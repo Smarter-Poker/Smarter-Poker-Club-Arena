@@ -41,7 +41,7 @@ export const VIPStatusCard: React.FC<VIPStatusCardProps> = ({
           <div className="badge-info">
             <span className="tier-label">{config.label} VIP</span>
             {memberSince && (
-              <span className="member-since">Member since {memberSince.getFullYear()}</span>
+              <span className="member-since">Member Since {memberSince.getFullYear()}</span>
             )}
           </div>
         </div>

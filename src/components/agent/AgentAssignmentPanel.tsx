@@ -119,7 +119,7 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
     }
   };
 
-  if (loading) return <div style={{ color: '#8aa', padding: 12 }}>Loading members…</div>;
+  if (loading) return <div style={{ color: '#8aa', padding: 12 }}>Loading Members…</div>;
 
   const agents = members.filter((m) => AGENT_ROLES.includes(m.role));
   const supers = members.filter((m) => m.role === 'super_agent');
@@ -162,9 +162,9 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
           background: 'rgba(255,255,255,0.03)',
         }}
       >
-        <h4 style={{ margin: '0 0 10px', color: '#e6f1f5' }}>Assign player to an agent</h4>
+        <h4 style={{ margin: '0 0 10px', color: '#e6f1f5' }}>Assign Player To An Agent</h4>
         <select value={playerId} onChange={(e) => setPlayerId(e.target.value)} style={sel}>
-          <option value="">Select player… ({players.length})</option>
+          <option value="">Select Player… ({players.length})</option>
           {players.map((p) => (
             <option key={p.user_id} value={p.user_id}>
               {p.label}
@@ -176,7 +176,7 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
           onChange={(e) => setPlayerAgentId(e.target.value)}
           style={sel}
         >
-          <option value="">Select agent… ({agents.length})</option>
+          <option value="">Select Agent… ({agents.length})</option>
           {agents.map((a) => (
             <option key={a.user_id} value={a.user_id}>
               {a.label} - {a.role.replace('_', ' ')}
@@ -200,9 +200,9 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
           background: 'rgba(255,255,255,0.03)',
         }}
       >
-        <h4 style={{ margin: '0 0 10px', color: '#e6f1f5' }}>Place agent under a super agent</h4>
+        <h4 style={{ margin: '0 0 10px', color: '#e6f1f5' }}>Place Agent Under A Super Agent</h4>
         <select value={agentId} onChange={(e) => setAgentId(e.target.value)} style={sel}>
-          <option value="">Select agent…</option>
+          <option value="">Select Agent…</option>
           {members
             .filter((m) => m.role === 'agent' || m.role === 'sub_agent')
             .map((a) => (
@@ -212,7 +212,7 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
             ))}
         </select>
         <select value={superAgentId} onChange={(e) => setSuperAgentId(e.target.value)} style={sel}>
-          <option value="">Select super agent… ({supers.length})</option>
+          <option value="">Select Super Agent… ({supers.length})</option>
           {supers.map((a) => (
             <option key={a.user_id} value={a.user_id}>
               {a.label}
@@ -227,7 +227,7 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
           {busy ? 'Working…' : 'Place'}
         </button>
         <p style={{ color: '#66787f', fontSize: '0.75rem', marginBottom: 0 }}>
-          A downline member's rakeback must stay at least 10 points below their upline's.
+          A Downline Member's Rakeback Must Stay At Least 10 Points Below Their Upline's.
         </p>
       </div>
     </div>

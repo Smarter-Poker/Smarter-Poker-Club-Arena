@@ -223,7 +223,7 @@ export function TournamentHUD({
           {isBreak ? '-' : `${fmtChips(cur?.smallBlind ?? 0)} / ${fmtChips(cur?.bigBlind ?? 0)}`}
         </span>
         {!isBreak && (cur?.ante ?? 0) > 0 && (
-          <span style={{ fontSize: 10, opacity: 0.7 }}>ante {fmtChips(cur!.ante)}</span>
+          <span style={{ fontSize: 10, opacity: 0.7 }}>Ante {fmtChips(cur!.ante)}</span>
         )}
       </div>
 
@@ -257,7 +257,7 @@ export function TournamentHUD({
             {fmtChips(next.smallBlind)}/{fmtChips(next.bigBlind)}
           </span>
         )}
-        {next?.isBreak && <span style={{ fontSize: 9, opacity: 0.6 }}>break next</span>}
+        {next?.isBreak && <span style={{ fontSize: 9, opacity: 0.6 }}>Break Next</span>}
       </div>
 
       {/* Players remaining */}

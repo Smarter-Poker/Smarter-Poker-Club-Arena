@@ -89,7 +89,7 @@ export default function NotificationGrouper({
         {filtered.length === 0 ? (
           <div className="ng-empty">
             <span className="ng-empty-icon">◉</span>
-            <span className="ng-empty-text">No notifications here</span>
+            <span className="ng-empty-text">No Notifications Here</span>
           </div>
         ) : (
           filtered.map((notif) => (

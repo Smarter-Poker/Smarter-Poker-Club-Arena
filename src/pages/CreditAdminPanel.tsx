@@ -239,7 +239,7 @@ export default function CreditAdminPanel() {
         <div style={{ fontSize: '2rem', marginBottom: '12px' }}>◈</div>
         <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>Access Denied</div>
         <div style={{ fontSize: '0.75rem', marginTop: '4px' }}>
-          Only club owners and admins can access the Credit Admin Panel.
+          Only Club Owners And Admins Can Access The Credit Admin Panel.
         </div>
         <button
           onClick={() => navigate(-1)}
@@ -281,7 +281,7 @@ export default function CreditAdminPanel() {
         <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Credit Admin Panel</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
           <p style={{ margin: 0, fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
-            Manage agent credit limits and monitor exposure
+            Manage Agent Credit Limits And Monitor Exposure
           </p>
           {agents.length > 0 && (
             <button
@@ -432,7 +432,7 @@ export default function CreditAdminPanel() {
         <PageSkeleton variant="list" />
       ) : agents.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>
-          No agents found
+          No Agents Found
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>

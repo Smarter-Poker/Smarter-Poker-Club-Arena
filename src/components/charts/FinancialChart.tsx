@@ -55,7 +55,7 @@ export const FinancialChart: React.FC<FinancialChartProps> = ({
           fontSize: '14px',
         }}
       >
-        No data to display
+        No Data To Display
       </div>
     );
   }

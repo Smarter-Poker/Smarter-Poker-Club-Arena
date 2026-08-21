@@ -164,7 +164,7 @@ export function BBJTicker({
 
       <div className="bbj-ticker__feed">
         {hits.length === 0 ? (
-          <span className="bbj-ticker__empty">No hits yet &mdash; it could be you.</span>
+          <span className="bbj-ticker__empty">No Hits Yet &mdash; It Could Be You.</span>
         ) : (
           <div className="bbj-ticker__track">
             {hits.map((h) => (

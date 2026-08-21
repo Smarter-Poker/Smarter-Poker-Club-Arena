@@ -121,13 +121,13 @@ export default function PromotionsList({ userId, clubId }: PromotionsListProps) 
 
       {error ? (
         <div className="pl-empty">
-          Failed to load promotions.{' '}
+          Failed To Load Promotions.{' '}
           <button className="pl-retry" onClick={loadData}>
             Retry
           </button>
         </div>
       ) : promotions.length === 0 ? (
-        <div className="pl-empty">No {tab} promotions at the moment</div>
+        <div className="pl-empty">No {tab} Promotions At The Moment</div>
       ) : (
         <div className="pl-grid">
           {promotions.map((promo) => {
@@ -154,16 +154,14 @@ export default function PromotionsList({ userId, clubId }: PromotionsListProps) 
                 {/* Footer */}
                 <div className="pl-card-footer">
                   {promo.prizePool && promo.prizePool > 0 && (
-                    <span className="pl-card-prize">
-                      {promo.prizePool.toLocaleString()} chips
-                    </span>
+                    <span className="pl-card-prize">{promo.prizePool.toLocaleString()} Chips</span>
                   )}
                   {tab === 'active' && (
                     <span className="pl-card-time"> {getTimeRemaining(promo.endDate)}</span>
                   )}
                   {promo.maxClaims && (
                     <span className="pl-card-claims">
-                      {promo.claimCount}/{promo.maxClaims} claimed
+                      {promo.claimCount}/{promo.maxClaims} Claimed
                     </span>
                   )}
                 </div>

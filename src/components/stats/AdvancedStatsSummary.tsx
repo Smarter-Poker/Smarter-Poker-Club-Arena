@@ -323,7 +323,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h3>Advanced Statistics</h3>
-            <p className="stats-subtitle">Detailed metrics from your play history</p>
+            <p className="stats-subtitle">Detailed Metrics From Your Play History</p>
           </div>
           <button
             className="benchmark-toggle"
@@ -445,15 +445,15 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
       <div className="stats-legend">
         <div className="legend-item">
           <span className="legend-label">BB/100</span>
-          <p>Big Blinds won per 100 hands - primary win rate metric</p>
+          <p>Big Blinds Won Per 100 Hands - Primary Win Rate Metric</p>
         </div>
         <div className="legend-item">
           <span className="legend-label">C-Bet</span>
-          <p>Continuation Bet - betting on the flop after raising preflop</p>
+          <p>Continuation Bet - Betting On The Flop After Raising Preflop</p>
         </div>
         <div className="legend-item">
           <span className="legend-label">AF</span>
-          <p>Aggression Factor - ratio of aggressive to passive actions</p>
+          <p>Aggression Factor - Ratio Of Aggressive To Passive Actions</p>
         </div>
       </div>
     </div>

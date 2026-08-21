@@ -103,14 +103,14 @@ export default function HelpPage() {
 
         {filteredFAQ.length === 0 && (
           <div className="empty-state">
-            <p>No results for "{searchQuery}"</p>
+            <p>No Results For "{searchQuery}"</p>
           </div>
         )}
       </div>
 
       <div className="help-footer">
-        <h3>Still need help?</h3>
-        <p>Our support team is available 24/7</p>
+        <h3>Still Need Help?</h3>
+        <p>Our Support Team Is Available 24/7</p>
         <button className="btn btn-primary" onClick={() => setShowFeedbackForm(true)}>
           Contact Support
         </button>

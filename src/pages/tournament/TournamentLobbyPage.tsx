@@ -778,7 +778,7 @@ export default function TournamentLobbyPage() {
         ) : filteredTournaments.length === 0 ? (
           <div className={styles.empty}>
             <span className={styles.emptyIcon}></span>
-            <p>No tournaments found</p>
+            <p>No Tournaments Found</p>
             {clubId && !isInUnion && (
               <Link to={`/clubs/${clubId}/create-tournament`} className={styles.createBtn}>
                 + Create Tournament

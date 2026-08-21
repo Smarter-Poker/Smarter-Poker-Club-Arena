@@ -704,10 +704,10 @@ export default function PlayerSessionsPage() {
             >
               <h3 className="admin-card-title">Send Welcome-Back Chips</h3>
               <p className="admin-text-secondary" style={{ marginBottom: '12px', lineHeight: 1.5 }}>
-                Send promo chips to{' '}
-                <strong style={{ color: 'var(--text-primary)' }}>{wbTarget.name}</strong> to
-                encourage them to return. They&apos;ve been inactive for{' '}
-                <strong style={{ color: '#F7C52A' }}>{wbTarget.daysSinceActive} days</strong>.
+                Send Promo Chips To{' '}
+                <strong style={{ color: 'var(--text-primary)' }}>{wbTarget.name}</strong> To
+                Encourage Them To Return. They&apos;Ve Been Inactive For{' '}
+                <strong style={{ color: '#F7C52A' }}>{wbTarget.daysSinceActive} Days</strong>.
               </p>
               <div style={{ marginBottom: '16px' }}>
                 <label className="admin-label">Chip Amount</label>
@@ -831,7 +831,7 @@ export default function PlayerSessionsPage() {
                   fontWeight: 400,
                 }}
               >
-                {fmt(summary.totalMembers)} members
+                {fmt(summary.totalMembers)} Members
               </span>
             )}
           </div>
@@ -860,9 +860,9 @@ export default function PlayerSessionsPage() {
               }}
               onClick={() => setTab('retention')}
             >
-              <strong>{retSummary.atRisk + retSummary.churned}</strong> player
-              {retSummary.atRisk + retSummary.churned !== 1 ? 's' : ''} need attention -{' '}
-              {retSummary.atRisk} at-risk, {retSummary.churned} churned
+              <strong>{retSummary.atRisk + retSummary.churned}</strong> Player
+              {retSummary.atRisk + retSummary.churned !== 1 ? 's' : ''} Need Attention -{' '}
+              {retSummary.atRisk} At-Risk, {retSummary.churned} Churned
             </div>
           )}
 
@@ -1143,7 +1143,7 @@ export default function PlayerSessionsPage() {
             {sessions.length === 0 ? (
               <div className="admin-empty-state">
                 <span className="admin-empty-icon">▦</span>
-                <span>No session data available</span>
+                <span>No Session Data Available</span>
               </div>
             ) : (
               <div className="admin-table-scroll">
@@ -1206,7 +1206,7 @@ export default function PlayerSessionsPage() {
             {!retentionLoaded ? (
               <div className="admin-empty-state">
                 <span className="admin-empty-icon">◷</span>
-                <span>Scanning player activity...</span>
+                <span>Scanning Player Activity...</span>
               </div>
             ) : (
               <>
@@ -1244,7 +1244,7 @@ export default function PlayerSessionsPage() {
                       className="admin-text-secondary"
                       style={{ marginBottom: '8px', fontSize: '12px' }}
                     >
-                      Inactive for 5-14 days - reach out before they churn
+                      Inactive For 5-14 Days - Reach Out Before They Churn
                     </div>
                     <div className="admin-table-scroll">
                       <table className="admin-data-table">
@@ -1291,7 +1291,7 @@ export default function PlayerSessionsPage() {
                       className="admin-text-secondary"
                       style={{ marginBottom: '8px', fontSize: '12px' }}
                     >
-                      Inactive for 14+ days
+                      Inactive For 14+ Days
                     </div>
                     <div className="admin-table-scroll">
                       <table className="admin-data-table">
@@ -1320,7 +1320,7 @@ export default function PlayerSessionsPage() {
                                   className="admin-btn admin-btn-ghost admin-btn-sm"
                                   style={{ borderColor: '#F7C52A', color: '#F7C52A' }}
                                 >
-                                  Re-engage
+                                  Re-Engage
                                 </button>
                               </td>
                             </tr>
@@ -1334,7 +1334,7 @@ export default function PlayerSessionsPage() {
                 {atRisk.length === 0 && churned.length === 0 && (
                   <div className="admin-empty-state">
                     <span className="admin-empty-icon">✓</span>
-                    <span>All players are actively engaged!</span>
+                    <span>All Players Are Actively Engaged!</span>
                   </div>
                 )}
               </>
@@ -1354,7 +1354,7 @@ export default function PlayerSessionsPage() {
             ) : chipFlowEntries.length === 0 ? (
               <div className="admin-empty-state">
                 <span className="admin-empty-icon">→</span>
-                <span>No chip flow data for the last 7 days</span>
+                <span>No Chip Flow Data For The Last 7 Days</span>
               </div>
             ) : (
               <>

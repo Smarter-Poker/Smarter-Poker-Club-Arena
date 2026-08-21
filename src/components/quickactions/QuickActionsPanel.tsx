@@ -164,7 +164,7 @@ export const QuickActionsPanel: React.FC = () => {
           <div className="quick-panel">
             <div className="quick-header">
               <h3>Quick Actions</h3>
-              <span className="shortcut-hint">Alt + key</span>
+              <span className="shortcut-hint">Alt + Key</span>
             </div>
             <div className="quick-grid">
               {sortedActions.map((action, i) => (
@@ -185,7 +185,7 @@ export const QuickActionsPanel: React.FC = () => {
               ))}
             </div>
             <div className="quick-footer">
-              <span>Recently used appear first</span>
+              <span>Recently Used Appear First</span>
             </div>
           </div>
         </>

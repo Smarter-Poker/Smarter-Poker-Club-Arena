@@ -35,7 +35,7 @@ export const VIPUpgradeModal: React.FC<VIPUpgradeModalProps> = ({
 
         <div className="modal-header">
           <h2> Upgrade Your VIP Status</h2>
-          <p>Unlock exclusive perks and rewards</p>
+          <p>Unlock Exclusive Perks And Rewards</p>
         </div>
 
         <div className="tiers-container">

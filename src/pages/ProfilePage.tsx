@@ -788,7 +788,7 @@ export default function ProfilePage() {
     return (
       <div className={styles.page}>
         <div className={styles.emptyProfile}>
-          <p>Profile not found</p>
+          <p>Profile Not Found</p>
         </div>
       </div>
     );
@@ -1226,7 +1226,7 @@ export default function ProfilePage() {
               </>
             ) : (
               <div className={styles.emptyAchievements}>
-                <p>No achievements yet. Start playing to unlock achievements!</p>
+                <p>No Achievements Yet. Start Playing To Unlock Achievements!</p>
               </div>
             )}
 
@@ -1284,7 +1284,7 @@ export default function ProfilePage() {
                         color: '#6a7a8a',
                       }}
                     >
-                      Loading chart...
+                      Loading Chart...
                     </div>
                   }
                 >
@@ -1345,7 +1345,7 @@ export default function ProfilePage() {
             ) : (
               <div className={styles.emptyHistory}>
                 <span className={styles.emptyIcon}></span>
-                <p>No recent transactions to display.</p>
+                <p>No Recent Transactions To Display.</p>
                 <button className={styles.playButton} onClick={() => navigate('/')}>
                   Start Playing
                 </button>

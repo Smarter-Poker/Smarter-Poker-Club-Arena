@@ -599,7 +599,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
               <div key={type} className="admin-stat-card">
                 <div className="admin-stat-label">{toTitleCase(type)}</div>
                 <div className="admin-stat-value">{fmtChips(data.volume)}</div>
-                <div className="admin-stat-detail">{fmt(data.count)} transactions</div>
+                <div className="admin-stat-detail">{fmt(data.count)} Transactions</div>
               </div>
             ))}
           </div>
@@ -786,7 +786,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
         ) : (
           <div>
             <div className="admin-text-secondary" style={{ marginBottom: '16px' }}>
-              No active period found. Start a new tracking period for your agents.
+              No Active Period Found. Start A New Tracking Period For Your Agents.
             </div>
             <button
               onClick={() => doAction('open')}
@@ -811,7 +811,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
             className="admin-btn admin-btn-ghost admin-btn-sm"
             style={{ borderColor: '#31A24C', color: '#31A24C' }}
           >
-            Mark All as Paid
+            Mark All As Paid
           </button>
         )}
       </h3>
@@ -819,7 +819,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
       {(data.pendingCommissions || []).length === 0 ? (
         <div className="admin-empty-state">
           <span className="admin-empty-icon">→</span>
-          <span>No pending commissions to pay.</span>
+          <span>No Pending Commissions To Pay.</span>
         </div>
       ) : (
         <div className="admin-table-scroll">
@@ -888,9 +888,12 @@ function AuditLogTab({ clubId }: { clubId: string }) {
 
         const { data, error, count } = await supabase
           .from('audit_trail')
-          .select('id, action, actor_id, target_type, target_id, details:after_state, ip_address, created_at', {
-            count: 'exact',
-          })
+          .select(
+            'id, action, actor_id, target_type, target_id, details:after_state, ip_address, created_at',
+            {
+              count: 'exact',
+            }
+          )
           .eq('club_id', uuid)
           .order('created_at', { ascending: false })
           .range(from, to);
@@ -1298,7 +1301,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
       {items.length === 0 ? (
         <div className="admin-empty-state">
           <span className="admin-empty-icon">◉</span>
-          <span>No announcements yet. Create one above.</span>
+          <span>No Announcements Yet. Create One Above.</span>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1457,7 +1460,7 @@ function SettingsTab({ clubId }: { clubId: string }) {
             </label>
           ))}
           <div style={{ marginTop: '8px' }}>
-            <label className="admin-label">Default Action Time (seconds)</label>
+            <label className="admin-label">Default Action Time (Seconds)</label>
             <input
               type="number"
               value={settings.default_action_time || 30}
@@ -1559,12 +1562,12 @@ function HierarchyTab({ clubId }: { clubId: string }) {
       <h3 className="admin-card-title">Agent Hierarchy Tree</h3>
       <div className="admin-card">
         <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-          {tree.length} members in hierarchy
+          {tree.length} Members In Hierarchy
         </div>
         {tree.length === 0 ? (
           <div className="admin-empty-state">
             <span className="admin-empty-icon">▲</span>
-            <span>No agents in hierarchy yet.</span>
+            <span>No Agents In Hierarchy Yet.</span>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1663,7 +1666,7 @@ function SettlementHistoryTab({ clubId }: { clubId: string }) {
       {periods.length === 0 ? (
         <div className="admin-empty-state">
           <span className="admin-empty-icon">◆</span>
-          <span>No settlement periods yet.</span>
+          <span>No Settlement Periods Yet.</span>
         </div>
       ) : (
         <div className="admin-table-scroll">
@@ -1830,8 +1833,8 @@ function BrandingTab({ clubId }: { clubId: string }) {
           className="admin-text-secondary"
           style={{ fontSize: '12px', marginBottom: '12px', lineHeight: 1.6 }}
         >
-          Transfer complete ownership of this club to another member. This action is irreversible -
-          you will be demoted to admin.
+          Transfer Complete Ownership Of This Club To Another Member. This Action Is Irreversible -
+          You Will Be Demoted To Admin.
         </p>
         <div style={{ display: 'flex', gap: '8px' }}>
           <input
@@ -2090,7 +2093,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
       {templates.length === 0 ? (
         <div className="admin-empty-state">
           <span className="admin-empty-icon">▤</span>
-          <span>No table templates yet. Create tables from the lobby to save templates.</span>
+          <span>No Table Templates Yet. Create Tables From The Lobby To Save Templates.</span>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -2103,7 +2106,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                   <div style={{ fontWeight: 700, fontSize: '14px' }}>{tmpl.name || 'Template'}</div>
                   <div className="admin-text-secondary" style={{ fontSize: '12px' }}>
                     {tmpl.game_type || 'NLH'} • {tmpl.small_blind}/{tmpl.big_blind} •{' '}
-                    {tmpl.max_players || 9} seats
+                    {tmpl.max_players || 9} Seats
                     {tmpl.schedule_enabled && ' • Scheduled'}
                   </div>
                 </div>
@@ -2131,9 +2134,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                         if (insErr) throw insErr;
                         masterBus.emit('TABLE_CREATED', { tableId: newTable?.id || '', clubId });
                       } catch (e: unknown) {
-                        setActionError(
-                          `Launch failed: ${safeErrorMessage(e)}`
-                        );
+                        setActionError(`Launch failed: ${safeErrorMessage(e)}`);
                       }
                     }}
                     className="admin-btn admin-btn-success admin-btn-sm"
@@ -2160,9 +2161,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                         if (delErr) throw delErr;
                         load();
                       } catch (e: unknown) {
-                        setActionError(
-                          `Delete failed: ${safeErrorMessage(e)}`
-                        );
+                        setActionError(`Delete failed: ${safeErrorMessage(e)}`);
                       }
                     }}
                     className="admin-btn admin-btn-danger admin-btn-sm"
@@ -2319,10 +2318,10 @@ function MintChipsTab({ clubId }: { clubId: string }) {
     <div className="admin-tab-content">
       <div className="admin-card">
         <div style={{ fontSize: '16px', fontWeight: 700, marginBottom: '4px' }}>
-          Mint Chips to Treasury
+          Mint Chips To Treasury
         </div>
         <div className="admin-text-secondary" style={{ marginBottom: '16px', lineHeight: 1.5 }}>
-          Create new chips and add them to the club treasury. Subject to daily limits.
+          Create New Chips And Add Them To The Club Treasury. Subject To Daily Limits.
         </div>
         {msg && (
           <div className="admin-success-banner" style={{ marginBottom: '12px' }}>
@@ -2347,7 +2346,7 @@ function MintChipsTab({ clubId }: { clubId: string }) {
             />
           </div>
           <div>
-            <label className="admin-label">Notes (optional)</label>
+            <label className="admin-label">Notes (Optional)</label>
             <input
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -2505,7 +2504,7 @@ export default function AdminDashboardPage() {
               className="admin-btn admin-btn-primary"
               style={{ marginTop: '16px' }}
             >
-              ← Back to Lobby
+              ← Back To Lobby
             </button>
           </div>
         </div>

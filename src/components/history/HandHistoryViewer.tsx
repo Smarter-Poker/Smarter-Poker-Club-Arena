@@ -185,7 +185,7 @@ export function HandHistoryViewer({
       </div>
 
       {filteredHands.length === 0 ? (
-        <div className="empty-state">No hands found</div>
+        <div className="empty-state">No Hands Found</div>
       ) : (
         <div className="hand-history__list">
           {filteredHands.map((hand, i) => (

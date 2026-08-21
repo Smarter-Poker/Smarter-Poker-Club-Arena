@@ -292,7 +292,7 @@ export default function ClubFinancialsPage() {
       }
       // Rakeback plotted from the rows that actually paid it, not as a
       // fixed fraction of the rake bar next to it.
-      for (const row of ((rakebackRes as any)?.data || [])) {
+      for (const row of (rakebackRes as any)?.data || []) {
         const dayKey = dayLabel(row.created_at);
         const existing = dailyMap.get(dayKey) || { rake: 0, rakeback: 0 };
         existing.rakeback += Number(row.amount) || 0;
@@ -514,7 +514,7 @@ export default function ClubFinancialsPage() {
         <h3>Recent Transactions</h3>
         {transactions.length === 0 ? (
           <div className="empty-state">
-            <p>No transactions yet</p>
+            <p>No Transactions Yet</p>
           </div>
         ) : (
           <div className="transactions-list">

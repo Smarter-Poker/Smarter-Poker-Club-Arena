@@ -168,7 +168,7 @@ export function AdminReports({
                   ) : (
                     <tr>
                       <td colSpan={4} className="empty-row">
-                        No agent data for this period
+                        No Agent Data For This Period
                       </td>
                     </tr>
                   )}

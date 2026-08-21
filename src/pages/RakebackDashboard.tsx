@@ -201,11 +201,9 @@ export default function RakebackDashboard() {
             >
               ← Back
             </button>
-            <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>
-              Rakeback Dashboard
-            </h1>
+            <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Rakeback Dashboard</h1>
             <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
-              Earn cashback on every hand you play
+              Earn Cashback On Every Hand You Play
             </p>
           </div>
 
@@ -278,7 +276,7 @@ export default function RakebackDashboard() {
                 <div
                   style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginTop: '8px' }}
                 >
-                  <strong style={{ color: '#fff' }}>{stats.tierProgress.toFixed(1)}%</strong> to{' '}
+                  <strong style={{ color: '#fff' }}>{stats.tierProgress.toFixed(1)}%</strong> To{' '}
                   {stats.nextTier}
                 </div>
               )}
@@ -399,7 +397,7 @@ export default function RakebackDashboard() {
                     fontFamily: 'monospace',
                   }}
                 >
-                  {tier.minRake.toLocaleString()} rake
+                  {tier.minRake.toLocaleString()} Rake
                 </span>
                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: tier.color }}>
                   {tier.percent}%
@@ -432,7 +430,7 @@ export default function RakebackDashboard() {
               <span
                 style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}
               >
-                Last 20 payouts
+                Last 20 Payouts
               </span>
             </div>
 
@@ -445,7 +443,7 @@ export default function RakebackDashboard() {
                   fontSize: '0.85rem',
                 }}
               >
-                No payout history found
+                No Payout History Found
               </div>
             ) : (
               <div style={{ width: '100%', height: '180px' }}>

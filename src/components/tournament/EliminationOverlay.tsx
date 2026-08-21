@@ -133,7 +133,7 @@ export const EliminationOverlay: React.FC<EliminationOverlayProps> = ({
           <div className="elimination-bounty">
             <span className="elimination-bounty-icon"></span>
             <span className="elimination-bounty-text">
-              Bounty collected by <strong>{elimination.bountyCollectedBy}</strong>
+              Bounty Collected By <strong>{elimination.bountyCollectedBy}</strong>
             </span>
             <span className="elimination-bounty-amount">
               +{elimination.bountyAmount.toLocaleString()}

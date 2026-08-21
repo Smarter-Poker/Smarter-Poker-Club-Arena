@@ -102,7 +102,7 @@ const Step1Basics = ({
   return (
     <div className={styles.stepContent}>
       <h2>Club Basics</h2>
-      <p className={styles.stepDesc}>Give your club a name, pick a logo, and set permissions.</p>
+      <p className={styles.stepDesc}>Give Your Club A Name, Pick A Logo, And Set Permissions.</p>
 
       <div className={styles.formGroup}>
         <label>Club Name *</label>
@@ -158,10 +158,10 @@ const Step1Basics = ({
           >
             <div className={styles.dropIcon}>▣</div>
             <span className={styles.dropText}>
-              <strong>Upload your club logo</strong>
+              <strong>Upload Your Club Logo</strong>
             </span>
             <span className={styles.dropHint}>
-              Drag & drop or click to browse • JPG, PNG, GIF, WebP • Max 2MB
+              Drag & Drop Or Click To Browse • JPG, PNG, GIF, WebP • Max 2MB
             </span>
           </div>
         )}
@@ -183,7 +183,7 @@ const Step1Basics = ({
             className={styles.defaultsToggle}
             onClick={() => setDefaultsExpanded(!defaultsExpanded)}
           >
-            <span>Or choose a default icon</span>
+            <span>Or Choose A Default Icon</span>
             <span className={styles.toggleArrow}>{defaultsExpanded ? '▲' : '▼'}</span>
           </button>
 
@@ -235,7 +235,7 @@ const Step1Basics = ({
             <span className={styles.checkmark} />
             <div>
               <strong>Public</strong>
-              <p>Anyone can find and join your club. Open membership.</p>
+              <p>Anyone Can Find And Join Your Club. Open Membership.</p>
             </div>
           </label>
 
@@ -249,7 +249,7 @@ const Step1Basics = ({
             <span className={styles.checkmark} />
             <div>
               <strong>Private</strong>
-              <p>Invite only. New members require admin approval.</p>
+              <p>Invite Only. New Members Require Admin Approval.</p>
             </div>
           </label>
         </div>
@@ -279,7 +279,7 @@ const Step2Preview = ({
   return (
     <div className={styles.stepContent}>
       <h2>Preview & Create</h2>
-      <p className={styles.stepDesc}>Review your club settings before creating.</p>
+      <p className={styles.stepDesc}>Review Your Club Settings Before Creating.</p>
 
       <div className={styles.previewCard}>
         <div className={styles.previewHeader}>
@@ -319,8 +319,8 @@ const Step2Preview = ({
         <div>
           <strong>Rake & Game Settings</strong>
           <p>
-            Default rake and game settings are applied automatically. You can customize rake %, rake
-            cap, table rules, and game visibility anytime from your Club Settings after creation.
+            Default Rake And Game Settings Are Applied Automatically. You Can Customize Rake %, Rake
+            Cap, Table Rules, And Game Visibility Anytime From Your Club Settings After Creation.
           </p>
         </div>
       </div>
@@ -329,8 +329,8 @@ const Step2Preview = ({
       <div className={styles.bonusNotice}>
         <span className={styles.bonusIcon}>◈</span>
         <p>
-          If this is the first club that you are creating you will receive a bonus of{' '}
-          <strong>10,000 club chips</strong>. Congratulations!
+          If This Is The First Club That You Are Creating You Will Receive A Bonus Of{' '}
+          <strong>10,000 Club Chips</strong>. Congratulations!
         </p>
       </div>
 
@@ -344,12 +344,12 @@ const Step2Preview = ({
           />
           <span className={styles.checkmark} />
           <span>
-            By clicking "Create", you confirm you are 18+ years old, and that you understand and
-            accept our{' '}
+            By Clicking "Create", You Confirm You Are 18+ Years Old, And That You Understand And
+            Accept Our{' '}
             <button type="button" className={styles.rulesLink} onClick={onShowRules}>
               Club Promotion Rules
             </button>{' '}
-            and Media Guidelines.
+            And Media Guidelines.
           </span>
         </label>
       </div>

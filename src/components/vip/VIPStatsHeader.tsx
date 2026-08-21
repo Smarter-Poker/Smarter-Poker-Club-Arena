@@ -92,7 +92,7 @@ export const VIPStatsHeader: React.FC<VIPStatsHeaderProps> = ({
           </div>
 
           <div className="stat-card">
-            <span className="stat-icon">o</span>
+            <span className="stat-icon">O</span>
             <div className="stat-content">
               <span className="stat-value">
                 <AnimatedValue value={currentPoints} />
@@ -113,7 +113,7 @@ export const VIPStatsHeader: React.FC<VIPStatsHeaderProps> = ({
             <span className="stat-icon">#</span>
             <div className="stat-content">
               <span className="stat-value">{daysSinceReview}</span>
-              <span className="stat-label">Days to Review</span>
+              <span className="stat-label">Days To Review</span>
             </div>
           </div>
         </div>

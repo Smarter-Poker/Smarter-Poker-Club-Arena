@@ -1101,7 +1101,7 @@ export default function UnionDashboardPage() {
                         ID: {club.club_id}
                       </div>
                     </div>
-                    <span className="admin-badge">{pct(club.club_commission_rate)} comm</span>
+                    <span className="admin-badge">{pct(club.club_commission_rate)} Comm</span>
                   </div>
                   <div
                     style={{
@@ -1111,9 +1111,9 @@ export default function UnionDashboardPage() {
                       color: 'var(--text-secondary)',
                     }}
                   >
-                    <span>{fmt(club.member_count)} members</span>
-                    <span>{fmt(club.active_tables)} tables</span>
-                    <span>{fmt(club.total_rake)} rake</span>
+                    <span>{fmt(club.member_count)} Members</span>
+                    <span>{fmt(club.active_tables)} Tables</span>
+                    <span>{fmt(club.total_rake)} Rake</span>
                   </div>
                   {isLead && (
                     <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
@@ -1283,10 +1283,10 @@ export default function UnionDashboardPage() {
                 style={{ padding: '16px', marginBottom: '16px', borderLeft: '3px solid #22c55e' }}
               >
                 <h3 className="admin-card-title" style={{ color: '#22c55e' }}>
-                  Deposit to Union Bank
+                  Deposit To Union Bank
                 </h3>
                 <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
-                  Move chips from your player wallet into the Union Main Bank
+                  Move Chips From Your Player Wallet Into The Union Main Bank
                 </p>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <input
@@ -1368,8 +1368,8 @@ export default function UnionDashboardPage() {
                   Fund BBJ Pool
                 </h3>
                 <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
-                  Move chips from the Union Bank into the shared Bad Beat Jackpot. Split across
-                  main/backup/promo per your union BBJ settings.
+                  Move Chips From The Union Bank Into The Shared Bad Beat Jackpot. Split Across
+                  Main/Backup/Promo Per Your Union BBJ Settings.
                   {bbjPool
                     ? ` Current pool: ${fmt(bbjPool.main_balance)} main / ${fmt(bbjPool.backup_balance)} backup / ${fmt(bbjPool.promo_balance)} promo.`
                     : ' No active pool found.'}
@@ -1426,7 +1426,7 @@ export default function UnionDashboardPage() {
                   Clawback Chips
                 </h3>
                 <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
-                  Recall chips from any club treasury, agent wallet, or player wallet back to Union
+                  Recall Chips From Any Club Treasury, Agent Wallet, Or Player Wallet Back To Union
                   Bank
                 </p>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -1436,7 +1436,7 @@ export default function UnionDashboardPage() {
                     value={clawbackForm.target}
                     onChange={(e) => setClawbackForm((f) => ({ ...f, target: e.target.value }))}
                   >
-                    <option value="">Select target...</option>
+                    <option value="">Select Target...</option>
                     <optgroup label="Club Treasuries">
                       {clubs.map((c) => (
                         <option key={`club-${c.id}`} value={`club:${c.id}`}>
@@ -1542,7 +1542,7 @@ export default function UnionDashboardPage() {
 
             {isLead && (
               <div className="admin-card" style={{ padding: '16px', marginBottom: '16px' }}>
-                <h3 className="admin-card-title">Send Chips to Club</h3>
+                <h3 className="admin-card-title">Send Chips To Club</h3>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <select
                     className="admin-input"
@@ -1550,7 +1550,7 @@ export default function UnionDashboardPage() {
                     value={transferForm.clubId}
                     onChange={(e) => setTransferForm((f) => ({ ...f, clubId: e.target.value }))}
                   >
-                    <option value="">Select club...</option>
+                    <option value="">Select Club...</option>
                     {clubs.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
@@ -1626,7 +1626,7 @@ export default function UnionDashboardPage() {
             {clubs.length === 0 ? (
               <div className="admin-empty-state">
                 <span className="admin-empty-icon">▦</span>
-                <span>No clubs yet</span>
+                <span>No Clubs Yet</span>
               </div>
             ) : (
               <div className="admin-table-scroll">
@@ -1743,8 +1743,8 @@ export default function UnionDashboardPage() {
               }}
             >
               <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                Distribute each club&apos;s share of last week&apos;s rake from the union wallet.
-                Runs are idempotent - a week can&apos;t be paid twice.
+                Distribute Each Club&apos;S Share Of Last Week&apos;S Rake From The Union Wallet.
+                Runs Are Idempotent - A Week Can&apos;T Be Paid Twice.
               </span>
               <button
                 className="admin-action-btn"
@@ -1792,14 +1792,14 @@ export default function UnionDashboardPage() {
             {pnlSettlements.length === 0 ? (
               <div className="admin-empty-state">
                 <span className="admin-empty-icon">▦</span>
-                <span>No player P&amp;L settlement has run yet</span>
+                <span>No Player P&amp;L Settlement Has Run Yet</span>
               </div>
             ) : (
               <div className="admin-table-scroll">
                 <table className="admin-data-table">
                   <thead>
                     <tr>
-                      <th>Week of</th>
+                      <th>Week Of</th>
                       <th>Status</th>
                       <th>Collected</th>
                       <th>Paid</th>
@@ -1853,7 +1853,7 @@ export default function UnionDashboardPage() {
             {recentPeriods.length === 0 ? (
               <div className="admin-empty-state">
                 <span className="admin-empty-icon">▦</span>
-                <span>No settlement data yet</span>
+                <span>No Settlement Data Yet</span>
               </div>
             ) : (
               <div className="admin-table-scroll">
@@ -1898,7 +1898,7 @@ export default function UnionDashboardPage() {
           <div className="admin-tab-content">
             {!appsLoaded && (
               <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
-                Loading applications...
+                Loading Applications...
               </div>
             )}
             <div
@@ -2038,7 +2038,7 @@ export default function UnionDashboardPage() {
             ) : (
               <div className="admin-empty-state">
                 <span className="admin-empty-icon">▤</span>
-                <span>No {appsFilter} applications</span>
+                <span>No {appsFilter} Applications</span>
               </div>
             )}
 
@@ -2121,7 +2121,7 @@ export default function UnionDashboardPage() {
               </div>
             ) : (
               <div className="admin-empty-state">
-                <span>No pending leave requests</span>
+                <span>No Pending Leave Requests</span>
               </div>
             )}
           </div>

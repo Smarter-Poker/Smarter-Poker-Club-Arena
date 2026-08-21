@@ -107,8 +107,7 @@ const BACKGROUND_FALLBACK_GRADIENT = 'radial-gradient(ellipse at 50% 35%, #2c323
 const BACKGROUND_ASSETS: ThemeAsset[] = TABLE_BACKGROUND_IDS.map((id) => ({
   id,
   name:
-    BACKGROUND_META[id]?.name ??
-    id.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+    BACKGROUND_META[id]?.name ?? id.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
   thumbnail: BACKGROUND_FALLBACK_GRADIENT,
   vipOnly: BACKGROUND_META[id]?.vipOnly ?? false,
 }));
@@ -731,8 +730,8 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
               <div className="theme-vip-prompt__icon">VIP</div>
               <h4 className="theme-vip-prompt__title">VIP Theme Unlocked</h4>
               <p className="theme-vip-prompt__text">
-                This theme is exclusive to VIP members. Upgrade to unlock premium themes, tables,
-                and more.
+                This Theme Is Exclusive To VIP Members. Upgrade To Unlock Premium Themes, Tables,
+                And More.
               </p>
               <div className="theme-vip-prompt__actions">
                 <button
@@ -743,7 +742,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                     navigate('/vip');
                   }}
                 >
-                  Upgrade to VIP
+                  Upgrade To VIP
                 </button>
                 <button
                   className="theme-vip-prompt__btn theme-vip-prompt__btn--cancel"

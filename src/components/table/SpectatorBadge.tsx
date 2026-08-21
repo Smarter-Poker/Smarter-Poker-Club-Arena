@@ -49,7 +49,7 @@ export const SpectatorBadge: React.FC<SpectatorBadgeProps> = ({ observers, class
         }}
       >
         <span style={{ fontSize: '14px' }}></span>
-        <span>{count} watching</span>
+        <span>{count} Watching</span>
       </button>
 
       {/* Dropdown list */}

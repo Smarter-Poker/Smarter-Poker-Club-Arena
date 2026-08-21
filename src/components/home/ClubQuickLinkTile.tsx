@@ -279,7 +279,7 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
                   </span>
                   {balances?.has(club.id) && (
                     <span className={styles.cashierSwitchItemBalance}>
-                      {(balances.get(club.id) as number).toLocaleString()} chips
+                      {(balances.get(club.id) as number).toLocaleString()} Chips
                     </span>
                   )}
                 </span>

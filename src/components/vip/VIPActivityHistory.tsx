@@ -93,7 +93,7 @@ export const VIPActivityHistory: React.FC<VIPActivityHistoryProps> = ({ activiti
       {/* Header */}
       <div className="activity-header">
         <h3>Activity History</h3>
-        <p>Track your VIP points earnings and redemptions</p>
+        <p>Track Your VIP Points Earnings And Redemptions</p>
       </div>
 
       {/* Summary Stats */}
@@ -171,7 +171,7 @@ export const VIPActivityHistory: React.FC<VIPActivityHistoryProps> = ({ activiti
                     {activity.action === 'earned' ? '+' : '−'}
                     {activity.points.toLocaleString()}
                   </span>
-                  <span className="points-label">pts</span>
+                  <span className="points-label">Pts</span>
                 </div>
               </div>
 
@@ -184,7 +184,7 @@ export const VIPActivityHistory: React.FC<VIPActivityHistoryProps> = ({ activiti
         ) : (
           <div className="no-activity">
             <span className="no-activity-icon">◆</span>
-            <p>No activity in this category yet</p>
+            <p>No Activity In This Category Yet</p>
           </div>
         )}
       </div>
@@ -211,7 +211,7 @@ export const VIPActivityHistory: React.FC<VIPActivityHistoryProps> = ({ activiti
                     <span className="stat-label">Spent</span>
                   </div>
                 </div>
-                <span className="month-count">{summary.count} activities</span>
+                <span className="month-count">{summary.count} Activities</span>
               </div>
             ))}
           </div>

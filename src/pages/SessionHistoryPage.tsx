@@ -341,7 +341,7 @@ export default function SessionHistoryPage() {
         ) : sessions.length === 0 ? (
           <div className="sh-empty">
             <span className="sh-empty-icon">▦</span>
-            <p>No sessions found. Play some hands to see your history!</p>
+            <p>No Sessions Found. Play Some Hands To See Your History!</p>
           </div>
         ) : (
           sessions.map((session) => (
@@ -351,7 +351,7 @@ export default function SessionHistoryPage() {
                   {formatDate(session.session_end || session.session_start)}
                 </div>
                 <div className="sh-session-meta">
-                  <span>{session.hands_played} hands</span>
+                  <span>{session.hands_played} Hands</span>
                   <span>•</span>
                   <span>{formatDuration(session.session_start, session.session_end)}</span>
                   <span>•</span>

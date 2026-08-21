@@ -250,7 +250,7 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
                   <span className={styles.itemName}>{club.name || 'Unnamed Club'}</span>
                   {balances?.has(club.id) && (
                     <span className={styles.itemBalance}>
-                      {(balances.get(club.id) as number).toLocaleString()} chips
+                      {(balances.get(club.id) as number).toLocaleString()} Chips
                     </span>
                   )}
                 </span>

@@ -133,7 +133,7 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
     }
   };
 
-  if (loading) return <div style={{ padding: 16, color: '#8aa' }}>Loading union operations…</div>;
+  if (loading) return <div style={{ padding: 16, color: '#8aa' }}>Loading Union Operations…</div>;
 
   if (loadError) {
     return (
@@ -217,7 +217,7 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
       {tab === 'risk' && (
         <div style={{ overflowX: 'auto' }}>
           {risk.length === 0 ? (
-            <p style={{ color: '#8aa' }}>No agent activity in this period.</p>
+            <p style={{ color: '#8aa' }}>No Agent Activity In This Period.</p>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
               <thead>
@@ -228,9 +228,9 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
                   <th style={{ padding: 8, textAlign: 'right' }}>Players</th>
                   <th style={{ padding: 8, textAlign: 'right' }}>Seated</th>
                   <th style={{ padding: 8, textAlign: 'right' }}>Rake</th>
-                  <th style={{ padding: 8, textAlign: 'right' }}>Player net</th>
+                  <th style={{ padding: 8, textAlign: 'right' }}>Player Net</th>
                   <th style={{ padding: 8, textAlign: 'right' }}>Commission</th>
-                  <th style={{ padding: 8, textAlign: 'right' }}>Credit out</th>
+                  <th style={{ padding: 8, textAlign: 'right' }}>Credit Out</th>
                 </tr>
               </thead>
               <tbody>
@@ -266,7 +266,7 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
             </table>
           )}
           <p style={{ color: '#66787f', fontSize: '0.78rem', marginTop: 10 }}>
-            Player net is shown from the union's side: red means that agent's players are up.
+            Player Net Is Shown From The Union's Side: Red Means That Agent's Players Are Up.
           </p>
         </div>
       )}
@@ -333,9 +333,9 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
                   : `Over-distributed by ${money(dist.over_distributed_by)}`}
               </strong>
               <div style={{ color: '#8fa3ad', fontSize: '0.82rem', marginTop: 6 }}>
-                Rake collected {money(dist.rake_collected)} · commissions{' '}
-                {money(dist.agent_commissions)} · player rakeback {money(dist.player_rakeback)} ·
-                distributed {money(dist.total_distributed)}
+                Rake Collected {money(dist.rake_collected)} · Commissions{' '}
+                {money(dist.agent_commissions)} · Player Rakeback {money(dist.player_rakeback)} ·
+                Distributed {money(dist.total_distributed)}
               </div>
             </div>
           )}
@@ -359,12 +359,12 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
             </button>
           )}
           <p style={{ color: '#66787f', fontSize: '0.78rem', margin: 0 }}>
-            Round 1 union pays the clubs · Round 2 clubs pay super agents and agents · Round 3
-            agents pay their players. Each round is funded by the one above it.
+            Round 1 Union Pays The Clubs · Round 2 Clubs Pay Super Agents And Agents · Round 3
+            Agents Pay Their Players. Each Round Is Funded By The One Above It.
           </p>
 
           {rounds.length === 0 ? (
-            <p style={{ color: '#8aa' }}>No settlement runs recorded yet.</p>
+            <p style={{ color: '#8aa' }}>No Settlement Runs Recorded Yet.</p>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
               <thead>
@@ -430,7 +430,7 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
               }}
             >
               <strong style={{ color: law.healthy ? '#37e7c7' : '#ff7676' }}>
-                Union law {law.healthy ? 'healthy' : `- ${law.breaches.length} breach(es)`}
+                Union Law {law.healthy ? 'healthy' : `- ${law.breaches.length} breach(es)`}
               </strong>
               {law.breaches.length > 0 && (
                 <ul style={{ color: '#ff9c9c', fontSize: '0.82rem', margin: '8px 0 0 18px' }}>
@@ -466,8 +466,8 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
             </button>
           )}
           <p style={{ color: '#66787f', fontSize: '0.78rem', margin: 0 }}>
-            Scored by agent, not by player: a bot or colluding ring has to be funded and settled by
-            someone, and that is the accountable layer.
+            Scored By Agent, Not By Player: A Bot Or Colluding Ring Has To Be Funded And Settled By
+            Someone, And That Is The Accountable Layer.
           </p>
         </div>
       )}
@@ -519,7 +519,7 @@ function SettlementConfirm({
           border: '1px solid #24343d',
         }}
       >
-        <h3 style={{ margin: '0 0 2px', color: '#e6f1f5' }}>Run settlement</h3>
+        <h3 style={{ margin: '0 0 2px', color: '#e6f1f5' }}>Run Settlement</h3>
         <p style={{ color: '#7d919b', fontSize: '0.8rem', marginTop: 0 }}>
           {new Date(preview.period_start).toLocaleDateString()} -{' '}
           {new Date(preview.period_end).toLocaleDateString()}
@@ -551,7 +551,7 @@ function SettlementConfirm({
               justifyContent: 'space-between',
             }}
           >
-            <strong style={{ color: '#e6f1f5' }}>Total to move</strong>
+            <strong style={{ color: '#e6f1f5' }}>Total To Move</strong>
             <strong style={{ color: '#37e7c7' }}>{money(preview.total_to_move)}</strong>
           </div>
         </div>
@@ -567,23 +567,23 @@ function SettlementConfirm({
             }}
           >
             <strong style={{ color: '#ffb347' }}>
-              {preview.round2.clubs_short + preview.round3.agents_short} payer(s) cannot cover their
-              obligation
+              {preview.round2.clubs_short + preview.round3.agents_short} Payer(S) Cannot Cover Their
+              Obligation
             </strong>
             <p style={{ color: '#c8a15e', fontSize: '0.78rem', margin: '6px 0 8px' }}>
-              These will be skipped and reported as shortfalls. Everyone else is still paid.
+              These Will Be Skipped And Reported As Shortfalls. Everyone Else Is Still Paid.
             </p>
             <ul style={{ margin: 0, paddingLeft: 18, color: '#d8b784', fontSize: '0.8rem' }}>
               {preview.round2.detail.slice(0, 6).map((d, i) => (
                 <li key={`c${i}`}>
-                  {d.club ?? 'club'} owes {money(d.owed)}, treasury {money(d.treasury)} - short{' '}
+                  {d.club ?? 'club'} Owes {money(d.owed)}, Treasury {money(d.treasury)} - Short{' '}
                   {money(d.short_by)}
                 </li>
               ))}
               {preview.round3.detail.slice(0, 6).map((d, i) => (
                 <li key={`a${i}`}>
-                  {d.agent ?? 'agent'} owes {money(d.owed)}, balance {money(d.agent_balance)} -
-                  short {money(d.short_by)}
+                  {d.agent ?? 'agent'} Owes {money(d.owed)}, Balance {money(d.agent_balance)} -
+                  Short {money(d.short_by)}
                 </li>
               ))}
             </ul>
@@ -592,7 +592,7 @@ function SettlementConfirm({
 
         {nothingToDo && (
           <p style={{ color: '#8fa3ad', fontSize: '0.85rem' }}>
-            Nothing outstanding for this period - running again is safe and will move nothing.
+            Nothing Outstanding For This Period - Running Again Is Safe And Will Move Nothing.
           </p>
         )}
 

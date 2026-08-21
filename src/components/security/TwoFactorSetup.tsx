@@ -77,8 +77,8 @@ export const TwoFactorSetup: React.FC<TwoFactorSetupProps> = ({
       {step === 'info' && (
         <div className="setup-info">
           <p>
-            Add an extra layer of security to your account by requiring a verification code in
-            addition to your password.
+            Add An Extra Layer Of Security To Your Account By Requiring A Verification Code In
+            Addition To Your Password.
           </p>
           <button
             className={`toggle-btn ${isEnabled ? 'disable' : 'enable'}`}
@@ -91,13 +91,13 @@ export const TwoFactorSetup: React.FC<TwoFactorSetupProps> = ({
 
       {step === 'scan' && qrCodeUrl && (
         <div className="setup-scan">
-          <p>Scan this QR code with your authenticator app:</p>
+          <p>Scan This QR Code With Your Authenticator App:</p>
           <div className="qr-container">
             <img loading="lazy" decoding="async" src={qrCodeUrl} alt="2FA QR Code" />
           </div>
           {secretKey && (
             <div className="secret-key">
-              <span>Or enter manually:</span>
+              <span>Or Enter Manually:</span>
               <code>{secretKey}</code>
             </div>
           )}
@@ -109,7 +109,7 @@ export const TwoFactorSetup: React.FC<TwoFactorSetupProps> = ({
 
       {step === 'verify' && (
         <div className="setup-verify">
-          <p>Enter the 6-digit code from your authenticator:</p>
+          <p>Enter The 6-Digit Code From Your Authenticator:</p>
           <input
             type="text"
             className="code-input"

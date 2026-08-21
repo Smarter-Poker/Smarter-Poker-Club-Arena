@@ -73,8 +73,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <label>Language</label>
               <select defaultValue="en">
                 <option value="en">English</option>
-                <option value="es">Español</option>
-                <option value="pt">Português</option>
+                <option value="es">EspañOl</option>
+                <option value="pt">PortuguêS</option>
                 <option value="zh">中文</option>
               </select>
             </div>
@@ -88,7 +88,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <div className="setting-row">
               <label>Time Zone</label>
               <select defaultValue="auto">
-                <option value="auto">Auto-detect</option>
+                <option value="auto">Auto-Detect</option>
                 <option value="utc">UTC</option>
                 <option value="est">Eastern</option>
                 <option value="pst">Pacific</option>

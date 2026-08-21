@@ -28,7 +28,7 @@ export const HandForHandBanner: React.FC<HandForHandBannerProps> = ({
         <div className="hfh-burst-content">
           <span className="hfh-burst-icon">▲</span>
           <span className="hfh-burst-text">BUBBLE BURST!</span>
-          <span className="hfh-burst-sub">{playersRemaining} players are now in the money!</span>
+          <span className="hfh-burst-sub">{playersRemaining} Players Are Now In The Money!</span>
         </div>
       </div>
     );
@@ -44,9 +44,9 @@ export const HandForHandBanner: React.FC<HandForHandBannerProps> = ({
           <span className="hfh-icon">◆</span>
         </div>
         <div className="hfh-info">
-          <span className="hfh-players">{playersRemaining} players remaining</span>
+          <span className="hfh-players">{playersRemaining} Players Remaining</span>
           <span className="hfh-separator">•</span>
-          <span className="hfh-money">{paidPositions} paid positions</span>
+          <span className="hfh-money">{paidPositions} Paid Positions</span>
         </div>
         <div className="hfh-bubble-text">THE MONEY BUBBLE</div>
       </div>

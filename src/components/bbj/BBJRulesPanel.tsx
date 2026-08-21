@@ -94,7 +94,7 @@ export function BBJRulesPanel({
             className={`bbj-rules__tab${tab === 'qualifying' ? ' is-active' : ''}`}
             onClick={() => setTab('qualifying')}
           >
-            What qualifies
+            What Qualifies
           </button>
           <button
             role="tab"
@@ -102,7 +102,7 @@ export function BBJRulesPanel({
             className={`bbj-rules__tab${tab === 'payout' ? ' is-active' : ''}`}
             onClick={() => setTab('payout')}
           >
-            What it pays
+            What It Pays
           </button>
         </div>
       )}
@@ -113,7 +113,7 @@ export function BBJRulesPanel({
             <thead>
               <tr>
                 <th>Game</th>
-                <th>Losing hand must be</th>
+                <th>Losing Hand Must Be</th>
               </tr>
             </thead>
             <tbody>
@@ -140,16 +140,16 @@ export function BBJRulesPanel({
           </table>
 
           <ul className="bbj-rules__list">
-            <li>Minimum pot: {BBJ_RULES.minPotBB} big blinds</li>
-            <li>Minimum players dealt in: {BBJ_RULES.minPlayersDealt}</li>
+            <li>Minimum Pot: {BBJ_RULES.minPotBB} Big Blinds</li>
+            <li>Minimum Players Dealt In: {BBJ_RULES.minPlayersDealt}</li>
             {BBJ_RULES.requireBothHoleCards && (
               <li>
-                Both hole cards must play (in Omaha games, exactly two) &mdash; for both the losing
-                and the winning hand
+                Both Hole Cards Must Play (In Omaha Games, Exactly Two) &mdash; For Both The Losing
+                And The Winning Hand
               </li>
             )}
             {BBJ_RULES.onlyFirstRunout && (
-              <li>When a pot is run twice or three times, only the FIRST board can trigger it</li>
+              <li>When A Pot Is Run Twice Or Three Times, Only The FIRST Board Can Trigger It</li>
             )}
           </ul>
         </div>
@@ -158,9 +158,9 @@ export function BBJRulesPanel({
       {active === 'payout' && (
         <div className="bbj-rules__body">
           <p className="bbj-rules__note">
-            A jackpot hit pays a share of the main pool set by the stakes you were playing &mdash;
-            not the whole pool. That share is then split 50% to the bad-beat hand, 25% to the hand
-            that won, and 25% between everyone else dealt into the hand.
+            A Jackpot Hit Pays A Share Of The Main Pool Set By The Stakes You Were Playing &mdash;
+            Not The Whole Pool. That Share Is Then Split 50% To The Bad-Beat Hand, 25% To The Hand
+            That Won, And 25% Between Everyone Else Dealt Into The Hand.
           </p>
 
           <table className="bbj-rules__table">
@@ -168,7 +168,7 @@ export function BBJRulesPanel({
               <tr>
                 <th>Stakes</th>
                 <th>Pays</th>
-                {poolAmount > 0 && <th>At today&rsquo;s pool</th>}
+                {poolAmount > 0 && <th>At Today&rsquo;S Pool</th>}
               </tr>
             </thead>
             <tbody>
@@ -189,7 +189,7 @@ export function BBJRulesPanel({
                     {poolAmount > 0 && (
                       <td className="bbj-rules__money">
                         {chips(total)}
-                        <span className="bbj-rules__money-sub">bad beat {chips(total * 0.5)}</span>
+                        <span className="bbj-rules__money-sub">Bad Beat {chips(total * 0.5)}</span>
                       </td>
                     )}
                   </tr>

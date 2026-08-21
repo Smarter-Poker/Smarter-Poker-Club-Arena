@@ -140,7 +140,7 @@ export default function EngineDashboard() {
     <div className="engine-dashboard">
       <header className="engine-header">
         <h1>⚙ Global Matrix Orchestrator</h1>
-        <p>Master Control Panel for the Club Arena Cash Game & Hydra Engines</p>
+        <p>Master Control Panel For The Club Arena Cash Game & Hydra Engines</p>
         <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
           <Link
             to="/analytics"
@@ -174,8 +174,8 @@ export default function EngineDashboard() {
             </span>
           </div>
           <p className="card-desc">
-            Controls all HeadlessTableEngine instances globally. When online, active tables will
-            automatically deal hands.
+            Controls All HeadlessTableEngine Instances Globally. When Online, Active Tables Will
+            Automatically Deal Hands.
           </p>
           <div className="card-metrics">
             <div className="metric">
@@ -203,8 +203,8 @@ export default function EngineDashboard() {
             </span>
           </div>
           <p className="card-desc">
-            Manages the 300+ Horse liquidity fleet. Automatically seeds empty tables and organically
-            recedes when real players join.
+            Manages The 300+ Horse Liquidity Fleet. Automatically Seeds Empty Tables And Organically
+            Recedes When Real Players Join.
           </p>
           <div className="card-metrics">
             <div className="metric">
@@ -223,11 +223,11 @@ export default function EngineDashboard() {
             </div>
             <div className="metric">
               <span className="label">Persona Rotation</span>
-              <span className="value text-green">30m CYCLE</span>
+              <span className="value text-green">30M CYCLE</span>
             </div>
           </div>
           <button className="engine-btn btn-secondary" disabled>
-            Hydra is linked to Master Engine
+            Hydra Is Linked To Master Engine
           </button>
         </div>
 
@@ -239,8 +239,8 @@ export default function EngineDashboard() {
             </span>
           </div>
           <p className="card-desc">
-            Controls all TournamentEngine instances globally. When online, tournaments will
-            automatically start, break tables, and process payouts.
+            Controls All TournamentEngine Instances Globally. When Online, Tournaments Will
+            Automatically Start, Break Tables, And Process Payouts.
           </p>
           <div className="card-metrics">
             <div className="metric">

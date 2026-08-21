@@ -394,7 +394,7 @@ export function AgentCommissionDashboard() {
                     {(summary.thisMonth / 4).toLocaleString(undefined, {
                       maximumFractionDigits: 0,
                     })}{' '}
-                    / week
+                    / Week
                   </span>
                 </div>
               )}
@@ -407,7 +407,7 @@ export function AgentCommissionDashboard() {
       {activeTab === 'records' && (
         <div className="agent-commission__records">
           {records.length === 0 ? (
-            <div className="empty-state">No commission records yet</div>
+            <div className="empty-state">No Commission Records Yet</div>
           ) : (
             <table>
               <thead>
@@ -453,7 +453,7 @@ export function AgentCommissionDashboard() {
       {activeTab === 'subagents' && (
         <div className="agent-commission__subagents">
           {subAgents.length === 0 ? (
-            <div className="empty-state">No sub-agents yet</div>
+            <div className="empty-state">No Sub-Agents Yet</div>
           ) : (
             <div className="subagent-grid">
               {subAgents.map((agent, idx) => (
@@ -462,7 +462,7 @@ export function AgentCommissionDashboard() {
                   <div className="info">
                     <span className="name">{agent.username}</span>
                     <span className="stats">
-                      {agent.totalPlayers} players • {(agent.commissionRate * 100).toFixed(0)}% rate
+                      {agent.totalPlayers} Players • {(agent.commissionRate * 100).toFixed(0)}% Rate
                     </span>
                   </div>
                   <span className="earnings">{agent.totalCommission.toLocaleString()}</span>

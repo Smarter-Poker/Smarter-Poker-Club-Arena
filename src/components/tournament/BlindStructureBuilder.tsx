@@ -256,7 +256,7 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
             onChange={(e) => setAutoInsertBreaks(e.target.checked)}
           />
           <span className="bsb-slider" />
-          Auto-insert breaks every
+          Auto-Insert Breaks Every
         </label>
         {autoInsertBreaks && (
           <select
@@ -264,10 +264,10 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
             value={breakEvery}
             onChange={(e) => setBreakEvery(Number(e.target.value))}
           >
-            <option value={4}>4 levels</option>
-            <option value={5}>5 levels</option>
-            <option value={6}>6 levels</option>
-            <option value={8}>8 levels</option>
+            <option value={4}>4 Levels</option>
+            <option value={5}>5 Levels</option>
+            <option value={6}>6 Levels</option>
+            <option value={8}>8 Levels</option>
           </select>
         )}
       </div>
@@ -304,7 +304,7 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
                         min={1}
                         max={30}
                       />
-                      <span className="bsb-unit">min</span>
+                      <span className="bsb-unit">Min</span>
                     </td>
                     <td className="bsb-col-actions">
                       <button
@@ -357,7 +357,7 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
                         min={1}
                         max={120}
                       />
-                      <span className="bsb-unit">min</span>
+                      <span className="bsb-unit">Min</span>
                     </td>
                     <td className="bsb-col-actions">
                       <div className="bsb-action-group">

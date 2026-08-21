@@ -127,7 +127,7 @@ export function FeedbackForm({ isOpen, onClose }: { isOpen: boolean; onClose: ()
         >
           <div className="success-icon"></div>
           <h3>Feedback Sent!</h3>
-          <p>Thank you for helping us improve Poker Club.</p>
+          <p>Thank You For Helping Us Improve Poker Club.</p>
           <button onClick={onClose} className="close-btn">
             Close
           </button>

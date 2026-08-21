@@ -53,89 +53,89 @@ export default function TOSAcceptanceModal({ onAccept }: TOSAcceptanceModalProps
       >
         <div className="tos-header">
           <span className="tos-icon"></span>
-          <h1>Terms of Service</h1>
-          <p className="tos-subtitle">Please review and accept to continue</p>
+          <h1>Terms Of Service</h1>
+          <p className="tos-subtitle">Please Review And Accept To Continue</p>
         </div>
 
         <div className="tos-content" onScroll={handleScroll}>
-          <h2>Club Arena Terms of Service</h2>
+          <h2>Club Arena Terms Of Service</h2>
           <p className="tos-updated">Last Updated: January 2026</p>
 
-          <h3>1. Acceptance of Terms</h3>
+          <h3>1. Acceptance Of Terms</h3>
           <p>
-            By accessing or using Club Arena ("the Service"), you agree to be bound by these Terms
-            of Service. If you do not agree to these terms, you may not use the Service.
+            By Accessing Or Using Club Arena ("The Service"), You Agree To Be Bound By These Terms
+            Of Service. If You Do Not Agree To These Terms, You May Not Use The Service.
           </p>
 
-          <h3>2. Description of Service</h3>
+          <h3>2. Description Of Service</h3>
           <p>
-            Club Arena is a poker club management platform that enables users to create and join
-            private poker clubs, manage agents and players, and participate in poker games.
+            Club Arena Is A Poker Club Management Platform That Enables Users To Create And Join
+            Private Poker Clubs, Manage Agents And Players, And Participate In Poker Games.
           </p>
 
           <h3>3. User Accounts</h3>
           <p>
-            You are responsible for maintaining the confidentiality of your account credentials and
-            for all activities that occur under your account. You must immediately notify us of any
-            unauthorized use.
+            You Are Responsible For Maintaining The Confidentiality Of Your Account Credentials And
+            For All Activities That Occur Under Your Account. You Must Immediately Notify Us Of Any
+            Unauthorized Use.
           </p>
 
           <h3>4. Virtual Currency</h3>
           <p>
-            The Service uses virtual chips and diamonds for gameplay purposes. Virtual currency has
-            no real-world monetary value and cannot be exchanged for real money, goods, or services
-            outside the platform.
+            The Service Uses Virtual Chips And Diamonds For Gameplay Purposes. Virtual Currency Has
+            No Real-World Monetary Value And Cannot Be Exchanged For Real Money, Goods, Or Services
+            Outside The Platform.
           </p>
 
           <h3>5. Prohibited Activities</h3>
-          <p>You agree not to:</p>
+          <p>You Agree Not To:</p>
           <ul>
-            <li>Use the Service for any illegal purpose</li>
-            <li>Engage in collusion, chip-dumping, or other unfair play</li>
-            <li>Use unauthorized scripts or automated software</li>
-            <li>Attempt to exploit bugs or vulnerabilities</li>
-            <li>Harass, abuse, or threaten other users</li>
-            <li>Create multiple accounts to circumvent restrictions</li>
+            <li>Use The Service For Any Illegal Purpose</li>
+            <li>Engage In Collusion, Chip-Dumping, Or Other Unfair Play</li>
+            <li>Use Unauthorized Scripts Or Automated Software</li>
+            <li>Attempt To Exploit Bugs Or Vulnerabilities</li>
+            <li>Harass, Abuse, Or Threaten Other Users</li>
+            <li>Create Multiple Accounts To Circumvent Restrictions</li>
           </ul>
 
           <h3>6. Privacy Policy</h3>
           <p>
-            Your privacy is important to us. We collect and process personal data as described in
-            our Privacy Policy, which is incorporated into these Terms by reference.
+            Your Privacy Is Important To Us. We Collect And Process Personal Data As Described In
+            Our Privacy Policy, Which Is Incorporated Into These Terms By Reference.
           </p>
 
           <h3>7. Intellectual Property</h3>
           <p>
-            All content, features, and functionality of the Service are owned by Club Arena and are
-            protected by copyright, trademark, and other intellectual property laws.
+            All Content, Features, And Functionality Of The Service Are Owned By Club Arena And Are
+            Protected By Copyright, Trademark, And Other Intellectual Property Laws.
           </p>
 
-          <h3>8. Disclaimer of Warranties</h3>
+          <h3>8. Disclaimer Of Warranties</h3>
           <p>
             THE SERVICE IS PROVIDED "AS IS" WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR
             IMPLIED. WE DO NOT GUARANTEE UNINTERRUPTED OR ERROR-FREE SERVICE.
           </p>
 
-          <h3>9. Limitation of Liability</h3>
+          <h3>9. Limitation Of Liability</h3>
           <p>
             TO THE MAXIMUM EXTENT PERMITTED BY LAW, SMARTER.POKER SHALL NOT BE LIABLE FOR ANY
             INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES.
           </p>
 
-          <h3>10. Changes to Terms</h3>
+          <h3>10. Changes To Terms</h3>
           <p>
-            We reserve the right to modify these Terms at any time. Continued use of the Service
-            after changes constitutes acceptance of the modified Terms.
+            We Reserve The Right To Modify These Terms At Any Time. Continued Use Of The Service
+            After Changes Constitutes Acceptance Of The Modified Terms.
           </p>
 
           <h3>11. Governing Law</h3>
           <p>
-            These Terms shall be governed by and construed in accordance with the laws of the
-            jurisdiction in which Club Arena operates.
+            These Terms Shall Be Governed By And Construed In Accordance With The Laws Of The
+            Jurisdiction In Which Club Arena Operates.
           </p>
 
           <h3>12. Contact</h3>
-          <p>For questions about these Terms, please contact us at support@smarter.poker</p>
+          <p>For Questions About These Terms, Please Contact Us At Support@Smarter.Poker</p>
 
           <div className="tos-scroll-hint">
             {!hasScrolledToBottom && '↓ Scroll to read all terms'}
@@ -149,7 +149,7 @@ export default function TOSAcceptanceModal({ onAccept }: TOSAcceptanceModalProps
               checked={hasScrolledToBottom}
               onChange={() => setHasScrolledToBottom(true)}
             />
-            I have read and agree to the Terms of Service and Privacy Policy
+            I Have Read And Agree To The Terms Of Service And Privacy Policy
           </label>
 
           <button

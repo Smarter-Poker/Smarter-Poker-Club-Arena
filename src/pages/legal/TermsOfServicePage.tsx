@@ -22,33 +22,33 @@ export default function TermsOfServicePage() {
         <button className={styles.backBtn} onClick={() => navigate(-1)}>
           ← Back
         </button>
-        <h1>Terms of Service</h1>
+        <h1>Terms Of Service</h1>
       </div>
 
       <div className={styles.content}>
         <section style={sectionAnimationStyle(0)}>
-          <h2>1. Acceptance of Terms</h2>
+          <h2>1. Acceptance Of Terms</h2>
           <p>
-            By accessing and using Club Arena, you accept and agree to be bound by the terms and
-            provision of this agreement. If you do not agree to abide by the above, please do not
-            use this service.
+            By Accessing And Using Club Arena, You Accept And Agree To Be Bound By The Terms And
+            Provision Of This Agreement. If You Do Not Agree To Abide By The Above, Please Do Not
+            Use This Service.
           </p>
         </section>
 
         <section style={sectionAnimationStyle(1)}>
           <h2>2. Use License</h2>
           <p>
-            Permission is granted to temporarily access Club Arena for personal, non-commercial use
-            only. This is the grant of a license, not a transfer of title, and under this license
-            you may not:
+            Permission Is Granted To Temporarily Access Club Arena For Personal, Non-Commercial Use
+            Only. This Is The Grant Of A License, Not A Transfer Of Title, And Under This License
+            You May Not:
           </p>
           <ul>
-            <li>Modify or copy the materials</li>
-            <li>Use the materials for any commercial purpose or for any public display</li>
-            <li>Attempt to reverse engineer any software contained in Club Arena</li>
-            <li>Remove any copyright or other proprietary notations from the materials</li>
+            <li>Modify Or Copy The Materials</li>
+            <li>Use The Materials For Any Commercial Purpose Or For Any Public Display</li>
+            <li>Attempt To Reverse Engineer Any Software Contained In Club Arena</li>
+            <li>Remove Any Copyright Or Other Proprietary Notations From The Materials</li>
             <li>
-              Transfer the materials to another person or "mirror" the materials on any other server
+              Transfer The Materials To Another Person Or "Mirror" The Materials On Any Other Server
             </li>
           </ul>
         </section>
@@ -56,71 +56,71 @@ export default function TermsOfServicePage() {
         <section style={sectionAnimationStyle(2)}>
           <h2>3. Account Responsibilities</h2>
           <p>
-            You are responsible for maintaining the confidentiality of your account and password.
-            You agree to accept responsibility for all activities that occur under your account.
+            You Are Responsible For Maintaining The Confidentiality Of Your Account And Password.
+            You Agree To Accept Responsibility For All Activities That Occur Under Your Account.
           </p>
         </section>
 
         <section style={sectionAnimationStyle(3)}>
           <h2>4. Play Money Only</h2>
           <p>
-            Club Arena uses play money chips only. All chips, diamonds, and virtual currency have no
-            real-world monetary value and cannot be exchanged for real money or prizes.
+            Club Arena Uses Play Money Chips Only. All Chips, Diamonds, And Virtual Currency Have No
+            Real-World Monetary Value And Cannot Be Exchanged For Real Money Or Prizes.
           </p>
         </section>
 
         <section style={sectionAnimationStyle(4)}>
           <h2>5. Fair Play</h2>
           <p>
-            Users must play fairly and not use any unauthorized automated tools or collusion with
-            other players. Violation of fair play rules may result in account suspension or
-            termination.
+            Users Must Play Fairly And Not Use Any Unauthorized Automated Tools Or Collusion With
+            Other Players. Violation Of Fair Play Rules May Result In Account Suspension Or
+            Termination.
           </p>
         </section>
 
         <section style={sectionAnimationStyle(5)}>
-          <h2>6. Content and Conduct</h2>
-          <p>Users must not post, transmit, or otherwise make available any content that is:</p>
+          <h2>6. Content And Conduct</h2>
+          <p>Users Must Not Post, Transmit, Or Otherwise Make Available Any Content That Is:</p>
           <ul>
-            <li>Unlawful, harmful, threatening, abusive, harassing, or otherwise objectionable</li>
-            <li>Invasive of another's privacy</li>
-            <li>Infringes any intellectual property or other proprietary rights</li>
-            <li>Contains software viruses or any other malicious code</li>
+            <li>Unlawful, Harmful, Threatening, Abusive, Harassing, Or Otherwise Objectionable</li>
+            <li>Invasive Of Another's Privacy</li>
+            <li>Infringes Any Intellectual Property Or Other Proprietary Rights</li>
+            <li>Contains Software Viruses Or Any Other Malicious Code</li>
           </ul>
         </section>
 
         <section style={sectionAnimationStyle(6)}>
           <h2>7. Termination</h2>
           <p>
-            We may terminate or suspend your account and bar access to the service immediately,
-            without prior notice or liability, under our sole discretion, for any reason whatsoever,
-            including without limitation if you breach the Terms.
+            We May Terminate Or Suspend Your Account And Bar Access To The Service Immediately,
+            Without Prior Notice Or Liability, Under Our Sole Discretion, For Any Reason Whatsoever,
+            Including Without Limitation If You Breach The Terms.
           </p>
         </section>
 
         <section style={sectionAnimationStyle(7)}>
-          <h2>8. Limitation of Liability</h2>
+          <h2>8. Limitation Of Liability</h2>
           <p>
-            In no event shall Club Arena, nor its directors, employees, partners, agents, suppliers,
-            or affiliates, be liable for any indirect, incidental, special, consequential or
-            punitive damages, including without limitation, loss of profits, data, use, goodwill, or
-            other intangible losses.
+            In No Event Shall Club Arena, Nor Its Directors, Employees, Partners, Agents, Suppliers,
+            Or Affiliates, Be Liable For Any Indirect, Incidental, Special, Consequential Or
+            Punitive Damages, Including Without Limitation, Loss Of Profits, Data, Use, Goodwill, Or
+            Other Intangible Losses.
           </p>
         </section>
 
         <section style={sectionAnimationStyle(8)}>
-          <h2>9. Changes to Terms</h2>
+          <h2>9. Changes To Terms</h2>
           <p>
-            We reserve the right, at our sole discretion, to modify or replace these Terms at any
-            time. We will provide notice of any material changes by posting the new Terms on this
-            page.
+            We Reserve The Right, At Our Sole Discretion, To Modify Or Replace These Terms At Any
+            Time. We Will Provide Notice Of Any Material Changes By Posting The New Terms On This
+            Page.
           </p>
         </section>
 
         <section style={sectionAnimationStyle(9)}>
           <h2>10. Contact Us</h2>
           <p>
-            If you have any questions about these Terms, please contact us at support@smarter.poker
+            If You Have Any Questions About These Terms, Please Contact Us At Support@Smarter.Poker
           </p>
         </section>
 

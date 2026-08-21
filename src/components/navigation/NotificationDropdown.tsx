@@ -186,14 +186,14 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
         <div className={styles.dropdown}>
           <div className={styles.header}>
             <h4>Notifications</h4>
-            {unreadCount > 0 && <button onClick={markAllAsRead}>Mark all read</button>}
+            {unreadCount > 0 && <button onClick={markAllAsRead}>Mark All Read</button>}
           </div>
 
           <div className={styles.list}>
             {loading ? (
               <div className={styles.loading}>Loading...</div>
             ) : notifications.length === 0 ? (
-              <div className={styles.empty}>No notifications</div>
+              <div className={styles.empty}>No Notifications</div>
             ) : (
               notifications.map((n, i) => (
                 <div

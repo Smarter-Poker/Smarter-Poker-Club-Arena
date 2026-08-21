@@ -131,7 +131,7 @@ export function BadBeatJackpot({
                 nano table can never pay. */}
             {typeof payoutPercent === 'number' && payoutPercent > 0 && (
               <p className="bbj-info__payout">
-                This table hits for {payoutPercent}% of the pool
+                This Table Hits For {payoutPercent}% Of The Pool
                 {amount > 0 && (
                   <>
                     {' '}
@@ -139,7 +139,7 @@ export function BadBeatJackpot({
                     {Math.trunc((amount * payoutPercent) / 100).toLocaleString('en-US')})
                   </>
                 )}
-                &nbsp;&mdash; 50% bad beat / 25% winner / 25% table
+                &nbsp;&mdash; 50% Bad Beat / 25% Winner / 25% Table
               </p>
             )}
           </div>

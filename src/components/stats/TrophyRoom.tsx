@@ -106,10 +106,34 @@ function countMilestone(
 
 function buildMilestones(o: OverallLike, t: TournLike | null): Milestone[] {
   const out: Milestone[] = [
-    countMilestone('first_hand', 'First Hand', 'Play your first hand.', 'common', o.total_hands, 1, 'hands'),
-    countMilestone('hundred', 'Getting Started', 'Play 100 hands.', 'common', o.total_hands, 100, 'hands'),
+    countMilestone(
+      'first_hand',
+      'First Hand',
+      'Play your first hand.',
+      'common',
+      o.total_hands,
+      1,
+      'hands'
+    ),
+    countMilestone(
+      'hundred',
+      'Getting Started',
+      'Play 100 hands.',
+      'common',
+      o.total_hands,
+      100,
+      'hands'
+    ),
     countMilestone('grinder', 'Grinder', 'Play 1,000 hands.', 'rare', o.total_hands, 1000, 'hands'),
-    countMilestone('ironman', 'Ironman', 'Play 10,000 hands.', 'epic', o.total_hands, 10000, 'hands'),
+    countMilestone(
+      'ironman',
+      'Ironman',
+      'Play 10,000 hands.',
+      'epic',
+      o.total_hands,
+      10000,
+      'hands'
+    ),
     countMilestone(
       'marathon',
       'Marathon',
@@ -179,9 +203,7 @@ function buildMilestones(o: OverallLike, t: TournLike | null): Milestone[] {
     name: 'Aggressor',
     description: 'Hold an aggression factor of 2.0 or better over 1,000 hands.',
     rarity: 'epic',
-    progress: aggroQualified
-      ? clamp01(o.aggression_factor / 2)
-      : clamp01(o.total_hands / 1000),
+    progress: aggroQualified ? clamp01(o.aggression_factor / 2) : clamp01(o.total_hands / 1000),
     unlocked: aggroQualified && o.aggression_factor >= 2,
     detail: aggroQualified
       ? `AF ${o.aggression_factor.toFixed(2)}`
@@ -190,9 +212,33 @@ function buildMilestones(o: OverallLike, t: TournLike | null): Milestone[] {
 
   if (t) {
     out.push(
-      countMilestone('mtt_reg', 'Tournament Regular', 'Enter 10 tournaments.', 'common', t.entries, 10, 'entries'),
-      countMilestone('mtt_cash', 'In The Money', 'Cash in a tournament.', 'rare', t.cashes, 1, 'cashes'),
-      countMilestone('mtt_win', 'Champion', 'Win a tournament outright.', 'legendary', t.wins, 1, 'wins')
+      countMilestone(
+        'mtt_reg',
+        'Tournament Regular',
+        'Enter 10 tournaments.',
+        'common',
+        t.entries,
+        10,
+        'entries'
+      ),
+      countMilestone(
+        'mtt_cash',
+        'In The Money',
+        'Cash in a tournament.',
+        'rare',
+        t.cashes,
+        1,
+        'cashes'
+      ),
+      countMilestone(
+        'mtt_win',
+        'Champion',
+        'Win a tournament outright.',
+        'legendary',
+        t.wins,
+        1,
+        'wins'
+      )
     );
   }
 
@@ -222,7 +268,7 @@ export default function TrophyRoom({ overall, tournaments }: Props) {
       <div className="trophy-card trophy-empty">
         <h3 className="trophy-title">Trophy Room</h3>
         <p className="trophy-empty-text">
-          Play some hands and your trophies, and a read on your playing style, will appear here.
+          Play Some Hands And Your Trophies, And A Read On Your Playing Style, Will Appear Here.
         </p>
       </div>
     );
@@ -302,7 +348,7 @@ export default function TrophyRoom({ overall, tournaments }: Props) {
         <div className="trophy-head-row">
           <h3 className="trophy-title">Trophies</h3>
           <span className="trophy-count">
-            {unlocked.length} of {milestones.length}
+            {unlocked.length} Of {milestones.length}
           </span>
         </div>
 
@@ -352,8 +398,8 @@ export default function TrophyRoom({ overall, tournaments }: Props) {
         </motion.ul>
 
         <p className="trophy-note">
-          Trophies are worked out from your live stats each time this page loads, so they are always
-          current and never need to be claimed.
+          Trophies Are Worked Out From Your Live Stats Each Time This Page Loads, So They Are Always
+          Current And Never Need To Be Claimed.
         </p>
       </div>
     </div>

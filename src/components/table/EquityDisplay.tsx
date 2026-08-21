@@ -88,7 +88,7 @@ function LegacyEquityDisplay({
         </div>
       )}
 
-      {outs !== undefined && <span className="outs">{outs} outs</span>}
+      {outs !== undefined && <span className="outs">{outs} Outs</span>}
     </div>
   );
 }

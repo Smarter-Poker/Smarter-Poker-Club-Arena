@@ -97,7 +97,7 @@ export const TimeBankStoreModal: React.FC<TimeBankStoreModalProps> = ({
           <span className="tbs-price-label">Price</span>
           <span className="tbs-price-value">
             <span className="tbs-diamond" aria-hidden="true" />
-            {diamondCost} per bank
+            {diamondCost} Per Bank
           </span>
         </div>
 
@@ -117,7 +117,7 @@ export const TimeBankStoreModal: React.FC<TimeBankStoreModalProps> = ({
 
         <div className="tbs-total">
           <span>
-            {quantity} bank{quantity === 1 ? '' : 's'}
+            {quantity} Bank{quantity === 1 ? '' : 's'}
           </span>
           <span className="tbs-total-value">
             <span className="tbs-diamond" aria-hidden="true" />
@@ -127,8 +127,8 @@ export const TimeBankStoreModal: React.FC<TimeBankStoreModalProps> = ({
 
         {shortfall > 0 && (
           <p className="tbs-shortfall">
-            You need {shortfall.toLocaleString()} more diamond
-            {shortfall === 1 ? '' : 's'} for this.
+            You Need {shortfall.toLocaleString()} More Diamond
+            {shortfall === 1 ? '' : 's'} For This.
           </p>
         )}
 

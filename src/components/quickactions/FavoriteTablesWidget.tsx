@@ -132,8 +132,8 @@ export const FavoriteTablesWidget: React.FC<FavoriteTablesWidgetProps> = ({ onJo
 
       {favorites.length === 0 ? (
         <div className="no-favorites">
-          <p>No favorite tables yet</p>
-          <span>Star tables to add them here for quick access</span>
+          <p>No Favorite Tables Yet</p>
+          <span>Star Tables To Add Them Here For Quick Access</span>
         </div>
       ) : (
         <div className="favorites-list">

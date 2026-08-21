@@ -310,7 +310,7 @@ export function CashierModal({
                   </div>
                 ))
               ) : (
-                <div className="tx-empty">No transaction history found.</div>
+                <div className="tx-empty">No Transaction History Found.</div>
               )}
             </div>
           )}

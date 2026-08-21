@@ -220,7 +220,6 @@ export interface TableModalsLayerProps {
   onConfettiComplete: () => void;
   onParticleComplete: () => void;
 
-
   // Leave Notice
   leaveNotice: string | null;
   onDismissLeaveNotice: () => void;
@@ -612,8 +611,8 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
             ) : (
               <div className="no-hand-history">
                 <span className="empty-icon">♠</span>
-                <p>No recent hand to replay</p>
-                <p className="hint">Complete a hand to view its replay</p>
+                <p>No Recent Hand To Replay</p>
+                <p className="hint">Complete A Hand To View Its Replay</p>
               </div>
             )}
           </div>
@@ -712,7 +711,9 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
             );
             // Stay open. Closing here is what put players back in a queue they
             // believed they had left.
-            onWaitListError?.(res?.error || 'Could not leave the wait list - you are still queued.');
+            onWaitListError?.(
+              res?.error || 'Could not leave the wait list - you are still queued.'
+            );
           });
         }}
       />

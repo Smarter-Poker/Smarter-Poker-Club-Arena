@@ -187,11 +187,11 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
     <div className="spin-lobby">
       <div className="spin-lobby__header">
         <h3>Spin & Go</h3>
-        <span className="spin-lobby__subtitle">Win up to 1000x your buy-in!</span>
+        <span className="spin-lobby__subtitle">Win Up To 1000X Your Buy-In!</span>
       </div>
 
       {tournaments.length === 0 ? (
-        <div className="empty-state">No spin tournaments available</div>
+        <div className="empty-state">No Spin Tournaments Available</div>
       ) : (
         <div className="spin-grid">
           {tournaments.map((t, i) => (
@@ -255,7 +255,7 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
               {/* Probability Info */}
               <div className="spin-card__info">
                 <span className="info-label">Prize Tiers</span>
-                <span className="info-text">2x-76%, 3x-14%, 5x-6%, 10x-2.4%, 25x+</span>
+                <span className="info-text">2X-76%, 3X-14%, 5X-6%, 10X-2.4%, 25X+</span>
               </div>
 
               {t.status === 'registering' && (

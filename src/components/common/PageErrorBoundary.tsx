@@ -72,7 +72,7 @@ export class PageErrorBoundary extends React.Component<
               fontWeight: 600,
             }}
           >
-            Something went wrong
+            Something Went Wrong
           </h3>
           <p
             style={{
@@ -83,9 +83,9 @@ export class PageErrorBoundary extends React.Component<
               lineHeight: 1.5,
             }}
           >
-            {this.props.pageName || 'This page'} encountered an error.
+            {this.props.pageName || 'This page'} Encountered An Error.
             <br />
-            Try refreshing or go back.
+            Try Refreshing Or Go Back.
           </p>
           <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
             <button

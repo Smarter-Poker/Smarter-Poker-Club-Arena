@@ -184,7 +184,7 @@ export default function AddOnModal({
           Add-On Available
         </div>
         <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 16 }}>
-          Re-entry period has ended
+          Re-Entry Period Has Ended
         </div>
 
         {/* Countdown */}
@@ -205,7 +205,7 @@ export default function AddOnModal({
           >
             {countdown}s
           </div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>Time remaining</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>Time Remaining</div>
         </div>
 
         {/* Add-On Details */}
@@ -221,7 +221,7 @@ export default function AddOnModal({
             >
               <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Add-On Cost</span>
               <span style={{ color: '#fff', fontWeight: 600, fontSize: 14 }}>
-                {money(addOnCost)} chips
+                {money(addOnCost)} Chips
               </span>
             </div>
             {addOnFee > 0 && (
@@ -235,7 +235,7 @@ export default function AddOnModal({
               >
                 <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>House Fee</span>
                 <span style={{ color: '#fff', fontWeight: 600, fontSize: 14 }}>
-                  {money(addOnFee)} chips
+                  {money(addOnFee)} Chips
                 </span>
               </div>
             )}
@@ -251,7 +251,7 @@ export default function AddOnModal({
             >
               <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Total Charged</span>
               <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>
-                {money(totalCost)} chips
+                {money(totalCost)} Chips
               </span>
             </div>
             <div
@@ -264,7 +264,7 @@ export default function AddOnModal({
             >
               <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Chips Received</span>
               <span style={{ color: '#10b981', fontWeight: 600, fontSize: 14 }}>
-                +{addOnChips.toLocaleString()} chips
+                +{addOnChips.toLocaleString()} Chips
               </span>
             </div>
             <div
@@ -281,18 +281,18 @@ export default function AddOnModal({
               <span
                 style={{ color: canAfford ? '#fbbf24' : '#ef4444', fontWeight: 600, fontSize: 14 }}
               >
-                {walletBalance.toLocaleString()} chips
+                {walletBalance.toLocaleString()} Chips
               </span>
             </div>
 
             {!priceKnown && (
               <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 12 }}>
-                Add-on price unavailable - cannot purchase right now
+                Add-On Price Unavailable - Cannot Purchase Right Now
               </div>
             )}
             {priceKnown && !canAfford && (
               <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 12 }}>
-                Insufficient balance - you need {totalCost.toLocaleString()} chips
+                Insufficient Balance - You Need {totalCost.toLocaleString()} Chips
               </div>
             )}
 
@@ -349,7 +349,7 @@ export default function AddOnModal({
           <div style={{ padding: '16px 0' }}>
             {result === 'accepted' && (
               <div style={{ color: '#10b981', fontSize: 16, fontWeight: 600 }}>
-                Add-On Accepted - +{addOnChips.toLocaleString()} chips added
+                Add-On Accepted - +{addOnChips.toLocaleString()} Chips Added
               </div>
             )}
             {result === 'declined' && (

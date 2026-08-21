@@ -149,7 +149,7 @@ export default function ClubRulesPage() {
       let adminFromOwner = false;
       if (club) {
         setClubName(club.name);
-        setRules(((club.settings as { rules_text?: string } | null)?.rules_text) || '');
+        setRules((club.settings as { rules_text?: string } | null)?.rules_text || '');
         adminFromOwner = club.owner_id === user?.id;
         if (adminFromOwner) {
           setIsAdmin(true);
@@ -161,7 +161,7 @@ export default function ClubRulesPage() {
             swrKey,
             JSON.stringify({
               name: club.name,
-              rules: ((club.settings as { rules_text?: string } | null)?.rules_text) || '',
+              rules: (club.settings as { rules_text?: string } | null)?.rules_text || '',
             })
           );
         } catch {
@@ -248,7 +248,7 @@ export default function ClubRulesPage() {
       <div className="club-rules-page">
         <div style={{ textAlign: 'center', padding: '60px 20px', color: '#aaa' }}>
           <p style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠</p>
-          <p style={{ marginBottom: '16px' }}>Failed to load club rules</p>
+          <p style={{ marginBottom: '16px' }}>Failed To Load Club Rules</p>
           <button
             onClick={() => loadRules()}
             style={{

@@ -90,10 +90,10 @@ export default function NumericKeypad({
         <span className="keypad-label">{label}</span>
         <div className="keypad-value">
           <span className="keypad-amount">{value || '0'}</span>
-          <span className="keypad-chips-label">chips</span>
+          <span className="keypad-chips-label">Chips</span>
         </div>
         {showConversion && numericValue > 0 && (
-          <span className="keypad-conversion">≈ {unitValue.toFixed(2)} units</span>
+          <span className="keypad-conversion">≈ {unitValue.toFixed(2)} Units</span>
         )}
       </div>
 

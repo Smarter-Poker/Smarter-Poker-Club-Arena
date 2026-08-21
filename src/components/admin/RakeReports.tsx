@@ -173,7 +173,7 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
         </div>
         <div className="summary-card">
           <span className="card-value">{Math.trunc(data.avgRakePerHand * 100) / 100}</span>
-          <span className="card-label">Avg per Hand</span>
+          <span className="card-label">Avg Per Hand</span>
         </div>
       </div>
 
@@ -195,7 +195,7 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
 
       {/* Top Games */}
       <div className="top-games">
-        <h3>Top Games by Rake</h3>
+        <h3>Top Games By Rake</h3>
         <div className="games-list">
           {data.topGames.map((game, index) => (
             <div key={game.game} className="game-row">
@@ -203,7 +203,7 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
               <span className="game-name">{game.game}</span>
               <div className="game-stats">
                 <span className="game-rake">{game.rake.toLocaleString()}</span>
-                <span className="game-hands">{game.hands.toLocaleString()} hands</span>
+                <span className="game-hands">{game.hands.toLocaleString()} Hands</span>
               </div>
             </div>
           ))}

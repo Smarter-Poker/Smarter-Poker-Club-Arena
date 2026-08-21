@@ -146,14 +146,14 @@ export function RunItTwicePrompt({
                 className="rit-prompt__btn rit-prompt__btn--accept"
                 onClick={() => onChooserDecide?.(2)}
               >
-                Run it Twice
+                Run It Twice
               </button>
               {maxRuns >= 3 && (
                 <button
                   className="rit-prompt__btn rit-prompt__btn--accept rit-prompt__btn--triple"
                   onClick={() => onChooserDecide?.(3)}
                 >
-                  Run it 3×
+                  Run It 3×
                 </button>
               )}
             </>
@@ -163,7 +163,7 @@ export function RunItTwicePrompt({
                 No Thanks
               </button>
               <button className="rit-prompt__btn rit-prompt__btn--accept" onClick={onAccept}>
-                Run it {runsLabel}!
+                Run It {runsLabel}!
               </button>
             </>
           )}
@@ -216,7 +216,7 @@ export function RunItTwiceBoard({
   return (
     <div className="rit-board">
       <div className="rit-board__header">
-        <span className="rit-board__badge"> Run it Twice</span>
+        <span className="rit-board__badge"> Run It Twice</span>
         <span className="rit-board__pot">
           Pot: {currency}
           {potAmount.toLocaleString()}
@@ -350,7 +350,7 @@ export function RunItTwiceResult({
       <div className="rit-result" onClick={(e) => e.stopPropagation()}>
         <div className="rit-board__header">
           <span className="rit-board__badge">
-            Ran it {data.runs === 3 ? 'Three Times' : 'Twice'}
+            Ran It {data.runs === 3 ? 'Three Times' : 'Twice'}
           </span>
           <span className="rit-board__pot">
             Pot: {currency}
@@ -372,7 +372,8 @@ export function RunItTwiceResult({
           const runs = data.runs || data.boards.length || 1;
           const boardValue = Math.floor(data.potTotal / runs);
           const winners = data.perBoardWinners?.[bi] ?? [];
-          const perWinner = winners.length > 1 ? Math.floor(boardValue / winners.length) : boardValue;
+          const perWinner =
+            winners.length > 1 ? Math.floor(boardValue / winners.length) : boardValue;
           const sharePct = data.potTotal > 0 ? Math.round((boardValue / data.potTotal) * 100) : 0;
 
           return (
@@ -407,9 +408,7 @@ export function RunItTwiceResult({
                     <span
                       key={`c-${bi}-${ci}`}
                       className="rit-board__card"
-                      style={
-                        { animationDelay: `${bi * 900 + ci * 140}ms` } as React.CSSProperties
-                      }
+                      style={{ animationDelay: `${bi * 900 + ci * 140}ms` } as React.CSSProperties}
                     >
                       <CardImage card={toCardImage(card)} size="xs" />
                     </span>

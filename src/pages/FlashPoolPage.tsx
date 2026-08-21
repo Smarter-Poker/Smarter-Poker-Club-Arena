@@ -299,7 +299,7 @@ export default function FlashPoolPage() {
             Flash Pool
           </h1>
           <p style={{ color: '#8b8fa3', margin: '4px 0 0', fontSize: '13px' }}>
-            Fast-fold poker - fold instantly, get new cards
+            Fast-Fold Poker - Fold Instantly, Get New Cards
           </p>
         </div>
       </div>
@@ -364,11 +364,11 @@ export default function FlashPoolPage() {
                   {pool.stakes}
                 </div>
                 <div style={{ fontSize: '12px', color: '#8b8fa3' }}>
-                  Buy-in: {pool.buyInMin.toLocaleString()} - {pool.buyInMax.toLocaleString()}
+                  Buy-In: {pool.buyInMin.toLocaleString()} - {pool.buyInMax.toLocaleString()}
                 </div>
                 {userBalance !== null && (
                   <div style={{ fontSize: '11px', color: '#60a5fa', marginTop: '2px' }}>
-                    Your balance: {userBalance.toLocaleString()} chips
+                    Your Balance: {userBalance.toLocaleString()} Chips
                   </div>
                 )}
               </div>
@@ -384,10 +384,10 @@ export default function FlashPoolPage() {
                   <span style={{ display: 'inline-block', transition: 'transform 0.3s ease' }}>
                     {pool.activePlayers}
                   </span>{' '}
-                  players
+                  Players
                 </div>
                 <div style={{ fontSize: '12px', color: '#8b8fa3' }}>
-                  {pool.tablesRunning} tables
+                  {pool.tablesRunning} Tables
                 </div>
               </div>
             </div>
@@ -435,11 +435,7 @@ export default function FlashPoolPage() {
                   transition: 'all 0.3s ease',
                 }}
               >
-                {joiningPool === pool.poolId
-                  ? '◷'
-                  : pool.status === 'closed'
-                    ? 'Closed'
-                    : 'Play'}
+                {joiningPool === pool.poolId ? '◷' : pool.status === 'closed' ? 'Closed' : 'Play'}
               </button>
             </div>
           </div>
@@ -455,8 +451,8 @@ export default function FlashPoolPage() {
           }}
         >
           <div style={{ fontSize: '48px', marginBottom: '12px' }}>▲</div>
-          <p>No flash pools available yet.</p>
-          <p style={{ fontSize: '13px' }}>Check back soon!</p>
+          <p>No Flash Pools Available Yet.</p>
+          <p style={{ fontSize: '13px' }}>Check Back Soon!</p>
         </div>
       )}
     </div>

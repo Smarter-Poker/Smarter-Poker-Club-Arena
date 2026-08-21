@@ -97,11 +97,11 @@ export const PayoutStructureEditor: React.FC<PayoutStructureEditorProps> = ({
       {/* ── Summary ── */}
       <div className="pe-summary">
         <span className="pe-summary-item">
-          <strong>{payouts.length}</strong> paid positions
+          <strong>{payouts.length}</strong> Paid Positions
         </span>
         <span className="pe-separator">•</span>
         <span className="pe-summary-item">
-          Prize pool: <strong>{prizePool.toLocaleString()}</strong>
+          Prize Pool: <strong>{prizePool.toLocaleString()}</strong>
         </span>
         <span className="pe-separator">•</span>
         <span className="pe-summary-item">

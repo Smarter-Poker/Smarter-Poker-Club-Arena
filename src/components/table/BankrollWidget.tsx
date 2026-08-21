@@ -100,7 +100,7 @@ export const BankrollWidget: React.FC<BankrollWidgetProps> = ({
           <div className="stats-grid">
             <div className="stat-item">
               <span className="stat-value">{formatNumber(stats.buyIn)}</span>
-              <span className="stat-label">Buy-in</span>
+              <span className="stat-label">Buy-In</span>
             </div>
             <div className="stat-item">
               <span className="stat-value">{formatNumber(stats.currentStack)}</span>

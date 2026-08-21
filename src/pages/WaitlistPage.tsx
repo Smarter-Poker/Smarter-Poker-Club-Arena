@@ -240,7 +240,7 @@ export default function WaitlistPage() {
       {entries.length > 0 && (
         <div className="realtime-indicator">
           <span className="live-dot"></span>
-          <span>Live updates enabled</span>
+          <span>Live Updates Enabled</span>
         </div>
       )}
 
@@ -259,7 +259,7 @@ export default function WaitlistPage() {
           <div className="empty-state">
             <span className="empty-icon">☰</span>
             <h3>No Active Waitlists</h3>
-            <p>You're not on any table waitlists</p>
+            <p>You're Not On Any Table Waitlists</p>
             <button className="btn btn-primary" onClick={() => navigate('/')}>
               Browse Tables
             </button>

@@ -220,7 +220,7 @@ export default function ReportReviewPage() {
       ) : reports.length === 0 ? (
         <div className="empty-state">
           <span className="empty-icon">⚠</span>
-          <p>No {filter === 'pending' ? 'pending' : ''} reports</p>
+          <p>No {filter === 'pending' ? 'pending' : ''} Reports</p>
         </div>
       ) : (
         <div className="reports-list">

@@ -139,7 +139,7 @@ export const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onChange }) =>
           <span className="toggle-switch"></span>
         </label>
         <label className="privacy-toggle">
-          <span>Hide from Search</span>
+          <span>Hide From Search</span>
           <input
             type="checkbox"
             checked={config.hideFromSearch}

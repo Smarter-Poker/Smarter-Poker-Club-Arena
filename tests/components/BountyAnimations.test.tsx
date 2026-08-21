@@ -14,6 +14,10 @@
  *  away or the broadcast is dropped.
  */
 
+// Case-insensitive text matchers on purpose: Dan's house rule Title Cases every
+// word on every forward-facing page (scripts/ci/check-title-case.mjs), so pinning
+// the casing of copy makes these fail on a styling rule rather than on the
+// behaviour they exist to protect. The words are the contract.
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -150,8 +154,8 @@ describe('KnockoutAnimation', () => {
     act(() => {
       vi.advanceTimersByTime(1600);
     });
-    expect(screen.getByText(/paid to you/)).toBeTruthy();
-    expect(screen.getByText(/onto your head/)).toBeTruthy();
+    expect(screen.getByText(/paid to you/i)).toBeTruthy();
+    expect(screen.getByText(/onto your head/i)).toBeTruthy();
     expect(screen.getByText('1,250')).toBeTruthy();
   });
 
@@ -160,7 +164,7 @@ describe('KnockoutAnimation', () => {
     act(() => {
       vi.advanceTimersByTime(1600);
     });
-    expect(screen.queryByText(/onto your head/)).toBeNull();
+    expect(screen.queryByText(/onto your head/i)).toBeNull();
   });
 
   it('shows the eliminated head, which is what the bounty actually is', () => {
@@ -184,12 +188,12 @@ describe('KnockoutAnimation', () => {
 
   it('tells the player more knockouts are queued behind this one', () => {
     render(<KnockoutAnimation data={KO} onDone={() => {}} queuedBehind={2} />);
-    expect(screen.getByText(/\+2 more knockouts/)).toBeTruthy();
+    expect(screen.getByText(/\+2 more knockouts/i)).toBeTruthy();
   });
 
   it('says nothing about a queue when there is none', () => {
     render(<KnockoutAnimation data={KO} onDone={() => {}} queuedBehind={0} />);
-    expect(screen.queryByText(/more knockout/)).toBeNull();
+    expect(screen.queryByText(/more knockout/i)).toBeNull();
   });
 
   it('clears itself and reports done', () => {
@@ -518,7 +522,7 @@ describe('MysteryBountyChest — suspense and context', () => {
       vi.advanceTimersByTime(3200);
     });
     // 1.1x is noise, not news.
-    expect(screen.queryByText(/the average bounty/)).toBeNull();
+    expect(screen.queryByText(/the average bounty/i)).toBeNull();
   });
 
   it('never divides by zero when no average is known', () => {
@@ -536,8 +540,8 @@ describe('MysteryBountyChest — suspense and context', () => {
     act(() => {
       vi.advanceTimersByTime(3200);
     });
-    expect(screen.queryByText(/the average bounty/)).toBeNull();
-    expect(screen.queryByText(/NaN|Infinity/)).toBeNull();
+    expect(screen.queryByText(/the average bounty/i)).toBeNull();
+    expect(screen.queryByText(/NaN|Infinity/i)).toBeNull();
   });
 
   it('tells the player more bounties are queued behind this one', () => {

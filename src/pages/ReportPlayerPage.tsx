@@ -88,8 +88,8 @@ export default function ReportPlayerPage() {
           <span className="success-icon"></span>
           <h2>Report Submitted</h2>
           <p>
-            Thank you for helping keep our community safe. Our team will review your report within
-            24 hours.
+            Thank You For Helping Keep Our Community Safe. Our Team Will Review Your Report Within
+            24 Hours.
           </p>
           <button className="btn btn-primary" onClick={() => navigate(-1)}>
             Go Back
@@ -107,12 +107,12 @@ export default function ReportPlayerPage() {
         <div className="report-warning" style={reportSectionAnimationStyle(0)}>
           <span className="warning-icon"></span>
           <p>
-            False reports may result in account suspension. Please only report genuine violations.
+            False Reports May Result In Account Suspension. Please Only Report Genuine Violations.
           </p>
         </div>
 
         <section className="report-section" style={reportSectionAnimationStyle(1)}>
-          <h3>Reason for Report</h3>
+          <h3>Reason For Report</h3>
           <div className="reason-options">
             {reasonOptions.map((opt) => (
               <button
@@ -157,7 +157,7 @@ export default function ReportPlayerPage() {
                 setForm((prev) => ({ ...prev, include_chat_logs: e.target.checked }))
               }
             />
-            <label htmlFor="include-chat">Include recent chat logs with this player</label>
+            <label htmlFor="include-chat">Include Recent Chat Logs With This Player</label>
           </div>
         </section>
 

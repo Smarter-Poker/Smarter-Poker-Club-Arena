@@ -159,7 +159,7 @@ export function WaitListModal({
             <div className="waitlist-modal__position-info">
               <span className="waitlist-modal__position-label">Your Position</span>
               <span className="waitlist-modal__position-eta">
-                Est. wait: {formatDuration(estimatedWait)}
+                Est. Wait: {formatDuration(estimatedWait)}
               </span>
             </div>
           </div>
@@ -174,7 +174,7 @@ export function WaitListModal({
           </div>
           <div className="waitlist-modal__queue-body">
             {players.length === 0 ? (
-              <div className="waitlist-modal__empty">No players waiting</div>
+              <div className="waitlist-modal__empty">No Players Waiting</div>
             ) : (
               players.map((player, i) => (
                 <div
@@ -231,7 +231,7 @@ export function WaitListModal({
 
           {showConfirmLeave && (
             <div className="waitlist-modal__confirm">
-              <span>Are you sure you want to leave?</span>
+              <span>Are You Sure You Want To Leave?</span>
               <div className="waitlist-modal__confirm-actions">
                 <button
                   type="button"

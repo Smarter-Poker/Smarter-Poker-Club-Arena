@@ -36,16 +36,16 @@ export default function PlayerBlockModal({
         </div>
 
         <div className="block-modal-body">
-          <p className="block-warning">Blocking this player will:</p>
+          <p className="block-warning">Blocking This Player Will:</p>
           <ul className="block-effects">
-            <li>Prevent them from messaging you</li>
-            <li>Remove them from your friends list</li>
-            <li>Hide them from your friend suggestions</li>
-            <li>Block friend requests between you</li>
+            <li>Prevent Them From Messaging You</li>
+            <li>Remove Them From Your Friends List</li>
+            <li>Hide Them From Your Friend Suggestions</li>
+            <li>Block Friend Requests Between You</li>
           </ul>
 
           <div className="block-reason-field">
-            <label>Reason (optional)</label>
+            <label>Reason (Optional)</label>
             <input
               type="text"
               value={reason}

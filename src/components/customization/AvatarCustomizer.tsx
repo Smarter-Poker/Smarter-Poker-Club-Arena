@@ -172,7 +172,7 @@ export const AvatarCustomizer: React.FC<AvatarCustomizerProps> = ({ currentAvata
           <button className="upload-btn" onClick={() => fileInputRef.current?.click()}>
             Choose Image
           </button>
-          <p className="upload-hint">JPG, PNG or GIF. Max 2MB.</p>
+          <p className="upload-hint">JPG, PNG Or GIF. Max 2MB.</p>
         </div>
       )}
 

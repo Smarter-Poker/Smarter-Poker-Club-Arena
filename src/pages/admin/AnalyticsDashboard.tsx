@@ -178,7 +178,11 @@ export default function AnalyticsDashboard() {
   const loadAggregates = useCallback(async () => {
     try {
       let handQuery = supabase.from('player_position_stats').select('hands_played').limit(5000);
-      let vipQuery = supabase.from('diamond_ledger').select('amount:delta').gt('delta', 0).limit(5000);
+      let vipQuery = supabase
+        .from('diamond_ledger')
+        .select('amount:delta')
+        .gt('delta', 0)
+        .limit(5000);
       let playerQuery = supabase.from('player_position_stats').select('user_id').limit(5000);
 
       const cutoff = getTimeRangeCutoff(timeRange);
@@ -327,10 +331,10 @@ export default function AnalyticsDashboard() {
       <header className="analytics-header">
         <h1>Club Analytics Dashboard</h1>
         <p>
-          Real-time player position stats and VIP economy overview
+          Real-Time Player Position Stats And VIP Economy Overview
           <span className="refresh-indicator">
             <span className="refresh-dot" />
-            Live - updated {lastRefresh.toLocaleTimeString()}
+            Live - Updated {lastRefresh.toLocaleTimeString()}
           </span>
         </p>
 
@@ -431,7 +435,7 @@ export default function AnalyticsDashboard() {
       <div className="analytics-grid">
         {/* Position Win Rate Chart */}
         <div className="chart-card">
-          <h3>Win Rate by Position</h3>
+          <h3>Win Rate By Position</h3>
           {isLoading ? (
             <div className="skeleton-bars">
               {ALL_POSITIONS.map((p) => (
@@ -470,14 +474,14 @@ export default function AnalyticsDashboard() {
           ) : (
             <div className="empty-state">
               <div className="icon">▲</div>
-              <p>No position stats yet. Data populates as hands are dealt.</p>
+              <p>No Position Stats Yet. Data Populates As Hands Are Dealt.</p>
             </div>
           )}
         </div>
 
         {/* VPIP by Position */}
         <div className="chart-card">
-          <h3>VPIP % by Position</h3>
+          <h3>VPIP % By Position</h3>
           {isLoading ? (
             <div className="skeleton-bars">
               {ALL_POSITIONS.map((p) => (
@@ -513,7 +517,7 @@ export default function AnalyticsDashboard() {
           ) : (
             <div className="empty-state">
               <div className="icon">◎</div>
-              <p>VPIP data populates as hands are dealt.</p>
+              <p>VPIP Data Populates As Hands Are Dealt.</p>
             </div>
           )}
         </div>
@@ -577,7 +581,7 @@ export default function AnalyticsDashboard() {
         <div className="chart-card">
           <div className="empty-state">
             <div className="icon">◆</div>
-            <p>No VIP points transactions yet.</p>
+            <p>No VIP Points Transactions Yet.</p>
           </div>
         </div>
       )}

@@ -179,8 +179,8 @@ export default function CreditRequestWidget({
           />
         </div>
         <div className="credit-info">
-          <span>{currentCreditUsed.toLocaleString()} used</span>
-          <span>of {currentCreditLimit.toLocaleString()}</span>
+          <span>{currentCreditUsed.toLocaleString()} Used</span>
+          <span>Of {currentCreditLimit.toLocaleString()}</span>
         </div>
       </div>
 

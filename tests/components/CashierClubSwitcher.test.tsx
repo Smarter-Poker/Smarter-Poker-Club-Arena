@@ -5,6 +5,10 @@
  * balances, and the single-club static chip.
  */
 
+// Case-insensitive text matchers on purpose: Dan's house rule Title Cases every
+// word on every forward-facing page (scripts/ci/check-title-case.mjs), so pinning
+// the casing of copy makes these fail on a styling rule rather than on the
+// behaviour they exist to protect. The words are the contract.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -97,8 +101,10 @@ describe('CashierClubSwitcher', () => {
     });
     renderSwitcher(A.id);
     await user.click(screen.getByRole('button', { name: /Current club: Alpha Club/ }));
-    expect(await screen.findByText(`${(4200).toLocaleString()} chips`)).toBeInTheDocument();
-    expect(screen.getByText('15 chips')).toBeInTheDocument();
+    expect(
+      await screen.findByText(new RegExp(`${(4200).toLocaleString()} chips`, 'i'))
+    ).toBeInTheDocument();
+    expect(screen.getByText(/15 chips/i)).toBeInTheDocument();
   });
 
   it('never offers a union as a cashier destination', () => {

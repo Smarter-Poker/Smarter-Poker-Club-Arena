@@ -197,7 +197,7 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
         {filteredNotes.length === 0 ? (
           <div className="empty-notes">
             <span>▤</span>
-            <p>No notes yet</p>
+            <p>No Notes Yet</p>
           </div>
         ) : (
           filteredNotes.map((note, i) => (

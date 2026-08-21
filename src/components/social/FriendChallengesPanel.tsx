@@ -61,9 +61,9 @@ export default function FriendChallengesPanel({ userId }: { userId: string }) {
       const list = (data || []) as ChallengeRow[];
       if (!isMounted.current) return;
       setRows(list);
-      const ids = [
-        ...new Set(list.flatMap((r) => [r.challenger_id, r.challengee_id])),
-      ].filter((id) => id && id !== userId);
+      const ids = [...new Set(list.flatMap((r) => [r.challenger_id, r.challengee_id]))].filter(
+        (id) => id && id !== userId
+      );
       if (ids.length > 0) {
         const { data: profs } = await supabase
           .from('profiles')
@@ -117,12 +117,14 @@ export default function FriendChallengesPanel({ userId }: { userId: string }) {
   if (rows.length === 0) {
     return (
       <div style={{ padding: '2rem 1.5rem', textAlign: 'center' }}>
-        <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.5rem', opacity: 0.5 }}>
+        <span
+          style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.5rem', opacity: 0.5 }}
+        >
           ⚔
         </span>
-        <p style={{ fontWeight: 600, margin: '0 0 0.35rem' }}>No challenges yet</p>
+        <p style={{ fontWeight: 600, margin: '0 0 0.35rem' }}>No Challenges Yet</p>
         <p style={{ color: 'var(--soft-white,#B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
-          Challenge a friend from their profile to start a race.
+          Challenge A Friend From Their Profile To Start A Race.
         </p>
       </div>
     );
@@ -171,7 +173,7 @@ export default function FriendChallengesPanel({ userId }: { userId: string }) {
               <>
                 {header(r)}
                 <p style={{ margin: '0 0 10px', fontSize: '0.85rem' }}>
-                  <strong>{names[r.challenger_id] || 'A friend'}</strong> challenged you -{' '}
+                  <strong>{names[r.challenger_id] || 'A friend'}</strong> Challenged You -{' '}
                   {timeLeft(r.expires_at)}
                 </p>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -225,9 +227,11 @@ export default function FriendChallengesPanel({ userId }: { userId: string }) {
               <>
                 {header(r)}
                 <div style={{ fontSize: '0.8rem', marginBottom: '6px' }}>
-                  vs <strong>{themName}</strong> · {timeLeft(r.expires_at)}
+                  Vs <strong>{themName}</strong> · {timeLeft(r.expires_at)}
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                <div
+                  style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}
+                >
                   <span>You: {myProg}</span>
                   <span>
                     {themName}: {theirProg}
@@ -264,7 +268,7 @@ export default function FriendChallengesPanel({ userId }: { userId: string }) {
               <>
                 {header(r)}
                 <p style={{ margin: 0, fontSize: '0.85rem', opacity: 0.8 }}>
-                  Waiting for <strong>{names[r.challengee_id] || 'friend'}</strong> to accept ·{' '}
+                  Waiting For <strong>{names[r.challengee_id] || 'friend'}</strong> To Accept ·{' '}
                   {timeLeft(r.expires_at)}
                 </p>
               </>,
@@ -286,13 +290,11 @@ export default function FriendChallengesPanel({ userId }: { userId: string }) {
                 {header(r)}
                 <div style={{ fontSize: '0.85rem' }}>
                   {tie ? (
-                    <span>Tie vs {themName}</span>
+                    <span>Tie Vs {themName}</span>
                   ) : iWon ? (
-                    <span style={{ color: '#31A24C', fontWeight: 700 }}>
-                      You won vs {themName}
-                    </span>
+                    <span style={{ color: '#31A24C', fontWeight: 700 }}>You Won Vs {themName}</span>
                   ) : (
-                    <span style={{ opacity: 0.8 }}>{themName} won</span>
+                    <span style={{ opacity: 0.8 }}>{themName} Won</span>
                   )}
                   <span style={{ opacity: 0.6 }}>
                     {' '}

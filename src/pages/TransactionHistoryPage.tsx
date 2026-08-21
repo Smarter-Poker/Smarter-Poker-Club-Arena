@@ -406,7 +406,7 @@ export default function TransactionHistoryPage() {
             fontSize: '0.8rem',
           }}
         />
-        <span style={{ color: '#888', fontSize: '0.8rem' }}>to</span>
+        <span style={{ color: '#888', fontSize: '0.8rem' }}>To</span>
         <input
           type="date"
           value={dateTo}

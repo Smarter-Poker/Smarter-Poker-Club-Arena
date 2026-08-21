@@ -481,8 +481,8 @@ export default function ManageTab({
           />
         </div>
         <div className={styles.grantHint}>
-          Stock is a limited drop; max-per-member caps lifetime purchases; a sale price is what is
-          actually charged; &quot;available until&quot; ends the offer automatically.
+          Stock Is A Limited Drop; Max-Per-Member Caps Lifetime Purchases; A Sale Price Is What Is
+          Actually Charged; &quot;Available Until&quot; Ends The Offer Automatically.
         </div>
         {grantInfo?.grantUnit && (
           <div className={styles.formRow}>
@@ -518,7 +518,7 @@ export default function ManageTab({
               maxLength={64}
             />
             <span className={styles.grantHint}>
-              Unique per item - two items sharing an id unlock the same thing.
+              Unique Per Item - Two Items Sharing An ID Unlock The Same Thing.
             </span>
           </div>
         )}
@@ -541,11 +541,11 @@ export default function ManageTab({
       {/* Item list */}
       {!loaded ? (
         <div className={styles.emptyState}>
-          <span className={styles.emptyText}>Loading items...</span>
+          <span className={styles.emptyText}>Loading Items...</span>
         </div>
       ) : loadError ? (
         <div className={styles.emptyState}>
-          <span className={styles.emptyText}>Could not load shop items.</span>
+          <span className={styles.emptyText}>Could Not Load Shop Items.</span>
           <span className={styles.emptySubText}>{loadError}</span>
           <button className={styles.emptyButton} onClick={loadItems}>
             Retry
@@ -553,7 +553,7 @@ export default function ManageTab({
         </div>
       ) : items.length === 0 ? (
         <div className={styles.emptyState}>
-          <span className={styles.emptyText}>No shop items. Create one above.</span>
+          <span className={styles.emptyText}>No Shop Items. Create One Above.</span>
         </div>
       ) : (
         <div className={styles.adminList}>
@@ -571,10 +571,10 @@ export default function ManageTab({
                     {item.name}
                   </div>
                   <div style={{ fontSize: 12, color: '#8b8d91', marginTop: 2 }}>
-                    {fmtChips(item.price)} chips {' - '}
+                    {fmtChips(item.price)} Chips {' - '}
                     <span className={styles.categorySmall}>{item.category || 'Time Banks'}</span>
                     {' - '}
-                    {item.purchase_count || 0} sold
+                    {item.purchase_count || 0} Sold
                     {item.revenue ? ` - ${fmtChips(item.revenue)} earned` : ''}
                     {item.stock !== null && item.stock !== undefined ? ` - ${item.stock} left` : ''}
                     {item.sale_price !== null && item.sale_price !== undefined
@@ -749,7 +749,7 @@ export default function ManageTab({
                         onChange={(e) => setDraft({ ...draft, stackable: e.target.checked })}
                         style={{ marginRight: 8 }}
                       />
-                      Stackable - members may hold several unredeemed copies
+                      Stackable - Members May Hold Several Unredeemed Copies
                     </label>
                   </div>
                   {(() => {

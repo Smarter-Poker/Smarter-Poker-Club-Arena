@@ -647,7 +647,7 @@ export function ShareHand({
         {/* Footer */}
         <div className="share-hand__footer">
           <span className="share-hand__footer-text">
-            Click the link to watch a video replay of this hand
+            Click The Link To Watch A Video Replay Of This Hand
           </span>
         </div>
       </div>

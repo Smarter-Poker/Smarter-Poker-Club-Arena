@@ -134,7 +134,7 @@ export const LiveChipCounts: React.FC<LiveChipCountsProps> = ({
     return (
       <div className="live-chip-counts loading">
         <div className="lcc-spinner" />
-        <span>Loading chip counts...</span>
+        <span>Loading Chip Counts...</span>
       </div>
     );
   }
@@ -261,7 +261,7 @@ export const LiveChipCounts: React.FC<LiveChipCountsProps> = ({
       {/* Empty State */}
       {leaders.length === 0 && (
         <div className="lcc-empty">
-          <span>No players found</span>
+          <span>No Players Found</span>
         </div>
       )}
     </div>

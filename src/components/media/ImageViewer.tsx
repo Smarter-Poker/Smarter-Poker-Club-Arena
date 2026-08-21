@@ -24,7 +24,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         onClick={() => setIsExpanded(true)}
       >
         {error ? (
-          <div className="image-error">Failed to load</div>
+          <div className="image-error">Failed To Load</div>
         ) : (
           <img
             loading="lazy"

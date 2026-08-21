@@ -125,7 +125,7 @@ export default function GamificationLeaderboard() {
         {loading ? (
           <div className="gl-loading">Loading Rankings...</div>
         ) : entries.length === 0 ? (
-          <div className="gl-empty">No data available yet.</div>
+          <div className="gl-empty">No Data Available Yet.</div>
         ) : (
           entries.map((entry) => (
             <div key={entry.id} className="gl-item">

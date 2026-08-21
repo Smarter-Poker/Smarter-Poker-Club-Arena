@@ -110,8 +110,8 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
 
         <div className={styles.content}>
           <p className={styles.intro}>
-            Welcome to Club Arena! Before you hit the tables, please choose your Poker Alias. This
-            is how other players will identify you.
+            Welcome To Club Arena! Before You Hit The Tables, Please Choose Your Poker Alias. This
+            Is How Other Players Will Identify You.
           </p>
 
           <form id="complete-profile-form" onSubmit={handleSave} className={styles.formGroup}>
@@ -147,7 +147,7 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
             {error && <div className={styles.errorText}>{error}</div>}
 
             <div className={styles.infoBox}>
-              <p>You can change these later in your Profile settings.</p>
+              <p>You Can Change These Later In Your Profile Settings.</p>
             </div>
           </form>
         </div>

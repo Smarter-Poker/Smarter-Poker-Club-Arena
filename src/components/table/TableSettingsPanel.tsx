@@ -62,7 +62,7 @@ export function TableSettingsPanel({
   if (loading) {
     return (
       <div className={`tsp-container tsp-${mode}`}>
-        <div className="tsp-loading">Loading settings...</div>
+        <div className="tsp-loading">Loading Settings...</div>
       </div>
     );
   }

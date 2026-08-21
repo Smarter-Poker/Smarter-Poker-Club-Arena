@@ -666,10 +666,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         // whose table has closed. Fall back to the old registration path so
         // those legacy rows stay playable, then land on their table.
         setSpinJoin({ name: t.name, stage: 'Reserving Your Seat' });
-        const { data: regData, error: regErr } = await supabase.rpc(
-          'fn_register_for_tournament',
-          { p_tournament_id: t.id }
-        );
+        const { data: regData, error: regErr } = await supabase.rpc('fn_register_for_tournament', {
+          p_tournament_id: t.id,
+        });
         const reg = regData as { ok?: boolean; reason?: string } | null;
         const reason = regErr?.message || (reg?.ok === false ? reg.reason : null);
         if (reason && reason !== 'already_registered') {
@@ -1461,7 +1460,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
    */
   const totalGameCount = tables.length + tournaments.length;
 
-
   const formatNumber = (num: number) => {
     return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
@@ -1589,7 +1587,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               fontWeight: 600,
             }}
           >
-            Back to Clubs
+            Back To Clubs
           </Link>
         </div>
       </div>
@@ -1718,7 +1716,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 </span>
                 {club.online_count > 0 && (
                   <span className="lobby-club__online">
-                    {club.online_count.toLocaleString()} online
+                    {club.online_count.toLocaleString()} Online
                   </span>
                 )}
               </div>
@@ -2139,7 +2137,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               <div className="new-badge">NEW</div>
               <div className="plus-icon">+</div>
             </div>
-            <span className="create-table-card__label">Create new table</span>
+            <span className="create-table-card__label">Create New Table</span>
           </Link>
         )}
 
@@ -2220,16 +2218,16 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                   <>
                     <p>{showTournaments ? 'No Tournaments Yet' : 'No Tables Yet'}</p>
                     <p className="empty-hint">
-                      Nothing is running here right now. New games open all the time.
+                      Nothing Is Running Here Right Now. New Games Open All The Time.
                     </p>
                   </>
                 ) : (
                   <>
                     <p>Nothing Matches Your Filters</p>
                     <p className="empty-hint">
-                      {totalHere.toLocaleString()} game{totalHere === 1 ? '' : 's'} are open in this
-                      club, but {searching ? 'your search and ' : ''}
-                      the filters on this tab hide {totalHere === 1 ? 'it' : 'them all'}.
+                      {totalHere.toLocaleString()} Game{totalHere === 1 ? '' : 's'} Are Open In This
+                      Club, But {searching ? 'your search and ' : ''}
+                      The Filters On This Tab Hide {totalHere === 1 ? 'it' : 'them all'}.
                     </p>
                     <div className="empty-actions">
                       <button className="empty-action" onClick={clearAllNarrowing}>

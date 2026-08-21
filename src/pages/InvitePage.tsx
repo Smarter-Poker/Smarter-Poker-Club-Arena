@@ -289,13 +289,13 @@ export default function InvitePage() {
           </div>
         </div>
 
-        <p className="invite-message">You've been invited to join this poker club!</p>
+        <p className="invite-message">You've Been Invited To Join This Poker Club!</p>
 
         {pendingApproval ? (
           <div className="already-member">
-            <span>Request submitted - pending approval.</span>
+            <span>Request Submitted - Pending Approval.</span>
             <p style={{ color: '#aaa', fontSize: '0.85rem', margin: '8px 0 12px' }}>
-              This club requires owner approval. You'll gain access once your request is reviewed.
+              This Club Requires Owner Approval. You'll Gain Access Once Your Request Is Reviewed.
             </p>
             <button className="btn btn-primary" onClick={() => navigate('/clubs')}>
               Browse Clubs
@@ -304,7 +304,7 @@ export default function InvitePage() {
         ) : alreadyMember ? (
           <>
             <div className="already-member">
-              <span>You're already a member!</span>
+              <span>You're Already A Member!</span>
               <button className="btn btn-primary" onClick={() => navigate(`/clubs/${club.id}`)}>
                 Enter Club
               </button>

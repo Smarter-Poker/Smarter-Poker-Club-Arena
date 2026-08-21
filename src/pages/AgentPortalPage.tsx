@@ -274,7 +274,7 @@ export default function AgentPortalPage() {
         </button>
         <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Agent Command Center</h1>
         <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
-          Triple wallet management, credit lines, and commission trends
+          Triple Wallet Management, Credit Lines, And Commission Trends
         </p>
       </div>
 
@@ -383,7 +383,7 @@ export default function AgentPortalPage() {
             {wallet.promoBal.toLocaleString()}
           </div>
           <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
-            Non-cashable giveaways
+            Non-Cashable Giveaways
           </div>
         </div>
       </div>
@@ -461,7 +461,7 @@ export default function AgentPortalPage() {
                 ⚠ INVOICE DUE
               </div>
               <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.6)' }}>
-                Settle {wallet.debt.toLocaleString()} chips
+                Settle {wallet.debt.toLocaleString()} Chips
               </div>
             </div>
             <button
@@ -537,7 +537,7 @@ export default function AgentPortalPage() {
             marginTop: '6px',
           }}
         >
-          Total: {commissionData.reduce((s, d) => s + d.commissions, 0).toLocaleString()} chips
+          Total: {commissionData.reduce((s, d) => s + d.commissions, 0).toLocaleString()} Chips
         </div>
       </div>
 
@@ -566,13 +566,13 @@ export default function AgentPortalPage() {
               width: '92%',
             }}
           >
-            <h3 style={{ margin: '0 0 16px', fontSize: '1.05rem' }}>Transfer to Play Wallet</h3>
+            <h3 style={{ margin: '0 0 16px', fontSize: '1.05rem' }}>Transfer To Play Wallet</h3>
             <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', margin: '0 0 12px' }}>
               Available:{' '}
               <span style={{ color: '#3b82f6', fontWeight: 700 }}>
                 {wallet.agentBal.toLocaleString()}
               </span>{' '}
-              chips
+              Chips
             </p>
             <input
               type="number"

@@ -201,7 +201,7 @@ export function RealTimeResults({
         <div className="rtr-section">
           <div className="rtr-section-header">Profile Data</div>
           <div className="rtr-row">
-            <span className="rtr-label">Buy-in:</span>
+            <span className="rtr-label">Buy-In:</span>
             <span className="rtr-value">{formatAmount(sessionStats.buyIn, currency)}</span>
           </div>
           <div className="rtr-row">
@@ -264,7 +264,7 @@ export function RealTimeResults({
           <div className="rtr-section-header">Observers ({observers.length})</div>
           <div className="rtr-observers">
             {observers.length === 0 ? (
-              <span className="rtr-no-observers">No observers</span>
+              <span className="rtr-no-observers">No Observers</span>
             ) : (
               observers.map((observer) => (
                 <div key={observer.id} className="rtr-observer">

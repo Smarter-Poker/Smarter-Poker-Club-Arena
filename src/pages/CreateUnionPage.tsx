@@ -109,8 +109,8 @@ export default function CreateUnionPage() {
         <div className={styles.container}>
           <div className={styles.noClubMessage}>
             <span className={styles.noClubIcon}></span>
-            <h2>Create a Club First</h2>
-            <p>You need to own at least one club before you can create a union.</p>
+            <h2>Create A Club First</h2>
+            <p>You Need To Own At Least One Club Before You Can Create A Union.</p>
             <button className={styles.createClubBtn} onClick={() => navigate('/clubs/create')}>
               Create Your First Club
             </button>
@@ -228,7 +228,7 @@ export default function CreateUnionPage() {
           {step === 1 && (
             <div className={styles.stepContent}>
               <h2> Union Basics</h2>
-              <p className={styles.stepDesc}>Create a network of clubs with shared resources.</p>
+              <p className={styles.stepDesc}>Create A Network Of Clubs With Shared Resources.</p>
 
               <div className={styles.formGroup}>
                 <label>Union Name *</label>
@@ -263,7 +263,7 @@ export default function CreateUnionPage() {
                 <span className={styles.checkmark} />
                 <div>
                   <strong>Public Union</strong>
-                  <p>Other clubs can discover and request to join</p>
+                  <p>Other Clubs Can Discover And Request To Join</p>
                 </div>
               </label>
             </div>
@@ -272,7 +272,7 @@ export default function CreateUnionPage() {
           {step === 2 && (
             <div className={styles.stepContent}>
               <h2> Revenue & Features</h2>
-              <p className={styles.stepDesc}>Configure profit sharing and shared features.</p>
+              <p className={styles.stepDesc}>Configure Profit Sharing And Shared Features.</p>
 
               <div className={styles.settingsGrid}>
                 <div className={styles.formGroup}>
@@ -288,7 +288,7 @@ export default function CreateUnionPage() {
                     />
                     <span>%</span>
                   </div>
-                  <span className={styles.hint}>% of club rake to union</span>
+                  <span className={styles.hint}>% Of Club Rake To Union</span>
                 </div>
 
                 <div className={styles.formGroup}>
@@ -319,7 +319,7 @@ export default function CreateUnionPage() {
                       min={1}
                       max={7}
                     />
-                    <span>days</span>
+                    <span>Days</span>
                   </div>
                 </div>
               </div>
@@ -334,7 +334,7 @@ export default function CreateUnionPage() {
                   <span className={styles.toggleSlider} />
                   <div>
                     <strong>Shared Player Pool</strong>
-                    <p>Players can move between clubs in the union</p>
+                    <p>Players Can Move Between Clubs In The Union</p>
                   </div>
                 </label>
 
@@ -347,7 +347,7 @@ export default function CreateUnionPage() {
                   <span className={styles.toggleSlider} />
                   <div>
                     <strong>Cross-Club Tournaments</strong>
-                    <p>Host tournaments across all member clubs</p>
+                    <p>Host Tournaments Across All Member Clubs</p>
                   </div>
                 </label>
               </div>
@@ -357,7 +357,7 @@ export default function CreateUnionPage() {
           {step === 3 && (
             <div className={styles.stepContent}>
               <h2> Review & Create</h2>
-              <p className={styles.stepDesc}>Review your union settings before creating.</p>
+              <p className={styles.stepDesc}>Review Your Union Settings Before Creating.</p>
 
               <div className={styles.previewCard}>
                 <div className={styles.previewHeader}>
@@ -382,7 +382,7 @@ export default function CreateUnionPage() {
                     <span>Settlement</span>
                   </div>
                   <div>
-                    <strong>{form.gracePeriodDays} days</strong>
+                    <strong>{form.gracePeriodDays} Days</strong>
                     <span>Grace Period</span>
                   </div>
                 </div>

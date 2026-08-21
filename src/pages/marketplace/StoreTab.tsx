@@ -154,7 +154,7 @@ export default function StoreTab({
   if (items.length === 0 && loading) {
     return (
       <div className={styles.emptyState}>
-        <span className={styles.emptyText}>Loading the shop...</span>
+        <span className={styles.emptyText}>Loading The Shop...</span>
       </div>
     );
   }
@@ -163,10 +163,10 @@ export default function StoreTab({
     return (
       <div className={styles.emptyState}>
         <span className={styles.emptyIcon}>◇</span>
-        <span className={styles.emptyText}>The club shop is currently empty.</span>
+        <span className={styles.emptyText}>The Club Shop Is Currently Empty.</span>
         <span className={styles.emptySubText}>
-          Club owners can add in-game items like time banks, table skins, throwables, and emotes for
-          members to purchase with chips.
+          Club Owners Can Add In-Game Items Like Time Banks, Table Skins, Throwables, And Emotes For
+          Members To Purchase With Chips.
         </span>
         {isAdmin && (
           <button className={styles.emptyButton} onClick={onGoManage}>
@@ -210,7 +210,7 @@ export default function StoreTab({
                 <div className={styles.itemName}>{buyTarget.name}</div>
                 <div className={styles.itemDesc}>{buyTarget.description}</div>
                 {grantText(buyTarget) && (
-                  <div className={styles.grantLine}>Grants on redeem: {grantText(buyTarget)}</div>
+                  <div className={styles.grantLine}>Grants On Redeem: {grantText(buyTarget)}</div>
                 )}
               </div>
             </div>
@@ -234,7 +234,7 @@ export default function StoreTab({
                 {/* The "Get Chips" upsell pointed at the diamonds -> chips
                     conversion, which is forbidden (product rule, Dan
                     2026-08-19). Chips are won and transferred, never bought. */}
-                Insufficient chips. You need {fmt(effectivePrice(buyTarget) - balance)} more.
+                Insufficient Chips. You Need {fmt(effectivePrice(buyTarget) - balance)} More.
               </div>
             )}
             <div className={styles.modalActions}>
@@ -294,8 +294,8 @@ export default function StoreTab({
           aria-label="Sort shop items"
         >
           <option value="newest">Newest First</option>
-          <option value="price-low">Price: Low to High</option>
-          <option value="price-high">Price: High to Low</option>
+          <option value="price-low">Price: Low To High</option>
+          <option value="price-high">Price: High To Low</option>
           <option value="popular">Most Popular</option>
         </select>
       </div>
@@ -304,7 +304,7 @@ export default function StoreTab({
       {filteredItems.length === 0 ? (
         <div className={styles.emptyState}>
           <span className={styles.emptyIcon}>?</span>
-          <span className={styles.emptyText}>No items match your filters.</span>
+          <span className={styles.emptyText}>No Items Match Your Filters.</span>
           <button
             className={styles.emptyButton}
             onClick={() => {
@@ -359,13 +359,13 @@ export default function StoreTab({
                   <span className={styles.categoryTag}>{item.category || 'Time Banks'}</span>
                   {soldOut && <span className={styles.soldOutTag}>SOLD OUT</span>}
                   {limited && !soldOut && (
-                    <span className={styles.stockTag}>{item.stock} left</span>
+                    <span className={styles.stockTag}>{item.stock} Left</span>
                   )}
                   {onSale && !soldOut && <span className={styles.saleTag}>SALE</span>}
                   {item.per_user_limit && !blocked ? (
                     <span className={styles.stockTag}>
-                      {Math.max(0, item.per_user_limit - (item.my_purchase_count ?? 0))} left for
-                      you
+                      {Math.max(0, item.per_user_limit - (item.my_purchase_count ?? 0))} Left For
+                      You
                     </span>
                   ) : null}
                 </div>
@@ -381,10 +381,10 @@ export default function StoreTab({
                         {onSale && (
                           <span className={styles.strikePrice}>{fmtChips(item.price)}</span>
                         )}
-                        {fmtChips(effectivePrice(item))} chips
+                        {fmtChips(effectivePrice(item))} Chips
                       </span>
                       {(item.purchase_count || 0) > 0 && (
-                        <div className={styles.soldCount}>{item.purchase_count} sold</div>
+                        <div className={styles.soldCount}>{item.purchase_count} Sold</div>
                       )}
                     </div>
                     <button

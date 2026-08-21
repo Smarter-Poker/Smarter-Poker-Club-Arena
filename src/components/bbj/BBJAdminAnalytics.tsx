@@ -79,26 +79,26 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
     <div className="bbj-admin">
       <div className="bbj-admin__header">
         <h3 className="bbj-admin__title">Jackpot Health</h3>
-        <span className="bbj-admin__subtitle">Admin only &middot; from the payout ledger</span>
+        <span className="bbj-admin__subtitle">Admin Only &middot; From The Payout Ledger</span>
       </div>
 
       <div className="bbj-admin__grid">
         <div className="bbj-admin__stat">
-          <span className="bbj-admin__stat-label">Funded (24h)</span>
+          <span className="bbj-admin__stat-label">Funded (24H)</span>
           <span className="bbj-admin__stat-value">${money(data.contributions_24h)}</span>
           <span className="bbj-admin__stat-sub">
-            {Number(data.hands_24h).toLocaleString()} qualifying hands
+            {Number(data.hands_24h).toLocaleString()} Qualifying Hands
           </span>
         </div>
 
         <div className="bbj-admin__stat">
-          <span className="bbj-admin__stat-label">Funded (7d)</span>
+          <span className="bbj-admin__stat-label">Funded (7D)</span>
           <span className="bbj-admin__stat-value">${money(data.contributions_7d)}</span>
-          <span className="bbj-admin__stat-sub">&asymp; ${money(dailyFunding)}/day</span>
+          <span className="bbj-admin__stat-sub">&asymp; ${money(dailyFunding)}/Day</span>
         </div>
 
         <div className="bbj-admin__stat">
-          <span className="bbj-admin__stat-label">Hits (all time)</span>
+          <span className="bbj-admin__stat-label">Hits (All Time)</span>
           <span className="bbj-admin__stat-value">{Number(data.hit_count).toLocaleString()}</span>
           <span className="bbj-admin__stat-sub">
             {data.avg_days_between_hits != null
@@ -108,13 +108,13 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
         </div>
 
         <div className="bbj-admin__stat">
-          <span className="bbj-admin__stat-label">Paid out</span>
+          <span className="bbj-admin__stat-label">Paid Out</span>
           <span className="bbj-admin__stat-value">${money(data.total_paid_all_time)}</span>
-          <span className="bbj-admin__stat-sub">biggest ${money(data.biggest_hit)}</span>
+          <span className="bbj-admin__stat-sub">Biggest ${money(data.biggest_hit)}</span>
         </div>
 
         <div className="bbj-admin__stat">
-          <span className="bbj-admin__stat-label">Last hit</span>
+          <span className="bbj-admin__stat-label">Last Hit</span>
           <span className="bbj-admin__stat-value">
             {data.days_since_last_hit != null
               ? `${Number(data.days_since_last_hit).toFixed(1)}d`
@@ -126,18 +126,18 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
         </div>
 
         <div className={`bbj-admin__stat ${netPositive ? 'is-positive' : 'is-negative'}`}>
-          <span className="bbj-admin__stat-label">Net position</span>
+          <span className="bbj-admin__stat-label">Net Position</span>
           <span className="bbj-admin__stat-value">
             {netPositive ? '+' : '-'}${money(Math.abs(Number(data.net_pool_position)))}
           </span>
-          <span className="bbj-admin__stat-sub">collected minus paid, all time</span>
+          <span className="bbj-admin__stat-sub">Collected Minus Paid, All Time</span>
         </div>
       </div>
 
       <div className="bbj-admin__bar">
         <div className="bbj-admin__bar-label">
-          Pool split &mdash; main ${money(data.main_balance, 0)} / backup $
-          {money(data.backup_balance, 0)} / promo ${money(data.promo_balance, 0)}
+          Pool Split &mdash; Main ${money(data.main_balance, 0)} / Backup $
+          {money(data.backup_balance, 0)} / Promo ${money(data.promo_balance, 0)}
         </div>
         <div className="bbj-admin__bar-track">
           {(() => {

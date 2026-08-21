@@ -80,7 +80,7 @@ export default function UnionAgentStatements({ unionId = MIDWAY_UNION_ID }: { un
     [filtered]
   );
 
-  if (loading) return <div style={{ color: '#8aa', padding: 12 }}>Loading agent statements…</div>;
+  if (loading) return <div style={{ color: '#8aa', padding: 12 }}>Loading Agent Statements…</div>;
 
   if (loadError) {
     return (
@@ -130,7 +130,7 @@ export default function UnionAgentStatements({ unionId = MIDWAY_UNION_ID }: { un
       </div>
 
       {filtered.length === 0 ? (
-        <p style={{ color: '#8aa' }}>No agent statements for this period.</p>
+        <p style={{ color: '#8aa' }}>No Agent Statements For This Period.</p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
@@ -141,9 +141,9 @@ export default function UnionAgentStatements({ unionId = MIDWAY_UNION_ID }: { un
                 <th style={{ padding: 8, textAlign: 'right' }}>Players</th>
                 <th style={{ padding: 8, textAlign: 'right' }}>Rake</th>
                 <th style={{ padding: 8, textAlign: 'right' }}>Commission</th>
-                <th style={{ padding: 8, textAlign: 'right' }}>Passed down</th>
-                <th style={{ padding: 8, textAlign: 'right' }}>Credit out</th>
-                <th style={{ padding: 8, textAlign: 'right' }}>Net settle</th>
+                <th style={{ padding: 8, textAlign: 'right' }}>Passed Down</th>
+                <th style={{ padding: 8, textAlign: 'right' }}>Credit Out</th>
+                <th style={{ padding: 8, textAlign: 'right' }}>Net Settle</th>
               </tr>
             </thead>
             <tbody>
@@ -185,7 +185,7 @@ export default function UnionAgentStatements({ unionId = MIDWAY_UNION_ID }: { un
             <tfoot>
               <tr style={{ borderTop: '2px solid #2a3a44', color: '#e6f1f5', fontWeight: 700 }}>
                 <td style={{ padding: 8 }} colSpan={3}>
-                  {filtered.length} agents
+                  {filtered.length} Agents
                 </td>
                 <td style={{ padding: 8, textAlign: 'right' }}>{money(totals.rake)}</td>
                 <td style={{ padding: 8, textAlign: 'right' }}>{money(totals.comm)}</td>

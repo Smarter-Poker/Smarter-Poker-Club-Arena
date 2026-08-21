@@ -106,8 +106,8 @@ function CashoutStepTracker({ status, createdAt }: { status: string; createdAt?:
             letterSpacing: '0.3px',
           }}
         >
-          ⏱ Cancel window: {Math.floor(remainingMs / 60000)}m{' '}
-          {Math.floor((remainingMs % 60000) / 1000)}s remaining
+          ⏱ Cancel Window: {Math.floor(remainingMs / 60000)}m{' '}
+          {Math.floor((remainingMs % 60000) / 1000)}s Remaining
         </div>
       )}
     </>
@@ -395,7 +395,7 @@ export default function CashoutRequestModal({
           {/* Current Balance */}
           <div className="balance-display">
             <span className="label">Available Balance</span>
-            <span className="value">{currentBalance.toLocaleString()} chips</span>
+            <span className="value">{currentBalance.toLocaleString()} Chips</span>
           </div>
 
           {/* Pending Cashouts */}
@@ -407,7 +407,7 @@ export default function CashoutRequestModal({
                   <div key={cashout.id} className="pending-item">
                     <div className="pending-info">
                       <span className="pending-amount">
-                        {cashout.amount.toLocaleString()} chips
+                        {cashout.amount.toLocaleString()} Chips
                       </span>
                       <span className="pending-time">{formatTime(cashout.createdAt)}</span>
                     </div>
@@ -424,7 +424,7 @@ export default function CashoutRequestModal({
                 ))}
               </div>
               <div className="pending-note">
-                These chips are locked until your agent processes the request or you cancel.
+                These Chips Are Locked Until Your Agent Processes The Request Or You Cancel.
               </div>
             </div>
           )}
@@ -432,7 +432,7 @@ export default function CashoutRequestModal({
           {/* New Request Form */}
           {success ? (
             <div className="success-message">
-              Cashout request submitted! Your agent has been notified.
+              Cashout Request Submitted! Your Agent Has Been Notified.
             </div>
           ) : (
             <div className="cashout-form">
@@ -450,7 +450,7 @@ export default function CashoutRequestModal({
                     step={1}
                     inputMode="numeric"
                   />
-                  <span className="chip-label">chips</span>
+                  <span className="chip-label">Chips</span>
                 </div>
                 <div className="quick-amounts">
                   {[25, 50, 100].map((pct) => (
@@ -478,7 +478,7 @@ export default function CashoutRequestModal({
               </div>
 
               <div className="form-group">
-                <label htmlFor="cashout-note">Note (optional)</label>
+                <label htmlFor="cashout-note">Note (Optional)</label>
                 <textarea
                   id="cashout-note"
                   placeholder="Any message for your agent..."
@@ -499,8 +499,8 @@ export default function CashoutRequestModal({
               </button>
 
               <div className="info-note">
-                Your chips will be locked until your agent approves the cashout. You can cancel
-                anytime before approval.
+                Your Chips Will Be Locked Until Your Agent Approves The Cashout. You Can Cancel
+                Anytime Before Approval.
               </div>
             </div>
           )}

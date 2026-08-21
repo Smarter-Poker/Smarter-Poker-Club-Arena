@@ -279,12 +279,12 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessio
       <div className="bankroll-tracker">
         <div className="bankroll-header">
           <h3>Bankroll Tracker</h3>
-          <p className="bankroll-subtitle">No session data to chart yet</p>
+          <p className="bankroll-subtitle">No Session Data To Chart Yet</p>
         </div>
         <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'rgba(255,255,255,0.5)' }}>
           <span style={{ fontSize: '2rem' }}>--</span>
           <p style={{ marginTop: '0.5rem' }}>
-            Play some sessions and your bankroll progression will appear here.
+            Play Some Sessions And Your Bankroll Progression Will Appear Here.
           </p>
         </div>
       </div>
@@ -295,7 +295,7 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessio
     <div className="bankroll-tracker">
       <div className="bankroll-header">
         <h3>Bankroll Tracker</h3>
-        <p className="bankroll-subtitle">Track your bankroll progression over time</p>
+        <p className="bankroll-subtitle">Track Your Bankroll Progression Over Time</p>
       </div>
 
       {/* Period selector */}

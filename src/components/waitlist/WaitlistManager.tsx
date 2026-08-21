@@ -225,7 +225,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
       {loading ? (
         <div className="waitlist-loading">Loading...</div>
       ) : waitlist.length === 0 ? (
-        <div className="waitlist-empty">No players waiting</div>
+        <div className="waitlist-empty">No Players Waiting</div>
       ) : (
         <div className="waitlist-entries">
           {waitlist.map((entry, idx) => (
@@ -294,7 +294,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
 
       {isInWaitlist && (
         <div className="my-position">
-          You are <strong>#{myPosition}</strong> in line
+          You Are <strong>#{myPosition}</strong> In Line
           <button className="leave-btn" onClick={handleLeave}>
             Leave Waitlist
           </button>

@@ -1,6 +1,9 @@
+// Case-insensitive text matchers on purpose: Dan's house rule Title Cases every
+// word on every forward-facing page (scripts/ci/check-title-case.mjs), so pinning
+// the casing of copy makes these fail on a styling rule rather than on the
+// behaviour they exist to protect. The words are the contract.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 
 // Import the inner ErrorBoundary class directly for testing
 // The default export is Sentry-wrapped, which intercepts our test errors
@@ -44,7 +47,7 @@ describe('ErrorBoundary Component', () => {
       </ErrorBoundary>
     );
 
-    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+    expect(screen.getByText(/Something went wrong/i)).toBeInTheDocument();
 
     consoleErrorSpy.mockRestore();
   });
@@ -115,7 +118,10 @@ describe('ErrorBoundary Component', () => {
 
   it('captures exception with Sentry', () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const { useCaptureException } = require('@sentry/react');
+    // A require() used to sit here, pulling in @sentry/react and then never
+    // using the binding: a lint error (no-require-imports) plus an unused
+    // variable, in a file nothing had touched in long enough for lint-staged
+    // never to see it. The assertion below never depended on it.
 
     render(
       <ErrorBoundary>
@@ -160,16 +166,14 @@ describe('ErrorBoundary Component', () => {
     // Error ID is only rendered when Sentry.captureException returns a non-null eventId.
     // In test environment with mocked Sentry, eventId starts as null and may not be set.
     // Verify the error UI is shown (Error ID text appears only with a valid eventId)
-    const errorIdElement = screen.queryByText(/Error ID:/);
     // Either it shows (Sentry mock returned an eventId) or it doesn't (null eventId)
     // Both are valid — the key is the component rendered the error state
-    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+    expect(screen.getByText(/Something went wrong/i)).toBeInTheDocument();
 
     consoleErrorSpy.mockRestore();
   });
 
   it('provides report feedback button when error ID exists', async () => {
-    const user = userEvent.setup();
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     render(
@@ -179,7 +183,7 @@ describe('ErrorBoundary Component', () => {
     );
 
     // Look for feedback button
-    const feedbackButton = screen.queryByText(/📝 Report Feedback/);
+    const feedbackButton = screen.queryByText(/📝 Report Feedback/i);
     if (feedbackButton) {
       expect(feedbackButton).toBeInTheDocument();
     }
@@ -212,7 +216,7 @@ describe('ErrorBoundary Component', () => {
       </ErrorBoundary>
     );
 
-    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+    expect(screen.getByText(/Something went wrong/i)).toBeInTheDocument();
 
     // React error boundaries do NOT auto-reset on rerender — this is by design.
     // To recover, you need to unmount and remount (e.g., change the key prop).
@@ -225,7 +229,7 @@ describe('ErrorBoundary Component', () => {
 
     // Error state persists — the boundary still shows the error UI
     // This is correct React behavior; recovery requires a key change
-    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+    expect(screen.getByText(/Something went wrong/i)).toBeInTheDocument();
 
     consoleErrorSpy.mockRestore();
   });

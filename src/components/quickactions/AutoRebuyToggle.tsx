@@ -59,7 +59,7 @@ export const AutoRebuyToggle: React.FC<AutoRebuyToggleProps> = ({
       {showSettings && (
         <div className="toggle-settings">
           <div className="setting-row">
-            <label>Trigger below</label>
+            <label>Trigger Below</label>
             <div className="setting-input">
               <input
                 type="number"
@@ -72,7 +72,7 @@ export const AutoRebuyToggle: React.FC<AutoRebuyToggleProps> = ({
             </div>
           </div>
           <div className="setting-row">
-            <label>Rebuy to</label>
+            <label>Rebuy To</label>
             <div className="setting-input">
               <input
                 type="number"

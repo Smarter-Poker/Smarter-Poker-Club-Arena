@@ -295,8 +295,8 @@ export function TableChat({
       <div className="table-chat__messages" ref={messagesContainerRef} onScroll={handleScroll}>
         {displayMessages.length === 0 ? (
           <div className="table-chat__empty">
-            <span>No messages yet</span>
-            <span>Be the first to say hello! </span>
+            <span>No Messages Yet</span>
+            <span>Be The First To Say Hello! </span>
           </div>
         ) : (
           displayMessages.map((msg) => (

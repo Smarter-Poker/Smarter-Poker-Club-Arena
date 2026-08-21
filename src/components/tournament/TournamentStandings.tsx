@@ -154,7 +154,7 @@ export default function TournamentStandings({
   if (loading) {
     return (
       <div className={styles.container}>
-        <div className={styles.loading}>Loading standings...</div>
+        <div className={styles.loading}>Loading Standings...</div>
       </div>
     );
   }

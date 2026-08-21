@@ -402,7 +402,7 @@ export default function FinancialAdminHub() {
         </button>
         <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Financial Admin Hub</h1>
         <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
-          Central command for all financial operations
+          Central Command For All Financial Operations
         </p>
       </div>
 
@@ -501,7 +501,7 @@ export default function FinancialAdminHub() {
                     fontFamily: 'monospace',
                   }}
                 >
-                  {totalRevenue.toLocaleString()} chip{totalRevenue === 1 ? '' : 's'}
+                  {totalRevenue.toLocaleString()} Chip{totalRevenue === 1 ? '' : 's'}
                 </span>
               </div>
               <div style={{ height: 180, marginTop: '20px' }}>
@@ -551,7 +551,7 @@ export default function FinancialAdminHub() {
                                   fontFamily: 'monospace',
                                 }}
                               >
-                                {Number(payload[0].value).toLocaleString()} chips
+                                {Number(payload[0].value).toLocaleString()} Chips
                               </div>
                             </div>
                           );
@@ -656,7 +656,7 @@ export default function FinancialAdminHub() {
           color: 'rgba(255,255,255,0.35)',
         }}
       >
-        <span>Financial Engine v3.0 • All services operational</span>
+        <span>Financial Engine V3.0 • All Services Operational</span>
         <span>
           System Health:{' '}
           {stats.lastCheckPassed === true

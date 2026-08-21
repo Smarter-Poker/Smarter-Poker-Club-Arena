@@ -87,8 +87,8 @@ const SimPage: React.FC = () => {
           <h1 className="sim-page__title">Club Arena - Sim</h1>
         </div>
         <p className="sim-page__subtitle">
-          Deterministic scenario playback. No live engine. Each step is a scripted state snapshot of
-          what the UI SHOULD render at that moment.
+          Deterministic Scenario Playback. No Live Engine. Each Step Is A Scripted State Snapshot Of
+          What The UI SHOULD Render At That Moment.
         </p>
 
         <div className="sim-page__controls">
@@ -227,7 +227,7 @@ const SimPage: React.FC = () => {
 
       {/* Raw-state inspector so we can eyeball what the UI is being fed */}
       <details className="sim-page__inspector">
-        <summary>Raw state (debug)</summary>
+        <summary>Raw State (Debug)</summary>
         <pre className="sim-page__inspector-pre">{JSON.stringify(state, null, 2)}</pre>
       </details>
     </div>

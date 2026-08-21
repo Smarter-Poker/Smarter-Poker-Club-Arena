@@ -302,7 +302,7 @@ export default function BonusPage() {
       {/* Daily Login Calendar */}
       <section className="bonus-section">
         <h3>Daily Login Bonus</h3>
-        <p className="section-desc">Login daily to earn rewards!</p>
+        <p className="section-desc">Login Daily To Earn Rewards!</p>
         <div className="daily-calendar">
           {dailyBonuses.map((bonus, index) => (
             <div
@@ -369,7 +369,7 @@ export default function BonusPage() {
         <section className="bonus-section" style={{ textAlign: 'center', padding: '2rem 1rem' }}>
           <h3>Special Bonuses</h3>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            No special bonuses available right now. Check back later for exclusive rewards!
+            No Special Bonuses Available Right Now. Check Back Later For Exclusive Rewards!
           </p>
         </section>
       )}

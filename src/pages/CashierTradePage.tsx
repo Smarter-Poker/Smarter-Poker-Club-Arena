@@ -393,42 +393,42 @@ export default function CashierTradePage() {
     setRecordsError(null);
     (async () => {
       try {
-      const { data, error } = await supabase
-        .from('chip_transactions')
-        .select('id, created_at, transaction_type, amount, from_user_id, to_user_id, notes')
-        .eq('club_id', clubUuid)
-        .or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`)
-        .order('created_at', { ascending: false })
-        .limit(50);
-      if (!live) return;
-      // A discarded error rendered as "No trades recorded yet", which is a
-      // different statement from "we could not read them".
-      if (error) throw error;
-      const ids = new Set<string>();
-      for (const r of data || []) {
-        if (r.from_user_id) ids.add(r.from_user_id);
-        if (r.to_user_id) ids.add(r.to_user_id);
-      }
-      const { data: profs } = await supabase
-        .from('profiles')
-        .select('id, display_name, username')
-        .in('id', Array.from(ids));
-      const nameOf = new Map((profs || []).map((p) => [p.id, p.display_name || p.username]));
-      if (!live) return;
-      setRecords(
-        (data || []).map((r) => {
-          const out = r.from_user_id === user.id;
-          const other = out ? r.to_user_id : r.from_user_id;
-          return {
-            id: r.id,
-            createdAt: r.created_at,
-            type: (r.transaction_type as string) || 'transfer',
-            amount: Number(r.amount) || 0,
-            direction: out ? ('out' as const) : ('in' as const),
-            counterparty: (other && nameOf.get(other)) || 'Club',
-          };
-        })
-      );
+        const { data, error } = await supabase
+          .from('chip_transactions')
+          .select('id, created_at, transaction_type, amount, from_user_id, to_user_id, notes')
+          .eq('club_id', clubUuid)
+          .or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        if (!live) return;
+        // A discarded error rendered as "No trades recorded yet", which is a
+        // different statement from "we could not read them".
+        if (error) throw error;
+        const ids = new Set<string>();
+        for (const r of data || []) {
+          if (r.from_user_id) ids.add(r.from_user_id);
+          if (r.to_user_id) ids.add(r.to_user_id);
+        }
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id, display_name, username')
+          .in('id', Array.from(ids));
+        const nameOf = new Map((profs || []).map((p) => [p.id, p.display_name || p.username]));
+        if (!live) return;
+        setRecords(
+          (data || []).map((r) => {
+            const out = r.from_user_id === user.id;
+            const other = out ? r.to_user_id : r.from_user_id;
+            return {
+              id: r.id,
+              createdAt: r.created_at,
+              type: (r.transaction_type as string) || 'transfer',
+              amount: Number(r.amount) || 0,
+              direction: out ? ('out' as const) : ('in' as const),
+              counterparty: (other && nameOf.get(other)) || 'Club',
+            };
+          })
+        );
       } catch (e) {
         reportError(e, 'CashierTradePage.records');
         if (live) {
@@ -465,7 +465,10 @@ export default function CashierTradePage() {
           .select('id, display_name, username')
           .in('id', ids);
         for (const pr of profs || [])
-          names.set(pr.id as string, (pr.display_name as string) || (pr.username as string) || 'Player');
+          names.set(
+            pr.id as string,
+            (pr.display_name as string) || (pr.username as string) || 'Player'
+          );
       }
       if (!isMounted.current) return;
       setRequests(
@@ -501,7 +504,11 @@ export default function CashierTradePage() {
       const res = data as { success?: boolean; error?: string } | null;
       if (!res?.success) throw new Error(res?.error || 'Refused');
       toast?.success?.(
-        action === 'approve' ? 'Request Approved' : action === 'decline' ? 'Request Declined' : 'Request Cancelled'
+        action === 'approve'
+          ? 'Request Approved'
+          : action === 'decline'
+            ? 'Request Declined'
+            : 'Request Cancelled'
       );
       masterBus.emit('BALANCE_UPDATED', { source: 'chip_request', userId: user?.id || '' });
       loadRequests();
@@ -602,10 +609,7 @@ export default function CashierTradePage() {
     return rows;
   }, [downline, search, sortKey, groupByRole, mineOnly]);
 
-  const agencyBalance = useMemo(
-    () => downline.reduce((s, r) => s + r.chipBalance, 0),
-    [downline]
-  );
+  const agencyBalance = useMemo(() => downline.reduce((s, r) => s + r.chipBalance, 0), [downline]);
 
   // A selection had no relationship to what was on screen. Select three
   // players, type a search, select a fourth, press Send Out - and chips went
@@ -648,7 +652,9 @@ export default function CashierTradePage() {
     const targets = list.filter((r) => selected.has(r.userId));
     if (targets.length === 0) return;
     if ((kind === 'send' || kind === 'ticket') && value * targets.length > myBalance) {
-      toast?.error?.(`Insufficient Chips: Sending ${fmt(value * targets.length)} Needs More Than ${fmt(myBalance)}`);
+      toast?.error?.(
+        `Insufficient Chips: Sending ${fmt(value * targets.length)} Needs More Than ${fmt(myBalance)}`
+      );
       return;
     }
     if (busyRef.current) return; // a fast double-tap must not send twice
@@ -657,61 +663,61 @@ export default function CashierTradePage() {
     let ok = 0;
     let skipped = 0;
     try {
-    for (const t of targets) {
-      try {
-        if (kind === 'send') {
-          // fn_cashier_send_chips (migration 20260821): sender is always
-          // auth.uid() server-side; owner/admin -> anyone, agents -> their
-          // own downline only. Moves club_members.chip_balance — the ledger
-          // that buys into games.
-          const { data, error } = await supabase.rpc('fn_cashier_send_chips', {
-            p_club_id: clubUuid,
-            p_to_user_id: t.userId,
-            p_amount: value,
-            p_reason: `Cashier send out to ${t.name}`,
-          });
-          if (error) throw error;
-          const res = data as { success?: boolean; error?: string } | null;
-          if (res && res.success === false) throw new Error(res.error || 'refused');
-        } else if (kind === 'ticket') {
-          // Tournament ticket: the value is ESCROWED off the issuer now and
-          // held on the ticket until the player redeems it.
-          const { data, error } = await supabase.rpc('fn_issue_tournament_ticket', {
-            p_club_id: clubUuid,
-            p_holder_id: t.userId,
-            p_value: value,
-            p_note: `Ticket from cashier`,
-          });
-          if (error) throw error;
-          const res = data as { success?: boolean; error?: string } | null;
-          if (res && res.success === false) throw new Error(res.error || 'refused');
-        } else {
-          const claim = Math.min(value, t.chipBalance);
-          // Nothing to take back. Counted, so the summary can say so instead
-          // of closing the modal in silence and leaving the user guessing.
-          if (claim <= 0) {
-            skipped++;
-            continue;
+      for (const t of targets) {
+        try {
+          if (kind === 'send') {
+            // fn_cashier_send_chips (migration 20260821): sender is always
+            // auth.uid() server-side; owner/admin -> anyone, agents -> their
+            // own downline only. Moves club_members.chip_balance — the ledger
+            // that buys into games.
+            const { data, error } = await supabase.rpc('fn_cashier_send_chips', {
+              p_club_id: clubUuid,
+              p_to_user_id: t.userId,
+              p_amount: value,
+              p_reason: `Cashier send out to ${t.name}`,
+            });
+            if (error) throw error;
+            const res = data as { success?: boolean; error?: string } | null;
+            if (res && res.success === false) throw new Error(res.error || 'refused');
+          } else if (kind === 'ticket') {
+            // Tournament ticket: the value is ESCROWED off the issuer now and
+            // held on the ticket until the player redeems it.
+            const { data, error } = await supabase.rpc('fn_issue_tournament_ticket', {
+              p_club_id: clubUuid,
+              p_holder_id: t.userId,
+              p_value: value,
+              p_note: `Ticket from cashier`,
+            });
+            if (error) throw error;
+            const res = data as { success?: boolean; error?: string } | null;
+            if (res && res.success === false) throw new Error(res.error || 'refused');
+          } else {
+            const claim = Math.min(value, t.chipBalance);
+            // Nothing to take back. Counted, so the summary can say so instead
+            // of closing the modal in silence and leaving the user guessing.
+            if (claim <= 0) {
+              skipped++;
+              continue;
+            }
+            // fn_cashier_claim_back (migration 20260821): conserved player ->
+            // caller move on the club ledger. NOT fn_admin_remove_player_chips,
+            // which refuses agents and strands the chips in clubs.chip_pool.
+            const { data, error } = await supabase.rpc('fn_cashier_claim_back', {
+              p_club_id: clubUuid,
+              p_from_user_id: t.userId,
+              p_amount: claim,
+              p_reason: 'Cashier claim back',
+            });
+            if (error) throw error;
+            const res = data as { success?: boolean; error?: string } | null;
+            if (res && res.success === false) throw new Error(res.error || 'refused');
           }
-          // fn_cashier_claim_back (migration 20260821): conserved player ->
-          // caller move on the club ledger. NOT fn_admin_remove_player_chips,
-          // which refuses agents and strands the chips in clubs.chip_pool.
-          const { data, error } = await supabase.rpc('fn_cashier_claim_back', {
-            p_club_id: clubUuid,
-            p_from_user_id: t.userId,
-            p_amount: claim,
-            p_reason: 'Cashier claim back',
-          });
-          if (error) throw error;
-          const res = data as { success?: boolean; error?: string } | null;
-          if (res && res.success === false) throw new Error(res.error || 'refused');
+          ok++;
+        } catch (e) {
+          reportError(e, 'CashierTradePage.' + kind);
+          toast?.error?.(`${t.name}: ${(e as Error).message || 'Transfer Failed'}`);
         }
-        ok++;
-      } catch (e) {
-        reportError(e, 'CashierTradePage.' + kind);
-        toast?.error?.(`${t.name}: ${(e as Error).message || 'Transfer Failed'}`);
       }
-    }
     } finally {
       // A throw between here and the end used to leave `busy` true forever,
       // and both Confirm and Cancel are disabled on it - the modal became a
@@ -789,7 +795,7 @@ export default function CashierTradePage() {
                 <span className={styles.entityInitial}>{initial(m.name)}</span>
               )}
               <span className={styles.pickerName}>{m.name}</span>
-              <span className={styles.pickerBalance}>{fmt(m.chipBalance)} chips</span>
+              <span className={styles.pickerBalance}>{fmt(m.chipBalance)} Chips</span>
             </button>
           ))}
         </div>
@@ -872,19 +878,19 @@ export default function CashierTradePage() {
                 checked={groupByRole}
                 onChange={(e) => setGroupByRole(e.target.checked)}
               />
-              Group by Role
+              Group By Role
             </label>
             <button
               className={styles.sortBtn}
               onClick={() => setSortKey((k) => (k === 'balance' ? 'name' : 'balance'))}
             >
-              Sort by {sortKey === 'balance' ? 'Chip Balance' : 'Name'} &#9662;
+              Sort By {sortKey === 'balance' ? 'Chip Balance' : 'Name'} &#9662;
             </button>
           </div>
 
           {/* Downline list */}
           <div className={styles.list}>
-            {loading && <div className={styles.empty}>Loading members...</div>}
+            {loading && <div className={styles.empty}>Loading Members...</div>}
             {!loading && loadError && (
               <div className={styles.empty} role="alert">
                 {loadError}{' '}
@@ -908,43 +914,45 @@ export default function CashierTradePage() {
               so a player could be selected from the club you just left and the
               transfer submitted against the club you had switched to.
             */}
-            {!loading && !loadError && list.map((r) => (
-              <div
-                key={r.userId}
-                className={`${styles.row} ${selected.has(r.userId) ? styles.rowSelected : ''}`}
-                onClick={() => toggleSelect(r.userId)}
-                onKeyDown={(e) => {
-                  // role="checkbox" + tabIndex advertises a control. Without
-                  // this, every row was reachable by keyboard and none of them
-                  // could be selected.
-                  if (e.key === ' ' || e.key === 'Enter') {
-                    e.preventDefault();
-                    toggleSelect(r.userId);
-                  }
-                }}
-                role="checkbox"
-                aria-checked={selected.has(r.userId)}
-                tabIndex={0}
-              >
-                {r.avatarUrl ? (
-                  <img src={r.avatarUrl} alt="" className={styles.avatar} />
-                ) : (
-                  <span className={styles.avatarFallback}>{initial(r.name)}</span>
-                )}
-                <div className={styles.rowInfo}>
-                  <span className={styles.rowName}>{r.name}</span>
-                  <span className={styles.rowSub}>
-                    {r.role !== 'player' ? r.role.replace('_', ' ') : r.isHorse ? 'horse' : ''}
-                    {r.username ? ` @${r.username}` : ''}
-                  </span>
+            {!loading &&
+              !loadError &&
+              list.map((r) => (
+                <div
+                  key={r.userId}
+                  className={`${styles.row} ${selected.has(r.userId) ? styles.rowSelected : ''}`}
+                  onClick={() => toggleSelect(r.userId)}
+                  onKeyDown={(e) => {
+                    // role="checkbox" + tabIndex advertises a control. Without
+                    // this, every row was reachable by keyboard and none of them
+                    // could be selected.
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      e.preventDefault();
+                      toggleSelect(r.userId);
+                    }
+                  }}
+                  role="checkbox"
+                  aria-checked={selected.has(r.userId)}
+                  tabIndex={0}
+                >
+                  {r.avatarUrl ? (
+                    <img src={r.avatarUrl} alt="" className={styles.avatar} />
+                  ) : (
+                    <span className={styles.avatarFallback}>{initial(r.name)}</span>
+                  )}
+                  <div className={styles.rowInfo}>
+                    <span className={styles.rowName}>{r.name}</span>
+                    <span className={styles.rowSub}>
+                      {r.role !== 'player' ? r.role.replace('_', ' ') : r.isHorse ? 'horse' : ''}
+                      {r.username ? ` @${r.username}` : ''}
+                    </span>
+                  </div>
+                  <span className={styles.rowBalance}>{fmt(r.chipBalance)}</span>
+                  <span
+                    className={`${styles.checkbox} ${selected.has(r.userId) ? styles.checkboxOn : ''}`}
+                    aria-hidden="true"
+                  />
                 </div>
-                <span className={styles.rowBalance}>{fmt(r.chipBalance)}</span>
-                <span
-                  className={`${styles.checkbox} ${selected.has(r.userId) ? styles.checkboxOn : ''}`}
-                  aria-hidden="true"
-                />
-              </div>
-            ))}
+              ))}
             <button
               className={styles.classicLink}
               onClick={() => navigate(`/clubs/${clubParam}/cashier-classic`)}
@@ -982,12 +990,14 @@ export default function CashierTradePage() {
 
       {tab === 'record' && (
         <div className={styles.list}>
-          {recordsLoading && <div className={styles.empty}>Loading trades...</div>}
+          {recordsLoading && <div className={styles.empty}>Loading Trades...</div>}
           {!recordsLoading && recordsError && (
-            <div className={styles.empty} role="alert">{recordsError}</div>
+            <div className={styles.empty} role="alert">
+              {recordsError}
+            </div>
           )}
           {!recordsLoading && !recordsError && records.length === 0 && (
-            <div className={styles.empty}>No trades recorded yet.</div>
+            <div className={styles.empty}>No Trades Recorded Yet.</div>
           )}
           {records.map((r) => (
             <div key={r.id} className={styles.row}>
@@ -1019,10 +1029,10 @@ export default function CashierTradePage() {
 
       {tab === 'leaderboard' && (
         <div className={styles.list}>
-          {invoicesLoading && <div className={styles.empty}>Loading settlement records...</div>}
+          {invoicesLoading && <div className={styles.empty}>Loading Settlement Records...</div>}
           {!invoicesLoading && invoices.length === 0 && (
             <div className={styles.empty}>
-              No settlement records yet. They appear here after the first weekly close.
+              No Settlement Records Yet. They Appear Here After The First Weekly Close.
             </div>
           )}
           {invoices.map((iv) => (
@@ -1038,8 +1048,10 @@ export default function CashierTradePage() {
                   &middot; {iv.status}
                 </span>
               </div>
-              <span className={styles.rowSub}>gross {fmt(iv.gross)}</span>
-              <span className={`${styles.rowBalance} ${iv.net >= 0 ? styles.amtIn : styles.amtOut}`}>
+              <span className={styles.rowSub}>Gross {fmt(iv.gross)}</span>
+              <span
+                className={`${styles.rowBalance} ${iv.net >= 0 ? styles.amtIn : styles.amtOut}`}
+              >
                 {iv.net >= 0 ? '+' : ''}
                 {fmt(iv.net)}
               </span>
@@ -1053,9 +1065,9 @@ export default function CashierTradePage() {
           <button className={styles.classicLink} onClick={() => setAskOpen(true)}>
             Request Chips From Your Agent
           </button>
-          {requestsLoading && <div className={styles.empty}>Loading requests...</div>}
+          {requestsLoading && <div className={styles.empty}>Loading Requests...</div>}
           {!requestsLoading && requests.length === 0 && (
-            <div className={styles.empty}>No open chip requests.</div>
+            <div className={styles.empty}>No Open Chip Requests.</div>
           )}
           {requests.map((r) => (
             <div key={r.id} className={styles.row}>
@@ -1119,7 +1131,7 @@ export default function CashierTradePage() {
               maxLength={120}
             />
             <div className={styles.modalHint}>
-              Goes to your agent, or the club owner if you have none.
+              Goes To Your Agent, Or The Club Owner If You Have None.
             </div>
             <div className={styles.modalActions}>
               <button onClick={() => setAskOpen(false)}>Cancel</button>
@@ -1149,7 +1161,7 @@ export default function CashierTradePage() {
                 : amountModal === 'ticket'
                   ? 'Send Ticket'
                   : 'Claim Back'}{' '}
-              &middot; {selected.size} player
+              &middot; {selected.size} Player
               {selected.size === 1 ? '' : 's'}
             </div>
             <input
@@ -1169,13 +1181,13 @@ export default function CashierTradePage() {
             />
             {amountModal === 'ticket' && (
               <div className={styles.modalHint}>
-                Tickets are paid now and held until the player redeems them. Cancel an unredeemed
-                ticket to get the chips back.
+                Tickets Are Paid Now And Held Until The Player Redeems Them. Cancel An Unredeemed
+                Ticket To Get The Chips Back.
               </div>
             )}
             {(amountModal === 'send' || amountModal === 'ticket') && (
               <div className={styles.modalHint}>
-                Total: {fmt((Number(amount) || 0) * selected.size)} &middot; Your balance:{' '}
+                Total: {fmt((Number(amount) || 0) * selected.size)} &middot; Your Balance:{' '}
                 {fmt(myBalance)}
               </div>
             )}

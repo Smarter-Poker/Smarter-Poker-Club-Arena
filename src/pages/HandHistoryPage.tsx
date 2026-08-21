@@ -359,7 +359,7 @@ export default function HandHistoryPage() {
             </span>
             <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>No Hands Recorded Yet</p>
             <p style={{ fontSize: 13, opacity: 0.6, margin: 0 }}>
-              Play some poker and your hand history will appear here.
+              Play Some Poker And Your Hand History Will Appear Here.
             </p>
           </div>
         ) : (
@@ -392,7 +392,7 @@ export default function HandHistoryPage() {
                 </div>
                 <div className="hand-footer">
                   <span className="stakes">{hand.stakes}</span>
-                  <span className="players">{hand.players.length} players</span>
+                  <span className="players">{hand.players.length} Players</span>
                   <button
                     className="analyze-btn"
                     onClick={(e) => {

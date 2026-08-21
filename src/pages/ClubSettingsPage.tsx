@@ -245,12 +245,19 @@ export default function ClubSettingsPage() {
   useEffect(() => {
     if (!hasUnsavedChanges || !isOwner) return;
     const onClickCapture = (e: MouseEvent) => {
-      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+      if (
+        e.defaultPrevented ||
+        e.button !== 0 ||
+        e.metaKey ||
+        e.ctrlKey ||
+        e.shiftKey ||
+        e.altKey
+      ) {
         return;
       }
-      const anchor = (e.target as HTMLElement | null)?.closest?.('a[href]') as
-        | HTMLAnchorElement
-        | null;
+      const anchor = (e.target as HTMLElement | null)?.closest?.(
+        'a[href]'
+      ) as HTMLAnchorElement | null;
       if (!anchor || anchor.target === '_blank' || anchor.hasAttribute('download')) return;
       const href = anchor.getAttribute('href') || '';
       if (!href || href.startsWith('#')) return; // in-page anchor, not a navigation
@@ -263,9 +270,7 @@ export default function ClubSettingsPage() {
       // Leaving the origin is already covered by the beforeunload handler.
       if (dest.origin !== window.location.origin) return;
       if (dest.pathname === window.location.pathname) return; // same page
-      if (
-        !window.confirm('You have unsaved settings changes. Leave this page and discard them?')
-      ) {
+      if (!window.confirm('You have unsaved settings changes. Leave this page and discard them?')) {
         e.preventDefault();
         e.stopPropagation();
       }
@@ -344,7 +349,8 @@ export default function ClubSettingsPage() {
                 (k) => k in next && String(next[k]) !== String(base[k])
               );
               const logoTouched =
-                'logo_url' in next && (next.logo_url ?? null) !== (currentLogoUrlRef.current ?? null);
+                'logo_url' in next &&
+                (next.logo_url ?? null) !== (currentLogoUrlRef.current ?? null);
               if (!touched && !logoTouched) return;
             }
             loadClubSettings(() => isMounted, { silent: true });
@@ -450,7 +456,8 @@ export default function ClubSettingsPage() {
         setCurrentLogoUrl(data.logo_url || null);
         const wouldDiscardEdits = !opts?.force && hasUnsavedChangesRef.current;
         if (wouldDiscardEdits) {
-          const serverMoved = JSON.stringify(fromServer) !== JSON.stringify(originalSettings.current);
+          const serverMoved =
+            JSON.stringify(fromServer) !== JSON.stringify(originalSettings.current);
           // Re-baseline so the change list stays honest about what the save
           // would actually alter, and tell the owner the server copy moved.
           originalSettings.current = fromServer;
@@ -532,7 +539,8 @@ export default function ClubSettingsPage() {
           .upload(path, pendingLogo.file, { contentType: pendingLogo.file.type });
         if (uploadErr) throw uploadErr;
         uploadedPathRef.current = path;
-        newLogoUrl = supabase.storage.from('club-assets').getPublicUrl(path).data?.publicUrl || null;
+        newLogoUrl =
+          supabase.storage.from('club-assets').getPublicUrl(path).data?.publicUrl || null;
       }
       // Phase 13: Optimistic save — emit events instantly, then confirm with server
       await masterBus.executeOptimistic(
@@ -772,12 +780,12 @@ export default function ClubSettingsPage() {
     return (
       <div className="club-settings-page">
         <div className="settings-empty-state">
-          <p className="settings-empty-title">No club selected</p>
+          <p className="settings-empty-title">No Club Selected</p>
           <p className="settings-empty-desc">
-            Open this page from a club so it knows which settings to show.
+            Open This Page From A Club So It Knows Which Settings To Show.
           </p>
           <button className="btn btn-primary" onClick={() => navigate('/clubs')}>
-            Browse clubs
+            Browse Clubs
           </button>
         </div>
       </div>
@@ -796,12 +804,12 @@ export default function ClubSettingsPage() {
     return (
       <div className="club-settings-page">
         <div className="settings-empty-state">
-          <p className="settings-empty-title">Club not found</p>
+          <p className="settings-empty-title">Club Not Found</p>
           <p className="settings-empty-desc">
-            This club does not exist, or it is private and you are not a member.
+            This Club Does Not Exist, Or It Is Private And You Are Not A Member.
           </p>
           <button className="btn btn-primary" onClick={() => navigate('/clubs')}>
-            Browse clubs
+            Browse Clubs
           </button>
         </div>
         <ClubBottomNav clubId={clubId} userRole={userRole} />
@@ -813,7 +821,7 @@ export default function ClubSettingsPage() {
     return (
       <div className="club-settings-page">
         <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
-          <p style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Failed to load settings</p>
+          <p style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Failed To Load Settings</p>
           <button
             onClick={() => loadClubSettings(undefined, { force: true })}
             style={{
@@ -853,7 +861,7 @@ export default function ClubSettingsPage() {
               fontSize: '0.85rem',
             }}
           >
-            Read-only view. Only the club owner can change these settings.
+            Read-Only View. Only The Club Owner Can Change These Settings.
           </div>
         )}
         {/* Basic Info */}
@@ -920,7 +928,7 @@ export default function ClubSettingsPage() {
                 </button>
               </div>
               <small className="form-hint">
-                Players can find and join the club with this code.
+                Players Can Find And Join The Club With This Code.
               </small>
             </div>
           )}
@@ -953,7 +961,7 @@ export default function ClubSettingsPage() {
                     fontSize: '0.65rem',
                   }}
                 >
-                  No logo
+                  No Logo
                 </div>
               )}
               {isOwner && (
@@ -993,7 +1001,7 @@ export default function ClubSettingsPage() {
               )}
             </div>
             <small className="form-hint">
-              PNG, JPG, WEBP or GIF up to 2 MB. Applied when you save changes.
+              PNG, JPG, WEBP Or GIF Up To 2 MB. Applied When You Save Changes.
             </small>
           </div>
         </section>
@@ -1004,7 +1012,7 @@ export default function ClubSettingsPage() {
           <div className="toggle-row">
             <div className="toggle-info">
               <span className="toggle-label">Public Club</span>
-              <span className="toggle-desc">Anyone can find and request to join</span>
+              <span className="toggle-desc">Anyone Can Find And Request To Join</span>
             </div>
             <button
               type="button"
@@ -1030,14 +1038,14 @@ export default function ClubSettingsPage() {
           </div>
           {privateClubNeedsApproval(settings.is_public, settings.requires_approval) && (
             <small className="form-hint" role="alert" style={{ color: '#ffb020' }}>
-              This club is private but admits anyone instantly. Private only hides the club from
-              search - joining is gated by Require Approval.
+              This Club Is Private But Admits Anyone Instantly. Private Only Hides The Club From
+              Search - Joining Is Gated By Require Approval.
             </small>
           )}
           <div className="toggle-row">
             <div className="toggle-info">
               <span className="toggle-label">Require Approval</span>
-              <span className="toggle-desc">Manually approve new members</span>
+              <span className="toggle-desc">Manually Approve New Members</span>
             </div>
             <button
               type="button"
@@ -1092,7 +1100,7 @@ export default function ClubSettingsPage() {
               disabled={!isOwner}
             />
             <small className="form-hint">
-              Leave blank to use the house schedule (10%). A club can take less, never more.{' '}
+              Leave Blank To Use The House Schedule (10%). A Club Can Take Less, Never More.{' '}
               {settings.default_rake_percent < 0
                 ? 'Currently: house schedule.'
                 : `Currently: ${settings.default_rake_percent}% (house caps still apply).`}
@@ -1122,8 +1130,8 @@ export default function ClubSettingsPage() {
               disabled={!isOwner}
             />
             <small className="form-hint">
-              Most that can be raked from one pot, in big blinds. Blank uses the house cap for each
-              stake ($3-$20 depending on blinds).{' '}
+              Most That Can Be Raked From One Pot, In Big Blinds. Blank Uses The House Cap For Each
+              Stake ($3-$20 Depending On Blinds).{' '}
               {settings.rake_cap < 0 ? 'Currently: house cap.' : capPreview}
             </small>
           </div>
@@ -1184,7 +1192,7 @@ export default function ClubSettingsPage() {
 
         {/* Buy-in Limits */}
         <section className="settings-section">
-          <h3>Buy-in Limits</h3>
+          <h3>Buy-In Limits</h3>
           <div className="form-row">
             <div className="form-group">
               <label htmlFor="club-min-buyin">Min (BB)</label>
@@ -1193,7 +1201,9 @@ export default function ClubSettingsPage() {
                 id="club-min-buyin"
                 value={Number.isFinite(settings.min_buyin_bb) ? settings.min_buyin_bb : ''}
                 onChange={(e) => updateSetting('min_buyin_bb', parseInt(e.target.value, 10))}
-                onBlur={() => updateSetting('min_buyin_bb', clampBuyin(settings.min_buyin_bb, BUYIN_BB_FLOOR))}
+                onBlur={() =>
+                  updateSetting('min_buyin_bb', clampBuyin(settings.min_buyin_bb, BUYIN_BB_FLOOR))
+                }
                 min={BUYIN_BB_FLOOR}
                 max={BUYIN_BB_CEILING}
                 disabled={!isOwner}
@@ -1206,7 +1216,9 @@ export default function ClubSettingsPage() {
                 id="club-max-buyin"
                 value={Number.isFinite(settings.max_buyin_bb) ? settings.max_buyin_bb : ''}
                 onChange={(e) => updateSetting('max_buyin_bb', parseInt(e.target.value, 10))}
-                onBlur={() => updateSetting('max_buyin_bb', clampBuyin(settings.max_buyin_bb, BUYIN_BB_CEILING))}
+                onBlur={() =>
+                  updateSetting('max_buyin_bb', clampBuyin(settings.max_buyin_bb, BUYIN_BB_CEILING))
+                }
                 min={BUYIN_BB_FLOOR}
                 max={BUYIN_BB_CEILING}
                 disabled={!isOwner}
@@ -1238,8 +1250,8 @@ export default function ClubSettingsPage() {
               <div className="export-info">
                 <span className="export-label">Export Club Stats</span>
                 <span className="export-desc">
-                  Download the member roster with lifetime stats, or your own hand history for
-                  this club, as CSV or JSON.
+                  Download The Member Roster With Lifetime Stats, Or Your Own Hand History For This
+                  Club, As CSV Or JSON.
                 </span>
               </div>
               <button className="btn btn-secondary" onClick={() => setShowStatsExport(true)}>
@@ -1255,9 +1267,9 @@ export default function ClubSettingsPage() {
             <h3>Danger Zone</h3>
             <div className="danger-item">
               <div className="danger-info">
-                <span className="danger-label">Delete this club</span>
+                <span className="danger-label">Delete This Club</span>
                 <span className="danger-desc">
-                  Once deleted, all club data, members, and tables will be permanently removed.
+                  Once Deleted, All Club Data, Members, And Tables Will Be Permanently Removed.
                 </span>
               </div>
               <button
@@ -1297,28 +1309,26 @@ export default function ClubSettingsPage() {
           <div className="modal-content delete-modal" onClick={(e) => e.stopPropagation()}>
             <h3>Delete Club</h3>
             <p>
-              This action <strong>cannot be undone</strong>. This will permanently delete the club{' '}
+              This Action <strong>Cannot Be Undone</strong>. This Will Permanently Delete The Club{' '}
               <strong>{savedClubName}</strong>.
             </p>
-            {impactLoading && <p className="delete-impact">Checking what this would delete...</p>}
+            {impactLoading && <p className="delete-impact">Checking What This Would Delete...</p>}
             {!impactLoading && deleteImpact && (
               <ul className="delete-impact">
-                <li>{deleteImpact.members.toLocaleString()} member records</li>
+                <li>{deleteImpact.members.toLocaleString()} Member Records</li>
                 <li>
-                  every table in this club
+                  Every Table In This Club
                   {deleteImpact.runningTables > 0
                     ? `, including ${deleteImpact.runningTables} currently running`
                     : ' (none are running)'}
                 </li>
-                <li>
-                  club wallets holding {deleteImpact.walletChips.toLocaleString()} chips
-                </li>
+                <li>Club Wallets Holding {deleteImpact.walletChips.toLocaleString()} Chips</li>
               </ul>
             )}
             {!impactLoading && !deleteImpact && (
               <p className="delete-impact delete-impact--blocked">
-                Could not check what this would delete. Deletion is disabled until that check
-                succeeds.
+                Could Not Check What This Would Delete. Deletion Is Disabled Until That Check
+                Succeeds.
               </p>
             )}
             {deleteBlockedReason && (
@@ -1327,7 +1337,7 @@ export default function ClubSettingsPage() {
               </p>
             )}
             <div className="form-group">
-              <label htmlFor="confirm-club-name">Type the club name to confirm:</label>
+              <label htmlFor="confirm-club-name">Type The Club Name To Confirm:</label>
               <input
                 id="confirm-club-name"
                 type="text"
@@ -1398,10 +1408,10 @@ export default function ClubSettingsPage() {
           }}
         >
           <span style={{ color: '#ffb020', fontSize: '0.75rem', fontWeight: 600 }}>
-            These settings changed elsewhere
+            These Settings Changed Elsewhere
           </span>
           <span style={{ color: '#6a7a8a', fontSize: '0.7rem' }}>
-            Your edits are still here. Saving overwrites the newer values.
+            Your Edits Are Still Here. Saving Overwrites The Newer Values.
           </span>
           <button
             onClick={() => {
@@ -1419,7 +1429,7 @@ export default function ClubSettingsPage() {
               flexShrink: 0,
             }}
           >
-            Load theirs
+            Load Theirs
           </button>
         </div>
       )}
@@ -1428,7 +1438,7 @@ export default function ClubSettingsPage() {
       {hasUnsavedChanges && isOwner && (
         <div className="unsaved-bar" role="status">
           <span className="unsaved-bar__count">
-            {changedFieldsDisplay.length} unsaved change{changedFieldsDisplay.length > 1 ? 's' : ''}
+            {changedFieldsDisplay.length} Unsaved Change{changedFieldsDisplay.length > 1 ? 's' : ''}
           </span>
           <span className="unsaved-bar__fields" title={changedFieldsDisplay.join(', ')}>
             {changedFieldsDisplay.join(', ')}

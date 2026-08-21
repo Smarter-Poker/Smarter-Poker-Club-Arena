@@ -130,7 +130,7 @@ export default function AdminTableHeatmap({
   if (!tables || tables.length === 0) {
     return (
       <div style={{ padding: 20, textAlign: 'center', color: '#B0B3B8' }}>
-        No tables available for God View.
+        No Tables Available For God View.
       </div>
     );
   }

@@ -42,15 +42,15 @@ export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabPro
       <div className={styles.sectionIntro}>
         <h2 className={styles.sectionTitle}>Buy Diamonds</h2>
         <p className={styles.sectionSub}>
-          Diamonds power everything: chips, VIP passes, throwables, and premium features.{' '}
+          Diamonds Power Everything: Chips, VIP Passes, Throwables, And Premium Features.{' '}
           {wallet.loaded ? (
             <>
-              Current balance: <strong>{fmt(wallet.diamonds)}</strong>.
+              Current Balance: <strong>{fmt(wallet.diamonds)}</strong>.
             </>
           ) : (
-            <>Your current balance is unavailable right now.</>
+            <>Your Current Balance Is Unavailable Right Now.</>
           )}{' '}
-          Secure payment via Stripe - you will be redirected to checkout and returned here.
+          Secure Payment Via Stripe - You Will Be Redirected To Checkout And Returned Here.
         </p>
       </div>
 
@@ -61,9 +61,9 @@ export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabPro
             className={`${styles.pkgCard} ${pkg.popular ? styles.pkgCardPopular : ''}`}
           >
             {pkg.popular && <span className={styles.pkgRibbon}>POPULAR</span>}
-            {pkg.bonus > 0 && <span className={styles.pkgBonus}>+{fmt(pkg.bonus)} bonus</span>}
+            {pkg.bonus > 0 && <span className={styles.pkgBonus}>+{fmt(pkg.bonus)} Bonus</span>}
             <div className={styles.pkgAmount}>{fmt(pkg.diamonds)}</div>
-            <div className={styles.pkgLabel}>diamonds</div>
+            <div className={styles.pkgLabel}>Diamonds</div>
             <button
               className={styles.pkgBuy}
               disabled={redirecting !== null}
@@ -76,8 +76,8 @@ export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabPro
       </div>
 
       <div className={styles.infoNote}>
-        1 diamond = $0.01. Purchases are credited automatically after payment. If your balance does
-        not update right away, use Refresh - Stripe confirmation can take a few seconds.
+        1 Diamond = $0.01. Purchases Are Credited Automatically After Payment. If Your Balance Does
+        Not Update Right Away, Use Refresh - Stripe Confirmation Can Take A Few Seconds.
       </div>
     </>
   );

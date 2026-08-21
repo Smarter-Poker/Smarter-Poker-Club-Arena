@@ -63,7 +63,7 @@ export default function ClubActivityChart({ data, height = 240 }: Props) {
           fontSize: '0.85rem',
         }}
       >
-        No activity in this period yet
+        No Activity In This Period Yet
       </div>
     );
   }
@@ -130,7 +130,14 @@ export default function ClubActivityChart({ data, height = 240 }: Props) {
             strokeWidth={2}
             fill="url(#caHands)"
           />
-          <Bar yAxisId="rake" dataKey="rake" name="Rake" fill="#f59e0b" opacity={0.75} radius={[3, 3, 0, 0]} />
+          <Bar
+            yAxisId="rake"
+            dataKey="rake"
+            name="Rake"
+            fill="#f59e0b"
+            opacity={0.75}
+            radius={[3, 3, 0, 0]}
+          />
         </ComposedChart>
       </ResponsiveContainer>
     </div>

@@ -35,7 +35,7 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
         <div>
           <h3>Active Sessions</h3>
           <p>
-            {sessions.length} device{sessions.length !== 1 ? 's' : ''} connected
+            {sessions.length} Device{sessions.length !== 1 ? 's' : ''} Connected
           </p>
         </div>
         {sessions.length > 1 && (
@@ -51,8 +51,8 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
             <div className="session-icon">{getDeviceIcon(session.device)}</div>
             <div className="session-info">
               <div className="session-device">
-                {session.browser} on {session.device}
-                {session.isCurrent && <span className="current-badge">This device</span>}
+                {session.browser} On {session.device}
+                {session.isCurrent && <span className="current-badge">This Device</span>}
               </div>
               <div className="session-details">
                 {session.location} • {session.ip} • {formatRelativeShort(session.lastActive)}

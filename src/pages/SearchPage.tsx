@@ -397,7 +397,7 @@ export default function SearchPage() {
               )}
             </div>
             {recentSearches.length === 0 ? (
-              <p className="empty-text">No recent searches</p>
+              <p className="empty-text">No Recent Searches</p>
             ) : (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
                 {recentSearches.map((s, i) => (
@@ -432,7 +432,7 @@ export default function SearchPage() {
               ⌕
             </span>
             <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
-              No Results for "{query}"
+              No Results For "{query}"
             </p>
             <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
               {category !== 'all'

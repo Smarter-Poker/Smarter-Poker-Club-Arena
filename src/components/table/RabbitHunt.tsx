@@ -162,7 +162,7 @@ export function RabbitHunt({ isAvailable, onReveal, currentBoard, maxCards = 5 }
       {/* Revealed Cards */}
       {revealedCards.length > 0 && (
         <div className="rabbit-hunt__reveal">
-          <span className="rabbit-hunt__reveal-label">Rabbit shows:</span>
+          <span className="rabbit-hunt__reveal-label">Rabbit Shows:</span>
           <div className="rabbit-hunt__cards">
             {revealedCards.map((card, idx) => (
               <div

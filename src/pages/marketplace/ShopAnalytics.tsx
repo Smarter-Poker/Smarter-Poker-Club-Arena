@@ -108,11 +108,11 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
 
       {loading && !data ? (
         <div className={styles.emptyState}>
-          <span className={styles.emptyText}>Loading sales...</span>
+          <span className={styles.emptyText}>Loading Sales...</span>
         </div>
       ) : error && !data ? (
         <div className={styles.emptyState}>
-          <span className={styles.emptyText}>Could not load sales.</span>
+          <span className={styles.emptyText}>Could Not Load Sales.</span>
           <button className={styles.emptyButton} onClick={load}>
             Retry
           </button>
@@ -126,7 +126,7 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
             </div>
             <div className={styles.statCard}>
               <span className={styles.statValue}>{fmtChips(data.totals.netRevenue)}</span>
-              <span className={styles.statLabel}>Net chips</span>
+              <span className={styles.statLabel}>Net Chips</span>
             </div>
             <div className={styles.statCard}>
               <span className={styles.statValue}>{fmt(data.totals.uniqueBuyers)}</span>
@@ -134,22 +134,22 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
             </div>
             <div className={styles.statCard}>
               <span className={styles.statValue}>{fmtChips(data.totals.averageSale)}</span>
-              <span className={styles.statLabel}>Avg sale</span>
+              <span className={styles.statLabel}>Avg Sale</span>
             </div>
           </div>
 
           {data.totals.refundedAmount > 0 && (
             <div className={styles.grantHint}>
-              Gross {fmtChips(data.totals.grossRevenue)} less {fmtChips(data.totals.refundedAmount)}{' '}
-              refunded.
+              Gross {fmtChips(data.totals.grossRevenue)} Less {fmtChips(data.totals.refundedAmount)}{' '}
+              Refunded.
             </div>
           )}
 
           {data.totals.sales === 0 ? (
             <div className={styles.emptyState}>
-              <span className={styles.emptyText}>No sales in the last {data.days} days.</span>
+              <span className={styles.emptyText}>No Sales In The Last {data.days} Days.</span>
               <span className={styles.emptySubText}>
-                Try a sale price, or a limited drop to create urgency.
+                Try A Sale Price, Or A Limited Drop To Create Urgency.
               </span>
             </div>
           ) : (
@@ -174,7 +174,7 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
                 <table className={styles.dataTable}>
                   <thead>
                     <tr>
-                      <th>Top items</th>
+                      <th>Top Items</th>
                       <th>Sold</th>
                       <th>Chips</th>
                     </tr>
@@ -196,7 +196,7 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
                   <table className={styles.dataTable}>
                     <thead>
                       <tr>
-                        <th>Top buyers</th>
+                        <th>Top Buyers</th>
                         <th>Purchases</th>
                         <th>Chips</th>
                       </tr>

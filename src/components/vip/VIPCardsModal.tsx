@@ -81,17 +81,17 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
         {/* Status */}
         <div className="vip-modal__status-section">
           {isLoading ? (
-            <p>Checking status...</p>
+            <p>Checking Status...</p>
           ) : isVIP ? (
             <div className="vip-status-active">
               <span className="vip-crown"></span>
               <span>VIP Gold Active</span>
-              <span className="vip-sub">Included with Club Arena Membership</span>
+              <span className="vip-sub">Included With Club Arena Membership</span>
             </div>
           ) : (
             <div className="vip-status-inactive">
               <span> Pay Per Feature</span>
-              <span className="vip-sub">Or upgrade to Club Arena for VIP Gold</span>
+              <span className="vip-sub">Or Upgrade To Club Arena For VIP Gold</span>
             </div>
           )}
         </div>
@@ -143,7 +143,7 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
               rel="noopener noreferrer"
               className="vip-upgrade-btn"
             >
-              Get VIP Gold with Club Arena Membership
+              Get VIP Gold With Club Arena Membership
             </a>
           </div>
         )}

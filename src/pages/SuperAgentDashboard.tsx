@@ -261,7 +261,7 @@ export default function SuperAgentDashboard() {
       <div className="super-agent-dashboard">
         <div className="empty-state">
           <span className="empty-icon">♠</span>
-          <p>You are not an agent in this club</p>
+          <p>You Are Not An Agent In This Club</p>
           <button className="btn btn-primary" onClick={() => navigate(-1)}>
             Go Back
           </button>
@@ -407,7 +407,7 @@ export default function SuperAgentDashboard() {
           <div className="agents-section">
             <h3>Your Sub-Agents ({subAgents.length})</h3>
             {subAgents.length === 0 ? (
-              <p className="empty-text">No sub-agents yet</p>
+              <p className="empty-text">No Sub-Agents Yet</p>
             ) : (
               <div className="agent-list">
                 {subAgents.map((sub, index) => (
@@ -425,7 +425,7 @@ export default function SuperAgentDashboard() {
                       <span className="agent-role">{sub.role}</span>
                     </div>
                     <div className="agent-stats">
-                      <span>{sub.totalPlayers} players</span>
+                      <span>{sub.totalPlayers} Players</span>
                       <span className="rake">{sub.weeklyRakeGenerated.toLocaleString()}</span>
                     </div>
                   </div>
@@ -460,7 +460,7 @@ export default function SuperAgentDashboard() {
                   <div className="player-info">
                     <span className="player-name">{player.displayName}</span>
                     <span className="player-rakeback">
-                      {((player.rakebackPercent || 0) * 100).toFixed(1)}% rakeback
+                      {((player.rakebackPercent || 0) * 100).toFixed(1)}% Rakeback
                     </span>
                   </div>
                   <div className="player-balance">{(player.chipBalance ?? 0).toLocaleString()}</div>
@@ -481,7 +481,7 @@ export default function SuperAgentDashboard() {
                 </span>
               </div>
               <div className="commission-row">
-                <span>Paid to Downlines</span>
+                <span>Paid To Downlines</span>
                 <span className="value negative">-{spread.payoutToDownlines.toLocaleString()}</span>
               </div>
               <div className="commission-row total">
@@ -494,7 +494,7 @@ export default function SuperAgentDashboard() {
 
         {activeTab === 'transfers' && (
           <div className="transfers-section">
-            <h3>Transfer to Player</h3>
+            <h3>Transfer To Player</h3>
             <div className="transfer-form">
               <div className="form-row">
                 <label>Select Player</label>
@@ -502,7 +502,7 @@ export default function SuperAgentDashboard() {
                   value={transferPlayerId}
                   onChange={(e) => setTransferPlayerId(e.target.value)}
                 >
-                  <option value="">Choose player...</option>
+                  <option value="">Choose Player...</option>
                   {players.map((p) => (
                     <option key={p.id} value={p.userId}>
                       {p.displayName}

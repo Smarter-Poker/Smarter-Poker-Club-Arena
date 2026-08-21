@@ -217,7 +217,7 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
               padding: 0,
             }}
           >
-            My downline
+            My Downline
           </button>
           {crumbs.map((c, i) => (
             <span key={c.userId} style={{ color: '#66787f' }}>
@@ -270,7 +270,7 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
           </button>
         </div>
       ) : loading && rows.length === 0 ? (
-        <div style={{ color: '#8aa', padding: 12 }}>Loading downline rake…</div>
+        <div style={{ color: '#8aa', padding: 12 }}>Loading Downline Rake…</div>
       ) : (
         <>
           {/* SUMMARY */}
@@ -327,13 +327,13 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
                       marginRight: 6,
                     }}
                   />
-                  Live · updated {liveAt.toLocaleTimeString()}
+                  Live · Updated {liveAt.toLocaleTimeString()}
                 </>
               )}
             </span>
             {debounced && (
               <span style={{ color: '#8fa3ad', fontSize: '0.78rem' }}>
-                {rows.length} match{rows.length === 1 ? '' : 'es'} · {money(totals.shown)} rake
+                {rows.length} Match{rows.length === 1 ? '' : 'es'} · {money(totals.shown)} Rake
               </span>
             )}
           </div>
@@ -354,7 +354,7 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
                     <th style={{ padding: 8 }}>Upline</th>
                     <th style={{ padding: 8, textAlign: 'right' }}>Hands</th>
                     <th style={{ padding: 8, textAlign: 'right' }}>Rake</th>
-                    <th style={{ padding: 8, textAlign: 'right' }}>Their downline</th>
+                    <th style={{ padding: 8, textAlign: 'right' }}>Their Downline</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -413,9 +413,9 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
             </div>
           )}
           <p style={{ color: '#66787f', fontSize: '0.75rem', margin: 0 }}>
-            A hand's rake is split evenly between the players dealt into it - the same rule the
-            weekly payout uses, so these figures match your statement. Tap an agent to open their
-            downline.
+            A Hand's Rake Is Split Evenly Between The Players Dealt Into It - The Same Rule The
+            Weekly Payout Uses, So These Figures Match Your Statement. Tap An Agent To Open Their
+            Downline.
           </p>
         </>
       )}

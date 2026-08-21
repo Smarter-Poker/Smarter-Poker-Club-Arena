@@ -612,7 +612,7 @@ export default function AchievementsPage() {
               Daily Login Streak
             </h2>
             <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              Log in every day to claim milestone rewards!
+              Log In Every Day To Claim Milestone Rewards!
             </p>
           </div>
           <StreakFire streakCount={dailyStreak} size="lg" showLabel />
@@ -686,7 +686,7 @@ export default function AchievementsPage() {
                 fontStyle: 'italic',
               }}
             >
-              Start playing to light up your activity grid!
+              Start Playing To Light Up Your Activity Grid!
             </p>
           )}
         </div>
@@ -733,7 +733,7 @@ export default function AchievementsPage() {
                     ></div>
                   </div>
                   <p className="next-up-motivational">
-                    {100 - achievement.progress}% remaining for {achievement.name}!
+                    {100 - achievement.progress}% Remaining For {achievement.name}!
                   </p>
                 </div>
               </div>
@@ -937,14 +937,14 @@ export default function AchievementsPage() {
                   border: '1px solid rgba(0, 212, 255, 0.1)',
                 }}
               >
-                Almost there - {100 - Math.round(selectedAchievement.progress)}% remaining!
+                Almost There - {100 - Math.round(selectedAchievement.progress)}% Remaining!
               </p>
             )}
 
             {selectedAchievement.unlocked ? (
               <>
                 <p style={{ color: '#10b981', fontSize: '0.8rem', marginBottom: '1rem' }}>
-                  Unlocked on{' '}
+                  Unlocked On{' '}
                   {new Date(selectedAchievement.unlockedAt || Date.now()).toLocaleDateString()}
                 </p>
                 <button
@@ -995,7 +995,7 @@ export default function AchievementsPage() {
                   borderRadius: '8px',
                 }}
               >
-                Keep playing to unlock this badge!
+                Keep Playing To Unlock This Badge!
               </p>
             )}
           </div>

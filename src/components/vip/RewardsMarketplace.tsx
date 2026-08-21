@@ -222,7 +222,7 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
       <div className="marketplace-header">
         <div>
           <h3>Rewards Marketplace</h3>
-          <p>Spend your VIP points on exclusive rewards</p>
+          <p>Spend Your VIP Points On Exclusive Rewards</p>
         </div>
         <div className="points-balance">
           <span className="balance-label">Your Points</span>
@@ -241,10 +241,10 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
               <p>{featuredReward.description}</p>
               <div className="featured-meta">
                 <span className="points-cost">
-                  {featuredReward.pointsCost.toLocaleString()} points
+                  {featuredReward.pointsCost.toLocaleString()} Points
                 </span>
                 {featuredReward.stock && (
-                  <span className="stock-count">{featuredReward.stock} available</span>
+                  <span className="stock-count">{featuredReward.stock} Available</span>
                 )}
               </div>
             </div>
@@ -279,7 +279,7 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
 
       {/* Sorting Options */}
       <div className="sorting-controls">
-        <label htmlFor="sort-select">Sort by:</label>
+        <label htmlFor="sort-select">Sort By:</label>
         <select
           id="sort-select"
           value={sortBy}
@@ -287,8 +287,8 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
           className="sort-select"
         >
           <option value="popular">Most Popular</option>
-          <option value="price-low">Price: Low to High</option>
-          <option value="price-high">Price: High to Low</option>
+          <option value="price-low">Price: Low To High</option>
+          <option value="price-high">Price: High To Low</option>
           <option value="new">Newest</option>
         </select>
       </div>
@@ -302,7 +302,7 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
               className={`reward-card ${canRedeem(reward) ? 'available' : 'insufficient'} ${isOutOfStock(reward) ? 'out-of-stock' : ''}`}
               style={{ '--reveal-delay': `${idx * 0.05}s` } as React.CSSProperties}
             >
-              {isOutOfStock(reward) && <div className="out-of-stock-overlay">Out of Stock</div>}
+              {isOutOfStock(reward) && <div className="out-of-stock-overlay">Out Of Stock</div>}
 
               <div className="reward-icon-box">
                 <span className="reward-icon">{reward.icon}</span>
@@ -314,8 +314,8 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
 
                 <div className="reward-footer">
                   <div className="reward-meta">
-                    <span className="points-cost">{reward.pointsCost.toLocaleString()} pts</span>
-                    {reward.stock && <span className="stock-badge">{reward.stock} left</span>}
+                    <span className="points-cost">{reward.pointsCost.toLocaleString()} Pts</span>
+                    {reward.stock && <span className="stock-badge">{reward.stock} Left</span>}
                   </div>
 
                   <button
@@ -341,7 +341,7 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
         ) : (
           <div className="no-rewards">
             <span className="no-rewards-icon">◈</span>
-            <p>No rewards in this category yet</p>
+            <p>No Rewards In This Category Yet</p>
           </div>
         )}
       </div>

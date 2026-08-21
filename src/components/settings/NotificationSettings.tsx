@@ -174,7 +174,7 @@ export const NotificationSettings: React.FC<NotificationSettingsProps> = ({ onCh
               disabled={!config.quietHoursEnabled}
             />
           </div>
-          <span className="time-separator">to</span>
+          <span className="time-separator">To</span>
           <div className="time-input">
             <label>End</label>
             <input

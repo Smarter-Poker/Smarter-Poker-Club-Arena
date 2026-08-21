@@ -215,7 +215,7 @@ function HandEntry({
               <div className="hh-entry__winners">
                 {hand.winners.map((w, i) => (
                   <span key={i} className="hh-entry__winner">
-                    {w.playerName} won {formatAmount(w.amount)}
+                    {w.playerName} Won {formatAmount(w.amount)}
                     {w.hand && <span className="hh-entry__hand"> - {w.hand}</span>}
                   </span>
                 ))}
@@ -353,7 +353,7 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
       {/* Hand list */}
       <div className="hh-panel__list">
         {hands.length === 0 ? (
-          <div className="hh-panel__empty">No hands played yet</div>
+          <div className="hh-panel__empty">No Hands Played Yet</div>
         ) : (
           hands.map((hand, idx) => (
             <div

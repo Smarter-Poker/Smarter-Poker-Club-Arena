@@ -24,7 +24,7 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
     <div className="search-filters">
       {activeFilters.length > 0 && (
         <button className="clear-filters" onClick={onClearAll}>
-          Clear all
+          Clear All
         </button>
       )}
       <div className="filter-chips">

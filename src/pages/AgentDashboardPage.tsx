@@ -193,9 +193,7 @@ export default function AgentDashboardPage() {
 
         // Filter to downline for non-owners
         const myDownline = (downline || []).filter(
-          (m: DownlineMember) =>
-            isClubStaff(membership?.role) ||
-            m.referred_by === user.id
+          (m: DownlineMember) => isClubStaff(membership?.role) || m.referred_by === user.id
         );
 
         // Get profiles for all relevant users
@@ -594,7 +592,7 @@ export default function AgentDashboardPage() {
                 className="admin-card-title"
                 style={{ display: 'flex', justifyContent: 'space-between' }}
               >
-                <span>Agent-to-Agent Transfer</span>
+                <span>Agent-To-Agent Transfer</span>
                 <button
                   onClick={() => setShowTransfer(false)}
                   style={{
@@ -619,7 +617,7 @@ export default function AgentDashboardPage() {
                   />
                 </div>
                 <div>
-                  <label className="admin-label">Amount (chips)</label>
+                  <label className="admin-label">Amount (Chips)</label>
                   <input
                     className="admin-input"
                     type="number"
@@ -630,7 +628,7 @@ export default function AgentDashboardPage() {
                   />
                 </div>
                 <div>
-                  <label className="admin-label">Notes (optional)</label>
+                  <label className="admin-label">Notes (Optional)</label>
                   <input
                     className="admin-input"
                     value={transferNotes}
@@ -744,12 +742,12 @@ export default function AgentDashboardPage() {
             }}
             onClick={() => setTab('cashouts')}
           >
-            <strong>{pendingCashouts.length}</strong> pending cashout request
+            <strong>{pendingCashouts.length}</strong> Pending Cashout Request
             {pendingCashouts.length !== 1 ? 's' : ''} -{' '}
             {fmtChips(
               pendingCashouts.reduce((sum: number, c: CashoutRequest) => sum + (c.amount || 0), 0)
             )}{' '}
-            chips waiting
+            Chips Waiting
           </div>
         )}
 
@@ -834,7 +832,7 @@ export default function AgentDashboardPage() {
             {recentTx.length === 0 ? (
               <div className="admin-empty-state">
                 <span className="admin-empty-icon">▤</span>
-                <span>No recent transactions</span>
+                <span>No Recent Transactions</span>
               </div>
             ) : (
               <>
@@ -1005,14 +1003,14 @@ export default function AgentDashboardPage() {
             <h3 className="admin-section-title">
               Pending Cashout Requests
               <span className="admin-badge" style={{ marginLeft: '8px' }}>
-                {pendingCashouts.length} pending
+                {pendingCashouts.length} Pending
               </span>
             </h3>
 
             {pendingCashouts.length === 0 ? (
               <div className="admin-empty-state">
                 <span className="admin-empty-icon">✓</span>
-                <span>No pending cashout requests</span>
+                <span>No Pending Cashout Requests</span>
               </div>
             ) : (
               <div className="admin-table-scroll">
@@ -1096,7 +1094,7 @@ export default function AgentDashboardPage() {
             {commissions.length === 0 ? (
               <div className="admin-empty-state">
                 <span className="admin-empty-icon">◆</span>
-                <span>No commission records yet</span>
+                <span>No Commission Records Yet</span>
               </div>
             ) : (
               <div className="admin-table-scroll">
@@ -1145,7 +1143,7 @@ export default function AgentDashboardPage() {
                 <div className="admin-stat-value" style={{ color: '#31A24C' }}>
                   {fmt(onlinePlayers.length)}
                 </div>
-                <div className="admin-stat-label">Active (5min)</div>
+                <div className="admin-stat-label">Active (5Min)</div>
               </div>
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#F7C52A' }}>
@@ -1158,7 +1156,7 @@ export default function AgentDashboardPage() {
                     }).length
                   )}
                 </div>
-                <div className="admin-stat-label">At-Risk (5-14d)</div>
+                <div className="admin-stat-label">At-Risk (5-14D)</div>
               </div>
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#FA383E' }}>
@@ -1170,7 +1168,7 @@ export default function AgentDashboardPage() {
                     }).length
                   )}
                 </div>
-                <div className="admin-stat-label">Churned (14d+)</div>
+                <div className="admin-stat-label">Churned (14D+)</div>
               </div>
             </div>
 
@@ -1178,7 +1176,7 @@ export default function AgentDashboardPage() {
             {players.length === 0 ? (
               <div className="admin-empty-state">
                 <span className="admin-empty-icon">▦</span>
-                <span>No player data</span>
+                <span>No Player Data</span>
               </div>
             ) : (
               <div className="admin-table-scroll">
@@ -1246,7 +1244,7 @@ export default function AgentDashboardPage() {
         {tab === 'promo' && isOwnerOrAdmin && (
           <div className="admin-tab-content">
             <div className="admin-card" style={{ marginBottom: '20px', padding: '16px 20px' }}>
-              <h3 className="admin-card-title">Grant Promo to Agent</h3>
+              <h3 className="admin-card-title">Grant Promo To Agent</h3>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <select
                   className="admin-input"
@@ -1254,11 +1252,11 @@ export default function AgentDashboardPage() {
                   value={creditTarget}
                   onChange={(e) => setCreditTarget(e.target.value)}
                 >
-                  <option value="">Select agent...</option>
+                  <option value="">Select Agent...</option>
                   {agents.map((a: DownlineMember) => (
                     <option key={a.user_id} value={a.user_id}>
                       {a.profile?.display_name || a.profile?.username || a.user_id?.slice(0, 8)} (
-                      {fmtChips(a.chip_balance)} chips)
+                      {fmtChips(a.chip_balance)} Chips)
                     </option>
                   ))}
                 </select>
@@ -1370,7 +1368,7 @@ export default function AgentDashboardPage() {
                 className="admin-text-secondary"
                 style={{ marginBottom: '16px', lineHeight: 1.5 }}
               >
-                Issue credit lines, add prepaid balances, or revoke credit for agents.
+                Issue Credit Lines, Add Prepaid Balances, Or Revoke Credit For Agents.
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div>
@@ -1380,7 +1378,7 @@ export default function AgentDashboardPage() {
                     value={creditTarget}
                     onChange={(e) => setCreditTarget(e.target.value)}
                   >
-                    <option value="">Select agent...</option>
+                    <option value="">Select Agent...</option>
                     {agents.map((a: DownlineMember) => (
                       <option key={a.user_id} value={a.user_id}>
                         {a.profile?.display_name || a.profile?.username || a.user_id?.slice(0, 8)} -{' '}
@@ -1413,7 +1411,7 @@ export default function AgentDashboardPage() {
                   />
                 </div>
                 <div>
-                  <label className="admin-label">Notes (optional)</label>
+                  <label className="admin-label">Notes (Optional)</label>
                   <input
                     className="admin-input"
                     value={creditNotes}

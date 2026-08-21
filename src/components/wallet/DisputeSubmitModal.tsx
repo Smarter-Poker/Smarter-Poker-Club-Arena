@@ -88,7 +88,7 @@ export default function DisputeSubmitModal({
         }}
       >
         <h3 style={{ margin: '0 0 16px', fontSize: '1.1rem', color: 'var(--text-primary, #fff)' }}>
-          ⚠ Submit a Dispute
+          ⚠ Submit A Dispute
         </h3>
 
         {/* Target Type */}
@@ -123,7 +123,7 @@ export default function DisputeSubmitModal({
           <label
             style={{ display: 'block', fontSize: '0.8rem', color: '#888', marginBottom: '4px' }}
           >
-            Reference ID <span style={{ opacity: 0.5 }}>(optional)</span>
+            Reference ID <span style={{ opacity: 0.5 }}>(Optional)</span>
           </label>
           <input
             type="text"
@@ -148,7 +148,7 @@ export default function DisputeSubmitModal({
           <label
             style={{ display: 'block', fontSize: '0.8rem', color: '#888', marginBottom: '4px' }}
           >
-            Disputed Amount (chips)
+            Disputed Amount (Chips)
           </label>
           <input
             type="number"

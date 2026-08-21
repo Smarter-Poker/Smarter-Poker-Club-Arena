@@ -107,7 +107,7 @@ export default function ClubMessagesPage() {
     ? `/hub/messenger?${messengerParams.toString()}`
     : '/hub/messenger?hideHeader=true';
 
-  /* eslint-disable react-hooks/rules-of-hooks */
+   
   useEffect(() => {
     setIframeError(false);
     setIframeLoaded(false);
@@ -119,7 +119,7 @@ export default function ClubMessagesPage() {
       if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
     };
   }, [messengerUrl]);
-  /* eslint-enable react-hooks/rules-of-hooks */
+   
 
   // The header above claims parity with MessagesPage on "skeleton loading",
   // but this page had no load timeout and no error state at all: a messenger
@@ -129,9 +129,9 @@ export default function ClubMessagesPage() {
     return (
       <div className="club-messages-page">
         <div className="club-messages-error" role="alert">
-          <p>Could not load the messenger.</p>
+          <p>Could Not Load The Messenger.</p>
           <button type="button" onClick={handleRetry}>
-            Try again
+            Try Again
           </button>
         </div>
         {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}

@@ -292,14 +292,14 @@ export default function PlayerInviteModal({
         {mode === 'invite' && (
           <div className={styles.inviteSection}>
             <div className={styles.inviteForm}>
-              <label>Email (optional)</label>
+              <label>Email (Optional)</label>
               <input
                 type="email"
                 placeholder="player@email.com"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
               />
-              <p className={styles.hint}>Leave blank to generate a shareable code</p>
+              <p className={styles.hint}>Leave Blank To Generate A Shareable Code</p>
             </div>
 
             {!inviteCode ? (
@@ -318,9 +318,9 @@ export default function PlayerInviteModal({
             )}
 
             <div className={styles.inviteInfo}>
-              <p> Share this code with new players</p>
-              <p> Code expires in 7 days</p>
-              <p> Player will be assigned to you</p>
+              <p> Share This Code With New Players</p>
+              <p> Code Expires In 7 Days</p>
+              <p> Player Will Be Assigned To You</p>
             </div>
           </div>
         )}

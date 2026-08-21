@@ -133,7 +133,7 @@ export default function MyItemsTab({
   const entitlementStrip =
     entitlementChips.length > 0 ? (
       <div className={styles.entitlementStrip}>
-        <span className={styles.entitlementLabel}>You currently hold:</span>
+        <span className={styles.entitlementLabel}>You Currently Hold:</span>
         {entitlementChips.map((c) => (
           <span key={c as string} className={styles.entitlementChip}>
             {c}
@@ -148,7 +148,7 @@ export default function MyItemsTab({
         {entitlementStrip}
         <div className={styles.emptyState}>
           <span className={styles.emptyIcon}>◇</span>
-          <span className={styles.emptyText}>You have not purchased any items yet.</span>
+          <span className={styles.emptyText}>You Have Not Purchased Any Items Yet.</span>
           <button className={styles.emptyButton} onClick={onGoStore}>
             Browse Store
           </button>
@@ -224,7 +224,7 @@ export default function MyItemsTab({
         </div>
       ) : (
         <div className={styles.emptyState}>
-          <span className={styles.emptyText}>No items in your inventory right now.</span>
+          <span className={styles.emptyText}>No Items In Your Inventory Right Now.</span>
           <button className={styles.emptyButton} onClick={onGoStore}>
             Browse Store
           </button>
@@ -235,7 +235,7 @@ export default function MyItemsTab({
       {purchases.length > 0 && (
         <div className={styles.historyBlock}>
           <button className={styles.historyToggle} onClick={() => setShowHistory((v) => !v)}>
-            {showHistory ? 'Hide' : 'Show'} purchase history ({purchases.length})
+            {showHistory ? 'Hide' : 'Show'} Purchase History ({purchases.length})
           </button>
           {showHistory && (
             <div className={styles.tableScroll}>

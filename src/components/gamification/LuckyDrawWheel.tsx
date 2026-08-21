@@ -179,7 +179,7 @@ export default function LuckyDrawWheel({
           <div className="ldw-result">
             <span className="ldw-result-icon">{result.icon}</span>
             <span className="ldw-result-text">
-              You won{' '}
+              You Won{' '}
               <strong>
                 +{(result.amount * streakMultiplier).toLocaleString()} {result.label}
               </strong>
@@ -199,7 +199,7 @@ export default function LuckyDrawWheel({
 
         {spinsRemaining > 0 && !spinning && (
           <span className="ldw-spins-left">
-            {spinsRemaining} spin{spinsRemaining !== 1 ? 's' : ''} remaining
+            {spinsRemaining} Spin{spinsRemaining !== 1 ? 's' : ''} Remaining
           </span>
         )}
 

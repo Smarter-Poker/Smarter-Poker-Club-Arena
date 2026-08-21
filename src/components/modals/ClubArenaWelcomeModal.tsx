@@ -45,7 +45,7 @@ export default function ClubArenaWelcomeModal({ isOpen, onAccept }: ClubArenaWel
         }}
       >
         <header className={styles.header}>
-          <h2>Welcome to Club Arena</h2>
+          <h2>Welcome To Club Arena</h2>
         </header>
 
         <div className={styles.content}>
@@ -56,44 +56,44 @@ export default function ClubArenaWelcomeModal({ isOpen, onAccept }: ClubArenaWel
           <div className={styles.disclaimer}>
             <p>
               <strong>
-                Club Arena is an online social gaming platform and does not provide any real-money
-                service.
+                Club Arena Is An Online Social Gaming Platform And Does Not Provide Any Real-Money
+                Service.
               </strong>
             </p>
           </div>
 
           <div className={styles.rules}>
-            <h4>By entering Club Arena, you acknowledge:</h4>
+            <h4>By Entering Club Arena, You Acknowledge:</h4>
             <ul>
               <li>
-                This is a <strong>social gaming platform</strong> for entertainment purposes only.
+                This Is A <strong>Social Gaming Platform</strong> For Entertainment Purposes Only.
               </li>
               <li>
-                All chips and currencies are <strong>virtual</strong> with no real-world monetary
-                value.
+                All Chips And Currencies Are <strong>Virtual</strong> With No Real-World Monetary
+                Value.
               </li>
               <li>
-                You are <strong>18 years of age or older</strong> (or the legal age in your
-                jurisdiction).
+                You Are <strong>18 Years Of Age Or Older</strong> (Or The Legal Age In Your
+                Jurisdiction).
               </li>
               <li>
-                You will abide by all <strong>local, state, and national laws</strong>.
+                You Will Abide By All <strong>Local, State, And National Laws</strong>.
               </li>
               <li>
-                Club Arena is <strong>not responsible</strong> for any interactions or arrangements
-                between club members.
+                Club Arena Is <strong>Not Responsible</strong> For Any Interactions Or Arrangements
+                Between Club Members.
               </li>
               <li>
-                Club owners and operators are <strong>independent</strong> and not affiliated with
-                or endorsed by Club Arena.
+                Club Owners And Operators Are <strong>Independent</strong> And Not Affiliated With
+                Or Endorsed By Club Arena.
               </li>
             </ul>
           </div>
 
           <div className={styles.infoBox}>
             <p>
-              For questions or concerns, contact us at{' '}
-              <a href="mailto:support@smarter.poker">support@smarter.poker</a>
+              For Questions Or Concerns, Contact Us At{' '}
+              <a href="mailto:support@smarter.poker">Support@Smarter.Poker</a>
             </p>
           </div>
         </div>
@@ -106,7 +106,7 @@ export default function ClubArenaWelcomeModal({ isOpen, onAccept }: ClubArenaWel
               onChange={(e) => setHasAgreed(e.target.checked)}
             />
             <span className={styles.checkmark} />
-            <span>I understand and agree to these terms</span>
+            <span>I Understand And Agree To These Terms</span>
           </label>
 
           <button className={styles.enterButton} onClick={onAccept} disabled={!hasAgreed}>

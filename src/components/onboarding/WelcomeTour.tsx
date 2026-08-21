@@ -50,7 +50,7 @@ export const WelcomeTour: React.FC<WelcomeTourProps> = ({
       <div className="tour-tooltip">
         <div className="tour-header">
           <span className="tour-step-indicator">
-            {currentStep + 1} of {steps.length}
+            {currentStep + 1} Of {steps.length}
           </span>
           <button className="tour-skip" onClick={onSkip}>
             Skip Tour

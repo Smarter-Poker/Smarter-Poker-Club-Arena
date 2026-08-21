@@ -127,7 +127,7 @@ export default function ClubLogoSelector({
         ) : (
           <div className="logo-preview__placeholder">
             <span className="logo-preview__icon">IMG</span>
-            <span className="logo-preview__text">No logo selected</span>
+            <span className="logo-preview__text">No Logo Selected</span>
           </div>
         )}
       </div>
@@ -162,7 +162,7 @@ export default function ClubLogoSelector({
             <button className="logo-upload__button" onClick={triggerFileInput} disabled={uploading}>
               {uploading ? 'Uploading...' : 'Choose File'}
             </button>
-            <p className="logo-upload__hint">JPEG, PNG, GIF or WebP. Max 2MB.</p>
+            <p className="logo-upload__hint">JPEG, PNG, GIF Or WebP. Max 2MB.</p>
           </div>
         ) : (
           <div className="logo-preset-grid">

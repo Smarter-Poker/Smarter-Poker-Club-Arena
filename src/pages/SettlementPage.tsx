@@ -695,7 +695,7 @@ export default function SettlementPage() {
   if (!selectedPeriod) {
     return (
       <div className={styles.page}>
-        <div className={styles.error}>No settlement periods found</div>
+        <div className={styles.error}>No Settlement Periods Found</div>
       </div>
     );
   }
@@ -846,9 +846,9 @@ export default function SettlementPage() {
                 <code>FINAL WIRE = (Net Player P/L) + (Gross Rake) - (Union Tax 10%)</code>
               </div>
               <p className={styles.formulaNote}>
-                Positive wire → Union pays Club
+                Positive Wire → Union Pays Club
                 <br />
-                Negative wire → Club pays Union
+                Negative Wire → Club Pays Union
               </p>
             </div>
 
@@ -866,21 +866,21 @@ export default function SettlementPage() {
                   <span className={styles.timelineDot}>●</span>
                   <div>
                     <strong>Active Settlement</strong>
-                    <p>Rake & P/L tracking in progress</p>
+                    <p>Rake & P/L Tracking In Progress</p>
                   </div>
                 </div>
                 <div className={styles.timelineItem}>
                   <span className={styles.timelineDot}>○</span>
                   <div>
                     <strong>Sunday Snapshot</strong>
-                    <p>11:59:59 PM PST - Invoice generation</p>
+                    <p>11:59:59 PM PST - Invoice Generation</p>
                   </div>
                 </div>
                 <div className={styles.timelineItem}>
                   <span className={styles.timelineDot}>○</span>
                   <div>
                     <strong>Monday Payouts</strong>
-                    <p>4:00 AM PST - Commission injection</p>
+                    <p>4:00 AM PST - Commission Injection</p>
                   </div>
                 </div>
               </div>
@@ -902,7 +902,7 @@ export default function SettlementPage() {
                   )}
                 </button>
                 <p className={styles.actionNote}>
-                  This will finalize all wires and process agent payouts
+                  This Will Finalize All Wires And Process Agent Payouts
                 </p>
               </div>
             )}
@@ -1017,8 +1017,8 @@ export default function SettlementPage() {
 
             <div className={styles.payoutNote}>
               <p>
-                <strong>Net Payout</strong> = Gross Commission - Player Rakeback (the spread agent
-                keeps)
+                <strong>Net Payout</strong> = Gross Commission - Player Rakeback (The Spread Agent
+                Keeps)
               </p>
             </div>
           </div>
@@ -1046,9 +1046,9 @@ export default function SettlementPage() {
                     {formatDate(period.startAt)} - {formatDate(period.endAt)}
                   </p>
                   <div className={styles.periodStats}>
-                    <span>{formatMoney(period.totalRake)} rake</span>
+                    <span>{formatMoney(period.totalRake)} Rake</span>
                     <span>•</span>
-                    <span>{period.totalHands.toLocaleString()} hands</span>
+                    <span>{period.totalHands.toLocaleString()} Hands</span>
                   </div>
                 </div>
               ))}

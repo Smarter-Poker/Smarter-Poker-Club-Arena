@@ -10,12 +10,7 @@
  */
 
 import React, { useState, useMemo, memo, useRef, useEffect } from 'react';
-import {
-  type ClubRole,
-  isClubPrincipal,
-  normaliseRole,
-  roleRank,
-} from '../../types/clubRoles';
+import { type ClubRole, isClubPrincipal, normaliseRole, roleRank } from '../../types/clubRoles';
 import { useNavigate } from 'react-router-dom';
 import './MemberList.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
@@ -236,7 +231,7 @@ function MemberListInner({
               </div>
             ))
           ) : (
-            <div className="member-list__empty">No members found matching "{searchQuery}"</div>
+            <div className="member-list__empty">No Members Found Matching "{searchQuery}"</div>
           )}
         </div>
       </div>

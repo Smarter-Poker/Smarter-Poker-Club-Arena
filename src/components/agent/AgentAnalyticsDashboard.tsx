@@ -202,14 +202,14 @@ export default function AgentAnalyticsDashboard({ userId, clubId }: AgentAnalyti
           <span className="aad-kpi-value">
             {Math.round(metrics.avgDistribution).toLocaleString()}
           </span>
-          <span className="aad-kpi-label">Avg per Txn</span>
+          <span className="aad-kpi-label">Avg Per Txn</span>
         </div>
       </div>
 
       {/* Secondary stats */}
       <div className="aad-secondary">
         <div className="aad-sec-item">
-          <span className="aad-sec-label">Distributions/Day (30d)</span>
+          <span className="aad-sec-label">Distributions/Day (30D)</span>
           <span className="aad-sec-value">{metrics.perDay.toFixed(1)}</span>
         </div>
         <div className="aad-sec-item">
@@ -228,7 +228,7 @@ export default function AgentAnalyticsDashboard({ userId, clubId }: AgentAnalyti
 
       {/* Weekly volume bars */}
       <div className="aad-chart-section">
-        <h4 className="aad-chart-title">Weekly Volume (8 weeks)</h4>
+        <h4 className="aad-chart-title">Weekly Volume (8 Weeks)</h4>
         <div className="aad-bars">
           {weeklyVolume.map((w, i) => (
             <div key={i} className="aad-bar-col">
@@ -254,7 +254,7 @@ export default function AgentAnalyticsDashboard({ userId, clubId }: AgentAnalyti
               <span className="aad-top-rank">#{i + 1}</span>
               <span className="aad-top-id">{r.id.slice(0, 8)}…</span>
               <span className="aad-top-amount">{r.total.toLocaleString()}</span>
-              <span className="aad-top-count">{r.count} txns</span>
+              <span className="aad-top-count">{r.count} Txns</span>
               {r.clawed > 0 && <span className="aad-top-clawed">{r.clawed} ↩</span>}
             </div>
           ))}

@@ -124,7 +124,7 @@ export const AddOnModal: React.FC<AddOnModalProps> = ({
           <div className="am-details">
             <div className="am-detail-row">
               <span className="am-detail-label">Add-On Cost</span>
-              <span className="am-detail-value">{money(addOnCost)} chips</span>
+              <span className="am-detail-value">{money(addOnCost)} Chips</span>
             </div>
             <div className="am-detail-row">
               <span className="am-detail-label">Chips Received</span>
@@ -137,7 +137,7 @@ export const AddOnModal: React.FC<AddOnModalProps> = ({
           </div>
 
           {purchased && (
-            <div className="am-success">Add-on purchased! Your stack has been updated.</div>
+            <div className="am-success">Add-On Purchased! Your Stack Has Been Updated.</div>
           )}
 
           {error && <div className="am-error">⚠ {error}</div>}

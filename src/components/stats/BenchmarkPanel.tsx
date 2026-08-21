@@ -131,14 +131,14 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
       <div className="bench-head">
         <h3 className="bench-title">How You Compare</h3>
         <p className="bench-sub">
-          Measured against {sample.toLocaleString()} players in this club with 1,000 or more hands.
+          Measured Against {sample.toLocaleString()} Players In This Club With 1,000 Or More Hands.
         </p>
       </div>
 
       {thinHero && (
         <p className="bench-warn">
-          You have {handsPlayed.toLocaleString()} hands. Rate stats do not settle down until a few
-          thousand, so treat everything below as a first impression rather than a verdict.
+          You Have {handsPlayed.toLocaleString()} Hands. Rate Stats Do Not Settle Down Until A Few
+          Thousand, So Treat Everything Below As A First Impression Rather Than A Verdict.
         </p>
       )}
 
@@ -173,19 +173,19 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
 
       {days !== null && (
         <p className="bench-note">
-          Your figures cover the last {days} days; the field is measured over its full history.
-          Short ranges swing a long way, so a wide gap here may be the range rather than your game.
+          Your Figures Cover The Last {days} Days; The Field Is Measured Over Its Full History.
+          Short Ranges Swing A Long Way, So A Wide Gap Here May Be The Range Rather Than Your Game.
         </p>
       )}
       <p className="bench-note">
-        The comparison group is every player in the club above the hands threshold, which is the
-        field you actually sit down against. It is not a sample of human players only.
+        The Comparison Group Is Every Player In The Club Above The Hands Threshold, Which Is The
+        Field You Actually Sit Down Against. It Is Not A Sample Of Human Players Only.
       </p>
       {results.some((r) => r.barPosition === null) && (
         <p className="bench-note">
-          3-Bet is shown against the range winning players hold rather than against the field: the
-          club-wide figure is measured per hand dealt while yours is measured per opportunity, and
-          comparing the two would be comparing different statistics.
+          3-Bet Is Shown Against The Range Winning Players Hold Rather Than Against The Field: The
+          Club-Wide Figure Is Measured Per Hand Dealt While Yours Is Measured Per Opportunity, And
+          Comparing The Two Would Be Comparing Different Statistics.
         </p>
       )}
     </div>

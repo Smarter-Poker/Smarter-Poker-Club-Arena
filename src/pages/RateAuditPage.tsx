@@ -228,7 +228,7 @@ export default function RateAuditPage() {
           </button>
           <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700 }}>Rate Audit Trail</h1>
           <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
-            Commission & rake rate change history
+            Commission & Rake Rate Change History
           </p>
         </div>
         <span
@@ -242,7 +242,7 @@ export default function RateAuditPage() {
             fontWeight: 600,
           }}
         >
-          {changes.length} changes
+          {changes.length} Changes
         </span>
       </div>
 
@@ -283,10 +283,10 @@ export default function RateAuditPage() {
         >
           <div style={{ fontSize: '2rem', marginBottom: '12px' }}>▤</div>
           <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>
-            No rate changes recorded yet
+            No Rate Changes Recorded Yet
           </p>
           <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.75rem' }}>
-            Rate changes will appear here when commission or rake rates are modified
+            Rate Changes Will Appear Here When Commission Or Rake Rates Are Modified
           </p>
         </div>
       ) : (
@@ -340,7 +340,7 @@ export default function RateAuditPage() {
                     {change.rateType.replace(/_/g, ' ')}
                   </div>
                   <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)' }}>
-                    {change.entityLabel} • by {change.changedBy}
+                    {change.entityLabel} • By {change.changedBy}
                   </div>
                 </div>
 

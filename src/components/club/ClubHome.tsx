@@ -159,7 +159,7 @@ export function ClubHome({
                 </div>
               ))
             ) : (
-              <div className="club-activity-empty">No recent activity</div>
+              <div className="club-activity-empty">No Recent Activity</div>
             )}
           </div>
         </div>

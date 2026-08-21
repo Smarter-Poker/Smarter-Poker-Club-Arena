@@ -185,8 +185,8 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
       <div className="pos-radar-card pos-radar-empty">
         <h3 className="pos-radar-title">Positional Shape</h3>
         <p className="pos-radar-empty-text">
-          Play hands from at least three different positions and your positional shape will appear
-          here.
+          Play Hands From At Least Three Different Positions And Your Positional Shape Will Appear
+          Here.
         </p>
       </div>
     );
@@ -201,7 +201,7 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
         <div>
           <h3 className="pos-radar-title">Positional Shape</h3>
           <p className="pos-radar-sub">
-            Strong positional play widens toward the button. A flat or inverted web is a leak.
+            Strong Positional Play Widens Toward The Button. A Flat Or Inverted Web Is A Leak.
           </p>
         </div>
       </div>
@@ -400,14 +400,14 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
 
       {lowSample.length > 0 && (
         <p className="pos-radar-note">
-          Dimmed positions have under {minHands} hands, which is too few to read anything into:{' '}
+          Dimmed Positions Have Under {minHands} Hands, Which Is Too Few To Read Anything Into:{' '}
           {lowSample.map((r) => r.position).join(', ')}.
         </p>
       )}
       {showReference && referenceComplete && (
         <p className="pos-radar-note">
-          The dashed shape is a general reference for solid positional play, not a target. Your own
-          winning strategy may sit outside it.
+          The Dashed Shape Is A General Reference For Solid Positional Play, Not A Target. Your Own
+          Winning Strategy May Sit Outside It.
         </p>
       )}
     </div>

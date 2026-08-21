@@ -5,6 +5,10 @@
  * intent, and the long-press latch regression.
  */
 
+// Case-insensitive text matchers on purpose: Dan's house rule Title Cases every
+// word on every forward-facing page (scripts/ci/check-title-case.mjs), so pinning
+// the casing of copy makes these fail on a styling rule rather than on the
+// behaviour they exist to protect. The words are the contract.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -113,7 +117,9 @@ describe('ClubQuickLinkTile', () => {
     // Right-click is the pointer path to the quick-switch popover
     fireEvent.contextMenu(screen.getByRole('button', { name: /hold to switch clubs/ }));
     expect(screen.getByRole('menu')).toBeInTheDocument();
-    expect(await screen.findByText(`${(1234).toLocaleString()} chips`)).toBeInTheDocument();
+    expect(
+      await screen.findByText(new RegExp(`${(1234).toLocaleString()} chips`, 'i'))
+    ).toBeInTheDocument();
     await user.click(screen.getByRole('menuitem', { name: /Bravo Club/ }));
     expect(onSelect).toHaveBeenCalledWith(B);
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();

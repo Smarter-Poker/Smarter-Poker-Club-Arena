@@ -624,14 +624,14 @@ export default function DepositWithdrawModal({
 
             {mode === 'deposit' && (
               <div className={styles.instructions}>
-                <p>After clicking confirm:</p>
+                <p>After Clicking Confirm:</p>
                 <ol>
                   <li>
-                    Send {numericAmount.toLocaleString()} to{' '}
+                    Send {numericAmount.toLocaleString()} To{' '}
                     <strong>{currentMethod.description}</strong>
                   </li>
-                  <li>Include your reference ID in the memo</li>
-                  <li>Funds will be credited within {currentMethod.processingTime}</li>
+                  <li>Include Your Reference ID In The Memo</li>
+                  <li>Funds Will Be Credited Within {currentMethod.processingTime}</li>
                 </ol>
               </div>
             )}
@@ -679,7 +679,7 @@ export default function DepositWithdrawModal({
             {mode === 'deposit' && (
               <>
                 <p>
-                  Send exactly <strong>{numericAmount.toLocaleString()}</strong> to:
+                  Send Exactly <strong>{numericAmount.toLocaleString()}</strong> To:
                 </p>
                 <div className={styles.paymentDetails}>
                   <span className={styles.destination}>{currentMethod?.description}</span>
@@ -688,13 +688,13 @@ export default function DepositWithdrawModal({
                   <span className={styles.refLabel}>Reference ID</span>
                   <span className={styles.refValue}>{referenceId?.slice(0, 8).toUpperCase()}</span>
                 </div>
-                <p className={styles.hint}>Include this ID in your payment memo</p>
+                <p className={styles.hint}>Include This ID In Your Payment Memo</p>
               </>
             )}
 
             {mode === 'withdraw' && (
               <p style={{ color: 'rgba(255,255,255,0.6)' }}>
-                Your withdrawal is being processed. You'll receive confirmation soon.
+                Your Withdrawal Is Being Processed. You'll Receive Confirmation Soon.
               </p>
             )}
 

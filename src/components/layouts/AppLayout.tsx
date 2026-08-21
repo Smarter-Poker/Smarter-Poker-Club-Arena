@@ -84,7 +84,7 @@ export default function AppLayout() {
             zIndex: 9999,
           }}
         >
-          ⚠ You are offline - changes will sync when connection is restored
+          ⚠ You Are Offline - Changes Will Sync When Connection Is Restored
         </div>
       )}
 

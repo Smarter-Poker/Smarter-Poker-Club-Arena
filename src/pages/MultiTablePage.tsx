@@ -151,8 +151,7 @@ const isLobbyTab = (t: TableInstance) => t.kind === 'lobby' || t.id.startsWith(L
  * Read once at module load: a mid-session rotation cannot strand open tables,
  * and the server still has the final say on every buy-in.
  */
-const MAX_TABLES =
-  typeof window !== 'undefined' && window.innerWidth >= 1024 ? 6 : 4;
+const MAX_TABLES = typeof window !== 'undefined' && window.innerWidth >= 1024 ? 6 : 4;
 
 /**
  * Dan 2026-08-19 (persistence upgrade): what the GLOBAL dock should show while
@@ -686,8 +685,7 @@ export default function MultiTablePage() {
    * a burning time bank left it stopped, so nothing counted down anywhere.
    */
   const anyTurnLive = tables.some(
-    (t) =>
-      (t.isMyTurn && t.turnDeadlineMs !== undefined) || !!t.decision || !!t.timeBank
+    (t) => (t.isMyTurn && t.turnDeadlineMs !== undefined) || !!t.decision || !!t.timeBank
   );
   useEffect(() => {
     if (!anyTurnLive) return;
@@ -1203,9 +1201,7 @@ export default function MultiTablePage() {
           id: r.id as string,
           name: (r.name as string) || 'Table',
           stakes:
-            r.small_blind != null && r.big_blind != null
-              ? `${r.small_blind}/${r.big_blind}`
-              : '',
+            r.small_blind != null && r.big_blind != null ? `${r.small_blind}/${r.big_blind}` : '',
           players: Number(r.current_players) || 0,
           max: Number(r.max_players) || 0,
           code: gameCode({
@@ -1502,7 +1498,12 @@ export default function MultiTablePage() {
       }
       // Audit round 3 (a11y): Alt+Arrow moves the ACTIVE tab - the keyboard
       // path to reorder, matching the quick menu's Move Left/Right.
-      if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      if (
+        e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        (e.key === 'ArrowLeft' || e.key === 'ArrowRight')
+      ) {
         e.preventDefault();
         const cur = activeIndexRef.current;
         const t = tablesRef.current[cur];
@@ -1712,8 +1713,8 @@ export default function MultiTablePage() {
     if (hidden) return null;
     return (
       <div className="multi-table-page multi-table-page--empty">
-        <p>No tables open</p>
-        <button onClick={goToLobby}>Go to Lobby</button>
+        <p>No Tables Open</p>
+        <button onClick={goToLobby}>Go To Lobby</button>
       </div>
     );
   }
@@ -1883,7 +1884,7 @@ export default function MultiTablePage() {
                   {sessionAgg.rows.length} {sessionAgg.rows.length === 1 ? 'table' : 'tables'}
                 </span>
                 <span className="multi-table-page__session-hands">
-                  {sessionAgg.hands} hands
+                  {sessionAgg.hands} Hands
                   {sessionAgg.handsPerHour > 0 ? ` - ${sessionAgg.handsPerHour}/hr` : ''}
                 </span>
                 <span
@@ -1983,10 +1984,7 @@ export default function MultiTablePage() {
                 </Suspense>
                 {/* Batch 4: per-tile action strip - acts without focusing. */}
                 {!isLobbyTab(table) && table.isMyTurn && (
-                  <div
-                    className="multi-table-grid__actions"
-                    onClick={(e) => e.stopPropagation()}
-                  >
+                  <div className="multi-table-grid__actions" onClick={(e) => e.stopPropagation()}>
                     {(table.toCall ?? 0) > 0 ? (
                       <>
                         <button
@@ -2028,10 +2026,7 @@ export default function MultiTablePage() {
                     illegal (below min-raise, above stack) is simply refused,
                     exactly as it would be from the table view. */}
                 {!isLobbyTab(table) && table.isMyTurn && (
-                  <div
-                    className="multi-table-grid__raises"
-                    onClick={(e) => e.stopPropagation()}
-                  >
+                  <div className="multi-table-grid__raises" onClick={(e) => e.stopPropagation()}>
                     {(
                       [
                         ['½ Pot', 0.5],
@@ -2141,7 +2136,7 @@ export default function MultiTablePage() {
                             marginTop: 12,
                           }}
                         >
-                          Loading table…
+                          Loading Table…
                         </span>
                       </div>
                     }

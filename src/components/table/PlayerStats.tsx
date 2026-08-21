@@ -187,7 +187,7 @@ export function PlayerStats({
             </span>
             {sessionStats && (
               <span className="player-stats__time">
-                At table {formatTime(sessionStats.timeAtTable)}
+                At Table {formatTime(sessionStats.timeAtTable)}
               </span>
             )}
           </div>
@@ -223,7 +223,7 @@ export function PlayerStats({
         {/* HUD Stats */}
         {stats && stats.handsPlayed >= 10 && (
           <div className="player-stats__hud">
-            <span className="player-stats__hud-title">Stats ({stats.handsPlayed} hands)</span>
+            <span className="player-stats__hud-title">Stats ({stats.handsPlayed} Hands)</span>
             <div className="player-stats__hud-grid">
               {[
                 { value: stats.vpip ?? '-', label: 'VPIP', percent: true },
@@ -316,7 +316,7 @@ export function PlayerStats({
             )}
 
             {notes.length === 0 && !showNoteInput && (
-              <span className="player-stats__no-notes">No notes yet</span>
+              <span className="player-stats__no-notes">No Notes Yet</span>
             )}
           </div>
         )}

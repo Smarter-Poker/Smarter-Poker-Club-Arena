@@ -39,7 +39,7 @@ export function IdentityModal({
         </div>
         <div className="identity-modal-body">
           <div className="identity-modal-row">
-            <label>Use Alias at Tables</label>
+            <label>Use Alias At Tables</label>
             <button
               className={`tsp-toggle ${useAlias ? 'tsp-toggle--on' : 'tsp-toggle--off'}`}
               onClick={onToggleAlias}

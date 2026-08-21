@@ -406,9 +406,9 @@ export function CashierModal({
           </div>
           <div className="cashier-modal__limit">
             {activeTab === 'add' ? (
-              <span>Available to add: {formatAmount(canAddAmount, currency)}</span>
+              <span>Available To Add: {formatAmount(canAddAmount, currency)}</span>
             ) : (
-              <span>Available to withdraw: {formatAmount(canWithdrawAmount, currency)}</span>
+              <span>Available To Withdraw: {formatAmount(canWithdrawAmount, currency)}</span>
             )}
           </div>
         </div>

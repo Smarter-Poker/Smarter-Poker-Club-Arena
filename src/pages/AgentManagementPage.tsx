@@ -565,9 +565,9 @@ export default function AgentManagementPage() {
       <div className={styles.page}>
         <div className={styles.error}>
           <h2>No Club Selected</h2>
-          <p>Please select a club to manage agents.</p>
+          <p>Please Select A Club To Manage Agents.</p>
           <button className={styles.addButton} onClick={() => navigate('/clubs')}>
-            Go to Clubs
+            Go To Clubs
           </button>
         </div>
       </div>
@@ -598,7 +598,7 @@ export default function AgentManagementPage() {
       <div className={styles.header}>
         <div>
           <h1>Agent Management</h1>
-          <p className={styles.subtitle}>Manage agents, commissions, and credit lines</p>
+          <p className={styles.subtitle}>Manage Agents, Commissions, And Credit Lines</p>
         </div>
         <button className={styles.addButton} onClick={() => setShowAddModal(true)}>
           + Add Agent
@@ -922,7 +922,7 @@ export default function AgentManagementPage() {
                     >
                       <div>
                         <div style={{ fontSize: '0.85rem', color: '#fff', fontWeight: 600 }}>
-                          {tx.amount.toLocaleString()} chips → {recipientName}
+                          {tx.amount.toLocaleString()} Chips → {recipientName}
                         </div>
                         <div
                           style={{
@@ -1043,7 +1043,7 @@ export default function AgentManagementPage() {
             <div className={styles.creditHierarchy}>
               <h2>Credit Limit Assignment</h2>
               <p>
-                Assign credit limits directly. Clubs set limits for Agents. Agents set limits for
+                Assign Credit Limits Directly. Clubs Set Limits For Agents. Agents Set Limits For
                 Sub-Agents.
               </p>
             </div>
@@ -1129,18 +1129,18 @@ export default function AgentManagementPage() {
               <h3> Credit Assignment Rules</h3>
               <ul>
                 <li>
-                  <strong>Club → Agent:</strong> Club Owner assigns credit limits when creating an
-                  agent
+                  <strong>Club → Agent:</strong> Club Owner Assigns Credit Limits When Creating An
+                  Agent
                 </li>
                 <li>
-                  <strong>Agent → Sub-Agent:</strong> Agents assign limits to their sub-agents
-                  (cannot exceed their own limit)
+                  <strong>Agent → Sub-Agent:</strong> Agents Assign Limits To Their Sub-Agents
+                  (Cannot Exceed Their Own Limit)
                 </li>
                 <li>
-                  <strong>Adjustable:</strong> Limits can be changed anytime by the assigning level
+                  <strong>Adjustable:</strong> Limits Can Be Changed Anytime By The Assigning Level
                 </li>
                 <li>
-                  <strong>Suspension:</strong> Agents at 90%+ utilization should be reviewed
+                  <strong>Suspension:</strong> Agents At 90%+ Utilization Should Be Reviewed
                 </li>
               </ul>
             </div>
@@ -1245,12 +1245,12 @@ export default function AgentManagementPage() {
             <div className={styles.modalBody}>
               {/* Member Selection */}
               <div className={styles.formGroup}>
-                <label>Select Member to Promote *</label>
+                <label>Select Member To Promote *</label>
                 {isLoadingMembers ? (
-                  <div className={styles.loadingSelect}>Loading members...</div>
+                  <div className={styles.loadingSelect}>Loading Members...</div>
                 ) : availableMembers.length === 0 ? (
                   <div className={styles.emptySelect}>
-                    No eligible members found. Members must be active and not already agents.
+                    No Eligible Members Found. Members Must Be Active And Not Already Agents.
                   </div>
                 ) : (
                   <select
@@ -1258,7 +1258,7 @@ export default function AgentManagementPage() {
                     onChange={(e) => setNewAgentForm({ ...newAgentForm, userId: e.target.value })}
                     className={styles.formSelect}
                   >
-                    <option value="">Choose a member to promote...</option>
+                    <option value="">Choose A Member To Promote...</option>
                     {availableMembers.map((m) => (
                       <option key={m.id} value={m.userId}>
                         {m.displayName || 'Unknown'}
@@ -1281,7 +1281,7 @@ export default function AgentManagementPage() {
                   >
                     <span className={styles.roleIcon}></span>
                     <span className={styles.roleLabel}>Super Agent</span>
-                    <span className={styles.roleDesc}>Can have agents under them</span>
+                    <span className={styles.roleDesc}>Can Have Agents Under Them</span>
                   </button>
                   <button
                     type="button"
@@ -1290,7 +1290,7 @@ export default function AgentManagementPage() {
                   >
                     <span className={styles.roleIcon}></span>
                     <span className={styles.roleLabel}>Agent</span>
-                    <span className={styles.roleDesc}>Standard agent role</span>
+                    <span className={styles.roleDesc}>Standard Agent Role</span>
                   </button>
                   <button
                     type="button"
@@ -1299,7 +1299,7 @@ export default function AgentManagementPage() {
                   >
                     <span className={styles.roleIcon}></span>
                     <span className={styles.roleLabel}>Sub-Agent</span>
-                    <span className={styles.roleDesc}>Under another agent</span>
+                    <span className={styles.roleDesc}>Under Another Agent</span>
                   </button>
                 </div>
               </div>
@@ -1322,7 +1322,7 @@ export default function AgentManagementPage() {
                       }
                       className={styles.formSelect}
                     >
-                      <option value="">Select parent agent...</option>
+                      <option value="">Select Parent Agent...</option>
                       {agents
                         .filter(
                           (a) =>
@@ -1341,7 +1341,7 @@ export default function AgentManagementPage() {
               {/* Commission Rate */}
               <div className={styles.formGroup}>
                 <label>
-                  Commission Rate * <span className={styles.formHint}>(max 70%)</span>
+                  Commission Rate * <span className={styles.formHint}>(Max 70%)</span>
                 </label>
                 <div className={styles.sliderGroup}>
                   <input
@@ -1357,14 +1357,14 @@ export default function AgentManagementPage() {
                   <span className={styles.sliderValue}>{newAgentForm.commissionRate}%</span>
                 </div>
                 <p className={styles.fieldDesc}>
-                  Percentage of rake this agent receives from the club
+                  Percentage Of Rake This Agent Receives From The Club
                 </p>
               </div>
 
               {/* Rakeback Rate */}
               <div className={styles.formGroup}>
                 <label>
-                  Player Rakeback Rate * <span className={styles.formHint}>(max 50%)</span>
+                  Player Rakeback Rate * <span className={styles.formHint}>(Max 50%)</span>
                 </label>
                 <div className={styles.sliderGroup}>
                   <input
@@ -1383,14 +1383,14 @@ export default function AgentManagementPage() {
                   <span className={styles.sliderValue}>{newAgentForm.playerRakebackRate}%</span>
                 </div>
                 <p className={styles.fieldDesc}>
-                  Rakeback rate - percentage of rake players receive back as chips
+                  Rakeback Rate - Percentage Of Rake Players Receive Back As Chips
                 </p>
               </div>
 
               {/* Credit Limit */}
               <div className={styles.formGroup}>
                 <label>
-                  Credit Limit * <span className={styles.formHint}>(required)</span>
+                  Credit Limit * <span className={styles.formHint}>(Required)</span>
                 </label>
                 <div className={styles.creditInputGroup}>
                   <span className={styles.currencySymbol}>◉</span>
@@ -1406,7 +1406,7 @@ export default function AgentManagementPage() {
                     className={styles.creditInput}
                   />
                 </div>
-                <p className={styles.fieldDesc}>Maximum credit this agent can extend to players</p>
+                <p className={styles.fieldDesc}>Maximum Credit This Agent Can Extend To Players</p>
               </div>
 
               {/* Summary */}

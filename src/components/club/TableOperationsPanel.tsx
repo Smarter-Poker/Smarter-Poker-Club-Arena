@@ -531,11 +531,11 @@ export default function TableOperationsPanel({ clubId }: Props) {
 
   // ─── Render ────────────────────────────────────────────────────────────────
   if (loading) {
-    return <div style={styles.emptyState}>Loading tables...</div>;
+    return <div style={styles.emptyState}>Loading Tables...</div>;
   }
 
   if (tables.length === 0) {
-    return <div style={styles.emptyState}>No active tables in this club</div>;
+    return <div style={styles.emptyState}>No Active Tables In This Club</div>;
   }
 
   return (
@@ -574,7 +574,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
                   {formatVariant(table.game_variant)} · {table.small_blind}/{table.big_blind}
                   {table.ante > 0 ? ` (+${table.ante})` : ''}
                   {' · '}
-                  {table.current_players}/{table.max_players} players
+                  {table.current_players}/{table.max_players} Players
                 </div>
               </div>
               <span style={getStatusBadgeStyle(table.status)}>{table.status}</span>
@@ -632,7 +632,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
                 {/* Seated Players */}
                 <div style={styles.sectionTitle}>Seated Players</div>
                 {players.length === 0 ? (
-                  <div style={styles.noPlayers}>No players seated</div>
+                  <div style={styles.noPlayers}>No Players Seated</div>
                 ) : (
                   players.map((player, pIdx) => {
                     const profile = player.profiles;
@@ -705,8 +705,8 @@ export default function TableOperationsPanel({ clubId }: Props) {
               <>
                 <div style={styles.confirmTitle}>Kick Player</div>
                 <div style={styles.confirmText}>
-                  Remove <strong>{confirmAction.playerName}</strong> from the table? Their chips
-                  will be returned to their wallet.
+                  Remove <strong>{confirmAction.playerName}</strong> From The Table? Their Chips
+                  Will Be Returned To Their Wallet.
                 </div>
                 <div style={styles.confirmActions}>
                   <button style={styles.cancelBtn} onClick={() => setConfirmAction(null)}>
@@ -721,8 +721,8 @@ export default function TableOperationsPanel({ clubId }: Props) {
               <>
                 <div style={styles.confirmTitle}>Close Table</div>
                 <div style={styles.confirmText}>
-                  This will close the table and all seated players will be cashed out. This action
-                  cannot be undone.
+                  This Will Close The Table And All Seated Players Will Be Cashed Out. This Action
+                  Cannot Be Undone.
                 </div>
                 <div style={styles.confirmActions}>
                   <button style={styles.cancelBtn} onClick={() => setConfirmAction(null)}>

@@ -1566,11 +1566,11 @@ export default function CashierPage() {
             {hasNoClubs ? (
               <>
                 <div className={`${styles.message} ${styles.messageInfo}`}>
-                  The cashier belongs to a club - chips are held per club, so there is no cashier
-                  until you join one.
+                  The Cashier Belongs To A Club - Chips Are Held Per Club, So There Is No Cashier
+                  Until You Join One.
                 </div>
                 <button type="button" className={styles.btnPrimary} onClick={() => navigate('/')}>
-                  Find a club
+                  Find A Club
                 </button>
               </>
             ) : (
@@ -1629,12 +1629,12 @@ export default function CashierPage() {
           {realtimeStatus === 'reconnecting' ? (
             <>
               <span className={styles.connectionDot} style={{ background: '#ffb800' }} />{' '}
-              Reconnecting to live updates…
+              Reconnecting To Live Updates…
             </>
           ) : (
             <>
               <span className={styles.connectionDot} style={{ background: '#ef4444' }} /> Live
-              connection lost - data may be stale
+              Connection Lost - Data May Be Stale
             </>
           )}
         </div>
@@ -1736,7 +1736,7 @@ export default function CashierPage() {
           </h2>
           <div className={styles.cardBody}>
             <div className={`${styles.message} ${styles.messageInfo}`}>
-              Send chips from your wallet to{' '}
+              Send Chips From Your Wallet To{' '}
               {userRole === 'owner'
                 ? 'agents, sub-agents, and players'
                 : userRole === 'agent' || userRole === 'super_agent'
@@ -1757,7 +1757,7 @@ export default function CashierPage() {
                   value={selectedRecipient}
                   onChange={(e) => setSelectedRecipient(e.target.value)}
                 >
-                  <option value="">Select recipient</option>
+                  <option value="">Select Recipient</option>
                   {recipients.map((r) => {
                     const isAgent = ['agent', 'super_agent', 'sub_agent'].includes(r.role);
                     const roleTag =
@@ -1886,8 +1886,8 @@ export default function CashierPage() {
           </h2>
           <div className={styles.cardBody}>
             <div className={`${styles.message} ${styles.messageInfo}`}>
-              Distribute chips directly to players or agents from the club bank. Each distribution
-              is logged with a full audit trail.
+              Distribute Chips Directly To Players Or Agents From The Club Bank. Each Distribution
+              Is Logged With A Full Audit Trail.
             </div>
 
             {/* Player Selector */}
@@ -1903,10 +1903,10 @@ export default function CashierPage() {
                   value={selectedRecipient}
                   onChange={(e) => setSelectedRecipient(e.target.value)}
                 >
-                  <option value="">Select player...</option>
+                  <option value="">Select Player...</option>
                   {recipients.map((r) => (
                     <option key={r.id} value={r.id}>
-                      {r.username} ({r.role}) - {r.balance.toLocaleString()} chips
+                      {r.username} ({r.role}) - {r.balance.toLocaleString()} Chips
                     </option>
                   ))}
                 </select>
@@ -2094,12 +2094,12 @@ export default function CashierPage() {
               <div className={styles.escrowIcon}>◈</div>
               <h3 className={styles.escrowTitle}>Security Verification Required</h3>
               <p className={styles.escrowDesc}>
-                You are requesting a high-value cashout of{' '}
+                You Are Requesting A High-Value Cashout Of{' '}
                 <strong className={styles.escrowAmount}>
-                  {cashoutConfirm.value.toLocaleString()} chips
+                  {cashoutConfirm.value.toLocaleString()} Chips
                 </strong>
                 .<br />
-                This amount triggers our mandatory escrow protocols to ensure player security.
+                This Amount Triggers Our Mandatory Escrow Protocols To Ensure Player Security.
               </p>
 
               {/* These three rows previously rendered "Anti-Money Laundering
@@ -2113,19 +2113,19 @@ export default function CashierPage() {
                 <div className={styles.escrowCheckItem}>
                   <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckGreen}`}>✓</div>
                   <span className={styles.escrowCheckLabel}>
-                    Request amount confirmed against your club balance
+                    Request Amount Confirmed Against Your Club Balance
                   </span>
                 </div>
                 <div className={styles.escrowCheckItem}>
                   <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckAmber}`}>◷</div>
                   <span className={styles.escrowCheckLabel}>
-                    Escrow holding - chips are reserved until review completes
+                    Escrow Holding - Chips Are Reserved Until Review Completes
                   </span>
                 </div>
                 <div className={styles.escrowCheckItem}>
                   <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckAmber}`}>◷</div>
                   <span className={styles.escrowCheckLabel}>
-                    Pending club agent review and approval
+                    Pending Club Agent Review And Approval
                   </span>
                 </div>
               </div>
@@ -2162,7 +2162,7 @@ export default function CashierPage() {
                   <div className={styles.pendingTitle}>Pending Cashouts</div>
                   {pendingCashouts.map((pc) => (
                     <div key={pc.id} className={styles.pendingRow}>
-                      <span>{pc.amount.toLocaleString()} chips</span>
+                      <span>{pc.amount.toLocaleString()} Chips</span>
                       <span className={styles.pendingStatus}>
                         {pc.status === 'pending' ? 'Awaiting Agent' : 'Processing'}
                       </span>
@@ -2181,7 +2181,7 @@ export default function CashierPage() {
               {/* Cashout context info */}
               {action === 'cashout' && !tableId && (
                 <div className={`${styles.message} ${styles.messageInfo}`}>
-                  Your chips will be held in escrow until your assigned agent approves the cashout.
+                  Your Chips Will Be Held In Escrow Until Your Assigned Agent Approves The Cashout.
                 </div>
               )}
 
@@ -2208,7 +2208,7 @@ export default function CashierPage() {
                   {Math.ceil(
                     (parseFloat(amount || '0') * DIAMOND_RATE_NUM) / DIAMOND_RATE_DEN
                   ).toLocaleString()}{' '}
-                  diamonds required
+                  Diamonds Required
                 </div>
               )}
 
@@ -2275,7 +2275,7 @@ export default function CashierPage() {
               </button>
 
               {tableId && (
-                <p className={styles.tableContext}>Returning to table after transaction</p>
+                <p className={styles.tableContext}>Returning To Table After Transaction</p>
               )}
             </div>
           )}
@@ -2348,9 +2348,9 @@ export default function CashierPage() {
             ) : filteredTransactions.length === 0 ? (
               <div className={styles.txEmpty}>
                 <span className={styles.txEmptyIcon}>▦</span>
-                <span className={styles.txEmptyTitle}>No transactions recorded yet</span>
+                <span className={styles.txEmptyTitle}>No Transactions Recorded Yet</span>
                 <span className={styles.txEmptyDesc}>
-                  Your buy-ins, cashouts, and chip transfers will appear here.
+                  Your Buy-Ins, Cashouts, And Chip Transfers Will Appear Here.
                 </span>
               </div>
             ) : (
@@ -2401,7 +2401,7 @@ export default function CashierPage() {
                     onClick={() => setTxPage((p) => p + 1)}
                     aria-label="Load more transactions"
                   >
-                    Load More ({filteredTransactions.length - txPage * TX_PAGE_SIZE} remaining)
+                    Load More ({filteredTransactions.length - txPage * TX_PAGE_SIZE} Remaining)
                   </button>
                 )}
               </>
@@ -2410,12 +2410,7 @@ export default function CashierPage() {
         </section>
       )}
 
-      {clubId && (
-        <ClubBottomNav
-          clubId={clubId}
-          userRole={userRole as ClubRole}
-        />
-      )}
+      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole as ClubRole} />}
 
       {/* Cashout Request Modal — Full step tracker UX */}
       {clubId && user?.id && (
@@ -2451,11 +2446,11 @@ export default function CashierPage() {
               Confirm High-Value Transfer
             </h3>
             <p className={styles.confirmText}>
-              You are about to send <strong>{sendConfirm.value.toLocaleString()}</strong> chips to{' '}
+              You Are About To Send <strong>{sendConfirm.value.toLocaleString()}</strong> Chips To{' '}
               <strong>{sendConfirm.recipientName}</strong>.
             </p>
             <p className={styles.confirmWarning}>
-              This action cannot be undone. Please verify the amount and recipient.
+              This Action Cannot Be Undone. Please Verify The Amount And Recipient.
             </p>
             <div className={styles.confirmButtons}>
               <button

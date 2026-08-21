@@ -42,7 +42,7 @@ export const RatingModal: React.FC<RatingModalProps> = ({
         {submitted ? (
           <div className="rating-success">
             <span className="success-icon"></span>
-            <p>Thanks for your feedback!</p>
+            <p>Thanks For Your Feedback!</p>
           </div>
         ) : (
           <>

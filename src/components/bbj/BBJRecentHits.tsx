@@ -223,7 +223,7 @@ export function BBJRecentHits({
 
   if (failed) {
     return (
-      <div className="bbj-hits__empty">Couldn&rsquo;t Load Recent Jackpots. Try Again Shortly.</div>
+      <div className="bbj-hits__empty">Couldn&rsquo;T Load Recent Jackpots. Try Again Shortly.</div>
     );
   }
 

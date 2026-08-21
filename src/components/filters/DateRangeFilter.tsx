@@ -26,7 +26,7 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
     <div className="date-range-filter">
       <div className="date-inputs">
         <input type="date" value={startDate} onChange={(e) => onStartChange(e.target.value)} />
-        <span className="date-separator">to</span>
+        <span className="date-separator">To</span>
         <input type="date" value={endDate} onChange={(e) => onEndChange(e.target.value)} />
       </div>
       {onPresetClick && presets.length > 0 && (

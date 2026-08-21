@@ -82,7 +82,7 @@ export default function UnionClubGovernance({ unionId, clubId, clubName, onExpel
           cursor: busy ? 'wait' : 'pointer',
         }}
       >
-        Remove from union
+        Remove From Union
       </button>
 
       {open && (
@@ -112,7 +112,7 @@ export default function UnionClubGovernance({ unionId, clubId, clubName, onExpel
           >
             <h3 style={{ margin: '0 0 4px', color: '#e6f1f5' }}>Remove {clubName}</h3>
             <p style={{ color: '#7d919b', fontSize: '0.82rem', marginTop: 0 }}>
-              The club keeps its own private games. Its players lose access to union games.
+              The Club Keeps Its Own Private Games. Its Players Lose Access To Union Games.
             </p>
 
             {blockers && (
@@ -194,7 +194,7 @@ export default function UnionClubGovernance({ unionId, clubId, clubName, onExpel
                     cursor: busy ? 'wait' : 'pointer',
                   }}
                 >
-                  Force remove
+                  Force Remove
                 </button>
               )}
               <button

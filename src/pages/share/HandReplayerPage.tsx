@@ -240,7 +240,7 @@ export default function HandReplayerPage() {
     return (
       <div className="hand-replayer loading">
         <div className="loader-spinner" />
-        <p>Loading hand replay...</p>
+        <p>Loading Hand Replay...</p>
       </div>
     );
   }
@@ -249,7 +249,7 @@ export default function HandReplayerPage() {
     return (
       <div className="hand-replayer error">
         <h2>Hand Not Found</h2>
-        <p>This hand may have expired or been removed.</p>
+        <p>This Hand May Have Expired Or Been Removed.</p>
       </div>
     );
   }

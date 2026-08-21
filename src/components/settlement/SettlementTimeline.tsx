@@ -32,7 +32,7 @@ export default function SettlementTimeline({ entries, onSelect }: SettlementTime
     return (
       <div className="st-empty">
         <span className="st-empty-icon">◆</span>
-        <span className="st-empty-text">No settlement history yet</span>
+        <span className="st-empty-text">No Settlement History Yet</span>
       </div>
     );
   }
@@ -66,7 +66,7 @@ export default function SettlementTimeline({ entries, onSelect }: SettlementTime
               {/* Content */}
               <div className="st-content">
                 <div className="st-content-header">
-                  <span className="st-amount">{entry.netAmount.toLocaleString()} chips</span>
+                  <span className="st-amount">{entry.netAmount.toLocaleString()} Chips</span>
                   <span className="st-status" style={{ color: cfg.color }}>
                     {cfg.label}
                   </span>

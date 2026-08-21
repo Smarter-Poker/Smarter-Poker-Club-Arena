@@ -660,7 +660,7 @@ export default function UnionDetailPage() {
         >
           <div className={styles.modal}>
             <h2>Select Club</h2>
-            <p>Which club would you like to apply with?</p>
+            <p>Which Club Would You Like To Apply With?</p>
             <div className={styles.clubList}>
               {ownedClubs.map((c) => (
                 <button
@@ -764,7 +764,7 @@ export default function UnionDetailPage() {
                 marginBottom: '8px',
               }}
             >
-              {uLevel.progressPercent}% to Lv.{Math.min(uLevel.level + 1, 50)}
+              {uLevel.progressPercent}% To Lv.{Math.min(uLevel.level + 1, 50)}
             </div>
           </>
         );
@@ -901,7 +901,7 @@ export default function UnionDetailPage() {
             <div className={styles.card}>
               <h3>
                 {' '}
-                Live Tables ({tables.filter((t) => (t.current_players || 0) > 0).length} active)
+                Live Tables ({tables.filter((t) => (t.current_players || 0) > 0).length} Active)
               </h3>
               {tables.filter((t) => (t.current_players || 0) > 0).length === 0 ? (
                 <div
@@ -909,7 +909,7 @@ export default function UnionDetailPage() {
                 >
                   <div style={{ fontSize: '1.5rem', marginBottom: '6px' }}>◆</div>
                   <p style={{ margin: 0, fontSize: '0.75rem' }}>
-                    No active tables - games will appear here when clubs start playing
+                    No Active Tables - Games Will Appear Here When Clubs Start Playing
                   </p>
                 </div>
               ) : (
@@ -930,7 +930,7 @@ export default function UnionDetailPage() {
                     ))}
                   {tables.filter((t) => (t.current_players || 0) > 0).length > 8 && (
                     <button className={styles.viewAllBtn} onClick={() => setActiveTab('tables')}>
-                      View all {tables.length} tables →
+                      View All {tables.length} Tables →
                     </button>
                   )}
                 </div>
@@ -1006,7 +1006,7 @@ export default function UnionDetailPage() {
                   <div>
                     <span>Pending</span>
                     <strong>
-                      {financialSummary.pendingSettlements} settlement
+                      {financialSummary.pendingSettlements} Settlement
                       {financialSummary.pendingSettlements !== 1 ? 's' : ''}
                     </strong>
                   </div>
@@ -1036,9 +1036,9 @@ export default function UnionDetailPage() {
                 }}
               >
                 <div style={{ fontSize: '2rem', marginBottom: '8px' }}>⌂</div>
-                <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 500 }}>No clubs yet</p>
+                <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 500 }}>No Clubs Yet</p>
                 <p style={{ margin: '4px 0 0', fontSize: '0.7rem' }}>
-                  Invite clubs to join your union to get started
+                  Invite Clubs To Join Your Union To Get Started
                 </p>
               </div>
             ) : (
@@ -1142,9 +1142,9 @@ export default function UnionDetailPage() {
                 }}
               >
                 <div style={{ fontSize: '2rem', marginBottom: '8px' }}>▦</div>
-                <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 500 }}>No tables active</p>
+                <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 500 }}>No Tables Active</p>
                 <p style={{ margin: '4px 0 0', fontSize: '0.7rem' }}>
-                  Your clubs&apos; tables will appear here when games start
+                  Your Clubs&apos; Tables Will Appear Here When Games Start
                 </p>
               </div>
             ) : (
@@ -1219,7 +1219,7 @@ export default function UnionDetailPage() {
             <div className={styles.sectionHeader}>
               <div>
                 <h3>Union Tournaments (XMTT)</h3>
-                <p>Tournaments open to all member clubs</p>
+                <p>Tournaments Open To All Member Clubs</p>
               </div>
               {union?.ownerId === user?.id && clubs.length > 0 && (
                 <button
@@ -1298,7 +1298,7 @@ export default function UnionDetailPage() {
               className={styles.statementsLink}
               onClick={() => navigate(`/unions/${unionId}/statements`)}
             >
-              Weekly statements and square-up
+              Weekly Statements And Square-Up
             </button>
 
             {/* Summary Cards */}
@@ -1354,9 +1354,9 @@ export default function UnionDetailPage() {
                   settlement live, so in practice none of it was visible to the
                   people who own it. */}
               <p style={{ margin: '0 0 12px', fontSize: 13, opacity: 0.75 }}>
-                Weekly player win/loss settlement, wallet and treasury live on the{' '}
+                Weekly Player Win/Loss Settlement, Wallet And Treasury Live On The{' '}
                 <Link to="/union-dashboard" style={{ color: '#1877F2', fontWeight: 600 }}>
-                  union dashboard
+                  Union Dashboard
                 </Link>
                 .
               </p>
@@ -1399,7 +1399,7 @@ export default function UnionDetailPage() {
             <div className={styles.settingsCard}>
               <h3> Revenue Configuration</h3>
               <p className={styles.settingsDesc}>
-                Configure how revenue is split between the union and clubs
+                Configure How Revenue Is Split Between The Union And Clubs
               </p>
 
               <div className={styles.settingRow}>
@@ -1420,7 +1420,7 @@ export default function UnionDetailPage() {
                   />
                   <span className={styles.sliderValue}>{settingsForm.revenueSharePercent}%</span>
                 </div>
-                <p className={styles.settingHint}>Percentage of club rake that goes to the union</p>
+                <p className={styles.settingHint}>Percentage Of Club Rake That Goes To The Union</p>
               </div>
 
               <div className={styles.settingRow}>
@@ -1434,7 +1434,7 @@ export default function UnionDetailPage() {
                   />
                   Shared Player Pool
                 </label>
-                <p className={styles.settingHint}>Allow players to sit at any club’s tables</p>
+                <p className={styles.settingHint}>Allow Players To Sit At Any Club’s Tables</p>
               </div>
 
               <div className={styles.settingRow}>
@@ -1451,7 +1451,7 @@ export default function UnionDetailPage() {
                   />
                   Cross-Club Tournaments
                 </label>
-                <p className={styles.settingHint}>Enable union-wide tournament scheduling</p>
+                <p className={styles.settingHint}>Enable Union-Wide Tournament Scheduling</p>
               </div>
 
               <button

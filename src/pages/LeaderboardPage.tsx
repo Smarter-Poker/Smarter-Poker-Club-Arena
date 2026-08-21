@@ -363,7 +363,7 @@ export default function LeaderboardPage() {
     }
     // Monotonic request token: a newer request always wins, and an in-flight
     // response that is no longer current is discarded rather than rendered.
-    const myReq = ++reqSeqRef.current;  // also invalidates any in-flight loadMore
+    const myReq = ++reqSeqRef.current; // also invalidates any in-flight loadMore
 
     // SWR: show cached data instantly
     const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}`;
@@ -381,7 +381,12 @@ export default function LeaderboardPage() {
         () =>
           isGlobal
             ? LeaderboardService.getGlobalLeaderboard(metric, period, PAGE_SIZE)
-            : LeaderboardService.getClubLeaderboard(selectedClubId as string, metric, period, PAGE_SIZE),
+            : LeaderboardService.getClubLeaderboard(
+                selectedClubId as string,
+                metric,
+                period,
+                PAGE_SIZE
+              ),
         { maxRetries: 2 }
       );
       if (myReq !== reqSeqRef.current) return; // superseded by a newer request
@@ -396,12 +401,7 @@ export default function LeaderboardPage() {
       if (user?.id) {
         const rank = isGlobal
           ? await LeaderboardService.getGlobalUserRank(user.id, metric, period)
-          : await LeaderboardService.getUserRank(
-              user.id,
-              selectedClubId as string,
-              metric,
-              period
-            );
+          : await LeaderboardService.getUserRank(user.id, selectedClubId as string, metric, period);
         if (myReq !== reqSeqRef.current) return;
         if (getIsMounted && !getIsMounted()) return;
         setUserRank(rank);
@@ -734,7 +734,7 @@ export default function LeaderboardPage() {
         ) : scope === 'my-clubs' && userClubs.length === 0 ? (
           <div className="empty-state">
             <span className="empty-icon">{'♠'}</span>
-            <p>Join a club to see leaderboard rankings, or switch to Global.</p>
+            <p>Join A Club To See Leaderboard Rankings, Or Switch To Global.</p>
             <button className="join-club-btn" onClick={() => navigate('/clubs')}>
               Browse Clubs
             </button>
@@ -759,7 +759,7 @@ export default function LeaderboardPage() {
               {'★'}
             </span>
             <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
-              No rankings yet for this period.
+              No Rankings Yet For This Period.
             </p>
             <p
               className="empty-sub"
@@ -769,10 +769,10 @@ export default function LeaderboardPage() {
                 margin: '0 0 1.5rem',
               }}
             >
-              Start playing to climb the leaderboard.
+              Start Playing To Climb The Leaderboard.
             </p>
             <button className="join-club-btn" onClick={() => navigate('/')}>
-              Find a Table
+              Find A Table
             </button>
           </div>
         ) : activeTab === 'tournaments' && tournamentsLoading ? (
@@ -784,8 +784,8 @@ export default function LeaderboardPage() {
         ) : activeTab === 'tournaments' && tournamentStats.length === 0 ? (
           <div className="empty-state">
             <span className="empty-icon">{'★'}</span>
-            <p>No tournament stats yet.</p>
-            <p className="empty-sub">Register for a tournament to see your stats.</p>
+            <p>No Tournament Stats Yet.</p>
+            <p className="empty-sub">Register For A Tournament To See Your Stats.</p>
           </div>
         ) : activeTab === 'rankings' && entries.length > 0 ? (
           <>
@@ -890,7 +890,7 @@ export default function LeaderboardPage() {
             {userRank && !entries.some((e) => e.userId === user?.id) && (
               <>
                 <div className="rankings-divider">
-                  <span>Your position</span>
+                  <span>Your Position</span>
                 </div>
                 <div
                   className="leaderboard-entry current-user pinned-self"
@@ -908,7 +908,7 @@ export default function LeaderboardPage() {
                   <div className="entry-info">
                     <span className="entry-name">You</span>
                     <span className="entry-subline">
-                      of {userRank.total.toLocaleString('en-US')} ranked
+                      Of {userRank.total.toLocaleString('en-US')} Ranked
                     </span>
                   </div>
                   <div className={`entry-value ${userRank.value >= 0 ? 'positive' : 'negative'}`}>
@@ -978,12 +978,12 @@ export default function LeaderboardPage() {
             <span className="rank-label">Your Rank{scope === 'global' ? ' (Global)' : ''}</span>
           </div>
           <div className="rank-context">
-            <span>out of {userRank.total.toLocaleString()} players</span>
+            <span>Out Of {userRank.total.toLocaleString()} Players</span>
             {userRank.value !== 0 && (
               <span className="rank-own-value">{formatValue(userRank.value, metric)}</span>
             )}
             {!entries.some((e) => e.userId === user?.id) && entries.length > 0 && (
-              <span className="rank-offlist">not in the top {entries.length}</span>
+              <span className="rank-offlist">Not In The Top {entries.length}</span>
             )}
           </div>
         </div>

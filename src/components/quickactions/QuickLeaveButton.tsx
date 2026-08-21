@@ -36,7 +36,7 @@ export const QuickLeaveButton: React.FC<QuickLeaveButtonProps> = ({
 
             <div className="leave-summary">
               <div className="summary-row">
-                <span>Buy-in</span>
+                <span>Buy-In</span>
                 <span>{buyIn.toLocaleString()}</span>
               </div>
               <div className="summary-row">

@@ -249,8 +249,8 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
           <option value="messages">Messages</option>
           <option value="chip_mint">Chip Mints</option>
           <option value="chip_transfer">Transfers</option>
-          <option value="buyin">Buy-ins</option>
-          <option value="cashout">Cash-outs</option>
+          <option value="buyin">Buy-Ins</option>
+          <option value="cashout">Cash-Outs</option>
           <option value="settlement">Settlements</option>
           <option value="rake">Rake</option>
         </select>
@@ -259,9 +259,9 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
       {/* Entries */}
       <div className="arena-ledger__list">
         {loading ? (
-          <div className="arena-ledger__loading">Loading ledger...</div>
+          <div className="arena-ledger__loading">Loading Ledger...</div>
         ) : filteredEntries.length === 0 ? (
-          <div className="arena-ledger__empty">No matching ledger entries</div>
+          <div className="arena-ledger__empty">No Matching Ledger Entries</div>
         ) : (
           filteredEntries.map((entry) => {
             const config =
@@ -320,8 +320,8 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
 
       {/* Footer */}
       <div className="arena-ledger__footer">
-        {filteredEntries.length} of {entries.length} events
-        {isLive && <span className="arena-ledger__footer-live"> · Live streaming</span>}
+        {filteredEntries.length} Of {entries.length} Events
+        {isLive && <span className="arena-ledger__footer-live"> · Live Streaming</span>}
       </div>
     </div>
   );

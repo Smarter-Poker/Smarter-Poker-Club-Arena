@@ -158,7 +158,7 @@ class ErrorBoundary extends Component<Props, State> {
                   fontWeight: '600',
                 }}
               >
-                Something went wrong
+                Something Went Wrong
               </h1>
 
               <p
@@ -168,8 +168,8 @@ class ErrorBoundary extends Component<Props, State> {
                   lineHeight: '1.6',
                 }}
               >
-                We've been notified and are working on a fix. You can help us by providing more
-                details about what happened.
+                We've Been Notified And Are Working On A Fix. You Can Help Us By Providing More
+                Details About What Happened.
               </p>
 
               <div

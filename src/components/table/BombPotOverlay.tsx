@@ -278,7 +278,7 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSou
           <div className="bpo-subtitle">{doubleBoard ? 'DOUBLE BOARD' : 'ALL PLAYERS IN'}</div>
           {anteAmount > 0 && (
             <div className="bpo-ante">
-              Everyone antes {anteAmount.toLocaleString()}
+              Everyone Antes {anteAmount.toLocaleString()}
               {bbMultiplier > 0 ? ` (${bbMultiplier}x BB)` : ''}
             </div>
           )}

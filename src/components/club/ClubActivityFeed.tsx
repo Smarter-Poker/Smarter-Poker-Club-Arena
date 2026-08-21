@@ -209,9 +209,9 @@ export default function ClubActivityFeed({
 
       <div className={styles.list}>
         {loading ? (
-          <div className={styles.loading}>Loading activity...</div>
+          <div className={styles.loading}>Loading Activity...</div>
         ) : filteredActivities.length === 0 ? (
-          <div className={styles.empty}>No activity yet</div>
+          <div className={styles.empty}>No Activity Yet</div>
         ) : (
           filteredActivities.map((activity) => (
             <div

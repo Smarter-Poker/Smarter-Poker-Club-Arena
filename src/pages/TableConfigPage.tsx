@@ -27,10 +27,7 @@ import {
   buildTournamentConfig,
   canRunAsTournament as gameTypeCanRunAsTournament,
 } from '../lib/tournamentFromTableConfig';
-import {
-  gameCreationDeniedMessage,
-  type GameCreationAccess,
-} from '../lib/gameCreationAccess';
+import { gameCreationDeniedMessage, type GameCreationAccess } from '../lib/gameCreationAccess';
 import { fetchGameCreationAccess } from '../services/GameAccessService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1005,294 +1002,294 @@ export default function TableConfigPage() {
             and have every one of them silently ignored. */}
         {config.gameMode === 'regular' && (
           <>
-        {/* SECTION: Basic Settings */}
-        <Toggle
-          label="Private Game"
-          value={config.isPrivate}
-          onChange={(v) => updateConfig('isPrivate', v)}
-        />
-        <Toggle
-          label="VIP Only"
-          value={config.isVipOnly}
-          onChange={(v) => updateConfig('isVipOnly', v)}
-        />
-        <Toggle
-          label="Bomb Pot"
-          value={config.bombPotEnabled}
-          onChange={(v) => updateConfig('bombPotEnabled', v)}
-          tooltip="Enable bomb pot rounds"
-        />
-        <Toggle
-          label="Double Board"
-          value={config.doubleBoard}
-          onChange={(v) => updateConfig('doubleBoard', v)}
-        />
-        <Toggle
-          label="Triple Board"
-          value={config.tripleBoard}
-          onChange={(v) => updateConfig('tripleBoard', v)}
-        />
-        <Toggle
-          label="Pineapple Hold'em"
-          value={config.pineappleHoldem}
-          onChange={(v) => updateConfig('pineappleHoldem', v)}
-          tooltip="3 hole cards, discard 1"
-        />
-        <Toggle
-          label="Seven-Deuce"
-          value={config.sevenDeuceEnabled}
-          onChange={(v) => updateConfig('sevenDeuceEnabled', v)}
-          tooltip="Winner holding any 7-2 collects a bounty from each other player (post-flop only)"
-        />
-        {config.sevenDeuceEnabled && (
-          <Slider
-            label="7-2 Bounty"
-            value={config.sevenDeuceAmountBB}
-            onChange={(v) => updateConfig('sevenDeuceAmountBB', v)}
-            min={0.5}
-            max={10}
-            step={0.5}
-            suffix=" Big Blind"
-          />
-        )}
-        <Toggle
-          label="NIT Game"
-          value={config.nitGame}
-          onChange={(v) => updateConfig('nitGame', v)}
-          tooltip="Penalty for tight play"
-        />
-        <Toggle
-          label="Anonymous Table"
-          value={config.isAnonymous}
-          onChange={(v) => updateConfig('isAnonymous', v)}
-        />
-        <Toggle
-          label="Cap"
-          value={config.capEnabled}
-          onChange={(v) => updateConfig('capEnabled', v)}
-          tooltip="Cap the max bet"
-        />
-        <Toggle
-          label="Ban Chat"
-          value={config.banChat}
-          onChange={(v) => updateConfig('banChat', v)}
-        />
-        <Toggle
-          label="Label as NEW"
-          value={config.labelAsNew}
-          onChange={(v) => updateConfig('labelAsNew', v)}
-          tooltip="Show NEW badge"
-        />
-        <Toggle
-          label="Featured Table"
-          value={config.isFeatured}
-          onChange={(v) => updateConfig('isFeatured', v)}
-          tooltip="Feature at top of list"
-        />
-        <Toggle
-          label="No Rathole"
-          value={config.noRathole}
-          onChange={(v) => updateConfig('noRathole', v)}
-          tooltip="Prevent leaving with winnings"
-        />
-
-        {/* SECTION: Table Parameters */}
-        <Slider
-          label="Table Size"
-          value={config.maxPlayers}
-          onChange={(v) => updateConfig('maxPlayers', v)}
-          min={2}
-          max={10}
-          suffix=" max"
-        />
-
-        <Toggle
-          label="Calltime"
-          value={config.calltimeEnabled}
-          onChange={(v) => updateConfig('calltimeEnabled', v)}
-          tooltip="Shot clock for action"
-        />
-
-        <Slider
-          label="Action Time"
-          value={config.actionTimeSeconds}
-          onChange={(v) => updateConfig('actionTimeSeconds', v)}
-          min={5}
-          max={60}
-          suffix=" sec"
-        />
-
-        {/* Blinds Slider */}
-        <div className="config-slider">
-          <div className="slider-header">
-            <span className="slider-label">
-              Blinds: {config.smallBlind}/{config.bigBlind}
-            </span>
-          </div>
-          <div className="slider-track-container">
-            <input
-              type="range"
-              min={0}
-              max={BLINDS_PRESETS.length - 1}
-              value={blindsIndex}
-              onChange={(e) => handleBlindsChange(Number(e.target.value))}
-              className="slider-input"
+            {/* SECTION: Basic Settings */}
+            <Toggle
+              label="Private Game"
+              value={config.isPrivate}
+              onChange={(v) => updateConfig('isPrivate', v)}
             />
-          </div>
-        </div>
+            <Toggle
+              label="VIP Only"
+              value={config.isVipOnly}
+              onChange={(v) => updateConfig('isVipOnly', v)}
+            />
+            <Toggle
+              label="Bomb Pot"
+              value={config.bombPotEnabled}
+              onChange={(v) => updateConfig('bombPotEnabled', v)}
+              tooltip="Enable bomb pot rounds"
+            />
+            <Toggle
+              label="Double Board"
+              value={config.doubleBoard}
+              onChange={(v) => updateConfig('doubleBoard', v)}
+            />
+            <Toggle
+              label="Triple Board"
+              value={config.tripleBoard}
+              onChange={(v) => updateConfig('tripleBoard', v)}
+            />
+            <Toggle
+              label="Pineapple Hold'em"
+              value={config.pineappleHoldem}
+              onChange={(v) => updateConfig('pineappleHoldem', v)}
+              tooltip="3 hole cards, discard 1"
+            />
+            <Toggle
+              label="Seven-Deuce"
+              value={config.sevenDeuceEnabled}
+              onChange={(v) => updateConfig('sevenDeuceEnabled', v)}
+              tooltip="Winner holding any 7-2 collects a bounty from each other player (post-flop only)"
+            />
+            {config.sevenDeuceEnabled && (
+              <Slider
+                label="7-2 Bounty"
+                value={config.sevenDeuceAmountBB}
+                onChange={(v) => updateConfig('sevenDeuceAmountBB', v)}
+                min={0.5}
+                max={10}
+                step={0.5}
+                suffix=" Big Blind"
+              />
+            )}
+            <Toggle
+              label="NIT Game"
+              value={config.nitGame}
+              onChange={(v) => updateConfig('nitGame', v)}
+              tooltip="Penalty for tight play"
+            />
+            <Toggle
+              label="Anonymous Table"
+              value={config.isAnonymous}
+              onChange={(v) => updateConfig('isAnonymous', v)}
+            />
+            <Toggle
+              label="Cap"
+              value={config.capEnabled}
+              onChange={(v) => updateConfig('capEnabled', v)}
+              tooltip="Cap the max bet"
+            />
+            <Toggle
+              label="Ban Chat"
+              value={config.banChat}
+              onChange={(v) => updateConfig('banChat', v)}
+            />
+            <Toggle
+              label="Label as NEW"
+              value={config.labelAsNew}
+              onChange={(v) => updateConfig('labelAsNew', v)}
+              tooltip="Show NEW badge"
+            />
+            <Toggle
+              label="Featured Table"
+              value={config.isFeatured}
+              onChange={(v) => updateConfig('isFeatured', v)}
+              tooltip="Feature at top of list"
+            />
+            <Toggle
+              label="No Rathole"
+              value={config.noRathole}
+              onChange={(v) => updateConfig('noRathole', v)}
+              tooltip="Prevent leaving with winnings"
+            />
 
-        {/* Buy-in Range */}
-        <div className="config-slider">
-          <div className="slider-header">
-            <span className="slider-label">
-              Buy-in: {config.minBuyInBB} - {config.maxBuyInBB}
-            </span>
-          </div>
-          <div className="buyin-sliders">
-            <input
-              type="range"
+            {/* SECTION: Table Parameters */}
+            <Slider
+              label="Table Size"
+              value={config.maxPlayers}
+              onChange={(v) => updateConfig('maxPlayers', v)}
               min={2}
-              max={config.maxBuyInBB}
-              value={config.minBuyInBB}
-              onChange={(e) => updateConfig('minBuyInBB', Number(e.target.value))}
-              className="slider-input"
+              max={10}
+              suffix=" max"
             />
-            <input
-              type="range"
-              min={config.minBuyInBB}
-              max={500}
-              value={config.maxBuyInBB}
-              onChange={(e) => updateConfig('maxBuyInBB', Number(e.target.value))}
-              className="slider-input"
+
+            <Toggle
+              label="Calltime"
+              value={config.calltimeEnabled}
+              onChange={(v) => updateConfig('calltimeEnabled', v)}
+              tooltip="Shot clock for action"
             />
-          </div>
-        </div>
 
-        <Slider
-          label="Ante"
-          value={config.anteBB}
-          onChange={(v) => updateConfig('anteBB', v)}
-          min={0}
-          max={5}
-          step={0.5}
-          suffix=" Big Blind"
-        />
+            <Slider
+              label="Action Time"
+              value={config.actionTimeSeconds}
+              onChange={(v) => updateConfig('actionTimeSeconds', v)}
+              min={5}
+              max={60}
+              suffix=" sec"
+            />
 
-        <Slider
-          label="Career %"
-          value={config.careerPercentMin}
-          onChange={(v) => updateConfig('careerPercentMin', v)}
-          min={0}
-          max={100}
-          suffix="%"
-        />
+            {/* Blinds Slider */}
+            <div className="config-slider">
+              <div className="slider-header">
+                <span className="slider-label">
+                  Blinds: {config.smallBlind}/{config.bigBlind}
+                </span>
+              </div>
+              <div className="slider-track-container">
+                <input
+                  type="range"
+                  min={0}
+                  max={BLINDS_PRESETS.length - 1}
+                  value={blindsIndex}
+                  onChange={(e) => handleBlindsChange(Number(e.target.value))}
+                  className="slider-input"
+                />
+              </div>
+            </div>
 
-        <Slider
-          label="Maintain %"
-          value={config.maintainPercentMin}
-          onChange={(v) => updateConfig('maintainPercentMin', v)}
-          min={0}
-          max={100}
-          suffix="%"
-        />
+            {/* Buy-in Range */}
+            <div className="config-slider">
+              <div className="slider-header">
+                <span className="slider-label">
+                  Buy-In: {config.minBuyInBB} - {config.maxBuyInBB}
+                </span>
+              </div>
+              <div className="buyin-sliders">
+                <input
+                  type="range"
+                  min={2}
+                  max={config.maxBuyInBB}
+                  value={config.minBuyInBB}
+                  onChange={(e) => updateConfig('minBuyInBB', Number(e.target.value))}
+                  className="slider-input"
+                />
+                <input
+                  type="range"
+                  min={config.minBuyInBB}
+                  max={500}
+                  value={config.maxBuyInBB}
+                  onChange={(e) => updateConfig('maxBuyInBB', Number(e.target.value))}
+                  className="slider-input"
+                />
+              </div>
+            </div>
 
-        <Slider
-          label="Maintain #"
-          value={config.maintainHands}
-          onChange={(v) => updateConfig('maintainHands', v)}
-          min={1}
-          max={100}
-          suffix=" hands"
-        />
+            <Slider
+              label="Ante"
+              value={config.anteBB}
+              onChange={(v) => updateConfig('anteBB', v)}
+              min={0}
+              max={5}
+              step={0.5}
+              suffix=" Big Blind"
+            />
 
-        <Slider
-          label="AutoStart"
-          value={config.autoStartPlayers}
-          onChange={(v) => updateConfig('autoStartPlayers', v)}
-          min={2}
-          max={10}
-          suffix=" players"
-        />
+            <Slider
+              label="Career %"
+              value={config.careerPercentMin}
+              onChange={(v) => updateConfig('careerPercentMin', v)}
+              min={0}
+              max={100}
+              suffix="%"
+            />
 
-        {/* SECTION: Auto Settings */}
-        <Toggle
-          label="Auto Extension"
-          value={config.autoExtension}
-          onChange={(v) => updateConfig('autoExtension', v)}
-          tooltip="Extend table automatically"
-        />
-        <Toggle
-          label="Auto Restart"
-          value={config.autoRestart}
-          onChange={(v) => updateConfig('autoRestart', v)}
-        />
-        <Toggle
-          label="Auto Create Table"
-          value={config.autoCreateTable}
-          onChange={(v) => updateConfig('autoCreateTable', v)}
-          tooltip="Create new table when full"
-        />
-        <Toggle
-          label="Auto UTG Straddle"
-          value={config.autoUtgStraddle}
-          onChange={(v) => updateConfig('autoUtgStraddle', v)}
-          tooltip="Automatic UTG straddle"
-        />
-        <Toggle
-          label="Voluntary Straddle"
-          value={config.voluntaryStraddle}
-          onChange={(v) => updateConfig('voluntaryStraddle', v)}
-          tooltip="Allow voluntary straddle"
-        />
-        <Toggle
-          label="Insurance"
-          value={config.insuranceEnabled}
-          onChange={(v) => updateConfig('insuranceEnabled', v)}
-          tooltip="All-in insurance option"
-        />
+            <Slider
+              label="Maintain %"
+              value={config.maintainPercentMin}
+              onChange={(v) => updateConfig('maintainPercentMin', v)}
+              min={0}
+              max={100}
+              suffix="%"
+            />
 
-        {/* Run It Multi-Times */}
-        <div className="config-radio-group">
-          <span className="radio-group-label">Run It Multi-Times</span>
-          <div className="radio-options">
-            <label className="radio-option">
-              <input
-                type="radio"
-                name="runIt"
-                checked={config.runItMode === 'none'}
-                onChange={() => updateConfig('runItMode', 'none')}
-              />
-              <span>None</span>
-            </label>
-            <label className="radio-option">
-              <input
-                type="radio"
-                name="runIt"
-                checked={config.runItMode === 'player_choice'}
-                onChange={() => updateConfig('runItMode', 'player_choice')}
-              />
-              <span>Player's choice</span>
-            </label>
-            <label className="radio-option">
-              <input
-                type="radio"
-                name="runIt"
-                checked={config.runItMode === 'mandatory_twice'}
-                onChange={() => updateConfig('runItMode', 'mandatory_twice')}
-              />
-              <span>Mandatory Twice</span>
-            </label>
-            <label className="radio-option">
-              <input
-                type="radio"
-                name="runIt"
-                checked={config.runItMode === 'mandatory_three'}
-                onChange={() => updateConfig('runItMode', 'mandatory_three')}
-              />
-              <span>Mandatory 3 times</span>
-            </label>
-          </div>
-        </div>
+            <Slider
+              label="Maintain #"
+              value={config.maintainHands}
+              onChange={(v) => updateConfig('maintainHands', v)}
+              min={1}
+              max={100}
+              suffix=" hands"
+            />
+
+            <Slider
+              label="AutoStart"
+              value={config.autoStartPlayers}
+              onChange={(v) => updateConfig('autoStartPlayers', v)}
+              min={2}
+              max={10}
+              suffix=" players"
+            />
+
+            {/* SECTION: Auto Settings */}
+            <Toggle
+              label="Auto Extension"
+              value={config.autoExtension}
+              onChange={(v) => updateConfig('autoExtension', v)}
+              tooltip="Extend table automatically"
+            />
+            <Toggle
+              label="Auto Restart"
+              value={config.autoRestart}
+              onChange={(v) => updateConfig('autoRestart', v)}
+            />
+            <Toggle
+              label="Auto Create Table"
+              value={config.autoCreateTable}
+              onChange={(v) => updateConfig('autoCreateTable', v)}
+              tooltip="Create new table when full"
+            />
+            <Toggle
+              label="Auto UTG Straddle"
+              value={config.autoUtgStraddle}
+              onChange={(v) => updateConfig('autoUtgStraddle', v)}
+              tooltip="Automatic UTG straddle"
+            />
+            <Toggle
+              label="Voluntary Straddle"
+              value={config.voluntaryStraddle}
+              onChange={(v) => updateConfig('voluntaryStraddle', v)}
+              tooltip="Allow voluntary straddle"
+            />
+            <Toggle
+              label="Insurance"
+              value={config.insuranceEnabled}
+              onChange={(v) => updateConfig('insuranceEnabled', v)}
+              tooltip="All-in insurance option"
+            />
+
+            {/* Run It Multi-Times */}
+            <div className="config-radio-group">
+              <span className="radio-group-label">Run It Multi-Times</span>
+              <div className="radio-options">
+                <label className="radio-option">
+                  <input
+                    type="radio"
+                    name="runIt"
+                    checked={config.runItMode === 'none'}
+                    onChange={() => updateConfig('runItMode', 'none')}
+                  />
+                  <span>None</span>
+                </label>
+                <label className="radio-option">
+                  <input
+                    type="radio"
+                    name="runIt"
+                    checked={config.runItMode === 'player_choice'}
+                    onChange={() => updateConfig('runItMode', 'player_choice')}
+                  />
+                  <span>Player's Choice</span>
+                </label>
+                <label className="radio-option">
+                  <input
+                    type="radio"
+                    name="runIt"
+                    checked={config.runItMode === 'mandatory_twice'}
+                    onChange={() => updateConfig('runItMode', 'mandatory_twice')}
+                  />
+                  <span>Mandatory Twice</span>
+                </label>
+                <label className="radio-option">
+                  <input
+                    type="radio"
+                    name="runIt"
+                    checked={config.runItMode === 'mandatory_three'}
+                    onChange={() => updateConfig('runItMode', 'mandatory_three')}
+                  />
+                  <span>Mandatory 3 Times</span>
+                </label>
+              </div>
+            </div>
           </>
         )}
 
@@ -1487,7 +1484,6 @@ export default function TableConfigPage() {
                 onChange={(e) => updateConfig('startTime', e.target.value)}
               />
             </div>
-
           </>
         )}
 
@@ -1497,7 +1493,7 @@ export default function TableConfigPage() {
             per hand, so a per-pot rake override has nothing to act on. */}
         {config.gameMode === 'regular' && (
           <>
-        {/* SECTION: Rake Settings
+            {/* SECTION: Rake Settings
             Both sliders sit at -1 ("Schedule") by default, which means the
             published rake schedule decides — 10% with a cash cap that varies by
             stake. Sliding either one off -1 is a deliberate override, and an
@@ -1505,52 +1501,52 @@ export default function TableConfigPage() {
             clamps percent to 10 and the cap to 10 BB (getFullRakeConfig).
             The cap is entered in big blinds; the live cash value is shown
             beside it because 3 BB is $0.60 at 0.10/0.20 and $75 at 10/25. */}
-        <Slider
-          label="Fee"
-          value={config.rakePercent}
-          onChange={(v) => updateConfig('rakePercent', v)}
-          min={RAKE_INHERIT}
-          max={10}
-          step={0.5}
-          format={(v) => (v < 0 ? 'Schedule (10%)' : `${v}%`)}
-          tooltip="Percentage of each raked pot. Schedule = use the house rake schedule."
-        />
+            <Slider
+              label="Fee"
+              value={config.rakePercent}
+              onChange={(v) => updateConfig('rakePercent', v)}
+              min={RAKE_INHERIT}
+              max={10}
+              step={0.5}
+              format={(v) => (v < 0 ? 'Schedule (10%)' : `${v}%`)}
+              tooltip="Percentage of each raked pot. Schedule = use the house rake schedule."
+            />
 
-        <Slider
-          label="FeeCap"
-          value={config.rakeCapBB}
-          onChange={(v) => updateConfig('rakeCapBB', v)}
-          min={RAKE_INHERIT}
-          max={10}
-          format={(v) =>
-            v < 0
-              ? 'Schedule'
-              : `${v} x Big Blind${config.bigBlind ? ` (= ${formatCurrency(v * config.bigBlind)})` : ''}`
-          }
-          tooltip="Most that can be raked from one pot. Schedule = use the house cap for this stake."
-        />
+            <Slider
+              label="FeeCap"
+              value={config.rakeCapBB}
+              onChange={(v) => updateConfig('rakeCapBB', v)}
+              min={RAKE_INHERIT}
+              max={10}
+              format={(v) =>
+                v < 0
+                  ? 'Schedule'
+                  : `${v} x Big Blind${config.bigBlind ? ` (= ${formatCurrency(v * config.bigBlind)})` : ''}`
+              }
+              tooltip="Most that can be raked from one pot. Schedule = use the house cap for this stake."
+            />
 
-        {/* SECTION: Security */}
-        <Toggle
-          label="IP Restriction"
-          value={config.ipRestriction}
-          onChange={(v) => updateConfig('ipRestriction', v)}
-          tooltip="Two different accounts cannot sit at this table from the same internet connection. Players already seated are not affected."
-        />
-        <Toggle
-          label="Hide Club Name"
-          value={config.hideClubName}
-          onChange={(v) => updateConfig('hideClubName', v)}
-        />
+            {/* SECTION: Security */}
+            <Toggle
+              label="IP Restriction"
+              value={config.ipRestriction}
+              onChange={(v) => updateConfig('ipRestriction', v)}
+              tooltip="Two different accounts cannot sit at this table from the same internet connection. Players already seated are not affected."
+            />
+            <Toggle
+              label="Hide Club Name"
+              value={config.hideClubName}
+              onChange={(v) => updateConfig('hideClubName', v)}
+            />
 
-        <Slider
-          label="Game Length"
-          value={config.gameLengthHours}
-          onChange={(v) => updateConfig('gameLengthHours', v)}
-          min={1}
-          max={24}
-          suffix=" hour"
-        />
+            <Slider
+              label="Game Length"
+              value={config.gameLengthHours}
+              onChange={(v) => updateConfig('gameLengthHours', v)}
+              min={1}
+              max={24}
+              suffix=" hour"
+            />
           </>
         )}
       </div>

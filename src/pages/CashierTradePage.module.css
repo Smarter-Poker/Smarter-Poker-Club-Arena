@@ -25,7 +25,7 @@
 .back {
   background: none;
   border: none;
-  color: #f5a623;
+  color: #ffb800;
   font-size: 1.5rem;
   line-height: 1;
   cursor: pointer;
@@ -188,7 +188,7 @@
 .stripLabel {
   font-size: 0.62rem;
   font-weight: 700;
-  color: #f5a623;
+  color: #ffb800;
   line-height: 1.2;
 }
 
@@ -206,7 +206,7 @@
   height: 18px;
   border-radius: 50%;
   border: none;
-  background: #f5a623;
+  background: #ffb800;
   color: #1a1a1a;
   font-weight: 900;
   font-size: 0.8rem;
@@ -239,7 +239,7 @@
   justify-content: space-between;
   margin: 8px 14px 0;
   font-size: 0.78rem;
-  color: #f5a623;
+  color: #ffb800;
 }
 
 .groupToggle {
@@ -252,7 +252,7 @@
 .sortBtn {
   background: none;
   border: none;
-  color: #f5a623;
+  color: #ffb800;
   font-size: 0.78rem;
   cursor: pointer;
 }
@@ -274,7 +274,7 @@
 }
 
 .rowSelected {
-  background: rgba(245, 166, 35, 0.07);
+  background: rgba(255, 184, 0, 0.07);
 }
 
 .avatar {
@@ -347,8 +347,8 @@
 }
 
 .checkboxOn {
-  background: #f5a623;
-  border-color: #f5a623;
+  background: #ffb800;
+  border-color: #ffb800;
   position: relative;
 }
 

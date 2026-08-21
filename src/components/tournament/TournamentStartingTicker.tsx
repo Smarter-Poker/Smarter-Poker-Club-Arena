@@ -150,8 +150,17 @@ export function TournamentStartingTicker() {
         const horizonIso = new Date(Date.now() + LEAD_MS).toISOString();
         const { data, error } = await supabase
           .from('tournaments')
-          .select('id, name, start_time, club_id, buy_in_amount, current_players, status')
+          .select(
+            'id, name, start_time, club_id, buy_in_amount, current_players, status, tournament_type'
+          )
           .in('club_id', clubIds)
+          /* Dan 2026-08-21: "WE DON'T ANNOUNCE SPINS OR HEADS UP,
+             ONLY MTT EVENTS." Spins and heads-up games fire the moment their seats fill, so a
+             five-minute warning is meaningless for them and they would drown
+             the bar: the platform holds 7,306 spins and 2,809 heads-up games against
+             1,040 MTTs. A scheduled MTT is the only event a player needs to
+             be walked to the door for. */
+          .eq('tournament_type', 'MTT')
           // Pre-start states only. A RUNNING event is not "about to start", and
           // late registration has its own surfaces.
           .in('status', ['ANNOUNCED', 'REGISTERING'])

@@ -136,7 +136,7 @@ const GAME_FILTERS: Array<{ id: GameFilter; label: string }> = [
   { id: 'OMAHA', label: 'Omaha' },
   { id: 'MIXED', label: 'Mixed' },
   { id: 'MTT', label: 'MTT' },
-  { id: 'SNG', label: 'SNG' },
+  { id: 'SNG', label: 'Heads Up' },
 ];
 
 const STAKES_FILTERS: Array<{ id: StakesFilter; label: string }> = [

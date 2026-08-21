@@ -190,7 +190,7 @@ const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
   { key: 'HOLDEM', label: "Hold'em" },
   { key: 'OMAHA', label: 'Omaha' },
   { key: 'MTT', label: 'MTT' },
-  { key: 'SNG', label: 'Sit & Go' },
+  { key: 'SNG', label: 'Heads Up' },
   { key: 'SPIN', label: 'Spin' },
 ];
 
@@ -686,7 +686,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           if (!open) {
             return fail(
               variant === 'sng'
-                ? 'All Sit N Gos At This Stake Are Full, A Fresh One Opens Shortly'
+                ? 'All Heads Up Tables At This Stake Are Full, A Fresh One Opens Shortly'
                 : 'All Spins At This Stake Are Full, A Fresh One Opens Shortly'
             );
           }

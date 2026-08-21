@@ -61,7 +61,8 @@ export interface PayoutStructure {
 
 /**
  * Tournament Types:
- * - sng: Sit & Go (starts when full)
+ * - sng: Heads Up (starts when full). 'sng' stays the stored value;
+ *        Heads Up is what a player reads.
  * - mtt: Multi-Table Tournament (scheduled start)
  * - satellite: Wins seats to bigger tournaments
  * - spin: Spin & Go (random multiplier prize pools)

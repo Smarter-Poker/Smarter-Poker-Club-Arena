@@ -63,6 +63,13 @@ interface ThemeAsset {
 // game type that can never be played). Pineapple is an approved variant.
 const GAME_TYPES = ['ALL', 'NLH', '6+', 'PLO', 'PINEAPPLE', 'MTT', 'SNG'] as const;
 
+/* Dan 2026-08-21: 'SNG' is what the DB stores and what user_theme_settings is
+   keyed on, so the VALUE must not change - only what a player reads. Heads Up
+   is the product's name for it. */
+const GAME_TYPE_LABELS: Record<string, string> = {
+  SNG: 'Heads Up',
+};
+
 const TABS: { key: ThemeTab; label: string }[] = [
   { key: 'themes', label: 'Themes' },
   { key: 'table', label: 'Table' },
@@ -649,7 +656,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           >
             {GAME_TYPES.map((gt) => (
               <option key={gt} value={gt}>
-                {gt}
+                {GAME_TYPE_LABELS[gt] ?? gt}
               </option>
             ))}
           </select>

@@ -702,7 +702,7 @@ function TournamentCard({ tournament }: { tournament: Tournament }) {
       case 'mtt':
         return 'XMTT';
       case 'sng':
-        return 'SNG';
+        return 'HEADS UP';
       case 'spin':
         return 'SPIN';
       case 'satellite':

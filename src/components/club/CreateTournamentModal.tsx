@@ -477,8 +477,8 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                 <option value="mtt_rebuy">MTT (Rebuy)</option>
                 <option value="mtt_reentry">MTT (Re-Entry)</option>
               </optgroup>
-              <optgroup label="Sit & Go">
-                <option value="sng">Sit & Go (SNG)</option>
+              <optgroup label="Heads Up">
+                <option value="sng">Heads Up</option>
                 <option value="spin">Spin & Go</option>
               </optgroup>
               <optgroup label="Bounty Tournaments">

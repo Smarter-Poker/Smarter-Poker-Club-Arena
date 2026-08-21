@@ -169,7 +169,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
   const getTypeLabel = (type: string): string => {
     switch (type) {
       case 'sng':
-        return 'SNG';
+        return 'HEADS UP';
       case 'mtt':
         return 'MTT';
       case 'satellite':

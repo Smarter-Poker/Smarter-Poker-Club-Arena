@@ -8679,7 +8679,7 @@ export default function TablePage({
                           tournamentFormat === 'spin'
                             ? 'Poker Spins'
                             : tournamentFormat === 'sng'
-                              ? 'Poker Sit & Go'
+                              ? 'Poker Heads Up'
                               : 'Poker Tournament';
                         return (
                           <>

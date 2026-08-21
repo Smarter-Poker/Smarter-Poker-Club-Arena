@@ -1433,7 +1433,7 @@ function LegacyCreateTournamentModal({ clubId, onClose, onCreate }: CreateModalP
               value={form.type}
               onChange={(e) => setForm({ ...form, type: e.target.value as 'sng' | 'mtt' })}
             >
-              <option value="sng">Sit & Go</option>
+              <option value="sng">Heads Up</option>
               <option value="mtt">Tournament</option>
             </select>
           </div>

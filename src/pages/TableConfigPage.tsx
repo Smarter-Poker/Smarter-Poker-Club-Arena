@@ -835,7 +835,7 @@ export default function TableConfigPage() {
       );
       toast.success(
         config.gameMode === 'sng'
-          ? 'Sit & Go created - it starts as soon as it fills.'
+          ? 'Heads Up created - it starts as soon as it fills.'
           : 'Tournament created - registration is open.'
       );
       const createdId = (created as { id?: string } | null)?.id;

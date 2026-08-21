@@ -1170,6 +1170,91 @@ Verification: 2,610 tests pass (48 new), `tsc --noEmit` clean on client and
 server, `vite build` green, cross-user RPC denial proven against production,
 and Hetzner engine deploy confirmed by a DB-visible behavioural change.
 
+## 12B. Post-build audit, 2026-08-21
+
+Two full line-by-line review passes were run over everything above. They found
+**seven defects that corrupt data permanently** and a dozen correctness bugs.
+All are fixed, and every one has a regression test that was verified to FAIL
+against the old code.
+
+### 12B.1 The three that mattered most
+
+Each of these writes wrong data into `ca_hand_facts`, which is retained
+indefinitely while its source (`hand_history`) is purged at 7 days. A wrong row
+here is wrong forever.
+
+1. **`rake_paid` was hardcoded `0`.** Every row claimed the player paid no
+   rake, so "win rate net of rake" was permanently unanswerable. Now
+   contribution-weighted, matching `atomic_distribute_rake`.
+2. **`saw_flop` used a fold on *any* street.** A player who called preflop and
+   folded to a c-bet was recorded as never having seen the flop. That collapsed
+   `saw_flop` into `went_to_showdown` and — worse — made `cbet%` measure only
+   the c-bets that *worked*, because the ones that got raised off were excluded
+   from their own denominator.
+3. **`was_all_in` missed every all-in reached by calling.** The engine sets
+   `is_all_in` on a stack-consuming call but records the action as `'call'`, so
+   the covering player who snaps off a shove and the short stack who calls one
+   both looked not-all-in. That is one whole side of most all-in confrontations
+   missing from the luck graph.
+
+### 12B.2 The rest
+
+- `folded_to_three_bet` fired on folds to 4-bets and cold 4-bets (took two
+  passes to get right: it needs *opened*, *has not already answered*, and *no
+  further raise since*).
+- `faced_three_bet` fired on any re-raise, inflating fold-to-3-bet.
+- Transfer shares were rounded per pair, so they did not sum to what the winner
+  won — drift accumulating monotonically in the Nemesis aggregate. Now
+  largest-remainder, exact to the cent.
+- `all_in_street` recorded the runout street, not the player's commit street.
+- **Percentiles inverted below a negative breakpoint.** `bb100`'s p10 is −52.1
+  in production, and the extrapolation ranked −100 bb/100 at the 19th
+  percentile: the worse a player ran, the better they scored.
+- **The benchmark bar contradicted its own pill.** The field is 584 horses, so
+  VPIP p10 is 27.6 while the healthy band is 18-28 — a disciplined human at 24%
+  got a green "In Range" pill *and* a marker pinned under "Bottom 10%". Band
+  metrics now draw no bar at all.
+- **Two leak rules were unreachable.** `overall.wtsd` is showdowns over hands
+  *dealt* (~5% live), but the thresholds were written for showdowns over flops
+  *seen* (24-30%).
+- **The print dossier printed white-on-white** for most of its content, and
+  recharts' inline axis fills meant printed charts lost both axes. The 1s
+  "safety net" also collapsed the dossier mid-preview on Safari and mobile,
+  where `print()` does not block.
+- The EV gap band was green whether running above *or* below expectation.
+- The playstyle classifier was fed an aggression factor of exactly 1.0 on every
+  call, making shark/lag/maniac/tag literally unreachable.
+- A non-positive big blind wrote `net_bb` as raw chips, silently poisoning the
+  EV curve and heatmap colour scales. The hand is now refused instead.
+- `ca_player_class_hands` and `ca_hand_facts.four_bet` were live in production
+  with **no migration file** (RULE 2) — the schema was not reproducible from
+  `supabase/migrations`. Both committed.
+
+### 12B.3 Added after the audit
+
+- **`LeakPanel` / `findLeaks`** — the page could say what a player's numbers
+  were and nothing about what to do. Ranked, actionable findings derived purely
+  from stats already loaded. Its headline rule catches *position played
+  backwards*, which is invisible in a table of numbers.
+- **Heatmap drill-down** — clicking a cell lists the hands behind it.
+- **`four_bet`** column, because it is also unrecoverable if not captured now.
+
+### 12B.4 Known and deliberately left
+
+- `net` covers pot money only. Bad-beat jackpots, insurance settlements and 7-2
+  bounties move chips at the same settlement and are not included; a player who
+  hits a jackpot shows a large negative `net` on the hand that paid them.
+  Documented at the write site.
+- `had_cbet_flop_opp` counts spots where the hero was donked into, which most
+  trackers exclude.
+- `folds_to_3bet` and the c-bet rules are gated on hand volume rather than on
+  *opportunity* counts, which the RPC does not expose. At 1,000 hands and 8%
+  PFR a player faces perhaps 15-25 three-bets.
+- A 5-bet sets neither `three_bet` nor `four_bet`, matching usual tracker
+  scoping.
+
+---
+
 ### 12A.1 The one thing that is not done, and cannot be
 
 `ca_hand_facts` has **no backfill and cannot have one** — hole cards for

@@ -14,10 +14,15 @@
 
 .mtt-ticker {
   position: fixed;
+  /* `top` is set inline from the measured header bottom — see the component.
+     z-index sits BELOW the global header's 100 so that if the two ever do
+     meet (a header that grows after this bar is placed, a transform creating
+     a new stacking context) the header wins and the bar never draws across
+     it again. */
   top: 0;
   left: 0;
   right: 0;
-  z-index: 9400;
+  z-index: 90;
   display: flex;
   align-items: stretch;
   height: 34px;
@@ -109,6 +114,8 @@
 }
 @keyframes mttDrop {
   from {
+    /* Slides down out of the header rather than in from the top of the
+       viewport, now that it is anchored below it. */
     transform: translateY(-100%);
   }
   to {

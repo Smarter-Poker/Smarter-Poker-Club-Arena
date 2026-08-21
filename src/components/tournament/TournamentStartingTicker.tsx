@@ -79,13 +79,43 @@ function countdown(ms: number): string {
 export function TournamentStartingTicker() {
   const navigate = useNavigate();
   const location = useLocation();
-  // Dan 2026-08-21: only surface the ticker while at a table (see the render
-  // gate below). Computed here so hook order stays stable.
-  const atTable = location.pathname.startsWith('/table');
+  /* Dan 2026-08-21: "THE BANNER ONLY PLAYS WHILE YOUR INSIDE THE CLUB."
+     A table is inside a club, so both count; the home page, the global
+     tournament list and everything else do not. Computed here rather than at
+     the return so hook order stays stable. */
+  const insideClub =
+    location.pathname.startsWith('/clubs/') || location.pathname.startsWith('/table');
   const [upcoming, setUpcoming] = useState<UpcomingTournament[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [dismissed, setDismissed] = useState<Set<string>>(readDismissed);
   const clubIdsRef = useRef<string[] | null>(null);
+
+  /* Dan 2026-08-21: "it should play UNDER the global header, not through it."
+
+     The header is position: sticky, top 0, z-index 100, and lives inside the
+     page; this bar is an app-root sibling, so it cannot simply flow after it.
+     Measuring beats hard-coding 56px: three stylesheets declare a
+     --header-height (44px in one, 56px in two), the real header grows when its
+     content wraps, and a wrong constant shows either a gap or the overlap we
+     are here to remove. Read the rendered header's bottom edge, start there. */
+  const [headerBottom, setHeaderBottom] = useState(0);
+  useEffect(() => {
+    const measure = () => {
+      const el = document.querySelector('header');
+      setHeaderBottom(el ? Math.max(0, Math.round(el.getBoundingClientRect().bottom)) : 0);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    // The header also changes height after fonts and avatars load, not just
+    // on resize, so watch the element itself.
+    const el = document.querySelector('header');
+    const ro = typeof ResizeObserver !== 'undefined' && el ? new ResizeObserver(measure) : null;
+    if (ro && el) ro.observe(el);
+    return () => {
+      window.removeEventListener('resize', measure);
+      ro?.disconnect();
+    };
+  }, [location.pathname]);
 
   // ── Which clubs (and unions) does this player belong to? ──
   const loadScope = useCallback(async (): Promise<string[]> => {
@@ -180,10 +210,8 @@ export function TournamentStartingTicker() {
 
   if (live.length === 0) return null;
 
-  // Dan 2026-08-21: the ticker belongs to the FELT, not the whole app - it
-  // renders only while the player is at a table. Everywhere else (lobby,
-  // cashier, stats) the tournament pages carry their own schedules.
-  if (!atTable) return null;
+  // Outside a club there is nothing to announce: /clubs and /table only.
+  if (!insideClub) return null;
 
   // One bar. If two events land in the same window the marquee carries both
   // rather than stacking bars over the felt.
@@ -202,7 +230,7 @@ export function TournamentStartingTicker() {
     .join('        •        ');
 
   return (
-    <div className="mtt-ticker" role="status" aria-live="polite">
+    <div className="mtt-ticker" role="status" aria-live="polite" style={{ top: headerBottom }}>
       <span className="mtt-ticker__flag">STARTING SOON</span>
 
       <button

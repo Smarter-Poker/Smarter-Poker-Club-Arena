@@ -27,6 +27,10 @@ import { join, resolve, relative } from 'node:path';
 
 const SRC = resolve(__dirname, '../src');
 
+/** Code only. A rule that fires on its own documentation gets deleted. */
+const stripComments = (text: string) =>
+  text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
@@ -37,20 +41,43 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 describe('dealer tipping stays removed', () => {
-  it('the TipDealer component does not exist', () => {
-    for (const ext of ['.tsx', '.ts', '.jsx', '.js']) {
-      expect(existsSync(join(SRC, 'components/table', `TipDealer${ext}`))).toBe(false);
+  it('no tipping component exists', () => {
+    // TipDealer was the in-game modal. TipPrompt was a second one, in
+    // components/feedback, offering to tip "the dealer" after a win - dead,
+    // exported from the feedback barrel, and never rendered. Dan, 2026-08-21:
+    // "REMOVE ANY AND ALL THINGS RELATED TO TIPPING DEALERS."
+    const gone = [
+      ['components/table', 'TipDealer'],
+      ['components/feedback', 'TipPrompt'],
+    ];
+    const found: string[] = [];
+    for (const [dir, name] of gone) {
+      for (const ext of ['.tsx', '.ts', '.jsx', '.js', '.css']) {
+        if (existsSync(join(SRC, dir, `${name}${ext}`))) found.push(`${dir}/${name}${ext}`);
+      }
     }
+    expect(found).toEqual([]);
   });
 
-  it('nothing imports or re-exports it', () => {
+  it('nothing imports or re-exports either of them', () => {
     const offenders = walk(SRC).filter((f) => {
-      const text = readFileSync(f, 'utf8');
-      // The barrel file carries a comment explaining the removal, which is
-      // the one mention that should survive. Match code, not prose.
-      return /\bfrom\s+['"][^'"]*TipDealer['"]/.test(text) || /\bTipDealer\s*[,}]/.test(text);
+      // Barrel files carry comments explaining the removal, which are the one
+      // kind of mention that should survive. Match code, not prose.
+      const text = stripComments(readFileSync(f, 'utf8'));
+      return /\bfrom\s+['"][^'"]*(TipDealer|TipPrompt)['"]/.test(text)
+        || /\b(TipDealer|TipPrompt)\s*[,}]/.test(text);
     });
     expect(offenders.map((f) => relative(SRC, f))).toEqual([]);
+  });
+
+  it('the server has no tipdealer route or handler', () => {
+    const SERVER = resolve(__dirname, '../server/src');
+    expect(existsSync(join(SERVER, 'handlers/tipdealer.ts'))).toBe(false);
+    if (!existsSync(SERVER)) return;
+    const offenders = walk(SERVER).filter((f) =>
+      /tipDealer|handleTipdealer|['"]\/tipdealer['"]/.test(stripComments(readFileSync(f, 'utf8')))
+    );
+    expect(offenders.map((f) => relative(SERVER, f))).toEqual([]);
   });
 
   it('no client-side dealer tip call survives', () => {
@@ -62,8 +89,6 @@ describe('dealer tipping stays removed', () => {
     // every removed symbol precisely so nobody rebuilds them from memory, and
     // a guard that fires on its own documentation is a guard that gets deleted.
     const banned = /processDealerTip|tipDealer\s*\(|['"]\/tipdealer['"]|atomic_table_dealer_tip|deduct_table_chip_lock/;
-    const stripComments = (text: string) =>
-      text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
     const offenders = walk(SRC).filter((f) => banned.test(stripComments(readFileSync(f, 'utf8'))));
     expect(
       offenders.map((f) => relative(SRC, f)),

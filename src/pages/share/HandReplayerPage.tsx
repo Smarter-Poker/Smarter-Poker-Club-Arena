@@ -324,7 +324,9 @@ export default function HandReplayerPage() {
                   return (
                     <div
                       key={p.name}
-                      ref={(el) => (overlayRefs.current[p.seat] = el)}
+                      ref={(el) => {
+                        overlayRefs.current[p.seat] = el;
+                      }}
                       style={{
                         position: 'absolute',
                         left: '-9999px', // Initial hidden state until first update
@@ -426,10 +428,37 @@ export default function HandReplayerPage() {
               </button>
             </div>
 
-            <div className="action-timeline">
-              {hand.actions.map((action, idx) => (
-                <div key={idx} className={`timeline-step ${idx <= currentStep ? 'active' : ''}`} />
-              ))}
+            <div className="action-timeline-container">
+              <input
+                type="range"
+                className="timeline-scrubber"
+                min={0}
+                max={hand.actions.length - 1}
+                value={currentStep}
+                onChange={(e) => {
+                  setCurrentStep(Number(e.target.value));
+                  if (isPlaying) {
+                    setIsPlaying(false);
+                    if (intervalRef.current) clearInterval(intervalRef.current);
+                  }
+                }}
+              />
+              <div className="action-timeline-ticks">
+                {hand.actions.map((action, idx) => (
+                  <div
+                    key={idx}
+                    className={`timeline-step ${idx <= currentStep ? 'active' : ''}`}
+                    onClick={() => {
+                      setCurrentStep(idx);
+                      if (isPlaying) {
+                        setIsPlaying(false);
+                        if (intervalRef.current) clearInterval(intervalRef.current);
+                      }
+                    }}
+                    title={`${action.player}: ${action.action} ${action.amount || ''}`}
+                  />
+                ))}
+              </div>
             </div>
           </>
         )}

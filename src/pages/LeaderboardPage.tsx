@@ -57,11 +57,14 @@ const podiumAnimationStyle = {
   animation: 'fadeInUp 0.7s ease-out forwards',
 };
 
-const rankingRowAnimationStyle = (index: number) => ({
-  opacity: 0,
-  transform: 'translateY(8px)',
-  animation: `fadeInUp 0.5s ease-out ${index * 60}ms forwards`,
-});
+const rankingRowAnimationStyle = (index: number) =>
+  index > 12
+    ? {}
+    : {
+        opacity: 0,
+        transform: 'translateY(8px)',
+        animation: `fadeInUp 0.5s ease-out ${index * 60}ms forwards`,
+      };
 
 type LeaderboardScope = 'my-clubs' | 'global';
 type LeaderboardTab = 'rankings' | 'tournaments';
@@ -991,7 +994,7 @@ export default function LeaderboardPage() {
               computeItemKey={(index, item) => item.userId}
               itemContent={(index: number, stat: TournamentStats) => (
                 <div
-                  className={`tournament-stats-entry animate-fade-in-up stagger-${Math.min(index + 1, 10)} ${stat.userId === user?.id ? 'current-user' : ''}`}
+                  className={`tournament-stats-entry ${index < 12 ? `animate-fade-in-up stagger-${Math.min(index + 1, 10)}` : ''} ${stat.userId === user?.id ? 'current-user' : ''}`}
                   onClick={() => navigate(`/profile/${stat.userId}`)}
                   style={{ cursor: 'pointer' }}
                 >

@@ -38,6 +38,9 @@ import type { ThrowPhysics } from '../../services/ThrowableService';
 import { throwableSoundService } from '../../services/ThrowableSoundService';
 import { ThrowableImage } from './ThrowableImage';
 import './ThrowAnimation.css';
+// Per-item signature FX -- MUST load after ThrowAnimation.css so its
+// equal-specificity overrides win the cascade.
+import './ThrowableSignatures.css';
 
 // =================================================================================
 // TIMING (ms)
@@ -75,6 +78,25 @@ const PARTICLES: Record<string, number> = {
 const FLIGHT_SIZE: Record<string, number> = { light: 42, medium: 48, heavy: 58 };
 const IMPACT_SIZE: Record<string, number> = { light: 56, medium: 64, heavy: 76 };
 
+/**
+ * Per-item flight-duration overrides (ms) -- a tennis serve and a lightning
+ * strike should not share the leisurely pace of their physics profile.
+ */
+const DURATION_OVERRIDES: Record<string, number> = {
+  tennis_ball: 330,
+  lightning_bolt: 260,
+  rocket: 400,
+  magnet: 360,
+  boxing_glove: 380,
+};
+
+/**
+ * Items whose flight telegraphs the TARGET (rendered at the impact point
+ * DURING flight): the anvil's growing cartoon shadow, the lightning strike
+ * warning glow. Everything else renders no target FX.
+ */
+const TARGET_TELEGRAPH = new Set(['anvil', 'lightning_bolt', 'bomb']);
+
 /** Normalized stereo position (-1..1) for a screen x coordinate. */
 function panForX(x: number): number {
   const w = typeof window !== 'undefined' ? window.innerWidth : 0;
@@ -103,11 +125,20 @@ interface ParticleSpec {
 export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimationProps) {
   const [phase, setPhase] = useState<'windup' | 'flight' | 'impact' | 'linger' | 'done'>('windup');
 
-  const fromPos = seatPositions.get(event.fromSeat);
   const toPos = seatPositions.get(event.toSeat);
+  // ACCURACY FIX (per-item pass): an unseated thrower (railbird, or a seat
+  // the receiving client could not resolve) arrives as fromSeat 0, which has
+  // no position -- the throw used to be charged, broadcast, and then render
+  // NOTHING. Synthesize a launch point below the target instead, so every
+  // paid throw is seen by everyone.
+  const fromPos =
+    seatPositions.get(event.fromSeat) || (toPos ? { x: toPos.x, y: toPos.y + 240 } : undefined);
 
   const t = event.throwable;
-  const physics = PHYSICS[t.physics] || PHYSICS.arc;
+  const basePhysics = PHYSICS[t.physics] || PHYSICS.arc;
+  const physics = DURATION_OVERRIDES[t.id]
+    ? { ...basePhysics, duration: DURATION_OVERRIDES[t.id] }
+    : basePhysics;
   const isHeavy = t.weight === 'heavy';
   const flightSize = FLIGHT_SIZE[t.weight] || 48;
   const impactSize = IMPACT_SIZE[t.weight] || 64;
@@ -237,6 +268,20 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
         </div>
       )}
 
+      {/* FLIGHT -- target telegraph (anvil shadow / strike warning) */}
+      {phase === 'flight' && TARGET_TELEGRAPH.has(t.id) && (
+        <div
+          className="throw-animation__fxt"
+          style={
+            {
+              left: toPos.x,
+              top: toPos.y,
+              '--flight-dur': `${physics.duration}ms`,
+            } as React.CSSProperties
+          }
+        />
+      )}
+
       {/* FLIGHT -- physics-profiled trajectory with spin, tilt + trail */}
       {phase === 'flight' && (
         <div
@@ -266,6 +311,10 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
           <div className="throw-animation__spinner">
             <div className="throw-animation__glow throw-animation__glow--flight" />
             <div className="throw-animation__tilt">
+              {/* per-item flight signature (rocket flame, bomb fuse spark,
+                  water stream, feathers... display:none unless the item's
+                  data-throwable CSS block turns it on) */}
+              <div className="throw-animation__fxf" />
               <ThrowableImage throwableId={t.id} size={flightSize} />
             </div>
           </div>
@@ -293,6 +342,10 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
 
           {/* shockwave ring */}
           <div className="throw-animation__burst" />
+
+          {/* per-item impact signature (frost ring, bite marks, claw slashes,
+              steam, petals, pins, cork, magic-8 answer... CSS-gated) */}
+          <div className="throw-animation__fxi" />
 
           {/* particle scatter */}
           <div className="throw-animation__particles">

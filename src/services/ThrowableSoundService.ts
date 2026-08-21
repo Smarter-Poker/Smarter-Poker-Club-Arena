@@ -312,7 +312,15 @@ class ThrowableSoundServiceClass {
     // ── Reactions ──
     pop_up: () => this.run([523, 659, 784], 0.12, 0.2, 'triangle'),
     pop_down: () => this.run([392, 330, 262], 0.12, 0.2, 'triangle'),
-    giggle: () => this.run([600, 750, 600, 800, 650], 0.07, 0.16, 'square', 0.07),
+    giggle: () => {
+      // staccato ha-ha-ha, two bursts like a real laugh
+      this.run([620, 540, 620, 540], 0.05, 0.16, 'square', 0.075);
+      this.run([700, 590, 700], 0.05, 0.13, 'square', 0.075);
+      // second burst starts after a breath
+      [0.42, 0.5, 0.58].forEach((d, i) =>
+        this.tone(i % 2 === 0 ? 660 : 560, 0.05, 0.12, 'square', undefined, d)
+      );
+    },
     weep: () => {
       this.tone(500, 0.45, 0.16, 'sine', 260);
       this.noise(0.3, 0.05, 2500, 'highpass', 0.1);
@@ -322,9 +330,11 @@ class ThrowableSoundServiceClass {
       this.noise(0.2, 0.12, 300, 'lowpass');
     },
     smooth: () => {
-      this.tone(392, 0.3, 0.12, 'sine');
-      this.tone(494, 0.3, 0.12, 'sine');
-      this.tone(587, 0.35, 0.12, 'sine', undefined, 0.05);
+      // sunglasses slide down the nose... then the chord lands
+      this.noiseSweep(0.16, 0.08, 3200, 900, 'bandpass', 0, 1.4);
+      this.tone(392, 0.3, 0.12, 'sine', undefined, 0.12);
+      this.tone(494, 0.3, 0.12, 'sine', undefined, 0.12);
+      this.tone(587, 0.4, 0.12, 'sine', undefined, 0.18);
     },
     kiss: () => {
       this.noise(0.08, 0.14, 3000, 'bandpass', 0, 2);
@@ -345,16 +355,23 @@ class ThrowableSoundServiceClass {
     },
     slip: () => {
       this.tone(900, 0.25, 0.16, 'sine', 200); // slide-whistle down
-      this.thump(120, 0.1, 0.18, 0.22);
+      this.thump(120, 0.1, 0.18, 0.22); // pratfall
+      this.tone(260, 0.28, 0.14, 'sine', 520, 0.3); // cartoon boi-oing up
+      this.tone(520, 0.18, 0.08, 'sine', 380, 0.5); // ...and settle
     },
     splat_cheese: () => {
       this.noise(0.14, 0.26, 600, 'lowpass');
       this.thump(140, 0.14, 0.2);
+      this.tone(300, 0.3, 0.08, 'sine', 90, 0.1); // cheese stretching downward
+      this.noise(0.1, 0.06, 500, 'lowpass', 0.28); // the strand lets go
     },
     splat_heavy: () => {
       this.thump(100, 0.2, 0.3);
       this.noise(0.2, 0.3, 500, 'lowpass');
       this.noise(0.15, 0.1, 900, 'lowpass', 0.12);
+      // frosting shlop: a second, wetter splat sliding off
+      this.noise(0.18, 0.14, 350, 'lowpass', 0.26);
+      this.tone(180, 0.2, 0.07, 'sine', 70, 0.26);
     },
     splat_gross: () => {
       this.noise(0.18, 0.28, 350, 'lowpass');
@@ -385,6 +402,8 @@ class ThrowableSoundServiceClass {
     snow_poof: () => {
       this.noise(0.25, 0.2, 1200, 'lowpass');
       this.tone(600, 0.2, 0.08, 'sine', 300);
+      // icy crystal chimes as the frost ring blooms
+      this.run([2637, 3136, 3951], 0.16, 0.07, 'sine', 0.09);
     },
     magnet_clink: () => {
       this.warble(300, 50, 120, 0.25, 0.12); // hum
@@ -431,6 +450,8 @@ class ThrowableSoundServiceClass {
     mystic: () => {
       this.warble(440, 6, 30, 0.5, 0.12);
       this.run([523, 622, 740, 880], 0.15, 0.08, 'sine', 0.1);
+      // the answer surfaces: a deep certain thump under the shimmer
+      this.thump(72, 0.4, 0.2, 0.35);
     },
 
     // ── Cheers ──
@@ -463,7 +484,10 @@ class ThrowableSoundServiceClass {
       this.noise(0.06, 0.15, 6000, 'highpass'); // glassy tick
     },
     romance: () => {
-      this.run([659, 784, 988, 1319], 0.22, 0.1, 'sine', 0.11);
+      // harp glissando up, then a held soft third
+      this.run([523, 659, 784, 988, 1319, 1568], 0.2, 0.09, 'sine', 0.07);
+      this.tone(988, 0.5, 0.06, 'sine', undefined, 0.45);
+      this.tone(1245, 0.5, 0.06, 'sine', undefined, 0.45);
     },
     fanfare: () => {
       this.run([523, 659, 784, 1047], 0.16, 0.16, 'triangle', 0.09);
@@ -507,7 +531,9 @@ class ThrowableSoundServiceClass {
       this.tone(900, 0.6, 0.06, 'sine', 400, 0.1);
     },
     doom_rattle: () => {
-      this.tone(110, 0.5, 0.22, 'sawtooth', 80);
+      // detuned low dyad -- a horror-score shiver under the bones
+      this.tone(110, 0.5, 0.2, 'sawtooth', 80);
+      this.tone(116, 0.5, 0.14, 'sawtooth', 84);
       [0.1, 0.18, 0.25, 0.34].forEach((d) =>
         this.tone(500 + Math.random() * 200, 0.04, 0.12, 'square', undefined, d)
       );

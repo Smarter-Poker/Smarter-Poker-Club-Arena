@@ -40,12 +40,12 @@ agreed at boot — and then hand 1 settled and it all went quiet.
 
 Not by reading the code, which reads correctly. By counting.
 
-| window | measurement |
-|---|---|
-| 90 min of live traffic | 13,941 hands |
-| cash hands (RIT is tournament-gated) | 4,596 |
-| hands where betting stopped on a pre-river all-in | 54 |
-| RIT offers actually made | 3 |
+| window                                            | measurement  |
+| ------------------------------------------------- | ------------ |
+| 90 min of live traffic                            | 13,941 hands |
+| cash hands (RIT is tournament-gated)              | 4,596        |
+| hands where betting stopped on a pre-river all-in | 54           |
+| RIT offers actually made                          | 3            |
 
 Three offers, and all three landed in the minutes right after the 18:08 engine
 deploy restarted every table — each table spending its one allowed hand. That
@@ -9593,3 +9593,47 @@ tournaments_rake_within_10_pct. The constraint is NOT VALID and so tolerates
 the existing row but rejects any UPDATE to it, which is why that one event
 keeps its old advertised range. Its rake predates the one-rake model and
 19 players have already paid; that is Dan's call, not a migration's.
+
+## 2026-08-21 — Mystery bounty: the whole table watches, and the next hand waits for it
+
+Dan: "now all players at the table should see the mystery bounty video... and
+after it finished and the prize is awarded, the next hand starts with the
+dealing animation to move onto the next hand."
+
+ALREADY TRUE, VERIFIED NOT ASSUMED — every player at the table watches the
+same reveal. The winner's tap broadcasts mystery_chest_opened on the table
+channel; every other client sets remoteOpened, which runs the identical open
+sequence including the burst film. Spectators who never receive that packet
+open on their own failsafe at 14s, and the winner's client auto-opens at 9s
+if they are AFK, so no client is ever left staring at a locked chest. The
+film is muted + playsInline, which is what browsers require to autoplay
+without a gesture — a spectator has not tapped anything, and that is exactly
+the case this had to survive.
+
+TABLE SCOPE — A REAL BUG FOUND ON THE WAY. The reveal rides the TOURNAMENT
+channel (t-break-<id>), which EVERY table in the event subscribes to. So a
+knockout on table 3 played a full-screen chest on tables 1 and 2 as well,
+over their live hands, for something that happened to strangers. The engine
+now stamps the knockout's table_id (it was already resolved a few lines
+earlier to find the knocker) onto the broadcast, and TablePage ignores any
+reveal that is not its own. Builds that predate the stamp send no tableId
+and behave exactly as before.
+
+THE NEXT HAND NOW WAITS. The table used to keep dealing underneath the
+reveal. After a mystery bounty is collected, the engine holds dealing on that
+table for the length of the chest sequence via holdDealingUntil() — the same
+mechanism the spin wheel already uses — and when the hold expires the dealing
+loop resumes and the next hand deals in with its normal shuffle and deal
+animation. Only the knockout's own table pauses; a knockout on table 3 must
+not stall tables 1 and 2.
+
+The timing contract lives in server/src/config/mysteryChestSpec.ts and
+mirrors MysteryBountyChest.tsx phase for phase (landing 700, auto-open 9000,
+opening 900, explosion 600, revealed 5200, settle 400 = ~16.8s). Worst case
+is the AFK winner; a winner who taps finishes sooner and the hold does not
+shorten with them. That is the deliberate trade: a few idle seconds cost a
+knockout celebration nothing, dealing over the reveal destroys it. If the
+chest's phases change, change this file in the same commit.
+
+Verified: client + server tsc clean, vite build clean, 24 engine tests green
+across 3 suites.

@@ -115,6 +115,8 @@ export interface TableSettings {
   bomb_pot_enabled: boolean;
   bomb_pot_frequency: number; // Every N hands
   bomb_pot_ante_bb: number;
+  /** DOUBLE-BOARD BOMB POT 2026-08-20: deal two boards, split pots across them. */
+  bomb_pot_double_board?: boolean;
   // 2026-08-18: time_bank_seconds is gone. A time bank is a flat 20s grant,
   // 2 per street (Bible V8 s6.2) — there is no per-table "seconds per
   // activation" any more, and the engine never read the column. Whether a

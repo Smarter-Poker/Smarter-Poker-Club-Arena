@@ -456,6 +456,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandRake = 0;
     this.currentHandBBJFee = 0;
     this.currentHandCommunityCards = [];
+    this.currentHandCommunityCards2 = [];
     this.currentHandActions = [];
     this.currentHandWinners = [];
     this.currentHandContributions.clear(); // Bible V8 §4.18: Reset equal-share rakeback tracking (FIX 144)
@@ -589,7 +590,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
     // FIX-218: Bible V8 §4.22 — Bomb pot detection based on table settings
     // Triggers every N hands when bomb_pot_enabled + bomb_pot_frequency are set
-    let bombPotConfig: { anteMultiplier: number } | undefined;
+    let bombPotConfig: { anteMultiplier: number; doubleBoard?: boolean } | undefined;
     if (
       this.tableInfo.bomb_pot_enabled &&
       this.tableInfo.bomb_pot_frequency &&
@@ -598,6 +599,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     ) {
       bombPotConfig = {
         anteMultiplier: this.tableInfo.bomb_pot_ante_multiplier ?? 2,
+        // DOUBLE-BOARD BOMB POT 2026-08-20: table opt-in for the two-board
+        // variant. HandController still downgrades if the deck can't cover it.
+        doubleBoard: this.tableInfo.bomb_pot_double_board ?? false,
       };
     }
 

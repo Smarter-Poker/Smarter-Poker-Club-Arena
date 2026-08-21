@@ -106,6 +106,7 @@ import { ConfettiCanvas } from '../components/table/ConfettiCanvas';
 import { ParticleSystem } from '../components/table/ParticleSystem';
 import {
   ChipAnimationManager,
+  createChipToPotEvent,
   createPotToWinnerEvent,
   type ChipAnimationEvent,
 } from '../components/table/ChipAnimation';
@@ -344,6 +345,8 @@ interface TableState {
   pot: number;
   sidePots: SidePot[];
   communityCards: Card[];
+  /** DOUBLE-BOARD BOMB POT 2026-08-20: board 2, empty unless active. */
+  communityCards2: Card[];
   boardStage: BoardStage;
   /**
    * The engine's OWN stage string, unnormalised.
@@ -873,6 +876,7 @@ export default function TablePage({
     pot: 0,
     sidePots: [],
     communityCards: [],
+    communityCards2: [],
     boardStage: 'preflop',
     engineStage: 'preflop',
     dealerSeat: 0,
@@ -940,6 +944,12 @@ export default function TablePage({
       if (sameHand && nextCards.length < prev.communityCards.length) {
         nextCards = prev.communityCards;
       }
+      // DOUBLE-BOARD BOMB POT 2026-08-20: board 2 follows the same
+      // never-shrink-within-a-hand rule as board 1.
+      let nextCards2 = (mapped.communityCards2 ?? []) as Card[];
+      if (sameHand && nextCards2.length < prev.communityCards2.length) {
+        nextCards2 = prev.communityCards2;
+      }
       let nextStage = mapped.boardStage as BoardStage;
       const n = nextCards.length;
       const derivedStage = n >= 5 ? 'river' : n === 4 ? 'turn' : n >= 3 ? 'flop' : null;
@@ -962,6 +972,7 @@ export default function TablePage({
         ...prev,
         pot: mapped.pot,
         communityCards: nextCards,
+        communityCards2: nextCards2,
         boardStage: nextStage,
         engineStage: mapped.boardStage,
         dealerSeat: mapped.dealerSeat,
@@ -1105,6 +1116,8 @@ export default function TablePage({
   // Purely presentational: pot, stacks and action state are never held.
   const [bombPotHoldFlop, setBombPotHoldFlop] = useState(false);
   const bombPotHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Delayed seat→pot ante flights for the bomb-pot explosion beat. */
+  const bombPotChipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Time Bank State
   const [showTimeBank, setShowTimeBank] = useState(false);
@@ -5508,6 +5521,7 @@ export default function TablePage({
             handNumber: syncData.hand_number,
             pot: syncData.pot || 0,
             communityCards: normalizeCards(syncData.community_cards) as Card[],
+            communityCards2: normalizeCards(syncData.community_cards2 || []) as Card[],
             // P2-5 FIX: TableState uses `boardStage` (typed BoardStage), not
             // `stage`. The old `stage` write was dead, leaving the board stuck
             // in a stale stage after mid-hand reconnect. Map to boardStage.
@@ -5667,6 +5681,10 @@ export default function TablePage({
           clearTimeout(bombPotHoldTimerRef.current);
           bombPotHoldTimerRef.current = null;
         }
+        if (bombPotChipTimerRef.current) {
+          clearTimeout(bombPotChipTimerRef.current);
+          bombPotChipTimerRef.current = null;
+        }
         // AUDIT 2026-08-19: drop any in-flight pot push. It is otherwise
         // cleared only by a 700ms timer, and a hand that starts inside that
         // window would render its FRESH pot with .pot-display--collect still
@@ -5766,6 +5784,7 @@ export default function TablePage({
             lastActions: prev.lastActions.map(() => null),
             lastBetAmounts: prev.lastBetAmounts.map(() => 0),
             communityCards: [],
+            communityCards2: [],
             boardStage: 'preflop',
             engineStage: 'preflop',
           };
@@ -5837,14 +5856,53 @@ export default function TablePage({
             masterBus.emit('BOMB_POT_TRIGGERED', {
               tableId: tableId || '',
               anteAmount: Number(d?.ante_amount) || 0,
-              // The engine has no double-board concept in its bomb-pot path;
-              // report it honestly rather than implying a second board.
-              doubleBoard: false,
+              // DOUBLE-BOARD BOMB POT 2026-08-20: the engine reports it for
+              // real now (and downgrades itself when the deck can't cover
+              // two boards), so pass it through instead of hardcoding false.
+              doubleBoard: Boolean(d?.double_board),
               bbMultiplier: Number(d?.bb_multiplier) || 0,
             });
           } catch {
             /* bus publish is best-effort */
           }
+          // ANTE PRESENTATION 2026-08-20 (reference parity): the engine's
+          // postings array names every seat that paid the forced ante. Fly
+          // each ante to the pot at the overlay's EXPLOSION beat (2.0s,
+          // scaled) — in the reference the antes converge right after the
+          // blast, not while the bomb is still falling. Presentation only;
+          // the pot total was already settled server-side at trigger time.
+          {
+            const postings =
+              (d?.postings as Array<{ seat: number; amount: number }>) || [];
+            if (postings.length > 0) {
+              if (bombPotChipTimerRef.current) clearTimeout(bombPotChipTimerRef.current);
+              bombPotChipTimerRef.current = setTimeout(() => {
+                bombPotChipTimerRef.current = null;
+                const potPos = seatPctToViewportPx(tableScalerRef.current, POT_ANCHOR_PCT);
+                const events: ChipAnimationEvent[] = [];
+                for (const post of postings) {
+                  if (!(post.seat > 0) || !(post.amount > 0)) continue;
+                  const seatPct = seatPositions[post.seat - 1] || { x: 50, y: 50 };
+                  const seatPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
+                  events.push(...createChipToPotEvent(seatPos, potPos, post.amount));
+                }
+                if (events.length > 0) setChipAnimations((prev) => [...prev, ...events]);
+              }, 2000 * getAnimationSpeed());
+            }
+          }
+        }
+        break;
+      }
+
+      case 'BOMB_POT_COMPLETED': {
+        // DOUBLE-BOARD BOMB POT 2026-08-20: the engine now emits this at
+        // bomb-pot settlement (it was listener-only dead wiring since
+        // 2026-08-15). The HAND_COMPLETE fallback emit below stays for older
+        // engine builds; the overlay treats duplicates as no-ops.
+        try {
+          masterBus.emit('BOMB_POT_COMPLETED', { tableId: tableId || '' });
+        } catch {
+          /* bus publish is best-effort */
         }
         break;
       }
@@ -5908,6 +5966,8 @@ export default function TablePage({
         // EVERY board card as the Ace of Spades until the next snapshot.
         // normalizeCards() accepts both wire formats.
         const board = normalizeCards((evt.data as any).board) as Card[];
+        // DOUBLE-BOARD BOMB POT 2026-08-20: board 2 rides the same event.
+        const board2 = normalizeCards((evt.data as any).board2 || []) as Card[];
         const stage = ((evt.data as any).stage as string) || 'preflop';
 
         // Bible V8 §1.16 — chip-to-pot collection animation. Before updating
@@ -5969,6 +6029,7 @@ export default function TablePage({
         setTableState((prev) => ({
           ...prev,
           communityCards: board,
+          communityCards2: board2.length > 0 ? board2 : prev.communityCards2,
           boardStage: stage as BoardStage,
         }));
         // ANIMATION/SOUND AUDIT 2026-08-19: the community-card sound here
@@ -6252,6 +6313,7 @@ export default function TablePage({
           setTableState((prev) => ({
             ...prev,
             communityCards: [],
+            communityCards2: [],
             boardStage: 'preflop',
             engineStage: 'preflop',
             pot: 0,
@@ -7827,7 +7889,15 @@ export default function TablePage({
       /* Dan 2026-08-18: 2 or 3 when the hand is run multiple times — CSS
          shifts the felt masthead down by one board height per extra run so
          the stacked boards never cover it. */
-      data-boards={(ritResult?.boards?.length ?? 1) > 1 ? ritResult!.boards.length : undefined}
+      data-boards={
+        (ritResult?.boards?.length ?? 1) > 1
+          ? ritResult!.boards.length
+          : // DOUBLE-BOARD BOMB POT 2026-08-20: the live second board shifts
+            // the felt masthead exactly like a second RIT run does.
+            tableState.communityCards2.length > 0
+            ? 2
+            : undefined
+      }
       style={{
         // Dan 2026-08-18: the blurred-skin backdrop is GONE ("remove the
         // weird images around the table"). The page shows one of the ten
@@ -8394,6 +8464,25 @@ export default function TablePage({
                     cardBack={activeCardBack}
                     playSounds={ambientSoundsAllowed}
                   />
+                  {/* DOUBLE-BOARD BOMB POT 2026-08-20: board 2, stacked
+                      directly under board 1 like the reference — no label,
+                      same stage (both boards deal in lockstep), silent so
+                      each street sounds once. */}
+                  {tableState.communityCards2.length > 0 && (
+                    <div className="community-area__board2">
+                      <CommunityCards
+                        cards={tableState.communityCards2}
+                        stage={
+                          bombPotHoldFlop && tableState.boardStage === 'flop'
+                            ? 'preflop'
+                            : tableState.boardStage
+                        }
+                        deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
+                        cardBack={activeCardBack}
+                        playSounds={false}
+                      />
+                    </div>
+                  )}
                   {(ritResult?.boards?.length ?? 0) >= 2 &&
                     ritResult!.boards.slice(1).map((board, bi) => (
                       <div className="community-area__run" key={`run-${bi + 2}`}>

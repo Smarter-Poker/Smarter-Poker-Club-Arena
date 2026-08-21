@@ -8468,3 +8468,61 @@ off; still dealing)". Commit `52ae9724c`:
   Replay + Share buttons driving the existing HandReplayPlayer/ShareHand.
 - [P1] Time-bank alarm clock stacked directly above the previous-hand card in
   the TableHUD bottom-left (no longer a free-floating fixed pill).
+## 2026-08-20 — DOUBLE-BOARD BOMB POTS: engine, client, config (Cowork session, Dan's "proceed")
+
+The full Tier-3 feature behind the bomb-pot cinematic sequence. Engine deals
+TWO boards on opted-in bomb pots and splits every pot across them; client
+renders the stacked boards and flies the antes; config exposes the toggle.
+
+ENGINE (server/):
+- HandController: communityCards2 in GameState; doubleBoardActive set at
+  ante time with a deck-feasibility guard (players x holeCards + 10 <= deck;
+  9-handed PLO5 downgrades to single board with a warn). Flop/turn/river,
+  dealNextStreet (insurance pacing) and runOutCommunityCards all deal board
+  2 in lockstep and carry cards2 on COMMUNITY_CARDS. ALL_IN_RUNOUT carries
+  board2. SHOWDOWN results carry hand2 (board-2 evaluation).
+- Split-pot settlement: every pot halved in integer cents (odd cent to the
+  TOP board), each half awarded by determineWinners on its own board,
+  winners merged by user in cents — the merged sum equals the original pot
+  exactly, so rake scaling and conservation are untouched downstream.
+- BOMB_POT_TRIGGERED now carries doubleBoard + per-seat postings.
+  BOMB_POT_COMPLETED (listener-only dead wiring since 2026-08-15) is emitted
+  after every HAND_COMPLETE of a bomb-pot hand, all four completion paths.
+- RIT and insurance offers suppressed on double-board hands (already two
+  boards; no single-board equity to insure).
+- hand_history persists community_cards2 (text[], NULL on single-board
+  hands). ServerTableEngine broadcast/getTableState/getObserverState carry
+  community_cards2.
+- Tests: HandController.doubleboard.test.ts — lockstep dealing, 10 unique
+  board cards, exact cent conservation across 300 randomized double-board
+  hands (nlh + plo4), PLO5 downgrade, single-board unchanged, completion
+  beat ordering. Full sweep: 8 suites / 36 tests green, including the
+  10,000-hand chip-conservation property corpus. Server + client tsc clean,
+  vite prod build clean.
+
+CLIENT (src/):
+- mapEngineSnapshot + TablePage carry communityCards2 (never-shrink rule,
+  reconnect sync, discrete street events, both new-hand clears).
+- Board 2 renders directly under board 1 (community-area__board2 — NOT the
+  RIT run class, which would swap the flop flip for the RIT pop-in), same
+  stage, silent (playSounds=false), felt masthead shifts via data-boards=2.
+- BOMB_POT_TRIGGERED passes the engine's real doubleBoard through to the
+  overlay (the honest hardcoded false is gone), and postings drive seat->pot
+  ante chip flights at the explosion beat (2.0s scaled) via
+  createChipToPotEvent — reference parity for the ante sweep.
+- BOMB_POT_COMPLETED WS case forwards to the bus (HAND_COMPLETE fallback
+  emit stays for older engine builds; the overlay no-ops duplicates).
+
+CONFIG:
+- Migration 20260821003445 bomb_pot_double_board APPLIED TO PRODUCTION via
+  Supabase MCP and saved to supabase/migrations/: tables.
+  bomb_pot_double_board boolean NOT NULL DEFAULT false + hand_history.
+  community_cards2 text[] NULL, with post-apply type assertions.
+- CreateTableModal: "Double Board Bomb Pots" checkbox under Bomb Pots.
+- TableConfigPage: Bomb Pot + Double Board toggles combined now write
+  bomb_pot_double_board.
+
+NOTE (session ops): the working-tree edits for this feature were wiped once
+mid-session by the host reset loop; everything was rebuilt in an isolated
+clone and pushed from there. Do not develop long-running changes directly in
+the shared working tree.

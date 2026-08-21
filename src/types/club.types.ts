@@ -306,6 +306,8 @@ export interface TableSettings {
   bomb_pot_enabled: boolean;
   bomb_pot_frequency: number; // Every X hands, 0 = disabled
   bomb_pot_ante_bb: number; // In big blinds
+  /** DOUBLE-BOARD BOMB POT 2026-08-20: deal two boards, split pots across them. */
+  bomb_pot_double_board?: boolean;
   double_board: boolean;
 
   // Table Rules

@@ -40,6 +40,8 @@ export async function logHandHistory(params: {
   rakeAmount: number;
   bbjAmount?: number;
   communityCards: string[];
+  /** DOUBLE-BOARD BOMB POT 2026-08-20: board 2 (empty on single-board hands). */
+  communityCards2?: string[];
   // Round 38 — wall-clock timestamps. startedAt is captured at HAND_START
   // in ServerTableEngine; endedAt is stamped here at write time.
   startedAt?: number;
@@ -117,6 +119,10 @@ export async function logHandHistory(params: {
     rake_amount: params.rakeAmount,
     bbj_amount: params.bbjAmount || 0,
     community_cards: params.communityCards,
+    // DOUBLE-BOARD BOMB POT 2026-08-20: null (not []) on single-board hands
+    // so existing consumers see no change. Column added by migration
+    // 20260820 bomb_pot_double_board.
+    community_cards2: params.communityCards2?.length ? params.communityCards2 : null,
     started_at: startedAtIso,
     ended_at: endedAtIso,
     winners: params.winners,

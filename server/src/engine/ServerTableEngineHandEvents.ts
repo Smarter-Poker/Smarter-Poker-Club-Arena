@@ -53,6 +53,22 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           hand_number: this.handCount,
           ante_amount: (event as any).anteAmount,
           bb_multiplier: (event as any).bbMultiplier,
+          // DOUBLE-BOARD BOMB POT 2026-08-20: whether this hand runs two
+          // boards, plus per-seat postings for the ante-chip presentation.
+          double_board: (event as any).doubleBoard ?? false,
+          postings: (event as any).postings ?? [],
+          timestamp: Date.now(),
+        });
+        break;
+      }
+
+      case 'BOMB_POT_COMPLETED' as any: {
+        // DOUBLE-BOARD BOMB POT 2026-08-20: tell the table the bomb-pot hand
+        // is settled so BombPotOverlay dismisses with the hand.
+        this.hub?.emitEvent(this.tableId, {
+          type: 'bomb_pot_completed',
+          table_id: this.tableId,
+          hand_number: this.handCount,
           timestamp: Date.now(),
         });
         break;
@@ -363,6 +379,21 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
               this.currentHandCommunityCards = [...this.currentHandCommunityCards, ...newCards];
             }
           }
+          // DOUBLE-BOARD BOMB POT 2026-08-20: board 2 accumulates the same way.
+          const evCards2 = (event as { cards2?: import('../types.js').Card[] }).cards2;
+          if (evCards2 && evCards2.length > 0) {
+            const newCards2 = evCards2.map((c: any) =>
+              typeof c === 'string' ? c : `${c.rank}${c.suit}`
+            );
+            if (event.stage === 'flop') {
+              this.currentHandCommunityCards2 = newCards2;
+            } else {
+              this.currentHandCommunityCards2 = [
+                ...this.currentHandCommunityCards2,
+                ...newCards2,
+              ];
+            }
+          }
           // Bible V8 §1.16 (Real-Time Law): emit discrete community_cards_dealt
           // so the client slides the flop/turn/river cards onto the board with
           // the spec animation (§6 community cards dealing) the millisecond the
@@ -378,6 +409,10 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             // Full board too, for clients that want to render the complete
             // state without diffing.
             board: this.currentHandCommunityCards,
+            // DOUBLE-BOARD BOMB POT 2026-08-20: board 2 (both empty arrays
+            // and the fields absent mean "single board" to the client).
+            new_cards2: evCards2 ?? [],
+            board2: this.currentHandCommunityCards2,
             timestamp: Date.now(),
           });
           // ── ADDITIVE event-sourcing shadow (#1): record StreetAdvanced ──

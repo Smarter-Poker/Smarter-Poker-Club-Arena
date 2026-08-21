@@ -1000,6 +1000,19 @@
   width: 100%;
 }
 
+/* ── Double-board bomb pot (2026-08-20) ──────────────────────────────────
+   Board 2 sits directly under board 1, same width, no label — the
+   reference's tight two-board stack. Deliberately NOT community-area__run:
+   that class swaps the card animation for the RIT pop-in, while this board
+   deals in lockstep with board 1 and must run the same face-down-and-fan
+   flop animation. */
+.community-area__board2 {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
 /* ANIMATION AUDIT 2026-08-19: Run-It-Twice extra boards used to pop onto the
    felt fully formed in one frame. Each extra run's cards now deal in with a
    left-to-right stagger, run 3 starting after run 2. */

@@ -197,6 +197,8 @@ export abstract class ServerTableEngineBase {
   protected currentHandRake: number = 0;
   protected currentHandBBJFee: number = 0;
   protected currentHandCommunityCards: string[] = [];
+  /** DOUBLE-BOARD BOMB POT 2026-08-20: board 2 accumulator (empty unless active). */
+  protected currentHandCommunityCards2: string[] = [];
   // Round 38: track wall-clock start so logHandHistory can write started_at +
   // ended_at (was missing — every completed hand_history row had null
   // ended_at, breaking replay timestamps and audit reconciliation).

@@ -80,6 +80,7 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
     straddle_type: 'utg',
     run_it_twice: true,
     bomb_pot_enabled: false,
+    bomb_pot_double_board: false,
     bomb_pot_frequency: 10,
     bomb_pot_ante_bb: 2,
     time_bank_enabled: true,
@@ -484,6 +485,21 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                       />
                     </div>
                   </div>
+                )}
+
+                {settings.bomb_pot_enabled && (
+                  <label
+                    className={styles['checkbox-label']}
+                    style={{ paddingLeft: 20 }}
+                    title="Bomb pot hands deal two boards; each board wins half the pot"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={settings.bomb_pot_double_board ?? false}
+                      onChange={() => toggleSetting('bomb_pot_double_board')}
+                    />
+                    Double Board Bomb Pots
+                  </label>
                 )}
 
                 {/* ── No Rathole ── */}

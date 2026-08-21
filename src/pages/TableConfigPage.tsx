@@ -677,6 +677,10 @@ export default function TableConfigPage() {
     // (every 10 hands, 2x BB ante per Bible V8 §4.22) until the UI exposes knobs.
     bomb_pot_frequency: config.bombPotEnabled ? 10 : 0,
     bomb_pot_ante_multiplier: config.bombPotEnabled ? 2 : 0,
+    // DOUBLE-BOARD BOMB POT 2026-08-20: the existing Double Board toggle,
+    // combined with Bomb Pot, now means "bomb pots deal two boards" — the
+    // engine reads bomb_pot_double_board and splits every pot across them.
+    bomb_pot_double_board: config.bombPotEnabled && config.doubleBoard,
     double_board: config.doubleBoard,
     triple_board: config.tripleBoard,
     pineapple_holdem: config.pineappleHoldem,

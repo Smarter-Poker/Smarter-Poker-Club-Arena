@@ -376,7 +376,12 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       void this.broadcastAllInEquity(allInPlayers, board, pot);
     }
 
-    const insuranceEnabled = this.insuranceEngine.isEnabled(this.tableId);
+    // DOUBLE-BOARD BOMB POT 2026-08-20: a hand already running two boards
+    // neither needs a second runout (RIT) nor has a single-board equity to
+    // insure. Both offers are suppressed; the plain runout path fills both
+    // boards via HandController.
+    const doubleBoardHand = this.handController.isDoubleBoardActive();
+    const insuranceEnabled = this.insuranceEngine.isEnabled(this.tableId) && !doubleBoardHand;
 
     if (insuranceEnabled && board.length < 5 && allInPlayers.length >= 2) {
       // ═══════════════════════════════════════════════════════════════════════
@@ -409,7 +414,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       // - RIT and Insurance are mutually exclusive (FIX 92).
       // - Multiple side pots are handled: each pot evaluated per board.
       // ═══════════════════════════════════════════════════════════════════════
-      const ritEnabled = this.runItTwiceEngine.isEnabled(this.tableId);
+      const ritEnabled = this.runItTwiceEngine.isEnabled(this.tableId) && !doubleBoardHand;
       if (ritEnabled && allInPlayers.length >= 2 && board.length < 5) {
         // Determine the chooser: player with the BEST ACTUAL HAND right now
         const variant = this.tableInfo?.game_variant || 'nlh';

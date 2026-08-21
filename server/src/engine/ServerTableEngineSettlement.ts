@@ -767,6 +767,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           rakeAmount: this.currentHandRake,
           bbjAmount: this.currentHandBBJFee,
           communityCards: this.currentHandCommunityCards,
+          communityCards2: this.currentHandCommunityCards2,
           startedAt: this.currentHandStartedAt || Date.now(),
           endedAt: Date.now(),
           winners: this.currentHandWinners,

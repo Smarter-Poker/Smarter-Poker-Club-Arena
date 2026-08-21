@@ -115,6 +115,13 @@ export class HandController {
   private eventHandlers: ((event: HandEvent) => void)[] = [];
   /** FIX 120: Crazy Pineapple — tracks seats that still need to discard after flop */
   private pineappleDiscardsRemaining: Set<number> = new Set();
+  /**
+   * DOUBLE-BOARD BOMB POT 2026-08-20: set in postBombPotAntes() when the
+   * table config asks for a double board AND the deck can cover
+   * players × holeCards + 10 board cards. Every dealing/showdown path
+   * consults this, never the raw config flag.
+   */
+  private doubleBoardActive = false;
   /** FIX-225: Bible V8 §1.6/§3.2 — Formal Hand State Machine */
   private handFSM = createHandStateMachine('idle');
 
@@ -130,6 +137,7 @@ export class HandController {
       stage: 'preflop' as HandStage,
       deck: deck as any, // Internal only
       communityCards: [],
+      communityCards2: [],
       pot: 0,
       currentBet: 0,
       lastRaise: config.bigBlind,
@@ -439,12 +447,38 @@ export class HandController {
     if (!bombPot) return;
     const anteAmount = bigBlind * bombPot.anteMultiplier;
 
-    for (const player of this.state.players.filter((p) => !p.is_sitting_out)) {
+    const dealtIn = this.state.players.filter((p) => !p.is_sitting_out);
+
+    // DOUBLE-BOARD BOMB POT 2026-08-20: activate the second board only when
+    // the deck can cover it — every player's hole cards plus TEN board cards.
+    // A 9-handed PLO5 table (45 hole cards) quietly downgrades to a single
+    // board rather than exhausting the deck mid-hand. The short-deck 36-card
+    // deck is covered by the same arithmetic.
+    if (bombPot.doubleBoard) {
+      const deckSize = this.config.gameVariant === 'short_deck' ? 36 : 52;
+      const holeCardsNeeded = dealtIn.length * this.getCardsPerPlayer();
+      this.doubleBoardActive = holeCardsNeeded + 10 <= deckSize;
+      if (!this.doubleBoardActive) {
+        console.warn(
+          `[HandController] double-board bomb pot downgraded to single board: ` +
+            `${dealtIn.length} players × ${this.getCardsPerPlayer()} cards + 10 board > ${deckSize}`
+        );
+      }
+    }
+
+    // Per-seat postings for the client's ante-chip presentation. Built as we
+    // mutate so the amounts reflect what each player actually paid.
+    const postings: Array<{ seat: number; userId: string; amount: number }> = [];
+
+    for (const player of dealtIn) {
       const actualAnte = Math.min(anteAmount, player.stack);
       player.totalInvested += actualAnte;
       player.stack -= actualAnte;
       this.state.pot += actualAnte;
       if (player.stack === 0) player.is_all_in = true;
+      if (actualAnte > 0) {
+        postings.push({ seat: player.seat, userId: player.user_id, amount: actualAnte });
+      }
     }
 
     this.state.currentBet = 0;
@@ -457,6 +491,8 @@ export class HandController {
       type: 'BOMB_POT_TRIGGERED',
       anteAmount,
       bbMultiplier: bombPot.anteMultiplier,
+      doubleBoard: this.doubleBoardActive,
+      postings,
     });
     this.emit({ type: 'POT_UPDATE', pot: this.state.pot, pots: this.state.pots });
   }
@@ -809,6 +845,7 @@ export class HandController {
         this.emit({
           type: 'ALL_IN_RUNOUT',
           board: [...this.state.communityCards],
+          board2: this.doubleBoardActive ? [...this.state.communityCards2] : undefined,
           pot: this.state.pot,
           players: this.getActivePlayers().map((p) => ({ ...p })),
         });
@@ -822,7 +859,13 @@ export class HandController {
         this.state.sawFlop = true;
         const flop = deck.deal(3);
         this.state.communityCards.push(...flop);
-        this.emit({ type: 'COMMUNITY_CARDS', stage: 'flop', cards: flop });
+        // DOUBLE-BOARD BOMB POT 2026-08-20: board 2 gets its own flop.
+        let flop2: Card[] | undefined;
+        if (this.doubleBoardActive) {
+          flop2 = deck.deal(3);
+          this.state.communityCards2.push(...flop2);
+        }
+        this.emit({ type: 'COMMUNITY_CARDS', stage: 'flop', cards: flop, cards2: flop2 });
 
         // FIX 120: Crazy Pineapple — after dealing flop, enter discard phase
         if (this.config.gameVariant === 'pineapple') {
@@ -847,14 +890,24 @@ export class HandController {
         this.transitionStage('turn');
         const turn = deck.deal(1);
         this.state.communityCards.push(...turn);
-        this.emit({ type: 'COMMUNITY_CARDS', stage: 'turn', cards: turn });
+        let turn2: Card[] | undefined;
+        if (this.doubleBoardActive) {
+          turn2 = deck.deal(1);
+          this.state.communityCards2.push(...turn2);
+        }
+        this.emit({ type: 'COMMUNITY_CARDS', stage: 'turn', cards: turn, cards2: turn2 });
         break;
       }
       case 'turn': {
         this.transitionStage('river');
         const river = deck.deal(1);
         this.state.communityCards.push(...river);
-        this.emit({ type: 'COMMUNITY_CARDS', stage: 'river', cards: river });
+        let river2: Card[] | undefined;
+        if (this.doubleBoardActive) {
+          river2 = deck.deal(1);
+          this.state.communityCards2.push(...river2);
+        }
+        this.emit({ type: 'COMMUNITY_CARDS', stage: 'river', cards: river, cards2: river2 });
         break;
       }
       case 'river':
@@ -915,7 +968,17 @@ export class HandController {
     // whole runout. Advance the stage with the street.
     this.transitionStage(stage as HandStage);
     this.state.communityCards.push(...cards);
-    this.emit({ type: 'COMMUNITY_CARDS', stage: stage as HandStage, cards });
+    // DOUBLE-BOARD BOMB POT 2026-08-20: board 2 tracks board 1 street for
+    // street through the per-street (insurance-paced) runout as well.
+    let cards2: Card[] | undefined;
+    if (this.doubleBoardActive) {
+      const count2 = stage === 'flop' ? 3 - this.state.communityCards2.length : 1;
+      if (count2 > 0) {
+        cards2 = deck.deal(count2);
+        this.state.communityCards2.push(...cards2);
+      }
+    }
+    this.emit({ type: 'COMMUNITY_CARDS', stage: stage as HandStage, cards, cards2 });
 
     const complete = this.state.communityCards.length >= 5;
     return { board: [...this.state.communityCards], stage, complete };
@@ -955,6 +1018,7 @@ export class HandController {
       this.emit({ type: 'WINNERS', winners: [] });
       this.handFSM.transition('settlement');
       this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake, bbjFee });
+      this.emitBombPotCompleted();
       this.handFSM.transition('idle');
       return;
     }
@@ -1061,7 +1125,18 @@ export class HandController {
       // the hand ENDS preflop - a runout that deals the flop IS a flop.
       if (stage === 'flop') this.state.sawFlop = true;
       this.state.communityCards.push(...cards);
-      this.emit({ type: 'COMMUNITY_CARDS', stage: stage as HandStage, cards });
+      // DOUBLE-BOARD BOMB POT 2026-08-20: fill board 2 in lockstep during a
+      // full runout. Feasibility was checked at ante time, so the deck holds.
+      let cards2: Card[] | undefined;
+      if (this.doubleBoardActive && this.state.communityCards2.length < 5) {
+        const count2 =
+          stage === 'flop' ? Math.max(0, 3 - this.state.communityCards2.length) : 1;
+        if (count2 > 0) {
+          cards2 = deck.deal(count2);
+          this.state.communityCards2.push(...cards2);
+        }
+      }
+      this.emit({ type: 'COMMUNITY_CARDS', stage: stage as HandStage, cards, cards2 });
       // AUDIT V2 (2026-07-23): Crazy Pineapple all-in runout — the discard
       // phase is skipped when everyone is all-in, so players still held THREE
       // hole cards at showdown and evaluateHand scored best-5-of-8, an illegal
@@ -1172,6 +1247,16 @@ export class HandController {
    * and players keep the chips they had going in (table_seats.stack is only
    * written at settlement, so an aborted settlement is a no-op on balances).
    */
+  /**
+   * DOUBLE-BOARD BOMB POT 2026-08-20: BOMB_POT_COMPLETED finally has an
+   * emitter — fired after every HAND_COMPLETE of a bomb-pot hand so the
+   * client overlay dismisses with the hand. No-op on ordinary hands.
+   */
+  private emitBombPotCompleted(): void {
+    if (!this.config.bombPot) return;
+    this.emit({ type: 'BOMB_POT_COMPLETED', handNumber: this.config.handNumber });
+  }
+
   private completeHand(): void {
     try {
       this.completeHandInner();
@@ -1188,6 +1273,7 @@ export class HandController {
         rake: 0,
         bbjFee: 0,
       } as never);
+      this.emitBombPotCompleted();
     }
   }
 
@@ -1207,11 +1293,15 @@ export class HandController {
         ? evaluateOmahaHand
         : (h: Card[], c: Card[]) => evaluateHand(h, c, isShortDeck);
       const playersWithCards = activePlayers.filter((p) => p.cards && p.cards.length > 0);
+      // DOUBLE-BOARD BOMB POT 2026-08-20: each shown hand also carries its
+      // board-2 evaluation so clients can label both halves.
+      const showBoard2 = this.doubleBoardActive && this.state.communityCards2.length === 5;
       const showdownResults: ShowdownResult[] = playersWithCards.map((p) => ({
         seat: p.seat,
         userId: p.user_id,
         cards: p.cards,
         hand: evaluator(p.cards, this.state.communityCards),
+        hand2: showBoard2 ? evaluator(p.cards, this.state.communityCards2) : undefined,
       }));
 
       // Bible V8 §4.21: Sort showdown results — last aggressor shows first,
@@ -1236,13 +1326,57 @@ export class HandController {
     }
 
     // FIX 226: Pass dealerSeat so odd chip allocation is clockwise from dealer
-    let winners = determineWinners(
-      this.state.players,
-      this.state.communityCards,
-      pots,
-      this.config.gameVariant,
-      this.state.dealerSeat
-    );
+    //
+    // DOUBLE-BOARD BOMB POT 2026-08-20: with a full second board, every pot
+    // is split in integer cents — the odd cent goes to the TOP board's half —
+    // and each half is awarded independently on its own board. The merged
+    // winner list sums to exactly the original pot cents, so rake scaling and
+    // chip conservation downstream are untouched.
+    let winners: Winner[];
+    if (this.doubleBoardActive && this.state.communityCards2.length === 5) {
+      const potsBoard1: Pot[] = [];
+      const potsBoard2: Pot[] = [];
+      for (const pot of pots) {
+        const cents = Math.round(pot.amount * 100);
+        const cents1 = Math.ceil(cents / 2);
+        potsBoard1.push({ amount: cents1 / 100, eligiblePlayers: [...pot.eligiblePlayers] });
+        potsBoard2.push({
+          amount: (cents - cents1) / 100,
+          eligiblePlayers: [...pot.eligiblePlayers],
+        });
+      }
+      const winners1 = determineWinners(
+        this.state.players,
+        this.state.communityCards,
+        potsBoard1,
+        this.config.gameVariant,
+        this.state.dealerSeat
+      );
+      const winners2 = determineWinners(
+        this.state.players,
+        this.state.communityCards2,
+        potsBoard2,
+        this.config.gameVariant,
+        this.state.dealerSeat
+      );
+      // Merge by user, integer cents throughout so the sum stays exact.
+      const byUser = new Map<string, number>();
+      for (const w of [...winners1, ...winners2]) {
+        byUser.set(w.userId, (byUser.get(w.userId) ?? 0) + Math.round(w.amount * 100));
+      }
+      winners = Array.from(byUser.entries()).map(([userId, cents]) => ({
+        userId,
+        amount: cents / 100,
+      }));
+    } else {
+      winners = determineWinners(
+        this.state.players,
+        this.state.communityCards,
+        pots,
+        this.config.gameVariant,
+        this.state.dealerSeat
+      );
+    }
 
     // Bible V8 §1.9 — No-winners guard: if determineWinners returns empty
     // (edge case: all eligible players gone), award pot to last active player
@@ -1301,6 +1435,7 @@ export class HandController {
       this.emit({ type: 'WINNERS', winners: [] });
       this.handFSM.transition('settlement');
       this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake: 0, bbjFee: 0 });
+      this.emitBombPotCompleted();
       this.handFSM.transition('idle');
       return;
     }
@@ -1336,12 +1471,22 @@ export class HandController {
     this.emit({ type: 'WINNERS', winners: adjustedWinners });
     this.handFSM.transition('settlement');
     this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake, bbjFee });
+    this.emitBombPotCompleted();
     this.handFSM.transition('idle');
   }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Helper Methods
   // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * DOUBLE-BOARD BOMB POT 2026-08-20: exposed so ServerTableEngine can skip
+   * RIT and insurance offers — a hand that already runs two boards neither
+   * needs a second runout nor has a single-board equity to insure.
+   */
+  public isDoubleBoardActive(): boolean {
+    return this.doubleBoardActive;
+  }
 
   private getActivePlayers(): SeatPlayer[] {
     return this.state.players.filter((p) => !p.is_folded && !p.is_sitting_out);

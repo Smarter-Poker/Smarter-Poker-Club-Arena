@@ -133,6 +133,12 @@ export interface TableInfo {
   bomb_pot_frequency?: number;
   /** Bible V8 §4.22: Bomb pot ante multiplier (× BB) */
   bomb_pot_ante_multiplier?: number;
+  /**
+   * DOUBLE-BOARD BOMB POT 2026-08-20 (Dan's competitor-parity directive):
+   * when true, bomb-pot hands deal TWO full boards and split every pot in
+   * half across them at showdown.
+   */
+  bomb_pot_double_board?: boolean;
   /** Bible V8 §2.1: Minimum players to start a hand */
   min_players?: number;
   /** Bible V8 §2.1: Table display name */
@@ -198,6 +204,12 @@ export interface HandConfig {
   rakeConfig: RakeConfig;
   bombPot?: {
     anteMultiplier: number;
+    /**
+     * DOUBLE-BOARD BOMB POT 2026-08-20: deal two boards and split every pot
+     * across them. HandController downgrades to a single board when the deck
+     * cannot cover players × holeCards + 10 board cards.
+     */
+    doubleBoard?: boolean;
   };
   /** Bible V8 §2.8 / §4.20: Whether Run It Twice is enabled for this hand */
   ritEnabled?: boolean;
@@ -228,6 +240,12 @@ export interface GameState {
   stage: HandStage;
   deck: any; // Internal Deck instance — not serialized to clients
   communityCards: Card[];
+  /**
+   * DOUBLE-BOARD BOMB POT 2026-08-20: the second board. Empty on every hand
+   * except an active double-board bomb pot, where it fills in lockstep with
+   * communityCards (3/4/5 cards at flop/turn/river).
+   */
+  communityCards2: Card[];
   pot: number;
   currentBet: number;
   lastRaise: number;
@@ -252,6 +270,8 @@ export interface HandStateBroadcast {
   hand_number: number;
   pot: number;
   community_cards: Card[];
+  /** DOUBLE-BOARD BOMB POT 2026-08-20: second board (empty unless active). */
+  community_cards2?: Card[];
   current_bet: number;
   current_player: string; // user_id of player whose turn it is
   dealer_seat: number;
@@ -281,11 +301,17 @@ export interface ActionRecord {
 export type HandEvent =
   | { type: 'HAND_START'; handNumber: number; players: SeatPlayer[] }
   | { type: 'CARDS_DEALT'; seat: number; cards: Card[] }
-  | { type: 'COMMUNITY_CARDS'; stage: HandStage; cards: Card[] }
+  | {
+      type: 'COMMUNITY_CARDS';
+      stage: HandStage;
+      cards: Card[];
+      /** DOUBLE-BOARD BOMB POT 2026-08-20: the second board's new cards for this street. */
+      cards2?: Card[];
+    }
   | { type: 'PLAYER_ACTION'; seat: number; action: ActionType; amount: number }
   | { type: 'POT_UPDATE'; pot: number; pots: Pot[] }
   | { type: 'TURN_CHANGE'; seat: number; availableActions: ActionType[] }
-  | { type: 'ALL_IN_RUNOUT'; board: Card[]; pot: number; players: SeatPlayer[] }
+  | { type: 'ALL_IN_RUNOUT'; board: Card[]; board2?: Card[]; pot: number; players: SeatPlayer[] }
   | { type: 'PINEAPPLE_DISCARD_REQUIRED'; seats: number[] } // FIX 120: Crazy Pineapple
   | { type: 'SHOWDOWN'; results: ShowdownResult[] }
   | { type: 'WINNERS'; winners: Winner[] }
@@ -299,7 +325,24 @@ export type HandEvent =
    * player's side chips just vanished from their stack and the hand started on
    * the flop with no explanation.
    */
-  | { type: 'BOMB_POT_TRIGGERED'; anteAmount: number; bbMultiplier: number }
+  | {
+      type: 'BOMB_POT_TRIGGERED';
+      anteAmount: number;
+      bbMultiplier: number;
+      /** DOUBLE-BOARD BOMB POT 2026-08-20: whether this hand deals two boards. */
+      doubleBoard?: boolean;
+      /**
+       * Per-seat ante postings so the client can render each ante in front of
+       * its seat and sweep them into the pot (reference parity). Presentation
+       * data only — the pot math already happened atomically server-side.
+       */
+      postings?: Array<{ seat: number; userId: string; amount: number }>;
+    }
+  /**
+   * DOUBLE-BOARD BOMB POT 2026-08-20: the bomb-pot hand finished. The client
+   * overlay had listened for this since 2026-08-15 with no emitter.
+   */
+  | { type: 'BOMB_POT_COMPLETED'; handNumber: number }
   | { type: 'HAND_COMPLETE'; handNumber: number; rake: number; bbjFee: number };
 
 export interface ShowdownResult {
@@ -307,6 +350,8 @@ export interface ShowdownResult {
   userId: string;
   cards: Card[];
   hand: EvaluatedHand;
+  /** DOUBLE-BOARD BOMB POT 2026-08-20: the same hole cards evaluated on board 2. */
+  hand2?: EvaluatedHand;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

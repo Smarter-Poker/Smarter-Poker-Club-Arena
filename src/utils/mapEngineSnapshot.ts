@@ -64,6 +64,8 @@ export interface EnginePublishedState {
   hand_number: number;
   pot: number;
   community_cards: Array<{ rank: string; suit: string }>;
+  /** DOUBLE-BOARD BOMB POT 2026-08-20: second board (empty unless active). */
+  community_cards2?: Array<{ rank: string; suit: string }>;
   current_bet: number;
   current_player: string | null; // user_id
   dealer_seat: number;
@@ -94,6 +96,8 @@ export interface EnginePublishedState {
 export interface MappedTableStatePatch {
   pot: number;
   communityCards: Array<{ rank: string; suit: string }>;
+  /** DOUBLE-BOARD BOMB POT 2026-08-20: second board (empty unless active). */
+  communityCards2: Array<{ rank: string; suit: string }>;
   boardStage: string; // matches TableState['boardStage']
   dealerSeat: number;
   currentPlayerSeat: number;
@@ -313,6 +317,7 @@ export function mapEngineSnapshot(
     // pot is pots[0]; otherwise the running total s.pot is the main pot.
     pot: rawPots.length > 0 ? rawPots[0].amount : (s.pot ?? 0),
     communityCards: s.community_cards ?? [],
+    communityCards2: s.community_cards2 ?? [],
     boardStage: s.stage ?? 'preflop',
     dealerSeat: s.dealer_seat ?? 0,
     currentPlayerSeat,

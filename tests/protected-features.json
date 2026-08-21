@@ -72,15 +72,15 @@
       "minCount": {
         "src/services/ThrowableService.ts": {
           "pattern": "T\\(\\s*'[a-z0-9_]+'",
-          "min": 49
+          "min": 48
         },
         "src/components/table/ThrowableSignatures.css": {
           "pattern": "data-throwable='[a-z0-9_]+'",
-          "min": 160
+          "min": 150
         },
         "src/services/ThrowableSoundService.ts": {
           "pattern": "^\\s{4}\\w+: \\(\\) =>",
-          "min": 49
+          "min": 48
         }
       },
       "bundleMarkers": [

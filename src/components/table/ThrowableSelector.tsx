@@ -40,7 +40,7 @@ interface ThrowableSelectorProps {
  */
 const CATEGORY_LABELS: Record<ThrowableCategory, { label: string }> = {
   premium: { label: 'VIP' },
-  throws: { label: 'Toys' },
+  throws: { label: 'Food' },
   sports: { label: 'Sports' },
   cheers: { label: 'Party' },
   reactions: { label: 'Emoji' },

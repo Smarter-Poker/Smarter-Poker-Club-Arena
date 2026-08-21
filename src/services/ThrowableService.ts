@@ -312,7 +312,7 @@ const THROWABLES: Throwable[] = [
   T(
     'water_gun',
     'Water Gun',
-    'throws',
+    'sports',
     'fastball',
     'splash',
     'squirt',
@@ -325,7 +325,7 @@ const THROWABLES: Throwable[] = [
   T(
     'boxing_glove',
     'Boxing Glove',
-    'throws',
+    'sports',
     'fastball',
     'thud',
     'punch',
@@ -739,19 +739,6 @@ const THROWABLES: Throwable[] = [
     '#FFEB3B',
     360,
     '#FF9800'
-  ),
-  T(
-    'mouse_card',
-    'Card Shark',
-    'premium',
-    'fastball',
-    'sparkle',
-    'card_flick',
-    'light',
-    false,
-    '#ECEFF1',
-    1080,
-    '#EF5350'
   ),
 ];
 

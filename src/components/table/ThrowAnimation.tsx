@@ -98,9 +98,24 @@ const IMPACT_SIZE: Record<string, number> = { light: 112, medium: 128, heavy: 15
  * should have been doing all along (a splat appears when the thing lands, not
  * after it has finished bouncing).
  */
-const TARGET_TOTAL_MS = 3500;
+const TARGET_TOTAL_MS = 4200;
 /** Floor so a very slow lob still gets a readable landing beat. */
-const MIN_IMPACT_LIFE_MS = 1400;
+const MIN_IMPACT_LIFE_MS = 1800;
+/**
+ * Dan 2026-08-21, second pass: "each throwable only lasts a split second."
+ *
+ * The 3.5s total was already in place, so the complaint was about the part he
+ * was actually WATCHING — the flight. lightning_bolt crossed in 260ms and
+ * tennis_ball in 330ms, which is under a fifth of a second of travel: by the
+ * time your eye finds it, it has landed. A "fast" throw still has to be
+ * followable.
+ *
+ * Nothing now flies for less than this, and the total is enforced by
+ * tests/throwTimeline.test.ts rather than trusted.
+ */
+const MIN_FLIGHT_MS = 700;
+/** Hard floor on the whole sequence, independent of physics. */
+const MIN_TOTAL_MS = 3500;
 
 /**
  * Per-item flight-duration overrides (ms) -- a tennis serve and a lightning
@@ -217,16 +232,26 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
 
   const t = event.throwable;
   const basePhysics = PHYSICS[t.physics] || PHYSICS.arc;
-  const physics = DURATION_OVERRIDES[t.id]
+  const rawPhysics = DURATION_OVERRIDES[t.id]
     ? { ...basePhysics, duration: DURATION_OVERRIDES[t.id] }
     : basePhysics;
+  // Per-item overrides may ask for a snappy throw; they may not ask for an
+  // invisible one.
+  const physics = {
+    ...rawPhysics,
+    duration: Math.max(MIN_FLIGHT_MS, rawPhysics.duration),
+  };
   // Motion duration of the landing animation (squash, bounce, per-item
   // signature). Unchanged and still per-item: this is the CHOREOGRAPHY.
   const impactMs = IMPACT_MS[t.id] || IMPACT_DURATION;
   // How long the landed item stays on screen. Owns opacity only, so stretching
   // it never slows the motion above -- the item lands at its tuned pace, then
   // simply sits there before fading.
-  const lifeMs = Math.max(MIN_IMPACT_LIFE_MS, TARGET_TOTAL_MS - WINDUP_DURATION - physics.duration);
+  const lifeMs = Math.max(
+    MIN_IMPACT_LIFE_MS,
+    // Never let the floors conspire to produce a sequence under MIN_TOTAL_MS.
+    Math.max(TARGET_TOTAL_MS, MIN_TOTAL_MS) - WINDUP_DURATION - physics.duration
+  );
   // The stain fades out with the item rather than after it.
   const lingerMs = Math.min(LINGER_MS[t.id] || LINGER_DURATION, lifeMs);
   const isHeavy = t.weight === 'heavy';

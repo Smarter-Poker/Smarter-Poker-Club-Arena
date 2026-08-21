@@ -55,9 +55,9 @@ export default function LeakPanel({ overall, positions, still = false }: Props) 
       <div className="leak-card">
         <h3 className="leak-title">What To Work On</h3>
         <p className="leak-empty-text">
-          Nothing stands out as a clear leak in your numbers right now. That does not mean the game
-          is solved, only that the obvious structural problems are not there — the next gains are in
-          hand-by-hand decisions rather than in your overall frequencies.
+          Nothing Stands Out As A Clear Leak In Your Numbers Right Now. That Does Not Mean The Game
+          Is Solved, Only That The Obvious Structural Problems Are Not There - The Next Gains Are In
+          Hand-By-Hand Decisions Rather Than In Your Overall Frequencies.
         </p>
       </div>
     );
@@ -68,8 +68,8 @@ export default function LeakPanel({ overall, positions, still = false }: Props) 
       <div className="leak-head">
         <h3 className="leak-title">What To Work On</h3>
         <p className="leak-sub">
-          Ranked by what is costing the most. Worked out from your own frequencies, not from a
-          template.
+          Ranked By What Is Costing The Most. Worked Out From Your Own Frequencies, Not From A
+          Template.
         </p>
       </div>
 
@@ -98,8 +98,8 @@ export default function LeakPanel({ overall, positions, still = false }: Props) 
       </motion.ol>
 
       <p className="leak-note">
-        These are frequency-level findings. They cannot see how you played any individual hand, so
-        treat them as where to look rather than as a verdict.
+        These Are Frequency-Level Findings. They Cannot See How You Played Any Individual Hand, So
+        Treat Them As Where To Look Rather Than As A Verdict.
       </p>
     </div>
   );

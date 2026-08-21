@@ -57,10 +57,13 @@ function parseCatalog(): Array<{ id: string; sound: string }> {
 const catalog = parseCatalog();
 
 describe('throwables integrity — 49-item dynamic system', () => {
-  it('the catalog holds exactly the 49 storage-backed items', () => {
-    expect(catalog.length).toBe(49);
+  it('the catalog holds exactly the 48 storage-backed items', () => {
+    // 49 -> 48 on 2026-08-21: Dan removed 'Card Shark' (mouse_card). Its
+    // storage render still exists; the CATALOG is what decides what ships, and
+    // this count is the ratchet that makes any further loss deliberate.
+    expect(catalog.length).toBe(48);
     const ids = catalog.map((r) => r.id);
-    expect(new Set(ids).size).toBe(49);
+    expect(new Set(ids).size).toBe(48);
     // Spot anchors across every category — these ids ARE the storage
     // filenames (throwables/<id>.jpg); renaming one breaks the images.
     for (const anchor of [
@@ -69,7 +72,7 @@ describe('throwables integrity — 49-item dynamic system', () => {
       'bowling_ball',
       'champagne',
       'bomb',
-      'mouse_card',
+      'water_gun',
     ]) {
       expect(ids).toContain(anchor);
     }
@@ -78,7 +81,7 @@ describe('throwables integrity — 49-item dynamic system', () => {
   it('every item has its own sound recipe, and no recipe is orphaned', () => {
     const recipes = new Set([...sound.matchAll(/^\s{4}(\w+):\s*\(\)\s*=>/gm)].map((m) => m[1]));
     const sounds = catalog.map((r) => r.sound);
-    expect(new Set(sounds).size).toBe(49); // one UNIQUE key per item
+    expect(new Set(sounds).size).toBe(48); // one UNIQUE key per item
     for (const r of catalog) {
       expect(recipes.has(r.sound), `item '${r.id}' has no recipe '${r.sound}'`).toBe(true);
     }

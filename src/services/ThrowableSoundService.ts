@@ -641,14 +641,6 @@ class ThrowableSoundServiceClass {
       this.tone(2100, 0.08, 0.1, 'sine', 1600, 0.34); // ...squeak
       this.noise(0.12, 0.1, 900, 'lowpass', 0.42); // sploosh
     },
-    card_flick: () => {
-      // riffle fan arriving
-      [0, 0.025, 0.045, 0.06].forEach((d, i) =>
-        this.noise(0.02, 0.08 + i * 0.03, 3000 + i * 300, 'bandpass', d, 2.5)
-      );
-      this.noise(0.025, 0.22, 2400, 'bandpass', 0.09, 3); // SNAP on the felt
-      this.run([1568, 2093], 0.1, 0.1, 'triangle', 0.12);
-    },
   };
 }
 

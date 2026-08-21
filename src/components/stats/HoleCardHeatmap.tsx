@@ -253,26 +253,26 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
             // layout identical.
             <div className="heatmap-row" role="row" key={`row-${rowRank}`}>
               {RANKS.map((__, colIdx) => {
-              const key = classFor(rowIdx, colIdx);
-              const cell = byClass.get(key);
-              const hands = cell?.hands ?? 0;
-              const confident = hands >= MIN_CONFIDENT_HANDS;
+                const key = classFor(rowIdx, colIdx);
+                const cell = byClass.get(key);
+                const hands = cell?.hands ?? 0;
+                const confident = hands >= MIN_CONFIDENT_HANDS;
 
-              let bg = 'rgba(255,255,255,0.03)';
-              if (cell) {
-                if (mode === 'frequency') {
-                  bg = frequencyColor(cell.vpip_pct);
-                } else if (!confident) {
-                  // Deliberately colourless: too few hands to claim anything.
-                  bg = 'rgba(255,255,255,0.05)';
-                } else {
-                  const value = mode === 'luck' ? cell.net_bb - cell.ev_net_bb : cell.bb100;
-                  const confidenceWeight = Math.min(1, hands / (MIN_CONFIDENT_HANDS * 4));
-                  bg = signedColor(value, scale, 0.45 + confidenceWeight * 0.55);
+                let bg = 'rgba(255,255,255,0.03)';
+                if (cell) {
+                  if (mode === 'frequency') {
+                    bg = frequencyColor(cell.vpip_pct);
+                  } else if (!confident) {
+                    // Deliberately colourless: too few hands to claim anything.
+                    bg = 'rgba(255,255,255,0.05)';
+                  } else {
+                    const value = mode === 'luck' ? cell.net_bb - cell.ev_net_bb : cell.bb100;
+                    const confidenceWeight = Math.min(1, hands / (MIN_CONFIDENT_HANDS * 4));
+                    bg = signedColor(value, scale, 0.45 + confidenceWeight * 0.55);
+                  }
                 }
-              }
 
-              return (
+                return (
                   <button
                     key={key}
                     type="button"
@@ -344,21 +344,15 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
           <div className="heatmap-drill-head">
             <strong>{selected}</strong>
             <span>
-              {handsLoading
-                ? 'Loading hands...'
-                : `${(classHands ?? []).length} most recent`}
+              {handsLoading ? 'Loading hands...' : `${(classHands ?? []).length} most recent`}
             </span>
-            <button
-              type="button"
-              className="heatmap-drill-close"
-              onClick={() => setSelected(null)}
-            >
+            <button type="button" className="heatmap-drill-close" onClick={() => setSelected(null)}>
               Close
             </button>
           </div>
           {!handsLoading && (classHands ?? []).length === 0 && (
             <p className="heatmap-drill-empty">
-              No individual hands stored for {selected} yet under this filter.
+              No Individual Hands Stored For {selected} Yet Under This Filter.
             </p>
           )}
           {(classHands ?? []).length > 0 && (
@@ -370,12 +364,12 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
                     {new Date(h.played_at).toLocaleDateString()}
                   </span>
                   <span className="heatmap-drill-tags">
-                    {h.was_all_in && <em>all in</em>}
-                    {h.showdown && <em>showdown</em>}
+                    {h.was_all_in && <em>All In</em>}
+                    {h.showdown && <em>Showdown</em>}
                   </span>
                   <span className={h.net >= 0 ? 'is-up' : 'is-down'}>
                     {h.net >= 0 ? '+' : ''}
-                    {h.net_bb.toFixed(1)} bb
+                    {h.net_bb.toFixed(1)} BB
                   </span>
                 </li>
               ))}

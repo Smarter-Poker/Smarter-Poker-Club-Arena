@@ -1723,21 +1723,6 @@
 }
 
 /* =================================================================================
-   49. CARD SHARK -- 3D card flip in flight, crisp flick landing
-   ================================================================================= */
-
-.throw-animation[data-throwable='mouse_card'] .throw-animation__spinner {
-  perspective: 260px; /* without this, rotateY is just a horizontal squish */
-}
-.throw-animation[data-throwable='mouse_card'] .throw-animation__tilt {
-  animation: fx-cardflip var(--flight-dur, 420ms) linear forwards;
-  transform-style: preserve-3d;
-}
-.throw-animation[data-throwable='mouse_card'] .throw-animation__impact-icon {
-  animation: fx-icon-wobble-settle 700ms ease-out forwards;
-}
-
-/* =================================================================================
    REDUCED MOTION -- signatures are pure theatrics; drop them all
    ================================================================================= */
 

@@ -194,14 +194,18 @@ export function findLeaks(
   }
 
   // ── 5. Passive after the flop ───────────────────────────────────────────
-  if (overall.aggression_factor > 0 && overall.aggression_factor < 1 && overall.total_hands >= 1000) {
+  if (
+    overall.aggression_factor > 0 &&
+    overall.aggression_factor < 1 &&
+    overall.total_hands >= 1000
+  ) {
     leaks.push({
       id: 'passive_postflop',
       severity: 'high',
       title: 'You check and call far more than you bet',
       evidence: `Aggression factor ${overall.aggression_factor.toFixed(
         2
-      )} — you take a passive action more often than an aggressive one.`,
+      )} - you take a passive action more often than an aggressive one.`,
       action:
         'Bet your strong hands for value instead of trapping, and give up outright on the weak ones instead of calling. Calling wins only when you are ahead; betting can also win when you are behind.',
     });

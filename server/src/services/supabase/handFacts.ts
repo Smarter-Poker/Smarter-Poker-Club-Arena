@@ -142,6 +142,74 @@ function takeEquity(tableId: string, handNumber: number): CapturedEquity | null 
   return hit ?? null;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 1b. RUN-IT-TWICE LIFECYCLE TELEMETRY
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Dan 2026-08-21, from live play: "RUN IT TWICE DOESN'T ACTUALLY WORK, IT
+// DOESN'T RUN THE BOARD OR TURN OR RIVER TWICE, IT DOESN'T AWARD A POT TO THE
+// WINNERS OR ANYTHING, AND THERE IS NO OPTION TO RUN IT THREE TIMES."
+//
+// Every link in that chain reads as correct on inspection - the offer gate is
+// permissive, the chooser is pre-seeded into acceptedBy, the horses answer,
+// the modal renders a 3-run button when maxRuns is 3, and the engine suites
+// pass. And yet it does not happen. The reason nobody can close that gap is
+// that a RIT hand leaves NO TRACE: currentHandRitBoards reaches the chip
+// verifier and stops, hand_history has no RIT column, and community_cards2
+// belongs to double-board bomb pots. You cannot tell a hand that ran twice
+// from one that did not, so "did the offer even fire?" has never been
+// answerable.
+//
+// This makes it answerable. Every RIT event that passes through the hub is
+// recorded, so ONE live all-in says exactly where the chain stops:
+//   rit_offer            -> the engine offered, and to whom
+//   rit_chooser_decided  -> the chooser answered, and with how many runs
+//   rit_resolved         -> it actually ran, with the board count
+// No row for a hand with a 2+ way all-in means the offer never fired at all.
+//
+// Same shape as the equity capture above: intercepted in TableStateHub (a
+// small file) rather than in Runout.ts, which is over the deploy channel's
+// per-file ceiling. Fire-and-forget, fully swallowed - telemetry must never
+// affect a hand.
+
+const RIT_EVENT_TYPES = new Set([
+  'rit_offer',
+  'rit_chooser_decided',
+  'rit_accepted',
+  'rit_declined',
+  'rit_resolved',
+  'insurance_offers',
+]);
+
+export function captureRitEvent(tableId: string, payload: Record<string, unknown>): void {
+  try {
+    const type = typeof payload?.type === 'string' ? payload.type : '';
+    if (!tableId || !RIT_EVENT_TYPES.has(type)) return;
+
+    void supabase
+      .from('action_audit_logs')
+      .insert({
+        action_type: `engine_${type}`,
+        user_id: (payload.chooserPlayerId as string) || (payload.player_id as string) || null,
+        details: {
+          table_id: tableId,
+          hand_number: payload.hand_number ?? null,
+          chooser: payload.chooserPlayerId ?? null,
+          all_players: payload.allPlayerIds ?? null,
+          max_runs: payload.maxRuns ?? null,
+          chosen_runs: payload.chosenRuns ?? null,
+          pot: payload.pot ?? null,
+          offers: Array.isArray(payload.offers) ? (payload.offers as unknown[]).length : null,
+        },
+      })
+      .then(undefined, () => {
+        /* a telemetry insert must never surface at the table */
+      });
+  } catch {
+    /* never affect gameplay */
+  }
+}
+
 /** Test seam. Not used in production paths. */
 export function __resetEquityCacheForTests(): void {
   equityByHand.clear();

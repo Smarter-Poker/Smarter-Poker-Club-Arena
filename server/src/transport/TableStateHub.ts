@@ -34,7 +34,7 @@
 // default import, so destructure `compare` from the default export.
 import jsonPatch from 'fast-json-patch';
 import type { Operation as JsonPatchOperation } from 'fast-json-patch';
-import { captureAllInEquity } from '../services/supabase/handFacts.js';
+import { captureAllInEquity, captureRitEvent } from '../services/supabase/handFacts.js';
 const { compare } = jsonPatch;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -211,6 +211,10 @@ export class TableStateHub {
     // `if (!room) return` below: that early return fires on tables with no
     // subscribers, and a hand nobody is watching still counts.
     captureAllInEquity(tableId, payload);
+    // RIT/insurance lifecycle telemetry - see handFacts.captureRitEvent for
+    // why this exists. Same placement rationale: above the `if (!room) return`,
+    // because an offer nobody is subscribed to still happened.
+    captureRitEvent(tableId, payload);
 
     const room = this.rooms.get(tableId);
     if (!room) return;

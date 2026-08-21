@@ -139,6 +139,21 @@ export interface CarouselProps<T> {
   spacing?: number;
   /** Fraction of the item width between adjacent card centres. */
   spacingRatio?: number;
+  /**
+   * How many cards should be VISIBLE at once, sized from the track.
+   *
+   * Dan 2026-08-21: "IT NEEDS TO DISPLAY 3 CARDS AT ONCE... NOT ONLY DISPLAY
+   * ONE AT A TIME." The old sizing was `min(300, max(200, track * 0.55))`,
+   * which is a ONE-UP rule: at over half the track per card there is no room
+   * for a neighbour to sit beside the centre, so the strip reads as a single
+   * card even though the neighbours are mounted.
+   *
+   * When set, each card is sized so this many fit across the track with a
+   * little breathing room, which is what actually makes three of them show.
+   * Left undefined the previous behaviour is unchanged, so no other carousel
+   * on the site moves.
+   */
+  visibleCards?: number;
   /** Scale of a card one step off centre. 1 disables the size falloff. */
   edgeScale?: number;
   className?: string;
@@ -166,6 +181,7 @@ export function Carousel<T>({
   spacing,
   spacingRatio = 0.88,
   edgeScale = 0.82,
+  visibleCards,
   className,
   ariaLabel = 'Cards',
   initialIndex = 0,
@@ -225,8 +241,31 @@ export function Carousel<T>({
     return () => ro.disconnect();
   }, []);
 
+  /**
+   * Card width.
+   *
+   * `visibleCards` divides the track so that many cards fit; the +0.5 leaves
+   * roughly half a card of margin so the outer two are clearly framed rather
+   * than flush to the edges.
+   *
+   * Below NARROW_TRACK_PX there is not enough room for three readable club
+   * cards - a phone would get three ~110px slivers - so it falls back to a
+   * centre card with peeking neighbours. Mobile-first means the small screen
+   * gets the layout that works on it, not a scaled-down copy of the desktop.
+   */
+  const NARROW_TRACK_PX = 620;
+  const effectiveVisible =
+    visibleCards && trackWidth > 0 && trackWidth < NARROW_TRACK_PX
+      ? Math.min(visibleCards, 1.6)
+      : visibleCards;
+
   const resolvedItemWidth =
-    itemWidth ?? (trackWidth > 0 ? Math.min(300, Math.max(200, trackWidth * 0.55)) : 300);
+    itemWidth ??
+    (trackWidth > 0
+      ? effectiveVisible
+        ? Math.min(420, Math.max(190, trackWidth / (effectiveVisible + 0.5)))
+        : Math.min(300, Math.max(200, trackWidth * 0.55))
+      : 300);
   /* 0.88 leaves the neighbours clearly readable with only a slight tuck under
      the centre card. The 3D engine can pack tighter because depth and scale do
      the separating; flat cards carrying a club name and live stats cannot. */

@@ -320,6 +320,20 @@ export default function CarouselSection({
           onIndexChange={handleIndexChange}
           ariaLabel="Your Clubs"
           itemNoun="Club"
+          /* Dan 2026-08-21: "IT NEEDS TO DISPLAY 3 CARDS AT ONCE, AND SNAP TO
+             CENTER ONE CARD AT A TIME. NOT ONLY DISPLAY ONE AT A TIME."
+
+             The default sizing gave each card 55% of the track, which is a
+             one-up rule - over half the width per card leaves no room for a
+             neighbour beside the centre, so the strip read as a single card
+             even though three were mounted and swiping worked.
+
+             Three across, at full spacing so they sit side by side instead of
+             tucking under one another, and a gentle edge scale so the outer
+             two are plainly there rather than shrunken afterthoughts. */
+          visibleCards={3}
+          spacingRatio={1.0}
+          edgeScale={0.9}
           initialIndex={initialIndex}
           renderItem={renderClubCard}
         />

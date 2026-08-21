@@ -188,6 +188,12 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .mainContent {
+  /* Empty artwork above and below the console band in ACTION_BAR_HORIZONTAL.
+     Declared here, on the common ancestor of both consumers, so the crop is
+     one number to tune rather than two magic negatives in separate rules. */
+  --action-bar-dead-top: 92px;
+  --action-bar-dead-bottom: 88px;
+
   width: 100%;
   max-width: 960px;
   margin: 0 auto;
@@ -224,10 +230,21 @@
   align-items: center;
   width: 100%;
   z-index: 0;
-  margin: 0;
+  /* Dan 2026-08-21: "MOVE THE CREATE A CLUB, FIND A PLAYER, JOIN A CLUB ACTION
+     BAR TO THE VERY TOP OF THE PAGE, SO THE CLUB CARDS HAVE MORE SPACE AND CAN
+     BE AS LARGE AS POSSIBLE."
+
+     The bar could not simply be moved: it already IS the first child of
+     .mainContent. What pushed it down is the artwork itself - a 1024x682
+     canvas whose console occupies only the middle band, so at 600px wide the
+     img runs ~400px tall and roughly a quarter of that is empty pixels above
+     the bar. Cropping that dead band with a negative top margin is what
+     actually lifts the bar to the top, and it hands the reclaimed height
+     straight to the carousel. */
+  margin: calc(-1 * var(--action-bar-dead-top)) 0 0 0;
   padding: 0;
-  /* Pull content below up over the decorative bottom portion of the action-bar image */
-  margin-bottom: -75px;
+  /* Pull the carousel up over the decorative bottom portion of the same image. */
+  margin-bottom: calc(-1 * var(--action-bar-dead-bottom));
   /* Allow clicks to pass through the empty decorative area to the carousel beneath */
   pointer-events: none;
 }
@@ -937,7 +954,15 @@
 
 /* ── Carousel Scroll Fade Indicators (mobile) ─────────────────────────── */
 
+/* The club cards are the point of this page, so the carousel is allowed to be
+   wider than the 960px column the rest of the layout uses. Full-bleed out of
+   .mainContent, then capped - without a cap the cards keep growing on an
+   ultrawide monitor until three of them are billboards. */
 .carouselScrollFade {
+  width: 100vw;
+  max-width: 1360px;
+  margin-left: 50%;
+  transform: translateX(-50%);
   position: relative;
   /* Dan 2026-08-21: club cards are layer 1 — above the action-bar console's
      oversized image canvas (z-index 0). */

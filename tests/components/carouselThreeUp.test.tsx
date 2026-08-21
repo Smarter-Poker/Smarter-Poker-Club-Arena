@@ -54,6 +54,27 @@ function renderCarousel(items: Club[] = CLUBS, itemWidth?: number) {
   );
 }
 
+/** The lobby's real configuration: three across, side by side. */
+function renderThreeUp(items: Club[] = CLUBS) {
+  return render(
+    <Carousel
+      items={items}
+      getKey={(c) => c.id}
+      renderItem={(c) => <div data-testid={`card-${c.id}`}>{c.name}</div>}
+      visibleCards={3}
+      spacingRatio={1.0}
+      edgeScale={0.9}
+      ariaLabel="Your Clubs"
+    />
+  );
+}
+
+/** Slot width the component wrote onto the track. */
+function slotWidth(): number {
+  const track = document.querySelector('.sp-carousel__track') as HTMLElement;
+  return parseFloat(track.style.getPropertyValue('--sp-carousel-item-w'));
+}
+
 /** Parse the inline translateX the component writes each frame. */
 function translateXOf(el: HTMLElement): number {
   const m = /translateX\((-?[\d.]+)px\)/.exec(el.style.transform || '');
@@ -68,10 +89,15 @@ describe('three cards at once', () => {
   it('renders ALL THREE clubs, not just the centred one', () => {
     const spy = withTrackWidth(1200);
     renderCarousel();
-    expect(screen.getByTestId('card-a')).toBeInTheDocument();
-    expect(screen.getByTestId('card-b')).toBeInTheDocument();
-    expect(screen.getByTestId('card-c')).toBeInTheDocument();
+    // Assert on the POSITIONED cards only. The track also renders an invisible
+    // `.sp-carousel__sizer` copy of a card to give itself height, so a
+    // document-wide testid query legitimately finds duplicates - and the sizer
+    // is not something the user can see.
+    const names = itemEls()
+      .map((el) => el.textContent?.trim())
+      .sort();
     expect(itemEls()).toHaveLength(3);
+    expect(names).toEqual(['Club JAQK', 'Midway Union', 'SHARK CLUB'].sort());
     spy.mockRestore();
     cleanup();
   });
@@ -160,5 +186,64 @@ describe('foldOffset — the endless wrap', () => {
 
   it('is a no-op for an empty strip', () => {
     expect(foldOffset(0, 0, 0)).toBe(0);
+  });
+});
+
+describe('visibleCards={3} — the lobby configuration', () => {
+  it('sizes cards so three FIT ACROSS the track instead of one filling it', () => {
+    const spy = withTrackWidth(928); // .mainContent at its 960px cap, less padding
+    renderThreeUp();
+    const w = slotWidth();
+
+    // The old rule was track * 0.55 = 510px: over half the track for ONE card,
+    // which is why only the centre one was ever really on screen.
+    expect(w).toBeLessThan(928 * 0.4);
+    // Three of them plus margin must still fit inside the track.
+    expect(w * 3).toBeLessThanOrEqual(928);
+    spy.mockRestore();
+    cleanup();
+  });
+
+  it('places the three side by side, not tucked under one another', () => {
+    const spy = withTrackWidth(928);
+    renderThreeUp();
+    const w = slotWidth();
+    const offsets = itemEls().map(translateXOf).sort((a, b) => a - b);
+
+    // At spacingRatio 1.0 adjacent centres are one full card apart, so the
+    // neighbour's inner edge is at or beyond the centre card's outer edge.
+    expect(Math.abs(offsets[0])).toBeGreaterThanOrEqual(w * 0.95);
+    expect(Math.abs(offsets[2])).toBeGreaterThanOrEqual(w * 0.95);
+    spy.mockRestore();
+    cleanup();
+  });
+
+  it('makes the cards BIGGER than the old one-up sizing did in practice', () => {
+    // The lobby was rendering ~194px cards. Three-up on the wider stage must
+    // beat that comfortably, or the change has not earned itself.
+    const spy = withTrackWidth(1360); // the carousel's full-bleed cap
+    renderThreeUp();
+    expect(slotWidth()).toBeGreaterThan(300);
+    spy.mockRestore();
+    cleanup();
+  });
+
+  it('falls back to a centre-plus-peek layout on a phone', () => {
+    // Three readable club cards do not fit in 375px; three slivers help nobody.
+    const spy = withTrackWidth(375);
+    renderThreeUp();
+    const w = slotWidth();
+    expect(w).toBeGreaterThan(150); // still a legible card, not a sliver
+    expect(itemEls().length).toBeGreaterThanOrEqual(3); // neighbours still mounted
+    spy.mockRestore();
+    cleanup();
+  });
+
+  it('leaves every other carousel on the site untouched when the prop is absent', () => {
+    const spy = withTrackWidth(928);
+    renderCarousel(); // no visibleCards
+    expect(slotWidth()).toBe(300); // the previous min(300, max(200, w*0.55))
+    spy.mockRestore();
+    cleanup();
   });
 });

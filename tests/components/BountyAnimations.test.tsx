@@ -26,21 +26,8 @@ import { resolve } from 'node:path';
 import KnockoutAnimation from '../../src/components/tournament/KnockoutAnimation';
 import MysteryBountyChest, { getTier } from '../../src/components/tournament/MysteryBountyChest';
 
-/**
- * canvas-confetti runs a real requestAnimationFrame loop against a canvas it
- * owns. jsdom keeps firing queued frames after RTL unmounts the chest, so the
- * library calls clearRect on a null context and Vitest reports an UNCAUGHT
- * EXCEPTION — the run exits 1 with every assertion green. That is now a
- * deploy-blocker, not just noise: the client suite gates the bundle publish
- * (build-for-world-hub.yml), and a flaky celebration would stop shipping.
- *
- * The chest's confetti is decoration; these tests assert its phases, classes
- * and sounds, never its pixels. A no-op keeps the coverage and drops the loop.
- */
-vi.mock('canvas-confetti', () => {
-  const fn = () => Promise.resolve();
-  return { default: Object.assign(fn, { reset: () => {}, create: () => fn }) };
-});
+// canvas-confetti is stubbed globally via the alias in vitest.config.ts
+// (the import is dynamic, so a per-file vi.mock never intercepted it).
 
 vi.mock('../../src/services/SoundService', () => ({
   soundService: {

@@ -83,10 +83,35 @@ vi.mock('../src/lib/supabase', () => ({
       const builder: Record<string, unknown> = {};
       const chain = () => builder;
       for (const method of [
-        'select', 'insert', 'update', 'upsert', 'delete', 'eq', 'neq', 'gt',
-        'gte', 'lt', 'lte', 'like', 'ilike', 'is', 'in', 'contains',
-        'containedBy', 'rangeGt', 'rangeLt', 'overlaps', 'match', 'not', 'or',
-        'filter', 'order', 'limit', 'range', 'abortSignal', 'returns',
+        'select',
+        'insert',
+        'update',
+        'upsert',
+        'delete',
+        'eq',
+        'neq',
+        'gt',
+        'gte',
+        'lt',
+        'lte',
+        'like',
+        'ilike',
+        'is',
+        'in',
+        'contains',
+        'containedBy',
+        'rangeGt',
+        'rangeLt',
+        'overlaps',
+        'match',
+        'not',
+        'or',
+        'filter',
+        'order',
+        'limit',
+        'range',
+        'abortSignal',
+        'returns',
       ]) {
         builder[method] = vi.fn(chain);
       }
@@ -183,10 +208,50 @@ vi.mock('framer-motion', async () => {
 
   return {
     ...actual,
-    motion: {
-      div: (props: any) => React.createElement('div', { ...props }),
-      button: (props: any) => React.createElement('button', { ...props }),
-    },
+    /**
+     * EVERY tag, not just div and button.
+     *
+     * This mock used to list two elements. `motion.section`, `motion.li`,
+     * `motion.span` and friends therefore resolved to `undefined`, and React
+     * threw "Element type is invalid... got: undefined" the moment a component
+     * used one — which reads like a broken export and sent people hunting in
+     * entirely the wrong file. It also failed the file at LOAD time, and since
+     * the client suite gates the World Hub bundle publish, one component using
+     * motion.section stopped shipping for everyone.
+     *
+     * A Proxy answers for any tag that is asked for, so this can never be
+     * out of date again. Framer-only props are stripped so React does not warn
+     * about unknown DOM attributes.
+     */
+    motion: new Proxy(
+      {},
+      {
+        get: (_target, tag: string) => {
+          const Component = ({ children, ...props }: any) => {
+            const {
+              initial: _i,
+              animate: _a,
+              exit: _e,
+              transition: _t,
+              variants: _v,
+              whileHover: _wh,
+              whileTap: _wt,
+              whileInView: _wi,
+              viewport: _vp,
+              layout: _l,
+              layoutId: _lid,
+              drag: _d,
+              dragConstraints: _dc,
+              ...domProps
+            } = props;
+            return React.createElement(String(tag), domProps, children);
+          };
+          Component.displayName = `motion.${String(tag)}`;
+          return Component;
+        },
+      }
+    ),
     AnimatePresence: (props: any) => props.children,
+    useReducedMotion: () => false,
   };
 });

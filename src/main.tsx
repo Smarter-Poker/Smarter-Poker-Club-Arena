@@ -37,6 +37,10 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './styles/club-engine.css';
 import './styles/animations.css';
+// LAST of the global sheets on purpose: the reduced-motion rule is the final
+// word on animation, and importing it after the rest keeps its !important
+// declarations from being read before the sheets they moderate.
+import './styles/reducedMotion.css';
 // IMPROVEMENT PASS 2026-08-19: ChipAnimations.css and CardAnimations.css
 // deleted — ~1,400 lines of keyframes/selectors with ZERO component
 // consumers (chip-bet--from-seat-*, community-card--flop-*, card--folding,

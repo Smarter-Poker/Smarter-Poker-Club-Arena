@@ -1326,7 +1326,9 @@
   font-weight: 700;
   letter-spacing: 0.02em;
   cursor: pointer;
-  transition: transform 0.12s ease, filter 0.12s ease;
+  transition:
+    transform 0.12s ease,
+    filter 0.12s ease;
 }
 
 .spectator-footer-bar__cta:active {
@@ -2739,7 +2741,6 @@ body.ca-raising .bankroll-widget {
   background: transparent;
 }
 
-
 /* ═══════════════════════════════════════════════════════════════════════════
    POT-WIN FLOAT (Dan 2026-08-21, PokerBros reference: the "+1" above the
    winner's avatar). Phase 1 (0-30%): the number rides from the pot to the
@@ -2767,8 +2768,7 @@ body.ca-raising .bankroll-widget {
 @keyframes potWinFloatRide {
   0% {
     opacity: 0;
-    transform: translate(calc(var(--pwf-from-x) - 50%), calc(var(--pwf-from-y) - 50%))
-      scale(0.7);
+    transform: translate(calc(var(--pwf-from-x) - 50%), calc(var(--pwf-from-y) - 50%)) scale(0.7);
   }
   8% {
     opacity: 1;
@@ -2776,13 +2776,11 @@ body.ca-raising .bankroll-widget {
   30% {
     /* Arrived with the chips: parked just above the winner's avatar. */
     opacity: 1;
-    transform: translate(calc(var(--pwf-to-x) - 50%), calc(var(--pwf-to-y) - 50% - 44px))
-      scale(1);
+    transform: translate(calc(var(--pwf-to-x) - 50%), calc(var(--pwf-to-y) - 50% - 44px)) scale(1);
   }
   72% {
     opacity: 1;
-    transform: translate(calc(var(--pwf-to-x) - 50%), calc(var(--pwf-to-y) - 50% - 56px))
-      scale(1);
+    transform: translate(calc(var(--pwf-to-x) - 50%), calc(var(--pwf-to-y) - 50% - 56px)) scale(1);
   }
   100% {
     opacity: 0;
@@ -2793,7 +2791,10 @@ body.ca-raising .bankroll-widget {
 
 @media (prefers-reduced-motion: reduce) {
   .pot-win-float {
-    animation: potWinFloatReduced 1.6s ease-out forwards;
+    /* !important so the global reduced-motion rule cannot collapse this to
+       1ms — the whole point of this variant is that the amount stays on
+       screen long enough to READ. */
+    animation: potWinFloatReduced 1.6s ease-out forwards !important;
   }
   @keyframes potWinFloatReduced {
     0% {

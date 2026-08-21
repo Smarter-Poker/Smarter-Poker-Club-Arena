@@ -8468,6 +8468,7 @@ off; still dealing)". Commit `52ae9724c`:
   Replay + Share buttons driving the existing HandReplayPlayer/ShareHand.
 - [P1] Time-bank alarm clock stacked directly above the previous-hand card in
   the TableHUD bottom-left (no longer a free-floating fixed pill).
+
 ## 2026-08-20 — DOUBLE-BOARD BOMB POTS: engine, client, config (Cowork session, Dan's "proceed")
 
 The full Tier-3 feature behind the bomb-pot cinematic sequence. Engine deals
@@ -8475,6 +8476,7 @@ TWO boards on opted-in bomb pots and splits every pot across them; client
 renders the stacked boards and flies the antes; config exposes the toggle.
 
 ENGINE (server/):
+
 - HandController: communityCards2 in GameState; doubleBoardActive set at
   ante time with a deck-feasibility guard (players x holeCards + 10 <= deck;
   9-handed PLO5 downgrades to single board with a warn). Flop/turn/river,
@@ -8504,6 +8506,10 @@ CLIENT (src/):
 - mapEngineSnapshot + TablePage carry communityCards2 (never-shrink rule,
   reconnect sync, discrete street events, both new-hand clears).
 - Board 2 renders directly under board 1 (community-area__board2 — NOT the
+
+- mapEngineSnapshot + TablePage carry communityCards2 (never-shrink rule,
+  reconnect sync, discrete street events, both new-hand clears).
+- Board 2 renders directly under board 1 (community-area\_\_board2 — NOT the
   RIT run class, which would swap the flop flip for the RIT pop-in), same
   stage, silent (playSounds=false), felt masthead shifts via data-boards=2.
 - BOMB_POT_TRIGGERED passes the engine's real doubleBoard through to the
@@ -8514,6 +8520,7 @@ CLIENT (src/):
   emit stays for older engine builds; the overlay no-ops duplicates).
 
 CONFIG:
+
 - Migration 20260821003445 bomb_pot_double_board APPLIED TO PRODUCTION via
   Supabase MCP and saved to supabase/migrations/: tables.
   bomb_pot_double_board boolean NOT NULL DEFAULT false + hand_history.
@@ -8558,3 +8565,42 @@ hid inside mixed diffs. 75a7298 three-way-merged every file back (base
 buffer had separately overwritten. Lesson repeated in .agent terms: diff
 the snapshot against fresh origin/main per file BEFORE committing, and
 push single-file commits when a sibling session is mid-flight.
+
+## 2026-08-21 (00:30-00:50) — "never again" made structural, and the live audit
+
+Dan: "safe guards in place to prevent that from happening ever again … do a
+live e2e audit to insure everything is working, every single animation is
+live and functional, that nothing gets skipped ever."
+
+SAFEGUARDS (now four independent layers against two-dealers-one-table):
+
+1. ENGINE_LEASE_ENFORCE defaults ON — live-verified {enforced:true}.
+2. leaseEnforcementGuard.test.ts pins the default, the teardown loop, the
+   claim-before-start, and the shutdown lease release. A quiet code edit
+   flipping any of them fails CI.
+3. fn_detect_double_dealing — the hand_history overlap fingerprint,
+   service-role only.
+4. The 15-minute spin-sweep probe now reads the ENGINE'S OWN lease
+   diagnostics from /health (cache-busted; alerts on enforcement off, any
+   conflict, or unreachable engine) AND runs the overlap detector. The
+   watcher does not trust the watched.
+
+LIVE E2E AUDIT — 8/8 in real Chrome against the CSS production serves:
+the complete hand beat by beat (deal fly, cards land, TRUE 15s turn
+clock, chip slide, flop land+fan, pot collect, turn, river, showdown
+flips, winner pop, pot ship, fold muck), the all-in moment (banner slam,
+shockwave, equity pop), the SPIN-IT intro v2 (dim, beam, countdown,
+disc, winner flash, confetti), the knockout (vignette, shockwave, head
+slam + 1.1s fall), the mystery chest (drop, tension breathing, lid), the
+tournament winner overlay (entrance, trophy, sparkles, prize counter),
+the lobby result card (backdrop fade, card pop), and reduced-motion
+collapse of everything.
+
+PACING VERIFIED SERVER-SIDE: the TURN_CHANGE settle is unconditional (no
+human gate to fail); measured cycles match design (7.2s minimum for an
+insta-fold 3-max hand = 1500 start + 2x(2200 think + 650 settle); cash avg
+39.8s). The "3.8s hands" in history are the narrow started->ended window of
+one CORRECTLY paced dealer; Dan's chaos was the second dealer, now
+impossible. Keyframe namespace audited: 827 keyframes, 0 genuine collisions
+(the 9 `shimmer` definitions are byte-identical globals + module-scoped
+copies).

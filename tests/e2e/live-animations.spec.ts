@@ -311,6 +311,39 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
     expect(opening.mbcLidOpen, 'the lid must hinge open').toBe(900);
   });
 
+  test('the TOURNAMENT WINNER overlay: entrance, trophy, prize counter', async ({ page }) => {
+    // Dan's end-flow: the champion gets their celebration BEFORE being landed
+    // in the lobby. These are the beats that celebration is made of.
+    const b = await beat(
+      page,
+      `const w=document.createElement('div');w.className='winnerOverlay visible';
+       w.innerHTML='<div class="sparkleContainer"><span class="sparkle"></span></div>'+
+         '<div class="winnerContent winner-entrance">'+
+         '<div class="winnerTrophy trophy-bounce">WINNER</div>'+
+         '<div class="winnerTitle winner-golden">CHAMPION!</div>'+
+         '<div class="winnerPrize prize-counter">100</div></div>';
+       document.querySelector('.table-page').appendChild(w);`
+    );
+    expect(b.winnerGrandEntrance, 'the champion card must make an entrance').toBe(900);
+    expect(b.trophyBounce, 'the trophy must bounce').toBe(2000);
+    expect(b.sparkleFloat, 'the sparkles must float').toBe(4000);
+    expect(b.prizeCounterSlideIn, 'the prize must slide in, then count').toBe(800);
+  });
+
+  test('the LOBBY RESULT CARD: the landing after a finished tournament', async ({ page }) => {
+    // "placed inside the lobby and your tournament result card shown" — the
+    // card must ARRIVE (backdrop fade + card pop), not blink into place.
+    const b = await beat(
+      page,
+      `const r=document.createElement('div');r.className='trc';
+       r.innerHTML='<div class="trc__backdrop"></div>'+
+         '<div class="trc__card trc__card--won"><div class="trc__place trc__place--won">1st Place</div></div>';
+       document.querySelector('.table-page').appendChild(r);`
+    );
+    expect(b.trcFadeIn, 'the backdrop must fade in').toBe(300);
+    expect(b.trcCardIn, 'the result card must pop in').toBe(450);
+  });
+
   test('reduced motion is honoured — every animation collapses', async ({ browser }) => {
     const ctx = await browser.newContext({ reducedMotion: 'reduce' });
     const page = await ctx.newPage();

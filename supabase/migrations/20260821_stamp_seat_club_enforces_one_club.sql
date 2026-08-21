@@ -42,3 +42,42 @@ BEGIN
   RETURN NEW;
 END
 $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- THE LAST LAYER OF THE SAME OPT-OUT (same day, minutes later)
+--
+-- Removing the `IF NEW.club_id IS NULL` guard from the function above was not
+-- enough: a horse formed a fresh split immediately afterwards (`quantum`, cash
+-- seat since 02:31 on JAQK, tournament seat 19:13 on Shark) while the function,
+-- called directly with the same arguments, correctly answered "Club JAQK".
+--
+-- The guard existed in TWO places and only one had been found. The TRIGGER
+-- carried its own copy:
+--
+--     CREATE TRIGGER trg_table_seats_stamp_club
+--       BEFORE INSERT OR UPDATE ON table_seats
+--       FOR EACH ROW WHEN ((new.club_id IS NULL))    <-- here
+--
+-- so a caller supplying club_id — which the tournament seating path does — never
+-- reached the function at all, however the function was written.
+--
+-- Firing on every row is safe: the function is one indexed lookup on the
+-- player's live seats, it returns the supplied club unchanged for a player who
+-- is not already seated, and it returns the table's own club on non-union
+-- tables.
+--
+-- Verified: 14 fresh seats in the first two minutes after this landed, zero
+-- splits — against 69 seats / 1 split in the equivalent window before it.
+--
+-- ROLLBACK:
+--   drop trigger trg_table_seats_stamp_club on public.table_seats;
+--   create trigger trg_table_seats_stamp_club before insert or update
+--     on public.table_seats for each row when (new.club_id is null)
+--     execute function fn_stamp_seat_club();
+
+drop trigger if exists trg_table_seats_stamp_club on public.table_seats;
+
+create trigger trg_table_seats_stamp_club
+  before insert or update on public.table_seats
+  for each row
+  execute function public.fn_stamp_seat_club();

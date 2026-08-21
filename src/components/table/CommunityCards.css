@@ -44,8 +44,8 @@
 
 :root {
   /* -- Card dimensions -- */
-  --cc-card-w: 64px;
-  --cc-card-h: 90px;
+  --cc-card-w: 65px;
+  --cc-card-h: 91px;
   --cc-card-radius: 6px;
   --cc-card-gap: 8px;
 
@@ -803,8 +803,8 @@
 
 @media (max-width: 768px) {
   :root {
-    --cc-card-w: 56px;
-    --cc-card-h: 78px;
+    --cc-card-w: 55px;
+    --cc-card-h: 77px;
     --cc-card-gap: 6px;
     --cc-card-radius: 5px;
   }
@@ -840,8 +840,8 @@
 
 @media (max-width: 480px) {
   :root {
-    --cc-card-w: 44px;
-    --cc-card-h: 62px;
+    --cc-card-w: 45px;
+    --cc-card-h: 63px;
     --cc-card-gap: 4px;
     --cc-card-radius: 4px;
   }

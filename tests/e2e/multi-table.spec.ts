@@ -177,9 +177,17 @@ test.describe('LIVE E2E — the multi-table tab bar, beat by beat', () => {
   });
 
   test('a folded tab dims: "nothing to do here" must be visible at a glance', async ({ page }) => {
-    const opacity = await page.evaluate(() => {
+    const opacity = await page.evaluate(async () => {
       const el = document.getElementById('tabFold')!;
-      el.classList.add('table-tab-bar__tab--folded');
+      // Measure the folded state ALONE. Read on its own, this pill can still
+      // be carrying a state another beat left on it (a result flash, a
+      // countdown flash), and those animate background/box-shadow on the same
+      // element - so strip the tab to exactly "a folded tab" first, then let
+      // one frame settle before reading. Flaked once in a full-file run
+      // before this; deterministic now.
+      el.className = 'table-tab-bar__tab table-tab-bar__tab--folded';
+      el.getAnimations().forEach((a) => a.cancel());
+      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
       return getComputedStyle(el).opacity;
     });
     expect(Number(opacity), 'a folded tab must sit dimmed').toBeLessThan(0.7);
@@ -257,6 +265,39 @@ test.describe('LIVE E2E — the multi-table tab bar, beat by beat', () => {
     expect(styles.callImage, 'call must be the green gradient').toContain('22, 163, 74');
     expect(styles.clockColor, 'the countdown must read gold').toBe('rgb(250, 204, 21)');
     expect(styles.stripPosition, 'the strip must overlay its tile').toBe('absolute');
+  });
+
+  test('CARD ART: nothing crops the indices and nothing stair-steps the pips', async ({
+    page,
+  }) => {
+    // Dan 2026-08-21: "the cards ... are no longer crisp and clean, they seem
+    // distorted with edges cut off." Both halves of that regression are
+    // CSS-visible, so they are pinned here.
+    const read = await page.evaluate(() => {
+      const wrap = document.createElement('div');
+      wrap.className = 'card-image card-image--md';
+      const img = document.createElement('img');
+      img.className = 'card-image__img';
+      wrap.appendChild(img);
+      document.body.appendChild(wrap);
+      const cw = getComputedStyle(wrap);
+      const ci = getComputedStyle(img);
+      return {
+        fit: ci.objectFit,
+        rendering: ci.imageRendering,
+        w: parseFloat(cw.width),
+        h: parseFloat(cw.height),
+      };
+    });
+    // COVER shaves the difference off the edges of every card.
+    expect(read.fit, 'card art must never be cropped').toBe('contain');
+    // crisp-edges turns a 1050px-tall card scaled to 70px into stair-steps.
+    expect(
+      ['crisp-edges', 'pixelated', '-webkit-optimize-contrast'].includes(read.rendering),
+      'a downscaled card must be smoothed, not nearest-neighboured'
+    ).toBe(false);
+    // The art is 750x1050 = 5:7 exactly; the box must match it.
+    expect(read.w / read.h, 'card box must be 5:7 like the art').toBeCloseTo(5 / 7, 3);
   });
 
   test('reduced motion is honoured across the multi-table surface', async ({ browser }) => {

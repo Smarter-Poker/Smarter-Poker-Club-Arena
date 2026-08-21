@@ -74,7 +74,7 @@ class ProfileServiceClass {
       const { data, error } = await supabase
         .from('profiles')
         .select(
-          'id, username, display_name, avatar_url, bio, level, tier, login_streak, streak_days, last_login_date, total_hands_played, diamonds, created_at, updated_at'
+          'id, username, display_name, avatar_url:arena_avatar_url, bio, level, tier, login_streak, streak_days, last_login_date, total_hands_played, diamonds, created_at, updated_at'
         )
         .eq('id', userId)
         .maybeSingle();
@@ -96,7 +96,7 @@ class ProfileServiceClass {
       const { data, error } = await supabase
         .from('profiles')
         .select(
-          'id, username, display_name, avatar_url, bio, level, tier, login_streak, streak_days, last_login_date, total_hands_played, diamonds, created_at, updated_at'
+          'id, username, display_name, avatar_url:arena_avatar_url, bio, level, tier, login_streak, streak_days, last_login_date, total_hands_played, diamonds, created_at, updated_at'
         )
         .eq('username', username)
         .maybeSingle();
@@ -119,7 +119,7 @@ class ProfileServiceClass {
         .from('profiles')
         .select(
           `
-          id, username, display_name, avatar_url, bio,
+          id, username, display_name, avatar_url:arena_avatar_url, bio,
           level, tier,
           login_streak, streak_days,
           total_hands_played, diamonds,
@@ -334,7 +334,7 @@ class ProfileServiceClass {
     const { data } = await supabase
       .from('profiles')
       .select(
-        'id, username, display_name, avatar_url, level, tier, total_hands_played, diamonds, created_at, updated_at'
+        'id, username, display_name, avatar_url:arena_avatar_url, level, tier, total_hands_played, diamonds, created_at, updated_at'
       )
       .order(orderColumn, { ascending: false })
       .limit(limit);

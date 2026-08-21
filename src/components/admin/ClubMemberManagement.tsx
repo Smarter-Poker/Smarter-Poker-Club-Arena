@@ -81,7 +81,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
         if (cmUserIds.length > 0) {
           const { data: cmProfiles } = await supabase
             .from('profiles')
-            .select('id, username, avatar_url')
+            .select('id, username, avatar_url:arena_avatar_url')
             .in('id', cmUserIds);
           if (cmProfiles) {
             for (const p of cmProfiles) cmProfileMap[p.id] = p;

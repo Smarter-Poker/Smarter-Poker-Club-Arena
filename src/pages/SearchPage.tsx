@@ -122,7 +122,7 @@ export default function SearchPage() {
         if (category === 'all' || category === 'players') {
           const { data: players } = await supabase
             .from('profiles')
-            .select('id, username, avatar_url')
+            .select('id, username, avatar_url:arena_avatar_url')
             .ilike('username', `%${sanitized}%`)
             .limit(10);
 

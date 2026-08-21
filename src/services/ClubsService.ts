@@ -564,7 +564,7 @@ export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
       const chunk = userIds.slice(i, i + chunkSize);
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, username, avatar_url')
+        .select('id, username, avatar_url:arena_avatar_url')
         .in('id', chunk);
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
@@ -639,7 +639,7 @@ export async function getClubLeaderboard(
     const userIds = members.map((m: any) => m.user_id);
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, username, avatar_url')
+      .select('id, username, avatar_url:arena_avatar_url')
       .in('id', userIds);
     const profileMap: Record<string, any> = {};
     if (profiles) {

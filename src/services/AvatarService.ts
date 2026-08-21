@@ -14,12 +14,8 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { reportError } from '../utils/errorReporter';
-import {
-  generateAvatarSvg,
-  generateDefaultAvatar,
-  getAvatarWithFallback,
-} from '../utils/avatarGenerator';
+import { reportError, reportWarning } from '../utils/errorReporter';
+import { generateDefaultAvatar, getAvatarWithFallback } from '../utils/avatarGenerator';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -53,13 +49,16 @@ export { getAvatarWithFallback } from '../utils/avatarGenerator';
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const SUPABASE_STORAGE_URL = 'https://kuklfnapbkmacvwxktbh.supabase.co/storage/v1/object/public';
 const SOCIAL_AVATARS_BUCKET = 'social-media';
-const SOCIAL_AVATARS_PREFIX = 'avatars';
 const CUSTOM_AVATARS_BUCKET = 'custom-avatars';
-const CUSTOM_AVATARS_PREFIX = 'generated';
-/** Destination for user-uploaded photos. Public, 10MB cap, path must be <uid>/... */
-const UPLOAD_AVATARS_BUCKET = 'avatars';
+/**
+ * Dan 2026-08-21: "they can now only use avatars."
+ *
+ * The `avatars` storage bucket that held user-uploaded photos is gone from this
+ * file, along with `downscaleImage` and `uploadAvatar` that fed it. The bucket
+ * itself is deliberately NOT deleted — existing objects are what the migration
+ * that moves affected players onto library art rolls back to if it ever has to.
+ */
 
 /** Default avatar — deterministic SVG when no real image exists */
 const DEFAULT_AVATAR_SVG = generateDefaultAvatar();
@@ -67,50 +66,6 @@ const DEFAULT_AVATAR_SVG = generateDefaultAvatar();
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Downscale an image file to fit within `maxPx` on its longest edge, preserving
- * aspect ratio. Returns a JPEG (or PNG when the source has transparency), or
- * rejects so the caller can fall back to the original.
- *
- * Uses createImageBitmap + canvas: no dependency, and it never decodes the file
- * twice. Images already inside the box are returned untouched.
- */
-async function downscaleImage(file: File, maxPx: number): Promise<File> {
-  if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') return file;
-
-  const bitmap = await createImageBitmap(file);
-  try {
-    const longest = Math.max(bitmap.width, bitmap.height);
-    if (longest <= maxPx) return file;
-
-    const scale = maxPx / longest;
-    const w = Math.max(1, Math.round(bitmap.width * scale));
-    const h = Math.max(1, Math.round(bitmap.height * scale));
-
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return file;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(bitmap, 0, 0, w, h);
-
-    // PNG keeps alpha (avatars are often cut-outs); everything else is JPEG,
-    // which is dramatically smaller for photographs.
-    const keepAlpha = file.type === 'image/png';
-    const mime = keepAlpha ? 'image/png' : 'image/jpeg';
-    const blob: Blob | null = await new Promise((resolve) =>
-      canvas.toBlob(resolve, mime, keepAlpha ? undefined : 0.85)
-    );
-    if (!blob) return file;
-
-    const name = file.name.replace(/\.[^.]+$/, '') + (keepAlpha ? '.png' : '.jpg');
-    return new File([blob], name, { type: mime, lastModified: Date.now() });
-  } finally {
-    bitmap.close?.();
-  }
-}
 
 function normalizeAvatarUrl(url: string): string {
   if (!url) return url;
@@ -131,6 +86,46 @@ function normalizeAvatarUrl(url: string): string {
 
   // 3. Already normalized? Just to be safe, if it's /avatars/table/...webp, leave it.
   return url;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  LIBRARY-ONLY GUARD — Dan 2026-08-21: "they can now only use avatars"
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * THIS IS THE ENFORCEMENT POINT, NOT THE UI.
+ *
+ * The upload tab and the "Use Profile Photo" button are removed too, but on
+ * their own that is a locked door in a building with no walls: `setUserAvatar`
+ * accepted ANY string, and `normalizeAvatarUrl` returns anything it does not
+ * recognise unchanged. Any caller — a cached bundle, the console, the Hub, a
+ * future feature — could still write a photograph straight into
+ * `profiles.avatar_url`. A rule that lives only in a component is not a rule.
+ *
+ * WHAT COUNTS AS AN AVATAR
+ *   /avatars/...                     Hub library art, any tier
+ *   .../custom-avatars/generated/... AI-generated art. NOT a photograph: it is
+ *                                    drawn from a text prompt, and the
+ *                                    photo-likeness route that could turn a
+ *                                    selfie into one is deleted.
+ *   data:image/svg+xml,...           the generated monogram fallback
+ *
+ * Refused: Supabase Storage uploads (`/avatars/<uid>/…`,
+ * `/social-media/avatars/<uid>/…`) and external OAuth photos such as
+ * lh3.googleusercontent.com, which is what "Use Profile Photo" wrote.
+ *
+ * Note the ORDER dependency with normalizeAvatarUrl: `/avatars/vip/x.png` and
+ * `social-media/avatars/vip_x.png` are both legitimate ways of naming library
+ * art and both become `/avatars/table/...` there, so the guard must run AFTER
+ * normalisation or it would reject the very paths the Hub sends.
+ */
+export function isLibraryAvatarUrl(url: string): boolean {
+  if (!url) return false;
+  if (url.startsWith('data:image/svg+xml')) return true;
+  if (/\/custom-avatars\/generated\//i.test(url)) return true;
+  if (/^\/avatars\//i.test(url)) return true;
+  if (/^https?:\/\/[^/]+\/avatars\//i.test(url)) return true;
+  return false;
 }
 
 class AvatarServiceClass {
@@ -253,7 +248,7 @@ class AvatarServiceClass {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('avatar_url, display_name')
+        .select('avatar_url:arena_avatar_url, display_name')
         .eq('id', userId)
         .maybeSingle();
 
@@ -280,7 +275,7 @@ class AvatarServiceClass {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, avatar_url, display_name')
+        .select('id, avatar_url:arena_avatar_url, display_name')
         .in('id', userIds);
 
       if (!error && data) {
@@ -312,10 +307,32 @@ class AvatarServiceClass {
   async setUserAvatar(userId: string, avatarUrl: string): Promise<boolean> {
     try {
       avatarUrl = normalizeAvatarUrl(avatarUrl);
-      // Update the profile avatar_url (the canonical source)
+
+      /**
+       * Reported and refused, not thrown. A caller holding a photo URL should
+       * leave the player's existing avatar alone rather than crash the screen
+       * they are standing on — and the report is what tells us a write path was
+       * missed, which is the only way we would ever find one.
+       */
+      if (!isLibraryAvatarUrl(avatarUrl)) {
+        reportWarning(
+          'Refused a non-library avatar URL - profile pictures are no longer supported',
+          'AvatarService.setUserAvatar',
+          { userId, avatarUrl: avatarUrl.slice(0, 120) }
+        );
+        return false;
+      }
+
+      /* Dan 2026-08-21: writes go to arena_avatar_url, NEVER avatar_url.
+         avatar_url is the player's social media profile picture. This picker
+         lives in Club Arena and chooses the Club Arena avatar; writing the old
+         column is what silently changed 17 people's social pictures earlier
+         today. The two columns are now separate precisely so that cannot
+         recur - and tests/unit/arenaAvatarSeparation.test.ts fails the build
+         if any write in this app names avatar_url again. */
       const { error: profileError } = await supabase
         .from('profiles')
-        .update({ avatar_url: avatarUrl })
+        .update({ arena_avatar_url: avatarUrl })
         .eq('id', userId);
 
       if (profileError) {
@@ -358,128 +375,20 @@ class AvatarServiceClass {
   }
 
   /**
-   * The signed-in user's photo from their identity provider (Google, etc).
+   * Profile pictures were removed 2026-08-21 (Dan: "they can now only use
+   * avatars"). Two methods lived here and both are gone:
    *
-   * There is no separate "profile picture" column - profiles.avatar_url IS
-   * the profile picture. The distinct thing a user means by "use my profile
-   * pic" is the photo attached to the account they signed in with, which
-   * lives in the auth user metadata rather than in profiles.
+   *   getProfilePhotoUrl()  read the OAuth provider photo out of auth user
+   *                         metadata, which is what the "Use Profile Photo"
+   *                         button wrote into profiles.avatar_url.
+   *   uploadAvatar()        took a File, downscaled it, and pushed it to the
+   *                         `avatars` storage bucket.
    *
-   * Returns null when the account has no provider photo (most accounts are
-   * email/password), so callers can hide the option instead of offering a
-   * button that does nothing.
+   * Neither has a caller any more. They are recorded here rather than deleted
+   * silently so the next person looking for "where did upload go" finds an
+   * answer instead of an absence — and so nobody re-adds one thinking it was
+   * an oversight. isLibraryAvatarUrl() above is what actually enforces this.
    */
-  async getProfilePhotoUrl(): Promise<string | null> {
-    try {
-      const { data, error } = await supabase.auth.getUser();
-      if (error || !data?.user) return null;
-
-      const meta = (data.user.user_metadata ?? {}) as Record<string, unknown>;
-      // Providers disagree on the key: Google uses `picture`, most Supabase
-      // OAuth flows normalise to `avatar_url`. Accept either.
-      const candidate = meta.avatar_url ?? meta.picture;
-
-      if (typeof candidate !== 'string' || candidate.length === 0) return null;
-      if (!/^https?:\/\//i.test(candidate)) return null;
-
-      return candidate;
-    } catch (err) {
-      reportError(err, 'AvatarService.getProfilePhotoUrl');
-      return null;
-    }
-  }
-
-  /**
-   * Upload a user-supplied image and return its public URL.
-   *
-   * The gallery previously turned the chosen file into a base64 data URL and
-   * wrote that straight into profiles.avatar_url. A 5MB photo becomes a ~6.8MB
-   * string in a text column that is then re-sent to every client rendering
-   * that player at a table. This uploads to the `avatars` bucket instead and
-   * stores only the URL.
-   *
-   * Path must be `<uid>/<file>` to satisfy the bucket's INSERT policy
-   * (auth.uid() = foldername(name)[1]).
-   */
-  async uploadAvatar(userId: string, file: File): Promise<{ url?: string; error?: string }> {
-    const MAX_BYTES = 5 * 1024 * 1024;
-    const ALLOWED = ['image/jpeg', 'image/png', 'image/webp'];
-
-    if (!ALLOWED.includes(file.type)) {
-      return { error: 'Use a JPG, PNG or WebP image.' };
-    }
-    /**
-     * The 5 MB limit applies to what we UPLOAD, not to what the user picked.
-     *
-     * It used to be checked here, before any downscaling — so a perfectly
-     * ordinary phone photo was rejected outright even though the very next
-     * step would have turned it into ~50 KB. The only thing that genuinely
-     * has to be bounded up front is what we ask the browser to DECODE, since
-     * that is the part that can hurt a low-end device.
-     */
-    const MAX_DECODE_BYTES = 25 * 1024 * 1024;
-    if (file.size > MAX_DECODE_BYTES) {
-      return {
-        error: `That image is ${(file.size / 1048576).toFixed(1)}MB - too large to process. Please pick one under 25MB.`,
-      };
-    }
-
-    /**
-     * Downscale before it ever leaves the browser.
-     *
-     * Dan 2026-08-20 (measured): avatars were stored exactly as supplied. The
-     * owner account's is 1179x1509 / 263 KB and the largest box any of them is
-     * drawn in is 56 CSS px. Serving is already handled — sizedStorageUrl()
-     * asks Supabase's transform endpoint for the display size — but the
-     * original is still what gets stored, backed up and billed, and the
-     * transform has to chew through it on every cold cache.
-     *
-     * 512px square covers every present use at 3x DPR with room to spare.
-     * If anything here fails (no canvas, exotic colour profile, an image the
-     * decoder rejects) we upload the ORIGINAL rather than block the user —
-     * a slightly heavy avatar beats a broken upload.
-     */
-    const prepared = await downscaleImage(file, 512).catch((err) => {
-      // Falling back to the original is deliberate — a slightly heavy avatar
-      // beats a blocked upload. Reporting it is deliberate too: if the decoder
-      // starts rejecting a whole class of file, that must be visible rather
-      // than showing up months later as a bucket full of 5 MB originals.
-      reportError(err, 'AvatarService.downscale_failed_using_original');
-      return file;
-    });
-    const usable = prepared.size < file.size ? prepared : file;
-
-    // Now that the size is final, enforce the real limit. Reaching this means
-    // downscaling could not get the file under 5 MB — which in practice means
-    // the fallback ran and we are holding the original.
-    if (usable.size > MAX_BYTES) {
-      return {
-        error: `That image is still ${(usable.size / 1048576).toFixed(1)}MB after resizing. The limit is 5MB.`,
-      };
-    }
-
-    const ext = usable.type === 'image/png' ? 'png' : usable.type === 'image/webp' ? 'webp' : 'jpg';
-    const path = `${userId}/avatar-${Date.now()}.${ext}`;
-
-    try {
-      const { error: uploadError } = await supabase.storage
-        .from(UPLOAD_AVATARS_BUCKET)
-        .upload(path, usable, { cacheControl: '3600', upsert: true, contentType: usable.type });
-
-      if (uploadError) {
-        reportError(uploadError, 'AvatarService.uploadAvatar');
-        return { error: 'Upload failed. Please try again.' };
-      }
-
-      const { data } = supabase.storage.from(UPLOAD_AVATARS_BUCKET).getPublicUrl(path);
-      if (!data?.publicUrl) return { error: 'Upload succeeded but no URL was returned.' };
-
-      return { url: data.publicUrl };
-    } catch (err) {
-      reportError(err, 'AvatarService.uploadAvatar');
-      return { error: 'Upload failed. Please try again.' };
-    }
-  }
 
   /**
    * Open the Hub avatar creator in a new tab/modal.

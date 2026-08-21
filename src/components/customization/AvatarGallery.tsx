@@ -3,11 +3,17 @@
  *  AVATAR GALLERY — Choose Avatar
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Four things a player can do here:
+ * Three things a player can do here:
  *   1. See their current avatar next to the one they are about to pick
- *   2. Use the photo from the account they signed in with
- *   3. Create a new VIP avatar (opens the Hub AI avatar creator)
- *   4. Choose a new avatar - presets, their own saved avatars, or an upload
+ *   2. Create a new custom avatar (opens the Hub AI avatar creator)
+ *   3. Choose a new avatar - presets, VIP art, or their own saved avatars
+ *
+ * PROFILE PICTURES WERE REMOVED 2026-08-21 (Dan: "they can now only use
+ * avatars"). Two routes went, not one: the Upload tab, and a separate
+ * "Use Profile Photo" button that wrote the Google OAuth photo URL. The rule
+ * itself lives in AvatarService.isLibraryAvatarUrl, at the write point -
+ * removing the buttons alone would have been a locked door in a building with
+ * no walls.
  *
  * WHY THIS WAS REWRITTEN
  *   - The grid was always empty. storage.objects had exactly one SELECT policy,
@@ -20,13 +26,13 @@
  *     and then discarded, because the tab filter only matched 'free' or 'vip'.
  *     A user's own saved avatars were unreachable. That tab is now "Mine".
  *   - Upload turned the file into a base64 data URL and stored the whole blob
- *     in profiles.avatar_url, which is then re-sent to every client rendering
- *     that player at a table. It now uploads to storage and stores the URL.
- *   - Rejected uploads (wrong type, too large) returned silently with no UI
- *     feedback at all. They now explain themselves.
+ *     in profiles.avatar_url, which was re-sent to every client rendering that
+ *     player at a table. That was fixed to store a storage URL instead, and
+ *     then the whole path was removed - kept here as the reason the column can
+ *     still contain surprising values in old rows.
  */
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { avatarService, type Avatar } from '../../services/AvatarService';
 import { masterBus } from '../../core/MasterBus';
 import { haptic } from '../../services/SoundService';
@@ -38,7 +44,8 @@ import { reportError } from '../../utils/errorReporter';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-type GalleryTab = 'free' | 'vip' | 'custom' | 'upload';
+/** 'upload' was a fourth tab until 2026-08-21. Photos are gone. */
+type GalleryTab = 'free' | 'vip' | 'custom';
 
 export interface AvatarGalleryProps {
   isOpen: boolean;
@@ -64,13 +71,9 @@ export function AvatarGallery({
   const [activeTab, setActiveTab] = useState<GalleryTab>('free');
   const [avatars, setAvatars] = useState<Avatar[]>([]);
   const [selectedAvatar, setSelectedAvatar] = useState<string>(currentAvatarUrl);
-  const [uploadPreview, setUploadPreview] = useState<string | null>(null);
-  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Keep the preview honest if the caller swaps the current avatar underneath us
   useEffect(() => {
@@ -85,19 +88,22 @@ export function AvatarGallery({
     setLoading(true);
     setNotice(null);
 
-    Promise.all([avatarService.getAvatarLibrary(userId), avatarService.getProfilePhotoUrl()])
-      .then(([library, photo]) => {
+    avatarService
+      .getAvatarLibrary(userId)
+      .then((library) => {
         if (cancelled) return;
         setAvatars(library);
-        setProfilePhotoUrl(photo);
         if (library.length === 0) {
-          setNotice('No avatars available right now. You can still upload a photo.');
+          // The old copy here offered "You can still upload a photo" as the
+          // consolation. There is no longer a photo to fall back to, so say
+          // what is actually true instead of pointing at a removed feature.
+          setNotice('No avatars available right now. Please try again shortly.');
         }
       })
       .catch((e) => {
         if (cancelled) return;
         reportError(e, 'AvatarGallery.load');
-        setNotice('Could not load avatars. You can still upload a photo.');
+        setNotice('Could not load avatars. Please try again shortly.');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -140,13 +146,6 @@ export function AvatarGallery({
     [isVip]
   );
 
-  const handleUseProfilePhoto = useCallback(() => {
-    if (!profilePhotoUrl) return;
-    haptic.light();
-    setNotice(null);
-    setSelectedAvatar(profilePhotoUrl);
-  }, [profilePhotoUrl]);
-
   const handleCreateVipAvatar = useCallback(() => {
     haptic.medium();
     // The Hub owns AI avatar generation. It writes straight to the user's
@@ -154,38 +153,6 @@ export function AvatarGallery({
     avatarService.openAvatarSelector();
     setNotice('Finish your new avatar in the Hub window, then reopen this to pick it.');
   }, []);
-
-  const handleFileChange = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      // Reset so re-picking the same file still fires a change event
-      e.target.value = '';
-      if (!file) return;
-
-      setNotice(null);
-      setUploading(true);
-
-      // Show something immediately while the upload is in flight
-      const localPreview = URL.createObjectURL(file);
-      setUploadPreview(localPreview);
-
-      try {
-        const { url, error } = await avatarService.uploadAvatar(userId, file);
-        if (error || !url) {
-          setNotice(error ?? 'Upload failed. Please try again.');
-          setUploadPreview(null);
-          return;
-        }
-        // Store the storage URL, never the file contents
-        setSelectedAvatar(url);
-        setUploadPreview(url);
-      } finally {
-        URL.revokeObjectURL(localPreview);
-        setUploading(false);
-      }
-    },
-    [userId]
-  );
 
   const handleApply = useCallback(async () => {
     if (!userId || selectedAvatar === currentAvatarUrl) {
@@ -270,20 +237,13 @@ export function AvatarGallery({
           </div>
         </div>
 
-        {/* Quick actions */}
+        {/* Quick actions.
+            "Use Profile Photo" lived here until 2026-08-21. It pulled the photo
+            from the account the player signed in with (Google, via auth user
+            metadata) and wrote that external URL into profiles.avatar_url —
+            a profile picture by a different route than the upload tab, and
+            removed for the same reason. */}
         <div className="ag-actions">
-          <button
-            className="ag-action"
-            onClick={handleUseProfilePhoto}
-            disabled={!profilePhotoUrl}
-            title={
-              profilePhotoUrl
-                ? 'Use the photo from the account you signed in with'
-                : 'Your account has no profile photo to use'
-            }
-          >
-            Use Profile Photo
-          </button>
           <button className="ag-action ag-action--vip" onClick={handleCreateVipAvatar}>
             {isVip ? 'Create VIP Avatar' : 'Create Custom Avatar'}
           </button>
@@ -309,12 +269,6 @@ export function AvatarGallery({
           >
             Mine ({myAvatars.length})
           </button>
-          <button
-            className={`ag-tab ${activeTab === 'upload' ? 'ag-tab--active' : ''}`}
-            onClick={() => setActiveTab('upload')}
-          >
-            Upload
-          </button>
         </div>
 
         {notice && (
@@ -323,88 +277,61 @@ export function AvatarGallery({
           </div>
         )}
 
-        {/* Grid / upload */}
+        {/* Grid. The fourth tab here was Upload: a drop zone and a file input
+            that pushed a photo to the `avatars` storage bucket. Removed
+            2026-08-21 — players choose from the library or generate a custom
+            avatar, and AvatarService.isLibraryAvatarUrl now refuses anything
+            else at the write point, so this is the affordance going away rather
+            than the rule itself. */}
         <div className="ag-content">
-          {activeTab !== 'upload' ? (
-            loading ? (
-              <div className="ag-empty">Loading Avatars...</div>
-            ) : filteredAvatars.length === 0 ? (
-              <div className="ag-empty">
-                {activeTab === 'custom'
-                  ? 'You have not created any avatars yet. Use Create Custom Avatar above.'
-                  : activeTab === 'vip'
-                    ? 'VIP avatars could not be loaded.'
-                    : 'No preset avatars available.'}
-              </div>
-            ) : (
-              <div className="ag-grid">
-                {filteredAvatars.map((avatar) => {
-                  const isSelected = selectedAvatar === avatar.imageUrl;
-                  const isLocked = avatar.category === 'vip' && !isVip;
+          {loading ? (
+            <div className="ag-empty">Loading Avatars...</div>
+          ) : filteredAvatars.length === 0 ? (
+            <div className="ag-empty">
+              {activeTab === 'custom'
+                ? 'You have not created any avatars yet. Use Create Custom Avatar above.'
+                : activeTab === 'vip'
+                  ? 'VIP avatars could not be loaded.'
+                  : 'No preset avatars available.'}
+            </div>
+          ) : (
+            <div className="ag-grid">
+              {filteredAvatars.map((avatar) => {
+                const isSelected = selectedAvatar === avatar.imageUrl;
+                const isLocked = avatar.category === 'vip' && !isVip;
 
-                  return (
-                    <div
-                      key={avatar.id}
-                      className={[
-                        'ag-item',
-                        isSelected ? 'ag-item--selected' : '',
-                        isLocked ? 'ag-item--locked' : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')}
-                      onClick={() => handleSelect(avatar)}
-                      title={isLocked ? `${avatar.name} (VIP)` : avatar.name}
-                    >
-                      <img
-                        loading="lazy"
-                        decoding="async"
-                        /* Tiles render the lightweight derivative when one
+                return (
+                  <div
+                    key={avatar.id}
+                    className={[
+                      'ag-item',
+                      isSelected ? 'ag-item--selected' : '',
+                      isLocked ? 'ag-item--locked' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    onClick={() => handleSelect(avatar)}
+                    title={isLocked ? `${avatar.name} (VIP)` : avatar.name}
+                  >
+                    <img
+                      loading="lazy"
+                      decoding="async"
+                      /* Tiles render the lightweight derivative when one
                            exists; imageUrl stays the canonical asset that gets
                            saved to the profile. */
-                        src={avatar.thumbUrl || avatar.imageUrl}
-                        alt={avatar.name}
-                        className="ag-item__img"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = generateDefaultAvatar();
-                        }}
-                      />
-                      {isLocked && <div className="ag-item__lock">VIP</div>}
-                      {isSelected && !isLocked && <div className="ag-item__check">&#10003;</div>}
-                      <span className="ag-item__name">{avatar.name}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )
-          ) : (
-            <div className="ag-upload">
-              <div
-                className="ag-upload__zone"
-                onClick={() => !uploading && fileInputRef.current?.click()}
-              >
-                {uploading ? (
-                  <span className="ag-upload__text">Uploading...</span>
-                ) : uploadPreview ? (
-                  <img
-                    decoding="async"
-                    src={uploadPreview}
-                    alt="Upload preview"
-                    className="ag-upload__preview"
-                  />
-                ) : (
-                  <>
-                    <span className="ag-upload__text">Click To Upload A Photo</span>
-                    <span className="ag-upload__hint">Max 5MB, JPG PNG Or WebP</span>
-                  </>
-                )}
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="ag-upload__input"
-                onChange={handleFileChange}
-              />
+                      src={avatar.thumbUrl || avatar.imageUrl}
+                      alt={avatar.name}
+                      className="ag-item__img"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = generateDefaultAvatar();
+                      }}
+                    />
+                    {isLocked && <div className="ag-item__lock">VIP</div>}
+                    {isSelected && !isLocked && <div className="ag-item__check">&#10003;</div>}
+                    <span className="ag-item__name">{avatar.name}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -414,7 +341,7 @@ export function AvatarGallery({
           <button
             className={`ag-apply ${saving ? 'ag-apply--saving' : ''} ${unchanged ? 'ag-apply--disabled' : ''}`}
             onClick={handleApply}
-            disabled={saving || uploading || unchanged}
+            disabled={saving || unchanged}
           >
             {saving ? 'Saving...' : 'Apply Avatar'}
           </button>

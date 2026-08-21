@@ -328,7 +328,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
       const batch = scope.searchableUserIds.slice(0, 200);
       const { data: players } = await supabase
         .from('profiles')
-        .select('id, username, display_name, avatar_url')
+        .select('id, username, display_name, avatar_url:arena_avatar_url')
         .in('id', batch)
         .or(`username.ilike.%${safeQuery}%,display_name.ilike.%${safeQuery}%`)
         .limit(6);
@@ -429,7 +429,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
         // Direct lookup for a specific player
         const { data: player } = await supabase
           .from('profiles')
-          .select('id, username, display_name, avatar_url')
+          .select('id, username, display_name, avatar_url:arena_avatar_url')
           .eq('id', specificPlayerId)
           .maybeSingle();
 
@@ -445,7 +445,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
           const batch = activeScope.searchableUserIds.slice(i, i + BATCH_SIZE);
           const { data: players, error: searchError } = await supabase
             .from('profiles')
-            .select('id, username, display_name, avatar_url')
+            .select('id, username, display_name, avatar_url:arena_avatar_url')
             .in('id', batch)
             .or(`username.ilike.%${safeQuery}%,display_name.ilike.%${safeQuery}%`)
             .limit(20);

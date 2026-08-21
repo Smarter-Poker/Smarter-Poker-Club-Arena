@@ -268,7 +268,9 @@ class PromotionServiceClass {
        reporting it is what was missing. */
     const { data, error } = await supabase
       .from('promotion_claims')
-      .select('id, promotion_id, user_id, status, bonus_amount, wager_progress, wager_required, claimed_at')
+      .select(
+        'id, promotion_id, user_id, status, bonus_amount, wager_progress, wager_required, claimed_at'
+      )
       .eq('user_id', userId)
       .order('claimed_at', { ascending: false });
 
@@ -312,7 +314,7 @@ class PromotionServiceClass {
                 rank,
                 score,
                 prize,
-                profiles(id, username, display_name, avatar_url)
+                profiles(id, username, display_name, avatar_url:arena_avatar_url)
             `
       )
       .eq('promotion_id', promotionId)

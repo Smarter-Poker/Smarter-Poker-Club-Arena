@@ -204,7 +204,7 @@ export default function AgentDashboardPage() {
             () =>
               supabase
                 .from('profiles')
-                .select('id, display_name, username, avatar_url, last_seen')
+                .select('id, display_name, username, avatar_url:arena_avatar_url, last_seen')
                 .in('id', allUserIds)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: mountedRef }

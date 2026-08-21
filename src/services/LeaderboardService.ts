@@ -185,7 +185,7 @@ async function decorateWithProfiles(
   const userIds = rows.map((s) => s.user_id);
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, username, avatar_url, level, tier')
+    .select('id, username, avatar_url:arena_avatar_url, level, tier')
     .in('id', userIds);
 
   const profileMap = new Map((profiles || []).map((p: ProfileRow) => [p.id, p]));
@@ -628,7 +628,7 @@ export const LeaderboardService = {
       const userIds = statsArray.map((s) => s.userId);
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, username, avatar_url')
+        .select('id, username, avatar_url:arena_avatar_url')
         .in('id', userIds);
 
       const profileMap = new Map((profiles || []).map((p: ProfileRow) => [p.id, p]));

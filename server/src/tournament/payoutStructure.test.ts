@@ -121,8 +121,16 @@ describe('a rebuilt Spin structure pays out exactly the pool', () => {
     // 33.33 is deliberately awkward: 80/12/8 of it rounds to 26.66 + 4.00 +
     // 2.67 = 33.33 only because the last place absorbs the residual.
     for (const pool of [10, 25, 33.33, 100, 0.03, 1234.56]) {
-      for (const mult of [10, 25, 100]) {
+      // Derived from SPIN_TIERS rather than hardcoded. This list used to name
+      // 500x; that tier was retired in #164, resolvePayoutStructure started
+      // returning null for it, and the null hit `.map` - which failed the
+      // server suite, and the Hetzner deploy is gated on that suite, so a
+      // retired tier in a test list was blocking every engine deploy in the
+      // repo. Reading the spec means a tier can never again be retired out
+      // from under this test.
+      for (const mult of SPIN_TIERS.map((t) => t.multiplier)) {
         const structure = resolvePayoutStructure({ variant: 'spin', spin_multiplier: mult })!;
+        expect(structure, `${mult}x must resolve to a structure`).not.toBeNull();
         const total = structure
           .map((p) => computePlacePrize(pool, structure, p.place))
           .reduce((s, n) => s + n, 0);

@@ -371,7 +371,7 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
 
       {activeRow && (
         <p className="pos-radar-readout">
-          <strong>{activeRow.position}</strong> — {activeRow.hands_played.toLocaleString()} hands,
+          <strong>{activeRow.position}</strong>: {activeRow.hands_played.toLocaleString()} Hands,
           VPIP {pct(activeRow.vpip_count, activeRow.hands_played).toFixed(1)}%, PFR{' '}
           {pct(activeRow.pfr_count, activeRow.hands_played).toFixed(1)}%, 3-Bet{' '}
           {pct(activeRow.three_bet_count, activeRow.hands_played).toFixed(1)}%

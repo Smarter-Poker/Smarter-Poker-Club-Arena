@@ -254,6 +254,18 @@ function tournamentOpenFirst(
  * in-tab lobby fell back to the pre-lobby landing page instead of the actual
  * club lobby the player came from.
  */
+/** Seconds between one card's entrance and the next. */
+const STAGGER_STEP = 0.08;
+
+/**
+ * Cards past this index all animate together.
+ *
+ * Roughly a screenful on the 375px target. Beyond it the stagger is invisible
+ * (the card is below the fold) but still delays the card's appearance, which
+ * is how a 108-card lobby ended up finishing its entrance 8.6s late.
+ */
+const STAGGER_MAX = 11;
+
 export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
   const { clubId: routeClubId } = useParams<{ clubId: string }>();
   const clubId = clubIdOverride || routeClubId;
@@ -1419,6 +1431,23 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     [currentUserId, toast]
   );
 
+  /**
+   * Entrance-animation delay for the card at `idx`, in seconds.
+   *
+   * The stagger used to be a flat `idx * 0.08` with no ceiling. Measured on
+   * production this lobby renders 108 to 137 cards, so the last one began
+   * animating 8.6 to 11 SECONDS after the data arrived, and `both` fill keeps
+   * a card at opacity 0 until its delay elapses. The effect was a lobby that
+   * appeared to still be loading for another nine seconds after it had
+   * finished loading, which is worse than no animation at all.
+   *
+   * Capping at STAGGER_MAX keeps the effect where it is actually visible (the
+   * first screenful) and lets everything below the fold arrive at once. A
+   * player who scrolls immediately finds cards already there instead of
+   * scrolling into blank space waiting for its turn.
+   */
+  const cardDelay = (idx: number) => `${Math.min(idx, STAGGER_MAX) * STAGGER_STEP}s`;
+
   /** How many cards the grid is about to render. */
   const shownCount = filteredTables.length + filteredTournaments.length;
 
@@ -2127,7 +2156,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             <div
               key={tournament.id}
               style={{
-                animation: `slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) ${idx * 0.08}s both`,
+                animation: `slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) ${cardDelay(idx)} both`,
               }}
             >
               {isSpin && <SpinCard tournament={tournament} onQuickJoin={spinQuickJoin} />}
@@ -2146,7 +2175,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             <div
               key={table.id}
               style={{
-                animation: `slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) ${staggerIdx * 0.08}s both`,
+                animation: `slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) ${cardDelay(staggerIdx)} both`,
               }}
             >
               <CashGameCard

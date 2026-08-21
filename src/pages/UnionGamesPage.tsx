@@ -368,7 +368,7 @@ export default function UnionGamesPage() {
           <div className={styles.statValueBlue}>
             {fmt(tables.reduce((sum, t) => sum + (t.current_players || 0), 0))}
           </div>
-          <div className={styles.statLabel}>Players at Tables</div>
+          <div className={styles.statLabel}>Players At Tables</div>
         </div>
         {bbjPool && (
           <div className={styles.statCard}>
@@ -420,7 +420,7 @@ export default function UnionGamesPage() {
           {filteredTournaments.length === 0 ? (
             <div className={styles.emptyState}>
               <span className={styles.emptyIcon}>★</span>
-              <span className={styles.emptyText}>No tournaments match the filter.</span>
+              <span className={styles.emptyText}>No Tournaments Match The Filter.</span>
             </div>
           ) : (
             <div className={styles.cardList}>
@@ -472,15 +472,13 @@ export default function UnionGamesPage() {
           {tables.length === 0 ? (
             <div className={styles.emptyState}>
               <span className={styles.emptyIcon}>▦</span>
-              <span className={styles.emptyText}>No tables running across union clubs.</span>
+              <span className={styles.emptyText}>No Tables Running Across Union Clubs.</span>
             </div>
           ) : (
             <>
               {activeTables.length > 0 && (
                 <>
-                  <h3 className={styles.subsectionTitle}>
-                    Active Tables ({activeTables.length})
-                  </h3>
+                  <h3 className={styles.subsectionTitle}>Active Tables ({activeTables.length})</h3>
                   <div className={styles.tableGrid}>
                     {activeTables.map((table) => (
                       <Link key={table.id} to={`/table/${table.id}`} className={styles.tableCard}>
@@ -542,7 +540,7 @@ export default function UnionGamesPage() {
             <div className={styles.emptyState}>
               <span className={styles.emptyIcon}>◆</span>
               <span className={styles.emptyText}>
-                Bad Beat Jackpot is not enabled for this union.
+                Bad Beat Jackpot Is Not Enabled For This Union.
               </span>
             </div>
           ) : (
@@ -573,17 +571,17 @@ export default function UnionGamesPage() {
               </div>
 
               <div className={styles.bbjInfo}>
-                <h3>How the Bad Beat Jackpot Works</h3>
+                <h3>How The Bad Beat Jackpot Works</h3>
                 <ul>
-                  <li>A small percentage of each eligible pot is contributed to the BBJ pool</li>
+                  <li>A Small Percentage Of Each Eligible Pot Is Contributed To The BBJ Pool</li>
                   <li>
-                    When a qualifying hand occurs (e.g., Quad Jacks beaten), the pool is distributed
+                    When A Qualifying Hand Occurs (E.G., Quad Jacks Beaten), The Pool Is Distributed
                   </li>
                   <li>
-                    The loser (bad beat) receives the largest share, followed by the winner, and
-                    remaining table players
+                    The Loser (Bad Beat) Receives The Largest Share, Followed By The Winner, And
+                    Remaining Table Players
                   </li>
-                  <li>All clubs in the union participate in and benefit from the shared jackpot</li>
+                  <li>All Clubs In The Union Participate In And Benefit From The Shared Jackpot</li>
                 </ul>
               </div>
             </div>

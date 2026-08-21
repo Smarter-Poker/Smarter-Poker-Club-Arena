@@ -333,8 +333,8 @@ export default function CarouselSection({
           tabIndex={0}
         >
           <div className={styles.ctaCardIcon}>+</div>
-          <span className={styles.ctaCardLabel}>Join a Club</span>
-          <span className={styles.ctaCardSub}>Enter a club code to join an existing club</span>
+          <span className={styles.ctaCardLabel}>Join A Club</span>
+          <span className={styles.ctaCardSub}>Enter A Club Code To Join An Existing Club</span>
         </div>
       )}
 
@@ -362,7 +362,7 @@ export default function CarouselSection({
         >
           <div className={styles.ctaCardIcon}>+</div>
           <span className={styles.ctaCardLabel}>Create Club</span>
-          <span className={styles.ctaCardSub}>Start your own poker club and invite players</span>
+          <span className={styles.ctaCardSub}>Start Your Own Poker Club And Invite Players</span>
         </div>
       )}
     </div>

@@ -271,7 +271,7 @@ export default function AgentPromoPanel({
         <div>
           <div style={{ fontSize: 14, fontWeight: 700, color: FB.text }}>◈ Promo Wallet</div>
           <div style={{ fontSize: 11, color: FB.dim }}>
-            Distribute promotional chips to your players
+            Distribute Promotional Chips To Your Players
           </div>
         </div>
         <div
@@ -374,10 +374,10 @@ export default function AgentPromoPanel({
         >
           <div style={{ fontSize: 24, marginBottom: 6 }}>◈</div>
           <div style={{ fontSize: 13, color: FB.dim, fontWeight: 600 }}>
-            No promo chips available
+            No Promo Chips Available
           </div>
           <div style={{ fontSize: 11, color: FB.dim, marginTop: 4 }}>
-            Ask your club owner to grant promo chips from the Admin panel.
+            Ask Your Club Owner To Grant Promo Chips From The Admin Panel.
           </div>
         </div>
       ) : (
@@ -392,11 +392,11 @@ export default function AgentPromoPanel({
                 display: 'block',
               }}
             >
-              Select Player ({downline.length} in your downline)
+              Select Player ({downline.length} In Your Downline)
             </label>
             {downline.length === 0 ? (
               <div style={{ fontSize: 12, color: FB.dim, padding: '8px 0' }}>
-                No players assigned to you yet.
+                No Players Assigned To You Yet.
               </div>
             ) : (
               <select
@@ -413,7 +413,7 @@ export default function AgentPromoPanel({
                   fontWeight: 600,
                 }}
               >
-                <option value="">Choose a player...</option>
+                <option value="">Choose A Player...</option>
                 {downline.map((p) => (
                   <option key={p.user_id} value={p.user_id}>
                     {p.profiles?.display_name || p.profiles?.username || p.user_id.slice(0, 8)}
@@ -568,7 +568,7 @@ export default function AgentPromoPanel({
               })}
               {downline.length > 10 && (
                 <div style={{ fontSize: 11, color: FB.dim, textAlign: 'center', padding: 6 }}>
-                  +{downline.length - 10} more players
+                  +{downline.length - 10} More Players
                 </div>
               )}
             </div>
@@ -588,8 +588,8 @@ export default function AgentPromoPanel({
           lineHeight: 1.5,
         }}
       >
-        ⓘ Promo chips are non-transferable between agents. They can only be distributed to your
-        assigned players. Promo chips do not count as settlement debt.
+        ⓘ Promo Chips Are Non-Transferable Between Agents. They Can Only Be Distributed To Your
+        Assigned Players. Promo Chips Do Not Count As Settlement Debt.
       </div>
     </div>
   );

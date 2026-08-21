@@ -44,8 +44,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       />
       <div className="upload-icon">▣</div>
       <div className="upload-text">
-        <span className="upload-primary">Click to upload</span>
-        <span className="upload-hint">or drag and drop</span>
+        <span className="upload-primary">Click To Upload</span>
+        <span className="upload-hint">Or Drag And Drop</span>
       </div>
     </div>
   );

@@ -139,7 +139,7 @@ function PlayerRow({ player, currency, index = 0 }: PlayerRowProps) {
             {player.isCurrentUser && <span className="leaderboard-row__you">(You)</span>}
           </span>
           {player.handsPlayed !== undefined && (
-            <span className="leaderboard-row__hands">{player.handsPlayed} hands</span>
+            <span className="leaderboard-row__hands">{player.handsPlayed} Hands</span>
           )}
         </div>
       </div>
@@ -210,14 +210,14 @@ export function LeaderboardPanel({
           {isLoading ? (
             <div className="leaderboard-panel__loading">
               <div className="leaderboard-panel__spinner" />
-              <span>Loading rankings...</span>
+              <span>Loading Rankings...</span>
             </div>
           ) : players.length === 0 ? (
             <div className="leaderboard-panel__empty">
               <span className="leaderboard-panel__empty-icon">≡</span>
-              <span className="leaderboard-panel__empty-text">No rankings yet</span>
+              <span className="leaderboard-panel__empty-text">No Rankings Yet</span>
               <span className="leaderboard-panel__empty-hint">
-                Play some hands to appear on the leaderboard
+                Play Some Hands To Appear On The Leaderboard
               </span>
             </div>
           ) : (

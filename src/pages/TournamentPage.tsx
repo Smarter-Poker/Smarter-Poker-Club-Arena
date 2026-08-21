@@ -895,7 +895,7 @@ export default function TournamentPage() {
           </div>
           {filteredTournaments.length === 0 ? (
             <div className="empty-state">
-              <p>No tournaments match your filters</p>
+              <p>No Tournaments Match Your Filters</p>
             </div>
           ) : (
             filteredTournaments.map((tourn) => (
@@ -1014,7 +1014,7 @@ export default function TournamentPage() {
 
               <div className="detail-stats">
                 <div className="stat">
-                  <span className="stat-label">Buy-in</span>
+                  <span className="stat-label">Buy-In</span>
                   <span className="stat-value">
                     {formatBuyIn(selectedTournament.buy_in_amount, selectedTournament.buy_in_fee)}
                   </span>
@@ -1046,7 +1046,7 @@ export default function TournamentPage() {
                     <div className="stat">
                       <span className="stat-label">Bounty</span>
                       <span className="stat-value">
-                        {money(selectedTournament.bounty_amount)} chips
+                        {money(selectedTournament.bounty_amount)} Chips
                       </span>
                     </div>
                   )}
@@ -1056,7 +1056,7 @@ export default function TournamentPage() {
                   <div className="stat">
                     <span className="stat-label">PKO</span>
                     <span className="stat-value">
-                      {money(selectedTournament.bounty_amount)} chips starting bounty
+                      {money(selectedTournament.bounty_amount)} Chips Starting Bounty
                     </span>
                   </div>
                 )}
@@ -1067,7 +1067,7 @@ export default function TournamentPage() {
                       className="stat-value"
                       style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)' }}
                     >
-                      50% to knocker / 50% added to your bounty
+                      50% To Knocker / 50% Added To Your Bounty
                     </span>
                   </div>
                 )}
@@ -1078,7 +1078,7 @@ export default function TournamentPage() {
                     <span className="stat-label">Mystery Bounty Range</span>
                     <span className="stat-value">
                       {selectedTournament.mystery_bounty_min || '1'}x -{' '}
-                      {selectedTournament.mystery_bounty_max || '100'}x multiplier
+                      {selectedTournament.mystery_bounty_max || '100'}x Multiplier
                     </span>
                   </div>
                 )}
@@ -1119,7 +1119,7 @@ export default function TournamentPage() {
                   <div className="tourney-live-section">
                     <h3>Tables ({tourneyTables.length})</h3>
                     {tourneyTables.length === 0 ? (
-                      <p className="tourney-live-empty">No tables running yet.</p>
+                      <p className="tourney-live-empty">No Tables Running Yet.</p>
                     ) : (
                       <div className="tourney-table-list">
                         {tourneyTables.map((tb) => (
@@ -1170,7 +1170,7 @@ export default function TournamentPage() {
                             {level.bigBlind || level.big_blind}
                           </td>
                           <td>{level.ante || '-'}</td>
-                          <td>{level.durationMinutes || level.duration_minutes || 15} min</td>
+                          <td>{level.durationMinutes || level.duration_minutes || 15} Min</td>
                         </tr>
                       ));
                     })()}
@@ -1186,7 +1186,7 @@ export default function TournamentPage() {
                       if (!Array.isArray(blinds)) blinds = [];
                       return blinds.length > 5 ? (
                         <tr className="more-row">
-                          <td colSpan={4}>+ {blinds.length - 5} more levels</td>
+                          <td colSpan={4}>+ {blinds.length - 5} More Levels</td>
                         </tr>
                       ) : null;
                     })()}
@@ -1242,10 +1242,7 @@ export default function TournamentPage() {
                     <button className="btn btn-primary btn-block" onClick={handleRegister}>
                       Register (
                       {money(
-                        totalBuyIn(
-                          selectedTournament.buy_in_amount,
-                          selectedTournament.buy_in_fee
-                        )
+                        totalBuyIn(selectedTournament.buy_in_amount, selectedTournament.buy_in_fee)
                       )}
                       )
                     </button>
@@ -1353,8 +1350,8 @@ export default function TournamentPage() {
           ) : (
             <div className="empty-detail">
               <div className="empty-icon">♛</div>
-              <h3>Select a Tournament</h3>
-              <p>Click on a tournament to view details and register.</p>
+              <h3>Select A Tournament</h3>
+              <p>Click On A Tournament To View Details And Register.</p>
             </div>
           )}
         </div>
@@ -1501,7 +1498,7 @@ function LegacyCreateTournamentModal({ clubId, onClose, onCreate }: CreateModalP
 
         <div className="form-row">
           <div className="form-group">
-            <label>Buy-in</label>
+            <label>Buy-In</label>
             <input
               type="number"
               min={1}
@@ -1510,11 +1507,11 @@ function LegacyCreateTournamentModal({ clubId, onClose, onCreate }: CreateModalP
               value={form.buyIn}
               onChange={(e) => setForm({ ...form, buyIn: digitsOnly(e.target.value) })}
             />
-            <small>Whole chips only. The total the player pays.</small>
+            <small>Whole Chips Only. The Total The Player Pays.</small>
           </div>
 
           <div className="form-group">
-            <label>Fee (10% of buy-in)</label>
+            <label>Fee (10% Of Buy-In)</label>
             <input type="number" min={0} step={1} value={split.fee} readOnly disabled />
             <small>
               {split.total > 0
@@ -1547,9 +1544,9 @@ function LegacyCreateTournamentModal({ clubId, onClose, onCreate }: CreateModalP
                 })
               }
             >
-              <option value="turbo">Turbo (3 min)</option>
-              <option value="regular">Regular (8 min)</option>
-              <option value="deepStack">Deep Stack (15 min)</option>
+              <option value="turbo">Turbo (3 Min)</option>
+              <option value="regular">Regular (8 Min)</option>
+              <option value="deepStack">Deep Stack (15 Min)</option>
             </select>
           </div>
         </div>

@@ -131,7 +131,7 @@ export function SecurityAuditLog({ isOpen, onClose, logs }: SecurityAuditLogProp
               ) : (
                 <tr>
                   <td colSpan={5} className="audit-empty">
-                    No logs found matching filter.
+                    No Logs Found Matching Filter.
                   </td>
                 </tr>
               )}

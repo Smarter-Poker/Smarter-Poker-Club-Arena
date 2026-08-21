@@ -97,10 +97,10 @@ export function NotificationList({
       {notifications.length > 0 && onClearAll && (
         <div className="notification-list-header">
           <span className="notification-count">
-            {notifications.length} notification{notifications.length !== 1 ? 's' : ''}
+            {notifications.length} Notification{notifications.length !== 1 ? 's' : ''}
           </span>
           <button className="notification-clear-all" onClick={onClearAll}>
-            Clear all
+            Clear All
           </button>
         </div>
       )}
@@ -120,7 +120,7 @@ export function NotificationList({
         )}
       </AnimatePresence>
       {hasMore && (
-        <div className="notification-more">+{notifications.length - maxVisible} more</div>
+        <div className="notification-more">+{notifications.length - maxVisible} More</div>
       )}
     </div>
   );

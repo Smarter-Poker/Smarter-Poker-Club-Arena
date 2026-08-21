@@ -744,7 +744,7 @@ export default function TournamentDetails({
     return (
       <div className="tournament-details loading">
         <div className="loader-spinner" />
-        <p>Loading tournament...</p>
+        <p>Loading Tournament...</p>
       </div>
     );
   }
@@ -752,9 +752,9 @@ export default function TournamentDetails({
   if (!tournament) {
     return (
       <div className="tournament-details error">
-        <h2>Tournament not found</h2>
+        <h2>Tournament Not Found</h2>
         <Link to="/clubs" className="btn btn-primary">
-          Back to Clubs
+          Back To Clubs
         </Link>
       </div>
     );
@@ -916,7 +916,7 @@ export default function TournamentDetails({
               <div className="countdown-display">{formatCountdown()}</div>
               <div className="start-time">
                 {tournament.status === 'RUNNING' ? (
-                  <span>Running since {formatDate(tournament.started_at)}</span>
+                  <span>Running Since {formatDate(tournament.started_at)}</span>
                 ) : tournament.status === 'COMPLETED' ? (
                   <span>Completed - Total Duration</span>
                 ) : (
@@ -1055,7 +1055,7 @@ export default function TournamentDetails({
                 </span>
               </div>
               <div className="info-row">
-                <span className="info-label">Buy-in:</span>
+                <span className="info-label">Buy-In:</span>
                 <span className="info-value">
                   {/* Was `{amount}+{fee} chips` — "18+1.8 chips", which leads
                       with the half of the price that is NOT what the player
@@ -1111,7 +1111,7 @@ export default function TournamentDetails({
                   </span>
                 </div>
                 <div className="info-row half">
-                  <span className="info-label">Add-on:</span>
+                  <span className="info-label">Add-On:</span>
                   <span className="info-value">
                     {(tournament as any).add_on_available
                       ? `${((tournament as any).addon_chips || tournament.starting_chips || 0).toLocaleString()} chips - Level ${(tournament as any).late_reg_levels ?? (tournament as any).rebuy_levels ?? 8} to ${((tournament as any).late_reg_levels ?? (tournament as any).rebuy_levels ?? 8) + ((tournament as any).addon_levels ?? 1)}`
@@ -1157,7 +1157,7 @@ export default function TournamentDetails({
                 <div className="info-row">
                   <span className="info-label">Bounty:</span>
                   <span className="info-value" style={{ color: '#f87171' }}>
-                    {money((tournament as any).bounty_amount || 0)} chips per knockout
+                    {money((tournament as any).bounty_amount || 0)} Chips Per Knockout
                     {(tournament as any).is_pko &&
                       ' (Progressive: 50% to knocker, 50% added to bounty)'}
                     {(tournament as any).is_mystery_bounty &&
@@ -1199,7 +1199,7 @@ export default function TournamentDetails({
                 <div className="info-row">
                   <span className="info-label">Multi-Day:</span>
                   <span className="info-value" style={{ color: '#22d3ee' }}>
-                    Day {(tournament as any).day_number || 1} of{' '}
+                    Day {(tournament as any).day_number || 1} Of{' '}
                     {(tournament as any).total_days || 2}
                   </span>
                 </div>
@@ -1277,12 +1277,12 @@ export default function TournamentDetails({
                       margin: '8px 0',
                     }}
                   >
-                    BUBBLE - {playingCount} players left, {payoutCount} get paid
+                    BUBBLE - {playingCount} Players Left, {payoutCount} Get Paid
                   </div>
                 )}
                 {sorted.length === 0 ? (
                   <div className="empty-state">
-                    <p>No entries yet. Be the first to register!</p>
+                    <p>No Entries Yet. Be The First To Register!</p>
                   </div>
                 ) : (
                   sorted.map((entry, idx) => {
@@ -1355,8 +1355,8 @@ export default function TournamentDetails({
                   </span>
                 </div>
                 <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginTop: 8 }}>
-                  This tournament spans multiple clubs within the union. Players from all member
-                  clubs can participate.
+                  This Tournament Spans Multiple Clubs Within The Union. Players From All Member
+                  Clubs Can Participate.
                 </p>
                 <div className="info-row">
                   <span className="info-label">Participating Clubs:</span>
@@ -1374,7 +1374,7 @@ export default function TournamentDetails({
               </div>
             ) : (
               <div className="empty-state">
-                <p>This is a club tournament, not a union (XMTT) event.</p>
+                <p>This Is A Club Tournament, Not A Union (XMTT) Event.</p>
               </div>
             )}
           </div>
@@ -1384,7 +1384,7 @@ export default function TournamentDetails({
           <div className="tables-section">
             <div className="tables-header">
               <h3>Active Tables ({tables.length})</h3>
-              <span className="table-balance-indicator">Auto-balancing enabled</span>
+              <span className="table-balance-indicator">Auto-Balancing Enabled</span>
             </div>
             <div className="tables-grid">
               {tables.length === 0 ? (
@@ -1405,7 +1405,7 @@ export default function TournamentDetails({
                   >
                     <div className="table-num">{table.name || `Table ${idx + 1}`}</div>
                     <div className="table-players">
-                      {table.current_players}/{table.max_players} players
+                      {table.current_players}/{table.max_players} Players
                     </div>
                     <div className="table-blinds">
                       {table.small_blind}/{table.big_blind}
@@ -1416,7 +1416,7 @@ export default function TournamentDetails({
               )}
             </div>
             <div className="balance-info">
-              <p>Tables are automatically balanced when player counts differ by 2+</p>
+              <p>Tables Are Automatically Balanced When Player Counts Differ By 2+</p>
             </div>
           </div>
         )}
@@ -1435,7 +1435,7 @@ export default function TournamentDetails({
             />
           ) : (
             <div className="empty-state">
-              <p>No blind structure published for this tournament yet.</p>
+              <p>No Blind Structure Published For This Tournament Yet.</p>
             </div>
           ))}
 
@@ -1454,7 +1454,7 @@ export default function TournamentDetails({
             />
           ) : (
             <div className="empty-state">
-              <p>Chip counts appear once the tournament is under way.</p>
+              <p>Chip Counts Appear Once The Tournament Is Under Way.</p>
             </div>
           ))}
 
@@ -1576,8 +1576,8 @@ export default function TournamentDetails({
                       margin: '4px 0 8px',
                     }}
                   >
-                    Estimated payouts based on {entryCount} entries - final structure determined at
-                    start
+                    Estimated Payouts Based On {entryCount} Entries - Final Structure Determined At
+                    Start
                   </p>
                 )}
                 <div className="payout-table">
@@ -1609,7 +1609,7 @@ export default function TournamentDetails({
                         fontStyle: 'italic',
                       }}
                     >
-                      <span>Register to see estimated payouts</span>
+                      <span>Register To See Estimated Payouts</span>
                     </div>
                   )}
                 </div>
@@ -1764,14 +1764,14 @@ export default function TournamentDetails({
                 <div className="signup-row">
                   <span className="signup-label">Bounty:</span>
                   <span className="signup-value" style={{ color: '#f87171' }}>
-                    {money((tournament as any).bounty_amount || 0)} chips
+                    {money((tournament as any).bounty_amount || 0)} Chips
                     {(tournament as any).is_pko && ' (PKO)'}
                     {(tournament as any).is_mystery_bounty && ' (Mystery)'}
                   </span>
                 </div>
               )}
               <div className="signup-row">
-                <span className="signup-label">Start time:</span>
+                <span className="signup-label">Start Time:</span>
                 <span className="signup-value">{formatDate(tournament.start_time)}</span>
               </div>
               <div
@@ -1792,15 +1792,15 @@ export default function TournamentDetails({
                         : '#ef4444',
                   }}
                 >
-                  {money(walletBalance)} chips
+                  {money(walletBalance)} Chips
                 </span>
               </div>
               {walletBalance < totalBuyIn(tournament.buy_in_amount, tournament.buy_in_fee) && (
                 <p className="signup-note" style={{ color: '#ef4444' }}>
-                  Insufficient balance. Please add chips via your Cashier.
+                  Insufficient Balance. Please Add Chips Via Your Cashier.
                 </p>
               )}
-              <p className="signup-note">Cannot unregister within 1 minute of the start time</p>
+              <p className="signup-note">Cannot Unregister Within 1 Minute Of The Start Time</p>
               <div className="signup-actions">
                 <button className="btn btn-cancel" onClick={() => setShowSignUpModal(false)}>
                   Cancel

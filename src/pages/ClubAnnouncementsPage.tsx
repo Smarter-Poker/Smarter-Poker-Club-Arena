@@ -326,7 +326,7 @@ export default function ClubAnnouncementsPage() {
       {loadError && !loading && (
         <div style={{ textAlign: 'center', padding: '40px 20px', color: '#aaa' }}>
           <p style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠</p>
-          <p style={{ marginBottom: '16px' }}>Failed to load announcements</p>
+          <p style={{ marginBottom: '16px' }}>Failed To Load Announcements</p>
           <button
             onClick={() => loadAnnouncements()}
             style={{
@@ -392,7 +392,7 @@ export default function ClubAnnouncementsPage() {
         ) : announcements.length === 0 ? (
           <div className="empty-state">
             <span className="empty-icon">◈</span>
-            <p>No announcements yet</p>
+            <p>No Announcements Yet</p>
           </div>
         ) : (
           announcements.map((announcement, idx) => (

@@ -171,7 +171,7 @@ export default function PromotionDetail({
             {loadingLb ? (
               <div className="pd-lb-loading">Loading...</div>
             ) : leaderboard.length === 0 ? (
-              <div className="pd-lb-empty">No entries yet</div>
+              <div className="pd-lb-empty">No Entries Yet</div>
             ) : (
               <div className="pd-lb">
                 {leaderboard.map((entry) => (

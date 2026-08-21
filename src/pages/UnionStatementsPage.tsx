@@ -105,15 +105,43 @@ function compactInt(n: number | null | undefined): string {
 function boardToCsv(rows: BoardClub[]): string {
   const esc = csvEscape;
   const head = [
-    'club_name', 'club_code', 'status', 'amount', 'direction', 'delivered',
-    'due_at', 'paid_total', 'outstanding', 'rake_generated', 'rakeback_due',
-    'union_fee_kept', 'players_won', 'eco_amount', 'presettled',
+    'club_name',
+    'club_code',
+    'status',
+    'amount',
+    'direction',
+    'delivered',
+    'due_at',
+    'paid_total',
+    'outstanding',
+    'rake_generated',
+    'rakeback_due',
+    'union_fee_kept',
+    'players_won',
+    'eco_amount',
+    'presettled',
   ];
-  const lines = rows.map((r) => [
-    r.club_name, r.club_code, r.status, r.amount, r.direction, r.message_sent,
-    r.due_at, r.paid_total, r.outstanding, r.rake_generated, r.rakeback_due,
-    r.union_fee_kept, r.players_won, r.eco_amount, r.presettled,
-  ].map(esc).join(','));
+  const lines = rows.map((r) =>
+    [
+      r.club_name,
+      r.club_code,
+      r.status,
+      r.amount,
+      r.direction,
+      r.message_sent,
+      r.due_at,
+      r.paid_total,
+      r.outstanding,
+      r.rake_generated,
+      r.rakeback_due,
+      r.union_fee_kept,
+      r.players_won,
+      r.eco_amount,
+      r.presettled,
+    ]
+      .map(esc)
+      .join(',')
+  );
   return [head.join(','), ...lines].join('\n');
 }
 
@@ -166,8 +194,10 @@ export default function UnionStatementsPage() {
         // A null payload was being stored as success. loading was already
         // false, the skeleton wants !board && !error, the empty state wants a
         // board - so the page rendered a header over nothing, permanently.
-        reportError(new Error('statement board payload was empty'),
-          'UnionStatementsPage.board_shape');
+        reportError(
+          new Error('statement board payload was empty'),
+          'UnionStatementsPage.board_shape'
+        );
         setError('Could not load statements.');
         setBoard(null);
       } else {
@@ -180,7 +210,9 @@ export default function UnionStatementsPage() {
     }
   }, [unionId, period]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const issue = useCallback(async () => {
     if (!unionId || issuing) return;
@@ -227,39 +259,44 @@ export default function UnionStatementsPage() {
   // square-up is the bookkeeping record of what was owed for a period, paid
   // between people out of band, and the RPC deliberately leaves the chip
   // transfer columns alone so the two can never be confused.
-  const setPaid = useCallback(async (invoiceId: string, paid: boolean) => {
-    if (!invoiceId || settlingId) return;
-    setSettlingId(invoiceId);
-    try {
-      const { data, error: rpcError } = await supabase.rpc('ca_union_set_statement_paid', {
-        p_invoice_id: invoiceId,
-        p_paid: paid,
-        p_amount: null,
-        p_note: null,
-      });
-      if (rpcError) {
-        toast.error(
-          isAuthzError(rpcError)
-            ? 'Only a union owner or admin can settle a statement'
-            : 'Could not update the statement'
+  const setPaid = useCallback(
+    async (invoiceId: string, paid: boolean) => {
+      if (!invoiceId || settlingId) return;
+      setSettlingId(invoiceId);
+      try {
+        const { data, error: rpcError } = await supabase.rpc('ca_union_set_statement_paid', {
+          p_invoice_id: invoiceId,
+          p_paid: paid,
+          p_amount: null,
+          p_note: null,
+        });
+        if (rpcError) {
+          toast.error(
+            isAuthzError(rpcError)
+              ? 'Only a union owner or admin can settle a statement'
+              : 'Could not update the statement'
+          );
+          if (!isAuthzError(rpcError)) reportError(rpcError, 'UnionStatementsPage.set_paid');
+          return;
+        }
+        const res = data as { already_settled?: boolean } | null;
+        toast.success(
+          !paid
+            ? 'Statement reopened'
+            : res?.already_settled
+              ? 'This statement was already settled'
+              : 'Statement marked paid'
         );
-        if (!isAuthzError(rpcError)) reportError(rpcError, 'UnionStatementsPage.set_paid');
-        return;
+        await load();
+      } catch (e) {
+        reportError(e, 'UnionStatementsPage.set_paid');
+        toast.error('Could not update the statement');
+      } finally {
+        setSettlingId(null);
       }
-      const res = data as { already_settled?: boolean } | null;
-      toast.success(
-        !paid ? 'Statement reopened'
-          : res?.already_settled ? 'This statement was already settled'
-            : 'Statement marked paid'
-      );
-      await load();
-    } catch (e) {
-      reportError(e, 'UnionStatementsPage.set_paid');
-      toast.error('Could not update the statement');
-    } finally {
-      setSettlingId(null);
-    }
-  }, [settlingId, toast, load]);
+    },
+    [settlingId, toast, load]
+  );
 
   const exportCsv = useCallback(() => {
     if (!board?.clubs?.length) return;
@@ -277,16 +314,29 @@ export default function UnionStatementsPage() {
   }, [board]);
 
   if (isHydrating) {
-    return <div className={styles.page}><div className={styles.state}>Loading...</div></div>;
+    return (
+      <div className={styles.page}>
+        <div className={styles.state}>Loading...</div>
+      </div>
+    );
   }
   if (!user) {
-    return <div className={styles.page}><div className={styles.state}>Sign in to view statements.</div></div>;
+    return (
+      <div className={styles.page}>
+        <div className={styles.state}>Sign In To View Statements.</div>
+      </div>
+    );
   }
 
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <button type="button" className={styles.headerBtn} onClick={() => navigate(-1)} aria-label="Go back">
+        <button
+          type="button"
+          className={styles.headerBtn}
+          onClick={() => navigate(-1)}
+          aria-label="Go back"
+        >
           &laquo;
         </button>
         <h1 className={styles.title}>Union Statements</h1>
@@ -328,18 +378,20 @@ export default function UnionStatementsPage() {
         <div className={styles.summary}>
           <div className={styles.tile}>
             <div className={styles.tileValue}>{money(totals.clubs_owe)}</div>
-            <div className={styles.tileLabel}>Clubs owe</div>
+            <div className={styles.tileLabel}>Clubs Owe</div>
           </div>
           <div className={styles.tile}>
             <div className={styles.tileValue}>{money(totals.union_owes)}</div>
-            <div className={styles.tileLabel}>Union owes</div>
+            <div className={styles.tileLabel}>Union Owes</div>
           </div>
           <div className={styles.tile}>
             <div className={styles.tileValue}>{money(totals.outstanding)}</div>
-            <div className={styles.tileLabel}>Still outstanding</div>
+            <div className={styles.tileLabel}>Still Outstanding</div>
           </div>
           <div className={styles.tile}>
-            <div className={`${styles.tileValue} ${totals.eco_amount < 0 ? styles.neg : styles.pos}`}>
+            <div
+              className={`${styles.tileValue} ${totals.eco_amount < 0 ? styles.neg : styles.pos}`}
+            >
               {money(totals.eco_amount)}
             </div>
             <div className={styles.tileLabel}>ECO</div>
@@ -349,13 +401,15 @@ export default function UnionStatementsPage() {
 
       {totals && (
         <div className={styles.statusStrip}>
-          <span>{compactInt(totals.issued)} of {compactInt(totals.clubs)} issued</span>
-          <span>{compactInt(totals.delivered)} delivered</span>
-          <span>{compactInt(totals.paid)} paid</span>
-          <span>{money(totals.collected)} collected</span>
-          <span>{money(totals.rake_generated)} rake</span>
+          <span>
+            {compactInt(totals.issued)} Of {compactInt(totals.clubs)} Issued
+          </span>
+          <span>{compactInt(totals.delivered)} Delivered</span>
+          <span>{compactInt(totals.paid)} Paid</span>
+          <span>{money(totals.collected)} Collected</span>
+          <span>{money(totals.rake_generated)} Rake</span>
           {totals.missing > 0 && (
-            <span className={styles.warn}>{compactInt(totals.missing)} with no statement</span>
+            <span className={styles.warn}>{compactInt(totals.missing)} With No Statement</span>
           )}
         </div>
       )}
@@ -366,7 +420,9 @@ export default function UnionStatementsPage() {
             <button
               type="button"
               className={styles.dangerBtn}
-              onClick={() => { void issue(); }}
+              onClick={() => {
+                void issue();
+              }}
               disabled={issuing}
             >
               {issuing ? 'Issuing...' : 'Yes, issue and deliver'}
@@ -387,13 +443,13 @@ export default function UnionStatementsPage() {
             onClick={() => setConfirmIssue(true)}
             disabled={issuing}
           >
-            Issue statements for the closed week
+            Issue Statements For The Closed Week
           </button>
         )}
       </div>
       <div className={styles.actionNote}>
-        The Monday job already does this. Issuing again only fills in clubs that
-        have no statement for the period; nothing is billed or delivered twice.
+        The Monday Job Already Does This. Issuing Again Only Fills In Clubs That Have No Statement
+        For The Period; Nothing Is Billed Or Delivered Twice.
       </div>
 
       <div className={styles.list}>
@@ -408,112 +464,123 @@ export default function UnionStatementsPage() {
         {error && <div className={`${styles.state} ${styles.error}`}>{error}</div>}
 
         {!loading && !error && board && (board.clubs?.length ?? 0) === 0 && (
-          <div className={styles.state}>No clubs in this union.</div>
+          <div className={styles.state}>No Clubs In This Union.</div>
         )}
 
-        {!error && (board?.clubs || []).map((c) => {
-          const open = expanded === c.club_id;
-          const pillClass =
-            c.status === 'missing' ? styles.pillMissing
-              : c.status === 'paid' ? styles.pillPaid
-                : c.overdue ? styles.pillOverdue
-                  : styles.pillOpen;
-          return (
-            <div className={styles.clubRow} key={c.club_id}>
-              <button
-                type="button"
-                className={styles.clubMain}
-                onClick={() => setExpanded(open ? null : c.club_id)}
-                aria-expanded={open}
-              >
-                <div className={styles.clubText}>
-                  <div className={styles.clubName}>{c.club_name}</div>
-                  <div className={styles.clubMeta}>
-                    <span className={`${styles.pill} ${pillClass}`}>
-                      {c.status === 'missing' ? 'no statement' : c.overdue ? 'overdue' : c.status}
-                    </span>
-                    {c.status !== 'missing' && (
-                      <span className={c.message_sent ? styles.deliveredYes : styles.deliveredNo}>
-                        {c.message_sent ? 'delivered' : 'not delivered'}
+        {!error &&
+          (board?.clubs || []).map((c) => {
+            const open = expanded === c.club_id;
+            const pillClass =
+              c.status === 'missing'
+                ? styles.pillMissing
+                : c.status === 'paid'
+                  ? styles.pillPaid
+                  : c.overdue
+                    ? styles.pillOverdue
+                    : styles.pillOpen;
+            return (
+              <div className={styles.clubRow} key={c.club_id}>
+                <button
+                  type="button"
+                  className={styles.clubMain}
+                  onClick={() => setExpanded(open ? null : c.club_id)}
+                  aria-expanded={open}
+                >
+                  <div className={styles.clubText}>
+                    <div className={styles.clubName}>{c.club_name}</div>
+                    <div className={styles.clubMeta}>
+                      <span className={`${styles.pill} ${pillClass}`}>
+                        {c.status === 'missing' ? 'no statement' : c.overdue ? 'overdue' : c.status}
                       </span>
-                    )}
-                    {c.due_at && <span>due {String(c.due_at).slice(0, 10)}</span>}
-                  </div>
-                </div>
-                <div className={styles.clubAmount}>
-                  <div className={`${styles.amountValue} ${c.amount < 0 ? styles.neg : styles.pos}`}>
-                    {c.status === 'missing' ? '--' : money(c.amount)}
-                  </div>
-                  <div className={styles.amountLabel}>
-                    {c.status === 'missing'
-                      ? 'not billed'
-                      : c.direction === 'union owes club'
-                        ? 'union owes'
-                        : 'club owes'}
-                  </div>
-                </div>
-              </button>
-
-              {open && (
-                <div className={styles.breakdown}>
-                  {c.status === 'missing' ? (
-                    <div className={styles.state}>
-                      This club has no statement for the period. Issuing will create one.
+                      {c.status !== 'missing' && (
+                        <span className={c.message_sent ? styles.deliveredYes : styles.deliveredNo}>
+                          {c.message_sent ? 'delivered' : 'not delivered'}
+                        </span>
+                      )}
+                      {c.due_at && <span>Due {String(c.due_at).slice(0, 10)}</span>}
                     </div>
-                  ) : (
-                    [
-                      ['Rake generated', c.rake_generated],
-                      ['Club rakeback (90%)', c.rakeback_due],
-                      ['Union fee kept (10%)', c.union_fee_kept],
-                      ['Player win/loss', c.players_won],
-                      ['ECO adjustment', c.eco_amount],
-                      ['Payments received', c.presettled],
-                    ].map(([label, value]) => (
-                      <div className={styles.breakdownLine} key={String(label)}>
-                        <span>{String(label)}</span>
-                        <span>{money(Number(value || 0))}</span>
-                      </div>
-                    ))
-                  )}
-                  {c.paid_total > 0 && c.status !== 'paid' && (
-                    <div className={styles.breakdownLine}>
-                      <span>Part paid</span>
-                      <span>{money(c.paid_total)} of {money(Math.abs(c.amount))}</span>
-                    </div>
-                  )}
-
-                  <div className={styles.rowActions}>
-                    <button
-                      type="button"
-                      className={styles.linkBtn}
-                      onClick={() => navigate(`/clubs/${c.club_id}/data`)}
+                  </div>
+                  <div className={styles.clubAmount}>
+                    <div
+                      className={`${styles.amountValue} ${c.amount < 0 ? styles.neg : styles.pos}`}
                     >
-                      Open club data
-                    </button>
-                    {c.invoice_id && c.status !== 'cancelled' && (
+                      {c.status === 'missing' ? '--' : money(c.amount)}
+                    </div>
+                    <div className={styles.amountLabel}>
+                      {c.status === 'missing'
+                        ? 'not billed'
+                        : c.direction === 'union owes club'
+                          ? 'union owes'
+                          : 'club owes'}
+                    </div>
+                  </div>
+                </button>
+
+                {open && (
+                  <div className={styles.breakdown}>
+                    {c.status === 'missing' ? (
+                      <div className={styles.state}>
+                        This Club Has No Statement For The Period. Issuing Will Create One.
+                      </div>
+                    ) : (
+                      [
+                        ['Rake generated', c.rake_generated],
+                        ['Club rakeback (90%)', c.rakeback_due],
+                        ['Union fee kept (10%)', c.union_fee_kept],
+                        ['Player win/loss', c.players_won],
+                        ['ECO adjustment', c.eco_amount],
+                        ['Payments received', c.presettled],
+                      ].map(([label, value]) => (
+                        <div className={styles.breakdownLine} key={String(label)}>
+                          <span>{String(label)}</span>
+                          <span>{money(Number(value || 0))}</span>
+                        </div>
+                      ))
+                    )}
+                    {c.paid_total > 0 && c.status !== 'paid' && (
+                      <div className={styles.breakdownLine}>
+                        <span>Part Paid</span>
+                        <span>
+                          {money(c.paid_total)} Of {money(Math.abs(c.amount))}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className={styles.rowActions}>
                       <button
                         type="button"
-                        className={c.status === 'paid' ? styles.linkBtnMuted : styles.linkBtn}
-                        onClick={() => { void setPaid(c.invoice_id as string, c.status !== 'paid'); }}
-                        disabled={settlingId === c.invoice_id}
+                        className={styles.linkBtn}
+                        onClick={() => navigate(`/clubs/${c.club_id}/data`)}
                       >
-                        {settlingId === c.invoice_id
-                          ? 'Saving...'
-                          : c.status === 'paid' ? 'Reopen' : 'Mark paid'}
+                        Open Club Data
                       </button>
-                    )}
+                      {c.invoice_id && c.status !== 'cancelled' && (
+                        <button
+                          type="button"
+                          className={c.status === 'paid' ? styles.linkBtnMuted : styles.linkBtn}
+                          onClick={() => {
+                            void setPaid(c.invoice_id as string, c.status !== 'paid');
+                          }}
+                          disabled={settlingId === c.invoice_id}
+                        >
+                          {settlingId === c.invoice_id
+                            ? 'Saving...'
+                            : c.status === 'paid'
+                              ? 'Reopen'
+                              : 'Mark paid'}
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
+                )}
+              </div>
+            );
+          })}
       </div>
 
       {board && (
         <div className={styles.footNote}>
-          Marking a statement paid records that it was settled. It moves no
-          chips.
+          Marking A Statement Paid Records That It Was Settled. It Moves No Chips.
           {board.generated_at && !Number.isNaN(Date.parse(board.generated_at))
             ? ` Read ${new Date(board.generated_at).toLocaleTimeString()}.`
             : ''}

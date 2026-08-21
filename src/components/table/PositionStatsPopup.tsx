@@ -142,7 +142,7 @@ export default function PositionStatsPopup({
 
         {/* Total hands */}
         <div className="psp-total">
-          {totalHands.toLocaleString()} hands tracked
+          {totalHands.toLocaleString()} Hands Tracked
           {styleResult && styleResult.confidence > 0 && (
             <span className="psp-confidence">
               Confidence: {Math.round(styleResult.confidence * 100)}%
@@ -157,7 +157,7 @@ export default function PositionStatsPopup({
             <div className="psp-skeleton" />
           </div>
         ) : rows.length === 0 ? (
-          <div className="psp-empty">No position data available</div>
+          <div className="psp-empty">No Position Data Available</div>
         ) : (
           <>
             {/* Table header */}

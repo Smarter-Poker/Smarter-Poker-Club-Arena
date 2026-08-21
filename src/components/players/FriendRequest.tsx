@@ -51,7 +51,7 @@ export const FriendRequest: React.FC<FriendRequestProps> = ({
         <div className="request-username">@{username}</div>
         {mutualFriends > 0 && (
           <div className="mutual-friends">
-            {mutualFriends} mutual friend{mutualFriends > 1 ? 's' : ''}
+            {mutualFriends} Mutual Friend{mutualFriends > 1 ? 's' : ''}
           </div>
         )}
         <div className="request-time">{formatRelativeShort(sentAt)}</div>

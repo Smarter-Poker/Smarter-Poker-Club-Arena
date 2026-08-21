@@ -173,14 +173,13 @@ export function SitOutModal({
           </svg>
           <div className="sitout-modal__timer-content">
             <span className="sitout-modal__time">{formatTime(elapsed)}</span>
-            <span className="sitout-modal__time-label">sitting out</span>
+            <span className="sitout-modal__time-label">Sitting Out</span>
           </div>
         </div>
 
         {/* What is actually true: the seat and the stack are held. */}
         <div className="sitout-modal__note">
-          Your seat and chips are held while you are sitting out. Return whenever
-          you are ready.
+          Your Seat And Chips Are Held While You Are Sitting Out. Return Whenever You Are Ready.
         </div>
 
         {/* Auto-Post Toggle */}
@@ -192,7 +191,7 @@ export function SitOutModal({
               onChange={(e) => onAutoPostChange(e.target.checked)}
             />
             <span className="sitout-modal__toggle-slider" />
-            <span className="sitout-modal__toggle-label">Post blinds when returning</span>
+            <span className="sitout-modal__toggle-label">Post Blinds When Returning</span>
           </label>
         )}
 
@@ -219,7 +218,7 @@ export function SitOutModal({
             </>
           ) : (
             <div className="sitout-modal__confirm">
-              <span>Leave and cash out your chips?</span>
+              <span>Leave And Cash Out Your Chips?</span>
               <div className="sitout-modal__confirm-actions">
                 <button
                   type="button"

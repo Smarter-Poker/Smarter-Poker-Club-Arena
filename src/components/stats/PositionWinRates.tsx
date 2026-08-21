@@ -242,10 +242,10 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId, initialPosi
   return (
     <div className="position-win-rates">
       <div className="position-header">
-        <h3>Win Rate by Position</h3>
+        <h3>Win Rate By Position</h3>
         <p className="position-subtitle">
-          Position profitability at{' '}
-          {statsData.reduce((sum, p) => sum + p.handsPlayed, 0).toLocaleString()} hands
+          Position Profitability At{' '}
+          {statsData.reduce((sum, p) => sum + p.handsPlayed, 0).toLocaleString()} Hands
         </p>
       </div>
 
@@ -328,7 +328,6 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId, initialPosi
                 >
                   {pos.winRate.toFixed(2)}
                 </text>
-
               </g>
             );
           })}
@@ -358,7 +357,7 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId, initialPosi
               <div className="tooltip-stat">
                 <span>Win Rate:</span>
                 <span style={{ color: getPositionColor(statsData[hoveredPosition].winRate) }}>
-                  {statsData[hoveredPosition].winRate.toFixed(2)} bb/100
+                  {statsData[hoveredPosition].winRate.toFixed(2)} BB/100
                 </span>
               </div>
               <div className="tooltip-stat total">
@@ -377,34 +376,34 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId, initialPosi
           empty data set both reduce() seeds land on the same zero row, and the
           UI asserted "Strongest: UTG 0.00" and "Weakest: UTG 0.00" at once. */}
       {activeStats.length > 0 && (
-      <div className="position-callouts">
-        <div className="callout strongest">
-          <span className="callout-icon">▲</span>
-          <div className="callout-text">
-            <span className="callout-label">Strongest Position</span>
-            <span className="callout-value">{bestPosition.position}</span>
-            <span className="callout-detail">{bestPosition.winRate.toFixed(2)} bb/100</span>
+        <div className="position-callouts">
+          <div className="callout strongest">
+            <span className="callout-icon">▲</span>
+            <div className="callout-text">
+              <span className="callout-label">Strongest Position</span>
+              <span className="callout-value">{bestPosition.position}</span>
+              <span className="callout-detail">{bestPosition.winRate.toFixed(2)} BB/100</span>
+            </div>
+          </div>
+          <div className="callout weakest">
+            <span className="callout-icon">▼</span>
+            <div className="callout-text">
+              <span className="callout-label">Weakest Position</span>
+              <span className="callout-value">{worstPosition.position}</span>
+              <span className="callout-detail">{worstPosition.winRate.toFixed(2)} BB/100</span>
+            </div>
           </div>
         </div>
-        <div className="callout weakest">
-          <span className="callout-icon">▼</span>
-          <div className="callout-text">
-            <span className="callout-label">Weakest Position</span>
-            <span className="callout-value">{worstPosition.position}</span>
-            <span className="callout-detail">{worstPosition.winRate.toFixed(2)} bb/100</span>
-          </div>
-        </div>
-      </div>
       )}
 
       {!loaded && (
         <div className="position-subtitle" style={{ textAlign: 'center', padding: '8px 0' }}>
-          Loading position stats...
+          Loading Position Stats...
         </div>
       )}
       {loaded && activeStats.length === 0 && (
         <div className="position-subtitle" style={{ textAlign: 'center', padding: '8px 0' }}>
-          No position data yet - play some hands and this fills in automatically.
+          No Position Data Yet - Play Some Hands And This Fills In Automatically.
         </div>
       )}
 

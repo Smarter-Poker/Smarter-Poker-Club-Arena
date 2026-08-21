@@ -140,11 +140,11 @@ export const AgentHierarchyTree: React.FC<AgentHierarchyTreeProps> = ({
   };
 
   if (loading) {
-    return <div className="hierarchy-loading">Loading hierarchy...</div>;
+    return <div className="hierarchy-loading">Loading Hierarchy...</div>;
   }
 
   if (!hierarchy) {
-    return <div className="hierarchy-empty">No agent hierarchy found</div>;
+    return <div className="hierarchy-empty">No Agent Hierarchy Found</div>;
   }
 
   return (

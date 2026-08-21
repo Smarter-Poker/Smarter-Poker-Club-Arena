@@ -278,11 +278,11 @@ export default function DiamondWalletModal({
         {/* Transaction List */}
         <div className="diamond-wallet-modal__list">
           {loading ? (
-            <div className="diamond-wallet-modal__status">Loading transactions...</div>
+            <div className="diamond-wallet-modal__status">Loading Transactions...</div>
           ) : filteredTx.length === 0 ? (
             <div className="diamond-wallet-modal__status">
               <div style={{ fontSize: 32, marginBottom: 8 }}>◆</div>
-              No transactions yet
+              No Transactions Yet
             </div>
           ) : (
             filteredTx.map((tx) => {

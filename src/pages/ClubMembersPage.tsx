@@ -316,7 +316,7 @@ function PlayerActionModal({
             {confirmRole ? (
               <div className="player-modal__confirm">
                 <p>
-                  Promote <strong>{member.username}</strong> to{' '}
+                  Promote <strong>{member.username}</strong> To{' '}
                   <strong style={{ color: getRoleColor(confirmRole) }}>
                     {roleLabel(confirmRole)}
                   </strong>
@@ -365,7 +365,7 @@ function PlayerActionModal({
             still loading. */}
         {rolesLoading && !canManage && (
           <div className="player-modal__info-section">
-            <p>Checking what you can change...</p>
+            <p>Checking What You Can Change...</p>
           </div>
         )}
         {!rolesLoading && !canManage && (
@@ -939,7 +939,7 @@ export default function ClubMembersPage() {
                   fontSize: '0.7rem',
                 }}
               >
-                Showing {virtualScroll.visibleCount} of {virtualScroll.totalCount}
+                Showing {virtualScroll.visibleCount} Of {virtualScroll.totalCount}
               </div>
             )}
           </>

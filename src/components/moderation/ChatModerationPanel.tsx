@@ -110,7 +110,7 @@ export const ChatModerationPanel: React.FC<ChatModerationPanelProps> = ({
                     handleMute(msg.userId, msg.username, 15);
                   }}
                 >
-                  Mute 15m
+                  Mute 15M
                 </button>
                 <button
                   className="action-mute"
@@ -119,7 +119,7 @@ export const ChatModerationPanel: React.FC<ChatModerationPanelProps> = ({
                     handleMute(msg.userId, msg.username, 60);
                   }}
                 >
-                  Mute 1h
+                  Mute 1H
                 </button>
                 <button
                   className="action-ban"

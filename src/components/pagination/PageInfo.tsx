@@ -23,9 +23,9 @@ export const PageInfo: React.FC<PageInfoProps> = ({
       <strong>
         {start}-{end}
       </strong>{' '}
-      of <strong>{totalItems}</strong>
+      Of <strong>{totalItems}</strong>
       <span className="page-number">
-        Page {currentPage} of {totalPages}
+        Page {currentPage} Of {totalPages}
       </span>
     </div>
   );

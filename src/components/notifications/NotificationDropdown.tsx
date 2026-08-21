@@ -43,7 +43,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
           <h3>Notifications</h3>
           {unreadCount > 0 && (
             <button className="mark-read-btn" onClick={onMarkAllRead}>
-              Mark all read
+              Mark All Read
             </button>
           )}
         </div>
@@ -52,7 +52,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
           {notifications.length === 0 ? (
             <div className="empty-state">
               <span>✱</span>
-              <p>No notifications yet</p>
+              <p>No Notifications Yet</p>
             </div>
           ) : (
             notifications.map((notif) => (

@@ -179,7 +179,7 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
             </div>
 
             <div className="form-group">
-              <label>Bio (Max 100 chars)</label>
+              <label>Bio (Max 100 Chars)</label>
               <textarea
                 value={formData.bio}
                 onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
@@ -189,7 +189,7 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
             </div>
 
             <div className="form-group">
-              <label>Player Tags (Select up to 3)</label>
+              <label>Player Tags (Select Up To 3)</label>
               <div className="tags-grid">
                 {AVAILABLE_TAGS.map((tag) => (
                   <button

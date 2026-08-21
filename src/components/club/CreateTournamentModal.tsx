@@ -544,9 +544,9 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
               onChange={(e) => setGameVariant(e.target.value as any)}
             >
               <option value="NLH">No-Limit Hold'em</option>
-              <option value="PLO4">Pot-Limit Omaha (4-card)</option>
-              <option value="PLO5">Pot-Limit Omaha (5-card)</option>
-              <option value="PLO8">PLO Hi-Lo (8 or Better)</option>
+              <option value="PLO4">Pot-Limit Omaha (4-Card)</option>
+              <option value="PLO5">Pot-Limit Omaha (5-Card)</option>
+              <option value="PLO8">PLO Hi-Lo (8 Or Better)</option>
               <option value="SHORT_DECK">Short Deck Hold'em</option>
             </select>
           </div>
@@ -564,7 +564,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                     disabled
                     style={{ opacity: 0.7 }}
                   />
-                  <span className={styles.helperText}>Spins always start with 3 players</span>
+                  <span className={styles.helperText}>Spins Always Start With 3 Players</span>
                 </div>
               </div>
             )}
@@ -577,11 +577,11 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                     value={spinType}
                     onChange={(e) => setSpinType(e.target.value as 'standard' | 'hyper')}
                   >
-                    <option value="standard">Standard (EV: 2.24x)</option>
-                    <option value="hyper">Hyper (EV: 2.33x)</option>
+                    <option value="standard">Standard (EV: 2.24X)</option>
+                    <option value="hyper">Hyper (EV: 2.33X)</option>
                   </select>
                   <span className={styles.helperText}>
-                    Hyper spins have higher variance multipliers
+                    Hyper Spins Have Higher Variance Multipliers
                   </span>
                 </div>
               </div>
@@ -615,9 +615,9 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                   value={blindSpeed}
                   onChange={(e) => setBlindSpeed(e.target.value as any)}
                 >
-                  <option value="turbo">Turbo (3m)</option>
-                  <option value="regular">Regular (8m)</option>
-                  <option value="deepStack">Deep Stack (15m)</option>
+                  <option value="turbo">Turbo (3M)</option>
+                  <option value="regular">Regular (8M)</option>
+                  <option value="deepStack">Deep Stack (15M)</option>
                 </select>
               </div>
             </div>
@@ -627,7 +627,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
             <div className={styles.col}>
               <div className={styles.formGroup}>
                 <label>
-                  Buy-in <span style={{ color: '#ef4444' }}>*</span>
+                  Buy-In <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 {/* WHOLE NUMBERS ONLY (Dan 2026-08-20). step/min/inputMode set
                     the browser and the mobile keypad, and digitsOnly stops a
@@ -643,7 +643,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                   style={!isWholeBuyIn(buyIn) ? { borderColor: '#ef4444' } : undefined}
                 />
                 <span className={styles.helperText}>
-                  Whole chips only. This is the total the player pays.
+                  Whole Chips Only. This Is The Total The Player Pays.
                 </span>
               </div>
             </div>
@@ -657,7 +657,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                     2026-08-20: the fee is a CUT OUT OF the buy-in, rounded to a
                     whole number, so the player pays exactly the figure typed on
                     the left and never a decimal. */}
-                <label>Fee (10% of buy-in)</label>
+                <label>Fee (10% Of Buy-In)</label>
                 <input
                   type="number"
                   className={styles.input}
@@ -702,7 +702,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                   step={1}
                   inputMode="numeric"
                 />
-                <span className={styles.helperText}>0 = no guarantee</span>
+                <span className={styles.helperText}>0 = No Guarantee</span>
               </div>
             </div>
           </div>
@@ -718,7 +718,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                     value={satelliteTargetId}
                     onChange={(e) => setSatelliteTargetId(e.target.value)}
                   >
-                    <option value="">Select target tournament…</option>
+                    <option value="">Select Target Tournament…</option>
                     {satelliteTargets.map((t) => (
                       <option key={t.id} value={t.id}>
                         {t.name}
@@ -743,7 +743,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                     min="1"
                     step="1"
                   />
-                  <span className={styles.helperText}>Top N finishers win a seat</span>
+                  <span className={styles.helperText}>Top N Finishers Win A Seat</span>
                 </div>
               </div>
             </div>
@@ -760,7 +760,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                     value={startTimeMode}
                     onChange={(e) => setStartTimeMode(e.target.value as any)}
                   >
-                    <option value="now">Start in 1 min</option>
+                    <option value="now">Start In 1 Min</option>
                     <option value="scheduled">Schedule</option>
                   </select>
                 </div>
@@ -852,7 +852,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                       required
                       style={!isWholeBuyIn(bountyAmount) ? { borderColor: '#ef4444' } : undefined}
                     />
-                    <span className={styles.helperText}>Amount awarded for each knockout</span>
+                    <span className={styles.helperText}>Amount Awarded For Each Knockout</span>
                   </div>
                 </div>
                 {format === 'mystery_bounty' && (
@@ -875,7 +875,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                             !isWholeBuyIn(mysteryBountyMin) ? { borderColor: '#ef4444' } : undefined
                           }
                         />
-                        <span className={styles.helperText}>Lowest multiplier (e.g. 1x)</span>
+                        <span className={styles.helperText}>Lowest Multiplier (E.G. 1X)</span>
                       </div>
                     </div>
                     <div className={styles.col}>
@@ -898,7 +898,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                               : undefined
                           }
                         />
-                        <span className={styles.helperText}>Highest multiplier (e.g. 100x)</span>
+                        <span className={styles.helperText}>Highest Multiplier (E.G. 100X)</span>
                       </div>
                     </div>
                   </>
@@ -906,19 +906,19 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
               </div>
               {format === 'bounty' && (
                 <span className={styles.helperText}>
-                  Full bounty amount is awarded to the knocker on each elimination
+                  Full Bounty Amount Is Awarded To The Knocker On Each Elimination
                 </span>
               )}
               {format === 'progressive_bounty' && (
                 <span className={styles.helperText}>
-                  50% of bounty goes to knocker, 50% added to knocker's own bounty
+                  50% Of Bounty Goes To Knocker, 50% Added To Knocker's Own Bounty
                 </span>
               )}
               {format === 'mystery_bounty' && (
                 <span className={styles.helperText}>
-                  Each head is sealed at registration from a jackpot ladder - 60% x0.5, 25% x1,
-                  10% x2, 4% x3, 1% x13 of the bounty amount - and revealed on knockout. The
-                  ladder averages exactly 1x, so the bounty pool always funds the heads.
+                  Each Head Is Sealed At Registration From A Jackpot Ladder - 60% X0.5, 25% X1, 10%
+                  X2, 4% X3, 1% X13 Of The Bounty Amount - And Revealed On Knockout. The Ladder
+                  Averages Exactly 1X, So The Bounty Pool Always Funds The Heads.
                 </span>
               )}
               {bountySplit && (
@@ -934,22 +934,22 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                   }}
                 >
                   <strong style={{ color: '#ffd700' }}>
-                    Each {money(bountySplit.buyIn)} entry splits:
+                    Each {money(bountySplit.buyIn)} Entry Splits:
                   </strong>
                   <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 2 }}>
                     <span>
-                      Bounty pool <strong>{money(bountySplit.bounty)}</strong>
+                      Bounty Pool <strong>{money(bountySplit.bounty)}</strong>
                     </span>
                     <span>
                       Rake <strong>{money(bountySplit.rake)}</strong>
                     </span>
                     <span style={{ color: bountySplit.prize < 0 ? '#ef4444' : undefined }}>
-                      Prize pool <strong>{money(bountySplit.prize)}</strong>
+                      Prize Pool <strong>{money(bountySplit.prize)}</strong>
                     </span>
                   </div>
                   <span style={{ opacity: 0.65 }}>
-                    Bounty and prize pools are tracked separately; unclaimed bounty money goes to
-                    the champion.
+                    Bounty And Prize Pools Are Tracked Separately; Unclaimed Bounty Money Goes To
+                    The Champion.
                   </span>
                 </div>
               )}
@@ -979,11 +979,11 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                         disabled
                         className={styles.checkbox}
                       />
-                      Allow Rebuys (same seat)
+                      Allow Rebuys (Same Seat)
                     </label>
                     {!isRebuy && (
                       <span className={styles.helperText}>
-                        Select "MTT (Rebuy)" format to enable
+                        Select "MTT (Rebuy)" Format To Enable
                       </span>
                     )}
                   </div>
@@ -997,11 +997,11 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                         disabled
                         className={styles.checkbox}
                       />
-                      Allow Re-Entry (new seat)
+                      Allow Re-Entry (New Seat)
                     </label>
                     {!isReentry && (
                       <span className={styles.helperText}>
-                        Select "MTT (Re-Entry)" format to enable
+                        Select "MTT (Re-Entry)" Format To Enable
                       </span>
                     )}
                   </div>
@@ -1037,7 +1037,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                           step={1}
                           inputMode="numeric"
                         />
-                        <span className={styles.helperText}>Blank = same as buy-in</span>
+                        <span className={styles.helperText}>Blank = Same As Buy-In</span>
                       </div>
                     </div>
                     <div className={styles.col}>
@@ -1050,7 +1050,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                           onChange={(e) => setRebuyChips(e.target.value)}
                           placeholder={startingChips}
                         />
-                        <span className={styles.helperText}>Blank = starting stack</span>
+                        <span className={styles.helperText}>Blank = Starting Stack</span>
                       </div>
                     </div>
                   </div>
@@ -1079,7 +1079,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                         step={1}
                         inputMode="numeric"
                       />
-                      <span className={styles.helperText}>Blank = same as buy-in</span>
+                      <span className={styles.helperText}>Blank = Same As Buy-In</span>
                     </div>
                   </div>
                   <div className={styles.col}>
@@ -1092,7 +1092,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                         onChange={(e) => setAddOnChips(e.target.value)}
                         placeholder={startingChips}
                       />
-                      <span className={styles.helperText}>Blank = starting stack</span>
+                      <span className={styles.helperText}>Blank = Starting Stack</span>
                     </div>
                   </div>
                   <div className={styles.col}>
@@ -1105,12 +1105,12 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                       >
                         {[1, 2, 3].map((n) => (
                           <option key={n} value={String(n)}>
-                            {n} Level{n > 1 ? 's' : ''} after rebuy period
+                            {n} Level{n > 1 ? 's' : ''} After Rebuy Period
                           </option>
                         ))}
                       </select>
                       <span className={styles.helperText}>
-                        Add-on opens at Level {parseInt(lateRegLevels) || 0} through Level{' '}
+                        Add-On Opens At Level {parseInt(lateRegLevels) || 0} Through Level{' '}
                         {(parseInt(lateRegLevels) || 0) + (parseInt(addOnLevels) || 1)}
                       </span>
                     </div>
@@ -1157,7 +1157,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
           {/* ── Payout Info ── */}
           <div className={styles.payoutPreview}>
             <span className={styles.sectionLabel}>
-              Payout Structure ({payoutStructure.length} places paid)
+              Payout Structure ({payoutStructure.length} Places Paid)
             </span>
             <div className={styles.payoutList}>
               {payoutStructure.map((p, i) => (
@@ -1173,18 +1173,16 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
           {/* ── Validation Summary ── */}
           {!canSubmit && !isSubmitting && (
             <div style={{ color: '#ef4444', fontSize: '0.75rem', padding: '4px 0' }}>
-              {!name.trim() && <p>Tournament name is required</p>}
-              {!isWholeBuyIn(buyIn) && (
-                <p>Buy-in must be a whole number of chips greater than 0</p>
-              )}
-              {parseInt(startingChips) <= 0 && <p>Starting chips must be greater than 0</p>}
+              {!name.trim() && <p>Tournament Name Is Required</p>}
+              {!isWholeBuyIn(buyIn) && <p>Buy-In Must Be A Whole Number Of Chips Greater Than 0</p>}
+              {parseInt(startingChips) <= 0 && <p>Starting Chips Must Be Greater Than 0</p>}
               {startTimeMode === 'scheduled' && (!scheduledDate || !scheduledTime) && (
-                <p>Scheduled date and time are required</p>
+                <p>Scheduled Date And Time Are Required</p>
               )}
               {(isRebuy || isReentry) && parseInt(lateRegLevels) <= 0 && (
-                <p>Late reg levels must be set when rebuys/re-entries are enabled</p>
+                <p>Late Reg Levels Must Be Set When Rebuys/Re-Entries Are Enabled</p>
               )}
-              {!bountyValid && isBountyFormat && <p>Bounty configuration is incomplete</p>}
+              {!bountyValid && isBountyFormat && <p>Bounty Configuration Is Incomplete</p>}
             </div>
           )}
 

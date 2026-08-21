@@ -38,7 +38,7 @@ export default function GlobalUXIndicators({ wsConnected = true }: Props) {
       {/* Offline banner */}
       {!isOnline && (
         <div className="global-offline-banner" role="alert">
-          <span>⚠ Offline - showing cached data</span>
+          <span>⚠ Offline - Showing Cached Data</span>
         </div>
       )}
       {/* WS connection health dot */}

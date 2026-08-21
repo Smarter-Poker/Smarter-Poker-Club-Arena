@@ -55,7 +55,7 @@ export default function ProfitChart({ transactions }: ProfitChartProps) {
             fontWeight: 600,
           }}
         >
-          No transaction history yet
+          No Transaction History Yet
         </div>
         <div
           style={{
@@ -64,7 +64,7 @@ export default function ProfitChart({ transactions }: ProfitChartProps) {
             marginTop: 4,
           }}
         >
-          Start playing to see your P/L chart
+          Start Playing To See Your P/L Chart
         </div>
         <style>{`
                     @keyframes profitChartPulse {

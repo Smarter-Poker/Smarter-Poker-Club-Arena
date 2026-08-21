@@ -240,8 +240,8 @@ export function BuyInModal({
               textAlign: 'center',
             }}
           >
-            You cashed out {formatAmount(cashoutRestriction)} from this table. Min buy-in is{' '}
-            {formatAmount(cashoutRestriction)} for 2 hours.
+            You Cashed Out {formatAmount(cashoutRestriction)} From This Table. Min Buy-In Is{' '}
+            {formatAmount(cashoutRestriction)} For 2 Hours.
           </div>
         )}
 

@@ -78,7 +78,9 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Payment failed';
         reportError(e, 'AgentInvoicesPanel.handlePay', { invoiceId: inv.id });
-        toast.error(msg.includes('insufficient') ? 'Insufficient wallet balance' : 'Payment failed');
+        toast.error(
+          msg.includes('insufficient') ? 'Insufficient wallet balance' : 'Payment failed'
+        );
       } finally {
         setPayingId(null);
       }
@@ -109,16 +111,16 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
         <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Credit Invoices</h3>
         {outstanding.length > 0 && (
           <span style={{ fontSize: '12px', color: '#e53e3e', fontWeight: 600 }}>
-            {outstanding.length} outstanding
+            {outstanding.length} Outstanding
           </span>
         )}
       </div>
 
       {loading ? (
-        <div style={{ fontSize: '13px', opacity: 0.6, padding: '8px 0' }}>Loading invoices...</div>
+        <div style={{ fontSize: '13px', opacity: 0.6, padding: '8px 0' }}>Loading Invoices...</div>
       ) : invoices.length === 0 ? (
         <div style={{ fontSize: '13px', opacity: 0.6, padding: '8px 0' }}>
-          No invoices. Weekly invoices appear here when your account carries a balance.
+          No Invoices. Weekly Invoices Appear Here When Your Account Carries A Balance.
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -141,7 +143,7 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
               >
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: '13px', fontWeight: 600 }}>
-                    Week of {fmtDate(inv.periodStart)}
+                    Week Of {fmtDate(inv.periodStart)}
                   </div>
                   <div style={{ fontSize: '11px', opacity: 0.6 }}>
                     Due {fmtDate(inv.dueDate)} &middot;{' '}
@@ -152,11 +154,12 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '13px', fontWeight: 700 }}>
-                    {fmt(inv.amountRemaining)} <span style={{ fontSize: '10px', opacity: 0.6 }}>due</span>
+                    {fmt(inv.amountRemaining)}{' '}
+                    <span style={{ fontSize: '10px', opacity: 0.6 }}>Due</span>
                   </div>
                   {inv.amountPaid > 0 && (
                     <div style={{ fontSize: '10px', opacity: 0.5 }}>
-                      {fmt(inv.amountPaid)} / {fmt(inv.debtOwed)} paid
+                      {fmt(inv.amountPaid)} / {fmt(inv.debtOwed)} Paid
                     </div>
                   )}
                 </div>

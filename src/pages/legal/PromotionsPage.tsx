@@ -29,123 +29,123 @@ export default function PromotionsPage() {
         <section style={sectionAnimationStyle(0)}>
           <h2>1. General Promotion Guidelines</h2>
           <p>
-            All promotions, bonuses, and special offers in Club Arena are subject to these rules. By
-            participating in any promotion, you agree to abide by these terms.
+            All Promotions, Bonuses, And Special Offers In Club Arena Are Subject To These Rules. By
+            Participating In Any Promotion, You Agree To Abide By These Terms.
           </p>
         </section>
 
         <section style={sectionAnimationStyle(1)}>
           <h2>2. Eligibility</h2>
           <p>
-            Promotions are available to all registered Club Arena users unless otherwise specified.
-            Users must have an active account in good standing to participate.
+            Promotions Are Available To All Registered Club Arena Users Unless Otherwise Specified.
+            Users Must Have An Active Account In Good Standing To Participate.
           </p>
           <ul>
-            <li>One promotion per user unless stated otherwise</li>
-            <li>Users with suspended or banned accounts are not eligible</li>
+            <li>One Promotion Per User Unless Stated Otherwise</li>
+            <li>Users With Suspended Or Banned Accounts Are Not Eligible</li>
             <li>
-              Club owners may set additional eligibility requirements for club-specific promotions
+              Club Owners May Set Additional Eligibility Requirements For Club-Specific Promotions
             </li>
           </ul>
         </section>
 
         <section style={sectionAnimationStyle(2)}>
           <h2>3. Daily Bonuses</h2>
-          <p>Daily bonuses are awarded for consecutive daily logins:</p>
+          <p>Daily Bonuses Are Awarded For Consecutive Daily Logins:</p>
           <ul>
-            <li>Day 1: 100 chips</li>
-            <li>Day 2: 200 chips</li>
-            <li>Day 3: 300 chips</li>
-            <li>Day 4: 400 chips</li>
-            <li>Day 5: 500 chips</li>
-            <li>Day 6: 600 chips</li>
-            <li>Day 7: 1000 chips + 100 Diamonds</li>
+            <li>Day 1: 100 Chips</li>
+            <li>Day 2: 200 Chips</li>
+            <li>Day 3: 300 Chips</li>
+            <li>Day 4: 400 Chips</li>
+            <li>Day 5: 500 Chips</li>
+            <li>Day 6: 600 Chips</li>
+            <li>Day 7: 1000 Chips + 100 Diamonds</li>
           </ul>
-          <p>Missing a day resets your streak to Day 1.</p>
+          <p>Missing A Day Resets Your Streak To Day 1.</p>
         </section>
 
         <section style={sectionAnimationStyle(3)}>
           <h2>4. Tournament Promotions</h2>
-          <p>Tournament promotions may include:</p>
+          <p>Tournament Promotions May Include:</p>
           <ul>
-            <li>Freeroll tournaments with guaranteed prize pools</li>
-            <li>Reduced buy-in tournaments</li>
-            <li>Satellite tournaments to larger events</li>
-            <li>Special tournament series with leaderboards</li>
+            <li>Freeroll Tournaments With Guaranteed Prize Pools</li>
+            <li>Reduced Buy-In Tournaments</li>
+            <li>Satellite Tournaments To Larger Events</li>
+            <li>Special Tournament Series With Leaderboards</li>
           </ul>
           <p>
-            All tournament promotions are subject to the tournament's specific terms and conditions.
+            All Tournament Promotions Are Subject To The Tournament's Specific Terms And Conditions.
           </p>
         </section>
 
         <section style={sectionAnimationStyle(4)}>
-          <h2>5. Rakeback and Loyalty Rewards</h2>
+          <h2>5. Rakeback And Loyalty Rewards</h2>
           <p>
-            Rakeback is calculated based on the rake contributed in cash games and tournament fees:
+            Rakeback Is Calculated Based On The Rake Contributed In Cash Games And Tournament Fees:
           </p>
           <ul>
-            <li>Bronze VIP: 5% rakeback</li>
-            <li>Silver VIP: 10% rakeback</li>
-            <li>Gold VIP: 15% rakeback</li>
-            <li>Platinum VIP: 20% rakeback</li>
-            <li>Diamond VIP: 25% rakeback</li>
+            <li>Bronze VIP: 5% Rakeback</li>
+            <li>Silver VIP: 10% Rakeback</li>
+            <li>Gold VIP: 15% Rakeback</li>
+            <li>Platinum VIP: 20% Rakeback</li>
+            <li>Diamond VIP: 25% Rakeback</li>
           </ul>
-          <p>Rakeback is credited weekly on Mondays for the previous week's play.</p>
+          <p>Rakeback Is Credited Weekly On Mondays For The Previous Week's Play.</p>
         </section>
 
         <section style={sectionAnimationStyle(5)}>
           <h2>6. Referral Bonuses</h2>
-          <p>Refer friends to Club Arena and earn rewards:</p>
+          <p>Refer Friends To Club Arena And Earn Rewards:</p>
           <ul>
-            <li>Referrer receives 500 chips when friend completes registration</li>
-            <li>Referrer receives 1000 chips when friend plays their first hand</li>
-            <li>Referrer receives 5% of friend's rake for their first month</li>
+            <li>Referrer Receives 500 Chips When Friend Completes Registration</li>
+            <li>Referrer Receives 1000 Chips When Friend Plays Their First Hand</li>
+            <li>Referrer Receives 5% Of Friend's Rake For Their First Month</li>
           </ul>
           <p>
-            Self-referrals and fake accounts are prohibited and will result in account termination.
+            Self-Referrals And Fake Accounts Are Prohibited And Will Result In Account Termination.
           </p>
         </section>
 
         <section style={sectionAnimationStyle(6)}>
           <h2>7. Club-Specific Promotions</h2>
-          <p>Individual clubs may run their own promotions with custom rules:</p>
+          <p>Individual Clubs May Run Their Own Promotions With Custom Rules:</p>
           <ul>
-            <li>Club owners set promotion terms and eligibility</li>
-            <li>Club promotions are funded by the club, not Club Arena</li>
-            <li>Disputes regarding club promotions should be directed to the club owner</li>
+            <li>Club Owners Set Promotion Terms And Eligibility</li>
+            <li>Club Promotions Are Funded By The Club, Not Club Arena</li>
+            <li>Disputes Regarding Club Promotions Should Be Directed To The Club Owner</li>
           </ul>
         </section>
 
         <section style={sectionAnimationStyle(7)}>
           <h2>8. Promotion Abuse</h2>
           <p>
-            The following activities are considered promotion abuse and are strictly prohibited:
+            The Following Activities Are Considered Promotion Abuse And Are Strictly Prohibited:
           </p>
           <ul>
-            <li>Creating multiple accounts to claim bonuses</li>
-            <li>Colluding with other players to manipulate promotions</li>
-            <li>Using automated tools or unauthorized software</li>
-            <li>Exploiting bugs or glitches to gain unfair advantages</li>
+            <li>Creating Multiple Accounts To Claim Bonuses</li>
+            <li>Colluding With Other Players To Manipulate Promotions</li>
+            <li>Using Automated Tools Or Unauthorized Software</li>
+            <li>Exploiting Bugs Or Glitches To Gain Unfair Advantages</li>
           </ul>
           <p>
-            Promotion abuse will result in forfeiture of bonuses and potential account termination.
+            Promotion Abuse Will Result In Forfeiture Of Bonuses And Potential Account Termination.
           </p>
         </section>
 
         <section style={sectionAnimationStyle(8)}>
-          <h2>9. Modification and Cancellation</h2>
+          <h2>9. Modification And Cancellation</h2>
           <p>
-            Club Arena reserves the right to modify, suspend, or cancel any promotion at any time
-            without prior notice. In the event of cancellation, users will be notified and any
-            earned rewards will be honored.
+            Club Arena Reserves The Right To Modify, Suspend, Or Cancel Any Promotion At Any Time
+            Without Prior Notice. In The Event Of Cancellation, Users Will Be Notified And Any
+            Earned Rewards Will Be Honored.
           </p>
         </section>
 
         <section style={sectionAnimationStyle(9)}>
           <h2>10. Disputes</h2>
           <p>
-            All decisions regarding promotions are final and at the sole discretion of Club Arena.
-            For promotion-related questions or disputes, contact support@smarter.poker
+            All Decisions Regarding Promotions Are Final And At The Sole Discretion Of Club Arena.
+            For Promotion-Related Questions Or Disputes, Contact Support@Smarter.Poker
           </p>
         </section>
 

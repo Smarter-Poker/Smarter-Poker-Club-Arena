@@ -283,7 +283,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
           >
             {messages.length === 0 ? (
               <div style={{ textAlign: 'center', color: FB.dim, fontSize: 12, padding: '40px 0' }}>
-                No messages yet. Say hello!
+                No Messages Yet. Say Hello!
               </div>
             ) : (
               messages.map((m, i) => {
@@ -295,7 +295,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
                     {isFailed ? (
                       <div style={{ opacity: 0.5 }}>
                         <span style={{ color: '#FA383E', fontSize: 11, fontWeight: 700 }}>
-                          ⚠ Failed to send
+                          ⚠ Failed To Send
                         </span>
                         <div
                           style={{

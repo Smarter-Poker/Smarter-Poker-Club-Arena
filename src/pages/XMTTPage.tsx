@@ -345,7 +345,8 @@ export default function XMTTPage() {
             onClick={() => setFilter(f)}
           >
             {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
-            {f !== 'all' && ` (${tournaments.filter((t) => String(t.status).toLowerCase() === f).length})`}
+            {f !== 'all' &&
+              ` (${tournaments.filter((t) => String(t.status).toLowerCase() === f).length})`}
           </button>
         ))}
       </nav>
@@ -365,9 +366,9 @@ export default function XMTTPage() {
           {filtered.length === 0 ? (
             <div className={styles.emptyState}>
               <span className={styles.emptyIcon}>★</span>
-              <span className={styles.emptyText}>No MTT tournaments found for this filter.</span>
+              <span className={styles.emptyText}>No MTT Tournaments Found For This Filter.</span>
               <Link to="/" className={styles.btnPrimary} style={{ marginTop: 12 }}>
-                Go to Lobby
+                Go To Lobby
               </Link>
             </div>
           ) : (
@@ -388,7 +389,7 @@ export default function XMTTPage() {
                   {/* The advertised buy-in is the TOTAL (prize + fee), as whole
                       chips. buy_in_amount alone understated it by the fee and
                       could print a decimal on legacy rows. */}
-                  <span> Buy-in: {money(totalBuyIn(t.buy_in, t.buy_in_fee))}</span>
+                  <span> Buy-In: {money(totalBuyIn(t.buy_in, t.buy_in_fee))}</span>
                   <span>
                     {t.registered_count || 0} / {t.max_players || '∞'}
                   </span>
@@ -465,7 +466,7 @@ export default function XMTTPage() {
         {selectedTournament && (
           <div className={styles.detailPanel}>
             {detailLoading ? (
-              <div className={styles.detailLoading}>Loading details...</div>
+              <div className={styles.detailLoading}>Loading Details...</div>
             ) : detail ? (
               <>
                 <h3 className={styles.detailTitle}>
@@ -475,10 +476,7 @@ export default function XMTTPage() {
                   <div>
                     <div className={styles.detailLabel}>Buy-In</div>
                     <div className={styles.detailValueGold}>
-                      {formatBuyIn(
-                        detail.tournament?.buy_in ?? 0,
-                        detail.tournament?.buy_in_fee
-                      )}
+                      {formatBuyIn(detail.tournament?.buy_in ?? 0, detail.tournament?.buy_in_fee)}
                     </div>
                   </div>
                   <div>
@@ -499,7 +497,7 @@ export default function XMTTPage() {
                 <h4 className={styles.playerListTitle}>Registered Players</h4>
                 <div className={styles.playerList}>
                   {(detail.registrations || []).length === 0 ? (
-                    <div className={styles.noPlayers}>No registrations yet</div>
+                    <div className={styles.noPlayers}>No Registrations Yet</div>
                   ) : (
                     (detail.registrations || []).map((r, i) => (
                       <div key={r.user_id || i} className={styles.playerRow}>
@@ -513,7 +511,7 @@ export default function XMTTPage() {
                 </div>
               </>
             ) : (
-              <div className={styles.noSelection}>Select a tournament</div>
+              <div className={styles.noSelection}>Select A Tournament</div>
             )}
           </div>
         )}

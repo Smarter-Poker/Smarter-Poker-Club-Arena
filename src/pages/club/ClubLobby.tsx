@@ -467,9 +467,9 @@ export default function ClubLobby() {
   if (!club) {
     return (
       <div className="club-lobby error">
-        <h2>Club not found</h2>
+        <h2>Club Not Found</h2>
         <Link to="/" className="btn btn-primary">
-          Back to Home
+          Back To Home
         </Link>
       </div>
     );
@@ -674,7 +674,7 @@ export default function ClubLobby() {
         {totalGames === 0 && (
           <div className="empty-state">
             <span className="empty-icon">♠</span>
-            <p>No games available{searchQuery ? ` matching "${searchQuery}"` : ''}</p>
+            <p>No Games Available{searchQuery ? ` matching "${searchQuery}"` : ''}</p>
             <p className="empty-hint">
               {hasAdminAccess
                 ? 'Create a table to get started!'
@@ -748,7 +748,7 @@ function TournamentCard({ tournament }: { tournament: Tournament }) {
       </div>
       <div className="card-body">
         <div className="buyin-row">
-          <span className="buyin-label">Buy-in</span>
+          <span className="buyin-label">Buy-In</span>
           {/* The advertised buy-in is the TOTAL (prize + fee), whole chips. */}
           <span className="buyin-amount">
             {formatBuyInShort(tournament.buy_in_amount || 0, (tournament as any).buy_in_fee)}
@@ -821,7 +821,7 @@ function TableCardItem({ table }: { table: PokerTable }) {
         <h3 className="table-name">{table.name}</h3>
         <div className="stakes">{table.stakes}</div>
         <div className="players-count">
-          {displayCount}/{table.max_players} players
+          {displayCount}/{table.max_players} Players
         </div>
       </div>
       <div className="card-footer">

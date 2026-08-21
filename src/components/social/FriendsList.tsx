@@ -133,7 +133,7 @@ export function FriendsList({
       {/* List */}
       <div className="friends-content">
         {friends.length === 0 ? (
-          <div className="friends-empty">No friends yet. Add some!</div>
+          <div className="friends-empty">No Friends Yet. Add Some!</div>
         ) : (
           <>
             {/* Online Section */}
@@ -252,7 +252,7 @@ function FriendItem({
 
         {showMenu && (
           <div className="friend-dropdown">
-            <button onClick={() => onInvite(friend.id)}>Invite to Table</button>
+            <button onClick={() => onInvite(friend.id)}>Invite To Table</button>
             <button onClick={() => onRemove(friend.id)} className="danger">
               Remove Friend
             </button>

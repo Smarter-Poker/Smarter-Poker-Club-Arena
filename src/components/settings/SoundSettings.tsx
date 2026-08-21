@@ -153,7 +153,7 @@ export const SoundSettings: React.FC<SoundSettingsProps> = ({ onChange }) => {
         <h4>Sound Events</h4>
 
         <label className="toggle-row">
-          <span>Action Sounds (fold, bet, raise)</span>
+          <span>Action Sounds (Fold, Bet, Raise)</span>
           <input
             type="checkbox"
             checked={config.enableActionSounds}
@@ -197,7 +197,7 @@ export const SoundSettings: React.FC<SoundSettingsProps> = ({ onChange }) => {
         </label>
 
         <label className="toggle-row">
-          <span>Event Sounds (bomb pot, jackpot, bounty)</span>
+          <span>Event Sounds (Bomb Pot, Jackpot, Bounty)</span>
           <input
             type="checkbox"
             checked={config.enableEventSounds}

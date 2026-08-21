@@ -1747,6 +1747,9 @@ class TournamentService {
     // 'addon' category has never been written.)
     let rebuyTotal = 0;
     let addonTotal = 0;
+    // How many rebuys/re-entries were bought, so a bounty event can take its
+    // head value out of each one the way registration does.
+    let rebuyEntryCount = 0;
     try {
       const { data: rebuyTxns } = await supabase
         .from('wallet_transactions')
@@ -1761,6 +1764,7 @@ class TournamentService {
             addonTotal += Math.round(gross);
           } else {
             rebuyTotal += Math.round(gross);
+            rebuyEntryCount += 1;
           }
         }
       }
@@ -1803,7 +1807,28 @@ class TournamentService {
     // 40 trunc->round fixes on the payout side. Whole chips (Dan 2026-08-20):
     // every contributing term is whole, and legacy decimal buy_in_amount rows
     // are rounded rather than carried into a decimal pool.
-    const calculatedPool = Math.round((entryCount || 0) * buyIn + rebuyTotal + addonTotal);
+    // BOUNTY MONEY IS NOT PRIZE MONEY (Dan 2026-08-21).
+    //
+    // "20 buy-in, 10 bounty: 10 to the bounty pool, 8 to the prize pool, 2 for
+    // rake." buy_in_amount holds the post-rake half of that price (18 of the
+    // 20), so counting it whole credited the prize pool with the 10 already
+    // sitting on players' heads - the same chips promised twice, once as prize
+    // money and once as a bounty. fn_tournament_entry_split has always charged
+    // and split it correctly at registration; only this recalculation
+    // double-counted it.
+    const isBountyEvent = !!(
+      tournament.is_bounty ||
+      tournament.is_pko ||
+      tournament.is_mystery_bounty
+    );
+    const bountyPerEntry = isBountyEvent
+      ? Math.max(0, Math.round(Number(tournament.bounty_amount) || 0))
+      : 0;
+    const prizePerEntry = Math.max(0, buyIn - bountyPerEntry);
+    // A rebuy buys a head too, so its bounty share leaves the prize pool as
+    // well. rebuyTotal is already net of rake by this point.
+    const rebuyPrize = Math.max(0, rebuyTotal - bountyPerEntry * rebuyEntryCount);
+    const calculatedPool = Math.round((entryCount || 0) * prizePerEntry + rebuyPrize + addonTotal);
     const finalPool = guarantee > 0 ? Math.max(calculatedPool, guarantee) : calculatedPool;
 
     // Update tournament

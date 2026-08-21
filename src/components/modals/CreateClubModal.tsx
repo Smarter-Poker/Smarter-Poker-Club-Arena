@@ -630,7 +630,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
               <div style={{ fontSize: '48px', marginBottom: '20px' }}>◷</div>
               <div>GENERATING LOGO...</div>
               <div style={{ fontSize: '14px', marginTop: '10px', opacity: 0.7 }}>
-                Powered by Club Arena
+                Powered By Club Arena
               </div>
             </div>
           </div>

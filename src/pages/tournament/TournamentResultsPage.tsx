@@ -423,11 +423,11 @@ export default function TournamentResultsPage() {
 
       {isLoading ? (
         <div style={{ textAlign: 'center', color: '#64748b', padding: '40px' }}>
-          Loading results...
+          Loading Results...
         </div>
       ) : tournaments.length === 0 ? (
         <div style={{ textAlign: 'center', color: '#64748b', padding: '40px' }}>
-          No completed tournaments found
+          No Completed Tournaments Found
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -498,13 +498,13 @@ export default function TournamentResultsPage() {
                     {formatAmount(t.prize_pool)} Prize Pool
                   </div>
                   <div style={{ color: '#64748b', fontSize: '11px' }}>
-                    {t.current_players} entries · {formatDuration(t.started_at, t.ended_at)}
+                    {t.current_players} Entries · {formatDuration(t.started_at, t.ended_at)}
                   </div>
                 </div>
               </div>
 
               <div style={{ color: '#475569', fontSize: '11px' }}>
-                Buy-in: {formatAmount(t.buy_in_amount)} + {formatAmount(t.buy_in_fee)} · Entries:{' '}
+                Buy-In: {formatAmount(t.buy_in_amount)} + {formatAmount(t.buy_in_fee)} · Entries:{' '}
                 {t.current_players} · Duration: {formatDuration(t.started_at, t.ended_at)} · Ended:{' '}
                 {t.ended_at ? new Date(t.ended_at).toLocaleDateString() : '-'}
               </div>
@@ -685,7 +685,7 @@ export default function TournamentResultsPage() {
                               textAlign: 'center',
                             }}
                           >
-                            No hands recorded
+                            No Hands Recorded
                           </div>
                         ) : (
                           handHistory.map((hand) => (

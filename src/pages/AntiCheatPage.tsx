@@ -608,7 +608,7 @@ export default function AntiCheatPage() {
           <h1 className={styles.title}>
             Anti-Cheat Dashboard
             {stats && stats.open_flags > 0 && (
-              <span className={styles.badgeRed}>{stats.open_flags} open</span>
+              <span className={styles.badgeRed}>{stats.open_flags} Open</span>
             )}
           </h1>
         </div>
@@ -706,7 +706,7 @@ export default function AntiCheatPage() {
               </select>
             </div>
             <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Notes (optional)</label>
+              <label className={styles.formLabel}>Notes (Optional)</label>
               <input
                 className={styles.formInput}
                 placeholder="Add review notes..."
@@ -764,7 +764,7 @@ export default function AntiCheatPage() {
                 </div>
                 <div className={styles.statCard}>
                   <div className={styles.statValueGold}>{fmt(stats.blocks_24h)}</div>
-                  <div className={styles.statLabel}>Blocks (24h)</div>
+                  <div className={styles.statLabel}>Blocks (24H)</div>
                 </div>
                 <div className={styles.statCard}>
                   <div className={styles.statValueGreen}>{fmt(stats.active_sessions)}</div>
@@ -775,7 +775,7 @@ export default function AntiCheatPage() {
               {/* Severity Breakdown */}
               {Object.keys(stats.by_severity || {}).length > 0 && (
                 <div className={styles.subsection}>
-                  <h3 className={styles.subsectionTitle}>Flags by Severity</h3>
+                  <h3 className={styles.subsectionTitle}>Flags By Severity</h3>
                   <div className={styles.statsGrid}>
                     {Object.entries(stats.by_severity).map(([sev, count]) => {
                       const st = SEVERITY_MAP[sev as Severity] || {};
@@ -801,7 +801,7 @@ export default function AntiCheatPage() {
               {/* Flags by Type */}
               {Object.keys(stats.by_type || {}).length > 0 && (
                 <div className={styles.subsection}>
-                  <h3 className={styles.subsectionTitle}>Flags by Type</h3>
+                  <h3 className={styles.subsectionTitle}>Flags By Type</h3>
                   <div className={styles.tableScroll}>
                     <table className={styles.dataTable}>
                       <thead>
@@ -828,7 +828,7 @@ export default function AntiCheatPage() {
               {stats.open_flags === 0 && (
                 <div className={styles.emptyState}>
                   <span className={styles.emptyIcon}>✓</span>
-                  <span className={styles.emptyText}>No open flags - club is clean!</span>
+                  <span className={styles.emptyText}>No Open Flags - Club Is Clean!</span>
                 </div>
               )}
             </>
@@ -857,7 +857,7 @@ export default function AntiCheatPage() {
           ) : flags.length === 0 ? (
             <div className={styles.emptyState}>
               <span className={styles.emptyIcon}>▸</span>
-              <span className={styles.emptyText}>No flags match the filter "{flagFilter}"</span>
+              <span className={styles.emptyText}>No Flags Match The Filter "{flagFilter}"</span>
             </div>
           ) : (
             <div className={styles.tableScroll}>
@@ -928,7 +928,7 @@ export default function AntiCheatPage() {
           ) : events.length === 0 ? (
             <div className={styles.emptyState}>
               <span className={styles.emptyIcon}>▦</span>
-              <span className={styles.emptyText}>No anti-cheat events recorded yet</span>
+              <span className={styles.emptyText}>No Anti-Cheat Events Recorded Yet</span>
             </div>
           ) : (
             <>
@@ -1012,14 +1012,14 @@ export default function AntiCheatPage() {
                 <div className={styles.emptyState}>
                   <span className={styles.emptyIcon}>✓</span>
                   <span className={styles.emptyText}>
-                    No suspicious chip-dumping patterns detected across {fmt(analyzedHands)} hands
+                    No Suspicious Chip-Dumping Patterns Detected Across {fmt(analyzedHands)} Hands
                   </span>
                 </div>
               ) : (
                 <>
                   <h3 className={styles.subsectionTitle}>Suspected Collusion Pairs</h3>
                   <p className={styles.subsectionDesc}>
-                    Players with one-directional chip flow above 75% threshold
+                    Players With One-Directional Chip Flow Above 75% Threshold
                   </p>
                   <div className={styles.tableScroll}>
                     <table className={styles.dataTable}>
@@ -1129,14 +1129,14 @@ export default function AntiCheatPage() {
                 <div className={styles.emptyState}>
                   <span className={styles.emptyIcon}>◎</span>
                   <span className={styles.emptyText}>
-                    No suspicious plays detected - all hands look clean!
+                    No Suspicious Plays Detected - All Hands Look Clean!
                   </span>
                 </div>
               ) : (
                 <>
                   <h3 className={styles.subsectionTitle}>Suspicious Plays</h3>
                   <p className={styles.subsectionDesc}>
-                    Players who folded strong hands on the river (possible chip-dumping signal)
+                    Players Who Folded Strong Hands On The River (Possible Chip-Dumping Signal)
                   </p>
                   <div className={styles.tableScroll}>
                     <table className={styles.dataTable}>

@@ -59,7 +59,7 @@ export default function AgentBackOffice({ agentUserId, title }: Props) {
     void load();
   }, [load]);
 
-  if (loading) return <div style={{ padding: 16, color: '#8aa' }}>Loading roster…</div>;
+  if (loading) return <div style={{ padding: 16, color: '#8aa' }}>Loading Roster…</div>;
 
   if (loadError) {
     return (
@@ -127,7 +127,7 @@ export default function AgentBackOffice({ agentUserId, title }: Props) {
               letterSpacing: 0.5,
             }}
           >
-            Week of {new Date(statement.period_start).toLocaleDateString()}
+            Week Of {new Date(statement.period_start).toLocaleDateString()}
           </div>
           <div
             style={{
@@ -175,23 +175,23 @@ export default function AgentBackOffice({ agentUserId, title }: Props) {
         }}
       >
         <span>
-          <strong style={{ color: '#e6f1f5' }}>{roster.length}</strong> players
+          <strong style={{ color: '#e6f1f5' }}>{roster.length}</strong> Players
         </span>
         <span>
-          <strong style={{ color: '#37e7c7' }}>{seated}</strong> seated now
+          <strong style={{ color: '#37e7c7' }}>{seated}</strong> Seated Now
         </span>
         <span>
-          rake <strong style={{ color: '#e6f1f5' }}>{money(totalRake)}</strong>
+          Rake <strong style={{ color: '#e6f1f5' }}>{money(totalRake)}</strong>
         </span>
         <span>
-          net{' '}
+          Net{' '}
           <strong style={{ color: totalNet > 0 ? '#ff7676' : '#37e7c7' }}>{money(totalNet)}</strong>
         </span>
       </div>
 
       {/* ROSTER */}
       {roster.length === 0 ? (
-        <p style={{ color: '#8aa' }}>No players assigned yet.</p>
+        <p style={{ color: '#8aa' }}>No Players Assigned Yet.</p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
@@ -200,10 +200,10 @@ export default function AgentBackOffice({ agentUserId, title }: Props) {
                 <th style={{ padding: 8 }}>Player</th>
                 <th style={{ padding: 8 }}>Club</th>
                 <Th field="buyins" sort={sort} onSort={setSort}>
-                  Buy-ins
+                  Buy-Ins
                 </Th>
                 <Th field="cashouts" sort={sort} onSort={setSort}>
-                  Cash-outs
+                  Cash-Outs
                 </Th>
                 <Th field="net_result" sort={sort} onSort={setSort}>
                   Net
@@ -263,7 +263,7 @@ export default function AgentBackOffice({ agentUserId, title }: Props) {
         </div>
       )}
       <p style={{ color: '#66787f', fontSize: '0.78rem', margin: 0 }}>
-        Net is from the house side - red means the player is up and the loss settles against you.
+        Net Is From The House Side - Red Means The Player Is Up And The Loss Settles Against You.
       </p>
     </div>
   );

@@ -327,7 +327,7 @@ export function AvatarGallery({
         <div className="ag-content">
           {activeTab !== 'upload' ? (
             loading ? (
-              <div className="ag-empty">Loading avatars...</div>
+              <div className="ag-empty">Loading Avatars...</div>
             ) : filteredAvatars.length === 0 ? (
               <div className="ag-empty">
                 {activeTab === 'custom'
@@ -393,8 +393,8 @@ export function AvatarGallery({
                   />
                 ) : (
                   <>
-                    <span className="ag-upload__text">Click to upload a photo</span>
-                    <span className="ag-upload__hint">Max 5MB, JPG PNG or WebP</span>
+                    <span className="ag-upload__text">Click To Upload A Photo</span>
+                    <span className="ag-upload__hint">Max 5MB, JPG PNG Or WebP</span>
                   </>
                 )}
               </div>

@@ -111,7 +111,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
     return (
       <div className={styles.analyticsBlock}>
         <button className={styles.historyToggle} onClick={() => setOpen(true)}>
-          Purchase ledger &amp; refunds
+          Purchase Ledger &amp; Refunds
         </button>
       </div>
     );
@@ -120,7 +120,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
   return (
     <div className={styles.analyticsBlock}>
       <div className={styles.analyticsHeader}>
-        <h3 className={styles.createTitle}>Purchase ledger</h3>
+        <h3 className={styles.createTitle}>Purchase Ledger</h3>
         <button className={styles.btnGhost} onClick={() => setOpen(false)}>
           Hide
         </button>
@@ -141,11 +141,11 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
 
       {loading && rows.length === 0 ? (
         <div className={styles.emptyState}>
-          <span className={styles.emptyText}>Loading purchases...</span>
+          <span className={styles.emptyText}>Loading Purchases...</span>
         </div>
       ) : error && rows.length === 0 ? (
         <div className={styles.emptyState}>
-          <span className={styles.emptyText}>Could not load purchases.</span>
+          <span className={styles.emptyText}>Could Not Load Purchases.</span>
           <button className={styles.emptyButton} onClick={load}>
             Retry
           </button>
@@ -229,7 +229,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
               Previous
             </button>
             <span>
-              {offset + 1}-{offset + rows.length} of {total}
+              {offset + 1}-{offset + rows.length} Of {total}
             </span>
             <button
               className={styles.inlineLink}

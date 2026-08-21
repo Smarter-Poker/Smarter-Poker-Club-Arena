@@ -93,7 +93,7 @@ export const RebuyModal: React.FC<RebuyModalProps> = ({
           <div className="rm-details">
             <div className="rm-detail-row">
               <span className="rm-detail-label">Rebuy Cost</span>
-              <span className="rm-detail-value">{money(rebuyCost)} chips</span>
+              <span className="rm-detail-value">{money(rebuyCost)} Chips</span>
             </div>
             <div className="rm-detail-row">
               <span className="rm-detail-label">Chips Received</span>

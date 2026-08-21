@@ -400,7 +400,7 @@ export default function PlayerWalletPage() {
             }}
           >
             <span>◈</span>
-            <span>{balances.PLAYER.locked.toLocaleString()} chips in escrow</span>
+            <span>{balances.PLAYER.locked.toLocaleString()} Chips In Escrow</span>
             <span style={{ marginLeft: 'auto', fontSize: '0.65rem', opacity: 0.7 }}>
               Funds Secured
             </span>
@@ -479,7 +479,7 @@ export default function PlayerWalletPage() {
                 fontSize: '0.85rem',
               }}
             >
-              Move funds between your wallets instantly
+              Move Funds Between Your Wallets Instantly
             </p>
 
             <div className="transfer-form">

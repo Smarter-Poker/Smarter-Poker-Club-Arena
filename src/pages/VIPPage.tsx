@@ -341,7 +341,7 @@ export default function VIPPage() {
               >
                 Diamond Member
               </span>
-              <span className="vip-card-expiry">Included with Club Arena</span>
+              <span className="vip-card-expiry">Included With Club Arena</span>
             </div>
             <button className="vip-extend-btn" onClick={() => setShowInfoModal(true)}>
               View Benefits
@@ -437,7 +437,7 @@ export default function VIPPage() {
         <section className="vip-section">
           <h3> Buy Features</h3>
           <p className="section-desc">
-            Not a Diamond member? Purchase features individually with diamonds.
+            Not A Diamond Member? Purchase Features Individually With Diamonds.
           </p>
 
           <div className="purchase-grid">

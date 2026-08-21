@@ -133,7 +133,7 @@ export function ClubAnnouncementsList({ clubId, isAdmin, limit = 10 }: ClubAnnou
       </div>
 
       {announcements.length === 0 ? (
-        <div className="empty-state">No announcements</div>
+        <div className="empty-state">No Announcements</div>
       ) : (
         <div className="announcements">
           {announcements.map((ann, i) => (

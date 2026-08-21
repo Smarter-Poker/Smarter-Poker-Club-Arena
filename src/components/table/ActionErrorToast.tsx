@@ -61,7 +61,7 @@ export const ActionErrorToast: React.FC<ActionErrorToastProps> = ({
           {hint?.suggestedAction && hint?.suggestedAmount !== undefined && onApplyHint && (
             <button className="toast-hint-btn" onClick={handleApply}>
               <span>
-                Snap to {hint.suggestedAction.toUpperCase()} {hint.suggestedAmount}
+                Snap To {hint.suggestedAction.toUpperCase()} {hint.suggestedAmount}
               </span>
               <ChevronsRight size={14} />
             </button>

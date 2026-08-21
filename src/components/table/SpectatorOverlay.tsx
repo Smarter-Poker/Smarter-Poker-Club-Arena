@@ -94,7 +94,7 @@ export function SpectatorOverlay({
 
           <div className="so-panel__list">
             {spectators.length === 0 ? (
-              <div className="so-panel__empty">No spectators</div>
+              <div className="so-panel__empty">No Spectators</div>
             ) : (
               spectators.map((spec) => (
                 <div key={spec.userId} className="so-viewer">

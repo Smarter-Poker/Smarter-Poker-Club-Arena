@@ -631,7 +631,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
     <div className={styles.overlay} onClick={handleClose}>
       <div className={styles.modalContainer} onClick={(e) => e.stopPropagation()}>
         <div className={styles.modalContent}>
-          <h2 className={styles.title}>Find a Player</h2>
+          <h2 className={styles.title}>Find A Player</h2>
 
           {/* Search input with auto-suggest */}
           <div className={styles.searchSection}>
@@ -739,7 +739,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
           {/* Sort controls — show when we have multiple results */}
           {searchResults.length > 1 && (
             <div className={styles.sortControls}>
-              <span className={styles.sortLabel}>Sort by:</span>
+              <span className={styles.sortLabel}>Sort By:</span>
               <button
                 className={`${styles.sortBtn} ${sortField === 'display_name' ? styles.sortBtnActive : ''}`}
                 onClick={() => handleSortChange('display_name')}
@@ -765,7 +765,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
             {notFound && !error && (
               <div className={styles.notFoundMessage}>
                 <span className={styles.notFoundIcon}></span>
-                <p>No matching players found in your network</p>
+                <p>No Matching Players Found In Your Network</p>
               </div>
             )}
 
@@ -843,7 +843,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
 
             {!error && !notFound && searchResults.length === 0 && !isSearching && (
               <div className={styles.hintMessage}>
-                <p>Search for a player to see their active tables</p>
+                <p>Search For A Player To See Their Active Tables</p>
               </div>
             )}
           </div>

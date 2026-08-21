@@ -102,7 +102,7 @@ export default function WaitlistBanner() {
                 lineHeight: 1.3,
               }}
             >
-              You are{' '}
+              You Are{' '}
               <span
                 style={{
                   color: '#00d4ff',
@@ -111,7 +111,7 @@ export default function WaitlistBanner() {
               >
                 #{entry.position}
               </span>{' '}
-              in line
+              In Line
             </div>
             <div
               style={{

@@ -228,7 +228,7 @@ export function ReplayActions({
   if (streets.length === 0) {
     return (
       <div className="replay-actions replay-actions--empty">
-        <span className="replay-actions__empty-text">No actions to display</span>
+        <span className="replay-actions__empty-text">No Actions To Display</span>
       </div>
     );
   }

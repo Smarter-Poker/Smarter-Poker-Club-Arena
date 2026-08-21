@@ -88,7 +88,7 @@ export function TableLoader() {
   return (
     <div className="table-loader">
       <LoadingSpinner size="large" variant="chips" />
-      <p className="table-loader-message">Setting up table...</p>
+      <p className="table-loader-message">Setting Up Table...</p>
     </div>
   );
 }

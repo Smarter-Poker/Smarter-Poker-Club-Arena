@@ -75,9 +75,9 @@ export function StreamerMode({ isEnabled, onToggle }: StreamerModeProps) {
             <label>Stream Delay</label>
             <select value={delay} onChange={(e) => setDelay(Number(e.target.value))}>
               <option value={0}>None</option>
-              <option value={60}>1 min</option>
-              <option value={120}>2 mins</option>
-              <option value={300}>5 mins</option>
+              <option value={60}>1 Min</option>
+              <option value={120}>2 Mins</option>
+              <option value={300}>5 Mins</option>
             </select>
           </div>
         </div>

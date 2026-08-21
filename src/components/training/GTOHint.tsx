@@ -63,7 +63,7 @@ export const GTOHint: React.FC<GTOHintProps> = ({
           )}
 
           <div className="hint-footer">
-            <span> Mix strategies at this frequency</span>
+            <span> Mix Strategies At This Frequency</span>
           </div>
         </div>
       )}

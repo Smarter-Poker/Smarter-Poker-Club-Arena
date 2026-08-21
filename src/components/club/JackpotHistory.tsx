@@ -104,7 +104,7 @@ export function JackpotHistory({
                     <td className="col-player">
                       <span className="player-highlight">{hit.loserName}</span>
                       <span className="sub-text">
-                        won {currency}
+                        Won {currency}
                         {hit.winnerShare.toLocaleString()}
                       </span>
                     </td>
@@ -126,7 +126,7 @@ export function JackpotHistory({
               ) : (
                 <tr>
                   <td colSpan={6} className="table-empty">
-                    No jackpot hits yet. Keep grinding!
+                    No Jackpot Hits Yet. Keep Grinding!
                   </td>
                 </tr>
               )}

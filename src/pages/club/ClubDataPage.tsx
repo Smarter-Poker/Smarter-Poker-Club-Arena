@@ -181,21 +181,53 @@ function badgeClass(row: SnapshotRow): string {
 function rowsToCsv(rows: SnapshotRow[]): string {
   const esc = csvEscape;
   const head = [
-    'started_at', 'kind', 'name', 'variant', 'blinds', 'rake_percent',
-    'hands', 'players', 'fee', 'winnings',
+    'started_at',
+    'kind',
+    'name',
+    'variant',
+    'blinds',
+    'rake_percent',
+    'hands',
+    'players',
+    'fee',
+    'winnings',
   ];
   const lines = rows.map((r) =>
-    [r.started_at, r.kind, r.name, r.variant, r.blinds, r.rake_percent,
-      r.hands, r.players, r.fee, r.winnings].map(esc).join(','));
+    [
+      r.started_at,
+      r.kind,
+      r.name,
+      r.variant,
+      r.blinds,
+      r.rake_percent,
+      r.hands,
+      r.players,
+      r.fee,
+      r.winnings,
+    ]
+      .map(esc)
+      .join(',')
+  );
   return [head.join(','), ...lines].join('\n');
 }
 
 function playersToCsv(rows: PlayerRow[]): string {
   const esc = csvEscape;
-  const head = ['user_id', 'username', 'is_horse', 'hands', 'rake', 'net', 'cash_net', 'tournament_net'];
+  const head = [
+    'user_id',
+    'username',
+    'is_horse',
+    'hands',
+    'rake',
+    'net',
+    'cash_net',
+    'tournament_net',
+  ];
   const lines = rows.map((r) =>
     [r.user_id, r.username, r.is_horse, r.hands, r.rake, r.net, r.cash_net, r.tournament_net]
-      .map(esc).join(','));
+      .map(esc)
+      .join(',')
+  );
   return [head.join(','), ...lines].join('\n');
 }
 
@@ -237,7 +269,9 @@ export default function ClubDataPage() {
   const cancelledRef = useRef(false);
   useEffect(() => {
     cancelledRef.current = false;
-    return () => { cancelledRef.current = true; };
+    return () => {
+      cancelledRef.current = true;
+    };
   }, []);
 
   // debounce the search box so typing does not fire an RPC per keystroke
@@ -257,8 +291,14 @@ export default function ClubDataPage() {
   // resolve a club code or slug into a uuid once
   useEffect(() => {
     let cancelled = false;
-    if (!clubParam) { setClubUuid(null); return; }
-    if (isUUID(clubParam)) { setClubUuid(clubParam); return; }
+    if (!clubParam) {
+      setClubUuid(null);
+      return;
+    }
+    if (isUUID(clubParam)) {
+      setClubUuid(clubParam);
+      return;
+    }
     resolveClubUUID(clubParam)
       .then((uuid) => {
         if (cancelled) return;
@@ -280,7 +320,9 @@ export default function ClubDataPage() {
         setError('Club not found.');
         setLoading(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [clubParam]);
 
   // Every piece of per-club state is cleared the moment the club changes.
@@ -301,54 +343,67 @@ export default function ClubDataPage() {
   useEffect(() => {
     if (!clubUuid) return;
     let cancelled = false;
-    supabase.from('clubs').select('name').eq('id', clubUuid).maybeSingle()
-      .then(({ data }) => { if (!cancelled) setClubName(data?.name || ''); });
-    return () => { cancelled = true; };
+    supabase
+      .from('clubs')
+      .select('name')
+      .eq('id', clubUuid)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setClubName(data?.name || '');
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [clubUuid]);
 
-  const load = useCallback(async (showSpinner: boolean) => {
-    if (!clubUuid) return;
-    const myVersion = ++loadVersion.current;
-    const stale = () => cancelledRef.current || loadVersion.current !== myVersion;
-    if (showSpinner) setLoading(true);
-    try {
-      const { data, error: rpcError } = await supabase.rpc('ca_club_data_snapshot', {
-        p_club_id: clubUuid,
-        p_start: startDate,
-        p_end: endDate,
-        p_game: game,
-        p_stakes: stakes,
-        p_search: search || null,
-        p_limit: 200,
-      });
-      if (stale()) return;
-      if (rpcError) {
-        if (isAuthzError(rpcError)) {
-          setError('You need to be an owner or admin of this club to see its data.');
-        } else {
-          reportError(rpcError, 'ClubDataPage.snapshot_rpc');
+  const load = useCallback(
+    async (showSpinner: boolean) => {
+      if (!clubUuid) return;
+      const myVersion = ++loadVersion.current;
+      const stale = () => cancelledRef.current || loadVersion.current !== myVersion;
+      if (showSpinner) setLoading(true);
+      try {
+        const { data, error: rpcError } = await supabase.rpc('ca_club_data_snapshot', {
+          p_club_id: clubUuid,
+          p_start: startDate,
+          p_end: endDate,
+          p_game: game,
+          p_stakes: stakes,
+          p_search: search || null,
+          p_limit: 200,
+        });
+        if (stale()) return;
+        if (rpcError) {
+          if (isAuthzError(rpcError)) {
+            setError('You need to be an owner or admin of this club to see its data.');
+          } else {
+            reportError(rpcError, 'ClubDataPage.snapshot_rpc');
+            setError('Could not load club data.');
+          }
+          setSnapshot(null);
+        } else if (!data || !Array.isArray((data as Snapshot).rows)) {
+          // A null or shapeless payload used to be stored as success, leaving a
+          // page with no data, no skeleton and no message.
+          reportError(new Error('snapshot payload was empty'), 'ClubDataPage.snapshot_shape');
           setError('Could not load club data.');
+          setSnapshot(null);
+        } else {
+          setError(null);
+          setSnapshot(data as Snapshot);
         }
-        setSnapshot(null);
-      } else if (!data || !Array.isArray((data as Snapshot).rows)) {
-        // A null or shapeless payload used to be stored as success, leaving a
-        // page with no data, no skeleton and no message.
-        reportError(new Error('snapshot payload was empty'), 'ClubDataPage.snapshot_shape');
-        setError('Could not load club data.');
-        setSnapshot(null);
-      } else {
-        setError(null);
-        setSnapshot(data as Snapshot);
+      } finally {
+        // Only the newest request may clear the skeleton. A background poll that
+        // finished first used to pull it out from under a load the user had just
+        // started, leaving stale rows looking settled.
+        if (!stale()) setLoading(false);
       }
-    } finally {
-      // Only the newest request may clear the skeleton. A background poll that
-      // finished first used to pull it out from under a load the user had just
-      // started, leaving stale rows looking settled.
-      if (!stale()) setLoading(false);
-    }
-  }, [clubUuid, startDate, endDate, game, stakes, search]);
+    },
+    [clubUuid, startDate, endDate, game, stakes, search]
+  );
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => {
+    void load(true);
+  }, [load]);
 
   // Players are fetched only when that tab is open. It is a second scan over
   // the same window and there is no reason to pay for it on every visit.
@@ -405,16 +460,24 @@ export default function ClubDataPage() {
   // near-real-time: re-poll on an interval and whenever the tab regains focus
   useEffect(() => {
     if (!clubUuid) return;
-    const id = setInterval(() => { void load(false); }, REFRESH_MS);
-    const onVisible = () => { if (document.visibilityState === 'visible') void load(false); };
+    const id = setInterval(() => {
+      void load(false);
+    }, REFRESH_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load(false);
+    };
     document.addEventListener('visibilitychange', onVisible);
-    return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible); };
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [clubUuid, load]);
 
   useEffect(() => {
     if (!clubUuid) return;
     let cancelled = false;
-    supabase.rpc('ca_club_union_invoices', { p_club_id: clubUuid, p_limit: 8 })
+    supabase
+      .rpc('ca_club_union_invoices', { p_club_id: clubUuid, p_limit: 8 })
       .then(({ data, error: invErr }) => {
         if (cancelled) return;
         if (invErr) {
@@ -424,16 +487,21 @@ export default function ClubDataPage() {
           setInvoices((data as InvoiceRow[]) || []);
         }
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [clubUuid]);
 
-  const shiftRange = useCallback((direction: -1 | 1) => {
-    const d = new Date(`${endDate}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + direction * preset);
-    const next = toISODate(d);
-    const today = toISODate(new Date());
-    setEndDate(next > today ? today : next);
-  }, [endDate, preset]);
+  const shiftRange = useCallback(
+    (direction: -1 | 1) => {
+      const d = new Date(`${endDate}T00:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + direction * preset);
+      const next = toISODate(d);
+      const today = toISODate(new Date());
+      setEndDate(next > today ? today : next);
+    },
+    [endDate, preset]
+  );
 
   // The screen holds one page of rows. Exporting that silently would hand
   // someone a CSV of 200 games labelled as the period's data when the period
@@ -501,8 +569,12 @@ export default function ClubDataPage() {
     const v = Math.round(Number(pct) * 10) / 10;
     const cls = v > 0 ? styles.deltaUp : v < 0 ? styles.deltaDown : styles.deltaFlat;
     return (
-      <div className={`${styles.delta} ${cls}`} title={prevRange ? `previous period ${prevRange.start} to ${prevRange.end}` : undefined}>
-        {v > 0 ? '+' : ''}{v}% vs prev {preset}d
+      <div
+        className={`${styles.delta} ${cls}`}
+        title={prevRange ? `previous period ${prevRange.start} to ${prevRange.end}` : undefined}
+      >
+        {v > 0 ? '+' : ''}
+        {v}% Vs Prev {preset}d
       </div>
     );
   };
@@ -512,20 +584,36 @@ export default function ClubDataPage() {
     const v = Number(abs);
     const cls = v > 0 ? styles.deltaUp : v < 0 ? styles.deltaDown : styles.deltaFlat;
     return (
-      <div className={`${styles.delta} ${cls}`} title={prevRange ? `previous period ${prevRange.start} to ${prevRange.end}` : undefined}>
-        {v > 0 ? '+' : ''}{money(v)} vs prev {preset}d
+      <div
+        className={`${styles.delta} ${cls}`}
+        title={prevRange ? `previous period ${prevRange.start} to ${prevRange.end}` : undefined}
+      >
+        {v > 0 ? '+' : ''}
+        {money(v)} Vs Prev {preset}d
       </div>
     );
   };
 
   if (isHydrating) {
-    return <div className={styles.page}><div className={styles.state}>Loading...</div></div>;
+    return (
+      <div className={styles.page}>
+        <div className={styles.state}>Loading...</div>
+      </div>
+    );
   }
   if (!user) {
-    return <div className={styles.page}><div className={styles.state}>Sign in to view club data.</div></div>;
+    return (
+      <div className={styles.page}>
+        <div className={styles.state}>Sign In To View Club Data.</div>
+      </div>
+    );
   }
   if (!clubParam) {
-    return <div className={styles.page}><div className={styles.state}>No club selected.</div></div>;
+    return (
+      <div className={styles.page}>
+        <div className={styles.state}>No Club Selected.</div>
+      </div>
+    );
   }
 
   return (
@@ -543,7 +631,9 @@ export default function ClubDataPage() {
         <button
           type="button"
           className={styles.headerBtn}
-          onClick={() => { void exportCsv(); }}
+          onClick={() => {
+            void exportCsv();
+          }}
           disabled={tab === 'players' ? !sortedPlayers.length : !snapshot?.rows?.length}
           aria-label="Export as CSV"
           title="Export as CSV"
@@ -621,14 +711,18 @@ export default function ClubDataPage() {
           {pctNote(delta?.games_pct)}
         </div>
         <div className={styles.tile}>
-          <div className={`${styles.tileValue} ${Number(summary?.total_winnings || 0) < 0 ? styles.neg : styles.pos}`}>
+          <div
+            className={`${styles.tileValue} ${Number(summary?.total_winnings || 0) < 0 ? styles.neg : styles.pos}`}
+          >
             {money(summary?.total_winnings)}
           </div>
           <div className={styles.tileLabel}>Total Winnings</div>
           {absNote(delta?.winnings_abs)}
         </div>
         <div className={styles.tile}>
-          <div className={`${styles.tileValue} ${Number(summary?.mtt_winnings || 0) < 0 ? styles.neg : styles.pos}`}>
+          <div
+            className={`${styles.tileValue} ${Number(summary?.mtt_winnings || 0) < 0 ? styles.neg : styles.pos}`}
+          >
             {money(summary?.mtt_winnings)}
           </div>
           <div className={styles.tileLabel}>MTT Winnings</div>
@@ -652,12 +746,14 @@ export default function ClubDataPage() {
         >
           <div className={styles.invoiceTop}>
             <span className={styles.invoiceLabel}>
-              {latestInvoice.direction === 'union owes club' ? 'Union owes you' : 'Weekly square-up'}
+              {latestInvoice.direction === 'union owes club'
+                ? 'Union owes you'
+                : 'Weekly square-up'}
             </span>
             <span className={styles.invoiceAmount}>{money(latestInvoice.amount)}</span>
           </div>
           <div className={styles.invoiceMeta}>
-            {String(latestInvoice.period_start || '').slice(0, 10)} to{' '}
+            {String(latestInvoice.period_start || '').slice(0, 10)} To{' '}
             {String(latestInvoice.period_end || '').slice(0, 10)}
             {latestInvoice.due_at ? ` - due ${String(latestInvoice.due_at).slice(0, 10)}` : ''}
             {latestInvoice.status ? ` - ${latestInvoice.status}` : ''}
@@ -692,117 +788,138 @@ export default function ClubDataPage() {
         </div>
       )}
 
-      {tab === 'games' && (<>
-      <div className={styles.searchRow}>
-        <input
-          className={styles.searchInput}
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Type in the name of the game, creator ID or player ID"
-          aria-label="Search games"
-        />
-      </div>
+      {tab === 'games' && (
+        <>
+          <div className={styles.searchRow}>
+            <input
+              className={styles.searchInput}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Type in the name of the game, creator ID or player ID"
+              aria-label="Search games"
+            />
+          </div>
 
-      <div className={styles.filterRow} role="tablist" aria-label="Game type">
-        {GAME_FILTERS.map((f) => (
-          <button
-            key={f.id}
-            type="button"
-            role="tab"
-            aria-selected={game === f.id}
-            className={`${styles.chip} ${game === f.id ? styles.active : ''}`}
-            onClick={() => setGame(f.id)}
+          <div className={styles.filterRow} role="tablist" aria-label="Game type">
+            {GAME_FILTERS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                role="tab"
+                aria-selected={game === f.id}
+                className={`${styles.chip} ${game === f.id ? styles.active : ''}`}
+                onClick={() => setGame(f.id)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          <div
+            className={`${styles.filterRow} ${styles.stakesRow}`}
+            role="tablist"
+            aria-label="Stakes"
           >
-            {f.label}
-          </button>
-        ))}
-      </div>
+            {STAKES_FILTERS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                role="tab"
+                aria-selected={stakes === f.id}
+                className={`${styles.chip} ${stakes === f.id ? styles.active : ''}`}
+                onClick={() => setStakes((cur) => (cur === f.id ? 'ALL' : f.id))}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
 
-      <div className={`${styles.filterRow} ${styles.stakesRow}`} role="tablist" aria-label="Stakes">
-        {STAKES_FILTERS.map((f) => (
-          <button
-            key={f.id}
-            type="button"
-            role="tab"
-            aria-selected={stakes === f.id}
-            className={`${styles.chip} ${stakes === f.id ? styles.active : ''}`}
-            onClick={() => setStakes((cur) => (cur === f.id ? 'ALL' : f.id))}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
+          <div className={styles.list}>
+            {loading && !snapshot && !error && (
+              <>
+                <div className={styles.skeletonRow} />
+                <div className={styles.skeletonRow} />
+                <div className={styles.skeletonRow} />
+              </>
+            )}
 
-      <div className={styles.list}>
-        {loading && !snapshot && !error && (
-          <>
-            <div className={styles.skeletonRow} />
-            <div className={styles.skeletonRow} />
-            <div className={styles.skeletonRow} />
-          </>
-        )}
+            {error && <div className={`${styles.state} ${styles.error}`}>{error}</div>}
 
-        {error && <div className={`${styles.state} ${styles.error}`}>{error}</div>}
+            {!loading && !error && snapshot && snapshot.rows.length === 0 && (
+              <div className={styles.state}>No Games In This Period.</div>
+            )}
 
-        {!loading && !error && snapshot && snapshot.rows.length === 0 && (
-          <div className={styles.state}>No games in this period.</div>
-        )}
+            {!error &&
+              snapshot?.rows.map((row) => {
+                const started = row.started_at ? new Date(row.started_at) : null;
+                const hhmm = started
+                  ? `${String(started.getUTCHours()).padStart(2, '0')}:${String(started.getUTCMinutes()).padStart(2, '0')}`
+                  : '--:--';
+                const ddmm = started
+                  ? `${String(started.getUTCDate()).padStart(2, '0')}/${String(started.getUTCMonth() + 1).padStart(2, '0')}`
+                  : '';
+                const idLabel =
+                  row.creator_name ||
+                  (row.creator_id ? row.creator_id.slice(0, 8) : row.id.slice(0, 8));
 
-        {!error && snapshot?.rows.map((row) => {
-          const started = row.started_at ? new Date(row.started_at) : null;
-          const hhmm = started
-            ? `${String(started.getUTCHours()).padStart(2, '0')}:${String(started.getUTCMinutes()).padStart(2, '0')}`
-            : '--:--';
-          const ddmm = started
-            ? `${String(started.getUTCDate()).padStart(2, '0')}/${String(started.getUTCMonth() + 1).padStart(2, '0')}`
-            : '';
-          const idLabel = row.creator_name || (row.creator_id ? row.creator_id.slice(0, 8) : row.id.slice(0, 8));
+                return (
+                  <div className={styles.row} key={`${row.kind}-${row.id}`}>
+                    <div className={styles.rowTime}>
+                      <div className={styles.rowTimeMain}>{hhmm}</div>
+                      <div className={styles.rowTimeSub}>{ddmm}</div>
+                    </div>
 
-          return (
-            <div className={styles.row} key={`${row.kind}-${row.id}`}>
-              <div className={styles.rowTime}>
-                <div className={styles.rowTimeMain}>{hhmm}</div>
-                <div className={styles.rowTimeSub}>{ddmm}</div>
-              </div>
+                    <div className={styles.avatarWrap}>
+                      {row.creator_avatar ? (
+                        <img
+                          className={styles.avatar}
+                          src={row.creator_avatar}
+                          alt=""
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className={styles.avatarFallback} aria-hidden="true">
+                          {(row.name || '?').slice(0, 1).toUpperCase()}
+                        </div>
+                      )}
+                      <div className={styles.rowId} title={idLabel}>
+                        {idLabel}
+                      </div>
+                    </div>
 
-              <div className={styles.avatarWrap}>
-                {row.creator_avatar ? (
-                  <img className={styles.avatar} src={row.creator_avatar} alt="" loading="lazy" />
-                ) : (
-                  <div className={styles.avatarFallback} aria-hidden="true">
-                    {(row.name || '?').slice(0, 1).toUpperCase()}
+                    <div className={styles.rowMain}>
+                      <div className={styles.rowName} title={row.name}>
+                        {row.name}
+                      </div>
+                      <div className={styles.rowTags}>
+                        {row.rake_percent !== null && (
+                          <span className={styles.rakePct}>{Number(row.rake_percent)}%</span>
+                        )}
+                        <span className={badgeClass(row)}>
+                          {row.kind === 'CASH' ? row.variant : row.kind}
+                        </span>
+                      </div>
+                      {row.blinds && <div className={styles.rowBlinds}>Blinds: {row.blinds}</div>}
+                      {!row.blinds && row.players > 0 && (
+                        <div className={styles.rowBlinds}>{compactInt(row.players)} Players</div>
+                      )}
+                    </div>
+
+                    <div className={styles.rowFee}>
+                      <div className={styles.rowFeeValue}>{money(row.fee)}</div>
+                      <div className={styles.rowFeeLabel}>Fee</div>
+                      <div
+                        className={`${styles.rowWin} ${row.winnings < 0 ? styles.neg : styles.pos}`}
+                      >
+                        {money(row.winnings)}
+                      </div>
+                    </div>
                   </div>
-                )}
-                <div className={styles.rowId} title={idLabel}>{idLabel}</div>
-              </div>
-
-              <div className={styles.rowMain}>
-                <div className={styles.rowName} title={row.name}>{row.name}</div>
-                <div className={styles.rowTags}>
-                  {row.rake_percent !== null && (
-                    <span className={styles.rakePct}>{Number(row.rake_percent)}%</span>
-                  )}
-                  <span className={badgeClass(row)}>{row.kind === 'CASH' ? row.variant : row.kind}</span>
-                </div>
-                {row.blinds && <div className={styles.rowBlinds}>Blinds: {row.blinds}</div>}
-                {!row.blinds && row.players > 0 && (
-                  <div className={styles.rowBlinds}>{compactInt(row.players)} players</div>
-                )}
-              </div>
-
-              <div className={styles.rowFee}>
-                <div className={styles.rowFeeValue}>{money(row.fee)}</div>
-                <div className={styles.rowFeeLabel}>Fee</div>
-                <div className={`${styles.rowWin} ${row.winnings < 0 ? styles.neg : styles.pos}`}>
-                  {money(row.winnings)}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      </>)}
+                );
+              })}
+          </div>
+        </>
+      )}
 
       {tab === 'players' && (
         <div className={styles.playersPanel}>
@@ -823,11 +940,11 @@ export default function ClubDataPage() {
 
           {players && (
             <div className={styles.playerTotals}>
-              <span>{compactInt(players.totals.players)} players</span>
+              <span>{compactInt(players.totals.players)} Players</span>
               <span className={Number(players.totals.net) < 0 ? styles.neg : styles.pos}>
-                {money(players.totals.net)} net
+                {money(players.totals.net)} Net
               </span>
-              <span>{money(players.totals.rake)} rake</span>
+              <span>{money(players.totals.rake)} Rake</span>
             </div>
           )}
 
@@ -840,49 +957,54 @@ export default function ClubDataPage() {
               </>
             )}
 
-            {playersError && <div className={`${styles.state} ${styles.error}`}>{playersError}</div>}
-
-            {!playersLoading && !playersError && players && sortedPlayers.length === 0 && (
-              <div className={styles.state}>No player activity in this period.</div>
+            {playersError && (
+              <div className={`${styles.state} ${styles.error}`}>{playersError}</div>
             )}
 
-            {!playersError && sortedPlayers.map((pl, i) => (
-              <div className={styles.playerRow} key={pl.user_id}>
-                <div className={styles.playerRank}>{i + 1}</div>
+            {!playersLoading && !playersError && players && sortedPlayers.length === 0 && (
+              <div className={styles.state}>No Player Activity In This Period.</div>
+            )}
 
-                <div className={styles.avatarWrap}>
-                  {pl.avatar_url ? (
-                    <img className={styles.avatar} src={pl.avatar_url} alt="" loading="lazy" />
-                  ) : (
-                    <div className={styles.avatarFallback} aria-hidden="true">
-                      {(pl.username || '?').slice(0, 1).toUpperCase()}
+            {!playersError &&
+              sortedPlayers.map((pl, i) => (
+                <div className={styles.playerRow} key={pl.user_id}>
+                  <div className={styles.playerRank}>{i + 1}</div>
+
+                  <div className={styles.avatarWrap}>
+                    {pl.avatar_url ? (
+                      <img className={styles.avatar} src={pl.avatar_url} alt="" loading="lazy" />
+                    ) : (
+                      <div className={styles.avatarFallback} aria-hidden="true">
+                        {(pl.username || '?').slice(0, 1).toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className={styles.rowMain}>
+                    <div className={styles.rowName} title={pl.username}>
+                      {pl.username}
+                      {pl.is_horse && <span className={styles.horseTag}>HORSE</span>}
                     </div>
-                  )}
-                </div>
+                    <div className={styles.rowBlinds}>
+                      {compactInt(pl.hands)} Hands &middot; {money(pl.rake)} Rake
+                    </div>
+                  </div>
 
-                <div className={styles.rowMain}>
-                  <div className={styles.rowName} title={pl.username}>
-                    {pl.username}
-                    {pl.is_horse && <span className={styles.horseTag}>HORSE</span>}
-                  </div>
-                  <div className={styles.rowBlinds}>
-                    {compactInt(pl.hands)} hands &middot; {money(pl.rake)} rake
+                  <div className={styles.rowFee}>
+                    <div
+                      className={`${styles.rowFeeValue} ${pl.net < 0 ? styles.neg : styles.pos}`}
+                    >
+                      {money(pl.net)}
+                    </div>
+                    <div className={styles.rowFeeLabel}>Net</div>
                   </div>
                 </div>
-
-                <div className={styles.rowFee}>
-                  <div className={`${styles.rowFeeValue} ${pl.net < 0 ? styles.neg : styles.pos}`}>
-                    {money(pl.net)}
-                  </div>
-                  <div className={styles.rowFeeLabel}>Net</div>
-                </div>
-              </div>
-            ))}
+              ))}
           </div>
 
           {players && !playersError && (
             <div className={styles.footNote}>
-              A positive net means the player is up.
+              A Positive Net Means The Player Is Up.
               {(() => {
                 // Sliced, not compared raw: this is typed `string` and a
                 // timestamp would both fail the comparison - silently
@@ -902,13 +1024,15 @@ export default function ClubDataPage() {
       )}
 
       {exportNote && (
-        <div className={styles.footNote} role="status">{exportNote}</div>
+        <div className={styles.footNote} role="status">
+          {exportNote}
+        </div>
       )}
 
       {tab === 'games' && snapshot && (
         <div className={styles.footNote}>
           {clubName ? `${clubName} - ` : ''}
-          showing {snapshot.rows.length} of {compactInt(snapshot.row_count)} games
+          Showing {snapshot.rows.length} Of {compactInt(snapshot.row_count)} Games
           {snapshot.data_updated_at
             ? ` - cash data updated ${new Date(snapshot.data_updated_at).toLocaleTimeString()}`
             : ''}

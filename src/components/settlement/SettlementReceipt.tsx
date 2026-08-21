@@ -100,7 +100,7 @@ export default function SettlementReceipt({
       <div className="sr-amount-block">
         <span className="sr-amount-label">Net Payout</span>
         <span className="sr-amount-value">{netAmount.toLocaleString()}</span>
-        <span className="sr-amount-unit">chips</span>
+        <span className="sr-amount-unit">Chips</span>
       </div>
 
       {/* Expandable details */}

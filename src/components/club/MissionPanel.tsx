@@ -64,7 +64,7 @@ export function MissionPanel({ isOpen, onClose, missions, onClaim }: MissionPane
             <span className="mission-icon"></span>
             <div>
               <h2 className="mission-title">Missions & Rewards</h2>
-              <span className="mission-subtitle">Complete tasks to earn bonuses!</span>
+              <span className="mission-subtitle">Complete Tasks To Earn Bonuses!</span>
             </div>
           </div>
           <button className="mission-close" onClick={onClose}>
@@ -78,7 +78,7 @@ export function MissionPanel({ isOpen, onClose, missions, onClaim }: MissionPane
           {dailies.length > 0 && (
             <div className="mission-section">
               <h3 className="section-header">
-                Daily Missions <span className="timer">Resets in 4h 12m</span>
+                Daily Missions <span className="timer">Resets In 4H 12M</span>
               </h3>
               <div className="mission-list">
                 {dailies.map((m, i) => (
@@ -101,7 +101,7 @@ export function MissionPanel({ isOpen, onClose, missions, onClaim }: MissionPane
           {weeklies.length > 0 && (
             <div className="mission-section">
               <h3 className="section-header">
-                Weekly Challenges <span className="timer">Resets in 3d</span>
+                Weekly Challenges <span className="timer">Resets In 3D</span>
               </h3>
               <div className="mission-list">
                 {weeklies.map((m, i) => (

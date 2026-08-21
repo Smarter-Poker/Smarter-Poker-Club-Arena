@@ -251,7 +251,7 @@ export default function DisputeManagementPage() {
         <div className="dispute-header">
           <h2>⚖ Dispute Management</h2>
           {statusCounts.open > 0 && (
-            <span className="open-count-badge">{statusCounts.open} open</span>
+            <span className="open-count-badge">{statusCounts.open} Open</span>
           )}
         </div>
 
@@ -293,7 +293,7 @@ export default function DisputeManagementPage() {
         {loading ? (
           <div className="loading-state">
             <PageSkeleton variant="list" />
-            <p>Loading disputes...</p>
+            <p>Loading Disputes...</p>
           </div>
         ) : filtered.length === 0 ? (
           <div className="empty-state">
@@ -319,11 +319,11 @@ export default function DisputeManagementPage() {
                 >
                   <div className="dispute-meta">
                     {getStatusBadge(dispute.status)}
-                    <span className="dispute-amount">{dispute.amount.toLocaleString()} chips</span>
+                    <span className="dispute-amount">{dispute.amount.toLocaleString()} Chips</span>
                   </div>
                   <div className="dispute-target">
                     <span className="target-type">{dispute.targetType.replace('_', ' ')}</span>
-                    <span className="dispute-submitter">by {dispute.submitterName}</span>
+                    <span className="dispute-submitter">By {dispute.submitterName}</span>
                   </div>
                   <div className="dispute-date">
                     {new Date(dispute.createdAt).toLocaleDateString(undefined, {

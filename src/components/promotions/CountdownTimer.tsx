@@ -72,22 +72,22 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
         {showDays && (
           <div className="time-block">
             <span className="time-value">{String(timeRemaining.days).padStart(2, '0')}</span>
-            <span className="time-unit">days</span>
+            <span className="time-unit">Days</span>
           </div>
         )}
         <div className="time-block">
           <span className="time-value">{String(timeRemaining.hours).padStart(2, '0')}</span>
-          <span className="time-unit">hrs</span>
+          <span className="time-unit">Hrs</span>
         </div>
         <div className="time-separator">:</div>
         <div className="time-block">
           <span className="time-value">{String(timeRemaining.minutes).padStart(2, '0')}</span>
-          <span className="time-unit">min</span>
+          <span className="time-unit">Min</span>
         </div>
         <div className="time-separator">:</div>
         <div className="time-block">
           <span className="time-value">{String(timeRemaining.seconds).padStart(2, '0')}</span>
-          <span className="time-unit">sec</span>
+          <span className="time-unit">Sec</span>
         </div>
       </div>
     </div>

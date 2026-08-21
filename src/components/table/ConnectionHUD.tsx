@@ -220,7 +220,7 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
           }}
         >
           <span style={{ fontWeight: 700 }}>--</span>
-          Reconnected - syncing latest table state...
+          Reconnected - Syncing Latest Table State...
           <button
             onClick={() => setShowStaleBanner(false)}
             style={{
@@ -249,7 +249,7 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
             {graceCountdown !== null && graceCountdown > 0 && (
               <div className="conn-dc-grace">
                 <span className="conn-dc-timer">{graceCountdown}s</span>
-                <span className="conn-dc-label">reconnecting...</span>
+                <span className="conn-dc-label">Reconnecting...</span>
                 <div className="conn-dc-bar">
                   <div
                     className="conn-dc-fill"
@@ -262,15 +262,15 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
             )}
             {graceCountdown === 0 && (
               <span className="conn-dc-timeout">
-                Auto-action applied: {autoActionText || 'check/fold'}
+                Auto-Action Applied: {autoActionText || 'check/fold'}
               </span>
             )}
             {isReconnecting && reconnectAttempts > 0 && (
-              <span className="conn-dc-retry">Retry attempt {reconnectAttempts}/10...</span>
+              <span className="conn-dc-retry">Retry Attempt {reconnectAttempts}/10...</span>
             )}
             {!isReconnecting && reconnectAttempts >= 10 && (
               <span className="conn-dc-retry" style={{ color: '#ef4444' }}>
-                Reconnection failed. Please refresh the page.
+                Reconnection Failed. Please Refresh The Page.
               </span>
             )}
           </div>

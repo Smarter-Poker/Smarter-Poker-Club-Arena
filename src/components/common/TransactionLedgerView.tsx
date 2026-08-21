@@ -113,7 +113,7 @@ export default function TransactionLedgerView({
   if (loading) {
     return (
       <div style={{ padding: '16px', textAlign: 'center', color: '#666' }}>
-        Loading transactions...
+        Loading Transactions...
       </div>
     );
   }
@@ -122,7 +122,7 @@ export default function TransactionLedgerView({
     return (
       <div style={{ padding: '24px', textAlign: 'center', color: '#666' }}>
         <div style={{ fontSize: '32px', marginBottom: '8px', opacity: 0.5 }}>{'\u{1F4CB}'}</div>
-        <div>No transactions yet</div>
+        <div>No Transactions Yet</div>
       </div>
     );
   }
@@ -130,7 +130,7 @@ export default function TransactionLedgerView({
   return (
     <div>
       <div style={{ fontSize: '11px', color: '#888', marginBottom: '8px' }}>
-        {entries.length} transaction{entries.length !== 1 ? 's' : ''} shown
+        {entries.length} Transaction{entries.length !== 1 ? 's' : ''} Shown
       </div>
       <div
         style={{

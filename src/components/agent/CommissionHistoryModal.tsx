@@ -274,7 +274,7 @@ export default function CommissionHistoryModal({
           {loading ? (
             <div className={styles.loading}>Loading...</div>
           ) : filteredEntries.length === 0 ? (
-            <div className={styles.empty}>No commission history found</div>
+            <div className={styles.empty}>No Commission History Found</div>
           ) : (
             filteredEntries.map((entry, i) => (
               <div

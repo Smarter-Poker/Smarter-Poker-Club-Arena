@@ -79,7 +79,7 @@ export default function DailyLoginReward({
           <div className="dlr-card-front">
             <div className="dlr-card-pattern" />
             <span className="dlr-card-icon">◈</span>
-            <span className="dlr-card-prompt">Tap to Reveal</span>
+            <span className="dlr-card-prompt">Tap To Reveal</span>
           </div>
 
           {/* Back face — reward */}

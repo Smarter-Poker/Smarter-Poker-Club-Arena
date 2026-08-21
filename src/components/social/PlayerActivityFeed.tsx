@@ -167,7 +167,7 @@ export default function PlayerActivityFeed({ userId }: PlayerActivityFeedProps) 
     return (
       <div className="paf-container">
         <h3 className="paf-title">Recent Activity</h3>
-        <p className="paf-empty">No recent activity yet. Start playing!</p>
+        <p className="paf-empty">No Recent Activity Yet. Start Playing!</p>
       </div>
     );
   }

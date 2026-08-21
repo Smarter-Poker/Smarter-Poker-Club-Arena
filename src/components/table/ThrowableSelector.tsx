@@ -112,10 +112,10 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
             {allowance.isVip && allowance.freeThrowsRemaining > 0 ? (
               <span className="throwable-selector__free">
                 {' '}
-                {allowance.freeThrowsRemaining} free
+                {allowance.freeThrowsRemaining} Free
               </span>
             ) : (
-              <span className="throwable-selector__cost"> {allowance.diamondCost} each</span>
+              <span className="throwable-selector__cost"> {allowance.diamondCost} Each</span>
             )}
           </span>
         )}

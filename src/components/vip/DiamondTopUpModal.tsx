@@ -53,7 +53,7 @@ export function DiamondTopUpModal({ isOpen, onClose, onPurchaseComplete }: Diamo
         </div>
 
         <p className="diamond-modal__desc">
-          Diamonds power your VIP features, themes, and throwables.
+          Diamonds Power Your VIP Features, Themes, And Throwables.
         </p>
 
         <div className="diamond-modal__grid">
@@ -73,7 +73,7 @@ export function DiamondTopUpModal({ isOpen, onClose, onPurchaseComplete }: Diamo
                 <span className="diamond-package__diamonds">{pkg.diamonds.toLocaleString()}</span>
                 {pkg.bonusDiamonds > 0 && (
                   <span className="diamond-package__bonus">
-                    +{pkg.bonusDiamonds.toLocaleString()} bonus
+                    +{pkg.bonusDiamonds.toLocaleString()} Bonus
                   </span>
                 )}
               </div>
@@ -91,7 +91,7 @@ export function DiamondTopUpModal({ isOpen, onClose, onPurchaseComplete }: Diamo
           ))}
         </div>
 
-        <p className="diamond-modal__note">Purchases are instant. Diamonds never expire.</p>
+        <p className="diamond-modal__note">Purchases Are Instant. Diamonds Never Expire.</p>
       </div>
     </div>
   );

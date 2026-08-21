@@ -250,7 +250,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
         </div>
         <div style={{ textAlign: 'center', padding: '24px 16px', color: '#94a3b8' }}>
           <div style={{ fontSize: '24px', marginBottom: '8px' }}>⚠</div>
-          <p style={{ margin: '0 0 12px', fontSize: '13px' }}>Failed to load cashout requests</p>
+          <p style={{ margin: '0 0 12px', fontSize: '13px' }}>Failed To Load Cashout Requests</p>
           <button
             onClick={loadCashouts}
             style={{
@@ -286,7 +286,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
       {cashouts.length === 0 ? (
         <div className="empty-state">
           <span className="empty-icon">◉</span>
-          <p>No pending cashout requests</p>
+          <p>No Pending Cashout Requests</p>
         </div>
       ) : (
         <div className="cashout-list">
@@ -316,7 +316,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
                 </div>
                 <div className="cashout-amount">
                   <span className="amount-value">{cashout.amount.toLocaleString()}</span>
-                  <span className="amount-label">chips</span>
+                  <span className="amount-label">Chips</span>
                 </div>
               </div>
 
@@ -340,7 +340,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
               </div>
 
               <div className="escrow-notice">
-                Chips are locked in escrow. Approving will complete the cashout.
+                Chips Are Locked In Escrow. Approving Will Complete The Cashout.
               </div>
             </div>
           ))}

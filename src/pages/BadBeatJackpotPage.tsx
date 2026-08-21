@@ -405,8 +405,8 @@ export default function BadBeatJackpotPage() {
               100K Pivot Alert
             </span>
             <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
-              Pool at {(((jackpot?.main_balance || 0) / 100000) * 100).toFixed(1)}% of pivot
-              threshold
+              Pool At {(((jackpot?.main_balance || 0) / 100000) * 100).toFixed(1)}% Of Pivot
+              Threshold
             </div>
           </div>
           <div
@@ -442,7 +442,7 @@ export default function BadBeatJackpotPage() {
         >
           <span className="info-label">Backup Pool</span>
           <span className="info-value" style={{ color: '#007aff' }}>
-            {(jackpot?.backup_balance || 0).toLocaleString()} chips
+            {(jackpot?.backup_balance || 0).toLocaleString()} Chips
           </span>
         </div>
         <div
@@ -454,7 +454,7 @@ export default function BadBeatJackpotPage() {
         >
           <span className="info-label">Promo Pool</span>
           <span className="info-value" style={{ color: '#af52de' }}>
-            {(jackpot?.promo_balance || 0).toLocaleString()} chips
+            {(jackpot?.promo_balance || 0).toLocaleString()} Chips
           </span>
         </div>
       </div>
@@ -485,7 +485,7 @@ export default function BadBeatJackpotPage() {
             Distribute Promo Pool
           </div>
           <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
-            Rain promo chips to everyone currently seated. Split evenly.
+            Rain Promo Chips To Everyone Currently Seated. Split Evenly.
           </div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
             <input
@@ -556,7 +556,7 @@ export default function BadBeatJackpotPage() {
         </div>
         <div className="info-card">
           <span className="info-label">Total Collected</span>
-          <span className="info-value">{(poolFacts?.chips || 0).toLocaleString()} chips</span>
+          <span className="info-value">{(poolFacts?.chips || 0).toLocaleString()} Chips</span>
         </div>
         {playerContribution > 0 && (
           <div
@@ -566,12 +566,12 @@ export default function BadBeatJackpotPage() {
               background: 'rgba(52, 199, 89, 0.08)',
             }}
           >
-            <span className="info-label">Your Contribution (90d)</span>
+            <span className="info-label">Your Contribution (90D)</span>
             <span className="info-value" style={{ color: '#34c759' }}>
-              {playerContribution.toLocaleString(undefined, { maximumFractionDigits: 2 })} chips
+              {playerContribution.toLocaleString(undefined, { maximumFractionDigits: 2 })} Chips
             </span>
             <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
-              across {myHands.toLocaleString()} hands
+              Across {myHands.toLocaleString()} Hands
             </span>
           </div>
         )}
@@ -591,7 +591,7 @@ export default function BadBeatJackpotPage() {
             lineHeight: 1.5,
           }}
         >
-          Applied to the stakes-tiered share of the pool shown above &mdash; not the whole pool.
+          Applied To The Stakes-Tiered Share Of The Pool Shown Above &mdash; Not The Whole Pool.
         </p>
         <div className="payout-bars">
           <div className="payout-bar">
@@ -617,7 +617,7 @@ export default function BadBeatJackpotPage() {
         <h3>Recent Hits</h3>
         {history.length === 0 ? (
           <div className="empty-state">
-            <p>No jackpot hits yet. Will you be the first?</p>
+            <p>No Jackpot Hits Yet. Will You Be The First?</p>
           </div>
         ) : (
           <div className="history-list">
@@ -648,7 +648,7 @@ export default function BadBeatJackpotPage() {
                     </span>
                   )}
                   <span className="hit-hands">
-                    {hit.winner_hand} lost to {hit.loser_hand}
+                    {hit.winner_hand} Lost To {hit.loser_hand}
                   </span>
                 </div>
                 <div className="hit-amount">{hit.total_payout.toLocaleString()}</div>

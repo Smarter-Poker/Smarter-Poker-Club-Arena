@@ -115,7 +115,10 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
    */
   const fetchOwnHands = async (): Promise<any[]> => {
     if (!user?.id) throw new Error('not signed in');
-    let query = supabase.from('hand_history').select('*').contains('players', [{ userId: user.id }]);
+    let query = supabase
+      .from('hand_history')
+      .select('*')
+      .contains('players', [{ userId: user.id }]);
 
     if (clubId) {
       const resolvedId = await resolveClubUUID(clubId);
@@ -143,9 +146,7 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
       query = query.gte('created_at', startDate.toISOString());
     }
 
-    const { data, error } = await query
-      .order('created_at', { ascending: false })
-      .limit(5000);
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(5000);
     if (error) throw error;
     return data || [];
   };
@@ -184,8 +185,7 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
         );
       }
 
-      if (isMounted.current)
-        toast.success(`Exported ${rows.length.toLocaleString()} rows`);
+      if (isMounted.current) toast.success(`Exported ${rows.length.toLocaleString()} rows`);
       onClose();
     } catch (error) {
       reportError(error, 'StatsExport.Failed_to_export');
@@ -246,13 +246,13 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
                   className={dataset === 'members' ? 'active' : ''}
                   onClick={() => setDataset('members')}
                 >
-                  Member stats
+                  Member Stats
                 </button>
                 <button
                   className={dataset === 'hands' ? 'active' : ''}
                   onClick={() => setDataset('hands')}
                 >
-                  My hands
+                  My Hands
                 </button>
               </div>
             </div>
@@ -277,17 +277,17 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
             <div className="option-group">
               <label>Date Range</label>
               <select value={dateRange} onChange={(e) => setDateRange(e.target.value as any)}>
-                <option value="7d">Last 7 days</option>
-                <option value="30d">Last 30 days</option>
-                <option value="90d">Last 90 days</option>
-                <option value="all">All time</option>
+                <option value="7d">Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
+                <option value="90d">Last 90 Days</option>
+                <option value="all">All Time</option>
               </select>
             </div>
           )}
 
           {dataset === 'members' && (
             <p className="option-hint" style={{ fontSize: '0.75rem', color: '#6a7a8a', margin: 0 }}>
-              Full roster with lifetime hands, rake and win/loss per member.
+              Full Roster With Lifetime Hands, Rake And Win/Loss Per Member.
             </p>
           )}
         </div>

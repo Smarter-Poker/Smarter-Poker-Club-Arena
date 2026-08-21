@@ -229,7 +229,7 @@ export default function HandReplayViewer({
   if (loading) {
     return (
       <div className={styles.viewer}>
-        <div className={styles.loading}>Loading hand...</div>
+        <div className={styles.loading}>Loading Hand...</div>
       </div>
     );
   }
@@ -237,7 +237,7 @@ export default function HandReplayViewer({
   if (!hand) {
     return (
       <div className={styles.viewer}>
-        <div className={styles.error}>Hand not found</div>
+        <div className={styles.error}>Hand Not Found</div>
       </div>
     );
   }
@@ -331,10 +331,10 @@ export default function HandReplayViewer({
         <div className={styles.speedControl}>
           <span>Speed:</span>
           <select value={playSpeed} onChange={(e) => setPlaySpeed(Number(e.target.value))}>
-            <option value={0.5}>0.5x</option>
-            <option value={1}>1x</option>
-            <option value={2}>2x</option>
-            <option value={3}>3x</option>
+            <option value={0.5}>0.5X</option>
+            <option value={1}>1X</option>
+            <option value={2}>2X</option>
+            <option value={3}>3X</option>
           </select>
         </div>
       </div>
@@ -357,7 +357,7 @@ export default function HandReplayViewer({
               const player = hand.players.find((p) => p.id === w.playerId);
               return (
                 <span key={i}>
-                  {player?.name || 'Unknown'} wins{' '}
+                  {player?.name || 'Unknown'} Wins{' '}
                   {w.amount.toLocaleString('en-US', {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,

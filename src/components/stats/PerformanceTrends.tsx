@@ -192,7 +192,7 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
 
   const renderChart = useCallback(() => {
     if (chartData.points.length < 2) {
-      return <div className="pt-no-data">Not enough sessions to chart</div>;
+      return <div className="pt-no-data">Not Enough Sessions To Chart</div>;
     }
 
     const W = 400;

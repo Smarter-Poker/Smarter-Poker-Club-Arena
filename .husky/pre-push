@@ -200,6 +200,33 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   done
 done
 
+# ─────────────────────────────────────────────────────────────────────────────
+# HOUSE TEXT RULES (Dan 2026-08-21)
+#
+#   "First letter of every word is capitalized, that's a hard rule for all
+#    forward facing pages", and em dashes are forbidden.
+#
+# Both had a checker already, but it only ran in ci.yml - the workflow this
+# repo's own notes say NEVER COMPLETES on main, because pushes land faster than
+# its ~6 minutes and cancel-in-progress kills every run. A gate that never
+# finishes is not a gate, so they run here, where the other house rules live.
+# Together they take about two seconds.
+#
+# Autofix:  node scripts/ci/check-title-case.mjs --fix
+#           node scripts/ci/check-ui-text.mjs --fix
+# ─────────────────────────────────────────────────────────────────────────────
+if [ -f scripts/ci/check-title-case.mjs ]; then
+  if ! node scripts/ci/check-title-case.mjs; then
+    FAIL=1
+  fi
+fi
+
+if [ -f scripts/ci/check-ui-text.mjs ]; then
+  if ! node scripts/ci/check-ui-text.mjs; then
+    FAIL=1
+  fi
+fi
+
 if [ "$FAIL" -ne 0 ]; then
   echo ""
   echo "[club-arena pre-push] FAILED — fix the issues above or use --no-verify if certain."

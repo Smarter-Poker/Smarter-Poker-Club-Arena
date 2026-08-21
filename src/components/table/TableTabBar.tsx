@@ -567,7 +567,7 @@ export function TableTabBar({
                 <span className="table-tab-bar__tab-label">
                   <span className="table-tab-bar__tab-name">{decisionLabel}</span>
                   <span className="table-tab-bar__tab-sub">
-                    {tab.decisionSecondsLeft ?? 0}s left
+                    {tab.decisionSecondsLeft ?? 0}s Left
                   </span>
                 </span>
               ) : tab.timeBankSecondsLeft !== undefined ? (
@@ -604,9 +604,7 @@ export function TableTabBar({
 
               {/* Transient last-action chip ("Fold", "Call", ...) */}
               {flash && !tab.isMyTurn && (
-                <span className="table-tab-bar__action-chip">
-                  {ACTION_LABEL[flash] ?? flash}
-                </span>
+                <span className="table-tab-bar__action-chip">{ACTION_LABEL[flash] ?? flash}</span>
               )}
 
               {/* Turn indicator — show timer or pulsing dot */}
@@ -722,12 +720,7 @@ export function TableTabBar({
           // 'lobby:' id. Lobby tabs get exactly what makes sense for them:
           // Move Left/Right and Close.
           const isLobby = tab.id.startsWith('lobby:');
-          const item = (
-            label: string,
-            fn: () => void,
-            danger = false,
-            disabled = false
-          ) => (
+          const item = (label: string, fn: () => void, danger = false, disabled = false) => (
             <button
               key={label}
               type="button"
@@ -760,7 +753,12 @@ export function TableTabBar({
                   !isLobby &&
                   item(muted ? 'Unmute Table' : 'Mute Table', () => onQuickAction(tab.id, 'mute'))}
                 {onReorder &&
-                  item('Move Left', () => onReorder(tab.id, Math.max(0, idx - 1)), false, idx === 0)}
+                  item(
+                    'Move Left',
+                    () => onReorder(tab.id, Math.max(0, idx - 1)),
+                    false,
+                    idx === 0
+                  )}
                 {onReorder &&
                   item(
                     'Move Right',
@@ -770,7 +768,11 @@ export function TableTabBar({
                   )}
                 {onQuickAction &&
                   tabs.length > 1 &&
-                  item(isLobby ? 'Close Lobby' : 'Leave Table', () => onQuickAction(tab.id, 'leave'), true)}
+                  item(
+                    isLobby ? 'Close Lobby' : 'Leave Table',
+                    () => onQuickAction(tab.id, 'leave'),
+                    true
+                  )}
                 {(onSitOutAll || onBackAll) && tabs.length > 1 && (
                   <div className="table-tab-bar__qmenu-sep" aria-hidden="true" />
                 )}

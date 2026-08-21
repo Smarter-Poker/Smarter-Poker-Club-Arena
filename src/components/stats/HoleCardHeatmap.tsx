@@ -111,10 +111,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
     return m;
   }, [cells]);
 
-  const totalHands = useMemo(
-    () => (cells ?? []).reduce((s, c) => s + c.hands, 0),
-    [cells]
-  );
+  const totalHands = useMemo(() => (cells ?? []).reduce((s, c) => s + c.hands, 0), [cells]);
 
   /**
    * Colour scale from the 90th percentile of confident cells rather than the
@@ -144,9 +141,9 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
       <div className="heatmap-card heatmap-empty">
         <h3 className="heatmap-title">Starting Hands</h3>
         <p className="heatmap-empty-text">
-          No hold'em hands recorded yet for this filter. The grid is built from a per-hand record
-          that began collecting recently, so it fills in from your next session onward. Pot Limit
-          Omaha hands never appear here: a 13x13 grid cannot represent a four to six card holding.
+          No Hold'em Hands Recorded Yet For This Filter. The Grid Is Built From A Per-Hand Record
+          That Began Collecting Recently, So It Fills In From Your Next Session Onward. Pot Limit
+          Omaha Hands Never Appear Here: A 13X13 Grid Cannot Represent A Four To Six Card Holding.
         </p>
       </div>
     );
@@ -157,7 +154,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
       <div className="heatmap-head">
         <h3 className="heatmap-title">Starting Hands</h3>
         <p className="heatmap-sub">
-          {totalHands.toLocaleString()} hands dealt across {byClass.size} of 169 starting hands.
+          {totalHands.toLocaleString()} Hands Dealt Across {byClass.size} Of 169 Starting Hands.
         </p>
       </div>
 
@@ -288,19 +285,19 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
         {hoveredCell ? (
           <>
             <strong>{hoveredCell.hand_class}</strong>
-            <span>{hoveredCell.hands.toLocaleString()} dealt</span>
-            <span>played {(hoveredCell.vpip_pct * 100).toFixed(0)}%</span>
+            <span>{hoveredCell.hands.toLocaleString()} Dealt</span>
+            <span>Played {(hoveredCell.vpip_pct * 100).toFixed(0)}%</span>
             <span className={hoveredCell.net_bb >= 0 ? 'is-up' : 'is-down'}>
               {hoveredCell.net_bb >= 0 ? '+' : ''}
-              {hoveredCell.net_bb.toFixed(1)} bb
+              {hoveredCell.net_bb.toFixed(1)} BB
             </span>
             {hoveredCell.hands >= MIN_CONFIDENT_HANDS ? (
               <span className={hoveredCell.bb100 >= 0 ? 'is-up' : 'is-down'}>
                 {hoveredCell.bb100 >= 0 ? '+' : ''}
-                {hoveredCell.bb100.toFixed(0)} bb/100
+                {hoveredCell.bb100.toFixed(0)} BB/100
               </span>
             ) : (
-              <span className="is-thin-note">too few hands to rate</span>
+              <span className="is-thin-note">Too Few Hands To Rate</span>
             )}
           </>
         ) : (

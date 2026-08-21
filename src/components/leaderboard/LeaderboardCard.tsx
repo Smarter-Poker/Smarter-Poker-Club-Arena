@@ -123,7 +123,7 @@ function LeaderboardCardInner({
       {entries.length === 0 ? (
         <div className={styles.empty}>
           <span>≡</span>
-          <p>No entries yet</p>
+          <p>No Entries Yet</p>
         </div>
       ) : (
         <div className={styles.list}>

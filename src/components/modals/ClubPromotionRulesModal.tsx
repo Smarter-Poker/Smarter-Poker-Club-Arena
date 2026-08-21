@@ -75,253 +75,253 @@ export default function ClubPromotionRulesModal({
         <div className={styles.content} ref={scrollRef} onScroll={handleScroll}>
           {/* Preamble */}
           <p className={styles.preamble}>
-            For the purposes of these Club Promotion Rules, Club Arena shall mean Smarter Poker LLC,
-            its partners, parent companies, subsidiaries, licensees, licensors and affiliates (also
-            collectively referred to herein as "Company", "we", "our" or "us").
+            For The Purposes Of These Club Promotion Rules, Club Arena Shall Mean Smarter Poker LLC,
+            Its Partners, Parent Companies, Subsidiaries, Licensees, Licensors And Affiliates (Also
+            Collectively Referred To Herein As "Company", "We", "Our" Or "Us").
           </p>
 
           <p className={styles.preamble}>
-            All Club Arena product content, including but not limited to logos, trademarks, videos,
-            software, and online products, are copyrighted materials and protected by applicable
-            copyright and/or trademark law. Without express written permission from Smarter Poker
-            LLC, you shall never copy, modify, reproduce, translate, or tailor products, or create
-            new products or derivative works using the products in any written, visual, or audio
-            form, or by any means, whether electronic or mechanical. Any such activity constitutes
-            an infringement of Smarter Poker LLC copyrights, trademarks, or proprietary property, is
-            strictly prohibited by us, and may result in legal action and termination of your
-            account with Club Arena.
+            All Club Arena Product Content, Including But Not Limited To Logos, Trademarks, Videos,
+            Software, And Online Products, Are Copyrighted Materials And Protected By Applicable
+            Copyright And/Or Trademark Law. Without Express Written Permission From Smarter Poker
+            LLC, You Shall Never Copy, Modify, Reproduce, Translate, Or Tailor Products, Or Create
+            New Products Or Derivative Works Using The Products In Any Written, Visual, Or Audio
+            Form, Or By Any Means, Whether Electronic Or Mechanical. Any Such Activity Constitutes
+            An Infringement Of Smarter Poker LLC Copyrights, Trademarks, Or Proprietary Property, Is
+            Strictly Prohibited By Us, And May Result In Legal Action And Termination Of Your
+            Account With Club Arena.
           </p>
 
           {/* General Rules */}
           <h3>General Rules</h3>
           <p>
-            All users should participate in a way that promotes a legal and positive experience for
-            users and their followers. These Club Promotion Rules apply to all Fanpages/Club
-            Fanpages/Agency Pages/Clubs or any similar sites.
+            All Users Should Participate In A Way That Promotes A Legal And Positive Experience For
+            Users And Their Followers. These Club Promotion Rules Apply To All Fanpages/Club
+            Fanpages/Agency Pages/Clubs Or Any Similar Sites.
           </p>
           <p>
-            We may amend these Club Promotion Rules at any time and you agree to be subject to them.
-            If you do not wish to be subject to these Club Promotion Rules, any Club Arena
-            Fanpages/Club Fanpages/Agency Pages/Clubs or any similar sites must be deleted.
+            We May Amend These Club Promotion Rules At Any Time And You Agree To Be Subject To Them.
+            If You Do Not Wish To Be Subject To These Club Promotion Rules, Any Club Arena
+            Fanpages/Club Fanpages/Agency Pages/Clubs Or Any Similar Sites Must Be Deleted.
           </p>
 
           {/* Section 1 */}
-          <h3>1. Compliance with Law</h3>
+          <h3>1. Compliance With Law</h3>
           <p>
-            You must abide by all applicable local, state, national and international laws and
-            regulations. Any content or activity featuring, encouraging, offering, or soliciting
-            illegal activity is prohibited. We reserve the right to take action to the fullest
-            extent possible including removing players' access to the Service.
+            You Must Abide By All Applicable Local, State, National And International Laws And
+            Regulations. Any Content Or Activity Featuring, Encouraging, Offering, Or Soliciting
+            Illegal Activity Is Prohibited. We Reserve The Right To Take Action To The Fullest
+            Extent Possible Including Removing Players' Access To The Service.
           </p>
 
           {/* Section 2 */}
-          <h3>2. Suspensions and Termination</h3>
+          <h3>2. Suspensions And Termination</h3>
           <p>
-            Any and all suspensions or terminations are in the sole discretion of Club Arena. Any
-            attempt to circumvent a termination or suspension through any means, including but not
-            limited to using other accounts or identities, domains, or webpages, will result in
-            suspension or termination.
+            Any And All Suspensions Or Terminations Are In The Sole Discretion Of Club Arena. Any
+            Attempt To Circumvent A Termination Or Suspension Through Any Means, Including But Not
+            Limited To Using Other Accounts Or Identities, Domains, Or Webpages, Will Result In
+            Suspension Or Termination.
           </p>
 
           {/* Section 3 */}
-          <h3>3. Violence, Threats and Other Expressly Prohibited Conduct</h3>
+          <h3>3. Violence, Threats And Other Expressly Prohibited Conduct</h3>
           <p>
-            Club Arena expressly prohibits acts and threats of violence. Any accounts, pages, or
-            clubs containing such content are not allowed and will be suspended (until remedied at
-            our direction) or terminated. We also prohibit hateful conduct, which includes content
-            or activity that promotes, encourages, or facilitates discrimination, denigration,
-            harassment or violence, including such actions based on race, ethnicity, national
-            origin, religion, sex, gender, gender identity, sexual orientation, age, disability, or
-            veteran status. In our sole discretion, we will take action against any accounts, pages,
-            or clubs that we believe contain such prohibited content. Our actions may include
-            suspension or termination of user accounts.
+            Club Arena Expressly Prohibits Acts And Threats Of Violence. Any Accounts, Pages, Or
+            Clubs Containing Such Content Are Not Allowed And Will Be Suspended (Until Remedied At
+            Our Direction) Or Terminated. We Also Prohibit Hateful Conduct, Which Includes Content
+            Or Activity That Promotes, Encourages, Or Facilitates Discrimination, Denigration,
+            Harassment Or Violence, Including Such Actions Based On Race, Ethnicity, National
+            Origin, Religion, Sex, Gender, Gender Identity, Sexual Orientation, Age, Disability, Or
+            Veteran Status. In Our Sole Discretion, We Will Take Action Against Any Accounts, Pages,
+            Or Clubs That We Believe Contain Such Prohibited Content. Our Actions May Include
+            Suspension Or Termination Of User Accounts.
           </p>
 
           {/* Section 4 */}
           <h3>4. Personal Information</h3>
           <p>
-            If you share your personal information, you do so at your own risk. We prohibit the
-            sharing of content that contains the private information of another person without such
-            person's express permission. Private information includes a person's full name, address,
-            phone numbers, location, log-in identification/username and password. You may also not
-            share content that violates another person's reasonable expectation of privacy (such as
-            including people in videos who do not consent to be in those videos and/or who do not
-            consent to those videos being shared online). Including any personal information
-            (including photos or videos) of children (persons under 18) is strictly prohibited.
+            If You Share Your Personal Information, You Do So At Your Own Risk. We Prohibit The
+            Sharing Of Content That Contains The Private Information Of Another Person Without Such
+            Person's Express Permission. Private Information Includes A Person's Full Name, Address,
+            Phone Numbers, Location, Log-In Identification/Username And Password. You May Also Not
+            Share Content That Violates Another Person's Reasonable Expectation Of Privacy (Such As
+            Including People In Videos Who Do Not Consent To Be In Those Videos And/Or Who Do Not
+            Consent To Those Videos Being Shared Online). Including Any Personal Information
+            (Including Photos Or Videos) Of Children (Persons Under 18) Is Strictly Prohibited.
           </p>
 
           {/* Section 5 */}
-          <h3>5. Identification and Impersonation</h3>
+          <h3>5. Identification And Impersonation</h3>
           <p>
-            You are prohibited from misrepresenting yourself. This includes impersonating an
-            individual or an organization or your association with an organization (including Club
-            Arena). Any attempt to misrepresent yourself as associated with Club Arena will result
-            in adverse action, including suspension or termination of your account, in our sole
-            discretion.
+            You Are Prohibited From Misrepresenting Yourself. This Includes Impersonating An
+            Individual Or An Organization Or Your Association With An Organization (Including Club
+            Arena). Any Attempt To Misrepresent Yourself As Associated With Club Arena Will Result
+            In Adverse Action, Including Suspension Or Termination Of Your Account, In Our Sole
+            Discretion.
           </p>
 
           {/* Section 6 */}
           <h3>6. Other Prohibited Conduct</h3>
           <p>
-            You may not engage in any activity that disrupts, interrupts, harms or otherwise
-            violates the integrity of Club Arena's services or another user's use or enjoyment of
-            our services. This includes defrauding others, spreading misinformation, and tampering
-            with or defacing websites or social media pages (including posting inappropriate
-            content). We also prohibit content that is obscene or sexually explicit and content that
-            contains excessive gore or violence, as determined in our sole discretion. We will take
-            such action as we determine appropriate in our sole discretion against those engaging in
-            prohibited conduct, including the suspension or termination of user accounts.
+            You May Not Engage In Any Activity That Disrupts, Interrupts, Harms Or Otherwise
+            Violates The Integrity Of Club Arena's Services Or Another User's Use Or Enjoyment Of
+            Our Services. This Includes Defrauding Others, Spreading Misinformation, And Tampering
+            With Or Defacing Websites Or Social Media Pages (Including Posting Inappropriate
+            Content). We Also Prohibit Content That Is Obscene Or Sexually Explicit And Content That
+            Contains Excessive Gore Or Violence, As Determined In Our Sole Discretion. We Will Take
+            Such Action As We Determine Appropriate In Our Sole Discretion Against Those Engaging In
+            Prohibited Conduct, Including The Suspension Or Termination Of User Accounts.
           </p>
 
           {/* Section 7 */}
           <h3>7. Intellectual Property</h3>
           <p>
-            You may only share content that you own or have permission to share. If you share
-            content that you do not own or have the right to share (such as music), you may be
-            infringing another party's intellectual property rights. If you share unauthorized
-            content, the content may be removed, and we may suspend or terminate your account.
+            You May Only Share Content That You Own Or Have Permission To Share. If You Share
+            Content That You Do Not Own Or Have The Right To Share (Such As Music), You May Be
+            Infringing Another Party's Intellectual Property Rights. If You Share Unauthorized
+            Content, The Content May Be Removed, And We May Suspend Or Terminate Your Account.
           </p>
 
           {/* Section 8 */}
           <h3>8. Cheating</h3>
           <p>
-            We expressly prohibit any activities such as cheating, hacking, or tampering, that give
-            an individual or entity an unfair advantage in an online game or promotion.
+            We Expressly Prohibit Any Activities Such As Cheating, Hacking, Or Tampering, That Give
+            An Individual Or Entity An Unfair Advantage In An Online Game Or Promotion.
           </p>
 
           {/* Brand Usage Section */}
           <h3 className={styles.highlightHeader}>
-            Use of Official Club Arena Logos and Brand Elements
+            Use Of Official Club Arena Logos And Brand Elements
           </h3>
           <p className={styles.highlight}>
-            1. You may not use any official Club Arena logos and/or brand elements on your
-            Fanpage/Club Fanpage/Agency Page/Club on promotional materials in a way that implies
-            that Club Arena is endorsing your promotional activities or is directly involved in the
-            Fanpage/Club Fanpage/Agency Page/Club that you promote.
+            1. You May Not Use Any Official Club Arena Logos And/Or Brand Elements On Your
+            Fanpage/Club Fanpage/Agency Page/Club On Promotional Materials In A Way That Implies
+            That Club Arena Is Endorsing Your Promotional Activities Or Is Directly Involved In The
+            Fanpage/Club Fanpage/Agency Page/Club That You Promote.
           </p>
           <p>
-            2. In promoting your own Fanpage/Club Page please make sure that your advertising
-            material and other content is focused on your own brand materials such as your Club
-            logo, Fanpage logo, etc. You are specifically prohibited from using Club Arena elements
-            without Club Arena's permission.
+            2. In Promoting Your Own Fanpage/Club Page Please Make Sure That Your Advertising
+            Material And Other Content Is Focused On Your Own Brand Materials Such As Your Club
+            Logo, Fanpage Logo, Etc. You Are Specifically Prohibited From Using Club Arena Elements
+            Without Club Arena's Permission.
           </p>
           <p>
-            3. It is permissible to add the Club Arena logo and download link to the footer of a
-            page, but only if you include the following disclaimers:
+            3. It Is Permissible To Add The Club Arena Logo And Download Link To The Footer Of A
+            Page, But Only If You Include The Following Disclaimers:
           </p>
           <p className={styles.disclaimer}>
             <strong>
-              Club Arena is an online social gaming platform and does not provide any real-money
-              service.
+              Club Arena Is An Online Social Gaming Platform And Does Not Provide Any Real-Money
+              Service.
             </strong>
           </p>
           <p className={styles.disclaimer}>
             <strong>
-              Club Arena is not a sponsor of or in any way involved with this promotional activity,
-              nor does Club Arena endorse it.
+              Club Arena Is Not A Sponsor Of Or In Any Way Involved With This Promotional Activity,
+              Nor Does Club Arena Endorse It.
             </strong>
           </p>
           <p className={styles.highlight}>
-            4. It is specifically forbidden to promote, directly or indirectly, in any manner, Club
-            Arena as a real money application. Club Arena reserves the right to suspend or terminate
-            your account at our sole discretion if we believe you are in violation of this
-            prohibition.
+            4. It Is Specifically Forbidden To Promote, Directly Or Indirectly, In Any Manner, Club
+            Arena As A Real Money Application. Club Arena Reserves The Right To Suspend Or Terminate
+            Your Account At Our Sole Discretion If We Believe You Are In Violation Of This
+            Prohibition.
           </p>
           <p>
-            5. Club Owners, Managers and Agents must clarify when promoting their Club that Club
-            Arena does not in any way involve itself with the operation of the Club/Union.
+            5. Club Owners, Managers And Agents Must Clarify When Promoting Their Club That Club
+            Arena Does Not In Any Way Involve Itself With The Operation Of The Club/Union.
           </p>
 
           {/* Fair Usage */}
-          <h3>Fair Usage of Club Arena Brand Elements</h3>
+          <h3>Fair Usage Of Club Arena Brand Elements</h3>
           <p>
-            1. Subject to the Club Promotion Rules, fair use allows you to use some Club Arena brand
-            elements on your Page.{' '}
+            1. Subject To The Club Promotion Rules, Fair Use Allows You To Use Some Club Arena Brand
+            Elements On Your Page.{' '}
             <strong>
-              Examples of uses that likely fall under fair use, provided the uses comply with these
+              Examples Of Uses That Likely Fall Under Fair Use, Provided The Uses Comply With These
               Club Promotion Rules:
             </strong>
           </p>
           <ul>
             <li>
-              A. Your Fanpage/Club Fanpage/Agency Page/Club discusses Club Arena's new features or
-              discusses Club activities that use Club Arena to organize friendly games. Such pages
-              must include proper disclaimers (see above, Use of Official Club Arena Logos and Brand
-              Elements, section 3).
+              A. Your Fanpage/Club Fanpage/Agency Page/Club Discusses Club Arena's New Features Or
+              Discusses Club Activities That Use Club Arena To Organize Friendly Games. Such Pages
+              Must Include Proper Disclaimers (See Above, Use Of Official Club Arena Logos And Brand
+              Elements, Section 3).
             </li>
-            <li>B. You are sharing screenshots of your own gameplay with your friends.</li>
+            <li>B. You Are Sharing Screenshots Of Your Own Gameplay With Your Friends.</li>
           </ul>
           <p>
-            2. <strong>Examples of uses that likely do NOT fall under fair use:</strong>
+            2. <strong>Examples Of Uses That Likely Do NOT Fall Under Fair Use:</strong>
           </p>
           <ul>
             <li>
-              A. Use that is misleading to visitors as to your affiliation with Club Arena, Smarter
-              Poker LLC or any other brands provided by our Company
+              A. Use That Is Misleading To Visitors As To Your Affiliation With Club Arena, Smarter
+              Poker LLC Or Any Other Brands Provided By Our Company
             </li>
-            <li>B. Using Club Arena brand elements to promote your Club/Agency</li>
-            <li>C. Use that encourages violating our Terms of Service or these Rules</li>
+            <li>B. Using Club Arena Brand Elements To Promote Your Club/Agency</li>
+            <li>C. Use That Encourages Violating Our Terms Of Service Or These Rules</li>
           </ul>
           <p>
-            3. If you have questions regarding permissible, fair use, please refer to our Media
-            Guidelines or contact us via email at{' '}
-            <a href="mailto:compliance@smarter.poker">compliance@smarter.poker</a>
+            3. If You Have Questions Regarding Permissible, Fair Use, Please Refer To Our Media
+            Guidelines Or Contact Us Via Email At{' '}
+            <a href="mailto:compliance@smarter.poker">Compliance@Smarter.Poker</a>
           </p>
 
           {/* Naming */}
-          <h3>Naming and Brand Usage</h3>
+          <h3>Naming And Brand Usage</h3>
           <p>
-            <strong>1. Fansite Indication:</strong> In naming your Fanpage/Club Fanpage/Agency Page
-            etc., please include a term that indicates your site's status as a Club or Union
-            Fansite. Suggestions include "Fansite," "Union Unofficial Fanpage," "Unofficial Site,"
-            "Unofficial Community Site," or any other designation that has been approved by our
+            <strong>1. Fansite Indication:</strong> In Naming Your Fanpage/Club Fanpage/Agency Page
+            Etc., Please Include A Term That Indicates Your Site's Status As A Club Or Union
+            Fansite. Suggestions Include "Fansite," "Union Unofficial Fanpage," "Unofficial Site,"
+            "Unofficial Community Site," Or Any Other Designation That Has Been Approved By Our
             Compliance Team.
           </p>
           <p>
-            <strong>2. Domain Names:</strong> Do not use domain names that closely imitate official
-            Club Arena domains. Make it clear and easily recognizable that your business is in no
-            way affiliated with Club Arena.
+            <strong>2. Domain Names:</strong> Do Not Use Domain Names That Closely Imitate Official
+            Club Arena Domains. Make It Clear And Easily Recognizable That Your Business Is In No
+            Way Affiliated With Club Arena.
           </p>
 
           {/* Legal Notice */}
-          <h3 className={styles.highlightHeader}>Legal Notice and Disclaimer</h3>
+          <h3 className={styles.highlightHeader}>Legal Notice And Disclaimer</h3>
           <p>
-            1. As stated in <strong>Use of Official Club Arena Logos and Brand Elements</strong>,
-            section 3, you must incorporate the following disclaimers in all of your Fanpage's/Club
-            Fanpage's/Agency Page's/Club's publicity materials:
+            1. As Stated In <strong>Use Of Official Club Arena Logos And Brand Elements</strong>,
+            Section 3, You Must Incorporate The Following Disclaimers In All Of Your Fanpage's/Club
+            Fanpage's/Agency Page's/Club's Publicity Materials:
           </p>
           <p className={styles.disclaimer}>
             <strong>
-              Club Arena is an online social gaming platform and does not provide any real money
-              service.
+              Club Arena Is An Online Social Gaming Platform And Does Not Provide Any Real Money
+              Service.
             </strong>
           </p>
           <p className={styles.disclaimer}>
             <strong>
-              Club Arena is not a sponsor of or in any way involved with this promotional activity,
-              nor does Club Arena endorse it.
+              Club Arena Is Not A Sponsor Of Or In Any Way Involved With This Promotional Activity,
+              Nor Does Club Arena Endorse It.
             </strong>
           </p>
           <p>
-            2. If you have any questions about disclosures or any of these Club Promotion Rules, or
-            would like to obtain written permission to use brand elements, please email{' '}
-            <a href="mailto:compliance@smarter.poker">compliance@smarter.poker</a>.
+            2. If You Have Any Questions About Disclosures Or Any Of These Club Promotion Rules, Or
+            Would Like To Obtain Written Permission To Use Brand Elements, Please Email{' '}
+            <a href="mailto:compliance@smarter.poker">Compliance@Smarter.Poker</a>.
           </p>
           <p>
-            3. If we become aware that any website, social media page, "app" or other media or
-            online site is breaching the terms of the Club Arena Club Promotion Rules, we reserve
-            the right to take action to the fullest extent possible. Believing that these Club
-            Promotion Rules are being violated, we may take any and all actions possible in our sole
-            discretion, including, but not limited to, suspending and removing the responsible
+            3. If We Become Aware That Any Website, Social Media Page, "App" Or Other Media Or
+            Online Site Is Breaching The Terms Of The Club Arena Club Promotion Rules, We Reserve
+            The Right To Take Action To The Fullest Extent Possible. Believing That These Club
+            Promotion Rules Are Being Violated, We May Take Any And All Actions Possible In Our Sole
+            Discretion, Including, But Not Limited To, Suspending And Removing The Responsible
             Clubs.
           </p>
           <p>
-            4. We reserve the right to take legal action to the fullest extent of the law, including
-            reporting individuals in the applicable jurisdictions.
+            4. We Reserve The Right To Take Legal Action To The Fullest Extent Of The Law, Including
+            Reporting Individuals In The Applicable Jurisdictions.
           </p>
 
           <div className={styles.scrollIndicator}>
-            {!hasScrolledToBottom && <span>↓ Scroll to read all rules ↓</span>}
+            {!hasScrolledToBottom && <span>↓ Scroll To Read All Rules ↓</span>}
           </div>
         </div>
 
@@ -334,7 +334,7 @@ export default function ClubPromotionRulesModal({
               disabled={!hasScrolledToBottom}
             />
             <span className={styles.checkmark} />
-            <span>I have read and agree with the rules.</span>
+            <span>I Have Read And Agree With The Rules.</span>
           </label>
 
           <button className={styles.confirmButton} onClick={onAccept} disabled={!hasAgreed}>

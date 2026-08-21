@@ -137,7 +137,7 @@ export function TournamentBreakScreen({
       <div className="break-screen__content">
         {/* Header */}
         <div className="break-screen__header">
-          <span className="break-screen__badge">Tournament on Break</span>
+          <span className="break-screen__badge">Tournament On Break</span>
           <h1 className="break-screen__title">{tournamentName}</h1>
           <button
             className="break-screen__minimize-btn"
@@ -166,7 +166,7 @@ export function TournamentBreakScreen({
               <span className="break-screen__time" style={{ color: getTimerColor() }}>
                 {formatTime(displayTime)}
               </span>
-              <span className="break-screen__time-label">until next level</span>
+              <span className="break-screen__time-label">Until Next Level</span>
             </div>
           </div>
           <div
@@ -199,7 +199,7 @@ export function TournamentBreakScreen({
           <div className="break-screen__stat">
             <span className="break-screen__stat-label">Players</span>
             <span className="break-screen__stat-value">{playersRemaining}</span>
-            <span className="break-screen__stat-sub">of {totalPlayers}</span>
+            <span className="break-screen__stat-sub">Of {totalPlayers}</span>
           </div>
           <div className="break-screen__stat">
             <span className="break-screen__stat-label">Avg Stack</span>
@@ -223,7 +223,7 @@ export function TournamentBreakScreen({
               <div className="break-screen__my-rank">
                 <span className="break-screen__rank-label">Rank</span>
                 <span className="break-screen__rank-number">#{myPlayer.rank}</span>
-                <span className="break-screen__rank-of">of {playersRemaining}</span>
+                <span className="break-screen__rank-of">Of {playersRemaining}</span>
               </div>
               <div className="break-screen__divider"></div>
               <div className="break-screen__my-stack">

@@ -128,11 +128,11 @@ export const TierProgressionCard: React.FC<TierProgressionCardProps> = ({
                 <span className="points-remaining">
                   <AnimatedCounter value={Math.max(0, pointsToNextTier)} />
                 </span>
-                points to <strong>{nextTier.name}</strong>
+                Points To <strong>{nextTier.name}</strong>
               </span>
               {estimatedDaysToNextTier > 0 && (
                 <span className="estimated-time">
-                  ≈ {estimatedDaysToNextTier} days at current rate
+                  ≈ {estimatedDaysToNextTier} Days At Current Rate
                 </span>
               )}
             </div>

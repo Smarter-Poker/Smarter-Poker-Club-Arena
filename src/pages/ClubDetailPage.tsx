@@ -314,7 +314,7 @@ class CardErrorBoundary extends Component<
         <div className={styles.cardErrorFallback}>
           <span style={{ fontSize: '1.5rem' }}>⚠</span>
           <span style={{ fontSize: '0.8rem' }}>
-            Failed to load {this.props.label || 'component'}
+            Failed To Load {this.props.label || 'component'}
           </span>
           <button onClick={() => this.setState({ hasError: false })}>Retry</button>
         </div>
@@ -1039,7 +1039,7 @@ export default function ClubDetailPage() {
     return (
       <div className={styles.error}>
         <h2>Club Not Found</h2>
-        <p>The club you're looking for doesn't exist.</p>
+        <p>The Club You're Looking For Doesn't Exist.</p>
       </div>
     );
   }
@@ -1196,7 +1196,7 @@ export default function ClubDetailPage() {
           icon={Icons.shield}
           label="Agents"
         />
-        {(isClubStaff(userRole)) && (
+        {isClubStaff(userRole) && (
           <TabButton
             active={activeTab === 'operations'}
             onClick={() => setActiveTab('operations')}
@@ -1275,7 +1275,7 @@ export default function ClubDetailPage() {
             <div className={styles.card}>
               <h3> Active Tables</h3>
               {tables.filter((t) => t.status === 'running').length === 0 ? (
-                <p className={styles.emptyText}>No active tables</p>
+                <p className={styles.emptyText}>No Active Tables</p>
               ) : (
                 <div className={styles.tableList}>
                   {tables
@@ -1312,13 +1312,13 @@ export default function ClubDetailPage() {
             <div className={styles.card}>
               <h3> Club Rules</h3>
               <ul className={styles.rulesList}>
-                <li>Minimum buy-in: {club.settings.minBuyInBB} BB</li>
-                <li>Maximum buy-in: {club.settings.maxBuyInBB} BB</li>
+                <li>Minimum Buy-In: {club.settings.minBuyInBB} BB</li>
+                <li>Maximum Buy-In: {club.settings.maxBuyInBB} BB</li>
                 <li>
-                  Rake: {club.settings.defaultRakePercent}% (capped at {club.settings.rakeCap} BB)
+                  Rake: {club.settings.defaultRakePercent}% (Capped At {club.settings.rakeCap} BB)
                 </li>
                 <li>Straddle: {club.settings.allowStraddle ? 'Allowed' : 'Not allowed'}</li>
-                <li>Run it twice: {club.settings.allowRunItTwice ? 'Allowed' : 'Not allowed'}</li>
+                <li>Run It Twice: {club.settings.allowRunItTwice ? 'Allowed' : 'Not allowed'}</li>
               </ul>
             </div>
 
@@ -1330,7 +1330,7 @@ export default function ClubDetailPage() {
             <div className={styles.card}>
               <h3 style={{ margin: '0 0 8px', fontSize: '0.95rem' }}>Daily Challenges</h3>
               <p style={{ margin: '0 0 12px', fontSize: '0.8rem', color: '#8a9aaa' }}>
-                A fresh set of challenges every day, plus weekly and monthly goals.
+                A Fresh Set Of Challenges Every Day, Plus Weekly And Monthly Goals.
               </p>
               <button
                 onClick={() => navigate('/challenges')}
@@ -1439,9 +1439,9 @@ export default function ClubDetailPage() {
             <div className={styles.tablesGrid}>
               {tables.length === 0 ? (
                 <div className={styles.emptyState}>
-                  <p>No tables yet</p>
+                  <p>No Tables Yet</p>
                   <p className={styles.emptyHint}>
-                    Create a table to start hosting games for your club members.
+                    Create A Table To Start Hosting Games For Your Club Members.
                   </p>
                 </div>
               ) : (
@@ -1455,7 +1455,7 @@ export default function ClubDetailPage() {
                       <h4>{table.name}</h4>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <StatusBadge status={table.status} />
-                        {(isClubStaff(userRole)) && (
+                        {isClubStaff(userRole) && (
                           <button
                             className={styles.deleteTableBtn}
                             onClick={(e) => {
@@ -1480,7 +1480,7 @@ export default function ClubDetailPage() {
                         <span>{table.stakes}</span>
                       </div>
                       <div className={styles.tableSeats}>
-                        {table.currentPlayers}/{table.maxPlayers} players
+                        {table.currentPlayers}/{table.maxPlayers} Players
                       </div>
                     </div>
                     <Link to={`/table/${table.id}`} className={styles.joinButton}>
@@ -1508,7 +1508,7 @@ export default function ClubDetailPage() {
             </div>
 
             {/* Pending join requests — owner/admin approval queue */}
-            {(isClubStaff(userRole)) && pendingMembers.length > 0 && (
+            {isClubStaff(userRole) && pendingMembers.length > 0 && (
               <div
                 style={{
                   marginBottom: 16,
@@ -1577,14 +1577,14 @@ export default function ClubDetailPage() {
 
             {filteredMembers.length === 0 && memberSearch ? (
               <div className={styles.emptyState}>
-                <p>No members found for "{memberSearch}"</p>
-                <p className={styles.emptyHint}>Try a different search term.</p>
+                <p>No Members Found For "{memberSearch}"</p>
+                <p className={styles.emptyHint}>Try A Different Search Term.</p>
               </div>
             ) : filteredMembers.length === 0 && !memberSearch ? (
               <div className={styles.emptyState}>
-                <p>No members yet</p>
+                <p>No Members Yet</p>
                 <p className={styles.emptyHint}>
-                  Members will appear here once they join the club.
+                  Members Will Appear Here Once They Join The Club.
                 </p>
               </div>
             ) : (
@@ -1686,7 +1686,7 @@ export default function ClubDetailPage() {
                     className={styles.loadMoreBtn}
                     onClick={() => setMemberLimit((prev) => Math.min(prev + 50, 500))}
                   >
-                    Show More ({filteredMembers.length - memberLimit} remaining)
+                    Show More ({filteredMembers.length - memberLimit} Remaining)
                   </button>
                 )}
               </>
@@ -1706,13 +1706,13 @@ export default function ClubDetailPage() {
             {agentsLoading ? (
               <div className={styles.emptyState}>
                 <div className={styles.spinner} />
-                <p>Loading agents...</p>
+                <p>Loading Agents...</p>
               </div>
             ) : agents.length === 0 ? (
               <div className={styles.emptyState}>
-                <p>No agents assigned to this club yet.</p>
+                <p>No Agents Assigned To This Club Yet.</p>
                 <p className={styles.emptyHint}>
-                  Agents help recruit players and earn commission on rake.
+                  Agents Help Recruit Players And Earn Commission On Rake.
                 </p>
                 <button className={styles.createButton} onClick={() => setShowAgentManager(true)}>
                   + Add First Agent
@@ -1847,7 +1847,7 @@ export default function ClubDetailPage() {
             <div className={styles.settingsSection}>
               <h3> Table Defaults</h3>
               <div className={styles.settingRow}>
-                <label>Min Buy-in (BB)</label>
+                <label>Min Buy-In (BB)</label>
                 <input
                   type="number"
                   value={settingsForm.minBuyInBB}
@@ -1858,7 +1858,7 @@ export default function ClubDetailPage() {
                 />
               </div>
               <div className={styles.settingRow}>
-                <label>Max Buy-in (BB)</label>
+                <label>Max Buy-In (BB)</label>
                 <input
                   type="number"
                   value={settingsForm.maxBuyInBB}
@@ -1915,8 +1915,8 @@ export default function ClubDetailPage() {
             </div>
             <div className={styles.modalContent}>
               <p>
-                Manage your club's agent hierarchy, create new agents, and configure commission
-                rates.
+                Manage Your Club's Agent Hierarchy, Create New Agents, And Configure Commission
+                Rates.
               </p>
               <Link
                 to={`/clubs/${clubId}/agents`}

@@ -32,7 +32,7 @@ export function SitOutToggle({
         <div className="away-timer">
           <span className="time">{formatTime(awaySeconds)}</span>
           {autoFoldAt > 0 && (
-            <span className="warning">Auto-remove in {formatTime(autoFoldAt - awaySeconds)}</span>
+            <span className="warning">Auto-Remove In {formatTime(autoFoldAt - awaySeconds)}</span>
           )}
         </div>
       )}

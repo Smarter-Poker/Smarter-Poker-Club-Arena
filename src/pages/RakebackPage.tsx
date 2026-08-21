@@ -251,7 +251,7 @@ export default function RakebackPage() {
       {currentRate > 0 && (
         <div className="rakeback-promo-banner">
           <h3>You're Earning {(currentRate * 100).toFixed(0)}% Rakeback</h3>
-          <p>Every hand you play earns you cash back. Keep playing to increase your rate!</p>
+          <p>Every Hand You Play Earns You Cash Back. Keep Playing To Increase Your Rate!</p>
         </div>
       )}
 
@@ -349,8 +349,8 @@ export default function RakebackPage() {
       <div className="rakeback-info">
         <h3>How Rakeback Works</h3>
         <p>
-          You earn back a percentage of the rake you generate at the tables. Your rate increases as
-          you play more and move up VIP levels.
+          You Earn Back A Percentage Of The Rake You Generate At The Tables. Your Rate Increases As
+          You Play More And Move Up VIP Levels.
         </p>
       </div>
 
@@ -362,7 +362,7 @@ export default function RakebackPage() {
           </div>
         ) : periods.length === 0 ? (
           <div className="empty-state">
-            <p>No rakeback history yet. Play some hands to earn rakeback!</p>
+            <p>No Rakeback History Yet. Play Some Hands To Earn Rakeback!</p>
           </div>
         ) : (
           <div className="periods-list">
@@ -385,7 +385,9 @@ export default function RakebackPage() {
                   <span className="rake-generated">
                     Rake: {(period.rake_generated || 0).toLocaleString()}
                   </span>
-                  <span className="rakeback-rate">{((period.rakeback_rate || 0) * 100).toFixed(1)}%</span>
+                  <span className="rakeback-rate">
+                    {((period.rakeback_rate || 0) * 100).toFixed(1)}%
+                  </span>
                 </div>
                 <div className="period-earned">
                   <span className={`amount ${period.status}`}>

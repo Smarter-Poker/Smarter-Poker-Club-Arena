@@ -378,7 +378,7 @@ export function BBJCelebration({
       <div className="bbj-content">
         {/* Title */}
         <div className={`bbj-title ${phase !== 'explode' ? 'bbj-title-visible' : ''}`}>
-          <div className="bbj-title-crown">&#x1F451;</div>
+          <div className="bbj-title-crown">&#X1F451;</div>
           <h1 className="bbj-title-text">BAD BEAT JACKPOT!</h1>
           <div className="bbj-title-subtitle">JACKPOT HIT!</div>
           {qualifyingLabel && <div className="bbj-title-qualifier">{qualifyingLabel}</div>}
@@ -401,7 +401,7 @@ export function BBJCelebration({
         {/* Payout Breakdown */}
         <div className={`bbj-breakdown ${phase === 'breakdown' ? 'bbj-breakdown-visible' : ''}`}>
           <div className="bbj-breakdown-card bbj-breakdown-loser">
-            <div className="bbj-breakdown-emoji">&#x1F4B0;</div>
+            <div className="bbj-breakdown-emoji">&#X1F4B0;</div>
             <div className="bbj-breakdown-label">BAD BEAT HOLDER</div>
             <div className="bbj-breakdown-name">{loser.username}</div>
             <div className="bbj-breakdown-hand">{loser.handName}</div>
@@ -412,7 +412,7 @@ export function BBJCelebration({
           </div>
 
           <div className="bbj-breakdown-card bbj-breakdown-winner">
-            <div className="bbj-breakdown-emoji">&#x1F3C6;</div>
+            <div className="bbj-breakdown-emoji">&#X1F3C6;</div>
             <div className="bbj-breakdown-label">HAND WINNER</div>
             <div className="bbj-breakdown-name">{winner.username}</div>
             <div className="bbj-breakdown-hand">{winner.handName}</div>
@@ -423,11 +423,11 @@ export function BBJCelebration({
           </div>
 
           <div className="bbj-breakdown-card bbj-breakdown-table">
-            <div className="bbj-breakdown-emoji">&#x1F3B0;</div>
+            <div className="bbj-breakdown-emoji">&#X1F3B0;</div>
             <div className="bbj-breakdown-label">TABLE SHARE</div>
-            <div className="bbj-breakdown-name">{tablePlayerCount} players</div>
+            <div className="bbj-breakdown-name">{tablePlayerCount} Players</div>
             <div className="bbj-breakdown-hand">
-              ${perPlayerShare.toLocaleString(undefined, { minimumFractionDigits: 2 })} each
+              ${perPlayerShare.toLocaleString(undefined, { minimumFractionDigits: 2 })} Each
             </div>
             <div className="bbj-breakdown-amount">
               +${tableShare.toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -448,7 +448,7 @@ export function BBJCelebration({
                 })}
               </span>
               <br />
-              Chips added directly to your table balance!
+              Chips Added Directly To Your Table Balance!
             </>
           ) : (
             'Chips added directly to the players\u2019 table balances!'

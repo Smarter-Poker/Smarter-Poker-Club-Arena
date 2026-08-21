@@ -796,7 +796,7 @@ export default function ClubCarouselPage() {
         {/* #3: Offline banner */}
         {!isOnline && (
           <div className="carousel-offline-banner" role="alert">
-            <span>⚠ Offline - showing cached data</span>
+            <span>⚠ Offline - Showing Cached Data</span>
           </div>
         )}
 

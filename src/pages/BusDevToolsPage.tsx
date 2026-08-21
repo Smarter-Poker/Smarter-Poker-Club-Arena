@@ -182,7 +182,7 @@ export default function BusDevToolsPage() {
           fontFamily: 'monospace',
         }}
       >
-        Checking access...
+        Checking Access...
       </div>
     );
   if (!isAdmin)
@@ -197,7 +197,7 @@ export default function BusDevToolsPage() {
         }}
       >
         <h2>Access Denied</h2>
-        <p>Admin or owner role required to view Bus DevTools.</p>
+        <p>Admin Or Owner Role Required To View Bus DevTools.</p>
       </div>
     );
 
@@ -285,7 +285,7 @@ export default function BusDevToolsPage() {
           <div className="bdt-log-scroll">
             {filteredLog.length === 0 ? (
               <div className="bdt-empty">
-                No events yet - interact with the app to see events flow
+                No Events Yet - Interact With The App To See Events Flow
               </div>
             ) : (
               filteredLog.map((entry) => (
@@ -309,7 +309,7 @@ export default function BusDevToolsPage() {
             <h2>Channel Registry</h2>
             <div className="bdt-channel-list">
               {diagnostics?.channels.length === 0 ? (
-                <div className="bdt-empty">No channels registered</div>
+                <div className="bdt-empty">No Channels Registered</div>
               ) : (
                 diagnostics?.channels.map((ch) => (
                   <div key={ch.key} className="bdt-channel-row">
@@ -332,10 +332,10 @@ export default function BusDevToolsPage() {
 
           {/* Subscriber Bar Chart */}
           <div className="bdt-panel bdt-subscribers">
-            <h2>Subscribers per Event</h2>
+            <h2>Subscribers Per Event</h2>
             <div className="bdt-sub-chart">
               {subscriberEntries.length === 0 ? (
-                <div className="bdt-empty">No subscribers</div>
+                <div className="bdt-empty">No Subscribers</div>
               ) : (
                 subscriberEntries.map(([event, count]) => (
                   <div key={event} className="bdt-sub-row">

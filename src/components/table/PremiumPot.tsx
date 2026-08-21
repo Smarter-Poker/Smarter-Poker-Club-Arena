@@ -138,7 +138,7 @@ export function PremiumPot({
                 {formatAmount(sp.amount)}
               </span>
               <span className="pp-side__players" title={sp.eligible.join(', ')}>
-                ({sp.eligible.length} players)
+                ({sp.eligible.length} Players)
               </span>
             </div>
           ))}

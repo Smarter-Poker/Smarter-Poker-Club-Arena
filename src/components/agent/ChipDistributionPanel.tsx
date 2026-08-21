@@ -143,7 +143,7 @@ export const ChipDistributionPanel: React.FC<ChipDistributionPanelProps> = ({
 
       <div className="distribution-summary">
         <div className="summary-row">
-          <span>Total to Distribute</span>
+          <span>Total To Distribute</span>
           <span className={totalDistribution > sourceBalance ? 'over-limit' : ''}>
             {totalDistribution.toLocaleString()}
           </span>

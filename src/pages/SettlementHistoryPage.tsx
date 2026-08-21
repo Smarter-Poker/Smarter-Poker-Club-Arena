@@ -117,7 +117,9 @@ export default function SettlementHistoryPage() {
       // rake-hold invoices this screen is actually about.
       const { data } = await supabase
         .from('settlement_invoices')
-        .select('id, period_id, invoice_type, gross_amount, net_amount, breakdown, status, created_at')
+        .select(
+          'id, period_id, invoice_type, gross_amount, net_amount, breakdown, status, created_at'
+        )
         .eq('invoice_type', 'union_to_club')
         .order('created_at', { ascending: false })
         .limit(50);
@@ -178,7 +180,7 @@ export default function SettlementHistoryPage() {
         </button>
         <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Settlement History</h1>
         <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
-          Weekly settlement cycles and revenue trends
+          Weekly Settlement Cycles And Revenue Trends
         </p>
       </div>
 
@@ -357,7 +359,7 @@ export default function SettlementHistoryPage() {
         <PageSkeleton variant="default" />
       ) : cycles.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>
-          No settlement cycles yet
+          No Settlement Cycles Yet
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>

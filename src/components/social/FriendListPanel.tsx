@@ -314,7 +314,7 @@ function FriendListPanelInner({
       {/* Header */}
       <div className={styles.header}>
         <h3> Friends</h3>
-        <span className={styles.onlineCount}>{onlineCount} online</span>
+        <span className={styles.onlineCount}>{onlineCount} Online</span>
       </div>
 
       {/* Search */}

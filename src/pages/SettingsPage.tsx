@@ -609,7 +609,7 @@ export default function SettingsPage() {
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Sound Effects</span>
-              <span className={styles.settingDesc}>Play sounds for actions and events</span>
+              <span className={styles.settingDesc}>Play Sounds For Actions And Events</span>
             </div>
             <Toggle
               checked={settings.soundEnabled}
@@ -627,7 +627,6 @@ export default function SettingsPage() {
               disabled={!settings.soundEnabled}
             />
           </div>
-
         </section>
 
         {/* Display Settings */}
@@ -674,7 +673,7 @@ export default function SettingsPage() {
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Four-Color Deck</span>
               <span className={styles.settingDesc}>
-                Hearts ♥, Diamonds ♦ (blue), Clubs ♣ (green), Spades ♠
+                Hearts ♥, Diamonds ♦ (Blue), Clubs ♣ (Green), Spades ♠
               </span>
             </div>
             <Toggle
@@ -703,7 +702,7 @@ export default function SettingsPage() {
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Show Pot Odds</span>
-              <span className={styles.settingDesc}>Display pot odds during your action</span>
+              <span className={styles.settingDesc}>Display Pot Odds During Your Action</span>
             </div>
             <Toggle
               checked={settings.showPotOdds}
@@ -723,7 +722,7 @@ export default function SettingsPage() {
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Confirm All-In</span>
-              <span className={styles.settingDesc}>Require confirmation before going all-in</span>
+              <span className={styles.settingDesc}>Require Confirmation Before Going All-In</span>
             </div>
             <Toggle
               checked={settings.confirmAllIn}
@@ -735,7 +734,7 @@ export default function SettingsPage() {
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Auto-Muck My Winning Hand</span>
               <span className={styles.settingDesc}>
-                Skip the show-or-muck prompt when you win without a showdown
+                Skip The Show-Or-Muck Prompt When You Win Without A Showdown
               </span>
             </div>
             <Toggle
@@ -756,7 +755,7 @@ export default function SettingsPage() {
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Tournament Reminders</span>
-              <span className={styles.settingDesc}>Notify before registered tournaments start</span>
+              <span className={styles.settingDesc}>Notify Before Registered Tournaments Start</span>
             </div>
             <Toggle
               checked={settings.tournamentReminders}
@@ -767,7 +766,7 @@ export default function SettingsPage() {
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Club Activity</span>
-              <span className={styles.settingDesc}>New tables, tournaments, and announcements</span>
+              <span className={styles.settingDesc}>New Tables, Tournaments, And Announcements</span>
             </div>
             <Toggle
               checked={settings.clubActivity}
@@ -788,7 +787,7 @@ export default function SettingsPage() {
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Friend Alerts</span>
-              <span className={styles.settingDesc}>Friend requests, status changes</span>
+              <span className={styles.settingDesc}>Friend Requests, Status Changes</span>
             </div>
             <Toggle
               checked={settings.friendAlerts}
@@ -799,7 +798,7 @@ export default function SettingsPage() {
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Settlement Alerts</span>
-              <span className={styles.settingDesc}>Chip settlement and transfer notifications</span>
+              <span className={styles.settingDesc}>Chip Settlement And Transfer Notifications</span>
             </div>
             <Toggle
               checked={settings.settlementAlerts}
@@ -891,7 +890,7 @@ export default function SettingsPage() {
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Export Data</span>
-              <span className={styles.settingDesc}>Download all your data and hand histories</span>
+              <span className={styles.settingDesc}>Download All Your Data And Hand Histories</span>
             </div>
             <button
               className={styles.actionButtonSecondary}
@@ -906,7 +905,7 @@ export default function SettingsPage() {
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Delete Account</span>
               <span className={styles.settingDesc}>
-                Permanently delete your account and all data
+                Permanently Delete Your Account And All Data
               </span>
             </div>
             <button
@@ -928,7 +927,7 @@ export default function SettingsPage() {
         >
           <div className={styles.modal}>
             <h3>Change Email</h3>
-            <p>A confirmation email will be sent to your new address.</p>
+            <p>A Confirmation Email Will Be Sent To Your New Address.</p>
             <input
               type="email"
               placeholder="New email address"
@@ -960,7 +959,7 @@ export default function SettingsPage() {
         >
           <div className={styles.modal}>
             <h3>Change Password</h3>
-            <p>Password must be at least 8 characters.</p>
+            <p>Password Must Be At Least 8 Characters.</p>
             <input
               type="password"
               placeholder="New password"
@@ -977,7 +976,7 @@ export default function SettingsPage() {
               style={{ marginTop: '0.5rem' }}
             />
             {newPassword && confirmPassword && newPassword !== confirmPassword && (
-              <p style={{ color: '#ef4444', fontSize: '0.85rem' }}>Passwords don't match</p>
+              <p style={{ color: '#ef4444', fontSize: '0.85rem' }}>Passwords Don't Match</p>
             )}
             <div className={styles.modalActions}>
               <button className={styles.cancelBtn} onClick={() => setShowPasswordModal(false)}>
@@ -1008,7 +1007,7 @@ export default function SettingsPage() {
         >
           <div className={styles.modal}>
             <h3>Set Up Two-Factor Authentication</h3>
-            <p>Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.)</p>
+            <p>Scan This QR Code With Your Authenticator App (Google Authenticator, Authy, Etc.)</p>
 
             {totpQRCode && (
               <div style={{ textAlign: 'center', margin: '1rem 0' }}>
@@ -1021,7 +1020,7 @@ export default function SettingsPage() {
             )}
 
             <p style={{ fontSize: '0.85rem', color: '#9ca3af' }}>
-              Or enter this secret manually:{' '}
+              Or Enter This Secret Manually:{' '}
               <code
                 style={{ background: '#1f2937', padding: '0.25rem 0.5rem', borderRadius: '4px' }}
               >

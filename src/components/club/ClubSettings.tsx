@@ -161,7 +161,7 @@ export function ClubSettings({
                   onChange={(e) => handleChange('rakePercentage', parseFloat(e.target.value))}
                   className="form-input"
                 />
-                <span className="form-hint">Standard is 5%</span>
+                <span className="form-hint">Standard Is 5%</span>
               </div>
               <div className="form-group">
                 <label>Jackpot Contribution (Chips)</label>
@@ -174,7 +174,7 @@ export function ClubSettings({
                   onChange={(e) => handleChange('jackpotContribution', parseFloat(e.target.value))}
                   className="form-input"
                 />
-                <span className="form-hint">Amount taken per hand for BBJ</span>
+                <span className="form-hint">Amount Taken Per Hand For BBJ</span>
               </div>
             </div>
           )}
@@ -189,7 +189,7 @@ export function ClubSettings({
                 />
                 <div className="checkbox-info">
                   <span className="checkbox-label">Require Verification</span>
-                  <span className="checkbox-desc">New members must be approved by admin</span>
+                  <span className="checkbox-desc">New Members Must Be Approved By Admin</span>
                 </div>
               </label>
 
@@ -201,7 +201,7 @@ export function ClubSettings({
                 />
                 <div className="checkbox-info">
                   <span className="checkbox-label">Agent Invitations</span>
-                  <span className="checkbox-desc">Allow agents to generate invite links</span>
+                  <span className="checkbox-desc">Allow Agents To Generate Invite Links</span>
                 </div>
               </label>
 

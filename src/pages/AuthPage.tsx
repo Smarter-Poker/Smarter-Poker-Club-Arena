@@ -319,7 +319,7 @@ export default function AuthPage() {
         {/* Success Message */}
         {success && (
           <div className={styles.successMessage}>
-            <span>\u2713</span> {success}
+            <span>\U2713</span> {success}
           </div>
         )}
 
@@ -394,7 +394,7 @@ export default function AuthPage() {
                 setError(null);
               }}
             >
-              Forgot password?
+              Forgot Password?
             </button>
           </form>
         )}
@@ -459,7 +459,7 @@ export default function AuthPage() {
               <label htmlFor="referral-code">
                 Referral Code{' '}
                 <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.75rem' }}>
-                  (optional)
+                  (Optional)
                 </span>
               </label>
               <input
@@ -506,7 +506,7 @@ export default function AuthPage() {
         {mode === 'reset' && (
           <form onSubmit={handlePasswordReset} className={styles.form}>
             <p className={styles.resetText}>
-              Enter your email and we'll send you a link to reset your password.
+              Enter Your Email And We'll Send You A Link To Reset Your Password.
             </p>
 
             <div className={styles.inputGroup}>
@@ -558,7 +558,7 @@ export default function AuthPage() {
                 setSuccess(null);
               }}
             >
-              ← Back to Login
+              ← Back To Login
             </button>
           </form>
         )}

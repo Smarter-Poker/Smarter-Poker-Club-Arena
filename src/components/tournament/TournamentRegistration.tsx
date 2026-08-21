@@ -293,7 +293,7 @@ export function TournamentRegistration({
         </div>
       )}
 
-      {players.length === 0 && <div className="empty-state">No players registered yet</div>}
+      {players.length === 0 && <div className="empty-state">No Players Registered Yet</div>}
     </div>
   );
 }

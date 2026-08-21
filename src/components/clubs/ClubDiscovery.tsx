@@ -253,7 +253,7 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
                 {club.name}
               </div>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary, #8b9dc3)' }}>
-                {club.memberCount} members • {club.minStakes}
+                {club.memberCount} Members • {club.minStakes}
               </div>
               {club.activeTableCount > 0 && (
                 <div
@@ -264,7 +264,7 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
                     marginTop: '4px',
                   }}
                 >
-                  ● {club.activeTableCount} tables live
+                  ● {club.activeTableCount} Tables Live
                 </div>
               )}
             </div>
@@ -279,7 +279,7 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
         ) : filteredClubs.length === 0 ? (
           <div className="empty-state">
             <span>⌂</span>
-            <p>No clubs found matching your criteria</p>
+            <p>No Clubs Found Matching Your Criteria</p>
           </div>
         ) : (
           filteredClubs.map((club, i) => (
@@ -333,7 +333,7 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
               </div>
               <div className="club-stats">
                 <span> {club.memberCount}</span>
-                <span> {club.activeTableCount} tables</span>
+                <span> {club.activeTableCount} Tables</span>
                 <span>
                   {club.minStakes} - {club.maxStakes}
                 </span>

@@ -1107,7 +1107,7 @@ function HomePageInner() {
       {/* #15: Offline indicator banner */}
       {!isOnline && (
         <div className={styles.offlineBanner} role="alert">
-          <span>Offline -- showing cached data</span>
+          <span>Offline -- Showing Cached Data</span>
         </div>
       )}
 
@@ -1205,9 +1205,9 @@ function HomePageInner() {
         {!isLoading && hasFetchedOnceRef.current && displayClubs.length === 0 && (
           <div className={styles.emptyStateCard}>
             <div className={styles.emptyStateIcon}>♠</div>
-            <h3 className={styles.emptyStateTitle}>Welcome to Club Arena</h3>
+            <h3 className={styles.emptyStateTitle}>Welcome To Club Arena</h3>
             <p className={styles.emptyStateDesc}>
-              Join a club to play poker with friends, compete on leaderboards, and earn rewards.
+              Join A Club To Play Poker With Friends, Compete On Leaderboards, And Earn Rewards.
             </p>
             <div className={styles.emptyStateActions}>
               <button
@@ -1217,7 +1217,7 @@ function HomePageInner() {
                   setShowJoinModal(true);
                 }}
               >
-                Join a Club
+                Join A Club
               </button>
               <button
                 className={styles.emptyStateBtnSecondary}
@@ -1318,9 +1318,9 @@ function HomePageInner() {
               Leave Club?
             </h2>
             <p className={styles.modalSubtitle}>
-              Are you sure you want to leave{' '}
-              <strong>{leaveConfirm.club?.name || 'this club'}</strong>? This action cannot be
-              undone.
+              Are You Sure You Want To Leave{' '}
+              <strong>{leaveConfirm.club?.name || 'this club'}</strong>? This Action Cannot Be
+              Undone.
             </p>
             <div className={styles.modalButtons}>
               <button
@@ -1359,7 +1359,7 @@ function HomePageInner() {
           >
             {!showReferralPrompt ? (
               <>
-                <h2 className={styles.modalTitle}>Join a Club</h2>
+                <h2 className={styles.modalTitle}>Join A Club</h2>
                 <div className={styles.inputGroup}>
                   <input
                     ref={joinInputRef}
@@ -1395,7 +1395,7 @@ function HomePageInner() {
                 <h2 className={styles.modalTitle}>
                   {validClubName ? `Join ${validClubName}` : 'Referral Code'}
                 </h2>
-                <p className={styles.modalSubtitle}>Enter a referral code or join without one</p>
+                <p className={styles.modalSubtitle}>Enter A Referral Code Or Join Without One</p>
                 <div className={styles.inputGroup}>
                   <input
                     type="text"

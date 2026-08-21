@@ -174,7 +174,7 @@ export function AgentManager({
           {agents.length > 0 ? (
             agents.map((root) => renderNode(root))
           ) : (
-            <div className="agent-empty">No agents found. Start building your network!</div>
+            <div className="agent-empty">No Agents Found. Start Building Your Network!</div>
           )}
         </div>
       </div>

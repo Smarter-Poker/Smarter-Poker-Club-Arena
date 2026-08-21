@@ -313,7 +313,7 @@ export default function HandReplay({
     return (
       <div className="hand-replay loading">
         <div className="loader-spinner" />
-        <p>Loading hand...</p>
+        <p>Loading Hand...</p>
       </div>
     );
   }
@@ -321,7 +321,7 @@ export default function HandReplay({
   if (!handData) {
     return (
       <div className="hand-replay error">
-        <p>Hand not found</p>
+        <p>Hand Not Found</p>
         {onClose && <button onClick={onClose}>Close</button>}
       </div>
     );
@@ -425,7 +425,7 @@ export default function HandReplay({
               {player.result >= 0 ? '+' : ''}
               {player.result.toLocaleString()}
               <br />
-              <span className="result-label">Main pot</span>
+              <span className="result-label">Main Pot</span>
             </div>
           </div>
         ))}
@@ -511,7 +511,7 @@ export default function HandReplay({
                   color: '#b0b3b8',
                 }}
               >
-                Loading 3D viewer...
+                Loading 3D Viewer...
               </div>
             }
           >

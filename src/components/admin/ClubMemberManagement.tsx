@@ -222,10 +222,10 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
           <option value="member">Member</option>
         </select>
         <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)}>
-          <option value="name">Sort by Name</option>
-          <option value="balance">Sort by Balance</option>
-          <option value="rake">Sort by Rake</option>
-          <option value="joined">Sort by Joined</option>
+          <option value="name">Sort By Name</option>
+          <option value="balance">Sort By Balance</option>
+          <option value="rake">Sort By Rake</option>
+          <option value="joined">Sort By Joined</option>
         </select>
       </div>
 

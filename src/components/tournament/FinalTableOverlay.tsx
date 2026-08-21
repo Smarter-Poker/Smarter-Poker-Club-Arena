@@ -141,7 +141,7 @@ export const FinalTableOverlay: React.FC<FinalTableOverlayProps> = ({
           <h1 className="ft-overlay__title">FINAL TABLE</h1>
           <div className="ft-overlay__subtitle">{tournamentName}</div>
           {prizePool > 0 && (
-            <div className="ft-overlay__prize">Prize Pool: {prizePool.toLocaleString()} chips</div>
+            <div className="ft-overlay__prize">Prize Pool: {prizePool.toLocaleString()} Chips</div>
           )}
         </div>
 
@@ -209,7 +209,7 @@ export const FinalTableOverlay: React.FC<FinalTableOverlayProps> = ({
         </div>
 
         {/* Tap to dismiss */}
-        <div className="ft-overlay__dismiss">Tap to continue</div>
+        <div className="ft-overlay__dismiss">Tap To Continue</div>
       </div>
     </div>
   );

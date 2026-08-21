@@ -196,7 +196,7 @@ export const AppearanceSettings: React.FC = () => {
 
       {saved && (
         <span style={{ color: '#31A24C', fontSize: '0.85rem', transition: 'opacity 0.3s' }}>
-          ✓ Settings saved
+          ✓ Settings Saved
         </span>
       )}
     </div>

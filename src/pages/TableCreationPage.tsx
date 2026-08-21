@@ -251,7 +251,7 @@ export default function TableCreationPage() {
                 className={`size-btn ${settings.max_players === size ? 'active' : ''}`}
                 onClick={() => updateSetting('max_players', size)}
               >
-                {size} max
+                {size} Max
               </button>
             ))}
           </div>
@@ -259,7 +259,7 @@ export default function TableCreationPage() {
 
         {/* Buy-in Range */}
         <section className="creation-section" style={sectionAnimationStyle(4)}>
-          <h3>Buy-in Range (BB)</h3>
+          <h3>Buy-In Range (BB)</h3>
           <div className="buyin-range">
             <div className="buyin-input">
               <label>Min</label>

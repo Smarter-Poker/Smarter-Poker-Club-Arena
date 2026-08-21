@@ -1081,7 +1081,7 @@ export default function PlayerStatsPage() {
           <span className="empty-icon">{'!'}</span>
           <span className="empty-title">Couldn't Load Your Stats</span>
           <span className="empty-description">
-            Your statistics are still there - we just could not reach them right now.
+            Your Statistics Are Still There - We Just Could Not Reach Them Right Now.
           </span>
           <button
             className="empty-cta"
@@ -1105,10 +1105,10 @@ export default function PlayerStatsPage() {
       <span className="empty-icon">{'♠'}</span>
       <span className="empty-title">No Stats Yet</span>
       <span className="empty-description">
-        Play some hands at the tables and your statistics will appear here automatically.
+        Play Some Hands At The Tables And Your Statistics Will Appear Here Automatically.
       </span>
       <button className="empty-cta" onClick={() => navigate('/')}>
-        Go to Lobby
+        Go To Lobby
       </button>
     </div>
   );
@@ -1127,7 +1127,7 @@ export default function PlayerStatsPage() {
               {Math.max(lifetime.hands, overall.total_hands).toLocaleString()}
             </span>
             {lifetime.hands > overall.total_hands && (
-              <span className="hero-stat-sub">{overall.total_hands.toLocaleString()} analysed</span>
+              <span className="hero-stat-sub">{overall.total_hands.toLocaleString()} Analysed</span>
             )}
           </div>
           <div className="hero-stat">
@@ -1167,13 +1167,13 @@ export default function PlayerStatsPage() {
           stale figure as though it were a current lifetime total. */}
       {hasData && overall.hands_capped && (
         <div className="stats-notice">
-          Based on your most recent {overall.hand_cap.toLocaleString()} hands
+          Based On Your Most Recent {overall.hand_cap.toLocaleString()} Hands
           {rangeKey !== 'all' ? ' in this range' : ''}.
         </div>
       )}
       {hasData && !overall.hands_capped && rangeKey !== 'all' && (
         <div className="stats-notice">
-          {overall.total_hands.toLocaleString()} hands in the last{' '}
+          {overall.total_hands.toLocaleString()} Hands In The Last{' '}
           {RANGES.find((r) => r.key === rangeKey)?.label.toLowerCase()}.
         </div>
       )}
@@ -1181,13 +1181,13 @@ export default function PlayerStatsPage() {
           confident-looking number invites the wrong conclusion. */}
       {hasData && overall.cash_hands > 0 && overall.cash_hands < 1000 && (
         <div className="stats-notice">
-          {overall.cash_hands.toLocaleString()} cash hands is a small sample - win rate is not yet
-          meaningful.
+          {overall.cash_hands.toLocaleString()} Cash Hands Is A Small Sample - Win Rate Is Not Yet
+          Meaningful.
         </div>
       )}
       {servingCache && (
         <div className="stats-notice stats-notice-warn">
-          Showing your last loaded stats - the refresh did not go through.
+          Showing Your Last Loaded Stats - The Refresh Did Not Go Through.
         </div>
       )}
 
@@ -1610,7 +1610,7 @@ export default function PlayerStatsPage() {
               <div className="stats-empty-state">
                 <span className="empty-title">No Tournaments Yet</span>
                 <span className="empty-description">
-                  Register for a tournament in the lobby and your results will show up here.
+                  Register For A Tournament In The Lobby And Your Results Will Show Up Here.
                 </span>
               </div>
             )}
@@ -1655,7 +1655,7 @@ export default function PlayerStatsPage() {
               {/* Profit Over Time Chart */}
               <div className="chart-card">
                 <div className="chart-card-header">
-                  <h3>Profit Over Time (90 days)</h3>
+                  <h3>Profit Over Time (90 Days)</h3>
                 </div>
                 <div className="chart-container">
                   <ResponsiveContainer width="100%" height={250}>
@@ -1728,7 +1728,7 @@ export default function PlayerStatsPage() {
               {positionPie.length > 0 && (
                 <div className="chart-card">
                   <div className="chart-card-header">
-                    <h3>Hands Won by Position</h3>
+                    <h3>Hands Won By Position</h3>
                   </div>
                   <div className="chart-container pie-chart">
                     <ResponsiveContainer width="100%" height={250}>
@@ -1789,9 +1789,9 @@ export default function PlayerStatsPage() {
                   </button>
                 ))}
               </div>
-              {handsLoading && <div className="hand-empty">Loading hands...</div>}
+              {handsLoading && <div className="hand-empty">Loading Hands...</div>}
               {!handsLoading && hands && hands.length === 0 && (
-                <div className="hand-empty">No hands in this range yet.</div>
+                <div className="hand-empty">No Hands In This Range Yet.</div>
               )}
               {!handsLoading && hands && hands.length > 0 && (
                 <div className="hand-list">
@@ -1822,7 +1822,7 @@ export default function PlayerStatsPage() {
                           {h.profit >= 0 ? '+' : ''}
                           {h.profit.toLocaleString()}
                         </span>
-                        <span className="hand-row-pot">pot {h.pot_size.toLocaleString()}</span>
+                        <span className="hand-row-pot">Pot {h.pot_size.toLocaleString()}</span>
                       </div>
                     </div>
                   ))}
@@ -1841,8 +1841,8 @@ export default function PlayerStatsPage() {
               <SessionHistory userId={targetUserId} initialSessions={sessionRows} />
               {overall.tourney_hands > 0 && (
                 <div className="stats-notice">
-                  Cash tables only - tournament results are in the Tournaments tab, because a
-                  tournament result is a prize, not chips won at a table.
+                  Cash Tables Only - Tournament Results Are In The Tournaments Tab, Because A
+                  Tournament Result Is A Prize, Not Chips Won At A Table.
                 </div>
               )}
             </div>

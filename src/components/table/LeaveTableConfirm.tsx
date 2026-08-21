@@ -103,14 +103,14 @@ export default function LeaveTableConfirm({
           Leave Table?
         </h3>
         <p id="leave-confirm-desc" className="leave-confirm__desc">
-          You have{' '}
+          You Have{' '}
           <strong>
             {currentStack.toLocaleString('en-US', {
               minimumFractionDigits: 0,
               maximumFractionDigits: 0,
             })}
           </strong>{' '}
-          chips at <strong>{tableName}</strong>. Your chips will be returned to your wallet.
+          Chips At <strong>{tableName}</strong>. Your Chips Will Be Returned To Your Wallet.
         </p>
         <div className="leave-confirm__actions">
           <button

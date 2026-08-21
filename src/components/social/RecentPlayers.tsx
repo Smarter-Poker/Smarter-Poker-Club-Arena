@@ -100,7 +100,7 @@ export const RecentPlayers: React.FC<RecentPlayersProps> = ({
         ) : players.length === 0 ? (
           <div className="empty-state">
             <span>◉</span>
-            <p>No recent players</p>
+            <p>No Recent Players</p>
           </div>
         ) : (
           players.map((player, i) => (
@@ -136,7 +136,7 @@ export const RecentPlayers: React.FC<RecentPlayersProps> = ({
                 </div>
                 <span className="player-table">{player.tableName}</span>
                 <div className="player-meta">
-                  <span>{player.handsPlayed} hands</span>
+                  <span>{player.handsPlayed} Hands</span>
                   <span className={`result ${player.result >= 0 ? 'positive' : 'negative'}`}>
                     {player.result >= 0 ? '+' : ''}
                     {player.result}

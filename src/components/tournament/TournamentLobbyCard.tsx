@@ -312,7 +312,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
       {/* Info Grid */}
       <div className={styles.info}>
         <div className={styles.infoItem}>
-          <span className={styles.infoLabel}>Buy-in</span>
+          <span className={styles.infoLabel}>Buy-In</span>
           {/* Whole chips only (Dan 2026-08-20) - never a decimal buy-in. */}
           <span className={styles.infoValue}>{money(tournament.buyIn)}</span>
         </div>
@@ -404,7 +404,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
             (tournament.late_reg_levels || tournament.lateRegMins) &&
             (tournament.late_reg_levels || tournament.lateRegMins || 0) > 0 && (
               <span className={styles.featureTag}>
-                Late Reg through Lvl {tournament.late_reg_levels || tournament.lateRegMins}
+                Late Reg Through Lvl {tournament.late_reg_levels || tournament.lateRegMins}
               </span>
             )
           )}
@@ -415,7 +415,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
       {/* Countdown */}
       {tournament.startsAt && tournament.status === 'registering' && (
         <div className={`${styles.countdown} ${isCountdownCritical ? styles.critical : ''}`}>
-          <span className={styles.countdownLabel}>Starts in</span>
+          <span className={styles.countdownLabel}>Starts In</span>
           <span className={styles.countdownValue}>{countdown}</span>
         </div>
       )}
@@ -435,7 +435,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
         </>
       ) : (
         <span className={styles.spotsLabel}>
-          {tournament.registeredPlayers} registered - Open entry
+          {tournament.registeredPlayers} Registered - Open Entry
         </span>
       )}
 

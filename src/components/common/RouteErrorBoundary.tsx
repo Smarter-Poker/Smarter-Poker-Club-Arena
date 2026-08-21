@@ -87,10 +87,10 @@ export default class RouteErrorBoundary extends Component<Props, State> {
         >
           <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠</div>
           <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '.5rem' }}>
-            This page ran into an issue
+            This Page Ran Into An Issue
           </h2>
           <p style={{ color: '#64748b', marginBottom: '1.5rem', maxWidth: 400, lineHeight: 1.5 }}>
-            Something unexpected happened. You can go back or try reloading this page.
+            Something Unexpected Happened. You Can Go Back Or Try Reloading This Page.
           </p>
           <div style={{ display: 'flex', gap: '.75rem' }}>
             <button

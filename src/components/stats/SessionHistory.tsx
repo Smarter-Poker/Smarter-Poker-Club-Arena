@@ -251,7 +251,7 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
       <div className="session-history">
         <div className="session-header">
           <h3>Session History</h3>
-          <p className="session-subtitle">Loading sessions...</p>
+          <p className="session-subtitle">Loading Sessions...</p>
         </div>
       </div>
     );
@@ -318,7 +318,7 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
             <span className="stat-value">{getWinRate()}%</span>
           </div>
           <div className="summary-stat">
-            <span className="stat-label">Avg $/hr</span>
+            <span className="stat-label">Avg $/Hr</span>
             <span
               className="stat-value"
               style={{ color: parseFloat(getAverageHourlyRate()) >= 0 ? '#10b981' : '#ef4444' }}
@@ -392,7 +392,7 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
                     <span className="pl-value">{session.profitLoss.toLocaleString()}</span>
                   </div>
                   <div className="result-hourly">
-                    <span className="hourly-label">$/hr</span>
+                    <span className="hourly-label">$/Hr</span>
                     <span
                       className="hourly-value"
                       style={{ color: session.hourlyRate >= 0 ? '#10b981' : '#ef4444' }}
@@ -434,7 +434,7 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
                       <span className="detail-value">{session.cashOut.toLocaleString()}</span>
                     </div>
                     <div className="detail-item">
-                      <span className="detail-label">P/L per Hand</span>
+                      <span className="detail-label">P/L Per Hand</span>
                       <span className="detail-value">
                         {session.handsPlayed > 0
                           ? (session.profitLoss / session.handsPlayed).toFixed(2)

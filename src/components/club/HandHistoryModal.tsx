@@ -203,7 +203,7 @@ Seat 1: Player1 won (${currency}${selectedHand.potSize})`}
                 </div>
               </>
             ) : (
-              <div className="detail-empty">Select a hand to view details</div>
+              <div className="detail-empty">Select A Hand To View Details</div>
             )}
           </div>
         </div>

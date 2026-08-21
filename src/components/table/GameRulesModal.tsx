@@ -133,14 +133,14 @@ export function GameRulesModal({
                 </div>
               )}
               <div className="rules-modal__item">
-                <span className="rules-modal__label">Min Buy-in</span>
+                <span className="rules-modal__label">Min Buy-In</span>
                 <span className="rules-modal__value">
                   {currency}
                   {minBuyIn.toLocaleString()}
                 </span>
               </div>
               <div className="rules-modal__item">
-                <span className="rules-modal__label">Max Buy-in</span>
+                <span className="rules-modal__label">Max Buy-In</span>
                 <span className="rules-modal__value">
                   {currency}
                   {maxBuyIn.toLocaleString()}
@@ -175,7 +175,7 @@ export function GameRulesModal({
                 className={`rules-modal__feature ${isRunItTwiceEnabled ? 'rules-modal__feature--active' : ''}`}
               >
                 <span className="rules-modal__feature-icon">{isRunItTwiceEnabled ? '' : ''}</span>
-                <span className="rules-modal__feature-text">Run it Twice</span>
+                <span className="rules-modal__feature-text">Run It Twice</span>
               </div>
               <div
                 className={`rules-modal__feature ${isInsuranceEnabled ? 'rules-modal__feature--active' : ''}`}

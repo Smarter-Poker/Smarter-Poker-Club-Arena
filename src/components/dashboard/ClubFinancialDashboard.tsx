@@ -322,9 +322,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
 
       {/* Revenue Chart */}
       <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
-        <h2 className="text-gray-400 text-sm uppercase tracking-wide mb-4">
-          Weekly Revenue Trend
-        </h2>
+        <h2 className="text-gray-400 text-sm uppercase tracking-wide mb-4">Weekly Revenue Trend</h2>
         <ResponsiveContainer width="100%" height={200}>
           <AreaChart data={revenueData}>
             <defs>
@@ -359,9 +357,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Pie Chart */}
         <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
-          <h2 className="text-gray-400 text-sm uppercase tracking-wide mb-4">
-            Commission Split
-          </h2>
+          <h2 className="text-gray-400 text-sm uppercase tracking-wide mb-4">Commission Split</h2>
           <ResponsiveContainer width="100%" height={180}>
             <PieChart>
               <Pie
@@ -421,7 +417,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
           </h2>
           <div className="flex flex-col space-y-4">
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Chips to Mint</label>
+              <label className="block text-sm text-gray-400 mb-1">Chips To Mint</label>
               <input
                 type="number"
                 value={mintAmount}

@@ -564,7 +564,7 @@ export default function FriendsPage() {
             ) : filteredFriends.length === 0 ? (
               <div className="empty-state">
                 <span className="empty-icon">◆</span>
-                <p>No friends yet</p>
+                <p>No Friends Yet</p>
                 <button className="btn btn-primary" onClick={() => navigate('/search?tab=players')}>
                   Find Friends
                 </button>
@@ -629,10 +629,10 @@ export default function FriendsPage() {
                 ✉
               </span>
               <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
-                No pending requests
+                No Pending Requests
               </p>
               <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
-                When someone sends you a friend request, it will appear here.
+                When Someone Sends You A Friend Request, It Will Appear Here.
               </p>
             </div>
           ) : (
@@ -655,7 +655,7 @@ export default function FriendsPage() {
                 </div>
                 <div className="request-info">
                   <span className="request-name">{request.username}</span>
-                  <span className="request-label">wants to be friends</span>
+                  <span className="request-label">Wants To Be Friends</span>
                 </div>
                 <div className="request-actions">
                   <button className="accept-btn" onClick={() => acceptRequest(request.id)}>

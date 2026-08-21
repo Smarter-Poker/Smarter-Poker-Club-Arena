@@ -458,7 +458,7 @@ export default function MarketplacePage() {
         <div className={styles.headerLeft}>
           <h1 className={styles.title}>Marketplace</h1>
           <div className={styles.walletBar}>
-            <span className={styles.walletPill}>{fmt(balance)} chips</span>
+            <span className={styles.walletPill}>{fmt(balance)} Chips</span>
             <span className={styles.walletPillDiamond} aria-live="polite">
               {wallet.loaded ? `${fmt(wallet.diamonds)} diamonds` : 'diamonds -'}
             </span>
@@ -498,7 +498,7 @@ export default function MarketplacePage() {
       {/* Failure banners — these used to be silent on every refresh path */}
       {shopError && (
         <div className={styles.errorBanner} role="alert">
-          <span>Could not load the shop: {shopError}</span>
+          <span>Could Not Load The Shop: {shopError}</span>
           <button className={styles.inlineLink} onClick={refreshAll} disabled={refreshing}>
             Retry
           </button>
@@ -534,9 +534,9 @@ export default function MarketplacePage() {
         )}
         {tab === 'store' && !clubId && (
           <div className={styles.emptyState}>
-            <span className={styles.emptyText}>Join a club to browse its shop.</span>
+            <span className={styles.emptyText}>Join A Club To Browse Its Shop.</span>
             <span className={styles.emptySubText}>
-              Diamonds and VIP membership are still available in the other tabs.
+              Diamonds And VIP Membership Are Still Available In The Other Tabs.
             </span>
           </div>
         )}
@@ -582,7 +582,7 @@ export default function MarketplacePage() {
               {clubId ? 'The Manage tab is for club owners and admins.' : 'Join a club first.'}
             </span>
             <button className={styles.emptyButton} onClick={() => switchTab('store')}>
-              Back to Store
+              Back To Store
             </button>
           </div>
         )}

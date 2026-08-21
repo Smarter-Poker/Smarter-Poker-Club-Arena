@@ -589,7 +589,7 @@ export default function DailyChallengesPage() {
     return (
       <div className={styles.page}>
         <div className={styles.emptyState}>
-          <p>Sign in to see your daily challenges.</p>
+          <p>Sign In To See Your Daily Challenges.</p>
         </div>
       </div>
     );
@@ -618,7 +618,7 @@ export default function DailyChallengesPage() {
           <StreakFire streakCount={streak?.streak ?? stats?.currentStreak ?? 0} size="md" />
           <div className={styles.streakInfo}>
             <span className={styles.streakCount}>
-              {(streak?.streak ?? stats?.currentStreak ?? 0).toLocaleString()} day streak
+              {(streak?.streak ?? stats?.currentStreak ?? 0).toLocaleString()} Day Streak
             </span>
             <span className={styles.streakSub}>
               {streak?.usedFreeze && streak.frozenDate
@@ -641,7 +641,7 @@ export default function DailyChallengesPage() {
               </div>
               <span className={styles.milestoneText}>
                 {(streak?.streak ?? stats.currentStreak).toLocaleString()}/
-                {stats.nextMilestone.toLocaleString()} days
+                {stats.nextMilestone.toLocaleString()} Days
               </span>
             </>
           )}
@@ -687,7 +687,7 @@ export default function DailyChallengesPage() {
             {[unclaimed.diamonds > 0 ? `${'◆'} ${unclaimed.diamonds.toLocaleString()}` : '']
               .filter(Boolean)
               .join('  +  ')}{' '}
-            ready to claim
+            Ready To Claim
           </span>
           <button className={styles.claimAllButton} onClick={handleClaimAll} disabled={claimingAll}>
             {claimingAll
@@ -717,14 +717,14 @@ export default function DailyChallengesPage() {
       </nav>
 
       <p className={styles.tierReset}>
-        {TIER_LABELS[activeTier]} challenges reset in {tierCountdown[activeTier]}
+        {TIER_LABELS[activeTier]} Challenges Reset In {tierCountdown[activeTier]}
       </p>
 
       {/* Challenge list */}
       <section className={styles.list}>
         {visible.length === 0 ? (
           <div className={styles.emptyState}>
-            <p>No {TIER_LABELS[activeTier].toLowerCase()} challenges available right now.</p>
+            <p>No {TIER_LABELS[activeTier].toLowerCase()} Challenges Available Right Now.</p>
           </div>
         ) : (
           visible.map((c) => (
@@ -784,7 +784,7 @@ export default function DailyChallengesPage() {
 
             {reward.diamonds > 0 && (
               <p className={styles.celebrateBalance}>
-                New balance: {reward.diamondBalance.toLocaleString()} diamonds
+                New Balance: {reward.diamondBalance.toLocaleString()} Diamonds
               </p>
             )}
 
@@ -798,9 +798,9 @@ export default function DailyChallengesPage() {
       {/* How it works */}
       <footer className={styles.footer}>
         <p>
-          A new set of daily challenges arrives every day at midnight UTC. Weekly challenges reset
-          each Monday, monthly challenges on the 1st. Play hands, win pots, hit showdowns, and enter
-          tournaments to make progress automatically.
+          A New Set Of Daily Challenges Arrives Every Day At Midnight UTC. Weekly Challenges Reset
+          Each Monday, Monthly Challenges On The 1St. Play Hands, Win Pots, Hit Showdowns, And Enter
+          Tournaments To Make Progress Automatically.
         </p>
         <button className={styles.playButton} onClick={() => navigate('/')}>
           Go Play

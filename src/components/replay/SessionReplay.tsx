@@ -158,7 +158,7 @@ export const SessionReplay: React.FC<SessionReplayProps> = ({ sessionId, onClose
     return (
       <div className="session-replay loading">
         <div className="spinner" />
-        <p>Loading session...</p>
+        <p>Loading Session...</p>
       </div>
     );
   }

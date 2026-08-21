@@ -36,7 +36,7 @@ export const QuickSitButton: React.FC<QuickSitButtonProps> = ({
       <div className="quick-sit-content">
         <span className="quick-sit-label">Quick Sit</span>
         <span className="quick-sit-info">
-          {stakes} • {availableSeats} seat{availableSeats !== 1 ? 's' : ''}
+          {stakes} • {availableSeats} Seat{availableSeats !== 1 ? 's' : ''}
         </span>
       </div>
     </button>

@@ -383,8 +383,8 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
           <div className="psr-empty-icon">--</div>
           <div className="psr-empty-title">No Profile Data Yet</div>
           <div className="psr-empty-desc">
-            Play hands at the tables to build your player profile. Your aggression, tightness,
-            position awareness, and more will be tracked automatically.
+            Play Hands At The Tables To Build Your Player Profile. Your Aggression, Tightness,
+            Position Awareness, And More Will Be Tracked Automatically.
           </div>
         </div>
       </div>

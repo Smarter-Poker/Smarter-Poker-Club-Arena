@@ -108,7 +108,7 @@ export default function ActivityHeatmap({
           {label}
         </span>
         <span style={{ color: '#6a7a8a', fontSize: '0.7rem' }}>
-          {totalCount.toLocaleString()} total · Last {weeks} weeks
+          {totalCount.toLocaleString()} Total · Last {weeks} Weeks
         </span>
       </div>
 

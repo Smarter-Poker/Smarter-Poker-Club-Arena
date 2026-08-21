@@ -130,8 +130,8 @@ export default function MembershipTab({
       <div className={styles.sectionIntro}>
         <h2 className={styles.sectionTitle}>VIP Membership</h2>
         <p className={styles.sectionSub}>
-          VIP unlocks rabbit hunt, stack in big blinds, offline protection, auto time bank,
-          throwables, and daily diamond bonuses across Smarter.Poker and Club Arena.
+          VIP Unlocks Rabbit Hunt, Stack In Big Blinds, Offline Protection, Auto Time Bank,
+          Throwables, And Daily Diamond Bonuses Across Smarter.Poker And Club Arena.
         </p>
       </div>
 
@@ -149,7 +149,7 @@ export default function MembershipTab({
             </span>
           </>
         ) : (
-          <span>You are not a VIP member yet. Pick a plan below.</span>
+          <span>You Are Not A VIP Member Yet. Pick A Plan Below.</span>
         )}
       </div>
 
@@ -211,11 +211,11 @@ export default function MembershipTab({
       </div>
 
       <div className={styles.infoNote}>
-        Card subscriptions renew automatically and can be canceled anytime.{' '}
+        Card Subscriptions Renew Automatically And Can Be Canceled Anytime.{' '}
         <a className={styles.inlineLink} href="/hub/diamond-store?tab=vip">
-          Manage subscription
+          Manage Subscription
         </a>
-        . Diamond-paid plans do not auto-renew.
+        . Diamond-Paid Plans Do Not Auto-Renew.
       </div>
     </>
   );

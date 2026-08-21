@@ -290,7 +290,7 @@ export default function BlacklistManagerPage() {
       {showAddForm && (
         <div style={styles.card}>
           <div style={{ fontSize: '15px', fontWeight: 600, marginBottom: '16px', color: '#fff' }}>
-            Add Player to Blacklist
+            Add Player To Blacklist
           </div>
           <div style={styles.formRow}>
             <div style={styles.formGroup}>
@@ -312,7 +312,7 @@ export default function BlacklistManagerPage() {
               />
             </div>
             <div style={styles.formGroup}>
-              <label style={styles.label}>Expiry (optional)</label>
+              <label style={styles.label}>Expiry (Optional)</label>
               <input
                 style={styles.input}
                 type="date"
@@ -347,9 +347,9 @@ export default function BlacklistManagerPage() {
       {/* Entries Table */}
       <div style={styles.card}>
         {loading ? (
-          <div style={styles.empty}>Loading blacklist...</div>
+          <div style={styles.empty}>Loading Blacklist...</div>
         ) : entries.length === 0 ? (
-          <div style={styles.empty}>No blacklisted players. The blacklist is empty.</div>
+          <div style={styles.empty}>No Blacklisted Players. The Blacklist Is Empty.</div>
         ) : (
           <table style={styles.table}>
             <thead>
@@ -410,7 +410,7 @@ export default function BlacklistManagerPage() {
             textAlign: 'right',
           }}
         >
-          {entries.length} {entries.length === 1 ? 'entry' : 'entries'} total
+          {entries.length} {entries.length === 1 ? 'entry' : 'entries'} Total
         </div>
       </div>
     </div>

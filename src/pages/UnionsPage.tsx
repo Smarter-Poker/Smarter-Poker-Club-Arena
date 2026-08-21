@@ -138,7 +138,7 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
                 marginBottom: '4px',
               }}
             >
-              {uLevel.progressPercent}% to Lv.{Math.min(uLevel.level + 1, 50)}
+              {uLevel.progressPercent}% To Lv.{Math.min(uLevel.level + 1, 50)}
             </div>
           </>
         );
@@ -207,7 +207,7 @@ export default function UnionsPage() {
     <div className="unions-page">
       <header className="unions-header">
         <div>
-          <p>Join club networks for more players and bigger games.</p>
+          <p>Join Club Networks For More Players And Bigger Games.</p>
         </div>
         <button className="btn btn-primary" onClick={() => setIsCreating(true)}>
           + New Union
@@ -219,7 +219,7 @@ export default function UnionsPage() {
           <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '48px 16px' }}>
             <span style={{ fontSize: '2rem', display: 'block', marginBottom: '12px' }}>◈</span>
             <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem' }}>
-              No unions found. Create one to link your clubs!
+              No Unions Found. Create One To Link Your Clubs!
             </p>
           </div>
         ) : (
@@ -230,11 +230,11 @@ export default function UnionsPage() {
       <section className="create-union-cta">
         <h2>Create Your Own Union</h2>
         <p>
-          Bring together multiple clubs under one network for shared player pools and coordinated
-          events.
+          Bring Together Multiple Clubs Under One Network For Shared Player Pools And Coordinated
+          Events.
         </p>
         <button className="btn btn-ghost btn-lg" onClick={() => setIsCreating(true)}>
-          Start a Union
+          Start A Union
         </button>
       </section>
 

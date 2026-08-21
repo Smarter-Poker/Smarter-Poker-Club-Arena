@@ -221,7 +221,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
           <div className="text-3xl font-mono text-white mb-1">
             {wallet.playerBal.toLocaleString()}
           </div>
-          <div className="text-xs text-gray-500">For playing at tables</div>
+          <div className="text-xs text-gray-500">For Playing At Tables</div>
           <button
             onClick={handleTransferToPlayer}
             className="mt-2 w-full py-1 text-xs bg-green-900 hover:bg-green-800 text-green-200 rounded"
@@ -238,7 +238,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
           <div className="text-3xl font-mono text-white mb-1">
             {wallet.promoBal.toLocaleString()}
           </div>
-          <div className="text-xs text-gray-500">Non-cashable giveaways</div>
+          <div className="text-xs text-gray-500">Non-Cashable Giveaways</div>
         </div>
       </div>
 
@@ -283,7 +283,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
             <div>
               <span className="block text-red-500 font-bold"> SUNDAY INVOICE DUE</span>
               <span className="text-sm text-gray-300">
-                You must settle {wallet.debt.toLocaleString()} chips.
+                You Must Settle {wallet.debt.toLocaleString()} Chips.
               </span>
             </div>
             <button

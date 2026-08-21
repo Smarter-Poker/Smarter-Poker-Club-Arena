@@ -28,43 +28,43 @@ export default function FairGamingPage() {
 
       <div className={styles.content}>
         <section style={sectionAnimationStyle(0)}>
-          <h2>Our Commitment to Fair Play</h2>
+          <h2>Our Commitment To Fair Play</h2>
           <p>
-            Club Arena is committed to providing a fair, secure, and enjoyable poker experience for
-            all players. We employ industry-leading technology and practices to ensure game
-            integrity.
+            Club Arena Is Committed To Providing A Fair, Secure, And Enjoyable Poker Experience For
+            All Players. We Employ Industry-Leading Technology And Practices To Ensure Game
+            Integrity.
           </p>
         </section>
 
         <section style={sectionAnimationStyle(1)}>
           <h2>Random Number Generation (RNG)</h2>
           <p>
-            All card shuffling and dealing in Club Arena uses a certified Random Number Generator
+            All Card Shuffling And Dealing In Club Arena Uses A Certified Random Number Generator
             (RNG):
           </p>
           <ul>
-            <li>Cryptographically secure random number generation</li>
-            <li>Each shuffle is completely independent and unpredictable</li>
-            <li>No patterns or predictability in card distribution</li>
-            <li>Regular third-party audits to verify randomness</li>
+            <li>Cryptographically Secure Random Number Generation</li>
+            <li>Each Shuffle Is Completely Independent And Unpredictable</li>
+            <li>No Patterns Or Predictability In Card Distribution</li>
+            <li>Regular Third-Party Audits To Verify Randomness</li>
           </ul>
         </section>
 
         <section style={sectionAnimationStyle(2)}>
           <h2>Game Integrity</h2>
-          <p>We maintain game integrity through multiple safeguards:</p>
+          <p>We Maintain Game Integrity Through Multiple Safeguards:</p>
           <ul>
             <li>
-              <strong>Secure Servers:</strong> All games run on secure, monitored servers
+              <strong>Secure Servers:</strong> All Games Run On Secure, Monitored Servers
             </li>
             <li>
-              <strong>Encrypted Communication:</strong> All data transmission is encrypted
+              <strong>Encrypted Communication:</strong> All Data Transmission Is Encrypted
             </li>
             <li>
-              <strong>Anti-Cheating Detection:</strong> Automated systems detect suspicious patterns
+              <strong>Anti-Cheating Detection:</strong> Automated Systems Detect Suspicious Patterns
             </li>
             <li>
-              <strong>Hand History Verification:</strong> All hands are logged and can be reviewed
+              <strong>Hand History Verification:</strong> All Hands Are Logged And Can Be Reviewed
             </li>
           </ul>
         </section>
@@ -72,112 +72,112 @@ export default function FairGamingPage() {
         <section style={sectionAnimationStyle(3)}>
           <h2>Prohibited Activities</h2>
           <p>
-            The following activities are strictly prohibited and will result in immediate account
-            termination:
+            The Following Activities Are Strictly Prohibited And Will Result In Immediate Account
+            Termination:
           </p>
           <ul>
             <li>
-              <strong>Collusion:</strong> Working with other players to gain an unfair advantage
+              <strong>Collusion:</strong> Working With Other Players To Gain An Unfair Advantage
             </li>
             <li>
-              <strong>Multi-Accounting:</strong> Using multiple accounts at the same table
+              <strong>Multi-Accounting:</strong> Using Multiple Accounts At The Same Table
             </li>
             <li>
-              <strong>Chip Dumping:</strong> Intentionally losing chips to another player
+              <strong>Chip Dumping:</strong> Intentionally Losing Chips To Another Player
             </li>
             <li>
-              <strong>Unauthorized Software:</strong> Using automated software to play
+              <strong>Unauthorized Software:</strong> Using Automated Software To Play
             </li>
             <li>
-              <strong>Real-Time Assistance (RTA):</strong> Using external tools during play
+              <strong>Real-Time Assistance (RTA):</strong> Using External Tools During Play
             </li>
             <li>
-              <strong>Account Sharing:</strong> Allowing others to play on your account
+              <strong>Account Sharing:</strong> Allowing Others To Play On Your Account
             </li>
             <li>
-              <strong>Ghosting:</strong> Receiving advice from others during play
+              <strong>Ghosting:</strong> Receiving Advice From Others During Play
             </li>
           </ul>
         </section>
 
         <section style={sectionAnimationStyle(4)}>
-          <h2>Detection and Monitoring</h2>
-          <p>Our security team actively monitors for unfair play:</p>
+          <h2>Detection And Monitoring</h2>
+          <p>Our Security Team Actively Monitors For Unfair Play:</p>
           <ul>
-            <li>Automated pattern detection algorithms</li>
-            <li>Manual review of flagged accounts</li>
-            <li>Player reports and investigations</li>
-            <li>Statistical analysis of play patterns</li>
-            <li>IP address and device fingerprinting</li>
+            <li>Automated Pattern Detection Algorithms</li>
+            <li>Manual Review Of Flagged Accounts</li>
+            <li>Player Reports And Investigations</li>
+            <li>Statistical Analysis Of Play Patterns</li>
+            <li>IP Address And Device Fingerprinting</li>
           </ul>
         </section>
 
         <section style={sectionAnimationStyle(5)}>
           <h2>Player Reporting</h2>
-          <p>If you suspect unfair play, you can report it:</p>
+          <p>If You Suspect Unfair Play, You Can Report It:</p>
           <ul>
-            <li>Use the "Report Player" button at the table</li>
-            <li>Provide hand numbers and specific details</li>
-            <li>Include any supporting evidence</li>
-            <li>Reports are reviewed within 24-48 hours</li>
+            <li>Use The "Report Player" Button At The Table</li>
+            <li>Provide Hand Numbers And Specific Details</li>
+            <li>Include Any Supporting Evidence</li>
+            <li>Reports Are Reviewed Within 24-48 Hours</li>
           </ul>
-          <p>All reports are confidential and investigated thoroughly.</p>
+          <p>All Reports Are Confidential And Investigated Thoroughly.</p>
         </section>
 
         <section style={sectionAnimationStyle(6)}>
-          <h2>Consequences of Cheating</h2>
-          <p>Players found violating fair play rules face:</p>
+          <h2>Consequences Of Cheating</h2>
+          <p>Players Found Violating Fair Play Rules Face:</p>
           <ul>
             <li>
-              <strong>First Offense:</strong> Warning and temporary suspension (7-30 days)
+              <strong>First Offense:</strong> Warning And Temporary Suspension (7-30 Days)
             </li>
             <li>
-              <strong>Second Offense:</strong> Extended suspension (30-90 days) and chip
-              confiscation
+              <strong>Second Offense:</strong> Extended Suspension (30-90 Days) And Chip
+              Confiscation
             </li>
             <li>
-              <strong>Third Offense:</strong> Permanent account termination
+              <strong>Third Offense:</strong> Permanent Account Termination
             </li>
             <li>
-              <strong>Severe Violations:</strong> Immediate permanent ban
+              <strong>Severe Violations:</strong> Immediate Permanent Ban
             </li>
           </ul>
           <p>
-            Ill-gotten chips will be confiscated and redistributed to affected players when
-            possible.
+            Ill-Gotten Chips Will Be Confiscated And Redistributed To Affected Players When
+            Possible.
           </p>
         </section>
 
         <section style={sectionAnimationStyle(7)}>
           <h2>Hand History Access</h2>
-          <p>All players have access to their hand histories:</p>
+          <p>All Players Have Access To Their Hand Histories:</p>
           <ul>
-            <li>View all hands you've played</li>
-            <li>Download hand histories for analysis</li>
-            <li>Share hands with friends or coaches</li>
-            <li>Verify game outcomes and actions</li>
+            <li>View All Hands You've Played</li>
+            <li>Download Hand Histories For Analysis</li>
+            <li>Share Hands With Friends Or Coaches</li>
+            <li>Verify Game Outcomes And Actions</li>
           </ul>
         </section>
 
         <section style={sectionAnimationStyle(8)}>
           <h2>Dispute Resolution</h2>
-          <p>If you believe a game outcome was unfair:</p>
+          <p>If You Believe A Game Outcome Was Unfair:</p>
           <ul>
-            <li>Contact support@smarter.poker with the hand number</li>
-            <li>Our team will review the hand history</li>
-            <li>You will receive a response within 48 hours</li>
-            <li>If an error is found, appropriate compensation will be provided</li>
+            <li>Contact Support@Smarter.Poker With The Hand Number</li>
+            <li>Our Team Will Review The Hand History</li>
+            <li>You Will Receive A Response Within 48 Hours</li>
+            <li>If An Error Is Found, Appropriate Compensation Will Be Provided</li>
           </ul>
         </section>
 
         <section style={sectionAnimationStyle(9)}>
           <h2>Continuous Improvement</h2>
-          <p>We continuously improve our fair play systems:</p>
+          <p>We Continuously Improve Our Fair Play Systems:</p>
           <ul>
-            <li>Regular security audits</li>
-            <li>Updates to detection algorithms</li>
-            <li>Community feedback integration</li>
-            <li>Industry best practice adoption</li>
+            <li>Regular Security Audits</li>
+            <li>Updates To Detection Algorithms</li>
+            <li>Community Feedback Integration</li>
+            <li>Industry Best Practice Adoption</li>
           </ul>
         </section>
 

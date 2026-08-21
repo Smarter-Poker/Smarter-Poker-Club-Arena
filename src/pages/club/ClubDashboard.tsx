@@ -113,14 +113,7 @@ const ClubActivityChart = lazy(() => import('../../components/club/ClubActivityC
 
 type TabId = 'overview' | 'activity' | 'players' | 'tables' | 'revenue' | 'tournaments';
 
-const VALID_TABS: TabId[] = [
-  'overview',
-  'activity',
-  'players',
-  'tables',
-  'revenue',
-  'tournaments',
-];
+const VALID_TABS: TabId[] = ['overview', 'activity', 'players', 'tables', 'revenue', 'tournaments'];
 
 interface RevenueData {
   totals: {
@@ -216,7 +209,9 @@ export default function ClubDashboard() {
   const [dateRange, setDateRange] = useState<RangeId>(() =>
     getLocalStorage('ca_dashboard_range', 'week')
   );
-  const [sortBy, setSortBy] = useState<SortId>(() => getLocalStorage('ca_dashboard_sort', 'profit'));
+  const [sortBy, setSortBy] = useState<SortId>(() =>
+    getLocalStorage('ca_dashboard_sort', 'profit')
+  );
   const [hideHorses, setHideHorses] = useState<boolean>(() =>
     getLocalStorage('ca_dashboard_hide_horses', false)
   );
@@ -324,7 +319,6 @@ export default function ClubDashboard() {
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
       staggerTimersRef.current = [];
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topPlayersSignature]);
 
   // ── Club UUID resolution ───────────────────────────────────────────────────
@@ -680,20 +674,9 @@ export default function ClubDashboard() {
   // Debounced member search / paging, only while the Players tab is open.
   useEffect(() => {
     if (activeTab !== 'players' || !resolvedClubId) return;
-    const t = setTimeout(
-      () => loadMembers(memberPage, memberSearch, memberSort, memberRole),
-      250
-    );
+    const t = setTimeout(() => loadMembers(memberPage, memberSearch, memberSort, memberRole), 250);
     return () => clearTimeout(t);
-  }, [
-    activeTab,
-    resolvedClubId,
-    memberPage,
-    memberSearch,
-    memberSort,
-    memberRole,
-    loadMembers,
-  ]);
+  }, [activeTab, resolvedClubId, memberPage, memberSearch, memberSort, memberRole, loadMembers]);
 
   // A new search / filter / range must restart at page 1. Guarded so it does
   // not queue a redundant fetch when already on the first page.
@@ -715,8 +698,7 @@ export default function ClubDashboard() {
     [clubTables]
   );
   const seatedAcrossTables = useMemo(
-    () =>
-      clubTables.reduce((s, t) => (isLiveTableStatus(t.status) ? s + t.currentPlayers : s), 0),
+    () => clubTables.reduce((s, t) => (isLiveTableStatus(t.status) ? s + t.currentPlayers : s), 0),
     [clubTables]
   );
 
@@ -846,9 +828,9 @@ export default function ClubDashboard() {
       <div className={styles.error}>
         <h2>Members Only</h2>
         <p style={{ color: 'var(--text-secondary)', marginBottom: 16 }}>
-          Club analytics are visible to members of this club.
+          Club Analytics Are Visible To Members Of This Club.
         </p>
-        <Link to="/clubs">Back to Clubs</Link>
+        <Link to="/clubs">Back To Clubs</Link>
       </div>
     );
   }
@@ -857,7 +839,7 @@ export default function ClubDashboard() {
     return (
       <div className={styles.dashboard}>
         <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
-          <p style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Failed to load dashboard</p>
+          <p style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Failed To Load Dashboard</p>
           <button
             onClick={() => loadDashboardData()}
             style={{
@@ -883,7 +865,7 @@ export default function ClubDashboard() {
     return (
       <div className={styles.error}>
         <h2>Club Not Found</h2>
-        <Link to="/clubs">Back to Clubs</Link>
+        <Link to="/clubs">Back To Clubs</Link>
       </div>
     );
   }
@@ -922,10 +904,13 @@ export default function ClubDashboard() {
               )}
             </h1>
             <p>
-              {formatInt(club.memberCount)} members {'•'} {club.tableCount} active{' '}
+              {formatInt(club.memberCount)} Members {'•'} {club.tableCount} Active{' '}
               {club.tableCount === 1 ? 'table' : 'tables'}
               {dashStats && dashStats.seatedNow > 0 && (
-                <> {'•'} {formatInt(dashStats.seatedNow)} seated now</>
+                <>
+                  {' '}
+                  {'•'} {formatInt(dashStats.seatedNow)} Seated Now
+                </>
               )}
             </p>
           </div>
@@ -952,7 +937,7 @@ export default function ClubDashboard() {
           <Link to={`/clubs/${clubId}/settings`} className={styles.actionBtn}>
             Settings
           </Link>
-          {(isClubStaff(userRole)) && (
+          {isClubStaff(userRole) && (
             <button
               onClick={handleRecalculateLevel}
               className={styles.actionBtn}
@@ -1074,7 +1059,7 @@ export default function ClubDashboard() {
               {clubId && <ClubStatsCards clubId={clubId} stats={dashStats} />}
               {dashStats && dashStats.dailySeries.length > 0 && (
                 <div style={{ marginTop: 16 }}>
-                  <h2 style={{ fontSize: '0.95rem', marginBottom: 4 }}>Last 14 days</h2>
+                  <h2 style={{ fontSize: '0.95rem', marginBottom: 4 }}>Last 14 Days</h2>
                   <Suspense
                     fallback={
                       <div
@@ -1087,7 +1072,7 @@ export default function ClubDashboard() {
                           fontSize: '0.85rem',
                         }}
                       >
-                        Loading chart...
+                        Loading Chart...
                       </div>
                     }
                   >
@@ -1124,8 +1109,8 @@ export default function ClubDashboard() {
                   >
                     <option value="profit">Profit</option>
                     <option value="hands">Hands</option>
-                    <option value="winrate">Win rate</option>
-                    <option value="biggest">Biggest pot</option>
+                    <option value="winrate">Win Rate</option>
+                    <option value="biggest">Biggest Pot</option>
                   </select>
                   <label
                     style={{
@@ -1141,7 +1126,7 @@ export default function ClubDashboard() {
                       checked={hideHorses}
                       onChange={(e) => setHideHorses(e.target.checked)}
                     />
-                    Humans only
+                    Humans Only
                   </label>
                   {rankedPlayers.length > 0 && (
                     <button
@@ -1241,7 +1226,7 @@ export default function ClubDashboard() {
                             color: 'var(--text-secondary, #888)',
                           }}
                         >
-                          {formatInt(player.handsPlayed)} hands {'•'} {player.winRate}% won
+                          {formatInt(player.handsPlayed)} Hands {'•'} {player.winRate}% Won
                         </span>
                       </span>
                       <span
@@ -1263,7 +1248,7 @@ export default function ClubDashboard() {
                       marginTop: 4,
                     }}
                   >
-                    See all {formatInt(rankedPlayers.length)} ranked players {'→'}
+                    See All {formatInt(rankedPlayers.length)} Ranked Players {'→'}
                   </button>
                 )}
               </div>
@@ -1275,17 +1260,14 @@ export default function ClubDashboard() {
                     marginTop: 8,
                   }}
                 >
-                  Profit measured from post-hand stack movement on{' '}
-                  {formatInt(attribution.attributed)} of {formatInt(attribution.played)}{' '}
-                  player-hands {rangeLabel}
+                  Profit Measured From Post-Hand Stack Movement On{' '}
+                  {formatInt(attribution.attributed)} Of {formatInt(attribution.played)}{' '}
+                  Player-Hands {rangeLabel}
                   {attribution.played > 0 && (
-                    <>
-                      {' '}
-                      ({Math.round((attribution.attributed / attribution.played) * 100)}%)
-                    </>
+                    <> ({Math.round((attribution.attributed / attribution.played) * 100)}%)</>
                   )}
-                  . Hands spanning a re-buy or a table re-join cannot be attributed and are
-                  excluded.
+                  . Hands Spanning A Re-Buy Or A Table Re-Join Cannot Be Attributed And Are
+                  Excluded.
                 </p>
               )}
             </section>
@@ -1365,11 +1347,11 @@ export default function ClubDashboard() {
                 aria-label="Sort members"
                 style={selectStyle}
               >
-                <option value="hands">Most hands</option>
-                <option value="profit">Most profit</option>
+                <option value="hands">Most Hands</option>
+                <option value="profit">Most Profit</option>
                 <option value="name">Name (A-Z)</option>
-                <option value="joined">Recently joined</option>
-                <option value="last_active">Recently active</option>
+                <option value="joined">Recently Joined</option>
+                <option value="last_active">Recently Active</option>
               </select>
               <select
                 value={memberRole}
@@ -1377,7 +1359,7 @@ export default function ClubDashboard() {
                 aria-label="Filter members by role"
                 style={selectStyle}
               >
-                <option value="">All roles</option>
+                <option value="">All Roles</option>
                 <option value="owner">Owner</option>
                 <option value="admin">Admin</option>
                 <option value="agent">Agent</option>
@@ -1400,7 +1382,7 @@ export default function ClubDashboard() {
 
             <div className={styles.playersList}>
               {membersLoading && members.length === 0 ? (
-                <p className={styles.empty}>Loading members...</p>
+                <p className={styles.empty}>Loading Members...</p>
               ) : members.length === 0 ? (
                 <p className={styles.empty}>
                   {memberSearch ? `No members matching "${memberSearch}"` : 'No members yet'}
@@ -1471,7 +1453,7 @@ export default function ClubDashboard() {
                         )}
                       </span>
                       <span className={styles.playerStats}>
-                        {formatInt(m.handsPlayed)} hands {rangeLabel} {'•'} balance{' '}
+                        {formatInt(m.handsPlayed)} Hands {rangeLabel} {'•'} Balance{' '}
                         {formatChips(m.chipBalance)}
                       </span>
                     </div>
@@ -1503,17 +1485,13 @@ export default function ClubDashboard() {
                   Previous
                 </button>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                  Page {memberPage + 1} of {Math.max(1, Math.ceil(memberTotal / MEMBER_PAGE_SIZE))}
+                  Page {memberPage + 1} Of {Math.max(1, Math.ceil(memberTotal / MEMBER_PAGE_SIZE))}
                 </span>
                 <button
                   onClick={() =>
-                    setMemberPage((p) =>
-                      (p + 1) * MEMBER_PAGE_SIZE < memberTotal ? p + 1 : p
-                    )
+                    setMemberPage((p) => ((p + 1) * MEMBER_PAGE_SIZE < memberTotal ? p + 1 : p))
                   }
-                  disabled={
-                    (memberPage + 1) * MEMBER_PAGE_SIZE >= memberTotal || membersLoading
-                  }
+                  disabled={(memberPage + 1) * MEMBER_PAGE_SIZE >= memberTotal || membersLoading}
                   className={styles.actionBtn}
                 >
                   Next
@@ -1521,7 +1499,7 @@ export default function ClubDashboard() {
               </div>
             )}
 
-            {clubId && (isClubStaff(userRole)) && (
+            {clubId && isClubStaff(userRole) && (
               <ClubMemberManagement clubId={clubId} isAdmin={true} />
             )}
           </div>
@@ -1541,7 +1519,7 @@ export default function ClubDashboard() {
                       color: '#10b981',
                     }}
                   >
-                    {liveTableCount} live {'•'} {seatedAcrossTables} seated
+                    {liveTableCount} Live {'•'} {seatedAcrossTables} Seated
                   </span>
                 )}
               </h2>
@@ -1550,7 +1528,7 @@ export default function ClubDashboard() {
               </Link>
             </div>
             {clubTables.length === 0 ? (
-              <p className={styles.empty}>No tables yet. Create one to get the club playing.</p>
+              <p className={styles.empty}>No Tables Yet. Create One To Get The Club Playing.</p>
             ) : (
               <div className={styles.playersList}>
                 {sortedTables.map((t) => {
@@ -1567,7 +1545,7 @@ export default function ClubDashboard() {
                         <span className={styles.playerStats}>
                           {(t.gameVariant || t.gameType || 'NLH').toUpperCase()} {'•'}{' '}
                           {t.stakes || `${formatChips(t.smallBlind)}/${formatChips(t.bigBlind)}`}{' '}
-                          {'•'} {t.currentPlayers}/{t.maxPlayers} seated
+                          {'•'} {t.currentPlayers}/{t.maxPlayers} Seated
                         </span>
                       </div>
                       <span
@@ -1601,9 +1579,9 @@ export default function ClubDashboard() {
               <h2>Revenue ({rangeLabel})</h2>
             </div>
             {revenueLoading && !revenue ? (
-              <p className={styles.empty}>Loading revenue...</p>
+              <p className={styles.empty}>Loading Revenue...</p>
             ) : !revenue ? (
-              <p className={styles.empty}>No revenue data available</p>
+              <p className={styles.empty}>No Revenue Data Available</p>
             ) : (
               <>
                 <div
@@ -1639,17 +1617,17 @@ export default function ClubDashboard() {
                   ))}
                 </div>
 
-                <Suspense fallback={<p className={styles.empty}>Loading chart...</p>}>
+                <Suspense fallback={<p className={styles.empty}>Loading Chart...</p>}>
                   <ClubActivityChart
                     data={revenue.daily.map((d) => ({ d: d.d, hands: d.hands, rake: d.rake }))}
                     height={260}
                   />
                 </Suspense>
 
-                <h2 style={{ fontSize: '0.95rem', margin: '18px 0 8px' }}>Busiest tables</h2>
+                <h2 style={{ fontSize: '0.95rem', margin: '18px 0 8px' }}>Busiest Tables</h2>
                 <div className={styles.playersList}>
                   {revenue.by_table.length === 0 ? (
-                    <p className={styles.empty}>No table activity in this period</p>
+                    <p className={styles.empty}>No Table Activity In This Period</p>
                   ) : (
                     revenue.by_table.map((t) => (
                       <Link
@@ -1661,10 +1639,10 @@ export default function ClubDashboard() {
                         <div className={styles.playerInfo}>
                           <span className={styles.playerName}>{t.name}</span>
                           <span className={styles.playerStats}>
-                            {t.stakes} {'•'} {formatInt(t.players)} players
+                            {t.stakes} {'•'} {formatInt(t.players)} Players
                           </span>
                         </div>
-                        <span className={styles.playerStats}>{formatInt(t.hands)} hands</span>
+                        <span className={styles.playerStats}>{formatInt(t.hands)} Hands</span>
                       </Link>
                     ))
                   )}
@@ -1688,24 +1666,24 @@ export default function ClubDashboard() {
                       color: 'var(--text-secondary, #8a8f98)',
                     }}
                   >
-                    {formatInt(tournaments.summary.completed_30d)} finished in 30d {'•'}{' '}
-                    {formatChips(tournaments.summary.prize_pool_30d)} in prizes
+                    {formatInt(tournaments.summary.completed_30d)} Finished In 30D {'•'}{' '}
+                    {formatChips(tournaments.summary.prize_pool_30d)} In Prizes
                   </span>
                 )}
               </h2>
             </div>
             {tournamentsLoading && !tournaments ? (
-              <p className={styles.empty}>Loading tournaments...</p>
+              <p className={styles.empty}>Loading Tournaments...</p>
             ) : !tournaments ? (
-              <p className={styles.empty}>No tournament data available</p>
+              <p className={styles.empty}>No Tournament Data Available</p>
             ) : (
               <>
                 <h2 style={{ fontSize: '0.95rem', margin: '4px 0 8px' }}>
-                  Live and upcoming ({tournaments.live.length})
+                  Live And Upcoming ({tournaments.live.length})
                 </h2>
                 <div className={styles.playersList}>
                   {tournaments.live.length === 0 ? (
-                    <p className={styles.empty}>Nothing scheduled right now</p>
+                    <p className={styles.empty}>Nothing Scheduled Right Now</p>
                   ) : (
                     tournaments.live.map((t) => (
                       <Link
@@ -1717,9 +1695,9 @@ export default function ClubDashboard() {
                         <div className={styles.playerInfo}>
                           <span className={styles.playerName}>{t.name}</span>
                           <span className={styles.playerStats}>
-                            {(t.variant || 'NLH').toUpperCase()} {'•'} buy-in{' '}
+                            {(t.variant || 'NLH').toUpperCase()} {'•'} Buy-In{' '}
                             {formatChips(t.buy_in)} {'•'} {formatInt(t.players)}
-                            {t.max_players ? `/${formatInt(t.max_players)}` : ''} entered
+                            {t.max_players ? `/${formatInt(t.max_players)}` : ''} Entered
                           </span>
                         </div>
                         <span
@@ -1740,11 +1718,11 @@ export default function ClubDashboard() {
                 </div>
 
                 <h2 style={{ fontSize: '0.95rem', margin: '18px 0 8px' }}>
-                  Recently finished ({tournaments.recent.length})
+                  Recently Finished ({tournaments.recent.length})
                 </h2>
                 <div className={styles.playersList}>
                   {tournaments.recent.length === 0 ? (
-                    <p className={styles.empty}>No tournaments finished in the last 30 days</p>
+                    <p className={styles.empty}>No Tournaments Finished In The Last 30 Days</p>
                   ) : (
                     tournaments.recent.map((t) => (
                       <Link
@@ -1756,8 +1734,9 @@ export default function ClubDashboard() {
                         <div className={styles.playerInfo}>
                           <span className={styles.playerName}>{t.name}</span>
                           <span className={styles.playerStats}>
-                            {(t.variant || 'NLH').toUpperCase()} {'•'} {formatInt(t.players)} entered
-                            {'•'} prize pool {formatChips(t.prize_pool)}
+                            {(t.variant || 'NLH').toUpperCase()} {'•'} {formatInt(t.players)}{' '}
+                            Entered
+                            {'•'} Prize Pool {formatChips(t.prize_pool)}
                           </span>
                         </div>
                       </Link>

@@ -102,7 +102,7 @@ export const AntiCollusionMonitor: React.FC<AntiCollusionMonitorProps> = ({
     return (
       <div className="collusion-monitor loading">
         <div className="spinner" />
-        <p>Analyzing patterns...</p>
+        <p>Analyzing Patterns...</p>
       </div>
     );
   }
@@ -152,8 +152,8 @@ export const AntiCollusionMonitor: React.FC<AntiCollusionMonitorProps> = ({
               </div>
             </div>
             <div className="report-stats">
-              <span>{report.handsAnalyzed} hands</span>
-              <span>{report.suspiciousPatterns.length} flags</span>
+              <span>{report.handsAnalyzed} Hands</span>
+              <span>{report.suspiciousPatterns.length} Flags</span>
             </div>
           </div>
         ))}
@@ -192,7 +192,7 @@ export const AntiCollusionMonitor: React.FC<AntiCollusionMonitorProps> = ({
                 </div>
                 <div className="pattern-meta">
                   <span>Confidence: {pattern.confidence}%</span>
-                  <span>{pattern.handsAnalyzed} hands analyzed</span>
+                  <span>{pattern.handsAnalyzed} Hands Analyzed</span>
                 </div>
                 <div className="pattern-actions">
                   <button className="btn-investigate" onClick={() => onInvestigate?.(pattern)}>
@@ -212,7 +212,7 @@ export const AntiCollusionMonitor: React.FC<AntiCollusionMonitorProps> = ({
       {!selectedReport && (
         <div className="empty-state">
           <span className="empty-icon">--</span>
-          <p>Select a table to view detailed analysis</p>
+          <p>Select A Table To View Detailed Analysis</p>
         </div>
       )}
     </div>

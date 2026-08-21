@@ -139,7 +139,7 @@ export function MiniStatsCard({
       {/* Real-Time Results View */}
       <div className="mini-stats-card__details">
         <div className="mini-stats-card__row">
-          <span className="mini-stats-card__label">Buy-in</span>
+          <span className="mini-stats-card__label">Buy-In</span>
           <span className="mini-stats-card__value">{totalBuyIn.toLocaleString()}</span>
         </div>
         <div className="mini-stats-card__row">
@@ -185,7 +185,7 @@ export function MiniStatsCard({
               </span>
             ))}
             {observers.length > 5 && (
-              <span className="mini-stats-card__observer-more">+{observers.length - 5} more</span>
+              <span className="mini-stats-card__observer-more">+{observers.length - 5} More</span>
             )}
           </div>
         ) : (
@@ -194,7 +194,7 @@ export function MiniStatsCard({
               className="mini-stats-card__observer-name"
               style={{ fontStyle: 'italic', background: 'transparent', padding: 0 }}
             >
-              Nobody yet
+              Nobody Yet
             </span>
           </div>
         )}

@@ -66,7 +66,7 @@ export const OnboardingChecklist: React.FC<OnboardingChecklistProps> = ({
       </div>
 
       {completedCount === items.length && (
-        <div className="all-complete">All tasks complete! You're ready to dominate.</div>
+        <div className="all-complete">All Tasks Complete! You're Ready To Dominate.</div>
       )}
     </div>
   );

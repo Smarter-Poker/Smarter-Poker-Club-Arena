@@ -93,13 +93,13 @@ export default function SharedHandReplayPage() {
   if (!hand) {
     return (
       <div style={{ padding: 32, color: '#fff', textAlign: 'center' }}>
-        <h1 style={{ fontSize: '1.3rem' }}>This replay link is not readable</h1>
+        <h1 style={{ fontSize: '1.3rem' }}>This Replay Link Is Not Readable</h1>
         <p style={{ opacity: 0.75 }}>
-          The link may have been truncated when it was copied. Ask for it again, or open the hand
-          from your own Hand History.
+          The Link May Have Been Truncated When It Was Copied. Ask For It Again, Or Open The Hand
+          From Your Own Hand History.
         </p>
         <Link to="/" style={{ color: '#ffd700' }}>
-          Go to the lobby
+          Go To The Lobby
         </Link>
       </div>
     );
@@ -129,10 +129,8 @@ export default function SharedHandReplayPage() {
         <strong style={{ color: '#ffd700' }}>Pot {hand.potTotal.toLocaleString()}</strong>
         {!!hand.winners?.length && (
           <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-            Won by{' '}
-            {hand.winners
-              .map((w) => `seat ${w.seat} (${w.amount.toLocaleString()})`)
-              .join(', ')}
+            Won By{' '}
+            {hand.winners.map((w) => `seat ${w.seat} (${w.amount.toLocaleString()})`).join(', ')}
           </div>
         )}
       </div>

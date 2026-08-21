@@ -951,7 +951,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         {/* Use Real Name Toggle */}
         <div style={{ ...menuItemStyle, justifyContent: 'space-between' }}>
           <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>
-            Use Real Name (vs Alias)
+            Use Real Name (Vs Alias)
           </span>
           <button
             onClick={handleUseRealNameToggle}
@@ -1323,7 +1323,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             fontSize: 12,
           }}
         >
-          Club Arena v1.12
+          Club Arena V1.12
         </div>
       </div>
 

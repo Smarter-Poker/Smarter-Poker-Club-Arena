@@ -218,7 +218,7 @@ export default function KnockoutAnimation({
 
         <div className="ko__names">
           <span className="ko__knocker">{data.knockerName}</span>
-          <span className="ko__verb">eliminated</span>
+          <span className="ko__verb">Eliminated</span>
           <span className="ko__eliminated">{data.eliminatedName}</span>
         </div>
 
@@ -252,7 +252,7 @@ export default function KnockoutAnimation({
                 {currency}
                 {data.amount.toLocaleString()}
               </span>
-              <span className="ko__split-label">paid to you</span>
+              <span className="ko__split-label">Paid To You</span>
             </div>
             <span className="ko__split-divider" aria-hidden="true" />
             <div className="ko__split-arm ko__split-arm--head">
@@ -260,7 +260,7 @@ export default function KnockoutAnimation({
                 {currency}
                 {(data.addedToHead ?? 0).toLocaleString()}
               </span>
-              <span className="ko__split-label">onto your head</span>
+              <span className="ko__split-label">Onto Your Head</span>
             </div>
           </div>
         )}
@@ -269,7 +269,7 @@ export default function KnockoutAnimation({
             sees one celebration end and another begin with no explanation. */}
         {queuedBehind > 0 && (
           <div className="ko__queued">
-            +{queuedBehind} more knockout{queuedBehind > 1 ? 's' : ''}
+            +{queuedBehind} More Knockout{queuedBehind > 1 ? 's' : ''}
           </div>
         )}
       </div>

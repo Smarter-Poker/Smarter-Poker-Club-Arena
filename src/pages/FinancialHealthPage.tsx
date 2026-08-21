@@ -116,7 +116,7 @@ export default function FinancialHealthPage() {
           <h2>Financial Health Dashboard</h2>
         </div>
         <div style={{ textAlign: 'center', padding: '60px 20px', color: 'rgba(255,255,255,0.3)' }}>
-          Loading health status...
+          Loading Health Status...
         </div>
       </div>
     );
@@ -192,18 +192,16 @@ export default function FinancialHealthPage() {
           <div
             className={`fh-result-card ${status.lastReconciliation.isBalanced ? 'balanced' : 'drift'}`}
           >
-            <div className="fh-result-icon">
-              {status.lastReconciliation.isBalanced ? '✓' : '⚠'}
-            </div>
+            <div className="fh-result-icon">{status.lastReconciliation.isBalanced ? '✓' : '⚠'}</div>
             <div className="fh-result-body">
               <div className="fh-result-title">
                 {status.lastReconciliation.isBalanced ? 'Ledger Balanced' : 'Ledger Drift Detected'}
               </div>
               <div className="fh-result-detail">
-                Difference: {status.lastReconciliation.difference.toLocaleString()} chips
+                Difference: {status.lastReconciliation.difference.toLocaleString()} Chips
               </div>
               <div className="fh-result-time">
-                Last checked:{' '}
+                Last Checked:{' '}
                 {formatDateTime(status.lastReconciliation.checkedAt, {
                   month: 'short',
                   day: 'numeric',
@@ -214,7 +212,7 @@ export default function FinancialHealthPage() {
             </div>
           </div>
         ) : (
-          <div className="fh-empty">No reconciliation runs yet</div>
+          <div className="fh-empty">No Reconciliation Runs Yet</div>
         )}
       </section>
 
@@ -246,7 +244,7 @@ export default function FinancialHealthPage() {
             </div>
           </div>
         ) : (
-          <div className="fh-empty">No suspension checks run yet</div>
+          <div className="fh-empty">No Suspension Checks Run Yet</div>
         )}
       </section>
 

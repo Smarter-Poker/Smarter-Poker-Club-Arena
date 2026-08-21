@@ -93,7 +93,7 @@ export function FAQPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
               </div>
             ))
           ) : (
-            <div className="faq-empty">No results found for "{search}"</div>
+            <div className="faq-empty">No Results Found For "{search}"</div>
           )}
         </div>
       </div>

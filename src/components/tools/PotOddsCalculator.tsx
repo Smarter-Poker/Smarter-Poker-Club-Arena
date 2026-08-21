@@ -91,7 +91,7 @@ export function PotOddsCalculator({
             />
           </div>
           <div className="input-group">
-            <label>Bet to Call</label>
+            <label>Bet To Call</label>
             <input
               type="number"
               value={bet || ''}
@@ -122,11 +122,11 @@ export function PotOddsCalculator({
             <span className="value">{calculations.impliedOdds}:1</span>
           </div>
           <div className="result">
-            <span className="label">Equity (1 card)</span>
+            <span className="label">Equity (1 Card)</span>
             <span className="value">{calculations.oneCardEquity}%</span>
           </div>
           <div className="result">
-            <span className="label">Equity (2 cards)</span>
+            <span className="label">Equity (2 Cards)</span>
             <span className="value">{calculations.twoCardEquity}%</span>
           </div>
         </div>
@@ -135,12 +135,12 @@ export function PotOddsCalculator({
           {calculations.isProfitable ? (
             <>
               {' '}
-              Profitable Call (need {calculations.breakEven}%, have {calculations.oneCardEquity}%)
+              Profitable Call (Need {calculations.breakEven}%, Have {calculations.oneCardEquity}%)
             </>
           ) : (
             <>
               {' '}
-              Unprofitable (need {calculations.breakEven}%, have {calculations.oneCardEquity}%)
+              Unprofitable (Need {calculations.breakEven}%, Have {calculations.oneCardEquity}%)
             </>
           )}
         </div>

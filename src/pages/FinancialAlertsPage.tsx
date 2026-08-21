@@ -192,7 +192,7 @@ export default function FinancialAlertsPage() {
         </div>
         <div className="loading-state">
           <PageSkeleton variant="financial" />
-          <p>Loading alerts...</p>
+          <p>Loading Alerts...</p>
         </div>
       </div>
     );
@@ -203,17 +203,17 @@ export default function FinancialAlertsPage() {
       <div className="alerts-header">
         <h2>Financial Alerts</h2>
         <div className="alert-stats">
-          {criticalCount > 0 && <span className="stat critical"> {criticalCount} critical</span>}
-          {warningCount > 0 && <span className="stat warning"> {warningCount} warning</span>}
+          {criticalCount > 0 && <span className="stat critical"> {criticalCount} Critical</span>}
+          {warningCount > 0 && <span className="stat warning"> {warningCount} Warning</span>}
           {infoCount > 0 && (
             <span
               className="stat"
               style={{ background: 'rgba(99,102,241,0.15)', color: '#818cf8' }}
             >
-              ℹ {infoCount} info
+              ℹ {infoCount} Info
             </span>
           )}
-          {alerts.length === 0 && <span className="stat clear">All clear</span>}
+          {alerts.length === 0 && <span className="stat clear">All Clear</span>}
         </div>
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
           {loading && alerts.length > 0 && (

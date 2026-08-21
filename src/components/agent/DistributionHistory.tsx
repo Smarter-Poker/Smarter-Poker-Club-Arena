@@ -171,7 +171,7 @@ export default function DistributionHistory({ userId, clubId }: DistributionHist
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="dh-empty">No distributions found for this period</div>
+        <div className="dh-empty">No Distributions Found For This Period</div>
       ) : (
         <div className="dh-list">
           {filtered.map((r) => {

@@ -47,9 +47,9 @@ export const FoldProtectionDialog: React.FC<FoldProtectionDialogProps> = ({
           ×
         </button>
         <h3 id="fold-protect-title" className="fold-protect-title">
-          Check or Fold?
+          Check Or Fold?
         </h3>
-        <p className="fold-protect-body">Notice: You can check this hand instead of folding.</p>
+        <p className="fold-protect-body">Notice: You Can Check This Hand Instead Of Folding.</p>
         <div className="fold-protect-actions">
           <button
             type="button"

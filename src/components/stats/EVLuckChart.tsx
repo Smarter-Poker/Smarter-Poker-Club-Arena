@@ -134,11 +134,11 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
   if (!hasHands) {
     return (
       <div className="evluck-card evluck-empty">
-        <h3 className="evluck-title">Luck: Actual vs Expected</h3>
+        <h3 className="evluck-title">Luck: Actual Vs Expected</h3>
         <p className="evluck-empty-text">
-          Nothing to plot yet. This chart is built from a new per-hand record that started
-          collecting recently, so it fills in from your next cash session onward rather than from
-          your older history.
+          Nothing To Plot Yet. This Chart Is Built From A New Per-Hand Record That Started
+          Collecting Recently, So It Fills In From Your Next Cash Session Onward Rather Than From
+          Your Older History.
         </p>
       </div>
     );
@@ -159,20 +159,20 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
       transition={reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 170, damping: 22 }}
     >
       <div className="evluck-head">
-        <h3 className="evluck-title">Luck: Actual vs Expected</h3>
+        <h3 className="evluck-title">Luck: Actual Vs Expected</h3>
         {allIns === 0 ? (
           <p className="evluck-sub">
-            No all-in hands in this range, so expected and actual are identical. Once you get it in,
-            the two lines will separate and the gap is your luck.
+            No All-In Hands In This Range, So Expected And Actual Are Identical. Once You Get It In,
+            The Two Lines Will Separate And The Gap Is Your Luck.
           </p>
         ) : (
           <p className="evluck-sub">
-            You are running{' '}
+            You Are Running{' '}
             <strong className={luck >= 0 ? 'is-up' : 'is-down'}>
-              {fmtBB(luck)} bb ({fmtBB(luckPer100)} bb/100)
+              {fmtBB(luck)} BB ({fmtBB(luckPer100)} BB/100)
             </strong>{' '}
-            {running} expectation across {summary?.hands.toLocaleString()} cash hands, measured over{' '}
-            {allIns.toLocaleString()} all-in {allIns === 1 ? 'spot' : 'spots'}.
+            {running} Expectation Across {summary?.hands.toLocaleString()} Cash Hands, Measured Over{' '}
+            {allIns.toLocaleString()} All-In {allIns === 1 ? 'spot' : 'spots'}.
           </p>
         )}
       </div>
@@ -271,25 +271,25 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
             className="evluck-swatch"
             style={{ background: runningAbove ? 'rgba(34,197,94,0.45)' : 'rgba(239,68,68,0.45)' }}
           />{' '}
-          Gap ({running} expected)
+          Gap ({running} Expected)
         </span>
       </div>
 
       {allIns > 0 && allIns < MEANINGFUL_ALL_INS && (
         <p className="evluck-note">
-          Based on {allIns} all-in {allIns === 1 ? 'spot' : 'spots'}. All-in EV is extremely
-          high-variance and a sample this small can swing wildly. Treat it as a curiosity until it
-          is well past {MEANINGFUL_ALL_INS}.
+          Based On {allIns} All-In {allIns === 1 ? 'spot' : 'spots'}. All-In EV Is Extremely
+          High-Variance And A Sample This Small Can Swing Wildly. Treat It As A Curiosity Until It
+          Is Well Past {MEANINGFUL_ALL_INS}.
         </p>
       )}
       {summary?.capped && (
         <p className="evluck-note">
-          Showing your most recent {summary.hands.toLocaleString()} cash hands.
+          Showing Your Most Recent {summary.hands.toLocaleString()} Cash Hands.
         </p>
       )}
       <p className="evluck-note">
-        Expected value is adjusted only for all-in runouts, where equity is known exactly. It does
-        not judge folds, bet sizing, or anything else about how you played.
+        Expected Value Is Adjusted Only For All-In Runouts, Where Equity Is Known Exactly. It Does
+        Not Judge Folds, Bet Sizing, Or Anything Else About How You Played.
       </p>
     </motion.div>
   );

@@ -110,7 +110,7 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
   return (
     <div className="refd-container">
       <h3 className="refd-title">Referral Program</h3>
-      <p className="refd-subtitle">Invite friends and earn chips together!</p>
+      <p className="refd-subtitle">Invite Friends And Earn Chips Together!</p>
 
       {/* Code Display */}
       <div className="refd-code-box">
@@ -138,7 +138,7 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
           <div key={m.count} className={`refd-milestone ${m.unlocked ? 'refd-unlocked' : ''}`}>
             <span className="refd-ms-icon">{m.unlocked ? '✓' : '◈'}</span>
             <span className="refd-ms-label">{m.label}</span>
-            <span className="refd-ms-reward">{m.reward.toLocaleString()} chips</span>
+            <span className="refd-ms-reward">{m.reward.toLocaleString()} Chips</span>
           </div>
         ))}
       </div>

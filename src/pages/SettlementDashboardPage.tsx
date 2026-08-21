@@ -635,7 +635,7 @@ export default function SettlementDashboardPage() {
         </button>
         <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700 }}>⚖ Settlement Center</h1>
         <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
-          Weekly settlement cycle monitoring and execution
+          Weekly Settlement Cycle Monitoring And Execution
         </p>
       </div>
 
@@ -914,23 +914,23 @@ export default function SettlementDashboardPage() {
             lineHeight: 1.5,
           }}
         >
-          Player rakeback settles automatically via the engine.{' '}
+          Player Rakeback Settles Automatically Via The Engine.{' '}
           {rakebackStatus.pendingPeriods > 0 ? (
             <>
               <strong style={{ color: '#8b5cf6' }}>
-                {rakebackStatus.pendingPeriods} period(s)
+                {rakebackStatus.pendingPeriods} Period(S)
               </strong>{' '}
-              across {rakebackStatus.pendingClubs} club(s) pending (~
-              {rakebackStatus.estimatedOwed.toLocaleString()} chips) - use “Settle Rakeback” to
-              clear now.
+              Across {rakebackStatus.pendingClubs} Club(S) Pending (~
+              {rakebackStatus.estimatedOwed.toLocaleString()} Chips) - Use “Settle Rakeback” To
+              Clear Now.
             </>
           ) : (
-            <strong style={{ color: '#10b981' }}>All rakeback settled - up to date.</strong>
+            <strong style={{ color: '#10b981' }}>All Rakeback Settled - Up To Date.</strong>
           )}
           {rakebackStatus.lastPaidAt && (
             <span style={{ color: 'rgba(255,255,255,0.45)' }}>
               {' '}
-              Last payout {formatDateTime(rakebackStatus.lastPaidAt)}.
+              Last Payout {formatDateTime(rakebackStatus.lastPaidAt)}.
             </span>
           )}
         </div>
@@ -1014,7 +1014,7 @@ export default function SettlementDashboardPage() {
         >
           <div style={{ fontSize: '1.8rem', marginBottom: '8px' }}>▤</div>
           <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem', margin: 0 }}>
-            No agent settlements yet
+            No Agent Settlements Yet
           </p>
         </div>
       ) : (
@@ -1117,7 +1117,7 @@ export default function SettlementDashboardPage() {
         >
           <div style={{ fontSize: '1.8rem', marginBottom: '8px' }}>▤</div>
           <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem', margin: 0 }}>
-            No completed settlement periods
+            No Completed Settlement Periods
           </p>
         </div>
       ) : (
@@ -1230,7 +1230,7 @@ export default function SettlementDashboardPage() {
           color: 'rgba(255,255,255,0.3)',
         }}
       >
-        Settlement Engine v3.0 • Sunday 11:59 PM snapshot • Monday 4:00 AM execution
+        Settlement Engine V3.0 • Sunday 11:59 PM Snapshot • Monday 4:00 AM Execution
       </div>
 
       {/* Cascaded settlement: union to clubs, clubs to agents, agents to players */}

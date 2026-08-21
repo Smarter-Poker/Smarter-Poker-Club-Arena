@@ -35,6 +35,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { readLocalSession } from '../../lib/authUtils';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import type { TournamentResult } from '../../services/pendingSessionSummary';
@@ -112,8 +113,11 @@ export default function TournamentRankingCard({
     let cancelled = false;
     (async () => {
       try {
-        const { data: auth } = await supabase.auth.getUser();
-        const uid = auth?.user?.id;
+        // readLocalSession, not a GoTrue round trip: the house rule (enforced
+        // by .husky/pre-push) is that no component blocks on the auth server
+        // for an id the JWT already sitting in localStorage carries. Same
+        // value, no network, no hang when GoTrue is slow.
+        const uid = readLocalSession()?.userId;
         if (!uid) return;
         const { data } = await supabase
           .from('profiles')
@@ -234,12 +238,12 @@ export default function TournamentRankingCard({
           <div className="trc2__extras">
             {result.knockouts > 0 && (
               <span className="trc2__extra">
-                <strong>{result.knockouts}</strong> knockout{result.knockouts === 1 ? '' : 's'}
+                <strong>{result.knockouts}</strong> Knockout{result.knockouts === 1 ? '' : 's'}
               </span>
             )}
             {result.bountyWinnings > 0 && (
               <span className="trc2__extra">
-                <strong>{formatMoney(result.bountyWinnings)}</strong> in bounties
+                <strong>{formatMoney(result.bountyWinnings)}</strong> In Bounties
               </span>
             )}
           </div>

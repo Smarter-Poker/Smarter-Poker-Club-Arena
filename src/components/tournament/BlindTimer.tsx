@@ -145,7 +145,7 @@ export const BlindTimer: React.FC<BlindTimerProps> = ({
         </div>
       ) : (
         <div className="blinds-display break-message">
-          <span>Tournament on Break</span>
+          <span>Tournament On Break</span>
         </div>
       )}
 

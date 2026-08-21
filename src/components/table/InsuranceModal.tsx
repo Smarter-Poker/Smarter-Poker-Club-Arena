@@ -220,7 +220,7 @@ export function InsuranceModal({
               ))}
             </div>
           </div>
-          <div className="insurance-modal__vs">vs</div>
+          <div className="insurance-modal__vs">Vs</div>
           <div className="insurance-modal__hand">
             <span className="insurance-modal__hand-label">Opponent</span>
             <div className="insurance-modal__hand-cards">
@@ -316,7 +316,7 @@ export function InsuranceModal({
                 </span>
               </div>
               <div className="insurance-modal__summary-row insurance-modal__summary-row--total">
-                <span className="insurance-modal__summary-label">If you lose, receive</span>
+                <span className="insurance-modal__summary-label">If You Lose, Receive</span>
                 <span className="insurance-modal__summary-value insurance-modal__summary-value--highlight">
                   {currency}
                   {payout.toLocaleString()}
@@ -337,7 +337,7 @@ export function InsuranceModal({
                   onClick={handleDeclineForHand}
                   title="Decline insurance for all remaining streets this hand"
                 >
-                  Decline for Hand
+                  Decline For Hand
                 </button>
               )}
               <button
@@ -389,7 +389,7 @@ export function InsuranceModal({
                   </span>
                 </div>
                 <div className="insurance-modal__summary-row insurance-modal__summary-row--total">
-                  <span className="insurance-modal__summary-label">You receive</span>
+                  <span className="insurance-modal__summary-label">You Receive</span>
                   <span className="insurance-modal__summary-value insurance-modal__summary-value--highlight">
                     {currency}
                     {evCashoutAmount.toLocaleString()}
@@ -398,7 +398,7 @@ export function InsuranceModal({
               </div>
 
               <p className="insurance-modal__ev-note">
-                Take your guaranteed equity now. The hand will continue but your payout is locked.
+                Take Your Guaranteed Equity Now. The Hand Will Continue But Your Payout Is Locked.
               </p>
             </div>
 

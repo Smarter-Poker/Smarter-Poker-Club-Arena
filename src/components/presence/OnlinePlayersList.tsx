@@ -168,11 +168,11 @@ export const OnlinePlayersList: React.FC<OnlinePlayersListProps> = ({
     <div className="online-players-list">
       <div className="list-header">
         <h4>Online Players</h4>
-        <span className="online-count">{onlineCount} online</span>
+        <span className="online-count">{onlineCount} Online</span>
       </div>
 
       {players.length === 0 ? (
-        <div className="no-players">No players online</div>
+        <div className="no-players">No Players Online</div>
       ) : (
         <div className="players-grid">
           {players.map((player, i) => (

@@ -99,7 +99,7 @@ export function PineappleDiscard({
       <div className="pineapple-discard__panel">
         <div className="pineapple-discard__header">
           <h2 id="pd-title" className="pineapple-discard__title">
-            Discard a card
+            Discard A Card
           </h2>
           {secondsLeft !== null && (
             <span
@@ -112,8 +112,8 @@ export function PineappleDiscard({
         </div>
 
         <p className="pineapple-discard__hint">
-          Pick the card to throw away. If the timer runs out the table discards your last card for
-          you.
+          Pick The Card To Throw Away. If The Timer Runs Out The Table Discards Your Last Card For
+          You.
         </p>
 
         <div className="pineapple-discard__cards">
@@ -134,7 +134,9 @@ export function PineappleDiscard({
                 }}
               >
                 <CardImage card={card} size="lg" deckStyle={deckStyle} />
-                <span className="pineapple-discard__card-tag">{isSelected ? 'DISCARD' : 'KEEP'}</span>
+                <span className="pineapple-discard__card-tag">
+                  {isSelected ? 'DISCARD' : 'KEEP'}
+                </span>
               </button>
             );
           })}

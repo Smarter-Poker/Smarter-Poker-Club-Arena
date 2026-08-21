@@ -43,7 +43,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
     return (
       <div className="search-results empty">
         <span className="empty-icon">◌</span>
-        <p>No results found for "{query}"</p>
+        <p>No Results Found For "{query}"</p>
       </div>
     );
   }

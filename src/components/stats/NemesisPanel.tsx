@@ -89,9 +89,7 @@ function FlowCard({
         {flow.net_chips >= 0 ? '+' : '-'}
         {chips(flow.net_chips)}
       </span>
-      <span className="nemesis-meta">
-        {flow.hands_together.toLocaleString()} hands together
-      </span>
+      <span className="nemesis-meta">{flow.hands_together.toLocaleString()} Hands Together</span>
     </button>
   );
 }
@@ -123,9 +121,7 @@ export default function NemesisPanel({ userId, days = null }: Props) {
   const rows = useMemo(() => {
     if (!data) return [];
     // Worst first: the player wants to know who is beating them.
-    return [...(data.worst ?? []), ...(data.best ?? [])].sort(
-      (a, b) => a.net_chips - b.net_chips
-    );
+    return [...(data.worst ?? []), ...(data.best ?? [])].sort((a, b) => a.net_chips - b.net_chips);
   }, [data]);
 
   const openProfile = (id: string) => navigate(`/stats/${id}`);
@@ -145,9 +141,9 @@ export default function NemesisPanel({ userId, days = null }: Props) {
       <div className="nemesis-panel nemesis-empty">
         <h3 className="nemesis-title">Rivals</h3>
         <p className="nemesis-empty-text">
-          No rivalries yet. An opponent appears here once you have played at least{' '}
-          {data?.min_hands ?? 25} hands against them, so that a single big pot cannot crown someone
-          who simply got lucky once.
+          No Rivalries Yet. An Opponent Appears Here Once You Have Played At Least{' '}
+          {data?.min_hands ?? 25} Hands Against Them, So That A Single Big Pot Cannot Crown Someone
+          Who Simply Got Lucky Once.
         </p>
       </div>
     );
@@ -158,8 +154,8 @@ export default function NemesisPanel({ userId, days = null }: Props) {
       <div className="nemesis-head">
         <h3 className="nemesis-title">Rivals</h3>
         <p className="nemesis-sub">
-          Net chips won and lost against each opponent, across {data?.opponents_qualified ?? 0}{' '}
-          players you have met at least {data?.min_hands ?? 25} times.
+          Net Chips Won And Lost Against Each Opponent, Across {data?.opponents_qualified ?? 0}{' '}
+          Players You Have Met At Least {data?.min_hands ?? 25} Times.
         </p>
       </div>
 
@@ -221,8 +217,8 @@ export default function NemesisPanel({ userId, days = null }: Props) {
       )}
 
       <p className="nemesis-note">
-        Chip flow is attributed per hand in proportion to what each player lost. Rake is not
-        counted against any opponent.
+        Chip Flow Is Attributed Per Hand In Proportion To What Each Player Lost. Rake Is Not Counted
+        Against Any Opponent.
       </p>
     </div>
   );

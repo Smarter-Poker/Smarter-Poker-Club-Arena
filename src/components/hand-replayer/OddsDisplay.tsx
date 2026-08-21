@@ -82,7 +82,7 @@ export default function OddsDisplay({
   if (holeCards.length < 2 || boardCards.length < 3) {
     return (
       <div className="odds-display odds-display--placeholder">
-        <p>Waiting for hole cards and flop...</p>
+        <p>Waiting For Hole Cards And Flop...</p>
       </div>
     );
   }
@@ -132,7 +132,7 @@ export default function OddsDisplay({
 
         <div className="metric-item">
           <span className="metric-label">Cards</span>
-          <span className="metric-value">{cardsTocome} left</span>
+          <span className="metric-value">{cardsTocome} Left</span>
         </div>
       </div>
 

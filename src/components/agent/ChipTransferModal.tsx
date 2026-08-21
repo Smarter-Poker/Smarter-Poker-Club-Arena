@@ -331,7 +331,7 @@ export default function ChipTransferModal({
         <div className="chip-transfer-header">
           <h2>Cashier Transfer</h2>
           <button className="close-btn" onClick={handleClose}>
-            x
+            X
           </button>
         </div>
 
@@ -353,7 +353,7 @@ export default function ChipTransferModal({
                   onChange={(e) => setSelectedRecipient(e.target.value)}
                   className="player-select"
                 >
-                  <option value="">Select recipient</option>
+                  <option value="">Select Recipient</option>
                   {recipients.map((r) => (
                     <option key={r.id} value={r.id}>
                       {r.role === 'agent' || r.role === 'super_agent'

@@ -2044,9 +2044,8 @@ export default function TablePage({
   } else if (!timeBankActive && timeBankDeadlineRef.current !== null) {
     timeBankDeadlineRef.current = null;
   }
-  const heroTabTimeBank = timeBankActive && timeBankDeadlineRef.current
-    ? `1:${timeBankDeadlineRef.current}`
-    : '';
+  const heroTabTimeBank =
+    timeBankActive && timeBankDeadlineRef.current ? `1:${timeBankDeadlineRef.current}` : '';
 
   const heroTabSittingOut = useMemo(() => {
     const hero = tableState.players[tableState.heroSeat - 1];
@@ -4715,9 +4714,7 @@ export default function TablePage({
                       void (async () => {
                         const full = tid ? await fetchTournamentResult(tid, userId) : undefined;
                         publishSessionSummary({
-                          duration: Math.floor(
-                            (Date.now() - sessionStartRef.current) / 1000
-                          ),
+                          duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
                           handsPlayed: handsPlayedRef.current,
                           handsWon: handsWonRef.current,
                           totalRebuys: totalRebuysRef.current,
@@ -6319,8 +6316,7 @@ export default function TablePage({
           // blast, not while the bomb is still falling. Presentation only;
           // the pot total was already settled server-side at trigger time.
           {
-            const postings =
-              (d?.postings as Array<{ seat: number; amount: number }>) || [];
+            const postings = (d?.postings as Array<{ seat: number; amount: number }>) || [];
             if (postings.length > 0) {
               if (bombPotChipTimerRef.current) clearTimeout(bombPotChipTimerRef.current);
               bombPotChipTimerRef.current = setTimeout(() => {
@@ -6431,9 +6427,7 @@ export default function TablePage({
           if (prev.currentPlayerSeat !== cdSeat) return prev;
           const pinned = cdTs + cdRemaining;
           const current = prev.actionTimerDeadline ?? 0;
-          return Math.abs(pinned - current) > 750
-            ? { ...prev, actionTimerDeadline: pinned }
-            : prev;
+          return Math.abs(pinned - current) > 750 ? { ...prev, actionTimerDeadline: pinned } : prev;
         });
         break;
       }
@@ -8752,7 +8746,7 @@ export default function TablePage({
             <span className="header-blinds">{tableState.blinds}</span>
           </div>
           <div className="header-center__bottom-row">
-            <span className="header-brand">smarter.poker</span>
+            <span className="header-brand">Smarter.Poker</span>
             {tableState.clubName && <span className="header-club-name">{tableState.clubName}</span>}
             {tableState.handNumber != null && tableState.handNumber > 0 && (
               <span className="header-hand-number">#{tableState.handNumber}</span>
@@ -9197,15 +9191,15 @@ export default function TablePage({
                     bombPotRules is a one-shot fetch that would hold the pill
                     hostage until a page reload. */}
                 {tableState.bombPotIn != null && !bombPotActive && (
-                    <div
-                      className={`bomb-pot-eta ${tableState.bombPotIn === 1 ? 'bomb-pot-eta--next' : ''}`}
-                    >
-                      <span className="bomb-pot-eta__dot" />
-                      {tableState.bombPotIn === 1
-                        ? `${bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
-                        : `BOMB POT IN ${tableState.bombPotIn}`}
-                    </div>
-                  )}
+                  <div
+                    className={`bomb-pot-eta ${tableState.bombPotIn === 1 ? 'bomb-pot-eta--next' : ''}`}
+                  >
+                    <span className="bomb-pot-eta__dot" />
+                    {tableState.bombPotIn === 1
+                      ? `${bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
+                      : `BOMB POT IN ${tableState.bombPotIn}`}
+                  </div>
+                )}
 
                 {/* Dan 2026-08-15: the "Game Info Strip" that lived here is
                     gone. It printed the stakes a second and third time
@@ -9235,7 +9229,7 @@ export default function TablePage({
                     <div
                       className={`spinMultiplierBadge ${tableState.spinMultiplier >= 100 ? 'premium' : ''}`}
                     >
-                      <span className="spinMultiplierIcon">x</span>
+                      <span className="spinMultiplierIcon">X</span>
                       <span className="spinMultiplierValue">{tableState.spinMultiplier}x</span>
                     </div>
                   )}
@@ -9725,9 +9719,7 @@ export default function TablePage({
              chips exist yet and no hand is running. Say so, and offer the way
              out — "IF THEY LEAVE THE SEAT THEY ARE FULLY REFUNDED." */
           <div className="spectator-footer-bar" data-state="reserved">
-            <span className="spectator-footer-bar__label">
-              Seat Reserved, Waiting For Players
-            </span>
+            <span className="spectator-footer-bar__label">Seat Reserved, Waiting For Players</span>
             <button
               type="button"
               className="spectator-footer-bar__cta spectator-footer-bar__cta--leave"
@@ -10049,7 +10041,7 @@ export default function TablePage({
             }}
             aria-label="Post the big blind to enter the next hand"
           >
-            <span className="post-bb-overlay-button__title">Post BB to Enter</span>
+            <span className="post-bb-overlay-button__title">Post BB To Enter</span>
             <span className="post-bb-overlay-button__sub">Skip The Wait, Pay The BB Now</span>
           </button>
         )}

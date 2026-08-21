@@ -96,7 +96,7 @@ export function PlayerProfileCard({
   }
 
   if (!profile) {
-    return <div className="player-card error">Player not found</div>;
+    return <div className="player-card error">Player Not Found</div>;
   }
 
   return (
@@ -146,7 +146,7 @@ export function PlayerProfileCard({
 
           {profile.currentTable && (
             <div className="player-card__current">
-              Playing at <strong>{profile.currentTable}</strong>
+              Playing At <strong>{profile.currentTable}</strong>
             </div>
           )}
 

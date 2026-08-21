@@ -215,7 +215,7 @@ function Countdown({ startTime, live }: { startTime?: string; live?: boolean }) 
     return () => clearInterval(id);
   }, [live]);
   if (live) return <span className="ngc-cd ngc-cd--live">LIVE</span>;
-  if (!startTime) return <span className="ngc-cd">when full</span>;
+  if (!startTime) return <span className="ngc-cd">When Full</span>;
   const ms = new Date(startTime).getTime() - now;
   if (ms <= 0) return <span className="ngc-cd ngc-cd--live">LIVE NOW</span>;
   const s = Math.floor(ms / 1000);
@@ -259,7 +259,17 @@ interface NeonCardProps {
   children?: React.ReactNode;
   onDelete?: () => void;
 }
-function NeonCard({ to, neon, emblem, bbj, maxLabel, live, children, onDelete, onCardClick }: NeonCardProps) {
+function NeonCard({
+  to,
+  neon,
+  emblem,
+  bbj,
+  maxLabel,
+  live,
+  children,
+  onDelete,
+  onCardClick,
+}: NeonCardProps) {
   return (
     <div className="ngc-wrap">
       <Link
@@ -585,7 +595,7 @@ export function SpinCard({
       </div>
       <div className="ngc-row">
         <span className="ngc-win">
-          Win up to {maxMult}x{liveTop && <span className="ngc-spin-live">{liveTop}x LIVE</span>}
+          Win Up To {maxMult}x{liveTop && <span className="ngc-spin-live">{liveTop}x LIVE</span>}
         </span>
         <span className="ngc-players">
           {tournament.current_players}/{tournament.max_players}

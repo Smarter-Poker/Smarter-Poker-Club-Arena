@@ -320,7 +320,7 @@ export default function App() {
         <ConnectionStatusBar />
         {/* Accessibility: Skip to main content link */}
         <a href="#main-content" className="skip-link">
-          Skip to main content
+          Skip To Main Content
         </a>
 
         {/* Intro video overlay - app loads in background while video plays */}
@@ -356,7 +356,7 @@ export default function App() {
                 letterSpacing: '0.5px',
               }}
             >
-              Reconnecting - your actions are saved and will sync automatically
+              Reconnecting - Your Actions Are Saved And Will Sync Automatically
             </div>
           )}
           <OfflineQueueBadge />
@@ -1494,7 +1494,7 @@ export default function App() {
                           marginBottom: '2rem',
                         }}
                       >
-                        This page doesn't exist
+                        This Page Doesn't Exist
                       </p>
                       <Link
                         to="/"
@@ -1510,7 +1510,7 @@ export default function App() {
                           boxShadow: '0 4px 12px rgba(24, 119, 242, 0.3)',
                         }}
                       >
-                        Back to Home
+                        Back To Home
                       </Link>
                     </div>
                   }

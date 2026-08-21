@@ -123,7 +123,7 @@ export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
         </div>
 
         <div className="report-reasons">
-          <h3>Reason for Report</h3>
+          <h3>Reason For Report</h3>
           {REPORT_REASONS.map((reason) => (
             <label
               key={reason.id}
@@ -146,7 +146,7 @@ export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
 
         <div className="report-details">
           <label>
-            <span>Additional Details (optional)</span>
+            <span>Additional Details (Optional)</span>
             <textarea
               value={details}
               onChange={(e) => setDetails(e.target.value)}
@@ -158,7 +158,7 @@ export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
 
         <div className="report-hand">
           <label>
-            <span>Related Hand ID (optional)</span>
+            <span>Related Hand ID (Optional)</span>
             <input
               type="text"
               value={handId}

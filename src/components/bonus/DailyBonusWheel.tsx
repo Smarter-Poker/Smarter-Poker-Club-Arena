@@ -177,7 +177,7 @@ export default function DailyBonusWheel({
       {result && (
         <div className={styles.resultCard}>
           <span className={styles.resultIcon}>{getTypeIcon(result.type)}</span>
-          <span className={styles.resultText}>You won {result.label}!</span>
+          <span className={styles.resultText}>You Won {result.label}!</span>
         </div>
       )}
 
@@ -187,7 +187,7 @@ export default function DailyBonusWheel({
       </button>
 
       {/* Spin Count */}
-      {spinCount > 0 && <div className={styles.spinCount}>{spinCount} day streak!</div>}
+      {spinCount > 0 && <div className={styles.spinCount}>{spinCount} Day Streak!</div>}
     </div>
   );
 }

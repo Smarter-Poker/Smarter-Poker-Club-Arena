@@ -253,7 +253,7 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
       <div className="transaction-history">
         <div className="tx-error-state">
           <span className="tx-error-icon">⚠</span>
-          <p>Failed to load transactions</p>
+          <p>Failed To Load Transactions</p>
           <button className="tx-retry-btn" onClick={loadTransactions}>
             ↻ Retry
           </button>
@@ -287,7 +287,7 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
       </div>
 
       {filteredTransactions.length === 0 ? (
-        <div className="empty-state">No transactions</div>
+        <div className="empty-state">No Transactions</div>
       ) : (
         <div className="transaction-list">
           {visibleTransactions.map((tx, i) => (
@@ -328,7 +328,7 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
                 cursor: 'pointer',
               }}
             >
-              Load More ({filteredTransactions.length - visibleTransactions.length} remaining)
+              Load More ({filteredTransactions.length - visibleTransactions.length} Remaining)
             </button>
           )}
         </div>

@@ -169,8 +169,8 @@ export function HandDetailModal({
             </div>
           </div>
           <div className="hdm-empty">
-            No completed hands yet at this table. Play a hand to the end and it
-            will appear here.
+            No Completed Hands Yet At This Table. Play A Hand To The End And It
+            Will Appear Here.
           </div>
         </div>
       </div>
@@ -309,7 +309,7 @@ export function HandDetailModal({
                 <span>Main Pot : {fmt(hand.potTotal)}</span>
               </div>
               {summaryRows.length === 0 && (
-                <div className="hdm-empty">No showdown - the pot was taken without a reveal.</div>
+                <div className="hdm-empty">No Showdown - The Pot Was Taken Without A Reveal.</div>
               )}
               {summaryRows.map((r) => (
                 <SummaryRow key={r.id} r={r} heroId={heroId} big />

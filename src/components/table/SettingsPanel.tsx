@@ -389,7 +389,7 @@ export function SettingsPanel({
             <div className="settings-item settings-item--action">
               <div className="settings-item__info">
                 <span className="settings-item__label">Avatar</span>
-                <span className="settings-item__description">Change your table avatar</span>
+                <span className="settings-item__description">Change Your Table Avatar</span>
               </div>
               <button className="settings-action-btn" onClick={() => setShowAvatarGallery(true)}>
                 <img
@@ -431,7 +431,7 @@ export function SettingsPanel({
         {/* Footer */}
         <div className="settings-panel__footer">
           <button className="settings-panel__reset" onClick={handleReset}>
-            Reset to Defaults
+            Reset To Defaults
           </button>
         </div>
       </div>

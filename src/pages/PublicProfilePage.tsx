@@ -280,7 +280,7 @@ export default function PublicProfilePage() {
       <div className="public-profile-page">
         <div className="public-profile-loading">
           <PageSkeleton variant="default" />
-          <p>Loading profile...</p>
+          <p>Loading Profile...</p>
         </div>
       </div>
     );
@@ -325,7 +325,7 @@ export default function PublicProfilePage() {
               {VIP_LABELS[profile.vipTier] || 'Bronze'}
             </span>
             <span className="level-badge">Level {profile.level}</span>
-            <span className="member-since">Member since {memberSince}</span>
+            <span className="member-since">Member Since {memberSince}</span>
           </div>
 
           {/* Q3: Playing-At & Status */}
@@ -336,7 +336,7 @@ export default function PublicProfilePage() {
                 playerStatus.playingAtTableId && navigate(`/table/${playerStatus.playingAtTableId}`)
               }
             >
-              Playing at <strong>{playerStatus.playingAt}</strong>
+              Playing At <strong>{playerStatus.playingAt}</strong>
             </div>
           )}
           {playerStatus?.statusText && (
@@ -485,13 +485,13 @@ export default function PublicProfilePage() {
       {/* Q3: Profile QR Code */}
       {userId && (
         <div className="profile-qr-section">
-          <h3>Scan to Connect</h3>
+          <h3>Scan To Connect</h3>
           <img
             src={messagingService.generateProfileQRData(userId)}
             alt="Profile QR Code"
             className="profile-qr-image"
           />
-          <p className="qr-hint">Scan at the table to add as friend</p>
+          <p className="qr-hint">Scan At The Table To Add As Friend</p>
         </div>
       )}
 

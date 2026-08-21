@@ -462,11 +462,11 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
           <div className="sw__status">
             <span className="sw__status-sub">
               {currency}
-              {Math.round(data.buyIn).toLocaleString('en-US')} buy-in
+              {Math.round(data.buyIn).toLocaleString('en-US')} Buy-In
             </span>
             {nextUnlock && (
               <span className="sw__status-locked">
-                {nextUnlock.multiplier}× unlocks when the club reserve reaches {currency}
+                {nextUnlock.multiplier}× Unlocks When The Club Reserve Reaches {currency}
                 {(nextUnlock.unlocksAt as number).toLocaleString(undefined, {
                   maximumFractionDigits: 0,
                 })}

@@ -316,7 +316,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
             <div
               style={{ padding: '2rem', textAlign: 'center', color: '#6a7a8a', fontSize: '0.8rem' }}
             >
-              No results found
+              No Results Found
             </div>
           )}
           {Array.from(grouped.entries()).map(([category, actions]) => (

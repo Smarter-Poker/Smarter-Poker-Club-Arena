@@ -204,7 +204,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
         {!searched ? (
           <div className="empty-state">
             <span>◉</span>
-            <p>Search for players to manage</p>
+            <p>Search For Players To Manage</p>
           </div>
         ) : loading ? (
           <div className="empty-state">
@@ -214,7 +214,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
         ) : results.length === 0 ? (
           <div className="empty-state">
             <span>⌕</span>
-            <p>No players found matching "{query}"</p>
+            <p>No Players Found Matching "{query}"</p>
           </div>
         ) : (
           results.map((player, i) => (

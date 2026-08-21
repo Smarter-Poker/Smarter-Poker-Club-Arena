@@ -110,7 +110,7 @@ export const InviteToTable: React.FC<InviteToTableProps> = ({
       <div className="invite-header">
         <div className="header-info">
           <h2>Invite Players</h2>
-          <span className="table-name">to {tableName}</span>
+          <span className="table-name">To {tableName}</span>
         </div>
         <button className="close-btn" onClick={onClose}>
           ✕
@@ -145,7 +145,7 @@ export const InviteToTable: React.FC<InviteToTableProps> = ({
         ) : filteredPlayers.length === 0 ? (
           <div className="empty-state">
             <span>◉</span>
-            <p>No players found</p>
+            <p>No Players Found</p>
           </div>
         ) : (
           filteredPlayers.map((player, i) => (

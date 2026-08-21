@@ -348,7 +348,7 @@ export default function ClubsPage() {
       <div className={styles.page}>
         {/* Header */}
         <div className={styles.pageIntro}>
-          <p className={styles.subtitle}>Join private poker communities or create your own.</p>
+          <p className={styles.subtitle}>Join Private Poker Communities Or Create Your Own.</p>
         </div>
 
         {/* Tabs */}
@@ -389,7 +389,7 @@ export default function ClubsPage() {
             <div className={styles.discoverTab}>
               <section className={styles.joinSection}>
                 <h3>JOIN A CLUB</h3>
-                <p>Enter a 6-digit Club Code to join an existing club.</p>
+                <p>Enter A 6-Digit Club Code To Join An Existing Club.</p>
 
                 {joinError && <div className={styles.errorText}>{joinError}</div>}
 
@@ -555,7 +555,7 @@ export default function ClubsPage() {
                     fontSize: '0.85rem',
                   }}
                 >
-                  Your clubs are nested under your unions below.
+                  Your Clubs Are Nested Under Your Unions Below.
                 </p>
               )}
 
@@ -629,7 +629,7 @@ export default function ClubsPage() {
             <div className={styles.createTab}>
               <div className={styles.createForm}>
                 <h3>CREATE A CLUB</h3>
-                <p>Start your own private poker community.</p>
+                <p>Start Your Own Private Poker Community.</p>
 
                 {createError && <div className={styles.errorText}>{createError}</div>}
 
@@ -670,7 +670,7 @@ export default function ClubsPage() {
                           setIsPublic(true);
                         }}
                       />
-                      <span>Public (anyone can find and join)</span>
+                      <span>Public (Anyone Can Find And Join)</span>
                     </label>
                     <label className={styles.checkbox}>
                       <input
@@ -682,7 +682,7 @@ export default function ClubsPage() {
                           setIsPublic(false);
                         }}
                       />
-                      <span>Private (invite only, requires approval)</span>
+                      <span>Private (Invite Only, Requires Approval)</span>
                     </label>
                   </div>
                 </div>

@@ -106,7 +106,7 @@ function SystemOffline({ status, onRetry }: SystemOfflineProps) {
 
         {/* Title */}
         <h1 style={styles.title}>System Offline</h1>
-        <p style={styles.subtitle}>Club Arena is currently unavailable</p>
+        <p style={styles.subtitle}>Club Arena Is Currently Unavailable</p>
 
         {/* Error Details */}
         <div style={styles.errorBox}>
@@ -144,7 +144,7 @@ function SystemOffline({ status, onRetry }: SystemOfflineProps) {
 
         {/* Timestamp */}
         <p style={styles.timestamp}>
-          Last check: {new Date(status.checks.timestamp).toLocaleTimeString()}
+          Last Check: {new Date(status.checks.timestamp).toLocaleTimeString()}
         </p>
       </div>
     </div>

@@ -90,7 +90,7 @@ export const VIPBenefitsGrid: React.FC<VIPBenefitsGridProps> = ({ currentPoints 
     <div className="vip-benefits-grid">
       <div className="benefits-header">
         <h3>Your VIP Benefits</h3>
-        <p>Unlock more perks as you climb the VIP ladder</p>
+        <p>Unlock More Perks As You Climb The VIP Ladder</p>
       </div>
 
       <div className="benefits-container">
@@ -140,7 +140,7 @@ export const VIPBenefitsGrid: React.FC<VIPBenefitsGridProps> = ({ currentPoints 
 
       {/* Tier-specific benefits showcase */}
       <div className="tier-benefits-section">
-        <h4>Tier Benefits at {currentTier.name}</h4>
+        <h4>Tier Benefits At {currentTier.name}</h4>
         <div className="tier-benefits-display">
           <div className="tier-benefit-item">
             <span className="label">Rakeback</span>

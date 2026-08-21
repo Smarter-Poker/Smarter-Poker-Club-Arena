@@ -30,6 +30,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { readLocalSession } from '../../lib/authUtils';
 import { reportError } from '../../utils/errorReporter';
 import { sessionStatsService, type SessionStats } from '../../services/SessionStatsService';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
@@ -202,8 +203,11 @@ export default function RealTimeResultPanel({
     let cancelled = false;
     (async () => {
       try {
-        const { data: auth } = await supabase.auth.getUser();
-        const uid = auth?.user?.id;
+        // readLocalSession, not a GoTrue round trip: the house rule (enforced
+        // by .husky/pre-push) is that no component blocks on the auth server
+        // for an id the JWT already sitting in localStorage carries. Same
+        // value, no network, no hang when GoTrue is slow.
+        const uid = readLocalSession()?.userId;
         if (!uid || cancelled) return;
         const ch = supabase.channel(`table-observers-${tableId}`, {
           config: { presence: { key: uid } },
@@ -253,9 +257,7 @@ export default function RealTimeResultPanel({
     // "20-Aug 50↓200↑ 7MAX"
     const gameName = [
       created ? dayMon(created) : dayMon(now),
-      meta && (meta.minBuyIn || meta.maxBuyIn)
-        ? `${meta.minBuyIn}↓${meta.maxBuyIn}↑`
-        : null,
+      meta && (meta.minBuyIn || meta.maxBuyIn) ? `${meta.minBuyIn}↓${meta.maxBuyIn}↑` : null,
       meta?.maxPlayers ? `${meta.maxPlayers}MAX` : null,
     ]
       .filter(Boolean)
@@ -332,7 +334,7 @@ export default function RealTimeResultPanel({
         <div className="rtr__section">Profile Data</div>
         <div className="rtr__rows rtr__rows--wide">
           <div className="rtr__row">
-            <span className="rtr__label">Buy-in</span>
+            <span className="rtr__label">Buy-In</span>
             <span className="rtr__value">{money(stats?.buyInTotal ?? 0)}</span>
           </div>
           <div className="rtr__row">
@@ -366,7 +368,7 @@ export default function RealTimeResultPanel({
         <div className="rtr__section">Observers ({observers.length})</div>
         <div className="rtr__observers">
           {observers.length === 0 ? (
-            <span className="rtr__empty">No one is watching this table</span>
+            <span className="rtr__empty">No One Is Watching This Table</span>
           ) : (
             observers.map((o) => (
               <span className="rtr__observer" key={o.id}>

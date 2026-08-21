@@ -312,7 +312,7 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
             <div className={styles['form-row']}>
               <div className={styles['form-group']}>
                 <label>
-                  Min Buy-in (BB) <span style={{ color: '#ef4444' }}>*</span>
+                  Min Buy-In (BB) <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <input
                   type="number"
@@ -325,7 +325,7 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
               </div>
               <div className={styles['form-group']}>
                 <label>
-                  Max Buy-in (BB) <span style={{ color: '#ef4444' }}>*</span>
+                  Max Buy-In (BB) <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <input
                   type="number"
@@ -341,18 +341,18 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
             {/* ── Action Time & Time Limit ── */}
             <div className={styles['form-row']}>
               <div className={styles['form-group']}>
-                <label>Action Time (sec)</label>
+                <label>Action Time (Sec)</label>
                 <select
                   className={styles['form-select']}
                   value={actionTime}
                   onChange={(e) => setActionTime(e.target.value)}
                 >
-                  <option value="10">10s (Fast)</option>
-                  <option value="15">15s (Standard)</option>
-                  <option value="20">20s</option>
-                  <option value="30">30s</option>
-                  <option value="45">45s</option>
-                  <option value="60">60s (Slow)</option>
+                  <option value="10">10S (Fast)</option>
+                  <option value="15">15S (Standard)</option>
+                  <option value="20">20S</option>
+                  <option value="30">30S</option>
+                  <option value="45">45S</option>
+                  <option value="60">60S (Slow)</option>
                 </select>
               </div>
               <div className={styles['form-group']}>
@@ -363,13 +363,13 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                   onChange={(e) => setTimeLimitMins(e.target.value)}
                 >
                   <option value="0">No Limit</option>
-                  <option value="30">30 minutes</option>
-                  <option value="60">1 hour</option>
-                  <option value="120">2 hours</option>
-                  <option value="180">3 hours</option>
-                  <option value="240">4 hours</option>
-                  <option value="360">6 hours</option>
-                  <option value="480">8 hours</option>
+                  <option value="30">30 Minutes</option>
+                  <option value="60">1 Hour</option>
+                  <option value="120">2 Hours</option>
+                  <option value="180">3 Hours</option>
+                  <option value="240">4 Hours</option>
+                  <option value="360">6 Hours</option>
+                  <option value="480">8 Hours</option>
                 </select>
               </div>
             </div>
@@ -377,7 +377,7 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
             {/* ── Ante ── */}
             <div className={styles['form-row']}>
               <div className={styles['form-group']}>
-                <label>Ante (chips)</label>
+                <label>Ante (Chips)</label>
                 <input
                   type="number"
                   className="input"
@@ -386,7 +386,7 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                   value={anteAmount}
                   onChange={(e) => setAnteAmount(e.target.value)}
                 />
-                <span className={styles['helper-text']}>0 = no ante</span>
+                <span className={styles['helper-text']}>0 = No Ante</span>
               </div>
             </div>
 
@@ -452,7 +452,7 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                 {settings.bomb_pot_enabled && (
                   <div className={styles['form-row']} style={{ paddingLeft: 20, marginBottom: 4 }}>
                     <div className={styles['form-group']} style={{ flex: 1 }}>
-                      <label style={{ fontSize: '0.65rem' }}>Every N hands</label>
+                      <label style={{ fontSize: '0.65rem' }}>Every N Hands</label>
                       <input
                         type="number"
                         className="input"
@@ -523,7 +523,7 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                     checked={settings.insurance_enabled}
                     onChange={() => toggleSetting('insurance_enabled')}
                   />
-                  All-in Insurance
+                  All-In Insurance
                 </label>
 
                 {/* ── Auto Muck ── */}
@@ -561,10 +561,10 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
             {/* ── Validation Summary ── */}
             {!isValid && (
               <div style={{ color: '#ef4444', fontSize: '0.75rem', padding: '6px 0' }}>
-                {!name.trim() && <p>Table name is required</p>}
-                {sb <= 0 && <p>Small blind must be greater than 0</p>}
-                {bb <= sb && bb > 0 && <p>Big blind must be greater than small blind</p>}
-                {maxBB < minBB && <p>Max buy-in must be greater than or equal to min buy-in</p>}
+                {!name.trim() && <p>Table Name Is Required</p>}
+                {sb <= 0 && <p>Small Blind Must Be Greater Than 0</p>}
+                {bb <= sb && bb > 0 && <p>Big Blind Must Be Greater Than Small Blind</p>}
+                {maxBB < minBB && <p>Max Buy-In Must Be Greater Than Or Equal To Min Buy-In</p>}
               </div>
             )}
           </div>

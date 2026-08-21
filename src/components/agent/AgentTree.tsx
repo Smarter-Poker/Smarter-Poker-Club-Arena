@@ -300,7 +300,7 @@ export default function AgentTree({ clubId, onAgentClick, onTransferClick }: Age
   };
 
   if (loading) {
-    return <div className={styles.loading}>Loading agent hierarchy...</div>;
+    return <div className={styles.loading}>Loading Agent Hierarchy...</div>;
   }
 
   if (error) {
@@ -312,7 +312,7 @@ export default function AgentTree({ clubId, onAgentClick, onTransferClick }: Age
       <div className={styles.empty}>
         <span className={styles.emptyIcon}>▲</span>
         <h4>No Agents Yet</h4>
-        <p>Create your first agent to start building your hierarchy</p>
+        <p>Create Your First Agent To Start Building Your Hierarchy</p>
       </div>
     );
   }
@@ -327,7 +327,7 @@ export default function AgentTree({ clubId, onAgentClick, onTransferClick }: Age
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <span className={styles.nodeCount}>{countNodes(tree)} agents</span>
+        <span className={styles.nodeCount}>{countNodes(tree)} Agents</span>
         <button className={styles.controlBtn} onClick={expandAll}>
           Expand All
         </button>

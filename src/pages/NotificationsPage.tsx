@@ -371,7 +371,7 @@ export default function NotificationsPage() {
       <div className="realtime-indicator">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span className="live-dot"></span>
-          <span>Live updates</span>
+          <span>Live Updates</span>
         </div>
         <button
           className={`dnd-toggle ${dndActive ? 'dnd-active' : ''}`}
@@ -397,7 +397,7 @@ export default function NotificationsPage() {
       {/* Q3: DND Duration Picker */}
       {showDndPicker && (
         <div className="dnd-picker">
-          <span className="dnd-label">Mute notifications for:</span>
+          <span className="dnd-label">Mute Notifications For:</span>
           <div className="dnd-options">
             {[15, 30, 60, 120, 480].map((mins) => (
               <button key={mins} className="dnd-option" onClick={() => handleDndToggle(mins)}>
@@ -411,7 +411,7 @@ export default function NotificationsPage() {
       {/* Q3: DND Active Banner */}
       {dndActive && (
         <div className="dnd-banner">
-          Do Not Disturb - {notificationService.getDndRemaining()}m remaining
+          Do Not Disturb - {notificationService.getDndRemaining()}m Remaining
           <button className="dnd-clear" onClick={handleDndClear}>
             Resume
           </button>
@@ -441,7 +441,7 @@ export default function NotificationsPage() {
       {unreadCount > 0 && (
         <div className="mark-all-bar">
           <button className="mark-all-btn" onClick={markAllRead}>
-            Mark all as read ({unreadCount})
+            Mark All As Read ({unreadCount})
           </button>
         </div>
       )}
@@ -462,10 +462,10 @@ export default function NotificationsPage() {
               ✓
             </span>
             <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
-              You're all caught up!
+              You're All Caught Up!
             </p>
             <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
-              No new notifications. We'll let you know when something happens.
+              No New Notifications. We'll Let You Know When Something Happens.
             </p>
           </div>
         ) : filteredNotifications.length === 0 ? (
@@ -473,7 +473,7 @@ export default function NotificationsPage() {
             <span className="empty-icon">
               {NOTIF_CATEGORIES.find((c) => c.id === activeCategory)?.icon || '○'}
             </span>
-            <p>No {activeCategory} notifications</p>
+            <p>No {activeCategory} Notifications</p>
           </div>
         ) : (
           (Object.keys(groupedNotifications) as TimeGroup[]).map((groupName) => {

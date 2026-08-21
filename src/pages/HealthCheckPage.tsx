@@ -91,7 +91,7 @@ export default function HealthCheckPage() {
       }}
     >
       <h1 style={{ color, fontSize: '1.2rem', marginBottom: 16 }}>
-        smarter.poker - {health.status.toUpperCase()}
+        Smarter.Poker - {health.status.toUpperCase()}
       </h1>
       <pre id="health-json" data-status={health.status}>
         {JSON.stringify(health, null, 2)}

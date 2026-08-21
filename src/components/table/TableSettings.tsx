@@ -229,7 +229,7 @@ export function TableSettings({
 
         <div className="table-settings__footer">
           <span className="table-settings__bb-info">
-            Current Big Blind: <strong>{bigBlind}</strong> chips
+            Current Big Blind: <strong>{bigBlind}</strong> Chips
           </span>
         </div>
       </div>
@@ -243,14 +243,14 @@ export function TableSettings({
           <div className="table-settings__confirm" onClick={(e) => e.stopPropagation()}>
             <h4>Enable Auto Time Bank?</h4>
             <p>
-              Each time bank activation will cost{' '}
-              <strong>{FEATURE_PRICING.auto_time_bank.cost} D</strong>. Diamonds are automatically
-              deducted from your balance.
+              Each Time Bank Activation Will Cost{' '}
+              <strong>{FEATURE_PRICING.auto_time_bank.cost} D</strong>. Diamonds Are Automatically
+              Deducted From Your Balance.
             </p>
             <div className="table-settings__confirm-vip">
               <span>D</span>
               <div>
-                <strong>VIP Diamond Members</strong> get unlimited time bank for free!
+                <strong>VIP Diamond Members</strong> Get Unlimited Time Bank For Free!
                 <a
                   href="/vip"
                   onClick={(e) => {
@@ -269,7 +269,7 @@ export function TableSettings({
                 Cancel
               </button>
               <button className="confirm-btn confirm-btn--accept" onClick={confirmAutoTimeBank}>
-                Enable (5D/use)
+                Enable (5D/Use)
               </button>
             </div>
           </div>

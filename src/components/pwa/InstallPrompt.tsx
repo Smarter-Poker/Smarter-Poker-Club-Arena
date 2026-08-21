@@ -151,16 +151,16 @@ export const InstallPrompt: React.FC = () => {
         </button>
 
         <div className="prompt-icon">♠</div>
-        <h3>Add Club Arena to Home Screen</h3>
-        <p>Get instant access with a native app experience!</p>
+        <h3>Add Club Arena To Home Screen</h3>
+        <p>Get Instant Access With A Native App Experience!</p>
 
         {isIOS ? (
           <div className="ios-instructions">
             <p>
-              Tap the <span className="share-icon">⬆</span> share button
+              Tap The <span className="share-icon">⬆</span> Share Button
             </p>
             <p>
-              Then tap <strong>"Add to Home Screen"</strong>
+              Then Tap <strong>"Add To Home Screen"</strong>
             </p>
           </div>
         ) : (
@@ -175,9 +175,9 @@ export const InstallPrompt: React.FC = () => {
         )}
 
         <div className="prompt-benefits">
-          <span>✓ Instant launch</span>
-          <span>✓ Works offline</span>
-          <span>✓ Push notifications</span>
+          <span>✓ Instant Launch</span>
+          <span>✓ Works Offline</span>
+          <span>✓ Push Notifications</span>
         </div>
       </div>
     </div>

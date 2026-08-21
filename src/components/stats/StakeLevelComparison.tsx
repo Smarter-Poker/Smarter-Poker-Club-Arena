@@ -255,7 +255,7 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
           <div className="slc-empty-icon">--</div>
           <div className="slc-empty-title">No Stake Data Yet</div>
           <div className="slc-empty-desc">
-            Play sessions at different stakes to compare your performance across varying levels.
+            Play Sessions At Different Stakes To Compare Your Performance Across Varying Levels.
           </div>
         </div>
       </div>

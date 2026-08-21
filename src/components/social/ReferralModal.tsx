@@ -64,7 +64,7 @@ export function ReferralModal({
         <div className="referral-body">
           <div className="referral-illustration"></div>
           <p className="referral-text">
-            Invite your friends to the club and earn <strong>5% of their rake forever!</strong>
+            Invite Your Friends To The Club And Earn <strong>5% Of Their Rake Forever!</strong>
           </p>
 
           <div className="referral-stat-box">
@@ -83,7 +83,7 @@ export function ReferralModal({
           </div>
 
           <div className="referral-code-box">
-            <span>Or share code:</span>
+            <span>Or Share Code:</span>
             <strong className="code-display">{referralCode}</strong>
           </div>
         </div>

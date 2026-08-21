@@ -61,7 +61,7 @@ export default function SystemOffline({ status }: Props) {
             marginBottom: '2rem',
           }}
         >
-          Anti-Gravity failed to initialize. Missing configuration detected.
+          Anti-Gravity Failed To Initialize. Missing Configuration Detected.
         </p>
 
         {/* Status Grid */}

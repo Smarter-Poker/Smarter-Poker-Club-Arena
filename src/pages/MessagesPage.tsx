@@ -160,7 +160,7 @@ export default function MessagesPage() {
         <div className="messages-error" role="alert">
           <span className="messages-error-icon">⚠</span>
           <p className="messages-error-title">Messenger Unavailable</p>
-          <p className="messages-error-hint">Check your connection and try again.</p>
+          <p className="messages-error-hint">Check Your Connection And Try Again.</p>
           <button className="messages-error-retry" onClick={handleRetry}>
             Retry
           </button>

@@ -153,7 +153,7 @@ export function ClubAnnouncements({
                 </div>
               ))
             ) : (
-              <div className="news-empty">No announcements yet.</div>
+              <div className="news-empty">No Announcements Yet.</div>
             )}
           </div>
         </div>

@@ -78,7 +78,7 @@ describe('ClubQuickLinkTile', () => {
     renderTile({ onSelect });
     // The v8 tile art owns the visual — the club name lives in aria-label + title
     const tileBtn = screen.getByRole('button', { name: /Cashier for Alpha Club/ });
-    expect(tileBtn).toHaveAttribute('title', 'Cashier — Alpha Club');
+    expect(tileBtn).toHaveAttribute('title', 'Cashier - Alpha Club');
     await user.click(tileBtn);
     expect(onSelect).toHaveBeenCalledWith(A);
   });

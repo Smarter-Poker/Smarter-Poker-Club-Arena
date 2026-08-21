@@ -34,10 +34,14 @@
 const WORD_START = /(^|[\s([{"'‘“-])([a-z])/g;
 
 /** An em/en dash used as a clause break: surrounded by spaces. */
-const DASH_CLAUSE = /\s+[--]\s+/g;
+// FORMATTER-PROOF 2026-08-21: a format pass once mangled literal em/en
+// dashes in these classes into ASCII hyphens, silently disabling the rule
+// (and converting spaced hyphens instead). Unicode escapes cannot be
+// mangled: \u2014 em dash, \u2013 en dash.
+const DASH_CLAUSE = /\s+[\u2014\u2013]\s+/g;
 
 /** Any stray em/en dash left over (unspaced, decorative, doubled). */
-const DASH_ANY = /[--]/g;
+const DASH_ANY = /[\u2014\u2013]/g;
 
 export function formatPopupText(message: string): string {
   if (!message) return message;

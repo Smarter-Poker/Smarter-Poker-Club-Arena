@@ -48,6 +48,22 @@ jobs:
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
           git push --no-verify --force origin "HEAD:refs/heads/ci-marker/${SHORT_SHA}-deps" || true
 
+      # ═══════════════════════════════════════════════════════════════════
+      # CLIENT TESTS GATE THE BUNDLE — added 2026-08-21.
+      #
+      # ci.yml's unit job exists but NEVER COMPLETES on main: pushes land
+      # faster than the ~6-minute CI and cancel-in-progress kills every run,
+      # while this workflow ships the bundle on push regardless. Proven live:
+      # a format pass mangled the em-dash classes in popupStyle.ts (Dan's
+      # BINDING popup rule) and 19 client tests sat red on main while the
+      # broken bundle served production. Same philosophy as the engine's
+      # "Server tests must pass before anything is deployed": the suite runs
+      # HERE, in the workflow that publishes, so a red suite means no sync.
+      # The whole suite is ~15s; a superseding push re-tests its own commit.
+      # ═══════════════════════════════════════════════════════════════════
+      - name: Client tests must pass before the bundle ships
+        run: npx vitest run tests/
+
       - name: Build Club Arena
         env:
           NODE_ENV: production

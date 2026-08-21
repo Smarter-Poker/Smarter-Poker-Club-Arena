@@ -1161,6 +1161,14 @@ export default function TablePage({
   // before — prevents a junk serverSetPreAction(clear) firing on every mount
   // (preAction starts null).
   const hadPreActionRef = useRef(false);
+  /**
+   * Dan 2026-08-21 (bug list item 1): the Fold toggle in the pre-action bar
+   * renders as "Check/Fold" whenever checking is free, but the effect below
+   * mapped it to `auto_fold` either way — so arming the button labelled
+   * "Check/Fold" threw away a free check. Record what the bar was actually
+   * offering at the moment the player armed it, and map accordingly.
+   */
+  const preActionCanCheckRef = useRef(false);
 
   // Deal Animation State — triggers card dealing visual at start of new hand
   const [dealAnimationKey, setDealAnimationKey] = useState(0);
@@ -1313,7 +1321,9 @@ export default function TablePage({
       if (preAction) {
         const serverAction =
           preAction === 'fold'
-            ? 'auto_fold'
+            ? preActionCanCheckRef.current
+              ? 'auto_check_fold'
+              : 'auto_fold'
             : preAction === 'check'
               ? 'auto_check'
               : preAction === 'call'
@@ -9876,7 +9886,16 @@ export default function TablePage({
                   }
                   isMyTurn={false}
                   preAction={preAction}
-                  onPreActionChange={setPreAction}
+                  onPreActionChange={(next) => {
+                    // Snapshot whether checking was free at arm time so the
+                    // effect above can send auto_check_fold vs auto_fold.
+                    preActionCanCheckRef.current =
+                      (tableStateRef.current.currentBet || 0) <=
+                      (tableStateRef.current.lastBetAmounts?.[
+                        tableStateRef.current.heroSeat - 1
+                      ] || 0);
+                    setPreAction(next);
+                  }}
                   currentBet={Math.max(
                     0,
                     (tableState.currentBet || 0) -

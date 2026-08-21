@@ -99,23 +99,18 @@ export default function PreActionBar({
   // Bible V8 §4.15: auto_check_fold — "check if possible, otherwise fold"
   const foldLabel = canCheck ? 'Check/Fold' : 'Fold';
 
-  // Dan 2026-04-17 (BUG 024): players complained the bar gave no clear
-  // visual feedback that a pre-action was armed — the button color shift
-  // alone was too subtle. Show an "ARMED" header strip above the buttons
-  // whenever preAction !== null. The strip uses the same accent color as
-  // the selected button and pulses to draw the eye.
-  const armedLabel: string | null =
-    preAction === 'fold'
-      ? canCheck
-        ? 'Auto check / fold'
-        : 'Auto fold'
-      : preAction === 'check'
-        ? 'Auto check'
-        : preAction === 'call'
-          ? `Auto call ${currentBet > 0 ? currentBet.toLocaleString() : ''}`.trim()
-          : preAction === 'callAny'
-            ? 'Auto call any'
-            : null;
+  /**
+   * Dan 2026-08-21 (bug list item 15): the "AUTO FOLD / Cancel" strip is gone.
+   *
+   * It read as a standing instruction that outlived the hand — players saw
+   * "AUTO FOLD" and reasonably believed every future hand would be folded for
+   * them. A pre-action only ever applies to the hand in progress, so the armed
+   * state now shows exactly where the player set it: the lit toggle itself
+   * (filled dot, accent border), which clears the moment the hand ends.
+   * Tapping the lit toggle again disarms it — the old Cancel button's job.
+   *
+   * Do not reintroduce the strip.
+   */
 
   return (
     <div
@@ -125,20 +120,6 @@ export default function PreActionBar({
       onPointerUp={onPointerUp}
       onPointerCancel={() => (swipeStartX.current = null)}
     >
-      {armedLabel && (
-        <div className="pre-action-bar__armed-strip" aria-live="polite">
-          <span className="pre-action-bar__armed-dot" aria-hidden="true" />
-          <span className="pre-action-bar__armed-label">{armedLabel}</span>
-          <button
-            type="button"
-            className="pre-action-bar__armed-clear"
-            onClick={() => onPreActionChange(null)}
-            aria-label="Clear pre-action"
-          >
-            Cancel
-          </button>
-        </div>
-      )}
       <div className="pre-action-buttons">
         {/* Bible V8 §4.15: auto_fold / auto_check_fold */}
         <button

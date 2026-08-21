@@ -179,7 +179,24 @@ export class PreActionEngine {
     // FSM: queued → validating
     fsm.transition('validating');
 
-    // Always clear the pre-action after processing
+    /**
+     * Dan 2026-08-21 (bug list item 1): a fold/check pre-action is a decision
+     * about the WHOLE HAND, not about one street.
+     *
+     * This used to `delete` unconditionally, so "Check/Fold" checked the flop,
+     * disarmed itself, and then demanded a fresh click on the turn — the player
+     * had told the table they were done with the hand and the table asked again
+     * every street. Fold-family and check-family pre-actions now re-arm after
+     * they run and survive until the hand ends (`dispose`/`clearTable` at
+     * settlement) or the player clears them.
+     *
+     * Money-moving pre-actions stay single-shot on purpose: agreeing to call
+     * once is not agreeing to call again on every later street.
+     */
+    const sticky =
+      entry.action === 'auto_fold' ||
+      entry.action === 'auto_check_fold' ||
+      entry.action === 'auto_check';
     this.queuedActions.delete(key);
 
     let action: ActionType | undefined;
@@ -294,6 +311,12 @@ export class PreActionEngine {
         amount,
       });
       fsm.transition('idle');
+      // Re-arm for the rest of the hand (see the `sticky` note above). A fold
+      // needs no re-arm — that player is out of the hand already.
+      if (sticky && action !== 'fold') {
+        this.queuedActions.set(key, { ...entry });
+        if (fsm.canTransition('queued')) fsm.transition('queued');
+      }
       return { executed: true, action, amount };
     }
 

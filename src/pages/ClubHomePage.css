@@ -1726,3 +1726,81 @@
   font-size: 0.85rem;
   padding: 2px 6px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SPIN QUICK-JOIN OVERLAY (Dan 2026-08-20: no lobby for a spin — tap the
+   tile, land on the table). Shown from tap until the seat exists.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.spin-join-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 8, 14, 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: spinJoinFadeIn 0.25s ease-out;
+}
+
+.spin-join-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 34px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(20, 28, 40, 0.97), rgba(10, 15, 24, 0.98));
+  border: 1px solid rgba(80, 220, 130, 0.25);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+}
+
+.spin-join-spinner {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 3px solid rgba(80, 220, 130, 0.2);
+  border-top-color: #3ddc84;
+  animation: spinJoinRotate 0.8s linear infinite;
+}
+
+.spin-join-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 0.02em;
+}
+
+.spin-join-sub {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.spin-join-cancel {
+  margin-top: 8px;
+  padding: 8px 22px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@keyframes spinJoinRotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spinJoinFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

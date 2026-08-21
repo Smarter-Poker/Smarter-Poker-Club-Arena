@@ -229,6 +229,13 @@ function Countdown({ startTime, live }: { startTime?: string; live?: boolean }) 
 // ─── Neon table shell ────────────────────────────────────────────────────
 interface NeonCardProps {
   to: string;
+  /**
+   * Dan 2026-08-20: "there is 'no lobby' for a spin, you just start on a
+   * table." When set, tapping the card runs this instead of navigating to
+   * `to` — the spin quick-join path registers the player and drops them
+   * straight onto their table.
+   */
+  onCardClick?: () => void;
   neon: string;
   emblem: string;
   bbj?: boolean;
@@ -252,11 +259,19 @@ interface NeonCardProps {
   children?: React.ReactNode;
   onDelete?: () => void;
 }
-function NeonCard({ to, neon, emblem, bbj, maxLabel, live, children, onDelete }: NeonCardProps) {
+function NeonCard({ to, neon, emblem, bbj, maxLabel, live, children, onDelete, onCardClick }: NeonCardProps) {
   return (
     <div className="ngc-wrap">
       <Link
         to={to}
+        onClick={
+          onCardClick
+            ? (e) => {
+                e.preventDefault();
+                onCardClick();
+              }
+            : undefined
+        }
         className={`ngc${live ? ' ngc--live' : ''}`}
         style={{ ['--neon' as string]: NEON_HEX[neon] || NEON_HEX.gold } as React.CSSProperties}
       >
@@ -489,7 +504,10 @@ export function SNGCard({ tournament }: TournamentCardProps) {
 }
 
 // ─── Spin Card ─────────────────────────────────────────────────────────────
-export function SpinCard({ tournament }: TournamentCardProps) {
+export function SpinCard({
+  tournament,
+  onQuickJoin,
+}: TournamentCardProps & { onQuickJoin?: (t: TournamentData) => void }) {
   const vKey = TOURNEY_VARIANT_MAP[tournament.game_type] || 'nlh';
   const v = VARIANT_DISPLAY[vKey] || VARIANT_DISPLAY.nlh;
   // "Win up to" is a claim about the FORMAT, not about this particular
@@ -514,6 +532,7 @@ export function SpinCard({ tournament }: TournamentCardProps) {
   return (
     <NeonCard
       to={`/tournaments/${tournament.id}`}
+      onCardClick={onQuickJoin ? () => onQuickJoin(tournament) : undefined}
       neon="green"
       emblem="spin"
       live={tournament.status === 'RUNNING' || tournament.status === 'running'}

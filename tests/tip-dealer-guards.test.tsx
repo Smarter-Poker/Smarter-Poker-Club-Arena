@@ -1,94 +1,75 @@
 /**
- * Tip Dealer was dead code with two live bugs inside it.
+ * DEALER TIPPING STAYS REMOVED
+ * ============================================================================
+ * This file used to render `src/components/table/TipDealer` and assert its
+ * validation. That component was deleted on 2026-08-20 by product decision -
+ * Smarter Poker has no dealers to tip - and the test was written afterwards,
+ * so it could never resolve its own import. It failed at transform time from
+ * the moment it landed, and because the client suite gates the World Hub
+ * bundle, NOTHING shipped to production for as long as it sat on main.
  *
- *  1. UNREACHABLE. `setShowTipDealer(true)` was never called anywhere in the
- *     app, so the modal, its CSS and its handler had never run. Confirmed
- *     against prod: `select count(*) from wallet_transactions where category
- *     ilike '%tip%'` returned 0.
- *  2. The custom-amount submit button gated on `!customAmount` — the truthiness
- *     of the STRING — so "0" (a non-empty string) left Tip enabled on a tip
- *     that can never succeed, as did "-5".
- *  3. No in-flight guard: `onTip` was fired and `onClose()` called immediately,
- *     so a double tap sent two tips and the modal closed before the result was
- *     known.
+ * The intent behind it is still worth keeping, and is stronger stated the
+ * other way round. The old path was not merely dead, it was dangerous: it
+ * called deduct_table_chip_lock from the browser, writing table_seats.stack
+ * while the authoritative engine held a different figure in memory. The next
+ * settlement overwrote the row from memory, so the player got their stack back
+ * while clubs.chip_treasury kept the tip - it MINTED chips. See the note in
+ * WalletService.
+ *
+ * So this now guards the REMOVAL: no component, no re-export, no client-side
+ * caller. A file that cannot be imported guards nothing; a rule about what
+ * must not come back guards something real.
  */
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { TipDealer } from '../src/components/table/TipDealer';
 
-vi.mock('../src/services/SoundService', () => ({
-  haptic: { light: vi.fn(), medium: vi.fn(), heavy: vi.fn() },
-  soundService: { playBuyInConfirm: vi.fn() },
-}));
+import { describe, it, expect } from 'vitest';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, resolve, relative } from 'node:path';
 
-const base = { isOpen: true, balance: 500, defaultAmounts: [1, 5, 25, 100] };
+const SRC = resolve(__dirname, '../src');
 
-describe('TipDealer custom amount validation', () => {
-  it('keeps Tip disabled for "0"', () => {
-    render(<TipDealer {...base} onClose={vi.fn()} onTip={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText('Custom tip amount'), { target: { value: '0' } });
-    expect((screen.getByRole('button', { name: 'Tip' }) as HTMLButtonElement).disabled).toBe(true);
+function walk(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) walk(full, out);
+    else if (/\.(ts|tsx)$/.test(entry)) out.push(full);
+  }
+  return out;
+}
+
+describe('dealer tipping stays removed', () => {
+  it('the TipDealer component does not exist', () => {
+    for (const ext of ['.tsx', '.ts', '.jsx', '.js']) {
+      expect(existsSync(join(SRC, 'components/table', `TipDealer${ext}`))).toBe(false);
+    }
   });
 
-  it('keeps Tip disabled for a negative amount', () => {
-    render(<TipDealer {...base} onClose={vi.fn()} onTip={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText('Custom tip amount'), { target: { value: '-5' } });
-    expect((screen.getByRole('button', { name: 'Tip' }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it('keeps Tip disabled above the table stack', () => {
-    render(<TipDealer {...base} onClose={vi.fn()} onTip={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText('Custom tip amount'), { target: { value: '501' } });
-    expect((screen.getByRole('button', { name: 'Tip' }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it('enables Tip for a valid amount and sends it', async () => {
-    const onTip = vi.fn().mockResolvedValue(undefined);
-    render(<TipDealer {...base} onClose={vi.fn()} onTip={onTip} />);
-    fireEvent.change(screen.getByLabelText('Custom tip amount'), { target: { value: '12.5' } });
-    const btn = screen.getByRole('button', { name: 'Tip' }) as HTMLButtonElement;
-    expect(btn.disabled).toBe(false);
-    fireEvent.click(btn);
-    await waitFor(() => expect(onTip).toHaveBeenCalledWith(12.5));
-  });
-});
-
-describe('TipDealer in-flight behaviour', () => {
-  it('sends one tip when a preset is double-tapped', async () => {
-    let resolve!: () => void;
-    const gate = new Promise<void>((r) => {
-      resolve = r;
+  it('nothing imports or re-exports it', () => {
+    const offenders = walk(SRC).filter((f) => {
+      const text = readFileSync(f, 'utf8');
+      // The barrel file carries a comment explaining the removal, which is
+      // the one mention that should survive. Match code, not prose.
+      return /\bfrom\s+['"][^'"]*TipDealer['"]/.test(text) || /\bTipDealer\s*[,}]/.test(text);
     });
-    const onTip = vi.fn().mockReturnValue(gate);
-    render(<TipDealer {...base} onClose={vi.fn()} onTip={onTip} />);
-    const preset = screen.getAllByRole('button').find((b) => b.textContent?.includes('25'))!;
-    fireEvent.click(preset);
-    fireEvent.click(preset);
-    fireEvent.click(preset);
-    expect(onTip).toHaveBeenCalledTimes(1);
-    await act(async () => {
-      resolve();
-      await gate;
-    });
+    expect(offenders.map((f) => relative(SRC, f))).toEqual([]);
   });
 
-  it('does not close itself — the caller closes only on success', async () => {
-    const onClose = vi.fn();
-    const onTip = vi.fn().mockResolvedValue(undefined);
-    render(<TipDealer {...base} onClose={onClose} onTip={onTip} />);
-    const preset = screen.getAllByRole('button').find((b) => b.textContent?.includes('25'))!;
-    fireEvent.click(preset);
-    await waitFor(() => expect(onTip).toHaveBeenCalled());
-    // The old modal called onClose() unconditionally, immediately after firing
-    // onTip — so a rejected tip looked exactly like an accepted one.
-    expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it('disables presets the stack cannot cover', () => {
-    render(<TipDealer {...base} balance={10} onClose={vi.fn()} onTip={vi.fn()} />);
-    const preset = screen
-      .getAllByRole('button')
-      .find((b) => b.textContent?.includes('100')) as HTMLButtonElement;
-    expect(preset.disabled).toBe(true);
+  it('no client-side dealer tip call survives', () => {
+    // processDealerTip, GameServerAPI.tipDealer and the POST /tipdealer route
+    // all went with it. Any of them reappearing means the chip-minting path is
+    // back, because the browser has no authority over a seated stack.
+    //
+    // Comments are stripped first. WalletService carries a long note naming
+    // every removed symbol precisely so nobody rebuilds them from memory, and
+    // a guard that fires on its own documentation is a guard that gets deleted.
+    const banned = /processDealerTip|tipDealer\s*\(|['"]\/tipdealer['"]|atomic_table_dealer_tip|deduct_table_chip_lock/;
+    const stripComments = (text: string) =>
+      text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+    const offenders = walk(SRC).filter((f) => banned.test(stripComments(readFileSync(f, 'utf8'))));
+    expect(
+      offenders.map((f) => relative(SRC, f)),
+      'Dealer tipping wrote table_seats.stack from the browser while the engine ' +
+        'held a different figure in memory, and the next settlement handed the ' +
+        'stack back while the treasury kept the tip. It minted chips.'
+    ).toEqual([]);
   });
 });

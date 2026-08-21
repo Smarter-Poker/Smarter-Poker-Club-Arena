@@ -109,3 +109,49 @@ Handoff: `.agent/handoffs/2026-08-21-club-arena-branch-protection.md`.
 Also stale: World Hub's `CLAUDE.md` §11.4 lists a
 `branch-protection-watchdog.yml`. No such workflow exists on main in either
 repo. Anyone relying on that line is relying on nothing.
+
+## The one that was actually eating the work
+
+Found because the drift step above turned the invisible into a red run.
+
+`build-for-world-hub.yml`'s final step, "Commit and push to World Hub", handled
+a rejected push with `git pull --rebase --no-edit origin main || exit 1`.
+
+That rebase **can never succeed**. The commit being replayed contains nothing
+but generated output — a hashed asset set and `build-info.json` — and the tip it
+is replayed onto contains a *different* generated output. `build-info.json`
+conflicts on every line, every time:
+
+```
+CONFLICT (content): Merge conflict in public/hub/club-arena/build-info.json
+error: could not apply 25427c8... chore(club-arena): sync build e9baf3aa1
+##[error]Process completed with exit code 1.
+```
+
+So whenever two syncs overlapped, **neither published**. With agents pushing to
+Club Arena main every minute or two against a four-minute build, overlapping is
+the normal case. Production sat on `4f7f47564` while main ran fifteen commits
+ahead, and the run went red at the very last step with the bundle already built
+and thrown away.
+
+This is the mechanism I had been blaming on force-pushes. Work really was not
+reaching production. It was never being deleted from main — it was being built
+and then discarded at the publish step.
+
+**Fix:** a merge is the wrong tool for a build artifact. There is nothing to
+reconcile — `dist/` is a complete directory replacement — so on rejection the
+step now discards its commit, resets onto the new tip, re-applies the bundle
+and commits again. Conflict-free by construction.
+
+Guarded against the obvious way that turns into a regression: before each
+attempt it reads the `build_at` of the bundle already on World Hub and stands
+down if that is newer, rather than publishing an older build over a newer one.
+ISO-8601 UTC sorts lexically, so the comparison is real.
+
+Rehearsed both paths against throwaway repos before shipping:
+
+- *newer bundle, contended push* — rejected on attempt 1, rebuilt on the new
+  tip, published on attempt 2; the competing agent's unrelated Hub file
+  survived, the superseded asset was removed;
+- *older bundle* — stood down without touching the remote, which still held
+  the newer build.

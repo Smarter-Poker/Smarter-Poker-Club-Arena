@@ -157,29 +157,68 @@ jobs:
             world-hub/public/hub/club-arena/
 
       - name: Commit and push to World Hub
+        # 2026-08-21: this step used to `git pull --rebase` on a rejected push
+        # and `exit 1` if that failed. It ALWAYS failed. Our commit is nothing
+        # but generated files — a hashed asset set and build-info.json — and
+        # the commit it was being replayed onto is a DIFFERENT generated file
+        # set. build-info.json conflicts on every single line, every time. So
+        # any two syncs racing meant neither published, and with agents pushing
+        # to Club Arena main every minute or two, that race is the normal case,
+        # not the exception. Production sat on 4f7f47564 while main ran 15
+        # commits ahead, and the run went red at the last step with the bundle
+        # already built.
+        #
+        # A merge is the wrong tool for a build artifact. There is nothing to
+        # reconcile: our dist/ is a COMPLETE directory (`rsync --delete`), so
+        # instead of replaying our commit onto the new tip we throw the commit
+        # away and rebuild it on top of the new tip. That cannot conflict, by
+        # construction.
+        #
+        # The one thing that must not happen is publishing an OLDER bundle over
+        # a newer one, which is how a "retry" turns into a regression. Before
+        # each attempt we read the build-info.json already on World Hub main
+        # and stand down if it is newer than ours.
         run: |
+          set -u
           cd world-hub
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git add public/hub/club-arena/
-          if git diff --cached --quiet; then
-            echo "No changes to sync — World Hub already up to date."
-            exit 0
-          fi
-          git commit -m "chore(club-arena): sync build ${{ github.sha }}"
-          # World Hub main receives pushes from other pipelines while this job
-          # runs, so a bare push loses the race with a non-fast-forward reject.
-          # Rebase our single sync commit on top and retry.
+
+          OURS_AT=$(sed -n 's/.*"built_at"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+                    ../club-arena-build/dist/build-info.json 2>/dev/null || true)
+          echo "this bundle was built at: ${OURS_AT:-unknown}"
+
           for attempt in 1 2 3 4 5; do
+            THEIRS_AT=$(sed -n 's/.*"built_at"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+                        public/hub/club-arena/build-info.json 2>/dev/null || true)
+            # ISO-8601 UTC sorts lexically, so > is a real time comparison.
+            if [ -n "$OURS_AT" ] && [ -n "$THEIRS_AT" ] && [ "$THEIRS_AT" \> "$OURS_AT" ]; then
+              echo "World Hub already carries a NEWER bundle ($THEIRS_AT > $OURS_AT)."
+              echo "Standing down rather than regressing production to an older build."
+              exit 0
+            fi
+
+            rsync -a --delete ../club-arena-build/dist/ public/hub/club-arena/
+            git add -A public/hub/club-arena/
+            if git diff --cached --quiet; then
+              echo "No changes to sync — World Hub already carries this bundle."
+              exit 0
+            fi
+            git commit -q -m "chore(club-arena): sync build ${{ github.sha }}"
+
             if git push; then
               echo "World Hub updated successfully (attempt ${attempt})."
               exit 0
             fi
-            echo "Push rejected on attempt ${attempt}; rebasing onto origin/main."
-            git pull --rebase --no-edit origin main || exit 1
-            sleep 5
+
+            echo "Push rejected on attempt ${attempt}; rebuilding the sync commit on the new tip."
+            git reset --hard HEAD~1 >/dev/null
+            git fetch --no-tags origin main
+            git reset --hard origin/main >/dev/null
+            sleep $(( attempt * 3 ))
           done
-          echo "World Hub push failed after 5 attempts."
+
+          echo "::error::World Hub push failed after 5 attempts — the bundle was built but is NOT published."
           exit 1
 
       # The sync branch is a courier, not a record. It exists only so this job

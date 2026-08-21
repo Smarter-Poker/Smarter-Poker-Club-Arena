@@ -309,6 +309,10 @@ export default function LeaderboardPage() {
   useEffect(() => {
     let isMounted = true;
     if (activeTab === 'rankings' && (scope === 'global' || selectedClubId)) {
+      if (scope === 'global') {
+        const opt = METRIC_OPTIONS.find((m) => m.value === metric);
+        if (opt && !opt.globalSupported) return;
+      }
       loadLeaderboard(false, () => isMounted);
     } else if (scope === 'my-clubs' && !selectedClubId) {
       setEntries([]);
@@ -324,6 +328,7 @@ export default function LeaderboardPage() {
   useEffect(() => {
     let isMounted = true;
     if (selectedClubId && activeTab === 'tournaments') {
+      if (scope === 'global') return;
       loadTournamentStats(() => isMounted);
     } else if (!selectedClubId) {
       setTournamentStats([]);
@@ -333,7 +338,7 @@ export default function LeaderboardPage() {
       isMounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedClubId, activeTab]);
+  }, [selectedClubId, activeTab, scope]);
 
   const loadUserClubs = async (getIsMounted?: () => boolean) => {
     setClubsLoading(true);
@@ -452,7 +457,10 @@ export default function LeaderboardPage() {
           // The list may have been replaced while this was in flight.
           if (prev.length !== offset) return prev;
           const seen = new Set(prev.map((e) => e.userId));
-          return [...prev, ...more.filter((m) => !seen.has(m.userId))];
+          const next = [...prev, ...more.filter((m) => !seen.has(m.userId))];
+          const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}`;
+          setCachedEntries(cacheKey, next);
+          return next;
         });
       }
     } catch (e) {

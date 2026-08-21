@@ -202,7 +202,7 @@ export function captureRitEvent(tableId: string, payload: Record<string, unknown
           offers: Array.isArray(payload.offers) ? (payload.offers as unknown[]).length : null,
         },
       })
-      .then(undefined, () => {
+      .catch(() => {
         /* a telemetry insert must never surface at the table */
       });
   } catch {

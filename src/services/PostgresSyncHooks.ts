@@ -154,7 +154,7 @@ class PostgresSyncHooksService {
             this.scheduleReconnect(userId);
             break;
           case 'TIMED_OUT':
-            console.warn(`[PostgresSync] Channel timed out — scheduling reconnect.`);
+            console.warn(`[PostgresSync] Channel timed out - scheduling reconnect.`);
             masterBus.emit('REALTIME_DISCONNECTED', {
               channelName,
               reason: 'Connection timed out',
@@ -176,7 +176,7 @@ class PostgresSyncHooksService {
   private scheduleReconnect(userId: string): void {
     if (this.retryCount >= PostgresSyncHooksService.MAX_RETRIES) {
       console.warn(
-        `[PostgresSync] Max retries (${PostgresSyncHooksService.MAX_RETRIES}) reached — ` +
+        `[PostgresSync] Max retries (${PostgresSyncHooksService.MAX_RETRIES}) reached - ` +
           `will rely on MasterBus health monitor or IdentityDNA token refresh for recovery.`
       );
       return;

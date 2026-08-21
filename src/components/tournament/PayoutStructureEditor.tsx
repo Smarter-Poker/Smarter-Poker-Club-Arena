@@ -120,7 +120,7 @@ export const PayoutStructureEditor: React.FC<PayoutStructureEditorProps> = ({
               <div className="pe-bar" style={{ width: `${(p.percentage / maxPercent) * 100}%` }} />
               <span className="pe-bar-label">{p.percentage.toFixed(1)}%</span>
             </div>
-            <div className="pe-amount">{p.amount?.toLocaleString() || '—'}</div>
+            <div className="pe-amount">{p.amount?.toLocaleString() || '-'}</div>
             {template === 'custom' && (
               <div className="pe-custom-controls">
                 <input

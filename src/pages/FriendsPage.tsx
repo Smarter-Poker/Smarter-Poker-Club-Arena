@@ -574,7 +574,7 @@ export default function FriendsPage() {
                 {filteredFriends.filter((f) => f.is_online).length > 0 && (
                   <div className="friend-group">
                     <h3 className="friend-group-header">
-                      Online — {filteredFriends.filter((f) => f.is_online).length}
+                      Online - {filteredFriends.filter((f) => f.is_online).length}
                     </h3>
                     {filteredFriends
                       .filter((f) => f.is_online)
@@ -596,7 +596,7 @@ export default function FriendsPage() {
                 {filteredFriends.filter((f) => !f.is_online).length > 0 && (
                   <div className="friend-group">
                     <h3 className="friend-group-header">
-                      Offline — {filteredFriends.filter((f) => !f.is_online).length}
+                      Offline - {filteredFriends.filter((f) => !f.is_online).length}
                     </h3>
                     {filteredFriends
                       .filter((f) => !f.is_online)

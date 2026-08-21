@@ -434,7 +434,7 @@ export async function leaveClub(clubId: string): Promise<void> {
 
   if (leaveErr) {
     reportError(leaveErr, 'ClubsService.Leave_club_failed');
-    throw new Error('Failed to leave club — please try again');
+    throw new Error('Failed to leave club - please try again');
   }
   if (!leaveResult?.success) {
     const reason = leaveResult?.error || 'unknown error';
@@ -844,7 +844,7 @@ export async function uploadClubLogo(clubId: string, file: File): Promise<string
     .eq('id', resolvedId);
   if (updateErr) {
     reportError(updateErr, 'ClubsService.Logo_uploaded_but_failed_to_save_URL_to_');
-    throw new Error('Logo uploaded but failed to save — please try again');
+    throw new Error('Logo uploaded but failed to save - please try again');
   }
 
   return logoUrl;
@@ -897,7 +897,7 @@ export async function uploadClubBanner(clubId: string, file: File): Promise<stri
     .eq('id', resolvedId);
   if (updateErr) {
     reportError(updateErr, 'ClubsService.Banner_uploaded_but_failed_to_save_URL_t');
-    throw new Error('Banner uploaded but failed to save — please try again');
+    throw new Error('Banner uploaded but failed to save - please try again');
   }
 
   return bannerUrl;

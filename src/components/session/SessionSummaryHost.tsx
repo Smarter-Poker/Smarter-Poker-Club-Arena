@@ -38,6 +38,7 @@ import {
   type SessionSummaryPayload,
 } from '../../services/pendingSessionSummary';
 import { formatGameTitle } from '../../utils/formatGameTitle';
+import { titleCase } from '../../utils/titleCase';
 import './SessionSummaryHost.css';
 
 /** Ease-out-back: overshoots slightly then settles. Reads as "landing". */
@@ -155,23 +156,25 @@ export function SessionSummaryHost() {
          Every one of those is a chip statistic, and the screenshot that
          prompted this showed them as a wall of zeroes next to a meaningless
          "+265 profit" for a tournament seat. */
+      /* Title Case throughout, and no em dashes (Dan 2026-08-20). The unknown
+         placeholder was an em dash; it is a plain hyphen now. */
       const out = [
         {
           label: 'Finished',
-          value: t.finishPlace != null ? ordinal(t.finishPlace) : '—',
+          value: t.finishPlace != null ? ordinal(t.finishPlace) : '-',
         },
-        { label: 'Entrants', value: t.entrants != null ? String(t.entrants) : '—' },
+        { label: 'Entrants', value: t.entrants != null ? String(t.entrants) : '-' },
         { label: 'Prize', value: formatChips(t.prize) },
         { label: 'Duration', value: formatDuration(payload.duration) },
-        { label: 'Hands played', value: String(payload.handsPlayed) },
-        { label: 'Hands/hour', value: String(handsPerHour) },
+        { label: 'Hands Played', value: String(payload.handsPlayed) },
+        { label: 'Hands Per Hour', value: String(handsPerHour) },
       ];
       if (t.knockouts > 0) out.push({ label: 'Knockouts', value: String(t.knockouts) });
       if (t.bountyWinnings > 0) {
         out.push({ label: 'Bounties', value: formatChips(t.bountyWinnings) });
       }
       if (t.rebuys > 0) out.push({ label: 'Rebuys', value: String(t.rebuys) });
-      if (t.addOns > 0) out.push({ label: 'Add-ons', value: String(t.addOns) });
+      if (t.addOns > 0) out.push({ label: 'Add Ons', value: String(t.addOns) });
       return out;
     }
 
@@ -180,11 +183,11 @@ export function SessionSummaryHost() {
 
     const out = [
       { label: 'Duration', value: formatDuration(payload.duration) },
-      { label: 'Hands played', value: String(payload.handsPlayed) },
-      { label: 'Hands/hour', value: String(handsPerHour) },
-      { label: 'Biggest pot', value: formatChips(payload.biggestPot) },
-      { label: 'Peak stack', value: formatChips(payload.peakStack) },
-      { label: 'Win rate', value: `${winRate}%` },
+      { label: 'Hands Played', value: String(payload.handsPlayed) },
+      { label: 'Hands Per Hour', value: String(handsPerHour) },
+      { label: 'Biggest Pot', value: formatChips(payload.biggestPot) },
+      { label: 'Peak Stack', value: formatChips(payload.peakStack) },
+      { label: 'Win Rate', value: `${winRate}%` },
     ];
     if (payload.totalRebuys > 0) {
       out.push({ label: 'Rebuys', value: String(payload.totalRebuys) });
@@ -198,7 +201,13 @@ export function SessionSummaryHost() {
   return createPortal(
     <div className="ssh-overlay" onClick={close} role="presentation">
       <div
-        className={`ssh-card ${isProfit ? 'ssh-card--win' : 'ssh-card--loss'}`}
+        /* Two distinct cards, not one card with different numbers in it
+           (Dan 2026-08-20). --tourney repaints the whole surface cyan so a
+           player knows which kind of result they are reading before they read
+           a word of it; --win/--loss still tints the money line. */
+        className={`ssh-card ${isTournament ? 'ssh-card--tourney ' : ''}${
+          isProfit ? 'ssh-card--win' : 'ssh-card--loss'
+        }`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -215,10 +224,16 @@ export function SessionSummaryHost() {
             {isTournament ? 'Tournament Complete' : 'Session Complete'}
           </span>
           <h2 className="ssh-title" id="ssh-title">
+            {/* titleCase runs BEFORE formatGameTitle: it capitalises the words
+                and strips any em dash out of a club-authored table name, then
+                formatGameTitle shouts the variant acronyms back to NLH/PLO4.
+                Reversing the order would let titleCase re-case "NLH" to "Nlh". */}
             {formatGameTitle(
-              (isTournament ? tourney?.name : undefined) ||
-                payload.tableName ||
-                (isTournament ? 'Tournament' : 'Table session')
+              titleCase(
+                (isTournament ? tourney?.name : undefined) ||
+                  payload.tableName ||
+                  (isTournament ? 'Tournament' : 'Table Session')
+              )
             )}
           </h2>
         </header>
@@ -231,13 +246,13 @@ export function SessionSummaryHost() {
               {tourney?.finishPlace != null ? 'Finished' : 'Result'}
             </span>
             <span className="ssh-hero__value">
-              {tourney?.finishPlace != null ? ordinal(tourney.finishPlace) : '—'}
+              {tourney?.finishPlace != null ? ordinal(tourney.finishPlace) : '-'}
             </span>
             {tourney?.entrants != null && tourney.entrants > 0 && (
-              <span className="ssh-hero__sub">of {tourney.entrants.toLocaleString()} entrants</span>
+              <span className="ssh-hero__sub">Of {tourney.entrants.toLocaleString()} Entrants</span>
             )}
             <span className="ssh-hero__sub ssh-hero__sub--money">
-              {totalWon > 0 ? `Won ${formatChips(displayPL)}` : 'No prize'}
+              {totalWon > 0 ? `Won ${formatChips(displayPL)}` : 'No Prize'}
             </span>
             <span className="ssh-hero__sweep" aria-hidden="true" />
           </div>

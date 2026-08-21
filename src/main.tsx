@@ -116,7 +116,7 @@ if (bootStatus.antigravityOk) {
 } else {
   // ONLY show SystemOffline for missing env vars (build/deploy misconfiguration)
   reportError(
-    new Error('[BOOT] Missing environment variables — rendering diagnostic screen'),
+    new Error('[BOOT] Missing environment variables - rendering diagnostic screen'),
     'main.Missing_environment_variables__rendering'
   );
   root.render(<SystemOffline status={bootStatus} />);

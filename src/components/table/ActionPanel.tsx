@@ -205,6 +205,17 @@ export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
     return presets;
   }
 
+  // ── Dan 2026-08-21: "when you are facing a bet, 3X and 4X must be
+  // clickable options." Postflop FACING A BET now mirrors the preflop
+  // grammar — multiples of the bet being faced (rule 7: base = the last
+  // bet) — plus POT. Fractions only make sense when nobody has bet yet.
+  if (currentBet > 0) {
+    const multiples = isPotLimit ? [2, 3] : [2, 3, 4];
+    const presets = multiples.map((n) => finalize(`${n}X`, currentBet * n));
+    presets.push(finalize('POT', potSizedRaiseTo(currentBet, pot, callAmount)));
+    return presets;
+  }
+
   // Postflop fractions are "bet f x the pot I'd be raising into", as raise-TO
   // absolutes: currentBet + f * (pot + callAmount). At f = 1 this is exactly
   // potSizedRaiseTo. The previous formula added `callAmount` a second time, so
@@ -595,7 +606,7 @@ export default function ActionPanel({
                     type="button"
                     className="raise-value__amount"
                     onClick={beginEditAmount}
-                    aria-label={`Edit bet amount ${formatChips(raiseAmount)} — opens numeric keyboard`}
+                    aria-label={`Edit bet amount ${formatChips(raiseAmount)} - opens numeric keyboard`}
                     title="Tap to type exact amount"
                   >
                     {formatChips(raiseAmount)}
@@ -642,7 +653,7 @@ export default function ActionPanel({
                        into. Over-stack now snaps to all-in, per spec 5.2. */
                     disabled={minRaise > maxRaise}
                     title={`Raise to ${formatChips(p.value)}`}
-                    aria-label={`Bet ${p.label} — raise to ${formatChips(p.value)}`}
+                    aria-label={`Bet ${p.label} - raise to ${formatChips(p.value)}`}
                   >
                     {p.label}
                   </button>
@@ -794,7 +805,7 @@ export default function ActionPanel({
           </button>
         ) : (
           <button className="action-btn action-btn--check" disabled>
-            <span className="action-btn__label">—</span>
+            <span className="action-btn__label">-</span>
           </button>
         )}
 

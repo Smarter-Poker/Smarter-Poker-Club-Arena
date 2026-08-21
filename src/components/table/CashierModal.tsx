@@ -207,7 +207,7 @@ export function CashierModal({
       setSubmitError(
         error instanceof Error && error.message
           ? error.message
-          : 'Something went wrong. Nothing was moved — please try again.'
+          : 'Something went wrong. Nothing was moved - please try again.'
       );
     } finally {
       busyRef.current = false;

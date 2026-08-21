@@ -420,7 +420,7 @@ export const CreditService = {
         _agentInvoicesDisabled = true;
         reportError(result.error, 'CreditService.getAgentInvoices', {
           agentId,
-          note: 'Disabling subsequent calls — likely RLS/permission for non-agent user',
+          note: 'Disabling subsequent calls - likely RLS/permission for non-agent user',
         });
         return [];
       }
@@ -429,7 +429,7 @@ export const CreditService = {
       _agentInvoicesDisabled = true;
       reportError(e, 'CreditService.getAgentInvoices.tableAccess', {
         agentId,
-        note: 'Disabling subsequent calls — likely RLS/permission for non-agent user',
+        note: 'Disabling subsequent calls - likely RLS/permission for non-agent user',
       });
       return [];
     }

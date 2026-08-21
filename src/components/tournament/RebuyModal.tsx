@@ -114,7 +114,7 @@ export const RebuyModal: React.FC<RebuyModalProps> = ({
             Decline
           </button>
           <button className="rm-btn rm-btn-rebuy" onClick={handleRebuy} disabled={processing}>
-            {processing ? 'Processing...' : `Rebuy — ${rebuyCost.toLocaleString()}`}
+            {processing ? 'Processing...' : `Rebuy - ${rebuyCost.toLocaleString()}`}
           </button>
         </div>
       </div>

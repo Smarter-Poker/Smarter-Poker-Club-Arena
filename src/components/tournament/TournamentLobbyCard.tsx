@@ -336,7 +336,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
         <div className={styles.infoItem}>
           <span className={styles.infoLabel}>Starting Chips</span>
           <span className={styles.infoValue}>
-            {tournament.startingChips ? tournament.startingChips.toLocaleString() : '—'}
+            {tournament.startingChips ? tournament.startingChips.toLocaleString() : '-'}
           </span>
         </div>
         {tournament.gameType && (
@@ -431,7 +431,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
         </>
       ) : (
         <span className={styles.spotsLabel}>
-          {tournament.registeredPlayers} registered — Open entry
+          {tournament.registeredPlayers} registered - Open entry
         </span>
       )}
 

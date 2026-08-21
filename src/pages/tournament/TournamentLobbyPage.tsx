@@ -568,7 +568,7 @@ export default function TournamentLobbyPage() {
     if (!user?.id) return;
     try {
       await tournamentService.unregisterPlayer(tournamentId, user.id);
-      toast.success('Unregistered — buy-in refunded to your wallet');
+      toast.success('Unregistered - buy-in refunded to your wallet');
       loadTournaments();
     } catch (error) {
       reportError(error, 'TournamentLobbyPage.Unregistration_failed');

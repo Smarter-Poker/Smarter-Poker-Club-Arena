@@ -361,8 +361,8 @@ class PayoutEngineClass {
    */
   getTemplateOptions(): { value: PayoutTemplate; label: string; description: string }[] {
     return [
-      { value: 'top15', label: 'Top 15%', description: 'Standard MTT — pays top 15% of field' },
-      { value: 'top20', label: 'Top 20%', description: 'Generous MTT — pays top 20% of field' },
+      { value: 'top15', label: 'Top 15%', description: 'Standard MTT - pays top 15% of field' },
+      { value: 'top20', label: 'Top 20%', description: 'Generous MTT - pays top 20% of field' },
       {
         value: 'winner_take_all',
         label: 'Winner Take All',

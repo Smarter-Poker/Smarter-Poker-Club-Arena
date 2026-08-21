@@ -216,7 +216,7 @@ function HandEntry({
                 {hand.winners.map((w, i) => (
                   <span key={i} className="hh-entry__winner">
                     {w.playerName} won {formatAmount(w.amount)}
-                    {w.hand && <span className="hh-entry__hand"> — {w.hand}</span>}
+                    {w.hand && <span className="hh-entry__hand"> - {w.hand}</span>}
                   </span>
                 ))}
               </div>

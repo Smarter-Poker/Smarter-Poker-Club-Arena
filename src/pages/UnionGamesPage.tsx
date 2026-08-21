@@ -21,7 +21,7 @@ import { fmt, fmtChips } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 
 const formatDate = (ts: string | null) => {
-  if (!ts) return '—';
+  if (!ts) return '-';
   return new Date(ts).toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
@@ -43,7 +43,7 @@ function StatusBadge({ status }: { status: string }) {
   const c = map[status?.toLowerCase()] || { bg: '#3A3B3C', color: '#B0B3B8' };
   return (
     <span className={styles.statusBadge} style={{ background: c.bg, color: c.color }}>
-      {status?.toUpperCase() || '—'}
+      {status?.toUpperCase() || '-'}
     </span>
   );
 }
@@ -318,7 +318,7 @@ export default function UnionGamesPage() {
     try {
       // unregisterPlayer handles buy-in refund, status validation, CAS deletion, and rollback
       await tournamentService.unregisterPlayer(tournamentId, user.id);
-      toast.success('Unregistered — buy-in refunded');
+      toast.success('Unregistered - buy-in refunded');
       loadUnionData(unionId || undefined);
     } catch (err: any) {
       toast.error(err.message);
@@ -331,7 +331,7 @@ export default function UnionGamesPage() {
     <div className={styles.page}>
       <header className={styles.header}>
         <div className={styles.headerLeft}>
-          <h1 className={styles.title}> {unionName} — Games</h1>
+          <h1 className={styles.title}> {unionName} - Games</h1>
         </div>
         <div className={styles.headerActions}>
           {unionId && (

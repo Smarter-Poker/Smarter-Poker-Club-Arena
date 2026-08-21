@@ -263,7 +263,7 @@ export default function AgentBackOffice({ agentUserId, title }: Props) {
         </div>
       )}
       <p style={{ color: '#66787f', fontSize: '0.78rem', margin: 0 }}>
-        Net is from the house side — red means the player is up and the loss settles against you.
+        Net is from the house side - red means the player is up and the loss settles against you.
       </p>
     </div>
   );

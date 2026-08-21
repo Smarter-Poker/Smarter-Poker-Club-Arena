@@ -460,7 +460,7 @@ export default function MarketplacePage() {
           <div className={styles.walletBar}>
             <span className={styles.walletPill}>{fmt(balance)} chips</span>
             <span className={styles.walletPillDiamond} aria-live="polite">
-              {wallet.loaded ? `${fmt(wallet.diamonds)} diamonds` : 'diamonds —'}
+              {wallet.loaded ? `${fmt(wallet.diamonds)} diamonds` : 'diamonds -'}
             </span>
             {wallet.isVip && <span className={styles.vipPill}>VIP</span>}
           </div>

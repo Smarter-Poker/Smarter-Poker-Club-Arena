@@ -204,13 +204,13 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
                           className={styles.grantHint}
                           title={
                             r.status === 'redeemed'
-                              ? 'Already used — the granted benefit cannot be taken back automatically'
+                              ? 'Already used - the granted benefit cannot be taken back automatically'
                               : r.status === 'refunded'
                                 ? 'Already refunded'
                                 : 'No delivered copy to revoke'
                           }
                         >
-                          —
+                          -
                         </span>
                       )}
                     </td>
@@ -229,7 +229,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
               Previous
             </button>
             <span>
-              {offset + 1}–{offset + rows.length} of {total}
+              {offset + 1}-{offset + rows.length} of {total}
             </span>
             <button
               className={styles.inlineLink}

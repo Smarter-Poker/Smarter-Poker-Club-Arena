@@ -251,7 +251,7 @@ export default function CarouselSection({
           onDrop={() => handleDrop(club.id)}
           onDragEnd={handleDragEnd}
           role="button"
-          aria-label={`${club.name || 'Club'} — Click to enter lobby`}
+          aria-label={`${club.name || 'Club'} - Click to enter lobby`}
           tabIndex={0}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {

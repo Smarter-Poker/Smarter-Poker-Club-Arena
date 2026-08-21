@@ -147,7 +147,7 @@ export default function FinancialHealthPage() {
             <div>
               <div className="fh-status-label">Reconciliation Interval</div>
               <div className="fh-status-value">
-                {status ? formatInterval(status.config.reconciliationIntervalMs) : '—'}
+                {status ? formatInterval(status.config.reconciliationIntervalMs) : '-'}
               </div>
             </div>
           </div>
@@ -156,7 +156,7 @@ export default function FinancialHealthPage() {
             <div>
               <div className="fh-status-label">Suspension Check</div>
               <div className="fh-status-value">
-                Every {status ? formatInterval(status.config.suspensionCheckIntervalMs) : '—'}
+                Every {status ? formatInterval(status.config.suspensionCheckIntervalMs) : '-'}
               </div>
             </div>
           </div>

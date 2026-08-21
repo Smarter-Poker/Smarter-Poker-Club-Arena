@@ -937,7 +937,7 @@ export default function AchievementsPage() {
                   border: '1px solid rgba(0, 212, 255, 0.1)',
                 }}
               >
-                Almost there — {100 - Math.round(selectedAchievement.progress)}% remaining!
+                Almost there - {100 - Math.round(selectedAchievement.progress)}% remaining!
               </p>
             )}
 

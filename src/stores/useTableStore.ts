@@ -272,7 +272,7 @@ export const useTableStore = create<TableState>((set, get) => ({
       });
       if (!success) {
         console.warn(
-          '[TableStore] Failed to send action via WebSocket — rolling back optimistic update'
+          '[TableStore] Failed to send action via WebSocket - rolling back optimistic update'
         );
         set({
           seats: snapshot.seats,
@@ -283,7 +283,7 @@ export const useTableStore = create<TableState>((set, get) => ({
         });
       }
     } else {
-      console.warn('[TableStore] WebSocket not connected — rolling back');
+      console.warn('[TableStore] WebSocket not connected - rolling back');
       set({
         seats: snapshot.seats,
         pot: snapshot.pot,

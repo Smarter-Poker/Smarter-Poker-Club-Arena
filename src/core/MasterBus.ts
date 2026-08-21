@@ -368,7 +368,20 @@ export interface BusPayloadMap {
   STREAK_UPDATE: { userId: string; streakCount: number; multiplier: number };
   // Gameplay events — strict payload types (#7)
   HAND_WON: { handId: string; winners: string[]; pot: number };
-  HAND_COMPLETED: { handId: string; tableId: string };
+  /**
+   * Emitted once per hand the hero was DEALT IN (TablePage guards on
+   * outcome.dealtIn). Dan 2026-08-20: `won`, `potWon` and `heroStack` were
+   * added because the payload previously described only WHICH hand ended, not
+   * how it went — leaving useTableSession unable to count hands played or won,
+   * which pinned three Session Complete tiles to zero forever.
+   */
+  HAND_COMPLETED: {
+    handId: string;
+    tableId: string;
+    won?: boolean;
+    potWon?: number;
+    heroStack?: number;
+  };
   FLOP_SEEN: { handId: string; tableId: string };
   ALL_IN_WON: { handId: string; playerId: string; pot: number };
   BIG_POT_WON: { handId: string; pot: number };

@@ -178,7 +178,7 @@ class IdentityDNACore {
             if (session) {
               // Guard against concurrent SIGNED_IN events (e.g. parent sends two auth tokens)
               if (this.isHydrating) {
-                console.warn('[IdentityDNA] Ignoring concurrent SIGNED_IN — hydration in progress');
+                console.warn('[IdentityDNA] Ignoring concurrent SIGNED_IN - hydration in progress');
                 break;
               }
               this.isHydrating = true;

@@ -217,12 +217,25 @@ describe('computeRaisePresets - rule 4b: PLO always offers RAISE POT', () => {
     expect(p[3].label).toBe('POT');
   });
 
-  it('postflop already had POT and is unchanged by the pot-limit flag', () => {
+  // Dan 2026-08-21: "when you are facing a bet, 3X and 4X must be clickable."
+  // Postflop facing a bet now uses bet-multiples (2X/3X[/4X]) + POT; the
+  // fraction row is reserved for unopened streets. In pot-limit 4X is dropped
+  // (it would clamp onto POT — the dead-button rule).
+  it('postflop FACING A BET offers bet multiples plus POT (pot-limit)', () => {
     const p = computeRaisePresets({
       isPreflop: false, bigBlind: 2, currentBet: 10, callAmount: 10,
       pot: 40, minRaise: 20, maxRaise: 60, isPotLimit: true,
     });
-    expect(p.map((x) => x.label)).toEqual(['33%', '50%', '75%', 'POT']);
-    expect(p[3].value).toBe(60);
+    expect(p.map((x) => x.label)).toEqual(['2X', '3X', 'POT']);
+    expect(p[2].value).toBe(60); // POT = 10 + (40 + 10)
+  });
+
+  it('postflop FACING A BET offers 2X/3X/4X of the bet plus POT (no-limit)', () => {
+    const p = computeRaisePresets({
+      isPreflop: false, bigBlind: 2, currentBet: 10, callAmount: 10,
+      pot: 40, minRaise: 20, maxRaise: BIG,
+    });
+    expect(p.map((x) => x.label)).toEqual(['2X', '3X', '4X', 'POT']);
+    expect(p.map((x) => x.value)).toEqual([20, 30, 40, 60]);
   });
 });

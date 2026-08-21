@@ -245,7 +245,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   plo8: {
     label: 'PLO8 (Hi-Lo 8 or Better)',
     minLosingHand: 'KKKK2',
-    description: 'Four of a Kind (Kings) or better must LOSE — evaluated on HIGH hand only',
+    description: 'Four of a Kind (Kings) or better must LOSE - evaluated on HIGH hand only',
     rules: [
       'Must use exactly 2 cards from hand',
       'Both players must use two cards from their hole cards',
@@ -257,7 +257,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   plo_hilo: {
     label: 'PLO8 (Hi-Lo 8 or Better)',
     minLosingHand: 'KKKK2',
-    description: 'Four of a Kind (Kings) or better must LOSE — evaluated on HIGH hand only',
+    description: 'Four of a Kind (Kings) or better must LOSE - evaluated on HIGH hand only',
     rules: [
       'Must use exactly 2 cards from hand',
       'Both players must use two cards from their hole cards',

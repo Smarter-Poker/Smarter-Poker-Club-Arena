@@ -860,7 +860,7 @@ export default function SettingsPage() {
               <span className={styles.settingLabel}>Two-Factor Authentication</span>
               <span className={styles.settingDesc}>
                 {twoFactorEnabled
-                  ? 'Enabled — Your account is protected'
+                  ? 'Enabled - Your account is protected'
                   : 'Add extra security to your account'}
               </span>
             </div>

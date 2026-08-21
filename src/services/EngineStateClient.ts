@@ -136,6 +136,8 @@ export class EngineStateClient {
   private lastInboundAt = 0;
   private watchdogTimer: number | null = null;
   private onVisibility: (() => void) | null = null;
+  /** Dan 2026-08-21: browser 'online' hook for instant post-outage reconnect. */
+  private onOnline: (() => void) | null = null;
 
   /** How often the watchdog samples. */
   private static readonly WATCHDOG_TICK_MS = 5_000;
@@ -165,12 +167,31 @@ export class EngineStateClient {
     if (this.ws !== null && this.ws.readyState <= 1 /* OPEN or CONNECTING */) return;
     this.intentionalClose = false;
     this.retryCount = 0;
+    // Dan 2026-08-21 (never-die failsafe): the instant the browser reports
+    // the network is back, skip whatever backoff is pending and reconnect NOW.
+    if (this.onOnline === null && typeof window !== 'undefined') {
+      this.onOnline = () => {
+        if (this.intentionalClose) return;
+        if (this.ws !== null && this.ws.readyState <= 1) return;
+        if (this.reconnectTimer !== null) {
+          window.clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
+        this.retryCount = 0;
+        void this.openOnce();
+      };
+      window.addEventListener('online', this.onOnline);
+    }
     await this.openOnce();
   }
 
   /** Close the connection permanently. */
   disconnect(): void {
     this.intentionalClose = true;
+    if (this.onOnline !== null && typeof window !== 'undefined') {
+      window.removeEventListener('online', this.onOnline);
+      this.onOnline = null;
+    }
     // Dan 2026-08-15 (item 6): tear the watchdog down here or its interval and
     // visibilitychange listener outlive the client. In MultiTablePage, where
     // up to four of these exist and tabs open/close freely, that leaks a timer
@@ -396,7 +417,7 @@ export class EngineStateClient {
         // full minute — well past two missed 25s pings. Force it closed so
         // onclose -> scheduleReconnect runs. Without this the table is stuck.
         this.opts.onError({
-          reason: `engine silent for ${Math.round(silentFor / 1000)}s — forcing reconnect`,
+          reason: `engine silent for ${Math.round(silentFor / 1000)}s - forcing reconnect`,
         });
         this.lastInboundAt = Date.now(); // don't re-fire while the close lands
         try {
@@ -445,15 +466,24 @@ export class EngineStateClient {
 
   private scheduleReconnect(): void {
     if (this.reconnectTimer !== null) return;
+    this.retryCount++;
+    // ── Dan 2026-08-21 ("the games can never freeze or die"): NEVER stop
+    // trying. The old code went terminally 'failed' after maxRetries and the
+    // table sat dead until a manual refresh. Now maxRetries only marks the
+    // moment we ANNOUNCE failure (status 'failed' → the host UI can escalate,
+    // e.g. auto-refresh) — the backoff ladder keeps running at maxDelay
+    // cadence forever underneath. A laptop waking from sleep or a phone
+    // regaining signal reconnects on its own, however long it was gone.
     if (this.retryCount >= this.opts.maxRetries) {
       this.setStatus('failed');
-      this.opts.onError({ reason: 'max retries reached' });
-      return;
+      if (this.retryCount === this.opts.maxRetries) {
+        this.opts.onError({ reason: 'max retries reached - still retrying in background' });
+      }
+    } else {
+      this.setStatus('reconnecting');
     }
-    this.retryCount++;
-    this.setStatus('reconnecting');
     const base = Math.min(
-      this.opts.initialDelay * Math.pow(2, this.retryCount - 1),
+      this.opts.initialDelay * Math.pow(2, Math.min(this.retryCount, 10) - 1),
       this.opts.maxDelay
     );
     const jitter = Math.random() * base * 0.3;

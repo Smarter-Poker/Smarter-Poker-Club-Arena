@@ -498,7 +498,7 @@ function HomePageInner() {
     } catch {
       /* quota */
     }
-    toast.info('Welcome to Club Arena — Create or join a club to get started!');
+    toast.info('Welcome to Club Arena - Create or join a club to get started!');
   }, [isLoading, userClubs.length, toast]);
 
   // Enhancement #6: Real-time stats refresh for ALL club cards
@@ -754,7 +754,7 @@ function HomePageInner() {
         // Approval-required club — request queued, NOT yet a member.
         // No optimistic club card; it would vanish on the next refresh.
         toast.info(
-          `Join request sent to ${validClubName || 'the club'} — you'll be added once an admin approves.`
+          `Join request sent to ${validClubName || 'the club'} - you'll be added once an admin approves.`
         );
       } else {
         // #2: Optimistic UI — add placeholder club immediately

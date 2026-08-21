@@ -65,7 +65,7 @@ export const SettlementCronService = {
     };
 
     console.debug(
-      '[SettlementCron] Started — checking every',
+      '[SettlementCron] Started - checking every',
       this.config.checkIntervalMs / 1000,
       's'
     );
@@ -117,7 +117,7 @@ export const SettlementCronService = {
    */
   async check(): Promise<void> {
     if (this.isRunning) {
-      console.debug('[SettlementCron] Already running — skipping');
+      console.debug('[SettlementCron] Already running - skipping');
       return;
     }
 
@@ -138,7 +138,7 @@ export const SettlementCronService = {
         return;
       }
 
-      console.debug(`[SettlementCron] Period ${period.id} expired — initiating settlement cycle`);
+      console.debug(`[SettlementCron] Period ${period.id} expired - initiating settlement cycle`);
 
       masterBus.emit('SETTLEMENT_CYCLE_STARTED', {
         periodId: period.id,
@@ -210,14 +210,14 @@ export const SettlementCronService = {
       // browser tab being open. This client cron only closes the period.
       if (this.config.autoExecutePayouts) {
         console.debug(
-          '[SettlementCron] Payout execution is server-authoritative (engine daemon weekly close) — nothing to do client-side'
+          '[SettlementCron] Payout execution is server-authoritative (engine daemon weekly close) - nothing to do client-side'
         );
         masterBus.emit('SETTLEMENT_CYCLE_COMPLETED', {
           periodId: period.id,
           status: 'completed',
         });
       } else {
-        console.debug('[SettlementCron] Period closed — manual payout execution required');
+        console.debug('[SettlementCron] Period closed - manual payout execution required');
         masterBus.emit('SETTLEMENT_CYCLE_COMPLETED', {
           periodId: period.id,
           status: 'closed_pending_payout',
@@ -241,14 +241,14 @@ export const SettlementCronService = {
         // FAIL-CLOSED: If canary RPC doesn't exist, settlement MUST NOT proceed unverified.
         // Raise critical alert and block until the RPC is deployed.
         reportError(
-          'Canary RPC not available — BLOCKING settlement (fail-closed)',
+          'Canary RPC not available - BLOCKING settlement (fail-closed)',
           'SettlementCronService.canaryRPCMissing'
         );
         try {
           const { FinancialAlertService } = await import('./FinancialAlertService');
           await FinancialAlertService.logCritical(
             'SettlementCronService.runCanaryCheck',
-            'Canary balance-check RPC (get_wallet_balance_totals) is missing — settlement blocked',
+            'Canary balance-check RPC (get_wallet_balance_totals) is missing - settlement blocked',
             { error: error?.message || 'No data returned' }
           );
         } catch (err) {

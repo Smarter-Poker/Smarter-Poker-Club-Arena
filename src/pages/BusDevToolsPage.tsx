@@ -285,7 +285,7 @@ export default function BusDevToolsPage() {
           <div className="bdt-log-scroll">
             {filteredLog.length === 0 ? (
               <div className="bdt-empty">
-                No events yet — interact with the app to see events flow
+                No events yet - interact with the app to see events flow
               </div>
             ) : (
               filteredLog.map((entry) => (

@@ -819,7 +819,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
             const recipientId = participants?.[0]?.userId;
             if (recipientId && user?.id) {
               // Send a contact card as a message
-              sendMessage(`Shared contact card — /profile/${user.id}`, undefined, undefined);
+              sendMessage(`Shared contact card - /profile/${user.id}`, undefined, undefined);
             }
           }}
           title="Share Contact Card"

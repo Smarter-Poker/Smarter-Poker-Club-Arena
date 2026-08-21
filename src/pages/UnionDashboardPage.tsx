@@ -565,12 +565,12 @@ export default function UnionDashboardPage() {
     lastMonday.setUTCDate(lastMonday.getUTCDate() - 7);
     const periodStart = lastMonday.toISOString();
     const periodEnd = thisMonday.toISOString();
-    const label = `${lastMonday.toLocaleDateString()} – ${new Date(thisMonday.getTime() - 1).toLocaleDateString()}`;
+    const label = `${lastMonday.toLocaleDateString()} - ${new Date(thisMonday.getTime() - 1).toLocaleDateString()}`;
 
     if (
       !(await confirmDialog({
         title: 'Distribute weekly rakeback',
-        message: `Pay each club its share of last week's rake (${label}) from the union wallet? This is idempotent — it can't pay the same week twice.`,
+        message: `Pay each club its share of last week's rake (${label}) from the union wallet? This is idempotent - it can't pay the same week twice.`,
         confirmText: 'Distribute',
         variant: 'default',
       }))
@@ -793,7 +793,7 @@ export default function UnionDashboardPage() {
               style={{ maxWidth: '380px', margin: '60px auto', padding: '20px' }}
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="admin-card-title">Edit Commission — {editCommClub.name}</h3>
+              <h3 className="admin-card-title">Edit Commission - {editCommClub.name}</h3>
               <div style={{ marginBottom: '12px' }}>
                 <label className="admin-label">Commission Rate (%)</label>
                 <input
@@ -880,7 +880,7 @@ export default function UnionDashboardPage() {
                     verticalAlign: 'middle',
                   }}
                 >
-                  Lv.{uLevel.level} — {uLevel.tierLabel}
+                  Lv.{uLevel.level} - {uLevel.tierLabel}
                 </span>
               );
             })()}
@@ -1743,7 +1743,7 @@ export default function UnionDashboardPage() {
             >
               <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
                 Distribute each club&apos;s share of last week&apos;s rake from the union wallet.
-                Runs are idempotent — a week can&apos;t be paid twice.
+                Runs are idempotent - a week can&apos;t be paid twice.
               </span>
               <button
                 className="admin-action-btn"
@@ -1767,7 +1767,7 @@ export default function UnionDashboardPage() {
                     {rakebackHistory.map((r) => (
                       <tr key={r.id}>
                         <td style={{ fontSize: '12px' }}>
-                          {new Date(r.period_start).toLocaleDateString()} –{' '}
+                          {new Date(r.period_start).toLocaleDateString()} -{' '}
                           {new Date(r.period_end).toLocaleDateString()}
                         </td>
                         <td style={{ color: '#31A24C' }}>{fmt(r.total_rakeback)}</td>
@@ -1825,7 +1825,7 @@ export default function UnionDashboardPage() {
                               }}
                               title={
                                 review
-                                  ? 'Club nets did not balance to zero across the union — no chips were moved, pending review.'
+                                  ? 'Club nets did not balance to zero across the union - no chips were moved, pending review.'
                                   : undefined
                               }
                             >
@@ -1837,7 +1837,7 @@ export default function UnionDashboardPage() {
                           <td>
                             {Number(s.total_unpaid || 0) > 0
                               ? Number(s.total_unpaid).toLocaleString()
-                              : '—'}
+                              : '-'}
                           </td>
                         </tr>
                       );

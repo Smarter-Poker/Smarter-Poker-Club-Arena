@@ -142,7 +142,7 @@ export function GameRulesModal({
                     number is worse than no number — show a dash instead. */}
                 <span className="rules-modal__value">
                   {rakePercentage === undefined || rakeCap === undefined
-                    ? '—'
+                    ? '-'
                     : `${rakePercentage}% (Cap ${currency}${rakeCap})`}
                 </span>
               </div>

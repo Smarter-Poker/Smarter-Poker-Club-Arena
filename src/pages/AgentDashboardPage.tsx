@@ -744,7 +744,7 @@ export default function AgentDashboardPage() {
             onClick={() => setTab('cashouts')}
           >
             <strong>{pendingCashouts.length}</strong> pending cashout request
-            {pendingCashouts.length !== 1 ? 's' : ''} —{' '}
+            {pendingCashouts.length !== 1 ? 's' : ''} -{' '}
             {fmtChips(
               pendingCashouts.reduce((sum: number, c: CashoutRequest) => sum + (c.amount || 0), 0)
             )}{' '}
@@ -855,8 +855,8 @@ export default function AgentDashboardPage() {
                           </td>
                           <td style={{ fontWeight: 600 }}>{fmtChips(tx.amount)}</td>
                           <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                            {tx.from_user_id?.substring(0, 8) || '—'}.. →{' '}
-                            {tx.to_user_id?.substring(0, 8) || '—'}..
+                            {tx.from_user_id?.substring(0, 8) || '-'}.. →{' '}
+                            {tx.to_user_id?.substring(0, 8) || '-'}..
                           </td>
                           <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                             {timeAgo(tx.created_at)}
@@ -1039,7 +1039,7 @@ export default function AgentDashboardPage() {
                             textOverflow: 'ellipsis',
                           }}
                         >
-                          {c.player_note || '—'}
+                          {c.player_note || '-'}
                         </td>
                         <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                           {timeAgo(c.created_at)}
@@ -1116,7 +1116,7 @@ export default function AgentDashboardPage() {
                           <span className="admin-badge">{c.source_type || 'rake'}</span>
                         </td>
                         <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          {c.notes || '—'}
+                          {c.notes || '-'}
                         </td>
                         <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                           {timeAgo(c.created_at)}
@@ -1382,7 +1382,7 @@ export default function AgentDashboardPage() {
                     <option value="">Select agent...</option>
                     {agents.map((a: DownlineMember) => (
                       <option key={a.user_id} value={a.user_id}>
-                        {a.profile?.display_name || a.profile?.username || a.user_id?.slice(0, 8)} —{' '}
+                        {a.profile?.display_name || a.profile?.username || a.user_id?.slice(0, 8)} -{' '}
                         {a.role}
                       </option>
                     ))}
@@ -1450,7 +1450,7 @@ export default function AgentDashboardPage() {
                         add_prepaid: 'Prepaid added',
                         revoke_credit: 'Credit revoked',
                       };
-                      setSuccess(`${labels[creditAction] || 'Done'} — ${fmtChips(amt)} chips`);
+                      setSuccess(`${labels[creditAction] || 'Done'} - ${fmtChips(amt)} chips`);
                       masterBus.emit('CREDIT_UPDATED', {
                         clubId: clubId || '',
                         userId: creditTarget,

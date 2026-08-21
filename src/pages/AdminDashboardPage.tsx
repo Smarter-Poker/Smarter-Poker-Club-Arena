@@ -758,7 +758,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
                 Period #{cp.period_number || 1} • Year {cp.year || new Date().getFullYear()}
               </div>
               <div className="admin-text-primary" style={{ marginTop: '4px', fontWeight: 600 }}>
-                {formatDate(String(cp.start_at))} —{' '}
+                {formatDate(String(cp.start_at))} -{' '}
                 {cp.status === 'open' ? 'Now' : formatDate(String(cp.end_at))}
               </div>
             </div>
@@ -1679,7 +1679,7 @@ function SettlementHistoryTab({ clubId }: { clubId: string }) {
             <tbody>
               {periods.map((p: SettlementPeriod) => (
                 <tr key={p.id}>
-                  <td style={{ fontWeight: 600 }}>{p.period_number || '—'}</td>
+                  <td style={{ fontWeight: 600 }}>{p.period_number || '-'}</td>
                   <td>
                     <span
                       className={`admin-badge ${p.status === 'open' ? 'admin-badge-green' : p.status === 'closed' ? 'admin-badge-yellow' : ''}`}
@@ -1823,13 +1823,13 @@ function BrandingTab({ clubId }: { clubId: string }) {
             color: '#FA383E',
           }}
         >
-          ⚠ Danger Zone — Transfer Ownership
+          ⚠ Danger Zone - Transfer Ownership
         </h4>
         <p
           className="admin-text-secondary"
           style={{ fontSize: '12px', marginBottom: '12px', lineHeight: 1.6 }}
         >
-          Transfer complete ownership of this club to another member. This action is irreversible —
+          Transfer complete ownership of this club to another member. This action is irreversible -
           you will be demoted to admin.
         </p>
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -2651,7 +2651,7 @@ export default function AdminDashboardPage() {
             <AnalyticsTab clubId={clubId} />
             <div style={{ marginTop: '24px' }}>
               <h3 style={{ color: 'var(--text-primary)', marginBottom: '12px' }}>
-                Table Heatmap — God View
+                Table Heatmap - God View
               </h3>
               <AdminTableHeatmap
                 clubId={clubId}

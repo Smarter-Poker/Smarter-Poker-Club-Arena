@@ -279,7 +279,7 @@ export default function ProfilePage() {
     // Safety net: force loading off after 12s to prevent infinite spinner
     const safetyTimer = setTimeout(() => {
       if (isMounted) {
-        console.warn('[PROFILE] Safety timeout — forcing loading off after 12s');
+        console.warn('[PROFILE] Safety timeout - forcing loading off after 12s');
         setIsLoading(false);
       }
     }, 12000);

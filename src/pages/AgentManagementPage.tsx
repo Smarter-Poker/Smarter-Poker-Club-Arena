@@ -1382,7 +1382,7 @@ export default function AgentManagementPage() {
                   <span className={styles.sliderValue}>{newAgentForm.playerRakebackRate}%</span>
                 </div>
                 <p className={styles.fieldDesc}>
-                  Rakeback rate — percentage of rake players receive back as chips
+                  Rakeback rate - percentage of rake players receive back as chips
                 </p>
               </div>
 

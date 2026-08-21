@@ -176,7 +176,7 @@ if (typeof window !== 'undefined') {
       if (timeUntilExpiry < REFRESH_BUFFER && timeUntilExpiry > 0) {
         lastRefreshAttempt = Date.now();
         console.debug(
-          `[Supabase] Proactive token refresh — expires in ${Math.round(timeUntilExpiry / 1000)}s`
+          `[Supabase] Proactive token refresh - expires in ${Math.round(timeUntilExpiry / 1000)}s`
         );
         supabase.auth.refreshSession().catch((err) => {
           console.warn('[Supabase] Proactive refresh failed:', err);
@@ -184,7 +184,7 @@ if (typeof window !== 'undefined') {
       } else if (timeUntilExpiry <= 0) {
         lastRefreshAttempt = Date.now();
         // Token already expired — try to refresh anyway
-        console.warn('[Supabase] Token expired — attempting emergency refresh');
+        console.warn('[Supabase] Token expired - attempting emergency refresh');
         supabase.auth.refreshSession().catch((err) => {
           reportError(err, 'supabase.Emergency_refresh_failed');
           // If refresh token is dead, force signOut to prevent zombie session
@@ -193,7 +193,7 @@ if (typeof window !== 'undefined') {
             String(err).includes('invalid_grant')
           ) {
             reportError(
-              new Error('[Supabase] Refresh token is dead — forcing sign out'),
+              new Error('[Supabase] Refresh token is dead - forcing sign out'),
               'supabase.Refresh_token_is_dead__forcing_sign_out'
             );
             supabase.auth
@@ -228,7 +228,7 @@ if (typeof window !== 'undefined') {
         // If less than 10 minutes until expiry, refresh on tab focus
         if (timeUntilExpiry < 10 * 60_000) {
           lastRefreshAttempt = Date.now();
-          console.debug('[Supabase] Tab visible — refreshing session proactively');
+          console.debug('[Supabase] Tab visible - refreshing session proactively');
           supabase.auth.refreshSession().catch((e) => {
             console.warn('[Supabase] Proactive refresh on tab focus failed:', e);
           });

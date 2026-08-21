@@ -81,6 +81,23 @@ interface TableInstance {
    */
   kind?: 'table' | 'lobby';
   /**
+   * Does the hero hold an ACTIVE SEAT at this table right now?
+   *
+   * Dan 2026-08-20: "take seat button must never exist if you're not active on
+   * a table." An open tab is not a seat. A tab is also created by the route
+   * effect from a bare /table/:id URL — a spectator, a deep link, a player who
+   * arrived but has not bought in — and none of those give the player a seat to
+   * be taken back to. Gating the Take Seat bar on `kind !== 'lobby'` therefore
+   * offered to return people to seats they did not hold.
+   *
+   * Set true by exactly two things, both of which are evidence of a real seat:
+   * the TABLE_SEATED event, and the server-truth rebuild, which reads
+   * table_seats WHERE left_at IS NULL. Everything else leaves it undefined,
+   * which reads as "not seated" — the safe default for a control whose whole
+   * job is to claim you have somewhere to sit.
+   */
+  seated?: boolean;
+  /**
    * Dan 2026-08-19: a lobby tab drilled into a tournament. Set when the user
    * taps a tournament card inside the in-tab lobby; the tab then renders
    * TournamentDetails instead of the club lobby so the running tables never
@@ -351,6 +368,10 @@ export default function MultiTablePage() {
             stakes,
             isMyTurn: false,
             pot: 0,
+            // These ids came from table_seats WHERE left_at IS NULL, which is
+            // the definition of an active seat. Nothing else in this file has
+            // stronger evidence than that.
+            seated: true,
           };
         });
         return additions.length > 0 ? [...prev, ...additions] : prev;
@@ -385,7 +406,17 @@ export default function MultiTablePage() {
 
     // Functional updater handles dedup check via prev.find — no closure dep needed
     setTables((prev) => {
-      if (prev.find((t) => t.id === e.tableId)) return prev;
+      /* Dan 2026-08-20: an existing tab used to be returned UNCHANGED. That is
+         right for the tab itself, but it means a tab the route effect created
+         from a bare /table/:id URL (seated: undefined) stayed marked unseated
+         even after this very event proved the hero had taken a seat there.
+         Mark it and keep everything else as-is. */
+      const existing = prev.find((t) => t.id === e.tableId);
+      if (existing) {
+        return existing.seated
+          ? prev
+          : prev.map((t) => (t.id === e.tableId ? { ...t, seated: true } : t));
+      }
 
       const seatedTab: TableInstance = {
         id: e.tableId,
@@ -394,6 +425,7 @@ export default function MultiTablePage() {
         isMyTurn: false,
         pot: 0,
         kind: 'table',
+        seated: true,
       };
 
       // Dan 2026-08-15: if the player reached this table from a lobby tab
@@ -768,7 +800,13 @@ export default function MultiTablePage() {
    * is the player's only tab there is no seat to take and no bar.
    */
   const takeSeatTarget = (() => {
-    const live = tables.filter((t) => !isLobbyTab(t));
+    /* Dan 2026-08-20: "take seat button must never exist if you're not active
+       on a table." This filtered on `!isLobbyTab(t)` — i.e. any tab that is not
+       the lobby — which counts spectator tabs and bare /table/:id deep links as
+       seats. `seated` is set only by TABLE_SEATED and by the table_seats
+       rebuild, so an undefined value means "no evidence of a seat" and the bar
+       correctly does not render. */
+    const live = tables.filter((t) => !isLobbyTab(t) && t.seated === true);
     if (live.length === 0) return null;
     // Same preference order as the global dock, for one reason: a player who
     // has learnt what "return" does at the dock must not find it means

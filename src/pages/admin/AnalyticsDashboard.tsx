@@ -300,7 +300,7 @@ export default function AnalyticsDashboard() {
       .join('\n');
 
     const csvContent =
-      'Club Analytics Export — ' +
+      'Club Analytics Export - ' +
       new Date().toLocaleString() +
       '\n\nPosition Stats\n' +
       posHeader +
@@ -330,7 +330,7 @@ export default function AnalyticsDashboard() {
           Real-time player position stats and VIP economy overview
           <span className="refresh-indicator">
             <span className="refresh-dot" />
-            Live — updated {lastRefresh.toLocaleTimeString()}
+            Live - updated {lastRefresh.toLocaleTimeString()}
           </span>
         </p>
 
@@ -567,7 +567,7 @@ export default function AnalyticsDashboard() {
                     {entry.amount >= 0 ? '+' : ''}
                     {entry.amount.toLocaleString()}
                   </td>
-                  <td style={{ color: '#94a3b8' }}>{entry.description || '—'}</td>
+                  <td style={{ color: '#94a3b8' }}>{entry.description || '-'}</td>
                 </tr>
               ))}
             </tbody>

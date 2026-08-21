@@ -314,7 +314,7 @@ class CreditRequestServiceClass {
     if (agentRows.length > 1) {
       // Ambiguous (agent in multiple clubs) and the request carried no club_id —
       // refuse rather than raise the wrong club's line.
-      throw new Error('Ambiguous agent (multiple clubs) — request is missing a club');
+      throw new Error('Ambiguous agent (multiple clubs) - request is missing a club');
     }
     const agentId = agentRows[0].id;
 

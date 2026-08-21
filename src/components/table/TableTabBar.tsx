@@ -153,6 +153,23 @@ export function TableTabBar({
       }
       prevActionsRef.current[tab.id] = cur;
     }
+    // Audit 2026-08-20: closing a tab left its entries behind in all three
+    // stores forever (and a pending timer could later setState for a tab that
+    // no longer exists). Prune everything keyed by an id that is gone.
+    const liveIds = new Set(tabs.map((t) => t.id));
+    for (const id of Object.keys(prevActionsRef.current)) {
+      if (!liveIds.has(id)) {
+        delete prevActionsRef.current[id];
+        clearTimeout(flashTimersRef.current[id]);
+        delete flashTimersRef.current[id];
+        setActionFlash((p) => {
+          if (!(id in p)) return p;
+          const next = { ...p };
+          delete next[id];
+          return next;
+        });
+      }
+    }
   }, [tabs]);
   // Clear all pending flash timers on unmount only.
   useEffect(() => {
@@ -237,7 +254,7 @@ export function TableTabBar({
         <div
           className="table-tab-bar__offline"
           role="status"
-          title="Reconnecting to the live feed — your seats and chips are safe on the server."
+          title="Reconnecting to the live feed - your seats and chips are safe on the server."
         >
           <span className="table-tab-bar__offline-dot" aria-hidden="true">
             ●

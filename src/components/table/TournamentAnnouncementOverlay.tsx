@@ -57,25 +57,25 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
     hand_for_hand: {
       icon: 'H',
       title: 'HAND FOR HAND',
-      subtitle: 'All tables play one hand at a time — bubble approaching!',
+      subtitle: 'All tables play one hand at a time - bubble approaching!',
       color: '#f59e0b',
     },
     bubble_burst: {
       icon: '$',
       title: 'BUBBLE BURST!',
-      subtitle: 'Congratulations — all remaining players are in the money!',
+      subtitle: 'Congratulations - all remaining players are in the money!',
       color: '#10b981',
     },
     final_table: {
       icon: '*',
       title: 'FINAL TABLE',
-      subtitle: `${data?.playersRemaining || 'All'} players remain — final table begins!`,
+      subtitle: `${data?.playersRemaining || 'All'} players remain - final table begins!`,
       color: '#8b5cf6',
     },
     level_up: {
       icon: '⬆',
       title: `LEVEL ${data?.level || 1}`,
-      subtitle: `Blinds: ${data?.smallBlind ?? '—'}/${data?.bigBlind ?? '—'}${data?.ante ? ` Ante: ${data.ante}` : ''}`,
+      subtitle: `Blinds: ${data?.smallBlind ?? '-'}/${data?.bigBlind ?? '-'}${data?.ante ? ` Ante: ${data.ante}` : ''}`,
       color: '#3b82f6',
     },
     bounty_collected: {
@@ -86,7 +86,7 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
         const victim = data?.eliminatedName
           ? ` knocked out ${data.eliminatedName}`
           : ' scored a knockout';
-        const amt = data?.amount != null ? ` — collected ${data.amount}` : '';
+        const amt = data?.amount != null ? ` - collected ${data.amount}` : '';
         const head = data?.addedToHead > 0 ? ` (+${data.addedToHead} onto their own head)` : '';
         return `${who}${victim}${amt}${head}`;
       })(),
@@ -101,7 +101,7 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
         const amt = data?.amount != null ? `${data.amount}` : 'a mystery prize';
         const big =
           data?.avgBounty && data?.amount && Number(data.amount) >= Number(data.avgBounty) * 3
-            ? ' — JACKPOT!'
+            ? ' - JACKPOT!'
             : '';
         return victim ? `${who} opened ${victim}'s envelope: ${amt}${big}` : `${who} revealed ${amt}${big}`;
       })(),
@@ -111,8 +111,8 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
       icon: '72',
       title: 'SEVEN-DEUCE BOUNTY',
       subtitle: data?.winnerName
-        ? `${data.winnerName} won with 7-2 — collected ${data?.amount ?? ''} from the table`
-        : `Won with 7-2 — collected ${data?.amount ?? ''} from the table`,
+        ? `${data.winnerName} won with 7-2 - collected ${data?.amount ?? ''} from the table`
+        : `Won with 7-2 - collected ${data?.amount ?? ''} from the table`,
       color: '#ef4444',
     },
   };

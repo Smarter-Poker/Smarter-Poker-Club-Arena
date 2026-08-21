@@ -219,7 +219,7 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
             ? `${tile.alt} for ${clubName} (press ${tile.shortcutKey}${hasSwitch ? ', hold to switch clubs' : ''})`
             : `${tile.alt} (press ${tile.shortcutKey})`
         }
-        title={clubName ? `${tile.alt} — ${clubName}` : tile.alt}
+        title={clubName ? `${tile.alt} - ${clubName}` : tile.alt}
       >
         <div className={styles.tilePedestal}></div>
         <div className={styles.tileImageWrapper}>

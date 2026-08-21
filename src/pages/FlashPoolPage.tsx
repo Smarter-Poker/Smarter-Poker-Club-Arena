@@ -232,7 +232,7 @@ export default function FlashPoolPage() {
           p_buy_in: buyIn,
         });
         if (joinError) {
-          toast.error(joinError.message || 'Unable to join pool — you may already be in this pool');
+          toast.error(joinError.message || 'Unable to join pool - you may already be in this pool');
           return;
         }
         toast.success(`Joining ${pool.stakes} flash pool...`);
@@ -299,7 +299,7 @@ export default function FlashPoolPage() {
             Flash Pool
           </h1>
           <p style={{ color: '#8b8fa3', margin: '4px 0 0', fontSize: '13px' }}>
-            Fast-fold poker — fold instantly, get new cards
+            Fast-fold poker - fold instantly, get new cards
           </p>
         </div>
       </div>
@@ -364,7 +364,7 @@ export default function FlashPoolPage() {
                   {pool.stakes}
                 </div>
                 <div style={{ fontSize: '12px', color: '#8b8fa3' }}>
-                  Buy-in: {pool.buyInMin.toLocaleString()} – {pool.buyInMax.toLocaleString()}
+                  Buy-in: {pool.buyInMin.toLocaleString()} - {pool.buyInMax.toLocaleString()}
                 </div>
                 {userBalance !== null && (
                   <div style={{ fontSize: '11px', color: '#60a5fa', marginTop: '2px' }}>

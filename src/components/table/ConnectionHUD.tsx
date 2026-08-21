@@ -106,7 +106,7 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
       // Show reconnect toast and stale data banner
       if (wasDisconnectedRef.current) {
         wasDisconnectedRef.current = false;
-        toast.success('Connection restored — table data syncing...');
+        toast.success('Connection restored - table data syncing...');
         setShowStaleBanner(true);
         // Auto-hide stale banner after 5s (data should be fresh by then)
         if (staleBannerTimerRef.current) clearTimeout(staleBannerTimerRef.current);
@@ -128,7 +128,7 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
         .replace(/\b\w/g, (c: string) => c.toUpperCase());
       setAutoActionText(actionLabel);
       haptic.strong(); // Haptic: timeout warning
-      console.debug(`[ConnectionHUD] Disconnect timeout — auto-action: ${action}`);
+      console.debug(`[ConnectionHUD] Disconnect timeout - auto-action: ${action}`);
     }
   });
 
@@ -220,7 +220,7 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
           }}
         >
           <span style={{ fontWeight: 700 }}>--</span>
-          Reconnected — syncing latest table state...
+          Reconnected - syncing latest table state...
           <button
             onClick={() => setShowStaleBanner(false)}
             style={{

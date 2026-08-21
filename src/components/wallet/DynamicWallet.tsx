@@ -692,7 +692,7 @@ export default function DynamicWallet({
               label: 'Due at close',
               icon: 'rakeback',
               value: data.clubProjectedRakeback,
-              hint: `90% rakeback · ${closeDay}`,
+              hint: `90% Rakeback · ${closeDay}`,
             } as WalletRow,
           ]
         : []),
@@ -709,7 +709,7 @@ export default function DynamicWallet({
         // treasury, so the bank climbed with every hand and this hint had to
         // explain how much of it was actually free. Rake now lands ONLY in the
         // treasury, so the bank is the union's own money, full stop.
-        hint: unionFiguresKnown ? "union's own funds" : 'union admins only',
+        hint: unionFiguresKnown ? "Union's Own Funds" : 'Union Admins Only',
       },
       {
         // Dan 2026-08-20: these ARE two separate pots now. The treasury holds
@@ -721,15 +721,15 @@ export default function DynamicWallet({
         value: animTreasury,
         known: unionFiguresKnown,
         hint: unionFiguresKnown
-          ? `held in trust · ${formatBalance(data.projectedClubsShare)} to clubs ${closeDay}`
-          : 'union admins only',
+          ? `Held In Trust · ${formatBalance(data.projectedClubsShare)} To Clubs ${closeDay}`
+          : 'Union Admins Only',
       },
       {
         label: 'Clubs Wallet',
         icon: 'agent',
         value: animRow2,
         known: unionFiguresKnown,
-        hint: unionFiguresKnown ? 'member club banks' : undefined,
+        hint: unionFiguresKnown ? 'Member Club Banks' : undefined,
       },
       {
         label: 'Promo Wallet',
@@ -739,7 +739,7 @@ export default function DynamicWallet({
         // The 25% promo slice accrues inside the BBJ pool and is swept across
         // to this wallet every ~5 minutes, so it steps rather than streams.
         // Saying so stops it reading as "not being funded".
-        hint: unionFiguresKnown ? '25% BBJ slice · swept every 5 min' : undefined,
+        hint: unionFiguresKnown ? '25% BBJ Slice · Swept Every 5 Min' : undefined,
       },
     ],
   };
@@ -784,9 +784,9 @@ export default function DynamicWallet({
             fetchData();
           }}
           aria-label="Retry loading wallet data"
-          title="Failed to load — tap to retry"
+          title="Failed to load - tap to retry"
         >
-          Balances unavailable · Retry
+          Balances Unavailable · Retry
         </button>
       )}
 
@@ -801,7 +801,7 @@ export default function DynamicWallet({
           aria-label={`Bad Beat Jackpot: ${animBBJ === 0 ? 'no pool' : formatBalance(animBBJ)}`}
         >
           <span className="dw__bbj-label">BAD BEAT JACKPOT</span>
-          <span className="dw__bbj-amount">{animBBJ === 0 ? '—' : formatBalance(animBBJ)}</span>
+          <span className="dw__bbj-amount">{animBBJ === 0 ? '-' : formatBalance(animBBJ)}</span>
         </div>
       )}
 
@@ -842,7 +842,7 @@ export default function DynamicWallet({
               {row.hint && <span className="dw__row-hint">{row.hint}</span>}
             </span>
             <span className="dw__row-value">
-              {row.known === false ? '—' : formatBalance(row.value)}
+              {row.known === false ? '-' : formatBalance(row.value)}
             </span>
             {idx === 0 && showMintButton && (
               <button
@@ -873,10 +873,10 @@ export default function DynamicWallet({
             </span>
             <span className="dw__row-label">
               Backup BBJ
-              <span className="dw__row-hint">reserve · reseeds main after a hit</span>
+              <span className="dw__row-hint">Reserve · Reseeds Main After A Hit</span>
             </span>
             <span className="dw__row-value">
-              {animBackupBBJ === 0 ? '—' : formatBalance(animBackupBBJ)}
+              {animBackupBBJ === 0 ? '-' : formatBalance(animBackupBBJ)}
             </span>
           </div>
         )}

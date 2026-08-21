@@ -117,7 +117,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     try {
       const lockResult = await checkSettlementLock(clubId || '');
       if (lockResult.locked) {
-        if (isMounted.current) setError('Settlement in progress — cashout actions frozen');
+        if (isMounted.current) setError('Settlement in progress - cashout actions frozen');
         if (isMounted.current) setProcessing(null);
         return;
       }
@@ -151,7 +151,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     try {
       const lockResult = await checkSettlementLock(clubId || '');
       if (lockResult.locked) {
-        if (isMounted.current) setError('Settlement in progress — cashout actions frozen');
+        if (isMounted.current) setError('Settlement in progress - cashout actions frozen');
         if (isMounted.current) setProcessing(null);
         return;
       }

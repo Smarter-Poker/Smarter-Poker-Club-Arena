@@ -572,7 +572,7 @@ export default function AntiCheatPage() {
         club_id: clubId,
         player_id: playerId,
         event_type: 'player_kicked',
-        details: { reason: 'Anti-cheat violation — removed by admin', table_id: tableId },
+        details: { reason: 'Anti-cheat violation - removed by admin', table_id: tableId },
       });
       if (logError) console.warn('[AntiCheat] Failed to log kick event:', logError.message);
 
@@ -685,7 +685,7 @@ export default function AntiCheatPage() {
                 Player:{' '}
                 {reviewTarget.player?.display_name ||
                   reviewTarget.player_id?.substring(0, 8) ||
-                  '—'}
+                  '-'}
               </p>
               {reviewTarget.details && (
                 <pre className={styles.detailsBlock}>
@@ -828,7 +828,7 @@ export default function AntiCheatPage() {
               {stats.open_flags === 0 && (
                 <div className={styles.emptyState}>
                   <span className={styles.emptyIcon}>✓</span>
-                  <span className={styles.emptyText}>No open flags — club is clean!</span>
+                  <span className={styles.emptyText}>No open flags - club is clean!</span>
                 </div>
               )}
             </>
@@ -879,7 +879,7 @@ export default function AntiCheatPage() {
                         <SeverityBadge severity={f.severity} />
                       </td>
                       <td style={{ fontWeight: 600 }}>{f.flag_type}</td>
-                      <td>{f.player?.display_name || f.player_id?.substring(0, 8) || '—'}</td>
+                      <td>{f.player?.display_name || f.player_id?.substring(0, 8) || '-'}</td>
                       <td className={styles.timeCell}>{timeAgo(f.flagged_at)}</td>
                       <td>
                         <span
@@ -963,7 +963,7 @@ export default function AntiCheatPage() {
                           {ev.player?.display_name || ev.player_id?.substring(0, 8) || 'System'}
                         </td>
                         <td className={styles.detailsCell}>
-                          {ev.details ? JSON.stringify(ev.details).substring(0, 80) : '—'}
+                          {ev.details ? JSON.stringify(ev.details).substring(0, 80) : '-'}
                         </td>
                         <td className={styles.timeCell}>{timeAgo(ev.created_at)}</td>
                       </tr>
@@ -1129,7 +1129,7 @@ export default function AntiCheatPage() {
                 <div className={styles.emptyState}>
                   <span className={styles.emptyIcon}>◎</span>
                   <span className={styles.emptyText}>
-                    No suspicious plays detected — all hands look clean!
+                    No suspicious plays detected - all hands look clean!
                   </span>
                 </div>
               ) : (

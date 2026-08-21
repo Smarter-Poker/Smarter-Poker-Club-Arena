@@ -171,7 +171,7 @@ export default function FriendChallengesPanel({ userId }: { userId: string }) {
               <>
                 {header(r)}
                 <p style={{ margin: '0 0 10px', fontSize: '0.85rem' }}>
-                  <strong>{names[r.challenger_id] || 'A friend'}</strong> challenged you —{' '}
+                  <strong>{names[r.challenger_id] || 'A friend'}</strong> challenged you -{' '}
                   {timeLeft(r.expires_at)}
                 </p>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -296,7 +296,7 @@ export default function FriendChallengesPanel({ userId }: { userId: string }) {
                   )}
                   <span style={{ opacity: 0.6 }}>
                     {' '}
-                    ({myProg}–{theirProg})
+                    ({myProg}-{theirProg})
                   </span>
                 </div>
               </>,

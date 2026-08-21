@@ -284,7 +284,7 @@ class PresenceServiceClass {
       const channel = this.channels.get(channelName);
       if (!channel) {
         // Channel was removed but heartbeat is still running — clean up
-        console.warn(`[PresenceService] Heartbeat orphaned for ${channelName} — stopping`);
+        console.warn(`[PresenceService] Heartbeat orphaned for ${channelName} - stopping`);
         this.stopHeartbeat(channelName);
         return;
       }

@@ -38,13 +38,13 @@ export default function LiveTablesBar({ tables, urgent, onReturn }: LiveTablesBa
       <button
         className="live-tables-bar live-tables-bar--urgent"
         onClick={() => onReturn(urgent.tableId)}
-        title="Your turn — return to the table"
+        title="Your turn - return to the table"
       >
         <span className="live-tables-bar__dot live-tables-bar__dot--urgent" aria-hidden="true">
           ●
         </span>
         <span className="live-tables-bar__label">
-          Action Needed — {formatGameTitle(urgent.name)}
+          Action Needed - {formatGameTitle(urgent.name)}
         </span>
         {urgent.secondsLeft !== undefined && (
           <span className="live-tables-bar__timer">{urgent.secondsLeft}s</span>

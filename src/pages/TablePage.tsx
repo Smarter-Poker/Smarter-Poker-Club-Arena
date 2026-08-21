@@ -244,6 +244,7 @@ import { useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';
 import { TableHUD } from '../components/table/TableHUD';
 import { MiniStatsCard } from '../components/table/MiniStatsCard';
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
+import { HandDetailModal } from '../components/table/HandDetailModal';
 import { reportError } from '../utils/errorReporter';
 import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
 import { getAnimationSpeed } from '../utils/animationSpeed';
@@ -1212,7 +1213,7 @@ export default function TablePage({
             );
             hadPreActionRef.current = false;
             setPreAction(null); // the bar must not claim something the engine has not armed
-            toast?.error?.(res?.error || 'Could not arm that pre-action — play it manually.');
+            toast?.error?.(res?.error || 'Could not arm that pre-action - play it manually.');
           }
         });
         // Also emit to MasterBus for local telemetry
@@ -1234,7 +1235,7 @@ export default function TablePage({
               'TablePage.PreAction_clear_refused'
             );
             hadPreActionRef.current = true;
-            toast?.error?.('Could not cancel your pre-action — it may still run this hand.');
+            toast?.error?.('Could not cancel your pre-action - it may still run this hand.');
           }
         });
       }
@@ -1274,13 +1275,39 @@ export default function TablePage({
           new Error(`heartbeat missed ${consecutiveMisses}x`),
           'TablePage.Heartbeat_lost'
         );
-        toast?.error?.('Connection lost — the server may fold for you. Check your connection.');
+        toast?.error?.('Connection lost - the server may fold for you. Check your connection.');
       }
     };
     void beat();
     const heartbeatInterval = setInterval(() => void beat(), 5000);
     return () => clearInterval(heartbeatInterval);
   }, [tableId, userId, toast]);
+
+  // ── Dan 2026-08-21: "the games can never freeze or die" — last-resort
+  // auto-recovery. EngineStateClient now retries forever, but if the socket
+  // has been in 'failed' (10+ straight failures) for 20 more seconds while
+  // this tab is VISIBLE, something deeper than the network is wedged (dead
+  // service worker, poisoned auth token, leaked socket state). A full reload
+  // is safe at any moment — the engine is authoritative and the seat
+  // restores server-truth on mount — so take it rather than sitting dead.
+  // Guarded to once per 2 minutes via sessionStorage so a hard outage cannot
+  // reload-loop the browser.
+  useEffect(() => {
+    if (engineWsStatus !== 'failed') return;
+    const t = window.setTimeout(() => {
+      if (document.visibilityState !== 'visible') return;
+      const KEY = 'ca_ws_autoreload_at';
+      const last = Number(sessionStorage.getItem(KEY) || 0);
+      if (Date.now() - last < 120_000) return;
+      sessionStorage.setItem(KEY, String(Date.now()));
+      reportError(
+        new Error('engine WS failed >20s - auto-refresh failsafe'),
+        'TablePage.wsAutoReload'
+      );
+      window.location.reload();
+    }, 20_000);
+    return () => window.clearTimeout(t);
+  }, [engineWsStatus]);
 
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   const [showBuyInModal, setShowBuyInModal] = useState(false);
@@ -1296,6 +1323,9 @@ export default function TablePage({
     name: string;
   } | null>(null);
   const [showHandReplay, setShowHandReplay] = useState(false);
+  // Dan 2026-08-21: PokerBros-style hand breakdown — opened by the
+  // previous-hand card; the animated replay + share live INSIDE it now.
+  const [showHandDetail, setShowHandDetail] = useState(false);
   const [lastHandId, setLastHandId] = useState<string | null>(null);
   const [showGameRules, setShowGameRules] = useState(false);
   const [showIdentityModal, setShowIdentityModal] = useState(false);
@@ -1463,7 +1493,7 @@ export default function TablePage({
       setSitOutSince(Date.now());
       setShowSitOut(true);
     } else {
-      toast?.error?.(res?.error || 'Could not sit out — you are still in the game');
+      toast?.error?.(res?.error || 'Could not sit out - you are still in the game');
     }
   }, [tableId, toast]);
 
@@ -2374,7 +2404,7 @@ export default function TablePage({
     // them (edge case: stale state, reconnection). On a real-money platform
     // inventing a card outcome misrepresents the deck, so short-circuit the
     // reveal instead — surface "unavailable" and return no cards.
-    toast.error('Rabbit Hunt unavailable — no card data from server.');
+    toast.error('Rabbit Hunt unavailable - no card data from server.');
     setIsRabbitAvailable(false);
     return [];
   };
@@ -2817,7 +2847,7 @@ export default function TablePage({
         return;
       }
       await tournamentService.processAddOn(tableState.tournamentId, userId);
-      toast?.success('Add-on successful — chips added');
+      toast?.success('Add-on successful - chips added');
       setShowRebuyModal(false);
     } catch (err) {
       toast?.error((err as Error).message || 'Add-on failed');
@@ -2937,7 +2967,7 @@ export default function TablePage({
         // the state too: the seat is immediately open to other players.
         setTableState((prev) => ({ ...prev, heroSeat: 0 }));
         pendingSeatStackRef.current = 0;
-        console.debug(`[Leave] Success — ${result.chipsReturned} chips returned to wallet`);
+        console.debug(`[Leave] Success - ${result.chipsReturned} chips returned to wallet`);
 
         // Notify system (TABLE_LEFT is deliberately delayed until Session Summary closes)
         masterBus.emit('SESSION_ENDED', { tableId, userId });
@@ -3019,7 +3049,7 @@ export default function TablePage({
         // means the player genuinely holds no active seat (already left / double-tap),
         // NOT "mid-hand" (that path returns success:true with leave_pending set). So
         // the message no longer misleadingly blames an active hand.
-        console.warn('[Leave] leaveTable returned false — no active seat found for user', {
+        console.warn('[Leave] leaveTable returned false - no active seat found for user', {
           tableId,
           userId,
           heroSeat: tableState.heroSeat,
@@ -3088,7 +3118,7 @@ export default function TablePage({
           'TablePage.handleForceLeaveTable.refused'
         );
         setLeaveNotice(
-          forced.error || 'Could not leave the table — your chips are still in your seat.'
+          forced.error || 'Could not leave the table - your chips are still in your seat.'
         );
         return; // stay on the table; the seat is still live
       }
@@ -4134,7 +4164,7 @@ export default function TablePage({
                 }));
                 if (data.payload?.active) {
                   setAnnouncement({ type: 'hand_for_hand', data: data.payload });
-                  toast?.info?.('Hand-for-hand play activated — bubble approaching');
+                  toast?.info?.('Hand-for-hand play activated - bubble approaching');
                 }
               } else if (data?.type === 'final_table') {
                 // DEAD-WIRING FIX 2026-08-15: the server has always broadcast
@@ -4209,7 +4239,7 @@ export default function TablePage({
                   bubbleInfo: undefined,
                 }));
                 setAnnouncement({ type: 'bubble_burst', data: data.payload });
-                toast?.success?.('Bubble burst — you are in the money!');
+                toast?.success?.('Bubble burst - you are in the money!');
               } else if (data?.type === 'player_eliminated') {
                 // A player was eliminated from the tournament
                 const elimData = data.payload || {};
@@ -4259,35 +4289,60 @@ export default function TablePage({
 
                 // Check if the current user was eliminated
                 if (elimData.userId === userId) {
+                  // ── Dan 2026-08-20, from a live table ─────────────────────
+                  // "at the end of the tournament when you lose, you need to
+                  //  be auto removed from the table, placed inside the lobby
+                  //  and your tournament result card shown … winners should
+                  //  be auto removed at the end as well."
+                  //
+                  // The engine has already closed the busted seat (left_at is
+                  // stamped in eliminatePlayer), so "removed from the table"
+                  // is a navigation fact, not a server call. Both branches
+                  // end the same way: the CLUB LOBBY, carrying the result in
+                  // router state, where ClubLobby renders the result card.
+                  const goToLobbyWithResult = (
+                    position: number,
+                    prize: number,
+                    delayMs: number
+                  ) => {
+                    const result = {
+                      tournamentId: table.tournament_id || null,
+                      tournamentName: tableStateRef.current.tableName || 'Tournament',
+                      position,
+                      prize,
+                      isSpin: tournamentFormat === 'spin',
+                      at: Date.now(),
+                    };
+                    setTimeout(() => {
+                      const clubId = actualClubIdRef.current;
+                      if (clubId) {
+                        navigate(`/clubs/${clubId}`, { state: { tournamentResult: result } });
+                      } else {
+                        // No club to land in (should not happen) — the old
+                        // results page beats stranding them at a dead table.
+                        navigate(`/tournament-results?id=${result.tournamentId ?? ''}`);
+                      }
+                    }, delayMs);
+                  };
+
                   if (elimData.position === 1) {
-                    // Current user won the tournament
+                    // Winner: let the celebration overlay play, then leave.
                     // BUG-G FIX: Use tableStateRef for fresh name (closure has 'Loading...')
                     const tournamentName = tableStateRef.current.tableName || 'Tournament';
                     setTournamentWinner({
                       prize: elimData.prize || 0,
                       name: tournamentName,
                     });
+                    goToLobbyWithResult(1, elimData.prize || 0, 7000);
                   } else {
-                    // Current user was eliminated (not winner)
-                    const pos = elimData.position || '?';
-                    const prize = elimData.prize || 0;
-                    if (prize > 0) {
-                      toast?.success?.(
-                        `You finished ${pos}${pos === 1 ? 'st' : pos === 2 ? 'nd' : pos === 3 ? 'rd' : 'th'} and won ${prize}!`
-                      );
-                    } else {
-                      toast?.info?.(
-                        `You finished ${pos}${pos === 1 ? 'st' : pos === 2 ? 'nd' : pos === 3 ? 'rd' : 'th'}. Better luck next time!`
-                      );
-                    }
-                    // Auto-redirect to results after 5 seconds
-                    setTimeout(() => {
-                      // BUG-G FIX: Use table.tournament_id (local var) — not stale closure
-                      const tournId = table.tournament_id;
-                      if (tournId) {
-                        navigate(`/tournament-results?id=${tournId}`);
-                      }
-                    }, 5000);
+                    // Busted: a short beat so the elimination lands, then out.
+                    // The result card in the lobby says everything the old
+                    // toast said, in a place you can actually read it.
+                    goToLobbyWithResult(
+                      Number(elimData.position) || 0,
+                      Number(elimData.prize) || 0,
+                      2500
+                    );
                   }
                 }
 
@@ -4488,7 +4543,7 @@ export default function TablePage({
           // CRITICAL: Detect and clean up duplicate seats for the same user
           const heroSeats = existingSeats.filter((s) => s.user_id === userId);
           if (heroSeats.length > 1) {
-            reportError('— cleaning up extras', 'TablePage.DUPLICATE_SEATS_DETECTED_for_user');
+            reportError('- cleaning up extras', 'TablePage.DUPLICATE_SEATS_DETECTED_for_user');
             // Keep the first seat, remove the rest from DB
             const [keepSeat, ...extraSeats] = heroSeats;
             for (const extra of extraSeats) {
@@ -4565,7 +4620,7 @@ export default function TablePage({
                   console.warn(
                     '[Seat] Hero seat at',
                     seat.seat_number,
-                    'has stack=0 — bust-rebuy flow will prompt rebuy or clean up on decline'
+                    'has stack=0 - bust-rebuy flow will prompt rebuy or clean up on decline'
                   );
                 }
               }
@@ -4577,7 +4632,7 @@ export default function TablePage({
                 console.debug(
                   '[Seat] Cleared ghost player from seat',
                   i + 1,
-                  '— not in DB:',
+                  '- not in DB:',
                   prev.players[i]?.id
                 );
               }
@@ -4958,7 +5013,7 @@ export default function TablePage({
       return;
     }
     if (!isConnected && prevConnectedRef.current) {
-      toast?.warning?.('Connection lost — reconnecting…');
+      toast?.warning?.('Connection lost - reconnecting…');
       if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playDisconnect();
     } else if (isConnected && !prevConnectedRef.current) {
       toast?.success?.('Reconnected');
@@ -5298,7 +5353,7 @@ export default function TablePage({
     const seatNum = idx + 1;
     if (tableState.heroSeat === seatNum) return; // invariant holds
     console.warn(
-      `[Seat] heroSeat=${tableState.heroSeat} disagrees with players[] (hero at seat ${seatNum}) — reconciling`
+      `[Seat] heroSeat=${tableState.heroSeat} disagrees with players[] (hero at seat ${seatNum}) - reconciling`
     );
     heroSeatRef.current = seatNum;
     setTableState((prev) => {
@@ -6064,9 +6119,27 @@ export default function TablePage({
             // existing once-per-hand guard so a duplicated or re-emitted
             // HAND_COMPLETE cannot double-fire it.
             try {
+              /* Dan 2026-08-20: the payload carried only handId + tableId, so
+                 nothing downstream could tell a hand the hero WON from one they
+                 lost. useTableSession needs exactly that to count handsPlayed
+                 and handsWon, which were declared and never written — the
+                 Session Complete card showed "0 Hands Played / 0 Hands per
+                 Hour / 0% Win Rate" for every session ever played.
+
+                 heroStack rides along for the same reason: peakStack only ever
+                 moved on CHIPS_ADDED, so a player who never topped up finished
+                 with a Peak Stack of 0 no matter what they held. This is the
+                 once-per-hand, dealt-in-guarded emit, which makes it the exact
+                 point at which the hero's stack is worth sampling. */
               masterBus.emit('HAND_COMPLETED', {
                 handId: String(tableStateRef.current.handNumber ?? hn),
                 tableId: tableId || '',
+                won: outcome.won === true,
+                potWon: Number(outcome.potWon) || 0,
+                heroStack:
+                  Number(
+                    tableStateRef.current.players?.[tableStateRef.current.heroSeat - 1]?.stack
+                  ) || 0,
               });
             } catch {
               /* bus publish is best-effort -- never block the table reset */
@@ -6771,7 +6844,7 @@ export default function TablePage({
     const seatIdx = seatNumber - 1;
     if (seatIdx >= 0 && seatIdx < tableState.players.length && tableState.players[seatIdx]) {
       // Seat is occupied — ignore click
-      console.debug('[Seat] Seat', seatNumber, 'is occupied — ignoring click');
+      console.debug('[Seat] Seat', seatNumber, 'is occupied - ignoring click');
       return;
     }
     // FIX 132: Don't allow sitting if already seated at this table
@@ -6780,12 +6853,12 @@ export default function TablePage({
       console.debug(
         '[Seat] Hero already seated (ref) at seat',
         heroSeatRef.current,
-        '— ignoring click'
+        '- ignoring click'
       );
       return;
     }
     if (tableState.heroSeat > 0) {
-      console.debug('[Seat] Hero already seated at seat', tableState.heroSeat, '— ignoring click');
+      console.debug('[Seat] Hero already seated at seat', tableState.heroSeat, '- ignoring click');
       return;
     }
     const existingHeroIdx = tableState.players.findIndex((p) => p && p.id === userId);
@@ -6793,22 +6866,22 @@ export default function TablePage({
       console.debug(
         '[Seat] Hero found at seat',
         existingHeroIdx + 1,
-        'via player scan — ignoring click'
+        'via player scan - ignoring click'
       );
       return;
     }
     // Block if buy-in is already in progress (race condition guard)
     if (buyInProcessingRef.current) {
-      console.debug('[Seat] Buy-in already processing — ignoring click');
+      console.debug('[Seat] Buy-in already processing - ignoring click');
       return;
     }
     // Block if buy-in modal already open
     if (showBuyInModal) {
-      console.debug('[Seat] Buy-in modal already open — ignoring click');
+      console.debug('[Seat] Buy-in modal already open - ignoring click');
       return;
     }
     if (pendingSeat !== null) {
-      console.debug('[Seat] A seat reservation is already pending — ignoring click');
+      console.debug('[Seat] A seat reservation is already pending - ignoring click');
       return;
     }
     console.debug('[Seat] Opening buy-in modal for seat', seatNumber);
@@ -7134,7 +7207,7 @@ export default function TablePage({
     _amount?: number
   ) => {
     if (!tableId) {
-      setActionErrorData({ error: 'Table not ready — reconnecting' });
+      setActionErrorData({ error: 'Table not ready - reconnecting' });
       return false;
     }
     // Auto-allow fold
@@ -7154,7 +7227,7 @@ export default function TablePage({
         heroPlayer,
       });
       setActionErrorData({
-        error: 'Your seat is out of sync with the table — resyncing',
+        error: 'Your seat is out of sync with the table - resyncing',
         code: 'CLIENT_STATE_STALE',
       });
       return false;
@@ -7826,13 +7899,9 @@ export default function TablePage({
           every time a hand ended, so a player could never check how many banks
           they had left before the next hand — precisely when you want to know.
           Observers (heroSeat === 0) still see nothing. */}
-      {tableState.heroSeat > 0 && (
-        <TimebankCounter
-          count={timeBanksRemaining}
-          low={timeBanksRemaining <= 1}
-          onClick={() => setShowTimeBank(true)}
-        />
-      )}
+      {/* Dan 2026-08-21: the counter moved into the TableHUD bottom-left
+          stack, directly ABOVE the previous-hand card (see the bottomLeft
+          prop below) — it no longer floats at its own fixed offset. */}
       {/*
         Phase 1.3 PR-C+D: server-rejection toast.
         Auto-clears after 4s (component-internal). The Snap-to-hint button
@@ -8077,13 +8146,23 @@ export default function TablePage({
         }
         bottomLeft={
           <div className="hud-ul-column hud-ul-column--stack">
+            {/* Dan 2026-08-21: "the previous hand should be in the bottom left
+                corner, the time bank icon should be on top of it." Stacked in
+                that exact order — alarm clock above, previous-hand card below. */}
+            {tableState.heroSeat > 0 && (
+              <TimebankCounter
+                count={timeBanksRemaining}
+                low={timeBanksRemaining <= 1}
+                onClick={() => setShowTimeBank(true)}
+              />
+            )}
             <PreviousHandCard
               handNumber={prevHandResult?.handNumber ?? null}
               result={prevHandResult?.result ?? 0}
               didWin={prevHandResult?.didWin ?? false}
               didFold={prevHandResult?.didFold ?? false}
               handDescription={prevHandResult?.handDescription}
-              onTap={() => setShowHandReplay(true)}
+              onTap={() => setShowHandDetail(true)}
               onShareHand={() => {
                 // The modal renders only when a hand has been captured. Say so
                 // instead of no-opping — tapping a menu item and getting
@@ -8848,7 +8927,7 @@ export default function TablePage({
               <div className="control-strip control-strip--transparent">
                 <button
                   className="control-strip__btn"
-                  title="Rabbit Hunt — reveal remaining cards"
+                  title="Rabbit Hunt - reveal remaining cards"
                   onClick={handleRabbitReveal}
                 >
                   <span className="control-strip__icon">R</span>
@@ -9304,7 +9383,7 @@ export default function TablePage({
               // player thought they were back in the game.
               void setSitOut(tableId, false).then((res) => {
                 if (!res?.success) {
-                  toast?.error?.(res?.error || 'Could not sit back in — try again');
+                  toast?.error?.(res?.error || 'Could not sit back in - try again');
                 }
               });
             }}
@@ -9369,6 +9448,27 @@ export default function TablePage({
         deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
       />
 
+      {/* Dan 2026-08-21: PokerBros-style hand breakdown. Replay + Share are
+          buttons in its header, driving the existing HandReplayPlayer and
+          ShareHand modals. */}
+      <HandDetailModal
+        isOpen={showHandDetail}
+        onClose={() => setShowHandDetail(false)}
+        hands={handHistory}
+        heroId={userId || ''}
+        onReplay={() => {
+          setShowHandDetail(false);
+          setShowHandReplay(true);
+        }}
+        onShare={() => {
+          if (!sharedHandData) {
+            toast?.info?.('Play a hand to the end, then share it.');
+            return;
+          }
+          setShowHandDetail(false);
+          setShowShareHand(true);
+        }}
+      />
       <TableModalsLayer
         tableId={tableId}
         userId={userId}
@@ -9734,7 +9834,7 @@ export default function TablePage({
           setRebuyProcessing(true);
           try {
             await tournamentService.processAddOn(tableState.tournamentId, userId);
-            toast?.success('Add-on accepted — chips added to your stack');
+            toast?.success('Add-on accepted - chips added to your stack');
             setAddOnPeriod((prev) => ({ ...prev, active: false }));
             return true;
           } catch (err: any) {
@@ -9753,7 +9853,7 @@ export default function TablePage({
           setRebuyProcessing(true);
           try {
             await tournamentService.processRebuy(tableState.tournamentId, userId);
-            toast?.success('Rebuy successful — chips added to your stack');
+            toast?.success('Rebuy successful - chips added to your stack');
             setShowRebuyModal(false);
           } catch (err: any) {
             toast?.error(err.message || 'Rebuy failed');

@@ -281,7 +281,7 @@ export default function ClubsPage() {
       setJoinClubId('');
       if (membership?.status === 'pending') {
         // Approval-gated club — the request is queued, the user is not yet a member.
-        toast.success('Request submitted — pending owner approval.');
+        toast.success('Request submitted - pending owner approval.');
       } else {
         toast.success('Successfully joined club!');
         setActiveTab('my-clubs');
@@ -426,7 +426,7 @@ export default function ClubsPage() {
                     await loadMyClubs();
                     if (membership?.status === 'pending') {
                       // Approval-gated club — not a member until approved.
-                      toast.success('Request submitted — pending owner approval.');
+                      toast.success('Request submitted - pending owner approval.');
                     } else {
                       setActiveTab('my-clubs');
                       toast.success('Successfully joined club!');
@@ -599,7 +599,7 @@ export default function ClubsPage() {
                           </div>
                           <div className={styles.clubStat}>
                             <span className={styles.unionStatValue}>
-                              {union.totalRake ? `$${union.totalRake.toLocaleString()}` : '—'}
+                              {union.totalRake ? `$${union.totalRake.toLocaleString()}` : '-'}
                             </span>
                             <span className={styles.statLabel}>Total Rake</span>
                           </div>

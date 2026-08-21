@@ -386,7 +386,7 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
                             </span>
                           )}
                         </td>
-                        <td style={{ padding: 8, color: '#8fa3ad' }}>{r.upline_name ?? '—'}</td>
+                        <td style={{ padding: 8, color: '#8fa3ad' }}>{r.upline_name ?? '-'}</td>
                         <td style={{ padding: 8, textAlign: 'right', color: '#8fa3ad' }}>
                           {count(r.hands)}
                         </td>
@@ -403,7 +403,7 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
                         <td style={{ padding: 8, textAlign: 'right', color: '#8fa3ad' }}>
                           {r.downline_players > 0
                             ? `${count(r.downline_players)} · ${money(r.downline_rake)}`
-                            : '—'}
+                            : '-'}
                         </td>
                       </tr>
                     );
@@ -413,7 +413,7 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
             </div>
           )}
           <p style={{ color: '#66787f', fontSize: '0.75rem', margin: 0 }}>
-            A hand's rake is split evenly between the players dealt into it — the same rule the
+            A hand's rake is split evenly between the players dealt into it - the same rule the
             weekly payout uses, so these figures match your statement. Tap an agent to open their
             downline.
           </p>

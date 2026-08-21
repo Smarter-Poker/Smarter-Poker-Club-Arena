@@ -56,7 +56,7 @@ function fmtClock(totalSeconds: number): string {
 }
 
 function fmtChips(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return '—';
+  if (!Number.isFinite(n) || n <= 0) return '-';
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 10_000) return `${Math.round(n / 1000)}K`;
   return Math.trunc(n).toLocaleString();
@@ -220,7 +220,7 @@ export function TournamentHUD({
           Blinds
         </span>
         <span style={{ fontSize: 15, fontWeight: 700 }}>
-          {isBreak ? '—' : `${fmtChips(cur?.smallBlind ?? 0)} / ${fmtChips(cur?.bigBlind ?? 0)}`}
+          {isBreak ? '-' : `${fmtChips(cur?.smallBlind ?? 0)} / ${fmtChips(cur?.bigBlind ?? 0)}`}
         </span>
         {!isBreak && (cur?.ante ?? 0) > 0 && (
           <span style={{ fontSize: 10, opacity: 0.7 }}>ante {fmtChips(cur!.ante)}</span>

@@ -88,7 +88,7 @@ export async function backfillClubCards(clubs: BackfillTarget[]): Promise<void> 
           (uploadError as any).status === 404
         ) {
           console.warn(
-            `[ClubCardBackfill] Storage bucket unavailable — disabling backfill for this session`
+            `[ClubCardBackfill] Storage bucket unavailable - disabling backfill for this session`
           );
           storageDisabled = true;
           return;

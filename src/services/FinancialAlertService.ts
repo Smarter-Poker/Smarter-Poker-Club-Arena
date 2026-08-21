@@ -122,7 +122,7 @@ export const FinancialAlertService = {
         });
       } else {
         console.warn(
-          `[FinancialAlert] ${severity} alert not persisted: ${source} — ${message}`,
+          `[FinancialAlert] ${severity} alert not persisted: ${source} - ${message}`,
           persistFailure
         );
       }

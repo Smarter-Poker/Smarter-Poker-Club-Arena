@@ -252,7 +252,7 @@ export const WalletService = {
         'mint',
         club.union_id
           ? `Union mint: ${chipAmount} chips for ${club.name} (${diamondCost} diamonds spent)`
-          : `Club mint: ${chipAmount} chips (${diamondCost} diamonds spent) — standalone club`,
+          : `Club mint: ${chipAmount} chips (${diamondCost} diamonds spent) - standalone club`,
         undefined,
         undefined,
         clubId
@@ -595,7 +595,7 @@ export const WalletService = {
         // FIX: await the async logCritical call to prevent unhandled rejections
         await FinancialAlertService.logCritical(
           'WalletService.logTransaction',
-          'Transaction log failed after successful financial operation — audit trail gap',
+          'Transaction log failed after successful financial operation - audit trail gap',
           { userId, walletType, amount, type, category, description, rpcError: error.message }
         );
       }
@@ -610,7 +610,7 @@ export const WalletService = {
       // FIX: await the async logCritical call to prevent unhandled rejections
       await FinancialAlertService.logCritical(
         'WalletService.logTransaction',
-        'Transaction log threw exception — audit trail gap',
+        'Transaction log threw exception - audit trail gap',
         { userId, walletType, amount, type, category, error: String(err) }
       );
     }

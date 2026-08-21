@@ -193,7 +193,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
               if (wasRecentlyAuthenticated() && retryCountRef.current < MAX_RETRIES) {
                 retryCountRef.current++;
                 console.warn(
-                  `[AUTH GUARD] Session missing but user was recently authenticated — retry ${retryCountRef.current}/${MAX_RETRIES}`
+                  `[AUTH GUARD] Session missing but user was recently authenticated - retry ${retryCountRef.current}/${MAX_RETRIES}`
                 );
                 retryTimerRef.current = setTimeout(() => {
                   if (!cancelled) checkAuth();
@@ -217,7 +217,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
             if (wasRecentlyAuthenticated() && retryCountRef.current < MAX_RETRIES) {
               retryCountRef.current++;
               console.warn(
-                `[AUTH GUARD] getSession() failed but user was recently authenticated — retry ${retryCountRef.current}/${MAX_RETRIES}`
+                `[AUTH GUARD] getSession() failed but user was recently authenticated - retry ${retryCountRef.current}/${MAX_RETRIES}`
               );
               retryTimerRef.current = setTimeout(() => {
                 if (!cancelled) checkAuth();
@@ -261,7 +261,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
       // (e.g., from a token refresh race condition). Do NOT redirect.
       if (hasLocalSession()) {
         console.warn(
-          '[AUTH GUARD] Store cleared but localStorage has valid session — re-hydrating instead of redirecting'
+          '[AUTH GUARD] Store cleared but localStorage has valid session - re-hydrating instead of redirecting'
         );
         hydrateStoreFromLocalStorage();
         // Do NOT set isAuthenticated to false
@@ -272,7 +272,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
       // delay the redirect to allow token refresh to complete.
       if (wasRecentlyAuthenticated()) {
         console.warn(
-          '[AUTH GUARD] Store cleared and localStorage empty, but user was recently authenticated — delaying redirect'
+          '[AUTH GUARD] Store cleared and localStorage empty, but user was recently authenticated - delaying redirect'
         );
         // Wait and re-check before redirecting
         if (retryTimerRef.current) clearTimeout(retryTimerRef.current);

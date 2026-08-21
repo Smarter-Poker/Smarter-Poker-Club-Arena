@@ -212,7 +212,7 @@ export default function MessageBubble({
                 <span style={{ fontSize: '1.1rem' }}>▤</span>
                 <span style={{ fontWeight: 600, marginLeft: 6 }}>
                   {message.content
-                    .replace('Shared contact card — ', '')
+                    .replace('Shared contact card - ', '')
                     .replace(/\/profile\/.*/, 'Profile Card') || 'Contact'}
                 </span>
                 <span style={{ display: 'block', fontSize: '0.75rem', opacity: 0.6, marginTop: 2 }}>

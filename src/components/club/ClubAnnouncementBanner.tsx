@@ -209,7 +209,7 @@ export default function ClubAnnouncementBanner({
       <div className={styles.meta}>
         {current.createdByName && (
           <span className={styles.author}>
-            — {current.createdByName}, {formatDate(current.createdAt)}
+            - {current.createdByName}, {formatDate(current.createdAt)}
           </span>
         )}
       </div>

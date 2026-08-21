@@ -108,6 +108,13 @@ export interface ActionResult {
   error?: string;
   code?: string;
   hint?: Record<string, unknown>;
+  /**
+   * Dan 2026-08-21: /leave replies carry this. true = the engine has no live
+   * hand holding the player (safe for the client to run the DB cashout now);
+   * false = a hand is running and the ENGINE will cash the player out at
+   * settlement (processLeavePending) — the client must NOT touch the stack.
+   */
+  immediate?: boolean;
 }
 
 export interface PlayerActions {
@@ -210,13 +217,13 @@ export async function submitAction(
 
       if (response.status === 429) {
         // Every retry exhausted. Never show the number.
-        return { success: false, error: 'The table is busy — please try again' };
+        return { success: false, error: 'The table is busy - please try again' };
       }
 
       return { success: false, error: `Server error (${response.status})` };
     }
     // Unreachable: the loop returns on every path.
-    return { success: false, error: 'The table is busy — please try again' };
+    return { success: false, error: 'The table is busy - please try again' };
   } catch (err: unknown) {
     reportError(err, 'GameServerAPI.submitAction');
     return { success: false, error: 'Server unreachable' };
@@ -329,7 +336,7 @@ export async function getServerStatus(): Promise<ServerStatus | null> {
 export async function sendHeartbeat(tableId: string): Promise<ActionResult> {
   // Circuit breaker: skip if game server is known-unreachable
   if (circuitBreaker.isOpen()) {
-    return { success: false, error: 'Circuit breaker open — server unreachable' };
+    return { success: false, error: 'Circuit breaker open - server unreachable' };
   }
   try {
     const headers = await getAuthHeaders();
@@ -362,7 +369,7 @@ export async function setPreAction(
 ): Promise<ActionResult> {
   // Circuit breaker: skip if game server is known-unreachable
   if (circuitBreaker.isOpen()) {
-    return { success: false, error: 'Circuit breaker open — server unreachable' };
+    return { success: false, error: 'Circuit breaker open - server unreachable' };
   }
   try {
     const headers = await getAuthHeaders();
@@ -377,7 +384,7 @@ export async function setPreAction(
       // report to Sentry; just return the error for the caller to handle.
       if (response.status === 400) {
         console.debug(
-          `[GameServerAPI] setPreAction rejected (HTTP 400) — player not in hand or not their turn`
+          `[GameServerAPI] setPreAction rejected (HTTP 400) - player not in hand or not their turn`
         );
         return { success: false, error: `Server error (${response.status})` };
       }

@@ -291,7 +291,7 @@ export default function TournamentResultsPage() {
   }, [selectedTournament?.id]);
 
   const formatDuration = (startedAt: string | null, endedAt: string | null) => {
-    if (!startedAt || !endedAt) return '—';
+    if (!startedAt || !endedAt) return '-';
     const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
     const mins = Math.floor(ms / 60000);
     if (mins < 60) return `${mins}m`;
@@ -301,7 +301,7 @@ export default function TournamentResultsPage() {
   };
 
   const getOrdinalPosition = (pos: number | null): string => {
-    if (!pos) return '—';
+    if (!pos) return '-';
     if (pos === 1) return '1st';
     if (pos === 2) return '2nd';
     if (pos === 3) return '3rd';
@@ -506,7 +506,7 @@ export default function TournamentResultsPage() {
               <div style={{ color: '#475569', fontSize: '11px' }}>
                 Buy-in: {formatAmount(t.buy_in_amount)} + {formatAmount(t.buy_in_fee)} · Entries:{' '}
                 {t.current_players} · Duration: {formatDuration(t.started_at, t.ended_at)} · Ended:{' '}
-                {t.ended_at ? new Date(t.ended_at).toLocaleDateString() : '—'}
+                {t.ended_at ? new Date(t.ended_at).toLocaleDateString() : '-'}
               </div>
 
               {/* Expanded Results — Tabs */}
@@ -656,7 +656,7 @@ export default function TournamentResultsPage() {
                                       fontWeight: r.prize > 0 ? 600 : 400,
                                     }}
                                   >
-                                    {r.prize > 0 ? `${formatAmount(r.prize)}` : '—'}
+                                    {r.prize > 0 ? `${formatAmount(r.prize)}` : '-'}
                                   </span>
                                 </div>
                               </div>

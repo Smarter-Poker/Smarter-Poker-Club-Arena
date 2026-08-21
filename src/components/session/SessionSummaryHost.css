@@ -44,18 +44,68 @@
   animation: sshRise 0.42s cubic-bezier(0.17, 0.84, 0.44, 1.03) both;
 }
 
-/* Result-led palette. This is what stops it reading as a generic grey card. */
+/* ═══════════════════════════════════════════════════════════════════════════
+   SMARTER.POKER PALETTE (Dan 2026-08-20: "it must follow the smarter.poker
+   color schema")
+   ───────────────────────────────────────────────────────────────────────────
+   The card was lime-green into yellow — a palette that appears nowhere else in
+   the product. The house colours are the ones the lobby, the nav and the club
+   card already use:
+
+     #1877f2  primary blue      brand, and the CTA everywhere else
+     #00d4ff  cyan              live/active accents, nav highlight
+     #ffb800  gold              money, club identity, jackpot
+     #ef4444  red               loss/danger
+
+   Money still reads instantly - a win is gold, a loss is red - but through the
+   brand's own gold rather than an off-palette green. Blue carries the chrome
+   and the button, which is what makes it look like the same application.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Cash: a win. Gold, because the result is MONEY. ── */
 .ssh-card--win {
-  --ssh-accent: #34d97b;
-  --ssh-accent-2: #ffd34d;
-  --ssh-glow: rgba(52, 217, 123, 0.22);
-  --ssh-edge: rgba(52, 217, 123, 0.34);
+  --ssh-accent: #ffb800;
+  --ssh-accent-2: #ffd76b;
+  --ssh-glow: rgba(255, 184, 0, 0.18);
+  --ssh-edge: rgba(255, 184, 0, 0.34);
+  --ssh-cta: linear-gradient(135deg, #1877f2, #0a5dc2);
+  --ssh-cta-ink: #ffffff;
 }
+
+/* ── Cash: a loss. ── */
 .ssh-card--loss {
-  --ssh-accent: #ff6b6b;
-  --ssh-accent-2: #ff9d7a;
-  --ssh-glow: rgba(255, 107, 107, 0.16);
-  --ssh-edge: rgba(255, 107, 107, 0.26);
+  --ssh-accent: #ef4444;
+  --ssh-accent-2: #fb8a8a;
+  --ssh-glow: rgba(239, 68, 68, 0.15);
+  --ssh-edge: rgba(239, 68, 68, 0.26);
+  --ssh-cta: linear-gradient(135deg, #1877f2, #0a5dc2);
+  --ssh-cta-ink: #ffffff;
+}
+
+/* ── Tournament. A DIFFERENT CARD, not a recoloured cash one.
+   Dan asked for "two completely different cards", and the distinction is real:
+   a cash session is measured in money, a tournament in placing. Cyan is the
+   product's "event" accent (the nav highlight, the live rails), so a player
+   can tell which of the two they are looking at before reading a word. ── */
+.ssh-card--tourney {
+  --ssh-accent: #00d4ff;
+  --ssh-accent-2: #4da3ff;
+  --ssh-glow: rgba(0, 212, 255, 0.16);
+  --ssh-edge: rgba(0, 212, 255, 0.32);
+  --ssh-cta: linear-gradient(135deg, #1877f2, #0a5dc2);
+  --ssh-cta-ink: #ffffff;
+}
+
+/* A tournament that CASHED still gets the gold MONEY LINE, so the one number
+   that pays rent is the brand's money colour on both card types.
+
+   Scoped to the money line only, deliberately. Overriding --ssh-accent-2 at
+   card level instead made the hero place value a cyan-to-gold gradient, which
+   reads GREEN through the middle — verified in a headless render, and green is
+   precisely the off-palette colour this whole pass exists to remove. The place
+   is an event stat and stays cyan-to-blue; only the prize is gold. */
+.ssh-card--tourney .ssh-hero__sub--money {
+  color: #ffb800;
 }
 
 /* ── The X Dan asked for ── */
@@ -219,8 +269,14 @@
   padding: 13px;
   border: none;
   border-radius: 12px;
-  background: linear-gradient(135deg, var(--ssh-accent), var(--ssh-accent-2));
-  color: #0d1017;
+  /* The CTA is brand BLUE on every variant, not the result colour.
+     It used to inherit --ssh-accent, so the primary action changed colour
+     depending on whether you had won — green on a win, red on a loss. A
+     button's colour should say "this is the action", not restate the outcome
+     the hero panel is already shouting. #1877f2 is the same primary the rest
+     of the product uses for its confirm buttons. */
+  background: var(--ssh-cta, linear-gradient(135deg, #1877f2, #0a5dc2));
+  color: var(--ssh-cta-ink, #ffffff);
   font-size: 0.92rem;
   font-weight: 800;
   letter-spacing: 0.04em;

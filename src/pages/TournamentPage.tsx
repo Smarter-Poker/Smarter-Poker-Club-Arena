@@ -597,7 +597,7 @@ export default function TournamentPage() {
             break;
 
           case 'break_ended':
-            toast.success('Break ended — play resumes');
+            toast.success('Break ended - play resumes');
             break;
 
           case 'hand_for_hand':
@@ -1007,7 +1007,7 @@ export default function TournamentPage() {
                   <span className="stat-value">
                     {selectedTournament.starting_chips
                       ? selectedTournament.starting_chips.toLocaleString()
-                      : '—'}
+                      : '-'}
                   </span>
                 </div>
                 <div className="stat">

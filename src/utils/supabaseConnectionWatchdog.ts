@@ -126,7 +126,7 @@ class SupabaseConnectionWatchdog {
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        console.warn('[Watchdog] Health check timed out — retrying');
+        console.warn('[Watchdog] Health check timed out - retrying');
       }
       this.markFailure();
       this.scheduleRetry();
@@ -234,7 +234,7 @@ class SupabaseConnectionWatchdog {
   }
 
   private handleOnline = (): void => {
-    console.debug('[Watchdog] Browser went online — checking health');
+    console.debug('[Watchdog] Browser went online - checking health');
     // FIX: Store timer ID so stop() can clear it. Previously this timer
     // was fire-and-forget and could fire after stop() was called.
     if (this.onlineCheckTimer) clearTimeout(this.onlineCheckTimer);

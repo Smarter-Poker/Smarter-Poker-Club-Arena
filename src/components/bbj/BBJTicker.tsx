@@ -172,7 +172,7 @@ export function BBJTicker({
                 <span className="bbj-ticker__hit-amount">${money(h.total_payout)}</span>
                 <span className="bbj-ticker__hit-who">
                   {h.loser_display_name || 'Player'}
-                  {h.loser_hand ? ` — ${h.loser_hand}` : ''}
+                  {h.loser_hand ? ` - ${h.loser_hand}` : ''}
                 </span>
                 <span className="bbj-ticker__hit-when">{timeAgo(h.awarded_at)}</span>
               </span>

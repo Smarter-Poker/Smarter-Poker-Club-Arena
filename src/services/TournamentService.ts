@@ -109,7 +109,7 @@ export interface SpinMultiplier {
 const TOURNAMENT_CREATE_ERRORS: Record<string, string> = {
   not_authenticated: 'You need to be signed in to create a tournament.',
   not_authorised:
-    'Only the owner or an admin can create tournaments here. A club inside a union does not create its own — the union creates them.',
+    'Only the owner or an admin can create tournaments here. A club inside a union does not create its own - the union creates them.',
   buy_in_must_not_be_negative: 'Buy-in cannot be negative.',
   max_players_must_be_positive: 'Set a maximum number of players. Zero means nobody can register.',
   blind_structure_required: 'Choose a blind structure.',
@@ -362,7 +362,7 @@ class TournamentService {
       }
     } catch (e: unknown) {
       console.warn(
-        '[TournamentService] Union XMTT lookup failed — returning club tournaments only:',
+        '[TournamentService] Union XMTT lookup failed - returning club tournaments only:',
         e
       );
     }
@@ -745,7 +745,7 @@ class TournamentService {
 
     // Verify cancellation reason: only cancel if < 3 players
     if ((tournament.current_players || 0) >= 3) {
-      throw new Error('Cannot cancel — tournament has 3 or more players registered');
+      throw new Error('Cannot cancel - tournament has 3 or more players registered');
     }
 
     // RAKE-AUDIT 2026-07-24: fetch the players BEFORE the atomic cancel — the
@@ -852,7 +852,7 @@ class TournamentService {
       );
       await this.cancelTournament(
         tournamentId,
-        `Only ${players.length} player(s) registered — minimum 3 required`
+        `Only ${players.length} player(s) registered - minimum 3 required`
       );
       throw new Error(
         `Tournament cancelled: only ${players.length} player(s) registered (minimum 3 required)`
@@ -1400,7 +1400,7 @@ class TournamentService {
     if (levelState.levelIndex < rebuyLevelCap) {
       return {
         allowed: false,
-        reason: 'Rebuy/re-entry period still active — add-on opens after it ends',
+        reason: 'Rebuy/re-entry period still active - add-on opens after it ends',
       };
     }
 

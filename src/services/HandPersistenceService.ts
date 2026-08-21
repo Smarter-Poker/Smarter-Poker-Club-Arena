@@ -189,7 +189,7 @@ export class HandPersistence {
     // With serialized events this should be rare, but handle it defensively.
     if (this.currentHand) {
       reportError(
-        `Previous hand #${this.currentHand.hand_number} still open — finalizing before hand #${handNumber}`,
+        `Previous hand #${this.currentHand.hand_number} still open - finalizing before hand #${handNumber}`,
         'HandPersistence.onHandStart.orphanedHand'
       );
       await this.onHandComplete(this.currentHand.hand_number, 0);

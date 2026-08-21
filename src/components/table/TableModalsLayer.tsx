@@ -702,7 +702,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
             );
             // Stay open. Closing here is what put players back in a queue they
             // believed they had left.
-            onWaitListError?.(res?.error || 'Could not leave the wait list — you are still queued.');
+            onWaitListError?.(res?.error || 'Could not leave the wait list - you are still queued.');
           });
         }}
       />

@@ -679,7 +679,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                   </select>
                   <span className={styles.helperText}>
                     {satelliteTargets.length === 0
-                      ? 'No upcoming tournaments to feed into — create one first.'
+                      ? 'No upcoming tournaments to feed into - create one first.'
                       : 'Winners earn a seat into this tournament.'}
                   </span>
                 </div>
@@ -764,7 +764,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                     <span className={styles.helperText}>
                       {parseInt(lateRegLevels) > 0
                         ? `Late reg, rebuys, and re-entries close after Level ${lateRegLevels}`
-                        : 'No late registration — registration closes when tournament starts'}
+                        : 'No late registration - registration closes when tournament starts'}
                     </span>
                   </div>
                 </div>
@@ -871,8 +871,8 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
               )}
               {format === 'mystery_bounty' && (
                 <span className={styles.helperText}>
-                  Each head is sealed at registration from a jackpot ladder — 60% x0.5, 25% x1,
-                  10% x2, 4% x3, 1% x13 of the bounty amount — and revealed on knockout. The
+                  Each head is sealed at registration from a jackpot ladder - 60% x0.5, 25% x1,
+                  10% x2, 4% x3, 1% x13 of the bounty amount - and revealed on knockout. The
                   ladder averages exactly 1x, so the bounty pool always funds the heads.
                 </span>
               )}
@@ -913,7 +913,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                   {!bountyAmount || parseFloat(bountyAmount) <= 0
                     ? 'Bounty amount is required and must be greater than 0'
                     : bountySplit && bountySplit.prize < 0
-                      ? `Bounty ${bountySplit.bounty} + ${bountySplit.rake} rake exceeds the ${bountySplit.buyIn} buy-in — nothing left for the prize pool`
+                      ? `Bounty ${bountySplit.bounty} + ${bountySplit.rake} rake exceeds the ${bountySplit.buyIn} buy-in - nothing left for the prize pool`
                       : 'Mystery max multiplier must be greater than min multiplier'}
                 </p>
               )}

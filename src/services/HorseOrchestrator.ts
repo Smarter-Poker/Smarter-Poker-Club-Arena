@@ -97,7 +97,7 @@ interface TableConfig {
 
 const MIDWAY_UNION = {
   name: 'Midway Union',
-  description: 'The premier poker union — all stakes, all games, all action.',
+  description: 'The premier poker union - all stakes, all games, all action.',
   ownerId: '47965354-0e56-43ef-931c-ddaab82af765', // Dan's user ID
   isPublic: true,
   settings: {
@@ -479,7 +479,7 @@ const PAYOUT_3_PLACES = [
 const TOURNAMENT_CONFIGS = [
   // ─── MONDAY: FREEROLL FIESTA ─────────────────────────────────────────────
   {
-    name: 'FREEROLL — Monday Kickoff (NLH)',
+    name: 'FREEROLL - Monday Kickoff (NLH)',
     type: 'mtt' as const,
     gameVariant: 'nlh',
     buyIn: 0,
@@ -495,7 +495,7 @@ const TOURNAMENT_CONFIGS = [
     startHour: 19,
   },
   {
-    name: 'FREEROLL — PLO4 Welcome',
+    name: 'FREEROLL - PLO4 Welcome',
     type: 'mtt' as const,
     gameVariant: 'plo4',
     buyIn: 0,
@@ -513,7 +513,7 @@ const TOURNAMENT_CONFIGS = [
 
   // ─── TUESDAY: FREEZEOUT FEST ─────────────────────────────────────────────
   {
-    name: '5 Chip Freezeout — NLH Deep Stack',
+    name: '5 Chip Freezeout - NLH Deep Stack',
     type: 'mtt' as const,
     gameVariant: 'nlh',
     buyIn: 5,
@@ -529,7 +529,7 @@ const TOURNAMENT_CONFIGS = [
     startHour: 19,
   },
   {
-    name: '10 Chip Freezeout — PLO5 Action',
+    name: '10 Chip Freezeout - PLO5 Action',
     type: 'mtt' as const,
     gameVariant: 'plo5',
     buyIn: 10,
@@ -547,7 +547,7 @@ const TOURNAMENT_CONFIGS = [
 
   // ─── WEDNESDAY: BOUNTY BONANZA ───────────────────────────────────────────
   {
-    name: '10 Chip Bounty Hunter — NLH (5 Chip Bounty)',
+    name: '10 Chip Bounty Hunter - NLH (5 Chip Bounty)',
     type: 'bounty' as const,
     gameVariant: 'nlh',
     buyIn: 10,
@@ -563,7 +563,7 @@ const TOURNAMENT_CONFIGS = [
     startHour: 19,
   },
   {
-    name: '25 Chip Bounty Hunter — PLO4 (12 Chip Bounty)',
+    name: '25 Chip Bounty Hunter - PLO4 (12 Chip Bounty)',
     type: 'bounty' as const,
     gameVariant: 'plo4',
     buyIn: 25,
@@ -581,7 +581,7 @@ const TOURNAMENT_CONFIGS = [
 
   // ─── THURSDAY: PKO (PROGRESSIVE KNOCKOUT) ────────────────────────────────
   {
-    name: '15 Chip PKO — NLH Progressive Bounty',
+    name: '15 Chip PKO - NLH Progressive Bounty',
     type: 'progressive_bounty' as const,
     gameVariant: 'nlh',
     buyIn: 15,
@@ -597,7 +597,7 @@ const TOURNAMENT_CONFIGS = [
     startHour: 19,
   },
   {
-    name: '20 Chip PKO — PLO8 Hi-Lo Bounty',
+    name: '20 Chip PKO - PLO8 Hi-Lo Bounty',
     type: 'progressive_bounty' as const,
     gameVariant: 'plo8',
     buyIn: 20,
@@ -615,7 +615,7 @@ const TOURNAMENT_CONFIGS = [
 
   // ─── FRIDAY: MYSTERY BOUNTY MADNESS ──────────────────────────────────────
   {
-    name: '25 Chip Mystery Bounty — NLH (Random 5-500 Chip Bounties!)',
+    name: '25 Chip Mystery Bounty - NLH (Random 5-500 Chip Bounties!)',
     type: 'mystery_bounty' as const,
     gameVariant: 'nlh',
     buyIn: 25,
@@ -632,7 +632,7 @@ const TOURNAMENT_CONFIGS = [
   },
   // ─── SATURDAY: TURBO MARATHON + BIG GUARANTEE ────────────────────────────
   {
-    name: '50 Chip Saturday Major — NLH 5K GTD',
+    name: '50 Chip Saturday Major - NLH 5K GTD',
     type: 'mtt' as const,
     gameVariant: 'nlh',
     buyIn: 50,
@@ -648,7 +648,7 @@ const TOURNAMENT_CONFIGS = [
     startHour: 18,
   },
   {
-    name: '5 Chip Turbo Bounty — NLH Fast Action',
+    name: '5 Chip Turbo Bounty - NLH Fast Action',
     type: 'bounty' as const,
     gameVariant: 'nlh',
     buyIn: 5,
@@ -664,7 +664,7 @@ const TOURNAMENT_CONFIGS = [
     startHour: 20,
   },
   {
-    name: '10 Chip Turbo PLO4 — Saturday Night Action',
+    name: '10 Chip Turbo PLO4 - Saturday Night Action',
     type: 'mtt' as const,
     gameVariant: 'plo4',
     buyIn: 10,
@@ -682,7 +682,7 @@ const TOURNAMENT_CONFIGS = [
 
   // ─── SUNDAY: CHAMPIONSHIP SUNDAY ─────────────────────────────────────────
   {
-    name: '100 Chip Sunday Championship — NLH 10K GTD',
+    name: '100 Chip Sunday Championship - NLH 10K GTD',
     type: 'mtt' as const,
     gameVariant: 'nlh',
     buyIn: 100,
@@ -698,7 +698,7 @@ const TOURNAMENT_CONFIGS = [
     startHour: 17,
   },
   {
-    name: '50 Chip Sunday PLO4 Championship — 3K GTD',
+    name: '50 Chip Sunday PLO4 Championship - 3K GTD',
     type: 'mtt' as const,
     gameVariant: 'plo4',
     buyIn: 50,
@@ -714,7 +714,7 @@ const TOURNAMENT_CONFIGS = [
     startHour: 19,
   },
   {
-    name: '25 Chip PKO — Sunday Night Showdown',
+    name: '25 Chip PKO - Sunday Night Showdown',
     type: 'progressive_bounty' as const,
     gameVariant: 'nlh',
     buyIn: 25,
@@ -730,7 +730,7 @@ const TOURNAMENT_CONFIGS = [
     startHour: 21,
   },
   {
-    name: 'FREEROLL — Sunday Night Freebie (NLH)',
+    name: 'FREEROLL - Sunday Night Freebie (NLH)',
     type: 'mtt' as const,
     gameVariant: 'nlh',
     buyIn: 0,
@@ -748,7 +748,7 @@ const TOURNAMENT_CONFIGS = [
 
   // ─── DAILY RECURRING (EVERY DAY) ─────────────────────────────────────────
   {
-    name: 'Daily Freeroll — NLH (Every Day)',
+    name: 'Daily Freeroll - NLH (Every Day)',
     type: 'mtt' as const,
     gameVariant: 'nlh',
     buyIn: 0,
@@ -764,7 +764,7 @@ const TOURNAMENT_CONFIGS = [
     startHour: 12,
   },
   {
-    name: '10 Chip Daily Grinder — NLH 250 GTD',
+    name: '10 Chip Daily Grinder - NLH 250 GTD',
     type: 'mtt' as const,
     gameVariant: 'nlh',
     buyIn: 10,
@@ -1108,7 +1108,7 @@ class HorseOrchestrator {
     }
 
     if (!existingUnion) {
-      console.debug('[Orchestrator] Midway Union not found — creating...');
+      console.debug('[Orchestrator] Midway Union not found - creating...');
       const { error: insertErr } = await supabase.from('unions').insert({
         id: this.unionId,
         name: MIDWAY_UNION.name,
@@ -1490,7 +1490,7 @@ class HorseOrchestrator {
         .eq('id', tournament.id);
 
       console.debug(
-        `[Orchestrator] Tournament "${config.name}" created: ${tournament.id} — ${registered} horses, ${prizePool} prize pool (GTD: ${config.guarantee || 0})`
+        `[Orchestrator] Tournament "${config.name}" created: ${tournament.id} - ${registered} horses, ${prizePool} prize pool (GTD: ${config.guarantee || 0})`
       );
       return { tournamentId: tournament.id, registered };
     } catch (err: any) {
@@ -1722,7 +1722,7 @@ class HorseOrchestrator {
         .eq('id', spin.id);
 
       console.debug(
-        `[Orchestrator] Spin "${config.name}" created with ${registered} horses — multiplier drawn at start`
+        `[Orchestrator] Spin "${config.name}" created with ${registered} horses - multiplier drawn at start`
       );
       // multiplier: 0 is honest — it has not been drawn yet. Callers that
       // want the drawn value read spin_multiplier off the row after start.
@@ -1764,7 +1764,7 @@ class HorseOrchestrator {
     spinHorses: number;
   }> {
     console.debug('═══════════════════════════════════════════════════════════════');
-    console.debug('[Orchestrator] LAUNCHING EVERYTHING — FULL FLEET DEPLOYMENT');
+    console.debug('[Orchestrator] LAUNCHING EVERYTHING - FULL FLEET DEPLOYMENT');
     console.debug('═══════════════════════════════════════════════════════════════');
 
     // 1. Cash games + today's tournaments (launch() now includes launchTodaysTournaments())
@@ -2336,7 +2336,7 @@ class HorseOrchestrator {
     // admin action, not an autonomous loop. (Persona rotation, if still desired, should
     // be reimplemented server-side.)
     console.debug(
-      '[Orchestrator] Allocation loop is server-authoritative — no client-side loop started'
+      '[Orchestrator] Allocation loop is server-authoritative - no client-side loop started'
     );
   }
 
@@ -2620,7 +2620,7 @@ export type { OrchestratorTable, OrchestratorStats, TableConfig };
 export async function ensureMidwayUnionSetup(): Promise<boolean> {
   try {
     await horseOrchestrator.ensureUnionSetup();
-    console.debug('[MidwayUnion] Setup verified — union exists, both clubs attached');
+    console.debug('[MidwayUnion] Setup verified - union exists, both clubs attached');
     return true;
   } catch (err) {
     console.error('[MidwayUnion] Setup failed:', err);

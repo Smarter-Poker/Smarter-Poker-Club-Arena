@@ -202,7 +202,7 @@ export default function AgentPromoPanel({
     try {
       const lockResult = await checkSettlementLock(clubId);
       if (lockResult.locked) {
-        showToast('Settlement in progress — distributions frozen', 'error');
+        showToast('Settlement in progress - distributions frozen', 'error');
         if (isMounted.current) setDistributing(false);
         return;
       }
@@ -417,7 +417,7 @@ export default function AgentPromoPanel({
                 {downline.map((p) => (
                   <option key={p.user_id} value={p.user_id}>
                     {p.profiles?.display_name || p.profiles?.username || p.user_id.slice(0, 8)}
-                    {' — '}Chips: {(p.chip_balance || 0).toLocaleString()}
+                    {' - '}Chips: {(p.chip_balance || 0).toLocaleString()}
                   </option>
                 ))}
               </select>

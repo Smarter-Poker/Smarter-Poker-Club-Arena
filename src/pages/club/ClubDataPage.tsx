@@ -157,6 +157,7 @@ export default function ClubDataPage() {
   const [showInvoiceDetail, setShowInvoiceDetail] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exportNote, setExportNote] = useState<string | null>(null);
 
   // guards every async write so nothing lands in an unmounted tree
   const cancelledRef = useRef(false);
@@ -185,10 +186,25 @@ export default function ClubDataPage() {
     if (!clubParam) { setClubUuid(null); return; }
     if (isUUID(clubParam)) { setClubUuid(clubParam); return; }
     resolveClubUUID(clubParam)
-      .then((uuid) => { if (!cancelled) setClubUuid(uuid || null); })
+      .then((uuid) => {
+        if (cancelled) return;
+        if (uuid) {
+          setClubUuid(uuid);
+          return;
+        }
+        // A club code that resolves to nothing used to leave clubUuid null with
+        // no error set, and load() bails before its try/finally - so `loading`
+        // stayed true and the page showed skeleton rows forever with no way
+        // out. Same failure shape as the messenger's "Loading your clubs...".
+        setClubUuid(null);
+        setError('Club not found.');
+        setLoading(false);
+      })
       .catch((err) => {
         reportError(err, 'ClubDataPage.resolve_club');
-        if (!cancelled) setError('Club not found');
+        if (cancelled) return;
+        setError('Club not found.');
+        setLoading(false);
       });
     return () => { cancelled = true; };
   }, [clubParam]);
@@ -267,16 +283,44 @@ export default function ClubDataPage() {
     setEndDate(next > today ? today : next);
   }, [endDate, preset]);
 
-  const exportCsv = useCallback(() => {
-    if (!snapshot?.rows?.length) return;
-    const blob = new Blob([rowsToCsv(snapshot.rows)], { type: 'text/csv;charset=utf-8;' });
+  // The screen holds one page of rows. Exporting that silently would hand
+  // someone a CSV of 200 games labelled as the period's data when the period
+  // has thousands - on a financial page that is not acceptable, so the export
+  // re-fetches at the RPC's ceiling and says so when even that is not enough.
+  const exportCsv = useCallback(async () => {
+    if (!clubUuid || !snapshot) return;
+    setExportNote(null);
+    let rows = snapshot.rows;
+    try {
+      if (snapshot.row_count > rows.length) {
+        const { data, error: exportError } = await supabase.rpc('ca_club_data_snapshot', {
+          p_club_id: clubUuid,
+          p_start: startDate,
+          p_end: endDate,
+          p_game: game,
+          p_stakes: stakes,
+          p_search: search || null,
+          p_limit: 500,
+        });
+        if (!exportError && data) rows = (data as Snapshot).rows;
+      }
+    } catch (e) {
+      reportError(e, 'ClubDataPage.export_refetch');
+    }
+    if (!rows.length) return;
+    if (snapshot.row_count > rows.length) {
+      setExportNote(
+        `Exported the ${rows.length} most recent of ${snapshot.row_count} games. Narrow the date range to export the rest.`
+      );
+    }
+    const blob = new Blob([rowsToCsv(rows)], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `club_data_${startDate}_${endDate}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [snapshot, startDate, endDate]);
+  }, [clubUuid, snapshot, startDate, endDate, game, stakes, search]);
 
   const latestInvoice = invoices[0] || null;
   const summary = snapshot?.summary;
@@ -306,7 +350,7 @@ export default function ClubDataPage() {
         <button
           type="button"
           className={styles.headerBtn}
-          onClick={exportCsv}
+          onClick={() => { void exportCsv(); }}
           disabled={!snapshot?.rows?.length}
           aria-label="Export as CSV"
           title="Export as CSV"
@@ -471,7 +515,7 @@ export default function ClubDataPage() {
       </div>
 
       <div className={styles.list}>
-        {loading && !snapshot && (
+        {loading && !snapshot && !error && (
           <>
             <div className={styles.skeletonRow} />
             <div className={styles.skeletonRow} />
@@ -538,6 +582,10 @@ export default function ClubDataPage() {
           );
         })}
       </div>
+
+      {exportNote && (
+        <div className={styles.footNote} role="status">{exportNote}</div>
+      )}
 
       {snapshot && (
         <div className={styles.footNote}>

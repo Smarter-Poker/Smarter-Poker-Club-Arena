@@ -921,3 +921,71 @@
 }
 .freezeInfo {
 }
+
+.rerollButton {
+  margin-top: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #a0aec0;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+.rerollButton:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.cardCompleted {
+  box-shadow:
+    0 0 15px rgba(0, 255, 255, 0.2),
+    inset 0 0 10px rgba(0, 255, 255, 0.1);
+  border-color: rgba(0, 255, 255, 0.3);
+}
+.cardCelebrating {
+  animation: glowPulse 1.5s infinite;
+}
+@keyframes glowPulse {
+  0% {
+    box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+  }
+  50% {
+    box-shadow:
+      0 0 25px rgba(0, 255, 255, 0.6),
+      inset 0 0 15px rgba(0, 255, 255, 0.4);
+  }
+  100% {
+    box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+  }
+}
+
+.milestoneTracker {
+  margin-top: 8px;
+  width: 100%;
+}
+.milestoneLabels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #a0aec0;
+  margin-bottom: 4px;
+}
+.milestoneBar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+.milestoneFill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff7b00, #ffea00);
+  border-radius: 3px;
+  box-shadow: 0 0 10px rgba(255, 123, 0, 0.5);
+}

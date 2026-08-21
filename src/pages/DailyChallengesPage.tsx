@@ -129,12 +129,14 @@ function ChallengeCard({
   claiming,
   celebrating,
   onClaim,
+  onReroll,
 }: {
   challenge: TieredChallenge;
   tier: Tier;
   claiming: boolean;
   celebrating: boolean;
   onClaim: (c: TieredChallenge) => void;
+  onReroll?: (c: TieredChallenge) => void;
 }) {
   const c = challenge.challenge;
   const pct = c.requirement > 0 ? Math.min((challenge.progress / c.requirement) * 100, 100) : 0;
@@ -182,12 +184,31 @@ function ChallengeCard({
       </div>
 
       <div className={styles.progressTrack} aria-hidden="true">
-        <div className={styles.progressFill} style={{ width: `${pct}%` }} />
+        <motion.div
+          className={styles.progressFill}
+          initial={{ width: 0 }}
+          animate={{ width: `${pct}%` }}
+          transition={{ duration: 1, ease: 'easeOut' }}
+        />
         <span className={styles.progressText}>
           {Math.min(challenge.progress, c.requirement).toLocaleString()} /{' '}
           {c.requirement.toLocaleString()}
         </span>
       </div>
+
+      {!done && onReroll && (
+        <button
+          className={styles.rerollButton}
+          onClick={(e) => {
+            e.stopPropagation();
+            onReroll(challenge);
+          }}
+          title="Swap this challenge for a new one"
+        >
+          <span style={{ fontSize: 16, marginRight: 6 }}>🎲</span>
+          Reroll (10 💎)
+        </button>
+      )}
     </div>
   );
 }
@@ -491,6 +512,26 @@ export default function DailyChallengesPage() {
     }
   }, [userId, buyingFreeze, stats?.totalDiamondsEarned, toast, loadChallenges]);
 
+  const handleReroll = useCallback(
+    async (challenge: TieredUserChallenge) => {
+      if (!userId) return;
+      if ((stats?.totalDiamondsEarned || 0) < 10) {
+        toast.error('Not enough diamonds (10 💎 required).');
+        return;
+      }
+      const confirmSwap = window.confirm('Pay 10 Diamonds to swap this challenge for a new one?');
+      if (!confirmSwap) return;
+
+      // Mocking for UX: deduct 10 diamonds and simulate a reload
+      setStats((prev) =>
+        prev ? { ...prev, totalDiamondsEarned: prev.totalDiamondsEarned - 10 } : prev
+      );
+      toast.success('Challenge swapped! (Mocked)');
+      setTimeout(() => loadChallenges(userId, true), 800);
+    },
+    [userId, stats, loadChallenges, toast]
+  );
+
   const handleClaimAll = useCallback(async () => {
     if (!userId || claimingAll) return;
     const ready = challenges.filter((c) => c.completed && !c.claimed);
@@ -652,10 +693,25 @@ export default function DailyChallengesPage() {
             <span className={styles.streakCount}>
               {(streak?.streak ?? stats?.currentStreak ?? 0).toLocaleString()} Day Streak
             </span>
-            <span className={styles.streakDesc}>
-              Play Every Day To Earn Streak Bonuses. Next Reward At{' '}
-              {stats?.nextMilestone.toLocaleString()} Days.
-            </span>
+            <span className={styles.streakDesc}>Play Every Day To Earn Streak Bonuses.</span>
+            <div className={styles.milestoneTracker}>
+              <div className={styles.milestoneLabels}>
+                <span>
+                  Current: {(streak?.streak ?? stats?.currentStreak ?? 0).toLocaleString()}
+                </span>
+                <span>Next: {stats?.nextMilestone.toLocaleString()}</span>
+              </div>
+              <div className={styles.milestoneBar}>
+                <motion.div
+                  className={styles.milestoneFill}
+                  initial={{ width: 0 }}
+                  animate={{
+                    width: `${Math.min((((streak?.streak ?? stats?.currentStreak ?? 0) % 7) / 7) * 100, 100)}%`,
+                  }}
+                  transition={{ duration: 1.5, ease: 'easeOut' }}
+                />
+              </div>
+            </div>
           </div>
         </div>
         <div className={styles.streakRight}>
@@ -777,6 +833,7 @@ export default function DailyChallengesPage() {
                   claiming={claimingIds.has(c.id)}
                   celebrating={celebratingIds.has(c.id)}
                   onClaim={handleClaim}
+                  onReroll={handleReroll}
                 />
               </motion.div>
             ))}

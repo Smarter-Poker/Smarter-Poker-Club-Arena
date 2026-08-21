@@ -221,6 +221,21 @@ if [ -f scripts/ci/check-title-case.mjs ]; then
   fi
 fi
 
+# Protected work must not be orphaned from main.
+# Two of the 2026-08-21 throwables regressions were stale bundles (now covered
+# by the World Hub provenance gate). The third was a commit that stopped being
+# an ancestor of main because history was rewritten over it, and it passed
+# every content-level guard: the source file, its imports and its registry
+# entry vanished together, so the resulting main was self-consistent.
+# The non-fast-forward check above stops the obvious force-push; this catches
+# the work going missing by any route, including a merge resolved stale-side.
+if [ -f scripts/ci/check-no-orphaned-work.mjs ]; then
+  if ! node scripts/ci/check-no-orphaned-work.mjs; then
+    echo "[club-arena pre-push] BLOCKED: protected work has been orphaned from main"
+    FAIL=1
+  fi
+fi
+
 if [ -f scripts/ci/check-ui-text.mjs ]; then
   if ! node scripts/ci/check-ui-text.mjs; then
     FAIL=1

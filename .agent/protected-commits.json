@@ -1,0 +1,41 @@
+{
+  "$comment": [
+    "Commits whose work must remain reachable from main.",
+    "",
+    "Checked by scripts/ci/check-no-orphaned-work.mjs. Three throwables",
+    "regressions in one day produced this file. The first two were stale",
+    "bundles, now covered by the provenance and feature-marker gates. The",
+    "third was different: a commit stopped being an ancestor of main because",
+    "history was rewritten over it, and because its source, its imports AND",
+    "its registry entry all vanished together, the resulting main was",
+    "internally consistent and every content-level guard passed.",
+    "",
+    "Guarding content is not enough when commits can silently stop existing.",
+    "",
+    "ADD an entry after landing work you cannot afford to lose.",
+    "REMOVE one only as a deliberate, explained act in the same commit that",
+    "supersedes the work."
+  ],
+  "commits": [
+    {
+      "sha": "9860a9c",
+      "note": "guards: provenance stamp, protected-features registry, generic source guard"
+    },
+    {
+      "sha": "43645f9",
+      "note": "throwables: true alpha cutout (kills the black background box)"
+    },
+    {
+      "sha": "1b4ea56",
+      "note": "throwables: VIP-first tabs, 3-across grid, background-agnostic keying"
+    },
+    {
+      "sha": "77c0e8c",
+      "note": "throwables: enforced 3.5-5s timing, Food tab, sports moves, Card Shark removed"
+    },
+    {
+      "sha": "db61c77",
+      "note": "throwables: voices, impact captions, 30+ per-item signatures (ORPHANED ONCE - restored)"
+    }
+  ]
+}

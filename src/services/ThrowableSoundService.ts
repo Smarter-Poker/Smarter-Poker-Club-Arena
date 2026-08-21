@@ -322,8 +322,10 @@ class ThrowableSoundServiceClass {
       );
     },
     weep: () => {
-      this.tone(500, 0.45, 0.16, 'sine', 260);
+      this.tone(500, 0.45, 0.16, 'sine', 260); // descending sob
       this.noise(0.3, 0.05, 2500, 'highpass', 0.1);
+      this.noise(0.06, 0.1, 1800, 'bandpass', 0.5, 2); // sniff
+      this.tone(420, 0.2, 0.08, 'sine', 300, 0.58); // trailing whimper
     },
     growl: () => {
       this.tone(90, 0.35, 0.28, 'sawtooth', 60);
@@ -337,10 +339,15 @@ class ThrowableSoundServiceClass {
       this.tone(587, 0.4, 0.12, 'sine', undefined, 0.18);
     },
     kiss: () => {
-      this.noise(0.08, 0.14, 3000, 'bandpass', 0, 2);
+      this.noise(0.08, 0.14, 3000, 'bandpass', 0, 2); // mwah
       this.run([880, 1175, 1480], 0.14, 0.14, 'sine', 0.05);
+      this.noise(0.06, 0.09, 3200, 'bandpass', 0.24, 2); // ...mwah
+      this.tone(1480, 0.12, 0.08, 'sine', undefined, 0.28);
     },
-    twinkle: () => this.run([1047, 1319, 1568, 2093], 0.1, 0.14, 'triangle', 0.05),
+    twinkle: () => {
+      this.run([1047, 1319, 1568, 2093], 0.1, 0.14, 'triangle', 0.05);
+      this.noiseSweep(0.4, 0.04, 6000, 9000, 'highpass', 0.05, 0.5); // stardust shimmer
+    },
 
     // ── Throws ──
     splat_wet: () => {
@@ -383,21 +390,25 @@ class ThrowableSoundServiceClass {
       this.tone(1200, 0.25, 0.08, 'sine', 500);
     },
     punch: () => {
+      this.noise(0.015, 0.32, 5000, 'highpass'); // whip-crack transient
       this.thump(110, 0.15, 0.35);
       this.noise(0.06, 0.3, 1500, 'lowpass');
       this.tone(65, 0.25, 0.25, 'sine', 45, 0.02);
+      this.tone(140, 0.18, 0.1, 'sawtooth', 80, 0.1); // winded grunt
     },
     anvil_clang: () => {
       this.tone(220, 0.5, 0.3, 'square', 210);
       this.tone(554, 0.4, 0.15, 'square', 540);
       this.thump(70, 0.3, 0.35);
       this.noise(0.08, 0.3, 3000, 'highpass');
+      this.noise(0.55, 0.14, 160, 'lowpass', 0.12); // the floor groans
     },
     metal_crash: () => {
       this.noise(0.35, 0.3, 2500, 'bandpass', 0, 0.6);
       this.tone(310, 0.3, 0.18, 'square', 290);
       this.thump(90, 0.2, 0.25);
-      this.noise(0.2, 0.15, 1800, 'bandpass', 0.18, 0.7); // lid wobble
+      this.noise(0.2, 0.15, 1800, 'bandpass', 0.18, 0.7); // lid clatter
+      this.warble(420, 22, 180, 0.45, 0.08, 0.3); // lid wobbling to rest
     },
     snow_poof: () => {
       this.noise(0.25, 0.2, 1200, 'lowpass');
@@ -419,22 +430,25 @@ class ThrowableSoundServiceClass {
       this.noise(0.04, 0.1, 2000, 'highpass', 0.01); // squeak
     },
     football_hit: () => {
+      this.noiseSweep(0.12, 0.1, 1600, 700, 'bandpass', 0, 1.2); // spiral whoosh in
       this.thump(130, 0.15, 0.28);
       this.noise(0.08, 0.2, 1000, 'lowpass');
       this.tone(2400, 0.3, 0.06, 'sine', undefined, 0.2); // ref whistle hint
     },
     tennis_pop: () => {
-      this.noise(0.03, 0.25, 2500, 'bandpass', 0, 2);
+      this.noise(0.03, 0.25, 2500, 'bandpass', 0, 2); // thwock
       this.thump(300, 0.08, 0.2);
-      this.thump(300, 0.05, 0.1, 0.15);
+      this.thump(300, 0.05, 0.1, 0.15); // second skip
+      this.tone(2200, 0.07, 0.08, 'sine', 2900, 0.2); // shoe squeak on the line
     },
     bowling_strike: () => {
-      this.thump(80, 0.25, 0.35);
-      // pin scatter — staggered woodblock clicks
-      [0.08, 0.13, 0.17, 0.22, 0.28, 0.33].forEach((d, i) =>
-        this.tone(700 + i * 120, 0.05, 0.12, 'square', undefined, d)
+      this.noiseSweep(0.14, 0.16, 200, 420, 'lowpass', 0, 0.7); // the roll arrives
+      this.thump(80, 0.25, 0.35, 0.1);
+      // pin scatter: staggered woodblock clicks, nine pins deep
+      [0.18, 0.22, 0.25, 0.29, 0.32, 0.36, 0.41, 0.47, 0.54].forEach((d, i) =>
+        this.tone(650 + (i % 5) * 130, 0.05, 0.12, 'square', undefined, d)
       );
-      this.noise(0.3, 0.15, 1200, 'lowpass', 0.06);
+      this.noise(0.3, 0.15, 1200, 'lowpass', 0.16);
     },
     lucky_clang: () => {
       this.tone(660, 0.3, 0.2, 'square', 650);
@@ -446,6 +460,8 @@ class ThrowableSoundServiceClass {
         this.tone(900 + Math.random() * 500, 0.03, 0.14, 'square', undefined, d)
       );
       this.thump(250, 0.08, 0.12, 0.24);
+      this.tone(1100, 0.025, 0.1, 'square', undefined, 0.36); // settle...
+      this.tone(950, 0.03, 0.08, 'square', undefined, 0.42); // ...and rest
     },
     mystic: () => {
       this.warble(440, 6, 30, 0.5, 0.12);
@@ -507,6 +523,10 @@ class ThrowableSoundServiceClass {
       this.thump(55, 0.5, 0.4); // sub BOOM (fuse already burned during flight)
       this.noise(0.4, 0.35, 700, 'lowpass');
       this.noise(0.6, 0.12, 250, 'lowpass', 0.18); // rumble tail
+      // debris pattering back down
+      [0.45, 0.53, 0.6, 0.68, 0.77].forEach((d) =>
+        this.noise(0.025, 0.08, 1200 + Math.random() * 800, 'bandpass', d, 2)
+      );
     },
     rocket_boom: () => {
       this.thump(60, 0.45, 0.38);
@@ -515,6 +535,7 @@ class ThrowableSoundServiceClass {
     },
     ufo_warble: () => {
       this.warble(700, 9, 250, 0.55, 0.14);
+      this.warble(65, 9, 12, 0.55, 0.16); // sub-bass engine throb underneath
       this.tone(1400, 0.2, 0.1, 'sine', 300, 0.4); // beam-down
     },
     alien_blip: () => {
@@ -525,10 +546,12 @@ class ThrowableSoundServiceClass {
       this.tone(200, 0.12, 0.2, 'square', 100);
       this.warble(300, 30, 200, 0.3, 0.12, 0.1);
       this.noise(0.08, 0.2, 3000, 'highpass', 0.12); // spark
+      this.tone(880, 0.4, 0.09, 'sawtooth', 110, 0.4); // servo powering down
     },
     ghost_woo: () => {
       this.warble(600, 4, 80, 0.7, 0.13);
       this.tone(900, 0.6, 0.06, 'sine', 400, 0.1);
+      this.noiseSweep(0.6, 0.05, 3000, 1200, 'bandpass', 0.05, 0.5); // breathy whisper
     },
     doom_rattle: () => {
       // detuned low dyad -- a horror-score shiver under the bones
@@ -562,7 +585,8 @@ class ThrowableSoundServiceClass {
     },
     cluck: () => {
       this.run([900, 700, 1000, 750], 0.06, 0.16, 'square', 0.09);
-      this.noise(0.15, 0.08, 2500, 'bandpass', 0.3, 1.5); // feather flutter
+      this.tone(750, 0.16, 0.14, 'square', 1350, 0.36); // indignant SQUAWK
+      this.noise(0.15, 0.08, 2500, 'bandpass', 0.42, 1.5); // feather flutter
     },
     squeak: () => {
       this.tone(1400, 0.12, 0.22, 'sine', 2000);

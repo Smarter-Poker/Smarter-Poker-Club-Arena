@@ -97,6 +97,63 @@ const DURATION_OVERRIDES: Record<string, number> = {
  */
 const TARGET_TELEGRAPH = new Set(['anvil', 'lightning_bolt', 'bomb']);
 
+/**
+ * Per-item IMPACT durations (ms, default 820). Presentation-layer tuning:
+ * a giggle needs a full second to rock through, the magic 8-ball's answer
+ * must be READABLE, the card flick is over in a snap. Signature CSS reads
+ * the value through --impact-dur so keyframes stretch with it.
+ */
+const IMPACT_MS: Record<string, number> = {
+  laughing_emoji: 1000,
+  cool_sunglasses_emoji: 1150,
+  heart: 950,
+  thumbs_up: 950,
+  thumbs_down: 950,
+  banana_peel: 950,
+  cake: 900,
+  boxing_glove: 900,
+  basketball: 950,
+  dice: 900,
+  magic_8_ball: 1250,
+  bowling_ball: 950,
+  champagne: 950,
+  cash_stack: 950,
+  alien: 950,
+  ghost: 1000,
+  doge: 950,
+  shark: 950,
+  mouse_card: 700,
+};
+
+/**
+ * Per-item LINGER durations (ms, default 2500) for items with linger: true.
+ * A bomb's scorch outlives a splash of water; poop... lingers.
+ */
+const LINGER_MS: Record<string, number> = {
+  tomato: 3400,
+  cracked_egg: 3000,
+  pizza_slice: 3000,
+  cake: 3200,
+  poop: 4200,
+  water_gun: 2200,
+  anvil: 3000,
+  trash_can: 2800,
+  snowman: 2800,
+  beer: 2500,
+  champagne: 2600,
+  coffee: 2400,
+  bomb: 4500,
+  rocket: 4000,
+};
+
+/** Per-item particle-count overrides (default comes from the impact profile). */
+const PARTICLE_COUNT: Record<string, number> = {
+  cash_stack: 20, // it should RAIN money
+  fireworks: 22,
+  chicken: 12, // feather burst
+  snowman: 14,
+};
+
 /** Normalized stereo position (-1..1) for a screen x coordinate. */
 function panForX(x: number): number {
   const w = typeof window !== 'undefined' ? window.innerWidth : 0;
@@ -139,6 +196,8 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
   const physics = DURATION_OVERRIDES[t.id]
     ? { ...basePhysics, duration: DURATION_OVERRIDES[t.id] }
     : basePhysics;
+  const impactMs = IMPACT_MS[t.id] || IMPACT_DURATION;
+  const lingerMs = LINGER_MS[t.id] || LINGER_DURATION;
   const isHeavy = t.weight === 'heavy';
   const flightSize = FLIGHT_SIZE[t.weight] || 48;
   const impactSize = IMPACT_SIZE[t.weight] || 64;
@@ -214,8 +273,8 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
       }
     });
 
-    // IMPACT -> LINGER or DONE
-    at(WINDUP_DURATION + physics.duration + IMPACT_DURATION, () => {
+    // IMPACT -> LINGER or DONE (per-item impact pace)
+    at(WINDUP_DURATION + physics.duration + impactMs, () => {
       if (t.linger) {
         setPhase('linger');
       } else {
@@ -224,9 +283,9 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
       }
     });
 
-    // LINGER -> DONE
+    // LINGER -> DONE (per-item residue lifetime)
     if (t.linger) {
-      at(WINDUP_DURATION + physics.duration + IMPACT_DURATION + LINGER_DURATION, () => {
+      at(WINDUP_DURATION + physics.duration + impactMs + lingerMs, () => {
         setPhase('done');
         onCompleteRef.current();
       });
@@ -238,7 +297,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
 
   // Randomized particle scatter, stable per event
   const particles = useMemo<ParticleSpec[]>(() => {
-    const count = PARTICLES[t.impact] ?? 10;
+    const count = PARTICLE_COUNT[t.id] ?? PARTICLES[t.impact] ?? 10;
     return Array.from({ length: count }, (_, i) => ({
       angle: (360 / count) * i + (Math.random() * 24 - 12),
       dist: 34 + Math.random() * 46,
@@ -325,7 +384,13 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
       {phase === 'impact' && (
         <div
           className={`throw-animation__impact throw-animation__impact--${t.impact}`}
-          style={{ left: toPos.x, top: toPos.y }}
+          style={
+            {
+              left: toPos.x,
+              top: toPos.y,
+              '--impact-dur': `${impactMs}ms`,
+            } as React.CSSProperties
+          }
         >
           {/* explosion flash / fireball / smoke layers (CSS-gated by profile) */}
           <div className="throw-animation__flash" />
@@ -372,7 +437,13 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
       {phase === 'linger' && t.linger && (
         <div
           className={`throw-animation__linger throw-animation__linger--${t.impact}`}
-          style={{ left: toPos.x, top: toPos.y }}
+          style={
+            {
+              left: toPos.x,
+              top: toPos.y,
+              '--linger-dur': `${lingerMs}ms`,
+            } as React.CSSProperties
+          }
         />
       )}
     </div>

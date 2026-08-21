@@ -11,6 +11,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { getAuthUser, supabase } from '../lib/supabase';
 import { LoadingState } from '../components/common/EmptyState';
@@ -550,7 +551,7 @@ export default function DailyChallengesPage() {
   };
 
   const visible = useMemo(
-    () => challenges.filter((c) => c.tier === activeTier),
+    () => challenges.filter((c) => c.tier === activeTier && !c.claimed),
     [challenges, activeTier]
   );
 
@@ -602,6 +603,28 @@ export default function DailyChallengesPage() {
               {stats?.nextMilestone.toLocaleString()} Days.
             </span>
           </div>
+        </div>
+        <div className={styles.streakRight}>
+          <button
+            className={styles.freezeButton}
+            onClick={async () => {
+              if (stats && stats.totalDiamondsEarned >= 5000) {
+                const ok = await dailyChallengeService.buyStreakFreeze(userId!);
+                if (ok) {
+                  setStats((prev) =>
+                    prev ? { ...prev, totalDiamondsEarned: prev.totalDiamondsEarned - 5000 } : prev
+                  );
+                  toast.success('Streak Freeze Purchased!');
+                } else {
+                  toast.error('Failed to buy Streak Freeze.');
+                }
+              } else {
+                toast.error('Not enough diamonds (5,000 required).');
+              }
+            }}
+          >
+            Buy ❄️ (5K 💎)
+          </button>
         </div>
         <div className={styles.streakRight}>
           {streak && (
@@ -689,16 +712,25 @@ export default function DailyChallengesPage() {
             <p>No {TIER_LABELS[activeTier].toLowerCase()} Challenges Available Right Now.</p>
           </div>
         ) : (
-          visible.map((c) => (
-            <ChallengeCard
-              key={c.id}
-              challenge={c}
-              tier={c.tier}
-              claiming={claimingIds.has(c.id)}
-              celebrating={celebratingIds.has(c.id)}
-              onClaim={handleClaim}
-            />
-          ))
+          <AnimatePresence>
+            {visible.map((c) => (
+              <motion.div
+                key={c.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, x: -50, height: 0, marginBottom: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <ChallengeCard
+                  challenge={c}
+                  tier={c.tier}
+                  claiming={claimingIds.has(c.id)}
+                  celebrating={celebratingIds.has(c.id)}
+                  onClaim={handleClaim}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
         )}
       </section>
 

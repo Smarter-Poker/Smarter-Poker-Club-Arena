@@ -1178,8 +1178,8 @@ export default function CashierTradePage() {
                 : amountModal === 'ticket'
                   ? 'Send Ticket'
                   : 'Claim Back'}{' '}
-              &middot; {selected.size} Player
-              {selected.size === 1 ? '' : 's'}
+              &middot; {list.filter((r) => selected.has(r.userId)).length} Player
+              {list.filter((r) => selected.has(r.userId)).length === 1 ? '' : 's'}
             </div>
             <input
               type="number"
@@ -1204,8 +1204,9 @@ export default function CashierTradePage() {
             )}
             {(amountModal === 'send' || amountModal === 'ticket') && (
               <div className={styles.modalHint}>
-                Total: {fmt((Number(amount) || 0) * selected.size)} &middot; Available:{' '}
-                {fmt(availableChips)}
+                Total:{' '}
+                {fmt((Number(amount) || 0) * list.filter((r) => selected.has(r.userId)).length)}{' '}
+                &middot; Available: {fmt(availableChips)}
               </div>
             )}
             <div className={styles.modalActions}>
@@ -1218,6 +1219,96 @@ export default function CashierTradePage() {
                 onClick={() => runTransfers(amountModal)}
               >
                 {busy ? 'Working...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Role Management Modal */}
+      {roleModalTarget && (
+        <div
+          className={styles.modalOverlay}
+          onClick={() => !roleModalBusy && setRoleModalTarget(null)}
+        >
+          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalTitle}>Change Role</div>
+            <select
+              className={styles.roleSelect}
+              value={roleModalSelection}
+              onChange={(e) => setRoleModalSelection(e.target.value as ClubRole)}
+              disabled={roleModalBusy}
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                marginBottom: '1rem',
+                background: 'var(--c-panel-bg)',
+                color: 'white',
+                border: '1px solid var(--c-border)',
+              }}
+            >
+              <option value="" disabled>
+                Select New Role
+              </option>
+              {grantableRoles(
+                myRole,
+                downline.find((r) => r.userId === roleModalTarget)?.role || 'player',
+                { isSelf: false, inDownline: true, isPlatformAdmin: false }
+              ).map((role) => (
+                <option key={role} value={role}>
+                  {ROLE_LABEL[role as ClubRole] || role.replace('_', ' ')}
+                </option>
+              ))}
+            </select>
+            <div className={styles.modalActions}>
+              <button disabled={roleModalBusy} onClick={() => setRoleModalTarget(null)}>
+                Cancel
+              </button>
+              <button
+                className={styles.modalConfirm}
+                disabled={roleModalBusy || !roleModalSelection}
+                onClick={submitRoleChange}
+              >
+                {roleModalBusy ? 'Working...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transfer Results Modal */}
+      {transferResults && (
+        <div className={styles.modalOverlay} onClick={() => setTransferResults(null)}>
+          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalTitle}>Transfer Results</div>
+            <div style={{ marginBottom: '1rem', color: 'var(--c-text-primary)' }}>
+              Successfully Processed: {transferResults.successes}
+            </div>
+            {transferResults.failures.length > 0 && (
+              <div
+                style={{
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                  marginBottom: '1rem',
+                  padding: '0.5rem',
+                  background: 'rgba(255,0,0,0.1)',
+                  border: '1px solid red',
+                  borderRadius: '4px',
+                }}
+              >
+                <div style={{ color: 'red', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                  Failed Transfers ({transferResults.failures.length}):
+                </div>
+                {transferResults.failures.map((f, i) => (
+                  <div key={i} style={{ fontSize: '0.85rem', marginBottom: '0.25rem' }}>
+                    <strong>{f.name}</strong>: {f.error}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className={styles.modalActions} style={{ justifyContent: 'center' }}>
+              <button className={styles.modalConfirm} onClick={() => setTransferResults(null)}>
+                Dismiss
               </button>
             </div>
           </div>

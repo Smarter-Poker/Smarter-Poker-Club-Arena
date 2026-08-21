@@ -66,6 +66,27 @@ export type LeaderboardMetric =
   | 'bb100'
   | 'tournaments_won';
 
+export interface LeaderboardSettings {
+  club_id: string;
+  payout_currency: 'diamonds' | 'chips';
+  weekly_prizes: { rank: number; amount: number }[];
+  monthly_prizes: { rank: number; amount: number }[];
+}
+
+export interface LeaderboardPayout {
+  id: string;
+  club_id: string;
+  period: string;
+  metric: string;
+  start_date: string;
+  end_date: string;
+  user_id: string;
+  rank: number;
+  payout_amount: number;
+  payout_currency: string;
+  awarded_at: string;
+}
+
 export interface LeaderboardEntry {
   rank: number;
   userId: string;
@@ -650,27 +671,131 @@ export const LeaderboardService = {
   /**
    * Get period date boundaries
    */
-  getPeriodBoundaries(period: LeaderboardPeriod): { start: Date; end: Date } {
+
+  async getLeaderboardSettings(clubId: string): Promise<LeaderboardSettings | null> {
+    try {
+      const { data, error } = await supabase
+        .from('club_leaderboard_settings')
+        .select('*')
+        .eq('club_id', clubId)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      reportError(err, 'LeaderboardService.getLeaderboardSettings');
+      return null;
+    }
+  },
+
+  async updateLeaderboardSettings(
+    clubId: string,
+    updates: Partial<LeaderboardSettings>
+  ): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('club_leaderboard_settings')
+        .upsert({ club_id: clubId, ...updates }, { onConflict: 'club_id' });
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      reportError(err, 'LeaderboardService.updateLeaderboardSettings');
+      return false;
+    }
+  },
+
+  async getPayoutsForPeriod(
+    clubId: string,
+    period: string,
+    metric: string,
+    startDate: string
+  ): Promise<LeaderboardPayout[]> {
+    try {
+      const { data, error } = await supabase
+        .from('leaderboard_payouts')
+        .select('*')
+        .eq('club_id', clubId)
+        .eq('period', period)
+        .eq('metric', metric)
+        .eq('start_date', startDate);
+      if (error) throw error;
+      return data || [];
+    } catch (err) {
+      reportError(err, 'LeaderboardService.getPayoutsForPeriod');
+      return [];
+    }
+  },
+
+  async payoutLeaderboardPeriod(
+    clubId: string,
+    period: string,
+    metric: string,
+    startDate: string,
+    endDate: string
+  ): Promise<boolean> {
+    try {
+      const { error } = await supabase.rpc('fn_payout_leaderboard', {
+        p_club_id: clubId,
+        p_period: period,
+        p_metric: metric,
+        p_start_date: startDate,
+        p_end_date: endDate,
+      });
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      reportError(err, 'LeaderboardService.payoutLeaderboardPeriod');
+      throw err;
+    }
+  },
+
+  async getUserTrophies(userId: string): Promise<LeaderboardPayout[]> {
+    try {
+      const { data, error } = await supabase
+        .from('leaderboard_payouts')
+        .select('*')
+        .eq('user_id', userId)
+        .order('awarded_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    } catch (err) {
+      reportError(err, 'LeaderboardService.getUserTrophies');
+      return [];
+    }
+  },
+  getPeriodBoundaries(period: LeaderboardPeriod, offset: number = 0): { start: Date; end: Date } {
     const now = new Date();
-    const end = new Date(now);
+
+    // Shift 'now' by the offset
+    if (period === 'daily') now.setDate(now.getDate() + offset);
+    if (period === 'weekly') now.setDate(now.getDate() + offset * 7);
+    if (period === 'monthly') now.setMonth(now.getMonth() + offset);
+
     let start: Date;
+    let end: Date = new Date(now);
 
     switch (period) {
       case 'daily':
         start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
         break;
       case 'weekly': {
         const dayOfWeek = now.getDay();
         start = new Date(now);
         start.setDate(now.getDate() - dayOfWeek);
         start.setHours(0, 0, 0, 0);
+
+        end = new Date(start);
+        end.setDate(start.getDate() + 6);
+        end.setHours(23, 59, 59, 999);
         break;
       }
       case 'monthly':
         start = new Date(now.getFullYear(), now.getMonth(), 1);
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
         break;
       case 'all_time':
         start = new Date(0);
+        end = new Date(); // All time always ends now
         break;
     }
 

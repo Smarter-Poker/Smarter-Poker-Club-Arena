@@ -757,6 +757,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     if (!this.handController) return;
 
     const runs = this.runItTwiceEngine.getChosenRuns(this.tableId);
+    // RIT VERIFIER FIX 2026-08-21: the verifier needs to know this hand
+    // resolved across multiple boards (see currentHandRitBoards).
+    this.currentHandRitBoards = runs >= 2 ? runs : 0;
     if (runs < 2) {
       // Dan 2026-08-20: continueRunout() is the INSTANT synchronous loop —
       // flop, turn and river all land in one tick with no equity updates. A

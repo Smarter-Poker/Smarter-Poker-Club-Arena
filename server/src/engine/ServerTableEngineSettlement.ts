@@ -136,6 +136,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         communityCards: finalState.communityCards,
         pot: finalState.pot,
         stage: finalState.stage,
+        // RIT VERIFIER FIX 2026-08-21: multi-board hands keep only the
+        // shared prefix in communityCards — tell the verifier.
+        ritBoards: this.currentHandRitBoards,
       });
       if (!verifyResult.valid) {
         reportError(

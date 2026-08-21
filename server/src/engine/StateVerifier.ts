@@ -34,6 +34,13 @@ export interface VerificationContext {
   communityCards: Card[];
   pot: number;
   stage: string; // preflop | flop | turn | river | showdown
+  /**
+   * RIT VERIFIER FIX 2026-08-21: boards dealt by Run It Twice this hand
+   * (0/undefined = normal hand). Multi-board hands legitimately keep only
+   * the shared pre-all-in prefix in communityCards — each full board lives
+   * in the RIT runout's own arrays and is guaranteed 5 cards there.
+   */
+  ritBoards?: number;
   initialChipTotal?: number;
   /**
    * A7 FIX (2026-07-28): which point of the hand this snapshot was taken at.
@@ -556,6 +563,13 @@ export class StateVerifier {
     }
 
     if (actual < expected) {
+      // RIT VERIFIER FIX 2026-08-21: a hand resolved across 2-3 boards keeps
+      // only the shared pre-all-in prefix here (0 for a preflop all-in, 4
+      // for a turn all-in) while the stage reads 'showdown'. That is the
+      // DESIGNED shape, not a missing board — every RIT board is dealt to a
+      // full 5 in the runout (2026-08-18 rake-fix invariant). Reporting it
+      // was pure noise that would bury a real violation.
+      if ((context.ritBoards ?? 0) >= 2) return;
       violations.push({
         type: 'COMMUNITY_CARD_COUNT',
         message: `Stage ${context.stage} expects ${expected} community cards, got only ${actual} — cards are missing`,

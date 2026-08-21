@@ -235,6 +235,20 @@ export abstract class ServerTableEngineBase {
   protected currentHandBBJPayoutConfig: ServerRakeConfigResult | null = null;
   /** Remaining deck cards at hand completion — used for Rabbit Hunt reveal */
   protected currentHandRabbitCards: import('../types.js').Card[] = [];
+  /**
+   * RIT VERIFIER FIX 2026-08-21: number of boards dealt by Run It Twice this
+   * hand (0 = normal hand). Every RIT-resolved hand tripped the state
+   * verifier's COMMUNITY_CARD_COUNT warning at showdown — the multi-board
+   * runout deals its boards in dealAndResolveRIT's own arrays, so the main
+   * communityCards keeps only the shared pre-all-in prefix (0 cards for a
+   * preflop all-in, 4 for a turn all-in) while the stage reads 'showdown'.
+   * Three false WARNINGs in 30 minutes of live traffic — noise that would
+   * bury a REAL missing-board violation. The count is passed to the verifier
+   * so it can skip the board-behind-stage check for multi-board hands (each
+   * RIT board is independently guaranteed 5 cards by the 2026-08-18 rake
+   * fix invariant).
+   */
+  protected currentHandRitBoards = 0;
   protected currentHandShowdownResults: Array<{
     userId: string;
     handRanking: number;

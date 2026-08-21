@@ -744,6 +744,17 @@
   }
 }
 
+/* Dan 2026-08-21 (item 8): "it needs to slow down at the end."
+   The shrink was strictly linear, so the last second looked exactly like the
+   first and there was no sense of the clock running out. This easing spends
+   75% of the arc in the first two-thirds of the clock and the remaining 25%
+   over the final third, so the ring visibly decelerates into the deadline —
+   while still reaching empty at that deadline exactly, which a plain ease-out
+   over the whole turn would not do as convincingly.
+
+   Declared as its own property (not inside the `animation` shorthand) so that
+   a browser without CSS `linear()` easing simply drops this line and keeps the
+   correct linear countdown from the shorthand below. */
 .seat--active .seat__info {
   border-color: transparent;
   /* Shrink + color-shift share the same duration/delay so they stay in sync */
@@ -753,6 +764,7 @@
   animation:
     spTimerRingShrink var(--sp-timer-duration, 15s) linear var(--sp-timer-delay, 0s) forwards,
     spTimerColorShift var(--sp-timer-yellow-duration, 15s) linear var(--sp-timer-delay, 0s) forwards;
+  animation-timing-function: linear(0, 0.75 66.6%, 1), linear;
 }
 
 /* Outer glow container */
@@ -785,10 +797,39 @@
   z-index: -1;
 }
 
-/* Smooth glow on active timer — no pulsing/ticking, just a steady subtle glow */
+/* Smooth glow on active timer — steady for the bulk of the turn, then the
+   final-five-seconds blink (Dan 2026-08-21, item 8).
+
+   The blink is its own animation rather than extra keyframes on the shrink so
+   it can repeat. --sp-timer-flash-delay is when it starts, measured from the
+   same origin as the shrink (negative = we painted mid-window, e.g. after a
+   reconnect, so the player joins a blink already running). --sp-timer-flash-count
+   is how many 0.5s blinks are left, so it stops AT zero rather than strobing on
+   into the next player's turn. Seats with neither variable set never blink: the
+   999s default puts the start beyond any turn length. */
 .seat--active .seat__info::before {
   filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.5)) drop-shadow(0 0 10px rgba(0, 229, 255, 0.2));
   transition: filter 0.3s ease;
+  animation: spTimerFlash 0.5s ease-in-out var(--sp-timer-flash-delay, 999s)
+    var(--sp-timer-flash-count, 0) both;
+}
+
+@keyframes spTimerFlash {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+
+/* Someone who has asked for less motion still needs to know their clock is
+   nearly out — hold the ring solid instead of blinking it. */
+@media (prefers-reduced-motion: reduce) {
+  .seat--active .seat__info::before {
+    animation: none;
+  }
 }
 
 /* Timer urgency — smooth color transitions, NO pulsing/ticking */

@@ -30,7 +30,10 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import StatsFactsService, { type HandGridCell } from '../../services/StatsFactsService';
+import StatsFactsService, {
+  type HandGridCell,
+  type ClassHand,
+} from '../../services/StatsFactsService';
 import './HoleCardHeatmap.css';
 
 interface Props {
@@ -85,6 +88,10 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
   const [position, setPosition] = useState<string | null>(null);
   const [variant, setVariant] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
+  // Drill-down: the individual hands behind one cell.
+  const [selected, setSelected] = useState<string | null>(null);
+  const [classHands, setClassHands] = useState<ClassHand[] | null>(null);
+  const [handsLoading, setHandsLoading] = useState(false);
   useEffect(() => {
     if (!userId) {
       setLoading(false);
@@ -93,6 +100,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
     let cancelled = false;
     setLoading(true);
     setHovered(null); // a key from the previous filter would read "never dealt"
+    setSelected(null);
     StatsFactsService.getHandGrid(userId, { position, variant, days })
       .then((payload) => {
         if (!cancelled) setCells(payload.cells ?? []);
@@ -104,6 +112,25 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
       cancelled = true;
     };
   }, [userId, position, variant, days]);
+
+  useEffect(() => {
+    if (!userId || !selected) {
+      setClassHands(null);
+      return;
+    }
+    let cancelled = false;
+    setHandsLoading(true);
+    StatsFactsService.getClassHands(userId, selected, { position, variant, days })
+      .then((p) => {
+        if (!cancelled) setClassHands(p.hands ?? []);
+      })
+      .finally(() => {
+        if (!cancelled) setHandsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, selected, position, variant, days]);
 
   const byClass = useMemo(() => {
     const m = new Map<string, HandGridCell>();
@@ -261,7 +288,12 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
                     onFocus={() => setHovered(key)}
                     // Touch has no hover. Without a click handler the readout
                     // never populated on a phone, on a mobile-first product.
-                    onClick={() => setHovered(key)}
+                    // A click also opens the hands behind the cell.
+                    onClick={() => {
+                      setHovered(key);
+                      setSelected((cur) => (cur === key && cell ? null : cell ? key : null));
+                    }}
+                    aria-expanded={cell ? selected === key : undefined}
                     aria-label={
                       !cell
                         ? `${key}, never dealt`
@@ -309,6 +341,51 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
           </span>
         )}
       </div>
+
+      {selected && (
+        <div className="heatmap-drill">
+          <div className="heatmap-drill-head">
+            <strong>{selected}</strong>
+            <span>
+              {handsLoading
+                ? 'Loading hands...'
+                : `${(classHands ?? []).length} most recent`}
+            </span>
+            <button
+              type="button"
+              className="heatmap-drill-close"
+              onClick={() => setSelected(null)}
+            >
+              Close
+            </button>
+          </div>
+          {!handsLoading && (classHands ?? []).length === 0 && (
+            <p className="heatmap-drill-empty">
+              No individual hands stored for {selected} yet under this filter.
+            </p>
+          )}
+          {(classHands ?? []).length > 0 && (
+            <ul className="heatmap-drill-list">
+              {(classHands ?? []).map((h) => (
+                <li key={h.hand_id} className="heatmap-drill-row">
+                  <span className="heatmap-drill-pos">{h.position}</span>
+                  <span className="heatmap-drill-date">
+                    {new Date(h.played_at).toLocaleDateString()}
+                  </span>
+                  <span className="heatmap-drill-tags">
+                    {h.was_all_in && <em>all in</em>}
+                    {h.showdown && <em>showdown</em>}
+                  </span>
+                  <span className={h.net >= 0 ? 'is-up' : 'is-down'}>
+                    {h.net >= 0 ? '+' : ''}
+                    {h.net_bb.toFixed(1)} bb
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <p className="heatmap-note">
         {mode === 'frequency' &&

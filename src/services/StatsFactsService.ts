@@ -72,6 +72,26 @@ export interface HandGridPayload {
   generated_at: string;
 }
 
+export interface ClassHand {
+  hand_id: string;
+  played_at: string;
+  position: string;
+  net: number;
+  net_bb: number;
+  big_blind: number;
+  variant: string;
+  was_all_in: boolean;
+  showdown: boolean;
+  won: boolean;
+  hole_cards: Array<{ rank: string; suit: string }> | null;
+}
+
+export interface ClassHandsPayload {
+  hand_class: string | null;
+  hands: ClassHand[];
+  generated_at?: string;
+}
+
 // ── Nemesis ────────────────────────────────────────────────────────────────
 
 export interface OpponentFlow {
@@ -168,6 +188,31 @@ export const StatsFactsService = {
         filters: { position: null, variant: null, days: null },
         generated_at: '',
       }
+    );
+  },
+
+  /**
+   * The individual hands behind one cell of the 13x13 grid.
+   *
+   * Returns hole cards that may never have gone to showdown, so it is the
+   * caller's own hands only - the RPC asserts identity server-side.
+   */
+  async getClassHands(
+    userId: string,
+    handClass: string,
+    opts: { position?: string | null; variant?: string | null; days?: number | null } = {}
+  ): Promise<ClassHandsPayload> {
+    return callRpc<ClassHandsPayload>(
+      'ca_player_class_hands',
+      {
+        p_user: userId,
+        p_hand_class: handClass,
+        p_position: opts.position ?? null,
+        p_variant: opts.variant ?? null,
+        p_days: opts.days ?? null,
+        p_limit: 20,
+      },
+      { hand_class: handClass, hands: [] }
     );
   },
 

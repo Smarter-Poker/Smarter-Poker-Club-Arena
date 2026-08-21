@@ -129,6 +129,14 @@ export interface RaisePresetInput {
    * "PLO must always have a RAISE POT button" - it was missing preflop.
    */
   isPotLimit?: boolean;
+  /**
+   * The table's chip granularity — the smallest amount that can actually be
+   * wagered. Dan 2026-08-21 (item 9): "it must identify which game stakes it's
+   * at." Presets that are NOT exact multiples (POT and the postflop fractions)
+   * snap to this grid, so a 1.5K/3K game offers 4,500 rather than 4,501 and a
+   * 0.5/1 game offers 3.5 rather than 4. Defaults to the small blind.
+   */
+  smallestChip?: number;
 }
 
 /**
@@ -177,28 +185,81 @@ export function potSizedRaiseTo(currentBet: number, pot: number, callAmount: num
  *       that same cap, so 5X was already an unlabelled POT.
  */
 export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
-  const { isPreflop, bigBlind, currentBet, callAmount, pot, minRaise, maxRaise, isPotLimit } =
-    input;
+  const {
+    isPreflop,
+    bigBlind,
+    currentBet,
+    callAmount,
+    pot,
+    minRaise,
+    maxRaise,
+    isPotLimit,
+    smallestChip,
+  } = input;
 
-  // Whole-number bounds. Floor the ceiling and ceil the floor so that every
-  // value we can emit is both whole AND legal.
-  const capWhole = Math.floor(maxRaise);
-  const minWhole = Math.ceil(minRaise);
+  /**
+   * Dan 2026-08-21 (item 9): "the pre-selected 3X, 4X, 5X isn't calibrated or
+   * working correctly. It must identify which game stakes it's at, and if you
+   * are raising a bet you're facing, it should purely 3X, 4X or 5X the bet
+   * you're facing EXACTLY."
+   *
+   * Two things were wrong, and they were both in this rounding step.
+   *
+   *  1. Every preset was pushed through `Math.ceil`. On any table whose chips
+   *     are not whole numbers — a 0.5/1 game, or any stake with a half-blind
+   *     small blind — 3X of a 2.5 bet came out as 8, not 7.5. The button said
+   *     3X and raised 3.2X. An exact multiple is the one thing a button
+   *     labelled "3X" has to deliver.
+   *
+   *  2. The grid was the integer 1, regardless of stakes. That is not what
+   *     "the game's chips" means at 1.5K/3K any more than it is at 0.5/1.
+   *
+   * So multiples are now EXACT and are only ever moved by legality — below the
+   * minimum raise or above the ceiling — in which case `cappedByMax` says so.
+   * Only the derived sizings (POT, the postflop fractions), which have no exact
+   * value to preserve, snap to the table's chip grid.
+   */
+  const grid = smallestChip && smallestChip > 0 ? smallestChip : Math.max(bigBlind / 2, 0.01);
+  const snapUp = (n: number) => Math.ceil(n / grid - 1e-9) * grid;
+  /** Kill binary dust like 7.500000000000001 before it reaches a button. */
+  const clean = (n: number) => Math.round(n * 100) / 100;
 
+  const capOnGrid = Math.floor(maxRaise / grid + 1e-9) * grid;
+  const minOnGrid = snapUp(minRaise);
+
+  /** For POT and the fractions: nearest legal value on the chip grid. */
   const finalize = (label: string, raw: number): RaisePreset => {
     // If the legal minimum is already above the ceiling, hero has no raise
     // room left; the only legal raise-TO is the ceiling itself.
-    if (minWhole > capWhole) return { label, raw, value: maxRaise, cappedByMax: true };
-    const whole = Math.ceil(raw);
-    const capped = Math.min(whole, capWhole);
-    return { label, raw, value: Math.max(minWhole, capped), cappedByMax: capped < whole };
+    if (minOnGrid > capOnGrid) return { label, raw, value: maxRaise, cappedByMax: true };
+    const onGrid = snapUp(raw);
+    const capped = Math.min(onGrid, capOnGrid);
+    return {
+      label,
+      raw,
+      value: clean(Math.max(minOnGrid, capped)),
+      cappedByMax: capped < onGrid,
+    };
+  };
+
+  /**
+   * For NX: the exact multiple, untouched, unless it is illegal. No grid
+   * snapping — N times a legal bet is already a legal amount by construction,
+   * because the bet it multiplies was itself made of this table's chips.
+   */
+  const finalizeExact = (label: string, raw: number): RaisePreset => {
+    if (minRaise > maxRaise) return { label, raw, value: maxRaise, cappedByMax: true };
+    const exact = clean(raw);
+    if (exact > maxRaise) return { label, raw, value: clean(maxRaise), cappedByMax: true };
+    if (exact < minRaise) return { label, raw, value: clean(minRaise), cappedByMax: false };
+    return { label, raw, value: exact, cappedByMax: false };
   };
 
   if (isPreflop) {
     // The bet being faced. Unopened pot -> the big blind.
     const base = Math.max(currentBet, bigBlind) || bigBlind || 1;
     const multiples = isPotLimit ? [2, 3, 4] : [2, 3, 4, 5];
-    const presets = multiples.map((n) => finalize(`${n}X`, base * n));
+    const presets = multiples.map((n) => finalizeExact(`${n}X`, base * n));
     if (isPotLimit) {
       presets.push(finalize('POT', potSizedRaiseTo(currentBet, pot, callAmount)));
     }
@@ -206,12 +267,17 @@ export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
   }
 
   // ── Dan 2026-08-21: "when you are facing a bet, 3X and 4X must be
-  // clickable options." Postflop FACING A BET now mirrors the preflop
-  // grammar — multiples of the bet being faced (rule 7: base = the last
-  // bet) — plus POT. Fractions only make sense when nobody has bet yet.
+  // clickable options." Postflop FACING A BET mirrors the preflop grammar —
+  // exact multiples of the bet being faced (rule 7: base = the last bet) —
+  // plus POT. Fractions only make sense when nobody has bet yet.
+  //
+  // 5X joins the row in no-limit (Dan 2026-08-21 named 3X/4X/5X explicitly).
+  // Pot-limit still stops at 3X: with maxRaise pinned to the pot cap, every
+  // higher multiple clamps onto that same number and you get a row of buttons
+  // that all do the same thing.
   if (currentBet > 0) {
-    const multiples = isPotLimit ? [2, 3] : [2, 3, 4];
-    const presets = multiples.map((n) => finalize(`${n}X`, currentBet * n));
+    const multiples = isPotLimit ? [2, 3] : [2, 3, 4, 5];
+    const presets = multiples.map((n) => finalizeExact(`${n}X`, currentBet * n));
     presets.push(finalize('POT', potSizedRaiseTo(currentBet, pot, callAmount)));
     return presets;
   }
@@ -391,8 +457,21 @@ export default function ActionPanel({
         minRaise,
         maxRaise,
         isPotLimit,
+        // Dan 2026-08-21 (item 9): the derived sizings snap to THIS table's
+        // chips, not to the integer 1.
+        smallestChip,
       }),
-    [isPreflop, bigBlind, currentBet, callAmount, pot, minRaise, maxRaise, isPotLimit]
+    [
+      isPreflop,
+      bigBlind,
+      currentBet,
+      callAmount,
+      pot,
+      minRaise,
+      maxRaise,
+      isPotLimit,
+      smallestChip,
+    ]
   );
 
   /**

@@ -956,10 +956,43 @@ export const SeatSlot = memo(
       // never outlive the ring it colours.
       const YELLOW_MS = 15_000;
       const yellowMs = Math.min(YELLOW_MS, durationMs);
+      /**
+       * Dan 2026-08-21 (bug list item 8): "it must take 15 seconds to fully
+       * disappear, it needs to slow down at the end and FLASH when there are 5
+       * seconds left."
+       *
+       * The 15s floor above already guarantees the length. These two variables
+       * add the other half of the request:
+       *
+       *   --sp-timer-flash-delay  when the blink starts, measured from the
+       *                           animation's own origin. Negative when the
+       *                           seat first paints INSIDE the last five
+       *                           seconds (reconnect, tab wake), which drops
+       *                           the player straight into a blink already in
+       *                           progress instead of restarting it.
+       *   --sp-timer-flash-count  how many 0.5s blinks are left, so the ring
+       *                           stops flashing at zero instead of strobing
+       *                           on into the next turn.
+       *
+       * The slow-down itself is a CSS `linear()` easing on the shrink — see
+       * SeatSlot.css. It is expressed there rather than here because it is a
+       * fixed shape (75% of the arc in the first two-thirds of the clock), not
+       * something that varies per turn.
+       */
+      const FLASH_WINDOW_MS = 5_000;
+      const FLASH_CYCLE_MS = 500;
+      const remainingMs = Math.max(0, durationMs - elapsedMs);
+      const flashDelayMs = durationMs - FLASH_WINDOW_MS - elapsedMs;
+      const flashCount = Math.max(
+        0,
+        Math.ceil(Math.min(FLASH_WINDOW_MS, remainingMs) / FLASH_CYCLE_MS)
+      );
       timerStyle = {
         '--sp-timer-duration': `${(durationMs / 1000).toFixed(3)}s`,
         '--sp-timer-yellow-duration': `${(yellowMs / 1000).toFixed(3)}s`,
         '--sp-timer-delay': `-${(elapsedMs / 1000).toFixed(3)}s`,
+        '--sp-timer-flash-delay': `${(flashDelayMs / 1000).toFixed(3)}s`,
+        '--sp-timer-flash-count': `${flashCount}`,
       } as React.CSSProperties;
       // React key so the .seat__info remounts (animation restarts) each new
       // turn.

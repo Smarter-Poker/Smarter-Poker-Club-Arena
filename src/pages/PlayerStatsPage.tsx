@@ -45,6 +45,7 @@ import HoleCardHeatmap from '../components/stats/HoleCardHeatmap';
 import NemesisPanel from '../components/stats/NemesisPanel';
 import BenchmarkPanel from '../components/stats/BenchmarkPanel';
 import TrophyRoom from '../components/stats/TrophyRoom';
+import LeakPanel from '../components/stats/LeakPanel';
 import StatsShareCard from '../components/stats/StatsShareCard';
 import { playerStyleFromStats } from '../components/stats/playerStyleFromStats';
 import SessionHistory from '../components/stats/SessionHistory';
@@ -1324,6 +1325,14 @@ export default function PlayerStatsPage() {
                 ))}
               </div>
             )}
+
+            {/* The only section on this page that answers "so what should I
+                change?". Pure function over stats already loaded - no fetch. */}
+            <LeakPanel
+              overall={full?.overall}
+              positions={full?.positions}
+              still={printing}
+            />
 
             {/* Rivals: the most socially engaging stat on the page, so it sits
                 where a player looks first. Owner only — head-to-head chip flow

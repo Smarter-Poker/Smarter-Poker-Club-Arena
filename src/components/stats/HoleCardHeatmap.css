@@ -279,3 +279,120 @@
 
 .heatmap-empty { text-align: center; }
 .heatmap-head { text-align: left; }
+
+/* ── Drill-down: the hands behind one cell ─────────────────────────────── */
+
+.heatmap-drill {
+  margin-top: 0.6rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 12px;
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  background: rgba(139, 92, 246, 0.07);
+}
+
+.heatmap-drill-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  font-size: 0.72rem;
+  color: rgba(200, 224, 245, 0.65);
+}
+
+.heatmap-drill-head strong {
+  font-size: 0.85rem;
+  color: #c4b5fd;
+  text-transform: none;
+}
+
+.heatmap-drill-close {
+  margin-left: auto;
+  padding: 0.2rem 0.5rem;
+  min-height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: transparent;
+  color: rgba(220, 238, 255, 0.7);
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.heatmap-drill-close:focus-visible {
+  outline: 2px solid #00d4ff;
+  outline-offset: 2px;
+}
+
+.heatmap-drill-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  /* Twenty rows is a lot on a phone; scroll inside the panel rather than
+     pushing the grid off screen. */
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.heatmap-drill-row {
+  display: grid;
+  grid-template-columns: 2.6rem 5rem 1fr auto;
+  gap: 0.4rem;
+  align-items: baseline;
+  padding: 0.3rem 0.35rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  color: rgba(220, 238, 255, 0.75);
+}
+
+.heatmap-drill-pos {
+  font-weight: 700;
+  color: #e8f4ff;
+  text-transform: none;
+}
+
+.heatmap-drill-date {
+  color: rgba(200, 224, 245, 0.5);
+}
+
+.heatmap-drill-tags {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.heatmap-drill-tags em {
+  font-style: normal;
+  font-size: 0.58rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 999px;
+  background: rgba(0, 212, 255, 0.14);
+  color: #7dd3fc;
+  white-space: nowrap;
+}
+
+.heatmap-drill-row .is-up {
+  color: #22c55e;
+  text-align: right;
+}
+
+.heatmap-drill-row .is-down {
+  color: #ef4444;
+  text-align: right;
+}
+
+.heatmap-drill-empty {
+  margin: 0.4rem 0 0;
+  font-size: 0.7rem;
+  color: rgba(200, 224, 245, 0.5);
+}
+
+/* The drill-down is an interactive affordance; a printed dossier shows the
+   grid itself, not whichever cell happened to be open. */
+@media print {
+  .heatmap-drill {
+    display: none !important;
+  }
+}

@@ -7,6 +7,50 @@
 
 ---
 
+## Cowork session 2026-08-21 — main could not deploy four times, and now it cannot break
+
+Dan: "That's now four separate times today that main sat unable to deploy on a
+red test committed alongside the feature it was meant to guard."
+
+WHAT WAS ACTUALLY WRONG. `.husky/pre-push` enforced nine house rules - merge
+markers, vercel crons, client-side PIN storage, raw auth calls, non-fast-forward
+pushes, two text rules - and never ran the tests. The one check that gates the
+World Hub bundle was the only one not enforced before a push. Worse,
+`scripts/git-safe-push.sh` - the command every agent is told to use - pushed with
+`--no-verify`, so even the nine rules it did have never ran from it, and fell
+back to `--force-with-lease`, which is how four commits already serving in
+production were rewound off main.
+
+FIXED, IN ORDER:
+- pre-push now runs the tests covering the files you touched (~4s targeted, not
+  minutes). Verified against all four incident shapes: a spec with no
+  implementation blocks in 0.7s, a source change breaking its own test blocks in
+  4.2s, a clean change passes in 6.2s, a docs-only push skips entirely.
+- CLAUDE.md rule 8: writing the spec first is fine, committing it RED is not.
+  `it.skip()` until the implementation lands.
+- GitHub Pro purchased; main now carries a ruleset. Stage 1 blocks force-push
+  and deletion. Stage 2 makes main reachable only through a PR whose required
+  checks (TypeScript Check, Client Unit Tests) have passed.
+- git-safe-push.sh routes through `scripts/ci/pr-push.mjs`: branch, PR, wait,
+  merge. Same command, same argument. No force-push path remains.
+- `check-no-orphaned-work` had a shallow-clone trap: an object can be present
+  while the ancestry chain to HEAD is cut by the shallow boundary, so it named
+  four commits as lost that had never left main. Measured at --depth 50 it
+  refused two pushes; at --depth 135 all four resolved. It deepens once and
+  re-asks now, and says "cannot verify" rather than accusing.
+- A GitHub PAT with Administration write was sitting in `github_token.md`,
+  untracked but NOT gitignored, in a tree where agents run `git add -A`
+  constantly. Ignored by shape now, not by filename.
+
+THE FOUR INCIDENTS, for the record: a test importing a component deleted the day
+before; a test reading `soundService.ts` when the file is `SoundService.ts`
+(macOS resolved it, Linux CI did not); a spec asserting the engine sends
+`card_indices`, which it has never contained, committed by a commit whose own
+message was "unblock the deploy gate"; and a test still asserting the rounding
+rule that the same commit's feature had just replaced.
+
+---
+
 ## Cowork session 2026-08-21 — run it twice and insurance were dead after hand 1
 
 Dan: "INSURANCE AND RUN IT TWICE (OR 3 TIMES) ARE 100% BROKEN AND HAVE ZERO

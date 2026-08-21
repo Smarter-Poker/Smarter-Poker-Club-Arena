@@ -9,6 +9,7 @@
  * - No emoji in source (SWC/build rule): Unicode symbols only.
  */
 
+import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
@@ -157,8 +158,8 @@ export default function LeaderboardPage() {
   const [payouts, setPayouts] = useState<any[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [finalizeLoading, setFinalizeLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
   const [metric, setMetric] = useState<LeaderboardMetric>('profit');
+  const [searchQuery, setSearchQuery] = useState('');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [totalRanked, setTotalRanked] = useState<number | null>(null);
   const [baselineDate, setBaselineDate] = useState<string | null>(null);
@@ -175,7 +176,7 @@ export default function LeaderboardPage() {
   const [userClubs, setUserClubs] = useState<UserClub[]>([]);
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [clubsLoading, setClubsLoading] = useState(true);
-  const selectedClub = userClubs.find(c => c.id === selectedClubId);
+  const selectedClub = userClubs.find((c) => c.id === selectedClubId);
 
   // Tournament stats (club-scoped)
   const [activeTab, setActiveTab] = useState<LeaderboardTab>('rankings');
@@ -397,7 +398,7 @@ export default function LeaderboardPage() {
       isMounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, period, metric, selectedClubId, activeTab]);
+  }, [scope, period, metric, selectedClubId, activeTab, periodOffset]);
 
   // Fetch Tournament Stats Data (club-scoped only)
   useEffect(() => {
@@ -454,7 +455,7 @@ export default function LeaderboardPage() {
     const myReq = ++reqSeqRef.current; // also invalidates any in-flight loadMore
 
     // SWR: show cached data instantly
-    const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}`;
+    const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}_${periodOffset}`;
     if (!silent) {
       const cached = getCachedEntries(cacheKey);
       if (cached && cached.length > 0) {
@@ -522,13 +523,20 @@ export default function LeaderboardPage() {
     setLoadingMore(true);
     try {
       const more = isGlobal
-        ? await LeaderboardService.getGlobalLeaderboard(metric, period, PAGE_SIZE, offset)
+        ? await LeaderboardService.getGlobalLeaderboard(
+            metric,
+            period,
+            PAGE_SIZE,
+            offset,
+            periodOffset
+          )
         : await LeaderboardService.getClubLeaderboard(
             selectedClubId as string,
             metric,
             period,
             PAGE_SIZE,
-            offset
+            offset,
+            periodOffset
           );
       if (myReq !== reqSeqRef.current) return; // filters moved on; drop this page
       if (more.length > 0) {
@@ -537,7 +545,7 @@ export default function LeaderboardPage() {
           if (prev.length !== offset) return prev;
           const seen = new Set(prev.map((e) => e.userId));
           const next = [...prev, ...more.filter((m) => !seen.has(m.userId))];
-          const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}`;
+          const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}_${periodOffset}`;
           setCachedEntries(cacheKey, next);
           return next;
         });
@@ -594,11 +602,16 @@ export default function LeaderboardPage() {
     (m) => scope === 'my-clubs' || m.globalSupported
   );
 
-  const filteredEntries = entries.filter((e) => 
-    !searchQuery || e.username.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredEntries = entries.filter((e) =>
+    e.username?.toLowerCase().includes(searchQuery.toLowerCase())
   );
-  const top3 = filteredEntries.slice(0, 3);
-  const rest = filteredEntries.slice(3);
+  const isSearching = searchQuery.trim().length > 0;
+  const top3 = isSearching ? [] : filteredEntries.slice(0, 3);
+  const rest = isSearching ? filteredEntries : filteredEntries.slice(3);
+
+  const filteredTournamentStats = tournamentStats.filter((s) =>
+    s.username?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   // Rate metrics are meaningless without volume, so every row carries the hand
   // count for the selected period, and rows that fail the ROI qualifier say so
@@ -737,27 +750,7 @@ export default function LeaderboardPage() {
         )}
 
         {/* Scope Toggle */}
-        {/* Search Bar */}
-        <div className="filter-group">
-          <input
-            type="text"
-            className="lb-search-input"
-            placeholder="Search players..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '8px',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              background: 'rgba(0, 0, 0, 0.3)',
-              color: '#fff',
-              fontSize: '14px',
-              width: '180px'
-            }}
-          />
-        </div>
-        
-        {/* Scope Toggle */}
+        <div className="filter-group scope-toggle">
           <button
             className={scope === 'my-clubs' ? 'active' : ''}
             onClick={() => setScope('my-clubs')}
@@ -770,47 +763,56 @@ export default function LeaderboardPage() {
         </div>
 
         {/* Period Selector */}
-        <div className="filter-group lb-chip-bar flex items-center">
-          <button 
-            className="lb-filter-chip" 
-            style={{ padding: '4px 10px', fontSize: '12px' }} 
-            onClick={() => setPeriodOffset(p => p - 1)}
-          >
-            &larr; Past
-          </button>
-          
-          {PERIOD_OPTIONS.map((opt) => (
+        {activeTab === 'rankings' && (
+          <div className="filter-group lb-chip-bar flex items-center">
             <button
-              key={opt.value}
-              className={`lb-filter-chip ${period === opt.value ? 'active' : ''}`}
-              onClick={() => setPeriod(opt.value)}
+              className="lb-filter-chip"
+              style={{ padding: '4px 10px', fontSize: '12px' }}
+              onClick={() => setPeriodOffset((p) => p - 1)}
             >
-              {opt.label}
+              &larr; Past
             </button>
-          ))}
 
-          <button 
-            className="lb-filter-chip" 
-            style={{ padding: '4px 10px', fontSize: '12px', opacity: periodOffset >= 0 ? 0.3 : 1 }} 
-            onClick={() => setPeriodOffset(p => p < 0 ? p + 1 : 0)} 
-            disabled={periodOffset >= 0}
-          >
-            Future &rarr;
-          </button>
-        </div>
+            {PERIOD_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                className={`lb-filter-chip ${period === opt.value ? 'active' : ''}`}
+                onClick={() => setPeriod(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+
+            <button
+              className="lb-filter-chip"
+              style={{
+                padding: '4px 10px',
+                fontSize: '12px',
+                opacity: periodOffset >= 0 ? 0.3 : 1,
+              }}
+              onClick={() => setPeriodOffset((p) => (p < 0 ? p + 1 : 0))}
+              disabled={periodOffset >= 0}
+            >
+              Future &rarr;
+            </button>
+          </div>
+        )}
 
         {/* Prize Settings & Finalize (Owner Only) */}
         {isOwner && scope === 'my-clubs' && activeTab === 'rankings' && (
-          <div className="filter-group" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <button 
-              className="lb-filter-chip" 
-              style={{ background: 'rgba(255,255,255,0.1)', color: 'white' }} 
+          <div
+            className="filter-group"
+            style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}
+          >
+            <button
+              className="lb-filter-chip"
+              style={{ background: 'rgba(255,255,255,0.1)', color: 'white' }}
               onClick={() => setShowSettings(true)}
             >
               ⚙️ Payout Settings
             </button>
             {periodOffset < 0 && !isPaidOut && (
-              <button 
+              <button
                 className="lb-filter-chip"
                 style={{ background: '#22c55e', color: 'black', fontWeight: 'bold' }}
                 onClick={handleFinalize}
@@ -820,23 +822,50 @@ export default function LeaderboardPage() {
               </button>
             )}
             {periodOffset < 0 && isPaidOut && (
-              <span style={{ color: '#4ade80', fontWeight: 'bold', fontSize: '0.85rem' }}>✓ Paid Out</span>
+              <span style={{ color: '#4ade80', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                ✓ Paid Out
+              </span>
             )}
           </div>
         )}
 
         {/* Metric Selector */}
-        <div className="filter-group lb-chip-bar lb-chip-scroll">
-          {visibleMetricOptions.map((opt) => (
-            <button
-              key={opt.value}
-              className={`lb-filter-chip ${metric === opt.value ? 'active' : ''}`}
-              title={opt.description}
-              onClick={() => setMetric(opt.value)}
-            >
-              {opt.icon} {opt.label}
-            </button>
-          ))}
+        {activeTab === 'rankings' && (
+          <div className="filter-group lb-chip-bar lb-chip-scroll">
+            {visibleMetricOptions.map((opt) => (
+              <button
+                key={opt.value}
+                className={`lb-filter-chip ${metric === opt.value ? 'active' : ''}`}
+                title={opt.description}
+                onClick={() => setMetric(opt.value)}
+              >
+                {opt.icon} {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div
+          className="filter-group lb-search-bar"
+          style={{ padding: '0 1.5rem', marginBottom: '1rem' }}
+        >
+          <input
+            type="text"
+            placeholder="Search players..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '10px 16px',
+              borderRadius: '12px',
+              border: '1px solid rgba(255,255,255,0.1)',
+              background: 'rgba(0,0,0,0.4)',
+              color: 'white',
+              fontSize: '14px',
+              outline: 'none',
+              transition: 'all 0.2s ease',
+            }}
+          />
         </div>
 
         <div
@@ -985,11 +1014,14 @@ export default function LeaderboardPage() {
             {/* Show top 3 as list rows if less than 3 total */}
             {top3.length < 3 &&
               top3.map((entry, index) => (
-                <div
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05, duration: 0.3 }}
                   key={entry.userId}
                   className={`leaderboard-entry ${entry.userId === user?.id ? 'current-user' : ''}`}
                   onClick={() => navigate(`/profile/${entry.userId}`)}
-                  style={{ ...rankingRowAnimationStyle(index), cursor: 'pointer' }}
+                  style={{ cursor: 'pointer' }}
                 >
                   <span className={`entry-rank top-3`}>{getRankLabel(entry.rank)}</span>
                   <div className="entry-avatar">
@@ -1009,7 +1041,7 @@ export default function LeaderboardPage() {
                     {formatValue(entry.value, metric)}
                     {renderChangeBadge(entry.change)}
                   </div>
-                </div>
+                </motion.div>
               ))}
 
             {/* ── REMAINING RANKINGS (4th+) ── */}
@@ -1019,7 +1051,10 @@ export default function LeaderboardPage() {
               </div>
             )}
             {rest.map((entry, index) => (
-              <div
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: (isSearching ? index : index + 3) * 0.05, duration: 0.3 }}
                 key={entry.userId}
                 className={`leaderboard-entry ${entry.userId === user?.id ? 'current-user' : ''}`}
                 onClick={() => navigate(`/profile/${entry.userId}`)}
@@ -1027,7 +1062,7 @@ export default function LeaderboardPage() {
                 role="button"
                 tabIndex={0}
                 aria-label={`${getRankLabel(entry.rank)} ${entry.username}, ${formatValue(entry.value, metric)}`}
-                style={{ ...rankingRowAnimationStyle(index), cursor: 'pointer' }}
+                style={{ cursor: 'pointer' }}
               >
                 <span className="entry-rank">{getRankLabel(entry.rank)}</span>
                 <div className="entry-avatar">
@@ -1053,7 +1088,7 @@ export default function LeaderboardPage() {
                   {formatValue(entry.value, metric)}
                   {renderChangeBadge(entry.change)}
                 </div>
-              </div>
+              </motion.div>
             ))}
 
             {totalRanked != null && entries.length < totalRanked && (

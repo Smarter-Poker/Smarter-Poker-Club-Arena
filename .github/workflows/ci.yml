@@ -485,83 +485,14 @@ jobs:
       # ── Bundle Size Tracking ─────────────────────────────────────────────
       - name: Track Bundle Size
         if: success()
-        run: |
-          echo "## 📦 Bundle Size Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| File | Size | Gzipped |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|------|---------|" >> $GITHUB_STEP_SUMMARY
-
-          TOTAL_JS=0
-          TOTAL_CSS=0
-          TOTAL_JS_GZ=0
-          TOTAL_CSS_GZ=0
-
-          for f in dist/assets/*.js; do
-            if [ -f "$f" ]; then
-              SIZE=$(wc -c < "$f" | tr -d ' ')
-              GZIP=$(gzip -c "$f" | wc -c | tr -d ' ')
-              SIZE_KB=$((SIZE / 1024))
-              GZIP_KB=$((GZIP / 1024))
-              TOTAL_JS=$((TOTAL_JS + SIZE))
-              TOTAL_JS_GZ=$((TOTAL_JS_GZ + GZIP))
-              BASENAME=$(basename "$f")
-              echo "| \`${BASENAME}\` | ${SIZE_KB}kB | ${GZIP_KB}kB |" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
-
-          for f in dist/assets/*.css; do
-            if [ -f "$f" ]; then
-              SIZE=$(wc -c < "$f" | tr -d ' ')
-              GZIP=$(gzip -c "$f" | wc -c | tr -d ' ')
-              SIZE_KB=$((SIZE / 1024))
-              GZIP_KB=$((GZIP / 1024))
-              TOTAL_CSS=$((TOTAL_CSS + SIZE))
-              TOTAL_CSS_GZ=$((TOTAL_CSS_GZ + GZIP))
-              BASENAME=$(basename "$f")
-              echo "| \`${BASENAME}\` | ${SIZE_KB}kB | ${GZIP_KB}kB |" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
-
-          TOTAL_JS_KB=$((TOTAL_JS / 1024))
-          TOTAL_CSS_KB=$((TOTAL_CSS / 1024))
-          TOTAL_KB=$(( (TOTAL_JS + TOTAL_CSS) / 1024 ))
-          TOTAL_GZ_KB=$(( (TOTAL_JS_GZ + TOTAL_CSS_GZ) / 1024 ))
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Total JS:** ${TOTAL_JS_KB}kB | **Total CSS:** ${TOTAL_CSS_KB}kB | **Grand Total:** ${TOTAL_KB}kB raw / ${TOTAL_GZ_KB}kB gzipped" >> $GITHUB_STEP_SUMMARY
-
-          # Gate on gzipped size — that's what users actually download and what
-          # Sentry/CDN bandwidth costs scale with. Raw size is still tracked in
-          # the summary for visibility but does not fail the build on its own.
-          # Current baseline (post-U3.5): ~1641kB gzipped. Gate at 2048kB gives
-          # ~25% headroom and will fire before any material regression slips in.
-          GZ_LIMIT=2048
-          RAW_LIMIT=8192  # soft ceiling — only fails if BOTH raw and gzipped balloon together
-          if [ $TOTAL_GZ_KB -gt $GZ_LIMIT ]; then
-            echo "::error::Gzipped bundle size ${TOTAL_GZ_KB}kB exceeds limit ${GZ_LIMIT}kB. Investigate code splitting."
-            exit 1
-          fi
-          if [ $TOTAL_KB -gt $RAW_LIMIT ] && [ $TOTAL_GZ_KB -gt $((GZ_LIMIT * 9 / 10)) ]; then
-            echo "::error::Raw bundle ${TOTAL_KB}kB exceeds ${RAW_LIMIT}kB AND gzipped is >90% of limit — real bloat."
-            exit 1
-          fi
-
-          echo "✅ Bundle size: ${TOTAL_GZ_KB}kB gzipped (limit ${GZ_LIMIT}kB) / ${TOTAL_KB}kB raw"
-
-  # ─────────────────────────────────────────────────────────────────────────────
-  # STEP 3: Playwright E2E Tests against production — ALWAYS ON
-  # Tests run against https://smarter.poker (not a local dev server) to avoid
-  # auth/session complexity in CI and to catch real production regressions.
-  # ─────────────────────────────────────────────────────────────────────────────
-  e2e:
-    name: E2E Tests (Playwright)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: build
-    # Only run E2E on push to main (not PRs) to avoid running against a pre-deploy build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
+        # Measures INITIAL LOAD (what a user downloads to open the app) and
+        # gates on it, then reports whole-app size against a bloat ceiling.
+        # The previous inline version summed every file in dist/assets and
+        # failed on the total -- charging every push for ~1.6MB gzipped of
+        # lazily-split route chunks that no session ever fetches, which made
+        # correct code-splitting score exactly as badly as shipping the code
+        # eagerly. See the header of the script for the measurements.
+        run: node scripts/ci/bundle-size.mjs
       - name: Checkout
         uses: actions/checkout@v4.3.1
         with:

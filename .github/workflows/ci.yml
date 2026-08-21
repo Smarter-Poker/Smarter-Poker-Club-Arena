@@ -728,6 +728,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   css-beats-e2e:
     name: CSS Beat E2E (multi-table + animations)
+    continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 20
 

@@ -396,6 +396,26 @@ export default function MultiTablePage() {
         });
         return additions.length > 0 ? [...prev, ...additions] : prev;
       });
+      // Audit round 3: after a reload the rebuild used to land the player on
+      // whichever seat sorted first. If the table they were LOOKING AT before
+      // the reload came back, focus it. The id lives in sessionStorage; a
+      // table that did not come back simply fails the lookup.
+      if (!cancelled) {
+        // Deferred one tick: tablesRef reflects the committed array, and the
+        // setTables above has not committed yet at this line.
+        setTimeout(() => {
+          if (cancelled) return;
+          try {
+            const lastId = sessionStorage.getItem('ca_last_active_table');
+            if (lastId) {
+              const idx = tablesRef.current.findIndex((t) => t.id === lastId);
+              if (idx > 0) setActiveIndex(idx);
+            }
+          } catch {
+            /* private-mode storage may throw */
+          }
+        }, 250);
+      }
       // Tell the player OUTSIDE the updater. A setTables callback must stay
       // pure — React may run it twice under StrictMode, and this file has been
       // bitten by side effects in updaters twice already (see TABLE_LEFT and
@@ -703,7 +723,11 @@ export default function MultiTablePage() {
     for (let i = 0; i < tables.length; i++) {
       const t = tables[i];
       const was = prevTurnMapRef.current.get(t.id) ?? false;
-      if (t.isMyTurn && !was && i !== activeIndex) {
+      // Audit round 3: while the container is hidden (cashier, lobby, any
+      // other route) the ACTIVE table's bell is muted by its isActive gate,
+      // which left that one table's turn start completely silent. Hidden
+      // means no tab is really "in front", so ping for all of them.
+      if (t.isMyTurn && !was && (hidden || i !== activeIndex)) {
         if (soundService.isEnabled()) soundService.playChatMessage();
         haptic.light();
       }
@@ -713,20 +737,30 @@ export default function MultiTablePage() {
     for (const id of prevTurnMapRef.current.keys()) {
       if (!live.has(id)) prevTurnMapRef.current.delete(id);
     }
-  }, [tables, activeIndex]);
+  }, [tables, activeIndex, hidden]);
 
   // ─── Action queue (batch 2, GG-style) ─────────────────────────────────
   // The moment the hero's turn ENDS on the focused table (they acted, or the
   // clock resolved it), advance to the table that has been waiting on them
   // the longest — most pressing deadline first. A short beat lets the action
   // animation land before the view moves.
-  const prevActiveTurnRef = useRef(false);
+  /**
+   * Audit round 3: this edge used to be a bare boolean, so SWITCHING AWAY
+   * from a my-turn table read as "the turn ended" and the queue yanked the
+   * player 400ms after their own deliberate tab choice. The edge is now
+   * keyed by table identity: it only fires when the SAME table that was
+   * focused loses its turn while still focused - i.e. the hero actually
+   * acted (or timed out) there.
+   */
+  const prevActiveTurnRef = useRef<{ id: string; turn: boolean }>({ id: '', turn: false });
   const queueSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const active = tables[activeIndex];
+    const activeId = active?.id ?? '';
     const activeTurn = !!active && !isLobbyTab(active) && active.isMyTurn;
     if (
-      prevActiveTurnRef.current &&
+      prevActiveTurnRef.current.turn &&
+      prevActiveTurnRef.current.id === activeId &&
       !activeTurn &&
       !hidden &&
       userSettings.multi_action_queue
@@ -748,7 +782,7 @@ export default function MultiTablePage() {
         }, 400);
       }
     }
-    prevActiveTurnRef.current = activeTurn;
+    prevActiveTurnRef.current = { id: activeId, turn: activeTurn };
   }, [tables, activeIndex, hidden, userSettings.multi_action_queue]);
   useEffect(
     () => () => {
@@ -1049,6 +1083,9 @@ export default function MultiTablePage() {
         .eq('club_id', club)
         .is('tournament_id', null)
         .neq('status', 'closed')
+        // Audit round 3: soft-deleted tables kept their status and listed as
+        // joinable. NULL must count as not-deleted, hence NOT IS TRUE.
+        .not('is_deleted', 'is', true)
         .limit(30);
       const rows: QuickJoinRow[] = (data ?? [])
         .filter(
@@ -1350,6 +1387,21 @@ export default function MultiTablePage() {
       ) {
         return;
       }
+      // Audit round 3 (a11y): Alt+Arrow moves the ACTIVE tab - the keyboard
+      // path to reorder, matching the quick menu's Move Left/Right.
+      if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        e.preventDefault();
+        const cur = activeIndexRef.current;
+        const t = tablesRef.current[cur];
+        if (t) {
+          const to =
+            e.key === 'ArrowLeft'
+              ? Math.max(0, cur - 1)
+              : Math.min(tablesRef.current.length - 1, cur + 1);
+          handleReorder(t.id, to);
+        }
+        return;
+      }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       // Number keys 1..MAX_TABLES to switch tables. Derived from the constant
       // rather than a hardcoded '4' so the cap has exactly one definition.
@@ -1373,7 +1425,7 @@ export default function MultiTablePage() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [tables.length, hidden]);
+  }, [tables.length, hidden, handleReorder]);
 
   // ─── Swipe Gesture Handling ──────────────────────────────────────────
   const handleTouchStart = useCallback(
@@ -1510,7 +1562,17 @@ export default function MultiTablePage() {
   useEffect(() => {
     if (hidden) return;
     const cur = tables[activeIndex];
-    if (cur && !isLobbyTab(cur)) lastActiveTableIdRef.current = cur.id;
+    if (cur && !isLobbyTab(cur)) {
+      lastActiveTableIdRef.current = cur.id;
+      // Audit round 3: survive a reload. Only the ID is stored - the tab
+      // itself is always rebuilt from server truth (table_seats), so a stale
+      // id can never resurrect a zombie tab; it just fails the lookup.
+      try {
+        sessionStorage.setItem('ca_last_active_table', cur.id);
+      } catch {
+        /* private-mode storage may throw */
+      }
+    }
   }, [hidden, tables, activeIndex]);
 
   // ─── Global dock (Dan 2026-08-19) ────────────────────────────────────
@@ -1586,7 +1648,7 @@ export default function MultiTablePage() {
               onBackAll={handleBackAll}
             />
             {/* Batch 5: live multi-table P&L chip -> session breakdown */}
-            {sessionAgg && (
+            {sessionAgg && sessionAgg.rows.some((r) => r.tracked) && (
               <button
                 type="button"
                 className={`multi-table-page__pnl-chip${

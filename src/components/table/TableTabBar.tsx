@@ -654,6 +654,11 @@ export function TableTabBar({
           if (!tab) return null;
           const idx = tabs.findIndex((t) => t.id === quickMenu.tabId);
           const muted = !!mutedIds?.includes(tab.id);
+          // Audit round 3: a LOBBY tab is not a seat. It offered Sit Out /
+          // Mute, and Sit Out fired a real engine call with a synthetic
+          // 'lobby:' id. Lobby tabs get exactly what makes sense for them:
+          // Move Left/Right and Close.
+          const isLobby = tab.id.startsWith('lobby:');
           const item = (
             label: string,
             fn: () => void,
@@ -684,10 +689,12 @@ export function TableTabBar({
               >
                 <div className="table-tab-bar__qmenu-title">{formatGameTitle(tab.name)}</div>
                 {onQuickAction &&
+                  !isLobby &&
                   item(tab.sittingOut ? "I'm Back" : 'Sit Out', () =>
                     onQuickAction(tab.id, tab.sittingOut ? 'back' : 'sitout')
                   )}
                 {onQuickAction &&
+                  !isLobby &&
                   item(muted ? 'Unmute Table' : 'Mute Table', () => onQuickAction(tab.id, 'mute'))}
                 {onReorder &&
                   item('Move Left', () => onReorder(tab.id, Math.max(0, idx - 1)), false, idx === 0)}
@@ -700,7 +707,7 @@ export function TableTabBar({
                   )}
                 {onQuickAction &&
                   tabs.length > 1 &&
-                  item('Leave Table', () => onQuickAction(tab.id, 'leave'), true)}
+                  item(isLobby ? 'Close Lobby' : 'Leave Table', () => onQuickAction(tab.id, 'leave'), true)}
                 {(onSitOutAll || onBackAll) && tabs.length > 1 && (
                   <div className="table-tab-bar__qmenu-sep" aria-hidden="true" />
                 )}

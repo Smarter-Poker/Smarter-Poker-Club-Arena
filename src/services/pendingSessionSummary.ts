@@ -83,6 +83,10 @@ export interface SessionSummaryPayload {
    * because someone forgot to set the flag.
    */
   tournament?: TournamentResult;
+  vpipPercent?: number;
+  totalBuyIn?: number;
+  sessionStart?: number;
+  sessionEnd?: number;
 }
 
 type Listener = (payload: SessionSummaryPayload | null) => void;

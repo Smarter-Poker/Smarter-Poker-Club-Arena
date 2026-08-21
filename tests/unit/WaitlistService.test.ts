@@ -4,6 +4,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../src/lib/supabase', () => {
@@ -117,5 +119,59 @@ describe('WaitlistService', () => {
       expect(surface.notifyNextPlayer).toBeUndefined();
       expect(surface.markSeated).toBeUndefined();
     });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ONE TABLE, NOT TWO
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// `table_waitlist` (singular) and `table_waitlists` (plural) both existed and
+// the readers were split between them: the clients wrote one, and the ENGINE's
+// seat-offer path watched the other. Nothing was ever offered a seat, and both
+// tables sat at zero rows all-time because the loop could not close.
+//
+// The duplicate was dropped on 2026-08-21. This scans source rather than
+// mocking a client, because the failure mode is a plausible-looking string in
+// a `.from(...)` call that no unit test would otherwise execute.
+describe('waitlist table name', () => {
+  const ROOTS = ['src', 'server/src'];
+
+  function walk(dir: string, out: string[] = []): string[] {
+    let entries: string[];
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      return out;
+    }
+    for (const e of entries) {
+      const p = join(dir, e);
+      if (statSync(p).isDirectory()) walk(p, out);
+      else if (/\.tsx?$/.test(p)) out.push(p);
+    }
+    return out;
+  }
+
+  it('never queries the retired plural table', () => {
+    const offenders: string[] = [];
+    for (const root of ROOTS) {
+      for (const file of walk(root)) {
+        const src = readFileSync(file, 'utf8');
+        // Only real query targets, not prose in a comment explaining the history.
+        const re = /\.from\(\s*['"`]table_waitlists['"`]/g;
+        if (re.test(src)) offenders.push(file);
+      }
+    }
+    expect(
+      offenders,
+      `these query public.table_waitlists, which was dropped: ${offenders.join(', ')}`
+    ).toEqual([]);
+  });
+
+  it('the engine seat-offer path uses the canonical table', () => {
+    const src = readFileSync('server/src/services/supabase/seats.ts', 'utf8');
+    // If this file ever points elsewhere, joining a queue silently stops
+    // leading to a seat offer -- the exact bug this replaced.
+    expect(src).toContain("from('table_waitlist')");
   });
 });

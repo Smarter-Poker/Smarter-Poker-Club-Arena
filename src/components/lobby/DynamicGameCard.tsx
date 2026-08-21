@@ -329,9 +329,19 @@ interface CashCardProps {
   table: CashTableData;
   isAdmin?: boolean;
   onDelete?: (id: string) => void;
+  /** True when this player already holds an active place in this table's queue. */
+  waitlisted?: boolean;
+  /** Join or leave the queue. Omitted (e.g. signed out) hides the control. */
+  onWaitlistToggle?: (tableId: string, joining: boolean) => void;
 }
 
-export function CashGameCard({ table, isAdmin, onDelete }: CashCardProps) {
+export function CashGameCard({
+  table,
+  isAdmin,
+  onDelete,
+  waitlisted,
+  onWaitlistToggle,
+}: CashCardProps) {
   const v = VARIANT_DISPLAY[(table.game_variant || '').toLowerCase()] || VARIANT_DISPLAY.nlh;
   const s = parseSettings(table.settings);
   const n = table.name.toLowerCase();
@@ -351,6 +361,10 @@ export function CashGameCard({ table, isAdmin, onDelete }: CashCardProps) {
   const seatPct = table.max_players
     ? Math.min(100, Math.round((table.current_players / table.max_players) * 100))
     : 0;
+  /* A full table was previously indistinguishable from an empty one at a
+     glance: both showed "n/m" and both linked straight to /table/:id, so the
+     only way to learn there was no seat was to arrive and find none. */
+  const isFull = table.max_players > 0 && table.current_players >= table.max_players;
   const straddleSuffix =
     (s.straddle_enabled || s.straddle) && (s.straddle_type || s.straddleType)
       ? `/${String(s.straddle_type || s.straddleType || '')
@@ -377,13 +391,31 @@ export function CashGameCard({ table, isAdmin, onDelete }: CashCardProps) {
         </div>
       </div>
       <div className="ngc-row">
-        <span className="ngc-players">
+        <span className={`ngc-players${isFull ? ' ngc-players--full' : ''}`}>
           {table.current_players}/{table.max_players}
         </span>
+        {isFull && <span className="ngc-fullpill">Full</span>}
       </div>
-      <div className="ngc-seats">
+      <div className={`ngc-seats${isFull ? ' ngc-seats--full' : ''}`}>
         <i style={{ width: `${seatPct}%` }} />
       </div>
+      {isFull && onWaitlistToggle && (
+        <button
+          type="button"
+          className={`ngc-waitbtn${waitlisted ? ' is-on' : ''}`}
+          /* The card is wrapped in a <Link> to the table. Without both of
+             these the tap would queue the player AND navigate them to a table
+             that has no seat for them, which is the confusing outcome this
+             control exists to prevent. */
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onWaitlistToggle(table.id, !waitlisted);
+          }}
+        >
+          {waitlisted ? 'On Waitlist' : 'Join Waitlist'}
+        </button>
+      )}
       <Badges names={feats} />
       <div className="ngc-bottom">
         <span className="ngc-name">

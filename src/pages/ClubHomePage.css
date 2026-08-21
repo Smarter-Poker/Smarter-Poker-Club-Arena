@@ -901,6 +901,54 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    GAMES GRID
 ═══════════════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   RESULT COUNT — sits between the ad strip and the grid
+   ─────────────────────────────────────────────────────────────────────────
+   Matches the grid's 1rem side padding so the number lines up with the left
+   edge of the first card rather than floating in its own margin.
+═══════════════════════════════════════════════════════════════════════════ */
+.lobby-count {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 1rem 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  color: #8b94a6;
+}
+
+.lobby-count__text strong {
+  color: #e6ebf2;
+  font-weight: 700;
+}
+
+.lobby-count__clear {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 4px 12px;
+  color: #9fb4d0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.lobby-count__clear:hover {
+  color: #fff;
+  border-color: rgba(255, 184, 0, 0.45);
+}
+
+.lobby-count__clear:focus-visible {
+  outline: 2px solid rgba(255, 184, 0, 0.6);
+  outline-offset: 2px;
+}
+
 .club-home__games {
   display: grid;
   /* 300px floor, was 150px. NeonCard spends 26px padding x2 (52px) plus a

@@ -94,9 +94,16 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
     try {
       const { data, error } = await supabase
         .from('table_waitlist')
-        .select('id, user_id, position, created_at')
+        .select('id, user_id, created_at')
         .eq('table_id', tableId)
-        .order('position', { ascending: true });
+        /* ORDER BY created_at, not by the stored `position`.
+           The stored column cannot be trusted: it was written client-side as
+           `waitlist.length + 1`, so two players joining at once both claimed
+           the same number, and nothing renumbered the queue when someone left
+           (leave #2 of 5 and the next joiner takes 5 a second time). Join time
+           is the only ordering that is correct without a write, and it is
+           already what the engine's seat-offer path and WaitlistService use. */
+        .order('created_at', { ascending: true });
       if (error) reportError(error, 'WaitlistManager.Load_failed');
 
       if (data && data.length > 0) {
@@ -109,7 +116,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
 
         const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
 
-        const mapped = data.map((e: any) => {
+        const mapped = data.map((e: any, idx: number) => {
           const profile = profileMap.get(e.user_id);
           return {
             id: e.id,
@@ -117,7 +124,9 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
             username: profile?.username || 'Unknown',
             displayName: profile?.full_name || profile?.username || 'Unknown',
             avatarUrl: profile?.avatar_url,
-            position: e.position,
+            // Display position is the row's place in a created_at-ordered
+            // list, so it is always 1..n with no gaps or ties.
+            position: idx + 1,
             joinedAt: new Date(e.created_at),
           };
         });
@@ -139,10 +148,13 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
     if (!currentUserId) return;
     setJoining(true);
     try {
+      /* `position` is deliberately NOT sent. It is NOT NULL DEFAULT 1 in the
+         schema and is now vestigial: order comes from created_at everywhere
+         that reads this table. Sending a client-computed value here is what
+         made two simultaneous joiners collide on the same number. */
       const { error } = await supabase.from('table_waitlist').insert({
         table_id: tableId,
         user_id: currentUserId,
-        position: waitlist.length + 1,
       });
 
       if (error) throw error;

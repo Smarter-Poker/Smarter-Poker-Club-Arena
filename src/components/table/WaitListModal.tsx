@@ -43,7 +43,7 @@ export interface WaitListModalProps {
  *
  * The auto-seat switch was gated on `onAutoSeatChange` being supplied, and no
  * caller ever supplied it, so it never rendered. That was the only thing
- * keeping it honest: there is no `auto_seat` column on `table_waitlists` and
+ * keeping it honest: there is no `auto_seat` column on `table_waitlist` and
  * nothing anywhere that seats a waiting player automatically, so the switch had
  * nothing behind it. Rendering it would have promised a feature the platform
  * does not have. Re-add it together with the server side, not before.

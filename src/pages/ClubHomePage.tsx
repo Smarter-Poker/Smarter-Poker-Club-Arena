@@ -30,6 +30,7 @@ import { getClubLevel, ClubLevelInfo } from '../utils/clubLevels';
 import { BusToastBridge } from '../components/common/BusToastBridge';
 import { DiamondService } from '../services/DiamondService';
 import { useToast } from '../components/common/Toast';
+import { waitlistService } from '../services/WaitlistService';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { retryFetch } from '../utils/retryFetch';
 import './ClubHomePage.css';
@@ -1244,6 +1245,51 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     }
   }, [tables, gameType, showsCash, sortKey, searchQuery, advFilters]);
 
+  /**
+   * Is the lobby showing less than everything, and why.
+   *
+   * Three independent things narrow this list: the game-type tab, the search
+   * box, and the saved Advanced Filters for that tab. The empty state already
+   * had to work this out to explain itself; the result count needs exactly the
+   * same answer, so it is computed once here rather than twice in the markup.
+   */
+  const narrowing = useMemo(() => {
+    const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+    const fVal = advFilters[gameType as FilterGameType];
+    const filtered = Boolean(fSpec && fVal && isFilterActive(fSpec, fVal));
+    const searching = searchQuery.trim().length > 0;
+    return {
+      fSpec,
+      filtered,
+      searching,
+      tabbed: gameType !== 'ALL',
+      any: filtered || searching || gameType !== 'ALL',
+    };
+  }, [gameType, advFilters, searchQuery]);
+
+  /**
+   * Clear EVERY narrowing at once.
+   *
+   * Undoing them one at a time means guessing which one was responsible, and
+   * the saved Advanced Filters are not visible from the lobby at all. Shared
+   * by the result count and the empty state so the two cannot drift into
+   * clearing different things.
+   */
+  const clearAllNarrowing = useCallback(() => {
+    haptic.selection();
+    setSearchQuery('');
+    setSearchOpen(false);
+    setGameType('ALL');
+    if (narrowing.fSpec) {
+      const next: FilterStore = {
+        ...advFilters,
+        [gameType]: emptyFilterValue(narrowing.fSpec),
+      };
+      setAdvFilters(next);
+      if (resolvedClubId) saveFilters(resolvedClubId, next);
+    }
+  }, [narrowing.fSpec, advFilters, gameType, resolvedClubId]);
+
   const filteredTournaments = useMemo(() => {
     if (!showsTournaments) return [];
 
@@ -1297,6 +1343,94 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         return rows.sort(tournamentOpenFirst);
     }
   }, [tournaments, gameType, showsTournaments, sortKey, searchQuery, advFilters]);
+
+  /**
+   * Tables this player already holds an active place in the queue for.
+   *
+   * Loaded once per club visit rather than per card: a lobby renders up to
+   * ~170 cards, and asking each one whether it is waitlisted would be ~170
+   * round trips to answer a question one query answers for all of them.
+   */
+  const [waitlistedTableIds, setWaitlistedTableIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setWaitlistedTableIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    waitlistService
+      .myWaitlists()
+      .then((rows) => {
+        if (!cancelled) setWaitlistedTableIds(new Set(rows.map((r) => r.tableId)));
+      })
+      .catch((e) => reportError(e, 'ClubHomePage.loadMyWaitlists'));
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUserId]);
+
+  const handleWaitlistToggle = useCallback(
+    async (tableId: string, joining: boolean) => {
+      if (!currentUserId) {
+        toast.error('Sign In To Join A Waitlist');
+        return;
+      }
+      haptic.selection();
+      /* Optimistic, then reconciled. The button is on a card in a long grid
+         and the round trip is not instant; leaving it unchanged until the
+         server answers reads as a dead tap and invites a second one, which
+         would toggle it straight back. */
+      setWaitlistedTableIds((prev) => {
+        const next = new Set(prev);
+        if (joining) next.add(tableId);
+        else next.delete(tableId);
+        return next;
+      });
+
+      try {
+        if (joining) {
+          const entry = await waitlistService.joinWaitlist(tableId);
+          if (!entry) throw new Error('Could not join the waitlist');
+          const pos = await waitlistService.getPosition(tableId);
+          toast.success(
+            pos && pos.position > 0
+              ? `Added To The Waitlist. You Are Number ${pos.position} In Line.`
+              : 'Added To The Waitlist.'
+          );
+        } else {
+          const left = await waitlistService.leave(tableId);
+          if (!left) throw new Error('Could not leave the waitlist');
+          toast.success('Removed From The Waitlist.');
+        }
+      } catch (e) {
+        // Put the button back where it was; the queue did not change.
+        setWaitlistedTableIds((prev) => {
+          const next = new Set(prev);
+          if (joining) next.delete(tableId);
+          else next.add(tableId);
+          return next;
+        });
+        reportError(e, 'ClubHomePage.handleWaitlistToggle', { tableId, joining });
+        toast.error(joining ? 'Could Not Join The Waitlist' : 'Could Not Leave The Waitlist');
+      }
+    },
+    [currentUserId, toast]
+  );
+
+  /** How many cards the grid is about to render. */
+  const shownCount = filteredTables.length + filteredTournaments.length;
+
+  /**
+   * Everything the club is running, before ANY narrowing.
+   *
+   * Deliberately the whole club rather than the current tab: the count exists
+   * to answer "am I missing games?", and a per-tab total would answer that
+   * question with the tab's own filter already applied, which is the one
+   * narrowing most likely to be forgotten.
+   */
+  const totalGameCount = tables.length + tournaments.length;
+
 
   const formatNumber = (num: number) => {
     return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1931,6 +2065,40 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           the only working one. */}
 
       {/* ═══════════════════════════════════════════════════════════════════
+          RESULT COUNT
+          ─────────────────────────────────────────────────────────────────
+          The lobby runs 60 to 170 cards and three independent things narrow
+          it, one of which (Advanced Filters) is SAVED and survives a reload.
+          Without a count, a player who set a filter days ago sees a short
+          list and reads it as "this club is dead" rather than "you are
+          looking at 12 of 170". The count only claims "of N" when something
+          is actually narrowing, so it never implies a filter that is not set,
+          and it carries the same one-tap clear the empty state uses.
+      ═══════════════════════════════════════════════════════════════════ */}
+      {shownCount > 0 && (
+        <div className="lobby-count">
+          <span className="lobby-count__text">
+            {narrowing.any && totalGameCount > shownCount ? (
+              <>
+                Showing <strong>{shownCount.toLocaleString()}</strong> Of{' '}
+                {totalGameCount.toLocaleString()} Games
+              </>
+            ) : (
+              <>
+                <strong>{shownCount.toLocaleString()}</strong> Game
+                {shownCount === 1 ? '' : 's'}
+              </>
+            )}
+          </span>
+          {narrowing.any && totalGameCount > shownCount && (
+            <button type="button" className="lobby-count__clear" onClick={clearAllNarrowing}>
+              Show All
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════
                 GAMES GRID - Tables & Create New Table Button
             ═══════════════════════════════════════════════════════════════════ */}
       <div className="club-home__games">
@@ -1983,6 +2151,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               <CashGameCard
                 table={table}
                 isAdmin={isOwner || userRole === 'admin'}
+                waitlisted={waitlistedTableIds.has(table.id)}
+                onWaitlistToggle={currentUserId ? handleWaitlistToggle : undefined}
                 onDelete={(id) => {
                   setDeleteTableConfirm({ show: true, tableId: id, tableName: table.name });
                 }}
@@ -2009,12 +2179,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         {filteredTables.length === 0 &&
           filteredTournaments.length === 0 &&
           (() => {
-            const totalHere = tables.length + tournaments.length;
-            const searching = searchQuery.trim().length > 0;
-            const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
-            const fVal = advFilters[gameType as FilterGameType];
-            const filtered = Boolean(fSpec && fVal && isFilterActive(fSpec, fVal));
-            const narrowed = searching || filtered || gameType !== 'ALL';
+            // Same three causes the result count reads, from the same place.
+            const totalHere = totalGameCount;
+            const { searching, filtered } = narrowing;
+            const narrowed = narrowing.any;
 
             return (
               <div className="empty-tables">
@@ -2034,27 +2202,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                       the filters on this tab hide {totalHere === 1 ? 'it' : 'them all'}.
                     </p>
                     <div className="empty-actions">
-                      <button
-                        className="empty-action"
-                        onClick={() => {
-                          haptic.selection();
-                          /* Clear EVERY narrowing at once. Undoing them one at
-                             a time means guessing which one was responsible,
-                             and the player cannot see the saved filters from
-                             here. */
-                          setSearchQuery('');
-                          setSearchOpen(false);
-                          setGameType('ALL');
-                          if (fSpec) {
-                            const next: FilterStore = {
-                              ...advFilters,
-                              [gameType]: emptyFilterValue(fSpec),
-                            };
-                            setAdvFilters(next);
-                            if (resolvedClubId) saveFilters(resolvedClubId, next);
-                          }
-                        }}
-                      >
+                      <button className="empty-action" onClick={clearAllNarrowing}>
                         Show All Games
                       </button>
                       {filtered && (

@@ -442,3 +442,82 @@
 .ngc-del:hover {
   background: #e23b46;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FULL TABLE + WAITLIST  (2026-08-21)
+   ─────────────────────────────────────────────────────────────────────────
+   A full table used to look exactly like an empty one: "9/9" in the same
+   colour as "0/9", the same green seat bar, and the same tap straight through
+   to a table with no seat on it. The only way to find out was to arrive.
+   Now the count turns amber, the bar reads as full rather than healthy, and
+   the queue is one tap away without leaving the lobby.
+═══════════════════════════════════════════════════════════════════════════ */
+.ngc-players--full {
+  color: #ffb800;
+  font-weight: 800;
+}
+
+.ngc-fullpill {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 184, 0, 0.14);
+  border: 1px solid rgba(255, 184, 0, 0.45);
+  color: #ffb800;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+/* Green reads as "room to sit". A full bar must not. */
+.ngc-seats--full > i {
+  background: linear-gradient(90deg, #ffc94d, #ffb800);
+}
+
+.ngc-waitbtn {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 184, 0, 0.1);
+  border: 1px solid rgba(255, 184, 0, 0.45);
+  color: #ffce4d;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  /* The card itself is a link; this sits above it so the tap that queues a
+     player cannot also navigate them to the seatless table. */
+  position: relative;
+  z-index: 2;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.ngc-waitbtn:hover {
+  background: rgba(255, 184, 0, 0.2);
+  color: #fff;
+}
+
+.ngc-waitbtn:focus-visible {
+  outline: 2px solid rgba(255, 184, 0, 0.75);
+  outline-offset: 2px;
+}
+
+/* Already queued: a settled state, not a call to action. */
+.ngc-waitbtn.is-on {
+  background: rgba(124, 255, 176, 0.1);
+  border-color: rgba(124, 255, 176, 0.45);
+  color: #7cffb0;
+}
+
+.ngc-waitbtn.is-on:hover {
+  background: rgba(255, 92, 92, 0.14);
+  border-color: rgba(255, 92, 92, 0.5);
+  color: #ff8b8b;
+}

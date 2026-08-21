@@ -301,9 +301,14 @@ export async function atomicCashout(
 /**
  * TOURNEY-AUDIT 2026-07-24 (sweep 6): cash-game waitlist notifier. When a seat
  * opens at a cash table, the longest-waiting 'waiting' entry is flipped to
- * 'notified' and receives a notification row — the player then sits via the
+ * 'notified' and receives a notification row. The player then sits via the
  * normal buy-in flow. Cash games only (tournament entrants are auto-seated by
  * the engine, never queued). Fire-and-forget; failures never block the table.
+ *
+ * TABLE NAME, 2026-08-21: this read `table_waitlists` (plural) while every
+ * client path wrote `table_waitlist` (singular). The engine was therefore
+ * watching an empty queue that nothing ever joined, and no seat offer could
+ * ever have fired. Both tables were empty, so the reconciliation cost no data.
  */
 export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
   try {
@@ -317,7 +322,7 @@ export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
     if ((tableRow.current_players ?? 0) >= (tableRow.max_players ?? 9)) return;
 
     const { data: next } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .select('id, user_id')
       .eq('table_id', tableId)
       .eq('status', 'waiting')
@@ -327,7 +332,7 @@ export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
     if (!next) return;
 
     const { data: claimed } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .update({ status: 'notified', notified_at: new Date().toISOString() })
       .eq('id', next.id)
       .eq('status', 'waiting')
@@ -337,8 +342,8 @@ export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
     await supabase.from('notifications').insert({
       user_id: next.user_id,
       type: 'waitlist_seat_open',
-      title: 'Seat open!',
-      message: `A seat just opened at ${tableRow.name || 'your waitlisted table'} — sit down now to claim it.`,
+      title: 'Seat Open',
+      message: `A Seat Just Opened At ${tableRow.name || 'Your Waitlisted Table'}. Sit Down Now To Claim It.`,
       data: { table_id: tableId },
     });
     console.log(

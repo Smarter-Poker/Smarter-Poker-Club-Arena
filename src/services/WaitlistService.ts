@@ -6,12 +6,22 @@
  * Waitlists apply to CASH GAMES ONLY. Tournament / SNG / Spin players are seated
  * by the game engine (late-reg seating + table spawn/redraw), never by a waitlist.
  *
- * Table backing this service: public.table_waitlists
+ * Table backing this service: public.table_waitlist
  *   id          uuid pk
  *   table_id    uuid   (a cash table; rows for tournament tables are never created)
  *   user_id     uuid
  *   created_at  timestamptz  (FIFO ordering key)
  *   notified_at timestamptz  (set when the engine offers an open seat)
+ *
+ * CANONICAL TABLE: `table_waitlist`, singular.
+ *
+ * This service used to read and write `table_waitlists` (plural) while the
+ * World Hub API route, TableService, WaitlistManager, WaitlistPage and
+ * GlobalWaitlistListener all used the singular. Two tables with the same
+ * meaning is one table too many: a player joining from the table modal landed
+ * in a different queue from the one the seat-offer path reads, so a waitlist
+ * could never have paid out. Both were empty (the feature had never run in
+ * production), so reconciling cost no data.
  *   status      text   'waiting' | 'notified' | 'seated' | 'cancelled' | 'expired'
  *
  * The engine (server/src/services/supabase.ts → notifyWaitlistSeatOpen) claims the
@@ -95,7 +105,7 @@ function mapRow(
  * expiry, so this is the same identity the SDK would report, without the
  * network round-trip that getUser() makes on every join. Trusting a
  * client-read id is safe here because it is not what authorises anything:
- * every table_waitlists write is checked against auth.uid() by RLS, so a
+ * every table_waitlist write is checked against auth.uid() by RLS, so a
  * stale or tampered local id gets rejected by the database, not by this
  * function. Kept `async` so the call sites are unchanged.
  */
@@ -146,7 +156,7 @@ export const WaitlistService = {
 
     // Return existing active row if present (idempotent join).
     const { data: existing } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .select('id, table_id, user_id, status, created_at, notified_at')
       .eq('table_id', tableId)
       .eq('user_id', userId)
@@ -157,7 +167,7 @@ export const WaitlistService = {
     if (existing) return mapRow(existing as any);
 
     const { data: inserted, error: insErr } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .insert({ table_id: tableId, user_id: userId, status: 'waiting' })
       .select('id, table_id, user_id, status, created_at, notified_at')
       .maybeSingle();
@@ -178,7 +188,7 @@ export const WaitlistService = {
     if (insErr || !inserted) {
       // Unique-violation → a concurrent join won the race; fetch and return it.
       const { data: raced } = await supabase
-        .from('table_waitlists')
+        .from('table_waitlist')
         .select('id, table_id, user_id, status, created_at, notified_at')
         .eq('table_id', tableId)
         .eq('user_id', userId)
@@ -216,7 +226,7 @@ export const WaitlistService = {
       return { success: false, cancelled: 0, error: 'You are not signed in.' };
     }
     const { data, error } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .update({ status: 'cancelled' })
       .eq('table_id', tableId)
       .eq('user_id', userId)
@@ -239,7 +249,7 @@ export const WaitlistService = {
     if (!userId) return null;
 
     const { data: mine, error: mineErr } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .select('id, status, created_at')
       .eq('table_id', tableId)
       .eq('user_id', userId)
@@ -260,7 +270,7 @@ export const WaitlistService = {
 
     // Count 'waiting' rows created strictly before mine.
     const { count, error: cntErr } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .select('id', { count: 'exact', head: true })
       .eq('table_id', tableId)
       .eq('status', 'waiting')
@@ -281,7 +291,7 @@ export const WaitlistService = {
     const userId = await currentUserId();
     if (!userId) return [];
     const { data, error } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .select('id, table_id, user_id, status, created_at, notified_at')
       .eq('user_id', userId)
       .in('status', ACTIVE_STATES)
@@ -302,7 +312,7 @@ export const WaitlistService = {
   async getTableWaitlist(tableId: string): Promise<WaitlistEntry[]> {
     if (!tableId) return [];
     const { data, error } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .select('id, table_id, user_id, status, created_at, notified_at')
       .eq('table_id', tableId)
       .in('status', ACTIVE_STATES)
@@ -332,7 +342,7 @@ export const WaitlistService = {
     if (!uid) return [];
 
     const { data: mine, error: mineErr } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .select('id, table_id, user_id, status, created_at, notified_at')
       .eq('user_id', uid)
       .in('status', ACTIVE_STATES)
@@ -348,7 +358,7 @@ export const WaitlistService = {
 
     // Peers on the same tables → local FIFO ranking.
     const { data: peers, error: peersErr } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .select('id, table_id, status, created_at')
       .in('table_id', tableIds)
       .in('status', ACTIVE_STATES)
@@ -400,7 +410,7 @@ export const WaitlistService = {
     const uid = userId ?? (await currentUserId());
     if (!uid) return false;
     const { data, error } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .update({ status: 'cancelled' })
       .eq('table_id', tableId)
       .eq('user_id', uid)

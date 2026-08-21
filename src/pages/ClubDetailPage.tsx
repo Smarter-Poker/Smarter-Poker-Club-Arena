@@ -788,6 +788,10 @@ export default function ClubDetailPage() {
             .from('club_members')
             .select('user_id, role, chip_balance, status, created_at, last_active')
             .eq('club_id', resolvedId)
+            // 500 with no order is an arbitrary slice of a 588-member club:
+            // whoever falls off the end is invisible, and which 88 those are
+            // can change between two loads of the same page
+            .order('created_at', { ascending: true })
             .limit(500)
             .then(({ data, error }) => {
               if (error) throw error;

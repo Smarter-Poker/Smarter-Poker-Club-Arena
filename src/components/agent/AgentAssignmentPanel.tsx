@@ -43,6 +43,9 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
         .from('club_members')
         .select('user_id, role')
         .eq('club_id', clubId)
+        // an unordered cap returns an arbitrary slice; order so the same 2,000
+        // come back every time and the tail is the tail
+        .order('joined_at', { ascending: true })
         .limit(2000);
       if (error) throw error;
 

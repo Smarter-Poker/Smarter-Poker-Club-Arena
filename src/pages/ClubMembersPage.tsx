@@ -542,6 +542,7 @@ export default function ClubMembersPage() {
               .select('user_id, role, chip_balance, joined_at, parent_agent_id')
               .eq('club_id', resolvedId)
               .not('status', 'in', '("banned","suspended")')
+              .order('joined_at', { ascending: true })
               .limit(5000)
               .then((r) => r),
           { maxRetries: 2, isMountedRef: isMountedRef }

@@ -191,6 +191,9 @@ class FriendSuggestionServiceClass {
         .select('user_id, club_id')
         .in('club_id', clubIds)
         .neq('user_id', userId)
+        // ordered so the 100 suggestions are stable between refreshes rather
+        // than a different arbitrary slice each time
+        .order('joined_at', { ascending: false })
         .limit(100);
       if (mErr) reportError(mErr, 'FriendSuggestionService.getSharedClubUsers_members_error');
 

@@ -517,7 +517,10 @@ export default function CashierPage() {
       const resolvedId = await resolveClubUUID(clubId);
       // Determine which roles this user can send to
       let roleFilter: string[];
-      if (userRole === 'owner' || isUnionOwner) {
+      // 'admin' was missing from every branch, so a club admin fell through to
+      // the else below and was told "regular members can't send chips" - on a
+      // page whose own comment two lines down says admins see everyone.
+      if (userRole === 'owner' || userRole === 'admin' || isUnionOwner) {
         roleFilter = ['agent', 'super_agent', 'sub_agent', 'member', 'player'];
       } else if (userRole === 'agent' || userRole === 'super_agent') {
         roleFilter = ['sub_agent', 'member', 'player'];
@@ -533,39 +536,50 @@ export default function CashierPage() {
       // Fetch members — role-based visibility:
       // Union/Club owners + admins: see everyone
       // Agents/sub-agents: see only their downline (filtered by agent_id)
-      let query = supabase
-        .from('club_members')
-        .select('user_id, role, display_name, nickname, chip_balance, agent_id')
-        .eq('club_id', resolvedId)
-        .neq('user_id', user.id)
-        .in('role', roleFilter)
-        .limit(500);
+      // club_members.agent_id holds the agent's USER id and carries a foreign
+      // key to users. This used to look up the agent's row in `agents` and
+      // filter on agents.id - a different id entirely - so the query could
+      // never match a single row and every agent saw an empty recipient list.
+      // Verified against production: all 1,160 assigned memberships are
+      // user-id shaped and none matches any agents.id. The lookup it needed
+      // was also redundant, because userRole already established that this
+      // person is an agent in this club.
+      const agentScoped = userRole === 'agent' || userRole === 'sub_agent';
 
-      // For agents: only show their assigned downline players
-      if (userRole === 'agent' || userRole === 'sub_agent') {
-        // Get this user's agent record ID
-        const { data: agentRecord } = await retryFetch(
-          () =>
-            supabase
-              .from('agents')
-              .select('id')
-              .eq('user_id', user.id)
-              .eq('club_id', resolvedId)
-              .maybeSingle()
-              .then((r) => r),
-          { maxRetries: 2, isMountedRef: isMounted }
-        );
+      // PostgREST caps a response at 1,000 rows and .limit(500) capped it lower
+      // still, with no ORDER BY - so on a 588-member club, 88 people vanished
+      // in whatever order Postgres happened to return, and the most recently
+      // added members are exactly the ones that fall off the end. Pages through
+      // in a deterministic order instead.
+      const PAGE = 500;
+      const MAX_RECIPIENTS = 10000;
+      const collected: Array<Record<string, unknown>> = [];
+      for (let from = 0; from < MAX_RECIPIENTS; from += PAGE) {
+        let query = supabase
+          .from('club_members')
+          .select('user_id, role, display_name, nickname, chip_balance, agent_id')
+          .eq('club_id', resolvedId)
+          .neq('user_id', user.id)
+          .in('role', roleFilter)
+          // status carries two words for "in this club" - see
+          // tests/unit/clubMemberStatus.test.ts. Asking for one hides most of a
+          // real club; this page previously asked for neither, which also let
+          // banned memberships through as valid recipients.
+          .in('status', ['active', 'approved'])
+          .order('joined_at', { ascending: true })
+          .order('user_id', { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (agentScoped) query = query.eq('agent_id', user.id);
+
+        const { data: page } = await retryFetch(() => query.then((r) => r), {
+          maxRetries: 2,
+          isMountedRef: isMounted,
+        });
         if (!isMounted.current || stale()) return;
-
-        if (agentRecord?.id) {
-          query = query.eq('agent_id', agentRecord.id);
-        }
+        collected.push(...((page || []) as Array<Record<string, unknown>>));
+        if (!page || page.length < PAGE) break;
       }
-
-      const { data } = await retryFetch(() => query.then((r) => r), {
-        maxRetries: 2,
-        isMountedRef: isMounted,
-      });
+      const data = collected;
 
       // Map recipients — use display_name/nickname from club_members directly
       const members = (data || []) as Array<{

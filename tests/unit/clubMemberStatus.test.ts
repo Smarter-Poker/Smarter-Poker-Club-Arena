@@ -87,3 +87,40 @@ describe('club_members status filters', () => {
     ).toEqual([]);
   });
 });
+
+describe('club_members row caps', () => {
+  it('never caps a membership read without ordering it', () => {
+    // A .limit() or .range() with no .order() returns an ARBITRARY slice. On a
+    // 588-member club, `.limit(500)` silently drops 88 people, and which 88
+    // can differ between two loads of the same page. That is how ten horses
+    // assigned to an owner vanished from the cashier: they were the most
+    // recently added rows, which is exactly what falls off an unordered cap.
+    //
+    // Skipped for reads that end in .single()/.maybeSingle(), where one row is
+    // the whole point.
+    const files = walk(SRC);
+    const offenders: string[] = [];
+
+    for (const file of files) {
+      const source = readFileSync(file, 'utf8');
+      FROM_CLUB_MEMBERS.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = FROM_CLUB_MEMBERS.exec(source)) !== null) {
+        const end = source.indexOf(';', m.index);
+        const chain = source.slice(m.index, end === -1 ? m.index + 900 : end);
+        const capped = /\.limit\(\s*\d/.test(chain) || /\.range\(/.test(chain);
+        const ordered = chain.includes('.order(');
+        const single = /maybeSingle\(\)|\.single\(\)/.test(chain);
+        if (capped && !ordered && !single) {
+          offenders.push(`${relative(SRC, file)}:${source.slice(0, m.index).split('\n').length}`);
+        }
+      }
+    }
+
+    expect(
+      offenders,
+      `These membership reads cap the row count without an .order(), so which ` +
+        `rows survive is arbitrary and can change between loads. Add an .order().`
+    ).toEqual([]);
+  });
+});

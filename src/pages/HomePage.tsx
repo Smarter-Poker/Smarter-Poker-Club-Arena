@@ -820,6 +820,15 @@ function HomePageInner() {
   // Stable string identity of club IDs — avoids .map().join() allocation on every render
   const displayClubIdsKey = useMemo(() => displayClubs.map((c) => c.id).join(','), [displayClubs]);
 
+  /* Realtime subscribes per club id, so it needs the ids themselves and not
+     just their joined identity. Keyed off displayClubIdsKey rather than
+     displayClubs so the array is only rebuilt when the MEMBERSHIP changes —
+     otherwise every stats refresh would tear down and rebuild every channel. */
+  const clubIdsForRealtime = useMemo(
+    () => (displayClubIdsKey ? displayClubIdsKey.split(',').filter(Boolean) : []),
+    [displayClubIdsKey]
+  );
+
   // ═══════════════════════════════════════════════════════════════════════════════
   // Per-club stats fetching — member count, club level, active players
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -991,15 +1000,65 @@ function HomePageInner() {
     }
 
     fetchAllClubStats();
-    // BUGFIX 2026-07-24: near-real-time active counts for every visible club card
-    // via a 20s poll (the table_seats realtime listener was removed for write volume).
-    const allStatsPoll = setInterval(fetchAllClubStats, 20000);
+
+    /* ── Dan 2026-08-20: "that needs to be real time updates." ──
+       A 20s poll means a card can be wrong for twenty seconds, and the number
+       it is wrong about is the one that tells a player whether a club is worth
+       opening. The listener was removed in 2026-07 "for write volume", and that
+       concern is real — horses seat and unseat constantly, so an unfiltered
+       table_seats subscription would fire hundreds of times a minute.
+
+       Two things decide the shape of this. table_seats is NOT in the
+       supabase_realtime publication — verified against production — so
+       subscribing to it would have fired exactly zero times, silently. `tables`
+       IS published, carries club_id, and its rows are touched whenever a table
+       moves, which is the same signal an order of magnitude cheaper: one event
+       per table instead of one per seat.
+
+       So: subscribe PER CLUB against `tables` (the filter runs server-side, so
+       we are only woken for clubs actually on screen) and DEBOUNCE the refetch.
+       The event is only a nudge — it says "something moved", never a count —
+       and the batched RPC stays the single source of truth, so a burst of
+       twelve table updates costs one query, not twelve.
+
+       The poll stays as a backstop at a longer interval. If realtime drops
+       silently — which it does — the cards still converge instead of freezing
+       on whatever they last saw. */
+    const debounceRef = { t: null as ReturnType<typeof setTimeout> | null };
+    const scheduleRefresh = () => {
+      if (debounceRef.t) return; // a refresh is already queued; coalesce into it
+      debounceRef.t = setTimeout(() => {
+        debounceRef.t = null;
+        if (isMounted) fetchAllClubStats();
+      }, 1500);
+    };
+
+    const seatChannels = clubIdsForRealtime.map((cid) =>
+      supabase
+        .channel(`club-active-${cid}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'tables', filter: `club_id=eq.${cid}` },
+          scheduleRefresh
+        )
+        .subscribe()
+    );
+
+    const allStatsPoll = setInterval(fetchAllClubStats, 60000);
     return () => {
       isMounted = false;
       clearInterval(allStatsPoll);
+      if (debounceRef.t) clearTimeout(debounceRef.t);
+      for (const ch of seatChannels) {
+        try {
+          supabase.removeChannel(ch);
+        } catch {
+          /* channel already torn down */
+        }
+      }
     };
     // Stats re-fetch naturally when displayClubIdsKey changes (membership changes)
-  }, [displayClubs.length, displayClubIdsKey]);
+  }, [displayClubs.length, displayClubIdsKey, clubIdsForRealtime]);
 
   // Club quick links — shared resolution (utils/clubQuickLink): last-used
   // club if still a member, else first club; unions excluded

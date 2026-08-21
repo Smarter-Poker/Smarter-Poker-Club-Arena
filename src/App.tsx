@@ -8,6 +8,8 @@
 
 import { Routes, Route, Link } from 'react-router-dom';
 import { SessionSummaryHost } from './components/session/SessionSummaryHost';
+import TournamentRankingHost from './components/tournament/TournamentRankingHost';
+import TournamentStartingTicker from './components/tournament/TournamentStartingTicker';
 import { MEDIA_BASE } from './utils/mediaBase';
 import { Suspense, useState, useEffect } from 'react';
 import { lazyWithRetry as lazy } from './utils/lazyWithRetry';
@@ -302,6 +304,14 @@ export default function App() {
           lives outside <Routes> - it has to survive the navigate() off the
           table, and "the lobby" is HomePage OR ClubHomePage OR ClubLobby. */}
         <SessionSummaryHost />
+        {/* Dan 2026-08-20: the tournament bust card. Same feed as the cash
+          summary above, split on payload.tournament — see TournamentRankingHost. */}
+        <TournamentRankingHost />
+        {/* Dan 2026-08-20: "when a scheduled MTT is about to start... 5 minutes
+          left, there should be a scrolling announcement across all active
+          club/union cash games and tournaments." It has to reach players where
+          they already are, so it rides at the app root over every page. */}
+        <TournamentStartingTicker />
         <MilestoneToast />
         <ConnectionStatusBar />
         {/* Accessibility: Skip to main content link */}

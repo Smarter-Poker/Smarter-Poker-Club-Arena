@@ -195,7 +195,14 @@ export function SessionSummaryHost() {
     return out;
   }, [payload]);
 
-  if (!payload) return null;
+  /* Dan 2026-08-20 gave a reference for the tournament card, and it is a
+     different card entirely — RANKING, a medal, a place band, Stay Observing /
+     Play Again. TournamentRankingHost owns that one and reads the same feed,
+     so this host stands down whenever the payload carries a tournament result.
+     The split is on the data, not a flag: a tournament cannot fall through to
+     the cash summary and report a chip profit on a seat where chips are not
+     money. */
+  if (!payload || payload.tournament) return null;
   if (typeof document === 'undefined') return null;
 
   return createPortal(

@@ -25,6 +25,14 @@
 .ngc:hover {
   transform: translateY(-4px);
 }
+/* QUICK-JOIN FEEL 2026-08-21: a tile that seats you on tap needs tap
+   feedback — press compresses, glow tightens, so the tap reads as taken. */
+.ngc:active {
+  transform: scale(0.97);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.6),
+    0 0 22px -8px var(--neon);
+}
 .ngc::before {
   content: '';
   position: absolute;

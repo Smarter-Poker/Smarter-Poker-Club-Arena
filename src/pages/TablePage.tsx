@@ -1170,6 +1170,7 @@ export default function TablePage({
     Array<{ id: number; fromX: number; fromY: number; toX: number; toY: number; label: string }>
   >([]);
   const potWinFloatIdRef = useRef(0);
+  const potWinFloatTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const spawnPotWinFloat = useCallback(
     (fromX: number, fromY: number, toX: number, toY: number, amount: number) => {
       if (!(amount > 0)) return;
@@ -1178,9 +1179,20 @@ export default function TablePage({
       const id = ++potWinFloatIdRef.current;
       setPotWinFloats((prev) => [...prev, { id, fromX, fromY, toX, toY, label }]);
       // Self-clean after the CSS animation (2.2s) has fully played out.
-      setTimeout(() => {
+      // REVIEW FIX 2026-08-21: timers tracked so unmount clears them — no
+      // setState on a dead page during rapid table hops.
+      const timer = setTimeout(() => {
+        potWinFloatTimersRef.current.delete(timer);
         setPotWinFloats((prev) => prev.filter((f) => f.id !== id));
       }, 2400 * getAnimationSpeed());
+      potWinFloatTimersRef.current.add(timer);
+    },
+    []
+  );
+  useEffect(
+    () => () => {
+      for (const t of potWinFloatTimersRef.current) clearTimeout(t);
+      potWinFloatTimersRef.current.clear();
     },
     []
   );
@@ -1449,6 +1461,14 @@ export default function TablePage({
   // from a table they were never at risk of losing. Track when sit-out started
   // instead and report elapsed time.
   const [sitOutSince, setSitOutSince] = useState<number | null>(null);
+  // SIT-OUT REVIEW FIX 2026-08-21: authoritative set of seated user ids whose
+  // table_seats row says is_sitting_out. The engine snapshot's per-hand flag
+  // is (correctly) always false — a sat-out tournament player is a full hand
+  // participant — so without this the greyed seat was overwritten to
+  // active/folded by the very next snapshot. Fed by the initial seats load
+  // and the realtime table_seats subscription; read by the snapshot mapping
+  // and the footer bar.
+  const sittingOutIdsRef = useRef<Set<string>>(new Set());
   const [showWaitList, setShowWaitList] = useState(false);
   // Stamp the clock off the SERVER's view of the hero's seat, not off any
   // local button press — a player can be put into sit-out by the engine
@@ -4818,6 +4838,9 @@ export default function TablePage({
             for (const seat of existingSeats) {
               const seatIdx = seat.seat_number - 1;
               if (seatIdx < 0 || seatIdx >= updatedPlayers.length) continue;
+              // Seed the authoritative sit-out set from the seat rows.
+              if (seat.is_sitting_out) sittingOutIdsRef.current.add(seat.user_id);
+              else sittingOutIdsRef.current.delete(seat.user_id);
               const profile = profileMap.get(seat.user_id);
               // Only the FIRST matching seat gets isHero — prevents duplicates
               const isHero = seat.user_id === userId && !heroAlreadyAssigned;
@@ -5502,9 +5525,13 @@ export default function TablePage({
                 // sitting_out and active — never clobber a transient in-hand
                 // status (folded/all_in) the snapshot stream owns.
                 let status = (existing as any).status;
-                if (updated.is_sitting_out === true) status = 'sitting_out';
-                else if (updated.is_sitting_out === false && status === 'sitting_out')
-                  status = 'active';
+                if (updated.is_sitting_out === true) {
+                  status = 'sitting_out';
+                  sittingOutIdsRef.current.add(updated.user_id);
+                } else if (updated.is_sitting_out === false) {
+                  sittingOutIdsRef.current.delete(updated.user_id);
+                  if (status === 'sitting_out') status = 'active';
+                }
                 updatedPlayers[seatIdx] = {
                   ...existing,
                   stack: updated.stack,
@@ -5686,13 +5713,21 @@ export default function TablePage({
                   sp.user_id === userId || (sp.cards && sp.cards.length > 0 && !sp.is_folded)
                     ? sp.cards || existing?.holeCards || []
                     : [],
-                status: sp.is_folded
-                  ? 'folded'
-                  : sp.is_all_in
-                    ? 'all_in'
-                    : sp.is_sitting_out
-                      ? 'sitting_out'
-                      : 'active',
+                // SIT-OUT REVIEW FIX 2026-08-21: the hand-state flag is
+                // always false by design (sat-out players are dealt in and
+                // blinded off). The seat-row truth lives in sittingOutIdsRef;
+                // a sat-out player's seat stays GREY except in the moment
+                // they are all-in (impossible while auto-folding, but never
+                // hide a live all-in).
+                status: sp.is_all_in
+                  ? 'all_in'
+                  : sittingOutIdsRef.current.has(sp.user_id)
+                    ? 'sitting_out'
+                    : sp.is_folded
+                      ? 'folded'
+                      : sp.is_sitting_out
+                        ? 'sitting_out'
+                        : 'active',
                 isHero: sp.user_id === userId,
                 showCards: sp.cards && sp.cards.length > 0 && !sp.is_folded,
               } as any;
@@ -9333,11 +9368,8 @@ export default function TablePage({
               Seat Reserved, You'll Be Dealt In Next Hand
             </span>
           </div>
-        ) : !tableState.isHandInProgress && !isRabbitAvailable ? (
-          <div className="spectator-footer-bar" data-state="waiting">
-            <span className="spectator-footer-bar__label">Waiting For Next Hand…</span>
-          </div>
-        ) : getPlayerAtSeat(tableState.heroSeat)?.status === 'sitting_out' ? (
+        ) : getPlayerAtSeat(tableState.heroSeat)?.status === 'sitting_out' ||
+          sittingOutIdsRef.current.has(userId || '') ? (
           /* SIT-OUT VISIBILITY 2026-08-21: whether the hero sat out from the
              settings panel or was force-sat-out after 3 straight timeouts,
              the footer says so plainly and offers the way back. In
@@ -9353,6 +9385,7 @@ export default function TablePage({
                 if (!tableId) return;
                 void setSitOut(tableId, false).then((res) => {
                   if (res?.success) {
+                    if (userId) sittingOutIdsRef.current.delete(userId);
                     setSitOutNextHand(false);
                     setTableState((prev) => {
                       const seatIdx = prev.heroSeat - 1;
@@ -9372,6 +9405,10 @@ export default function TablePage({
             >
               I'm Back
             </button>
+          </div>
+        ) : !tableState.isHandInProgress && !isRabbitAvailable ? (
+          <div className="spectator-footer-bar" data-state="waiting">
+            <span className="spectator-footer-bar__label">Waiting For Next Hand…</span>
           </div>
         ) : tableState.isHandInProgress &&
           (getPlayerAtSeat(tableState.heroSeat)?.status === 'folded' ||

@@ -606,7 +606,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // moment the held seat is taken (start-when-full, 5s discovery) -> poll for
   // our seat -> land on the table. The overlay covers the wait; Cancel backs
   // out of the WAIT (the registration stands — the game still starts).
-  const [spinJoin, setSpinJoin] = useState<{ name: string } | null>(null);
+  const [spinJoin, setSpinJoin] = useState<{ name: string; stage: string } | null>(null);
   const spinJoinCancelRef = useRef(false);
 
   const spinQuickJoin = useCallback(
@@ -616,7 +616,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     ) => {
       if (spinJoin) return; // one join at a time
       spinJoinCancelRef.current = false;
-      setSpinJoin({ name: t.name });
+      setSpinJoin({ name: t.name, stage: 'Reserving Your Seat' });
       const fail = (msg: string) => {
         setSpinJoin(null);
         toast?.error?.(msg);
@@ -691,16 +691,19 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             );
           }
           targetId = open.id;
-          setSpinJoin({ name: open.name || t.name });
+          setSpinJoin({ name: open.name || t.name, stage: 'Reserving Your Seat' });
           reason = await tryRegister(targetId);
         }
         if (reason) {
+          // fn_register_for_tournament's exact reason string is
+          // 'insufficient_balance'; the regex keeps any variant covered.
           const pretty =
-            reason === 'insufficient_funds' || /insufficient/i.test(reason)
+            reason === 'insufficient_balance' || /insufficient/i.test(reason)
               ? 'Not Enough Chips For This Buy In'
               : 'Could Not Join The Spin, Please Try Again';
           return fail(pretty);
         }
+        setSpinJoin((prev) => (prev ? { ...prev, stage: 'Seat Taken, Game Starting' } : prev));
 
         // Registered (or already in). Wait for the engine to seat us: the
         // held-seat spin starts when full (5s discovery cadence), tables are
@@ -716,6 +719,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             .limit(3);
           const tableIds = (tbls || []).map((x) => x.id);
           if (tableIds.length > 0) {
+            setSpinJoin((prev) =>
+              prev && prev.stage !== 'Dealing You In'
+                ? { ...prev, stage: 'Dealing You In' }
+                : prev
+            );
             const { data: seat } = await supabase
               .from('table_seats')
               .select('table_id')
@@ -2117,7 +2125,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         <div className="spin-join-overlay" role="status">
           <div className="spin-join-card">
             <div className="spin-join-spinner" aria-hidden="true" />
-            <div className="spin-join-title">Taking Your Seat</div>
+            <div className="spin-join-title">{spinJoin.stage}</div>
             <div className="spin-join-sub">{spinJoin.name}</div>
             <button
               type="button"

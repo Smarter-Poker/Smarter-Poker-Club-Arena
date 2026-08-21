@@ -184,11 +184,13 @@ export default function CashierTradePage() {
       const isStaff = role === 'owner' || role === 'admin';
       const isAgent = role === 'agent' || role === 'super_agent' || role === 'sub_agent';
 
+      // NOTE: no PostgREST embed here - club_members.user_id has no FK to
+      // profiles (it references public.users), so `profiles:user_id(...)`
+      // 400s and the whole load died (verified live: 0 members, 0.00
+      // balances on first deploy). Two-step fetch instead.
       let q = supabase
         .from('club_members')
-        .select(
-          'user_id, role, chip_balance, display_name, nickname, agent_id, profiles:user_id (username, display_name, avatar_url, is_horse)'
-        )
+        .select('user_id, role, chip_balance, display_name, nickname, agent_id')
         .eq('club_id', clubUuid)
         .eq('status', 'active')
         .neq('user_id', user.id)
@@ -197,13 +199,21 @@ export default function CashierTradePage() {
       const { data: dl, error: dlErr } = await q;
       if (dlErr) throw dlErr;
 
+      const ids = (dl || []).map((r) => r.user_id as string);
+      const profMap = new Map<
+        string,
+        { username?: string; display_name?: string; avatar_url?: string; is_horse?: boolean }
+      >();
+      if (ids.length > 0) {
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url, is_horse')
+          .in('id', ids);
+        for (const pr of profs || []) profMap.set(pr.id as string, pr);
+      }
+
       const rows: DownlineRow[] = (dl || []).map((r) => {
-        const p = (Array.isArray(r.profiles) ? r.profiles[0] : r.profiles) as {
-          username?: string;
-          display_name?: string;
-          avatar_url?: string;
-          is_horse?: boolean;
-        } | null;
+        const p = profMap.get(r.user_id as string) || null;
         return {
           userId: r.user_id as string,
           name:

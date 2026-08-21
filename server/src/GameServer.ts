@@ -1578,6 +1578,55 @@ export class GameServer {
             await recoverStuckCompletingTournaments('discovery-watchdog', stuck.id);
           }
         }
+
+        // ── STALLED DECIDED-BUT-RUNNING RECOVERY (2026-08-21) ──
+        // A tournament whose LAST elimination was processed but whose finish
+        // check never ran (engine restart in the gap) stays RUNNING forever:
+        // the survivor sits in status='playing' with no position, no prize,
+        // and an open table where no hand can ever be dealt again. Observed
+        // live twice in the 23:00-00:25Z deploy-churn window (two Turbo SNGs,
+        // ~2h stalled). Re-adoption does NOT self-heal: the finish check only
+        // runs inside elimination processing, and with one player there are
+        // no hands, no eliminations, no check. Detect the decided state here,
+        // stop any idle engine, and route through the SAME recovery path that
+        // rescues stuck-COMPLETING tournaments (ranks survivors, pays via
+        // computePlacePrize, closes every player row).
+        const decidedCutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+        const { data: maybeDecided } = await supabase
+          .from('tournaments')
+          .select('id, name')
+          .eq('status', 'RUNNING')
+          .lt('started_at', decidedCutoff);
+        for (const t of maybeDecided || []) {
+          const { count: playingCount, error: playingErr } = await supabase
+            .from('tournament_players')
+            .select('*', { count: 'exact', head: true })
+            .eq('tournament_id', t.id)
+            .eq('status', 'playing');
+          // PAYOUT-INTEGRITY: a count we could not read is UNKNOWN, not zero.
+          if (playingErr || playingCount === null || playingCount === undefined) continue;
+          if (playingCount > 1) continue; // still a live contest
+          console.warn(
+            `[GameServer] RUNNING tournament ${t.name} (${t.id.slice(0, 8)}) is decided (${playingCount} playing) — recovering the winner`
+          );
+          const idleTm = this.tournamentEngines.get(t.id);
+          if (idleTm) {
+            try {
+              idleTm.stop();
+            } catch (err) {
+              reportError(err, 'GameServer.stalled_decided_stop_engine');
+            }
+            this.tournamentEngines.delete(t.id);
+          }
+          // Conditional flip so a concurrent legitimate finish is never clobbered;
+          // recovery itself only acts on COMPLETING rows and dedupes payouts.
+          await supabase
+            .from('tournaments')
+            .update({ status: 'COMPLETING' })
+            .eq('id', t.id)
+            .eq('status', 'RUNNING');
+          await recoverStuckCompletingTournaments('stalled-running-decided', t.id);
+        }
       } catch (err) {
         reportError(err, 'GameServer.Tournament_discovery_error');
       }

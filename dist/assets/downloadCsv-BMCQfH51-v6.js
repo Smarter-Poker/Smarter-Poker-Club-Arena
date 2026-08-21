@@ -1,0 +1,2 @@
+function r(t){const n=t==null?"":String(t);return/[",\n\r]/.test(n)?`"${n.replace(/"/g,'""')}"`:n}function s(t,n){if(typeof document>"u"||typeof(URL==null?void 0:URL.createObjectURL)!="function")return!1;const c=new Blob(["\uFEFF"+n],{type:"text/csv;charset=utf-8;"}),o=URL.createObjectURL(c),e=document.createElement("a");return e.href=o,e.download=t,e.rel="noopener",e.style.display="none",document.body.appendChild(e),e.click(),e.remove(),setTimeout(()=>URL.revokeObjectURL(o),3e4),!0}export{r as c,s as d};
+//# sourceMappingURL=downloadCsv-BMCQfH51-v6.js.map

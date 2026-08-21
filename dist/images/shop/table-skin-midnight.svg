@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 260"><defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#1e202a"/><stop offset="1" stop-color="#14161e"/>
+</linearGradient>
+<radialGradient id="glow" cx="0.5" cy="0.42" r="0.65">
+<stop offset="0" stop-color="#4599ff" stop-opacity="0.35"/><stop offset="1" stop-color="#4599ff" stop-opacity="0"/>
+</radialGradient>
+</defs>
+<rect width="400" height="260" rx="14" fill="url(#bg)"/>
+<rect width="400" height="260" rx="14" fill="url(#glow)"/>
+<rect x="1" y="1" width="398" height="258" rx="13" fill="none" stroke="#4599ff" stroke-opacity="0.35" stroke-width="2"/><ellipse cx="200" cy="112" rx="140" ry="72" fill="#0d1b3d" stroke="#1877F2" stroke-width="8"/>
+<ellipse cx="200" cy="112" rx="112" ry="52" fill="none" stroke="rgba(69,153,255,0.5)" stroke-width="2" stroke-dasharray="6 6"/>
+<circle cx="200" cy="112" r="16" fill="rgba(69,153,255,0.2)" stroke="#4599ff" stroke-width="2"/>
+<text x="200" y="118" text-anchor="middle" font-family="Inter,sans-serif" font-size="14" font-weight="800" fill="#4599ff">♠</text><text x="200" y="238" text-anchor="middle" font-family="Inter,-apple-system,sans-serif" font-size="15" font-weight="700" fill="#e4e6eb" opacity="0.85">MIDNIGHT FELT</text></svg>

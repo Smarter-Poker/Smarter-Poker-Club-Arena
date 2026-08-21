@@ -20,10 +20,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 
-const css = fs.readFileSync(
-  path.join(process.cwd(), 'src/components/table/SeatSlot.css'),
-  'utf8'
-);
+const css = fs.readFileSync(path.join(process.cwd(), 'src/components/table/SeatSlot.css'), 'utf8');
 
 /* Two markups, because the row geometry has to hold for both.
  *
@@ -91,15 +88,21 @@ async function measure(
       feltLeft: scaler.left,
       feltRight: scaler.right,
       seatCentreX: seat.left + seat.width / 2,
+      seatRight: seat.right,
       seatTop: seat.top,
+      seatBottom: seat.bottom,
+      rowTop: row.top,
       rowLeft: row.left,
       rowRight: row.right,
       rowCentreX: row.left + row.width / 2,
       rowBottom: row.bottom,
       cardW: card.width,
       cardH: card.height,
-      step: parseFloat(getComputedStyle(document.querySelector('.seat__cards--hero')!)
-        .getPropertyValue('--sp-hero-card-step')),
+      step: parseFloat(
+        getComputedStyle(document.querySelector('.seat__cards--hero')!).getPropertyValue(
+          '--sp-hero-card-step'
+        )
+      ),
     };
   });
 }
@@ -110,31 +113,55 @@ for (const bp of BREAKPOINTS) {
 
     for (const n of [2, 4, 5, 6]) {
       for (const markup of ['wrapped', 'bare'] as const) {
-      test(`${n} cards (${markup}): centred above the player box, inside the felt`, async ({
-        page,
-      }) => {
-        const m = await measure(page, n, markup);
+        const placement = n < 4 ? 'beside the plate' : 'centred above the plate';
+        test(`${n} cards (${markup}): ${placement}, inside the felt`, async ({ page }) => {
+          const m = await measure(page, n, markup);
 
-        // Item 1: centred on the seat, not offset to one side.
-        expect(Math.abs(m.rowCentreX - m.seatCentreX)).toBeLessThanOrEqual(1);
+          if (n < 4) {
+            /* Dan 2026-08-21, bug list item 11, verbatim: "hole cards MUST ALWAYS
+             appear to the RIGHT of the hero, not on top of the profile."
 
-        // Directly ABOVE the box, not overlapping it.
-        expect(m.rowBottom).toBeLessThanOrEqual(m.seatTop);
+             This supersedes item 1 for hold-em. The centred-above row put two
+             cards across the hero's own avatar and name on a 375px phone, which
+             is the thing item 11 is about. PLO keeps the centred layout below,
+             because a six-card row hung off the right of a bottom-centre seat
+             runs clean off the felt — that exception is why the CSS is written
+             as :not(:has(4th child)) rather than an unconditional rule.
 
-        // Never escapes the felt on either side.
-        expect(m.rowLeft).toBeGreaterThanOrEqual(m.feltLeft);
-        expect(m.rowRight).toBeLessThanOrEqual(m.feltRight);
+             This spec asserted centring for every hand size, so the moment the
+             CSS started honouring item 11 the suite went red on correct code —
+             eight failures that described the fix as the bug. */
+            expect(
+              m.rowLeft,
+              'the row must start at or past the seat, never over it'
+            ).toBeGreaterThanOrEqual(m.seatRight - 1);
 
-        // Cards are actually rendered.
-        expect(m.cardW).toBeGreaterThan(0);
-        expect(m.cardH).toBeGreaterThan(0);
+            // Beside means level with the plate, not floating above it: the row's
+            // own vertical span has to overlap the seat's.
+            expect(m.rowTop).toBeLessThan(m.seatBottom);
+            expect(m.rowBottom).toBeGreaterThan(m.seatTop);
+          } else {
+            // Item 1 still governs PLO: centred on the seat, not offset to one side.
+            expect(Math.abs(m.rowCentreX - m.seatCentreX)).toBeLessThanOrEqual(1);
 
-        /* The row is exactly w + (n - 1) * step. Asserting the total width, not
+            // Directly ABOVE the box, not overlapping it.
+            expect(m.rowBottom).toBeLessThanOrEqual(m.seatTop);
+          }
+
+          // Never escapes the felt on either side.
+          expect(m.rowLeft).toBeGreaterThanOrEqual(m.feltLeft);
+          expect(m.rowRight).toBeLessThanOrEqual(m.feltRight);
+
+          // Cards are actually rendered.
+          expect(m.cardW).toBeGreaterThan(0);
+          expect(m.cardH).toBeGreaterThan(0);
+
+          /* The row is exactly w + (n - 1) * step. Asserting the total width, not
            just "inside the felt", is what catches a lost overlap on a hand size
            small enough to still fit: a 4-card row with no overlap is 240px,
            inside the 320px felt, and wrong. */
-        expect(m.rowRight - m.rowLeft).toBeCloseTo(m.cardW + (n - 1) * m.step, 0);
-      });
+          expect(m.rowRight - m.rowLeft).toBeCloseTo(m.cardW + (n - 1) * m.step, 0);
+        });
       }
     }
 

@@ -41,15 +41,11 @@ const VARIANT_TOKENS = new Set([
   'sng',
   'mtt',
   'pko',
+  'hu',
+  'nl',
+  'pl',
+  'fl',
 ]);
-
-/* AUDIT 2026-08-20 — the two-letter variants are deliberately NOT in that set.
-   'nl', 'pl', 'fl' and 'hu' are real poker abbreviations, but they are also
-   ordinary words and name fragments, and this function runs over every table
-   and club name a human can type. A home game called "Fl Keys Friday" or a
-   host named Hu would have been shouted at. The four-plus letter acronyms
-   above carry no such ambiguity, and a table named "NL Hold'em" already
-   arrives capitalised from whoever typed it. */
 
 /**
  * Uppercase every game-variant token in a display string.

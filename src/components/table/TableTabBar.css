@@ -258,6 +258,18 @@
   font-size: 0.45rem;
 }
 
+/* A tab in cards mode trades label padding for card room, so PLO4's four
+   cards plus the countdown badge fit inside the pill without clipping. */
+.table-tab-bar__tab--cards {
+  padding: 0 8px;
+}
+
+@media (max-width: 480px) {
+  .table-tab-bar__tab--cards {
+    padding: 0 6px;
+  }
+}
+
 /* 4-color deck */
 .table-tab-bar__mini-card--s {
   color: #111318;
@@ -368,7 +380,14 @@
   line-height: 1;
 }
 
-.table-tab-bar__tab:hover .table-tab-bar__close {
+/* Audit 2026-08-20: hover-only meant the close control was UNREACHABLE on
+   touch devices (no hover) and invisible to keyboard users (display:none is
+   out of the tab order). Show it on hover, whenever focus is inside the tab,
+   and always on the active tab so touch users can close the table they are
+   looking at. */
+.table-tab-bar__tab:hover .table-tab-bar__close,
+.table-tab-bar__tab:focus-within .table-tab-bar__close,
+.table-tab-bar__tab--active .table-tab-bar__close {
   display: flex;
 }
 

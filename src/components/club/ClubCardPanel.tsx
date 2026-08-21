@@ -12,15 +12,6 @@ interface ClubCardPanelProps {
   clubLevel: number;
   activePlayers: number;
   clubId?: number | string;
-  /**
-   * Where the club sits between its current level and the next, 0-100, on the
-   * 1-55 member ladder. Omit to hide the progress line entirely.
-   */
-  levelProgressPercent?: number;
-  /** Members still needed for the next level. null at the cap. */
-  membersToNextLevel?: number | null;
-  /** "Regional Operator" etc, for the level tile's tooltip. */
-  levelTierLabel?: string;
   cardImageUrl?: string | null;
   logoUrl?: string | null;
   entityType?: 'club' | 'union';
@@ -32,9 +23,6 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
   clubLevel,
   activePlayers,
   clubId,
-  levelProgressPercent,
-  membersToNextLevel,
-  levelTierLabel,
   cardImageUrl,
   logoUrl,
   entityType = 'club',
@@ -127,19 +115,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
               {Math.max(1, totalMembers).toLocaleString()}
             </span>
           </div>
-          {/* Dan 2026-08-20: level is now the 1-55 member ladder, so the bare
-              number is worth explaining on hover — which tier it is, and how
-              many members away the next one is. */}
-          <div
-            className="club-card-stat"
-            title={
-              levelTierLabel
-                ? membersToNextLevel != null
-                  ? `${levelTierLabel} - ${membersToNextLevel.toLocaleString()} more members to level ${Math.max(1, clubLevel) + 1}`
-                  : `${levelTierLabel} - maximum level`
-                : undefined
-            }
-          >
+          <div className="club-card-stat">
             <span className="club-card-stat-label">LEVEL</span>
             <span className="club-card-stat-value club-card-stat-value--level">
               {Math.max(1, clubLevel)}
@@ -150,25 +126,6 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
             <span className="club-card-stat-value">{activePlayers.toLocaleString()}</span>
           </div>
         </div>
-
-        {/* Progress toward the next level. A bare number does not say whether a
-            club just levelled or is one member short of the next; this does,
-            in 3px. Hidden entirely when no progress was supplied. */}
-        {levelProgressPercent != null && (
-          <div
-            className="club-card-level-track"
-            role="progressbar"
-            aria-valuenow={Math.round(levelProgressPercent)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label={`Progress to level ${Math.max(1, clubLevel) + 1}`}
-          >
-            <span
-              className="club-card-level-fill"
-              style={{ width: `${Math.max(0, Math.min(100, levelProgressPercent))}%` }}
-            />
-          </div>
-        )}
       </div>
     </div>
   );

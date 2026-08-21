@@ -862,15 +862,44 @@ function HomePageInner() {
 
             const activePlayers = activeCountMap.get(club.id) || 0;
 
-            /* AUDIT 2026-08-20 - this block is gone, and with it two network
-               round trips per club on the hottest page in the app.
+            // Auto-recompute club level if stuck at default
+            // Session dedup: only fire the RPC once per session per club
+            let effectiveLevel = club.level || 1;
+            const levelRecomputeKey = `level_recomputed_${club.id}`;
+            if (effectiveLevel <= 1 && !sessionStorage.getItem(levelRecomputeKey)) {
+              try {
+                const { error: rpcErr } = await supabase.rpc('recompute_club_levels', {
+                  p_club_id: club.id,
+                });
+                if (!rpcErr) {
+                  sessionStorage.setItem(levelRecomputeKey, '1');
+                  const { data: refreshed } = await supabase
+                    .from('clubs')
+                    .select(
+                      'level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+                    )
+                    .eq('id', club.id)
+                    .maybeSingle();
+                  if (refreshed && refreshed.level > 1) {
+                    effectiveLevel = refreshed.level;
+                    club.hierarchy_units_rounded_up =
+                      refreshed.hierarchy_units_rounded_up ?? club.hierarchy_units_rounded_up;
+                    club.player_threshold_current =
+                      refreshed.player_threshold_current ?? club.player_threshold_current;
+                    club.player_threshold_next =
+                      refreshed.player_threshold_next ?? club.player_threshold_next;
+                    club.hierarchy_threshold_current =
+                      refreshed.hierarchy_threshold_current ?? club.hierarchy_threshold_current;
+                    club.hierarchy_threshold_next =
+                      refreshed.hierarchy_threshold_next ?? club.hierarchy_threshold_next;
+                  }
+                }
+              } catch (e) {
+                reportError(e, 'HomePage');
+                // RPC not available
+              }
+            }
 
-               It recomputed the stored clubs.level and then re-SELECTed the
-               club to pick up that level and its threshold columns. Nothing
-               reads any of that any more: level is derived from member_count
-               below, client-side, on the published ladder. The recompute RPC
-               fired for every club sitting at level 1 - which, on a fresh
-               session, is every club a new player has just joined. */
             /* Dan 2026-08-20: "a true 'club level' level 1-55 that is
                determined based on how many players are inside a club."
 
@@ -878,9 +907,11 @@ function HomePageInner() {
                HIERARCHY curve — so a club levelled up by appointing agents,
                and the badge answered a question nobody was asking. Level is
                now purely member count, on the published 1-55 ladder that
-               public.fn_club_level_for_members mirrors. The stored clubs.level
-               is no longer read here at all. */
+               public.fn_club_level_for_members mirrors. `effectiveLevel` (the
+               stored clubs.level) is left alone for the progress bars that
+               still read the legacy threshold columns. */
             const clubLevel = getClubLevelFromMembers(memberCount);
+            void effectiveLevel;
 
             if (isMounted) {
               // Safety clamp: active players can never exceed member count

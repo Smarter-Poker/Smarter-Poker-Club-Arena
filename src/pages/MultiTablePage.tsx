@@ -22,6 +22,7 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { supabase } from '../lib/supabase';
+import { soundService, haptic } from '../services/SoundService';
 import './MultiTablePage.css';
 
 // Lazy-load TablePage for code splitting
@@ -68,6 +69,8 @@ interface TableInstance {
   holeCards?: string;
   /** Hero's last action this street at this table ('fold', 'call', ...). */
   lastAction?: string;
+  /** Live Bad Beat Jackpot pool at this table (0/undefined = no BBJ). */
+  jackpot?: number;
   /**
    * Dan 2026-08-15: a tab is either a live table or a LOBBY placeholder.
    *
@@ -645,6 +648,32 @@ export default function MultiTablePage() {
     [tables, secondsLeft, nowMs]
   );
 
+  /**
+   * ─── Background-table urgency alert (audit 2026-08-20) ─────────────────
+   * The bell (playTurnAlert) rings when a turn STARTS on any table, and the
+   * tick-tock warning loop is deliberately owned by the ACTIVE TablePage only
+   * (four instances sharing the singleton loop used to fight over it — see
+   * the AUDIT-2 note in TablePage). That left one hole: a background table's
+   * clock entering its final seconds made no sound at all. One-shot per turn,
+   * on the rising edge of the <=6s window, for non-active tabs only — the
+   * active tab's own warning loop covers itself, and the auto-switch below
+   * yanks focus at <5s anyway. Keyed by the turn's deadline so the same turn
+   * never re-alerts, even across re-renders.
+   */
+  const urgentAlertedRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    for (let i = 0; i < tables.length; i++) {
+      const t = tables[i];
+      if (i === activeIndex || !t.isMyTurn || t.turnDeadlineMs === undefined) continue;
+      const left = secondsLeft(t);
+      if (left === undefined || left > 6) continue;
+      if (urgentAlertedRef.current.get(t.id) === t.turnDeadlineMs) continue;
+      urgentAlertedRef.current.set(t.id, t.turnDeadlineMs);
+      if (soundService.isEnabled()) soundService.playTimerWarning();
+      haptic.strong();
+    }
+  }, [tables, activeIndex, secondsLeft]);
+
   // ─── Table Management ────────────────────────────────────────────────
   const handleTabSelect = useCallback(
     (tabId: string) => {
@@ -1145,6 +1174,12 @@ export default function MultiTablePage() {
               onAddTable={handleAddTable}
               maxTables={MAX_TABLES}
               realtimeDown={realtimeDown}
+              /* Audit 2026-08-20: TableTabBar's JACKPOT badge existed since
+                 the component was written but nothing ever passed the prop.
+                 The ACTIVE table's live BBJ pool — matching the reference
+                 footage, where the ticker above the felt follows the table
+                 you are looking at. */
+              jackpotAmount={tables[activeIndex]?.jackpot}
             />
             {tables.length > 1 && (
               <button

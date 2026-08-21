@@ -14,10 +14,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
-import {
-  publishSessionSummary,
-  type TournamentResult,
-} from '../services/pendingSessionSummary';
+import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -284,19 +281,10 @@ async function fetchTournamentResult(
   };
 
   try {
-    /* AUDIT 2026-08-20 — entrants is COUNTED, not read off the tournament row.
-
-       `tournaments.current_players` is an entry counter incremented on register
-       and decremented only on UNregister; no elimination path touches it. It is
-       close to the field size and drifts from it, which is why TournamentClock
-       already stopped trusting it ("the clock showed the starting field for the
-       whole tournament"). Counting tournament_players is the same source the
-       clock uses, so the two agree, and it stays right for re-entry events.
-       current_players remains the fallback if the count cannot be read. */
-    const [{ data: entry }, { data: tourney }, { count: entryCount }] = await Promise.all([
+    const [{ data: entry }, { data: tourney }] = await Promise.all([
       supabase
         .from('tournament_players')
-        .select('position, prize, bounty_winnings, bounties_collected, rebuys, add_on, status')
+        .select('position, prize, bounty_winnings, bounties_collected, rebuys, add_on')
         .eq('tournament_id', tournamentId)
         .eq('user_id', userId)
         .maybeSingle(),
@@ -305,16 +293,12 @@ async function fetchTournamentResult(
         .select('name, current_players')
         .eq('id', tournamentId)
         .maybeSingle(),
-      supabase
-        .from('tournament_players')
-        .select('user_id', { count: 'exact', head: true })
-        .eq('tournament_id', tournamentId),
     ]);
 
     return {
       name: tourney?.name || undefined,
       finishPlace: entry?.position ?? null,
-      entrants: entryCount ?? tourney?.current_players ?? null,
+      entrants: tourney?.current_players ?? null,
       prize: Number(entry?.prize) || 0,
       bountyWinnings: Number(entry?.bounty_winnings) || 0,
       knockouts: Number(entry?.bounties_collected) || 0,
@@ -539,6 +523,10 @@ interface TablePageProps {
     /** Hero's last action this street ('fold' | 'check' | 'call' | 'bet' |
      *  'raise' | ...), for the transient badge under the tab. */
     lastAction?: string;
+    /** Live Bad Beat Jackpot pool at this table, for the tab bar's JACKPOT
+     *  badge (audit 2026-08-20: the badge existed in TableTabBar but nothing
+     *  ever passed it — dead wiring since the component was written). */
+    jackpot?: number;
   }) => void;
   /** Whether this table is part of a multi-table session (hides own header if tab bar is shown) */
   isMultiTable?: boolean;
@@ -1843,6 +1831,16 @@ export default function TablePage({
   // Bad Beat Jackpot state
   const [showBBJ, setShowBBJ] = useState(false);
   const [bbjAmount, setBbjAmount] = useState(0);
+
+  // Audit 2026-08-20: feed the live BBJ pool to the multi-table tab bar. A
+  // separate effect (not folded into the main reporting effect above) because
+  // bbjAmount is declared here, after that effect's deps close over their
+  // values — and the pool moves on its own realtime cadence anyway.
+  useEffect(() => {
+    if (!onTableInfoUpdate || bbjAmount <= 0) return;
+    onTableInfoUpdate({ jackpot: bbjAmount });
+  }, [bbjAmount, onTableInfoUpdate]);
+
   // Resolved pool id — the last-5-jackpots modal reads its history from this.
   const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
   // Pinned once per table session so the felt masthead does not silently
@@ -5818,13 +5816,10 @@ export default function TablePage({
           // Hold the flop reveal until the bomb explodes (see state decl).
           setBombPotHoldFlop(true);
           if (bombPotHoldTimerRef.current) clearTimeout(bombPotHoldTimerRef.current);
-          bombPotHoldTimerRef.current = setTimeout(
-            () => {
-              bombPotHoldTimerRef.current = null;
-              setBombPotHoldFlop(false);
-            },
-            2150 * getAnimationSpeed()
-          );
+          bombPotHoldTimerRef.current = setTimeout(() => {
+            bombPotHoldTimerRef.current = null;
+            setBombPotHoldFlop(false);
+          }, 2150 * getAnimationSpeed());
           try {
             masterBus.emit('BOMB_POT_TRIGGERED', {
               tableId: tableId || '',

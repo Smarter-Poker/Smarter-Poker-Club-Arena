@@ -296,14 +296,10 @@ export function getClubLevel(input: ClubLevelInput): ClubLevelInfo {
 
      The stored level is still honoured as a fallback for a caller that knows a
      level but not a member count — the union page's per-club rows, for one. */
-  /* AUDIT 2026-08-20: the test is "was a count supplied", NOT "is it above
-     zero". Keying on pCount > 0 meant an empty club fell through to its stored
-     clubs.level — so a club that had shed its members kept displaying the
-     level it earned when it had them. A club with nobody in it is level 1. */
-  const hasCount = input.playerCount !== undefined || input.memberCount !== undefined;
-  const currentLvl = hasCount
-    ? getClubLevelFromMembers(pCount)
-    : Math.min(Math.max(input.level || 1, 1), MAX_CLUB_LEVEL);
+  const currentLvl =
+    pCount > 0
+      ? getClubLevelFromMembers(pCount)
+      : Math.min(Math.max(input.level || 1, 1), MAX_CLUB_LEVEL);
   const hUnitsRaw = input.hierarchyUnitsRoundedUp ?? Math.ceil(input.hierarchyUnits || 0);
 
   // Determine sub-levels for display (prefer DB values, fallback to client compute)
@@ -341,7 +337,7 @@ export function getClubLevel(input: ClubLevelInput): ClubLevelInfo {
   /* When we have a member count, the progress bar must measure the SAME ladder
      the level came from. Leaving it on the legacy dual-axis maths would show a
      bar filling toward a level the badge will never display. */
-  if (hasCount) {
+  if (pCount > 0) {
     progressPercent = getClubLevelInfoFromMembers(pCount).progressPercent;
   }
 

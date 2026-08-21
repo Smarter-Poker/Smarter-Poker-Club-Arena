@@ -68,34 +68,57 @@ describe('computeRaisePresets - rule 7: multiples of the bet being faced', () =>
   });
 });
 
-describe('computeRaisePresets - rule 14: whole numbers', () => {
-  it('never emits a fractional amount', () => {
+/**
+ * SUPERSEDED RULE, REWRITTEN RATHER THAN DELETED.
+ *
+ * This block used to assert that presets are always whole numbers, rounded UP.
+ * Dan's item 9 (2026-08-21) replaced that: "if you are raising a bet you're
+ * facing, it should purely 3X, 4X or 5X the bet you're facing EXACTLY."
+ *
+ * The two rules cannot both hold. On a 0.5/1 table, 3X of a 2.5 bet is 7.5;
+ * rounding it up to 8 puts 3.2X behind a button that says 3X, which is the
+ * exact complaint. So a multiple is now EXACT, and the only thing allowed to
+ * move it is legality - the minimum raise below, the all-in ceiling above -
+ * which the preset reports through cappedByMax rather than silently.
+ *
+ * The intent the old tests were protecting still stands and is asserted here:
+ * a preset never quietly becomes a number the player did not ask for.
+ */
+describe('computeRaisePresets - a multiple is exact, and only legality moves it', () => {
+  it('is an exact multiple of the bet, even when that is fractional', () => {
     const p = computeRaisePresets({
       isPreflop: true, bigBlind: 1, currentBet: 2.5, callAmount: 2.5,
       pot: 500, minRaise: 5, maxRaise: BIG,
     });
-    for (const x of p) expect(Number.isInteger(x.value)).toBe(true);
+    // 2X..5X of a 2.5 bet.
+    expect(p.map((x) => x.value)).toEqual([5, 7.5, 10, 12.5]);
+    for (const x of p) expect(x.cappedByMax).toBe(false);
   });
 
-  it('rounds UP to the next whole number, never down', () => {
+  it('never rounds a multiple against the player', () => {
     const p = computeRaisePresets({
       isPreflop: true, bigBlind: 1, currentBet: 2.5, callAmount: 2.5,
       pot: 500, minRaise: 5, maxRaise: BIG,
     });
-    expect(p[1].value).toBe(8); // 3 x 2.5 = 7.5 -> 8, not 7 and not 7.5
+    // 3 x 2.5 is 7.5. Not 8, which would raise 3.2X behind a 3X button.
+    expect(p[1].label).toBe('3X');
+    expect(p[1].value).toBe(7.5);
   });
 
-  it('stays whole even when the ceiling itself is fractional', () => {
-    // PLO pot cap of 27.5: presets must land on 27, never 27.5 and never 28.
+  it('clamps to the ceiling and SAYS SO, instead of moving the number quietly', () => {
+    // A pot cap of 27.5 sits under 5X of a 6 bet (30).
     const p = computeRaisePresets({
       isPreflop: true, bigBlind: 2, currentBet: 6, callAmount: 6,
       pot: 9.5, minRaise: 12, maxRaise: 27.5,
     });
-    expect(p[3].value).toBe(27);
-    for (const x of p) {
-      expect(Number.isInteger(x.value)).toBe(true);
-      expect(x.value).toBeLessThanOrEqual(27.5);
-    }
+    const five = p[p.length - 1];
+    expect(five.label).toBe('5X');
+    expect(five.raw).toBe(30);
+    expect(five.value).toBe(27.5);
+    expect(five.cappedByMax).toBe(true);
+    for (const x of p) expect(x.value).toBeLessThanOrEqual(27.5);
+    // Everything under the ceiling is still exact.
+    expect(p.slice(0, 3).map((x) => x.value)).toEqual([12, 18, 24]);
   });
 });
 
@@ -230,12 +253,13 @@ describe('computeRaisePresets - rule 4b: PLO always offers RAISE POT', () => {
     expect(p[2].value).toBe(60); // POT = 10 + (40 + 10)
   });
 
-  it('postflop FACING A BET offers 2X/3X/4X of the bet plus POT (no-limit)', () => {
+  it('postflop FACING A BET offers 2X/3X/4X/5X of the bet plus POT (no-limit)', () => {
+    // 5X joined the ladder with Dan's item 9; POT stays last.
     const p = computeRaisePresets({
       isPreflop: false, bigBlind: 2, currentBet: 10, callAmount: 10,
       pot: 40, minRaise: 20, maxRaise: BIG,
     });
-    expect(p.map((x) => x.label)).toEqual(['2X', '3X', '4X', 'POT']);
-    expect(p.map((x) => x.value)).toEqual([20, 30, 40, 60]);
+    expect(p.map((x) => x.label)).toEqual(['2X', '3X', '4X', '5X', 'POT']);
+    expect(p.map((x) => x.value)).toEqual([20, 30, 40, 50, 60]);
   });
 });

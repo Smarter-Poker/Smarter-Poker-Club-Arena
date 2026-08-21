@@ -82,7 +82,7 @@
   font-size: 1.4rem;
   font-weight: 800;
   color: #00d4ff;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   text-shadow: 0 0 12px rgba(0, 212, 255, 0.5);
   line-height: 1;
 }
@@ -131,7 +131,7 @@
 .hero-stat-value {
   font-size: 0.95rem;
   font-weight: 700;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
 }
 
 .hero-stat-value.positive {
@@ -216,7 +216,7 @@
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 1.2px;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   margin: 0;
   font-weight: 600;
 }
@@ -277,7 +277,7 @@
 .row-value {
   font-weight: 700;
   color: #00d4ff;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   font-size: 0.9rem;
 }
 
@@ -317,7 +317,7 @@
   font-size: 0.75rem;
   font-weight: 600;
   color: #00d4ff;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   text-transform: uppercase;
   letter-spacing: 1px;
 }
@@ -364,7 +364,7 @@
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   letter-spacing: 0.5px;
   transition: all 0.25s ease;
 }
@@ -421,7 +421,7 @@
   font-size: 1.1rem;
   font-weight: 700;
   color: #8a9aaa;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
 }
 
 .empty-description {

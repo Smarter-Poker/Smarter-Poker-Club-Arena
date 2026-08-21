@@ -100,7 +100,7 @@ export default function ActivityHeatmap({
           style={{
             color: '#00d4ff',
             fontSize: '0.8rem',
-            fontFamily: "'Orbitron', monospace",
+            fontFamily: "'Rajdhani', monospace",
             textTransform: 'uppercase',
             letterSpacing: '1px',
           }}

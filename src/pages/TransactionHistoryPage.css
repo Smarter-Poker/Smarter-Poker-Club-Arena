@@ -111,7 +111,7 @@
   font-weight: 700;
   font-size: 1rem;
   white-space: nowrap;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
 }
 
 .tx-amount.positive {
@@ -171,7 +171,7 @@
   display: block;
   font-size: 1.25rem;
   font-weight: 700;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
 }
 
 .summary-value.positive {

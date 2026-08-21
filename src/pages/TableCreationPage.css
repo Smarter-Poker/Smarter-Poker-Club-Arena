@@ -45,7 +45,7 @@
   color: #00d4ff;
   text-transform: uppercase;
   letter-spacing: 1px;
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
 }
 
 .name-input {
@@ -179,7 +179,7 @@
   background: linear-gradient(180deg, #0d1520 0%, #1a2332 100%);
   color: #00d4ff;
   text-align: center;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
@@ -258,7 +258,7 @@
   background: linear-gradient(180deg, #0d1520 0%, #1a2332 100%);
   color: #ffd700;
   text-align: center;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 

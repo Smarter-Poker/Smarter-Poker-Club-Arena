@@ -89,7 +89,7 @@ export default function CircularGauge({
             style={{
               fontSize: `${size * 0.2}px`,
               fontWeight: 700,
-              fontFamily: "'Orbitron', monospace",
+              fontFamily: "'Rajdhani', monospace",
               color: accent,
             }}
           >

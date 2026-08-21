@@ -126,7 +126,7 @@
   margin: 0 0 0.15rem;
   color: #fff;
   font-size: 1.4rem;
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
   text-transform: uppercase;
   letter-spacing: 1px;
   white-space: nowrap;
@@ -139,7 +139,7 @@
   color: #00d4ff;
   font-size: 0.8rem;
   font-weight: 600;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   opacity: 0.8;
 }
 
@@ -266,7 +266,7 @@
   margin: 0 0 0.25rem;
   color: #fff;
   font-size: 1.5rem;
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
   text-transform: uppercase;
   letter-spacing: 1px;
 }
@@ -276,7 +276,7 @@
   font-size: 0.85rem;
   margin: 0 0 0.5rem;
   font-weight: 600;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
 }
 
 .clubDesc {
@@ -434,7 +434,7 @@
   font-size: 1.25rem;
   font-weight: 700;
   color: #00d4ff;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
 }
 
 .statLabel {
@@ -620,7 +620,7 @@
   color: #00d4ff;
   text-transform: uppercase;
   letter-spacing: 1px;
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
 }
 
 .emptyText {
@@ -674,7 +674,7 @@
 .tableStakes {
   color: #ffd700;
   font-size: 0.8rem;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
 }
 
 .tablePlayers {
@@ -750,7 +750,7 @@
 .tablesHeader h3 {
   margin: 0;
   color: #fff;
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
 }
 
 .createButton {
@@ -836,7 +836,7 @@
 .membersHeader h3 {
   margin: 0;
   color: #fff;
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
 }
 
 .searchInput {
@@ -901,7 +901,7 @@
 }
 
 .balanceCell {
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   color: #00d4ff;
 }
 
@@ -945,7 +945,7 @@
   font-size: 0.9rem;
   text-transform: uppercase;
   letter-spacing: 1px;
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
 }
 
 .settingRow {
@@ -1030,7 +1030,7 @@
 .agentsHeader h3 {
   margin: 0;
   color: #fff;
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
 }
 
 .emptyState {
@@ -1190,7 +1190,7 @@
 .modalHeader h3 {
   margin: 0;
   color: #00d4ff;
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
 }
 
 .modalHeader button {

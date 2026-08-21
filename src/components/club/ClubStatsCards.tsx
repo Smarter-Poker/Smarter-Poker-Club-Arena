@@ -69,7 +69,10 @@ function Sparkline({ points, color }: { points: number[]; color: string }) {
   const span = max - min || 1;
   const step = points.length > 1 ? w / (points.length - 1) : w;
   const d = points
-    .map((p, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(2)},${(h - ((p - min) / span) * h).toFixed(2)}`)
+    .map(
+      (p, i) =>
+        `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(2)},${(h - ((p - min) / span) * h).toFixed(2)}`
+    )
     .join(' ');
   return (
     <svg
@@ -309,7 +312,7 @@ export default function ClubStatsCards({ clubId, stats: statsProp }: ClubStatsCa
             fontSize="12"
             fontWeight="700"
             fill="#f59e0b"
-            fontFamily="Orbitron, monospace"
+            fontFamily="Rajdhani, monospace"
           >
             $
           </text>

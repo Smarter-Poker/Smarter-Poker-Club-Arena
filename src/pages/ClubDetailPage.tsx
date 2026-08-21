@@ -160,7 +160,7 @@ const Icons = {
         fontSize="14"
         fontWeight="700"
         fill="#fbbf24"
-        fontFamily="Orbitron, monospace"
+        fontFamily="Rajdhani, monospace"
       >
         %
       </text>
@@ -1363,7 +1363,7 @@ export default function ClubDetailPage() {
                   textTransform: 'uppercase',
                   letterSpacing: '1px',
                   marginBottom: '1rem',
-                  fontFamily: "'Orbitron', monospace",
+                  fontFamily: "'Rajdhani', monospace",
                 }}
               >
                 Performance

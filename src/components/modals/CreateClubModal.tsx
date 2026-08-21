@@ -621,7 +621,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
               style={{
                 textAlign: 'center',
                 color: '#00d4ff',
-                fontFamily: 'Orbitron, monospace',
+                fontFamily: 'Rajdhani, monospace',
                 fontSize: '24px',
                 fontWeight: 600,
                 textShadow: '0 0 20px rgba(0, 212, 255, 0.8)',

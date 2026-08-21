@@ -103,7 +103,7 @@
 }
 
 .diamond-wallet-modal__balance-value {
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   font-size: 36px;
   font-weight: 700;
   color: #00d4ff;
@@ -221,7 +221,7 @@
 }
 
 .diamond-wallet-modal__tx-amount {
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   font-size: 14px;
   font-weight: 700;
 }

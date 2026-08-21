@@ -53,7 +53,7 @@
 .tournament-header h1 {
   margin: 0;
   font-size: var(--text-2xl);
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
   color: #00d4ff;
   text-transform: uppercase;
   letter-spacing: 2px;
@@ -141,7 +141,7 @@
   color: #8899aa;
   text-transform: uppercase;
   letter-spacing: 1px;
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
 }
 
 .tournament-card {
@@ -214,7 +214,7 @@
 .tourn-name {
   font-weight: 700;
   color: #fff;
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
 }
 
 .tourn-status {
@@ -256,7 +256,7 @@
 }
 
 .tourn-buyin {
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   color: #00d4ff;
 }
 
@@ -293,7 +293,7 @@
 .detail-header h2 {
   margin: 0;
   font-size: var(--text-xl);
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
   color: #fff;
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -389,7 +389,7 @@
 .stat-value {
   font-size: var(--text-lg);
   font-weight: 700;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   color: #00d4ff;
 }
 
@@ -416,7 +416,7 @@
   margin-bottom: var(--space-3);
   text-transform: uppercase;
   letter-spacing: 1px;
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
 }
 
 .blind-structure table {
@@ -440,7 +440,7 @@
 
 .blind-structure td {
   font-size: var(--text-sm);
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   color: #00d4ff;
 }
 
@@ -468,7 +468,7 @@
   margin-bottom: var(--space-3);
   text-transform: uppercase;
   letter-spacing: 1px;
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
 }
 
 .payout-list {
@@ -506,7 +506,7 @@
 
 .payout-amount {
   font-weight: 700;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   color: #ffd700;
   text-shadow: 0 0 8px rgba(255, 215, 0, 0.3);
 }
@@ -648,7 +648,7 @@
 
 .modal h2 {
   color: #00d4ff;
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
   text-transform: uppercase;
   letter-spacing: 1px;
   margin: 0 0 1.5rem;
@@ -982,7 +982,7 @@
 .tourn-countdown {
   margin-top: 8px;
   font-size: 0.7rem;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   color: #00d4ff;
   letter-spacing: 1px;
   padding: 4px 8px;
@@ -1039,7 +1039,7 @@
 .results-header {
   font-size: 1.125rem;
   font-weight: 700;
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
   color: #ffd700;
   text-shadow: 0 0 12px rgba(255, 215, 0, 0.4);
   margin-bottom: var(--space-4);
@@ -1090,7 +1090,7 @@
 .podium-payout {
   font-size: 0.85rem;
   font-weight: 700;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   color: #ffd700;
   text-shadow: 0 0 6px rgba(255, 215, 0, 0.3);
 }

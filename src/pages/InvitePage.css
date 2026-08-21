@@ -6,10 +6,10 @@
  */
 
 .invite-page {
-    min-height: 100vh;
-    background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
-    display: flex;
-    flex-direction: column;
+  min-height: 100vh;
+  background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
+  display: flex;
+  flex-direction: column;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -17,61 +17,65 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 .invite-card {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem;
-    text-align: center;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
 }
 
 .club-avatar {
-    width: 100px;
-    height: 100px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #00d4ff 0%, #0066aa 100%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 1.5rem;
-    overflow: hidden;
-    border: 3px solid rgba(255, 255, 255, 0.2);
-    box-shadow: 0 0 30px rgba(0, 212, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #00d4ff 0%, #0066aa 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    0 0 30px rgba(0, 212, 255, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
 .club-avatar:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 0 40px rgba(0, 212, 255, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 40px rgba(0, 212, 255, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .club-avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .club-avatar span {
-    font-size: 2.5rem;
-    color: white;
-    font-weight: 700;
+  font-size: 2.5rem;
+  color: white;
+  font-weight: 700;
 }
 
 .club-name {
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: #fff;
-    margin: 0 0 0.5rem;
-    font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 0.5rem;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
 }
 
 .club-description {
-    color: #8a9aaa;
-    font-size: 0.875rem;
-    max-width: 280px;
-    margin: 0 0 1.5rem;
-    line-height: 1.5;
+  color: #8a9aaa;
+  font-size: 0.875rem;
+  max-width: 280px;
+  margin: 0 0 1.5rem;
+  line-height: 1.5;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -79,35 +83,35 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 .club-stats {
-    display: flex;
-    gap: 2rem;
-    margin-bottom: 1.5rem;
+  display: flex;
+  gap: 2rem;
+  margin-bottom: 1.5rem;
 }
 
 .stat {
-    text-align: center;
+  text-align: center;
 }
 
 .stat-value {
-    display: block;
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: #00d4ff;
-    font-family: 'Orbitron', monospace;
-    text-shadow: 0 0 10px rgba(0, 212, 255, 0.4);
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #00d4ff;
+  font-family: 'Rajdhani', monospace;
+  text-shadow: 0 0 10px rgba(0, 212, 255, 0.4);
 }
 
 .stat-label {
-    font-size: 0.7rem;
-    color: #6a7a8a;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+  font-size: 0.7rem;
+  color: #6a7a8a;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .invite-message {
-    color: #00d4ff;
-    font-size: 0.875rem;
-    margin-bottom: 1.5rem;
+  color: #00d4ff;
+  font-size: 0.875rem;
+  margin-bottom: 1.5rem;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -115,36 +119,40 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 .join-btn {
-    padding: 1rem 3rem;
-    font-size: 1.125rem;
-    background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
-    border: none;
-    border-radius: 12px;
-    color: #fff;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    cursor: pointer;
-    box-shadow: 0 0 25px rgba(0, 212, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  padding: 1rem 3rem;
+  font-size: 1.125rem;
+  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+  border: none;
+  border-radius: 12px;
+  color: #fff;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  box-shadow:
+    0 0 25px rgba(0, 212, 255, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
 .join-btn:hover {
-    box-shadow: 0 0 40px rgba(0, 212, 255, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    transform: translateY(-2px);
+  box-shadow:
+    0 0 40px rgba(0, 212, 255, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transform: translateY(-2px);
 }
 
 .already-member {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: center;
 }
 
 .already-member span {
-    color: #10b981;
-    font-size: 1.125rem;
-    font-weight: 600;
+  color: #10b981;
+  font-size: 1.125rem;
+  font-weight: 600;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -153,41 +161,59 @@
 
 .loading-state,
 .error-state {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 1rem;
-    padding: 2rem;
-    color: #6a7a8a;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2rem;
+  color: #6a7a8a;
 }
 
 .error-icon {
-    font-size: 3rem;
-    color: #ef4444;
+  font-size: 3rem;
+  color: #ef4444;
 }
 
 .error-state h2 {
-    margin: 0;
-    color: #fff;
+  margin: 0;
+  color: #fff;
 }
 
 .error-state p {
-    margin: 0 0 1rem;
+  margin: 0 0 1rem;
 }
 /* ─── MOBILE RESPONSIVE ─── */
 @media (max-width: 480px) {
-    .invite-card { padding: 1.25rem; }
-    .invite-icon { font-size: 2.5rem; }
-    .invite-title { font-size: 1.25rem; }
-    .invite-desc { font-size: 0.85rem; }
-    .join-btn { padding: 0.875rem; font-size: 0.9rem; }
-    .club-preview { padding: 0.75rem; }
+  .invite-card {
+    padding: 1.25rem;
+  }
+  .invite-icon {
+    font-size: 2.5rem;
+  }
+  .invite-title {
+    font-size: 1.25rem;
+  }
+  .invite-desc {
+    font-size: 0.85rem;
+  }
+  .join-btn {
+    padding: 0.875rem;
+    font-size: 0.9rem;
+  }
+  .club-preview {
+    padding: 0.75rem;
+  }
 }
 @media (max-width: 380px) {
-    .invite-card { padding: 1rem; }
-    .club-preview-stats { flex-direction: column; gap: 0.25rem; }
+  .invite-card {
+    padding: 1rem;
+  }
+  .club-preview-stats {
+    flex-direction: column;
+    gap: 0.25rem;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -195,12 +221,12 @@
    ═══════════════════════════════════════════════════════════════ */
 
 @keyframes invitePageFadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(12px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

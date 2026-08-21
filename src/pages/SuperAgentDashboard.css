@@ -136,7 +136,7 @@
   font-size: 1.25rem;
   font-weight: 700;
   color: #00d4ff;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   text-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
 }
 
@@ -231,7 +231,7 @@
   font-weight: 700;
   font-size: 1.125rem;
   color: #00d4ff;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   text-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
 }
 
@@ -250,7 +250,7 @@
   margin: 0 0 1rem;
   font-size: 0.9rem;
   color: #00d4ff;
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
   text-transform: uppercase;
   letter-spacing: 1px;
 }
@@ -365,7 +365,7 @@
 .player-balance {
   font-weight: 700;
   color: #ffd700;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   text-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
 }
 
@@ -413,7 +413,7 @@
   margin-bottom: 1rem;
   font-size: 0.9rem;
   color: #00d4ff;
-  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
   text-transform: uppercase;
   letter-spacing: 1px;
 }

@@ -19,7 +19,7 @@
   font-size: 1rem;
   font-weight: 600;
   color: #00d4ff;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   text-transform: uppercase;
   letter-spacing: 1px;
 }
@@ -63,7 +63,7 @@
 }
 
 .position-label {
-  font-family: 'Rajdhani', 'Orbitron', monospace;
+  font-family: 'Rajdhani', 'Rajdhani', monospace;
   font-weight: 600;
   text-anchor: middle;
   pointer-events: none;

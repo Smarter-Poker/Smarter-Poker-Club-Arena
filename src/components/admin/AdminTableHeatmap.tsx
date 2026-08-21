@@ -248,7 +248,7 @@ export default function AdminTableHeatmap({
                       style={{
                         fontSize: 18,
                         fontWeight: 800,
-                        fontFamily: '"Orbitron", monospace',
+                        fontFamily: '"Rajdhani", monospace',
                         textShadow: '0 2px 4px rgba(0,0,0,0.8)',
                       }}
                     >
@@ -260,7 +260,7 @@ export default function AdminTableHeatmap({
                       style={{
                         fontSize: 18,
                         fontWeight: 800,
-                        fontFamily: '"Orbitron", monospace',
+                        fontFamily: '"Rajdhani", monospace',
                         color: '#A855F7',
                         textShadow: '0 2px 4px rgba(0,0,0,0.8)',
                       }}
@@ -273,7 +273,7 @@ export default function AdminTableHeatmap({
                       style={{
                         fontSize: 18,
                         fontWeight: 800,
-                        fontFamily: '"Orbitron", monospace',
+                        fontFamily: '"Rajdhani", monospace',
                         color: heat.color,
                         textShadow: '0 2px 4px rgba(0,0,0,0.8)',
                       }}

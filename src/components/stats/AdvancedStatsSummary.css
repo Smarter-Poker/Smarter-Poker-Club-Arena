@@ -19,7 +19,7 @@
   font-size: 1rem;
   font-weight: 600;
   color: #00d4ff;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   text-transform: uppercase;
   letter-spacing: 1px;
 }
@@ -86,7 +86,7 @@
   color: #00d4ff;
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  font-family: 'Rajdhani', 'Orbitron', monospace;
+  font-family: 'Rajdhani', 'Rajdhani', monospace;
 }
 
 .card-actions {
@@ -197,7 +197,7 @@
   font-size: 0.9rem;
   font-weight: 600;
   color: #00d4ff;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   text-transform: uppercase;
   letter-spacing: 1px;
 }

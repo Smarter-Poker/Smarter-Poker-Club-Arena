@@ -711,7 +711,7 @@ export default function AchievementsPage() {
               fontSize: '1rem',
               color: '#00d4ff',
               marginBottom: '1rem',
-              fontFamily: 'Orbitron, sans-serif',
+              fontFamily: 'Rajdhani, sans-serif',
             }}
           >
             Next Up
@@ -894,7 +894,7 @@ export default function AchievementsPage() {
                 fontSize: '1.5rem',
                 color: '#fff',
                 margin: '1rem 0 0.5rem',
-                fontFamily: 'Orbitron, sans-serif',
+                fontFamily: 'Rajdhani, sans-serif',
               }}
             >
               {selectedAchievement.name}

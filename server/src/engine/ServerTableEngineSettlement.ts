@@ -782,6 +782,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             cards: [],
           })),
           actions: this.currentHandActions,
+          // STATS FACT LAYER 2026-08-21: engine-memory values the write used to
+          // discard. Rationale in services/supabase/handFacts.ts.
+          clubId: this.tableInfo.club_id,
+          contributions: this.currentHandContributions,
+          holeCardsAll: this.currentHandHoleCards,
+          roster: players.map((p) => ({ userId: p.user_id, isHorse: p.is_horse })),
           // ASSISTANT FIX 2026-08-16: both of these were already computed on
           // the engine for this hand and then thrown away at the write.
           //

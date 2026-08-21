@@ -1330,7 +1330,7 @@
 }
 .seat__cards--hero:has(> *:nth-child(6)) {
   --sp-hero-card-w: 54px;
-  --sp-hero-card-h: 75px;
+  --sp-hero-card-h: 76px;
   --sp-hero-card-step: 21px;
 }
 
@@ -2275,7 +2275,7 @@
   .seat__cards--hero {
     --sp-hero-box-half: 19px;
     --sp-hero-card-w: 42px;
-    --sp-hero-card-h: 58px;
+    --sp-hero-card-h: 59px;
     --sp-hero-card-step: 30px;
     --sp-hero-gap: 8px;
     top: auto;
@@ -2293,7 +2293,7 @@
   }
   .seat__cards--hero:has(> *:nth-child(5)) {
     --sp-hero-card-w: 54px;
-    --sp-hero-card-h: 75px;
+    --sp-hero-card-h: 76px;
     --sp-hero-card-step: 22px;
   }
   .seat__cards--hero:has(> *:nth-child(6)) {
@@ -2386,7 +2386,7 @@
   }
   .seat__cards--hero:has(> *:nth-child(5)) {
     --sp-hero-card-w: 48px;
-    --sp-hero-card-h: 68px;
+    --sp-hero-card-h: 67px;
     --sp-hero-card-step: 20px;
   }
   .seat__cards--hero:has(> *:nth-child(6)) {
@@ -2453,7 +2453,7 @@
   .seat__cards--hero {
     --sp-hero-box-half: 15px;
     --sp-hero-card-w: 32px;
-    --sp-hero-card-h: 44px;
+    --sp-hero-card-h: 45px;
     --sp-hero-card-step: 23px;
     --sp-hero-gap: 6px;
     top: auto;

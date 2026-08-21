@@ -45,7 +45,7 @@
 :root {
   /* -- Card dimensions -- */
   --cc-card-w: 64px;
-  --cc-card-h: 92px;
+  --cc-card-h: 90px;
   --cc-card-radius: 6px;
   --cc-card-gap: 8px;
 
@@ -804,7 +804,7 @@
 @media (max-width: 768px) {
   :root {
     --cc-card-w: 56px;
-    --cc-card-h: 80px;
+    --cc-card-h: 78px;
     --cc-card-gap: 6px;
     --cc-card-radius: 5px;
   }
@@ -823,7 +823,7 @@
 @media (max-width: 640px) {
   :root {
     --cc-card-w: 50px;
-    --cc-card-h: 72px;
+    --cc-card-h: 70px;
     --cc-card-gap: 5px;
   }
 
@@ -841,7 +841,7 @@
 @media (max-width: 480px) {
   :root {
     --cc-card-w: 44px;
-    --cc-card-h: 64px;
+    --cc-card-h: 62px;
     --cc-card-gap: 4px;
     --cc-card-radius: 4px;
   }
@@ -869,7 +869,7 @@
 @media (max-width: 380px) {
   :root {
     --cc-card-w: 40px;
-    --cc-card-h: 58px;
+    --cc-card-h: 56px;
     --cc-card-gap: 3px;
     --cc-card-radius: 3px;
   }

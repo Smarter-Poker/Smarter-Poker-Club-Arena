@@ -34,6 +34,7 @@
 // default import, so destructure `compare` from the default export.
 import jsonPatch from 'fast-json-patch';
 import type { Operation as JsonPatchOperation } from 'fast-json-patch';
+import { captureAllInEquity } from '../services/supabase/handFacts.js';
 const { compare } = jsonPatch;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -196,6 +197,21 @@ export class TableStateHub {
    * Emit a transient event (e.g. time bank timeout, insurance offer) to all subscribers.
    */
   emitEvent(tableId: string, payload: Record<string, unknown>): void {
+    // STATS FACT LAYER 2026-08-21 — capture all-in equity on its way past.
+    //
+    // ServerTableEngineRunout.broadcastAllInEquity() computes EXACT all-in
+    // equity (every hand is known at an all-in, so it prices each holding
+    // against the known others rather than a random range) and then discards
+    // it: the number goes to clients and a Prometheus histogram, and nowhere
+    // else. It is the whole basis of an EV-vs-actual "luck" graph and it was
+    // being thrown away on every all-in.
+    //
+    // Runout.ts is above the deploy channel's per-file size ceiling, so we
+    // intercept here instead of editing it. This MUST sit above the
+    // `if (!room) return` below: that early return fires on tables with no
+    // subscribers, and a hand nobody is watching still counts.
+    captureAllInEquity(tableId, payload);
+
     const room = this.rooms.get(tableId);
     if (!room) return;
     this.broadcast(room, { type: 'EVENT', tableId, payload });

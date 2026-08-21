@@ -11,6 +11,7 @@
 
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
+import { writeHandFacts } from './handFacts.js';
 
 /**
  * Log hand history — every hand documented for audit and replay.
@@ -78,6 +79,28 @@ export async function logHandHistory(params: {
    * never persisted.
    */
   buttonSeat?: number;
+  /**
+   * STATS FACT LAYER 2026-08-21 — inputs for ca_hand_facts.
+   *
+   * All four are already in engine memory at the single call site
+   * (ServerTableEngineSettlement.postHandTasks) and were previously discarded.
+   * They are optional so that nothing else calling this function has to change,
+   * and so a caller that cannot supply them simply skips the fact write.
+   *
+   * `contributions` is the important one: it is SeatPlayer.totalInvested, which
+   * includes blinds, antes, dead blinds and straddles and is net of a returned
+   * uncalled bet. It is the only exact net available — reconstructing it from
+   * `actions` undercounts by the forced money, which is why
+   * buildHandHistoryTiers() flags its own figure `contributedIncludesBlinds:
+   * false`.
+   */
+  clubId?: string | null;
+  /** userId -> totalInvested (includes blinds/antes). */
+  contributions?: Map<string, number>;
+  /** Every seat dealt in: userId -> { seat, cards }. Includes folded players. */
+  holeCardsAll?: Map<string, { seat: number; cards: unknown }>;
+  /** Seat roster with horse flags. Only humans get fact rows. */
+  roster?: Array<{ userId: string; isHorse: boolean }>;
 }): Promise<{ handId: string | null }> {
   // Round 38 fix: stamp started_at/ended_at + RETURNING id so the caller
   // can FK rake_records.hand_id back to this hand_history row.
@@ -131,6 +154,14 @@ export async function logHandHistory(params: {
     hole_cards: holeCardsPayload,
     board: boardPayload,
     button_seat: params.buttonSeat ?? null,
+    // RETENTION FIX 2026-08-21: has_human has existed since the retention work
+    // and NOTHING has ever set it — it was NULL on all 1,509,240 rows. It is
+    // the flag sp_prune_hand_history() uses to spare hands with a human in
+    // them from the 7-day purge, so for its entire existence the purge has
+    // been deleting human hands along with the horse traffic it was aimed at.
+    // Undefined (not false) when the caller cannot tell us, so we never assert
+    // "no humans here" on a hand we simply have no roster for.
+    ...(params.roster ? { has_human: params.roster.some((p) => !p.isHorse) } : {}),
   };
 
   const handId = await insertHandHistoryRow(row, 'settlement');
@@ -139,6 +170,33 @@ export async function logHandHistory(params: {
     // than losing the hand — see enqueueHandHistory().
     enqueueHandHistory(row);
   }
+
+  // STATS FACT LAYER 2026-08-21. Durable per-human-per-hand row for the stats
+  // page: exact net, own hole cards on every hand (not just showdowns),
+  // all-in EV, and head-to-head chip flow. Deliberately NOT awaited — this is
+  // a stats write inside a money-critical settlement step, and writeHandFacts
+  // never throws, so the hand must not wait on it or be endangered by it.
+  if (handId && params.contributions && params.holeCardsAll && params.roster) {
+    void writeHandFacts({
+      handId,
+      tableId: params.tableId,
+      clubId: params.clubId ?? null,
+      tournamentId: params.tournamentId ?? null,
+      handNumber: params.handNumber,
+      gameVariant: params.gameVariant,
+      bigBlind: params.bigBlind,
+      playedAt: endedAtIso,
+      buttonSeat: params.buttonSeat ?? null,
+      rakeAmount: params.rakeAmount,
+      boardLength: params.communityCards?.length ?? 0,
+      holeCardsAll: params.holeCardsAll,
+      contributions: params.contributions,
+      winners: params.winners,
+      actions: params.actions,
+      roster: params.roster,
+    });
+  }
+
   return { handId };
 }
 
@@ -650,21 +708,25 @@ export interface StoredHandHistoryRow {
   started_at?: string | null;
   ended_at?: string | null;
   created_at?: string | null;
-  winners?: {
-    userId: string;
-    amount: number;
-    potIndex?: number;
-    hand?: { name: string; ranking: number };
-  }[] | null;
+  winners?:
+    | {
+        userId: string;
+        amount: number;
+        potIndex?: number;
+        hand?: { name: string; ranking: number };
+      }[]
+    | null;
   players?: { userId: string; username: string; seat: number; stack: number }[] | null;
-  actions?: {
-    seat: number;
-    userId?: string;
-    action: string;
-    amount?: number;
-    timestamp?: number;
-    stage: string;
-  }[] | null;
+  actions?:
+    | {
+        seat: number;
+        userId?: string;
+        action: string;
+        amount?: number;
+        timestamp?: number;
+        stage: string;
+      }[]
+    | null;
 }
 
 /**
@@ -764,7 +826,10 @@ export function buildHandHistoryTiers(hand: StoredHandHistoryRow) {
   }
   for (const [key, level] of levelByStreet) {
     const seat = Number(key.split(':')[0]);
-    contributedBySeat.set(seat, Math.round(((contributedBySeat.get(seat) ?? 0) + level) * 100) / 100);
+    contributedBySeat.set(
+      seat,
+      Math.round(((contributedBySeat.get(seat) ?? 0) + level) * 100) / 100
+    );
   }
 
   const playerSummaries = players.map((p) => {

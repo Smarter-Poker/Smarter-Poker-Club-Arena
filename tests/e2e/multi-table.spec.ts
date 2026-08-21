@@ -75,7 +75,8 @@ async function mountTabBar(page: Page) {
         <span class="table-tab-bar__turn-dot" id="turnDot">12s</span>
       </button>
       <button class="table-tab-bar__tab" id="tabIdle">
-        <span class="table-tab-bar__tab-label"><span class="table-tab-bar__tab-name">PLO4 2/5</span></span>
+        <span class="table-tab-bar__tab-label"><span class="table-tab-bar__tab-name" id="idleCode">PLO5</span>
+        <span class="table-tab-bar__tab-sub" id="idleStakes">2/5</span></span>
       </button>
       <button class="table-tab-bar__tab" id="tabFold">
         <span class="table-tab-bar__tab-label"><span class="table-tab-bar__tab-name">NLH 5/10</span></span>
@@ -149,6 +150,30 @@ test.describe('LIVE E2E — the multi-table tab bar, beat by beat', () => {
     expect(colors.spade, 'spades must be near-black').toBe('rgb(17, 19, 24)');
     expect(colors.heart, 'hearts must be red').toBe('rgb(220, 38, 38)');
     expect(colors.face, 'the mini card must have a white face').toBe('rgb(248, 249, 251)');
+  });
+
+  test('an idle tab reads its GAME CODE, with the stakes underneath', async ({ page }) => {
+    // Dan 2026-08-21: "if i don't have a hand it should say the game type."
+    // The code is the primary line and must out-weigh the stakes sub-line.
+    const read = await page.evaluate(() => {
+      const code = document.getElementById('idleCode')!;
+      const stakes = document.getElementById('idleStakes')!;
+      const cs = getComputedStyle(code);
+      const ss = getComputedStyle(stakes);
+      return {
+        codeText: code.textContent,
+        codeWeight: Number(cs.fontWeight),
+        codeSize: parseFloat(cs.fontSize),
+        stakesSize: parseFloat(ss.fontSize),
+        direction: getComputedStyle(code.parentElement!).flexDirection,
+      };
+    });
+    expect(read.codeText).toBe('PLO5');
+    expect(read.codeWeight, 'the game code must be the heavy line').toBeGreaterThanOrEqual(700);
+    expect(read.codeSize, 'the code must be larger than its stakes').toBeGreaterThan(
+      read.stakesSize
+    );
+    expect(read.direction, 'code stacks over stakes').toBe('column');
   });
 
   test('a folded tab dims: "nothing to do here" must be visible at a glance', async ({ page }) => {

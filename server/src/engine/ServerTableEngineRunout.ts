@@ -380,7 +380,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // neither needs a second runout (RIT) nor has a single-board equity to
     // insure. Both offers are suppressed; the plain runout path fills both
     // boards via HandController.
-    const doubleBoardHand = this.handController.isDoubleBoardActive();
+    // Optional call: RIT test harnesses inject minimal HandController mocks
+    // that predate this method — absent method means single board.
+    const doubleBoardHand = this.handController.isDoubleBoardActive?.() ?? false;
     const insuranceEnabled = this.insuranceEngine.isEnabled(this.tableId) && !doubleBoardHand;
 
     if (insuranceEnabled && board.length < 5 && allInPlayers.length >= 2) {

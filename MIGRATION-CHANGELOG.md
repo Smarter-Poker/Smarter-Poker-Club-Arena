@@ -8691,3 +8691,24 @@ one CORRECTLY paced dealer; Dan's chaos was the second dealer, now
 impossible. Keyframe namespace audited: 827 keyframes, 0 genuine collisions
 (the 9 `shimmer` definitions are byte-identical globals + module-scoped
 copies).
+
+## 2026-08-21 (later): AFK sit-out semantics, the uncrowned-winner stall, and the frozen-row constraint
+
+**Session scope:** Dan: "1, how many animations are there for the cash games? ... make sure they are truly 1:1 clones ... 2, you need to keep bug hunting, improving and optimizing the tournament functionality until its perfect."
+
+### Animation parity audit (question 1) — VERIFIED 1:1
+- Counted every `@keyframes` per CSS file, classified by mount surface, and audited all 31 `isTournament` gates in TablePage + table components.
+- **162 shared gameplay keyframes** render identically at cash AND tournament tables (SeatSlot 37, ThrowAnimation 25, TablePage 21, CommunityCards 12, PotDisplay 12, ChipPhysics 9, BombPot 9, TableTabBar 9, BBJ 8+5, BuyIn 6, Rebuy 3, others). Zero animations are gated away from tournaments — every gate audited is a poker-rule difference (straddle cash-only, tournament seats not sittable, separate rebuy flows), not a visual one.
+- Tournaments ADD 71 exclusive keyframes (MysteryBountyChest 22, KnockoutAnimation 16, SpinWheel 11, WinnerOverlay 9, FinalTable 5, Elimination 3, HandForHand 3, ResultCard 2). Cash-only: 7 (SessionHUD live stats + session summary; the tournament counterpart is the result card).
+
+### Bug hunt (question 2) — three engine fixes shipped + one production freeze resolved
+
+1. **AFK time-bank burn never counted a strike** (`79e88d0a6`). recordConnectedTimeout was wired into the plain timer-expiry path only (2026-07-19 fix); a player with time-bank uses auto-activates the bank and expires in the TB block, so consecutiveTimeouts stayed 0 forever — observed live as one player's timers grinding at four stale tables. Both expiry paths now count. Pinned in `server/src/engine/afkSitOutGuard.test.ts`.
+
+2. **Tournament sit-out = frozen stack** (`79e88d0a6`). Cash semantics (exclude sat-out players from the deal) applied to tournaments meant no blinds, no blind-off, no elimination — a tournament that can never end. Tournament sit-outs are now dealt in, stay in the blind rotation, count as dealable for the watchdog, and are insta-folded by the existing onPlayerTurn auto-action. Hand state carries a truthful is_sitting_out. HorseSessionRotator verified cash-only.
+
+3. **Decided-but-RUNNING tournaments stalled forever** (`1c141b8c1`). Two Turbo SNGs sat RUNNING ~2h with every player eliminated but one: survivor status='playing', position NULL, no prize, table open. The finish check only runs inside elimination processing; an engine restart in the gap leaves nothing to re-run it (a one-player table deals no hands). Discovery watchdog now detects RUNNING + <=1 playing (>10 min old, unknown counts skipped), stops any idle engine, flips to COMPLETING conditionally, and routes through recoverStuckCompletingTournaments (shared computePlacePrize, deduped).
+
+4. **`tournaments_whole_dollar_buyin` CHECK froze 9,814 legacy rows** (migration `20260821a`). The 20260820 CHECK was added NOT VALID believing that grandfathers old rows — but NOT VALID only skips the initial scan; the CHECK still fires on every UPDATE. Every pre-refactor row (old 1.1x pricing, e.g. 5.00+0.50=5.50) became read-only: level_started_at persists failed every cycle, the new watchdog's status flip was silently rejected, recovery was blocked. Replaced with `trg_whole_dollar_buyin`, a BEFORE INSERT OR UPDATE trigger that enforces the rule only on INSERT and on updates that CHANGE the buy-in columns. Within one discovery cycle of applying it, both stalled SNGs completed: winners crowned (pos 1, prize 19.50; 19.50+10.50 = 30.00 = exact 6x5.00 pool), tables closed, engine logs silent.
+
+**Verification:** engine container `club-arena-engine:1c141b8c1...` confirmed running on Hetzner; both deploy workflows green; post-fix DB sweep: 0 COMPLETING, 0 decided-RUNNING, 0 leftover open tables, 4 healthy RUNNING; 45s log sample: 0 constraint errors, 0 stalled-decided detections. Paid-gate confirmed non-blocking (3 spins started since 00:26Z, 0 stuck REGISTERING).

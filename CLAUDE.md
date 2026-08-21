@@ -154,6 +154,35 @@ Do NOT audit 10 items and then ask "what should I fix?" -- fix them as you go.
 
 ---
 
+8. NEVER PUSH A RED TEST (Dan 2026-08-21, binding). `npx vitest run tests/` in
+   `build-for-world-hub.yml` is what PUBLISHES the bundle. A failing test does
+   not fail a report - it stops the World Hub sync for every agent and every
+   deploy, until a human notices. On 2026-08-21 that happened four times in one
+   day, and every one was a test pushed alongside the feature it was meant to
+   guard:
+
+   - a test importing a component that had been deleted the day before;
+   - a test reading `src/services/soundService.ts` when the file is
+     `SoundService.ts` (macOS resolved it, Linux CI did not);
+   - a spec asserting the engine sends `card_indices`, committed with no
+     implementation beside it - by a commit whose message was "unblock the
+     deploy gate";
+   - a test still asserting the rounding rule that the same commit's feature
+     had just replaced.
+
+   THE RULES:
+   - `.husky/pre-push` now runs the tests covering what you touched, in about
+     four seconds. Do not `--no-verify` past it.
+   - WRITING THE SPEC FIRST IS ENCOURAGED. Committing it red is not. Mark it
+     `it.skip()` / `describe.skip()` with a note saying what has to be built,
+     and delete the `.skip` in the commit that implements it. A skipped spec
+     documents the work; a red one holds the platform hostage.
+   - If you deliberately replace behaviour a test pins, UPDATE THAT TEST IN THE
+     SAME COMMIT. "Someone else will fix the test" means "nobody ships until
+     they do."
+   - If you find main already red, fixing it comes before your own work
+     (section 4, fix-first). You cannot ship past it anyway.
+
 ## 6. FILE MAP
 
 ```

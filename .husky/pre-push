@@ -227,6 +227,82 @@ if [ -f scripts/ci/check-ui-text.mjs ]; then
   fi
 fi
 
+# ═════════════════════════════════════════════════════════════════════════════
+# 10. THE TEST SUITE — THE ONE GATE THAT WAS MISSING (Dan, 2026-08-21)
+#
+# On 2026-08-21 main sat unable to deploy FOUR separate times, every one of
+# them a red test pushed alongside the feature it was meant to guard:
+#
+#   - tests/tip-dealer-guards.test.tsx imported a component deleted the day
+#     before, so it failed at transform time from the moment it landed.
+#   - tests/unit/handCompletionLaw.test.ts read src/services/soundService.ts.
+#     The file is SoundService.ts. macOS resolved it; Linux CI did not.
+#   - tests/unit/winningCardHighlight.test.ts asserted that the engine sends
+#     card_indices. The engine has never contained that string. It was a
+#     specification committed with no implementation beside it - by a commit
+#     whose own message was "unblock the deploy gate".
+#   - tests/actionpanel-raise-presets.test.ts still asserted the rounding rule
+#     that the same commit's feature had just replaced.
+#
+# Each one blocked EVERY agent and every deploy until a human noticed, because
+# `npx vitest run tests/` in build-for-world-hub.yml is what publishes the
+# bundle. This hook already enforces nine house rules about the CONTENT of a
+# push and never once ran the tests.
+#
+# WHY TARGETED AND NOT THE WHOLE SUITE: the full run is minutes; `vitest
+# related` on the files you actually touched is about four seconds, and it
+# would have caught all four incidents above - three of them changed a test
+# file (run directly), the fourth changed ActionPanel.tsx (found by related).
+# A gate people wait minutes for is a gate people start bypassing.
+#
+# Emergency bypass:  CA_SKIP_TESTS=1 git push
+# ═════════════════════════════════════════════════════════════════════════════
+if [ -z "${CA_SKIP_TESTS:-}" ] && [ -f package.json ]; then
+  CHANGED_TESTS=""
+  CHANGED_SRC=""
+  for f in $FILES; do
+    [ -f "$f" ] || continue
+    case "$f" in
+      tests/*.test.ts|tests/*.test.tsx|tests/**/*.test.ts|tests/**/*.test.tsx)
+        CHANGED_TESTS="$CHANGED_TESTS $f" ;;
+      src/*.ts|src/*.tsx|server/src/*.ts|src/**/*.ts|src/**/*.tsx|server/src/**/*.ts)
+        case "$f" in
+          *.test.ts|*.test.tsx|*.d.ts) ;;
+          *) CHANGED_SRC="$CHANGED_SRC $f" ;;
+        esac ;;
+    esac
+  done
+
+  if [ -n "$CHANGED_TESTS" ]; then
+    echo "[club-arena pre-push] running the test files you changed..."
+    if ! npx vitest run $CHANGED_TESTS; then
+      echo ""
+      echo "[club-arena pre-push] BLOCKED: a test you changed is failing."
+      echo "                      A red test on main stops the World Hub bundle"
+      echo "                      for EVERY agent, not just for you."
+      echo ""
+      echo "                      Writing the spec before the code is fine - but"
+      echo "                      mark it it.skip() or describe.skip() until the"
+      echo "                      implementation lands, so it documents the work"
+      echo "                      without holding the deploy hostage."
+      FAIL=1
+    fi
+  fi
+
+  if [ -n "$CHANGED_SRC" ]; then
+    echo "[club-arena pre-push] running the tests that cover your changes..."
+    if ! npx vitest related --run $CHANGED_SRC; then
+      echo ""
+      echo "[club-arena pre-push] BLOCKED: your change breaks a test that covers it."
+      echo "                      If the test pins behaviour you deliberately"
+      echo "                      replaced, UPDATE the test in this same commit."
+      echo "                      Leaving it red blocks every deploy until"
+      echo "                      somebody else finds it."
+      FAIL=1
+    fi
+  fi
+fi
+
 if [ "$FAIL" -ne 0 ]; then
   echo ""
   echo "[club-arena pre-push] FAILED — fix the issues above or use --no-verify if certain."

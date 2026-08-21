@@ -234,7 +234,7 @@ class CashoutServiceClass {
       .select(
         `
                 *,
-                player:player_id(display_name, avatar_url),
+                player:player_id(display_name, avatar_url:arena_avatar_url),
                 agent:agent_id(display_name)
             `
       )
@@ -255,7 +255,7 @@ class CashoutServiceClass {
       .select(
         `
                 *,
-                player:player_id(display_name, avatar_url),
+                player:player_id(display_name, avatar_url:arena_avatar_url),
                 agent:agent_id(display_name)
             `
       )
@@ -287,7 +287,7 @@ class CashoutServiceClass {
       .select(
         `
                 *,
-                player:player_id(display_name, avatar_url),
+                player:player_id(display_name, avatar_url:arena_avatar_url),
                 agent:agent_id(display_name)
             `
       )

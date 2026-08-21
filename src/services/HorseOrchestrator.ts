@@ -2496,7 +2496,7 @@ class HorseOrchestrator {
       // Load available player profiles
       const { data: availableHorses } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url')
+        .select('id, display_name, avatar_url:arena_avatar_url')
         .eq('is_horse', true)
         .eq('horse_status', 'available')
         .limit(staleHorses.length);

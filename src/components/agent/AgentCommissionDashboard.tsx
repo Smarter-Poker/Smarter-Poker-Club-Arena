@@ -198,7 +198,7 @@ export function AgentCommissionDashboard() {
           try {
             const { data: profiles } = await supabase
               .from('profiles')
-              .select('id, display_name, avatar_url')
+              .select('id, display_name, avatar_url:arena_avatar_url')
               .in('id', subAgentUserIds);
             if (profiles) {
               for (const p of profiles) subProfileMap[p.id] = p;

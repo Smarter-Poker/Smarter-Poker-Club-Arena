@@ -408,7 +408,7 @@ export default function ClubCarouselPage() {
       try {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, display_name, avatar_url, diamonds, tier, player_number')
+          .select('id, display_name, avatar_url:arena_avatar_url, diamonds, tier, player_number')
           .eq('id', userId)
           .maybeSingle();
         if (!isMounted.current) return;

@@ -194,7 +194,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       supabase
         .from('profiles')
         .select(
-          'avatar_url, username, display_name, sounds_enabled, vibrations_enabled, show_stack_bb, is_vip, tier'
+          'avatar_url:arena_avatar_url, username, display_name, sounds_enabled, vibrations_enabled, show_stack_bb, is_vip, tier'
         )
         .eq('id', user.id)
         .maybeSingle()

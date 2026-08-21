@@ -85,7 +85,7 @@ export default function PlayerInviteModal({
       // Search profiles by username or display name
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, username, display_name, avatar_url, email')
+        .select('id, username, display_name, avatar_url:arena_avatar_url, email')
         .or(`username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%`)
         .limit(10);
 

@@ -50,7 +50,7 @@ export function TournamentChipCount({ tournamentId, limit = 10 }: TournamentChip
       const { data, error } = await supabase
         .from('tournament_players')
         .select(
-          'user_id, chips, table_id, seat_number, player:profiles!user_id(username, avatar_url)'
+          'user_id, chips, table_id, seat_number, player:profiles!user_id(username, avatar_url:arena_avatar_url)'
         )
         .eq('tournament_id', tournamentId)
         .neq('status', 'eliminated')

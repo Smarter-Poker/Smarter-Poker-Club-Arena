@@ -477,7 +477,7 @@ export default function ClubMembersPage() {
               const chunk = userIds.slice(i, i + chunkSize);
               const { data: profiles } = await supabase
                 .from('profiles')
-                .select('id, username, display_name, avatar_url')
+                .select('id, username, display_name, avatar_url:arena_avatar_url')
                 .in('id', chunk);
               if (profiles) {
                 for (const p of profiles) profileMap[p.id] = p;

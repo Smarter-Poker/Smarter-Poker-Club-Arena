@@ -64,7 +64,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
           `
                     id,
                     username,
-                    avatar_url,
+                    avatar_url:arena_avatar_url,
                     email,
                     status,
                     created_at,

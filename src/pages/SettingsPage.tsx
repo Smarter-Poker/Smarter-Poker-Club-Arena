@@ -292,7 +292,7 @@ export default function SettingsPage() {
         supabase
           .from('profiles')
           .select(
-            'id, display_name, username, avatar_url, bio, role, created_at, streak_days, last_login'
+            'id, display_name, username, avatar_url:arena_avatar_url, bio, role, created_at, streak_days, last_login'
           )
           .eq('id', user.id)
           .maybeSingle(),

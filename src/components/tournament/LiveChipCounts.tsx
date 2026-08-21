@@ -59,7 +59,7 @@ export const LiveChipCounts: React.FC<LiveChipCountsProps> = ({
     try {
       const { data, error } = await supabase
         .from('tournament_players')
-        .select('user_id, chips, status, profile:profiles!user_id(username, avatar_url)')
+        .select('user_id, chips, status, profile:profiles!user_id(username, avatar_url:arena_avatar_url)')
         .eq('tournament_id', tournamentId)
         .neq('status', 'eliminated')
         .order('chips', { ascending: false })

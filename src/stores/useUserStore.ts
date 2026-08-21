@@ -151,7 +151,7 @@ export const useUserStore = create<UserState>()(
            */
           const { data, error } = await supabase
             .from('profiles')
-            .select('id, username, display_name, avatar_url, tier, created_at')
+            .select('id, username, display_name, avatar_url:arena_avatar_url, tier, created_at')
             .eq('id', userId)
             .maybeSingle();
 

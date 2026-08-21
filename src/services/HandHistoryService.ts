@@ -260,7 +260,7 @@ class HandHistoryServiceClass {
       const unique = [...new Set(userIds)];
       const { data } = await supabase
         .from('profiles')
-        .select('id, username, avatar_url')
+        .select('id, username, avatar_url:arena_avatar_url')
         .in('id', unique);
 
       for (const p of data || []) {

@@ -117,7 +117,7 @@ class BlockServiceClass {
           blocked_id,
           reason,
           created_at,
-          profiles:blocked_id(username, avatar_url)
+          profiles:blocked_id(username, avatar_url:arena_avatar_url)
         `
         )
         .eq('blocker_id', userId)

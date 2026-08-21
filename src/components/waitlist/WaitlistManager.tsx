@@ -111,7 +111,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
         const userIds = data.map((e: any) => e.user_id);
         const { data: profiles } = await supabase
           .from('profiles')
-          .select('id, username, full_name, avatar_url')
+          .select('id, username, full_name, avatar_url:arena_avatar_url')
           .in('id', userIds);
 
         const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));

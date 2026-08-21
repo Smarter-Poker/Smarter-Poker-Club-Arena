@@ -45,9 +45,9 @@ export default function GamificationLeaderboard() {
             `
             user_id,
             total_spins,
-            profiles (
+            profiles(
               username,
-              avatar_url
+              avatar_url:arena_avatar_url
             )
           `
           )

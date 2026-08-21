@@ -281,6 +281,62 @@
   }
 }
 
+/* ─── LOSE — the other half of the outcome ───────────────────────────────────
+   Fires on the isMucking rising edge: this seat lost a showdown and its cards
+   are flying to the muck. Until this existed the table expressed exactly one of
+   the two outcomes — the winner cheered and the player who had just lost held
+   the same calm idle they had before the cards turned over.
+
+   The shape is the inverse of celebrate. That one crouches then leaves the
+   ground; this one never leaves it: a small flinch at the reveal, then the
+   shoulders go down and stay down. Ends low rather than back at neutral,
+   because the hand is over for them and `.seat--folded` will usually take the
+   posture from here. No rotation — a losing player sags, they do not wobble. */
+.seat__avatar-wrap--lose {
+  animation: spAvatarLose calc(0.74s * var(--animation-speed, 1)) cubic-bezier(0.33, 0, 0.25, 1)
+    both;
+}
+
+@keyframes spAvatarLose {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  18% {
+    /* the flinch — a small recoil as the hand is read */
+    transform: translateY(-1.5px) scale(1.015);
+  }
+  100% {
+    transform: translateY(3.5px) scale(0.965);
+  }
+}
+
+/* ─── TENSE — on the clock ───────────────────────────────────────────────────
+   Held while an acting player is under a third of their time. The countdown
+   used to be expressed purely as chrome — the ring shrinks and changes colour
+   while the player it belongs to breathes calmly through it.
+
+   A tremor, not a gesture: sub-pixel horizontal movement on a fast loop, which
+   at 84px reads as "unsettled" rather than as any particular motion. It stacks
+   ON the forward lean the alert gesture settled into, so the character stays
+   leaning in and starts to fidget, which is what the moment actually looks
+   like. Gated in SeatSlot rather than by source order — see the note there. */
+.seat__avatar-wrap--tense {
+  animation: spAvatarTense calc(0.6s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+
+@keyframes spAvatarTense {
+  0%,
+  100% {
+    transform: translate(0, -1px) scale(1.012);
+  }
+  25% {
+    transform: translate(-0.4px, -1.4px) scale(1.014);
+  }
+  75% {
+    transform: translate(0.4px, -0.8px) scale(1.01);
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    RIGGED AVATARS — the rig owns all motion
    ─────────────────────────────────────────────────────────────────────────────
@@ -471,6 +527,11 @@
   .seat__avatar-wrap--check,
   .seat__avatar-wrap--fold,
   .seat__avatar-wrap--alert,
+  .seat__avatar-wrap--lose,
+  /* --tense is the other INFINITE one. A gesture is over in under a second;
+     this runs for as long as someone is on the clock, so it is squarely in the
+     "cannot wait it out" category the base breathing rule is here for. */
+  .seat__avatar-wrap--tense,
   .seat__avatar-wrap--celebrate {
     animation: none;
   }

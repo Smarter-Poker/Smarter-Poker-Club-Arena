@@ -72,7 +72,17 @@ export type LastAction = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' 
  * `scale(1.08)`. The wrap is the one box in the avatar subtree that nothing
  * else transforms or animates. Full rationale in avatarChoreography.css.
  */
-export type AvatarGesture = 'push' | 'check' | 'fold' | 'celebrate' | 'alert' | null;
+export type AvatarGesture = 'push' | 'check' | 'fold' | 'celebrate' | 'lose' | 'alert' | null;
+
+/** How long the showdown-loss slump plays. Matches spAvatarLose. */
+const LOSE_MS = 780;
+
+/**
+ * Below this much time remaining, an acting player stops looking calm.
+ * 33% mirrors `.seat--timer-urgent`, so the character's tell and the ring's
+ * colour change arrive together instead of at two unrelated moments.
+ */
+const TENSE_AT_PERCENT = 33;
 
 /**
  * AMBIENT IDLE 2026-08-21 — per-seat breathing desync.
@@ -654,6 +664,56 @@ export const SeatSlot = memo(
         ALERT_MS * getAnimationSpeed()
       );
     }, [isActive]);
+    /**
+     * THE OTHER HALF OF THE OUTCOME 2026-08-21.
+     *
+     * Winners celebrate; losers did nothing at all. A table that only expresses
+     * one of the two outcomes reads as oddly indifferent — the pot is pushed,
+     * one seat cheers, and the player who just lost a showdown holds exactly
+     * the same calm idle they had before the cards turned over.
+     *
+     * `isMucking` is the parent's existing "this seat LOST a showdown and its
+     * cards should fly to the muck" flag. It is already in the memo comparator
+     * (added when the muck animation landed), so this needs no new prop and no
+     * change in TablePage.
+     */
+    const prevGestureMuckRef = useRef(false);
+    useEffect(() => {
+      const rising = isMucking && !prevGestureMuckRef.current;
+      prevGestureMuckRef.current = isMucking;
+      if (!rising || prefersReducedMotion()) return;
+      // A loss cannot coincide with a win, so nothing to out-rank here — but it
+      // does share the timer, so a late-arriving celebrate would still replace
+      // it, which is the correct precedence.
+      setAvatarGesture('lose');
+      if (gestureTimerRef.current) clearTimeout(gestureTimerRef.current);
+      gestureTimerRef.current = setTimeout(
+        () => setAvatarGesture(null),
+        LOSE_MS * getAnimationSpeed()
+      );
+    }, [isMucking]);
+
+    /**
+     * TIME PRESSURE 2026-08-21 — the tell.
+     *
+     * Under a third of the clock the character stops looking comfortable. Until
+     * now the countdown was expressed purely as chrome: the ring shrinks and
+     * changes colour, and the player it belongs to sits there breathing calmly
+     * through it. Real players get tense on the clock, and it is the single
+     * most watched moment at the table.
+     *
+     * Deliberately NOT applied while a gesture is playing. The tense class and
+     * the gesture classes are all single-class selectors on the same element,
+     * so whichever is declared later would win outright; gating here keeps the
+     * precedence explicit and readable instead of hiding it in source order.
+     * Same approach as `--rigged`.
+     */
+    const showTense =
+      isActive &&
+      !avatarGesture &&
+      !rigActive &&
+      timerProgress !== undefined &&
+      timerProgress <= TENSE_AT_PERCENT;
 
     // Showdown card flip animation — 3D flip when opponent cards are revealed
     const [isShowdownFlip, setIsShowdownFlip] = useState(false);
@@ -1163,7 +1223,9 @@ export const SeatSlot = memo(
              not a layer on top of a rigged one. */
           className={`seat__avatar-wrap${isBustArt ? ' seat__avatar-wrap--bust' : ''}${
             avatarGesture && !rigActive ? ` seat__avatar-wrap--${avatarGesture}` : ''
-          }${rigActive ? ' seat__avatar-wrap--rigged' : ''}`}
+          }${showTense ? ' seat__avatar-wrap--tense' : ''}${
+            rigActive ? ' seat__avatar-wrap--rigged' : ''
+          }`}
           /* Two things share this style object.
              `visibility` kept deliberately: not rendering the <img> stops the
              download, but the wrap also holds the circle chrome, the status dot

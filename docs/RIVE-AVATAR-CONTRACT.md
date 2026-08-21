@@ -80,7 +80,12 @@ player's face was.
 | `Check`     | check                           | `spAvatarCheck`                |
 | `Fold`      | fold                            | `spAvatarFold`                 |
 | `Celebrate` | this seat won the pot           | `spAvatarCelebrate`            |
+| `Lose`      | this seat lost a showdown       | `spAvatarLose`                 |
 | `Alert`     | it just became this seat's turn | `spAvatarAlert`                |
+
+`Celebrate` and `Lose` are a pair — implement both or neither. A table where
+the winner reacts and the loser does not reads as oddly indifferent, which is
+the gap `Lose` was added to close.
 
 Every trigger is optional. A rig that implements only `Fold` and `Celebrate` is
 valid; it simply will not react to the others.
@@ -91,6 +96,12 @@ valid; it simply will not react to the others.
 | ---------- | ------------------------------ |
 | `IsActive` | it is this seat's turn to act  |
 | `IsFolded` | this player is out of the hand |
+
+There is no `IsTense` input. The static path has a time-pressure tremor
+(`spAvatarTense`, under a third of the clock), but a rig should express time
+pressure inside its own `IsActive` state rather than take a second boolean —
+one held condition per real condition. If a rig wants the clock, read `IsActive`
+and build the escalation into that state's timeline.
 
 Use these for the **resting pose**, not for the reaction. `Alert` is the moment
 of sitting up; `IsActive` is staying leant in for the rest of the turn. `Fold`

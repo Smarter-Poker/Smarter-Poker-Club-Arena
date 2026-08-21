@@ -31,7 +31,10 @@ const CSS = readFileSync(
   'utf8'
 );
 
-const GESTURES = ['push', 'check', 'fold', 'celebrate', 'alert'] as const;
+const GESTURES = ['push', 'check', 'fold', 'celebrate', 'lose', 'alert'] as const;
+
+/** Animations that run forever, so reduced motion MUST switch each one off. */
+const INFINITE = ['.seat__avatar-wrap,', '.seat__avatar-wrap--tense,'] as const;
 
 /** Line index of the first line matching a predicate, or -1. */
 function lineOf(pred: (l: string) => boolean): number {
@@ -83,11 +86,13 @@ describe('avatarChoreography.css cascade', () => {
     // The bare wrap selector is what disables the INFINITE one. A gesture lasts
     // half a second; breathing runs forever, so it is the animation a
     // motion-sensitive player actually cannot escape.
-    expect(
-      rm.includes('.seat__avatar-wrap,'),
-      'reduced motion must disable the base .seat__avatar-wrap breathing, not ' +
-        'only the gesture classes'
-    ).toBe(true);
+    for (const sel of INFINITE) {
+      expect(
+        rm.includes(sel),
+        `reduced motion must disable ${sel} — it runs forever, so unlike a ` +
+          `sub-second gesture it is one a motion-sensitive player cannot wait out`
+      ).toBe(true);
+    }
   });
 
   it('keeps the holo band able to actually move', () => {

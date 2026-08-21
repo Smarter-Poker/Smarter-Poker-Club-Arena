@@ -58,6 +58,7 @@ export const RIVE_TRIGGERS: Record<NonNullable<AvatarGesture>, string> = {
   check: 'Check',
   fold: 'Fold',
   celebrate: 'Celebrate',
+  lose: 'Lose',
   alert: 'Alert',
 };
 

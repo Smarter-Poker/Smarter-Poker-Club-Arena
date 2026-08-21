@@ -29,6 +29,7 @@ const makeInputs = () => [
   { name: 'Check', fire: () => fired.push('Check') },
   { name: 'Fold', fire: () => fired.push('Fold') },
   { name: 'Celebrate', fire: () => fired.push('Celebrate') },
+  { name: 'Lose', fire: () => fired.push('Lose') },
   { name: 'Alert', fire: () => fired.push('Alert') },
   {
     name: 'IsActive',
@@ -187,7 +188,7 @@ describe('RiveAvatar — when a rig exists', () => {
       onLoadCb?.();
     });
 
-    for (const g of ['push', 'check', 'fold', 'celebrate', 'alert'] as const) {
+    for (const g of ['push', 'check', 'fold', 'celebrate', 'lose', 'alert'] as const) {
       rerender(
         <RiveAvatar avatarUrl={AVATAR} gesture={g} isActive={false} isFolded={false} size={84} />
       );
@@ -199,8 +200,15 @@ describe('RiveAvatar — when a rig exists', () => {
 
     // The contract an artist builds against — assert the NAMES, not just that
     // something fired, because the names are the interface.
-    expect(fired).toEqual(['Push', 'Check', 'Fold', 'Celebrate', 'Alert']);
-    expect(Object.values(RIVE_TRIGGERS)).toEqual(['Push', 'Check', 'Fold', 'Celebrate', 'Alert']);
+    expect(fired).toEqual(['Push', 'Check', 'Fold', 'Celebrate', 'Lose', 'Alert']);
+    expect(Object.values(RIVE_TRIGGERS)).toEqual([
+      'Push',
+      'Check',
+      'Fold',
+      'Celebrate',
+      'Lose',
+      'Alert',
+    ]);
     expect(RIVE_STATE_MACHINE).toBe('SeatState');
   });
 

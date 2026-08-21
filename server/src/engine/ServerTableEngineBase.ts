@@ -1396,6 +1396,25 @@ export abstract class ServerTableEngineBase {
    * dealerSeatIndex over a differently-filtered roster and released players on
    * the wrong hand.)
    */
+  /**
+   * Dan 2026-08-21, BINDING: "CASH GAME PLAYERS CAN NEVER BE DEALT INTO THE
+   * SMALL BLIND. THEY MUST WAIT FOR THE BUTTON TO PASS." Same roster and
+   * rotation as getBBSeatIndex, stopping one seat earlier.
+   */
+  protected getSBSeatIndex(): number {
+    const roster = this.seatedPlayers.filter(
+      (p) =>
+        p.stack > 0 &&
+        (this.isTournamentTable() ||
+          !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
+    );
+    if (roster.length < 2) return -1;
+    const sortedSeats = roster.map((p) => p.seat_number).sort((a, b) => a - b);
+    const nextButton =
+      this.lastButtonSeat > 0 ? this.getNextSeat(this.lastButtonSeat, roster) : sortedSeats[0];
+    return roster.length === 2 ? nextButton : this.getNextSeat(nextButton, roster);
+  }
+
   protected getBBSeatIndex(): number {
     // Roster that CAN hold the button/blinds this hand: has chips and isn't
     // sitting out. Waiting-for-BB players are included so the moving BB can

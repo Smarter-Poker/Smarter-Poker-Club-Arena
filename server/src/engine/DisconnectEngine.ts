@@ -39,6 +39,15 @@ export interface PlayerConnectionState {
   lastHeartbeat: number;
   consecutiveTimeouts: number;
   isSittingOut: boolean;
+  /**
+   * Dan 2026-08-21: epoch ms the CURRENT sit-out began, or null when in the
+   * game. Drives the 5-minute half of "removed after the button passes them
+   * twice OR after 5 minutes, whichever happens first". Keyed per
+   * (table, player) so sitting out here never touches other tables.
+   */
+  sitOutSince?: number | null;
+  /** Hands dealt at this table since the sit-out began (button-pass proxy). */
+  sitOutOrbits?: number;
   /** Timestamp when disconnect was detected */
   disconnectedAt?: number;
   /** Timestamp when player reconnected (for grace period tracking — Bible V8 §6.3) */
@@ -92,6 +101,10 @@ export interface DisconnectEvent {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export class DisconnectEngine {
+  /** Sit-out eviction limits (Dan 2026-08-21): button passes, then minutes. */
+  static readonly SITOUT_MAX_ORBITS = 2;
+  static readonly SITOUT_MAX_MS = 5 * 60 * 1000;
+
   private tableConfigs: Map<string, DisconnectConfig> = new Map();
   private playerStates: Map<string, PlayerConnectionState> = new Map();
   private actionCallbacks: Map<string, (action: DisconnectAction) => void> = new Map();
@@ -145,6 +158,8 @@ export class DisconnectEngine {
       lastHeartbeat: Date.now(),
       consecutiveTimeouts: 0,
       isSittingOut: false,
+      sitOutSince: null,
+      sitOutOrbits: 0,
     });
   }
 
@@ -320,6 +335,12 @@ export class DisconnectEngine {
     const state = this.playerStates.get(key);
     if (!state) return;
 
+    // Stamp the clock only on the TRANSITION into sitting out, so a repeated
+    // sitOut() call cannot keep resetting the 5-minute eviction window.
+    if (!state.isSittingOut) {
+      state.sitOutSince = Date.now();
+      state.sitOutOrbits = 0;
+    }
     state.isSittingOut = true;
 
     this.emitEvent({
@@ -341,6 +362,8 @@ export class DisconnectEngine {
 
     state.isSittingOut = false;
     state.consecutiveTimeouts = 0;
+    state.sitOutSince = null;
+    state.sitOutOrbits = 0;
 
     this.emitEvent({
       type: 'PLAYER_SAT_BACK',
@@ -356,6 +379,26 @@ export class DisconnectEngine {
   isConnected(tableId: string, playerId: string): boolean {
     const key = `${tableId}:${playerId}`;
     return this.playerStates.get(key)?.isConnected ?? true;
+  }
+
+  /**
+   * Dan 2026-08-21, BINDING: "IF A PLAYER IS SITTING OUT THEY MUST BE REMOVED
+   * AFTER THE BUTTON PASSES THEM TWICE, OR AFTER 5 MINUTES, WHICHEVER HAPPENS
+   * FIRST." Called once per hand start with the players seated at THIS table.
+   */
+  tickSitOutsAndCollectEvictions(tableId: string, playerIds: string[]): string[] {
+    const evict: string[] = [];
+    const now = Date.now();
+    for (const playerId of playerIds) {
+      const state = this.playerStates.get(`${tableId}:${playerId}`);
+      if (!state || !state.isSittingOut) continue;
+      state.sitOutOrbits = (state.sitOutOrbits ?? 0) + 1;
+      const orbitsUp = (state.sitOutOrbits ?? 0) > DisconnectEngine.SITOUT_MAX_ORBITS;
+      const timeUp =
+        state.sitOutSince != null && now - state.sitOutSince >= DisconnectEngine.SITOUT_MAX_MS;
+      if (orbitsUp || timeUp) evict.push(playerId);
+    }
+    return evict;
   }
 
   isSittingOut(tableId: string, playerId: string): boolean {

@@ -19,6 +19,7 @@ import {
   supabase,
   autoRebuyHorse,
   markSeatAsLeft,
+  atomicCashout,
 } from '../services/supabase.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
@@ -113,6 +114,50 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // Bible V8 §6.3: Check for stale heartbeats before each hand
         this.disconnectEngine.checkStaleHeartbeats(this.tableId);
 
+        // ── Dan 2026-08-21, BINDING: sit-out eviction ──
+        // "IF A PLAYER IS SITTING OUT THEY MUST BE REMOVED AFTER THE BUTTON
+        //  PASSES THEM TWICE, OR AFTER 5 MINUTES, WHICHEVER HAPPENS FIRST."
+        // Cash tables only (a tournament sit-out is blinded off, never
+        // removed). The counter and clock live per (table, player), so this
+        // never reaches across a player's other seats — "A PLAYER CAN SIT OUT
+        // ON ONE TABLE BUT STILL PLAY TABLES ON SCREEN 2, 3 AND 4".
+        if (!this.isTournamentTable()) {
+          const evictable = this.disconnectEngine.tickSitOutsAndCollectEvictions(
+            this.tableId,
+            this.seatedPlayers.map((p) => p.user_id)
+          );
+          for (const userId of evictable) {
+            const seated = this.seatedPlayers.find((p) => p.user_id === userId);
+            if (!seated) continue;
+            console.log(
+              `[ServerTableEngine:${this.tableId}] evicting ${userId} — sat out past the 2-orbit / 5-minute limit`
+            );
+            this.hub?.emitEvent(this.tableId, {
+              type: 'seat_left',
+              table_id: this.tableId,
+              seat: seated.seat_number,
+              user_id: userId,
+              mid_hand: false,
+              reason: 'sit_out_timeout',
+              timestamp: Date.now(),
+            });
+            atomicCashout(userId, this.tableId, seated.seat_number)
+              .then(() => {
+                this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+                this.timeBankEngine.removePlayer(this.tableId, userId);
+                this.straddleEngine.removePlayer(this.tableId, userId);
+                this.preActionEngine.removePlayer(this.tableId, userId);
+              })
+              .catch((err) => {
+                reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_evict_cashout');
+                markSeatAsLeft(this.tableId, userId, seated.seat_number);
+              });
+          }
+          if (evictable.length > 0) {
+            this.seatedPlayers = this.seatedPlayers.filter((p) => !evictable.includes(p.user_id));
+          }
+        }
+
         // Bible V8 §6.17: Admin pause/maintenance lock — skip dealing
         if (this.adminPauseLock || this.maintenanceLock) {
           if (this.tableFSM.state === 'running') {
@@ -147,7 +192,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // to it; the natural-BB release above still wins when the blind is
         // reaching their seat anyway, in which case they just post normally.
         if (this.waitingForBB.size > 0) {
+          // Dan 2026-08-21, BINDING: "CASH GAME PLAYERS CAN NEVER BE DEALT
+          // INTO THE SMALL BLIND. THEY MUST WAIT FOR THE BUTTON TO PASS."
+          const sbSeatIndex = this.isTournamentTable() ? -1 : this.getSBSeatIndex();
           for (const userId of Array.from(this.waitingForBB)) {
+            const seatedWaiter = this.seatedPlayers.find((s2) => s2.user_id === userId);
+            if (seatedWaiter && sbSeatIndex > 0 && seatedWaiter.seat_number === sbSeatIndex) {
+              console.log(
+                `[ServerTableEngine:${this.tableId}] holding ${userId} out one hand — would have been dealt into the SB`
+              );
+              continue;
+            }
             this.waitingForBB.delete(userId);
             this.postingBBToEnter.add(userId);
             console.log(

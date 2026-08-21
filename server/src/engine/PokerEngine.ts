@@ -657,8 +657,30 @@ export function validateAction(
       }
       return { valid: true };
     }
-    case 'all_in':
+    case 'all_in': {
+      // ── Dan 2026-08-21, BINDING: "IN PLO YOU CAN NEVER GO ALL IN IF THE POT
+      //    IS LESS THAN THE CHIPS YOU HAVE. THE MOST YOU CAN EVER BET IS POT."
+      //
+      // This case returned `valid: true` unconditionally, so `all_in` was the
+      // one action that walked straight past the pot-limit ceiling every other
+      // branch enforces. A deep stack could shove many times the cap in PLO.
+      //
+      // An all-in is legal when the whole stack fits under the cap, and when
+      // it cannot even cover the call. It is illegal only when the stack
+      // EXCEEDS what pot-limit allows.
+      if (bettingState.maxRaise !== undefined) {
+        const playerBet = currentBet - toCall;
+        const allInTo = playerBet + playerStack;
+        const raiseSize = allInTo - currentBet;
+        if (raiseSize > bettingState.maxRaise + CENT_EPS) {
+          return {
+            valid: false,
+            error: `Pot-limit max is ${currentBet + bettingState.maxRaise} — you cannot go all in for more than the pot`,
+          };
+        }
+      }
       return { valid: true };
+    }
     default:
       return { valid: false, error: 'Invalid action' };
   }

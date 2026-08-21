@@ -9723,7 +9723,10 @@ export default function TablePage({
                         canCheck={callAmount === 0}
                         canCall={callAmount > 0}
                         canRaise={heroStack > callAmount && allInTo >= minRaise}
-                        canAllIn={heroStack > 0}
+                        /* Dan 2026-08-21, BINDING: "IN PLO YOU CAN NEVER GO
+                           ALL IN IF THE POT IS LESS THAN THE CHIPS YOU HAVE."
+                           The engine refuses it; the button must not offer it. */
+                        canAllIn={heroStack > 0 && (!isPotLimit || allInTo <= maxRaise + 0.005)}
                         callAmount={callAmount}
                         minRaise={minRaise}
                         maxRaise={maxRaise}

@@ -586,8 +586,27 @@ export class HandController {
       isPotLimit
     );
 
-    const validation = validateAction(action, amount, player.stack, bettingState);
+    // ── Dan 2026-08-21 (PLO hard cap) ──
+    // In pot-limit the maximum is the pot, so a stack bigger than the cap
+    // CANNOT shove. validateAction rejects that (PokerEngine.ts) — the rule
+    // truth — but a bare rejection would freeze the table when the shove came
+    // from an automated path (horse decision, disconnect auto-action, watchdog
+    // force). Pot-limit "all in" means "bet the legal maximum", so clamp.
+    let effAction: ActionType = action;
+    let effAmount = amount;
+    if (isPotLimit && action === 'all_in' && bettingState.maxRaise !== undefined) {
+      const allInTo = player.bet + player.stack;
+      const capTo = this.state.currentBet + bettingState.maxRaise;
+      if (allInTo > capTo + 0.005) {
+        effAction = this.state.currentBet > 0 ? 'raise' : 'bet';
+        effAmount = Math.round(capTo * 100) / 100;
+      }
+    }
+
+    const validation = validateAction(effAction, effAmount, player.stack, bettingState);
     if (!validation.valid) return false;
+    action = effAction;
+    amount = effAmount;
 
     // FIX-A1 2026-07-19 (Bible V8 §4.14 / TDA Rule 44): reject a `raise` that
     // cannot legally reopen betting — e.g. a player who already acted and now

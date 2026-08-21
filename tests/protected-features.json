@@ -51,7 +51,8 @@
         "src/components/table/ThrowAnimation.css",
         "src/components/table/ThrowableSignatures.css",
         "src/components/table/ThrowableImage.tsx",
-        "src/components/table/ThrowableSelector.tsx"
+        "src/components/table/ThrowableSelector.tsx",
+        "src/services/ThrowableCutout.ts"
       ],
       "contains": {
         "src/components/table/ThrowAnimation.tsx": [
@@ -61,7 +62,8 @@
           "data-throwable"
         ],
         "src/services/ThrowableService.ts": ["/storage/v1/render/image/public/"],
-        "src/components/table/ThrowableImage.tsx": ["getThrowableRawUrl"]
+        "src/components/table/ThrowableImage.tsx": ["getThrowableCutout", "throwable-img--cut"],
+        "src/services/ThrowableCutout.ts": ["knockOutBackground", "crossOrigin"]
       },
       "absent": {
         "src/components/table/ThrowAnimation.tsx": ["THROWABLE_ICONS"],
@@ -81,7 +83,12 @@
           "min": 49
         }
       },
-      "bundleMarkers": ["data-throwable", "throw-animation__fxi", "--impact-dur"]
+      "bundleMarkers": [
+        "data-throwable",
+        "throw-animation__fxi",
+        "--impact-dur",
+        "throwable-img--cut"
+      ]
     },
     {
       "id": "table-sounds",
@@ -147,6 +154,18 @@
         "src/utils/popupStyle.ts": ["export"]
       },
       "bundleMarkers": []
+    },
+    {
+      "id": "throwable-cutout",
+      "title": "True alpha cutout for throwable renders (no black background box)",
+      "owner": "table",
+      "since": "2026-08-21",
+      "files": ["src/services/ThrowableCutout.ts", "tests/throwableCutout.test.ts"],
+      "contains": {
+        "src/services/ThrowableCutout.ts": ["knockOutBackground", "getThrowableCutout"],
+        "src/components/table/ThrowAnimation.css": [".throwable-img--cut"]
+      },
+      "bundleMarkers": ["throwable-img--cut"]
     }
   ]
 }

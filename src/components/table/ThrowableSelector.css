@@ -810,9 +810,18 @@
   width: 44px;
   height: 44px;
   border-radius: 10px;
-  background: #000;
+  /* Was solid #000, needed as a floor for the screen blend. With real alpha
+     the tile can be glass like the rest of the panel, and the item sits on it
+     instead of in a black chip. */
+  background: rgba(255, 255, 255, 0.04);
   overflow: hidden;
   box-shadow: inset 0 0 0 1px var(--ts-border-subtle);
+}
+
+/* Blend-mode fallback still needs its black floor, or the JPEG background
+   would show as a grey square inside the tile. */
+.throwable-selector__icon--img:has(.throwable-img:not(.throwable-img--cut)) {
+  background: #000;
 }
 
 .throwable-selector__icon--img .throwable-img {

@@ -33,10 +33,25 @@
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;
-  /* Pure-black JPG background disappears over ANY arena surface */
+  /* LEGACY FALLBACK PATH ONLY (no real alpha yet).
+     The renders are JPGs on black. `screen` is a no-op over MATHEMATICALLY
+     pure black, but JPEG black is 8/8/8 with ringing around every edge, so
+     those pixels lighten the felt — the grey box Dan reported. It is kept
+     because it is still better than a hard black rectangle when keying is
+     impossible (no canvas, CORS refused). The real fix is below. */
   mix-blend-mode: screen;
-  /* Slight punch: dark-item detail otherwise washes out over bright felt */
   filter: saturate(1.12) contrast(1.05);
+}
+
+/* THE REAL FIX (2026-08-21): ThrowableCutout hands back a blob URL with a
+   genuine alpha channel, so the image composites NORMALLY — no blend, no
+   wash, no box, and correct over the felt, the glass selector panel and any
+   future light theme alike. */
+.throwable-img--cut {
+  mix-blend-mode: normal;
+  /* Screen used to lift dark items; with true alpha they need their own
+     contrast back rather than borrowing it from the backdrop. */
+  filter: saturate(1.06) contrast(1.02);
 }
 
 .throwable-img--fallback {
@@ -45,6 +60,14 @@
   color: #ffd93d;
   mix-blend-mode: normal;
   filter: none;
+}
+
+/* A cut image needs a soft ground shadow to sit ON the felt instead of
+   floating above it. Screen-blended originals cannot have one (the blend
+   would eat it), which is another reason the box read as wrong. */
+.throw-animation__spinner .throwable-img--cut,
+.throw-animation__impact-icon .throwable-img--cut {
+  filter: saturate(1.06) contrast(1.02) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.45));
 }
 
 /* =================================================================================

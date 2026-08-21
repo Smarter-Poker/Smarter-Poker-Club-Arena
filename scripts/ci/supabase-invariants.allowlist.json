@@ -34,12 +34,20 @@
     "verify_ledger_totals": "optional ledger-verify RPC — ChipFlowService has a working client-side paginated fallback",
     "promote_next_waitlisted_player": "intentionally absent — the engine's notifyWaitlistSeatOpen (server/src, sweep 6) is the AUTHORITATIVE cash-table waitlist promoter on a seat-open event. TableService's client-side best-effort call no-ops when the RPC is missing (error handled); creating the RPC would double-seat/double-notify against the server path.",
     "fn_respond_friend_challenge": "BUILT 2026-07-29 (friend-challenge accept/decline) — schema manifest update pending the PAT-rotation deploy fix; remove after manifest regen",
-    "fn_bump_friend_challenge_progress": "BUILT 2026-07-29 (friend-challenge progress) — manifest update pending; remove after regen"
+    "fn_bump_friend_challenge_progress": "BUILT 2026-07-29 (friend-challenge progress) — manifest update pending; remove after regen",
+    "fn_buy_streak_freeze": "daily-challenge streak freeze - 20260821z_phase14_streak_freeze.sql authors the function but was never applied (nothing runs supabase db push), and NOTHING in the UI calls DailyChallengeService.buyStreakFreeze. Applying it would need product answers this list cannot invent: what a freeze costs, in which currency, and how many a player may hold. get_challenge_streak already reports freezesAvailable, so the concept is real - only the purchase is unbuilt. Apply the migration or delete the method, then remove this line."
   },
   "phantomColumns": {
-    "tables": ["bomb_pot_double_board"],
-    "hand_history": ["community_cards2"],
-    "friend_challenges": ["winner_id", "resolved_at"],
+    "tables": [
+      "bomb_pot_double_board"
+    ],
+    "hand_history": [
+      "community_cards2"
+    ],
+    "friend_challenges": [
+      "winner_id",
+      "resolved_at"
+    ],
     "_comment": "BUILT columns whose columns-manifest entry is pending regeneration (deploy blocked by PAT rotation 2026-07-29). Remove once the manifest is regenerated."
   }
 }

@@ -128,3 +128,36 @@
     opacity: 1;
   }
 }
+
+/* Error fallback — parity with MessagesPage. Before 2026-08-20 this page had
+   no error state at all, so a messenger that failed to load left the skeleton
+   shimmering forever with no retry. */
+.club-messages-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  min-height: 60vh;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  color: #9aa3bd;
+  font-size: 0.875rem;
+}
+
+.club-messages-error button {
+  padding: 0.625rem 1.25rem;
+  min-height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: #10162e;
+  color: #f0b429;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.club-messages-error button:focus-visible {
+  outline: 2px solid #f0b429;
+  outline-offset: 2px;
+}

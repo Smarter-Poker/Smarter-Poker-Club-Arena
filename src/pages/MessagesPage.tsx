@@ -24,6 +24,7 @@ import { useHeaderDataStore } from '../stores/useHeaderDataStore';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import './MessagesPage.css';
 import { reportError } from '../utils/errorReporter';
+import { isUUID, resolveClubUUID } from '../utils/clubIdResolver';
 
 // Height of ClubBottomNav in px — tells the embedded messenger to pad its content
 // so the input bar is never hidden behind the nav. Keep in sync with
@@ -59,16 +60,24 @@ export default function MessagesPage() {
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Fetch actual user role for this club so ClubBottomNav shows correct tabs
+  // Fetch actual user role for this club so ClubBottomNav shows correct tabs.
+  //
+  // clubId off the route can be a club CODE or slug, not a uuid - every other
+  // club page resolves it first. This one queried club_members with the raw
+  // value, so on a slug route the uuid column comparison found nothing, the
+  // role stayed 'member', and an owner lost their admin tabs in ClubBottomNav.
+  // ClubMessagesPage already did this correctly; now both do.
   useEffect(() => {
     if (!clubId || !user?.id) return;
     let cancelled = false;
     (async () => {
       try {
+        const uuid = isUUID(clubId) ? clubId : await resolveClubUUID(clubId);
+        if (cancelled || !uuid) return;
         const { data } = await supabase
           .from('club_members')
           .select('role')
-          .eq('club_id', clubId)
+          .eq('club_id', uuid)
           .eq('user_id', user.id)
           .maybeSingle();
         if (!cancelled && data?.role) {
@@ -116,19 +125,23 @@ export default function MessagesPage() {
 
   const [iframeError, setIframeError] = useState(false);
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The timeout below used to read the `iframeLoaded` captured when the effect
+  // ran, which is always false - so a messenger that loaded in 2 seconds could
+  // still be declared broken at 12. A ref is the live value.
+  const iframeLoadedRef = useRef(false);
 
   // Start a 12-second timeout when the iframe URL is set.
   // If onLoad hasn't fired by then, show the error fallback (e.g. offline / server error).
   useEffect(() => {
     setIframeError(false);
     setIframeLoaded(false);
+    iframeLoadedRef.current = false;
     loadTimeoutRef.current = setTimeout(() => {
-      setIframeError((prev) => (!iframeLoaded && !prev ? true : prev));
+      if (!iframeLoadedRef.current) setIframeError(true);
     }, 12000);
     return () => {
       if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messengerUrl]);
 
   const handleRetry = () => {
@@ -177,6 +190,7 @@ export default function MessagesPage() {
             allow="camera; microphone; display-capture; autoplay"
             loading="lazy"
             onLoad={() => {
+              iframeLoadedRef.current = true;
               setIframeLoaded(true);
               if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
             }}

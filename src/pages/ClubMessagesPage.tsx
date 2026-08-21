@@ -32,7 +32,11 @@ export default function ClubMessagesPage() {
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
   const [clubId, setClubId] = useState<string | undefined>(urlClubId);
   const [iframeLoaded, setIframeLoaded] = useState(false);
+  const [iframeError, setIframeError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const iframeLoadedRef = useRef(false);
+  const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
@@ -41,6 +45,13 @@ export default function ClubMessagesPage() {
     // Reset skeleton so it shows again for the new club's load
     setIframeLoaded(false);
   }, [urlClubId]);
+
+  const handleRetry = () => {
+    setIframeError(false);
+    setIframeLoaded(false);
+    iframeLoadedRef.current = false;
+    setRetryKey((k) => k + 1);
+  };
 
   // Hydrate userRole from club_members so BottomNav shows correct tabs
   useEffect(() => {
@@ -89,10 +100,43 @@ export default function ClubMessagesPage() {
     hideHeader: 'true',
     ...(clubId && { clubId }),
     ...(clubId && { bottomPad: String(BOTTOM_NAV_HEIGHT_PX) }),
+    ...(retryKey ? { r: String(retryKey) } : {}),
   });
   const messengerUrl = clubId
     ? `/hub/messenger?${messengerParams.toString()}`
     : '/hub/messenger?hideHeader=true';
+
+  /* eslint-disable react-hooks/rules-of-hooks */
+  useEffect(() => {
+    setIframeError(false);
+    setIframeLoaded(false);
+    iframeLoadedRef.current = false;
+    loadTimeoutRef.current = setTimeout(() => {
+      if (!iframeLoadedRef.current) setIframeError(true);
+    }, 12000);
+    return () => {
+      if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+    };
+  }, [messengerUrl]);
+  /* eslint-enable react-hooks/rules-of-hooks */
+
+  // The header above claims parity with MessagesPage on "skeleton loading",
+  // but this page had no load timeout and no error state at all: a messenger
+  // that failed to load left a shimmer running forever with no way back.
+  // Same 12s guard and retry MessagesPage uses.
+  if (iframeError) {
+    return (
+      <div className="club-messages-page">
+        <div className="club-messages-error" role="alert">
+          <p>Could not load the messenger.</p>
+          <button type="button" onClick={handleRetry}>
+            Try again
+          </button>
+        </div>
+        {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
+      </div>
+    );
+  }
 
   return (
     <div className="club-messages-page">
@@ -118,7 +162,11 @@ export default function ClubMessagesPage() {
         title={clubId ? 'Club Messenger' : 'Smarter.Poker Messenger'}
         allow="camera; microphone; display-capture; autoplay"
         loading="lazy"
-        onLoad={() => setIframeLoaded(true)}
+        onLoad={() => {
+          iframeLoadedRef.current = true;
+          setIframeLoaded(true);
+          if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+        }}
         style={{ opacity: iframeLoaded ? 1 : 0, transition: 'opacity 0.25s ease' }}
       />
 

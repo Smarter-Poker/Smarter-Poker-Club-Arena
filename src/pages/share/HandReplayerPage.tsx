@@ -1,9 +1,3 @@
-/**
- * ♠ CLUB ARENA — Hand Replayer Page
- * premium-style shareable hand replay with social meta tags
- * URL: /share/hand/:handId
- */
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { handHistoryService } from '../../services/HandHistoryService';
@@ -53,6 +47,7 @@ export default function HandReplayerPage() {
   const [activeTab, setActiveTab] = useState<'replay' | 'analysis'>('replay');
   const [viewMode, setViewMode] = useState<'3d' | '2d'>('3d');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const overlayRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
   useEffect(() => {
     let isMounted = true;
@@ -195,21 +190,27 @@ export default function HandReplayerPage() {
   const currentSnapshot = useMemo((): ReplaySnapshot | null => {
     if (!hand) return null;
 
-    // Determine player bets based on actions up to current step
     const currentBetAmounts: Record<string, number> = {};
     const foldedPlayers: Record<string, boolean> = {};
+    let currentPot = 0;
+
     for (let i = 0; i <= currentStep; i++) {
       const a = hand.actions[i];
       if (!a) continue;
       if (a.action === 'fold') foldedPlayers[a.player] = true;
-      if (a.amount) currentBetAmounts[a.player] = a.amount;
+      if (a.amount) {
+        currentBetAmounts[a.player] = a.amount;
+        currentPot += a.amount;
+      }
     }
+
+    const isEndOfHand = currentStep === hand.actions.length - 1;
 
     return {
       stepIndex: currentStep,
       totalSteps: hand.actions.length,
       stage: currentStep < 4 ? 'preflop' : currentStep < 6 ? 'flop' : 'river',
-      pot: hand.pot, // In a real engine, we'd compute this per step
+      pot: hand.pot > 0 ? hand.pot : currentPot,
       communityCards: currentBoard,
       players: hand.players.map((p) => ({
         userId: p.name,
@@ -220,9 +221,11 @@ export default function HandReplayerPage() {
         isFolded: !!foldedPlayers[p.name],
         isAllIn: false,
         seat: p.seat,
+        isWinner: p.is_winner,
       })),
       currentAction: null,
       isPlaying,
+      isEndOfHand,
     };
   }, [hand, currentStep, currentBoard, isPlaying]);
 
@@ -300,29 +303,37 @@ export default function HandReplayerPage() {
                   active={true}
                   seatCount={hand.players.length || 6}
                   snapshot={currentSnapshot || undefined}
+                  onSeatPositionsUpdate={(positions) => {
+                    // Direct DOM manipulation to avoid 60FPS React state updates
+                    Object.entries(positions).forEach(([seatStr, pos]) => {
+                      const seatIdx = parseInt(seatStr, 10);
+                      const el = overlayRefs.current[seatIdx];
+                      if (el) {
+                        el.style.left = `${pos.x}px`;
+                        el.style.top = `${pos.y}px`;
+                      }
+                    });
+                  }}
                 />
 
                 {/* Overlay Action Bubbles & Player Names */}
                 {hand.players.map((p) => {
-                  // Very rough positioning for 3D overlay based on seat index
-                  const angle = (p.seat / (hand.players.length || 6)) * Math.PI * 2 - Math.PI / 2;
-                  const x = 50 + Math.cos(angle) * 35;
-                  const y = 50 + Math.sin(angle) * 35;
-
                   const actionAtStep =
                     hand.actions[currentStep]?.player === p.name ? hand.actions[currentStep] : null;
 
                   return (
                     <div
                       key={p.name}
+                      ref={(el) => (overlayRefs.current[p.seat] = el)}
                       style={{
                         position: 'absolute',
-                        left: `${x}%`,
-                        top: `${y}%`,
+                        left: '-9999px', // Initial hidden state until first update
+                        top: '-9999px',
                         transform: 'translate(-50%, -50%)',
                         pointerEvents: 'none',
                         textAlign: 'center',
                         textShadow: '0 2px 4px rgba(0,0,0,0.8)',
+                        zIndex: 10,
                       }}
                     >
                       <div

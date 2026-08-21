@@ -2,9 +2,6 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  HandReplay3D — Three.js 3D Hand Replay Viewer
  * ═══════════════════════════════════════════════════════════════════════════════
- *
- * Renders a 3D poker table with animated card dealing, chip movement, and
- * player actions using Three.js and GSAP.
  */
 
 import React, { useRef, useEffect, useState, memo } from 'react';
@@ -20,6 +17,7 @@ export interface HandReplay3DProps {
   speed?: ReplaySpeed;
   onReady?: () => void;
   snapshot?: ReplaySnapshot;
+  onSeatPositionsUpdate?: (positions: Record<number, { x: number; y: number }>) => void;
 }
 
 const TABLE_RADIUS = 4;
@@ -80,12 +78,21 @@ class PokerTable3D {
 
   cards: Map<string, THREE.Mesh> = new Map();
   chipStacks: Map<string, THREE.Group> = new Map();
+  mainPotStack: THREE.Group | null = null;
 
   seatCount: number;
   isDisposed = false;
 
-  constructor(canvas: HTMLCanvasElement, seatCount: number, feltColor: string) {
+  onSeatPositionsUpdate?: (positions: Record<number, { x: number; y: number }>) => void;
+
+  constructor(
+    canvas: HTMLCanvasElement,
+    seatCount: number,
+    feltColor: string,
+    onSeatPositionsUpdate?: (positions: Record<number, { x: number; y: number }>) => void
+  ) {
     this.seatCount = seatCount;
+    this.onSeatPositionsUpdate = onSeatPositionsUpdate;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#0a0a14'); // Dark premium background
@@ -131,7 +138,6 @@ class PokerTable3D {
     );
     feltGeometry.scale(1, 1, 0.65);
 
-    // Subtle noise bump map could be added here, using roughness for now
     const feltMaterial = new THREE.MeshStandardMaterial({
       color: feltColor,
       roughness: 0.9,
@@ -186,7 +192,6 @@ class PokerTable3D {
     const frontMat = new THREE.MeshStandardMaterial({ map: frontTex, roughness: 0.3 });
     const backMat = new THREE.MeshStandardMaterial({ map: backTex, roughness: 0.4 });
 
-    // Materials order for BoxGeometry: right, left, top, bottom, front, back
     const materials = [whiteEdge, whiteEdge, frontMat, backMat, whiteEdge, whiteEdge];
     const card = new THREE.Mesh(geo, materials);
     card.castShadow = true;
@@ -203,15 +208,13 @@ class PokerTable3D {
       activeCardKeys.add(key);
       if (!this.cards.has(key)) {
         const card = this.createCardMesh(cardStr);
-        // Start from dealer (center-ish or top)
         card.position.set(0, TABLE_HEIGHT + 2, -2);
-        card.rotation.x = Math.PI; // Face down initially
+        card.rotation.x = Math.PI;
         this.scene.add(card);
         this.cards.set(key, card);
 
         const xOffset = (index - 2) * (CARD_WIDTH + 0.08);
 
-        // GSAP Animation dealing to center
         gsap.to(card.position, {
           x: xOffset,
           y: TABLE_HEIGHT + 0.02,
@@ -221,7 +224,6 @@ class PokerTable3D {
           ease: 'power2.out',
         });
 
-        // Flip over
         gsap.to(card.rotation, {
           x: 0,
           duration: 0.5,
@@ -231,7 +233,34 @@ class PokerTable3D {
       }
     });
 
-    // 2. Player Cards & Bets
+    // 2. Main Pot (Center)
+    if (snapshot.pot > 0) {
+      if (!this.mainPotStack) {
+        this.mainPotStack = this.createChipStack(snapshot.pot);
+        this.mainPotStack.position.set(0, TABLE_HEIGHT + 0.5, -0.6);
+        this.scene.add(this.mainPotStack);
+
+        gsap.to(this.mainPotStack.position, {
+          y: TABLE_HEIGHT + 0.01,
+          duration: 0.5,
+          ease: 'bounce.out',
+        });
+      } else {
+        // Very naive update: recreate it if amount changed significantly.
+        // For now, we will assume it just grows, which means we could add chips.
+        // Simplified: just update it if needed. Let's recreate it safely.
+        const potKey = this.mainPotStack.userData.amount;
+        if (potKey !== snapshot.pot) {
+          this.scene.remove(this.mainPotStack);
+          this.mainPotStack = this.createChipStack(snapshot.pot);
+          this.mainPotStack.position.set(0, TABLE_HEIGHT + 0.01, -0.6);
+          this.mainPotStack.userData.amount = snapshot.pot;
+          this.scene.add(this.mainPotStack);
+        }
+      }
+    }
+
+    // 3. Player Cards & Bets
     snapshot.players.forEach((player) => {
       if (!player.isFolded) {
         player.cards.forEach((cardStr, idx) => {
@@ -240,16 +269,14 @@ class PokerTable3D {
 
           if (!this.cards.has(key)) {
             const card = this.createCardMesh(cardStr);
-            // Start from dealer
             card.position.set(0, TABLE_HEIGHT + 2, -2);
-            card.rotation.x = Math.PI; // Face down
+            card.rotation.x = Math.PI;
             this.scene.add(card);
             this.cards.set(key, card);
 
             const seatPos = getSeatPosition(player.seat, this.seatCount);
             const xOffset = (idx - 0.5) * 0.15;
 
-            // GSAP Deal to player
             gsap.to(card.position, {
               x: seatPos.x * 0.8 + xOffset,
               y: TABLE_HEIGHT + 0.02,
@@ -259,18 +286,16 @@ class PokerTable3D {
               ease: 'power2.out',
             });
 
-            // If it's a known card, flip it
             if (cardStr !== '??') {
               gsap.to(card.rotation, {
                 x: 0,
-                z: (Math.random() - 0.5) * 0.1, // slight rotation for realism
+                z: (Math.random() - 0.5) * 0.1,
                 duration: 0.4,
                 delay: player.seat * 0.05 + idx * 0.1 + 0.3,
                 ease: 'power2.out',
               });
             }
           } else {
-            // Check if card changed from ?? to known (showdown flip)
             const existingCard = this.cards.get(key)!;
             if (cardStr !== '??' && existingCard.rotation.x >= Math.PI - 0.1) {
               const tex = getTexture(getCardTexturePath(cardStr));
@@ -304,36 +329,62 @@ class PokerTable3D {
             duration: 0.4,
             ease: 'bounce.out',
           });
-        } else {
-          // If the bet changed, update the chips? For simplicity, we can just replace it.
-          // But GSAP makes it tricky. We'll just leave it for now unless they bet more.
         }
       }
     });
 
-    // 3. Remove old cards/chips
+    // 4. End of hand logic (winner rake pot)
+    if (snapshot.isEndOfHand && this.mainPotStack) {
+      const winner = snapshot.players.find((p) => p.isWinner);
+      if (winner) {
+        const seatPos = getSeatPosition(winner.seat, this.seatCount);
+        gsap.to(this.mainPotStack.position, {
+          x: seatPos.x * 0.8,
+          z: seatPos.z * 0.8,
+          duration: 0.8,
+          ease: 'power2.inOut',
+          onComplete: () => {
+            if (this.mainPotStack) {
+              this.scene.remove(this.mainPotStack);
+              this.mainPotStack = null;
+            }
+          },
+        });
+      }
+    }
+
+    // 5. Remove old cards/chips (mucking/folding)
     for (const [key, card] of this.cards.entries()) {
       if (!activeCardKeys.has(key)) {
+        // Slide to dealer position and fade down (simulated by scale since it's 3D and no transparency)
         gsap.to(card.position, {
           x: 0,
-          y: TABLE_HEIGHT + 0.05,
-          z: 0,
+          y: TABLE_HEIGHT + 0.01,
+          z: -1,
           duration: 0.4,
           ease: 'power2.in',
+        });
+        gsap.to(card.rotation, { x: Math.PI, z: Math.random() * Math.PI, duration: 0.4 });
+        gsap.to(card.scale, {
+          x: 0,
+          y: 0,
+          z: 0,
+          duration: 0.2,
+          delay: 0.4,
           onComplete: () => {
             this.scene.remove(card);
             this.cards.delete(key);
           },
         });
-        gsap.to(card.rotation, { x: Math.PI, duration: 0.4 });
       }
     }
 
     for (const [key, stack] of this.chipStacks.entries()) {
       if (!activeChipKeys.has(key)) {
+        // Move to pot animation
         gsap.to(stack.position, {
-          x: (Math.random() - 0.5) * 1,
-          z: (Math.random() - 0.5) * 1,
+          x: 0,
+          z: -0.6,
           duration: 0.5,
           ease: 'power2.inOut',
           onComplete: () => {
@@ -362,6 +413,7 @@ class PokerTable3D {
       chip.castShadow = true;
       group.add(chip);
     }
+    group.userData = { amount };
     return group;
   }
 
@@ -369,7 +421,27 @@ class PokerTable3D {
     const animate = () => {
       if (this.isDisposed) return;
       this.animationId = requestAnimationFrame(animate);
+
       this.renderer.render(this.scene, this.camera);
+
+      // Compute 2D screen coordinates for DOM overlays
+      if (this.onSeatPositionsUpdate && this.renderer.domElement) {
+        const positions: Record<number, { x: number; y: number }> = {};
+        const canvas = this.renderer.domElement;
+        const rect = canvas.getBoundingClientRect();
+
+        for (let i = 0; i < this.seatCount; i++) {
+          const pos = getSeatPosition(i, this.seatCount);
+          const vector = pos.clone();
+          vector.project(this.camera);
+
+          const x = (vector.x * 0.5 + 0.5) * rect.width;
+          const y = (vector.y * -0.5 + 0.5) * rect.height;
+
+          positions[i] = { x, y };
+        }
+        this.onSeatPositionsUpdate(positions);
+      }
     };
     animate();
   }
@@ -385,8 +457,18 @@ class PokerTable3D {
     if (this.animationId !== null) cancelAnimationFrame(this.animationId);
 
     gsap.killTweensOf(this.camera.position);
-    for (const card of this.cards.values()) gsap.killTweensOf(card.position);
-    for (const stack of this.chipStacks.values()) gsap.killTweensOf(stack.position);
+    gsap.killTweensOf(this.camera.rotation);
+    for (const card of this.cards.values()) {
+      gsap.killTweensOf(card.position);
+      gsap.killTweensOf(card.rotation);
+      gsap.killTweensOf(card.scale);
+    }
+    for (const stack of this.chipStacks.values()) {
+      gsap.killTweensOf(stack.position);
+    }
+    if (this.mainPotStack) {
+      gsap.killTweensOf(this.mainPotStack.position);
+    }
 
     this.renderer.dispose();
   }
@@ -400,6 +482,7 @@ function HandReplay3DComponent({
   speed = 1,
   onReady,
   snapshot,
+  onSeatPositionsUpdate,
 }: HandReplay3DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<PokerTable3D | null>(null);
@@ -408,6 +491,9 @@ function HandReplay3DComponent({
 
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
+
+  const onSeatPositionsUpdateRef = useRef(onSeatPositionsUpdate);
+  onSeatPositionsUpdateRef.current = onSeatPositionsUpdate;
 
   useEffect(() => {
     if (!active || !canvasRef.current) return;
@@ -419,7 +505,9 @@ function HandReplay3DComponent({
     canvas.width = rect.width;
     canvas.height = rect.height;
 
-    const scene = new PokerTable3D(canvas, seatCount, feltColor);
+    const scene = new PokerTable3D(canvas, seatCount, feltColor, (pos) => {
+      if (onSeatPositionsUpdateRef.current) onSeatPositionsUpdateRef.current(pos);
+    });
     scene.startRenderLoop();
     sceneRef.current = scene;
 

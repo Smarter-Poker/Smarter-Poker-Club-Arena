@@ -26,6 +26,7 @@ export interface ReplayPlayerState {
   isFolded: boolean;
   isAllIn: boolean;
   seat: number;
+  isWinner?: boolean;
 }
 
 export interface ReplaySnapshot {
@@ -37,6 +38,7 @@ export interface ReplaySnapshot {
   players: ReplayPlayerState[];
   currentAction: ReplayAction | null;
   isPlaying: boolean;
+  isEndOfHand?: boolean;
 }
 
 export type ReplaySpeed = 1 | 2 | 4;

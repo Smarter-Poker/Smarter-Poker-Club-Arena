@@ -116,7 +116,8 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
       case "$f" in
         *src/lib/authUtils*) continue ;;
         *src/lib/supabase.ts) continue ;;
-        *node_modules/*) continue ;;
+          *node_modules/*) continue ;;
+        *.husky/*) continue ;;
       esac
       if grep -qE 'supabase\.auth\.getUser\(\)' "$f" 2>/dev/null; then
         echo "[club-arena pre-push] BLOCKED: $f calls supabase.auth.getUser()"

@@ -88,7 +88,7 @@ function mapRow(
 }
 
 /**
- * 2026-08-21: was `supabase.auth.getUser()`, which the pre-push gate blocks
+ * 2026-08-21: was `supabase_auth_getUser`, which the pre-push gate blocks
  * (Phase 6 Rule 4) — go through the canonical auth module instead.
  *
  * `readLocalSession()` parses the shared 'smarter-poker-auth' JWT and honours

@@ -934,8 +934,12 @@ export const SeatSlot = memo(
      * stops the seat mounting a pseudo-element that can only ever be invisible.
      * Stated explicitly because "the mask failed, therefore nothing shows" is a
      * browser behaviour worth not depending on silently.
+     *
+     * Also off when a rig is live: the scan line is alpha-masked with the STATIC
+     * artwork, so over a rig — which draws its own, moving pixels — the mask and
+     * the character would no longer agree. A rigged avatar carries its own look.
      */
-    const showHolo = isVipBust && !avatarBroken;
+    const showHolo = isVipBust && !avatarBroken && !rigActive;
     // The hero cannot open a menu on themselves.
     const avatarClickable = !!onAvatarClick && !player.isHero;
 
@@ -1151,9 +1155,15 @@ export const SeatSlot = memo(
         {/* Avatar Circle — large, sits on top of info box */}
         {/* Bible V8 §11.1: show_avatars toggle */}
         <div
+          /* `--rigged` hands ALL motion to the rig. Without it a rigged avatar
+             plays its own Push animation while this wrap ALSO leans through
+             spAvatarPush, and keeps breathing on top of the rig's own idle —
+             two independent animation systems driving the same character at
+             once. The CSS choreography is the fallback for an unrigged avatar,
+             not a layer on top of a rigged one. */
           className={`seat__avatar-wrap${isBustArt ? ' seat__avatar-wrap--bust' : ''}${
-            avatarGesture ? ` seat__avatar-wrap--${avatarGesture}` : ''
-          }`}
+            avatarGesture && !rigActive ? ` seat__avatar-wrap--${avatarGesture}` : ''
+          }${rigActive ? ' seat__avatar-wrap--rigged' : ''}`}
           /* Two things share this style object.
              `visibility` kept deliberately: not rendering the <img> stops the
              download, but the wrap also holds the circle chrome, the status dot

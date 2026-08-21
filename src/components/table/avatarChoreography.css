@@ -282,6 +282,52 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
+   RIGGED AVATARS — the rig owns all motion
+   ─────────────────────────────────────────────────────────────────────────────
+   When a .riv is live it animates the character itself. Everything in this file
+   above is the FALLBACK for an unrigged avatar, not a layer to stack on top of
+   a rigged one: leave the wrap animating and a rigged seat plays its own Push
+   while the wrap ALSO leans, and breathes on the wrap over the rig's own idle.
+   Two animation systems, one character.
+
+   PLACEMENT IS LOAD-BEARING, exactly as it is for the idle rule at the top.
+   This is a single class, the same specificity as the five gesture classes, so
+   it only wins by being declared AFTER them. Move it above and a rigged avatar
+   silently starts double-animating again. SeatSlot also stops applying the
+   gesture classes while rigged, so this is the belt to that braces — it still
+   matters, because the infinite idle rule is not a gesture class and is only
+   switched off here.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+.seat__avatar-wrap--rigged {
+  animation: none;
+}
+
+/* ─── The rig's canvas ────────────────────────────────────────────────────────
+   Must occupy the same box, at the same scale, as the <img> it replaces.
+   Without this the canvas takes only its inline width/height — an 84px SQUARE,
+   unscaled — while the bust it stands in for renders about 90x122 after
+   object-fit: contain against a 125x170 artboard and then scale(1.45). A rig
+   would appear noticeably smaller than every static avatar beside it, and would
+   not sit on the name box.
+
+   Same variables as `.seat__avatar--bust .seat__avatar-img`, so the two cannot
+   drift: the top rail's --sp-bust-scale of 1.15 applies to a rig too.
+   Rive's default fit is `contain`, which is the canvas equivalent of the img's
+   object-fit, so the framing matches without further work. */
+.seat__avatar-rive {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.seat__avatar--bust .seat__avatar-rive {
+  --sp-bust-clip: 0%;
+  transform-origin: 50% calc(100% - var(--sp-bust-clip));
+  transform: translateY(var(--sp-bust-clip)) scale(var(--sp-bust-scale, 1.45));
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.55));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
    PREMIUM HOLO SCAN LINE — VIP bust art only
    ─────────────────────────────────────────────────────────────────────────────
    Dan: "God Tier avatars that ... have scanning holographic lines pulsing

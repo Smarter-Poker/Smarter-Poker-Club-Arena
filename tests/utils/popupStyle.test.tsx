@@ -13,9 +13,10 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { formatPopupText } from '../../src/utils/popupStyle';
+import { ToastProvider, useToast } from '../../src/components/common/Toast';
 
 describe('formatPopupText — Title Case', () => {
   it('capitalizes the first letter of every word', () => {
@@ -64,16 +65,66 @@ describe('formatPopupText — no em dashes, ever', () => {
 });
 
 describe('the Toast layer actually enforces the rule', () => {
-  const toast = readFileSync(resolve(__dirname, '../../src/components/common/Toast.tsx'), 'utf8');
+  // These used to grep Toast.tsx for the literal string
+  // `formatPopupText(message)`. That is a test of how the code is SPELLED, not
+  // of what it DOES, and it failed the moment error sanitisation was added
+  // between the argument and the transform - a change that strengthened the
+  // rule rather than breaking it. A green suite went red over a refactor that
+  // was entirely correct, and it blocked the bundle from shipping.
+  //
+  // Rewritten to assert the behaviour instead: mount the real provider, send a
+  // message through the real hook, and read what the player would actually see.
+  // Now the test can only fail if the RULE breaks.
 
-  it('showToast routes every message through formatPopupText', () => {
-    expect(toast).toMatch(/formatPopupText\(message\)/);
-    expect(toast).toMatch(/from '\.\.\/\.\.\/utils\/popupStyle'/);
+  function Harness({ message, type }: { message: string; type: 'info' | 'error' }) {
+    const toast = useToast();
+    return (
+      <button type="button" onClick={() => toast.showToast(message, type)}>
+        fire
+      </button>
+    );
+  }
+
+  const fire = async (message: string, type: 'info' | 'error' = 'info') => {
+    render(
+      <ToastProvider>
+        <Harness message={message} type={type} />
+      </ToastProvider>
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'fire' }));
+  };
+
+  it('title-cases every word a player is shown', async () => {
+    await fire('your session expired, please sign in again');
+    expect(screen.getByText('Your Session Expired, Please Sign In Again')).toBeTruthy();
   });
 
-  it('identical popups dedupe instead of stacking', () => {
-    // "connection lost pop ups need to stop" — a retry loop must not build a
+  it('never shows an em dash, whatever the caller passed', async () => {
+    await fire('connection lost — retrying now');
+    const region = screen.getByRole('region', { name: 'Notifications' });
+    expect(region.textContent).not.toMatch(/[—–]/);
+  });
+
+  it('applies the rule to errors too, after sanitising them', async () => {
+    await fire('could not reach the server', 'error');
+    const region = screen.getByRole('region', { name: 'Notifications' });
+    expect(region.textContent).not.toMatch(/[—–]/);
+    // whatever survives sanitisation is still Title Cased
+    expect(region.textContent).not.toMatch(/\b[a-z]/);
+  });
+
+  it('identical popups dedupe instead of stacking', async () => {
+    // "connection lost pop ups need to stop" - a retry loop must not build a
     // column of five matching warnings.
-    expect(toast).toMatch(/prev\.some\(\(t\) => t\.message === styled && t\.type === type\)/);
+    render(
+      <ToastProvider>
+        <Harness message="connection lost" type="info" />
+      </ToastProvider>
+    );
+    const button = screen.getByRole('button', { name: 'fire' });
+    await userEvent.click(button);
+    await userEvent.click(button);
+    await userEvent.click(button);
+    expect(screen.getAllByText('Connection Lost')).toHaveLength(1);
   });
 });

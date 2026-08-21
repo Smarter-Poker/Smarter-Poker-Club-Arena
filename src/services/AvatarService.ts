@@ -15,7 +15,6 @@
 
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
-import { VIP_AVATAR_LIBRARY } from '../data/vipAvatarLibrary';
 import {
   generateAvatarSvg,
   generateDefaultAvatar,
@@ -162,32 +161,12 @@ class AvatarServiceClass {
   async getAvatarLibrary(userId?: string): Promise<Avatar[]> {
     const results: Avatar[] = [];
 
-    // ── 1. Fetch preset avatars from storage bucket ──
+    // ── 1. Fetch ALL preset avatars (Free + VIP) from Hub API ──
     try {
       const presets = await this._getPresetAvatars();
       results.push(...presets);
     } catch (err) {
       console.warn('[AvatarService] Failed to load preset avatars:', err);
-    }
-
-    /* ── 2. The Hub's VIP library ──
-       Dan 2026-08-20: this source did not exist, which is why the gallery's
-       VIP tab was described as "permanently empty - nothing in the codebase
-       ever produced an Avatar with category 'vip'". It does now. The 74 VIP
-       avatars (including the 26 new transparent ones) are static files under
-       the Hub's public/avatars/vip/, same origin as Club Arena, so they need
-       no bucket listing and no network round trip at all. */
-    for (const entry of VIP_AVATAR_LIBRARY) {
-      results.push({
-        id: entry.id,
-        name: entry.name,
-        imageUrl: entry.image,
-        thumbUrl: entry.thumb,
-        category: 'vip',
-        // Gating is the caller's business (AvatarGallery knows isVip); the
-        // service reports what exists.
-        isOwned: true,
-      });
     }
 
     // ── 3. Fetch user's custom avatars from user_avatars table ──
@@ -228,63 +207,42 @@ class AvatarServiceClass {
    * Results are cached for 5 minutes to avoid repeated storage API calls.
    */
   private async _getPresetAvatars(): Promise<Avatar[]> {
-    // Return cache if fresh
     if (this._presetCache && Date.now() - this._presetCacheTs < AvatarServiceClass.CACHE_TTL) {
       return this._presetCache;
     }
 
-    // PAGINATE. There are 436 presets in the bucket; the previous single
-    // .list({ limit: 200 }) silently truncated the gallery to the first 200
-    // and left the other 236 unreachable. Storage caps a page at 1000, so
-    // loop until a short page comes back.
-    const PAGE = 1000;
-    const files: Array<{ name: string }> = [];
-    for (let offset = 0; ; offset += PAGE) {
-      const { data: page, error } = await supabase.storage
-        .from(SOCIAL_AVATARS_BUCKET)
-        .list(SOCIAL_AVATARS_PREFIX, {
-          limit: PAGE,
-          offset,
-          sortBy: { column: 'name', order: 'asc' },
-        });
+    try {
+      const response = await fetch('/api/avatars');
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-      if (error) {
-        // Pages already collected beat nothing; only fall back to the cache
-        // when the very first page failed.
-        if (files.length === 0) {
-          console.warn('[AvatarService] Preset listing failed:', error.message);
-          if (this._presetCache) return this._presetCache;
-          return [];
-        }
-        break;
-      }
+      const hubAvatars = await response.json();
 
-      if (!page || page.length === 0) break;
-      files.push(...page);
-      if (page.length < PAGE) break;
-    }
-
-    const avatars: Avatar[] = files
-      .filter((f) => f.name && /\.(png|jpg|jpeg|webp|svg)$/i.test(f.name))
-      .map((f, index) => {
-        const publicUrl = `${SUPABASE_STORAGE_URL}/${SOCIAL_AVATARS_BUCKET}/${SOCIAL_AVATARS_PREFIX}/${f.name}`;
-        const cleanName = f.name
-          .replace(/\.[^.]+$/, '') // Strip extension
-          .replace(/[-_]/g, ' ') // Dashes/underscores → spaces
-          .replace(/^[a-f0-9-]{36}$/i, `Avatar ${index + 1}`); // UUID filenames → numbered
+      const avatars: Avatar[] = hubAvatars.map((entry: any) => {
+        // Generate thumb URL exactly as the Hub's normalizeAvatarUrl does,
+        // to match the legacy 'free_shark' / 'vip_wolf' pattern.
+        const tierLower = (entry.tier || 'free').toLowerCase();
+        const slugMatch = entry.image.match(/\/([^/.]+)\.png$/i);
+        const slug = slugMatch ? slugMatch[1] : entry.id;
+        const thumbUrl = `/avatars/table/${tierLower}_${slug}@2x.webp`;
 
         return {
-          id: f.name,
-          name: cleanName.length > 2 ? cleanName : `Avatar ${index + 1}`,
-          imageUrl: publicUrl,
-          category: 'free' as const,
-          isOwned: true, // Preset avatars are available to all users
+          id: entry.id,
+          name: entry.name,
+          imageUrl: entry.image,
+          thumbUrl,
+          category: tierLower === 'vip' ? 'vip' : 'free',
+          isOwned: true,
         };
       });
 
-    this._presetCache = avatars;
-    this._presetCacheTs = Date.now();
-    return avatars;
+      this._presetCache = avatars;
+      this._presetCacheTs = Date.now();
+      return avatars;
+    } catch (err) {
+      console.warn('[AvatarService] Unified Avatar API fetch failed:', err);
+      if (this._presetCache) return this._presetCache;
+      return [];
+    }
   }
 
   /**

@@ -809,11 +809,28 @@ function HomePageInner() {
   const displayClubs = useMemo(() => {
     const clubs = [...userClubs];
 
-    // Inject Shark Club as the public featured demo - but ONLY when we
-    // actually know what the user's clubs are. Injecting it after a failed
-    // fetch turns "we could not reach the database" into "you have exactly one
-    // club", which is a far more alarming and completely false statement.
-    if (!loadFailed && !clubs.some((c) => Number(c.club_id) === SHARK_CLUB_ID)) {
+    /* Inject Shark Club as the public featured demo, but ONLY once we actually
+       know what the player's clubs are. Two separate ways that goes wrong, and
+       both are covered here:
+
+         loadFailed  - injecting after a failed fetch turns "we could not reach
+           the database" into "you have exactly one club", which is both
+           alarming and false.
+         isLoading   - injecting DURING the first fetch renders a single fake
+           Shark card, built from the hardcoded stub below with its fixed 580
+           member count, which is then swapped for the real clubs seconds
+           later. Measured on production: one fake card at 1.5s, three real
+           ones by nine. It is also a tappable card for a club the player may
+           not be in, shown before we know what they are in.
+
+       The cold-start skeleton further down already covers the loading moment
+       properly, so there is nothing to fill here. */
+    const stillLoadingFirstList = isLoading && userClubs.length === 0;
+    if (
+      !loadFailed &&
+      !stillLoadingFirstList &&
+      !clubs.some((c) => Number(c.club_id) === SHARK_CLUB_ID)
+    ) {
       clubs.push({
         id: 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4',
         club_id: SHARK_CLUB_ID,
@@ -833,7 +850,7 @@ function HomePageInner() {
       return (a.name || '').localeCompare(b.name || '');
     });
     return clubs;
-  }, [userClubs, pinnedClubIds, loadFailed]);
+  }, [userClubs, pinnedClubIds, loadFailed, isLoading]);
 
   // Stable string identity of club IDs — avoids .map().join() allocation on every render
   const displayClubIdsKey = useMemo(() => displayClubs.map((c) => c.id).join(','), [displayClubs]);

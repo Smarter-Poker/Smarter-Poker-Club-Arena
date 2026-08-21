@@ -342,6 +342,45 @@ describe('Carousel swipe', () => {
     expect(inactive?.hasAttribute('inert')).toBe(true);
   });
 
+  it('swipes when the touch STARTS ON A CARD, not on the track', async () => {
+    /* The real gesture never begins on the track: a finger lands on a card.
+       Those cards also run their own onTouchStart (the press-and-hold context
+       menu) which calls e.stopPropagation(), so this asserts the carousel
+       still sees the gesture. It does because the carousel binds a NATIVE
+       listener on the track, which runs during the bubble phase before React's
+       delegated handler at the root ever gets the chance to stop anything.
+       Dispatching on the track, as the other tests do, would never catch a
+       regression here. */
+    renderCarousel();
+    const card = document.querySelector('.sp-carousel__item.is-active') as HTMLElement;
+    expect(card, 'no card to start the touch on').not.toBeNull();
+
+    const touch = (x: number) => ({ clientX: x, clientY: 0 }) as Touch;
+    await act(async () => {
+      card.dispatchEvent(
+        new TouchEvent('touchstart', { touches: [touch(0)] as unknown as Touch[], bubbles: true })
+      );
+    });
+    for (let i = 1; i <= 10; i++) {
+      await act(async () => {
+        vi.advanceTimersByTime(400);
+        card.dispatchEvent(
+          new TouchEvent('touchmove', {
+            touches: [touch((-333 * i) / 10)] as unknown as Touch[],
+            bubbles: true,
+            cancelable: true,
+          })
+        );
+      });
+    }
+    await act(async () => {
+      card.dispatchEvent(new TouchEvent('touchend', { bubbles: true }));
+    });
+    await settle();
+
+    expect(activeName(), 'a touch starting on a card did not move the carousel').toBe('Bravo');
+  });
+
   it('does NOT open a club when the gesture was a swipe', async () => {
     const onSelect = vi.fn();
     renderCarousel(onSelect);

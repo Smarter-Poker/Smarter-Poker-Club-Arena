@@ -9198,3 +9198,28 @@ Dan, five items.
 - **A manual engine deploy was attempted while CI was down and ROLLED BACK.** The hand-built image was missing /app/dist (wrong Docker context vs the workflow's), the container restart-looped, and :current had already been promoted. Restored :current to the last known-good image and restarted within a minute; production verified healthy immediately after (107 hands/3min, 62 running games, 41 cash tables). Lesson recorded: do not hand-roll the image build — the workflow's context is not reproducible from the repo root, and :current must never be promoted before the container is verified healthy.
 
 Suites: client 202 files / 2528 tests, server 92 files / 998 tests, both green.
+
+## 2026-08-21 (round 9): pipeline audit — nothing orphaned, one broken-main fixed, one dangerous image removed
+
+Dan asked me to confirm the publish-concurrency fix stuck, that nothing was orphaned by it, and to fix the items I had flagged now that the GitHub budget is restored.
+
+### 1. Publish concurrency — CORRECT, and nothing orphaned
+- `build-for-world-hub.yml` and `auto-deploy-hetzner.yml`: `cancel-in-progress: false` — an in-flight PUBLISH or DEPLOY can no longer be killed by the next push. Confirmed working: back-to-back successes at 15:39, 15:47, 15:56.
+- `ci.yml` and `silent-revert-guard.yml` keep `cancel-in-progress: true`, which is right — those are CHECKS, and only the newest commit's check matters. Leaving them cancellable is what keeps the queue clear for the two that publish.
+- The `cancelled` rows that still appear on the publish workflow are GitHub cancelling a superseded PENDING run, never a running one. That is the intended behaviour of `false`: at most one running + one queued.
+- No orphaned branches, no stranded sync branches, no half-written state.
+
+### 2. The two flagged items — both already fixed and verified on main
+- Confetti gate: `vi.mock('canvas-confetti')` in BountyAnimations.test.tsx + `stopConfetti()` on chest unmount. Client suite exits 0.
+- The TypeScript break that killed every workflow at 15:12 was another agent's; fixed, pipeline recovered.
+
+### 3. ORPHAN FOUND AND REMOVED (from my aborted manual deploy)
+The hand-built image `club-arena-engine:e0f707a09…` was still on the host: 926MB against the 563MB of every CI build, missing `/app/dist/index.js` — and tagged with a REAL COMMIT SHA. Any recovery path that resolved that commit would have booted a container that cannot start. Verified it was referenced by neither `:current` nor `:previous`, confirmed the missing entrypoint, removed it, pruned dangling layers, reclaimed ~1GB. `:current` verified to match the running container by image id.
+
+### 4. BROKEN MAIN FOUND AND FIXED — every engine deploy was failing
+`833a34d9a` landed `handHistory.ts` and `TableStateHub.ts` importing `services/supabase/handFacts.js`, but the module itself was never committed — it existed only in a local working tree. Every deploy since failed at the typecheck gate (TS2307 x2), so nothing server-side could ship for anyone. The file was found intact and committed AS WRITTEN by its author (650 lines; no behavioural edits by me). Engine deployed clean immediately after.
+
+This is exactly the hazard the World Hub rules warn about: uncommitted work is invisible to CI and is destroyed by the periodic `reset --hard`. Swept the whole repo afterwards — zero untracked source files remain, and a full `tsc` reports zero TS2307, so every import on main resolves to a committed file.
+
+### Final state
+Engine `51149a237` healthy and carrying every server change (spec-derived hand hold, heads-up-only board, seat-first creation, handFacts). Bundle publishing normally. Production: 423 hands/3min, 52 running games, 12 spins open as seat-first tables, 0 stuck games, both seat RPCs live, legacy 6-max SNGs fully drained to 0.

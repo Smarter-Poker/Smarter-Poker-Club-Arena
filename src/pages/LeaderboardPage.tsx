@@ -113,6 +113,13 @@ const METRIC_OPTIONS: {
     globalSupported: false,
   },
   {
+    value: 'pfr',
+    label: 'PFR',
+    icon: '▤',
+    description: 'Preflop raise %',
+    globalSupported: false,
+  },
+  {
     value: 'roi',
     label: 'ROI',
     icon: '▲',
@@ -694,42 +701,67 @@ export default function LeaderboardPage() {
           ))}
         </div>
 
-        {entries.length > 0 && activeTab === 'rankings' && (
-          <button
-            className="lb-csv-btn"
-            style={{
-              background: 'rgba(65,105,225,0.15)',
-              color: '#4169E1',
-              border: '1px solid rgba(65,105,225,0.3)',
-              padding: '6px 14px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-            onClick={() => {
-              try {
-                exportToCSV(entries, `leaderboard_${scope}_${metric}_${period}.csv`, [
-                  { key: 'rank', label: 'Rank' },
-                  { key: 'username', label: 'Username' },
-                  {
-                    key: 'value',
-                    label: METRIC_OPTIONS.find((m) => m.value === metric)?.label || 'Value',
-                  },
-                  { key: 'hands', label: 'Hands' },
-                  { key: 'change', label: 'Change' },
-                  { key: 'userId', label: 'User ID' },
-                ]);
-                toast.success('Leaderboard exported');
-              } catch (e) {
-                reportError(e, 'LeaderboardPage.export');
-                toast.error('Export failed');
-              }
-            }}
-          >
-            Export CSV
-          </button>
-        )}
+        <div
+          className="export-container"
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            padding: '0 1.5rem',
+            marginBottom: '0.5rem',
+          }}
+        >
+          {((entries.length > 0 && activeTab === 'rankings') ||
+            (tournamentStats.length > 0 && activeTab === 'tournaments')) && (
+            <button
+              className="lb-csv-btn"
+              style={{
+                background: 'rgba(65,105,225,0.15)',
+                color: '#4169E1',
+                border: '1px solid rgba(65,105,225,0.3)',
+                padding: '6px 14px',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+              onClick={() => {
+                try {
+                  if (activeTab === 'rankings') {
+                    exportToCSV(entries, `leaderboard_${scope}_${metric}_${period}.csv`, [
+                      { key: 'rank', label: 'Rank' },
+                      { key: 'username', label: 'Username' },
+                      {
+                        key: 'value',
+                        label: METRIC_OPTIONS.find((m) => m.value === metric)?.label || 'Value',
+                      },
+                      { key: 'hands', label: 'Hands' },
+                      { key: 'change', label: 'Change' },
+                      { key: 'userId', label: 'User ID' },
+                    ]);
+                  } else {
+                    exportToCSV(tournamentStats, `leaderboard_${scope}_tournaments.csv`, [
+                      { key: 'username', label: 'Username' },
+                      { key: 'tournamentsPlayed', label: 'Tournaments' },
+                      { key: 'wins', label: 'Wins' },
+                      { key: 'finalTables', label: 'Final Tables' },
+                      { key: 'itmFinishes', label: 'ITM' },
+                      { key: 'totalPrizes', label: 'Total Prizes' },
+                      { key: 'roi', label: 'ROI' },
+                      { key: 'biggestWin', label: 'Biggest Win' },
+                      { key: 'userId', label: 'User ID' },
+                    ]);
+                  }
+                  toast.success('Leaderboard exported');
+                } catch (e) {
+                  reportError(e, 'LeaderboardPage.export');
+                  toast.error('Export failed');
+                }
+              }}
+            >
+              Export CSV
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Leaderboard Content */}

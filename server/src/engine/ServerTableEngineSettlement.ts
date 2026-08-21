@@ -561,9 +561,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       }
     }
 
-    // Step 6: Clean up advanced modules between hands
-    this.runItTwiceEngine.dispose(this.tableId);
-    this.insuranceEngine.dispose(this.tableId);
+    // Step 6: Clean up advanced modules between hands.
+    // OFFER-CONFIG FIX 2026-08-21: this used to call dispose(), which ALSO
+    // deleted the table's configuration - and configure() only ever runs in
+    // start(). Both features therefore worked for exactly one hand per engine
+    // restart and were dead for every hand after it. endHand() clears the
+    // hand's offers and timers and leaves the config alone.
+    this.runItTwiceEngine.endHand(this.tableId);
+    this.insuranceEngine.endHand(this.tableId);
     // Note: straddleEngine persists (auto-straddle enrollment persists)
     // Note: rakebackEngine persists (accumulates across hands)
 

@@ -148,6 +148,10 @@ function HomePageInner() {
     };
   }, []);
 
+  /** True when the membership fetch threw. Distinguishes "you have no clubs"
+   *  from "we could not find out", which the lobby previously conflated. */
+  const [loadFailed, setLoadFailed] = useState(false);
+
   // Real data states — start as NOT loading if SWR cache provides clubs
   const [userClubs, setUserClubs] = useState<UserClub[]>(() => {
     // SWR — instant render from cache
@@ -325,6 +329,7 @@ function HomePageInner() {
             return !isUnionHouseClub || (c as any).is_owner;
           });
           if (getIsMounted && !getIsMounted()) return;
+          setLoadFailed(false);
           setUserClubs(lawFilteredClubs);
           // Enhancement #9: Update SWR cache (stats re-fetch keys off
           // displayClubIdsKey — no manual refresh counter needed)
@@ -368,8 +373,18 @@ function HomePageInner() {
           }
         }
       } catch (err) {
+        // 2026-08-21: this used to only toast. userClubs stayed at its initial
+        // [], displayClubs then INJECTED the hardcoded Shark Club, and the
+        // lobby rendered a confident one-club carousel - so a database outage
+        // was indistinguishable from "you have been removed from your clubs".
+        // That is exactly what happened when Postgres briefly refused
+        // connections (57P03) and Midway Union and Club JAQK vanished.
+        //
+        // Record the failure so the carousel can say "could not load" instead
+        // of quietly inventing a club list.
+        if (!getIsMounted || getIsMounted()) setLoadFailed(true);
         reportError(err, 'HomePage.Error_fetching_user_data');
-        toast.error('Failed to load user data');
+        toast.error('Could Not Load Your Clubs');
       } finally {
         clearTimeout(loadingTimeout);
         if (!getIsMounted || getIsMounted()) {
@@ -794,8 +809,28 @@ function HomePageInner() {
   const displayClubs = useMemo(() => {
     const clubs = [...userClubs];
 
-    // Inject Shark Club if not present (so it functions as the public featured demo)
-    if (!clubs.some((c) => Number(c.club_id) === SHARK_CLUB_ID)) {
+    /* Inject Shark Club as the public featured demo, but ONLY once we actually
+       know what the player's clubs are. Two separate ways that goes wrong, and
+       both are covered here:
+
+         loadFailed  - injecting after a failed fetch turns "we could not reach
+           the database" into "you have exactly one club", which is both
+           alarming and false.
+         isLoading   - injecting DURING the first fetch renders a single fake
+           Shark card, built from the hardcoded stub below with its fixed 580
+           member count, which is then swapped for the real clubs seconds
+           later. Measured on production: one fake card at 1.5s, three real
+           ones by nine. It is also a tappable card for a club the player may
+           not be in, shown before we know what they are in.
+
+       The cold-start skeleton further down already covers the loading moment
+       properly, so there is nothing to fill here. */
+    const stillLoadingFirstList = isLoading && userClubs.length === 0;
+    if (
+      !loadFailed &&
+      !stillLoadingFirstList &&
+      !clubs.some((c) => Number(c.club_id) === SHARK_CLUB_ID)
+    ) {
       clubs.push({
         id: 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4',
         club_id: SHARK_CLUB_ID,
@@ -815,7 +850,7 @@ function HomePageInner() {
       return (a.name || '').localeCompare(b.name || '');
     });
     return clubs;
-  }, [userClubs, pinnedClubIds]);
+  }, [userClubs, pinnedClubIds, loadFailed, isLoading]);
 
   // Stable string identity of club IDs — avoids .map().join() allocation on every render
   const displayClubIdsKey = useMemo(() => displayClubs.map((c) => c.id).join(','), [displayClubs]);
@@ -1201,8 +1236,35 @@ function HomePageInner() {
           </HomePageErrorBoundary>
         </div>
 
+        {/* Load FAILED — say so. Previously this case fell through to the
+            hardcoded Shark Club injection and the lobby presented a confident
+            one-club carousel, so an outage looked exactly like losing your
+            clubs. "We could not find out" and "you have none" are different
+            statements and must not render the same. */}
+        {!isLoading && loadFailed && (
+          <div className={styles.emptyStateCard}>
+            <div className={styles.emptyStateIcon}>!</div>
+            <h3 className={styles.emptyStateTitle}>Could Not Load Your Clubs</h3>
+            <p className={styles.emptyStateDesc}>
+              Your Clubs Are Still There - We Just Could Not Reach Them Right Now. This Is Usually
+              Brief. Try Again In A Moment.
+            </p>
+            <div className={styles.emptyStateActions}>
+              <button
+                className={styles.emptyStateBtnPrimary}
+                onClick={() => {
+                  setLoadFailed(false);
+                  fetchUserData(false, () => true);
+                }}
+              >
+                Try Again
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Empty state — premium onboarding when user has no clubs */}
-        {!isLoading && hasFetchedOnceRef.current && displayClubs.length === 0 && (
+        {!isLoading && !loadFailed && hasFetchedOnceRef.current && displayClubs.length === 0 && (
           <div className={styles.emptyStateCard}>
             <div className={styles.emptyStateIcon}>♠</div>
             <h3 className={styles.emptyStateTitle}>Welcome To Club Arena</h3>

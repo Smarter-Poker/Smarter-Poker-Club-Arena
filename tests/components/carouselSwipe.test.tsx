@@ -86,6 +86,88 @@ async function swipe(dx: number, ms = 300) {
   await settle();
 }
 
+describe('Carousel opening position', () => {
+  beforeEach(() => {
+    // swipe() drives the rAF snap loop through the timer API.
+    vi.useFakeTimers();
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get: () => 1000,
+    });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('opens on the requested card, not always the first', () => {
+    /* With an endless strip and unlimited clubs, landing on someone else's
+       club instead of your own is several swipes every time you come back. */
+    render(
+      <Carousel
+        items={CLUBS}
+        getKey={(c) => c}
+        itemWidth={300}
+        initialIndex={3}
+        renderItem={(c, _i, isActive) => <div data-active={isActive}>{c}</div>}
+      />
+    );
+    expect(activeName()).toBe('Delta');
+  });
+
+  it('survives an index that is out of range', () => {
+    // A stale id from storage, or a club that has since been left.
+    render(
+      <Carousel
+        items={CLUBS}
+        getKey={(c) => c}
+        itemWidth={300}
+        initialIndex={99}
+        renderItem={(c, _i, isActive) => <div data-active={isActive}>{c}</div>}
+      />
+    );
+    expect(activeName()).not.toBeNull();
+  });
+
+  it('survives a negative index', () => {
+    render(
+      <Carousel
+        items={CLUBS}
+        getKey={(c) => c}
+        itemWidth={300}
+        initialIndex={-2}
+        renderItem={(c, _i, isActive) => <div data-active={isActive}>{c}</div>}
+      />
+    );
+    expect(activeName()).toBe('Delta'); // -2 folds to index 3 of 5
+  });
+
+  it('does not fight the player once they have swiped', async () => {
+    // initialIndex is a STARTING position, not a controlled value; re-reading
+    // it on every render would yank a card back mid-session.
+    const { rerender } = render(
+      <Carousel
+        items={CLUBS}
+        getKey={(c) => c}
+        itemWidth={300}
+        initialIndex={0}
+        renderItem={(c, _i, isActive) => <div data-active={isActive}>{c}</div>}
+      />
+    );
+    await swipe(-333, 4000);
+    expect(activeName()).toBe('Bravo');
+    rerender(
+      <Carousel
+        items={CLUBS}
+        getKey={(c) => c}
+        itemWidth={300}
+        initialIndex={4}
+        renderItem={(c, _i, isActive) => <div data-active={isActive}>{c}</div>}
+      />
+    );
+    expect(activeName(), 'a later initialIndex moved the player').toBe('Bravo');
+  });
+});
+
 describe('Carousel position indicator', () => {
   beforeEach(() => {
     Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
@@ -258,6 +340,45 @@ describe('Carousel swipe', () => {
     const inactive = document.querySelector('.sp-carousel__item:not(.is-active)');
     expect(inactive?.hasAttribute('aria-hidden')).toBe(false);
     expect(inactive?.hasAttribute('inert')).toBe(true);
+  });
+
+  it('swipes when the touch STARTS ON A CARD, not on the track', async () => {
+    /* The real gesture never begins on the track: a finger lands on a card.
+       Those cards also run their own onTouchStart (the press-and-hold context
+       menu) which calls e.stopPropagation(), so this asserts the carousel
+       still sees the gesture. It does because the carousel binds a NATIVE
+       listener on the track, which runs during the bubble phase before React's
+       delegated handler at the root ever gets the chance to stop anything.
+       Dispatching on the track, as the other tests do, would never catch a
+       regression here. */
+    renderCarousel();
+    const card = document.querySelector('.sp-carousel__item.is-active') as HTMLElement;
+    expect(card, 'no card to start the touch on').not.toBeNull();
+
+    const touch = (x: number) => ({ clientX: x, clientY: 0 }) as Touch;
+    await act(async () => {
+      card.dispatchEvent(
+        new TouchEvent('touchstart', { touches: [touch(0)] as unknown as Touch[], bubbles: true })
+      );
+    });
+    for (let i = 1; i <= 10; i++) {
+      await act(async () => {
+        vi.advanceTimersByTime(400);
+        card.dispatchEvent(
+          new TouchEvent('touchmove', {
+            touches: [touch((-333 * i) / 10)] as unknown as Touch[],
+            bubbles: true,
+            cancelable: true,
+          })
+        );
+      });
+    }
+    await act(async () => {
+      card.dispatchEvent(new TouchEvent('touchend', { bubbles: true }));
+    });
+    await settle();
+
+    expect(activeName(), 'a touch starting on a card did not move the carousel').toBe('Bravo');
   });
 
   it('does NOT open a club when the gesture was a swipe', async () => {

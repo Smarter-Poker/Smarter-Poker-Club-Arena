@@ -1143,8 +1143,35 @@ export class TournamentRecurringService {
       const bountyAmount = isBountyType
         ? Math.min(split.prize, Math.max(0, Math.round((split.total * bountyPercent) / 100)))
         : 0;
-      const mysteryMin = config.type === 'mystery_bounty' ? bountyAmount : 0;
-      const mysteryMax = config.type === 'mystery_bounty' ? Math.round(bountyAmount * 10) : 0;
+      // MYSTERY RANGE 2026-08-21 (Dan: "make sure that this is fully added to
+      // the mystery bounty tournaments"). These columns were advertising a
+      // range the draw could not produce.
+      //
+      // The prize is drawn in fn_register_for_tournament /
+      // fn_register_horse_for_tournament from a fixed multiplier table applied
+      // to the player's funded bounty:
+      //
+      //     60%  x0.5      25%  x1      10%  x2      4%  x3      1%  x13
+      //
+      // Expected value is exactly 1.0, which is what keeps the funded bounty
+      // pool balanced. So the true payout range is 0.5x to 13x the head — but
+      // these columns were being written as `bounty` and `bounty * 10`, and
+      // the lobby renders them as MULTIPLIERS ("6x - 60x"). A $6 head was
+      // therefore advertised as paying up to 60x when 13x is the ceiling, and
+      // as starting at 6x when 60% of draws are BELOW the head at 0.5x.
+      //
+      // Write what the table actually pays, in currency, so the lobby, the
+      // detail page and the chest all agree with the money.
+      const MYSTERY_MIN_MULT = 0.5;
+      const MYSTERY_MAX_MULT = 13;
+      const mysteryMin =
+        config.type === 'mystery_bounty'
+          ? Math.round(bountyAmount * MYSTERY_MIN_MULT * 100) / 100
+          : 0;
+      const mysteryMax =
+        config.type === 'mystery_bounty'
+          ? Math.round(bountyAmount * MYSTERY_MAX_MULT * 100) / 100
+          : 0;
 
       let tournament = null;
       let lastError = null;
@@ -1329,8 +1356,35 @@ export class TournamentRecurringService {
         ? Math.min(split.prize, Math.max(0, Math.round((split.total * bountyPercent) / 100)))
         : 0;
       // Mystery bounty range: min = base bounty, max = 10x base
-      const mysteryMin = config.type === 'mystery_bounty' ? bountyAmount : 0;
-      const mysteryMax = config.type === 'mystery_bounty' ? Math.round(bountyAmount * 10) : 0;
+      // MYSTERY RANGE 2026-08-21 (Dan: "make sure that this is fully added to
+      // the mystery bounty tournaments"). These columns were advertising a
+      // range the draw could not produce.
+      //
+      // The prize is drawn in fn_register_for_tournament /
+      // fn_register_horse_for_tournament from a fixed multiplier table applied
+      // to the player's funded bounty:
+      //
+      //     60%  x0.5      25%  x1      10%  x2      4%  x3      1%  x13
+      //
+      // Expected value is exactly 1.0, which is what keeps the funded bounty
+      // pool balanced. So the true payout range is 0.5x to 13x the head — but
+      // these columns were being written as `bounty` and `bounty * 10`, and
+      // the lobby renders them as MULTIPLIERS ("6x - 60x"). A $6 head was
+      // therefore advertised as paying up to 60x when 13x is the ceiling, and
+      // as starting at 6x when 60% of draws are BELOW the head at 0.5x.
+      //
+      // Write what the table actually pays, in currency, so the lobby, the
+      // detail page and the chest all agree with the money.
+      const MYSTERY_MIN_MULT = 0.5;
+      const MYSTERY_MAX_MULT = 13;
+      const mysteryMin =
+        config.type === 'mystery_bounty'
+          ? Math.round(bountyAmount * MYSTERY_MIN_MULT * 100) / 100
+          : 0;
+      const mysteryMax =
+        config.type === 'mystery_bounty'
+          ? Math.round(bountyAmount * MYSTERY_MAX_MULT * 100) / 100
+          : 0;
 
       let tournament = null;
       let lastError = null;

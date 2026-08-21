@@ -36,6 +36,7 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { ThrowEvent } from '../../services/ThrowableService';
 import type { ThrowPhysics } from '../../services/ThrowableService';
 import { throwableSoundService } from '../../services/ThrowableSoundService';
+import { throwableVoice } from '../../services/ThrowableVoice';
 import { ThrowableImage } from './ThrowableImage';
 import './ThrowAnimation.css';
 // Per-item signature FX -- MUST load after ThrowAnimation.css so its
@@ -137,6 +138,26 @@ const DURATION_OVERRIDES: Record<string, number> = {
 const TARGET_TELEGRAPH = new Set(['anvil', 'lightning_bolt', 'bomb']);
 
 /**
+ * On-screen shout at the moment of impact. Paired with the spoken line in
+ * ThrowableVoice: the caption is what you SEE, the voice is what you HEAR, and
+ * either alone still reads (sound is muted far more often than it is on).
+ */
+const IMPACT_CAPTION: Record<string, string> = {
+  bowling_ball: 'STRIKE!',
+  football: "IT'S GOOD!",
+  boxing_glove: 'K.O.',
+  anvil: 'OOF',
+  magic_8_ball: 'ASK AGAIN LATER',
+  trophy: "YOU'RE THE BEST",
+  horseshoe: 'GOOD LUCK',
+  dice: "LET'S GAMBLE",
+  beer: 'CHEERS!',
+  poop: 'PEE-YEW',
+  trash_can: 'STINKY!',
+  pizza_slice: 'UH OH',
+};
+
+/**
  * Per-item IMPACT durations (ms, default 820). Presentation-layer tuning:
  * a giggle needs a full second to rock through, the magic 8-ball's answer
  * must be READABLE, the card flick is over in a snap. Signature CSS reads
@@ -161,7 +182,6 @@ const IMPACT_MS: Record<string, number> = {
   ghost: 1000,
   doge: 950,
   shark: 950,
-  mouse_card: 700,
 };
 
 /**
@@ -299,6 +319,8 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
       setPhase('impact');
       try {
         throwableSoundService.playImpact(t.sound, t.weight, impactPan);
+        // Spoken taunt, for the items that have one. Silent for the rest.
+        throwableVoice.speakFor(t.id);
       } catch {
         /* audio is best-effort */
       }
@@ -462,6 +484,11 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
 
           {/* shockwave ring */}
           <div className="throw-animation__burst" />
+
+          {/* impact shout */}
+          {IMPACT_CAPTION[t.id] && (
+            <div className="throw-animation__caption">{IMPACT_CAPTION[t.id]}</div>
+          )}
 
           {/* stain / scorch residue for messy items. Concurrent with the
               impact, not appended after it: a splat appears the moment the

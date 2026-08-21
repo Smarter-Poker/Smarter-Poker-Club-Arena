@@ -11,6 +11,7 @@
 import nodeCrypto from 'node:crypto';
 import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
+import { mysteryChestHoldMs } from '../config/mysteryChestSpec.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { computePlacePrize } from './payoutMath.js';
 import {
@@ -577,7 +578,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         }
 
         if (knockerId) {
-          await this.processBountyCollection(tournament, userId, knockerId);
+          await this.processBountyCollection(tournament, userId, knockerId, seat?.table_id ?? null);
         } else {
           console.warn(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Could not determine knocker for ${userId.slice(0, 8)} — bounty skipped`
@@ -644,7 +645,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   protected async processBountyCollection(
     tournament: any,
     eliminatedUserId: string,
-    knockerUserId: string
+    knockerUserId: string,
+    /**
+     * The table the knockout happened at. The reveal broadcast goes out on the
+     * TOURNAMENT channel (t-break-<id>), which every table in the event is
+     * subscribed to — so without this every table in a multi-table tournament
+     * played the chest for a knockout that happened somewhere else. Clients
+     * match on it and ignore knockouts that are not theirs.
+     */
+    tableId: string | null = null
   ): Promise<void> {
     // DAN'S SPEC 2026-08-15: bounties are FUNDED (registration splits the
     // buy-in into rake / bounty_pool / prize_pool) and paid out of that pool
@@ -754,8 +763,30 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           knockerUserId,
           avgBounty: tournament?.bounty_amount || undefined,
           poolRemaining: res.pool_remaining,
+          // Which table this happened at — see the tableId parameter.
+          tableId,
         }
       );
+
+      // HOLD THE DEAL (Dan 2026-08-21): "after it finished and the prize is
+      // awarded, the next hand starts with the dealing animation." The chest
+      // owns the screen for the length of its sequence, so the table must not
+      // deal a hand underneath it. Same mechanism the spin wheel uses; when
+      // the hold expires the dealing loop resumes and the next hand deals in
+      // with its normal shuffle + deal animation.
+      //
+      // Only the knockout's own table pauses. A knockout on table 3 must not
+      // stall tables 1 and 2.
+      if (res.mode === 'mystery' && tableId) {
+        const engine = this.tableEngines.get(tableId);
+        if (engine) {
+          try {
+            engine.holdDealingUntil(Date.now() + mysteryChestHoldMs());
+          } catch {
+            /* the hold is presentation; never let it break the payout path */
+          }
+        }
+      }
     } catch {
       /* the reveal broadcast is cosmetic — never block the payout path */
     }

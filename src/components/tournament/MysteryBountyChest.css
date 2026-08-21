@@ -101,8 +101,10 @@
   font-size: 11px;
   font-weight: var(--weight-extrabold, 800);
   letter-spacing: 4px;
-  color: var(--chip-gold, #f59e0b);
-  text-shadow: 0 0 18px rgba(255, 215, 0, 0.55);
+  /* Dan 2026-08-21: "Mystery Bounty at the top should be grey no yellow."
+     The gold belongs to the prize, not to the label above it. */
+  color: var(--text-secondary, #9ca3af);
+  text-shadow: none;
   animation: mbcFadeDown 0.5s ease-out both;
 }
 
@@ -740,27 +742,6 @@
 
 /* ── OPENING ──────────────────────────────────────────────────────────────── */
 
-.mbc--opening .mbc__lid-DEPRECATED {
-  animation: mbcLidOpen 0.9s cubic-bezier(0.3, 0.9, 0.25, 1.15) forwards;
-}
-
-@keyframes mbcLidOpen {
-  0% {
-    transform: rotateX(0deg);
-  }
-  /* A hesitation at 12% — the latch resisting. Straight-through rotation looks
-     mechanical; the catch is what makes it feel heavy and forced open. */
-  12% {
-    transform: rotateX(-6deg);
-  }
-  20% {
-    transform: rotateX(-3deg);
-  }
-  100% {
-    transform: rotateX(-112deg);
-  }
-}
-
 .mbc--opening .mbc__inner-light,
 .mbc--explosion .mbc__inner-light,
 .mbc--revealed .mbc__inner-light {
@@ -981,8 +962,11 @@
   }
 }
 
+/* Dan 2026-08-21: "Jackpot needs to be larger as well and raised up from
+   the $4,800." Roughly half the amount again, with real air beneath it. */
 .mbc__tier {
-  font-size: 13px;
+  font-size: clamp(22px, 7.5vw, 34px);
+  margin-bottom: 14px;
   font-weight: var(--weight-extrabold, 800);
   letter-spacing: 3px;
   /* No uppercase transform: the label is Title Case by house rule and the
@@ -991,7 +975,7 @@
 }
 
 .mbc__amount {
-  margin-top: 4px;
+  margin-top: 0;
   font-family: 'JetBrains Mono', monospace;
   font-size: clamp(34px, 12vw, 58px);
   font-weight: var(--weight-extrabold, 800);
@@ -1017,14 +1001,21 @@
   }
 }
 
+/* Dan 2026-08-21: "change the font size and thickness of Won By to be
+   similar to the $4,800 just half the size." Same family and weight as the
+   amount, clamped to exactly half of its range (34-58 -> 17-29). */
 .mbc__won-by {
-  margin-top: 8px;
-  font-size: 12px;
+  margin-top: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(17px, 6vw, 29px);
+  font-weight: var(--weight-extrabold, 800);
+  line-height: 1.1;
   color: var(--text-secondary, #9ca3af);
 }
 
 .mbc__won-by strong {
-  color: #ffd166;
+  font-weight: var(--weight-extrabold, 800);
+  color: var(--text-primary, #f3f4f6);
 }
 
 .mbc__queued {
@@ -1113,10 +1104,11 @@
   .mbc__amount {
     animation: none !important;
   }
-  .mbc--opening .mbc__lid-DEPRECATED {
-    animation: none;
-    transform: rotateX(-112deg);
-    transition: transform 0.3s ease-out;
+  /* The lid swing is a transition, so reduced motion has to shorten THAT.
+     Not removed outright: with no transition at all the lid teleports open
+     and the reveal reads as a cut rather than a box being opened. */
+  .mbc__lid {
+    transition: transform 0.2s ease-out;
   }
   .mbc--opening .mbc__inner-light,
   .mbc--explosion .mbc__inner-light,

@@ -18,6 +18,16 @@ supabase/.temp
 .env.local
 .env.*.local
 .env.check
+
+# Secrets that are not .env files (2026-08-21). A token was saved to
+# github_token.md beside the .env, untracked but NOT ignored - one `git add -A`
+# from any of the agents that run here constantly would have committed it.
+# GitHub auto-revokes leaked tokens, so the damage is an outage, not just an
+# exposure. Ignore the shapes, not one filename.
+github_token.md
+*token*.md
+*secret*.md
+*credentials*.md
 .env.vercel
 .env.prod.check
 

@@ -7,6 +7,191 @@
 
 ---
 
+## Cowork session 2026-08-21 (later) — the day the gates blocked everyone, and why
+
+Dan, twice: "That's now four separate times today that main sat unable to deploy
+on a red test committed alongside the feature it was meant to guard. YOU NEED TO
+FIX THIS PROBLEM, OR TELL ME WHAT NEEDS TO GET DONE TO FIX IT."
+
+### What was actually wrong
+
+Three separate causes wearing the same costume.
+
+**1. Tests could land before the code they described.** Nothing stopped a commit
+whose test asserted behaviour that did not exist yet. Fixed in two places: a
+test gate in `.husky/pre-push` (`vitest related --run` on changed sources,
+`vitest run` on changed specs, bypass `CA_SKIP_TESTS=1` for a genuine
+emergency), and a GitHub ruleset on `main`.
+
+**2. `main` accepted direct pushes.** A red commit could go straight in, and did.
+`main` now carries a ruleset (id 21163380): `deletion`, `non_fast_forward`,
+`pull_request`, and `required_status_checks` on **TypeScript Check** and
+**Client Unit Tests (vitest)**. Verified by trying: a direct push is refused with
+`2 of 2 required status checks are expected`. `scripts/git-safe-push.sh` now
+routes main through `scripts/ci/pr-push.mjs` (branch -> PR -> wait -> squash),
+and no longer uses `--force-with-lease` or `--no-verify`.
+
+**3. The gates themselves went red on correct work.** This one blocked the whole
+repo for part of the afternoon and is the interesting failure.
+
+### The phantom-reference gates, and absence of evidence
+
+`check-phantom-tables.mjs` and `check-phantom-columns.mjs` compare `.from()` /
+`.rpc()` / `.select()` against `scripts/ci/supabase-*-manifest.json`. That
+snapshot is stale **by construction**: schema lands in prod continuously via the
+Supabase MCP while the manifest refreshes once a day. So the gate routinely
+flags a colleague's correct work.
+
+The tables gate already knew this and asked the live schema before failing. Two
+defects defeated it:
+
+- the rescue's timeout was 20s against an `fn_schema_manifest` that was measured
+  at **30.7s under load** (0.6s warm), so it could never complete when it was
+  most needed; and
+- a failed rescue `return`ed the same value as "no credentials", so an
+  unreachable database was treated as proof of a phantom.
+
+The columns gate had no rescue at all.
+
+Result on 2026-08-21: **46 tables/rpcs and 3 columns flagged; 45 of the 46 and 2
+of the 3 existed in production.** Every open PR was unmergeable, on the same day
+branch protection started requiring these jobs.
+
+The principle now written into both gates: the snapshot alone is not sufficient
+evidence of absence. Live says present -> the snapshot is stale, pass and say
+so. Live says absent -> genuine phantom, still fails. Live unreachable -> report
+what would have been flagged and pass, because blocking every merge in the repo
+on someone else's downtime is not a trade worth making, and a real phantom is
+caught on the next run minutes later. Behaviour without credentials (forks,
+local runs) is unchanged.
+
+Landed as #157 (tables + columns rescue) and #162 (75s budget per attempt,
+replacing 30s, justified by the 30.7s measurement).
+
+### The bug the noise was hiding
+
+Once the 46 false positives cleared, one real phantom remained:
+`v_spin_tier_availability` had no `can_draw_500x`, while
+`useSpinTierAvailability.ts` selected it. PostgREST answers 42703 for the
+**whole request**, the hook bails on error and keeps its empty cache, and
+`DynamicGameCard` computes `liveTop` from rows it never receives — so neither
+"100x LIVE" nor "500x LIVE" ever rendered for any club. The missing 500x column
+was killing the 100x badge as collateral.
+
+Two sessions found it independently within minutes and both closed it from the
+wrong side, adding the column, without having seen Dan's instruction on #160:
+"REMOVE THE 500X WE WILL ONLY EVER DO 100X." Retirement is #160/#164's to
+finish. Sequencing note recorded there: `main` still selects and reads
+`can_draw_500x`, so the client change must land before the column is dropped or
+the hook returns to 42703 and takes the 100x badge with it again.
+
+Also of note, mine used `500 * 1.5` by copying the 100x threshold;
+`SPIN_TIERS.reserveThresholdX` is 1.5 for 100x and **2.0** for 500x, which is
+what `fn_spin_draw_multiplier` gates on. 1.5 would advertise a jackpot the draw
+then refuses to select. The other session's 2.0 landed last and is what
+production holds.
+
+### Still open
+
+- **Bundle budget is breached on main**: raw 6820kB against a 6144kB limit with
+  gzip over 90% of its own. `Production Build` is failing for this reason alone
+  and is not a required check, so it blocks nothing — which is exactly how it
+  stays breached. Needs code splitting or a deliberate budget change.
+- The manifest-refresh workflow opens a PR that nothing auto-merges, and skips
+  opening a second one while the first is unmerged, so drift accumulates
+  silently behind an ignored PR.
+
+---
+
+## Cowork session 2026-08-21 — run it twice and insurance were dead after hand 1
+
+Dan: "INSURANCE AND RUN IT TWICE (OR 3 TIMES) ARE 100% BROKEN AND HAVE ZERO
+FUNCTIONALITY." He was precisely right, and the reason was four lines away from
+where everyone kept looking.
+
+### The bug
+
+`ServerTableEngineSettlement` step 6 cleaned up "advanced modules between hands":
+
+```ts
+this.runItTwiceEngine.dispose(this.tableId);
+this.insuranceEngine.dispose(this.tableId);
+```
+
+`dispose()` deleted the pending offer **and** `tableConfigs`. `configure()` runs
+exactly once, in `ServerTableEngine.start()`. Both engines gate on
+
+```ts
+isEnabled(id) { return this.tableConfigs.get(id)?.enabled ?? false; }
+```
+
+so from **hand 2 onward** every table reported both features OFF. Each table got
+exactly one eligible hand per engine restart, then nothing, forever.
+
+This is why the feature looked configured and behaved absent: the lobby said
+"run it twice", the DB said `run_it_twice = true` on 59,899 tables, the engine
+agreed at boot — and then hand 1 settled and it all went quiet.
+
+### How it was found
+
+Not by reading the code, which reads correctly. By counting.
+
+| window                                            | measurement  |
+| ------------------------------------------------- | ------------ |
+| 90 min of live traffic                            | 13,941 hands |
+| cash hands (RIT is tournament-gated)              | 4,596        |
+| hands where betting stopped on a pre-river all-in | 54           |
+| RIT offers actually made                          | 3            |
+
+Three offers, and all three landed in the minutes right after the 18:08 engine
+deploy restarted every table — each table spending its one allowed hand. That
+clustering is the whole fingerprint of the bug.
+
+### The fix
+
+`endHand(tableId)` on both engines clears the hand's offers and cancels their
+expiry timers, keeping the table config. Settlement calls that between hands.
+`dispose()` still tears the table down completely for shutdown, and now
+delegates to `endHand()` so the two cannot drift apart.
+
+### Verified in production, not asserted
+
+Engine deploy `d78c21f` finished 19:02:57 UTC.
+
+- **Run it twice:** 17 offers in the four minutes 19:07-19:11, still firing at
+  the end of the window rather than clustering at the start. All 17 settled
+  across multiple boards (`rit_board_2` / `rit_board_3` in the hand log),
+  **5 of them across three boards**, 17/17 with winners recorded, 6,604.73 in
+  pots awarded, 80.01 rake taken once.
+- **Insurance:** on a purpose-built 25/50 table with 2-4bb stacks
+  (`a2183324`, NLH 25/50 INSURANCE TEST), **4 eligible spots -> 4 offers**, the
+  last on hand ~39. Hand 39 is the point: the first offer would have fired even
+  with the bug.
+
+### A second, quieter bug found while verifying
+
+The telemetry listened for `rit_resolved`; the hub actually carries
+`rit_result`. So production showed 17 offers, 17 chooser decisions and **zero**
+resolutions — which reads exactly like "RIT never completes" when in fact all 17
+had settled. A name mismatch between emitter and recorder is invisible by
+construction: nothing throws, a row simply never appears.
+
+`RitTelemetryNames.test.ts` now derives the emitted names from the engine source
+and asserts the recorder knows every one of them, so no future rename can blind
+it again.
+
+### Tests
+
+Every pre-existing RIT/insurance test configured an engine and played **one**
+hand, so not one of them could see this. `OfferConfigSurvivesHand.test.ts` tests
+hand N+1 — hand 2, hand 5, offer isolation between hands, the OFF case, full
+teardown, and a source assertion that settlement never calls per-hand
+`dispose()`. Reverting either half of the fix fails 4 of its 10 tests.
+
+Suite: 1022/1022, `tsc --noEmit` clean.
+
+---
+
 ## Cowork session 2026-08-20 — the last call, the ranking card, live counts
 
 Three things Dan asked for, plus the defects review turned up on the way.
@@ -9456,3 +9641,95 @@ Client suite exits 0: 219 files, 2767 tests. Server: 93 files, 1004 tests.
 - Union-level reserve wallet (reserve comes from the UNION unless a club is standalone) — needs the wallet built.
 - Tournament completion card for ALL spin finishers.
 - Spins 1:1 animation clone verification against cash.
+
+## 2026-08-21 — Mystery bounty: typography, and the advertised prize range was a lie
+
+TYPOGRAPHY (Dan): "Won By" now matches the amount's family and weight at
+exactly half its size (clamp 17-29px against the amount's 34-58px). The tier
+label (Jackpot) is much larger — clamp 22-34px — and lifted 14px clear of the
+figure. The "Mystery Bounty" eyebrow is grey (--text-secondary), not gold;
+the gold belongs to the prize, not the label above it.
+
+THE REAL FIND — the advertised range could not happen. Three sources of
+truth disagreed:
+
+- the DRAW (fn_register_for_tournament / fn_register_horse_for_tournament)
+  applies a fixed table to the player's funded head:
+  60% x0.5, 25% x1, 10% x2, 4% x3, 1% x13 — expected value exactly 1.0,
+  which is what keeps the funded bounty pool balanced;
+- the COLUMNS were written as `bounty` and `bounty * 10`, in currency;
+- the LOBBY rendered those currency values as MULTIPLIERS ("6x - 60x"),
+  with an invented "1x - 100x" fallback when unset.
+
+A $6 head was therefore advertised as paying up to 60x when 13x is the
+ceiling, and as starting at 6x when 60% of all draws land BELOW the head at
+0.5x. Live proof: Evening Mystery Bounty (PLO5) advertised 6.00-60.00 while
+its 19 seated players hold prizes of 3.00, 6.00 and 12.00.
+
+Fixed on all three: TournamentRecurringService now writes the true currency
+range (0.5x and 13x of the head) at both creation sites; TournamentDetails
+and TournamentPage render currency "Per Knockout" instead of "x Multiplier"
+and no longer invent a range when none is set; migration
+20260821_mystery_bounty_true_advertised_range backfills every unfinished
+event.
+
+VERIFIED WORKING (no change needed): the knockout -> chest -> wallet chain is
+sound end to end. fn_collect_bounty resolves mystery mode, pays
+credit_player_wallet under an idempotency key of
+tourney:<id>:bounty:<eliminated>:<knocker>, writes the 'bounty' ledger row,
+and caps at the unpaid pool; 4,458 bounty wallet transactions and 4,192
+tournament_bounties rows exist in production. The engine broadcasts
+mystery_bounty_revealed on channel t-break-<tournamentId>, which TablePage
+subscribes to and feeds into the chest queue — so the chest fires for every
+knockout, on every client at the table, in real time.
+
+REPORTED, NOT CHANGED: Evening Mystery Bounty charges $2 fee on a $13 buy-in
+(13.3%) against the platform's 10% cap, so it fails
+tournaments_rake_within_10_pct. The constraint is NOT VALID and so tolerates
+the existing row but rejects any UPDATE to it, which is why that one event
+keeps its old advertised range. Its rake predates the one-rake model and
+19 players have already paid; that is Dan's call, not a migration's.
+
+## 2026-08-21 — Mystery bounty: the whole table watches, and the next hand waits for it
+
+Dan: "now all players at the table should see the mystery bounty video... and
+after it finished and the prize is awarded, the next hand starts with the
+dealing animation to move onto the next hand."
+
+ALREADY TRUE, VERIFIED NOT ASSUMED — every player at the table watches the
+same reveal. The winner's tap broadcasts mystery_chest_opened on the table
+channel; every other client sets remoteOpened, which runs the identical open
+sequence including the burst film. Spectators who never receive that packet
+open on their own failsafe at 14s, and the winner's client auto-opens at 9s
+if they are AFK, so no client is ever left staring at a locked chest. The
+film is muted + playsInline, which is what browsers require to autoplay
+without a gesture — a spectator has not tapped anything, and that is exactly
+the case this had to survive.
+
+TABLE SCOPE — A REAL BUG FOUND ON THE WAY. The reveal rides the TOURNAMENT
+channel (t-break-<id>), which EVERY table in the event subscribes to. So a
+knockout on table 3 played a full-screen chest on tables 1 and 2 as well,
+over their live hands, for something that happened to strangers. The engine
+now stamps the knockout's table_id (it was already resolved a few lines
+earlier to find the knocker) onto the broadcast, and TablePage ignores any
+reveal that is not its own. Builds that predate the stamp send no tableId
+and behave exactly as before.
+
+THE NEXT HAND NOW WAITS. The table used to keep dealing underneath the
+reveal. After a mystery bounty is collected, the engine holds dealing on that
+table for the length of the chest sequence via holdDealingUntil() — the same
+mechanism the spin wheel already uses — and when the hold expires the dealing
+loop resumes and the next hand deals in with its normal shuffle and deal
+animation. Only the knockout's own table pauses; a knockout on table 3 must
+not stall tables 1 and 2.
+
+The timing contract lives in server/src/config/mysteryChestSpec.ts and
+mirrors MysteryBountyChest.tsx phase for phase (landing 700, auto-open 9000,
+opening 900, explosion 600, revealed 5200, settle 400 = ~16.8s). Worst case
+is the AFK winner; a winner who taps finishes sooner and the hold does not
+shorten with them. That is the deliberate trade: a few idle seconds cost a
+knockout celebration nothing, dealing over the reveal destroys it. If the
+chest's phases change, change this file in the same commit.
+
+Verified: client + server tsc clean, vite build clean, 24 engine tests green
+across 3 suites.

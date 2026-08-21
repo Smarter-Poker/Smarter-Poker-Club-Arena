@@ -52,11 +52,60 @@ For post-deploy verification that production is serving your commit, follow up
 with `bash scripts/git-safe-push.sh` in the WH repo — but `sync-club-arena.sh`
 already exits non-zero on build/push failure.
 
+### 1.1.5 SERVER-SIDE PROTECTION (prepared, not yet active)
+
+`.husky/pre-push` is a seatbelt on an unlocked door: `--no-verify` skips it and
+a push made through the GitHub API never runs it. The lock is a ruleset, which
+GitHub enforces for every client. Private repos need GitHub Pro for that.
+
+`scripts/ci/apply-main-ruleset.mjs` applies it in one command the moment Pro is
+on, in two stages:
+
+    GH_PAT=... node scripts/ci/apply-main-ruleset.mjs --stage=1   # block force-push + deletion
+    GH_PAT=... node scripts/ci/apply-main-ruleset.mjs --stage=2   # + PR required, checks must pass
+
+Stage 1 changes nothing about how you work and would have prevented the
+2026-08-21 rewind that dropped four commits already serving in production.
+Stage 2 is the one that makes a red test impossible to land - and it ends
+direct pushes to main, so read section 1.3 again after it is applied. The two
+required checks (`TypeScript Check`, `Client Unit Tests (vitest)`) already exist
+in ci.yml and already run on pull_request.
+
+The token also needs `Administration: Read and write`; one that can push code
+cannot change protection rules. The script says which of the two is missing.
+
 ### 1.2 Vercel Project
 
 - `hub-vanguard` (`prj_op66GkZyZcygXQKm76iyycfVFAQx`) -- THE REAL ONE. Aliased to `smarter.poker`.
 - `smarter-poker` (`prj_FNUaJmcjRnwCSh1JzblIUYuOXDGK`) -- DEAD DUPLICATE. Disconnected. Do not touch.
 - There are NO deploy hooks. The Vercel git integration auto-deploys on push to main.
+
+### 1.2.5 HOW A PUSH LANDS NOW (changed 2026-08-21)
+
+The command is unchanged:
+
+    bash scripts/git-safe-push.sh "feat(ca): what changed"
+
+What it does underneath is not. main is protected by a ruleset now, so the
+script pushes a branch, opens a pull request, waits for the required checks and
+merges it. You do not open the PR yourself and you do not push to main directly.
+
+WHY, because the old path caused three separate incidents in one day:
+
+  - it pushed with `--force-with-lease` on every failure path, which REWOUND
+    main and dropped four commits already built, synced and serving in
+    production;
+  - it pushed with `--no-verify`, so the pre-push hook - nine house rules, and
+    since #149 the test suite - never ran from the one command every agent is
+    told to use, and red tests reached main four times;
+  - it rebased main automatically on conflict, which section 12 forbids.
+
+A pull request cannot do any of those. The branch push still runs the hook, so
+a failing test stops you at your own machine rather than stopping everyone.
+
+If it refuses to land, NOTHING was force-pushed and nothing was lost. Read the
+output: a hook failure is yours to fix, a `dirty` state means a real conflict
+with main, and a timeout leaves the PR open for you to merge by hand.
 
 ### 1.3 Never Do
 
@@ -153,6 +202,35 @@ Do NOT audit 10 items and then ask "what should I fix?" -- fix them as you go.
    do not build retry loops that re-toast the same message.
 
 ---
+
+8. NEVER PUSH A RED TEST (Dan 2026-08-21, binding). `npx vitest run tests/` in
+   `build-for-world-hub.yml` is what PUBLISHES the bundle. A failing test does
+   not fail a report - it stops the World Hub sync for every agent and every
+   deploy, until a human notices. On 2026-08-21 that happened four times in one
+   day, and every one was a test pushed alongside the feature it was meant to
+   guard:
+
+   - a test importing a component that had been deleted the day before;
+   - a test reading `src/services/soundService.ts` when the file is
+     `SoundService.ts` (macOS resolved it, Linux CI did not);
+   - a spec asserting the engine sends `card_indices`, committed with no
+     implementation beside it - by a commit whose message was "unblock the
+     deploy gate";
+   - a test still asserting the rounding rule that the same commit's feature
+     had just replaced.
+
+   THE RULES:
+   - `.husky/pre-push` now runs the tests covering what you touched, in about
+     four seconds. Do not `--no-verify` past it.
+   - WRITING THE SPEC FIRST IS ENCOURAGED. Committing it red is not. Mark it
+     `it.skip()` / `describe.skip()` with a note saying what has to be built,
+     and delete the `.skip` in the commit that implements it. A skipped spec
+     documents the work; a red one holds the platform hostage.
+   - If you deliberately replace behaviour a test pins, UPDATE THAT TEST IN THE
+     SAME COMMIT. "Someone else will fix the test" means "nobody ships until
+     they do."
+   - If you find main already red, fixing it comes before your own work
+     (section 4, fix-first). You cannot ship past it anyway.
 
 ## 6. FILE MAP
 

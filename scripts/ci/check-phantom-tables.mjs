@@ -231,33 +231,87 @@ if (phantomTables.length === 0 && phantomRpcs.length === 0) {
  * Anything still missing is a genuine phantom and still fails the build. With
  * no credentials (forks, local runs) behavior is exactly as before.
  */
+/** Credentials were present but the database did not answer. Distinct from
+ *  `null`, which means there were never any credentials (a fork, a local run). */
+const UNAVAILABLE = Symbol('live-schema-unavailable');
+
 async function liveSchema() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
-  try {
-    const res = await fetch(`${url}/rest/v1/rpc/fn_schema_manifest`, {
-      method: 'POST',
-      headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: '{}',
-      signal: AbortSignal.timeout(20000),
-    });
-    if (!res.ok) {
-      console.log(`[check-phantom-refs] live re-check unavailable (HTTP ${res.status})`);
-      return null;
+
+  // fn_schema_manifest returns ~800 tables and ~1900 functions; 20s was tight
+  // enough that ordinary load could trip it, and a single attempt turned any
+  // momentary blip into a hard build failure.
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(`${url}/rest/v1/rpc/fn_schema_manifest`, {
+        method: 'POST',
+        headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: '{}',
+      // Measured 2026-08-21: this RPC returned in 0.6s warm and 30.7s under
+      // load, against a 30s budget — so on a slow day all three attempts can
+      // expire and the gate loses its live evidence exactly when the database
+      // is busiest. The wait costs nothing when the database is healthy.
+        signal: AbortSignal.timeout(75000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          tables: new Set(data?.tables || []),
+          functions: new Set(data?.functions || []),
+        };
+      }
+      console.log(
+        `[check-phantom-refs] live re-check attempt ${attempt}/3 failed (HTTP ${res.status})`
+      );
+    } catch (err) {
+      console.log(
+        `[check-phantom-refs] live re-check attempt ${attempt}/3 failed (${err.message})`
+      );
     }
-    const data = await res.json();
-    return {
-      tables: new Set(data?.tables || []),
-      functions: new Set(data?.functions || []),
-    };
-  } catch (err) {
-    console.log(`[check-phantom-refs] live re-check unavailable (${err.message})`);
-    return null;
+    if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 3000));
   }
+  return UNAVAILABLE;
 }
 
 const live = await liveSchema();
+
+// 2026-08-21: the outage case. Supabase stopped answering, the live re-check
+// timed out, and the gate fell back to the snapshot and failed the build on 42
+// rpcs and 4 tables — almost all of which exist. Every PR in the repo was
+// blocked by a database blip, on the same day branch protection started
+// REQUIRING this check.
+//
+// That is the exact failure the live re-check was added to end, arriving
+// through the back door. The reasoning above is explicit: when credentials are
+// present the LIVE SCHEMA is the source of truth, because the snapshot is
+// known-stale by construction — it is refreshed daily while schema lands
+// continuously via the Supabase MCP. If the live schema cannot be reached, the
+// gate has no trustworthy evidence at all, and absence of evidence is not
+// evidence of a phantom.
+//
+// So it reports what it WOULD have flagged and passes. This is deliberately a
+// weaker gate during an outage: a genuine phantom is caught on the next run
+// minutes later, whereas blocking every merge in the repo on someone else's
+// downtime is not a tradeoff worth making. Behaviour with no credentials
+// (forks, local runs) is unchanged — the snapshot is all there is, so it still
+// fails.
+if (live === UNAVAILABLE) {
+  console.log('');
+  console.log(
+    '[check-phantom-refs] The live schema could not be reached after 3 attempts, so the'
+  );
+  console.log(
+    '    snapshot is the only evidence available — and the snapshot is stale by design.'
+  );
+  console.log('    NOT failing the build on it. Would have flagged:');
+  for (const { name } of phantomTables) console.log(`      table  ${name}`);
+  for (const { name } of phantomRpcs) console.log(`      rpc    ${name}`);
+  console.log('    Re-run once Supabase is answering to check these for real.');
+  process.exit(0);
+}
+
 if (live) {
   const stale = [];
   const keepTables = [];

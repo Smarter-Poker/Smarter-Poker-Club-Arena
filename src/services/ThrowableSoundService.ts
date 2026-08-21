@@ -321,57 +321,80 @@ class ThrowableSoundServiceClass {
       this.thump(90, 0.12, 0.14, 0.4); // ...flump
     },
     giggle: () => {
-      // staccato ha-ha-ha, two bursts like a real laugh
-      this.run([620, 540, 620, 540], 0.05, 0.16, 'square', 0.075);
-      this.run([700, 590, 700], 0.05, 0.13, 'square', 0.075);
-      // second burst starts after a breath
-      [0.42, 0.5, 0.58].forEach((d, i) =>
-        this.tone(i % 2 === 0 ? 660 : 560, 0.05, 0.12, 'square', undefined, d)
-      );
+      // Dan: LOL uses a laughing voice-over; this is just the breath under it.
+      this.run([620, 540, 620, 540], 0.05, 0.12, 'square', 0.075);
+      this.run([700, 590, 700], 0.05, 0.1, 'square', 0.075);
     },
     weep: () => {
-      this.tone(500, 0.45, 0.16, 'sine', 260); // descending sob
-      this.noise(0.3, 0.05, 2500, 'highpass', 0.1);
-      this.noise(0.06, 0.1, 1800, 'bandpass', 0.5, 2); // sniff
-      this.tone(420, 0.2, 0.08, 'sine', 300, 0.58); // trailing whimper
+      // Dan: real tears + crying sound (the sob itself is spoken).
+      this.tone(500, 0.5, 0.13, 'sine', 250);
+      this.noise(0.35, 0.05, 2500, 'highpass', 0.1);
+      this.noise(0.06, 0.1, 1800, 'bandpass', 0.55, 2);
+      // tears running down
+      [0.4, 0.62, 0.85, 1.05].forEach((d) => this.tone(900, 0.1, 0.05, 'sine', 380, d));
     },
     growl: () => {
-      this.tone(90, 0.35, 0.28, 'sawtooth', 60);
-      this.noise(0.02, 0.22, 4500, 'highpass', 0.3); // teeth SNAP
-      this.noise(0.2, 0.12, 300, 'lowpass');
+      // Dan: angry explosion when it hits.
+      // Dan: EXPLODE with rage.
+      this.tone(88, 0.45, 0.3, 'sawtooth', 55);
+      this.tone(94, 0.45, 0.2, 'sawtooth', 58);
+      this.noise(0.05, 0.34, 1200, 'lowpass');
+      this.thump(60, 0.4, 0.32, 0.04);
+      this.noise(0.02, 0.26, 4800, 'highpass', 0.3);
+      this.noise(0.5, 0.1, 300, 'lowpass', 0.1);
     },
     smooth: () => {
-      // sunglasses slide down the nose... then the chord lands
+      // Dan: dance around with an upbeat sound.
+      // Dan: upbeat, danceable.
       this.noiseSweep(0.16, 0.08, 3200, 900, 'bandpass', 0, 1.4);
-      this.tone(392, 0.3, 0.12, 'sine', undefined, 0.12);
-      this.tone(494, 0.3, 0.12, 'sine', undefined, 0.12);
-      this.tone(587, 0.4, 0.12, 'sine', undefined, 0.18);
+      const groove = [523, 659, 784, 659, 880, 784];
+      groove.forEach((f, i) => this.tone(f, 0.13, 0.13, 'triangle', undefined, 0.12 + i * 0.14));
+      [0, 0.28, 0.56, 0.84].forEach((d) => this.thump(70, 0.12, 0.18, d + 0.12));
+      [0.19, 0.47, 0.75].forEach((d) => this.noise(0.025, 0.08, 7000, 'highpass', d + 0.12));
     },
     kiss: () => {
-      this.noise(0.08, 0.14, 3000, 'bandpass', 0, 2); // mwah
-      this.run([880, 1175, 1480], 0.14, 0.14, 'sine', 0.05);
-      this.noise(0.06, 0.09, 3200, 'bandpass', 0.24, 2); // ...mwah
-      this.tone(1480, 0.12, 0.08, 'sine', undefined, 0.28);
+      // Dan: loving sound effect, bursting.
+      // Dan: EXPLODE with love.
+      this.noise(0.07, 0.16, 3000, 'bandpass', 0, 2);
+      this.run([523, 659, 784, 1047], 0.22, 0.13, 'sine', 0.07);
+      this.tone(1319, 0.5, 0.09, 'sine', undefined, 0.3);
+      this.tone(1568, 0.5, 0.07, 'sine', undefined, 0.34);
+      [0.3, 0.42, 0.55].forEach((d, i) =>
+        this.tone(2093 + i * 400, 0.18, 0.07, 'triangle', undefined, d)
+      );
     },
     twinkle: () => {
-      this.run([1047, 1319, 1568, 2093], 0.1, 0.14, 'triangle', 0.05);
-      this.noiseSweep(0.4, 0.04, 6000, 9000, 'highpass', 0.05, 0.5); // stardust shimmer
+      // Dan: star should explode and dance.
+      // Dan asked for "the Nintendo star sound". Deliberately NOT a copy of
+      // that jingle - reproducing a recognisable brand asset is not ours to
+      // ship. This is an original rising power-up arpeggio in the same spirit:
+      // fast ascending triangle runs with a shimmer tail.
+      const run1 = [523, 659, 784, 1047, 1319, 1568];
+      run1.forEach((f, i) => this.tone(f, 0.09, 0.15, 'triangle', undefined, i * 0.055));
+      const run2 = [659, 784, 1047, 1319, 1568, 2093];
+      run2.forEach((f, i) => this.tone(f, 0.09, 0.13, 'triangle', undefined, 0.34 + i * 0.055));
+      this.tone(2637, 0.35, 0.12, 'triangle', undefined, 0.68);
+      this.noiseSweep(0.5, 0.05, 6000, 11000, 'highpass', 0.1, 0.5);
     },
 
     // ── Throws ──
     splat_wet: () => {
-      this.noise(0.12, 0.3, 800, 'lowpass');
-      this.thump(150, 0.12, 0.22);
-      this.noise(0.25, 0.1, 400, 'lowpass', 0.08); // dripping goo
-      // seeds pattering off the victim
-      [0.16, 0.21, 0.27].forEach((d) => this.noise(0.02, 0.07, 2200, 'bandpass', d, 2));
+      // Dan: a real SPLAT. Sharp burst, wet body, then juice running off.
+      this.noise(0.02, 0.34, 3000, 'highpass');
+      this.noise(0.2, 0.34, 700, 'lowpass');
+      this.thump(140, 0.16, 0.24);
+      this.noise(0.4, 0.12, 380, 'lowpass', 0.1);
+      [0.18, 0.24, 0.31, 0.4].forEach((d) => this.noise(0.03, 0.08, 1800, 'bandpass', d, 2));
     },
     egg_crack: () => {
-      this.noise(0.03, 0.3, 4000, 'highpass'); // shell crack
-      this.noise(0.025, 0.2, 3600, 'highpass', 0.07); // second split
-      this.tone(260, 0.3, 0.06, 'sine', 90, 0.12); // the white sliding down
-      this.noise(0.15, 0.2, 700, 'lowpass', 0.03); // splat
-      this.thump(180, 0.1, 0.15, 0.03);
+      // Dan: hear a CRACK when it lands, then it runs down them.
+      this.noise(0.025, 0.36, 5200, 'highpass');
+      this.noise(0.02, 0.24, 4200, 'highpass', 0.05);
+      this.noise(0.16, 0.22, 700, 'lowpass', 0.07);
+      this.thump(170, 0.12, 0.16, 0.07);
+      // the white running down the villain
+      this.tone(300, 0.9, 0.07, 'sine', 90, 0.16);
+      this.noise(0.7, 0.05, 420, 'lowpass', 0.2);
     },
     slip: () => {
       this.tone(900, 0.25, 0.16, 'sine', 200); // slide-whistle down
@@ -380,10 +403,12 @@ class ThrowableSoundServiceClass {
       this.tone(520, 0.18, 0.08, 'sine', 380, 0.5); // ...and settle
     },
     splat_cheese: () => {
-      this.noise(0.14, 0.26, 600, 'lowpass');
-      this.thump(140, 0.14, 0.2);
-      this.tone(300, 0.3, 0.08, 'sine', 90, 0.1); // cheese stretching downward
-      this.noise(0.1, 0.06, 500, 'lowpass', 0.28); // the strand lets go
+      // Dan: it should SMEAR over them (the 'uh oh' is spoken separately).
+      this.noise(0.16, 0.3, 620, 'lowpass');
+      this.thump(130, 0.16, 0.22);
+      // the smear: a long low drag across them
+      this.noiseSweep(0.75, 0.12, 900, 260, 'lowpass', 0.08, 0.6);
+      this.tone(260, 0.6, 0.07, 'sine', 80, 0.1);
     },
     splat_heavy: () => {
       this.thump(100, 0.2, 0.3);
@@ -394,119 +419,171 @@ class ThrowableSoundServiceClass {
       this.tone(180, 0.2, 0.07, 'sine', 70, 0.26);
     },
     splat_gross: () => {
-      this.noise(0.18, 0.28, 350, 'lowpass');
-      this.thump(90, 0.18, 0.22);
-      this.warble(400, 28, 60, 0.35, 0.04, 0.15); // fly buzz
-      this.warble(120, 11, 40, 0.3, 0.07, 0.05); // bubbling gurgle
+      // Dan: PEE-YEW. Wet landing, then a lingering waft under the spoken line.
+      this.noise(0.2, 0.3, 340, 'lowpass');
+      this.thump(85, 0.2, 0.24);
+      // the stink itself: a slow wobbling waft
+      this.warble(220, 5, 90, 1.1, 0.06, 0.15);
+      this.warble(380, 26, 55, 0.5, 0.05, 0.2);
     },
     squirt: () => {
-      this.tone(900, 0.02, 0.14, 'square'); // pump click
-      this.tone(700, 0.02, 0.12, 'square', undefined, 0.045); // ...clack
-      this.noiseSweep(0.32, 0.2, 2600, 1200, 'bandpass', 0.07, 1.5);
-      this.tone(1200, 0.25, 0.08, 'sine', 500);
+      // Dan: sprays water and SOAKS them.
+      this.tone(900, 0.02, 0.14, 'square');
+      this.tone(700, 0.02, 0.12, 'square', undefined, 0.045);
+      // the spray itself, sustained
+      this.noiseSweep(0.75, 0.2, 2800, 900, 'bandpass', 0.07, 1.2);
+      // soaking: heavy water hitting and running off
+      this.noise(0.3, 0.18, 900, 'lowpass', 0.5);
+      this.noiseSweep(0.9, 0.1, 700, 220, 'lowpass', 0.6, 0.7);
+      [0.7, 0.82, 0.95, 1.08].forEach((d) => this.noise(0.04, 0.07, 1500, 'bandpass', d, 2));
     },
     punch: () => {
-      this.noise(0.015, 0.32, 5000, 'highpass'); // whip-crack transient
-      this.thump(110, 0.15, 0.35);
+      // Dan: TWO gloves beating them up, then 'K O' spoken over the top.
+      this.noise(0.015, 0.34, 5000, 'highpass');
+      this.thump(115, 0.14, 0.36);
       this.noise(0.06, 0.3, 1500, 'lowpass');
-      this.tone(65, 0.25, 0.25, 'sine', 45, 0.02);
-      this.tone(140, 0.18, 0.1, 'sawtooth', 80, 0.1); // winded grunt
+      // second glove
+      this.noise(0.015, 0.3, 4600, 'highpass', 0.19);
+      this.thump(100, 0.15, 0.34, 0.19);
+      this.noise(0.06, 0.26, 1400, 'lowpass', 0.19);
+      this.tone(150, 0.22, 0.1, 'sawtooth', 70, 0.3);
     },
     anvil_clang: () => {
-      this.tone(220, 0.5, 0.3, 'square', 210);
-      this.tone(554, 0.4, 0.15, 'square', 540);
-      this.thump(70, 0.3, 0.35);
+      // Dan: it SQUISHES them. Clang on top, compression underneath.
+      this.tone(220, 0.55, 0.3, 'square', 208);
+      this.tone(554, 0.45, 0.15, 'square', 540);
+      this.thump(62, 0.4, 0.4);
       this.noise(0.08, 0.3, 3000, 'highpass');
-      this.noise(0.55, 0.14, 160, 'lowpass', 0.12); // the floor groans
+      // the squish underneath it
+      this.noiseSweep(0.5, 0.14, 700, 180, 'lowpass', 0.06, 0.7);
+      this.noise(0.6, 0.12, 150, 'lowpass', 0.14);
     },
     metal_crash: () => {
-      this.noise(0.35, 0.3, 2500, 'bandpass', 0, 0.6);
-      this.tone(310, 0.3, 0.18, 'square', 290);
-      this.thump(90, 0.2, 0.25);
-      this.noise(0.2, 0.15, 1800, 'bandpass', 0.18, 0.7); // lid clatter
-      this.warble(420, 22, 180, 0.45, 0.08, 0.3); // lid wobbling to rest
+      // Dan: lid off, then SLAMS closed ('stinky' is spoken separately).
+      this.noise(0.3, 0.3, 2600, 'bandpass', 0, 0.6);
+      this.thump(85, 0.22, 0.26);
+      // the lid coming down and slamming shut
+      this.tone(330, 0.18, 0.2, 'square', 300, 0.22);
+      this.noise(0.05, 0.34, 2200, 'bandpass', 0.34, 1.2);
+      this.tone(210, 0.3, 0.16, 'square', 195, 0.34);
+      this.warble(300, 30, 120, 0.4, 0.07, 0.4);
     },
     snow_poof: () => {
-      this.noise(0.25, 0.2, 1200, 'lowpass');
-      this.tone(600, 0.2, 0.08, 'sine', 300);
-      // icy crystal chimes as the frost ring blooms
-      this.run([2637, 3136, 3951], 0.16, 0.07, 'sine', 0.09);
+      // Dan: 5 snowballs, 5 different impacts.
+      // Dan: morphs into 5 snowballs, 5 DIFFERENT impact sounds.
+      const hits = [
+        { d: 0.0, f: 1400, t: 620 },
+        { d: 0.13, f: 1000, t: 380 },
+        { d: 0.27, f: 1800, t: 800 },
+        { d: 0.42, f: 820, t: 300 },
+        { d: 0.58, f: 1250, t: 500 },
+      ];
+      hits.forEach((h, i) => {
+        this.noise(0.09 + i * 0.01, 0.2, h.f, 'lowpass', h.d);
+        this.thump(h.t, 0.09, 0.16, h.d);
+      });
+      this.run([2637, 3136, 3951], 0.16, 0.06, 'sine', 0.09);
     },
     magnet_clink: () => {
-      this.warble(300, 50, 120, 0.25, 0.12); // hum
-      [0.02, 0.06, 0.09, 0.13, 0.16, 0.19].forEach((d, i) =>
-        this.noise(0.012, 0.05 + i * 0.012, 5000, 'highpass', d)
-      ); // iron filings racing in
-      this.tone(1800, 0.06, 0.2, 'square', undefined, 0.22); // clink
-      this.thump(200, 0.08, 0.15, 0.22);
+      // Dan: extracting chips, clinking as they hit the magnet.
+      // Dan: pulls imaginary chips out of them; each chip CLINKS on the magnet.
+      this.warble(280, 45, 130, 0.5, 0.11);
+      const chips = [0.12, 0.22, 0.3, 0.4, 0.52, 0.63, 0.75];
+      chips.forEach((d, i) => {
+        this.tone(1500 + (i % 4) * 260, 0.05, 0.16, 'square', undefined, d);
+        this.tone(2600 + (i % 3) * 300, 0.03, 0.08, 'triangle', undefined, d + 0.01);
+      });
+      this.thump(190, 0.1, 0.12, 0.8);
     },
 
     // ── Sports ──
     ball_bounce: () => {
-      this.thump(180, 0.12, 0.25);
-      this.thump(180, 0.09, 0.15, 0.18);
-      this.thump(180, 0.06, 0.08, 0.32);
-      this.noise(0.04, 0.1, 2000, 'highpass', 0.01); // squeak
-      this.tone(420, 0.1, 0.1, 'square', 400); // backboard knock
-      this.warble(310, 60, 15, 0.25, 0.05, 0.05); // rim hum
+      // Dan: swoosh when it lands.
+      // Dan: a SWOOSH, like a clean net.
+      this.noiseSweep(0.26, 0.17, 5200, 1600, 'bandpass', 0, 0.8);
+      this.thump(170, 0.12, 0.22, 0.16);
+      this.thump(170, 0.08, 0.13, 0.32);
+      this.thump(170, 0.05, 0.07, 0.45);
     },
     football_hit: () => {
-      this.noiseSweep(0.12, 0.1, 1600, 700, 'bandpass', 0, 1.2); // spiral whoosh in
-      this.thump(130, 0.15, 0.28);
+      // Dan: through the posts, roaring crowd.
+      this.noiseSweep(0.14, 0.11, 1700, 700, 'bandpass', 0, 1.2);
+      this.thump(125, 0.16, 0.28);
       this.noise(0.08, 0.2, 1000, 'lowpass');
-      this.tone(2400, 0.3, 0.06, 'sine', undefined, 0.2); // ref whistle hint
+      this.tone(2600, 0.32, 0.08, 'sine', undefined, 0.18);
+      // roaring crowd swelling behind "IT'S GOOD"
+      this.noiseSweep(1.5, 0.16, 400, 1400, 'bandpass', 0.22, 0.35);
+      this.noiseSweep(1.2, 0.1, 1600, 500, 'bandpass', 0.5, 0.4);
     },
     tennis_pop: () => {
-      this.noise(0.03, 0.25, 2500, 'bandpass', 0, 2); // thwock
-      this.thump(300, 0.08, 0.2);
-      this.thump(300, 0.05, 0.1, 0.15); // second skip
-      this.tone(2200, 0.07, 0.08, 'sine', 2900, 0.2); // shoe squeak on the line
+      // Dan: should whack them like a racket.
+      // Dan: a racket WHACK, not a pop.
+      this.noise(0.012, 0.4, 3400, 'bandpass', 0, 2.4);
+      this.tone(680, 0.09, 0.22, 'triangle', 240);
+      this.thump(240, 0.09, 0.2);
+      this.noise(0.05, 0.1, 1800, 'bandpass', 0.02, 1.5);
+      this.thump(280, 0.06, 0.1, 0.22);
     },
     bowling_strike: () => {
-      this.noiseSweep(0.14, 0.16, 200, 420, 'lowpass', 0, 0.7); // the roll arrives
-      this.thump(80, 0.25, 0.35, 0.1);
-      // pin scatter: staggered woodblock clicks, nine pins deep
-      [0.18, 0.22, 0.25, 0.29, 0.32, 0.36, 0.41, 0.47, 0.54].forEach((d, i) =>
-        this.tone(650 + (i % 5) * 130, 0.05, 0.12, 'square', undefined, d)
+      // Dan: classic bowling, pins, then the STRIKE caption.
+      // Dan: rolls across, knocks the pins down, then STRIKE.
+      this.noiseSweep(0.5, 0.16, 150, 420, 'lowpass', 0, 0.7);
+      this.thump(78, 0.26, 0.36, 0.46);
+      [0.5, 0.54, 0.575, 0.61, 0.645, 0.685, 0.73, 0.78, 0.84].forEach((d, i) =>
+        this.tone(620 + (i % 5) * 140, 0.05, 0.14, 'square', undefined, d)
       );
-      this.noise(0.3, 0.15, 1200, 'lowpass', 0.16);
+      this.noise(0.45, 0.16, 1100, 'lowpass', 0.48);
     },
     lucky_clang: () => {
-      this.tone(660, 0.3, 0.2, 'square', 650);
-      this.tone(990, 0.25, 0.12, 'square', undefined, 0.08);
-      this.run([1319, 1568, 2093], 0.12, 0.1, 'triangle', 0.06); // lucky chime
-      this.warble(1800, 30, 220, 0.35, 0.05, 0.24); // coin-spin settling
+      // Dan: flies straight and GLOWS on impact.
+      this.tone(660, 0.35, 0.22, 'square', 650);
+      this.tone(990, 0.3, 0.13, 'square', undefined, 0.07);
+      this.run([1319, 1568, 2093, 2637], 0.16, 0.1, 'triangle', 0.07);
+      // the glow: a shimmering sustain
+      this.noiseSweep(0.9, 0.05, 5000, 9000, 'highpass', 0.15, 0.5);
+      this.tone(1568, 0.7, 0.06, 'sine', undefined, 0.3);
     },
     dice_rattle: () => {
-      [0, 0.05, 0.09, 0.14, 0.2].forEach((d) =>
-        this.tone(900 + Math.random() * 500, 0.03, 0.14, 'square', undefined, d)
+      // Dan: dice roll across the table.
+      // Dan: rolls across the table.
+      const rolls = [0, 0.06, 0.11, 0.17, 0.24, 0.3, 0.38, 0.46, 0.55];
+      rolls.forEach((d, i) =>
+        this.tone(880 + ((i * 137) % 520), 0.028, 0.13 - i * 0.008, 'square', undefined, d)
       );
-      this.thump(250, 0.08, 0.12, 0.24);
-      this.tone(1100, 0.025, 0.1, 'square', undefined, 0.36); // settle...
-      this.tone(950, 0.03, 0.08, 'square', undefined, 0.42); // ...and rest
+      this.thump(240, 0.09, 0.12, 0.62);
+      this.tone(1050, 0.025, 0.09, 'square', undefined, 0.7);
     },
     mystic: () => {
-      this.warble(440, 6, 30, 0.5, 0.12);
-      this.run([523, 622, 740, 880], 0.15, 0.08, 'sine', 0.1);
-      // the answer surfaces: a deep certain thump under the shimmer
-      this.thump(72, 0.4, 0.2, 0.35);
+      // Dan: shake, then show 'ask again later'.
+      // Dan: shakes, then the answer surfaces.
+      const shakes = [0, 0.09, 0.18, 0.27, 0.36];
+      shakes.forEach((d) => {
+        this.noise(0.05, 0.12, 700, 'lowpass', d);
+        this.tone(200 + Math.random() * 90, 0.05, 0.09, 'sine', undefined, d);
+      });
+      this.warble(440, 6, 34, 0.6, 0.12, 0.45);
+      this.run([523, 622, 740, 880], 0.16, 0.08, 'sine', 0.1);
+      this.thump(70, 0.45, 0.2, 0.75);
     },
 
     // ── Cheers ──
     glass_fizz: () => {
-      this.tone(1568, 0.15, 0.18, 'triangle'); // clink
-      this.tone(2093, 0.12, 0.12, 'triangle', undefined, 0.03);
-      this.noise(0.5, 0.08, 5000, 'highpass', 0.08); // fizz
-      this.tone(1760, 0.1, 0.1, 'triangle', undefined, 0.12); // second clink
-      this.tone(180, 0.09, 0.1, 'sine', 320, 0.3); // glug
-      this.tone(200, 0.09, 0.08, 'sine', 360, 0.42); // glug-glug
+      // Dan: flies straight in, GLASS CLINK, then 'cheers' spoken.
+      this.tone(1568, 0.16, 0.2, 'triangle');
+      this.tone(2093, 0.13, 0.14, 'triangle', undefined, 0.03);
+      this.tone(1760, 0.12, 0.11, 'triangle', undefined, 0.11);
+      this.noise(0.6, 0.08, 5200, 'highpass', 0.1);
+      this.tone(180, 0.09, 0.1, 'sine', 320, 0.3);
     },
     cork_pop: () => {
-      this.noise(0.03, 0.35, 1200, 'bandpass', 0, 3); // POP
-      this.tone(400, 0.08, 0.2, 'sine', 900);
-      this.noise(0.6, 0.09, 6000, 'highpass', 0.06); // spray
-      this.tone(1900, 0.14, 0.07, 'sine', 2600, 0.05); // bottle-neck whistle
-      this.run([1047, 1319, 1568], 0.12, 0.08, 'triangle', 0.08);
+      // Dan: top explodes off, classic pop and fizzle.
+      this.noise(0.025, 0.42, 1300, 'bandpass', 0, 3.2);
+      this.tone(380, 0.09, 0.24, 'sine', 1000);
+      this.tone(1900, 0.16, 0.08, 'sine', 2700, 0.03);
+      // fizz pouring out
+      this.noise(1.1, 0.11, 6200, 'highpass', 0.06);
+      this.noiseSweep(0.8, 0.07, 7000, 3000, 'highpass', 0.2, 0.5);
+      this.run([1047, 1319, 1568], 0.13, 0.08, 'triangle', 0.08);
     },
     hot_splash: () => {
       this.noise(0.2, 0.22, 1400, 'bandpass', 0, 1);
@@ -517,16 +594,16 @@ class ThrowableSoundServiceClass {
       this.noise(0.3, 0.05, 5200, 'highpass', 0.3); // sizzle on the felt
     },
     cash_count: () => {
-      // riffling bills
-      [0, 0.05, 0.1, 0.15, 0.2, 0.25].forEach((d) =>
-        this.noise(0.025, 0.14, 3500, 'bandpass', d, 2.5)
+      // Dan: raining cash with a hip-hop feel.
+      // Dan: it should RAIN on them, over a hip-hop style beat.
+      [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3].forEach((d) =>
+        this.noise(0.025, 0.13, 3500, 'bandpass', d, 2.5)
       );
-      // money-counter zipper: accelerating ticks
-      [0.28, 0.3, 0.315, 0.325, 0.333].forEach((d) =>
-        this.noise(0.012, 0.1, 4200, 'bandpass', d, 3)
-      );
-      this.tone(1319, 0.15, 0.12, 'triangle', undefined, 0.38); // cha-ching
-      this.tone(2093, 0.2, 0.12, 'triangle', undefined, 0.36);
+      // four-on-the-floor kick + hat under the fluttering bills
+      [0, 0.28, 0.56, 0.84].forEach((d) => this.thump(58, 0.16, 0.26, d));
+      [0.14, 0.42, 0.7, 0.98].forEach((d) => this.noise(0.03, 0.1, 7000, 'highpass', d));
+      [0.28, 0.84].forEach((d) => this.noise(0.06, 0.14, 1900, 'bandpass', d, 1.1));
+      this.tone(1319, 0.16, 0.1, 'triangle', undefined, 0.45);
     },
     crystal_chime: () => {
       this.run([2093, 2637, 3136], 0.2, 0.14, 'sine', 0.07);
@@ -541,19 +618,27 @@ class ThrowableSoundServiceClass {
       this.tone(1245, 0.5, 0.06, 'sine', undefined, 0.45);
     },
     fanfare: () => {
-      this.run([523, 659, 784, 1047], 0.16, 0.16, 'triangle', 0.09);
-      [0, 0.18, 0.27].forEach((d) => this.noise(0.04, 0.09, 1800, 'bandpass', d, 1.2)); // snare hits
-      this.thump(130, 0.15, 0.12, 0.36);
-      this.tone(1568, 0.3, 0.08, 'triangle', undefined, 0.42); // held top note
+      // Dan: triumphant winning sound under 'you're the best'.
+      this.run([523, 659, 784, 1047], 0.18, 0.17, 'triangle', 0.09);
+      [0, 0.18, 0.27].forEach((d) => this.noise(0.04, 0.09, 1800, 'bandpass', d, 1.2));
+      this.thump(130, 0.16, 0.13, 0.36);
+      this.run([1047, 1319, 1568], 0.24, 0.13, 'triangle', 0.1);
+      this.tone(2093, 0.6, 0.09, 'triangle', undefined, 0.62);
+      this.noiseSweep(0.7, 0.05, 5000, 9000, 'highpass', 0.4, 0.5);
     },
     firework: () => {
-      this.noise(0.05, 0.35, 1500, 'bandpass', 0, 1); // BANG
-      this.thump(90, 0.25, 0.3);
-      this.noise(0.06, 0.14, 700, 'bandpass', 0.5, 1); // distant second shell
-      this.thump(80, 0.2, 0.1, 0.5);
-      // crackle rain
-      [0.1, 0.15, 0.21, 0.27, 0.35, 0.43].forEach((d) =>
-        this.noise(0.03, 0.1, 4000 + Math.random() * 3000, 'bandpass', d, 3)
+      // Dan: fireworks effects and sounds when it lands.
+      // Dan: a proper display, not one bang.
+      this.tone(380, 0.4, 0.09, 'sine', 1500);
+      this.noise(0.05, 0.36, 1500, 'bandpass', 0.4, 1);
+      this.thump(85, 0.28, 0.32, 0.4);
+      [0.5, 0.58, 0.67, 0.78, 0.9, 1.02].forEach((d) =>
+        this.noise(0.03, 0.11, 4000 + Math.random() * 3500, 'bandpass', d, 3)
+      );
+      this.noise(0.06, 0.2, 900, 'bandpass', 0.95, 1);
+      this.thump(80, 0.24, 0.2, 0.95);
+      [1.05, 1.14, 1.24, 1.36].forEach((d) =>
+        this.noise(0.03, 0.09, 5000 + Math.random() * 3000, 'bandpass', d, 3)
       );
     },
 
@@ -596,18 +681,28 @@ class ThrowableSoundServiceClass {
       this.noiseSweep(0.6, 0.05, 3000, 1200, 'bandpass', 0.05, 0.5); // breathy whisper
     },
     doom_rattle: () => {
-      // detuned low dyad -- a horror-score shiver under the bones
-      this.tone(110, 0.5, 0.2, 'sawtooth', 80);
-      this.tone(116, 0.5, 0.14, 'sawtooth', 84);
-      [0.1, 0.18, 0.25, 0.34].forEach((d) =>
-        this.tone(500 + Math.random() * 200, 0.04, 0.12, 'square', undefined, d)
-      );
-      this.thump(70, 0.3, 0.2, 0.05);
+      // Dan: eyes flash red when it lands.
+      this.tone(108, 0.6, 0.22, 'sawtooth', 76);
+      this.tone(115, 0.6, 0.15, 'sawtooth', 80);
+      this.thump(64, 0.4, 0.24, 0.04);
+      // two red flashes: a stab per flash
+      [0.18, 0.46].forEach((d) => {
+        this.noise(0.03, 0.2, 3400, 'highpass', d);
+        this.tone(1400, 0.12, 0.1, 'square', 900, d);
+      });
     },
     thunder: () => {
-      this.noise(0.04, 0.4, 4000, 'highpass'); // CRACK
-      this.thump(65, 0.5, 0.38, 0.04);
-      this.noise(0.7, 0.2, 300, 'lowpass', 0.1); // rolling rumble
+      // Dan: extra bolts electrocuting them.
+      this.noise(0.035, 0.42, 4200, 'highpass');
+      this.thump(62, 0.55, 0.4, 0.03);
+      this.noise(0.8, 0.2, 300, 'lowpass', 0.1);
+      // extra bolts arcing over them
+      [0.22, 0.38, 0.55, 0.72].forEach((d, i) => {
+        this.noise(0.025, 0.26 - i * 0.04, 5200, 'highpass', d);
+        this.tone(2400 - i * 300, 0.06, 0.12, 'square', 700, d);
+      });
+      // the electrocution buzz
+      this.warble(90, 55, 40, 0.9, 0.1, 0.2);
     },
     doge_bark: () => {
       this.tone(400, 0.08, 0.22, 'square', 700);

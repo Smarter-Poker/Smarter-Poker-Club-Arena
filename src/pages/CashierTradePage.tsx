@@ -668,9 +668,9 @@ export default function CashierTradePage() {
     // looking at means a race can never widen the blast radius of a transfer.
     const targets = list.filter((r) => selected.has(r.userId));
     if (targets.length === 0) return;
-    if ((kind === 'send' || kind === 'ticket') && value * targets.length > myBalance) {
+    if ((kind === 'send' || kind === 'ticket') && value * targets.length > availableChips) {
       toast?.error?.(
-        `Insufficient Chips: Sending ${fmt(value * targets.length)} Needs More Than ${fmt(myBalance)}`
+        `Insufficient Chips: Sending ${fmt(value * targets.length)} Needs More Than ${fmt(availableChips)}`
       );
       return;
     }
@@ -1204,8 +1204,8 @@ export default function CashierTradePage() {
             )}
             {(amountModal === 'send' || amountModal === 'ticket') && (
               <div className={styles.modalHint}>
-                Total: {fmt((Number(amount) || 0) * selected.size)} &middot; Your Balance:{' '}
-                {fmt(myBalance)}
+                Total: {fmt((Number(amount) || 0) * selected.size)} &middot; Available:{' '}
+                {fmt(availableChips)}
               </div>
             )}
             <div className={styles.modalActions}>

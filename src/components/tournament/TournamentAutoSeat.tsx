@@ -132,7 +132,7 @@ export default function TournamentAutoSeat() {
         <div className="tas-flag">TOURNAMENT STARTED</div>
         <div className="tas-title">{blocked.name}</div>
         <p className="tas-body">
-          Has Just Started And Your Seat Is Waiting. You Are Already Playing 4 Tables — Please
+          Has Just Started And Your Seat Is Waiting. Your Cash Tables Are Full - Please
           Leave A Cash Game Or Close A Table To Sit Down.
         </p>
         <div className="tas-actions">

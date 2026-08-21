@@ -769,3 +769,41 @@
 .multi-table-page__session-net--down {
   color: #f87171;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TILE RAISE PRESETS (Dan 2026-08-21)
+   Second row under the fold/call strip so a 2x2 tile is genuinely playable.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.multi-table-grid__raises {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 60px;
+  z-index: 20;
+  display: flex;
+  gap: 6px;
+}
+
+.multi-table-grid__raise {
+  flex: 1;
+  padding: 7px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(10, 12, 18, 0.9);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.multi-table-grid__raise:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.multi-table-grid__raise--allin {
+  background: linear-gradient(180deg, #b45309 0%, #92400e 100%);
+  border-color: rgba(251, 191, 36, 0.5);
+}

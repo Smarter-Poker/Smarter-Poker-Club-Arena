@@ -138,7 +138,21 @@ interface TableInstance {
 const LOBBY_TAB_PREFIX = 'lobby:';
 const isLobbyTab = (t: TableInstance) => t.kind === 'lobby' || t.id.startsWith(LOBBY_TAB_PREFIX);
 
-const MAX_TABLES = 4;
+/**
+ * Dan 2026-08-21: "4-table cap ... Desktop could reasonably run 6-8."
+ *
+ * Six on a desktop-sized screen, four on a phone - four 2x2 tiles is already
+ * the most a 375px screen can show without the felt becoming unreadable, and
+ * the strip has to stay tappable. The SERVER is the real rule (migration
+ * 2026-08-21 raised atomic_table_buyin's v_max_tables to 6, cash tables only,
+ * tournaments still uncapped); this is the client refusing to offer a seat it
+ * knows the server would decline, and never the other way round.
+ *
+ * Read once at module load: a mid-session rotation cannot strand open tables,
+ * and the server still has the final say on every buy-in.
+ */
+const MAX_TABLES =
+  typeof window !== 'undefined' && window.innerWidth >= 1024 ? 6 : 4;
 
 /**
  * Dan 2026-08-19 (persistence upgrade): what the GLOBAL dock should show while
@@ -1073,18 +1087,19 @@ export default function MultiTablePage() {
   const tileActionLockRef = useRef<Map<string, number>>(new Map());
   const [tilePending, setTilePending] = useState<Record<string, boolean>>({});
   const handleTileAction = useCallback(
-    async (tblId: string, action: 'fold' | 'check' | 'call') => {
+    async (tblId: string, action: 'fold' | 'check' | 'call' | 'raise', amount?: number) => {
       const now = Date.now();
       if (now - (tileActionLockRef.current.get(tblId) ?? 0) < 400) return;
       tileActionLockRef.current.set(tblId, now);
       setTilePending((p) => ({ ...p, [tblId]: true }));
       try {
-        const res = await submitAction(tblId, user?.id || '', action);
+        const res = await submitAction(tblId, user?.id || '', action, amount);
         if (!res?.success) {
           toast.error(res?.error || 'Action Failed', 3500);
         } else if (soundService.isEnabled()) {
           if (action === 'check') soundService.playCheck();
           else if (action === 'call') soundService.playChips();
+          else if (action === 'raise') soundService.playRaise();
           else soundService.playFold();
         }
       } finally {
@@ -1558,12 +1573,11 @@ export default function MultiTablePage() {
          * neighbouring slot rendered past the end to slide in, so a full 40%
          * pull would drag blank felt into view. The wrap happens on release.
          */
-        const atStart = activeIndex === 0;
-        const atEnd = activeIndex === tables.length - 1;
-        const EDGE_TRAVEL = 110;
-        const maxLeft = atStart ? EDGE_TRAVEL : window.innerWidth * 0.4;
-        const maxRight = atEnd ? EDGE_TRAVEL : window.innerWidth * 0.4;
-        const clamped = Math.max(-maxRight, Math.min(maxLeft, dx));
+        // The ends are no longer special: the wrap target is rendered
+        // alongside them (see the slot renderer), so an edge drag has real
+        // content to pull in and gets the same travel as any other.
+        const travel = window.innerWidth * 0.4;
+        const clamped = Math.max(-travel, Math.min(travel, dx));
         setSwipeOffset(clamped);
       }
     },
@@ -2007,6 +2021,55 @@ export default function MultiTablePage() {
                     )}
                   </div>
                 )}
+                {/* Dan 2026-08-21: raise presets, so a 2x2 tile is genuinely
+                    playable instead of fold/call only. Sizes are computed from
+                    the pot the same way the full panel's presets are, and the
+                    server re-validates every one of them - a preset that is
+                    illegal (below min-raise, above stack) is simply refused,
+                    exactly as it would be from the table view. */}
+                {!isLobbyTab(table) && table.isMyTurn && (
+                  <div
+                    className="multi-table-grid__raises"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {(
+                      [
+                        ['½ Pot', 0.5],
+                        ['Pot', 1],
+                      ] as const
+                    ).map(([label, frac]) => {
+                      const pot = table.pot ?? 0;
+                      const toCall = table.toCall ?? 0;
+                      // Standard pot-raise size: call first, then raise the
+                      // pot that call creates.
+                      const size = Math.round(toCall + (pot + toCall * 2) * frac);
+                      const stack = table.heroStack ?? 0;
+                      const capped = stack > 0 ? Math.min(size, stack) : size;
+                      if (capped <= 0) return null;
+                      return (
+                        <button
+                          key={label}
+                          type="button"
+                          className="multi-table-grid__raise"
+                          disabled={!!tilePending[table.id]}
+                          onClick={() => handleTileAction(table.id, 'raise', capped)}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                    {(table.heroStack ?? 0) > 0 && (
+                      <button
+                        type="button"
+                        className="multi-table-grid__raise multi-table-grid__raise--allin"
+                        disabled={!!tilePending[table.id]}
+                        onClick={() => handleTileAction(table.id, 'raise', table.heroStack)}
+                      >
+                        All In
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -2032,13 +2095,40 @@ export default function MultiTablePage() {
               // During swipe, render adjacent slots for the swipe animation.
               const isActive = idx === activeIndex;
               const isAdjacent = Math.abs(idx - activeIndex) <= 1;
-              const shouldRender = isActivelySwiping ? isAdjacent : isActive;
+              /**
+               * Dan 2026-08-21: the wrap SLIDES now, it does not snap.
+               *
+               * The strip is laid out left-to-right and translated by
+               * -activeIndex*100%, so at either end the slot the wrap will
+               * land on is at the far side of the strip - nothing is next to
+               * you and a drag past the end showed blank felt. When the drag
+               * is at an end, the wrap target is rendered and pulled around by
+               * exactly one strip-width, so it sits alongside the edge slot
+               * and slides in like any other neighbour.
+               */
+              const count = tables.length;
+              const atStart = activeIndex === 0;
+              const atEnd = activeIndex === count - 1;
+              const isWrapTarget =
+                count > 1 &&
+                isActivelySwiping &&
+                ((atEnd && swipeOffset < 0 && idx === 0) ||
+                  (atStart && swipeOffset > 0 && idx === count - 1));
+              const shouldRender = isActivelySwiping ? isAdjacent || isWrapTarget : isActive;
+              // One strip-width, in the direction the wrap comes from.
+              const wrapShift = isWrapTarget ? (idx === 0 ? count : -count) * 100 : 0;
 
               return (
                 <div
                   key={table.id}
                   className={`multi-table-page__table-slot ${isActive ? 'multi-table-page__table-slot--active' : ''}`}
-                  style={shouldRender ? undefined : { display: 'none' }}
+                  style={
+                    shouldRender
+                      ? isWrapTarget
+                        ? { transform: `translateX(${wrapShift}%)` }
+                        : undefined
+                      : { display: 'none' }
+                  }
                 >
                   <Suspense
                     fallback={

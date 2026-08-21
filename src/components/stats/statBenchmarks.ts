@@ -196,7 +196,7 @@ export function benchmark(
     value,
     percentile,
     bandPosition: null,
-    readout: `${value.toFixed(1)}${def.unit === 'bb/100' ? ' bb/100' : def.unit} — ${ordinal(
+    readout: `${value.toFixed(1)}${def.unit === 'bb/100' ? ' bb/100' : def.unit} - ${ordinal(
       percentile
     )} of the field.`,
     barPosition,

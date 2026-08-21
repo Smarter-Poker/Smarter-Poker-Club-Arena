@@ -297,7 +297,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
           </>
         ) : (
           <span className="heatmap-readout-hint">
-            {hovered ? `${hovered} — never dealt` : 'Hover a hand for its detail'}
+            {hovered ? `${hovered} - never dealt` : 'Hover a hand for its detail'}
           </span>
         )}
       </div>

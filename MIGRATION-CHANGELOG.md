@@ -93,10 +93,12 @@ production holds.
 
 ### Still open
 
-- **Bundle budget is breached on main**: raw 6820kB against a 6144kB limit with
-  gzip over 90% of its own. `Production Build` is failing for this reason alone
-  and is not a required check, so it blocks nothing — which is exactly how it
-  stays breached. Needs code splitting or a deliberate budget change.
+- **The bundle is at 96% of its gzip ceiling.** 1962kB gzipped against a 2048kB
+  limit, 6823kB raw. Earlier in the day `Production Build` was failing this gate
+  outright; it passes now because the RAW ceiling was raised from 6144kB to
+  8192kB, not because anything got smaller. The gzip number is the one that
+  matters and it has 86kB of headroom left. `Production Build` is not a required
+  check, so when it does go red it blocks nothing.
 - The manifest-refresh workflow opens a PR that nothing auto-merges, and skips
   opening a second one while the first is unmerged, so drift accumulates
   silently behind an ignored PR.

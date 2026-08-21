@@ -10,6 +10,7 @@ import { Routes, Route, Link } from 'react-router-dom';
 import { SessionSummaryHost } from './components/session/SessionSummaryHost';
 import TournamentRankingHost from './components/tournament/TournamentRankingHost';
 import TournamentStartingTicker from './components/tournament/TournamentStartingTicker';
+import TournamentAutoSeat from './components/tournament/TournamentAutoSeat';
 import { MEDIA_BASE } from './utils/mediaBase';
 import { Suspense, useState, useEffect } from 'react';
 import { lazyWithRetry as lazy } from './utils/lazyWithRetry';
@@ -313,6 +314,8 @@ export default function App() {
           club/union cash games and tournaments." It has to reach players where
           they already are, so it rides at the app root over every page. */}
         <TournamentStartingTicker />
+        {/* Dan 2026-08-21: when an MTT starts, the player's seat opens itself. */}
+        <TournamentAutoSeat />
         <MilestoneToast />
         <ConnectionStatusBar />
         {/* Accessibility: Skip to main content link */}

@@ -41,6 +41,7 @@ export type BusEventType =
   // Dan 2026-08-15: the in-table "+" asks MultiTablePage to open a LOBBY tab
   // alongside the running game, instead of navigating the whole app away.
   | 'OPEN_LOBBY_TAB'
+  | 'TABLE_CAP_BLOCKED'
   | 'BALANCE_UPDATED'
   | 'VIP_POINTS_UPDATED'
   | 'WALLET_REFRESHED'
@@ -343,6 +344,9 @@ export interface BusPayloadMap {
   TABLE_LEFT: TableEventPayload;
   /** Request that MultiTablePage open a lobby tab beside the running game. */
   OPEN_LOBBY_TAB: { requestedBy?: string };
+  /** Dan 2026-08-21: a seat could not be opened because the player is at
+   *  the 4-table cap. TournamentAutoSeat turns this into the large popup. */
+  TABLE_CAP_BLOCKED: { tableId: string };
   BALANCE_UPDATED: { source: string; [key: string]: unknown };
   TRANSACTION_LOGGED: { entry: Record<string, unknown>; direction: 'in' | 'out' };
   VIP_POINTS_UPDATED: { userId: string; added: number; source: string; [key: string]: unknown };

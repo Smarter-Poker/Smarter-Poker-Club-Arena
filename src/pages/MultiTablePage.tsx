@@ -243,7 +243,13 @@ export default function MultiTablePage() {
    */
   const capNoticeAtRef = useRef<Record<string, number>>({});
   const notifyCapReached = useCallback(
-    (reason: 'add' | 'route' | 'seated') => {
+    (reason: 'add' | 'route' | 'seated', tableId?: string) => {
+      // Dan 2026-08-21: a tournament seat that cannot be opened is not a toast
+      // - the player is about to be blinded off a game they paid for. Announce
+      // the refusal so TournamentAutoSeat can raise the large popup.
+      if (reason === 'seated' && tableId) {
+        masterBus.emit('TABLE_CAP_BLOCKED', { tableId });
+      }
       const now = Date.now();
       // 'route' and 'add' can fire together for one user action — the route
       // effect and a bus event — so they share a window. 'seated' has its own.
@@ -502,7 +508,7 @@ export default function MultiTablePage() {
         // Engine seated us (tournament start, waitlist promotion) but the
         // device is full. Say so — silently dropping this used to leave the
         // player blinding out of a table they could not see.
-        notifyCapReached('seated');
+        notifyCapReached('seated', seatedTab.id);
         return prev;
       }
       return [...prev, seatedTab];

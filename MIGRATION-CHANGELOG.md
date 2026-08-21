@@ -8337,3 +8337,37 @@ Three deploys, all verified in production (SPA build-info + engine_table_leases.
 - [P1] Pot redesign (thin POT pill + street-bets pill, no per-action chip
   flights, sweep on street end), masthead viewer-club • union (was union
   twice), alarm-clock time-bank widget (20s face + banks remaining).
+
+## 2026-08-20 — PokerBros multi-table parity from Dan's live footage (Cowork session)
+
+Dan supplied a screen recording of a real PokerBros 4-table session and asked
+for full parity. Frame-by-frame extraction (57 frames) produced the feature
+catalog; an audit against MultiTablePage/TableTabBar found the navigation
+core already built (tabs, tap-to-switch, swipe, urgent pulse, auto-switch,
+keyboard shortcuts) and three signature features missing. All three shipped
+in `04c97be`:
+
+- **Tab hole-card previews** — each tab renders the hero's live hole cards at
+  that table as white mini-cards in the 4-color deck (spades black, hearts
+  red, diamonds blue, clubs green; T renders as 10; PLO's 4 cards squeeze
+  tighter). Between hands or after folding the tab reverts to the game name.
+  TablePage reports the cards as ONE comma-joined string so
+  updateTableInfo's shallow-compare bail-out (the P1-2 render-loop fix)
+  keeps working — an array identity would have defeated it.
+- **Depleting turn-timer bar** — gold bar riding the pill's bottom edge
+  whenever it is the hero's turn at that table, active tab included; drains
+  on the ENGINE clock (turnStartMs now reported beside the
+  server-authoritative deadline), goes red and pulses under 10s. Urgency
+  styling was also decoupled from tab focus — it is a property of the
+  clock, not of which tab the player is looking at.
+- **Transient last-action chips** — "Fold"/"Check"/"Call"/"Bet"/"Raise"/
+  "All In" flashes on the tab for 2.5s after acting at that table, derived
+  from lastActions[heroSeat]. Flash timers live in a ref keyed by tab id so
+  the once-a-second clock re-render cannot cancel a pending expiry.
+
+Deploy note: the session raced two concurrent pushes (0e15c70, a732483);
+work was merged in a /tmp clone (mount git is unlinked-locked) with 3
+conflicts resolved, tsc + vite build verified on the exact merged tree
+before each push attempt. WH sync 0c505e05 confirmed serving from
+production /api/health, and the live bundle greps positive for
+table-tab-bar__mini-card and table-tab-bar__timer-bar.

@@ -392,13 +392,35 @@ export function deriveFlowFlags(
   let lastAggressorPreflop: string | null = null;
   let facedThreeBet = false;
   let foldedToThreeBet = false;
+  /** Set once we make an aggressive action AFTER being 3-bet. */
+  let respondedToThreeBet = false;
+  /**
+   * The raise count at the moment we were 3-bet. If another raise lands before
+   * we act, whatever we do next is a response to THAT raise, not to the 3-bet.
+   */
+  let raiseCountAtThreeBet = -1;
 
   for (const a of preflop) {
     const isMine = a.userId === userId;
     const amt = a.amount ?? 0;
 
     if (a.action === 'fold') {
-      if (isMine && facedThreeBet) foldedToThreeBet = true;
+      // Only a fold that is still ANSWERING the 3-bet counts. Once we have
+      // acted on it (by 4-betting), a later fold is a fold to the 4-bet or
+      // 5-bet, not to the 3-bet. Without `respondedToThreeBet` this latched on
+      // any subsequent preflop fold and inflated fold-to-3-bet with traffic
+      // that had nothing to do with 3-bets.
+      // Three conditions, and all three are needed:
+      //   facedThreeBet          - we opened and were 3-bet at all
+      //   !respondedToThreeBet   - we have not already 4-bet (a later fold is
+      //                            then a fold to the 4-bet or 5-bet)
+      //   raiseCount unchanged   - nobody has COLD 4-BET over the top since;
+      //                            otherwise we are folding to that raise, and
+      //                            that is ordinary multiway traffic, not a
+      //                            corner case.
+      if (isMine && facedThreeBet && !respondedToThreeBet && raiseCount === raiseCountAtThreeBet) {
+        foldedToThreeBet = true;
+      }
       continue;
     }
 
@@ -408,6 +430,7 @@ export function deriveFlowFlags(
     if (raisesLevel) {
       if (isMine) {
         pfr = true;
+        if (facedThreeBet) respondedToThreeBet = true;
         if (myRaiseIndex < 0) myRaiseIndex = raiseCount;
         // Blinds never reach the action log, so the open is raise index 0,
         // the 3-bet is index 1 and the 4-bet is index 2.
@@ -425,6 +448,9 @@ export function deriveFlowFlags(
         // the standard definition scopes this stat to openers, which is also
         // what makes it comparable to other trackers.
         facedThreeBet = true;
+        // raiseCount is incremented just below, so record the post-increment
+        // value: that is what it will still equal if nobody raises again.
+        raiseCountAtThreeBet = raiseCount + 1;
       }
       raiseCount++;
       level = amt;
@@ -551,7 +577,7 @@ export function computeTransfers(nets: Map<string, number>): TransferRow[] {
       return { loserId, cents: floor, remainder: exact - floor };
     });
 
-    let allocated = parts.reduce((s, p) => s + p.cents, 0);
+    const allocated = parts.reduce((s, p) => s + p.cents, 0);
     let leftover = wonCents - allocated;
     // Ties broken by the original order, so the same inputs always produce the
     // same rows - this write is idempotent on (hand_id, winner_id, loser_id).
@@ -610,7 +636,10 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
     if (!input.handId) return;
 
     const humanIds = new Set(
-      input.roster.filter((p) => !p.isHorse).map((p) => p.userId).filter(Boolean)
+      input.roster
+        .filter((p) => !p.isHorse)
+        .map((p) => p.userId)
+        .filter(Boolean)
     );
     if (humanIds.size === 0) return; // horse-only hand: nothing worth storing
 
@@ -668,15 +697,30 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
     const rakeFactor = totalInvested > 0 ? totalAwarded / totalInvested : 0;
 
     const equity = takeEquity(input.tableId, input.handNumber);
-    const bb = input.bigBlind > 0 ? input.bigBlind : 1;
+
+    // Without a real big blind every bb-normalised column would be written as
+    // RAW CHIPS - a plausible-looking number 10x out at a 5/10 table, which
+    // then poisons the EV curve and the heatmap colour scales quietly. Refuse
+    // the hand instead: a missing row is visible, a wrong row is not.
+    const bb = input.bigBlind;
+    if (!Number.isFinite(bb) || bb <= 0) {
+      reportError(
+        new Error('writeHandFacts: non-positive big blind'),
+        'writeHandFacts.badBigBlind',
+        {
+          handId: input.handId,
+          bigBlind: input.bigBlind,
+        }
+      );
+      return;
+    }
 
     // Everyone actually DEALT IN, which is the honest basis for "hands played
     // together". Transfers cannot supply this: two players who both lose a
     // hand exchange no chips and so produce no transfer row between them, and
     // a transfer-derived count would silently omit exactly those hands.
-    const dealtIds = input.holeCardsAll.size > 0
-      ? [...input.holeCardsAll.keys()]
-      : [...participants];
+    const dealtIds =
+      input.holeCardsAll.size > 0 ? [...input.holeCardsAll.keys()] : [...participants];
 
     const factRows: Record<string, unknown>[] = [];
 

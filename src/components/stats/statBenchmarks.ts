@@ -245,8 +245,20 @@ export function benchmark(
       percentile: null,
       bandPosition,
       readout: readout.trim(),
-      barPosition,
-      medianPosition,
+      // NO BAR for band_optimal metrics, whatever the field says.
+      //
+      // This is the same collision the `fieldMetric` mechanism was introduced
+      // to stop, and it was live for VPIP: the field here is 584 horses, so
+      // VPIP's p10 is 27.6 while the healthy band is 18-28. A disciplined
+      // human at 24% got a green "In Range" pill and, in the same row, a
+      // marker pinned to the far left under the words "Bottom 10%". Two
+      // contradictory statements about one number.
+      //
+      // A band metric is judged against the range winning players hold, not
+      // against where this field happens to sit. Drawing both invites the
+      // reader to believe the wrong one.
+      barPosition: null,
+      medianPosition: null,
       sampleSize,
       tone,
     };

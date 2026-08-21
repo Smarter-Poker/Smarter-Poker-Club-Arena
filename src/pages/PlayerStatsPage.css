@@ -1336,6 +1336,7 @@
   .heatmap-card,
   .nemesis-panel,
   .bench-panel,
+  .leak-card,
   .trophy-card {
     background: #ffffff !important;
     border: 1px solid #d1d5db !important;

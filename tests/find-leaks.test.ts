@@ -30,12 +30,7 @@ const SOLID: LeakOverall = {
   bb_per_100: 4.2,
 };
 
-const pos = (
-  position: string,
-  hands: number,
-  vpipPct: number,
-  bb100 = 0
-): LeakPosition => ({
+const pos = (position: string, hands: number, vpipPct: number, bb100 = 0): LeakPosition => ({
   position,
   hands_played: hands,
   vpip_count: Math.round((vpipPct / 100) * hands),
@@ -117,11 +112,7 @@ describe('positional leaks', () => {
   });
 
   it('reports at most one bleeding position, the worst', () => {
-    const bleeding = [
-      ...GOOD_POSITIONS,
-      pos('UTG', 900, 15, -80),
-      pos('MP', 900, 18, -40),
-    ];
+    const bleeding = [...GOOD_POSITIONS, pos('UTG', 900, 15, -80), pos('MP', 900, 18, -40)];
     const { leaks } = findLeaks(SOLID, bleeding);
     const found = leaks.filter((l) => l.id.startsWith('position_losing_'));
     expect(found).toHaveLength(1);
@@ -169,10 +160,7 @@ describe('fold to 3-bet', () => {
 
   it('stays silent for a player who barely raises preflop', () => {
     // With PFR that low they hardly ever face a 3-bet, so the rate is noise.
-    const { leaks } = findLeaks(
-      { ...SOLID, pfr: 0.03, fold_to_three_bet: 0.9 },
-      GOOD_POSITIONS
-    );
+    const { leaks } = findLeaks({ ...SOLID, pfr: 0.03, fold_to_three_bet: 0.9 }, GOOD_POSITIONS);
     expect(leaks.find((x) => x.id === 'folds_to_3bet')).toBeUndefined();
   });
 
@@ -199,7 +187,15 @@ describe('postflop leaks', () => {
   });
 
   it('catches paying off too often', () => {
-    const { leaks } = findLeaks({ ...SOLID, wtsd: 0.41 }, GOOD_POSITIONS);
+    // Updated 2026-08-21: the rule no longer reads `overall.wtsd`, which is
+    // showdowns over hands DEALT and therefore never crossed the industry
+    // thresholds it was written against. It now measures showdowns over hands
+    // voluntarily PLAYED, which is what the copy claims and what a player
+    // actually controls: 2,200 showdowns over 0.2 x 20,000 = 4,000 played.
+    const { leaks } = findLeaks(
+      { ...SOLID, vpip: 0.2, total_hands: 20000, showdowns_total: 2200, showdowns_won: 1200 },
+      GOOD_POSITIONS
+    );
     expect(leaks.find((x) => x.id === 'wtsd_high')).toBeDefined();
   });
 

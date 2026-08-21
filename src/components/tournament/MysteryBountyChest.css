@@ -742,27 +742,6 @@
 
 /* ── OPENING ──────────────────────────────────────────────────────────────── */
 
-.mbc--opening .mbc__lid-DEPRECATED {
-  animation: mbcLidOpen 0.9s cubic-bezier(0.3, 0.9, 0.25, 1.15) forwards;
-}
-
-@keyframes mbcLidOpen {
-  0% {
-    transform: rotateX(0deg);
-  }
-  /* A hesitation at 12% — the latch resisting. Straight-through rotation looks
-     mechanical; the catch is what makes it feel heavy and forced open. */
-  12% {
-    transform: rotateX(-6deg);
-  }
-  20% {
-    transform: rotateX(-3deg);
-  }
-  100% {
-    transform: rotateX(-112deg);
-  }
-}
-
 .mbc--opening .mbc__inner-light,
 .mbc--explosion .mbc__inner-light,
 .mbc--revealed .mbc__inner-light {
@@ -1125,10 +1104,11 @@
   .mbc__amount {
     animation: none !important;
   }
-  .mbc--opening .mbc__lid-DEPRECATED {
-    animation: none;
-    transform: rotateX(-112deg);
-    transition: transform 0.3s ease-out;
+  /* The lid swing is a transition, so reduced motion has to shorten THAT.
+     Not removed outright: with no transition at all the lid teleports open
+     and the reveal reads as a cut rather than a box being opened. */
+  .mbc__lid {
+    transition: transform 0.2s ease-out;
   }
   .mbc--opening .mbc__inner-light,
   .mbc--explosion .mbc__inner-light,

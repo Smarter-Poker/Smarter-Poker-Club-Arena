@@ -293,11 +293,19 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
   });
 
   test('the MYSTERY CHEST: drop, breathe under tension, lid opens', async ({ page }) => {
+    // The chest is a real box: a preserve-3d lid group hinged at its back edge
+    // over a base with a cavity. Build it the way the component does, or the
+    // rules under test have nothing to match.
     const landing = await beat(
       page,
       `const m=document.createElement('div');m.className='mbc mbc--landing';m.id='mbc';
        m.innerHTML='<div class="mbc__backdrop"></div><div class="mbc__stage">'+
-         '<div class="mbc__chest"><div class="mbc__chest-lid"></div></div></div>';
+         '<div class="mbc__chest">'+
+           '<span class="mbc__lid"><span class="mbc__lid-top"></span>'+
+             '<span class="mbc__lid-front"></span></span>'+
+           '<span class="mbc__inner-light"></span>'+
+           '<span class="mbc__base"><span class="mbc__cavity"></span></span>'+
+         '</div></div>';
        document.querySelector('.table-page').appendChild(m);`
     );
     expect(landing.mbcBackdropIn).toBe(400);
@@ -310,7 +318,33 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
       page,
       `document.getElementById('mbc').className='mbc mbc--opening';`
     );
-    expect(opening.mbcLidOpen, 'the lid must hinge open').toBe(900);
+    // The box itself shudders as the latch gives.
+    expect(opening.mbcChestShudder, 'the chest must shudder as it gives').toBe(900);
+    // The light inside is revealed on the same beat as the swing.
+    expect(opening.mbcInnerLight, 'the inside must light up as it opens').toBe(900);
+
+    // The swing itself is a TRANSITION on the 3D lid group, not a keyframe —
+    // a keyframed rotation cannot be interrupted mid-swing, and the lid has to
+    // be able to settle from wherever it is. getAnimations() lists it as a
+    // CSSTransition, which carries no animationName, so read it directly.
+    const lid = await page.evaluate(() => {
+      const el = document.querySelector('.mbc__lid');
+      if (!el) return { ms: -1, deg: '' };
+      const t = el
+        .getAnimations()
+        .find(
+          (a) =>
+            (a as unknown as { transitionProperty?: string }).transitionProperty === 'transform'
+        );
+      const d = t?.effect?.getTiming().duration;
+      return {
+        ms: typeof d === 'number' ? Math.round(d) : -1,
+        deg: getComputedStyle(el).transform,
+      };
+    });
+    expect(lid.ms, 'the lid must hinge open').toBe(900);
+    // and it must actually be laid back, not merely "animating" in place.
+    expect(lid.deg, 'the lid must end up laid back past vertical').not.toBe('none');
   });
 
   test('the TOURNAMENT WINNER overlay: entrance, trophy, prize counter', async ({ page }) => {

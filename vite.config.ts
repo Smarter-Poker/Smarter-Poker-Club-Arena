@@ -104,6 +104,12 @@ export default defineConfig({
           // Let Vite co-locate them naturally with their React dependency.
           if (id.includes('node_modules/framer-motion')) return 'vendor-motion';
           if (id.includes('node_modules/@sentry/')) return 'vendor-sentry';
+          // The narrow Sentry surface belongs IN that chunk. It is a handful of
+          // re-exports, so Rollup would otherwise fold it into whichever chunk
+          // imports it — the entry — and the entry would then carry a static
+          // import of @sentry/*, dragging 80kB gzipped into the first paint that
+          // is supposed to arrive after it. Verified by measurement, twice.
+          if (id.includes('src/core/sentryBundle')) return 'vendor-sentry';
 
           // ── Application code: let Vite handle splitting naturally ──
           // DO NOT manually chunk services, core, hooks, stores, or common components.

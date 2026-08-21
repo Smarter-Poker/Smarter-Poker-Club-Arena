@@ -5,9 +5,20 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# 2026-08-21: was cancel-in-progress: true, which deadlocked publishing.
+# This build takes about 4 minutes. With several agents pushing to main every
+# minute or two, every run was killed by the next push before it reached the
+# sync step, so production sat on one sha (7547a6e45) for hours while main
+# moved far ahead. The queue was never idle and never finished.
+#
+# false is correct here because of how GitHub scopes it: a new run still
+# cancels an older PENDING run in the group, but a run already RUNNING is
+# allowed to finish. The group therefore holds at most one in-flight build
+# plus the newest queued commit, and each wave of pushes converges on
+# publishing the latest main instead of publishing nothing at all.
 concurrency:
   group: build-world-hub-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-and-store:

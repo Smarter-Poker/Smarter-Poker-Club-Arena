@@ -1098,16 +1098,84 @@ From World Hub CLAUDE.md:
 
 ---
 
-## 12. Open decisions requiring a call before building
+## 12. Decisions — all locked and implemented, 2026-08-21
 
-| # | Decision | Recommendation |
+Dan delegated every call. These are final and are reflected in the shipped code.
+
+| # | Decision | Call taken |
 |---|---|---|
-| 1 | Benchmark cohort: field (incl. horses) vs human-only | **Field**, labelled honestly, with a `cohort` param so human-only is a later flip |
-| 2 | PDF: client `jspdf` vs client `pdf-lib` vs server headless Chrome | **Server-side**, zero bundle cost; ship the canvas PNG share card in week 1 regardless |
-| 3 | Nemesis: include horses? | **Yes**, undistinguished, min 25 shared hands |
-| 4 | `/stats/:userId` exposure policy for the new tabs | Aggregates public; hole cards, EV, nemesis, trophies private |
-| 5 | Extend `hand_history` retention beyond 7 days for human hands? | Not needed once `ca_hand_facts` exists; fix `has_human` anyway |
-| 6 | Heatmap for PLO | Phase 3b categorical breakdown; explanatory card in the initial ship |
+| 1 | Benchmark cohort | **The field**, including horses. Labelled "the field" everywhere and never "players like you". `ca_stat_distribution.cohort` exists from day one so a human-only cohort is a config flip, not a rebuild. |
+| 2 | PDF approach | **Reversed during implementation.** Not server-side headless Chrome — see below. Print stylesheet + the browser's own vector PDF writer, plus a canvas PNG share card. |
+| 3 | Nemesis: horses? | **Included, undistinguished.** Minimum 25 shared hands, enforced server-side. Never referred to as bots. |
+| 4 | `/stats/:userId` exposure | Aggregates stay public. **Hands and Trophies tabs are owner-only**, EV chart and rivals render only for the owner, and every RPC asserts caller identity server-side. |
+| 5 | `hand_history` retention | Left at 7 days. `has_human` is now actually set, so the purge stops deleting human hands — a column that had been NULL on all 1,509,240 rows since it was added. |
+| 6 | PLO heatmap | `hand_class` is NULL for PLO so those hands never reach the grid; the empty state explains why. Categorical PLO breakdown deferred to 3b. |
+| 7 | Transfer attribution *(new)* | **Hand-level proportional**, not per-pot. Exact for single-pot and single-winner hands, conserves chips exactly, attributes rake to nobody. Per-pot attribution would have required editing an oversized engine file for accuracy invisible in the aggregate a nemesis stat displays. |
+
+### 12.1 Why decision 2 was reversed
+
+The plan recommended rendering the dossier server-side with headless Chrome.
+Once it came to building it, that was the wrong call:
+
+- **The engine box is latency-critical.** It runs live poker. Spawning Chrome
+  next to it to render a report trades gameplay smoothness for a document.
+- **A Vercel render function** means a cross-repo dependency, sits near the
+  50MB function ceiling once chromium is bundled, and adds cold starts to
+  babysit.
+- **`jspdf` + `html2canvas`** is roughly 400KB of bundle on a mobile-first
+  product for a rarely-used export, and rasterises every chart.
+
+The browser already ships an excellent vector PDF writer. The page now renders
+every tab at once in `printing` mode behind a single `showTab()` gate — one set
+of section markup serves both the tabbed screen view and the printed report, so
+there is no duplicated JSX to drift — and a real print stylesheet turns it into
+ink-on-paper with per-section page breaks and no panel split across pages.
+Result: selectable vector text, zero bundle cost, zero server load, and "Save
+as PDF" already sits in every print dialog.
+
+---
+
+## 12A. What shipped on 2026-08-21
+
+All eight requested features are built, verified and on `main`.
+
+| Feature | Status | Where |
+|---|---|---|
+| 1. EV vs actual profit | Shipped | `EVLuckChart.tsx`, `ca_player_ev_curve` |
+| 2. 13x13 hole card heatmap | Shipped | `HoleCardHeatmap.tsx`, `ca_player_hand_grid` |
+| 3. Nemesis / Target | Shipped | `NemesisPanel.tsx`, `ca_player_nemesis` |
+| 4. Positional radar | Shipped | `PositionalRadar.tsx` (no new queries) |
+| 5. Framer Motion | Shipped | `statsMotion.ts`, tab transitions, reduced-motion respected |
+| 6. PDF dossier | Shipped | print mode + print stylesheet, plus `StatsShareCard.tsx` |
+| 7. Trophy Room | Shipped | `TrophyRoom.tsx`, milestones derived from live stats |
+| 8. Percentile benchmarking | Shipped | `BenchmarkPanel.tsx`, `statBenchmarks.ts`, `ca_stat_distribution` |
+
+Supporting work:
+
+- `ca_hand_facts` and `ca_hand_transfers` created with RLS; the engine writes
+  them at settlement from values it already held and previously discarded.
+- All-in equity, which `broadcastAllInEquity()` computed exactly and then threw
+  away, is now captured via a two-line interception in `TableStateHub` — zero
+  edits to the three oversized engine files.
+- `has_human` fixed.
+- `ca_refresh_stat_distribution` wired into the existing
+  `club-stats-maintenance` cron rather than adding a cron file, per World Hub
+  CLAUDE.md 11.3/11.5.
+- `scripts/git-safe-push.sh`: its build gate had been silently disabled for
+  every agent on a non-interactive shell (no `npx` on PATH → reported "Build
+  failed" → pushed anyway, reason swallowed by `2>/dev/null`). Now fails closed
+  on a missing toolchain and prints real build output.
+
+Verification: 2,610 tests pass (48 new), `tsc --noEmit` clean on client and
+server, `vite build` green, cross-user RPC denial proven against production,
+and Hetzner engine deploy confirmed by a DB-visible behavioural change.
+
+### 12A.1 The one thing that is not done, and cannot be
+
+`ca_hand_facts` has **no backfill and cannot have one** — hole cards for
+non-showdown hands and all-in equity were never stored, so there is nothing to
+backfill from. Features 1, 2 and 3 render honest "still gathering" empty states
+until real hands accumulate. Everything else is live immediately.
 
 ---
 

@@ -135,12 +135,44 @@ else
   # ── Phase 2: Build check (Vite + TypeScript) ──
   if [ "$BUILD_CHECK" = true ]; then
     echo "🔨 Phase 2: Build check (tsc + vite build)..."
+
+    # 2026-08-21: this gate had been silently disabled for every agent running
+    # through a non-interactive shell. Those get a minimal PATH with no
+    # Homebrew and no nvm, so `npx` was "command not found" — which the old
+    # code caught as "Build failed!" and then pushed anyway, with the reason
+    # swallowed by 2>/dev/null. The gate looked like it ran, reported a
+    # failure it had not measured, and waved the push through regardless.
+    export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin:/usr/bin"
+    if [ -d "$HOME/.nvm/versions/node" ]; then
+      NVM_LATEST="$(ls -1 "$HOME/.nvm/versions/node" 2>/dev/null | tail -1)"
+      [ -n "$NVM_LATEST" ] && export PATH="$PATH:$HOME/.nvm/versions/node/$NVM_LATEST/bin"
+    fi
+
+    if ! command -v npx >/dev/null 2>&1; then
+      # A missing toolchain is NOT a build result. Failing closed here is the
+      # whole point: "we could not check" must never be reported as "we
+      # checked and it was fine", nor quietly downgraded to a warning.
+      echo "❌ Phase 2: npx is not on PATH, so the build gate cannot run."
+      echo "   This is a non-run, not a failure — refusing to push unverified."
+      echo "   Fix: run from a shell with node available, or pass --skip-build"
+      echo "   to state explicitly that you are pushing without a build check."
+      exit 1
+    fi
+
     BUILD_START=$(date +%s)
-    if npx tsc -b --noEmit 2>/dev/null && npx vite build 2>/dev/null; then
+    BUILD_LOG="$(mktemp -t ca_build.XXXXXX)"
+    if npx tsc -b --noEmit >"$BUILD_LOG" 2>&1 && npx vite build >>"$BUILD_LOG" 2>&1; then
       BUILD_END=$(date +%s)
       echo "✅ Build passed in $((BUILD_END - BUILD_START))s"
+      rm -f "$BUILD_LOG"
     else
-      echo "❌ Build failed! Attempting to push anyway (CI will catch issues)..."
+      # Preserving the long-standing push-anyway behaviour for a REAL build
+      # failure, but no longer hiding why. An error you cannot see is an error
+      # nobody fixes.
+      echo "❌ Build failed. Last 30 lines:"
+      tail -30 "$BUILD_LOG"
+      echo "   Attempting to push anyway (CI will catch issues)..."
+      rm -f "$BUILD_LOG"
     fi
   else
     echo "⏭️  Phase 2: Build check SKIPPED (--skip-build)"

@@ -61,14 +61,17 @@ export interface WaitlistPosition {
 
 const ACTIVE_STATES: WaitlistStatus[] = ['waiting', 'notified'];
 
-function mapRow(row: {
-  id: string;
-  table_id: string;
-  user_id: string;
-  status: string;
-  created_at: string;
-  notified_at: string | null;
-}, extras?: { position?: number; tableName?: string }): WaitlistEntry {
+function mapRow(
+  row: {
+    id: string;
+    table_id: string;
+    user_id: string;
+    status: string;
+    created_at: string;
+    notified_at: string | null;
+  },
+  extras?: { position?: number; tableName?: string }
+): WaitlistEntry {
   const status = (row.status as WaitlistStatus) ?? 'waiting';
   return {
     id: row.id,
@@ -146,8 +149,22 @@ export const WaitlistService = {
       .from('table_waitlists')
       .insert({ table_id: tableId, user_id: userId, status: 'waiting' })
       .select('id, table_id, user_id, status, created_at, notified_at')
-      .single();
-    if (insErr) {
+      .maybeSingle();
+    /**
+     * RULE 1 (2026-08-21): this was `.single()` — the last one left in the
+     * repo. On an insert that returns zero rows (RLS refusing the row is the
+     * common way that happens, not a lost race) `.single()` raises PGRST116,
+     * which landed in `insErr` and was then reported below as a unique-
+     * violation. The diagnosis in the error report was wrong every time.
+     *
+     * `.maybeSingle()` splits the two cases apart: a genuine failure still
+     * populates `insErr`, and "the insert came back empty" is now `!inserted`.
+     * Both still funnel into the same recovery lookup, so a real concurrent
+     * join is recovered exactly as before — but `inserted` can no longer be
+     * null on the success path, which is what `mapRow(inserted as any)` below
+     * has always quietly assumed.
+     */
+    if (insErr || !inserted) {
       // Unique-violation → a concurrent join won the race; fetch and return it.
       const { data: raced } = await supabase
         .from('table_waitlists')
@@ -158,7 +175,11 @@ export const WaitlistService = {
         .limit(1)
         .maybeSingle();
       if (raced) return mapRow(raced as any);
-      reportError(insErr, 'WaitlistService.joinWaitlist.insert', { tableId, userId });
+      reportError(
+        insErr ?? new Error('waitlist insert returned no row (RLS or silent reject)'),
+        'WaitlistService.joinWaitlist.insert',
+        { tableId, userId }
+      );
       return null;
     }
     return mapRow(inserted as any);

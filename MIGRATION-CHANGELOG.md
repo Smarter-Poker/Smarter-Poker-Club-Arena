@@ -8759,3 +8759,49 @@ copies).
 - Table balancing: hand-safe move deferral, seat-reuse, source-seat restore on failure. Wired.
 - Eliminations: distinct positions by construction, double-pay guards, rebuy-before-elimination. Audited previously, sound.
 - current_players count||0 at TournamentManagerBase:1217 is display-only (tables row), not a decision input.
+
+## 2026-08-21 — The multi-table roadmap, built out in full (Cowork session)
+
+Dan: "go ahead and fully build out and add in every single one of these
+ideas." All sixteen roadmap items shipped, in six batches, each tsc+build
+verified before push (35c22ec, cd611d1, 80d96f2, 4f09062, 4596a34):
+
+BATCH 1 - quick wins: folded-tab dimming, idle-tab live-pot line
+(TabInfo.pot finally consumed), green/red showdown flash keyed by hand
+number, React.memo on MiniCards (the 1s clock no longer re-renders card
+DOM), BBJ tab reports on a trailing 2s debounce.
+
+BATCH 2 - action queue (GG-style, default on) advancing to the most
+pressing waiting table 400ms after the hero acts; multi_auto_switch +
+multi_action_queue settings (migration applied via MCP, defaults true,
+surfaced in the settings panel); backgrounded-browser alerts (title flip,
+red-badged favicon, one Notification per turn when permission is already
+granted); three alert tiers - soft ping for background turn starts, the
+bell active-table-only (it used to ring for every table), tick-tock for
+final seconds.
+
+BATCH 3 - mouse drag-to-reorder with Move Left/Right in the long-press /
+right-click quick menu (Sit Out - I'm Back with truthful per-table labels,
+Mute/Unmute audio-only, Leave via the secure path, Sit Out All / Back At
+All); the "+" now opens a Quick Join sheet (same-stakes-first, fullest-
+first, five rows, full lobby one tap further).
+
+BATCH 4 - playable tile view: per-tile Fold/Call strip (Check alone when
+checking is free - fold-protect parity) submitting server-authoritatively
+with a 400ms per-table lock.
+
+BATCH 5 - aggregated session: live P&L chip beside the tile toggle,
+per-table breakdown popover, combined hands/hour over the longest session.
+
+BATCH 6 - Law 1.16 timer_countdown: engine pulses at 10/5/3/2/1s of the
+display deadline via DeadlineScheduler, turn-identity-guarded; client pins
+its deadline on >750ms drift, engine-clock both sides. /ws/multi socket
+multiplexing DEFAULT OFF behind localStorage ca_ws_mux: one socket, four
+subscriptions, per-table gates at SUBSCRIBE, 9 unit tests green; client
+facade keeps EngineStateClient's logic untouched. And the regression net:
+tests/e2e/multi-table.spec.ts - 10/10 in real Chrome against production
+CSS (the run that matters after two clobbers in one evening).
+
+Verified live: prod bundle greps positive for every batch marker, engine
+deploy confirmed by the hand-count dip-and-recover at 02:47-02:51 UTC
+(54/min trough, 110-135/min steady after).

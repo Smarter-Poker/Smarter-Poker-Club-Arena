@@ -139,3 +139,45 @@
   opacity: 0.4;
   cursor: default;
 }
+
+/* ── Destination / refusal states (audit pass 2026-08-21) ── */
+.cmm-dest {
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.cmm-dest strong {
+  color: #f5c542;
+}
+
+.cmm-dest--union {
+  background: rgba(245, 197, 66, 0.08);
+  border-color: rgba(245, 197, 66, 0.3);
+}
+
+.cmm-dest--blocked {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #ffb4b4;
+}
+
+.cmm-warn {
+  font-size: 0.78rem;
+  color: #ffb4b4;
+}
+
+.cmm-quick button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.cmm-max {
+  background: rgba(245, 197, 66, 0.14) !important;
+  border-color: rgba(245, 197, 66, 0.45) !important;
+  color: #f5c542 !important;
+}

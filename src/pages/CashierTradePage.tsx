@@ -32,6 +32,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
+import ChipMintModal from '../components/wallet/ChipMintModal';
 import styles from './CashierTradePage.module.css';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -117,6 +118,9 @@ export default function CashierTradePage() {
   const [amountModal, setAmountModal] = useState<'send' | 'claim' | null>(null);
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
+  // AUDIT 2026-08-21: the "+" on Available Chips used to punt to the classic
+  // cashier. Chips originate at the mint, so it opens the Chip Mint here.
+  const [showMint, setShowMint] = useState(false);
   const isMounted = useRef(true);
   useEffect(() => {
     isMounted.current = true;
@@ -286,8 +290,18 @@ export default function CashierTradePage() {
 
   // Refresh on any balance event
   useEffect(() => {
-    const unsub = masterBus.subscribe('BALANCE_UPDATED', () => loadClub());
-    return () => unsub();
+    // AUDIT 2026-08-21: BALANCE_UPDATED alone missed mints, distributions and
+    // settlement credits, so the strip could sit stale after real money moved.
+    const events = [
+      'BALANCE_UPDATED',
+      'CHIPS_ADDED',
+      'CHIPS_WITHDRAWN',
+      'CHIPS_DISTRIBUTED',
+      'CASHIER_BALANCE_CHANGED',
+      'SETTLEMENT_COMPLETED',
+    ] as const;
+    const unsubs = events.map((e) => masterBus.subscribe(e as never, () => loadClub()));
+    return () => unsubs.forEach((u) => u());
   }, [loadClub]);
 
   // ── Trade record tab data ──────────────────────────────────────────────────
@@ -535,8 +549,9 @@ export default function CashierTradePage() {
                 {fmt(availableChips)}
                 <button
                   className={styles.plusBtn}
-                  aria-label="Get more chips"
-                  onClick={() => navigate(`/clubs/${clubParam}/cashier-classic`)}
+                  aria-label="Mint chips"
+                  title="Chip Mint - convert diamonds into chips"
+                  onClick={() => setShowMint(true)}
                 >
                   +
                 </button>
@@ -699,6 +714,14 @@ export default function CashierTradePage() {
           Advanced Cashier.
         </div>
       )}
+
+      {/* Chip Mint — chips originate here (diamonds -> chips, 100 = 10,000). */}
+      <ChipMintModal
+        isOpen={showMint}
+        onClose={() => setShowMint(false)}
+        clubId={clubUuid || clubParam || ''}
+        onMinted={() => loadClub()}
+      />
 
       {/* Amount modal */}
       {amountModal && (

@@ -9,7 +9,7 @@
  * - PLAYER Wallet: Table buy-ins, gameplay chips
  * - PROMO Wallet: Bonuses, giveaways, leaderboard rewards
  *
- * 75% Cheaper Law: 38 Diamonds = 100 Chips
+ * MINT RATE (Dan 2026-08-21, BINDING): 100 Diamonds = 10,000 Chips.
  */
 
 import { supabase } from '../lib/supabase';
@@ -151,7 +151,7 @@ export const WalletService = {
    *   All chips must originate from the Union level and flow down.
    * - If the club is standalone (no union affiliation), the club owner can mint directly.
    *
-   * 75% Cheaper Law: 38 Diamonds = 100 Chips
+   * MINT RATE (Dan 2026-08-21, BINDING): 100 Diamonds = 10,000 Chips.
    */
   async mintChips(
     clubId: string,
@@ -201,8 +201,13 @@ export const WalletService = {
       }
     }
 
-    // 3. Calculate diamond cost
-    const diamondCost = Math.ceil((chipAmount / 100) * 38);
+    // ── Dan 2026-08-21, BINDING: "100 DIAMONDS EQUALS 10,000 CHIPS." ──
+    // The old 38-per-100 "75% cheaper law" is superseded. One rate, one place.
+    // NOTE (audit 2026-08-21): this legacy path calls /api/club-arena/mint-chips
+    // -> mint_club_chips, which credits the pool WITHOUT burning diamonds. The
+    // diamond-backed mint is fn_mint_chips_from_diamonds (ChipMintModal). This
+    // figure is therefore display-only here; do not treat it as a charge.
+    const diamondCost = Math.ceil(chipAmount / 100);
 
     // Mint SERVER-SIDE via the World Hub API route. mint_club_chips is
     // service_role-only, so a direct browser supabase.rpc() returns 42501 -- that

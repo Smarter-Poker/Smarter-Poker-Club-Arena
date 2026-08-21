@@ -24,6 +24,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
+import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './ChipMintModal.css';
 
 const CHIPS_PER_DIAMOND = 100; // 100 diamonds = 10,000 chips
@@ -39,42 +40,116 @@ interface ChipMintModalProps {
 
 const fmt = (n: number) => n.toLocaleString('en-US');
 
+/** Where this mint will land, resolved before a single diamond is burned. */
+type MintTarget =
+  | { state: 'loading' }
+  | { state: 'club'; clubUuid: string; label: string }
+  | { state: 'union'; clubUuid: string; label: string }
+  | { state: 'revoked'; label: string }
+  | { state: 'denied'; label: string };
+
 export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: ChipMintModalProps) {
   const { user } = useAuthUser();
   const toast = useToast();
   const [diamonds, setDiamonds] = useState('');
   const [balance, setBalance] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [target, setTarget] = useState<MintTarget>({ state: 'loading' });
 
   useEffect(() => {
     if (!isOpen || !user?.id) return;
     let live = true;
     setDiamonds('');
-    supabase
-      .from('profiles')
-      .select('diamonds')
-      .eq('id', user.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (live) setBalance(Number(data?.diamonds) || 0);
-      });
+    setTarget({ state: 'loading' });
+
+    (async () => {
+      // Diamond balance.
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('diamonds')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (live) setBalance(Number(prof?.diamonds) || 0);
+
+      // ── Destination pre-flight ──
+      // AUDIT 2026-08-21: the caller may hand us a 6-digit club CODE
+      // (ClubHomePage passes `resolvedClubId || clubId`), but the RPC takes a
+      // uuid — an unresolved code failed only AFTER the user hit Mint, with a
+      // raw postgres error. Resolve here, and while we are at it work out
+      // whether this mint is even permitted so the panel can say where the
+      // chips land (club pool vs union bank) or that the mint is revoked.
+      const uuid = (await resolveClubUUID(clubId)) || clubId;
+      const { data: club } = await supabase
+        .from('clubs')
+        .select('id, name, union_id, owner_id')
+        .eq('id', uuid)
+        .maybeSingle();
+      if (!live) return;
+      if (!club) {
+        setTarget({ state: 'denied', label: 'Club Not Found' });
+        return;
+      }
+
+      if (club.union_id) {
+        const [{ data: union }, { data: ua }] = await Promise.all([
+          supabase.from('unions').select('name, owner_id').eq('id', club.union_id).maybeSingle(),
+          supabase
+            .from('union_admins')
+            .select('user_id')
+            .eq('union_id', club.union_id)
+            .eq('user_id', user.id)
+            .maybeSingle(),
+        ]);
+        if (!live) return;
+        const mayMint = union?.owner_id === user.id || Boolean(ua);
+        setTarget(
+          mayMint
+            ? { state: 'union', clubUuid: uuid, label: `${union?.name || 'Union'} Bank` }
+            : { state: 'revoked', label: union?.name || 'This Union' }
+        );
+        return;
+      }
+
+      // Standalone club — owner / co_owner / admin only.
+      const { data: mem } = await supabase
+        .from('club_members')
+        .select('role')
+        .eq('club_id', uuid)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (!live) return;
+      const role = (mem?.role as string) || '';
+      const mayMint =
+        club.owner_id === user.id || ['owner', 'co_owner', 'admin'].includes(role);
+      setTarget(
+        mayMint
+          ? { state: 'club', clubUuid: uuid, label: `${club.name || 'Club'} Pool` }
+          : { state: 'denied', label: 'Only A Club Owner Or Admin May Mint' }
+      );
+    })();
+
     return () => {
       live = false;
     };
-  }, [isOpen, user?.id]);
+  }, [isOpen, user?.id, clubId]);
 
   if (!isOpen) return null;
 
   const d = Math.floor(Number(diamonds) || 0);
   const chips = d * CHIPS_PER_DIAMOND;
-  const valid = d > 0 && (balance === null || d <= balance);
+  const canMintHere = target.state === 'club' || target.state === 'union';
+  const overBalance = balance !== null && d > balance;
+  // AUDIT: validity used to pass while `balance` was still null (loading), so
+  // a fast tap could submit an amount the player does not hold.
+  const valid = d > 0 && balance !== null && !overBalance && canMintHere;
 
   const mint = async () => {
     if (!valid || busy) return;
     setBusy(true);
     try {
       const { data, error } = await supabase.rpc('fn_mint_chips_from_diamonds', {
-        p_club_id: clubId,
+        // Resolved uuid from the pre-flight, never the raw route param.
+        p_club_id: canMintHere ? (target as { clubUuid: string }).clubUuid : clubId,
         p_diamonds: d,
       });
       if (error) throw error;
@@ -114,38 +189,79 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
           <strong>{balance === null ? '...' : fmt(balance)}</strong>
         </div>
 
-        <input
-          type="number"
-          inputMode="numeric"
-          min={1}
-          step={100}
-          value={diamonds}
-          onChange={(e) => setDiamonds(e.target.value)}
-          placeholder="Diamonds to convert"
-          aria-label="Diamonds to convert"
-          autoFocus
-        />
+        {/* Where the chips land — resolved before anything is spent. */}
+        {target.state === 'loading' && <div className="cmm-dest">Checking Mint Rights...</div>}
+        {target.state === 'club' && (
+          <div className="cmm-dest">
+            Minting Into <strong>{target.label}</strong>
+          </div>
+        )}
+        {target.state === 'union' && (
+          <div className="cmm-dest cmm-dest--union">
+            Minting Into <strong>{target.label}</strong>
+          </div>
+        )}
+        {target.state === 'revoked' && (
+          <div className="cmm-dest cmm-dest--blocked">
+            Chip Mint Is Revoked For Clubs Inside {target.label}. Chips Flow From The Union - Mint
+            From The Union Instead.
+          </div>
+        )}
+        {target.state === 'denied' && (
+          <div className="cmm-dest cmm-dest--blocked">{target.label}</div>
+        )}
 
-        <div className="cmm-quick">
-          {[100, 500, 1000, 10000].map((q) => (
-            <button key={q} onClick={() => setDiamonds(String(q))}>
-              {fmt(q)}
-            </button>
-          ))}
-        </div>
+        {canMintHere && (
+          <>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              step={100}
+              value={diamonds}
+              onChange={(e) => setDiamonds(e.target.value)}
+              placeholder="Diamonds to convert"
+              aria-label="Diamonds to convert"
+              autoFocus
+            />
 
-        <div className={`cmm-preview ${valid ? '' : 'cmm-preview--dim'}`}>
-          <span>You Receive</span>
-          <strong>{fmt(chips)} Chips</strong>
-        </div>
+            <div className="cmm-quick">
+              {[100, 500, 1000, 10000].map((q) => (
+                <button key={q} disabled={balance !== null && q > balance} onClick={() => setDiamonds(String(q))}>
+                  {fmt(q)}
+                </button>
+              ))}
+              <button
+                className="cmm-max"
+                disabled={!balance}
+                onClick={() => setDiamonds(String(balance ?? 0))}
+              >
+                MAX
+              </button>
+            </div>
+
+            <div className={`cmm-preview ${valid ? '' : 'cmm-preview--dim'}`}>
+              <span>You Receive</span>
+              <strong>{fmt(chips)} Chips</strong>
+            </div>
+
+            {overBalance && (
+              <div className="cmm-warn">
+                You Only Hold {fmt(balance ?? 0)} Diamonds.
+              </div>
+            )}
+          </>
+        )}
 
         <div className="cmm-actions">
           <button disabled={busy} onClick={onClose}>
             Cancel
           </button>
-          <button className="cmm-confirm" disabled={!valid || busy} onClick={mint}>
-            {busy ? 'Minting...' : 'Mint Chips'}
-          </button>
+          {canMintHere && (
+            <button className="cmm-confirm" disabled={!valid || busy} onClick={mint}>
+              {busy ? 'Minting...' : 'Mint Chips'}
+            </button>
+          )}
         </div>
       </div>
     </div>

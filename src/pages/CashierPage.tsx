@@ -1451,8 +1451,11 @@ export default function CashierPage() {
     startCooldown();
   };
 
-  // Use integer arithmetic to avoid floating-point precision issues: (chips * 38) / 100
-  const DIAMOND_RATE_NUM = 38;
+  // Dan 2026-08-21, BINDING: "100 DIAMONDS EQUALS 10,000 CHIPS" — i.e. 1
+  // diamond per 100 chips. Supersedes the old 38-per-100 rate, which made the
+  // classic cashier quote a different price than the Chip Mint for the same
+  // chips. Integer arithmetic kept so the quote can never drift by a cent.
+  const DIAMOND_RATE_NUM = 1;
   const DIAMOND_RATE_DEN = 100;
   const preset = [100, 500, 1000, 5000];
 

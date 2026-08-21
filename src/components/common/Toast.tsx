@@ -7,7 +7,12 @@
 
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { formatPopupText } from '../../utils/popupStyle';
-import { safeErrorMessage, wasSanitized } from '../../utils/safeErrorMessage';
+import {
+  safeErrorMessage,
+  wasSanitized,
+  shouldSurfaceError,
+  extractRawErrorText,
+} from '../../utils/safeErrorMessage';
 import { reportError } from '../../utils/errorReporter';
 import './Toast.css';
 
@@ -16,6 +21,13 @@ import './Toast.css';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
+
+/**
+ * How long the SAME popup is barred from returning, whether or not the first
+ * one is still on screen. Longer than any retry cycle in the app, so a loop
+ * cannot pump one message onto the screen repeatedly.
+ */
+const TOAST_COOLDOWN_MS = 60_000;
 
 export interface Toast {
   id: string;
@@ -133,6 +145,20 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   // toast dedupes on screen, so the Sentry report dedupes here to match.
   const reportedRef = useRef<Map<string, number>>(new Map());
 
+  /**
+   * When each distinct popup was last shown.
+   *
+   * Dan 2026-08-21: "it shouldn't just keep popping it up over and over."
+   *
+   * The dedupe below only ever blocked a TWIN THAT WAS STILL ON SCREEN. A
+   * toast lives 4 seconds; a heartbeat, a poll loop or a reconnect retries on
+   * a shorter cycle than that gap, so the same message re-fired the moment its
+   * predecessor expired. To the player that is one popup that will not go
+   * away, which is what the screenshots show. An identical message now cannot
+   * come back for a full minute, whether or not the first is still visible.
+   */
+  const lastShownRef = useRef<Map<string, number>>(new Map());
+
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
@@ -150,6 +176,26 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     let text = message;
     if (type === 'error') {
       const original = typeof message === 'string' ? message : String(message ?? '');
+
+      /* SILENCE THE INFRASTRUCTURE (Dan, 2026-08-21, with two screenshots).
+         "The Table Is Busy" and "Connection Problem" are the retry loop
+         talking to itself: the client has already retried, and will retry
+         again, so the message is stale before it is read and asks the player
+         to do nothing. Dropped here rather than at 392 call sites, and still
+         reported, so this is quieter for the player and no quieter for us.
+         The disconnection notice Dan wants kept is DisconnectToast, driven by
+         the engine's own FSM, and does not come through this door. */
+      if (!shouldSurfaceError(original)) {
+        const now = Date.now();
+        const key = 'silent:' + extractRawErrorText(original);
+        const lastSeen = reportedRef.current.get(key);
+        if (lastSeen === undefined || now - lastSeen > 30_000) {
+          reportedRef.current.set(key, now);
+          reportError(new Error(original), 'Toast.error.suppressed', { shownToPlayer: false });
+        }
+        return;
+      }
+
       text = safeErrorMessage(original);
       if (wasSanitized(original, text)) {
         // The player is spared the detail; Sentry is not. Diagnostics survive.
@@ -167,6 +213,21 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       }
     }
     const styled = formatPopupText(text);
+
+    /* COOLDOWN. See lastShownRef: the on-screen dedupe below cannot stop a
+       message that returns after its predecessor expired, which is how one
+       error reads as an endless stream of them. */
+    const cooldownKey = type + ':' + styled;
+    const nowMs = Date.now();
+    const shownAt = lastShownRef.current.get(cooldownKey);
+    if (shownAt !== undefined && nowMs - shownAt < TOAST_COOLDOWN_MS) return;
+    lastShownRef.current.set(cooldownKey, nowMs);
+    if (lastShownRef.current.size > 100) {
+      for (const [k, t] of lastShownRef.current) {
+        if (nowMs - t > TOAST_COOLDOWN_MS) lastShownRef.current.delete(k);
+      }
+    }
+
     const id = `toast-${++toastIdRef.current}`;
     setToasts((prev) => {
       // DEDUPE (Dan, same session: "connection lost pop ups need to stop").

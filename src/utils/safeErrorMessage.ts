@@ -73,6 +73,87 @@ export const SAFE_MESSAGES = {
 
 export type SafeErrorCategory = keyof typeof SAFE_MESSAGES;
 
+/**
+ * Categories a player must never be interrupted by.
+ *
+ * Dan 2026-08-21, with two screenshots: "you need to stop these pop ups to
+ * users. The only thing that should ever appear is a disconnection
+ * notification. And it shouldn't just keep popping it up over and over."
+ *
+ * Both screenshots were this class of error: infrastructure telling on itself.
+ * "The Table Is Busy" is a 429 the client already retried four times with
+ * backoff; "Connection Problem" is a fetch that the next poll will repeat in
+ * two seconds. Neither asks the player to DO anything, and neither is even
+ * true by the time it is read. They arrive from retry loops, so they arrive
+ * again, and again.
+ *
+ * These are dropped before they reach the screen and reported to Sentry
+ * instead. What is NOT on this list is the class of error that answers
+ * something the player deliberately just did: not enough chips, no permission,
+ * session expired. Swallowing those would mean a player taps Buy In and
+ * nothing happens at all, which is a worse product than a popup.
+ *
+ * The disconnection notice Dan wants kept is not a toast at all: it is
+ * DisconnectToast, driven by the engine's own disconnect FSM, and it is
+ * untouched by this.
+ */
+export const SILENT_ERROR_CATEGORIES: ReadonlySet<SafeErrorCategory> = new Set([
+  'network',
+  'timeout',
+  'rateLimit',
+  'server',
+]);
+
+/**
+ * Should this error be shown to a player at all?
+ *
+ * Takes the RAW text, because the category is what decides, and by the time a
+ * message has been through safeErrorMessage every network failure reads as the
+ * same friendly sentence and the evidence is gone.
+ */
+export function shouldSurfaceError(raw: unknown): boolean {
+  const text = extractRawErrorText(raw);
+  if (!text) return false; // An empty popup tells a player nothing.
+  if (isSelfHealingMessage(text)) return false;
+  const category = categorizeError(text);
+  if (category && SILENT_ERROR_CATEGORIES.has(category)) return false;
+  return true;
+}
+
+/**
+ * Messages THIS APP writes for states that fix themselves.
+ *
+ * categorizeError cannot catch these, and correctly so: it hunts for machine
+ * fingerprints (`PGRST116`, `TypeError: Failed to fetch`) and these have none.
+ * They are already friendly sentences, written by us, which is exactly what
+ * makes them slip through and reach the player.
+ *
+ * Every one describes something the client is ALREADY recovering from: a 429
+ * that four backoff retries just exhausted, a socket mid-reconnect, a seat
+ * that is resyncing. The player cannot act on any of them, and the condition
+ * is usually over before the toast finishes animating in. Meanwhile the loop
+ * that produced the message is still running, so it produces it again.
+ *
+ * Deliberately anchored on distinctive phrases rather than loose keywords:
+ * "busy" alone would also swallow a genuine "That Seat Is Busy" that a player
+ * DOES need to read.
+ */
+const SELF_HEALING_PATTERNS: readonly RegExp[] = [
+  /\btable is busy\b/i,
+  /\bserver unreachable\b/i,
+  /\bserver error\s*\(\d+\)/i,
+  /\btable not ready\b/i,
+  /\breconnecting\b/i,
+  /\bresyncing\b/i,
+  /\bout of sync\b/i,
+];
+
+export function isSelfHealingMessage(text: unknown): boolean {
+  const raw = typeof text === 'string' ? text : extractRawErrorText(text);
+  if (!raw) return false;
+  return SELF_HEALING_PATTERNS.some((re) => re.test(raw));
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // STEP 1 — GET THE RAW TEXT OUT OF WHATEVER WAS THROWN
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -142,7 +223,10 @@ const CATEGORY_PATTERNS: Array<[SafeErrorCategory, RegExp]> = [
     'funds',
     /insufficient[\s_](?:funds|chips|balance|credit|stack)|not\s+enough\s+(?:chips|funds|money|balance|credit)|balance\s+too\s+low|\binsufficient_funds\b|\bover_credit_limit\b/i,
   ],
-  ['duplicate', /duplicate\s+key|unique\s+constraint|\b23505\b|already\s+(?:exists|registered|joined|seated)/i],
+  [
+    'duplicate',
+    /duplicate\s+key|unique\s+constraint|\b23505\b|already\s+(?:exists|registered|joined|seated)/i,
+  ],
   ['rateLimit', /\brate[\s_-]?limit|too\s+many\s+requests|over_request_rate_limit|\bthrottl/i],
   [
     'permission',
@@ -163,7 +247,10 @@ const CATEGORY_PATTERNS: Array<[SafeErrorCategory, RegExp]> = [
   // Deliberately narrow. `relation "x" does not exist` is a schema BUG, not a
   // missing record, and telling a player to refresh would be a lie; it is left
   // to fall through to the generic line instead.
-  ['notFound', /\bpgrst116\b|no\s+rows\s+returned|\b0\s+rows\b|json\s+object\s+requested|\bnot\s+found\b/i],
+  [
+    'notFound',
+    /\bpgrst116\b|no\s+rows\s+returned|\b0\s+rows\b|json\s+object\s+requested|\bnot\s+found\b/i,
+  ],
   [
     'server',
     /internal\s+server\s+error|bad\s+gateway|service\s+unavailable|\bupstream\b|\beconnaborted\b|status\s+(?:code\s+)?(?:500|502|503|504)\b|\b(?:500|502|503|504)\s+(?:internal|bad|service|gateway)/i,
@@ -298,7 +385,10 @@ function stripErrorPrefix(raw: string): string {
 function headBeforeColon(raw: string): string | null {
   const idx = raw.indexOf(':');
   if (idx <= 0) return null;
-  const head = raw.slice(0, idx).trim().replace(/[,;]+$/, '');
+  const head = raw
+    .slice(0, idx)
+    .trim()
+    .replace(/[,;]+$/, '');
   if (!head) return null;
   // A head that is itself just error framing ("Uncaught (in promise) Error",
   // "PostgrestException") is not a message. Drop it and take the generic.

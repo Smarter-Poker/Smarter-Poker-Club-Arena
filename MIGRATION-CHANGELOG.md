@@ -9342,3 +9342,49 @@ the fifth is reported below with evidence rather than a claim.
    NEXT STEP, and it is small: persist the extra board(s) so a RIT hand is
    visible in hand history and countable in the DB. Until that exists,
    nobody can answer "did it run" - which is the real defect here.
+
+## 2026-08-21 — Cowork live-fix session, batch 9 (finish the stubs) + batch 10 (five binding table rules)
+
+BATCH 9 — the three cashier surfaces that were only pretending:
+- chip_requests + tournament_tickets tables and five RPCs (migration
+  20260821_chip_requests_and_tickets). Chip Request: a player asks their agent
+  (or the club owner when they have none), the agent approves in one tap, and
+  approval performs the SAME conserved club-ledger move as a Send Out — a
+  request can never create chips. Self-approval refused, agent tier limited to
+  its own downline, max 3 open requests. Send Ticket: issuing ESCROWS the value
+  off the issuer immediately, redeeming credits the holder, cancelling refunds
+  the issuer. Leaderboard Record now reads real settlement_invoices.
+  Verified live: issue 50 (issuer -50, holder unchanged), cancel (+50 back),
+  self-approve refused, net zero across the whole test.
+
+BATCH 10 — Dan's five binding rules:
+- [P0 RULES] PLO CAN NEVER SHOVE ABOVE THE POT. `case 'all_in'` in
+  validateAction returned `{valid:true}` unconditionally — it was the ONE
+  action that walked past the pot-limit ceiling every other branch enforces, so
+  a deep stack could shove many times the cap. Now rejected server-side; the
+  HandController additionally CLAMPS an over-cap all-in to a pot-sized raise so
+  an automated path (horse, disconnect auto-action, watchdog) can never freeze
+  a table on the rejection; the ALL IN button is hidden client-side when the
+  stack exceeds the cap.
+- [P0 RULES] NEW CASH PLAYERS ARE NEVER DEALT INTO THE SB. The auto post-BB
+  entry (added earlier today so "dealt in next hand" was true) now skips anyone
+  sitting in this hand's small blind — they wait one more hand, by which time
+  the button has passed. New getSBSeatIndex() mirrors getBBSeatIndex().
+- [P1] SIT-OUT EVICTION: removed after the button passes twice OR 5 minutes,
+  whichever comes first. The clock and the orbit counter live per
+  (table, player) inside DisconnectEngine, so sitting out at one table never
+  touches the same player's other tables — which is also the source of the
+  server errors Dan reported. Cash tables only; a tournament sit-out is
+  blinded off, never removed. Evicted players are cashed out to their club
+  wallet.
+- [OK ALREADY] MISSED BLINDS: verified the engine already implements the rule
+  exactly as stated — dead SB straight into the pot, live BB in front of the
+  returning player (HandController deadBlinds), fed by returningFromSitout;
+  the wait-for-BB alternative is the postingBBToEnter path. No change needed.
+- [P1] MTT AUTO-SEAT: the engine already created tournament tables and wrote
+  the seats, but nothing on the player's screen noticed — a registered player
+  sat in the lobby while their tournament dealt without them. New
+  TournamentAutoSeat watches the player's own tournament seats and emits
+  TABLE_SEATED so the table opens itself; when they are already on four tables
+  MultiTablePage answers with the new TABLE_CAP_BLOCKED event and a large
+  popup asks them to free a slot ("Take My Seat" / "Not Now").

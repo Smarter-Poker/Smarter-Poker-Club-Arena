@@ -123,7 +123,12 @@ describe('tournament sit-outs are dealt in and blinded off (bug 2)', () => {
     const turns = strip(read('src/engine/ServerTableEngineTurns.ts'));
     // Each gated exclusion reads: (isTournamentTable() || !isSittingOut(...))
     const gated = /this\.isTournamentTable\(\)\s*\|\|\s*!this\.disconnectEngine\.isSittingOut/g;
-    expect((base.match(gated) || []).length, 'Base: dealableCount + getBBSeatIndex').toBe(2);
+    // Updated 2026-08-21: three, not two. getSBSeatIndex() was added with the
+    // "cash players are never dealt into the small blind" rule and builds the
+    // SAME roster as getBBSeatIndex - it has to, or the SB and BB would be
+    // computed from different rosters, which is a real bug. So the third
+    // occurrence is required, not accidental.
+    expect((base.match(gated) || []).length, 'Base: dealableCount + getBBSeatIndex + getSBSeatIndex').toBe(3);
     expect((turns.match(gated) || []).length, 'Turns: watchdog dealable count').toBe(1);
   });
 

@@ -251,6 +251,48 @@ import { HandDetailModal } from '../components/table/HandDetailModal';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { serverNow } from '../utils/serverClock';
+// Dan 2026-08-21, item 15: hero's live hand strength under their seat box.
+import { bestFive } from '../utils/handEvaluator';
+// Dan 2026-08-21, items 11 + 16: the client's post-hand hold comes from the
+// same animation spec the engine derives its own hold from, so the table can
+// never clear the winner before the pot has finished travelling to them.
+import { handCompletionHoldMs } from '../config/handCompletionSpec';
+
+/** Rank ordering for the preflop label. Ace high; T/J/Q/K above the numbers. */
+const RANK_ORDER = (r: string): number =>
+  ({
+    '2': 2,
+    '3': 3,
+    '4': 4,
+    '5': 5,
+    '6': 6,
+    '7': 7,
+    '8': 8,
+    '9': 9,
+    T: 10,
+    J: 11,
+    Q: 12,
+    K: 13,
+    A: 14,
+  })[String(r).toUpperCase()] ?? 0;
+
+/** "A" -> "Ace", "T" -> "Ten", so the preflop label reads like a poker room. */
+const RANK_WORD = (r: string): string =>
+  ({
+    '2': 'Two',
+    '3': 'Three',
+    '4': 'Four',
+    '5': 'Five',
+    '6': 'Six',
+    '7': 'Seven',
+    '8': 'Eight',
+    '9': 'Nine',
+    T: 'Ten',
+    J: 'Jack',
+    Q: 'Queen',
+    K: 'King',
+    A: 'Ace',
+  })[String(r).toUpperCase()] ?? String(r).toUpperCase();
 import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
 import { getAnimationSpeed } from '../utils/animationSpeed';
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
@@ -1164,6 +1206,17 @@ export default function TablePage({
   // before — prevents a junk serverSetPreAction(clear) firing on every mount
   // (preAction starts null).
   const hadPreActionRef = useRef(false);
+  /**
+   * Dan 2026-08-21 (items 11 + 16): did THIS hand reach a showdown, and how
+   * many hands were shown? Drives how long the table holds the finished hand
+   * on screen — the same two inputs the engine feeds `handCompletionHoldMs`,
+   * so client and engine agree on when the hand is actually over.
+   * Set in the SHOWDOWN handler, reset at HAND_STARTED.
+   */
+  const handShowdownRef = useRef<{ wentToShowdown: boolean; hands: number }>({
+    wentToShowdown: false,
+    hands: 2,
+  });
   /**
    * Dan 2026-08-21 (bug list item 1): the Fold toggle in the pre-action bar
    * renders as "Check/Fold" whenever checking is free, but the effect below
@@ -6109,6 +6162,8 @@ export default function TablePage({
         // BOMB POT 2026-08-20: the previous hand's bomb-pot state ends with
         // the hand. If THIS hand is a bomb pot, its own BOMB_POT_TRIGGERED
         // (emitted after HAND_STARTED in the engine's dealing path) re-arms it.
+        // Items 11 + 16: a fresh hand has not reached showdown yet.
+        handShowdownRef.current = { wentToShowdown: false, hands: 2 };
         setBombPotActive(false);
         setBombPotHoldFlop(false);
         if (bombPotHoldTimerRef.current) {
@@ -6532,6 +6587,31 @@ export default function TablePage({
       }
       case 'HAND_COMPLETE_EVENT':
       case 'HAND_COMPLETE': {
+        /**
+         * Dan 2026-08-21 (bug list item 10): "the last player folds, their
+         * cards are mucked right away, no need for the countdown light to keep
+         * going."
+         *
+         * The shot clock used to keep draining after the hand was already
+         * decided. Nothing here cleared it — the ring only went away when the
+         * NEXT state snapshot happened to arrive with currentPlayerSeat 0, and
+         * on a fold-around win that is up to a second later. In the meantime a
+         * blue countdown was ticking on a seat with no decision left to make.
+         *
+         * The hand is over the moment this event lands, so the clock stops
+         * here, synchronously, on the same frame.
+         */
+        setTableState((prev) =>
+          prev.currentPlayerSeat === 0 && prev.actionTimerDeadline === undefined
+            ? prev
+            : {
+                ...prev,
+                currentPlayerSeat: 0,
+                actionTimerDeadline: undefined,
+                actionTimerStartTime: undefined,
+                actionTimerPlayerId: undefined,
+              }
+        );
         // IMPROVEMENT PASS 2026-08-20: BOMB_POT_COMPLETED had a listener in
         // BombPotOverlay since 2026-08-15 but no emitter anywhere — dead
         // wiring. If an everyone-all-in bomb pot runs out and completes
@@ -6778,9 +6858,32 @@ export default function TablePage({
             }, 2400 * getAnimationSpeed());
           }
         }
-        // Bible V8 §5.1 — winner display persists 2.5–3s before the table
-        // resets to idle. Clear community board, pot, side pots and the
-        // winner highlight after that delay so the next hand starts crisp.
+        /**
+         * Dan 2026-08-21 (items 11 + 16): "the push pot and total animation
+         * never triggers" and "the winning hand must be displayed under the
+         * board at showdown."
+         *
+         * Both were this one hard-coded 3000. The engine emits HAND_COMPLETE
+         * immediately, then waits `showdownSettleMs` before emitting pot_win —
+         * and pot_win is what SETS the winner hand name and STARTS the pot
+         * ship. So the clock below was already running for most of the settle
+         * before the animation it was supposed to be holding open had even
+         * begun. At the old 1600ms settle that left ~1.4s for a 2.2s pot-win
+         * float and a hand name nobody had time to read; at the 3 full seconds
+         * Dan asked for in item 11 it would have left nothing at all — the
+         * label would appear and be wiped in the same frame.
+         *
+         * The engine already derives its own hold from the shared animation
+         * spec (src/config/handCompletionSpec.ts). The client now derives this
+         * one from the SAME function, so the table clears exactly when the
+         * engine is ready to deal and never a beat before. Changing an
+         * animation length in that file moves both sides together.
+         */
+        const holdMs =
+          handCompletionHoldMs({
+            wentToShowdown: handShowdownRef.current.wentToShowdown,
+            showdownHands: handShowdownRef.current.hands,
+          }) * getAnimationSpeed();
         // CA-22: track so unmount can cancel — prevents setTableState on dead page
         if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
         handCompleteTimerRef.current = window.setTimeout(() => {
@@ -6812,6 +6915,20 @@ export default function TablePage({
       case 'SHOWDOWN': {
         // This hand reached showdown → feeds the 'showdowns' daily challenge.
         heroHandOutcomeRef.current.showdown = true;
+        /**
+         * Dan 2026-08-21 (items 11 + 16): the TABLE-level showdown fact, as
+         * opposed to `heroHandOutcomeRef.showdown` which is only about hero.
+         * The post-hand reset below needs to know whether the board is holding
+         * a showdown to read, and how many hands are in it, so it can wait
+         * exactly as long as the engine does. Reset at HAND_STARTED.
+         */
+        handShowdownRef.current = {
+          wentToShowdown: true,
+          hands: Math.max(
+            2,
+            (tableStateRef.current.players || []).filter((p) => p && p.showCards).length
+          ),
+        };
         // Bible V8 §4.6: Showdown — play showdown sound, trigger card reveal animations
         // #175 gated for multi-table: only play on the active tab
         if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playShowdown();
@@ -7441,6 +7558,58 @@ export default function TablePage({
     },
     [tableState.players]
   );
+
+  /**
+   * Dan 2026-08-21 (bug list item 15): "display the current strength of the
+   * hero's hand under their box total — preflop, on the flop, on the turn and
+   * river. It should change dynamically."
+   *
+   * `src/utils/handEvaluator.ts` already had everything needed — including the
+   * Omaha exactly-two-from-hand rule and the wheel-straight case — and had no
+   * caller anywhere in the app. This is that caller.
+   *
+   * Preflop it returns null (four cards is not a hand), so instead of guessing
+   * we say the one true thing about a starting hand: whether it is a pair, and
+   * otherwise what the high card is. Once the flop lands the real evaluator
+   * takes over and the label updates itself on every street.
+   *
+   * Memoised on the cards and the variant, so it runs when the board changes
+   * rather than on every timer tick.
+   */
+  const heroHandStrength = useMemo<string | null>(() => {
+    const hero = tableState.players[tableState.heroSeat - 1];
+    if (!hero || !hero.isHero) return null;
+    if (hero.status === 'folded') return null;
+    const hole = (hero.holeCards || []).filter((c): c is Card => !!c);
+    if (hole.length < 2) return null;
+    const board = (tableState.communityCards || []).filter((c): c is Card => !!c);
+
+    if (board.length === 0) {
+      const ranks = hole.map((c) => String(c.rank).toUpperCase());
+      const counts = new Map<string, number>();
+      for (const r of ranks) counts.set(r, (counts.get(r) || 0) + 1);
+      let best: { rank: string; n: number } | null = null;
+      for (const [rank, n] of counts) {
+        if (!best || n > best.n || (n === best.n && RANK_ORDER(rank) > RANK_ORDER(best.rank))) {
+          best = { rank, n };
+        }
+      }
+      if (!best) return null;
+      if (best.n >= 4) return 'Four of a Kind';
+      if (best.n === 3) return 'Three of a Kind';
+      if (best.n === 2) return 'Pair';
+      const high = ranks.reduce((a, b) => (RANK_ORDER(b) > RANK_ORDER(a) ? b : a));
+      return `${RANK_WORD(high)} High`;
+    }
+
+    try {
+      const best = bestFive(hole, board, tableState.gameType);
+      return best?.name ?? null;
+    } catch {
+      // A malformed card must never take the table down over a label.
+      return null;
+    }
+  }, [tableState.players, tableState.heroSeat, tableState.communityCards, tableState.gameType]);
 
   // Handle seat click (sit down at empty seat)
   const handleSeatClick = (seatNumber: number) => {
@@ -9271,8 +9440,18 @@ export default function TablePage({
             <DealAnimation
               key={dealAnimationKey}
               active={true}
+              /* Dan 2026-08-21 (item 14): "cards actually dealt to ALL the
+                 players to start a new hand." The `status !== 'folded'` test
+                 was wrong at this exact moment: HAND_STARTED often lands before
+                 the fresh roster does, so the seats still carry LAST hand's
+                 folded flags and everyone who folded the previous hand was
+                 skipped by the deal. Nobody has folded a hand that has not been
+                 dealt yet — the only players who genuinely get no cards are
+                 those sitting out or away. */
               activeSeats={tableState.players
-                .map((p, i) => (p && p.status !== 'folded' && p.status !== 'sitting_out' ? i : -1))
+                .map((p, i) =>
+                  p && p.status !== 'sitting_out' && p.status !== 'away' ? i : -1
+                )
                 .filter((i) => i >= 0)}
               dealerSeatIndex={Math.max(0, tableState.dealerSeat - 1)}
               seatPositions={seatPositions}
@@ -9560,6 +9739,8 @@ export default function TablePage({
                     seatNumber === tableState.currentPlayerSeat ? actionTimeRemaining : undefined
                   }
                   bigBlind={safeBB(tableState.blinds)}
+                  /* Dan 2026-08-21, item 15: hero's live made hand. */
+                  handStrength={displayPlayer?.isHero ? heroHandStrength : null}
                   isTournament={tableState.isTournament}
                   bountyValue={
                     tableState.isBountyTournament && player
@@ -9803,16 +9984,16 @@ export default function TablePage({
               I'm Back
             </button>
           </div>
-        ) : !tableState.isHandInProgress && !isRabbitAvailable ? null : tableState.isHandInProgress &&
+        ) : !tableState.isHandInProgress &&
+          !isRabbitAvailable ? null : tableState.isHandInProgress &&
           (getPlayerAtSeat(tableState.heroSeat)?.status === 'folded' ||
-            getPlayerAtSeat(tableState.heroSeat)?.status === 'away') ? (
-          /* Dan: "YOU DO NOT NEED TO HAVE THIS DISPLAY ON THE BOTTOM... ITS
+            getPlayerAtSeat(tableState.heroSeat)?.status ===
+              'away') ? /* Dan: "YOU DO NOT NEED TO HAVE THIS DISPLAY ON THE BOTTOM... ITS
              POINTLESS. REMOVE THIS." Both bars said only that nothing was
              happening, which the table already shows: your cards are gone and
              no action buttons are up. They cost a permanent strip of screen on
              a phone to repeat it. */
-          null
-        ) : (
+        null : (
           <>
             {/* ─── CONTROL STRIP — Minimal: Time Bank + Timer during hand, Rabbit Hunt after hand ─── */}
             {tableState.isHandInProgress &&
@@ -10000,9 +10181,8 @@ export default function TablePage({
                     // effect above can send auto_check_fold vs auto_fold.
                     preActionCanCheckRef.current =
                       (tableStateRef.current.currentBet || 0) <=
-                      (tableStateRef.current.lastBetAmounts?.[
-                        tableStateRef.current.heroSeat - 1
-                      ] || 0);
+                      (tableStateRef.current.lastBetAmounts?.[tableStateRef.current.heroSeat - 1] ||
+                        0);
                     setPreAction(next);
                   }}
                   currentBet={Math.max(

@@ -165,9 +165,10 @@ export function potSizedRaiseTo(currentBet: number, pot: number, callAmount: num
  *       an open to 15, 3X is a raise TO 45; unopened, 3X is 3 big blinds.
  *
  *  (14) "3X/4X/5X raises must round to the next whole number without exceeding
- *       the pot."  Rounding went through `roundToChip`, which snaps to the
- *       NEAREST half-blind - so it rounded DOWN as readily as up, and a 1/2
- *       game produced amounts like 22.5. Presets now ceil to a whole number.
+ *       the pot."  SUPERSEDED 2026-08-21 by item 9 below: a button labelled 3X
+ *       has to raise exactly 3X, and on a table whose chips are not whole
+ *       numbers those two rules cannot both hold. Exactness wins for the NX
+ *       buttons; the derived sizings (POT, fractions) snap to the chip grid.
  *
  *       The "without exceeding the pot" half is enforced by `maxRaise`, which
  *       the caller already sets to the pot cap in pot-limit games. Presets
@@ -461,17 +462,7 @@ export default function ActionPanel({
         // chips, not to the integer 1.
         smallestChip,
       }),
-    [
-      isPreflop,
-      bigBlind,
-      currentBet,
-      callAmount,
-      pot,
-      minRaise,
-      maxRaise,
-      isPotLimit,
-      smallestChip,
-    ]
+    [isPreflop, bigBlind, currentBet, callAmount, pot, minRaise, maxRaise, isPotLimit, smallestChip]
   );
 
   /**
@@ -800,8 +791,7 @@ export default function ActionPanel({
                     : `Raise to ${formatChips(raiseAmount)}`
                 }
               >
-                {raiseAmount >= allInThreshold ? 'All In' : 'Raise'}{' '}
-                {formatChips(raiseAmount)}
+                {raiseAmount >= allInThreshold ? 'All In' : 'Raise'} {formatChips(raiseAmount)}
               </button>
             </div>
           </div>

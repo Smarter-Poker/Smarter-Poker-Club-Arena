@@ -418,7 +418,12 @@ export function deriveFlowFlags(
       //                            otherwise we are folding to that raise, and
       //                            that is ordinary multiway traffic, not a
       //                            corner case.
-      if (isMine && facedThreeBet && !respondedToThreeBet && raiseCount === raiseCountAtThreeBet) {
+      if (
+        isMine &&
+        facedThreeBet &&
+        !respondedToThreeBet &&
+        raiseCount === raiseCountAtThreeBet
+      ) {
         foldedToThreeBet = true;
       }
       continue;

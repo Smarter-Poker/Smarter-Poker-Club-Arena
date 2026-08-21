@@ -88,13 +88,34 @@ export type AvatarGesture = 'push' | 'check' | 'fold' | 'celebrate' | 'alert' | 
  * Derived rather than random so a seat's rhythm survives re-renders — a random
  * phase would resample on every mount and make avatars visibly jump.
  */
+/** Holo sweep period. Must match the duration in `.seat__avatar--holo::after`. */
+const HOLO_CYCLE_S = 7;
+
 function breathingStyle(seatNumber: number): React.CSSProperties {
   // 3.4s - 5.0s. Prime-ish spread so seats drift apart instead of re-syncing.
   const duration = 3.4 + ((seatNumber * 7) % 9) * 0.2;
   const delay = -((seatNumber * 13) % 40) * 0.1;
+
+  /**
+   * The holo sweep needs its OWN phase, not the breathing's.
+   *
+   * Reusing --sp-breath-delay looked fine and was measurably wrong: that value
+   * spans only 1.1s-3.9s, which is a good spread across a ~4s breath but a poor
+   * one across a 7s sweep. All nine VIPs would flash inside a single narrow
+   * window and then sit dark together — the synchronised-machinery look the
+   * per-seat phase exists to prevent, just on a longer clock.
+   *
+   * `(seat * 4) % 9` is a permutation of 0..8, so the nine phases land EVENLY
+   * across the full cycle and, because it is a permutation rather than a ramp,
+   * physically adjacent seats get distant phases. A plain `seat / 9` ramp would
+   * also be even but would sweep round the table like a lighthouse.
+   */
+  const holoDelay = -(((seatNumber * 4) % 9) / 9) * HOLO_CYCLE_S;
+
   return {
     ['--sp-breath-dur' as string]: `${duration.toFixed(2)}s`,
     ['--sp-breath-delay' as string]: `${delay.toFixed(2)}s`,
+    ['--sp-holo-delay' as string]: `${holoDelay.toFixed(2)}s`,
   };
 }
 
@@ -157,6 +178,12 @@ export interface SeatSlotProps {
   bombPotAnte?: boolean;
   isWinner?: boolean;
   winningHandName?: string; // e.g. "Straight", "Full House"
+  /**
+   * Dan 2026-08-21 (item 15): hero's CURRENT made hand, recomputed on every
+   * street ("Ace High" -> "Pair" -> "Two Pair"). Hero seats only; the parent
+   * evaluates it so the work happens once per board, not once per seat.
+   */
+  handStrength?: string | null;
   /**
    * Phase 2 T1-01 — net profit for this winner (winnings minus hero's
    * own contribution to the pot). When > 0 and isWinner true, renders
@@ -411,6 +438,7 @@ export const SeatSlot = memo(
       netWinAmount,
       bbjCreditAmount,
       winningHandName,
+      handStrength,
       hudStats,
       showHUD = false,
       playerStyle,
@@ -889,6 +917,16 @@ export const SeatSlot = memo(
     // avatar it returns a generated `data:` SVG, which cannot 404 — so this is
     // reachable only for real network URLs (Storage uploads, /avatars/table/*).
     const avatarBroken = failedAvatarUrl === avatarUrl;
+    /**
+     * A broken avatar falls back to the monogram, and the holo mask would be
+     * pointing at the URL that just 404'd. Verified in chromium that a dead
+     * mask paints NOTHING rather than dropping the mask and leaving a bare
+     * rectangle across the felt — so this is tidiness, not a live bug: it
+     * stops the seat mounting a pseudo-element that can only ever be invisible.
+     * Stated explicitly because "the mask failed, therefore nothing shows" is a
+     * browser behaviour worth not depending on silently.
+     */
+    const showHolo = isVipBust && !avatarBroken;
     // The hero cannot open a menu on themselves.
     const avatarClickable = !!onAvatarClick && !player.isHero;
 
@@ -1124,7 +1162,7 @@ export const SeatSlot = memo(
           {/* Timer is shown via smooth conic-gradient border on the info box below */}
           <div
             className={`seat__avatar${isBustArt ? ' seat__avatar--bust' : ''}${
-              isVipBust ? ' seat__avatar--holo' : ''
+              showHolo ? ' seat__avatar--holo' : ''
             }`}
             /* The scan line is painted by a ::after that is alpha-masked with
                the SAME artwork the <img> is showing, so the band follows the
@@ -1133,7 +1171,7 @@ export const SeatSlot = memo(
                property. Only set for VIP busts — everyone else gets no extra
                property and no pseudo-element at all. */
             style={
-              isVipBust
+              showHolo
                 ? ({ ['--sp-avatar-src' as string]: `url("${avatarUrl}")` } as React.CSSProperties)
                 : undefined
             }
@@ -1432,6 +1470,23 @@ export const SeatSlot = memo(
         {/* Winning Hand Name — floats below cards (premium style) "Straight" label */}
         {isWinner && winningHandName && <div className="seat__hand-name">{winningHandName}</div>}
 
+        {/**
+         * Dan 2026-08-21 (bug list item 15): "display the current strength of
+         * the hero's hand under their box total — preflop, on the flop, on the
+         * turn and river; it should change dynamically."
+         *
+         * Hero only, and never at the same time as the winner label above (that
+         * one is the settled result; this one is the live read, and showing both
+         * at once would stack two hand names under one seat). The parent
+         * evaluates it — see TablePage's `heroHandStrength` — so the arithmetic
+         * runs once per board change rather than once per seat render.
+         */}
+        {player.isHero && handStrength && !(isWinner && winningHandName) && (
+          <div className="seat__strength" aria-live="polite">
+            {handStrength}
+          </div>
+        )}
+
         {/* Phase 2 T1-01 — PokerBros net-profit "+N" yellow floating text.
          *  Shows only when isWinner=true AND netWinAmount>0. Keyed on the
          *  amount so each new win re-triggers the float animation. */}
@@ -1490,6 +1545,7 @@ export const SeatSlot = memo(
     if (prev.bombPotAnte !== next.bombPotAnte) return false;
     if (prev.isWinner !== next.isWinner) return false;
     if (prev.winningHandName !== next.winningHandName) return false;
+    if (prev.handStrength !== next.handStrength) return false;
     if (prev.netWinAmount !== next.netWinAmount) return false;
     if (prev.bbjCreditAmount !== next.bbjCreditAmount) return false;
     if (prev.lastAction !== next.lastAction) return false;

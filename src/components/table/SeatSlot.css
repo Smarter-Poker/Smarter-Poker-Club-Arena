@@ -2795,3 +2795,75 @@
     transform: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CARD PLACEMENT — Dan 2026-08-21, bug list item 11
+   ═══════════════════════════════════════════════════════════════════════════════
+
+   Verbatim: "hole cards MUST ALWAYS appear to the RIGHT of the hero, not on top
+   of the profile. When cards are shown down by villains they appear on top of
+   the villain, not on the table."
+
+   Two placements, deliberately opposite, because they solve opposite problems:
+
+   HERO — beside, never over. The row had been moved to `bottom: 100%`, i.e.
+   floating directly above the seat, where on a 375px phone it sat across the
+   hero's own avatar and name. Hero's cards are the ones you look at every
+   single hand, so they get their own space to the right of the plate, vertically
+   centred on the name/chip box.
+
+   The exception is PLO. A six-card row is ~200px wide; hung off the right of a
+   bottom-centre seat it runs clean off the felt. Four cards or more therefore
+   keep the centred-above layout, which is the only place they fit. That is why
+   this is written as :not(:has(4th child)) rather than an unconditional rule.
+
+   VILLAIN AT SHOWDOWN — over, never beside. Revealed cards used to appear to the
+   RIGHT of the villain's plate, out on the felt, where at a full table they
+   collide with the neighbouring seat and read as loose cards on the table rather
+   than as that player's hand. Sitting them on top of the villain's plate ties
+   the holding to its owner, which is the whole point of a showdown.
+
+   Declared at the end of the file, and at a specificity the three breakpoint
+   blocks above cannot reach, so one rule governs every screen size instead of
+   four copies that drift apart. */
+
+.seat__cards--hero:not(:has(> *:nth-child(4))) {
+  left: calc(100% + var(--sp-hero-gap, 8px));
+  right: auto;
+  top: auto;
+  bottom: var(--sp-hero-box-half, 21px);
+  transform: translateY(50%);
+  justify-content: flex-start;
+}
+
+.seat__cards--opponent.seat__cards--revealed {
+  left: 50%;
+  right: auto;
+  top: auto;
+  bottom: calc(100% - 10px);
+  transform: translateX(-50%);
+  z-index: 14;
+}
+
+/* Dan 2026-08-21 (item 15): hero's LIVE hand strength, under the name/chip box.
+   Deliberately quieter than .seat__hand-name — that one announces a settled
+   win, this one is a running read the player glances at without being pulled
+   away from the action. Same footprint so the seat does not jump when the
+   winner label replaces it. */
+.seat__strength {
+  position: relative;
+  text-align: center;
+  padding: 1px 10px;
+  margin-top: 2px;
+  border-radius: 7px;
+  background: rgba(8, 14, 26, 0.72);
+  border: 1px solid rgba(160, 190, 230, 0.22);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #cfe1f7;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+  z-index: 24;
+  pointer-events: none;
+}

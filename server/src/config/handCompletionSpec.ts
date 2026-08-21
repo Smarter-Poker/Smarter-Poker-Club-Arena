@@ -50,12 +50,25 @@ export const HAND_COMPLETION = {
   POT_PUSH_MS: 2200,
   /** Cards fly to the muck. */
   MUCK_MS: 600,
-  /** Reading a heads-up showdown: cards face-up, winning hand named. */
-  SHOWDOWN_READ_BASE_MS: 1200,
+  /**
+   * Reading a heads-up showdown: cards face-up, winning hand named.
+   *
+   * Dan 2026-08-21 (item 11): "give all showdowns 3 FULL SECONDS for all cards
+   * to be read by players before the pot ship animation and total size plays."
+   * 1200ms covered the card-flip animation and almost nothing else — enough to
+   * see that a showdown had happened, not enough to read two holdings and a
+   * board. Three seconds is the floor now, and it is a FLOOR: extra hands still
+   * add their own beat on top.
+   *
+   * `ServerTableEngineRunout.showdownSettleMs` is the sleep that actually
+   * delays the pot ship and MUST match this number, or the engine deals the
+   * next hand before the beat it is holding for has finished.
+   */
+  SHOWDOWN_READ_BASE_MS: 3000,
   /** Each additional shown hand needs its own beat to read. */
   SHOWDOWN_READ_PER_EXTRA_HAND_MS: 700,
   /** A big multiway showdown must still not stall the table forever. */
-  SHOWDOWN_READ_MAX_MS: 3000,
+  SHOWDOWN_READ_MAX_MS: 4400,
   /**
    * A Bad Beat Jackpot is real money and plays a ~9s full-screen celebration.
    * Nothing about a jackpot is rushed: the table waits for the whole thing.

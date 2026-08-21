@@ -3,8 +3,10 @@
  *  DEAL ANIMATION -- Card dealing visual + sound when a new hand starts
  * =================================================================================
  *
- * Shows card backs flying from the dealer position to each active player
- * at the start of a new hand. Two cards per player, staggered timing.
+ * Shows card backs flying from the DECK IN THE MIDDLE OF THE TABLE to each
+ * player in the hand. Two cards per player, staggered, dealt round the table
+ * starting to the dealer's left. (Dan 2026-08-21, item 14 — they used to launch
+ * from the dealer's own seat, i.e. out of a player's face.)
  *
  * Sounds:
  *  - playNewHand() fires once when the animation starts (subtle "new hand" chime)
@@ -29,8 +31,20 @@ export interface DealAnimationProps {
   active: boolean;
   /** Seat indices (0-based) of players being dealt to */
   activeSeats: number[];
-  /** Dealer seat index (0-based) — cards fly FROM here */
+  /**
+   * Dealer seat index (0-based).
+   *
+   * Dan 2026-08-21 (item 14): cards no longer fly FROM here — they come off
+   * the deck in the middle of the table (see `originPct`). Kept because the
+   * dealer still determines deal ORDER, and because removing a prop every
+   * caller passes buys nothing.
+   */
   dealerSeatIndex: number;
+  /**
+   * Where the cards come from, as {x, y} percentages of the table scaler.
+   * Defaults to the centre of the felt — the deck.
+   */
+  originPct?: { x: number; y: number };
   /** Seat positions as {x, y} percentages */
   seatPositions: { x: number; y: number }[];
   /** Called when animation completes */
@@ -86,6 +100,7 @@ function DealAnimationComponent({
   active,
   activeSeats,
   dealerSeatIndex,
+  originPct,
   seatPositions,
   onComplete,
   playSounds = true,
@@ -121,7 +136,21 @@ function DealAnimationComponent({
 
       prevActiveRef.current = true;
 
-      const dealerPos = seatPositions[dealerSeatIndex] || { x: 50, y: 50 };
+      /**
+       * Dan 2026-08-21 (bug list item 14): "cards need to appear from the
+       * MIDDLE of the table, and cards actually dealt to all the players to
+       * start a new hand."
+       *
+       * They used to launch from the DEALER'S SEAT, which on a nine-handed
+       * table means most hands began with cards flying out of a player's face
+       * — and when the button was on the hero, out from underneath the hero's
+       * own plate, where the flight was invisible. Cards come off the deck in
+       * the middle of the felt.
+       *
+       * `originPct` is overridable so a caller can point it somewhere else
+       * without another edit here; it defaults to the centre of the racetrack.
+       */
+      const dealerPos = originPct || { x: 50, y: 46 };
       const newCards: FlyingCard[] = [];
       // IMPROVEMENT PASS 2026-08-19: stagger + flight honor --animation-speed.
       const speed = getAnimationSpeed();
@@ -129,12 +158,27 @@ function DealAnimationComponent({
       const flight = flightDurationMs();
       setFlightMs(flight);
 
+      /**
+       * Deal ORDER starts to the dealer's left and goes round, which is how a
+       * hand is actually dealt — and what the header comment on this file has
+       * claimed since it was written. The code did not do it: it dealt in seat
+       * -index order, so on any hand where the button was not seat 1 the cards
+       * went round the table starting from the wrong player. Rotating the list
+       * here keeps the fix in one place; `activeSeats` stays a plain unordered
+       * set as far as the caller is concerned.
+       */
+      const startAfter = activeSeats.findIndex((s) => s > dealerSeatIndex);
+      const order =
+        startAfter <= 0
+          ? activeSeats
+          : [...activeSeats.slice(startAfter), ...activeSeats.slice(0, startAfter)];
+
       // Two rounds of dealing (two cards per player)
       for (let round = 0; round < 2; round++) {
-        activeSeats.forEach((seatIdx, orderIdx) => {
+        order.forEach((seatIdx, orderIdx) => {
           const pos = seatPositions[seatIdx];
           if (!pos) return;
-          const delay = (round * activeSeats.length + orderIdx) * staggerMs;
+          const delay = (round * order.length + orderIdx) * staggerMs;
           newCards.push({
             id: `deal-${round}-${seatIdx}`,
             targetX: pos.x,

@@ -30,7 +30,12 @@ const SOLID: LeakOverall = {
   bb_per_100: 4.2,
 };
 
-const pos = (position: string, hands: number, vpipPct: number, bb100 = 0): LeakPosition => ({
+const pos = (
+  position: string,
+  hands: number,
+  vpipPct: number,
+  bb100 = 0
+): LeakPosition => ({
   position,
   hands_played: hands,
   vpip_count: Math.round((vpipPct / 100) * hands),
@@ -112,7 +117,11 @@ describe('positional leaks', () => {
   });
 
   it('reports at most one bleeding position, the worst', () => {
-    const bleeding = [...GOOD_POSITIONS, pos('UTG', 900, 15, -80), pos('MP', 900, 18, -40)];
+    const bleeding = [
+      ...GOOD_POSITIONS,
+      pos('UTG', 900, 15, -80),
+      pos('MP', 900, 18, -40),
+    ];
     const { leaks } = findLeaks(SOLID, bleeding);
     const found = leaks.filter((l) => l.id.startsWith('position_losing_'));
     expect(found).toHaveLength(1);
@@ -160,7 +169,10 @@ describe('fold to 3-bet', () => {
 
   it('stays silent for a player who barely raises preflop', () => {
     // With PFR that low they hardly ever face a 3-bet, so the rate is noise.
-    const { leaks } = findLeaks({ ...SOLID, pfr: 0.03, fold_to_three_bet: 0.9 }, GOOD_POSITIONS);
+    const { leaks } = findLeaks(
+      { ...SOLID, pfr: 0.03, fold_to_three_bet: 0.9 },
+      GOOD_POSITIONS
+    );
     expect(leaks.find((x) => x.id === 'folds_to_3bet')).toBeUndefined();
   });
 

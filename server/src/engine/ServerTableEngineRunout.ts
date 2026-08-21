@@ -77,7 +77,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * leaves time to read the hands. Applied only when 2+ hands actually reached
    * showdown; a fold-around win has nothing to reveal.
    */
-  protected showdownSettleMs = 1600;
+  /**
+   * Dan 2026-08-21 (item 11): "give all showdowns 3 FULL SECONDS for all cards
+   * to be read by players before the pot ship animation and total size plays."
+   * Raised 1600 -> 3000. This number and HAND_COMPLETION.SHOWDOWN_READ_BASE_MS
+   * in config/handCompletionSpec.ts are the same beat seen from two sides: this
+   * one delays the ship, that one makes the engine hold the table long enough
+   * for the ship to finish. They must move together.
+   */
+  protected showdownSettleMs = 3000;
 
   /** Wall-clock stamp of the last street dealt — see streetSettleMs. */
   protected lastStreetDealtAtMs = 0;

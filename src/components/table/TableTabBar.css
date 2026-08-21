@@ -811,3 +811,56 @@
     font-size: 0.75rem;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   FIVE-SECOND FLASH + PENDING DECISION (Dan 2026-08-21)
+   "THE TABLE BOX AT THE TOP OF A PAGE SHOULD START FLASHING AND HAPTICS KICK
+   IN WHEN A USER ONLY HAS 5 SECONDS LEFT TO MAKE A DECISION."
+   Deliberately louder than the <10s urgent pulse and applied on EVERY tab,
+   focused or not - the clock does not care where the player is looking.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.table-tab-bar__tab--flash {
+  animation: tabFiveSecondFlash 0.5s steps(1, end) infinite;
+  border-color: #ef4444;
+}
+
+@keyframes tabFiveSecondFlash {
+  0%,
+  49% {
+    background: linear-gradient(180deg, #dc2626 0%, #b91c1c 100%);
+    color: #fff;
+    box-shadow: 0 0 16px 3px rgba(239, 68, 68, 0.75);
+  }
+  50%,
+  100% {
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+/* A pending non-turn decision (discard / insurance / run it) reads amber so it
+   is distinguishable from an ordinary turn at a glance. */
+.table-tab-bar__tab--decision {
+  border-color: rgba(251, 191, 36, 0.85);
+  background: rgba(251, 191, 36, 0.14);
+  color: #fde68a;
+}
+
+.table-tab-bar__tab--decision .table-tab-bar__tab-name {
+  color: #fbbf24;
+  letter-spacing: 0.04em;
+}
+
+/* The flash wins over the decision tint in the final five seconds. */
+.table-tab-bar__tab--decision.table-tab-bar__tab--flash {
+  border-color: #ef4444;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table-tab-bar__tab--flash {
+    animation: none;
+    background: linear-gradient(180deg, #dc2626 0%, #b91c1c 100%);
+    color: #fff;
+  }
+}

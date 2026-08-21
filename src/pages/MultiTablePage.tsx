@@ -91,6 +91,10 @@ interface TableInstance {
    *  (NLH / PLO5 / SPIN / MTT / HU). Best-effort at first paint, replaced by
    *  TablePage's authoritative value the moment it loads. */
   gameCode?: string;
+  /** Timed NON-TURN decision open here: "discard|insurance|rit:deadlineMs". */
+  decision?: string;
+  /** Time bank burning here: "1:deadlineMs". */
+  timeBank?: string;
   /**
    * Dan 2026-08-15: a tab is either a live table or a LOBBY placeholder.
    *
@@ -655,7 +659,16 @@ export default function MultiTablePage() {
   // 2026-08-15 multi-table fix: the tab countdown ticks off the server
   // deadline. One 1s clock runs only while some table has a live turn.
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const anyTurnLive = tables.some((t) => t.isMyTurn && t.turnDeadlineMs !== undefined);
+  /**
+   * Dan 2026-08-21: "ALL CLOCKS, COUNTDOWNS AND WARNINGS NEED TO STILL BE
+   * WORKING ALL AT THE SAME TIME." The 1s clock used to run only while some
+   * table had a TURN. A background table's discard / insurance / RIT offer or
+   * a burning time bank left it stopped, so nothing counted down anywhere.
+   */
+  const anyTurnLive = tables.some(
+    (t) =>
+      (t.isMyTurn && t.turnDeadlineMs !== undefined) || !!t.decision || !!t.timeBank
+  );
   useEffect(() => {
     if (!anyTurnLive) return;
     const iv = setInterval(() => setNowMs(Date.now()), 1000);
@@ -668,6 +681,15 @@ export default function MultiTablePage() {
         : undefined,
     [nowMs]
   );
+
+  /** Parse a reported "kind:deadlineMs" channel into its parts. */
+  const parseTimed = (v?: string): { kind: string; at: number } | null => {
+    if (!v) return null;
+    const i = v.lastIndexOf(':');
+    if (i <= 0) return null;
+    const at = Number(v.slice(i + 1));
+    return Number.isFinite(at) && at > 0 ? { kind: v.slice(0, i), at } : null;
+  };
 
   const tabInfos: TabInfo[] = useMemo(
     () =>
@@ -701,6 +723,19 @@ export default function MultiTablePage() {
           // TablePage's value is authoritative; until it lands, recover what
           // the table NAME says so the box is never unlabeled.
           gameCode: t.gameCode || gameCodeFromName(t.name),
+          ...(() => {
+            // A non-turn decision (discard / insurance / RIT) and a burning
+            // time bank each get their own countdown, computed from the same
+            // 1s clock as the turn timer so all tables tick together.
+            const d = parseTimed(t.decision);
+            const tb = parseTimed(t.timeBank);
+            const secs = (at: number) => Math.max(0, Math.ceil((at - nowMs) / 1000));
+            return {
+              decisionKind: d ? (d.kind as TabInfo['decisionKind']) : undefined,
+              decisionSecondsLeft: d ? secs(d.at) : undefined,
+              timeBankSecondsLeft: tb ? secs(tb.at) : undefined,
+            };
+          })(),
         };
       }),
     [tables, secondsLeft, nowMs]
@@ -718,19 +753,39 @@ export default function MultiTablePage() {
    * yanks focus at <5s anyway. Keyed by the turn's deadline so the same turn
    * never re-alerts, even across re-renders.
    */
+  /**
+   * Dan 2026-08-21: "THE TABLE BOX AT THE TOP OF A PAGE SHOULD START FLASHING
+   * AND HAPTICS KICK IN WHEN A USER ONLY HAS 5 SECONDS LEFT TO MAKE A
+   * DECISION."
+   *
+   * Two changes from the first version, both of which were real holes:
+   *   - it only alarmed a table the player was NOT looking at. The clock on
+   *     the focused table can run out just as easily while they read another
+   *     one, so every table alarms now.
+   *   - it only knew about TURNS. A discard / insurance / RIT clock is just as
+   *     expensive to miss, so any timed decision alarms.
+   * Keyed by deadline, so one alarm per decision, never a repeat.
+   */
   const urgentAlertedRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
-    for (let i = 0; i < tables.length; i++) {
-      const t = tables[i];
-      if (i === activeIndex || !t.isMyTurn || t.turnDeadlineMs === undefined) continue;
-      const left = secondsLeft(t);
-      if (left === undefined || left > 6) continue;
-      if (urgentAlertedRef.current.get(t.id) === t.turnDeadlineMs) continue;
-      urgentAlertedRef.current.set(t.id, t.turnDeadlineMs);
+    for (const t of tables) {
+      if (isLobbyTab(t)) continue;
+      const d = parseTimed(t.decision);
+      const deadline =
+        d?.at ?? (t.isMyTurn && t.turnDeadlineMs !== undefined ? t.turnDeadlineMs : undefined);
+      if (deadline === undefined) continue;
+      const left = Math.ceil((deadline - nowMs) / 1000);
+      if (left > 5 || left < 0) continue;
+      if (urgentAlertedRef.current.get(t.id) === deadline) continue;
+      urgentAlertedRef.current.set(t.id, deadline);
       if (soundService.isEnabled()) soundService.playTimerWarning();
       haptic.strong();
     }
-  }, [tables, activeIndex, secondsLeft]);
+    const live = new Set(tables.map((t) => t.id));
+    for (const id of urgentAlertedRef.current.keys()) {
+      if (!live.has(id)) urgentAlertedRef.current.delete(id);
+    }
+  }, [tables, nowMs]);
 
   // ─── Soft ping when a turn STARTS on a background table (batch 2) ─────
   // Three alert tiers now exist: soft ping (background turn start, here),

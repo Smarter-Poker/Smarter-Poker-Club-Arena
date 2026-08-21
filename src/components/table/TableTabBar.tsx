@@ -57,7 +57,24 @@ export interface TabInfo {
    * reliable thing about a table anyway (club owners type them).
    */
   gameCode?: string;
+  /**
+   * Dan 2026-08-21: a timed NON-TURN decision open at this table. These used
+   * to be completely invisible on a background tab - the modal is mounted in a
+   * display:none subtree, so the clock ran out and the engine decided for you.
+   */
+  decisionKind?: 'discard' | 'insurance' | 'rit';
+  /** Seconds left on that decision. */
+  decisionSecondsLeft?: number;
+  /** Seconds left on a BURNING time bank at this table (auto time bank on). */
+  timeBankSecondsLeft?: number;
 }
+
+/** What a pending decision is called on the pill. Short: it shares ~100px. */
+const DECISION_LABEL: Record<string, string> = {
+  discard: 'DISCARD',
+  insurance: 'INSURE',
+  rit: 'RUN IT',
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MINI HOLE-CARD PREVIEW (PokerBros parity — Dan 2026-08-20, from live footage)
@@ -483,6 +500,13 @@ export function TableTabBar({
           const flash = actionFlash[tab.id];
           const result = resultFlash[tab.id];
           const isMuted = !!mutedIds?.includes(tab.id);
+          // Dan 2026-08-21: 5 seconds left on ANY clock at this table - turn,
+          // discard, insurance or RIT - and the box flashes. On every tab,
+          // focused or not: the clock does not care where you are looking.
+          const anySecondsLeft =
+            tab.decisionSecondsLeft !== undefined ? tab.decisionSecondsLeft : tab.timeRemaining;
+          const isFlashing = anySecondsLeft !== undefined && anySecondsLeft <= 5;
+          const decisionLabel = tab.decisionKind ? DECISION_LABEL[tab.decisionKind] : '';
           const isDragging = dragState?.id === tab.id;
 
           return (
@@ -492,6 +516,8 @@ export function TableTabBar({
                 'table-tab-bar__tab',
                 isActive && 'table-tab-bar__tab--active',
                 hasCards && 'table-tab-bar__tab--cards',
+                isFlashing && 'table-tab-bar__tab--flash',
+                tab.decisionKind && 'table-tab-bar__tab--decision',
                 tab.folded && 'table-tab-bar__tab--folded',
                 result === 'win' && 'table-tab-bar__tab--won',
                 result === 'loss' && 'table-tab-bar__tab--lost',
@@ -537,7 +563,22 @@ export function TableTabBar({
               {/* PokerBros parity (Dan 2026-08-20): a tab where the hero holds
                   live cards previews THOSE CARDS; the name only shows between
                   hands / after folding. */}
-              {hasCards ? (
+              {decisionLabel ? (
+                <span className="table-tab-bar__tab-label">
+                  <span className="table-tab-bar__tab-name">{decisionLabel}</span>
+                  <span className="table-tab-bar__tab-sub">
+                    {tab.decisionSecondsLeft ?? 0}s left
+                  </span>
+                </span>
+              ) : tab.timeBankSecondsLeft !== undefined ? (
+                /* Dan 2026-08-21: "if they have auto time banks on, and it
+                   kicks in, it should display TIME BANK with a countdown
+                   clock in the box." */
+                <span className="table-tab-bar__tab-label">
+                  <span className="table-tab-bar__tab-name">TIME BANK</span>
+                  <span className="table-tab-bar__tab-sub">{tab.timeBankSecondsLeft}s</span>
+                </span>
+              ) : hasCards ? (
                 <MiniCards cards={tab.holeCards!} />
               ) : (
                 <span className="table-tab-bar__tab-label">

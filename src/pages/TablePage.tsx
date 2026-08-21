@@ -569,6 +569,18 @@ interface TablePageProps {
      *  live - NLH / PLO5 / SPIN / MTT / HU. Authoritative: this component
      *  knows the variant, the tournament format and the seat count. */
     gameCode?: string;
+    /**
+     * A TIMED NON-TURN DECISION open at this table, as "kind:absoluteDeadlineMs"
+     * ("discard:1787...", "insurance:...", "rit:..."), or '' when there is none.
+     * One comma-free STRING so the container's shallow-compare bail-out holds.
+     *
+     * Dan 2026-08-21: these are the clocks that used to run invisibly on a
+     * background table - the modal is mounted inside a display:none subtree, so
+     * the deadline passed with nothing on screen and the engine decided for you.
+     */
+    decision?: string;
+    /** Time bank is burning at this table, as "1:absoluteDeadlineMs" or ''. */
+    timeBank?: string;
   }) => void;
   /** Whether this table is part of a multi-table session (hides own header if tab bar is shown) */
   isMultiTable?: boolean;
@@ -1091,6 +1103,16 @@ export default function TablePage({
       setPineappleDeadline(null);
     }
   }, [heroPineappleCards]);
+
+  // Mirror the discard clock into the shared decision channel so the tab strip
+  // can show and alarm it on a table the player is not looking at.
+  useEffect(() => {
+    if (pineappleDeadline) {
+      setDecisionDeadline({ kind: 'discard', at: pineappleDeadline });
+    } else {
+      setDecisionDeadline((prev) => (prev?.kind === 'discard' ? null : prev));
+    }
+  }, [pineappleDeadline]);
 
   const handlePineappleDiscard = useCallback(
     async (cardIndex: number): Promise<boolean> => {
@@ -1853,11 +1875,35 @@ export default function TablePage({
   const [isReactionPickerOpen, setIsReactionPickerOpen] = useState(false);
 
   // Insurance Modal state
+  /**
+   * Dan 2026-08-21: "IF YOU ARE PLAYING MULTIPLE TABLES AT ONCE, ALL CLOCKS,
+   * COUNTDOWNS AND WARNINGS NEED TO STILL BE WORKING ALL AT THE SAME TIME."
+   *
+   * Every timed decision now records an ABSOLUTE deadline the moment it opens,
+   * so the multi-table strip can run its own clock for a table the player is
+   * not looking at. Before this the insurance modal did not even track its own
+   * timeout (the engine sends timeoutSeconds and the client dropped it), so a
+   * background table's offer expired with nothing on screen anywhere.
+   */
+  const [decisionDeadline, setDecisionDeadline] = useState<{
+    kind: 'insurance' | 'rit' | 'discard';
+    at: number;
+  } | null>(null);
   const [showInsurance, setShowInsurance] = useState(false);
   const [insuranceOffer, setInsuranceOffer] = useState<InsuranceOffer | null>(null);
 
   // Run It Twice state — FIX 96: 2-phase flow with chooser model
   const [showRIT, setShowRIT] = useState(false);
+  // A closed modal has no clock. Without this the strip would keep alarming a
+  // decision the player already answered.
+  useEffect(() => {
+    setDecisionDeadline((prev) => {
+      if (!prev) return prev;
+      if (prev.kind === 'insurance' && !showInsurance) return null;
+      if (prev.kind === 'rit' && !showRIT) return null;
+      return prev;
+    });
+  }, [showInsurance, showRIT]);
   // rit_result payload for the boards/payout overlay (2026-08-18) — the
   // handler used to discard the event, so nobody ever saw the extra boards.
   const [ritResult, setRitResult] = useState<
@@ -1957,6 +2003,25 @@ export default function TablePage({
     [tableState.gameType, tableState.isTournament, tournamentFormat, tableState.maxPlayers]
   );
 
+  /** "kind:deadline" or '' - see the prop doc. Primitive so the reporting
+   *  effect only fires when the decision actually changes. */
+  const heroTabDecision = useMemo(
+    () => (decisionDeadline ? `${decisionDeadline.kind}:${decisionDeadline.at}` : ''),
+    [decisionDeadline]
+  );
+
+  /** Time bank as "1:deadline". timeBankTimeRemaining ticks every second, so
+   *  the deadline is derived once per activation rather than per tick. */
+  const timeBankDeadlineRef = useRef<number | null>(null);
+  if (timeBankActive && timeBankDeadlineRef.current === null) {
+    timeBankDeadlineRef.current = Date.now() + Math.max(0, timeBankTimeRemaining) * 1000;
+  } else if (!timeBankActive && timeBankDeadlineRef.current !== null) {
+    timeBankDeadlineRef.current = null;
+  }
+  const heroTabTimeBank = timeBankActive && timeBankDeadlineRef.current
+    ? `1:${timeBankDeadlineRef.current}`
+    : '';
+
   const heroTabSittingOut = useMemo(() => {
     const hero = tableState.players[tableState.heroSeat - 1];
     return !!hero && hero.status === 'sitting_out';
@@ -2006,6 +2071,8 @@ export default function TablePage({
       heroStack: heroTabStack,
       sittingOut: heroTabSittingOut,
       gameCode: heroTabGameCode,
+      decision: heroTabDecision,
+      timeBank: heroTabTimeBank,
     });
   }, [
     tableState.tableName,
@@ -2021,6 +2088,8 @@ export default function TablePage({
     heroTabStack,
     heroTabSittingOut,
     heroTabGameCode,
+    heroTabDecision,
+    heroTabTimeBank,
     heroTabCards,
     heroTabLastAction,
     heroTabFolded,
@@ -3619,6 +3688,9 @@ export default function TablePage({
             board: [],
           });
           setShowInsurance(true);
+          // The engine publishes how long the offer stands; honour it.
+          const insSecs = Number((handState as Record<string, unknown>).timeoutSeconds) || 15;
+          setDecisionDeadline({ kind: 'insurance', at: Date.now() + insSecs * 1000 });
         }
         return; // Don't process as regular state
       }
@@ -3639,6 +3711,7 @@ export default function TablePage({
           setRitPlayerCount(allPlayerIds.length);
           setRitTimer(5); // Chooser gets 5 seconds per Dan's rules
           setShowRIT(true);
+          setDecisionDeadline({ kind: 'rit', at: Date.now() + 5000 });
         }
         // Non-choosers wait for rit_chooser_decided event
         return;

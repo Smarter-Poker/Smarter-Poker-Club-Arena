@@ -492,7 +492,16 @@ export class InsuranceEngine {
     return this.activeOffers.get(tableId) || [];
   }
 
-  dispose(tableId: string): void {
+  /**
+   * Per-HAND cleanup: drop this hand's offers and their expiry timers, KEEP
+   * the table's configuration.
+   *
+   * OFFER-CONFIG FIX 2026-08-21 - identical defect to RunItTwiceEngine.endHand
+   * (see that doc comment). Settlement's between-hands dispose() also deleted
+   * tableConfigs, so insurance_enabled went false after hand 1 and no insurance
+   * was ever offered again until the engine restarted.
+   */
+  endHand(tableId: string): void {
     const offers = this.activeOffers.get(tableId);
     if (offers) {
       // Phase 1.2 PR-G-real: cancel every expiry deadline we own for this table.
@@ -501,6 +510,10 @@ export class InsuranceEngine {
       }
     }
     this.activeOffers.delete(tableId);
+  }
+
+  dispose(tableId: string): void {
+    this.endHand(tableId);
     this.tableConfigs.delete(tableId);
   }
 

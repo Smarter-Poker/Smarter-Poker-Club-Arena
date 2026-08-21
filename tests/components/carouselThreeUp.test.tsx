@@ -102,6 +102,23 @@ describe('three cards at once', () => {
     cleanup();
   });
 
+  it('keeps the measuring sizer out of the accessibility tree', () => {
+    // The sizer is WHY the assertion above is scoped to `.sp-carousel__item`
+    // rather than querying the document: it holds a second copy of a card so
+    // the track can measure a natural width. That copy is harmless only for as
+    // long as it stays aria-hidden — the moment it does not, screen readers
+    // announce a card that is not there, and the scoping above starts looking
+    // arbitrary to whoever reads it next. Pin it rather than leave it as
+    // folklore; this test cost an afternoon and a blocked publish to learn.
+    const spy = withTrackWidth(1200);
+    renderCarousel();
+    const sizer = document.querySelector('.sp-carousel__sizer');
+    expect(sizer).not.toBeNull();
+    expect(sizer!.getAttribute('aria-hidden')).toBe('true');
+    spy.mockRestore();
+    cleanup();
+  });
+
   it('places the neighbours to the LEFT and RIGHT of centre, not on top of it', () => {
     const spy = withTrackWidth(1200);
     renderCarousel(CLUBS, 300);

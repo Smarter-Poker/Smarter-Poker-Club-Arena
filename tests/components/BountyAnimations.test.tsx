@@ -72,8 +72,16 @@ beforeEach(() => {
   // Fake requestAnimationFrame too: both components drive their count-up with
   // rAF, and without this advanceTimersByTime never moves the number.
   vi.useFakeTimers({
-    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date',
-             'requestAnimationFrame', 'cancelAnimationFrame', 'performance'],
+    toFake: [
+      'setTimeout',
+      'clearTimeout',
+      'setInterval',
+      'clearInterval',
+      'Date',
+      'requestAnimationFrame',
+      'cancelAnimationFrame',
+      'performance',
+    ],
   });
 });
 
@@ -201,25 +209,31 @@ describe('KnockoutAnimation', () => {
 
 // ═══════════════════════════════════════════════════════════════════════════
 describe('MysteryBountyChest — who may open it', () => {
-  it('offers TAP TO OPEN to the winner only', () => {
-    render(
-      <MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />
-    );
+  it('offers the open prompt to the winner only', () => {
+    render(<MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />);
     act(() => {
       vi.advanceTimersByTime(750);
     });
-    expect(screen.getByText('TAP THE CHEST TO OPEN')).toBeTruthy();
+    // Title Case, per Dan's binding house rule (2026-08-21) — 8bb24cd05 applied
+    // it to every label the chest shows, so asserting SHOUTING here would lock
+    // in copy the product has deliberately moved away from.
+    expect(screen.getByText('Tap The Chest To Open')).toBeTruthy();
     expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('shows spectators who is opening, and does not let them open it', () => {
-    render(
-      <MysteryBountyChest data={CHEST} viewerUserId="user-other" onDone={() => {}} />
-    );
+    render(<MysteryBountyChest data={CHEST} viewerUserId="user-other" onDone={() => {}} />);
     act(() => {
       vi.advanceTimersByTime(750);
     });
-    expect(screen.getByText(/Alice is opening the chest/)).toBeTruthy();
+    // The name and the animated "..." live in sibling nodes inside the prompt,
+    // so the string is split across elements and a plain text matcher cannot
+    // see it. Match on the element's own textContent instead.
+    expect(
+      screen.getByText((_content, el) => !!el?.textContent?.match(/Alice Is Opening The Chest/), {
+        selector: '.mbc__prompt-main--waiting',
+      })
+    ).toBeTruthy();
     const btn = screen.getByRole('button') as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
 
@@ -232,9 +246,7 @@ describe('MysteryBountyChest — who may open it', () => {
   });
 
   it('cannot be opened before it has landed', () => {
-    render(
-      <MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />
-    );
+    render(<MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />);
     // Still in the landing beat.
     fireEvent.click(screen.getByRole('button'));
     expect(soundService.playMysteryChestOpen).not.toHaveBeenCalled();
@@ -243,9 +255,7 @@ describe('MysteryBountyChest — who may open it', () => {
 
 describe('MysteryBountyChest — the reveal sequence', () => {
   it('runs land -> open -> explosion -> reveal in order', () => {
-    render(
-      <MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />
-    );
+    render(<MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />);
     expect(soundService.playMysteryChestLand).toHaveBeenCalledTimes(1);
 
     act(() => {
@@ -268,9 +278,7 @@ describe('MysteryBountyChest — the reveal sequence', () => {
   });
 
   it('reveals the amount and the tier', () => {
-    render(
-      <MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />
-    );
+    render(<MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />);
     act(() => {
       vi.advanceTimersByTime(750);
     });
@@ -278,15 +286,15 @@ describe('MysteryBountyChest — the reveal sequence', () => {
     act(() => {
       vi.advanceTimersByTime(3200);
     });
-    // 50000 / 1000 = 50x average -> JACKPOT
-    expect(screen.getByText('JACKPOT')).toBeTruthy();
-    expect(screen.getByText(/won by/)).toBeTruthy();
+    // 50000 / 1000 = 50x average -> the top tier
+    expect(screen.getByText('Jackpot')).toBeTruthy();
+    // "Won By" is Title Case too, so match case-insensitively rather than
+    // re-encoding the exact casing in two separate places.
+    expect(screen.getByText(/won by/i)).toBeTruthy();
   });
 
   it('is idempotent — a double tap cannot run the sequence twice', () => {
-    render(
-      <MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />
-    );
+    render(<MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />);
     act(() => {
       vi.advanceTimersByTime(750);
     });
@@ -341,7 +349,7 @@ describe('MysteryBountyChest — real-time sync', () => {
     expect(soundService.playMysteryChestOpen).toHaveBeenCalledTimes(1);
   });
 
-  it("still shows the winner their prize when the broadcast throws", () => {
+  it('still shows the winner their prize when the broadcast throws', () => {
     const onBroadcastOpen = vi.fn(() => {
       throw new Error('channel down');
     });
@@ -361,9 +369,7 @@ describe('MysteryBountyChest — real-time sync', () => {
   });
 
   it('opens itself if an AFK winner never taps', () => {
-    render(
-      <MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />
-    );
+    render(<MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />);
     act(() => {
       vi.advanceTimersByTime(750);
     });
@@ -375,9 +381,7 @@ describe('MysteryBountyChest — real-time sync', () => {
   });
 
   it('does not strand spectators when no broadcast ever arrives', () => {
-    render(
-      <MysteryBountyChest data={CHEST} viewerUserId="user-other" onDone={() => {}} />
-    );
+    render(<MysteryBountyChest data={CHEST} viewerUserId="user-other" onDone={() => {}} />);
     act(() => {
       vi.advanceTimersByTime(750);
     });
@@ -454,9 +458,7 @@ describe('MysteryBountyChest — suspense and context', () => {
     fireEvent.pointerUp(screen.getByRole('button'));
     expect(container.querySelector('.mbc--pressed')).toBeNull();
 
-    rerender(
-      <MysteryBountyChest data={CHEST} viewerUserId="user-other" onDone={() => {}} />
-    );
+    rerender(<MysteryBountyChest data={CHEST} viewerUserId="user-other" onDone={() => {}} />);
     fireEvent.pointerDown(screen.getByRole('button'));
     expect(container.querySelector('.mbc--pressed')).toBeNull();
   });
@@ -475,9 +477,7 @@ describe('MysteryBountyChest — suspense and context', () => {
   });
 
   it('says what the number MEANS, not just what it is', () => {
-    render(
-      <MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />
-    );
+    render(<MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />);
     act(() => {
       vi.advanceTimersByTime(750);
     });
@@ -485,8 +485,21 @@ describe('MysteryBountyChest — suspense and context', () => {
     act(() => {
       vi.advanceTimersByTime(3200);
     });
-    // 50000 / 1000 = 50x. A big figure with no reference point is just a big figure.
-    expect(screen.getByText(/50× the average bounty/)).toBeTruthy();
+    // 50000 / 1000 = 50x. A big figure with no reference point is just a big
+    // figure — that is what this test exists to reject, and it still does.
+    //
+    // 8bb24cd05 deliberately removed the "N× the average bounty" line, so the
+    // old assertion was testing copy the product had chosen to drop. Meaning is
+    // now carried by the TIER, which is the same idea in a better form: it
+    // answers "is this a lot?" without making the player do arithmetic mid-hand.
+    expect(screen.getByText('Jackpot')).toBeTruthy();
+
+    // The property that actually matters, and the reason a tier is not just
+    // decoration: the SAME figure must read differently depending on what is
+    // normal for the tournament. 50,000 is a jackpot where the average bounty
+    // is 1,000 and merely respectable where the average IS 50,000.
+    expect(getTier(50_000, 1_000).label).toBe('Jackpot');
+    expect(getTier(50_000, 50_000).label).toBe('Small Prize');
   });
 
   it('omits the multiple when it is not notable', () => {
@@ -536,7 +549,14 @@ describe('MysteryBountyChest — suspense and context', () => {
         queuedBehind={2}
       />
     );
-    expect(screen.getByText(/\+2 more bounties/)).toBeTruthy();
+    // Title Case, and the pluralisation is built from a split expression
+    // (`Bount{n > 1 ? 'ies' : 'y'}`), so the string is spread across text nodes
+    // and only the element's textContent sees it whole.
+    expect(
+      screen.getByText((_content, el) => !!el?.textContent?.match(/\+2 More Bounties To Reveal/), {
+        selector: '.mbc__queued',
+      })
+    ).toBeTruthy();
   });
 });
 
@@ -600,7 +620,10 @@ describe('CSS contracts', () => {
 
 describe('getTier', () => {
   it('matches the legacy thresholds so one prize never gets two names', () => {
-    expect(getTier(50000, 1000).label).toBe('JACKPOT');
+    // Title Case like every other tier — this one line was missed when
+    // 8bb24cd05 applied the house rule, which is why it was the only
+    // threshold assertion still failing.
+    expect(getTier(50000, 1000).label).toBe('Jackpot');
     expect(getTier(20000, 1000).label).toBe('Grand Prize');
     expect(getTier(10000, 1000).label).toBe('Mega Prize');
     expect(getTier(5000, 1000).label).toBe('Huge Prize');

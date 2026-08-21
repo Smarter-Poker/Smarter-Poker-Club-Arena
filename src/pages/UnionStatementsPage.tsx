@@ -158,6 +158,12 @@ export default function UnionStatementsPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [issuing, setIssuing] = useState(false);
   const [confirmIssue, setConfirmIssue] = useState(false);
+  // Recording a payment that arrived DURING a period, so the next statement
+  // asks for less. union_presettlements has existed for months and never held
+  // a row, because nothing could put one there.
+  const [payingClub, setPayingClub] = useState<string | null>(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [payBusy, setPayBusy] = useState(false);
   // Switching period, and issuing, can both leave two reads in flight. Without
   // a version the older one may land last and show the wrong week's money.
   const loadVersion = useRef(0);
@@ -259,6 +265,54 @@ export default function UnionStatementsPage() {
   // square-up is the bookkeeping record of what was owed for a period, paid
   // between people out of band, and the RPC deliberately leaves the chip
   // transfer columns alone so the two can never be confused.
+  const recordPayment = useCallback(
+    async (clubId: string) => {
+      if (!unionId || payBusy) return;
+      const amount = Number(payAmount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        toast.error('Enter an amount greater than zero');
+        return;
+      }
+      setPayBusy(true);
+      try {
+        const { data, error: rpcError } = await supabase.rpc('ca_union_record_presettlement', {
+          p_union_id: unionId,
+          p_club_id: clubId,
+          p_amount: amount,
+          p_method: null,
+          p_reference: null,
+          p_note: 'Recorded on the statement board',
+        });
+        if (rpcError) {
+          toast.error(
+            isAuthzError(rpcError)
+              ? 'Only a union owner or admin can record a payment'
+              : 'Could not record the payment'
+          );
+          if (!isAuthzError(rpcError)) reportError(rpcError, 'UnionStatementsPage.presettle');
+          return;
+        }
+        const res = data as { success?: boolean; error?: string; unapplied_total?: number } | null;
+        if (!res?.success) {
+          toast.error(res?.error || 'Could not record the payment');
+          return;
+        }
+        toast.success(
+          `Recorded ${money(amount)}, ${money(res.unapplied_total ?? amount)} Credited So Far`
+        );
+        setPayingClub(null);
+        setPayAmount('');
+        await load();
+      } catch (e) {
+        reportError(e, 'UnionStatementsPage.presettle');
+        toast.error('Could not record the payment');
+      } finally {
+        setPayBusy(false);
+      }
+    },
+    [unionId, payAmount, payBusy, toast, load]
+  );
+
   const setPaid = useCallback(
     async (invoiceId: string, paid: boolean) => {
       if (!invoiceId || settlingId) return;
@@ -546,6 +600,32 @@ export default function UnionStatementsPage() {
                       </div>
                     )}
 
+                    {payingClub === c.club_id && (
+                      <div className={styles.payRow}>
+                        <input
+                          className={styles.payInput}
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="0.01"
+                          value={payAmount}
+                          onChange={(e) => setPayAmount(e.target.value)}
+                          placeholder="Amount received"
+                          aria-label={`Payment received from ${c.club_name}`}
+                        />
+                        <button
+                          type="button"
+                          className={styles.payBtn}
+                          onClick={() => {
+                            void recordPayment(c.club_id);
+                          }}
+                          disabled={payBusy}
+                        >
+                          {payBusy ? 'Saving...' : 'Record'}
+                        </button>
+                      </div>
+                    )}
+
                     <div className={styles.rowActions}>
                       <button
                         type="button"
@@ -553,6 +633,15 @@ export default function UnionStatementsPage() {
                         onClick={() => navigate(`/clubs/${c.club_id}/data`)}
                       >
                         Open Club Data
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.linkBtn}
+                        onClick={() =>
+                          setPayingClub((cur) => (cur === c.club_id ? null : c.club_id))
+                        }
+                      >
+                        {payingClub === c.club_id ? 'Cancel Payment' : 'Record A Payment'}
                       </button>
                       {c.invoice_id && c.status !== 'cancelled' && (
                         <button

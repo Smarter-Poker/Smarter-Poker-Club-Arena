@@ -868,6 +868,22 @@ export const SeatSlot = memo(
     // (no circle crop, no ring, larger) like the reference client. Uploaded
     // photos and generated SVGs keep the circular frame.
     const isBustArt = /\/avatars\/(table|free|vip)\//.test(avatarUrl);
+    /**
+     * PREMIUM HOLO 2026-08-21 — Dan: "God Tier avatars that actually move,
+     * breathe, or have scanning holographic lines pulsing across their faces."
+     *
+     * Tier is already encoded in the filename by the Hub's asset pipeline:
+     * AvatarService normalises everything to `/avatars/table/{tier}_{slug}.webp`
+     * where tier is literally `vip` or `free`. So the premium gate costs one
+     * regex and needs no new prop, no lookup and no round-trip — the URL the
+     * seat is already rendering carries the entitlement.
+     *
+     * Bust art only. The effect is a scan line masked to the CHARACTER, and an
+     * uploaded photo is an opaque rectangle: masking to it would put a bright
+     * band across a square, which is the "ring behind the player" complaint in
+     * a different costume.
+     */
+    const isVipBust = isBustArt && /\/avatars\/table\/vip_/.test(avatarUrl);
     // Only true while THIS url is the one that failed, so a new url recovers
     // on its own. getAvatarWithFallback never returns empty — with no uploaded
     // avatar it returns a generated `data:` SVG, which cannot 404 — so this is
@@ -1074,7 +1090,20 @@ export const SeatSlot = memo(
         >
           {/* Timer is shown via smooth conic-gradient border on the info box below */}
           <div
-            className={`seat__avatar${isBustArt ? ' seat__avatar--bust' : ''}`}
+            className={`seat__avatar${isBustArt ? ' seat__avatar--bust' : ''}${
+              isVipBust ? ' seat__avatar--holo' : ''
+            }`}
+            /* The scan line is painted by a ::after that is alpha-masked with
+               the SAME artwork the <img> is showing, so the band follows the
+               character's silhouette instead of sweeping a rectangle across the
+               felt. CSS cannot read the img's src, so hand it over as a custom
+               property. Only set for VIP busts — everyone else gets no extra
+               property and no pseudo-element at all. */
+            style={
+              isVipBust
+                ? ({ ['--sp-avatar-src' as string]: `url("${avatarUrl}")` } as React.CSSProperties)
+                : undefined
+            }
             onClick={
               avatarClickable
                 ? (e) => {

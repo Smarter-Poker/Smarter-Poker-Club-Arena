@@ -281,6 +281,130 @@
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PREMIUM HOLO SCAN LINE — VIP bust art only
+   ─────────────────────────────────────────────────────────────────────────────
+   Dan: "God Tier avatars that ... have scanning holographic lines pulsing
+   across their faces."
+
+   MASKED TO THE CHARACTER, NOT TO A BOX. The band is alpha-masked with the very
+   same artwork the <img> is rendering (handed over as --sp-avatar-src, since CSS
+   cannot read an img's src), so it hugs the silhouette. Verified in chromium
+   against the real /avatars/table/vip_* family before shipping, with an
+   unmasked control in the same shot: without the mask the band is a rectangle
+   that overshoots the character on both sides and lies across the felt, which
+   is exactly the "ring behind the player" complaint wearing a different hat.
+
+   GEOMETRY IS DERIVED, NOT TUNED. The overlay reuses the img's own transform
+   and the mask equivalents of its object-fit / object-position:
+
+       img      object-fit: contain   object-position: 50% 100%
+       overlay  mask-size:   contain   mask-position:   50% 100%
+       both     transform: translateY(--sp-bust-clip) scale(--sp-bust-scale)
+       both     transform-origin: 50% calc(100% - --sp-bust-clip)
+
+   Because both read the SAME variables, they cannot drift: change
+   --sp-bust-scale (the top rail already does, to 1.15) and the mask follows.
+   Confirmed identical computed matrices, not eyeballed.
+
+   ON the character, never behind the seat — Dan 2026-08-15 is still binding.
+   `mix-blend-mode: screen` means it can only ever lighten pixels the character
+   already occupies; there is no box, no shadow and no pseudo-element outside
+   the silhouette.
+
+   PULSE, NOT STROBE. The sweep takes ~1.4s of a 7s cycle and the band sits
+   parked off-screen for the rest. A continuously travelling line on nine seats
+   would be the most distracting thing on the table.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.seat__avatar--holo {
+  position: relative;
+}
+
+.seat__avatar--holo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* Sits above the art, below the status dot and position badge (z-index 3). */
+  z-index: 2;
+
+  /* — mask: the character's own alpha — */
+  -webkit-mask-image: var(--sp-avatar-src);
+  mask-image: var(--sp-avatar-src);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-position: 50% 100%;
+  mask-position: 50% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+
+  /* — geometry: identical to .seat__avatar-img — */
+  --sp-bust-clip: 0%;
+  transform-origin: 50% calc(100% - var(--sp-bust-clip));
+  transform: translateY(var(--sp-bust-clip)) scale(var(--sp-bust-scale, 1.45));
+
+  /* — the band itself — */
+  /* Tuned against the real vip_ artwork in chromium, not picked on paper. The
+     first pass at 0.16/0.34 was invisible: `screen` over a dark dinner jacket
+     barely moves, so a value that looks reasonable in the file reads as nothing
+     on the felt. These are the values where the sweep is legible at 84px
+     without turning the character into a light show. */
+  background-image: linear-gradient(
+    to bottom,
+    transparent 30%,
+    rgba(120, 240, 255, 0.3) 42%,
+    rgba(210, 252, 255, 0.62) 50%,
+    rgba(120, 240, 255, 0.3) 58%,
+    transparent 70%
+  );
+  background-repeat: no-repeat;
+  /* MUST be shorter than the box. `background-position` percentages resolve as
+     (container - image) * percentage, so at `100% 100%` that factor is ZERO and
+     the band cannot move no matter what the keyframe says — the effect renders
+     as nothing at all. Caught in chromium; it is invisible in review because
+     the CSS reads perfectly. 40% also makes the band a band rather than a wash. */
+  background-size: 100% 40%;
+  mix-blend-mode: screen;
+  opacity: 0;
+
+  animation: spAvatarHolo calc(7s * var(--animation-speed, 1)) linear infinite;
+  animation-delay: var(--sp-breath-delay, 0s);
+}
+
+/* Percentages beyond 0-100% extrapolate, which is what carries the band fully
+   off the character at both ends instead of parking it at the edges. */
+@keyframes spAvatarHolo {
+  0% {
+    background-position: 0 -60%;
+    opacity: 0;
+  }
+  3% {
+    opacity: 1;
+  }
+  17% {
+    opacity: 1;
+  }
+  20% {
+    background-position: 0 260%;
+    opacity: 0;
+  }
+  100% {
+    background-position: 0 260%;
+    opacity: 0;
+  }
+}
+
+/* Nobody home, nobody shimmering. Matches the breathing's state gating so a
+   folded or absent seat is uniformly inert rather than half-alive. */
+.seat--folded .seat__avatar--holo::after,
+.seat--sitting_out .seat__avatar--holo::after,
+.seat--away .seat__avatar--holo::after,
+.seat--disconnected .seat__avatar--holo::after {
+  animation: none;
+  opacity: 0;
+}
+
 /* ─── REDUCED MOTION ─────────────────────────────────────────────────────────
    SeatSlot.tsx also checks prefersReducedMotion() before it ever applies the
    class, so this is the belt to that braces — it also covers a user who flips
@@ -297,6 +421,13 @@
   .seat__avatar-wrap--alert,
   .seat__avatar-wrap--celebrate {
     animation: none;
+  }
+  /* The holo sweep is infinite too, so it gets the same treatment — and its
+     opacity is reset so a motion-sensitive player sees the plain artwork
+     rather than the band frozen mid-sweep across the character's face. */
+  .seat__avatar--holo::after {
+    animation: none;
+    opacity: 0;
   }
   .seat--folded .seat__avatar-wrap {
     transition: none;

@@ -16,7 +16,11 @@
  */
 
 import React, { useState } from 'react';
-import { getThrowableImageUrl, throwableService } from '../../services/ThrowableService';
+import {
+  getThrowableImageUrl,
+  getThrowableRawUrl,
+  throwableService,
+} from '../../services/ThrowableService';
 
 interface ThrowableImageProps {
   throwableId: string;
@@ -32,10 +36,13 @@ export function ThrowableImage({
   className = '',
   loading = 'eager',
 }: ThrowableImageProps) {
-  const [failed, setFailed] = useState(false);
-  const url = getThrowableImageUrl(throwableId);
+  // Error ladder: sized transform URL -> raw full-size URL -> glyph.
+  // (If the /render/image/ endpoint is ever disabled, throws still render.)
+  const [errorStep, setErrorStep] = useState<0 | 1 | 2>(0);
+  const sized = getThrowableImageUrl(throwableId, size);
+  const url = errorStep === 0 ? sized : errorStep === 1 ? getThrowableRawUrl(throwableId) : '';
 
-  if (!url || failed) {
+  if (!url || errorStep >= 2) {
     // Storage unreachable — keep the layout, show a neutral chip glyph.
     return (
       <span
@@ -58,7 +65,7 @@ export function ThrowableImage({
       decoding="async"
       draggable={false}
       className={`throwable-img ${className}`}
-      onError={() => setFailed(true)}
+      onError={() => setErrorStep((prev) => (prev < 2 ? ((prev + 1) as 0 | 1 | 2) : prev))}
     />
   );
 }
@@ -79,11 +86,16 @@ export function preloadThrowableImages(): void {
 
   const warm = () => {
     for (const t of throwableService.getThrowables()) {
-      const url = getThrowableImageUrl(t.id);
-      if (!url) continue;
-      const img = new Image();
-      img.decoding = 'async';
-      img.src = url;
+      // Both retina buckets: 96 (selector tiles) + 160 (flight/impact).
+      // Sized through /render/image/ these are a few KB each — warming all
+      // 98 costs ~1 MB total, where the old full-size warm pulled ~22 MB.
+      for (const px of [40, 64]) {
+        const url = getThrowableImageUrl(t.id, px);
+        if (!url) continue;
+        const img = new Image();
+        img.decoding = 'async';
+        img.src = url;
+      }
     }
   };
 

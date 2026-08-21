@@ -126,6 +126,7 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
           <button
             key={cat}
             className={`throwable-selector__tab ${activeCategory === cat ? 'throwable-selector__tab--active' : ''}`}
+            data-cat={cat}
             onClick={() => {
               haptic.light();
               setActiveCategory(cat);
@@ -138,7 +139,7 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
       </div>
 
       {/* Throwable Grid — 3D renders on black, blended transparent */}
-      <div className="throwable-selector__grid">
+      <div className="throwable-selector__grid" data-cat={activeCategory}>
         {throwables[activeCategory].map((throwable) => (
           <button
             key={throwable.id}

@@ -111,8 +111,19 @@
     scale: 0.2;
     opacity: 0;
   }
+  55% {
+    scale: 1.24;
+    translate: 0 0;
+    opacity: 1;
+  }
+  82% {
+    /* coil: sink and squash before the spring */
+    scale: 1.02 0.92;
+    translate: 0 4px;
+  }
   100% {
-    scale: 1.15;
+    scale: 1.16;
+    translate: 0 -2px;
     opacity: 1;
   }
 }

@@ -310,8 +310,16 @@ class ThrowableSoundServiceClass {
 
   private recipes: Record<string, () => void> = {
     // ── Reactions ──
-    pop_up: () => this.run([523, 659, 784], 0.12, 0.2, 'triangle'),
-    pop_down: () => this.run([392, 330, 262], 0.12, 0.2, 'triangle'),
+    pop_up: () => {
+      this.noise(0.02, 0.18, 2800, 'bandpass', 0, 2.5); // bright pop
+      this.run([523, 659, 784], 0.12, 0.2, 'triangle');
+      this.tone(2093, 0.18, 0.08, 'sine', undefined, 0.24); // sparkle on top
+    },
+    pop_down: () => {
+      this.run([392, 330, 262], 0.12, 0.2, 'triangle');
+      this.tone(240, 0.22, 0.1, 'sine', 110, 0.2); // deflating slide
+      this.thump(90, 0.12, 0.14, 0.4); // ...flump
+    },
     giggle: () => {
       // staccato ha-ha-ha, two bursts like a real laugh
       this.run([620, 540, 620, 540], 0.05, 0.16, 'square', 0.075);
@@ -329,6 +337,7 @@ class ThrowableSoundServiceClass {
     },
     growl: () => {
       this.tone(90, 0.35, 0.28, 'sawtooth', 60);
+      this.noise(0.02, 0.22, 4500, 'highpass', 0.3); // teeth SNAP
       this.noise(0.2, 0.12, 300, 'lowpass');
     },
     smooth: () => {
@@ -354,9 +363,13 @@ class ThrowableSoundServiceClass {
       this.noise(0.12, 0.3, 800, 'lowpass');
       this.thump(150, 0.12, 0.22);
       this.noise(0.25, 0.1, 400, 'lowpass', 0.08); // dripping goo
+      // seeds pattering off the victim
+      [0.16, 0.21, 0.27].forEach((d) => this.noise(0.02, 0.07, 2200, 'bandpass', d, 2));
     },
     egg_crack: () => {
       this.noise(0.03, 0.3, 4000, 'highpass'); // shell crack
+      this.noise(0.025, 0.2, 3600, 'highpass', 0.07); // second split
+      this.tone(260, 0.3, 0.06, 'sine', 90, 0.12); // the white sliding down
       this.noise(0.15, 0.2, 700, 'lowpass', 0.03); // splat
       this.thump(180, 0.1, 0.15, 0.03);
     },
@@ -384,9 +397,12 @@ class ThrowableSoundServiceClass {
       this.noise(0.18, 0.28, 350, 'lowpass');
       this.thump(90, 0.18, 0.22);
       this.warble(400, 28, 60, 0.35, 0.04, 0.15); // fly buzz
+      this.warble(120, 11, 40, 0.3, 0.07, 0.05); // bubbling gurgle
     },
     squirt: () => {
-      this.noiseSweep(0.32, 0.2, 2600, 1200, 'bandpass', 0, 1.5);
+      this.tone(900, 0.02, 0.14, 'square'); // pump click
+      this.tone(700, 0.02, 0.12, 'square', undefined, 0.045); // ...clack
+      this.noiseSweep(0.32, 0.2, 2600, 1200, 'bandpass', 0.07, 1.5);
       this.tone(1200, 0.25, 0.08, 'sine', 500);
     },
     punch: () => {
@@ -418,6 +434,9 @@ class ThrowableSoundServiceClass {
     },
     magnet_clink: () => {
       this.warble(300, 50, 120, 0.25, 0.12); // hum
+      [0.02, 0.06, 0.09, 0.13, 0.16, 0.19].forEach((d, i) =>
+        this.noise(0.012, 0.05 + i * 0.012, 5000, 'highpass', d)
+      ); // iron filings racing in
       this.tone(1800, 0.06, 0.2, 'square', undefined, 0.22); // clink
       this.thump(200, 0.08, 0.15, 0.22);
     },
@@ -428,6 +447,8 @@ class ThrowableSoundServiceClass {
       this.thump(180, 0.09, 0.15, 0.18);
       this.thump(180, 0.06, 0.08, 0.32);
       this.noise(0.04, 0.1, 2000, 'highpass', 0.01); // squeak
+      this.tone(420, 0.1, 0.1, 'square', 400); // backboard knock
+      this.warble(310, 60, 15, 0.25, 0.05, 0.05); // rim hum
     },
     football_hit: () => {
       this.noiseSweep(0.12, 0.1, 1600, 700, 'bandpass', 0, 1.2); // spiral whoosh in
@@ -454,6 +475,7 @@ class ThrowableSoundServiceClass {
       this.tone(660, 0.3, 0.2, 'square', 650);
       this.tone(990, 0.25, 0.12, 'square', undefined, 0.08);
       this.run([1319, 1568, 2093], 0.12, 0.1, 'triangle', 0.06); // lucky chime
+      this.warble(1800, 30, 220, 0.35, 0.05, 0.24); // coin-spin settling
     },
     dice_rattle: () => {
       [0, 0.05, 0.09, 0.14, 0.2].forEach((d) =>
@@ -475,29 +497,42 @@ class ThrowableSoundServiceClass {
       this.tone(1568, 0.15, 0.18, 'triangle'); // clink
       this.tone(2093, 0.12, 0.12, 'triangle', undefined, 0.03);
       this.noise(0.5, 0.08, 5000, 'highpass', 0.08); // fizz
+      this.tone(1760, 0.1, 0.1, 'triangle', undefined, 0.12); // second clink
+      this.tone(180, 0.09, 0.1, 'sine', 320, 0.3); // glug
+      this.tone(200, 0.09, 0.08, 'sine', 360, 0.42); // glug-glug
     },
     cork_pop: () => {
       this.noise(0.03, 0.35, 1200, 'bandpass', 0, 3); // POP
       this.tone(400, 0.08, 0.2, 'sine', 900);
       this.noise(0.6, 0.09, 6000, 'highpass', 0.06); // spray
+      this.tone(1900, 0.14, 0.07, 'sine', 2600, 0.05); // bottle-neck whistle
       this.run([1047, 1319, 1568], 0.12, 0.08, 'triangle', 0.08);
     },
     hot_splash: () => {
       this.noise(0.2, 0.22, 1400, 'bandpass', 0, 1);
       this.tone(500, 0.2, 0.1, 'sine', 250);
       this.noise(0.35, 0.06, 4000, 'highpass', 0.15); // steam hiss
+      this.tone(1150, 0.05, 0.1, 'square', undefined, 0.08); // cup clatter
+      this.tone(1350, 0.04, 0.07, 'square', undefined, 0.14);
+      this.noise(0.3, 0.05, 5200, 'highpass', 0.3); // sizzle on the felt
     },
     cash_count: () => {
       // riffling bills
       [0, 0.05, 0.1, 0.15, 0.2, 0.25].forEach((d) =>
         this.noise(0.025, 0.14, 3500, 'bandpass', d, 2.5)
       );
-      this.tone(1319, 0.15, 0.12, 'triangle', undefined, 0.3); // cha-ching
+      // money-counter zipper: accelerating ticks
+      [0.28, 0.3, 0.315, 0.325, 0.333].forEach((d) =>
+        this.noise(0.012, 0.1, 4200, 'bandpass', d, 3)
+      );
+      this.tone(1319, 0.15, 0.12, 'triangle', undefined, 0.38); // cha-ching
       this.tone(2093, 0.2, 0.12, 'triangle', undefined, 0.36);
     },
     crystal_chime: () => {
       this.run([2093, 2637, 3136], 0.2, 0.14, 'sine', 0.07);
       this.noise(0.06, 0.15, 6000, 'highpass'); // glassy tick
+      this.tone(1047, 0.55, 0.05, 'sine', undefined, 0.1); // deep resonance
+      this.tone(4186, 0.3, 0.05, 'sine', undefined, 0.28); // far harmonic ping
     },
     romance: () => {
       // harp glissando up, then a held soft third
@@ -507,11 +542,15 @@ class ThrowableSoundServiceClass {
     },
     fanfare: () => {
       this.run([523, 659, 784, 1047], 0.16, 0.16, 'triangle', 0.09);
+      [0, 0.18, 0.27].forEach((d) => this.noise(0.04, 0.09, 1800, 'bandpass', d, 1.2)); // snare hits
       this.thump(130, 0.15, 0.12, 0.36);
+      this.tone(1568, 0.3, 0.08, 'triangle', undefined, 0.42); // held top note
     },
     firework: () => {
       this.noise(0.05, 0.35, 1500, 'bandpass', 0, 1); // BANG
       this.thump(90, 0.25, 0.3);
+      this.noise(0.06, 0.14, 700, 'bandpass', 0.5, 1); // distant second shell
+      this.thump(80, 0.2, 0.1, 0.5);
       // crackle rain
       [0.1, 0.15, 0.21, 0.27, 0.35, 0.43].forEach((d) =>
         this.noise(0.03, 0.1, 4000 + Math.random() * 3000, 'bandpass', d, 3)
@@ -532,6 +571,8 @@ class ThrowableSoundServiceClass {
       this.thump(60, 0.45, 0.38);
       this.noise(0.35, 0.3, 800, 'lowpass');
       this.noiseSweep(0.3, 0.12, 1200, 300, 'bandpass', 0.1, 0.8); // debris fall
+      this.tone(1500, 0.35, 0.06, 'sine', 500, 0.25); // falling-debris whistle
+      this.tone(2800, 0.4, 0.05, 'sine', 2750, 0.45); // hot metal ping
     },
     ufo_warble: () => {
       this.warble(700, 9, 250, 0.55, 0.14);
@@ -541,6 +582,7 @@ class ThrowableSoundServiceClass {
     alien_blip: () => {
       this.run([1200, 800, 1500, 900, 1700], 0.06, 0.14, 'square', 0.06);
       this.warble(500, 15, 150, 0.3, 0.08, 0.3);
+      this.run([1200, 800, 1500], 0.05, 0.05, 'square', 0.06); // mothership answers, far off
     },
     robo_zap: () => {
       this.tone(200, 0.12, 0.2, 'square', 100);
@@ -570,18 +612,23 @@ class ThrowableSoundServiceClass {
     doge_bark: () => {
       this.tone(400, 0.08, 0.22, 'square', 700);
       this.tone(350, 0.08, 0.22, 'square', 600, 0.16);
-      this.run([784, 988], 0.1, 0.08, 'triangle', 0.08); // wow
+      [0.28, 0.36, 0.44].forEach((d) => this.noise(0.05, 0.05, 900, 'bandpass', d, 0.8)); // panting
+      this.run([784, 988], 0.1, 0.08, 'triangle', 0.3); // wow
     },
     chomp: () => {
       this.thump(120, 0.12, 0.3);
       this.noise(0.06, 0.28, 1800, 'lowpass');
       this.thump(100, 0.15, 0.25, 0.14); // second bite
       this.noise(0.05, 0.2, 1500, 'lowpass', 0.14);
+      this.noise(0.07, 0.1, 900, 'bandpass', 0.24, 0.6); // crunch grit
+      this.tone(180, 0.14, 0.09, 'sine', 90, 0.34); // satisfied gulp
     },
     bear_roar: () => {
       this.tone(120, 0.55, 0.3, 'sawtooth', 70);
       this.warble(150, 25, 40, 0.5, 0.15);
       this.thump(80, 0.3, 0.25, 0.1);
+      this.thump(95, 0.14, 0.2, 0.42); // chest-beat...
+      this.thump(95, 0.14, 0.2, 0.56); // ...chest-beat
     },
     cluck: () => {
       this.run([900, 700, 1000, 750], 0.06, 0.16, 'square', 0.09);
@@ -591,11 +638,16 @@ class ThrowableSoundServiceClass {
     squeak: () => {
       this.tone(1400, 0.12, 0.22, 'sine', 2000);
       this.tone(1800, 0.15, 0.18, 'sine', 1100, 0.15); // squeak-squeak
+      this.tone(2100, 0.08, 0.1, 'sine', 1600, 0.34); // ...squeak
+      this.noise(0.12, 0.1, 900, 'lowpass', 0.42); // sploosh
     },
     card_flick: () => {
-      this.noise(0.03, 0.2, 3000, 'bandpass', 0, 2.5);
-      this.noise(0.03, 0.15, 3500, 'bandpass', 0.06, 2.5);
-      this.run([1568, 2093], 0.1, 0.1, 'triangle', 0.05);
+      // riffle fan arriving
+      [0, 0.025, 0.045, 0.06].forEach((d, i) =>
+        this.noise(0.02, 0.08 + i * 0.03, 3000 + i * 300, 'bandpass', d, 2.5)
+      );
+      this.noise(0.025, 0.22, 2400, 'bandpass', 0.09, 3); // SNAP on the felt
+      this.run([1568, 2093], 0.1, 0.1, 'triangle', 0.12);
     },
   };
 }

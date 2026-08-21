@@ -1763,3 +1763,237 @@
     display: none !important;
   }
 }
+
+/* =================================================================================
+   v5 -- SECOND SIGNATURE LAYER for the items that only had one
+   ================================================================================= */
+
+@keyframes fx-tear-side {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx, 26px), -8px) rotate(20deg);
+  }
+}
+
+@keyframes fx-dust-puff {
+  0% {
+    opacity: 0;
+    scale: 0.4;
+  }
+  30% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    scale: 1.5;
+  }
+}
+
+@keyframes fx-pip-blink {
+  0%,
+  40% {
+    opacity: 0;
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes fx-ember {
+  0% {
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+
+/* 3b. LAUGHING -- tears fly OUT sideways while it rocks */
+.throw-animation[data-throwable='laughing_emoji'] .throw-animation__fxi {
+  display: block;
+  width: 44px;
+  height: 12px;
+}
+.throw-animation[data-throwable='laughing_emoji'] .throw-animation__fxi::before,
+.throw-animation[data-throwable='laughing_emoji'] .throw-animation__fxi::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50% 0 50% 50%;
+  background: #6ec6ff;
+  animation: fx-tear-side 600ms ease-out 120ms both;
+}
+.throw-animation[data-throwable='laughing_emoji'] .throw-animation__fxi::before {
+  left: 2px;
+  --tx: -26px;
+  rotate: 45deg;
+}
+.throw-animation[data-throwable='laughing_emoji'] .throw-animation__fxi::after {
+  right: 2px;
+  --tx: 26px;
+  rotate: -135deg;
+  animation-delay: 240ms;
+}
+
+/* 11b. BANANA -- the slide leaves a smear streak on the felt */
+.throw-animation[data-throwable='banana_peel'] .throw-animation__fxi {
+  display: block;
+  width: 44px;
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    rgba(255, 235, 59, 0),
+    rgba(255, 235, 59, 0.55) 40%,
+    rgba(255, 235, 59, 0)
+  );
+  translate: 10px 12px;
+  animation: fx-fade-late 800ms linear 150ms both;
+}
+
+/* 21b. BASKETBALL -- court dust puffs timed with the first two hops */
+.throw-animation[data-throwable='basketball'] .throw-animation__fxi {
+  display: block;
+  width: 48px;
+  height: 16px;
+}
+.throw-animation[data-throwable='basketball'] .throw-animation__fxi::before,
+.throw-animation[data-throwable='basketball'] .throw-animation__fxi::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 16px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(200, 200, 200, 0.5) 0%, transparent 70%);
+  filter: blur(1px);
+}
+.throw-animation[data-throwable='basketball'] .throw-animation__fxi::before {
+  left: 2px;
+  animation: fx-dust-puff 350ms ease-out 300ms both;
+}
+.throw-animation[data-throwable='basketball'] .throw-animation__fxi::after {
+  right: 2px;
+  animation: fx-dust-puff 300ms ease-out 610ms both;
+}
+
+/* 22b. FOOTBALL -- turf flecks kicked up by the tumble */
+.throw-animation[data-throwable='football'] .throw-animation__fxi {
+  display: block;
+  width: 40px;
+  height: 18px;
+}
+.throw-animation[data-throwable='football'] .throw-animation__fxi::before,
+.throw-animation[data-throwable='football'] .throw-animation__fxi::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  width: 6px;
+  height: 4px;
+  border-radius: 1px;
+  background: #66bb6a;
+  animation: fx-petal 600ms ease-out both;
+}
+.throw-animation[data-throwable='football'] .throw-animation__fxi::before {
+  left: 4px;
+  animation-delay: 60ms;
+}
+.throw-animation[data-throwable='football'] .throw-animation__fxi::after {
+  right: 4px;
+  animation-delay: 150ms;
+}
+
+/* 26b. DICE -- the roll comes up: pips blink in over the settle */
+.throw-animation[data-throwable='dice'] .throw-animation__fxi {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 3px rgba(255, 255, 255, 0.8);
+  animation: fx-pip-blink 700ms ease-out 350ms both;
+}
+.throw-animation[data-throwable='dice'] .throw-animation__fxi::before,
+.throw-animation[data-throwable='dice'] .throw-animation__fxi::after {
+  content: '';
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 3px rgba(255, 255, 255, 0.8);
+  animation: fx-pip-blink 700ms ease-out both;
+}
+.throw-animation[data-throwable='dice'] .throw-animation__fxi::before {
+  left: -11px;
+  top: -9px;
+  animation-delay: 420ms;
+}
+.throw-animation[data-throwable='dice'] .throw-animation__fxi::after {
+  left: 11px;
+  top: 9px;
+  animation-delay: 490ms;
+}
+
+/* 34b. TROPHY -- golden stars rise with the shine sweep */
+.throw-animation[data-throwable='trophy'] .throw-animation__fxi::before,
+.throw-animation[data-throwable='trophy'] .throw-animation__fxi::after {
+  content: '';
+  position: absolute;
+  top: -6px;
+  width: 9px;
+  height: 9px;
+  background: #ffd93d;
+  clip-path: polygon(50% 0%, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0% 50%, 39% 39%);
+  filter: drop-shadow(0 0 3px rgba(255, 217, 61, 0.8));
+  animation: fx-rise-fade 800ms ease-out both;
+}
+.throw-animation[data-throwable='trophy'] .throw-animation__fxi::before {
+  left: 12px;
+  animation-delay: 200ms;
+}
+.throw-animation[data-throwable='trophy'] .throw-animation__fxi::after {
+  right: 12px;
+  animation-delay: 380ms;
+}
+
+/* 42b. SKULL -- ember eyes glow out of the dark pulse */
+.throw-animation[data-throwable='skull'] .throw-animation__fxi::before,
+.throw-animation[data-throwable='skull'] .throw-animation__fxi::after {
+  content: '';
+  position: absolute;
+  top: 42%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ff5252 0%, rgba(255, 82, 82, 0) 75%);
+  animation: fx-ember 650ms ease-out 150ms both;
+}
+.throw-animation[data-throwable='skull'] .throw-animation__fxi::before {
+  left: 34%;
+}
+.throw-animation[data-throwable='skull'] .throw-animation__fxi::after {
+  right: 34%;
+  animation-delay: 220ms;
+}
+
+/* 45b. SHARK -- a thud that throws WATER, not dust */
+.throw-animation[data-throwable='shark'] .throw-animation__particle {
+  background: #4fc3f7;
+  filter: none;
+  border-radius: 50%;
+  box-shadow: inset -1px -1px 2px rgba(2, 62, 96, 0.4);
+}

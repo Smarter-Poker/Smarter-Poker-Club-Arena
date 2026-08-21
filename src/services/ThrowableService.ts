@@ -796,13 +796,46 @@ const LEGACY_ID_MAP: Record<string, string> = {
 
 const imageUrlCache = new Map<string, string>();
 
-/** Public CDN URL for a throwable's 3D render (pure-black background JPG). */
-export function getThrowableImageUrl(id: string): string {
-  const cached = imageUrlCache.get(id);
+/**
+ * Raw (full-size) public URL for a throwable's 3D render. The originals are
+ * 300-620 KB JPGs — never draw these directly in a 40px tile; they exist as
+ * the fallback when the transform endpoint is unavailable.
+ */
+export function getThrowableRawUrl(id: string): string {
+  const key = `${id}@raw`;
+  const cached = imageUrlCache.get(key);
   if (cached) return cached;
   const { data } = supabase.storage.from('images').getPublicUrl(`throwables/${id}.jpg`);
   const url = data?.publicUrl || '';
-  if (url) imageUrlCache.set(id, url);
+  if (url) imageUrlCache.set(key, url);
+  return url;
+}
+
+/**
+ * Sized public URL for a throwable render via the Storage image-transform
+ * endpoint (/render/image/), the same pipeline the avatars use (measured
+ * there 2026-08-20: a 263 KB original comes back as 3.5 KB at 112px).
+ *
+ * Without this, the selector grid pulled 49 full-size JPGs — ~22 MB — to
+ * paint 40px tiles. Two retina buckets cover every surface we draw:
+ *   96px  selector tiles (40-44px boxes)
+ *   160px flight + impact (42-76px boxes)
+ * resize=contain (NOT the avatars' cover): items must never be cropped.
+ */
+export function getThrowableImageUrl(id: string, displayPx?: number): string {
+  const bucket = displayPx !== undefined && displayPx <= 48 ? 96 : 160;
+  const key = `${id}@${bucket}`;
+  const cached = imageUrlCache.get(key);
+  if (cached) return cached;
+  const raw = getThrowableRawUrl(id);
+  if (!raw) return '';
+  let url = raw;
+  if (raw.includes('/storage/v1/object/public/')) {
+    url =
+      raw.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/') +
+      `?width=${bucket}&height=${bucket}&resize=contain&quality=80`;
+  }
+  imageUrlCache.set(key, url);
   return url;
 }
 

@@ -31,15 +31,19 @@ interface ThrowableSelectorProps {
   onClose: () => void;
 }
 
-const CATEGORY_LABELS: Record<ThrowableCategory, { icon: React.ReactNode; label: string }> = {
-  reactions: {
-    icon: <span className="category-icon category-icon--reactions">☺</span>,
-    label: 'React',
-  },
-  throws: { icon: <span className="category-icon category-icon--throws">◆</span>, label: 'Throw' },
-  sports: { icon: <span className="category-icon category-icon--sports">●</span>, label: 'Sports' },
-  cheers: { icon: <span className="category-icon category-icon--cheers">★</span>, label: 'Cheer' },
-  premium: { icon: <span className="category-icon category-icon--premium">♛</span>, label: 'VIP' },
+/**
+ * Tab order and copy. Dan 2026-08-21: VIP leads, and the labels were renamed
+ * so all five fit one row without truncating — the old panel showed four and a
+ * clipped fifth, so the VIP tab (the one that sells something) was the one you
+ * could not see. Short nouns beat verbs here: "Emoji" reads as a category,
+ * "React" read as a button.
+ */
+const CATEGORY_LABELS: Record<ThrowableCategory, { label: string }> = {
+  premium: { label: 'VIP' },
+  reactions: { label: 'Emoji' },
+  throws: { label: 'Throw' },
+  sports: { label: 'Sports' },
+  cheers: { label: 'Party' },
 };
 
 export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelectorProps) {
@@ -50,7 +54,7 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
     cheers: [],
     premium: [],
   });
-  const [activeCategory, setActiveCategory] = useState<ThrowableCategory>('reactions');
+  const [activeCategory, setActiveCategory] = useState<ThrowableCategory>('premium');
   const [allowance, setAllowance] = useState<ThrowAllowance | null>(null);
   const [loading, setLoading] = useState(true);
   const toast = useToast();
@@ -157,6 +161,26 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
           </button>
         ))}
       </div>
+
+      {/* Dan 2026-08-21: a way to buy more without leaving the table blind.
+          Deep-links straight to the Diamonds tab rather than the store root,
+          so the next tap is the purchase and not another menu. */}
+      <button
+        className="throwable-selector__buy"
+        onClick={() => {
+          haptic.light();
+          onClose();
+          navigate('/marketplace?tab=diamonds');
+        }}
+      >
+        <span className="throwable-selector__buy-icon" aria-hidden>
+          ◆
+        </span>
+        <span className="throwable-selector__buy-label">Get More Throwables</span>
+        <span className="throwable-selector__buy-chevron" aria-hidden>
+          ›
+        </span>
+      </button>
     </div>
   );
 }

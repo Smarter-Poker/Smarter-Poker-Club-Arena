@@ -432,6 +432,36 @@
   }
 }
 
+/* -- LANDING LIFE (Dan 2026-08-21: a throw should last 3-4 seconds) ---------
+   Opacity lives HERE, on a wrapper, and motion lives on the icon inside it.
+   Keeping them on one element forced a choice between a slow-motion landing
+   and a throw that vanished in 1.6s: stretching one stretched the other.
+   Split, the item lands at its tuned pace, holds while you actually look at
+   it, and fades at the end. The motion keyframes below therefore no longer
+   set opacity at all. */
+.throw-animation__impact-life {
+  position: absolute;
+  animation: throwable-impact-life var(--life-dur, 2400ms) linear forwards;
+}
+
+@keyframes throwable-impact-life {
+  0% {
+    opacity: 1;
+  }
+  78% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* An exploding item is consumed by its own fireball, so it must NOT sit
+   around for three seconds -- only its smoke and scorch mark should. */
+.throw-animation__impact--explode .throw-animation__impact-life {
+  animation-duration: 420ms;
+}
+
 /* -- squash-and-stretch item ----------------------------------------------- */
 
 .throw-animation__impact-icon {
@@ -444,7 +474,6 @@
 @keyframes throwable-impact-squash {
   0% {
     transform: translate(-50%, -50%) scale(1.35, 0.55);
-    opacity: 1;
   }
   22% {
     transform: translate(-50%, -50%) scale(0.82, 1.22);
@@ -454,11 +483,9 @@
   }
   60% {
     transform: translate(-50%, -50%) scale(1, 1);
-    opacity: 1;
   }
   100% {
     transform: translate(-50%, -50%) scale(0.9);
-    opacity: 0;
   }
 }
 
@@ -470,7 +497,6 @@
 @keyframes throwable-impact-bounce {
   0% {
     transform: translate(-50%, -50%) scale(1.25, 0.65);
-    opacity: 1;
   }
   20% {
     transform: translate(-50%, calc(-50% - 34px)) scale(0.94, 1.08);
@@ -486,7 +512,6 @@
   }
   100% {
     transform: translate(-50%, -50%) scale(1);
-    opacity: 0;
   }
 }
 
@@ -498,14 +523,12 @@
 @keyframes throwable-impact-splat {
   0% {
     transform: translate(-50%, -50%) scale(1.5, 0.4);
-    opacity: 1;
   }
   30% {
     transform: translate(-50%, -50%) scale(1.25, 0.6);
   }
   100% {
     transform: translate(-50%, -50%) scale(1.15, 0.55);
-    opacity: 0;
   }
 }
 
@@ -517,11 +540,9 @@
 @keyframes throwable-impact-consume {
   0% {
     transform: translate(-50%, -50%) scale(1.2);
-    opacity: 1;
   }
   100% {
     transform: translate(-50%, -50%) scale(1.9);
-    opacity: 0;
   }
 }
 

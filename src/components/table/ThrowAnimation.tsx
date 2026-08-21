@@ -74,9 +74,33 @@ const PARTICLES: Record<string, number> = {
   burst: 16,
 };
 
-/** Projectile size per weight -- an anvil should LOOK heavier than a tennis ball */
-const FLIGHT_SIZE: Record<string, number> = { light: 42, medium: 48, heavy: 58 };
-const IMPACT_SIZE: Record<string, number> = { light: 56, medium: 64, heavy: 76 };
+/**
+ * Projectile size per weight -- an anvil should LOOK heavier than a tennis ball.
+ * Dan 2026-08-21: "each throwable should be about double its current size when
+ * thrown." Doubled from 42/48/58 and 56/64/76. The renders are fetched at the
+ * 160px retina bucket, so they stay sharp at these sizes.
+ */
+const FLIGHT_SIZE: Record<string, number> = { light: 84, medium: 96, heavy: 116 };
+const IMPACT_SIZE: Record<string, number> = { light: 112, medium: 128, heavy: 152 };
+
+/**
+ * Dan 2026-08-21: "should last about 3-4 seconds from the time it's thrown
+ * until the time it disappears."
+ *
+ * The old sequence ran ~1.6s for a plain item (140 windup + 650 flight + 820
+ * impact) while messy items ran to 6.4s because `linger` was appended AFTER
+ * the impact. Both wrong, in opposite directions.
+ *
+ * Now every throw targets the same wall-clock life. Flight keeps its tuned,
+ * snappy per-physics duration; the remainder is spent at the landing site,
+ * where there is actually something to look at. The stain no longer extends
+ * the total -- it runs CONCURRENTLY with the impact, which is also what it
+ * should have been doing all along (a splat appears when the thing lands, not
+ * after it has finished bouncing).
+ */
+const TARGET_TOTAL_MS = 3500;
+/** Floor so a very slow lob still gets a readable landing beat. */
+const MIN_IMPACT_LIFE_MS = 1400;
 
 /**
  * Per-item flight-duration overrides (ms) -- a tennis serve and a lightning
@@ -180,7 +204,7 @@ interface ParticleSpec {
 }
 
 export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimationProps) {
-  const [phase, setPhase] = useState<'windup' | 'flight' | 'impact' | 'linger' | 'done'>('windup');
+  const [phase, setPhase] = useState<'windup' | 'flight' | 'impact' | 'done'>('windup');
 
   const toPos = seatPositions.get(event.toSeat);
   // ACCURACY FIX (per-item pass): an unseated thrower (railbird, or a seat
@@ -196,11 +220,18 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
   const physics = DURATION_OVERRIDES[t.id]
     ? { ...basePhysics, duration: DURATION_OVERRIDES[t.id] }
     : basePhysics;
+  // Motion duration of the landing animation (squash, bounce, per-item
+  // signature). Unchanged and still per-item: this is the CHOREOGRAPHY.
   const impactMs = IMPACT_MS[t.id] || IMPACT_DURATION;
-  const lingerMs = LINGER_MS[t.id] || LINGER_DURATION;
+  // How long the landed item stays on screen. Owns opacity only, so stretching
+  // it never slows the motion above -- the item lands at its tuned pace, then
+  // simply sits there before fading.
+  const lifeMs = Math.max(MIN_IMPACT_LIFE_MS, TARGET_TOTAL_MS - WINDUP_DURATION - physics.duration);
+  // The stain fades out with the item rather than after it.
+  const lingerMs = Math.min(LINGER_MS[t.id] || LINGER_DURATION, lifeMs);
   const isHeavy = t.weight === 'heavy';
-  const flightSize = FLIGHT_SIZE[t.weight] || 48;
-  const impactSize = IMPACT_SIZE[t.weight] || 64;
+  const flightSize = FLIGHT_SIZE[t.weight] || 96;
+  const impactSize = IMPACT_SIZE[t.weight] || 128;
 
   // Velocity tilt: fast, spinless items lean into their line of travel
   // (rocket, water gun, boxing glove...). Fraction of the true angle so an
@@ -273,23 +304,13 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
       }
     });
 
-    // IMPACT -> LINGER or DONE (per-item impact pace)
-    at(WINDUP_DURATION + physics.duration + impactMs, () => {
-      if (t.linger) {
-        setPhase('linger');
-      } else {
-        setPhase('done');
-        onCompleteRef.current();
-      }
+    // IMPACT -> DONE. There is no separate linger phase any more: the stain is
+    // rendered inside the impact phase and fades on its own timer, so a messy
+    // item no longer runs 6+ seconds while a clean one is gone in 1.6.
+    at(WINDUP_DURATION + physics.duration + lifeMs, () => {
+      setPhase('done');
+      onCompleteRef.current();
     });
-
-    // LINGER -> DONE (per-item residue lifetime)
-    if (t.linger) {
-      at(WINDUP_DURATION + physics.duration + impactMs + lingerMs, () => {
-        setPhase('done');
-        onCompleteRef.current();
-      });
-    }
 
     return () => timers.forEach(clearTimeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -389,6 +410,8 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
               left: toPos.x,
               top: toPos.y,
               '--impact-dur': `${impactMs}ms`,
+              '--life-dur': `${lifeMs}ms`,
+              '--linger-dur': `${lingerMs}ms`,
             } as React.CSSProperties
           }
         >
@@ -401,12 +424,26 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
 
           {/* squash-and-stretch item with additive glow */}
           <div className="throw-animation__impact-glow" />
-          <div className="throw-animation__impact-icon">
-            <ThrowableImage throwableId={t.id} size={impactSize} />
+          {/* Two nested elements on purpose. The inner one owns the MOTION
+              (squash / bounce / per-item signature) at its tuned duration; the
+              outer owns OPACITY for the whole landing life. Splitting them is
+              what lets a throw last 3.5s without the landing animation playing
+              in slow motion. */}
+          <div className="throw-animation__impact-life">
+            <div className="throw-animation__impact-icon">
+              <ThrowableImage throwableId={t.id} size={impactSize} />
+            </div>
           </div>
 
           {/* shockwave ring */}
           <div className="throw-animation__burst" />
+
+          {/* stain / scorch residue for messy items. Concurrent with the
+              impact, not appended after it: a splat appears the moment the
+              thing lands. */}
+          {t.linger && (
+            <div className={`throw-animation__linger throw-animation__linger--${t.impact}`} />
+          )}
 
           {/* per-item impact signature (frost ring, bite marks, claw slashes,
               steam, petals, pins, cork, magic-8 answer... CSS-gated) */}
@@ -431,20 +468,6 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
             ))}
           </div>
         </div>
-      )}
-
-      {/* LINGER -- stain / scorch residue (messy items only) */}
-      {phase === 'linger' && t.linger && (
-        <div
-          className={`throw-animation__linger throw-animation__linger--${t.impact}`}
-          style={
-            {
-              left: toPos.x,
-              top: toPos.y,
-              '--linger-dur': `${lingerMs}ms`,
-            } as React.CSSProperties
-          }
-        />
       )}
     </div>
   );

@@ -324,7 +324,9 @@ export default function HandReplayerPage() {
                   return (
                     <div
                       key={p.name}
-                      ref={(el) => (overlayRefs.current[p.seat] = el)}
+                      ref={(el) => {
+                        overlayRefs.current[p.seat] = el;
+                      }}
                       style={{
                         position: 'absolute',
                         left: '-9999px', // Initial hidden state until first update

@@ -7,6 +7,102 @@
 
 ---
 
+## Cowork session 2026-08-21 (later) — the day the gates blocked everyone, and why
+
+Dan, twice: "That's now four separate times today that main sat unable to deploy
+on a red test committed alongside the feature it was meant to guard. YOU NEED TO
+FIX THIS PROBLEM, OR TELL ME WHAT NEEDS TO GET DONE TO FIX IT."
+
+### What was actually wrong
+
+Three separate causes wearing the same costume.
+
+**1. Tests could land before the code they described.** Nothing stopped a commit
+whose test asserted behaviour that did not exist yet. Fixed in two places: a
+test gate in `.husky/pre-push` (`vitest related --run` on changed sources,
+`vitest run` on changed specs, bypass `CA_SKIP_TESTS=1` for a genuine
+emergency), and a GitHub ruleset on `main`.
+
+**2. `main` accepted direct pushes.** A red commit could go straight in, and did.
+`main` now carries a ruleset (id 21163380): `deletion`, `non_fast_forward`,
+`pull_request`, and `required_status_checks` on **TypeScript Check** and
+**Client Unit Tests (vitest)**. Verified by trying: a direct push is refused with
+`2 of 2 required status checks are expected`. `scripts/git-safe-push.sh` now
+routes main through `scripts/ci/pr-push.mjs` (branch -> PR -> wait -> squash),
+and no longer uses `--force-with-lease` or `--no-verify`.
+
+**3. The gates themselves went red on correct work.** This one blocked the whole
+repo for part of the afternoon and is the interesting failure.
+
+### The phantom-reference gates, and absence of evidence
+
+`check-phantom-tables.mjs` and `check-phantom-columns.mjs` compare `.from()` /
+`.rpc()` / `.select()` against `scripts/ci/supabase-*-manifest.json`. That
+snapshot is stale **by construction**: schema lands in prod continuously via the
+Supabase MCP while the manifest refreshes once a day. So the gate routinely
+flags a colleague's correct work.
+
+The tables gate already knew this and asked the live schema before failing. Two
+defects defeated it:
+
+- the rescue's timeout was 20s against an `fn_schema_manifest` that was measured
+  at **30.7s under load** (0.6s warm), so it could never complete when it was
+  most needed; and
+- a failed rescue `return`ed the same value as "no credentials", so an
+  unreachable database was treated as proof of a phantom.
+
+The columns gate had no rescue at all.
+
+Result on 2026-08-21: **46 tables/rpcs and 3 columns flagged; 45 of the 46 and 2
+of the 3 existed in production.** Every open PR was unmergeable, on the same day
+branch protection started requiring these jobs.
+
+The principle now written into both gates: the snapshot alone is not sufficient
+evidence of absence. Live says present -> the snapshot is stale, pass and say
+so. Live says absent -> genuine phantom, still fails. Live unreachable -> report
+what would have been flagged and pass, because blocking every merge in the repo
+on someone else's downtime is not a trade worth making, and a real phantom is
+caught on the next run minutes later. Behaviour without credentials (forks,
+local runs) is unchanged.
+
+Landed as #157 (tables + columns rescue) and #162 (75s budget per attempt,
+replacing 30s, justified by the 30.7s measurement).
+
+### The bug the noise was hiding
+
+Once the 46 false positives cleared, one real phantom remained:
+`v_spin_tier_availability` had no `can_draw_500x`, while
+`useSpinTierAvailability.ts` selected it. PostgREST answers 42703 for the
+**whole request**, the hook bails on error and keeps its empty cache, and
+`DynamicGameCard` computes `liveTop` from rows it never receives — so neither
+"100x LIVE" nor "500x LIVE" ever rendered for any club. The missing 500x column
+was killing the 100x badge as collateral.
+
+Two sessions found it independently within minutes and both closed it from the
+wrong side, adding the column, without having seen Dan's instruction on #160:
+"REMOVE THE 500X WE WILL ONLY EVER DO 100X." Retirement is #160/#164's to
+finish. Sequencing note recorded there: `main` still selects and reads
+`can_draw_500x`, so the client change must land before the column is dropped or
+the hook returns to 42703 and takes the 100x badge with it again.
+
+Also of note, mine used `500 * 1.5` by copying the 100x threshold;
+`SPIN_TIERS.reserveThresholdX` is 1.5 for 100x and **2.0** for 500x, which is
+what `fn_spin_draw_multiplier` gates on. 1.5 would advertise a jackpot the draw
+then refuses to select. The other session's 2.0 landed last and is what
+production holds.
+
+### Still open
+
+- **Bundle budget is breached on main**: raw 6820kB against a 6144kB limit with
+  gzip over 90% of its own. `Production Build` is failing for this reason alone
+  and is not a required check, so it blocks nothing — which is exactly how it
+  stays breached. Needs code splitting or a deliberate budget change.
+- The manifest-refresh workflow opens a PR that nothing auto-merges, and skips
+  opening a second one while the first is unmerged, so drift accumulates
+  silently behind an ignored PR.
+
+---
+
 ## Cowork session 2026-08-21 — run it twice and insurance were dead after hand 1
 
 Dan: "INSURANCE AND RUN IT TWICE (OR 3 TIMES) ARE 100% BROKEN AND HAVE ZERO

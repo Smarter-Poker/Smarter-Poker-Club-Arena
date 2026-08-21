@@ -83,7 +83,7 @@ async function beat(page: Page, mutate: string): Promise<Record<string, number>>
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
     const out: Record<string, number> = {};
     for (const a of document.getAnimations()) {
-      const name = (a as unknown as { animationName?: string }).animationName;
+      const name = (a as any).animationName || (a as any).transitionProperty;
       if (!name) continue;
       const d = a.effect?.getTiming().duration;
       out[name] = typeof d === 'number' ? Math.round(d) : -1;

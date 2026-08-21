@@ -249,7 +249,11 @@ async function liveSchema() {
         method: 'POST',
         headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: '{}',
-        signal: AbortSignal.timeout(30000),
+      // Measured 2026-08-21: this RPC returned in 0.6s warm and 30.7s under
+      // load, against a 30s budget — so on a slow day all three attempts can
+      // expire and the gate loses its live evidence exactly when the database
+      // is busiest. The wait costs nothing when the database is healthy.
+        signal: AbortSignal.timeout(75000),
       });
       if (res.ok) {
         const data = await res.json();

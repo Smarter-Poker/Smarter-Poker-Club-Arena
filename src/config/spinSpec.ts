@@ -483,16 +483,43 @@ export function requiredSeed(highestStake: number): number {
 export const SPIN_REVEAL = {
   /** Dan: "ONE SECOND LATER" — the beat between the last buy-in and the count. */
   LEAD_IN_MS: 1000,
-  /** 3 ... 2 ... 1 */
+  /**
+   * 3 ... 2 ... 1 on the starting tree: red, then yellow, then green, one
+   * second apart. Dan 2026-08-21: "THE 3, 2, 1 SHOULD FEEL LIKE A NASCAR
+   * COUNT DOWN." A NASCAR tree is evenly spaced whole seconds; anything
+   * quicker reads as a stopwatch rather than a start.
+   */
   COUNTDOWN_MS: 3000,
-  /** The wheel chases and lands on the drawn tier. */
-  SPIN_MS: 4200,
-  /** The winning segment flashes and the multiplier is read. */
-  RESULT_HOLD_MS: 2200,
+  /**
+   * The chase light runs the disc and lands on the drawn tier.
+   *
+   * Dan 2026-08-21: "THE ROTATING SELECTOR SHOULD GO A LITTLE FASTER AND LAST
+   * A LITTLE LONGER." Both at once, which is only possible by adding laps: the
+   * chase went from 3 laps in 4200ms (5.5 steps/sec) to 5 laps in 6000ms
+   * (~7.7 steps/sec). Faster light, longer sequence.
+   */
+  SPIN_MS: 6000,
+  /**
+   * The winning multiplier's outline flashes on its own before the result
+   * card takes the screen. Dan: "FLASH ALONG THE OUTER EDGES OF THE
+   * MULTIPLIER THAT ONE" — which needs a beat of its own, or the result card
+   * lands on top of the thing it is announcing.
+   */
+  WINNER_FLASH_MS: 1600,
+  /** The prize is read. Long enough that the choral landing is not cut off. */
+  RESULT_HOLD_MS: 3200,
 } as const;
 
 /** Total wall time from the last buy-in to the first card being dealt. */
+/**
+ * The whole sequence, and therefore exactly how long the engine holds the
+ * deal. Every beat is summed here rather than hand-totalled anywhere else:
+ * the client used to carry its OWN result duration (4200ms) against an engine
+ * hold built from 2200ms, so for two full seconds a player could be dealt
+ * cards on top of the card announcing what they were playing for. Same class
+ * of bug as the hand-completion hold, same fix — one number, derived.
+ */
 export function spinRevealTotalMs(): number {
   const R = SPIN_REVEAL;
-  return R.LEAD_IN_MS + R.COUNTDOWN_MS + R.SPIN_MS + R.RESULT_HOLD_MS;
+  return R.LEAD_IN_MS + R.COUNTDOWN_MS + R.SPIN_MS + R.WINNER_FLASH_MS + R.RESULT_HOLD_MS;
 }

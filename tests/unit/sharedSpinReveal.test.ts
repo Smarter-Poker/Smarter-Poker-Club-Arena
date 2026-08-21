@@ -34,16 +34,47 @@ describe('the reveal timing is one spec, mirrored into the engine', () => {
     expect(read('server/src/config/spinSpec.ts')).toBe(read('src/config/spinSpec.ts'));
   });
 
-  it('the sequence is lead-in, countdown, spin, result', () => {
+  it('the sequence is lead-in, countdown, spin, winner flash, result', () => {
     expect(SPIN_REVEAL.LEAD_IN_MS).toBe(1000); // "ONE SECOND LATER"
     expect(SPIN_REVEAL.COUNTDOWN_MS).toBeGreaterThan(0); // 3 . 2 . 1
     expect(SPIN_REVEAL.SPIN_MS).toBeGreaterThan(0);
+    expect(SPIN_REVEAL.WINNER_FLASH_MS).toBeGreaterThan(0);
     expect(spinRevealTotalMs()).toBe(
       SPIN_REVEAL.LEAD_IN_MS +
         SPIN_REVEAL.COUNTDOWN_MS +
         SPIN_REVEAL.SPIN_MS +
+        SPIN_REVEAL.WINNER_FLASH_MS +
         SPIN_REVEAL.RESULT_HOLD_MS
     );
+  });
+
+  it('THE DRIFT THAT WAS THERE: the client cannot outlast the engine hold', () => {
+    // SpinWheel.tsx carried its own RESULT_MS of 4200 while the engine built
+    // its hold from a spec RESULT_HOLD_MS of 2200. For two seconds the engine
+    // believed the reveal was finished and was free to deal the first hand
+    // over the top of the card announcing the prize. Nothing compared the two
+    // numbers, so nothing caught it. Every client timing is now DERIVED.
+    const WHEEL = strip(read('src/components/tournament/SpinWheel.tsx'));
+    for (const literal of [/CHASE_MS\s*=\s*\d/, /RESULT_MS\s*=\s*\d/, /COUNTDOWN_STEP_MS\s*=\s*\d/]) {
+      expect(WHEEL, `a hand-written timing literal is back: ${literal}`).not.toMatch(literal);
+    }
+    expect(WHEEL).toMatch(/CHASE_MS = SPIN_REVEAL\.SPIN_MS/);
+    expect(WHEEL).toMatch(/SPIN_REVEAL\.WINNER_FLASH_MS \+ SPIN_REVEAL\.RESULT_HOLD_MS/);
+    expect(WHEEL).toMatch(/COUNTDOWN_STEP_MS = SPIN_REVEAL\.COUNTDOWN_MS \/ COUNTDOWN_FROM/);
+  });
+
+  it('the chase got faster AND longer, which needs more laps', () => {
+    // Dan 2026-08-21: "THE ROTATING SELECTOR SHOULD GO A LITTLE FASTER AND
+    // LAST A LITTLE LONGER." Those pull against each other on a fixed lap
+    // count, so the laps went up: 3 laps / 4200ms = 5.5 steps a second,
+    // 5 laps / 6000ms = 7.7.
+    const WHEEL = strip(read('src/components/tournament/SpinWheel.tsx'));
+    expect(WHEEL).toMatch(/CHASE_LOOPS = 5/);
+    expect(SPIN_REVEAL.SPIN_MS).toBe(6000);
+    const oldRate = (3 * 8) / 4.2;
+    const newRate = (5 * 8) / (SPIN_REVEAL.SPIN_MS / 1000);
+    expect(newRate).toBeGreaterThan(oldRate);
+    expect(SPIN_REVEAL.SPIN_MS).toBeGreaterThan(4200);
   });
 });
 

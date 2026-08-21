@@ -50,8 +50,19 @@ const SPIN = {
   tiers: DEFAULT_SPIN_TIERS,
 };
 
-const COUNTDOWN_MS = 3 * 750;
-const CHASE_MS = 4200;
+/**
+ * Timings come from the SPEC, never from literals repeated here.
+ *
+ * They used to be hand-copied (3 x 750, 4200), which meant this file agreed
+ * with an OLD component and would have gone on passing while the real
+ * component and the engine drifted apart. A test that pins yesterday's numbers
+ * is worse than no test: it reports green on a table that deals cards over its
+ * own result card.
+ */
+const COUNTDOWN_MS = SPIN_REVEAL.COUNTDOWN_MS;
+const CHASE_MS = SPIN_REVEAL.SPIN_MS;
+/** The winner's outline flashes alone, then the prize is read. */
+const RESULT_MS = SPIN_REVEAL.WINNER_FLASH_MS + SPIN_REVEAL.RESULT_HOLD_MS;
 /**
  * Dan 2026-08-21: "ONE SECOND LATER, A 3...2...1... COUNT DOWN CLOCK MUST
  * BEGIN WITH A WHEEL SPIN." The reveal now opens with a one-second beat before
@@ -180,7 +191,7 @@ describe('the chase is honest', () => {
 
   it('the schedule lands the runner on the target by construction', () => {
     for (let target = 0; target < 9; target++) {
-      const times = chaseSchedule(9, target, 4200);
+      const times = chaseSchedule(9, target, CHASE_MS);
       // Last step index modulo segment count IS the target.
       expect((times.length - 1) % 9).toBe(target);
       // And the schedule decelerates: every gap >= the one before it.
@@ -188,7 +199,7 @@ describe('the chase is honest', () => {
         expect(times[i] - times[i - 1]).toBeGreaterThanOrEqual(times[i - 1] - times[i - 2] - 1);
       }
       // All inside the allotted time.
-      expect(times[times.length - 1]).toBeLessThanOrEqual(4200);
+      expect(times[times.length - 1]).toBeLessThanOrEqual(CHASE_MS);
     }
   });
 
@@ -234,8 +245,9 @@ describe('sequence', () => {
     expect(container.querySelector('.sw__count')?.textContent).toBe('3');
     expect(container.querySelector('.sw__disc')).toBeNull();
 
+    // One light per second, derived — not the old hand-copied 750ms step.
     act(() => {
-      vi.advanceTimersByTime(LEAD_IN_MS + 760);
+      vi.advanceTimersByTime(LEAD_IN_MS + COUNTDOWN_MS / 3 + 10);
     });
     expect(container.querySelector('.sw__count')?.textContent).toBe('2');
 
@@ -279,7 +291,7 @@ describe('sequence', () => {
     const { container } = render(<SpinWheel data={SPIN} onDone={onDone} />);
     runToResult();
     act(() => {
-      vi.advanceTimersByTime(LEAD_IN_MS + 4200 + 100);
+      vi.advanceTimersByTime(LEAD_IN_MS + COUNTDOWN_MS + CHASE_MS + 100);
     });
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(container.firstChild).toBeNull();

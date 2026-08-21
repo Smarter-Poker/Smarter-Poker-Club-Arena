@@ -110,13 +110,34 @@ export const DEFAULT_SPIN_TIERS: SpinTier[] = SPIN_TIERS.map((t) => ({
   weight: t.freq,
 }));
 
-// ── Timing (PokerBros reference: ~10s countdown-to-fade) ────────────────────
+// ── Timing ──────────────────────────────────────────────────────────────────
+//
+// EVERY number here is DERIVED from SPIN_REVEAL, which is also what the engine
+// builds its deal hold from. They used to be independent literals, and they had
+// already drifted apart in two places:
+//
+//   RESULT_MS was 4200 against a spec RESULT_HOLD_MS of 2200, so for two full
+//   seconds the engine believed the reveal was over and could deal the first
+//   hand on top of the card telling the player what they were playing for.
+//
+//   3 countdown steps of 750ms is 2250ms against a spec COUNTDOWN_MS of 3000,
+//   so the wheel started three quarters of a second before the engine thought.
+//
+// Neither was visible in a test because nothing compared the two sources. Now
+// there is only one source, so the drift cannot recur.
 const COUNTDOWN_FROM = 3;
-const COUNTDOWN_STEP_MS = 750;
-const CHASE_MS = 4200;
-/** Chase loops before the runner starts caring where it lands. */
-const CHASE_LOOPS = 3;
-const RESULT_MS = 4200;
+/** One second per light: red, yellow, green. A NASCAR tree is evenly spaced. */
+const COUNTDOWN_STEP_MS = SPIN_REVEAL.COUNTDOWN_MS / COUNTDOWN_FROM;
+const CHASE_MS = SPIN_REVEAL.SPIN_MS;
+/**
+ * Chase loops before the runner starts caring where it lands. Dan 2026-08-21
+ * wanted the selector "A LITTLE FASTER AND LAST A LITTLE LONGER" — which is
+ * only possible together by adding laps. Five laps in 6000ms is ~7.7 steps a
+ * second, against three laps in 4200ms at 5.5.
+ */
+const CHASE_LOOPS = 5;
+/** The winner's outline flashes alone, THEN the prize is read. */
+const RESULT_MS = SPIN_REVEAL.WINNER_FLASH_MS + SPIN_REVEAL.RESULT_HOLD_MS;
 
 /**
  * Order the tiers around the disc so small and large ALTERNATE.
@@ -199,8 +220,10 @@ export function chaseSchedule(
     const t = i / steps;
     // Convex curve: step TIMES cluster early and spread late, so the gaps
     // between steps strictly grow — the runner sprints its opening laps and
-    // crawls the final segments one readable beat at a time.
-    times.push(Math.round(totalMs * Math.pow(t, 2.6)));
+    // crawls the final segments one readable beat at a time. Eased slightly
+    // (2.6 -> 2.35) when the chase went to five laps, so the extra distance
+    // reads as speed rather than as a longer crawl at the end.
+    times.push(Math.round(totalMs * Math.pow(t, 2.35)));
   }
   return times;
 }

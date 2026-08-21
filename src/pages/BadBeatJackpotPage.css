@@ -22,13 +22,13 @@
   background: linear-gradient(135deg, #1a2535 0%, #0d1520 50%, #1a2535 100%);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  border: 2px solid rgba(255, 215, 0, 0.5);
+  border: 2px solid rgba(213, 218, 226, 0.5);
   border-radius: 20px;
   text-align: center;
   overflow: hidden;
   box-shadow:
-    0 0 60px rgba(255, 215, 0, 0.15),
-    0 0 30px rgba(255, 215, 0, 0.1),
+    0 0 60px rgba(213, 218, 226, 0.15),
+    0 0 30px rgba(213, 218, 226, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
@@ -38,7 +38,7 @@
   left: 50%;
   width: 200px;
   height: 200px;
-  background: radial-gradient(circle, rgba(255, 215, 0, 0.4) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(213, 218, 226, 0.4) 0%, transparent 70%);
   transform: translate(-50%, -50%);
   animation: badBeatJackpotPagePulse 2s ease-in-out infinite;
 }
@@ -59,7 +59,7 @@
 .jackpot-label {
   display: block;
   font-size: 0.8rem;
-  color: rgba(255, 215, 0, 0.9);
+  color: rgba(213, 218, 226, 0.9);
   text-transform: uppercase;
   letter-spacing: 3px;
   margin-bottom: 0.5rem;
@@ -72,13 +72,13 @@
   display: block;
   font-size: 3rem;
   font-weight: 800;
-  background: linear-gradient(135deg, #ffd700 0%, #fff 40%, #ffd700 100%);
+  background: linear-gradient(135deg, #d5dae2 0%, #fff 40%, #d5dae2 100%);
   background-size: 200% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
   animation: goldShimmer 3s linear infinite;
-  filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.4));
+  filter: drop-shadow(0 0 20px rgba(213, 218, 226, 0.4));
   position: relative;
   z-index: 1;
   font-family: 'Rajdhani', monospace;
@@ -180,10 +180,10 @@
 
 .bar-fill {
   height: 14px;
-  background: linear-gradient(90deg, #ffd700 0%, #ffa500 100%);
+  background: linear-gradient(90deg, #d5dae2 0%, #b9c0ca 100%);
   border-radius: 7px;
   min-width: 20px;
-  box-shadow: 0 0 12px rgba(255, 215, 0, 0.35);
+  box-shadow: 0 0 12px rgba(213, 218, 226, 0.35);
   position: relative;
   overflow: hidden;
 }
@@ -211,7 +211,7 @@
 .payout-percent {
   font-size: 0.85rem;
   font-weight: 700;
-  color: #ffd700;
+  color: #d5dae2;
   font-family: 'Rajdhani', monospace;
 }
 
@@ -257,7 +257,7 @@
   transform: translateY(-2px);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 8px 24px rgba(255, 215, 0, 0.15);
+    0 8px 24px rgba(213, 218, 226, 0.15);
 }
 
 .hit-date {
@@ -274,9 +274,9 @@
 .hit-amount {
   font-weight: 700;
   font-size: 1.125rem;
-  color: #ffd700;
+  color: #d5dae2;
   font-family: 'Rajdhani', monospace;
-  text-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
+  text-shadow: 0 0 10px rgba(213, 218, 226, 0.4);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -350,10 +350,10 @@
       inset 0 0 40px rgba(0, 200, 83, 0.1);
   }
   100% {
-    border-color: rgba(255, 215, 0, 0.5);
+    border-color: rgba(213, 218, 226, 0.5);
     box-shadow:
-      0 0 60px rgba(255, 215, 0, 0.15),
-      0 0 30px rgba(255, 215, 0, 0.1),
+      0 0 60px rgba(213, 218, 226, 0.15),
+      0 0 30px rgba(213, 218, 226, 0.1),
       inset 0 1px 0 rgba(255, 255, 255, 0.06);
   }
 }
@@ -363,7 +363,7 @@
   display: block;
   font-size: 12px;
   font-weight: 700;
-  color: #ffd700;
+  color: #d5dae2;
   margin: 2px 0 1px;
   overflow-wrap: anywhere;
 }

@@ -20,6 +20,11 @@ import { reportError } from '../../utils/errorReporter';
 
 // Lazy-load heavy component
 
+import {
+  getClubLevelInfoFromMembers,
+  membersToNextClubLevel,
+} from '../../utils/clubLevels';
+
 const ClubCardPanel = lazy(() => import('../club/ClubCardPanel'));
 
 // ── Types ─────────────────────────────────────────
@@ -275,6 +280,13 @@ export default function CarouselSection({
                 totalMembers={stats?.totalMembers ?? club.member_count ?? 0}
                 clubLevel={stats?.clubLevel ?? 1}
                 activePlayers={stats?.activePlayers ?? 0}
+                levelProgressPercent={
+                  stats ? getClubLevelInfoFromMembers(stats.totalMembers).progressPercent : undefined
+                }
+                membersToNextLevel={stats ? membersToNextClubLevel(stats.totalMembers) : undefined}
+                levelTierLabel={
+                  stats ? getClubLevelInfoFromMembers(stats.totalMembers).tierLabel : undefined
+                }
                 clubId={club.club_id}
                 cardImageUrl={
                   Number(club.club_id) === SHARK_CLUB_ID

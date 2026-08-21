@@ -330,9 +330,7 @@ export class GameServer {
     // entry, so it is a real bound rather than a between-passes hope.
     if (handHistoryQueueDepth() > 0) {
       const deadline = Date.now() + 6_000;
-      console.log(
-        `[GameServer] flushing ${handHistoryQueueDepth()} queued hand_history row(s)...`
-      );
+      console.log(`[GameServer] flushing ${handHistoryQueueDepth()} queued hand_history row(s)...`);
       while (handHistoryQueueDepth() > 0 && Date.now() < deadline) {
         const before = handHistoryQueueDepth();
         const summary = await drainHandHistoryQueue(deadline);
@@ -353,7 +351,6 @@ export class GameServer {
     }
     onHandHistoryRecovered(null);
     stopHandHistoryRetry();
-
 
     // Stop all tournament engines
     for (const [, tm] of this.tournamentEngines) {
@@ -869,133 +866,135 @@ export class GameServer {
         );
       }
       if (canSweepSeats) {
-      // REVIEW FIX 2026-08-20: this said `.range(0, 4999)`, which does NOT
-      // raise the cap — PostgREST applies db-max-rows AFTER the Range header,
-      // so it still returned at most 1,000 rows with no error. That left the
-      // single most dangerous statement on this path (it credits wallets and
-      // DELETEs seat rows) silently truncated, while the read-only horse lookup
-      // above it had been paged. Page it properly.
-      const seatPage = await fetchAllRows<{
-        id: string;
-        user_id: string;
-        table_id: string;
-        seat_number: number;
-        stack: number;
-      }>(
-        (cursor, want) => {
-          let q = supabase
-            .from('table_seats')
-            .select('id, user_id, table_id, seat_number, stack, tables!inner(tournament_id)')
-            .is('left_at', null)
-            .is('tables.tournament_id', null)
-            .in('user_id', horseIdList)
-            .order('id', { ascending: true })
-            .limit(want);
-          if (protectedTableId) q = q.neq('table_id', protectedTableId);
-          if (cursor) q = q.gt('id', cursor);
-          return q;
-        },
-        { label: 'GameServer.staleSweep.seats', maxRows: 50_000 }
-      );
-      // Same fail-closed rule as the horse list: this path DELETES seat rows.
-      const activeSeats = seatPage.complete ? seatPage.rows : [];
-      if (!seatPage.complete) {
-        console.warn(
-          '[GameServer] Stale-seat sweep SKIPPED — the seat read was incomplete. ' +
-            'The rest of the cleanup still runs.'
+        // REVIEW FIX 2026-08-20: this said `.range(0, 4999)`, which does NOT
+        // raise the cap — PostgREST applies db-max-rows AFTER the Range header,
+        // so it still returned at most 1,000 rows with no error. That left the
+        // single most dangerous statement on this path (it credits wallets and
+        // DELETEs seat rows) silently truncated, while the read-only horse lookup
+        // above it had been paged. Page it properly.
+        const seatPage = await fetchAllRows<{
+          id: string;
+          user_id: string;
+          table_id: string;
+          seat_number: number;
+          stack: number;
+        }>(
+          (cursor, want) => {
+            let q = supabase
+              .from('table_seats')
+              .select('id, user_id, table_id, seat_number, stack, tables!inner(tournament_id)')
+              .is('left_at', null)
+              .is('tables.tournament_id', null)
+              .in('user_id', horseIdList)
+              .order('id', { ascending: true })
+              .limit(want);
+            if (protectedTableId) q = q.neq('table_id', protectedTableId);
+            if (cursor) q = q.gt('id', cursor);
+            return q;
+          },
+          { label: 'GameServer.staleSweep.seats', maxRows: 50_000 }
         );
-      }
-
-      if (activeSeats && activeSeats.length > 0) {
-        // Aggregate total stack per user
-        const userTotals = new Map<string, number>();
-        // A3 FIX (2026-07-28): carry the seat ids alongside the totals so the
-        // credit below can be made idempotent. The aggregate is per-user, so the
-        // only stable identity for "this exact cash-out" is the set of seat rows
-        // that produced it.
-        const userSeatIds = new Map<string, string[]>();
-        for (const seat of activeSeats) {
-          const prev = userTotals.get(seat.user_id) ?? 0;
-          userTotals.set(seat.user_id, prev + (seat.stack ?? 0));
-          const ids = userSeatIds.get(seat.user_id) ?? [];
-          ids.push(seat.id);
-          userSeatIds.set(seat.user_id, ids);
-        }
-
-        // Credit each user's wallet in parallel (batch of 10)
-        // FIX-232: Use atomic RPC increment — eliminates read-then-write race condition
-        // SWEEP #4 P1-1 FIX (2026-07-23): failed credits were only logged and
-        // cashedOut++ ran anyway, then EVERY seat was deleted below — so on a
-        // restart during a Supabase blip (exactly when restarts happen) the
-        // uncredited players' stacks were permanently destroyed. Track the users
-        // whose credit failed and spare their seats from the delete so their
-        // stacks survive for the next startup pass.
-        let cashedOut = 0;
-        const failedUserIds = new Set<string>();
-        const entries = Array.from(userTotals.entries()).filter(([_, total]) => total > 0);
-        for (let i = 0; i < entries.length; i += 10) {
-          const batch = entries.slice(i, i + 10);
-          await Promise.all(
-            batch.map(async ([userId, totalStack]) => {
-              try {
-                const { error: walletErr } = await supabase.rpc('credit_player_wallet', {
-                  p_user_id: userId,
-                  p_amount: totalStack,
-                  // A3 FIX (2026-07-28): `cleanupStaleData` runs on EVERY boot and
-                  // deliberately spares the seats of users whose credit failed
-                  // (see failedUserIds below) so their stacks survive - which means
-                  // the next boot re-credits the identical aggregate. A credit that
-                  // committed but timed out therefore minted the whole stack again.
-                  // Keyed on the sorted seat-id set that produced this aggregate.
-                  p_idempotency_key: `startup-cashout:${userId}:${(userSeatIds.get(userId) ?? []).slice().sort().join('|')}`,
-                });
-                if (walletErr) {
-                  console.warn(
-                    `[GameServer] Cashout wallet credit failed for ${userId}: ${walletErr.message}`
-                  );
-                  failedUserIds.add(userId);
-                  return;
-                }
-
-                cashedOut++;
-              } catch (err: any) {
-                console.warn(`[GameServer] Cashout failed for ${userId}: ${err.message}`);
-                failedUserIds.add(userId);
-              }
-            })
-          );
-        }
-
-        if (cashedOut > 0) {
-          console.log(`[GameServer] Safely cashed out ${cashedOut} seated players before cleanup`);
-        }
-        if (failedUserIds.size > 0) {
+        // Same fail-closed rule as the horse list: this path DELETES seat rows.
+        const activeSeats = seatPage.complete ? seatPage.rows : [];
+        if (!seatPage.complete) {
           console.warn(
-            `[GameServer] ${failedUserIds.size} player(s) had failed cashout credits — sparing their seats from deletion to preserve stacks`
+            '[GameServer] Stale-seat sweep SKIPPED — the seat read was incomplete. ' +
+              'The rest of the cleanup still runs.'
           );
         }
 
-        // TOURNEY-AUDIT 2026-07-24: delete EXACTLY the cash seats we just
-        // processed (minus failed credits, whose stacks are still owed) —
-        // never a blanket wipe. Tournament seats are untouched so a resumed
-        // tournament finds its players; historical (left_at set) rows are
-        // preserved as the seat audit trail.
-        const seatIdsToDelete = activeSeats
-          .filter((s) => !failedUserIds.has(s.user_id))
-          .map((s) => s.id);
-        for (let i = 0; i < seatIdsToDelete.length; i += 100) {
-          const chunk = seatIdsToDelete.slice(i, i + 100);
-          await supabase.from('table_seats').delete().in('id', chunk);
+        if (activeSeats && activeSeats.length > 0) {
+          // Aggregate total stack per user
+          const userTotals = new Map<string, number>();
+          // A3 FIX (2026-07-28): carry the seat ids alongside the totals so the
+          // credit below can be made idempotent. The aggregate is per-user, so the
+          // only stable identity for "this exact cash-out" is the set of seat rows
+          // that produced it.
+          const userSeatIds = new Map<string, string[]>();
+          for (const seat of activeSeats) {
+            const prev = userTotals.get(seat.user_id) ?? 0;
+            userTotals.set(seat.user_id, prev + (seat.stack ?? 0));
+            const ids = userSeatIds.get(seat.user_id) ?? [];
+            ids.push(seat.id);
+            userSeatIds.set(seat.user_id, ids);
+          }
+
+          // Credit each user's wallet in parallel (batch of 10)
+          // FIX-232: Use atomic RPC increment — eliminates read-then-write race condition
+          // SWEEP #4 P1-1 FIX (2026-07-23): failed credits were only logged and
+          // cashedOut++ ran anyway, then EVERY seat was deleted below — so on a
+          // restart during a Supabase blip (exactly when restarts happen) the
+          // uncredited players' stacks were permanently destroyed. Track the users
+          // whose credit failed and spare their seats from the delete so their
+          // stacks survive for the next startup pass.
+          let cashedOut = 0;
+          const failedUserIds = new Set<string>();
+          const entries = Array.from(userTotals.entries()).filter(([_, total]) => total > 0);
+          for (let i = 0; i < entries.length; i += 10) {
+            const batch = entries.slice(i, i + 10);
+            await Promise.all(
+              batch.map(async ([userId, totalStack]) => {
+                try {
+                  const { error: walletErr } = await supabase.rpc('credit_player_wallet', {
+                    p_user_id: userId,
+                    p_amount: totalStack,
+                    // A3 FIX (2026-07-28): `cleanupStaleData` runs on EVERY boot and
+                    // deliberately spares the seats of users whose credit failed
+                    // (see failedUserIds below) so their stacks survive - which means
+                    // the next boot re-credits the identical aggregate. A credit that
+                    // committed but timed out therefore minted the whole stack again.
+                    // Keyed on the sorted seat-id set that produced this aggregate.
+                    p_idempotency_key: `startup-cashout:${userId}:${(userSeatIds.get(userId) ?? []).slice().sort().join('|')}`,
+                  });
+                  if (walletErr) {
+                    console.warn(
+                      `[GameServer] Cashout wallet credit failed for ${userId}: ${walletErr.message}`
+                    );
+                    failedUserIds.add(userId);
+                    return;
+                  }
+
+                  cashedOut++;
+                } catch (err: any) {
+                  console.warn(`[GameServer] Cashout failed for ${userId}: ${err.message}`);
+                  failedUserIds.add(userId);
+                }
+              })
+            );
+          }
+
+          if (cashedOut > 0) {
+            console.log(
+              `[GameServer] Safely cashed out ${cashedOut} seated players before cleanup`
+            );
+          }
+          if (failedUserIds.size > 0) {
+            console.warn(
+              `[GameServer] ${failedUserIds.size} player(s) had failed cashout credits — sparing their seats from deletion to preserve stacks`
+            );
+          }
+
+          // TOURNEY-AUDIT 2026-07-24: delete EXACTLY the cash seats we just
+          // processed (minus failed credits, whose stacks are still owed) —
+          // never a blanket wipe. Tournament seats are untouched so a resumed
+          // tournament finds its players; historical (left_at set) rows are
+          // preserved as the seat audit trail.
+          const seatIdsToDelete = activeSeats
+            .filter((s) => !failedUserIds.has(s.user_id))
+            .map((s) => s.id);
+          for (let i = 0; i < seatIdsToDelete.length; i += 100) {
+            const chunk = seatIdsToDelete.slice(i, i + 100);
+            await supabase.from('table_seats').delete().in('id', chunk);
+          }
+          console.log(
+            `[GameServer] Deleted ${seatIdsToDelete.length} cash-table seats (after safe cashout; tournament seats preserved)`
+          );
+        } else {
+          // TOURNEY-AUDIT 2026-07-24: nothing to cash out — do NOT blanket-delete.
+          // The old path here deleted EVERY table_seats row (including tournament
+          // seats and historical left_at rows) on every restart.
+          console.log('[GameServer] No active cash-table seats needed cashout');
         }
-        console.log(
-          `[GameServer] Deleted ${seatIdsToDelete.length} cash-table seats (after safe cashout; tournament seats preserved)`
-        );
-      } else {
-        // TOURNEY-AUDIT 2026-07-24: nothing to cash out — do NOT blanket-delete.
-        // The old path here deleted EVERY table_seats row (including tournament
-        // seats and historical left_at rows) on every restart.
-        console.log('[GameServer] No active cash-table seats needed cashout');
-      }
       } // end if (canSweepSeats)
 
       // 3. FIX 202: Reset cash tables based on horse fleet mode.
@@ -1218,13 +1217,46 @@ export class GameServer {
             .filter((t) => finishedSet.has(t.tournament_id))
             .map((t) => t.id);
           for (let i = 0; i < orphanIds.length; i += 100) {
+            const batch = orphanIds.slice(i, i + 100);
+
+            /**
+             * RELEASE THE SEATS, not just the table (audit 2026-08-21).
+             *
+             * TournamentManagerEliminations releases seats on the NORMAL
+             * finish, but a tournament can reach COMPLETED/CANCELLED without
+             * ever passing through it - a crashed engine, the stuck-COMPLETING
+             * recovery, or the 12-hour idle sweep. Those paths landed here,
+             * where the table was closed and `table_seats` was left untouched,
+             * so seats kept leaking at a slower rate after the main fix. Two
+             * had already reappeared within hours of it shipping.
+             *
+             * This is the catch-all: whatever route a tournament took to
+             * finished, its players end up released. `left_at IS NULL` is what
+             * the multi-table rebuild reads as "I am still playing here", so a
+             * seat left open at a closed table follows the player around as a
+             * dead tab until something clears it.
+             */
+            const { error: seatErr } = await supabase
+              .from('table_seats')
+              .update({ left_at: new Date().toISOString() })
+              .in('table_id', batch)
+              .is('left_at', null);
+            if (seatErr) {
+              reportError(
+                new Error(`[GameServer] orphan seat release failed: ${seatErr.message}`),
+                'GameServer.orphan_seat_release_failed'
+              );
+            }
+
             await supabase
               .from('tables')
               .update({ status: 'closed', current_players: 0 })
-              .in('id', orphanIds.slice(i, i + 100));
+              .in('id', batch);
           }
           if (orphanIds.length > 0) {
-            console.log(`[GameServer] Closed ${orphanIds.length} orphaned tournament tables`);
+            console.log(
+              `[GameServer] Closed ${orphanIds.length} orphaned tournament tables and released their seats`
+            );
           }
         }
       } catch (orphanErr) {

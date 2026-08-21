@@ -116,6 +116,10 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
   useEffect(() => {
     if (!userId || !selected) {
       setClassHands(null);
+      // Must clear here too: if a fetch was in flight when `selected` went
+      // null, its cleanup set `cancelled` and skipped the .finally, so the
+      // flag would otherwise stay true for the rest of the session.
+      setHandsLoading(false);
       return;
     }
     let cancelled = false;
@@ -212,7 +216,10 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
             <select
               className="heatmap-select"
               value={position ?? ''}
-              onChange={(e) => setPosition(e.target.value || null)}
+              onChange={(e) => {
+                setSelected(null);
+                setPosition(e.target.value || null);
+              }}
             >
               <option value="">All</option>
               {POSITIONS.map((p) => (
@@ -227,7 +234,10 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
             <select
               className="heatmap-select"
               value={variant ?? ''}
-              onChange={(e) => setVariant(e.target.value || null)}
+              onChange={(e) => {
+                setSelected(null);
+                setVariant(e.target.value || null);
+              }}
             >
               {VARIANTS.map((v) => (
                 <option key={v.label} value={v.key ?? ''}>
@@ -367,9 +377,9 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
                     {h.was_all_in && <em>All In</em>}
                     {h.showdown && <em>Showdown</em>}
                   </span>
-                  <span className={h.net >= 0 ? 'is-up' : 'is-down'}>
-                    {h.net >= 0 ? '+' : ''}
-                    {h.net_bb.toFixed(1)} BB
+                  <span className={h.net_bb >= 0 ? 'is-up' : 'is-down'}>
+                    {h.net_bb >= 0 ? '+' : ''}
+                    {h.net_bb.toFixed(1)} bb
                   </span>
                 </li>
               ))}

@@ -202,6 +202,38 @@
 /* These were applied in TSX with no rule defined anywhere, so the empty
    states rendered inconsistently - only .pos-radar-empty was centred. */
 
-.bench-head { text-align: left; }
+.bench-head {
+  text-align: left;
+}
 /* Keeps a metric's label, bar and sentence together when the dossier prints. */
-.bench-item { break-inside: avoid; page-break-inside: avoid; }
+.bench-item {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* The median label is anchored to the tick rather than centred by flexbox.
+   The two used to disagree by up to 12 points, so the word "Median" pointed
+   at a place that was not the median. */
+.bench-bar-anchored {
+  position: relative;
+}
+
+.bench-bar-median-label {
+  position: absolute;
+  bottom: -0.15rem;
+  transform: translateX(-50%);
+  font-size: 0.58rem;
+  color: rgba(200, 224, 245, 0.5);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* The marker is offset by half its width, so at a clamped 0% or 100% half of
+   it used to hang outside the track. */
+.bench-bar-track {
+  overflow: visible;
+}
+
+.bench-bar-marker {
+  max-width: 12px;
+}

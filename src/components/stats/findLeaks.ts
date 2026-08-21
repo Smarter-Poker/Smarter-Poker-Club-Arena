@@ -97,7 +97,6 @@ export function findLeaks(
   const pfr = pct(overall.pfr);
   const f3b = pct(overall.fold_to_three_bet);
   const cbet = pct(overall.cbet_flop);
-  const wtsd = pct(overall.wtsd);
 
   // ── 1. Position played backwards ────────────────────────────────────────
   // The most expensive structural error there is, and completely invisible in
@@ -117,7 +116,9 @@ export function findLeaks(
           btnVpip
         )}% on the button, over ${utg.hands_played.toLocaleString()} and ${btn.hands_played.toLocaleString()} hands.`,
         action:
-          'Fold more from early position and open far wider on the button. Acting last for the whole hand is worth more than any two cards you can be dealt.',
+          vpip > 35
+            ? 'Fold far more from early position. Your overall volume is already high, so fix the shape first - the button should be your widest position, not your tightest.'
+            : 'Fold more from early position and open far wider on the button. Acting last for the whole hand is worth more than any two cards you can be dealt.',
       });
     } else if (btnVpip - utgVpip < 8) {
       leaks.push({
@@ -128,7 +129,9 @@ export function findLeaks(
           utgVpip
         )}% is only ${f1(btnVpip - utgVpip)} points of difference.`,
         action:
-          'Widen the button and tighten under the gun. Most of the money in a session comes from playing many more hands in late position than in early.',
+          vpip > 35
+            ? 'Tighten under the gun sharply. With your overall volume already high, the gain is in cutting early position rather than in adding more buttons.'
+            : 'Widen the button and tighten under the gun. Most of the money in a session comes from playing many more hands in late position than in early.',
       });
     }
   }
@@ -235,26 +238,44 @@ export function findLeaks(
   }
 
   // ── 7. Showdown discipline ──────────────────────────────────────────────
-  if (overall.showdowns_total >= 100) {
-    if (wtsd > 35) {
+  //
+  // DENOMINATOR TRAP: `overall.wtsd` from the RPC is showdowns / hands DEALT,
+  // not the industry statistic (showdowns / flops SEEN). Measured on live
+  // data it runs around 5% for a human and 16% field-wide, so thresholds
+  // calibrated for the industry version (24-30%) could NEVER fire and both
+  // rules here were silently dead.
+  //
+  // Showdowns over hands VOLUNTARILY PLAYED is computable from what we already
+  // have and is far closer to the real denominator, so that is what is used -
+  // and the evidence sentence now names the denominator it actually measured.
+  const handsPlayed = overall.vpip * overall.total_hands;
+  const showdownRate = handsPlayed > 0 ? (overall.showdowns_total / handsPlayed) * 100 : 0;
+
+  if (overall.showdowns_total >= 100 && handsPlayed >= 200) {
+    if (showdownRate > 45) {
       leaks.push({
         id: 'wtsd_high',
         severity: 'medium',
         title: 'You pay off too often',
-        evidence: `You reach showdown on ${f1(wtsd)}% of the hands you play.`,
+        evidence: `You reach showdown on ${f1(
+          showdownRate
+        )}% of the hands you choose to play, across ${overall.showdowns_total.toLocaleString()} showdowns.`,
         action:
-          'Fold more on the river when the story does not add up. Curiosity is the single most expensive habit at low stakes.',
+          'Fold more on the river when the story does not add up. Paying to see it is the single most expensive habit at low stakes.',
       });
     }
+
     const wsd = (overall.showdowns_won / overall.showdowns_total) * 100;
-    if (wsd < 45 && wtsd > 28) {
+    if (wsd < 45) {
       leaks.push({
         id: 'losing_showdowns',
         severity: 'medium',
         title: 'You are arriving at showdown behind',
-        evidence: `You win ${f1(wsd)}% of the showdowns you reach, across ${overall.showdowns_total.toLocaleString()} of them.`,
+        evidence: `You win ${f1(
+          wsd
+        )}% of the showdowns you reach, across ${overall.showdowns_total.toLocaleString()} of them.`,
         action:
-          'Get to fewer showdowns with marginal hands. Losing more than half of them means the hands you are calling with are not good enough.',
+          'Get to fewer showdowns with marginal hands. Losing more than half of them means the hands you are calling down with are not good enough.',
       });
     }
   }

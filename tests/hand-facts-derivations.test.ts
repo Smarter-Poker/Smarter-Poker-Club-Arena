@@ -515,3 +515,68 @@ describe('computeTransfers conserves chips exactly', () => {
     }
   });
 });
+
+describe('folded_to_three_bet counts only folds that answer the 3-bet', () => {
+  const A = 'user-a';
+  const B = 'user-b';
+  const C = 'user-c';
+  const act = (userId: string, action: string, stage: string, amount = 0): HandAction => ({
+    seat: 1,
+    userId,
+    action,
+    amount,
+    stage,
+  });
+
+  it('opener who is 3-bet and folds IS folding to a 3-bet', () => {
+    const actions = [
+      act(A, 'raise', 'preflop', 30),
+      act(B, 'raise', 'preflop', 90),
+      act(A, 'fold', 'preflop'),
+    ];
+    const f = deriveFlowFlags(A, actions, { boardLength: 0, returned: 0, nonFoldedCount: 1 });
+    expect(f.faced_three_bet).toBe(true);
+    expect(f.folded_to_three_bet).toBe(true);
+  });
+
+  it('opener who 4-bets and then folds to a 5-bet is NOT folding to a 3-bet', () => {
+    // The bug: once facedThreeBet latched, ANY later preflop fold set
+    // folded_to_three_bet - so a fold to a 5-bet counted as a fold to a 3-bet,
+    // inflating the stat with traffic that had nothing to do with 3-bets.
+    const actions = [
+      act(A, 'raise', 'preflop', 30), // open
+      act(B, 'raise', 'preflop', 90), // 3-bet
+      act(A, 'raise', 'preflop', 240), // hero 4-bets: he ANSWERED the 3-bet
+      act(B, 'raise', 'preflop', 600), // 5-bet
+      act(A, 'fold', 'preflop'),
+    ];
+    const f = deriveFlowFlags(A, actions, { boardLength: 0, returned: 0, nonFoldedCount: 1 });
+    expect(f.faced_three_bet).toBe(true);
+    expect(f.folded_to_three_bet).toBe(false);
+  });
+
+  it('opener who folds to a COLD 4-bet is not folding to a 3-bet', () => {
+    // Ordinary multiway traffic, not a corner case: hero opens, one villain
+    // 3-bets, another cold-4-bets, and only then does hero fold.
+    const actions = [
+      act(A, 'raise', 'preflop', 30),
+      act(B, 'raise', 'preflop', 90),
+      act(C, 'raise', 'preflop', 240),
+      act(A, 'fold', 'preflop'),
+    ];
+    const f = deriveFlowFlags(A, actions, { boardLength: 0, returned: 0, nonFoldedCount: 1 });
+    expect(f.folded_to_three_bet).toBe(false);
+  });
+
+  it('a 5-bet sets neither three_bet nor four_bet', () => {
+    const actions = [
+      act(A, 'raise', 'preflop', 30),
+      act(B, 'raise', 'preflop', 90),
+      act(A, 'raise', 'preflop', 240),
+      act(B, 'raise', 'preflop', 600),
+    ];
+    const fb = deriveFlowFlags(B, actions, { boardLength: 0, returned: 0, nonFoldedCount: 2 });
+    expect(fb.three_bet).toBe(true); // his FIRST raise was the 3-bet
+    expect(fb.four_bet).toBe(false);
+  });
+});

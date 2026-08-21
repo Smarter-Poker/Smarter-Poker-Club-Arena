@@ -792,3 +792,22 @@
     animation: none;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   GAME CODE LABEL (Dan 2026-08-21)
+   The tab's primary line when no hand is live: "NLH", "PLO5", "SPIN", "MTT".
+   A code, not a table name - it has to read at a glance on a ~100px pill.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.table-tab-bar__tab-label .table-tab-bar__tab-name {
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-size: 0.8125rem;
+  line-height: 1.15;
+}
+
+@media (max-width: 480px) {
+  .table-tab-bar__tab-label .table-tab-bar__tab-name {
+    font-size: 0.75rem;
+  }
+}

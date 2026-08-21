@@ -23,6 +23,8 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useUserTableSettings } from '../hooks/useUserTableSettings';
 import { useToast } from '../components/common/Toast';
 import { supabase } from '../lib/supabase';
+import { gameCode, gameCodeFromName } from '../utils/gameCode';
+import { swipeTargetIndex } from '../utils/swipeTarget';
 import { soundService, haptic } from '../services/SoundService';
 import { setSitOut, submitAction } from '../services/GameServerAPI';
 import { sessionStatsService } from '../services/SessionStatsService';
@@ -85,6 +87,10 @@ interface TableInstance {
   heroStack?: number;
   /** Hero is sitting out at this table. */
   sittingOut?: boolean;
+  /** Dan 2026-08-21: short game code the tab shows when no hand is live
+   *  (NLH / PLO5 / SPIN / MTT / HU). Best-effort at first paint, replaced by
+   *  TablePage's authoritative value the moment it loads. */
+  gameCode?: string;
   /**
    * Dan 2026-08-15: a tab is either a live table or a LOBBY placeholder.
    *
@@ -298,7 +304,7 @@ export default function MultiTablePage() {
 
   // Tab entrance animation — only used for multi-table mode with tab bar
   useEffect(() => {
-    if (tables.length > 1 && !tabEntranceComplete) {
+    if (tables.length >= 1 && !tabEntranceComplete) {
       const timer = setTimeout(() => setTabEntranceComplete(true), 200);
       return () => clearTimeout(timer);
     } else if (tables.length > 0 && !tabEntranceComplete) {
@@ -349,7 +355,11 @@ export default function MultiTablePage() {
       if (ids.length === 0) return;
       const { data: tblRows } = await supabase
         .from('tables')
-        .select('id, name, game_variant, small_blind, big_blind, tournament_id')
+        // Dan 2026-08-21: game_type + max_players come along so a restored
+        // tab wears its game code on the FIRST paint, not a second later.
+        .select(
+          'id, name, game_variant, game_type, max_players, small_blind, big_blind, tournament_id'
+        )
         .in('id', ids);
       if (cancelled) return;
       setTables((prev) => {
@@ -386,6 +396,11 @@ export default function MultiTablePage() {
             id,
             name: (row?.name as string) || `Table ${prev.length + i + 1}`,
             stakes,
+            gameCode: gameCode({
+              variant: row?.game_variant as string | undefined,
+              isTournament: row?.game_type === 'tournament' || !!row?.tournament_id,
+              maxPlayers: row?.max_players as number | undefined,
+            }),
             isMyTurn: false,
             pot: 0,
             // These ids came from table_seats WHERE left_at IS NULL, which is
@@ -683,6 +698,9 @@ export default function MultiTablePage() {
           folded: t.folded,
           handResult: t.handResult,
           sittingOut: t.sittingOut,
+          // TablePage's value is authoritative; until it lands, recover what
+          // the table NAME says so the box is never unlabeled.
+          gameCode: t.gameCode || gameCodeFromName(t.name),
         };
       }),
     [tables, secondsLeft, nowMs]
@@ -1058,6 +1076,8 @@ export default function MultiTablePage() {
     stakes: string;
     players: number;
     max: number;
+    /** Short game code, shown on the row and carried onto the new tab. */
+    code: string;
   }
   const [quickJoin, setQuickJoin] = useState<{
     open: boolean;
@@ -1087,7 +1107,9 @@ export default function MultiTablePage() {
       const activeStakes = tablesRef.current[activeIndexRef.current]?.stakes || '';
       const { data } = await supabase
         .from('tables')
-        .select('id, name, small_blind, big_blind, max_players, current_players, status')
+        .select(
+          'id, name, game_variant, game_type, small_blind, big_blind, max_players, current_players, status'
+        )
         .eq('club_id', club)
         .is('tournament_id', null)
         .neq('status', 'closed')
@@ -1110,6 +1132,11 @@ export default function MultiTablePage() {
               : '',
           players: Number(r.current_players) || 0,
           max: Number(r.max_players) || 0,
+          code: gameCode({
+            variant: r.game_variant as string | undefined,
+            isTournament: r.game_type === 'tournament',
+            maxPlayers: Number(r.max_players) || undefined,
+          }),
         }))
         .sort((a, b) => {
           const sameA = a.stakes === activeStakes ? 0 : 1;
@@ -1130,7 +1157,9 @@ export default function MultiTablePage() {
     (row: QuickJoinRow) => {
       closeQuickJoin();
       navigate(
-        `/table/${row.id}?name=${encodeURIComponent(row.name)}&stakes=${encodeURIComponent(row.stakes)}`
+        `/table/${row.id}?name=${encodeURIComponent(row.name)}` +
+          `&stakes=${encodeURIComponent(row.stakes)}` +
+          (row.code ? `&code=${encodeURIComponent(row.code)}` : '')
       );
     },
     [closeQuickJoin, navigate]
@@ -1458,9 +1487,21 @@ export default function MultiTablePage() {
 
       // Only swipe horizontally if horizontal movement > vertical
       if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
-        // Clamp the offset — don't allow overscroll past first/last table
-        const maxLeft = activeIndex > 0 ? window.innerWidth * 0.4 : 60;
-        const maxRight = activeIndex < tables.length - 1 ? window.innerWidth * 0.4 : 60;
+        /**
+         * Dan 2026-08-21: "you should be able to keep swiping in one
+         * direction as well - when you get to the end it should just restart
+         * at the first table."
+         *
+         * The ends are no longer dead ends, so they no longer rubber-band at
+         * 60px. They DO travel less than a mid-strip drag: there is no
+         * neighbouring slot rendered past the end to slide in, so a full 40%
+         * pull would drag blank felt into view. The wrap happens on release.
+         */
+        const atStart = activeIndex === 0;
+        const atEnd = activeIndex === tables.length - 1;
+        const EDGE_TRAVEL = 110;
+        const maxLeft = atStart ? EDGE_TRAVEL : window.innerWidth * 0.4;
+        const maxRight = atEnd ? EDGE_TRAVEL : window.innerWidth * 0.4;
         const clamped = Math.max(-maxRight, Math.min(maxLeft, dx));
         setSwipeOffset(clamped);
       }
@@ -1474,27 +1515,17 @@ export default function MultiTablePage() {
       return;
     }
 
-    const SWIPE_THRESHOLD = 50;
-    const VELOCITY_THRESHOLD = 0.3; // px/ms
-    const elapsed = Math.max(Date.now() - touchStartRef.current.time, 1);
-    const velocity = Math.abs(swipeOffset) / elapsed;
-
-    let newIndex = activeIndex;
-
-    if (swipeOffset > SWIPE_THRESHOLD || (velocity > VELOCITY_THRESHOLD && swipeOffset > 20)) {
-      // Swiped right → go to previous table
-      if (activeIndex > 0) {
-        newIndex = activeIndex - 1;
-      }
-    } else if (
-      swipeOffset < -SWIPE_THRESHOLD ||
-      (velocity > VELOCITY_THRESHOLD && swipeOffset < -20)
-    ) {
-      // Swiped left → go to next table
-      if (activeIndex < tables.length - 1) {
-        newIndex = activeIndex + 1;
-      }
-    }
+    // Dan 2026-08-21: both directions WRAP - swiping past the last table
+    // restarts at the first, and past the first lands on the last, so a
+    // player can keep flicking one way and cycle their tables. The decision
+    // lives in a pure helper (src/utils/swipeTarget.ts) so the wrap is unit
+    // tested rather than only ever testable by thumb.
+    const newIndex = swipeTargetIndex({
+      activeIndex,
+      count: tables.length,
+      offset: swipeOffset,
+      elapsedMs: Date.now() - touchStartRef.current.time,
+    });
 
     if (newIndex !== activeIndex) {
       setIsTransitioning(true);
@@ -1524,10 +1555,12 @@ export default function MultiTablePage() {
       setActiveIndex(existingIdx);
       return;
     }
+    const nameFromUrl = searchParams.get('name') || `Table ${prev.length + 1}`;
     const fromUrl: TableInstance = {
       id: routeTableId,
-      name: searchParams.get('name') || `Table ${prev.length + 1}`,
+      name: nameFromUrl,
       stakes: searchParams.get('stakes') || '',
+      gameCode: searchParams.get('code') || gameCodeFromName(nameFromUrl),
       isMyTurn: false,
       pot: 0,
       kind: 'table',
@@ -1633,8 +1666,13 @@ export default function MultiTablePage() {
         />
       )}
       <div className="multi-table-page" style={hidden ? { display: 'none' } : undefined}>
-        {/* Tab Bar */}
-        {tables.length > 1 && (
+        {/* Tab Bar — Dan 2026-08-21: "that box should stay there regardless".
+            It renders from the FIRST table on, not from the second: the box
+            is the player's home for switching, adding and reading a table,
+            and a control that appears and disappears is not a home. It also
+            means opening table 2 no longer shoves the felt down by 48px
+            mid-hand, which is what the old >1 condition did. */}
+        {tables.length >= 1 && (
           <div className="multi-table-page__tab-bar-wrapper">
             <TableTabBar
               tabs={tabInfos}
@@ -1810,6 +1848,7 @@ export default function MultiTablePage() {
                   >
                     <span className="multi-table-page__quickjoin-name">{row.name}</span>
                     <span className="multi-table-page__quickjoin-meta">
+                      {row.code && <span>{row.code}</span>}
                       {row.stakes && <span>{row.stakes}</span>}
                       <span>
                         {row.players}/{row.max}
@@ -1917,7 +1956,7 @@ export default function MultiTablePage() {
             style={{
               transform: containerTransform,
               // Single-table: always visible. Multi-table: fade in after tab bar renders.
-              opacity: tables.length <= 1 ? 1 : tabEntranceComplete ? 1 : 0,
+              opacity: tabEntranceComplete ? 1 : tables.length <= 1 ? 1 : 0,
               transition:
                 tabEntranceComplete && !isTransitioning && tables.length > 1
                   ? 'opacity 0.4s ease'

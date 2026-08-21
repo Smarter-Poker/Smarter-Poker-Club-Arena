@@ -57,6 +57,7 @@ import { supabase, getAuthUser } from '../lib/supabase';
 // it, so flipping the flag is a pure rollout switch.
 import { useEngineTableState } from '../hooks/useEngineTableState';
 import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
+import { gameCode } from '../utils/gameCode';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { masterBus } from '../core/MasterBus';
 import {
@@ -562,6 +563,10 @@ interface TablePageProps {
     /** Hero is sitting out at this table (drives the long-press menu's
      *  Sit Out / I'm Back label and the sit-out-everywhere control). */
     sittingOut?: boolean;
+    /** Dan 2026-08-21: the short game code the tab wears when no hand is
+     *  live - NLH / PLO5 / SPIN / MTT / HU. Authoritative: this component
+     *  knows the variant, the tournament format and the seat count. */
+    gameCode?: string;
   }) => void;
   /** Whether this table is part of a multi-table session (hides own header if tab bar is shown) */
   isMultiTable?: boolean;
@@ -1928,6 +1933,20 @@ export default function TablePage({
     [tableState.currentBet, tableState.lastBetAmounts, tableState.heroSeat]
   );
 
+  /** Dan 2026-08-21: the tab's game label. Primitive memo, same reason as
+   *  every other reported value - the effect below must not re-fire on an
+   *  array identity that changes each snapshot. */
+  const heroTabGameCode = useMemo(
+    () =>
+      gameCode({
+        variant: tableState.gameType,
+        isTournament: tableState.isTournament,
+        tournamentFormat,
+        maxPlayers: tableState.maxPlayers,
+      }),
+    [tableState.gameType, tableState.isTournament, tournamentFormat, tableState.maxPlayers]
+  );
+
   const heroTabSittingOut = useMemo(() => {
     const hero = tableState.players[tableState.heroSeat - 1];
     return !!hero && hero.status === 'sitting_out';
@@ -1976,6 +1995,7 @@ export default function TablePage({
       toCall: isHeroTurn ? heroTabToCall : undefined,
       heroStack: heroTabStack,
       sittingOut: heroTabSittingOut,
+      gameCode: heroTabGameCode,
     });
   }, [
     tableState.tableName,
@@ -1990,6 +2010,7 @@ export default function TablePage({
     heroTabToCall,
     heroTabStack,
     heroTabSittingOut,
+    heroTabGameCode,
     heroTabCards,
     heroTabLastAction,
     heroTabFolded,

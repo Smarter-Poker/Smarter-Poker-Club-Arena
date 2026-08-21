@@ -50,6 +50,13 @@ export interface TabInfo {
   handResult?: string;
   /** Hero is sitting out at this table (long-press menu label). */
   sittingOut?: boolean;
+  /**
+   * Dan 2026-08-21: the short game code - NLH / PLO / PLO5 / PLO6 / SPIN /
+   * MTT / SNG / HU. This is the tab's PRIMARY label whenever no hand is
+   * live: a 100px pill cannot carry a table name, and the name is the least
+   * reliable thing about a table anyway (club owners type them).
+   */
+  gameCode?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -534,15 +541,22 @@ export function TableTabBar({
                 <MiniCards cards={tab.holeCards!} />
               ) : (
                 <span className="table-tab-bar__tab-label">
-                  {/* Dan 2026-08-20: variants are acronyms — NLH, not nlh. */}
-                  <span className="table-tab-bar__tab-name">{formatGameTitle(tab.name)}</span>
-                  {/* Roadmap batch 1: an idle tab shows the live pot (a hand
-                      is running without the hero, or just settled) so tabs
-                      stay informative between hands. */}
-                  {tab.pot !== undefined && tab.pot > 0 && (
+                  {/* Dan 2026-08-21: no hand here, so say WHAT GAME THIS IS.
+                      The code wins; the table name is the fallback for a
+                      table whose variant we genuinely do not know yet.
+                      Dan 2026-08-20: variants are acronyms - NLH, not nlh. */}
+                  <span className="table-tab-bar__tab-name">
+                    {tab.gameCode || formatGameTitle(tab.name)}
+                  </span>
+                  {/* Sub-line: the live pot while a hand runs without the
+                      hero, otherwise the stakes - which is what tells two
+                      NLH tabs apart. */}
+                  {tab.pot !== undefined && tab.pot > 0 ? (
                     <span className="table-tab-bar__tab-sub">
                       Pot {tab.pot.toLocaleString('en-US')}
                     </span>
+                  ) : (
+                    tab.stakes && <span className="table-tab-bar__tab-sub">{tab.stakes}</span>
                   )}
                 </span>
               )}
@@ -615,8 +629,16 @@ export function TableTabBar({
           );
         })}
 
-        {/* "+" Add Table Buttons — fill remaining slots */}
-        {Array.from({ length: Math.min(emptySlots, 2) }).map((_, i) => (
+        {/* "+" Add Table — Dan 2026-08-21: "there is always ONE + button.
+            When you add a game the previous + area turns into the box with
+            the hand preview or the game type, and another + is added after
+            it, until the user maxes out at 4 games."
+
+            That is exactly a single trailing "+": it sits after the last
+            tab, a new tab takes the spot it occupied, and it vanishes at
+            MAX_TABLES. It used to render TWO, which read as a broken strip
+            rather than one invitation. */}
+        {Array.from({ length: emptySlots > 0 ? 1 : 0 }).map((_, i) => (
           <button
             key={`add-${i}`}
             className="table-tab-bar__add"

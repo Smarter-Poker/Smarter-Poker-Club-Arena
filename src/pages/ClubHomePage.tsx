@@ -294,7 +294,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // Dan 2026-08-21: Chip Mint (diamonds -> chips, 100 = 10,000).
   const [showChipMint, setShowChipMint] = useState(false);
   const [gameType, setGameType] = useState<GameType>('MTT');
-  const [sortKey, setSortKey] = useState<SortKey>('recommended');
+  const [sortKey, setSortKey] = useState<SortKey>('starting_soon');
   const [sortOpen, setSortOpen] = useState(false);
   /* Advanced Filters (Dan 2026-08-20). Loaded lazily from localStorage on
      first render so a returning player's preferences apply to the FIRST
@@ -1368,9 +1368,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           const status = String(t.status).toUpperCase();
           if (status === 'REGISTERING') return true;
           if (status === 'RUNNING') {
-            const lateReg = Number(t.late_reg_levels) || Number(t.late_reg_mins) || 0;
-            const current = Number(t.current_level) || 1;
-            return lateReg > 0 && current <= lateReg;
+            const levels = Number(t.late_reg_levels ?? 0);
+            if (levels > 0) return Number(t.current_level ?? 0) <= levels;
+            const mins = Number(t.late_reg_mins ?? 0);
+            if (mins > 0 && t.started_at) {
+              return Date.now() - new Date(t.started_at).getTime() <= mins * 60_000;
+            }
           }
           return false;
         };

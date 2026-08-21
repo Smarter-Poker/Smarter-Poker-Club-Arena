@@ -529,7 +529,7 @@
      anchor correct by construction instead of by hand-tuned luck. The name
      already has overflow:hidden + text-overflow:ellipsis, so it just truncates. */
   max-width: 100%;
-  z-index: 1;
+  z-index: 3;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
@@ -770,8 +770,7 @@
   );
   z-index: -2;
   /* Neon glow — color matches ring; drop-shadow tracks --timer-color implicitly */
-  filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.55))
-    drop-shadow(0 0 10px rgba(0, 149, 255, 0.25));
+  filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.55)) drop-shadow(0 0 10px rgba(0, 149, 255, 0.25));
   transition: filter 0.3s ease;
   will-change: background;
 }
@@ -1804,7 +1803,8 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.15);
   z-index: 5;
   white-space: nowrap;
-  animation: bombpotBadgeIn calc(0.3s * var(--animation-speed, 1)) cubic-bezier(0.18, 0.9, 0.32, 1.4) both;
+  animation: bombpotBadgeIn calc(0.3s * var(--animation-speed, 1))
+    cubic-bezier(0.18, 0.9, 0.32, 1.4) both;
   border: 1px solid rgba(255, 120, 235, 0.35);
 }
 

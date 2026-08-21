@@ -1931,52 +1931,52 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 .equity-overlay {
   position: absolute;
-  bottom: -18px;
+  top: -24px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 12px;
+  font-size: 24px;
   font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 10px;
+  padding: 4px 12px;
+  border-radius: 12px;
   color: #fff;
   white-space: nowrap;
   z-index: 50;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
   transition: background-color 0.4s ease;
   animation: equityPop calc(0.45s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.3, 1.4);
 }
 .equity-overlay--ahead {
-  background-color: rgba(46, 204, 113, 0.9);
-  box-shadow: 0 0 10px rgba(46, 204, 113, 0.45);
+  background-color: rgba(46, 204, 113, 0.95);
+  box-shadow: 0 0 16px rgba(46, 204, 113, 0.6);
 }
 .equity-overlay--behind {
-  background-color: rgba(231, 76, 60, 0.9);
-  box-shadow: 0 0 10px rgba(231, 76, 60, 0.35);
+  background-color: rgba(231, 76, 60, 0.95);
+  box-shadow: 0 0 16px rgba(231, 76, 60, 0.5);
 }
 /* IMPROVEMENT PASS 2026-08-19: mini equity bar inside the badge. */
 .equity-overlay {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 /* AUDIT-2 FIX 2026-08-20: fixed-width track so every seat's bar is drawn on
    the same scale — previously the bar sized against the text-width badge, so
    9% and 100% looked alike. */
 .equity-overlay__track {
   display: block;
-  width: 44px;
-  height: 3px;
-  border-radius: 2px;
-  background: rgba(0, 0, 0, 0.35);
+  width: 88px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.45);
   overflow: hidden;
 }
 .equity-overlay__bar {
   display: block;
   height: 100%;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
   transition: width 0.5s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 

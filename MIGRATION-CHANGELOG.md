@@ -8877,3 +8877,24 @@ defects found and fixed, one enhancement added:
   across a mid-session enable), hidden while the bomb sequence plays.
 - Verified: client+server tsc clean, vite build clean, 30 tests across 4
   suites green including the double-board-enriched conservation corpus.
+
+## 2026-08-21 — Multi-table audit round 3: the queue stops fighting the player (Cowork session)
+
+Line-by-line pass over all six roadmap batches after they shipped
+(267eac5). Five fixes: the action queue's turn-ended edge was a bare
+boolean, so manually switching AWAY from a my-turn table read as "acted"
+and the queue yanked the view back 400ms later - now keyed by table
+identity; a hidden container left the ACTIVE table's turn start silent
+(bell gated by isActive, ping skipped activeIndex) - hidden now pings all;
+the lobby tab's quick menu offered Sit Out and fired a real engine call
+with a synthetic lobby: id - lobby tabs now get Move/Close only; Quick
+Join listed soft-deleted tables (NOT IS TRUE filter, NULL = not deleted);
+the P&L chip showed a meaningless 0 before any table had tracked stats.
+Two upgrades: Alt+Arrow reorders the active tab (keyboard parity with the
+quick menu), and the focused table now survives a reload via a
+sessionStorage id re-focused after the server-truth rebuild - the id
+alone, so a stale value can never resurrect a zombie tab.
+
+Verified: prod bundle greps positive for round-3 markers on WH fd919979,
+and tests/e2e/multi-table.spec.ts ran 10/10 in real Chrome against that
+same deployment.

@@ -958,10 +958,13 @@ export abstract class ServerTableEngineBase {
   }
 
   dealableCount(): number {
+    // Tournament sit-outs are still dealt in (blind-off) — count them, or a
+    // table of sat-out players would read idle-by-design and never finish.
     return this.seatedPlayers.filter(
       (p) =>
         p.stack > 0 &&
-        !this.disconnectEngine.isSittingOut(this.tableId, p.user_id) &&
+        (this.isTournamentTable() ||
+          !this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) &&
         !this.waitingForBB.has(p.user_id)
     ).length;
   }
@@ -1344,7 +1347,12 @@ export abstract class ServerTableEngineBase {
     // sitting out. Waiting-for-BB players are included so the moving BB can
     // reach their seat and trigger release.
     const roster = this.seatedPlayers.filter(
-      (p) => p.stack > 0 && !this.disconnectEngine.isSittingOut(this.tableId, p.user_id)
+      (p) =>
+        p.stack > 0 &&
+        // Tournament sit-outs stay in the blind rotation — they are dealt in
+        // and blinded off, so the button/blinds must be able to reach them.
+        (this.isTournamentTable() ||
+          !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
     );
     if (roster.length < 2) return -1;
     const sortedSeats = roster.map((p) => p.seat_number).sort((a, b) => a - b);

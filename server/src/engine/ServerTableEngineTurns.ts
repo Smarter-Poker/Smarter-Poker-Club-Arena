@@ -191,7 +191,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       const dealable = this.seatedPlayers.filter(
         (p) =>
           p.stack > 0 &&
-          !this.disconnectEngine.isSittingOut(this.tableId, p.user_id) &&
+          // Tournament sit-outs are dealt in (blind-off) — the watchdog must
+          // agree with the dealing loop or it would restart an "idle" table.
+          (this.isTournamentTable() ||
+            !this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) &&
           !this.waitingForBB.has(p.user_id)
       ).length;
       if (dealable >= 2 && idleMs > ServerTableEngineBase.WATCHDOG_IDLE_MS) {
@@ -452,6 +455,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
             // Bible V8 §3.3: Turn FSM — processing → complete
             this.turnFSM.transition('complete');
+
+            // AUDIT FIX 2026-08-21: the 2026-07-19 fix added strike counting to
+            // the PLAIN timer-expiry path only. But an AFK player with time-bank
+            // uses left never reaches that path — the bank auto-activates and
+            // expiry resolves HERE instead, so consecutiveTimeouts stayed at 0
+            // forever and the player burned a full time bank every single hand
+            // without ever being sat out (observed live: one player's timers
+            // grinding at four stale tables at once). A time-bank expiry is a
+            // timeout too — count it toward the auto-sit-out cap.
+            this.disconnectEngine.recordConnectedTimeout(this.tableId, userId);
 
             this.engineTelemetry.recordTimerExpired(this.tableId);
             const tbUsesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);

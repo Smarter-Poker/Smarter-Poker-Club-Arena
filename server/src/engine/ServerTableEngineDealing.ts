@@ -189,10 +189,19 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // Standard online poker: sitting-out players skip the hand entirely.
         // They miss their blind and owe a dead blind when they return (§4.2).
         // Bible V8 §4.2: Also exclude players waiting for BB.
+        //
+        // TOURNAMENT EXCEPTION (2026-08-21): a sat-out TOURNAMENT player is
+        // still DEALT IN — they post blinds and are auto-folded when action
+        // reaches them (onPlayerTurn handles that instantly). Excluding them
+        // from the deal would freeze their stack: no blind-off, no
+        // elimination, a tournament that can never end. This is how every
+        // real poker site handles tournament sit-outs.
+        const dealInWhileSittingOut = this.isTournamentTable();
         const activePlayers = this.seatedPlayers.filter(
           (p) =>
             p.stack > 0 &&
-            !this.disconnectEngine.isSittingOut(this.tableId, p.user_id) &&
+            (dealInWhileSittingOut ||
+              !this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) &&
             !this.waitingForBB.has(p.user_id)
         );
 
@@ -519,7 +528,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       cards: [],
       is_folded: false,
       is_all_in: false,
-      is_sitting_out: false,
+      // 2026-08-21: truthful, not hardcoded false. In CASH games every dealt
+      // player is active (sat-out players are excluded from the deal above),
+      // so this stays false there. In TOURNAMENTS a sat-out player IS dealt
+      // in — the flag lets the client grey the seat and lets the pre-action /
+      // timer-rearm guards skip a seat that onPlayerTurn will insta-fold.
+      is_sitting_out: this.disconnectEngine.isSittingOut(this.tableId, p.user_id),
       // Bible V8 §2.3: Carry through identity fields for broadcast
       is_horse: p.is_horse ?? false,
       avatar_url: p.avatar_url ?? '',

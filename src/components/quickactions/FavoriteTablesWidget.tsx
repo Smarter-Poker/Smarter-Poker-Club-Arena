@@ -46,6 +46,10 @@ export const FavoriteTablesWidget: React.FC<FavoriteTablesWidgetProps> = ({ onJo
     );
   }, [favorites]);
 
+  /* AUDIT 2026-08-20: favorite_tables did not exist in the database until
+     migration 20260821010000, so this widget — mounted in ClubLobby and run on
+     every lobby load — had never listed a favourite, and its remove button had
+     never removed one. Both were reported through reportError and swallowed. */
   const loadFavorites = async () => {
     setLoading(true);
     try {
@@ -60,7 +64,7 @@ export const FavoriteTablesWidget: React.FC<FavoriteTablesWidgetProps> = ({ onJo
                         stakes,
                         current_players,
                         max_players,
-                        is_running,
+                        status,
                         clubs ( name )
                     )
                 `
@@ -78,7 +82,13 @@ export const FavoriteTablesWidget: React.FC<FavoriteTablesWidgetProps> = ({ onJo
           clubName: f.tables?.clubs?.name || '',
           currentPlayers: f.tables?.current_players || 0,
           maxPlayers: f.tables?.max_players || 9,
-          isRunning: f.tables?.is_running || false,
+          /* AUDIT 2026-08-20: this read tables.is_running, which is not a
+             column on tables — so even once favorite_tables existed, the whole
+             embedded select would have 400'd on it. `status` is the real
+             column; a table is running when it is not in a terminal state. */
+          isRunning: !['closed', 'completed', 'cancelled', 'finished'].includes(
+            String(f.tables?.status || '').toLowerCase()
+          ),
         })) || []
       );
     } catch (error) {

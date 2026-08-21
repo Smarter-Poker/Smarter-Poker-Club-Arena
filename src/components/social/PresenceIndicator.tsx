@@ -36,38 +36,39 @@ export default function PresenceIndicator({
 
     // Fetch initial presence
     const fetchPresence = async () => {
+      /* AUDIT 2026-08-20 — this read `user_presence`, and there is no such
+         table in the database. It has never returned a row.
+
+         Worse than the missing table was the shape of the failure. The
+         Supabase client RETURNS `{ data, error }`; it does not throw. So
+         `if (!error && data)` simply fell through, the catch below never ran,
+         and the profiles fallback sitting inside it was unreachable code. The
+         dot has read "offline" for every player since the day it was written,
+         and the fallback written precisely to prevent that could not fire.
+
+         profiles.is_online and profiles.last_seen are real columns and are the
+         only presence data that exists, so they are now the primary read
+         rather than a fallback nobody could reach. */
       try {
-        const { data, error } = await supabase
-          .from('user_presence')
-          .select('status, last_seen')
-          .eq('user_id', userId)
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('is_online, last_seen')
+          .eq('id', userId)
           .maybeSingle();
 
-        if (!error && data && isMounted) {
-          setStatus(data.status as PresenceStatus);
-          if (data.last_seen) {
-            setLastSeen(new Date(data.last_seen));
+        if (profile && isMounted) {
+          setStatus(profile.is_online ? 'online' : 'offline');
+          if (profile.last_seen) {
+            setLastSeen(new Date(profile.last_seen));
           }
         }
       } catch (e) {
-        // Fallback: check profiles table
-        try {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('is_online, last_seen')
-            .eq('id', userId)
-            .maybeSingle();
-
-          if (profile && isMounted) {
-            setStatus(profile.is_online ? 'online' : 'offline');
-            if (profile.last_seen) {
-              setLastSeen(new Date(profile.last_seen));
-            }
-          }
-        } catch (err) {
-          reportError(err, 'PresenceIndicator.Error');
-          // no-op
-        }
+        /* The old fallback lived here and duplicated the query above, from
+           back when this catch was expected to fire. It cannot: the client
+           returns errors rather than throwing. Nothing is retried — a player
+           whose presence cannot be read is shown as offline, which is the
+           honest default. */
+        reportError(e, 'PresenceIndicator.fetchPresence');
       }
     };
 
@@ -84,13 +85,16 @@ export default function PresenceIndicator({
         {
           event: '*',
           schema: 'public',
-          table: 'user_presence',
-          filter: `user_id=eq.${userId}`,
+          /* Same missing table, same silence: a subscription to a table that
+             does not exist never delivers a row, so the dot never updated
+             after its first read either. profiles is where is_online lives. */
+          table: 'profiles',
+          filter: `id=eq.${userId}`,
         },
         (payload) => {
           if (payload.new && isMounted) {
-            const newData = payload.new as { status: string; last_seen: string };
-            setStatus(newData.status as PresenceStatus);
+            const newData = payload.new as { is_online?: boolean; last_seen?: string };
+            setStatus(newData.is_online ? 'online' : 'offline');
             if (newData.last_seen) {
               setLastSeen(new Date(newData.last_seen));
             }

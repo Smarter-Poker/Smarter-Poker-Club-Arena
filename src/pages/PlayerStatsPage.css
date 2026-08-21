@@ -867,3 +867,359 @@
   font-size: 0.72rem;
   color: rgba(255, 255, 255, 0.4);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   DEPTH PASS — Dan 2026-08-21: "player stats page needs to be massively
+   improved... flat, boring, no depth or 3d look or feel."
+   Appended override layer: same markup, same selectors, a physical build —
+   layered glass panels, edge lighting, neon under-glows, lifted hover states.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.stats-page {
+  background:
+    radial-gradient(900px 500px at 12% -5%, rgba(0, 212, 255, 0.1) 0%, transparent 55%),
+    radial-gradient(800px 520px at 95% 20%, rgba(139, 92, 246, 0.09) 0%, transparent 55%),
+    radial-gradient(700px 600px at 50% 110%, rgba(65, 105, 225, 0.12) 0%, transparent 60%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.014) 0 1px, transparent 1px 44px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.014) 0 1px, transparent 1px 44px),
+    linear-gradient(180deg, #0b0e1a 0%, #090b14 100%);
+}
+
+.stats-hero {
+  position: relative;
+  background: linear-gradient(160deg, rgba(26, 32, 56, 0.85) 0%, rgba(13, 17, 32, 0.92) 60%);
+  border: 1px solid rgba(0, 212, 255, 0.18);
+  border-top-color: rgba(255, 255, 255, 0.16);
+  border-radius: 18px;
+  box-shadow:
+    0 24px 50px rgba(0, 0, 0, 0.55),
+    0 6px 18px rgba(0, 0, 0, 0.45),
+    0 0 60px rgba(0, 212, 255, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    inset 0 -14px 30px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.stats-hero::after {
+  content: '';
+  position: absolute;
+  top: -60%;
+  left: -30%;
+  width: 60%;
+  height: 220%;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.045) 45%,
+    rgba(0, 212, 255, 0.05) 50%,
+    rgba(255, 255, 255, 0.045) 55%,
+    transparent 100%
+  );
+  transform: rotate(8deg);
+  pointer-events: none;
+  animation: statsSheen 9s ease-in-out infinite;
+}
+
+@keyframes statsSheen {
+  0%,
+  70%,
+  100% {
+    left: -60%;
+    opacity: 0;
+  }
+  75% {
+    opacity: 1;
+  }
+  95% {
+    left: 120%;
+    opacity: 0;
+  }
+}
+
+.hero-gauge {
+  filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.55));
+}
+
+.hero-gauge svg {
+  filter: drop-shadow(0 0 10px rgba(34, 197, 94, 0.35));
+}
+
+.gauge-bg {
+  stroke: rgba(255, 255, 255, 0.07);
+}
+
+.gauge-value {
+  text-shadow:
+    0 0 16px currentColor,
+    0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+.hero-stat {
+  position: relative;
+  background: linear-gradient(165deg, rgba(38, 46, 76, 0.75) 0%, rgba(16, 20, 38, 0.9) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-top-color: rgba(255, 255, 255, 0.18);
+  border-radius: 13px;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -8px 16px rgba(0, 0, 0, 0.28);
+  transition:
+    transform 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+    box-shadow 0.22s ease,
+    border-color 0.22s ease;
+}
+
+.hero-stat::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 18%;
+  bottom: 18%;
+  width: 3px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #00d4ff, #4169e1);
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.55);
+}
+
+.hero-stat:hover {
+  transform: translateY(-3px);
+  border-color: rgba(0, 212, 255, 0.35);
+  box-shadow:
+    0 16px 34px rgba(0, 0, 0, 0.55),
+    0 0 26px rgba(0, 212, 255, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.hero-stat-value {
+  text-shadow:
+    0 0 14px currentColor,
+    0 2px 5px rgba(0, 0, 0, 0.6);
+}
+
+.stats-pill-tabs {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.45) 0%, rgba(20, 26, 48, 0.5) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  padding: 4px;
+  box-shadow:
+    inset 0 2px 8px rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.stats-pill-tabs button {
+  border-radius: 999px;
+}
+
+.stats-pill-tabs button.active {
+  background: linear-gradient(180deg, #2fbfff 0%, #1668e6 100%);
+  color: #ffffff;
+  box-shadow:
+    0 6px 16px rgba(22, 104, 230, 0.45),
+    0 0 22px rgba(0, 212, 255, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.stat-row {
+  background: linear-gradient(165deg, rgba(34, 41, 70, 0.6) 0%, rgba(15, 19, 36, 0.85) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-top-color: rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition:
+    transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+  animation: statRowIn 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+
+.stats-grid .stat-row:nth-child(1) { animation-delay: 0.02s; }
+.stats-grid .stat-row:nth-child(2) { animation-delay: 0.06s; }
+.stats-grid .stat-row:nth-child(3) { animation-delay: 0.1s; }
+.stats-grid .stat-row:nth-child(4) { animation-delay: 0.14s; }
+.stats-grid .stat-row:nth-child(5) { animation-delay: 0.18s; }
+.stats-grid .stat-row:nth-child(6) { animation-delay: 0.22s; }
+.stats-grid .stat-row:nth-child(7) { animation-delay: 0.26s; }
+.stats-grid .stat-row:nth-child(8) { animation-delay: 0.3s; }
+
+@keyframes statRowIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.stat-row:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 212, 255, 0.3);
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.5),
+    0 0 20px rgba(0, 212, 255, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.stat-row.highlight {
+  border-color: rgba(65, 105, 225, 0.5);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.45),
+    0 0 26px rgba(65, 105, 225, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.row-dot {
+  box-shadow: 0 0 8px currentColor;
+}
+
+.row-value {
+  text-shadow:
+    0 0 12px currentColor,
+    0 1px 4px rgba(0, 0, 0, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+.variant-table {
+  background: linear-gradient(170deg, rgba(28, 34, 60, 0.65) 0%, rgba(13, 16, 30, 0.9) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top-color: rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow:
+    0 14px 30px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.variant-row.variant-head {
+  background: linear-gradient(180deg, rgba(0, 212, 255, 0.1) 0%, rgba(0, 0, 0, 0.25) 100%);
+  border-bottom: 1px solid rgba(0, 212, 255, 0.18);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.variant-row {
+  transition: background 0.15s ease;
+}
+
+.variant-row:not(.variant-head):hover {
+  background: rgba(0, 212, 255, 0.05);
+}
+
+.variant-name {
+  text-shadow: 0 0 10px rgba(0, 212, 255, 0.35);
+}
+
+.tournament-item {
+  background: linear-gradient(165deg, rgba(34, 41, 70, 0.55) 0%, rgba(15, 19, 36, 0.85) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top-color: rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.tournament-item:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.5),
+    0 0 18px rgba(139, 92, 246, 0.12);
+}
+
+.chart-card {
+  background: linear-gradient(165deg, rgba(28, 34, 60, 0.7) 0%, rgba(13, 16, 30, 0.92) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top-color: rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  box-shadow:
+    0 16px 34px rgba(0, 0, 0, 0.5),
+    0 0 40px rgba(0, 212, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.stats-section-header h3 {
+  text-shadow: 0 0 14px rgba(0, 212, 255, 0.25);
+}
+
+.stats-section-header {
+  position: relative;
+  padding-bottom: 6px;
+}
+
+.stats-section-header::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 56px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #00d4ff, transparent);
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+}
+
+.view-hands-btn,
+.assistant-export-btn,
+.empty-cta {
+  background: linear-gradient(180deg, #2fbfff 0%, #1668e6 100%);
+  border: none;
+  color: #ffffff;
+  border-radius: 999px;
+  box-shadow:
+    0 8px 18px rgba(22, 104, 230, 0.4),
+    0 0 24px rgba(0, 212, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.25);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    filter 0.18s ease;
+}
+
+.view-hands-btn:hover,
+.assistant-export-btn:hover:not(:disabled),
+.empty-cta:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+  box-shadow:
+    0 12px 26px rgba(22, 104, 230, 0.5),
+    0 0 34px rgba(0, 212, 255, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.view-hands-btn:active,
+.assistant-export-btn:active:not(:disabled),
+.empty-cta:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.stats-range-row button,
+.stats-notice {
+  border-radius: 999px;
+}
+
+.stats-notice {
+  background: linear-gradient(180deg, rgba(0, 212, 255, 0.07) 0%, rgba(0, 0, 0, 0.25) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stats-hero::after {
+    display: none;
+  }
+  .stat-row,
+  .hero-stat,
+  .tournament-item {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -32,9 +32,10 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { formatGameTitle } from '../../utils/formatGameTitle';
+import { formatPopupText } from '../../utils/popupStyle';
 import { reportError } from '../../utils/errorReporter';
 import './TournamentStartingTicker.css';
 
@@ -77,6 +78,10 @@ function countdown(ms: number): string {
 
 export function TournamentStartingTicker() {
   const navigate = useNavigate();
+  const location = useLocation();
+  // Dan 2026-08-21: only surface the ticker while at a table (see the render
+  // gate below). Computed here so hook order stays stable.
+  const atTable = location.pathname.startsWith('/table');
   const [upcoming, setUpcoming] = useState<UpcomingTournament[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [dismissed, setDismissed] = useState<Set<string>>(readDismissed);
@@ -175,16 +180,24 @@ export function TournamentStartingTicker() {
 
   if (live.length === 0) return null;
 
+  // Dan 2026-08-21: the ticker belongs to the FELT, not the whole app - it
+  // renders only while the player is at a table. Everywhere else (lobby,
+  // cashier, stats) the tournament pages carry their own schedules.
+  if (!atTable) return null;
+
   // One bar. If two events land in the same window the marquee carries both
   // rather than stacking bars over the felt.
   const primary = live[0];
 
+  // Dan 2026-08-21: house popup rule applies here too - First Letter Of
+  // Every Word Capitalized, hyphenated words included ("Buy-In 22").
   const message = live
-    .map(
-      (t) =>
+    .map((t) =>
+      formatPopupText(
         `${formatGameTitle(t.name)} starts in ${countdown(t.startsAt - now)}` +
-        (t.buyIn > 0 ? ` · buy-in ${t.buyIn.toLocaleString()}` : ' · freeroll') +
-        ` · ${t.registered} registered`
+          (t.buyIn > 0 ? ` · buy-in ${t.buyIn.toLocaleString()}` : ' · freeroll') +
+          ` · ${t.registered} registered`
+      )
     )
     .join('        •        ');
 

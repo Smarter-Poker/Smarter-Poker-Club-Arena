@@ -1,0 +1,418 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  ADVANCED FILTERS SHEET
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * Full-height sheet, mobile-first at 375px. The reference screens are a phone
+ * modal with a pinned header, a scrolling body and a pinned three-button
+ * footer, and that structure is load-bearing: the feature grids are long
+ * enough that a footer scrolled off the bottom would leave Save unreachable
+ * without a long flick back.
+ *
+ * Colours are the smarter.poker palette throughout - #1877f2 primary,
+ * #ffb800 gold for a selected chip, #00d4ff cyan for the active tab.
+ */
+
+.afx-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(4, 7, 12, 0.72);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  animation: afxFade 0.18s ease-out;
+}
+
+@keyframes afxFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.afx-sheet {
+  width: min(100%, 560px);
+  /* dvh, not vh: on iOS Safari the URL bar makes 100vh taller than the visible
+     viewport, which pushes a pinned footer under the browser chrome - exactly
+     where the Save button would be. */
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #1b2236 0%, #141a2a 100%);
+  border-left: 1px solid rgba(255, 255, 255, 0.07);
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+  animation: afxRise 0.22s cubic-bezier(0.17, 0.84, 0.44, 1.03);
+}
+
+@keyframes afxRise {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.afx-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.afx-head h2 {
+  flex: 1;
+  margin: 0;
+  text-align: center;
+  /* Balances the back button so the title is optically centred rather than
+     centred in the space left over beside it. */
+  padding-right: 40px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #eef3fa;
+}
+
+.afx-back {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: #ffb800;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.afx-back:focus-visible {
+  outline: 2px solid rgba(255, 184, 0, 0.7);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* ── Game-type tabs ──────────────────────────────────────────────────────── */
+.afx-tabs {
+  flex-shrink: 0;
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  margin: 0 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.afx-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.afx-tab {
+  flex: 1 0 auto;
+  min-width: 0;
+  padding: 7px 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #9aa5b6;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+.afx-tab:hover {
+  color: #dfe6ef;
+}
+
+.afx-tab.is-active {
+  background: linear-gradient(135deg, #ffb800, #ff9d00);
+  color: #17130a;
+  font-weight: 800;
+}
+
+/* ── Body ────────────────────────────────────────────────────────────────── */
+.afx-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* The body scrolls vertically ONLY. Anything that overflows horizontally is
+     a layout bug to be fixed, not scrolled - a sideways-scrolling filter sheet
+     hides its own Save button. */
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 4px 0 12px;
+}
+
+.afx-section {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.afx-section h3 {
+  margin: 0 0 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #e2e9f3;
+}
+
+.afx-hint {
+  margin: -4px 0 10px;
+  font-size: 0.72rem;
+  color: #7f8ba0;
+}
+
+/* ── Chips ───────────────────────────────────────────────────────────────── */
+.afx-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.afx-chip {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 184, 0, 0.35);
+  background: #0f1420;
+  color: #cfd8e5;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.afx-chip:hover {
+  border-color: rgba(255, 184, 0, 0.6);
+  color: #fff;
+}
+
+.afx-chip.is-on {
+  background: linear-gradient(135deg, #ffb800, #ff9d00);
+  border-color: #ffb800;
+  color: #17130a;
+  font-weight: 800;
+}
+
+.afx-chip:focus-visible {
+  outline: 2px solid rgba(255, 184, 0, 0.8);
+  outline-offset: 2px;
+}
+
+/* ── Dual-thumb range ────────────────────────────────────────────────────── */
+.afx-range {
+  position: relative;
+  height: 40px;
+  margin: 6px 4px 10px;
+}
+
+.afx-range__track,
+.afx-range__fill {
+  position: absolute;
+  top: 50%;
+  height: 6px;
+  border-radius: 3px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.afx-range__track {
+  left: 0;
+  right: 0;
+  background: #0b0f18;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.afx-range__fill {
+  background: linear-gradient(90deg, #ffb800, #ff9d00);
+}
+
+/* Both inputs stack on the same line. The TRACK is transparent and
+   pointer-events:none so a click lands on whichever thumb is nearest rather
+   than on whichever input happens to be painted on top - without this the
+   upper input swallows every drag and the lower thumb cannot be moved. */
+.afx-range input[type='range'] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 40px;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: none;
+}
+
+.afx-range input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffd76b, #ffb800 60%, #b87f00 100%);
+  border: 2px solid #0b0f18;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.afx-range input[type='range']::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #ffb800;
+  border: 2px solid #0b0f18;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.afx-range input[type='range']:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid #00d4ff;
+  outline-offset: 2px;
+}
+
+/* ── Feature grids ───────────────────────────────────────────────────────── */
+.afx-grid {
+  display: grid;
+  /* minmax(0, 1fr), NOT 1fr. A grid item's default min-width is `auto`, which
+     means "at least as wide as my content" - so "PC Emulator Restriction"
+     forced its track past a quarter of the row and blew the whole sheet
+     sideways. Measured at 430px: the right-hand column, the Open Seats chip
+     and the Save button were all clipped off-screen. minmax(0, ...) lets the
+     track shrink and the label wrap, which is what the reference does. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.afx-feat {
+  min-height: 42px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: #0f1420;
+  color: #cfd8e5;
+  /* Several labels are two words that must not truncate ("Run It Player's
+     Choice", "PC Emulator Restriction"), so the cell wraps and the type is
+     small rather than the text being clipped. */
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1.2;
+  /* Long single tokens ("Seven-Deuce") still need a break opportunity once the
+     track is allowed to shrink. */
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.afx-feat:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.afx-feat.is-on {
+  background: rgba(24, 119, 242, 0.18);
+  border-color: #1877f2;
+  color: #9ecbff;
+}
+
+/* Hidden is a NEGATIVE selection and must not look like a positive one -
+   the two grids carry identical labels, so colour is the only thing telling
+   a player which list they just added a feature to. */
+.afx-feat--hide.is-on {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: #ef4444;
+  color: #fca5a5;
+}
+
+.afx-feat:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.75);
+  outline-offset: 2px;
+}
+
+@media (max-width: 400px) {
+  .afx-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+.afx-foot {
+  flex-shrink: 0;
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(20, 26, 42, 0.92), #101624);
+}
+
+.afx-btn {
+  flex: 1;
+  min-height: 44px;
+  border: none;
+  border-radius: 22px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    filter 0.16s ease,
+    transform 0.16s ease;
+}
+
+.afx-btn:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.afx-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.afx-btn--cancel {
+  background: linear-gradient(135deg, #f0653a, #d9451f);
+  color: #fff;
+}
+
+.afx-btn--reset {
+  background: linear-gradient(135deg, #ffd76b, #ffb800);
+  color: #17130a;
+}
+
+/* Save is the brand primary, matching every other confirm in the product. */
+.afx-btn--save {
+  background: linear-gradient(135deg, #1877f2, #0a5dc2);
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .afx-overlay,
+  .afx-sheet {
+    animation: none;
+  }
+  .afx-btn:hover {
+    transform: none;
+  }
+}

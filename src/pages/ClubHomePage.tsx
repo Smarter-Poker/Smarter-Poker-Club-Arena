@@ -38,13 +38,21 @@ import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
-import BBJTicker from '../components/bbj/BBJTicker';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
 import { matchesVariant, matchesTournamentSubFilter } from '../utils/tournamentFilters';
 import { useUserStore } from '../stores/useUserStore';
 import LobbyAdStrip from '../components/lobby/LobbyAdStrip';
+import AdvancedFilters, {
+  loadFilters,
+  type FilterStore,
+} from '../components/lobby/AdvancedFilters';
+import {
+  FILTER_SPECS,
+  matchesAdvancedFilter,
+  type FilterGameType,
+} from '../components/lobby/advancedFilterSpec';
 import {
   IconTrophy,
   IconLeaderboard,
@@ -55,7 +63,11 @@ import {
 } from '../components/icons/LobbyIcons';
 
 // Shark Club fallback logo — used when DB logo_url is null
-const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-card-v25.jpg`;
+/* Dan 2026-08-20: "replace the old logo image with the new one". v25 was a
+   wide CARD graphic being cropped into a square avatar slot, so most of the
+   art was thrown away by object-fit. shark-club-logo.jpg is the square
+   emblem and fills the box as intended. */
+const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo.jpg`;
 
 // SWR cache helpers for instant club data display
 function getClubHomeCache(clubId: string) {
@@ -160,11 +172,19 @@ type TournamentSubFilter = 'all' | 'running' | 'registering' | 'late_reg' | 'sta
 const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'MIXED'];
 const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
 
+/**
+ * Dan 2026-08-20: "remove Mixed games from the action bar."
+ *
+ * MIXED stays in the GameType union and in cashKind, because it is still the
+ * bucket every table that is neither Hold'em nor Omaha falls into — dropping
+ * the type would make those tables unclassifiable. It just has no tab of its
+ * own any more, so they surface under All, which is where a player browsing
+ * everything expects to find them.
+ */
 const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
   { key: 'ALL', label: 'All' },
   { key: 'HOLDEM', label: "Hold'em" },
   { key: 'OMAHA', label: 'Omaha' },
-  { key: 'MIXED', label: 'Mixed' },
   { key: 'MTT', label: 'MTT' },
   { key: 'SNG', label: 'Sit & Go' },
   { key: 'SPIN', label: 'Spin' },
@@ -256,6 +276,16 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [gameType, setGameType] = useState<GameType>('ALL');
   const [sortKey, setSortKey] = useState<SortKey>('recommended');
   const [sortOpen, setSortOpen] = useState(false);
+  /* Advanced Filters (Dan 2026-08-20). Loaded lazily from localStorage on
+     first render so a returning player's preferences apply to the FIRST
+     paint of the lobby rather than flashing an unfiltered list first. */
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [advFilters, setAdvFilters] = useState<FilterStore>({});
+  // Dan 2026-08-21: the header search icon was wired to `setSortOpen(false)` —
+  // a literal no-op. It now toggles a real search box that filters both the
+  // cash tables and the tournament cards by name.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   // Status defaults are 'all' on BOTH axes now. They used to be 'live' and
   // 'running', which was invisible: picking a game type silently hid every
   // empty table and every tournament still taking registrations, so a club
@@ -569,6 +599,17 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       .then(setResolvedClubId)
       .catch((e) => console.warn('[ClubHomePage] Failed to resolve clubId:', e));
   }, [clubId]);
+
+  /* Saved Advanced Filters are keyed per club, so they can only be read once
+     the UUID is known. Re-runs on a club switch: one club's "Bomb Pot only"
+     must never silently apply to another club's lobby. */
+  useEffect(() => {
+    if (!resolvedClubId) {
+      setAdvFilters({});
+      return;
+    }
+    setAdvFilters(loadFilters(resolvedClubId));
+  }, [resolvedClubId]);
 
   const handleMemberUpdate = useCallback(() => {
     loadClubData();
@@ -1021,8 +1062,44 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const filteredTables = useMemo(() => {
     if (!showsCash) return [];
 
+    const q = searchQuery.trim().toLowerCase();
+    /* Advanced Filters apply to the tab they were saved on. On ALL there is no
+       single tab to read, so they do not apply - ALL means "show me
+       everything", and quietly narrowing it would make the tab a lie. */
+    const advType = gameType === 'ALL' ? null : (gameType as FilterGameType);
+    const advSpec = advType && advType !== 'ALL' ? FILTER_SPECS[advType] : undefined;
+    const advValue = advType ? advFilters[advType] : undefined;
+
     const rows = tables.filter((table) => {
+      if (q && !(table.name || '').toLowerCase().includes(q)) return false;
       if (gameType !== 'ALL' && cashKind(table) !== gameType) return false;
+
+      if (advSpec && advValue) {
+        const bb = Number(table.big_blind) || 0;
+        if (bb > 0 && (bb < advValue.rangeMin || bb > advValue.rangeMax)) return false;
+        const max = Number(table.max_players) || 0;
+        if (max > 0 && (max < advValue.seatMin || max > advValue.seatMax)) return false;
+        const settings =
+          typeof table.settings === 'string'
+            ? (() => {
+                try {
+                  return JSON.parse(table.settings) as Record<string, unknown>;
+                } catch {
+                  return {};
+                }
+              })()
+            : ((table.settings as unknown as Record<string, unknown> | undefined) ?? {});
+        if (
+          !matchesAdvancedFilter(
+            advSpec,
+            advValue,
+            table as unknown as Record<string, unknown>,
+            settings
+          )
+        ) {
+          return false;
+        }
+      }
 
       // Status refines a chosen type; on ALL there is no type to refine.
       if (gameType === 'ALL') return true;
@@ -1052,14 +1129,33 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           (a, b) => cashRank(a) - cashRank(b) || (b.current_players || 0) - (a.current_players || 0)
         );
     }
-  }, [tables, gameType, showsCash, cashSubFilter, sortKey]);
+  }, [tables, gameType, showsCash, cashSubFilter, sortKey, searchQuery, advFilters]);
 
   const filteredTournaments = useMemo(() => {
     if (!showsTournaments) return [];
 
     const variant: TournVariant = TOURN_VARIANT_FOR[gameType] ?? 'ALL';
+    const q = searchQuery.trim().toLowerCase();
+    const advType = gameType === 'ALL' ? null : (gameType as FilterGameType);
+    const advSpec = advType && advType !== 'ALL' ? FILTER_SPECS[advType] : undefined;
+    const advValue = advType ? advFilters[advType] : undefined;
+
     const rows = tournaments.filter((t) => {
+      if (q && !((t.name as string) || '').toLowerCase().includes(q)) return false;
       if (!matchesVariant(t, variant)) return false;
+
+      if (advSpec && advValue) {
+        // The tournament range slider is a BUY-IN, and a player judges that on
+        // the total they pay, not on the prize-pool half of it.
+        const total = (Number(t.buy_in_amount) || 0) + (Number(t.buy_in_fee) || 0);
+        if (total < advValue.rangeMin || total > advValue.rangeMax) return false;
+        if (
+          !matchesAdvancedFilter(advSpec, advValue, t as unknown as Record<string, unknown>, {})
+        ) {
+          return false;
+        }
+      }
+
       if (gameType === 'ALL') return true;
       return matchesTournamentSubFilter(t, tournamentSubFilter);
     });
@@ -1081,7 +1177,15 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       default:
         return rows.sort(tournamentOpenFirst);
     }
-  }, [tournaments, gameType, showsTournaments, tournamentSubFilter, sortKey]);
+  }, [
+    tournaments,
+    gameType,
+    showsTournaments,
+    tournamentSubFilter,
+    sortKey,
+    searchQuery,
+    advFilters,
+  ]);
 
   const formatNumber = (num: number) => {
     return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1253,7 +1357,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               className="lobby-quick"
               onClick={() => {
                 haptic.selection();
-                navigate(`/clubs/${clubId}/detail`);
+                // Dan 2026-08-21: this navigated to /clubs/:id/detail — a route
+                // that does not exist, so the button did nothing. Events = the
+                // club's tournament schedule.
+                navigate(`/clubs/${clubId}/tournaments`);
               }}
             >
               <IconTrophy />
@@ -1277,24 +1384,37 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             onClick={() => {
               haptic.light();
               setSortOpen(false);
+              setSearchOpen((prev) => {
+                if (prev) setSearchQuery('');
+                return !prev;
+              });
             }}
           >
             <IconSearch />
           </button>
         </div>
 
-        {/* ── Bad Beat Jackpot — live pool + recent real hits ── */}
-        {(bbjScope.clubUuid || bbjScope.unionId) && (
-          <div className="lobby-top__bbj">
-            <BBJTicker
-              clubId={bbjScope.clubUuid}
-              unionId={bbjScope.unionId}
-              poolAmount={jackpotAmount}
-              onClick={() => {
-                haptic.selection();
-                setShowBBJInfo(true);
-              }}
+        {/* Dan 2026-08-21: real game search — filters cash tables and
+            tournament cards by name as you type. */}
+        {searchOpen && (
+          <div className="lobby-top__searchbox">
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search games and tournaments..."
+              autoFocus
+              aria-label="Search games and tournaments"
             />
+            {searchQuery && (
+              <button
+                className="lobby-top__searchclear"
+                aria-label="Clear search"
+                onClick={() => setSearchQuery('')}
+              >
+                &#10005;
+              </button>
+            )}
           </div>
         )}
 
@@ -1404,16 +1524,21 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               them; one wallet never gets access to the other. Union figures are
               managed on the union's own surfaces and appear nowhere here.
 
-              showBBJ is false because BBJTicker directly above already owns the
-              jackpot; two live copies of one number is how they eventually
-              disagree. */}
+              The BBJ now leads the wallet stack (see showBBJ below) rather
+              than sitting in its own strip above the club card. */}
           {currentUserId && resolvedClubId && (
             <div className="lobby-top__wallet">
+              {/* Dan 2026-08-20: "the BBJ amount should be on top of the rest
+                  of the wallet data." It was a full-width strip ABOVE the club
+                  card, which put it in a different column from the money it
+                  belongs with. showBBJ={true} renders it as the first row of
+                  the wallet stack instead, where it reads as the headline
+                  figure over the balances beneath it. */}
               <DynamicWallet
                 userId={currentUserId}
                 clubId={resolvedClubId}
                 variant={isOwner || userRole === 'owner' ? 'owner' : 'player'}
-                showBBJ={false}
+                showBBJ
                 onBuyDiamonds={() => {
                   haptic.medium();
                   navigate(`/clubs/${clubId}/detail`);
@@ -1471,6 +1596,27 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           ))}
         </div>
 
+        {/* Advanced Filters. Hidden on ALL, which has no spec of its own and
+            means "show everything" - offering a filter sheet there would imply
+            the tab can be narrowed when it deliberately cannot. */}
+        {gameType !== 'ALL' && (
+          <button
+            className={`game-bar__filter-btn ${
+              advFilters[gameType as FilterGameType] ? 'is-set' : ''
+            }`}
+            aria-label="Advanced filters"
+            title="Advanced Filters"
+            onClick={() => {
+              haptic.light();
+              setSortOpen(false);
+              setFiltersOpen(true);
+            }}
+          >
+            <IconSort />
+            <span>Filters</span>
+          </button>
+        )}
+
         <div className="game-bar__sort">
           <button
             className={`game-bar__sort-btn ${sortKey !== 'recommended' ? 'is-set' : ''}`}
@@ -1517,6 +1663,15 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       {/* ═══════════════════════════════════════════════════════════════════
           CLUB / UNION AD STRIP — directly under the action bar
       ═══════════════════════════════════════════════════════════════════ */}
+      {filtersOpen && resolvedClubId && (
+        <AdvancedFilters
+          clubId={resolvedClubId}
+          initialType={gameType as FilterGameType}
+          onClose={() => setFiltersOpen(false)}
+          onApply={setAdvFilters}
+        />
+      )}
+
       <LobbyAdStrip
         clubId={bbjScope.clubUuid || resolvedClubId}
         unionId={bbjScope.unionId}

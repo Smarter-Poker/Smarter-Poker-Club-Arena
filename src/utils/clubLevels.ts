@@ -64,17 +64,61 @@ export type ClubTier =
 
 /** min_members required to reach each level, index 0 = level 1. */
 export const CLUB_LEVEL_THRESHOLDS: readonly number[] = [
-  0, 5, 10, 15, 20, // 1-5    Starter
-  25, 30, 35, 40, 45, // 6-10   Small Club
-  50, 60, 70, 80, 90, // 11-15  Growing Club
-  100, 110, 125, 140, 160, // 16-20  Established
-  180, 200, 230, 270, 310, // 21-25  Large Club
-  360, 420, 490, 570, 660, // 26-30  Regional Operator
-  770, 900, 1050, 1200, 1400, // 31-35  Major Operator
-  1650, 1900, 2200, 2600, 3000, // 36-40  Network-Grade Club
-  3500, 4100, 4800, 5600, 6500, // 41-45  Enterprise Club
-  7600, 8900, 10500, 12500, 15000, // 46-50  Elite Network Operator
-  20000, 30000, 45000, 70000, 100000, // 51-55  Legendary Network
+  0,
+  5,
+  10,
+  15,
+  20, // 1-5    Starter
+  25,
+  30,
+  35,
+  40,
+  45, // 6-10   Small Club
+  50,
+  60,
+  70,
+  80,
+  90, // 11-15  Growing Club
+  100,
+  110,
+  125,
+  140,
+  160, // 16-20  Established
+  180,
+  200,
+  230,
+  270,
+  310, // 21-25  Large Club
+  360,
+  420,
+  490,
+  570,
+  660, // 26-30  Regional Operator
+  770,
+  900,
+  1050,
+  1200,
+  1400, // 31-35  Major Operator
+  1650,
+  1900,
+  2200,
+  2600,
+  3000, // 36-40  Network-Grade Club
+  3500,
+  4100,
+  4800,
+  5600,
+  6500, // 41-45  Enterprise Club
+  7600,
+  8900,
+  10500,
+  12500,
+  15000, // 46-50  Elite Network Operator
+  20000,
+  30000,
+  45000,
+  70000,
+  100000, // 51-55  Legendary Network
 ];
 
 export const MAX_CLUB_LEVEL = CLUB_LEVEL_THRESHOLDS.length; // 55
@@ -199,32 +243,60 @@ const TIER_LABELS: Record<ClubTier, string> = {
   legendary: 'Legendary Network',
 };
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * TIER PALETTE — smarter.poker only (Dan 2026-08-20: "remove the Orange of
+ * the Lv 28 ... these both need to be smarter.poker color schemas")
+ * ───────────────────────────────────────────────────────────────────────────
+ * The old ladder was a generic medal ramp: bronze, sky blue, GOLD, ORANGE,
+ * RED-ORANGE, BLUE VIOLET, MAGENTA. Six of eleven tiers used colours that
+ * appear nowhere else in the product, and Shark Club sits at level 28 —
+ * squarely in the orange band, which is what Dan is looking at.
+ *
+ * The house palette is the one the lobby, the nav and the wallet already use:
+ *
+ *   #8b95a7  steel      early tiers, unremarkable by design
+ *   #1877f2  blue       the brand primary
+ *   #00d4ff  cyan       live/active accent
+ *   #ffb800  gold       money and prestige
+ *   #e8edf5  platinum   the top of the ladder
+ *
+ * The ramp now READS as progress in one hue family: steel climbs to blue,
+ * blue to cyan, cyan to gold, gold to platinum. Nothing shouts before it has
+ * earned it, and a club owner can tell roughly where they sit from colour
+ * alone without reading the label.
+ */
 const TIER_COLORS: Record<ClubTier, string> = {
-  starter: '#CD7F32', // Bronze
-  small: '#C0C0C0', // Silver
-  growing: '#87CEEB', // Sky Blue
-  established: '#4682B4', // Steel Blue
-  large: '#FFD700', // Gold
-  regional: '#FFA500', // Orange
-  major: '#FF4500', // Red Orange
-  network: '#8A2BE2', // Blue Violet
-  enterprise: '#E5E4E2', // Platinum
-  elite: '#00CED1', // Diamond/Cyan
-  legendary: '#FF6FD8', // Legendary magenta
+  starter: '#8b95a7', // Steel
+  small: '#a9b4c6', // Light steel
+  growing: '#4da3ff', // Brand blue, light
+  established: '#1877f2', // Brand blue
+  large: '#0a5dc2', // Brand blue, deep
+  regional: '#00c8ff', // Cyan
+  major: '#00d4ff', // Cyan, bright
+  network: '#6fdcff', // Cyan, pale
+  enterprise: '#ffb800', // Brand gold
+  elite: '#ffd76b', // Gold, bright
+  legendary: '#e8edf5', // Platinum
 };
 
+/**
+ * Each gradient runs from its tier colour into the NEXT tier down, so the badge
+ * reads as a step on one continuous ladder rather than eleven unrelated
+ * two-tone chips. Every stop is from the palette above.
+ */
 const TIER_GRADIENTS: Record<ClubTier, string> = {
-  starter: 'linear-gradient(135deg, #CD7F32 0%, #8B4513 100%)',
-  small: 'linear-gradient(135deg, #C0C0C0 0%, #808080 100%)',
-  growing: 'linear-gradient(135deg, #87CEEB 0%, #4682B4 100%)',
-  established: 'linear-gradient(135deg, #4682B4 0%, #000080 100%)',
-  large: 'linear-gradient(135deg, #FFD700 0%, #B8860B 100%)',
-  regional: 'linear-gradient(135deg, #FFA500 0%, #FF8C00 100%)',
-  major: 'linear-gradient(135deg, #FF4500 0%, #8B0000 100%)',
-  network: 'linear-gradient(135deg, #8A2BE2 0%, #4B0082 100%)',
-  enterprise: 'linear-gradient(135deg, #E5E4E2 0%, #A9A9A9 100%)',
-  elite: 'linear-gradient(135deg, #B9F2FF 0%, #00CED1 100%)',
-  legendary: 'linear-gradient(135deg, #FF6FD8 0%, #3813C2 100%)',
+  starter: 'linear-gradient(135deg, #8b95a7 0%, #5b6577 100%)',
+  small: 'linear-gradient(135deg, #a9b4c6 0%, #7b8698 100%)',
+  growing: 'linear-gradient(135deg, #4da3ff 0%, #1877f2 100%)',
+  established: 'linear-gradient(135deg, #1877f2 0%, #0a5dc2 100%)',
+  large: 'linear-gradient(135deg, #0a5dc2 0%, #073f85 100%)',
+  regional: 'linear-gradient(135deg, #00c8ff 0%, #0a7fd4 100%)',
+  major: 'linear-gradient(135deg, #00d4ff 0%, #0090ff 100%)',
+  network: 'linear-gradient(135deg, #6fdcff 0%, #00b4e6 100%)',
+  enterprise: 'linear-gradient(135deg, #ffb800 0%, #cc8f00 100%)',
+  elite: 'linear-gradient(135deg, #ffd76b 0%, #ffb800 100%)',
+  legendary: 'linear-gradient(135deg, #e8edf5 0%, #9fb0c8 100%)',
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -296,10 +368,14 @@ export function getClubLevel(input: ClubLevelInput): ClubLevelInfo {
 
      The stored level is still honoured as a fallback for a caller that knows a
      level but not a member count — the union page's per-club rows, for one. */
-  const currentLvl =
-    pCount > 0
-      ? getClubLevelFromMembers(pCount)
-      : Math.min(Math.max(input.level || 1, 1), MAX_CLUB_LEVEL);
+  /* AUDIT 2026-08-20: the test is "was a count supplied", NOT "is it above
+     zero". Keying on pCount > 0 meant an empty club fell through to its stored
+     clubs.level — so a club that had shed its members kept displaying the
+     level it earned when it had them. A club with nobody in it is level 1. */
+  const hasCount = input.playerCount !== undefined || input.memberCount !== undefined;
+  const currentLvl = hasCount
+    ? getClubLevelFromMembers(pCount)
+    : Math.min(Math.max(input.level || 1, 1), MAX_CLUB_LEVEL);
   const hUnitsRaw = input.hierarchyUnitsRoundedUp ?? Math.ceil(input.hierarchyUnits || 0);
 
   // Determine sub-levels for display (prefer DB values, fallback to client compute)
@@ -337,7 +413,7 @@ export function getClubLevel(input: ClubLevelInput): ClubLevelInfo {
   /* When we have a member count, the progress bar must measure the SAME ladder
      the level came from. Leaving it on the legacy dual-axis maths would show a
      bar filling toward a level the badge will never display. */
-  if (pCount > 0) {
+  if (hasCount) {
     progressPercent = getClubLevelInfoFromMembers(pCount).progressPercent;
   }
 

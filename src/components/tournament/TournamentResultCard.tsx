@@ -31,12 +31,28 @@ export interface TournamentResult {
   at?: number;
 }
 
-const PLACE_LABEL: Record<number, string> = { 1: '1st Place', 2: '2nd Place', 3: '3rd Place' };
-
+/**
+ * AUDIT 2026-08-20: this printed "21th Place", "22th Place", "23th Place".
+ * Only 1, 2 and 3 were special-cased and everything else got "th" appended,
+ * so every finish whose last digit was 1, 2 or 3 above third was wrong — and
+ * in a 128-runner field that is most of the table. Suffix by the last digit,
+ * with the 11/12/13 exception that makes 11th..13th correct.
+ */
 function placeLabel(position: number): string {
-  if (PLACE_LABEL[position]) return PLACE_LABEL[position];
-  if (position > 0) return `${position}th Place`;
-  return 'Finished';
+  if (!(position > 0)) return 'Finished';
+  const n = Math.floor(position);
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th Place`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st Place`;
+    case 2:
+      return `${n}nd Place`;
+    case 3:
+      return `${n}rd Place`;
+    default:
+      return `${n}th Place`;
+  }
 }
 
 export default function TournamentResultCard({

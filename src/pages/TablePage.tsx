@@ -4335,34 +4335,88 @@ export default function TablePage({
                   // The engine has already closed the busted seat (left_at is
                   // stamped in eliminatePlayer), so "removed from the table"
                   // is a navigation fact, not a server call. Both branches
-                  // end the same way: the CLUB LOBBY, carrying the result in
-                  // router state, where ClubLobby renders the result card.
+                  // end the same way: the club lobby, with the result handed
+                  // to the app-root summary host on the way out.
+                  /* ── AUDIT 2026-08-20: this card had never once rendered ──
+                     The result travelled in ROUTER STATE to `/clubs/:clubId`,
+                     and the only component that reads it is ClubLobby, which
+                     is `/clubs/:clubId/lobby`. `/clubs/:clubId` is
+                     ClubHomePage. So the player was auto-removed and landed in
+                     the lobby exactly as asked, and the result card was
+                     silently dropped on arrival, every single time.
+
+                     Router state was the wrong carrier anyway, for the reason
+                     pendingSessionSummary already exists (see its header, and
+                     App.tsx): "the lobby" is not one component — it is
+                     HomePage OR ClubHomePage OR ClubLobby depending on where
+                     the player came from. Publishing to the app-root host
+                     instead means the card renders wherever they land, and it
+                     survives the navigation that killed it before.
+
+                     Publishing also carries the FULL result — entrants,
+                     knockouts, bounties, rebuys — rather than the two numbers
+                     that fit in the old state object, because
+                     fetchTournamentResult is already written and the elimination
+                     broadcast only knows position and prize. */
                   const goToLobbyWithResult = (
                     position: number,
                     prize: number,
                     delayMs: number
                   ) => {
-                    const result = {
-                      tournamentId: table.tournament_id || null,
-                      tournamentName: tableStateRef.current.tableName || 'Tournament',
-                      position,
-                      prize,
-                      isSpin: tournamentFormat === 'spin',
-                      at: Date.now(),
-                    };
+                    const tid = table.tournament_id || tableStateRef.current.tournamentId;
+
                     setTimeout(() => {
-                      const clubId = actualClubIdRef.current;
-                      if (clubId) {
-                        navigate(`/clubs/${clubId}`, { state: { tournamentResult: result } });
-                      } else {
-                        // No club to land in (should not happen) — the old
-                        // results page beats stranding them at a dead table.
-                        navigate(`/tournament-results?id=${result.tournamentId ?? ''}`);
-                      }
+                      void (async () => {
+                        const full = tid ? await fetchTournamentResult(tid, userId) : undefined;
+                        publishSessionSummary({
+                          duration: Math.floor(
+                            (Date.now() - sessionStartRef.current) / 1000
+                          ),
+                          handsPlayed: handsPlayedRef.current,
+                          handsWon: handsWonRef.current,
+                          totalRebuys: totalRebuysRef.current,
+                          profitLoss: 0,
+                          biggestPot: biggestPotRef.current,
+                          peakStack: peakStackRef.current,
+                          tableName: tableStateRef.current.tableName,
+                          tournament: {
+                            ...(full ?? {
+                              entrants: null,
+                              bountyWinnings: 0,
+                              knockouts: 0,
+                              rebuys: 0,
+                              addOns: 0,
+                              prize: 0,
+                              finishPlace: null,
+                            }),
+                            name: full?.name || tableStateRef.current.tableName || 'Tournament',
+                            /* The broadcast is authoritative for these two: it
+                               is what the engine just decided, whereas the row
+                               may not have been written yet when we read it. */
+                            finishPlace: position || full?.finishPlace || null,
+                            prize: prize || full?.prize || 0,
+                          },
+                        });
+
+                        const clubId = actualClubIdRef.current;
+                        if (clubId) {
+                          navigate(`/clubs/${clubId}`);
+                        } else {
+                          // No club to land in (should not happen) — the old
+                          // results page beats stranding them at a dead table.
+                          navigate(`/tournament-results?id=${tid ?? ''}`);
+                        }
+                      })();
                     }, delayMs);
                   };
 
-                  if (elimData.position === 1) {
+                  /* AUDIT 2026-08-20: `=== 1` on a value that arrives as
+                     untyped JSON over a realtime broadcast. The same handler
+                     already coerces it two lines up (`Number(...) === 3`) and
+                     again in the busted branch, so a string "1" would have
+                     skipped the winner's celebration overlay and sent the
+                     champion out on the 2.5s bust path. Coerce here too. */
+                  if (Number(elimData.position) === 1) {
                     // Winner: let the celebration overlay play, then leave.
                     // BUG-G FIX: Use tableStateRef for fresh name (closure has 'Loading...')
                     const tournamentName = tableStateRef.current.tableName || 'Tournament';

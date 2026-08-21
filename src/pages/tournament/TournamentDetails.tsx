@@ -1160,9 +1160,15 @@ export default function TournamentDetails({
                     {money((tournament as any).bounty_amount || 0)} Chips Per Knockout
                     {(tournament as any).is_pko &&
                       ' (Progressive: 50% to knocker, 50% added to bounty)'}
+                    {/* MYSTERY RANGE 2026-08-21: these columns hold CURRENCY,
+                        not multipliers — rendering them with an "x" told a
+                        player a $6 head could pay "60x". They now carry the
+                        true payout range the draw table produces. */}
                     {(tournament as any).is_mystery_bounty &&
                       (tournament as any).mystery_bounty_min != null &&
-                      ` (Mystery: ${(tournament as any).mystery_bounty_min}x - ${(tournament as any).mystery_bounty_max}x)`}
+                      ` (Mystery: ${money((tournament as any).mystery_bounty_min)} - ${money(
+                        (tournament as any).mystery_bounty_max
+                      )} Per Knockout)`}
                   </span>
                 </div>
               )}

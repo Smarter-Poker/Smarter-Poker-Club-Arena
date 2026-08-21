@@ -1247,9 +1247,21 @@ export default function TournamentPage() {
                 {selectedTournament.is_mystery_bounty && (
                   <div className="stat">
                     <span className="stat-label">Mystery Bounty Range</span>
+                    {/* MYSTERY RANGE 2026-08-21: currency, not multipliers. The
+                        old "1x - 100x" fallback was invented outright — the
+                        draw table's ceiling is 13x the head. When the range is
+                        not set we say so rather than making one up. */}
                     <span className="stat-value">
-                      {selectedTournament.mystery_bounty_min || '1'}x -{' '}
-                      {selectedTournament.mystery_bounty_max || '100'}x Multiplier
+                      {selectedTournament.mystery_bounty_min &&
+                      selectedTournament.mystery_bounty_max
+                        ? `${Number(selectedTournament.mystery_bounty_min).toLocaleString(
+                            undefined,
+                            { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                          )} - ${Number(selectedTournament.mystery_bounty_max).toLocaleString(
+                            undefined,
+                            { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                          )} Per Knockout`
+                        : 'Revealed At Knockout'}
                     </span>
                   </div>
                 )}

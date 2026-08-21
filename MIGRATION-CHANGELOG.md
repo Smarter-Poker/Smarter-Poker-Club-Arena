@@ -9456,3 +9456,51 @@ Client suite exits 0: 219 files, 2767 tests. Server: 93 files, 1004 tests.
 - Union-level reserve wallet (reserve comes from the UNION unless a club is standalone) — needs the wallet built.
 - Tournament completion card for ALL spin finishers.
 - Spins 1:1 animation clone verification against cash.
+
+## 2026-08-21 — Mystery bounty: typography, and the advertised prize range was a lie
+
+TYPOGRAPHY (Dan): "Won By" now matches the amount's family and weight at
+exactly half its size (clamp 17-29px against the amount's 34-58px). The tier
+label (Jackpot) is much larger — clamp 22-34px — and lifted 14px clear of the
+figure. The "Mystery Bounty" eyebrow is grey (--text-secondary), not gold;
+the gold belongs to the prize, not the label above it.
+
+THE REAL FIND — the advertised range could not happen. Three sources of
+truth disagreed:
+
+- the DRAW (fn_register_for_tournament / fn_register_horse_for_tournament)
+  applies a fixed table to the player's funded head:
+  60% x0.5, 25% x1, 10% x2, 4% x3, 1% x13 — expected value exactly 1.0,
+  which is what keeps the funded bounty pool balanced;
+- the COLUMNS were written as `bounty` and `bounty * 10`, in currency;
+- the LOBBY rendered those currency values as MULTIPLIERS ("6x - 60x"),
+  with an invented "1x - 100x" fallback when unset.
+
+A $6 head was therefore advertised as paying up to 60x when 13x is the
+ceiling, and as starting at 6x when 60% of all draws land BELOW the head at
+0.5x. Live proof: Evening Mystery Bounty (PLO5) advertised 6.00-60.00 while
+its 19 seated players hold prizes of 3.00, 6.00 and 12.00.
+
+Fixed on all three: TournamentRecurringService now writes the true currency
+range (0.5x and 13x of the head) at both creation sites; TournamentDetails
+and TournamentPage render currency "Per Knockout" instead of "x Multiplier"
+and no longer invent a range when none is set; migration
+20260821_mystery_bounty_true_advertised_range backfills every unfinished
+event.
+
+VERIFIED WORKING (no change needed): the knockout -> chest -> wallet chain is
+sound end to end. fn_collect_bounty resolves mystery mode, pays
+credit_player_wallet under an idempotency key of
+tourney:<id>:bounty:<eliminated>:<knocker>, writes the 'bounty' ledger row,
+and caps at the unpaid pool; 4,458 bounty wallet transactions and 4,192
+tournament_bounties rows exist in production. The engine broadcasts
+mystery_bounty_revealed on channel t-break-<tournamentId>, which TablePage
+subscribes to and feeds into the chest queue — so the chest fires for every
+knockout, on every client at the table, in real time.
+
+REPORTED, NOT CHANGED: Evening Mystery Bounty charges $2 fee on a $13 buy-in
+(13.3%) against the platform's 10% cap, so it fails
+tournaments_rake_within_10_pct. The constraint is NOT VALID and so tolerates
+the existing row but rejects any UPDATE to it, which is why that one event
+keeps its old advertised range. Its rake predates the one-rake model and
+19 players have already paid; that is Dan's call, not a migration's.

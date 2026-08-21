@@ -25,15 +25,15 @@ const LOBBY_TILES: LobbyTile[] = [
     shortcutKey: '1',
   },
   {
-    img: `${BASE}images/tiles/player-stats-v8.jpg`,
-    alt: 'Player Stats',
-    route: '/stats',
-    shortcutKey: '2',
-  },
-  {
     img: `${BASE}images/tiles/leaderboards-v8.jpg`,
     alt: 'Leaderboards',
     route: '/leaderboard',
+    shortcutKey: '2',
+  },
+  {
+    img: `${BASE}images/tiles/player-stats-v9.png`,
+    alt: 'Player Stats',
+    route: '/stats',
     shortcutKey: '3',
   },
   { img: `${BASE}images/tiles/cashier-v8.jpg`, alt: 'Cashier', route: null, shortcutKey: '4' }, // Custom — needs last-club logic

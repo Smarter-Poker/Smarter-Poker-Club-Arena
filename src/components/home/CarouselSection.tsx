@@ -15,6 +15,7 @@ import { STORAGE_KEYS } from '../../lib/storage';
 import { SHARK_CLUB_ID } from '../../lib/constants';
 import styles from '../../pages/HomePage.module.css';
 import { PageErrorBoundary } from '../common/PageErrorBoundary';
+import { Carousel } from '../carousel';
 import type { ToastContextValue } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 
@@ -89,9 +90,11 @@ export default function CarouselSection({
   // snap haptic/SFX.
   const userScrollRef = useRef(false);
 
-  // Enhancement #8: Drag-to-reorder state
-  const [draggedId, setDraggedId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  /* The drag-to-reorder state that lived here is gone with the handlers that
+     wrote it. Nothing set it once the carousel took over the gesture, so the
+     two "is this card being dragged" classes below were permanently false:
+     state that can only ever hold one value is worse than no state, because it
+     reads as a live feature. */
   const [orderedClubs, setOrderedClubs] = useState<UserClub[]>(displayClubs);
 
   // Keep orderedClubs in sync with displayClubs (respecting saved order)
@@ -162,51 +165,7 @@ export default function CarouselSection({
   }, []);
 
   // Enhancement #8: Drag handlers
-  const handleDragStart = useCallback((clubId: string) => {
-    setDraggedId(clubId);
-    PremiumSFX.dragStart();
-  }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent, clubId: string) => {
-    e.preventDefault();
-    setDragOverId(clubId);
-  }, []);
-
-  const handleDrop = useCallback(
-    (targetId: string) => {
-      if (!draggedId || draggedId === targetId) {
-        setDraggedId(null);
-        setDragOverId(null);
-        return;
-      }
-      setOrderedClubs((prev) => {
-        const arr = [...prev];
-        const fromIdx = arr.findIndex((c) => c.id === draggedId);
-        const toIdx = arr.findIndex((c) => c.id === targetId);
-        if (fromIdx === -1 || toIdx === -1) return prev;
-        const [moved] = arr.splice(fromIdx, 1);
-        arr.splice(toIdx, 0, moved);
-        try {
-          localStorage.setItem(STORAGE_KEYS.CLUB_ORDER, JSON.stringify(arr.map((c) => c.id)));
-        } catch {
-          /* */
-        }
-        return arr;
-      });
-      setDraggedId(null);
-      setDragOverId(null);
-      haptic.medium();
-      PremiumSFX.dragDrop();
-    },
-    [draggedId]
-  );
-
-  const handleDragEnd = useCallback(() => {
-    setDraggedId(null);
-    setDragOverId(null);
-  }, []);
-
-  // Single-click handler: navigate directly to club lobby
   const handleClubCardClick = useCallback(
     (club: UserClub) => {
       haptic.success();
@@ -215,7 +174,7 @@ export default function CarouselSection({
         localStorage.setItem(STORAGE_KEYS.LAST_VISITED, club.id);
         localStorage.setItem(STORAGE_KEYS.LAST_CLUB, club.id);
       } catch {
-        /* quota / private mode — navigation still works */
+        /* quota / private mode - navigation still works */
       }
       navigate(`/clubs/${club.id}`);
     },
@@ -226,30 +185,26 @@ export default function CarouselSection({
   // unnecessary re-creation on every render cycle
   const renderClubCard = useCallback(
     (club: UserClub) => {
-      const isDragging = draggedId === club.id;
-      const isDragTarget = dragOverId === club.id;
       const stats = clubStats[club.id];
 
       return (
         <div
-          key={club.id}
-          className={[
-            styles.carouselCardFeatured,
-            isDragging ? styles.cardDragging : '',
-            isDragTarget ? styles.cardDragOver : '',
-          ]
-            .filter(Boolean)
-            .join(' ')}
-          onClick={() => handleClubCardClick(club)}
+          className={styles.carouselCardFeatured}
+          /* The carousel owns the click: it decides whether a gesture was a
+             tap or a drag, and whether a tap on an off-centre card should open
+             it or bring it to the middle. Handling onClick here as well would
+             open a club the player was only swiping past. */
           onContextMenu={(e) => handleContextMenu(e, club)}
           onTouchStart={(e) => handleLongPressStart(club, e)}
           onTouchEnd={handleLongPressEnd}
           onTouchCancel={handleLongPressEnd}
-          draggable
-          onDragStart={() => handleDragStart(club.id)}
-          onDragOver={(e) => handleDragOver(e, club.id)}
-          onDrop={() => handleDrop(club.id)}
-          onDragEnd={handleDragEnd}
+          /* HTML5 drag-to-reorder is GONE from these cards, deliberately.
+             Native dragstart fires within a few pixels of pointer movement, so
+             it and a swipe are the same gesture and the browser hands it to
+             DnD every time: the carousel Dan asked for would simply never
+             move on desktop. The saved order is still honoured on load (see
+             STORAGE_KEYS.CLUB_ORDER above) and pinning still floats a club to
+             the front; only reordering BY DRAGGING is retired. */
           onMouseMove={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             e.currentTarget.style.setProperty('--x', `${e.clientX - rect.left}px`);
@@ -295,17 +250,11 @@ export default function CarouselSection({
       );
     },
     [
-      draggedId,
-      dragOverId,
       clubStats,
       handleClubCardClick,
       handleContextMenu,
       handleLongPressStart,
       handleLongPressEnd,
-      handleDragStart,
-      handleDragOver,
-      handleDrop,
-      handleDragEnd,
       pinnedClubIds,
     ]
   );
@@ -338,7 +287,30 @@ export default function CarouselSection({
         </div>
       )}
 
-      {orderedClubs.map((club) => renderClubCard(club))}
+      {orderedClubs.length > 0 && (
+        /* ENDLESS CAROUSEL (Dan 2026-08-21): "a user can join and be a part of
+           unlimited amounts of clubs, but the display is limited... the same
+           exact functionality that the World Hub page has, with the tiles
+           swiping back and forth in an endless carousel."
+
+           The strip used to be a native `overflow-x: auto` scroller with CSS
+           scroll snapping. That has ends: reach the last club and it stops,
+           and with a long list the only way back to the first is to drag all
+           the way through every one of them. The carousel wraps, so the far
+           end of the list is one swipe away in either direction, which is what
+           makes it usable at "unlimited amounts of clubs".
+
+           Interaction constants are lifted from the World Hub's own engine so
+           the feel matches. See components/carousel/Carousel.tsx for what was
+           portable from a WebGL carousel and what was not. */
+        <Carousel
+          items={orderedClubs}
+          getKey={(club) => club.id}
+          onSelect={(club) => handleClubCardClick(club)}
+          ariaLabel="Your Clubs"
+          renderItem={(club) => renderClubCard(club)}
+        />
+      )}
 
       {orderedClubs.length === 0 && (
         <div

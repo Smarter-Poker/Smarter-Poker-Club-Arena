@@ -447,9 +447,14 @@
 
 /* ── SHARK CLUB FEATURED CARD in the carousel ──────────────────────────── */
 
+/* The card sits inside .sp-carousel__item, which owns the width now (it sizes
+   from the TRACK using this same clamp, so a card in a narrower strip stops
+   overlapping its neighbours). Filling the slot keeps one source of truth for
+   how wide a club card is. The flex/scroll-snap properties below are inert
+   here: the carousel positions absolutely and is not a scroll container. */
 .carouselCardFeatured {
   flex: 0 0 auto;
-  width: clamp(200px, 55vw, 300px);
+  width: 100%;
   cursor: pointer;
   position: relative;
   scroll-snap-align: center;

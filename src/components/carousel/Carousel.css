@@ -1,62 +1,71 @@
-.carousel {
-    position: relative;
-    display: flex;
-    align-items: center;
+/* ═══════════════════════════════════════════════════════════════════════════
+   ENDLESS CAROUSEL
+   ─────────────────────────────────────────────────────────────────────────
+   Absolutely positioned cards around a centre point, moved by transform only.
+   Deliberately NOT a scroll container: the strip has no ends, so there is no
+   scrollWidth to scroll through, and a native scroller would fight the
+   pointer drag for the same gesture.
+
+   Transform-only movement also keeps this on the compositor. The lobby renders
+   large card panels with images and live stats; animating `left` would relayout
+   every one of them on every frame of a swipe.
+═══════════════════════════════════════════════════════════════════════════ */
+.sp-carousel {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
 }
 
-.carousel-track {
-    display: flex;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
+.sp-carousel__track {
+  position: relative;
+  width: 100%;
+  /* Tall enough for the card plus its shadow and hover lift. */
+  height: clamp(320px, 62vw, 430px);
+  cursor: grab;
+  /* The horizontal gesture belongs to the carousel; vertical still scrolls
+     the page. Without this, a swipe on a touch device pans the page instead. */
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  /* Nothing here is a drop target, and a native image drag would hijack the
+     swipe on desktop the moment the pointer crosses a card image. */
+  -webkit-user-drag: none;
 }
 
-.carousel-track::-webkit-scrollbar {
-    display: none;
+.sp-carousel__track:focus-visible {
+  outline: 2px solid rgba(255, 184, 0, 0.6);
+  outline-offset: -2px;
+  border-radius: 12px;
 }
 
-.carousel-item {
-    flex-shrink: 0;
-    scroll-snap-align: start;
+.sp-carousel--grabbing {
+  cursor: grabbing;
 }
 
-.carousel-btn {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 40px;
-    height: 40px;
-    background: rgba(0, 0, 0, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 50%;
-    color: #fff;
-    font-size: 1.4rem;
-    cursor: pointer;
-    z-index: 10;
-    transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-    backdrop-filter: blur(16px) saturate(1.2);
-    -webkit-backdrop-filter: blur(16px) saturate(1.2);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+.sp-carousel__item {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--sp-carousel-item-w, 300px);
+  /* transform and opacity are written inline every frame by the component;
+     declaring a transition on them would fight the rAF loop and add lag. */
+  will-change: transform, opacity;
 }
 
-.carousel-btn:hover:not(:disabled) {
-    background: rgba(255, 215, 0, 0.8);
-    border-color: #ffd700;
-    color: #000;
-    transform: translateY(-50%) translateY(-2px);
-    box-shadow: 0 4px 12px rgba(255, 215, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+.sp-carousel__item img {
+  -webkit-user-drag: none;
+  user-drag: none;
+  pointer-events: none;
 }
 
-.carousel-btn:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
+/* The centre card is the one a tap opens; the rest snap to centre instead.
+   Only it takes pointer events for its own inner controls. */
+.sp-carousel__item:not(.is-active) {
+  cursor: pointer;
 }
 
-.carousel-btn.left {
-    left: -20px;
-}
-
-.carousel-btn.right {
-    right: -20px;
+@media (prefers-reduced-motion: reduce) {
+  .sp-carousel__item {
+    will-change: auto;
+  }
 }

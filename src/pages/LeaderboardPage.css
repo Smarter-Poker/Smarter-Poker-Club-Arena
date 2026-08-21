@@ -6,9 +6,34 @@
  */
 
 .leaderboard-page {
-  min-height: 100vh;
-  background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
-  padding-bottom: 120px;
+  max-width: 680px;
+  margin: 0 auto;
+  padding-bottom: 70px;
+  color: #e2e8f0;
+  font-family: 'Rajdhani', 'Rajdhani', 'Exo 2', sans-serif;
+  min-height: 100dvh;
+  position: relative;
+  z-index: 1;
+}
+
+@media (max-width: 768px) {
+  .leaderboard-page {
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
+.leaderboard-page::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image: url('/hub/club-arena/images/bg_digital_matrix.jpg');
+  background-size: cover;
+  background-position: center;
+  background-color: rgba(10, 10, 21, 0.85);
+  background-blend-mode: multiply;
+  pointer-events: none;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -20,10 +45,34 @@
   align-items: center;
   gap: 1rem;
   padding: 1rem;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
-  border-bottom: 2px solid #2a3a4a;
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  background: linear-gradient(180deg, #3d4f5f 0%, #1a2332 50%, #0d1117 100%);
+  border: 3px solid #3d4f5f;
+  border-radius: 12px;
+  margin: 1rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    0 4px 20px rgba(0, 0, 0, 0.5);
+  position: relative;
+}
+.leaderboard-header::before,
+.leaderboard-header::after {
+  content: '';
+  position: absolute;
+  width: 4px;
+  top: 20%;
+  bottom: 20%;
+  background: #00d4ff;
+  box-shadow:
+    0 0 10px #00d4ff,
+    0 0 20px rgba(0, 212, 255, 0.6);
+  border-radius: 2px;
+}
+.leaderboard-header::before {
+  left: 8px;
+}
+.leaderboard-header::after {
+  right: 8px;
 }
 
 .leaderboard-header .back-btn {
@@ -43,10 +92,12 @@
 }
 
 .leaderboard-header h1 {
-  font-size: 1.25rem;
-  margin: 0;
-  color: #fff;
-  font-weight: 600;
+  font-size: 1.5rem;
+  margin: 0 0 0 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(0, 212, 255, 0.6);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -54,21 +105,20 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 .user-rank-card {
-  background: linear-gradient(135deg, #00d4ff 0%, #0066aa 50%, #004488 100%);
+  background: linear-gradient(180deg, #3d4f5f 0%, #1a2332 50%, #0d1117 100%);
   margin: 1rem;
   padding: 1.5rem;
-  border-radius: 16px;
+  border-radius: 12px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   color: white;
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  border: 3px solid #00d4ff;
   box-shadow:
-    0 0 30px rgba(0, 212, 255, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0 10px #00d4ff,
+    0 0 20px rgba(0, 212, 255, 0.6);
+  transition: all 0.3s ease;
 }
 
 .user-rank-card.sticky-bottom {
@@ -105,7 +155,7 @@
 .user-rank-position .rank-number {
   font-size: 2rem;
   font-weight: 700;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   text-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
 }
 
@@ -328,7 +378,7 @@
   font-size: 0.875rem;
   font-weight: 700;
   margin-top: 0.25rem;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
 }
 
 .gold-text {
@@ -624,17 +674,19 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 .leaderboard-entry {
+  position: relative;
+  background: linear-gradient(180deg, #3d4f5f 0%, #1a2332 50%, #0d1117 100%);
+  border: 3px solid #3d4f5f;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   gap: 0.75rem;
   padding: 1rem;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(100, 100, 100, 0.02) 100%);
-  border: 1px solid #2a3a4a;
-  border-radius: 12px;
-  margin-bottom: 0.5rem;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  margin-bottom: 0.75rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 4px 20px rgba(0, 0, 0, 0.5);
+  transition: all 0.3s ease;
 }
 
 .leaderboard-entry:hover {
@@ -657,7 +709,7 @@
   font-weight: 700;
   font-size: 1rem;
   color: #6a7a8a;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
 }
 
 .entry-rank.top-3 {
@@ -717,7 +769,7 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 0.125rem;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
   color: #00d4ff;
   text-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
 }
@@ -1155,7 +1207,7 @@
   font-weight: 700;
   font-size: 0.9rem;
   color: #6a7a8a;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
 }
 
 .player-cell .entry-avatar {
@@ -1184,7 +1236,7 @@
 
 .stats-cell.roi {
   font-weight: 700;
-  font-family: 'Orbitron', monospace;
+  font-family: 'Rajdhani', monospace;
 }
 
 .stats-cell.roi.positive {
@@ -1964,16 +2016,32 @@
 
 .lb-load-more {
   display: block;
-  width: 100%;
-  margin: 12px 0 4px;
-  padding: 10px 14px;
-  background: rgba(65, 105, 225, 0.12);
-  border: 1px solid rgba(65, 105, 225, 0.3);
-  border-radius: 10px;
-  color: #4169e1;
+  width: calc(100% - 2rem);
+  margin: 1rem;
+  padding: 0.875rem;
+  border: 2px solid #3d4f5f;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #3d4f5f 0%, #1a2332 50%, #0d1117 100%);
+  color: #e2e8f0;
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 4px 10px rgba(0, 0, 0, 0.5);
+  transition: all 0.25s ease;
 }
-.lb-load-more:disabled { opacity: 0.6; cursor: default; }
-.lb-load-more:focus-visible { outline: 2px solid #4169e1; outline-offset: 2px; }
+.lb-load-more:hover:not(:disabled) {
+  border-color: #00d4ff;
+  color: #00d4ff;
+}
+.lb-load-more:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.lb-load-more:focus-visible {
+  outline: 2px solid #4169e1;
+  outline-offset: 2px;
+}

@@ -281,12 +281,20 @@ export function TableTabBar({
               className={[
                 'table-tab-bar__tab',
                 isActive && 'table-tab-bar__tab--active',
+                hasCards && 'table-tab-bar__tab--cards',
                 !isActive && tab.isMyTurn && 'table-tab-bar__tab--turn',
                 !isActive && isUrgent && 'table-tab-bar__tab--urgent',
               ]
                 .filter(Boolean)
                 .join(' ')}
               onClick={() => onTabSelect(tab.id)}
+              // Audit 2026-08-20: when the tab shows mini cards the name span
+              // is gone and MiniCards is aria-hidden, so the button had NO
+              // accessible name at all. Announce the table and its state; the
+              // cards themselves are visual sugar a screen reader can live
+              // without (the table view reads them properly).
+              aria-label={`${formatGameTitle(tab.name)}${tab.isMyTurn ? ', your turn' : ''}`}
+              aria-current={isActive ? 'true' : undefined}
               style={{
                 opacity: visibleItems.has(i) ? 1 : 0,
                 transform: visibleItems.has(i) ? 'translateY(0)' : 'translateY(8px)',
@@ -333,16 +341,31 @@ export function TableTabBar({
                 />
               )}
 
-              {/* Close button — only on hover for non-sole tabs */}
+              {/* Close control — only on hover for non-sole tabs.
+                  Audit 2026-08-20: this was a <button> INSIDE the tab
+                  <button> — interactive content nested in interactive content
+                  is invalid HTML and browsers/screen readers mis-handle the
+                  pair (focus lands on the outer, clicks can fire both). A
+                  span with role=button + its own key handling keeps the DOM
+                  legal and both controls independently operable. */}
               {tabs.length > 1 && (
-                <button
+                <span
+                  role="button"
+                  tabIndex={0}
                   className="table-tab-bar__close"
                   onClick={(e) => handleClose(e, tab.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleClose(e as unknown as React.MouseEvent, tab.id);
+                    }
+                  }}
                   title="Close table"
                   aria-label={`Close ${tab.name}`}
                 >
                   ×
-                </button>
+                </span>
               )}
             </button>
           );

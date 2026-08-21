@@ -548,3 +548,14 @@
   }
   .stripCell { flex: 1 1 45%; }
 }
+
+/* The member count used to be the search box's placeholder, so it vanished
+   the moment anyone typed and was never exposed to assistive tech. */
+.memberCount {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #6d7691;
+  font-variant-numeric: tabular-nums;
+  padding-left: 6px;
+}

@@ -94,10 +94,11 @@ const fmt = (n: number) =>
 export default function CashierTradePage() {
   const { clubId: clubParam } = useParams<{ clubId: string }>();
   const navigate = useNavigate();
-  const { user } = useAuthUser();
+  const { user, isHydrating } = useAuthUser();
   const toast = useToast();
 
   const [clubUuid, setClubUuid] = useState<string | null>(null);
+  const [clubResolveFailed, setClubResolveFailed] = useState(false);
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [tab, setTab] = useState<TabKey>('trade');
@@ -122,6 +123,8 @@ export default function CashierTradePage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [records, setRecords] = useState<TradeRecordRow[]>([]);
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [recordsError, setRecordsError] = useState<string | null>(null);
   const [amountModal, setAmountModal] = useState<'send' | 'claim' | null>(null);
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
@@ -143,8 +146,19 @@ export default function CashierTradePage() {
     let live = true;
     (async () => {
       if (!clubParam) return;
-      const uuid = (await resolveClubUUID(clubParam)) || clubParam;
-      if (live) setClubUuid(uuid);
+      setClubResolveFailed(false);
+      // Falling back to the raw param put a club CODE into a uuid column
+      // filter, so every later query matched nothing and the cashier looked
+      // simply empty. A club we cannot identify is an error, not a filter.
+      const uuid = await resolveClubUUID(clubParam);
+      if (!live) return;
+      if (uuid) {
+        setClubUuid(uuid);
+      } else {
+        setClubUuid(null);
+        setClubResolveFailed(true);
+        setLoading(false);
+      }
     })();
     return () => {
       live = false;
@@ -335,10 +349,20 @@ export default function CashierTradePage() {
   }, [loadClub]);
 
   // ── Trade record tab data ──────────────────────────────────────────────────
+  // Cleared on every club change: the previous club's trades used to stay on
+  // screen until the new query landed.
+  useEffect(() => {
+    setRecords([]);
+    setRecordsError(null);
+  }, [clubUuid]);
+
   useEffect(() => {
     if (tab !== 'record' || !user?.id || !clubUuid) return;
     let live = true;
+    setRecordsLoading(true);
+    setRecordsError(null);
     (async () => {
+      try {
       const { data, error } = await supabase
         .from('chip_transactions')
         .select('id, created_at, transaction_type, amount, from_user_id, to_user_id, notes')
@@ -346,7 +370,10 @@ export default function CashierTradePage() {
         .or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`)
         .order('created_at', { ascending: false })
         .limit(50);
-      if (error || !live) return;
+      if (!live) return;
+      // A discarded error rendered as "No trades recorded yet", which is a
+      // different statement from "we could not read them".
+      if (error) throw error;
       const ids = new Set<string>();
       for (const r of data || []) {
         if (r.from_user_id) ids.add(r.from_user_id);
@@ -372,6 +399,15 @@ export default function CashierTradePage() {
           };
         })
       );
+      } catch (e) {
+        reportError(e, 'CashierTradePage.records');
+        if (live) {
+          setRecords([]);
+          setRecordsError('Could not load your trade record.');
+        }
+      } finally {
+        if (live) setRecordsLoading(false);
+      }
     })();
     return () => {
       live = false;
@@ -640,9 +676,12 @@ export default function CashierTradePage() {
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder={`${downline.length} member${downline.length === 1 ? '' : 's'}`}
-              aria-label="Search members"
+              placeholder="Search members"
+              aria-label={`Search ${downline.length} member${downline.length === 1 ? '' : 's'}`}
             />
+            <span className={styles.memberCount} aria-hidden="true">
+              {downline.length}
+            </span>
           </div>
           <div className={styles.filterRow}>
             <label className={styles.groupToggle}>
@@ -770,7 +809,13 @@ export default function CashierTradePage() {
 
       {tab === 'record' && (
         <div className={styles.list}>
-          {records.length === 0 && <div className={styles.empty}>No trades recorded yet.</div>}
+          {recordsLoading && <div className={styles.empty}>Loading trades...</div>}
+          {!recordsLoading && recordsError && (
+            <div className={styles.empty} role="alert">{recordsError}</div>
+          )}
+          {!recordsLoading && !recordsError && records.length === 0 && (
+            <div className={styles.empty}>No trades recorded yet.</div>
+          )}
           {records.map((r) => (
             <div key={r.id} className={styles.row}>
               <div className={styles.rowInfo}>

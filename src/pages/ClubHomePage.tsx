@@ -189,12 +189,11 @@ const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
  * everything expects to find them.
  */
 const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
-  { key: 'ALL', label: 'All' },
+  { key: 'MTT', label: 'MTT' },
   { key: 'HOLDEM', label: "Hold'em" },
   { key: 'OMAHA', label: 'Omaha' },
-  { key: 'MTT', label: 'MTT' },
-  { key: 'SNG', label: 'Heads Up' },
   { key: 'SPIN', label: 'Spin' },
+  { key: 'SNG', label: 'Heads Up' },
 ];
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
@@ -202,7 +201,7 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'stakes_high', label: 'Stakes: High To Low' },
   { key: 'stakes_low', label: 'Stakes: Low To High' },
   { key: 'players', label: 'Most Players' },
-  { key: 'starting_soon', label: 'Starting Soonest' },
+  { key: 'starting_soon', label: 'Starting Soon / Late Reg' },
 ];
 
 /** Which tournament tab a GameType maps onto, for the shared variant matcher. */
@@ -294,7 +293,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [showBBJInfo, setShowBBJInfo] = useState(false);
   // Dan 2026-08-21: Chip Mint (diamonds -> chips, 100 = 10,000).
   const [showChipMint, setShowChipMint] = useState(false);
-  const [gameType, setGameType] = useState<GameType>('ALL');
+  const [gameType, setGameType] = useState<GameType>('MTT');
   const [sortKey, setSortKey] = useState<SortKey>('recommended');
   const [sortOpen, setSortOpen] = useState(false);
   /* Advanced Filters (Dan 2026-08-20). Loaded lazily from localStorage on
@@ -1364,10 +1363,22 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         return rows.sort((a, b) => buyIn(a) - buyIn(b));
       case 'players':
         return rows.sort((a, b) => (b.current_players || 0) - (a.current_players || 0));
-      case 'starting_soon':
-        return rows.sort(
+      case 'starting_soon': {
+        const isLateReg = (t: TournamentData) => {
+          const status = String(t.status).toUpperCase();
+          if (status === 'REGISTERING') return true;
+          if (status === 'RUNNING') {
+            const lateReg = Number(t.late_reg_levels) || Number(t.late_reg_mins) || 0;
+            const current = Number(t.current_level) || 1;
+            return lateReg > 0 && current <= lateReg;
+          }
+          return false;
+        };
+        const activeOnly = rows.filter(isLateReg);
+        return activeOnly.sort(
           (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
         );
+      }
       case 'recommended':
       default:
         return rows.sort(tournamentOpenFirst);
@@ -1897,6 +1908,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 haptic.selection();
                 setGameType(tab.key);
                 setSortOpen(false);
+                if (tab.key === 'MTT') {
+                  setSortKey('starting_soon');
+                } else if (tab.key === 'HOLDEM' || tab.key === 'OMAHA') {
+                  setSortKey('recommended');
+                }
               }}
             >
               {tab.label}

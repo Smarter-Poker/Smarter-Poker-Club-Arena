@@ -1287,6 +1287,20 @@ export default function UnionDetailPage() {
         {/* Financials Tab */}
         {activeTab === 'financials' && financialSummary && (
           <div className={styles.financialsContainer}>
+            {/*
+              The weekly square-up board. It lives on its own page because it
+              is per-period and per-club, and because the one thing it has to
+              show - a club that was never billed - needs the whole club list
+              beside the invoice list to be visible at all.
+            */}
+            <button
+              type="button"
+              className={styles.statementsLink}
+              onClick={() => navigate(`/unions/${unionId}/statements`)}
+            >
+              Weekly statements and square-up
+            </button>
+
             {/* Summary Cards */}
             <div className={styles.financialCards}>
               <div className={styles.financialCard}>

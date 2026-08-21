@@ -878,3 +878,22 @@
     font-size: 0.78rem;
   }
 }
+
+/* link out to the weekly square-up board */
+.statementsLink {
+  display: block;
+  width: 100%;
+  margin-bottom: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: rgba(240, 180, 41, 0.12);
+  border: 1px solid rgba(240, 180, 41, 0.45);
+  border-radius: 10px;
+  color: #f0b429;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.statementsLink:focus-visible { outline: 2px solid #f0b429; outline-offset: 2px; }

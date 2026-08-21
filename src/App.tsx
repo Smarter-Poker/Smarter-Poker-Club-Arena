@@ -73,6 +73,7 @@ const DailyChallengesPage = lazy(() => import('./pages/DailyChallengesPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const UnionsPage = lazy(() => import('./pages/UnionsPage'));
 const UnionDetailPage = lazy(() => import('./pages/UnionDetailPage'));
+const UnionStatementsPage = lazy(() => import('./pages/UnionStatementsPage'));
 const CreateUnionPage = lazy(() => import('./pages/CreateUnionPage'));
 const SettlementPage = lazy(() => import('./pages/SettlementPage'));
 
@@ -620,6 +621,23 @@ export default function App() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="Union Details">
                         <UnionDetailPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                {/*
+                  The union lead's side of the weekly square-up. Separate from
+                  settlement because settlement moves chips and this does not:
+                  this is the billing record, who was billed, who was told, and
+                  - the part a per-club view structurally cannot show - who was
+                  missed.
+                */}
+                <Route
+                  path="unions/:unionId/statements"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Union Statements">
+                        <UnionStatementsPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

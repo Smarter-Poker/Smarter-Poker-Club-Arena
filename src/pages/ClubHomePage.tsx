@@ -41,7 +41,7 @@ import DynamicWallet from '../components/wallet/DynamicWallet';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
-import { matchesVariant, matchesTournamentSubFilter } from '../utils/tournamentFilters';
+import { matchesVariant } from '../utils/tournamentFilters';
 import { useUserStore } from '../stores/useUserStore';
 import LobbyAdStrip from '../components/lobby/LobbyAdStrip';
 import AdvancedFilters, {
@@ -52,7 +52,8 @@ import AdvancedFilters, {
 import {
   FILTER_SPECS,
   emptyFilterValue,
-  matchesAdvancedFilter,
+  rowPassesFilter,
+  isFilterActive,
   type FilterGameType,
 } from '../components/lobby/advancedFilterSpec';
 import {
@@ -168,8 +169,9 @@ interface WalletBalances {
 type GameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
 type SortKey = 'recommended' | 'stakes_high' | 'stakes_low' | 'players' | 'starting_soon';
 type TournVariant = 'ALL' | 'MTT' | 'Spin-It' | 'SN';
-type CashSubFilter = 'all' | 'live' | 'empty' | 'full';
-type TournamentSubFilter = 'all' | 'running' | 'registering' | 'late_reg' | 'starting_soon';
+/* The CashSubFilter / TournamentSubFilter types went with the state they
+   described (see the note further down). Status is one mechanism now:
+   GameFilterValue.statuses, defined per game type in advancedFilterSpec. */
 
 const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'MIXED'];
 const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
@@ -293,8 +295,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // empty table and every tournament still taking registrations, so a club
   // with 30 open games could look empty the moment a player filtered. A filter
   // the player did not choose must not remove rows.
-  const [cashSubFilter, setCashSubFilter] = useState<CashSubFilter>('all');
-  const [tournamentSubFilter, setTournamentSubFilter] = useState<TournamentSubFilter>('all');
+  /* AUDIT 2026-08-21: cashSubFilter / tournamentSubFilter are GONE.
+     The quick-preference chips used to drive them; they now write
+     `statuses` on the saved filter, which is the same mechanism the Advanced
+     Filters sheet uses. Keeping both meant two status systems on one screen,
+     and after the quick row was rewired the setters were never called at all -
+     the state sat permanently on its default while the filter code below still
+     branched on it. One mechanism, no dead state. */
   const [isOwner, setIsOwner] = useState(false);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
@@ -1223,10 +1230,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       if (gameType !== 'ALL' && cashKind(table) !== gameType) return false;
 
       if (advSpec && advValue) {
-        const bb = Number(table.big_blind) || 0;
-        if (bb > 0 && (bb < advValue.rangeMin || bb > advValue.rangeMax)) return false;
-        const max = Number(table.max_players) || 0;
-        if (max > 0 && (max < advValue.seatMin || max > advValue.seatMax)) return false;
+        /* ONE decision function for both halves of the lobby - see
+           rowPassesFilter. Applying the fields inline here is what let games,
+           format and statuses drift into being collected-but-ignored. */
         const settings =
           typeof table.settings === 'string'
             ? (() => {
@@ -1238,22 +1244,20 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               })()
             : ((table.settings as unknown as Record<string, unknown> | undefined) ?? {});
         if (
-          !matchesAdvancedFilter(
-            advSpec,
-            advValue,
-            table as unknown as Record<string, unknown>,
-            settings
-          )
+          !rowPassesFilter(advSpec, advValue, {
+            variant: table.game_variant,
+            price: Number(table.big_blind) || 0,
+            seats: Number(table.max_players) || 0,
+            seatsTaken: Number(table.current_players) || 0,
+            name: table.name,
+            row: table as unknown as Record<string, unknown>,
+            settings,
+          })
         ) {
           return false;
         }
       }
 
-      // Status refines a chosen type; on ALL there is no type to refine.
-      if (gameType === 'ALL') return true;
-      if (cashSubFilter === 'live') return table.current_players > 0;
-      if (cashSubFilter === 'empty') return table.current_players === 0;
-      if (cashSubFilter === 'full') return table.current_players >= table.max_players;
       return true;
     });
 
@@ -1277,7 +1281,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           (a, b) => cashRank(a) - cashRank(b) || (b.current_players || 0) - (a.current_players || 0)
         );
     }
-  }, [tables, gameType, showsCash, cashSubFilter, sortKey, searchQuery, advFilters]);
+  }, [tables, gameType, showsCash, sortKey, searchQuery, advFilters]);
 
   const filteredTournaments = useMemo(() => {
     if (!showsTournaments) return [];
@@ -1293,19 +1297,25 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       if (!matchesVariant(t, variant)) return false;
 
       if (advSpec && advValue) {
-        // The tournament range slider is a BUY-IN, and a player judges that on
-        // the total they pay, not on the prize-pool half of it.
+        // The tournament price is the TOTAL a player pays, not the prize half.
         const total = (Number(t.buy_in_amount) || 0) + (Number(t.buy_in_fee) || 0);
-        if (total < advValue.rangeMin || total > advValue.rangeMax) return false;
         if (
-          !matchesAdvancedFilter(advSpec, advValue, t as unknown as Record<string, unknown>, {})
+          !rowPassesFilter(advSpec, advValue, {
+            variant: t.game_type,
+            price: total,
+            seats: Number(t.max_players) || 0,
+            seatsTaken: Number(t.current_players) || 0,
+            status: t.status,
+            name: t.name,
+            row: t as unknown as Record<string, unknown>,
+            settings: {},
+          })
         ) {
           return false;
         }
       }
 
-      if (gameType === 'ALL') return true;
-      return matchesTournamentSubFilter(t, tournamentSubFilter);
+      return true;
     });
 
     const buyIn = (t: TournamentData) =>
@@ -1325,15 +1335,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       default:
         return rows.sort(tournamentOpenFirst);
     }
-  }, [
-    tournaments,
-    gameType,
-    showsTournaments,
-    tournamentSubFilter,
-    sortKey,
-    searchQuery,
-    advFilters,
-  ]);
+  }, [tournaments, gameType, showsTournaments, sortKey, searchQuery, advFilters]);
 
   const formatNumber = (num: number) => {
     return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1755,9 +1757,17 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             the tab can be narrowed when it deliberately cannot. */}
         {gameType !== 'ALL' && (
           <button
-            className={`game-bar__filter-btn ${
-              advFilters[gameType as FilterGameType] ? 'is-set' : ''
-            }`}
+            /* AUDIT 2026-08-21: this lit up whenever a saved object EXISTED
+               for the tab, which is true the moment a player opens the sheet
+               and presses Save without changing anything - a permanent gold
+               badge announcing a filter that filters nothing. isFilterActive
+               compares against the spec's defaults, so the badge means what it
+               looks like it means. */
+            className={`game-bar__filter-btn ${(() => {
+              const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+              const fVal = advFilters[gameType as FilterGameType];
+              return fSpec && fVal && isFilterActive(fSpec, fVal) ? 'is-set' : '';
+            })()}`}
             aria-label="Advanced filters"
             title="Advanced Filters"
             onClick={() => {
@@ -1881,24 +1891,18 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
               <div className="quickprefs__row quickprefs__row--status">
                 <span className="quickprefs__label">{showsCash ? 'Tables:' : 'Games:'}</span>
-                {(showsCash
-                  ? ([
-                      { key: 'all', label: 'All Tables' },
-                      { key: 'live', label: 'Live Games' },
-                      { key: 'empty', label: 'Empty' },
-                      { key: 'full', label: 'Full' },
-                    ] as { key: CashSubFilter; label: string }[])
-                  : ([
-                      { key: 'all', label: 'All' },
-                      { key: 'running', label: 'Running' },
-                      { key: 'registering', label: 'Registering' },
-                      { key: 'late_reg', label: 'Late Reg' },
-                      { key: 'starting_soon', label: 'Starting Soon' },
-                    ] as { key: TournamentSubFilter; label: string }[])
-                ).map((sf) => {
-                  const on = showsCash
-                    ? cashSubFilter === (sf.key as CashSubFilter)
-                    : tournamentSubFilter === (sf.key as TournamentSubFilter);
+                {/* AUDIT 2026-08-21: these chips used to be a hand-written list
+                    chosen by showsCash, which disagreed with the sheet on the
+                    same screen - Spin-It offered Full/Empty/Open Seats inside
+                    Advanced Filters and Running/Registering out here. Both now
+                    read spec.statuses, so there is one vocabulary per game type
+                    and one place to change it.
+
+                    They also write the SAVED filter now rather than the local
+                    sub-filter state, which is what makes them agree with the
+                    sheet after a reload instead of resetting. */}
+                {qSpec.statuses.map((sf) => {
+                  const on = qVal.statuses.includes(sf.key);
                   return (
                     <button
                       key={sf.key}
@@ -1906,8 +1910,17 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                       aria-pressed={on}
                       onClick={() => {
                         haptic.selection();
-                        if (showsCash) setCashSubFilter(sf.key as CashSubFilter);
-                        else setTournamentSubFilter(sf.key as TournamentSubFilter);
+                        const next: FilterStore = {
+                          ...advFilters,
+                          [gameType]: {
+                            ...qVal,
+                            statuses: on
+                              ? qVal.statuses.filter((k) => k !== sf.key)
+                              : [...qVal.statuses, sf.key],
+                          },
+                        };
+                        setAdvFilters(next);
+                        if (resolvedClubId) saveFilters(resolvedClubId, next);
                       }}
                     >
                       {sf.label}

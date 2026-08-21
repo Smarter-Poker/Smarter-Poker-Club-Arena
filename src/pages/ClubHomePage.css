@@ -892,43 +892,11 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    SUB-FILTERS (Cash: Live/Empty/Full | Tournament: Running/Registering/etc.)
 ═══════════════════════════════════════════════════════════════════════════════ */
-.club-home__sub-filters {
-  display: flex;
-  align-items: center;
-  padding: 0 1rem 0.5rem;
-  gap: 0.25rem;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-
-.club-home__sub-filters::-webkit-scrollbar {
-  display: none;
-}
-
-.sub-filter-tab {
-  padding: 0.35rem 0.75rem;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: transparent;
-  color: #999;
-  font-size: 0.75rem;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s ease;
-}
-
-.sub-filter-tab:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ccc;
-}
-
-.sub-filter-tab.active {
-  background: rgba(0, 200, 255, 0.15);
-  border-color: rgba(0, 200, 255, 0.5);
-  color: #00c8ff;
-  font-weight: 600;
-}
+/* AUDIT 2026-08-21: .club-home__sub-filters and .sub-filter-tab were removed.
+   Their markup went when the standalone status row folded into the quick
+   preference block, so ~40 lines of CSS were styling elements that no longer
+   render. Dead selectors are how a stylesheet grows a second, contradictory
+   copy of a component. */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    GAMES GRID

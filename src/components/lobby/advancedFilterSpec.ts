@@ -27,6 +27,12 @@
  * evaluated is worse than a missing one, so anything unmatchable is left out.
  */
 
+import {
+  isInLateRegistration,
+  STARTING_SOON_WINDOW_MINUTES,
+  type FilterableTournament,
+} from '../../utils/tournamentFilters';
+
 export type FilterGameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'MTT' | 'SPIN' | 'SNG';
 
 export interface FeatureOption {
@@ -177,6 +183,8 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
     statuses: [
       { key: 'running', label: 'Running' },
       { key: 'open_reg', label: 'Open Registration' },
+      { key: 'late_reg', label: 'Late Reg' },
+      { key: 'starting_soon', label: 'Starting Soon' },
     ],
     seats: { min: 2, max: 9 },
     seatsLabel: 'Table Size',
@@ -281,6 +289,150 @@ export function matchesAdvancedFilter(
     if (f && hasFeature(f)) return false;
   }
   return true;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE WHOLE FILTER DECISION, IN ONE PLACE
+ * ───────────────────────────────────────────────────────────────────────────
+ * AUDIT 2026-08-21. The sheet collected NINE fields and the lobby applied
+ * THREE. `games`, `format` and `statuses` were saved to localStorage, rendered
+ * back as selected chips on reopen, and then ignored completely: a player
+ * could pick "NLH only", "Regular SNG" or "Open Seats", press Save, and watch
+ * the lobby return exactly the same list. The seat range was applied to cash
+ * tables only, so the MTT and SNG sliders did nothing either.
+ *
+ * That is the worst shape a filter can take - it is not an absent feature, it
+ * is a control that LOOKS applied and is not, so the player concludes the
+ * lobby is broken rather than that the filter is.
+ *
+ * The fix is structural, not three more `if`s in the page: the decision moves
+ * here, beside the spec that defines the fields, and both the cash and
+ * tournament paths call the same function. A field added to GameFilterValue
+ * now has exactly one place that must learn to honour it.
+ */
+export interface FilterableRow {
+  /** Cash: game_variant. Tournament: game_type. */
+  variant?: string | null;
+  /** Cash: big_blind. Tournament: total buy-in (prize + fee). */
+  price?: number | null;
+  seats?: number | null;
+  seatsTaken?: number | null;
+  /** Tournament status, for the MTT running / open-registration chips. */
+  status?: string | null;
+  /** Tournament name, the only place SATS vs REGULAR is expressed today. */
+  name?: string | null;
+  /** Raw record for feature lookups. */
+  row: Record<string, unknown>;
+  settings: Record<string, unknown>;
+}
+
+/** Normalise a variant string to the keys used by the spec's `games` chips. */
+function variantKey(raw: string | null | undefined): string {
+  const v = String(raw ?? '').toLowerCase();
+  if (!v) return '';
+  if (v.includes('plo8') || v.includes('hi/lo') || v.includes('hilo')) return 'plo8';
+  if (v.includes('plo6')) return 'plo6';
+  if (v.includes('plo5')) return 'plo5';
+  if (v.includes('plo4') || v === 'plo') return 'plo4';
+  if (v.includes('short') || v === '6+') return 'short_deck';
+  if (v.includes('flh') || v.includes('limit holdem')) return 'flh';
+  if (v.includes('nlh') || v.includes('holdem') || v.includes("hold'em")) return 'nlh';
+  return v;
+}
+
+/**
+ * Does this row survive every saved filter for its tab?
+ *
+ * Empty selections mean "no opinion", never "match nothing" - an untouched
+ * filter must not silently empty the lobby.
+ */
+export function rowPassesFilter(
+  spec: GameFilterSpec,
+  v: GameFilterValue,
+  r: FilterableRow
+): boolean {
+  // ── Games chips ─────────────────────────────────────────────────────────
+  if (v.games.length > 0) {
+    const key = variantKey(r.variant);
+    // An UNRECOGNISED variant passes. The alternative is hiding a real table
+    // because this function has not learnt its name yet, which is the same
+    // "absence of evidence" trap the feature matcher above avoids.
+    if (key && !v.games.includes(key)) return false;
+  }
+
+  // ── Format chips (SN only: satellite vs regular) ─────────────────────────
+  if (v.format.length > 0) {
+    const name = String(r.name ?? '').toLowerCase();
+    const isSat = name.includes('sat') || r.row.is_satellite === true;
+    const wantsSat = v.format.includes('sats');
+    const wantsReg = v.format.includes('regular');
+    // Both selected is the same as neither: no opinion.
+    if (wantsSat !== wantsReg) {
+      if (wantsSat && !isSat) return false;
+      if (wantsReg && isSat) return false;
+    }
+  }
+
+  // ── Price range (blinds for cash, total buy-in for tournaments) ──────────
+  const price = Number(r.price);
+  if (Number.isFinite(price) && price > 0) {
+    if (price < v.rangeMin || price > v.rangeMax) return false;
+  }
+
+  // ── Seat range ───────────────────────────────────────────────────────────
+  // Applies to EVERY format whose spec declares a slider, not just cash. The
+  // MTT and SNG sliders were previously inert.
+  if (spec.seats) {
+    const seats = Number(r.seats);
+    if (Number.isFinite(seats) && seats > 0) {
+      if (seats < v.seatMin || seats > v.seatMax) return false;
+    }
+  }
+
+  // ── Status chips ─────────────────────────────────────────────────────────
+  if (v.statuses.length > 0) {
+    const taken = Number(r.seatsTaken) || 0;
+    const cap = Number(r.seats) || 0;
+    const status = String(r.status ?? '').toUpperCase();
+
+    const matches = v.statuses.some((key) => {
+      switch (key) {
+        case 'full':
+          return cap > 0 && taken >= cap;
+        case 'empty':
+          return taken === 0;
+        case 'open':
+          return cap > 0 && taken < cap;
+        case 'running':
+          return status === 'RUNNING' || status === 'IN_PROGRESS';
+        case 'open_reg':
+          return status === 'REGISTERING' || status === 'OPEN' || status === 'PENDING';
+        case 'late_reg':
+          // Derived from late_reg_mins / late_reg_levels, never from a status
+          // string - no tournament has ever carried a 'LATE_REG' status, which
+          // is why that tab was empty for months. Reuses the shared rule.
+          return isInLateRegistration(r.row as unknown as FilterableTournament, Date.now());
+        case 'starting_soon': {
+          const startsAt = new Date(String(r.row.start_time ?? '')).getTime();
+          if (!Number.isFinite(startsAt)) return false;
+          const minsAway = (startsAt - Date.now()) / 60000;
+          // Games here start on FILL, not on the clock, so a live one usually
+          // has a start_time already in the past. "Soon" therefore includes
+          // anything already due as well as anything inside the window.
+          return minsAway <= STARTING_SOON_WINDOW_MINUTES;
+        }
+        default:
+          // A key this build does not know is not an opinion about this row.
+          return true;
+      }
+    });
+    // Status chips are an OR within themselves: "Full or Empty" is a union,
+    // not an impossible intersection.
+    if (!matches) return false;
+  }
+
+  return matchesAdvancedFilter(spec, v, r.row, r.settings);
 }
 
 /** Has the player actually narrowed anything? Drives the bar's "active" dot. */

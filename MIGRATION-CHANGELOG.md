@@ -8838,3 +8838,11 @@ deploy confirmed by the hand-count dip-and-recover at 02:47-02:51 UTC
 - NOTE: the fleet reset loop destroyed one uncommitted fix mid-session (the
   cashier downline embed fix) — re-landed from a clean clone. Rule 13
   (commit+push immediately) re-proven the hard way.
+
+## 2026-08-21 (round 4): spin quick-join shipped, keyframe-collision guard, lease forensics clean
+
+1. **Spin quick-join (Dan 2026-08-20: "there is no lobby for a spin, you just start on a table").** Tapping a spin tile now: returns you straight to your seat if you are already in that game; registers you via fn_register_for_tournament (hopping to the next open spin at the same stake if this one filled or launched); waits under a Taking Your Seat overlay while the engine starts the game (held-seat spins start the moment the last seat fills — start-when-full on the 5s discovery cadence — and createTablesAndSeatPlayers seats every registrant); then navigates to the table the instant the seat row exists (1.5s poll, 45s ceiling with a graceful fallback). Cancel backs out of the wait only; the registration stands. NeonCard gained an onCardClick interceptor; overlay styled in ClubHomePage.css.
+
+2. **Keyframe-collision guard (tests/styles/keyframeCollisions.test.ts).** @keyframes is a global namespace across plain CSS files; the parity audit counted 827 names and found zero differing collisions (nine byte-identical `shimmer`s). The guard makes that luck a law: any duplicate name across files with differing bodies fails the suite and names both files. Verified green on live code.
+
+3. **Lease forensics: the 02:57:11Z burst of 44 lease_lost was the deploy cutover working as designed** — the outgoing container (ed33d2374) logging its handoff to the incoming one (d12725af, which carries all this session's engine fixes). Multi-table MTT engine rebuilds in the same window are per-table cutover noise; post-cutover state verified healthy: 9 RUNNING tournaments, 0 stuck, 545 hands in 5 minutes, e43dbfbc's 5 tables all live with 35 playing.

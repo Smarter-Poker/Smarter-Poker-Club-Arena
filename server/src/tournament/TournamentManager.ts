@@ -263,6 +263,9 @@ export class TournamentManager extends TournamentManagerEliminations {
             stack: oldSeat.stack,
             left_at: null,
             joined_at: nowIso,
+            // Seat turnover: never inherit the previous occupant's sit-out
+            // flag (trg_clear_sitout_on_turnover backstops every writer).
+            is_sitting_out: false,
           })
           .eq('table_id', move.toTableId)
           .eq('seat_number', move.toSeat)
@@ -684,6 +687,9 @@ export class TournamentManager extends TournamentManagerEliminations {
             stack: playerChips,
             left_at: null,
             joined_at: new Date().toISOString(),
+            // Seat turnover: never inherit the previous occupant's sit-out
+            // flag (trg_clear_sitout_on_turnover backstops every writer).
+            is_sitting_out: false,
           })
           .eq('table_id', best.tableId)
           .eq('seat_number', seatNumber)

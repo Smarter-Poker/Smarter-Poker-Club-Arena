@@ -122,6 +122,21 @@ describe('avatarChoreography.css cascade', () => {
     expect(holo.includes('var(--sp-bust-scale')).toBe(true);
   });
 
+  it('gives the holo sweep its own phase, not the breathing one', () => {
+    // Reusing --sp-breath-delay looked fine and measured wrong: those delays
+    // span only 1.1s-3.9s, a good spread across a ~4s breath and a poor one
+    // across a 7s sweep. Every VIP would flash inside one narrow window and go
+    // dark together — the synchronised-machinery look the phase exists to stop.
+    const holo = CSS.slice(CSS.indexOf('.seat__avatar--holo::after'));
+    const delay = holo.match(/animation-delay:\s*var\((--[a-z-]+)/)?.[1];
+    expect(delay, 'holo has no animation-delay').toBeTruthy();
+    expect(
+      delay,
+      'the holo must use --sp-holo-delay; --sp-breath-delay is scaled to the ' +
+        'breathing period and clusters every VIP into one window on a 7s cycle'
+    ).toBe('--sp-holo-delay');
+  });
+
   it('stops the holo sweep under reduced motion', () => {
     const rm = CSS.slice(CSS.indexOf('@media (prefers-reduced-motion: reduce)'));
     expect(

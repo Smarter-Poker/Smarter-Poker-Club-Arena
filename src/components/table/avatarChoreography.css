@@ -369,7 +369,13 @@
   opacity: 0;
 
   animation: spAvatarHolo calc(7s * var(--animation-speed, 1)) linear infinite;
-  animation-delay: var(--sp-breath-delay, 0s);
+  /* Its OWN phase, not the breathing's. --sp-breath-delay spans 1.1s-3.9s,
+     which is a fine spread across a ~4s breath and a poor one across a 7s
+     sweep: every VIP would flash inside one narrow window and then go dark
+     together. --sp-holo-delay is spread evenly over the full cycle by a
+     permutation, so adjacent seats also get distant phases. Set alongside the
+     breathing values by breathingStyle() in SeatSlot.tsx. */
+  animation-delay: var(--sp-holo-delay, 0s);
 }
 
 /* Percentages beyond 0-100% extrapolate, which is what carries the band fully

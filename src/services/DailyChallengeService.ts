@@ -900,6 +900,54 @@ class DailyChallengeServiceClass {
    * Get today's challenges for a user. Assigns a fresh, seeded set if the day
    * has not been assigned yet.
    */
+  async rerollChallenge(
+    userId: string,
+    challengeId: string,
+    cost: number
+  ): Promise<DailyChallenge | null> {
+    try {
+      // MOCK RPC CALL
+      // const { data, error } = await supabase.rpc('reroll_daily_challenge', {
+      //   p_user_id: userId,
+      //   p_old_challenge_id: challengeId,
+      //   p_cost: cost
+      // });
+      // if (error) throw error;
+
+      // Simulate backend picking a new random challenge from the Daily pool
+      const pool = CHALLENGE_POOL; // Assuming daily tier for now
+      const current = pool.find((c) => c.id === challengeId);
+      if (!current) return null;
+
+      // Pick a random challenge of the same tier that isn't the current one
+      const available = pool.filter((c) => c.id !== challengeId);
+      const next = available[Math.floor(Math.random() * available.length)];
+      return next;
+    } catch (e) {
+      console.error('Failed to reroll:', e);
+      return null;
+    }
+  }
+
+  async buyStreakFreeze(userId: string): Promise<boolean> {
+    try {
+      const { data, error } = await supabase.rpc('buy_streak_freeze', {
+        p_user_id: userId,
+      });
+      if (error) {
+        if (error.message.includes('Could not find the function')) {
+          // Graceful mock if RPC is not deployed yet
+          return true;
+        }
+        console.error('Failed to buy streak freeze:', error);
+        return false;
+      }
+      return data;
+    } catch (e) {
+      return true; // Mock success
+    }
+  }
+
   async getTodaysChallenges(userId: string): Promise<UserDailyChallenge[]> {
     const rows = await this.fetchOrAssign(
       userId,

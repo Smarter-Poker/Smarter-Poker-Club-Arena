@@ -3,7 +3,7 @@ import './ConfettiEffect.css';
 
 interface ConfettiEffectProps {
   isActive: boolean;
-  intensity?: 'light' | 'medium' | 'heavy';
+  intensity?: 'light' | 'medium' | 'heavy' | 'jackpot';
   colors?: string[];
   duration?: number;
 }
@@ -16,7 +16,8 @@ export const ConfettiEffect: React.FC<ConfettiEffectProps> = ({
 }) => {
   if (!isActive) return null;
 
-  const particleCount = intensity === 'light' ? 30 : intensity === 'heavy' ? 100 : 50;
+  const particleCount =
+    intensity === 'light' ? 30 : intensity === 'heavy' ? 100 : intensity === 'jackpot' ? 300 : 50;
 
   const particles = Array.from({ length: particleCount }, (_, i) => ({
     id: i,

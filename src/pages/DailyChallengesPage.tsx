@@ -11,6 +11,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { getAuthUser, supabase } from '../lib/supabase';
 import { LoadingState } from '../components/common/EmptyState';
@@ -27,6 +28,7 @@ import {
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { ConfettiEffect } from '../components/effects/ConfettiEffect';
+import { TopStreaksLeaderboard } from '../components/gamification/TopStreaksLeaderboard';
 import styles from './DailyChallengesPage.module.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -134,6 +136,7 @@ function ChallengeCard({
   claiming: boolean;
   celebrating: boolean;
   onClaim: (c: TieredChallenge) => void;
+  onReroll?: (c: TieredChallenge) => void;
 }) {
   const c = challenge.challenge;
   const pct = c.requirement > 0 ? Math.min((challenge.progress / c.requirement) * 100, 100) : 0;
@@ -378,6 +381,23 @@ export default function DailyChallengesPage() {
       setClaimingIds((prev) => new Set(prev).add(challenge.id));
 
       try {
+        // Optimistic UI update: Assume success instantly.
+        setStats((prev) =>
+          prev
+            ? {
+                ...prev,
+                totalCompleted: prev.totalCompleted + 1,
+                totalChipsEarned: prev.totalChipsEarned + (challenge.challenge.chipReward || 0),
+                totalDiamondsEarned:
+                  prev.totalDiamondsEarned + (challenge.challenge.diamondReward || 0),
+              }
+            : prev
+        );
+
+        setChallenges((prev) =>
+          prev.map((c) => (c.id === challenge.id ? { ...c, claimed: true } : c))
+        );
+
         const paid = await dailyChallengeService.claimChallenge(
           userId,
           challenge.id,
@@ -447,6 +467,36 @@ export default function DailyChallengesPage() {
   // wallet writes at once invites lock contention on the same profile row for
   // no user-visible gain. The overlay shows the COMBINED total rather than
   // flashing five times in a row.
+  const handleReroll = useCallback(
+    async (challenge: TieredChallenge) => {
+      if (!userId) return;
+      if (stats && stats.totalDiamondsEarned < 1000) {
+        toast.error('Not enough diamonds (1,000 required).');
+        return;
+      }
+
+      // Optimistic UI for Reroll
+      setStats((prev) =>
+        prev ? { ...prev, totalDiamondsEarned: prev.totalDiamondsEarned - 1000 } : prev
+      );
+
+      const nextChallenge = await dailyChallengeService.rerollChallenge(userId, challenge.id, 1000);
+      if (nextChallenge) {
+        setChallenges((prev) =>
+          prev.map((c) => (c.id === challenge.id ? { ...c, challenge: nextChallenge } : c))
+        );
+        toast.success('Challenge Rerolled!');
+      } else {
+        // Revert if failed
+        setStats((prev) =>
+          prev ? { ...prev, totalDiamondsEarned: prev.totalDiamondsEarned + 1000 } : prev
+        );
+        toast.error('Failed to reroll challenge.');
+      }
+    },
+    [userId, stats, toast]
+  );
+
   const handleClaimAll = useCallback(async () => {
     if (!userId || claimingAll) return;
     const ready = challenges.filter((c) => c.completed && !c.claimed);
@@ -462,6 +512,21 @@ export default function DailyChallengesPage() {
     for (const c of ready) {
       if (claimGuardRef.current.has(c.id)) continue;
       claimGuardRef.current.add(c.id);
+
+      // Optimistic UI for Claim All
+      setStats((prev) =>
+        prev
+          ? {
+              ...prev,
+              totalCompleted: prev.totalCompleted + 1,
+              totalChipsEarned: prev.totalChipsEarned + (c.challenge.chipReward || 0),
+              totalDiamondsEarned: prev.totalDiamondsEarned + (c.challenge.diamondReward || 0),
+            }
+          : prev
+      );
+
+      setChallenges((prev) => prev.map((ch) => (ch.id === c.id ? { ...ch, claimed: true } : ch)));
+
       try {
         const paid = await dailyChallengeService.claimChallenge(
           userId,
@@ -550,7 +615,7 @@ export default function DailyChallengesPage() {
   };
 
   const visible = useMemo(
-    () => challenges.filter((c) => c.tier === activeTier),
+    () => challenges.filter((c) => c.tier === activeTier && !c.claimed),
     [challenges, activeTier]
   );
 
@@ -689,16 +754,26 @@ export default function DailyChallengesPage() {
             <p>No {TIER_LABELS[activeTier].toLowerCase()} Challenges Available Right Now.</p>
           </div>
         ) : (
-          visible.map((c) => (
-            <ChallengeCard
-              key={c.id}
-              challenge={c}
-              tier={c.tier}
-              claiming={claimingIds.has(c.id)}
-              celebrating={celebratingIds.has(c.id)}
-              onClaim={handleClaim}
-            />
-          ))
+          <AnimatePresence>
+            {visible.map((c) => (
+              <motion.div
+                key={c.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, x: -50, height: 0, marginBottom: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <ChallengeCard
+                  challenge={c}
+                  tier={c.tier}
+                  claiming={claimingIds.has(c.id)}
+                  celebrating={celebratingIds.has(c.id)}
+                  onClaim={handleClaim}
+                  onReroll={handleReroll}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
         )}
       </section>
 
@@ -720,12 +795,21 @@ export default function DailyChallengesPage() {
             .join(' ')}
           onClick={() => setReward(null)}
         >
-          <ConfettiEffect
-            isActive={true}
-            intensity="heavy"
-            colors={['#00f0ff', '#0ff', '#ffffff']}
-            duration={4000}
-          />
+          {challenges.filter((c) => c.tier === 'daily').every((c) => c.completed) ? (
+            <ConfettiEffect
+              isActive={true}
+              intensity="jackpot"
+              colors={['#f59e0b', '#fbbf24', '#ffffff', '#00f0ff']}
+              duration={8000}
+            />
+          ) : (
+            <ConfettiEffect
+              isActive={true}
+              intensity="heavy"
+              colors={['#00f0ff', '#0ff', '#ffffff']}
+              duration={4000}
+            />
+          )}
           <div className={styles.celebrateCard} onClick={(e) => e.stopPropagation()}>
             <div className={styles.celebrateBurst} aria-hidden="true">
               {'\u25C6'}

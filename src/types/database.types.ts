@@ -67,7 +67,6 @@ export interface ClubMember {
   tier?: string | null;
   credit_used?: number;
   diamonds?: number;
-  reputation_xp?: number;
   trust_score?: number;
   rank_level?: number;
   sessions_played?: number;

@@ -87,7 +87,6 @@ export default function VIPPage() {
             if (newData.diamonds !== undefined) {
               setDiamonds(newData.diamonds);
             }
-            // xp has been removed
           }
         )
         .subscribe((status: string, err?: Error) => {

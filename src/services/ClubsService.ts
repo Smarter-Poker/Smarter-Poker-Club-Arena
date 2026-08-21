@@ -476,7 +476,7 @@ export async function getUserMemberships(
     .from('club_members')
     .select(
       `
-      club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
+      club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
       club:clubs(id, club_id, name, slug, description, avatar_url, logo_url, card_image_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, requires_approval, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next)
     `
     )
@@ -539,10 +539,14 @@ export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
   const { data, error } = await supabase
     .from('club_members')
     .select(
-      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
+      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
     )
     .eq('club_id', resolvedId)
-    .order('reputation_xp', { ascending: false })
+    // was .order('reputation_xp'), a column that is 0 on all 1,499 rows in
+    // production - so this list came back in whatever order Postgres felt
+    // like, and could differ between two loads of the same page
+    .order('chip_balance', { ascending: false })
+    .order('joined_at', { ascending: true })
     .limit(QUERY_LIMITS.MODERATE);
 
   if (error) {
@@ -615,10 +619,13 @@ export async function getClubLeaderboard(
   const { data, error } = await supabase
     .from('club_members')
     .select(
-      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
+      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
     )
     .eq('club_id', resolvedId)
-    .order('reputation_xp', { ascending: false })
+    // same as above: reputation_xp was always 0, so "top 50" was 50 arbitrary
+    // members rather than the top of anything
+    .order('chip_balance', { ascending: false })
+    .order('joined_at', { ascending: true })
     .limit(50);
 
   if (error) {

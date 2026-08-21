@@ -450,7 +450,7 @@ class ProfileServiceClass {
       bio: data.bio as string | undefined,
       level,
       vipTier: (data.tier as UserProfile['vipTier']) || 'bronze', // DB column is `tier`
-      vipPoints: 0, // No xp column anymore
+      vipPoints: 0, // there is no points column; VIP is tier-only
       currentStreak: (data.login_streak as number) || 0, // DB column is `login_streak`
       longestStreak: (data.streak_days as number) || 0, // DB column is `streak_days`
       lastLoginDate: data.last_login_date as string | undefined,

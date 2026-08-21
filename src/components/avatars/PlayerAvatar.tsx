@@ -3,7 +3,6 @@
  * ♠ PLAYER AVATAR — Q3 Social Upgrade (Phase 1: Avatar Revolution)
  *
  * Composite avatar component with:
- *   - XP progress ring (SVG circular progress)
  *   - VIP status ring (color-coded glow border)
  *   - Animated presence dot (pulsing, integrated into the ring)
  *   - Level badge (metallic gradient pill)

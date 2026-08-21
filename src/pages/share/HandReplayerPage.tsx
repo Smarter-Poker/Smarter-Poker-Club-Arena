@@ -223,7 +223,14 @@ export default function HandReplayerPage() {
         seat: p.seat,
         isWinner: p.is_winner,
       })),
-      currentAction: null,
+      currentAction: hand.actions[currentStep]
+        ? {
+            type: 'action',
+            playerId: hand.actions[currentStep].player,
+            action: hand.actions[currentStep].action,
+            amount: hand.actions[currentStep].amount,
+          }
+        : null,
       isPlaying,
       isEndOfHand,
     };

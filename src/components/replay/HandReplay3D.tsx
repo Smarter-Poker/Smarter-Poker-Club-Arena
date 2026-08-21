@@ -79,6 +79,7 @@ class PokerTable3D {
   cards: Map<string, THREE.Mesh> = new Map();
   chipStacks: Map<string, THREE.Group> = new Map();
   mainPotStack: THREE.Group | null = null;
+  activePlayerLight: THREE.PointLight;
 
   seatCount: number;
   isDisposed = false;
@@ -95,6 +96,11 @@ class PokerTable3D {
     this.onSeatPositionsUpdate = onSeatPositionsUpdate;
 
     this.scene = new THREE.Scene();
+
+    // Add golden spotlight for active player
+    this.activePlayerLight = new THREE.PointLight(0xffaa00, 0, 8, 2);
+    this.activePlayerLight.position.set(0, 2, 0);
+    this.scene.add(this.activePlayerLight);
     this.scene.background = new THREE.Color('#0a0a14'); // Dark premium background
 
     this.camera = new THREE.PerspectiveCamera(45, canvas.width / canvas.height, 0.1, 100);
@@ -201,6 +207,31 @@ class PokerTable3D {
   public syncSnapshot(snapshot: ReplaySnapshot) {
     const activeCardKeys = new Set<string>();
     const activeChipKeys = new Set<string>();
+
+    // 0. Dynamic Lighting for Active Player
+    if (snapshot.currentAction && snapshot.currentAction.playerId) {
+      const activePlayer = snapshot.players.find(
+        (p) => p.userId === snapshot.currentAction?.playerId
+      );
+      if (activePlayer) {
+        const seatPos = getSeatPosition(activePlayer.seat, this.seatCount);
+        gsap.to(this.activePlayerLight.position, {
+          x: seatPos.x * 0.8,
+          z: seatPos.z * 0.8,
+          duration: 0.5,
+          ease: 'power2.out',
+        });
+        gsap.to(this.activePlayerLight, {
+          intensity: 3,
+          duration: 0.3,
+        });
+      }
+    } else {
+      gsap.to(this.activePlayerLight, {
+        intensity: 0,
+        duration: 0.5,
+      });
+    }
 
     // 1. Community Cards
     snapshot.communityCards.forEach((cardStr, index) => {
@@ -534,31 +565,48 @@ function HandReplay3DComponent({
     const scene = sceneRef.current;
     scene.syncSnapshot(snapshot);
 
-    if (snapshot.communityCards.length === 5) {
-      gsap.to(scene.camera.position, {
-        y: 5,
-        z: 8,
-        duration: 2,
-        ease: 'power2.out',
-      });
-      gsap.to(scene.camera.rotation, {
-        x: -Math.PI / 6,
-        duration: 2,
-        ease: 'power2.out',
-      });
-    } else {
-      gsap.to(scene.camera.position, {
-        y: 8,
-        z: 7,
-        duration: 1,
-        ease: 'power2.out',
-      });
-      gsap.to(scene.camera.rotation, {
-        x: -0.7,
-        duration: 1,
-        ease: 'power2.out',
-      });
+    let targetCamX = 0;
+    let targetCamY = 8;
+    let targetCamZ = 7;
+    let targetRotX = -0.7;
+    let targetRotY = 0;
+
+    // Action tracking camera
+    if (snapshot.currentAction && snapshot.currentAction.playerId) {
+      const activePlayer = snapshot.players.find(
+        (p) => p.userId === snapshot.currentAction?.playerId
+      );
+      if (activePlayer) {
+        const angle = (activePlayer.seat / scene.seatCount) * Math.PI * 2 - Math.PI / 2;
+        targetCamX = Math.cos(angle) * 1.5;
+        targetCamZ = 7 + Math.sin(angle) * 1.0;
+        targetRotY = -Math.cos(angle) * 0.1;
+      }
     }
+
+    if (snapshot.communityCards.length === 5 && snapshot.isEndOfHand) {
+      targetCamX = 0;
+      targetCamY = 5;
+      targetCamZ = 8;
+      targetRotX = -Math.PI / 6;
+      targetRotY = 0;
+    }
+
+    gsap.to(scene.camera.position, {
+      x: targetCamX,
+      y: targetCamY,
+      z: targetCamZ,
+      duration: 1.2,
+      ease: 'power2.out',
+    });
+
+    gsap.to(scene.camera.rotation, {
+      x: targetRotX,
+      y: targetRotY,
+      z: 0,
+      duration: 1.2,
+      ease: 'power2.out',
+    });
   }, [isReady, snapshot]);
 
   if (!active) return null;

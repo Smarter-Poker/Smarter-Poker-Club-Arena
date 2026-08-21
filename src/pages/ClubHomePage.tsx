@@ -603,7 +603,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const spinJoinCancelRef = useRef(false);
 
   const spinQuickJoin = useCallback(
-    async (t: { id: string; name: string; buy_in_amount: number }) => {
+    async (
+      t: { id: string; name: string; buy_in_amount: number },
+      variant: 'spin' | 'sng' = 'spin'
+    ) => {
       if (spinJoin) return; // one join at a time
       spinJoinCancelRef.current = false;
       setSpinJoin({ name: t.name });
@@ -665,7 +668,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             .from('tournaments')
             .select('id, name, current_players, max_players')
             .eq('club_id', resolvedClubId || '')
-            .eq('variant', 'spin')
+            .eq('variant', variant)
             .eq('status', 'REGISTERING')
             .eq('buy_in_amount', t.buy_in_amount)
             .order('created_at', { ascending: true })
@@ -674,7 +677,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             (a) => (a.current_players || 0) < (a.max_players || 3) && a.id !== targetId
           );
           if (!open) {
-            return fail('All Spins At This Stake Are Full, A Fresh One Opens Shortly');
+            return fail(
+              variant === 'sng'
+                ? 'All Sit N Gos At This Stake Are Full, A Fresh One Opens Shortly'
+                : 'All Spins At This Stake Are Full, A Fresh One Opens Shortly'
+            );
           }
           targetId = open.id;
           setSpinJoin({ name: open.name || t.name });
@@ -1970,7 +1977,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               }}
             >
               {isSpin && <SpinCard tournament={tournament} onQuickJoin={spinQuickJoin} />}
-              {isSNG && !isSpin && <SNGCard tournament={tournament} />}
+              {isSNG && !isSpin && (
+                <SNGCard tournament={tournament} onQuickJoin={(t) => spinQuickJoin(t, 'sng')} />
+              )}
               {!isSpin && !isSNG && <TournamentCard tournament={tournament} />}
             </div>
           );

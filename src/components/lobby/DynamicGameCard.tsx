@@ -461,7 +461,10 @@ export function TournamentCard({ tournament }: TournamentCardProps) {
 }
 
 // ─── SNG Card ─────────────────────────────────────────────────────────────
-export function SNGCard({ tournament }: TournamentCardProps) {
+export function SNGCard({
+  tournament,
+  onQuickJoin,
+}: TournamentCardProps & { onQuickJoin?: (t: TournamentData) => void }) {
   const vKey = TOURNEY_VARIANT_MAP[tournament.game_type] || 'nlh';
   const v = VARIANT_DISPLAY[vKey] || VARIANT_DISPLAY.nlh;
   const isLive = tournament.status === 'running' || tournament.status === 'RUNNING';
@@ -472,6 +475,7 @@ export function SNGCard({ tournament }: TournamentCardProps) {
   return (
     <NeonCard
       to={`/tournaments/${tournament.id}`}
+      onCardClick={onQuickJoin ? () => onQuickJoin(tournament) : undefined}
       neon="gold"
       emblem="sng"
       live={isLive}

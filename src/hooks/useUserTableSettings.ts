@@ -88,8 +88,8 @@ export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
   table_alias: '',
   multi_auto_switch: true,
   multi_action_queue: true,
-  multi_desktop_alerts: false,
-  multi_shared_socket: false,
+  multi_desktop_alerts: true,
+  multi_shared_socket: true,
 };
 
 // Metadata for rendering toggles

@@ -86,6 +86,88 @@ async function swipe(dx: number, ms = 300) {
   await settle();
 }
 
+describe('Carousel opening position', () => {
+  beforeEach(() => {
+    // swipe() drives the rAF snap loop through the timer API.
+    vi.useFakeTimers();
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get: () => 1000,
+    });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('opens on the requested card, not always the first', () => {
+    /* With an endless strip and unlimited clubs, landing on someone else's
+       club instead of your own is several swipes every time you come back. */
+    render(
+      <Carousel
+        items={CLUBS}
+        getKey={(c) => c}
+        itemWidth={300}
+        initialIndex={3}
+        renderItem={(c, _i, isActive) => <div data-active={isActive}>{c}</div>}
+      />
+    );
+    expect(activeName()).toBe('Delta');
+  });
+
+  it('survives an index that is out of range', () => {
+    // A stale id from storage, or a club that has since been left.
+    render(
+      <Carousel
+        items={CLUBS}
+        getKey={(c) => c}
+        itemWidth={300}
+        initialIndex={99}
+        renderItem={(c, _i, isActive) => <div data-active={isActive}>{c}</div>}
+      />
+    );
+    expect(activeName()).not.toBeNull();
+  });
+
+  it('survives a negative index', () => {
+    render(
+      <Carousel
+        items={CLUBS}
+        getKey={(c) => c}
+        itemWidth={300}
+        initialIndex={-2}
+        renderItem={(c, _i, isActive) => <div data-active={isActive}>{c}</div>}
+      />
+    );
+    expect(activeName()).toBe('Delta'); // -2 folds to index 3 of 5
+  });
+
+  it('does not fight the player once they have swiped', async () => {
+    // initialIndex is a STARTING position, not a controlled value; re-reading
+    // it on every render would yank a card back mid-session.
+    const { rerender } = render(
+      <Carousel
+        items={CLUBS}
+        getKey={(c) => c}
+        itemWidth={300}
+        initialIndex={0}
+        renderItem={(c, _i, isActive) => <div data-active={isActive}>{c}</div>}
+      />
+    );
+    await swipe(-333, 4000);
+    expect(activeName()).toBe('Bravo');
+    rerender(
+      <Carousel
+        items={CLUBS}
+        getKey={(c) => c}
+        itemWidth={300}
+        initialIndex={4}
+        renderItem={(c, _i, isActive) => <div data-active={isActive}>{c}</div>}
+      />
+    );
+    expect(activeName(), 'a later initialIndex moved the player').toBe('Bravo');
+  });
+});
+
 describe('Carousel position indicator', () => {
   beforeEach(() => {
     Object.defineProperty(HTMLElement.prototype, 'clientWidth', {

@@ -100,3 +100,25 @@ export function preloadRoute(path: string): void {
     });
   }
 }
+
+/**
+ * Warm the club lobby.
+ *
+ * Kept out of routeMap above because it is the only parameterised route that
+ * matters here: every entry in that map is a literal path, and `/clubs/:id`
+ * would never match a lookup by string.
+ *
+ * Worth warming specifically. ClubHomePage is the heaviest screen in the app
+ * (the whole game lobby, its filters, the wallet and the live table grid) and
+ * it is where the club carousel sends every single tap. Called when a card
+ * settles in the middle, so by the time a player decides to open the club the
+ * chunk is usually already there.
+ *
+ * Fire and forget, and idempotent: a repeated dynamic import of a module that
+ * is already loaded resolves from cache without a second request.
+ */
+export function preloadClubLobby(): void {
+  import('../pages/ClubHomePage').catch(() => {
+    /* A failed preload must never surface: the real navigation will retry. */
+  });
+}

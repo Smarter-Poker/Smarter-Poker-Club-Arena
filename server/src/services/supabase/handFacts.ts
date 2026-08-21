@@ -1,0 +1,650 @@
+/**
+ * ca_hand_facts writer — the durable per-human-per-hand stats fact row.
+ *
+ * WHY THIS MODULE EXISTS
+ * ----------------------
+ * `hand_history` is purged after 7 days, stores hole cards only for players
+ * who reached showdown (32.5% of hands), and stores no all-in equity at all.
+ * Its `actions` JSON also omits blinds and antes, so every net figure
+ * reconstructed from it undercounts by the forced money — `buildHandHistoryTiers`
+ * says so honestly with `contributedIncludesBlinds: false`.
+ *
+ * None of that is recoverable after the fact. So the stats page cannot show a
+ * player their own folded holdings, their exact result, whether they ran above
+ * or below all-in EV, or who has been taking chips off them — not because the
+ * engine does not know, but because the engine knew and then threw it away.
+ *
+ * This module catches those values at settlement, while they are still in
+ * memory, and writes one durable row per HUMAN seat per hand. Horses get no
+ * rows: they are 99.97% of hand volume and nobody will ever read their stats
+ * page, which is what keeps this table roughly four orders of magnitude
+ * smaller than hand_history and lets it be retained indefinitely.
+ *
+ * DESIGN CONSTRAINT: this file and its two call sites are deliberately small
+ * and self-contained. HandController.ts (79KB), ServerTableEngineBase.ts
+ * (85KB) and ServerTableEngineRunout.ts (66KB) are all above the deploy
+ * channel's per-file ceiling, so ZERO edits are made to any of them.
+ *
+ * SECURITY: hole_cards written here include cards that never went to showdown.
+ * The table's RLS policy (`user_id = auth.uid()`) is the only thing keeping one
+ * player from reading another's mucked hand. Any SECURITY DEFINER RPC over this
+ * table must assert the caller's identity — DEFINER bypasses RLS.
+ */
+
+import { supabase } from './client.js';
+import { reportError } from '../errorReporter.js';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 1. ALL-IN EQUITY CAPTURE
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The engine already computes EXACT all-in equity in
+// ServerTableEngineRunout.broadcastAllInEquity() — in an all-in every hand is
+// known, so it prices each holding against the known others rather than
+// against a random range. The result is broadcast to clients and observed into
+// a Prometheus histogram, then discarded.
+//
+// Runout.ts is over the deploy file-size ceiling, so rather than editing it we
+// intercept the `all_in_equity` event on its way out through TableStateHub.
+// That is a 2-line edit to a 13KB file and gives us equity, board (hence
+// street) and pot for free.
+
+interface CapturedEquity {
+  /** userId -> equity as a FRACTION 0..1 (the event carries percent, 1dp). */
+  byUser: Map<string, number>;
+  street: string;
+  capturedAt: number;
+}
+
+const equityByHand = new Map<string, CapturedEquity>();
+
+/** Bounded so a long-lived process cannot leak on tables that never settle. */
+const EQUITY_CACHE_MAX = 5000;
+const EQUITY_CACHE_TTL_MS = 10 * 60 * 1000;
+
+function equityKey(tableId: string, handNumber: number | string): string {
+  return `${tableId}:${handNumber}`;
+}
+
+function streetFromBoard(boardLength: number): string {
+  if (boardLength >= 5) return 'river';
+  if (boardLength === 4) return 'turn';
+  if (boardLength === 3) return 'flop';
+  return 'preflop';
+}
+
+function pruneEquityCache(): void {
+  if (equityByHand.size <= EQUITY_CACHE_MAX) return;
+  const cutoff = Date.now() - EQUITY_CACHE_TTL_MS;
+  for (const [k, v] of equityByHand) {
+    if (v.capturedAt < cutoff) equityByHand.delete(k);
+  }
+  // Still oversized (pathological): drop oldest-inserted until under the cap.
+  if (equityByHand.size > EQUITY_CACHE_MAX) {
+    const overflow = equityByHand.size - EQUITY_CACHE_MAX;
+    let dropped = 0;
+    for (const k of equityByHand.keys()) {
+      equityByHand.delete(k);
+      if (++dropped >= overflow) break;
+    }
+  }
+}
+
+/**
+ * Called from TableStateHub.emitEvent for every `all_in_equity` payload.
+ *
+ * Only the FIRST all-in point of a hand is kept. broadcastAllInEquity fires
+ * again on each subsequent street of a paced runout, and by the river the
+ * "equity" is 0% or 100% — recording that would make every all-in look like it
+ * ran exactly to plan. The first firing is the moment the stack was committed,
+ * which is the only one that means anything.
+ *
+ * Never throws: a stats capture must not be able to break a table broadcast.
+ */
+export function captureAllInEquity(tableId: string, payload: Record<string, unknown>): void {
+  try {
+    if (!tableId || payload?.type !== 'all_in_equity') return;
+
+    const handNumber = payload.hand_number;
+    if (handNumber === undefined || handNumber === null) return;
+
+    const key = equityKey(tableId, String(handNumber));
+    if (equityByHand.has(key)) return; // first all-in point only
+
+    const raw = payload.equities;
+    if (!Array.isArray(raw) || raw.length === 0) return;
+
+    const byUser = new Map<string, number>();
+    for (const e of raw as Array<{ userId?: string; equity?: number }>) {
+      if (!e?.userId || typeof e.equity !== 'number' || !Number.isFinite(e.equity)) continue;
+      // The event carries percent with one decimal; store the fraction.
+      const fraction = Math.min(1, Math.max(0, e.equity / 100));
+      byUser.set(e.userId, fraction);
+    }
+    if (byUser.size === 0) return;
+
+    const board = Array.isArray(payload.board) ? payload.board : [];
+    equityByHand.set(key, {
+      byUser,
+      street: streetFromBoard(board.length),
+      capturedAt: Date.now(),
+    });
+    pruneEquityCache();
+  } catch {
+    /* stats capture must never affect gameplay */
+  }
+}
+
+function takeEquity(tableId: string, handNumber: number): CapturedEquity | null {
+  const key = equityKey(tableId, String(handNumber));
+  const hit = equityByHand.get(key);
+  if (hit) equityByHand.delete(key);
+  return hit ?? null;
+}
+
+/** Test seam. Not used in production paths. */
+export function __resetEquityCacheForTests(): void {
+  equityByHand.clear();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 2. PURE HELPERS (exported for unit test — these are where the bugs live)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const RANK_ORDER: Record<string, number> = {
+  '2': 2,
+  '3': 3,
+  '4': 4,
+  '5': 5,
+  '6': 6,
+  '7': 7,
+  '8': 8,
+  '9': 9,
+  T: 10,
+  J: 11,
+  Q: 12,
+  K: 13,
+  A: 14,
+};
+
+/**
+ * Canonical 169-grid key for a two-card holding: 'AA', 'AKs', '72o'.
+ *
+ * Returns null for anything that is not exactly two cards, which is how PLO
+ * (4-6 cards) opts out: a 13x13 grid cannot represent an Omaha starting hand,
+ * so `hand_class` stays NULL and the heatmap shows a categorical breakdown for
+ * those variants instead of a grid full of nonsense.
+ */
+export function computeHandClass(cards: Array<{ rank?: string; suit?: string }>): string | null {
+  if (!Array.isArray(cards) || cards.length !== 2) return null;
+  const [a, b] = cards;
+  if (!a?.rank || !b?.rank || !a?.suit || !b?.suit) return null;
+
+  const ra = RANK_ORDER[a.rank];
+  const rb = RANK_ORDER[b.rank];
+  if (!ra || !rb) return null;
+
+  const hi = ra >= rb ? a : b;
+  const lo = ra >= rb ? b : a;
+
+  if (hi.rank === lo.rank) return `${hi.rank}${lo.rank}`;
+  return `${hi.rank}${lo.rank}${hi.suit === lo.suit ? 's' : 'o'}`;
+}
+
+const LATE_NAMES = ['CO', 'HJ', 'LJ'];
+const EARLY_NAMES = ['UTG', 'UTG+1'];
+
+/**
+ * Position from the AUTHORITATIVE button seat and the set of seats actually
+ * dealt in — not from preflop action order.
+ *
+ * This matters: fn_process_hand_position_stats infers position from who acted
+ * first, which silently drops any player who folded without acting, so its
+ * numbers are biased toward players who played back. Deriving from the button
+ * is exact for everyone dealt a hand.
+ *
+ * Vocabulary is a superset of ca_player_stats_full's (BTN SB BB UTG UTG+1 MP
+ * CO), adding LJ and HJ at larger tables. '+1' spelling matches the existing
+ * RPC deliberately so the two never disagree on a shared position name.
+ */
+export function derivePosition(seat: number, buttonSeat: number, dealtSeats: number[]): string {
+  const seats = [...new Set(dealtSeats)].sort((x, y) => x - y);
+  const n = seats.length;
+  if (n === 0) return 'UNKNOWN';
+  if (n === 1) return 'BTN';
+
+  const myIdx = seats.indexOf(seat);
+  if (myIdx < 0) return 'UNKNOWN';
+
+  // The button may have folded/left; fall back to the next occupied seat.
+  let btnIdx = seats.indexOf(buttonSeat);
+  if (btnIdx < 0) {
+    btnIdx = seats.findIndex((s) => s > buttonSeat);
+    if (btnIdx < 0) btnIdx = 0;
+  }
+
+  const offset = (myIdx - btnIdx + n) % n;
+
+  // Heads-up: the button posts the small blind and there is no separate SB seat.
+  if (n === 2) return offset === 0 ? 'BTN' : 'BB';
+
+  if (offset === 0) return 'BTN';
+  if (offset === 1) return 'SB';
+  if (offset === 2) return 'BB';
+
+  const fromButton = n - offset; // 1 = CO, 2 = HJ, 3 = LJ
+  const fromBB = offset - 2; // 1 = UTG, 2 = UTG+1
+
+  if (fromButton <= LATE_NAMES.length && fromButton <= fromBB) {
+    return LATE_NAMES[fromButton - 1];
+  }
+  if (fromBB <= EARLY_NAMES.length) {
+    return EARLY_NAMES[fromBB - 1];
+  }
+  return 'MP';
+}
+
+export interface HandAction {
+  seat: number;
+  userId?: string;
+  action: string;
+  amount?: number;
+  timestamp?: number;
+  stage: string;
+}
+
+export interface FlowFlags {
+  vpip: boolean;
+  pfr: boolean;
+  three_bet: boolean;
+  faced_three_bet: boolean;
+  folded_to_three_bet: boolean;
+  had_cbet_flop_opp: boolean;
+  cbet_flop: boolean;
+  saw_flop: boolean;
+  went_to_showdown: boolean;
+  won_at_showdown: boolean;
+  aggressive_actions: number;
+  passive_actions: number;
+  was_all_in: boolean;
+  all_in_street: string | null;
+}
+
+const AGGRESSIVE = new Set(['bet', 'raise', 'all_in']);
+const PASSIVE = new Set(['call', 'check']);
+
+/**
+ * Derive every flow flag for one player from the hand's action log.
+ *
+ * Note on blinds: the action log contains no blind or ante postings (only
+ * PLAYER_ACTION events reach it). That is exactly right for VPIP — a big blind
+ * who checks has not voluntarily put money in — and it is why the money
+ * figures elsewhere in this module come from the engine's contributions map
+ * rather than from these actions.
+ */
+export function deriveFlowFlags(
+  userId: string,
+  actions: HandAction[],
+  opts: {
+    boardLength: number;
+    returned: number;
+    /** userIds who never folded — 2+ means a showdown happened. */
+    nonFoldedCount: number;
+  }
+): FlowFlags {
+  const mine = actions.filter((a) => a.userId === userId);
+  const preflop = actions.filter((a) => a.stage === 'preflop');
+
+  let aggressive = 0;
+  let passive = 0;
+  let wasAllIn = false;
+  let allInStreet: string | null = null;
+  for (const a of mine) {
+    if (AGGRESSIVE.has(a.action)) aggressive++;
+    else if (PASSIVE.has(a.action)) passive++;
+    if (a.action === 'all_in' && !wasAllIn) {
+      wasAllIn = true;
+      allInStreet = a.stage || null;
+    }
+  }
+
+  // Walk preflop in order, tracking the voluntary raise count and the level,
+  // so an all-in can be classified as a raise or a call rather than assumed.
+  let raiseCount = 0;
+  let level = 0;
+  let myRaiseIndex = -1; // which voluntary raise (0-based) was mine
+  let pfr = false;
+  let threeBet = false;
+  let vpip = false;
+  let lastAggressorPreflop: string | null = null;
+  let facedThreeBet = false;
+  let foldedToThreeBet = false;
+
+  for (const a of preflop) {
+    const isMine = a.userId === userId;
+    const amt = a.amount ?? 0;
+
+    if (a.action === 'fold') {
+      if (isMine && facedThreeBet) foldedToThreeBet = true;
+      continue;
+    }
+
+    if (isMine && (a.action === 'call' || AGGRESSIVE.has(a.action))) vpip = true;
+
+    const raisesLevel = AGGRESSIVE.has(a.action) && amt > level;
+    if (raisesLevel) {
+      if (isMine) {
+        pfr = true;
+        if (myRaiseIndex < 0) myRaiseIndex = raiseCount;
+        if (raiseCount === 1) threeBet = true;
+      } else if (myRaiseIndex >= 0 && raiseCount > myRaiseIndex) {
+        // Someone re-raised after our raise.
+        facedThreeBet = true;
+      }
+      raiseCount++;
+      level = amt;
+      lastAggressorPreflop = a.userId ?? null;
+    }
+  }
+
+  const iFolded = mine.some((a) => a.action === 'fold');
+  const sawFlop = !iFolded && opts.boardLength >= 3;
+  const hadCbetOpp = sawFlop && lastAggressorPreflop === userId;
+
+  let cbetFlop = false;
+  if (hadCbetOpp) {
+    const flop = actions.filter((a) => a.stage === 'flop');
+    const firstAggro = flop.find((a) => AGGRESSIVE.has(a.action));
+    cbetFlop = !!firstAggro && firstAggro.userId === userId;
+  }
+
+  // A showdown happened iff two or more players were still live at the end.
+  // This is exact, and unlike hand_history.hole_cards it does not conflate
+  // "reached showdown" with "had their cards revealed".
+  const wentToShowdown = !iFolded && opts.nonFoldedCount >= 2;
+
+  return {
+    vpip,
+    pfr,
+    three_bet: threeBet,
+    faced_three_bet: facedThreeBet,
+    folded_to_three_bet: foldedToThreeBet,
+    had_cbet_flop_opp: hadCbetOpp,
+    cbet_flop: cbetFlop,
+    saw_flop: sawFlop,
+    went_to_showdown: wentToShowdown,
+    won_at_showdown: wentToShowdown && opts.returned > 0,
+    aggressive_actions: aggressive,
+    passive_actions: passive,
+    was_all_in: wasAllIn,
+    all_in_street: allInStreet,
+  };
+}
+
+const r2 = (n: number): number => Math.round(n * 100) / 100;
+
+/**
+ * Maximum chips a player can win, given everyone's total contribution.
+ * Classic side-pot formula: you can win at most what you matched from each
+ * opponent, plus your own stake.
+ *
+ * Used to keep all-in EV honest when there is a side pot — without it, a short
+ * stack all-in for 50 against two players in for 100 would be credited with
+ * equity in chips they were never eligible to win.
+ */
+export function maxWinnable(myInvested: number, allInvested: number[]): number {
+  let total = 0;
+  for (const other of allInvested) total += Math.min(other, myInvested);
+  return total;
+}
+
+export interface TransferRow {
+  winnerId: string;
+  loserId: string;
+  amount: number;
+}
+
+/**
+ * Head-to-head chip attribution at HAND level, proportional to each loser's
+ * share of the hand's total losses:
+ *
+ *   transfer(w, l) = net_w * (|net_l| / totalLosses)
+ *
+ * Chips are conserved exactly. It is exactly right whenever there is a single
+ * pot or a single winner — the overwhelming majority of hands — and
+ * approximates only in multiway side-pot situations.
+ *
+ * Rake is deliberately attributed to nobody: total wins fall short of total
+ * losses by exactly the rake, so each loser's attributed outflow is their loss
+ * minus their share of the rake. The house took that, not the villain.
+ */
+export function computeTransfers(nets: Map<string, number>): TransferRow[] {
+  const winners: Array<[string, number]> = [];
+  const losers: Array<[string, number]> = [];
+  for (const [uid, net] of nets) {
+    if (net > 0.005) winners.push([uid, net]);
+    else if (net < -0.005) losers.push([uid, -net]);
+  }
+  if (winners.length === 0 || losers.length === 0) return [];
+
+  let totalLosses = 0;
+  for (const [, loss] of losers) totalLosses += loss;
+  if (totalLosses <= 0) return [];
+
+  const out: TransferRow[] = [];
+  for (const [winnerId, won] of winners) {
+    for (const [loserId, loss] of losers) {
+      if (winnerId === loserId) continue;
+      const amount = r2(won * (loss / totalLosses));
+      if (amount >= 0.01) out.push({ winnerId, loserId, amount });
+    }
+  }
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 3. THE WRITE
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface HandFactsInput {
+  handId: string;
+  tableId: string;
+  clubId?: string | null;
+  tournamentId?: string | null;
+  handNumber: number;
+  gameVariant: string;
+  bigBlind: number;
+  playedAt: string;
+  buttonSeat?: number | null;
+  rakeAmount: number;
+  boardLength: number;
+  /** Every seat dealt in: userId -> { seat, cards }. Authority for who played. */
+  holeCardsAll: Map<string, { seat: number; cards: unknown }>;
+  /** userId -> totalInvested, INCLUDING blinds/antes, net of uncalled refund. */
+  contributions: Map<string, number>;
+  winners: Array<{ userId: string; amount: number }>;
+  actions: HandAction[];
+  /** Seat roster with horse flags — only humans get fact rows. */
+  roster: Array<{ userId: string; isHorse: boolean }>;
+}
+
+/**
+ * Build and persist ca_hand_facts + ca_hand_transfers for one hand.
+ *
+ * Fire-and-forget and NEVER throws. It is called from inside logHandHistory,
+ * which runs inside `runStep('hand_history', moneyCritical = true, ...)` — a
+ * throw there raises a CRITICAL financial alert, and a stats row failing to
+ * write is emphatically not a financial incident.
+ */
+export async function writeHandFacts(input: HandFactsInput): Promise<void> {
+  try {
+    if (!input.handId) return;
+
+    const humanIds = new Set(
+      input.roster.filter((p) => !p.isHorse).map((p) => p.userId).filter(Boolean)
+    );
+    if (humanIds.size === 0) return; // horse-only hand: nothing worth storing
+
+    const dealtSeats: number[] = [];
+    for (const v of input.holeCardsAll.values()) {
+      if (typeof v?.seat === 'number') dealtSeats.push(v.seat);
+    }
+    const playersDealt = dealtSeats.length || input.roster.length;
+
+    // Gross awarded per user (post-rake — winners receive net of it).
+    const returnedBy = new Map<string, number>();
+    for (const w of input.winners ?? []) {
+      if (!w?.userId) continue;
+      returnedBy.set(w.userId, r2((returnedBy.get(w.userId) ?? 0) + (w.amount ?? 0)));
+    }
+
+    // Everyone who was dealt in, whether human or horse — nets across the whole
+    // table are needed for correct head-to-head attribution.
+    const participants = new Set<string>([
+      ...input.holeCardsAll.keys(),
+      ...input.contributions.keys(),
+      ...returnedBy.keys(),
+    ]);
+
+    const nets = new Map<string, number>();
+    const investedList: number[] = [];
+    for (const uid of participants) {
+      const invested = r2(input.contributions.get(uid) ?? 0);
+      const returned = r2(returnedBy.get(uid) ?? 0);
+      nets.set(uid, r2(returned - invested));
+      investedList.push(invested);
+    }
+
+    const nonFoldedCount = (() => {
+      const folded = new Set(
+        input.actions.filter((a) => a.action === 'fold' && a.userId).map((a) => a.userId as string)
+      );
+      let live = 0;
+      for (const uid of participants) if (!folded.has(uid)) live++;
+      return live;
+    })();
+
+    let totalAwarded = 0;
+    for (const v of returnedBy.values()) totalAwarded += v;
+    let totalInvested = 0;
+    for (const v of investedList) totalInvested += v;
+    const rakeFactor = totalInvested > 0 ? totalAwarded / totalInvested : 0;
+
+    const equity = takeEquity(input.tableId, input.handNumber);
+    const bb = input.bigBlind > 0 ? input.bigBlind : 1;
+
+    const factRows: Record<string, unknown>[] = [];
+
+    for (const uid of participants) {
+      if (!humanIds.has(uid)) continue; // humans only
+
+      const seatInfo = input.holeCardsAll.get(uid);
+      const invested = r2(input.contributions.get(uid) ?? 0);
+      const returned = r2(returnedBy.get(uid) ?? 0);
+      const net = r2(returned - invested);
+
+      const cards = Array.isArray(seatInfo?.cards)
+        ? (seatInfo!.cards as Array<{ rank?: string; suit?: string }>)
+        : null;
+
+      const flags = deriveFlowFlags(uid, input.actions, {
+        boardLength: input.boardLength,
+        returned,
+        nonFoldedCount,
+      });
+
+      // All-in EV. Outside an all-in the EV series equals the actual series by
+      // construction, which is the correct behaviour for a luck graph: the only
+      // thing being adjusted for is the runout of a committed stack.
+      let allInEquity: number | null = null;
+      let evReturned: number | null = null;
+      let evNet = net;
+
+      const eq = equity?.byUser.get(uid);
+      if (flags.was_all_in && typeof eq === 'number') {
+        allInEquity = eq;
+        const eligible = maxWinnable(invested, investedList) * rakeFactor;
+        evReturned = r2(eq * eligible);
+        evNet = r2(evReturned - invested);
+      }
+
+      factRows.push({
+        hand_id: input.handId,
+        user_id: uid,
+        club_id: input.clubId ?? null,
+        table_id: input.tableId,
+        tournament_id: input.tournamentId ?? null,
+        played_at: input.playedAt,
+        game_variant: input.gameVariant,
+        big_blind: input.bigBlind,
+        seat: seatInfo?.seat ?? null,
+        position:
+          typeof seatInfo?.seat === 'number' && typeof input.buttonSeat === 'number'
+            ? derivePosition(seatInfo.seat, input.buttonSeat, dealtSeats)
+            : 'UNKNOWN',
+        players_dealt: playersDealt,
+        hole_cards: cards,
+        hand_class: cards ? computeHandClass(cards) : null,
+        invested,
+        returned,
+        net,
+        net_bb: r2(net / bb),
+        rake_paid: 0,
+        vpip: flags.vpip,
+        pfr: flags.pfr,
+        three_bet: flags.three_bet,
+        faced_three_bet: flags.faced_three_bet,
+        folded_to_three_bet: flags.folded_to_three_bet,
+        had_cbet_flop_opp: flags.had_cbet_flop_opp,
+        cbet_flop: flags.cbet_flop,
+        saw_flop: flags.saw_flop,
+        went_to_showdown: flags.went_to_showdown,
+        won_at_showdown: flags.won_at_showdown,
+        aggressive_actions: flags.aggressive_actions,
+        passive_actions: flags.passive_actions,
+        was_all_in: flags.was_all_in,
+        all_in_street: flags.was_all_in ? (equity?.street ?? flags.all_in_street) : null,
+        all_in_at_risk: flags.was_all_in ? invested : null,
+        all_in_equity: allInEquity,
+        ev_returned: evReturned,
+        ev_net: evNet,
+        ev_net_bb: r2(evNet / bb),
+      });
+    }
+
+    if (factRows.length === 0) return;
+
+    const { error: factErr } = await supabase
+      .from('ca_hand_facts')
+      .upsert(factRows, { onConflict: 'hand_id,user_id', ignoreDuplicates: true });
+    if (factErr) reportError(factErr, 'writeHandFacts.facts', { handId: input.handId });
+
+    // Head-to-head transfers. Only rows touching a human are stored — a horse
+    // beating another horse is not a rivalry anybody will read about.
+    const transfers = computeTransfers(nets)
+      .filter((t) => humanIds.has(t.winnerId) || humanIds.has(t.loserId))
+      .map((t) => ({
+        hand_id: input.handId,
+        winner_id: t.winnerId,
+        loser_id: t.loserId,
+        amount: t.amount,
+        played_at: input.playedAt,
+        club_id: input.clubId ?? null,
+        table_id: input.tableId,
+      }));
+
+    if (transfers.length > 0) {
+      const { error: xferErr } = await supabase
+        .from('ca_hand_transfers')
+        .upsert(transfers, { onConflict: 'hand_id,winner_id,loser_id', ignoreDuplicates: true });
+      if (xferErr) reportError(xferErr, 'writeHandFacts.transfers', { handId: input.handId });
+    }
+  } catch (err) {
+    // Swallow. See the doc comment: this runs inside a money-critical step.
+    try {
+      reportError(err, 'writeHandFacts.unhandled', { handId: input?.handId });
+    } catch {
+      /* reporting must not throw either */
+    }
+  }
+}

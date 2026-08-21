@@ -8805,3 +8805,36 @@ CSS (the run that matters after two clobbers in one evening).
 Verified live: prod bundle greps positive for every batch marker, engine
 deploy confirmed by the hand-count dip-and-recover at 02:47-02:51 UTC
 (54/min trough, 110-135/min steady after).
+
+## 2026-08-21 — Cowork live-fix session, batch 5 (cashier rebuild + club cards)
+
+- [P1] CASHIER TRADE VIEW (new, PokerBros reference): /clubs/:id/cashier now
+  opens the Trade cashier — entity switcher listing EVERY club/union
+  membership with balances (verified live: SHARK CLUB 500,000.00 / Club JAQK
+  249,800.48 / Midway Union 5,000.00), Trade / Trade Record / Leaderboard
+  Record / Chip Request tabs, balance strip (own / agency players / available
+  with + to classic), member search, group-by-role, sort, multi-select
+  downline list, pinned Claim Back / Send Ticket / Send Out footer. Classic
+  cashier lives on at /cashier-classic, linked from the Trade tab.
+- [P1] MONEY RPCS (migrations 20260821): fn_cashier_send_chips and
+  fn_cashier_claim_back — the club-ledger (club_members.chip_balance)
+  primitives the browser lacked. Sender/actor is always auth.uid();
+  owner/admin reach everyone, agent-tier only their own downline; ordered row
+  locks; chip_transactions + wallet_transactions logged atomically. Verified
+  live with a 1-chip round trip both directions (conserved, balances exact).
+  fn_admin_remove_player_chips was the wrong claim-back (refuses agents,
+  strands chips in clubs.chip_pool); fn_transfer_chips is browser-forbidden
+  and unauthenticated-by-design (takes p_from as an argument) plus casts
+  ::integer in a decimal-chip economy — left untouched.
+- [P1] 10 horses seeded under Dan as agent in SHARK CLUB (auth.users +
+  profiles + club_members.agent_id chain; tag/lag/tricky profiles; 0 balances
+  to be funded via Send Out).
+- [P1] CLUB CARDS BLEED-THROUGH: the home action-bar console art is a
+  1024x682 mostly-empty canvas whose semi-opaque junk pixels painted
+  rectangular ghosts over the club cards' top corners (measured with
+  elementsFromPoint). Cards are layer 1 now: the bar is z-index 0 +
+  pointer-events none (its three click zones re-enable), carousel z-index 10.
+  Verified gone in a live screenshot.
+- NOTE: the fleet reset loop destroyed one uncommitted fix mid-session (the
+  cashier downline embed fix) — re-landed from a clean clone. Rule 13
+  (commit+push immediately) re-proven the hard way.

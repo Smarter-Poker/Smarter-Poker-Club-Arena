@@ -32,6 +32,7 @@ import RabbitHunt from './RabbitHunt';
 import LeaderboardPanel from './LeaderboardPanel';
 import LeaveTableConfirm from './LeaveTableConfirm';
 import { SessionHUD } from './SessionHUD';
+import RealTimeResultPanel from './RealTimeResultPanel';
 import SettingsPanel from './SettingsPanel';
 import ShareHand from './ShareHand';
 import AddOnModal from './AddOnModal';
@@ -993,9 +994,16 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         onCancel={onCloseLeaveConfirm}
       />
 
-      {/* Session Stats Modal (Cash Games) */}
+      {/* ── In-game stats card ──
+          Dan 2026-08-20, with a reference: "the stats card when you click the
+          in game stats card should look more like this and have these stats
+          inside of it." SESSION_STATS used to open SessionHUD; it now opens the
+          REAL TIME RESULT ledger, which answers the flat factual questions a
+          player actually opens this for — how long the table has run, the real
+          blinds, what they have in, what they are up or down. Same props, so it
+          is a drop-in. */}
       {tableId && userId !== 'guest' && (
-        <SessionHUD
+        <RealTimeResultPanel
           isOpen={showSessionStats}
           onClose={onCloseSessionStats}
           tableId={tableId}

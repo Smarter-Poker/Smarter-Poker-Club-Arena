@@ -1,14 +1,26 @@
 /* BBJ info modal — bottom sheet on phones, centered card on wider screens */
 
+/* NO backdrop-filter HERE (2026-08-21).
+ *
+ * The club lobby already paints fourteen blurred surfaces. Laying a
+ * full-viewport backdrop-filter on top of that asks the compositor to
+ * re-blur the entire page - and every blurred layer under it - on every
+ * frame, while the lobby's ambient animations keep invalidating it. On the
+ * machines that showed it, opening the popup made the whole page stutter.
+ * A slightly deeper flat scrim reads the same and costs one paint.
+ *
+ * `isolation` keeps the overlay in its own stacking context, and
+ * `contain: paint` stops anything inside it invalidating the page behind. */
 .bbj-modal__backdrop {
   position: fixed;
   inset: 0;
   z-index: 1200;
-  background: rgba(0, 0, 0, 0.68);
+  background: rgba(0, 0, 0, 0.78);
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  backdrop-filter: blur(2px);
+  isolation: isolate;
+  contain: paint;
 }
 
 .bbj-modal {
@@ -23,6 +35,9 @@
   background: linear-gradient(180deg, #15171c 0%, #0e0e10 100%);
   box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.6);
   animation: bbj-modal-up 0.22s ease-out;
+  /* The entry animation moves and fades this panel; telling the compositor
+     up front stops it promoting and demoting a layer mid-animation. */
+  will-change: transform, opacity;
   /* iOS safe area */
   padding-bottom: env(safe-area-inset-bottom, 0);
 }

@@ -53,7 +53,26 @@ interface DownlineRow {
   role: string;
   chipBalance: number;
   isHorse: boolean;
+  /** club_members.agent_id - the USER id of the agent this player sits under. */
+  agentId: string | null;
+  /** true when this player is assigned to the person looking at the screen */
+  isMine: boolean;
 }
+
+// A membership row means "in this club". The column carries two words for it:
+// everything created before 2026-07-22 says 'approved', everything since says
+// 'active', and 1,480 of the 1,499 rows in production are the older word. Every
+// other query in this codebase asks for BOTH - this page asked for 'active'
+// alone, which is why a 588-member club showed 11 people and an owner's
+// assigned horses vanished. Named once here so the next screen copies the set
+// rather than one of its halves.
+const MEMBER_IN_CLUB = ['active', 'approved'];
+
+// PostgREST caps a response at 1,000 rows. A club with more members than that
+// would silently lose the tail, which on a page that MOVES CHIPS is not an
+// acceptable failure mode, so the fetch pages until it has everything.
+const PAGE = 1000;
+const MAX_MEMBERS = 10000;
 
 interface TradeRecordRow {
   id: string;
@@ -86,6 +105,7 @@ export default function CashierTradePage() {
   const [myBalance, setMyBalance] = useState(0);
   const [availableChips, setAvailableChips] = useState(0);
   const [downline, setDownline] = useState<DownlineRow[]>([]);
+  const [mineOnly, setMineOnly] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState('');
@@ -127,7 +147,7 @@ export default function CashierTradePage() {
         .from('club_members')
         .select('club_id, role, chip_balance, clubs:club_id (name, club_id, logo_url)')
         .eq('user_id', user.id)
-        .eq('status', 'active');
+        .in('status', MEMBER_IN_CLUB);
       if (error) {
         reportError(error, 'CashierTradePage.memberships');
         return;
@@ -188,16 +208,27 @@ export default function CashierTradePage() {
       // profiles (it references public.users), so `profiles:user_id(...)`
       // 400s and the whole load died (verified live: 0 members, 0.00
       // balances on first deploy). Two-step fetch instead.
-      let q = supabase
-        .from('club_members')
-        .select('user_id, role, chip_balance, display_name, nickname, agent_id')
-        .eq('club_id', clubUuid)
-        .eq('status', 'active')
-        .neq('user_id', user.id)
-        .limit(500);
-      if (isAgent && !isStaff) q = q.eq('agent_id', user.id);
-      const { data: dl, error: dlErr } = await q;
-      if (dlErr) throw dlErr;
+      // An agent may only ever SEE their own players, so that stays a server
+      // filter. Staff see the whole club and narrow it with the "Assigned to
+      // me" toggle below - a filter they can turn off, not a wall.
+      const dl: Array<Record<string, unknown>> = [];
+      for (let from = 0; from < MAX_MEMBERS; from += PAGE) {
+        let q = supabase
+          .from('club_members')
+          .select('user_id, role, chip_balance, display_name, nickname, agent_id')
+          .eq('club_id', clubUuid)
+          .in('status', MEMBER_IN_CLUB)
+          .neq('user_id', user.id)
+          // deterministic order: without one, paging can repeat or skip rows
+          .order('joined_at', { ascending: true })
+          .order('user_id', { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (isAgent && !isStaff) q = q.eq('agent_id', user.id);
+        const { data: page, error: dlErr } = await q;
+        if (dlErr) throw dlErr;
+        dl.push(...((page || []) as Array<Record<string, unknown>>));
+        if (!page || page.length < PAGE) break;
+      }
 
       const ids = (dl || []).map((r) => r.user_id as string);
       const profMap = new Map<
@@ -214,6 +245,7 @@ export default function CashierTradePage() {
 
       const rows: DownlineRow[] = (dl || []).map((r) => {
         const p = profMap.get(r.user_id as string) || null;
+        const agentId = (r.agent_id as string | null) ?? null;
         return {
           userId: r.user_id as string,
           name:
@@ -227,6 +259,8 @@ export default function CashierTradePage() {
           role: (r.role as string) || 'player',
           chipBalance: Number(r.chip_balance) || 0,
           isHorse: Boolean(p?.is_horse),
+          agentId,
+          isMine: agentId === user.id,
         };
       });
 
@@ -301,11 +335,17 @@ export default function CashierTradePage() {
   }, [tab, user?.id, clubUuid]);
 
   // ── Derived list ───────────────────────────────────────────────────────────
+  const mineCount = useMemo(() => downline.filter((r) => r.isMine).length, [downline]);
+
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
     let rows = downline.filter(
       (r) => !q || r.name.toLowerCase().includes(q) || r.username.toLowerCase().includes(q)
     );
+    // "the players assigned to me" - the question an agent actually asks, and
+    // one an owner could not ask at all before, because an owner sees the whole
+    // club and nothing on the row said which of them were theirs.
+    if (mineOnly) rows = rows.filter((r) => r.isMine);
     rows =
       sortKey === 'balance'
         ? [...rows].sort((a, b) => b.chipBalance - a.chipBalance)
@@ -321,7 +361,7 @@ export default function CashierTradePage() {
       rows = [...rows].sort((a, b) => (rank[a.role] ?? 9) - (rank[b.role] ?? 9));
     }
     return rows;
-  }, [downline, search, sortKey, groupByRole]);
+  }, [downline, search, sortKey, groupByRole, mineOnly]);
 
   const agencyBalance = useMemo(
     () => downline.reduce((s, r) => s + r.chipBalance, 0),
@@ -518,6 +558,15 @@ export default function CashierTradePage() {
             <label className={styles.groupToggle}>
               <input
                 type="checkbox"
+                checked={mineOnly}
+                onChange={(e) => setMineOnly(e.target.checked)}
+                disabled={mineCount === 0}
+              />
+              Assigned To Me ({mineCount})
+            </label>
+            <label className={styles.groupToggle}>
+              <input
+                type="checkbox"
                 checked={groupByRole}
                 onChange={(e) => setGroupByRole(e.target.checked)}
               />
@@ -535,7 +584,13 @@ export default function CashierTradePage() {
           <div className={styles.list}>
             {loading && <div className={styles.empty}>Loading members...</div>}
             {!loading && list.length === 0 && (
-              <div className={styles.empty}>No members in your downline yet.</div>
+              <div className={styles.empty}>
+                {mineOnly
+                  ? 'No players are assigned to you in this club.'
+                  : search.trim()
+                    ? 'No members match that search.'
+                    : 'No members in your downline yet.'}
+              </div>
             )}
             {list.map((r) => (
               <div

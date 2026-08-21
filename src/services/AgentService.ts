@@ -579,7 +579,7 @@ class AgentServiceClass {
       .maybeSingle();
 
     if (!agentRecord) {
-      reportError(`Agent ${agentUserId} not found in club ${clubId}`, 'AgentService.assignPlayer');
+      reportError(`Agent ${agentUserId} not found in club ${clubId}`, 'AgentService.assignPlayerToAgent');
       return false;
     }
 
@@ -776,23 +776,19 @@ class AgentServiceClass {
   /**
    * Assign a player to an agent
    */
-  async assignPlayer(
-    clubId: string,
-    playerUserId: string,
-    agentMembershipId: string
-  ): Promise<boolean> {
-    const { error } = await supabase
-      .from('club_members')
-      .update({ agent_id: agentMembershipId })
-      .eq('club_id', clubId)
-      .eq('user_id', playerUserId);
-
-    if (!error) {
-      masterBus.emit('CLUB_UPDATED', { clubId });
-    }
-
-    return !error;
-  }
+  // assignPlayer() was removed on 2026-08-21. It took an `agentMembershipId`
+  // and wrote it into club_members.agent_id, which holds the agent's USER id
+  // and carries a foreign key to users - so the write could only ever fail the
+  // constraint or, worse, land an id that getAgentPlayers() would never match,
+  // making an assignment that appeared to succeed and then did not exist.
+  //
+  // It had no callers. The two correct paths are assignPlayerToAgent() below,
+  // and UnionOpsService.assignPlayerToAgent(), which goes through
+  // fn_assign_player_to_agent - the RPC that also checks the agent is active in
+  // that club, refuses an agent as their own player, and writes an audit row.
+  // Prefer the RPC. Verified against production: all 1,160 assigned rows are
+  // user-id shaped, so nothing was ever corrupted by this - it simply never
+  // worked.
 
   // ─────────────────────────────────────────────────────────────────────────────
   // WALLET OPERATIONS

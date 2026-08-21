@@ -649,6 +649,48 @@
   outline-offset: 2px;
 }
 
+/* ── Advanced Filters button ─────────────────────────────────────────────── */
+.game-bar__filter-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.06);
+  color: #9aa5b6;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+
+.game-bar__filter-btn:hover {
+  color: #dfe6ef;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Saved filters are invisible narrowing - a player who set "Bomb Pot only"
+   last week and comes back to a short list must be able to see WHY. Gold
+   fill plus a dot, matching how the sort control signals a non-default. */
+.game-bar__filter-btn.is-set {
+  color: #17130a;
+  background: linear-gradient(135deg, #ffb800, #ff9d00);
+  border-color: #ffb800;
+  font-weight: 800;
+}
+
+.game-bar__filter-btn:focus-visible {
+  outline: 2px solid rgba(255, 184, 0, 0.8);
+  outline-offset: 2px;
+}
+
 /* ── Sort control ────────────────────────────────────────────────────────── */
 .game-bar__sort {
   position: relative;

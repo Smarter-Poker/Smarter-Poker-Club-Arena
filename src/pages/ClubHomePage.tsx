@@ -44,6 +44,15 @@ import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
 import { matchesVariant, matchesTournamentSubFilter } from '../utils/tournamentFilters';
 import { useUserStore } from '../stores/useUserStore';
 import LobbyAdStrip from '../components/lobby/LobbyAdStrip';
+import AdvancedFilters, {
+  loadFilters,
+  type FilterStore,
+} from '../components/lobby/AdvancedFilters';
+import {
+  FILTER_SPECS,
+  matchesAdvancedFilter,
+  type FilterGameType,
+} from '../components/lobby/advancedFilterSpec';
 import {
   IconTrophy,
   IconLeaderboard,
@@ -267,6 +276,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [gameType, setGameType] = useState<GameType>('ALL');
   const [sortKey, setSortKey] = useState<SortKey>('recommended');
   const [sortOpen, setSortOpen] = useState(false);
+  /* Advanced Filters (Dan 2026-08-20). Loaded lazily from localStorage on
+     first render so a returning player's preferences apply to the FIRST
+     paint of the lobby rather than flashing an unfiltered list first. */
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [advFilters, setAdvFilters] = useState<FilterStore>({});
   // Dan 2026-08-21: the header search icon was wired to `setSortOpen(false)` —
   // a literal no-op. It now toggles a real search box that filters both the
   // cash tables and the tournament cards by name.
@@ -585,6 +599,17 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       .then(setResolvedClubId)
       .catch((e) => console.warn('[ClubHomePage] Failed to resolve clubId:', e));
   }, [clubId]);
+
+  /* Saved Advanced Filters are keyed per club, so they can only be read once
+     the UUID is known. Re-runs on a club switch: one club's "Bomb Pot only"
+     must never silently apply to another club's lobby. */
+  useEffect(() => {
+    if (!resolvedClubId) {
+      setAdvFilters({});
+      return;
+    }
+    setAdvFilters(loadFilters(resolvedClubId));
+  }, [resolvedClubId]);
 
   const handleMemberUpdate = useCallback(() => {
     loadClubData();
@@ -1038,9 +1063,43 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     if (!showsCash) return [];
 
     const q = searchQuery.trim().toLowerCase();
+    /* Advanced Filters apply to the tab they were saved on. On ALL there is no
+       single tab to read, so they do not apply - ALL means "show me
+       everything", and quietly narrowing it would make the tab a lie. */
+    const advType = gameType === 'ALL' ? null : (gameType as FilterGameType);
+    const advSpec = advType && advType !== 'ALL' ? FILTER_SPECS[advType] : undefined;
+    const advValue = advType ? advFilters[advType] : undefined;
+
     const rows = tables.filter((table) => {
       if (q && !(table.name || '').toLowerCase().includes(q)) return false;
       if (gameType !== 'ALL' && cashKind(table) !== gameType) return false;
+
+      if (advSpec && advValue) {
+        const bb = Number(table.big_blind) || 0;
+        if (bb > 0 && (bb < advValue.rangeMin || bb > advValue.rangeMax)) return false;
+        const max = Number(table.max_players) || 0;
+        if (max > 0 && (max < advValue.seatMin || max > advValue.seatMax)) return false;
+        const settings =
+          typeof table.settings === 'string'
+            ? (() => {
+                try {
+                  return JSON.parse(table.settings) as Record<string, unknown>;
+                } catch {
+                  return {};
+                }
+              })()
+            : ((table.settings as unknown as Record<string, unknown> | undefined) ?? {});
+        if (
+          !matchesAdvancedFilter(
+            advSpec,
+            advValue,
+            table as unknown as Record<string, unknown>,
+            settings
+          )
+        ) {
+          return false;
+        }
+      }
 
       // Status refines a chosen type; on ALL there is no type to refine.
       if (gameType === 'ALL') return true;
@@ -1070,16 +1129,33 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           (a, b) => cashRank(a) - cashRank(b) || (b.current_players || 0) - (a.current_players || 0)
         );
     }
-  }, [tables, gameType, showsCash, cashSubFilter, sortKey, searchQuery]);
+  }, [tables, gameType, showsCash, cashSubFilter, sortKey, searchQuery, advFilters]);
 
   const filteredTournaments = useMemo(() => {
     if (!showsTournaments) return [];
 
     const variant: TournVariant = TOURN_VARIANT_FOR[gameType] ?? 'ALL';
     const q = searchQuery.trim().toLowerCase();
+    const advType = gameType === 'ALL' ? null : (gameType as FilterGameType);
+    const advSpec = advType && advType !== 'ALL' ? FILTER_SPECS[advType] : undefined;
+    const advValue = advType ? advFilters[advType] : undefined;
+
     const rows = tournaments.filter((t) => {
       if (q && !((t.name as string) || '').toLowerCase().includes(q)) return false;
       if (!matchesVariant(t, variant)) return false;
+
+      if (advSpec && advValue) {
+        // The tournament range slider is a BUY-IN, and a player judges that on
+        // the total they pay, not on the prize-pool half of it.
+        const total = (Number(t.buy_in_amount) || 0) + (Number(t.buy_in_fee) || 0);
+        if (total < advValue.rangeMin || total > advValue.rangeMax) return false;
+        if (
+          !matchesAdvancedFilter(advSpec, advValue, t as unknown as Record<string, unknown>, {})
+        ) {
+          return false;
+        }
+      }
+
       if (gameType === 'ALL') return true;
       return matchesTournamentSubFilter(t, tournamentSubFilter);
     });
@@ -1101,7 +1177,15 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       default:
         return rows.sort(tournamentOpenFirst);
     }
-  }, [tournaments, gameType, showsTournaments, tournamentSubFilter, sortKey, searchQuery]);
+  }, [
+    tournaments,
+    gameType,
+    showsTournaments,
+    tournamentSubFilter,
+    sortKey,
+    searchQuery,
+    advFilters,
+  ]);
 
   const formatNumber = (num: number) => {
     return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1512,6 +1596,27 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           ))}
         </div>
 
+        {/* Advanced Filters. Hidden on ALL, which has no spec of its own and
+            means "show everything" - offering a filter sheet there would imply
+            the tab can be narrowed when it deliberately cannot. */}
+        {gameType !== 'ALL' && (
+          <button
+            className={`game-bar__filter-btn ${
+              advFilters[gameType as FilterGameType] ? 'is-set' : ''
+            }`}
+            aria-label="Advanced filters"
+            title="Advanced Filters"
+            onClick={() => {
+              haptic.light();
+              setSortOpen(false);
+              setFiltersOpen(true);
+            }}
+          >
+            <IconSort />
+            <span>Filters</span>
+          </button>
+        )}
+
         <div className="game-bar__sort">
           <button
             className={`game-bar__sort-btn ${sortKey !== 'recommended' ? 'is-set' : ''}`}
@@ -1558,6 +1663,15 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       {/* ═══════════════════════════════════════════════════════════════════
           CLUB / UNION AD STRIP — directly under the action bar
       ═══════════════════════════════════════════════════════════════════ */}
+      {filtersOpen && resolvedClubId && (
+        <AdvancedFilters
+          clubId={resolvedClubId}
+          initialType={gameType as FilterGameType}
+          onClose={() => setFiltersOpen(false)}
+          onApply={setAdvFilters}
+        />
+      )}
+
       <LobbyAdStrip
         clubId={bbjScope.clubUuid || resolvedClubId}
         unionId={bbjScope.unionId}

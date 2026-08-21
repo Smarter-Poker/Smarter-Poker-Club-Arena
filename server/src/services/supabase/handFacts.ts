@@ -186,9 +186,12 @@ export function captureRitEvent(tableId: string, payload: Record<string, unknown
     const type = typeof payload?.type === 'string' ? payload.type : '';
     if (!tableId || !RIT_EVENT_TYPES.has(type)) return;
 
-    void supabase
-      .from('action_audit_logs')
-      .insert({
+    // Promise.resolve() wraps the builder: PostgrestFilterBuilder is a
+    // THENABLE, not a Promise, so it has no .catch of its own - and the
+    // no-unhandled-rejection guard requires one on every fire-and-forget.
+    // Same shape EngineWebSocketServer.logConnectionAudit uses.
+    void Promise.resolve(
+      supabase.from('action_audit_logs').insert({
         action_type: `engine_${type}`,
         user_id: (payload.chooserPlayerId as string) || (payload.player_id as string) || null,
         details: {
@@ -202,9 +205,9 @@ export function captureRitEvent(tableId: string, payload: Record<string, unknown
           offers: Array.isArray(payload.offers) ? (payload.offers as unknown[]).length : null,
         },
       })
-      .catch(() => {
-        /* a telemetry insert must never surface at the table */
-      });
+    ).catch(() => {
+      /* a telemetry insert must never surface at the table */
+    });
   } catch {
     /* never affect gameplay */
   }

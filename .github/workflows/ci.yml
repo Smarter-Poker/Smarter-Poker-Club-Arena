@@ -546,6 +546,20 @@ jobs:
             exit 1
           fi
 
+          # An early-warning band. The gzipped limit is a HARD failure with no
+          # soft branch: the day it is crossed, every build in the repo is red
+          # and whoever is holding the keyboard has to go on a diet hunt under
+          # pressure. 2026-08-21 this ran at 1962 of 2048 and the response was
+          # to raise the RAW ceiling, because the raw one was the check that
+          # happened to fire first. Warn while there is still room to act.
+          WARN_AT=$((GZ_LIMIT * 9 / 10))
+          if [ $TOTAL_GZ_KB -gt $WARN_AT ]; then
+            HEADROOM=$((GZ_LIMIT - TOTAL_GZ_KB))
+            echo "::warning::Bundle is ${TOTAL_GZ_KB}kB gzipped — only ${HEADROOM}kB under the ${GZ_LIMIT}kB hard limit. Cut something before it fails the repo."
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Heads up:** ${TOTAL_GZ_KB}kB gzipped leaves **${HEADROOM}kB** under the ${GZ_LIMIT}kB hard gate." >> $GITHUB_STEP_SUMMARY
+          fi
+
           echo "✅ Bundle size: ${TOTAL_GZ_KB}kB gzipped (limit ${GZ_LIMIT}kB) / ${TOTAL_KB}kB raw"
 
   # ─────────────────────────────────────────────────────────────────────────────

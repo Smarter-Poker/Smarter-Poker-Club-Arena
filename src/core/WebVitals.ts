@@ -20,7 +20,7 @@ const isDev = import.meta.env.DEV;
 function sendToSentry(metric: Metric) {
   try {
     // Dynamic import to avoid hard dependency if Sentry isn't loaded
-    import('@sentry/react')
+    import('./sentryBundle')
       .then((Sentry) => {
         Sentry.setMeasurement(
           metric.name,

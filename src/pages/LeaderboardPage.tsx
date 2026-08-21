@@ -232,27 +232,13 @@ export default function LeaderboardPage() {
 
   // ── Bus Listener: instant leaderboard refresh when engine completes a hand ──
   useEffect(() => {
-    let timeout: ReturnType<typeof setTimeout> | null = null;
-    const pendingClubs = new Set<string>();
-
-    const unsub = masterBus.subscribe('HAND_COMPLETED', (event) => {
-      if (event.payload?.clubId) {
-        pendingClubs.add(event.payload.clubId);
-      }
-
-      if (timeout) clearTimeout(timeout);
-      timeout = setTimeout(() => {
-        const currentScope = scopeRef.current;
-        const currentClubId = selectedClubIdRef.current;
-        const shouldRefresh =
-          currentScope === 'global' || (currentClubId && pendingClubs.has(currentClubId));
-
-        if (shouldRefresh) {
-          if (activeTabRef.current === 'rankings') {
-            loadLeaderboardRef.current(true);
-          } else {
-            loadTournamentStatsRef.current();
-          }
+    const unsub = masterBus.subscribeDebounced(
+      'HAND_COMPLETED',
+      () => {
+        if (activeTabRef.current === 'rankings') {
+          loadLeaderboardRef.current(true);
+        } else {
+          loadTournamentStatsRef.current();
         }
       },
       500

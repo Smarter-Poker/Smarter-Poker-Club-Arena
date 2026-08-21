@@ -316,7 +316,9 @@ export default function DynamicWallet({
   // own per-club chip balance — the money that actually buys into games.
   const animPlayerWallet = useAnimatedCounter(data.chipBalance);
   const animTreasury = useAnimatedCounter(
-    effectiveVariant === 'union' ? data.unionRake : data.clubTreasury
+    effectiveVariant === 'union' || (effectiveVariant === 'owner' && isClubInUnion)
+      ? data.unionRake
+      : data.clubTreasury
   );
 
   // ── Fetch data — uses resolvedId (UUID) for all Supabase queries ───────────
@@ -689,22 +691,28 @@ export default function DynamicWallet({
       { label: 'Promo Wallet', icon: 'promo', value: animRow3 },
     ],
     owner: [
-      // Dan 2026-08-21: "even club owners need a player wallet, that's the
-      // only wallet they can play out of. Agents must move chips from their
-      // agent wallets to player wallets to buy into games." Owners get the
-      // same row players see, first, so the money that buys in is never
-      // hidden behind club treasury figures.
       {
         label: 'Player Wallet',
         icon: 'chip',
         value: animPlayerWallet,
         hint: 'The Wallet You Play From',
       },
-      { label: 'Club Bank', icon: 'bank', value: animRow1 },
-      // Dan 2026-08-21: "Due at close" removed from the wallet stack — that
-      // figure lives on the Data tab (ClubDataPage settlement breakdown shows
-      // the 90% rakeback due line). A money panel lists wallets, not
-      // projections.
+      {
+        label: isClubInUnion ? 'Union Wallet' : 'Club Bank',
+        icon: 'bank',
+        value: animRow1,
+        canMint: true,
+      },
+      ...(isClubInUnion
+        ? [
+            {
+              label: 'Rake Wallet',
+              icon: 'treasury' as WalletIconName,
+              value: animTreasury,
+              hint: 'Held In Trust',
+            },
+          ]
+        : []),
       { label: 'Agent Wallet', icon: 'agent', value: animRow2 },
       { label: 'Promo Wallet', icon: 'promo', value: animRow3 },
     ],
@@ -876,7 +884,9 @@ export default function DynamicWallet({
             backup figure by fn_club_money_panel, so rendering it here would
             put union money back on a club screen through the side door —
             the same leak as Union Bank, one row further down. */}
-        {(effectiveVariant === 'union' || (effectiveVariant === 'owner' && isClubInUnion) || (!isClubInUnion && data.backupBBJ > 0)) && (
+        {(effectiveVariant === 'union' ||
+          (effectiveVariant === 'owner' && isClubInUnion) ||
+          (!isClubInUnion && data.backupBBJ > 0)) && (
           <div className="dw__row dw__row--backup-bbj">
             <span className="dw__row-icon" aria-hidden="true">
               <WalletIcon name="reserve" />

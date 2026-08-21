@@ -679,6 +679,16 @@ export default function DailyChallengesPage() {
                 : ''}
             </span>
           )}
+          {!streak?.usedFreeze && (
+            <button
+              className="btn-secondary"
+              style={{ marginLeft: '10px', fontSize: '12px', padding: '4px 10px' }}
+              onClick={handleBuyFreeze}
+              disabled={buyingFreeze}
+            >
+              {buyingFreeze ? 'Working...' : 'Buy Freeze (5k 💎)'}
+            </button>
+          )}
         </div>
       </section>
 

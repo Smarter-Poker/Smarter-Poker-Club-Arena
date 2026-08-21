@@ -10,7 +10,13 @@
  * enforced in fn_create_tournament and process_tournament_rebuy.
  */
 import { describe, it, expect } from 'vitest';
-import { splitBuyIn, totalBuyIn, DEFAULT_RAKE_RATE } from '../../src/utils/buyIn';
+import {
+  splitBuyIn,
+  totalBuyIn,
+  DEFAULT_RAKE_RATE,
+  clampRakeToCap,
+  isRakeWithinCap,
+} from '../../src/utils/buyIn';
 
 describe('the fee is cut OUT of the advertised price', () => {
   it('prize + fee is exactly the price the player pays', () => {
@@ -26,17 +32,51 @@ describe('the fee is cut OUT of the advertised price', () => {
   it('the fee is 10% of the price, never a surcharge on top of it', () => {
     expect(splitBuyIn(100)).toEqual({ total: 100, prize: 90, fee: 10 });
     expect(splitBuyIn(20)).toEqual({ total: 20, prize: 18, fee: 2 });
-    expect(splitBuyIn(15)).toEqual({ total: 15, prize: 13, fee: 2 });
+    // Dan 2026-08-21 (second batch): 15 is 14 + 1, NOT 13 + 2. The old
+    // expectation here was 13 + 2 = 13.33%, which is the exact tournament he
+    // screenshotted when he said "rake is exceeding 10%".
+    expect(splitBuyIn(15)).toEqual({ total: 15, prize: 14, fee: 1 });
     // totalBuyIn is the inverse: prize + fee gets back to the advertised price.
     const s = splitBuyIn(20);
     expect(totalBuyIn(s.prize, s.fee)).toBe(20);
   });
 
-  it('EVERY positive buy-in pays a fee, however small', () => {
-    // round(4 * 0.1) is 0, so buy-ins under 5 used to enter rake-free.
-    for (const total of [1, 2, 3, 4]) {
-      expect(splitBuyIn(total).fee).toBeGreaterThanOrEqual(1);
+  /**
+   * Dan 2026-08-21 (second batch) SUPERSEDES "every positive buy-in pays a fee".
+   *
+   * That rule was added earlier the same day so micro games could not enter
+   * rake-free, and it was implemented as `max(1, ...)`. With whole-number fees
+   * it cannot coexist with a 10% ceiling: one chip on a 5 game IS 20%, and the
+   * live Pre-Dawn Mystery Bounties ran at exactly that all night. A breached
+   * ceiling is the more serious failure, so the ceiling wins and games under 10
+   * take nothing. The old test is rewritten rather than deleted so the reason
+   * the rule reversed stays in the suite.
+   */
+  it('THE CEILING: the house never takes more than 10%, at any price point', () => {
+    for (let total = 1; total <= 2000; total++) {
+      const s = splitBuyIn(total);
+      const pct = (s.fee / s.total) * 100;
+      expect(pct).toBeLessThanOrEqual(10 + 1e-9);
     }
+  });
+
+  it('a buy-in under 10 takes no rake — the cost of a whole-number cap', () => {
+    for (const total of [1, 2, 3, 4, 5, 9]) {
+      expect(splitBuyIn(total).fee).toBe(0);
+    }
+    // From 10 up, every rung pays a real fee again.
+    expect(splitBuyIn(10).fee).toBe(1);
+    expect(splitBuyIn(15).fee).toBe(1);
+    expect(splitBuyIn(25).fee).toBe(2);
+  });
+
+  it('clampRakeToCap fixes a bad pair without changing what the player pays', () => {
+    // The Evening Mystery Bounty as it shipped: 13 + 2.
+    expect(clampRakeToCap(13, 2)).toEqual({ prize: 14, fee: 1 });
+    // A pair already within cap is left exactly as it is.
+    expect(clampRakeToCap(18, 2)).toEqual({ prize: 18, fee: 2 });
+    expect(isRakeWithinCap(13, 2)).toBe(false);
+    expect(isRakeWithinCap(14, 1)).toBe(true);
   });
 
   it('a freeroll stays free - the one case where deriving a fee is wrong', () => {

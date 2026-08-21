@@ -18,6 +18,7 @@ export { default as HoleCardHeatmap } from './HoleCardHeatmap';
 export { default as NemesisPanel } from './NemesisPanel';
 export { default as BenchmarkPanel } from './BenchmarkPanel';
 export { default as TrophyRoom } from './TrophyRoom';
+export { default as StatsShareCard } from './StatsShareCard';
 export * from './statBenchmarks';
 
 export { default as AdvancedStatsSummary } from './AdvancedStatsSummary';

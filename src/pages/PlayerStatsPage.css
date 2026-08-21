@@ -1255,3 +1255,156 @@
     transition: none !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PRINT DOSSIER
+   ═══════════════════════════════════════════════════════════════════════════
+
+   The "Print Or Save Dossier" button flips the page into `printing` mode,
+   which renders EVERY tab at once, then calls window.print(). The browser's
+   own PDF engine does the rest.
+
+   That is why there is no PDF library in package.json. jspdf + html2canvas is
+   ~400KB of bundle on a mobile-first product and rasterises the charts;
+   headless Chrome would have to live next to a latency-critical poker engine.
+   The browser already ships a very good vector PDF writer, and this stylesheet
+   is what turns the app view into something worth handing it.
+
+   Printing is dark-on-dark by default here, which would burn a whole ink
+   cartridge and read terribly, so the palette is inverted to ink-on-paper.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 14mm 12mm;
+  }
+
+  /* Ink on paper, not neon on black. */
+  .stats-page {
+    background: #ffffff !important;
+    color: #111827 !important;
+    min-height: auto;
+    padding: 0;
+  }
+
+  .stats-page * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Chrome that means nothing on paper. */
+  .stats-pill-tabs,
+  .stats-range-row,
+  .stats-action-row,
+  .export-btn,
+  .assistant-export-btn,
+  .view-hands-btn,
+  .stats-notice,
+  .hand-mode-row,
+  .heatmap-controls,
+  .nemesis-expand,
+  .pos-radar-legend {
+    display: none !important;
+  }
+
+  /* Panels become bordered document sections rather than glass. */
+  .stats-hero,
+  .stats-grid,
+  .variant-table,
+  .chart-card,
+  .pos-radar-card,
+  .evluck-card,
+  .heatmap-card,
+  .nemesis-panel,
+  .bench-panel,
+  .trophy-card {
+    background: #ffffff !important;
+    border: 1px solid #d1d5db !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    margin: 0 0 8mm !important;
+    /* Never split a panel across a page boundary. */
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .stats-hero::before,
+  .stats-hero::after {
+    display: none !important;
+  }
+
+  .stats-section-header h3,
+  .pos-radar-title,
+  .evluck-title,
+  .heatmap-title,
+  .nemesis-title,
+  .bench-title,
+  .trophy-title {
+    color: #111827 !important;
+  }
+
+  .row-label,
+  .row-value,
+  .hero-stat,
+  .pos-radar-sub,
+  .evluck-sub,
+  .heatmap-sub,
+  .nemesis-sub,
+  .bench-sub,
+  .trophy-style-note,
+  .trophy-desc {
+    color: #1f2937 !important;
+  }
+
+  .stats-note,
+  .pos-radar-note,
+  .evluck-note,
+  .heatmap-note,
+  .nemesis-note,
+  .bench-note,
+  .trophy-note {
+    color: #4b5563 !important;
+  }
+
+  .stat-row,
+  .variant-row {
+    border-color: #e5e7eb !important;
+    /* The nth-child entrance delays would otherwise print rows mid-fade. */
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  /* Each major section starts a fresh page so the dossier reads as chapters. */
+  .pos-radar-card,
+  .heatmap-card,
+  .trophy-wrap {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  /* The 13x13 grid must print whole, not scroll. */
+  .heatmap-scroll {
+    overflow: visible !important;
+  }
+
+  .heatmap-grid {
+    min-width: 0 !important;
+  }
+
+  .heatmap-cell {
+    border-color: #e5e7eb !important;
+    color: #111827 !important;
+  }
+
+  .pos-radar-ring,
+  .pos-radar-spoke {
+    stroke: #d1d5db !important;
+  }
+
+  .pos-radar-axis-label {
+    fill: #111827 !important;
+  }
+}

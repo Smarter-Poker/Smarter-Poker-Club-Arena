@@ -45,6 +45,8 @@ import HoleCardHeatmap from '../components/stats/HoleCardHeatmap';
 import NemesisPanel from '../components/stats/NemesisPanel';
 import BenchmarkPanel from '../components/stats/BenchmarkPanel';
 import TrophyRoom from '../components/stats/TrophyRoom';
+import StatsShareCard from '../components/stats/StatsShareCard';
+import { playerStyleClassifier } from '../services/PlayerStyleClassifier';
 import SessionHistory from '../components/stats/SessionHistory';
 import BankrollTracker from '../components/stats/BankrollTracker';
 import AdvancedStatsSummary from '../components/stats/AdvancedStatsSummary';
@@ -563,6 +565,62 @@ export default function PlayerStatsPage() {
   const [servingCache, setServingCache] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [rangeKey, setRangeKey] = useState<string>('all');
+  /**
+   * PRINT DOSSIER
+   *
+   * The export buttons used to dump raw CSV. A dossier needs the charts, and
+   * the three obvious ways to make a PDF were all worse than this one:
+   *   - jspdf + html2canvas: ~400KB of bundle on a mobile-first product, for a
+   *     rarely-used export, and charts come out as soft rasterised images.
+   *   - headless Chrome on the engine box: the engine runs live poker and is
+   *     latency-critical. Spawning Chrome next to it to render a report is a
+   *     bad trade for gameplay.
+   *   - a Vercel render function: cross-repo, near the 50MB function ceiling
+   *     with bundled chromium, plus cold starts to babysit.
+   *
+   * The browser already has an excellent PDF engine. Rendering every tab at
+   * once and handing it a proper print stylesheet gives real vector text,
+   * selectable and crisp, at zero bundle cost and zero server load. "Save as
+   * PDF" is in every print dialog on desktop, and on the Share sheet on
+   * mobile.
+   */
+  const [printing, setPrinting] = useState(false);
+
+  useEffect(() => {
+    const done = () => setPrinting(false);
+    window.addEventListener('afterprint', done);
+    return () => window.removeEventListener('afterprint', done);
+  }, []);
+
+  // Style label for the share card. Same conversion as TrophyRoom: the RPC
+  // returns rates as FRACTIONS and the classifier wants COUNTS.
+  const shareStyle = useMemo(() => {
+    const o = full?.overall;
+    if (!o || o.total_hands < 300) return null;
+    try {
+      return playerStyleClassifier.classify({
+        handsPlayed: o.total_hands,
+        vpipCount: Math.round(o.vpip * o.total_hands),
+        pfrCount: Math.round(o.pfr * o.total_hands),
+        threeBetCount: Math.round(o.three_bet_percent * o.total_hands),
+        wtsdCount: Math.round(o.wtsd * o.total_hands),
+      });
+    } catch {
+      return null;
+    }
+  }, [full?.overall]);
+
+  const printDossier = useCallback(() => {
+    setPrinting(true);
+    // Give React a frame to mount every tab and recharts time to measure its
+    // ResponsiveContainers. Printing immediately yields blank charts.
+    window.setTimeout(() => {
+      window.print();
+      // Safety net for browsers that never fire afterprint.
+      window.setTimeout(() => setPrinting(false), 1000);
+    }, 700);
+  }, []);
+
   // Component-scope so the fact-layer panels (EV curve, heatmap, rivals) share
   // the SAME range the main RPC was loaded with. It used to be a local inside
   // the loader, which meant anything rendered outside that closure had no way
@@ -575,6 +633,15 @@ export default function PlayerStatsPage() {
   const [hands, setHands] = useState<HandRow[] | null>(null);
   const [handsLoading, setHandsLoading] = useState(false);
   const [category, setCategory] = useState<StatCategory>('overview');
+  /**
+   * A tab renders when it is selected, OR when the dossier is printing — that
+   * is how one set of section markup serves both the tabbed screen view and a
+   * complete printed report, with no duplicated JSX to drift apart.
+   */
+  const showTab = useCallback(
+    (t: StatCategory) => printing || category === t,
+    [printing, category]
+  );
 
   // RAKE REPORTING IS AN AGENT PRIVILEGE. A player sees no Rake tab at all
   // until they are promoted; the RPCs refuse them regardless, this just keeps
@@ -1158,12 +1225,12 @@ export default function PlayerStatsPage() {
         {!hasData && category !== 'rake' && emptyState}
 
         {/* ── RAKE TAB — live downline earnings, agents only ── */}
-        {category === 'rake' && agentRoles && agentRoles.length > 0 && (
+        {showTab('rake') && agentRoles && agentRoles.length > 0 && (
           <DownlineRakePanel roles={agentRoles} />
         )}
 
         {/* ── OVERVIEW TAB ── */}
-        {category === 'overview' && hasData && (
+        {showTab('overview') && hasData && (
           <>
             <div className="stats-grid">
               <StatRow label="VPIP" value={`${(overall.vpip * 100).toFixed(1)}%`} color="#00d4ff" />
@@ -1270,9 +1337,30 @@ export default function PlayerStatsPage() {
               }}
             />
 
+            {/* The export people actually use: a card for the club chat after
+                a good session, built on canvas so it costs no bundle weight. */}
+            {isOwnProfile && (
+              <StatsShareCard
+                displayName={user?.display_name || user?.username || 'Player'}
+                styleLabel={shareStyle?.label ?? null}
+                styleColor={shareStyle?.color ?? null}
+                stats={{
+                  hands: overall.total_hands,
+                  bb100: overall.bb_per_100,
+                  profit: overall.total_profit,
+                  vpip: overall.vpip * 100,
+                  pfr: overall.pfr * 100,
+                  hoursPlayed: overall.hours_played,
+                }}
+              />
+            )}
+
             <div className="stats-action-row">
               <button className="view-hands-btn" onClick={() => navigate('/player-sessions')}>
                 View Hand Histories
+              </button>
+              <button className="view-hands-btn" onClick={printDossier} disabled={printing}>
+                {printing ? 'Preparing Dossier...' : 'Print Or Save Dossier'}
               </button>
               <button
                 className="assistant-export-btn"
@@ -1286,7 +1374,7 @@ export default function PlayerStatsPage() {
         )}
 
         {/* ── PERFORMANCE TAB ── */}
-        {category === 'performance' && hasData && (
+        {showTab('performance') && hasData && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             {/* Luck first. Every number below it is a rate the player can act
                 on; this is the one that tells them whether the results they are
@@ -1391,7 +1479,7 @@ export default function PlayerStatsPage() {
         )}
 
         {/* ── POSITIONS TAB ── */}
-        {category === 'positions' && hasData && (
+        {showTab('positions') && hasData && (
           <div>
             {/* Positional shape first: a player reads the SHAPE of their game
                 before they read any individual number, and a web that pinches
@@ -1403,14 +1491,14 @@ export default function PlayerStatsPage() {
         )}
 
         {/* ── HANDS TAB — owner only, see the PRIVACY note on BASE_TABS ── */}
-        {category === 'hands' && isOwnProfile && (
+        {showTab('hands') && isOwnProfile && (
           <div>
             <HoleCardHeatmap userId={targetUserId} days={windowDays} />
           </div>
         )}
 
         {/* ── TROPHIES TAB — owner only ── */}
-        {category === 'trophies' && isOwnProfile && (
+        {showTab('trophies') && isOwnProfile && (
           <div>
             <TrophyRoom
               userId={targetUserId}
@@ -1421,7 +1509,7 @@ export default function PlayerStatsPage() {
         )}
 
         {/* ── TOURNAMENTS TAB ── */}
-        {category === 'tournaments' && hasData && (
+        {showTab('tournaments') && hasData && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div>
               <div className="stats-section-header">
@@ -1518,7 +1606,7 @@ export default function PlayerStatsPage() {
         )}
 
         {/* ── ANALYSIS TAB ── */}
-        {category === 'analysis' && hasData && (
+        {showTab('analysis') && hasData && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             {/* Advanced Stats */}
             <div>

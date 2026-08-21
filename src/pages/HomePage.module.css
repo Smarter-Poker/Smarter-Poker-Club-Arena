@@ -239,8 +239,16 @@
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-  /* Re-enable clicks on the actual action bar content */
-  pointer-events: auto;
+  /* Dan 2026-08-21 ("do not let the background image bleed through the game
+     cards"): the console art is a 1024x682 canvas that is mostly empty — at
+     600px wide the IMG runs ~400px tall and its semi-opaque junk pixels
+     painted rectangular ghosts over the top corners of the club cards
+     (white over JAQK, grey over Midway — measured with elementsFromPoint).
+     The cards are LAYER 1: pin this whole bar underneath them, and hand
+     pointer events to the three click zones only so card taps can never be
+     eaten by the oversized canvas. */
+  z-index: 0;
+  pointer-events: none;
 }
 
 .actionBarImage {
@@ -257,6 +265,9 @@
 .actionZoneCenter,
 .actionZoneRight {
   position: absolute;
+  /* Dan 2026-08-21: the wrapper is pointer-events:none now (see above) —
+     the zones are the ONLY click surface of the console. */
+  pointer-events: auto;
   top: 15%;
   height: 70%;
   background: transparent;
@@ -903,6 +914,9 @@
 
 .carouselScrollFade {
   position: relative;
+  /* Dan 2026-08-21: club cards are layer 1 — above the action-bar console's
+     oversized image canvas (z-index 0). */
+  z-index: 10;
 }
 
 .carouselScrollFade::before,

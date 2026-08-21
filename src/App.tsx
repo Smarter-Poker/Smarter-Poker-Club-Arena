@@ -86,6 +86,7 @@ const ClubMessagesPage = lazy(() => import('./pages/ClubMessagesPage'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const HelpPage = lazy(() => import('./pages/HelpPage'));
 const CashierPage = lazy(() => import('./pages/CashierPage'));
+const CashierTradePage = lazy(() => import('./pages/CashierTradePage'));
 const SuperAgentDashboard = lazy(() => import('./pages/SuperAgentDashboard'));
 const AchievementsPage = lazy(() => import('./pages/AchievementsPage'));
 const ClubMembersPage = lazy(() => import('./pages/ClubMembersPage'));
@@ -872,8 +873,22 @@ export default function App() {
                     </AuthGuard>
                   }
                 />
+                {/* Dan 2026-08-21: the PokerBros-style Trade cashier is now the
+                    front door; the full classic cashier (buy-in / cash-out /
+                    mint / history) moved to /cashier-classic and is linked
+                    from inside the Trade view. */}
                 <Route
                   path="clubs/:clubId/cashier"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Cashier">
+                        <CashierTradePage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/cashier-classic"
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Cashier">

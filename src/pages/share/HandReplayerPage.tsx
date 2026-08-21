@@ -10,14 +10,10 @@ import { handHistoryService } from '../../services/HandHistoryService';
 import { PositionAnalysis, OddsDisplay, ShareableHighlight } from '../../components/hand-replayer';
 import { CardImage } from '../../components/table/CardImage';
 import type { Card } from '../../components/table/CardImage';
+import HandReplay3D from '../../components/replay/HandReplay3D';
+import type { ReplaySnapshot } from '../../types/engine/handReplay';
 import './HandReplayerPage.css';
 import { reportError } from '../../utils/errorReporter';
-
-const playerSeatAnimationStyle = (index: number) => ({
-  opacity: 0,
-  transform: 'translateY(10px)',
-  animation: `fadeInUp 0.5s ease-out ${index * 70}ms forwards`,
-});
 
 interface HandAction {
   player: string;
@@ -51,13 +47,11 @@ export default function HandReplayerPage() {
   const [hand, setHand] = useState<HandData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [shareLabel, setShareLabel] = useState<'Share' | 'Link copied' | 'Copy failed'>(
-    'Share'
-  );
+  const [shareLabel, setShareLabel] = useState<'Share' | 'Link copied' | 'Copy failed'>('Share');
   const [currentStep, setCurrentStep] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [showAnalysis, setShowAnalysis] = useState(true);
   const [activeTab, setActiveTab] = useState<'replay' | 'analysis'>('replay');
+  const [viewMode, setViewMode] = useState<'3d' | '2d'>('3d');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -71,24 +65,19 @@ export default function HandReplayerPage() {
     };
   }, [handId]);
 
-  // Set document title for this page
   useEffect(() => {
     document.title = 'Hand Replay | Club Arena';
-    // Note: OG meta tags should be set server-side for proper social sharing
   }, [hand]);
 
   const loadHand = async (getIsMounted?: () => boolean) => {
     try {
       const record = await handHistoryService.getHand(handId!);
-
       if (getIsMounted && !getIsMounted()) return;
-
       if (!record) {
         setHand(null);
         return;
       }
 
-      // Map HandRecord → HandData for the replayer UI
       const winnerPlayer = record.players.find((p) => p.is_winner);
       const mapped: HandData = {
         id: record.id,
@@ -171,13 +160,11 @@ export default function HandReplayerPage() {
 
   const shareUrl = `https://smarter.poker/hub/club-arena/share/hand/${handId}`;
 
-  // Find hero player (first player with cards visible)
   const heroPlayer = useMemo(() => {
     if (!hand) return null;
     return hand.players.find((p) => p.cards) || null;
   }, [hand]);
 
-  // Get boards at different streets for odds display
   const boardByStreet = useMemo(() => {
     if (!hand) return { flop: [], turn: [], river: [] };
     const flop = hand.community_cards.slice(0, 3);
@@ -186,26 +173,58 @@ export default function HandReplayerPage() {
     return { flop, turn, river };
   }, [hand]);
 
-  // Get current board for odds display
   const currentBoard = useMemo(() => {
     if (!hand) return [];
-    if (currentStep < 4) return boardByStreet.flop;
-    if (currentStep < 6) return boardByStreet.turn;
+    if (currentStep < 4) return [];
+    if (currentStep < 6) return boardByStreet.flop;
+    if (currentStep < 8) return boardByStreet.turn;
     return boardByStreet.river;
   }, [currentStep, boardByStreet, hand]);
 
-  // Determine action summary for shareable highlight
   const actionSummary = useMemo(() => {
     if (!hand) return '';
     const actionCounts: Record<string, number> = {};
     hand.actions.forEach((a) => {
       actionCounts[a.action] = (actionCounts[a.action] || 0) + 1;
     });
-    const actions = Object.entries(actionCounts)
+    return Object.entries(actionCounts)
       .map(([action, count]) => `${count}x ${action}`)
       .join(', ');
-    return actions;
   }, [hand]);
+
+  const currentSnapshot = useMemo((): ReplaySnapshot | null => {
+    if (!hand) return null;
+
+    // Determine player bets based on actions up to current step
+    const currentBetAmounts: Record<string, number> = {};
+    const foldedPlayers: Record<string, boolean> = {};
+    for (let i = 0; i <= currentStep; i++) {
+      const a = hand.actions[i];
+      if (!a) continue;
+      if (a.action === 'fold') foldedPlayers[a.player] = true;
+      if (a.amount) currentBetAmounts[a.player] = a.amount;
+    }
+
+    return {
+      stepIndex: currentStep,
+      totalSteps: hand.actions.length,
+      stage: currentStep < 4 ? 'preflop' : currentStep < 6 ? 'flop' : 'river',
+      pot: hand.pot, // In a real engine, we'd compute this per step
+      communityCards: currentBoard,
+      players: hand.players.map((p) => ({
+        userId: p.name,
+        username: p.name,
+        stack: p.stack,
+        bet: currentBetAmounts[p.name] || 0,
+        cards: p.cards || ['??', '??'],
+        isFolded: !!foldedPlayers[p.name],
+        isAllIn: false,
+        seat: p.seat,
+      })),
+      currentAction: null,
+      isPlaying,
+    };
+  }, [hand, currentStep, currentBoard, isPlaying]);
 
   if (loading) {
     return (
@@ -228,15 +247,28 @@ export default function HandReplayerPage() {
   return (
     <>
       <div className="hand-replayer">
-        {/* Background pattern */}
         <div className="replayer-bg" />
 
-        {/* Sound toggle */}
-        <button className="sound-toggle" onClick={() => setSoundEnabled(!soundEnabled)}>
-          {soundEnabled ? 'ON' : 'OFF'}
-        </button>
+        <div className="replayer-header-controls">
+          <button className="sound-toggle" onClick={() => setSoundEnabled(!soundEnabled)}>
+            {soundEnabled ? '🔊' : '🔇'}
+          </button>
+          <div className="view-toggle">
+            <button
+              className={`view-btn ${viewMode === '3d' ? 'active' : ''}`}
+              onClick={() => setViewMode('3d')}
+            >
+              3D
+            </button>
+            <button
+              className={`view-btn ${viewMode === '2d' ? 'active' : ''}`}
+              onClick={() => setViewMode('2d')}
+            >
+              2D
+            </button>
+          </div>
+        </div>
 
-        {/* Tab navigation */}
         <div className="replayer-tabs">
           <button
             className={`tab-btn ${activeTab === 'replay' ? 'active' : ''}`}
@@ -252,80 +284,137 @@ export default function HandReplayerPage() {
           </button>
         </div>
 
-        {/* Replay view */}
         {activeTab === 'replay' && (
           <>
-            {/* Table */}
-            <div className="replay-table">
-              <div className="table-felt">
-                <div className="table-center">
-                  <div className="game-info">
-                    <span className="game-type">{hand.game_type}</span>
-                    <span className="stakes">{hand.stakes}</span>
-                  </div>
-                  <div className="pot-display">
-                    <span className="pot-label">POT</span>
-                    <span className="pot-amount">{hand.pot.toLocaleString()}</span>
-                  </div>
-                  {/* Community cards */}
-                  <div className="community-cards">
-                    {hand.community_cards.map((card, idx) => (
-                      <div key={idx} className="card">
-                        <CardImage card={parseCard(card)} size="sm" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+            {viewMode === '3d' ? (
+              <div
+                className="replay-3d-container"
+                style={{
+                  position: 'relative',
+                  width: '100%',
+                  height: '500px',
+                  marginBottom: '20px',
+                }}
+              >
+                <HandReplay3D
+                  active={true}
+                  seatCount={hand.players.length || 6}
+                  snapshot={currentSnapshot || undefined}
+                />
 
-              {/* Player seats */}
-              {hand.players.map((player, idx) => (
-                <div
-                  key={player.seat}
-                  style={playerSeatAnimationStyle(idx)}
-                  className={`player-seat seat-${player.seat} ${player.is_winner ? 'winner' : ''}`}
-                >
-                  <div className="player-avatar">{player.avatar || player.name.charAt(0)}</div>
-                  <div className="player-info-pod">
-                    <span className="player-name">{player.name}</span>
-                    {player.stack !== undefined && (
-                      <span className="player-stack">{player.stack.toLocaleString()}</span>
-                    )}
-                  </div>
-                  {player.cards && (
-                    <div className="player-cards">
-                      {player.cards.map((card, cIdx) => (
-                        <div key={cIdx} className="hole-card">
-                          <CardImage card={parseCard(card)} size="xs" />
+                {/* Overlay Action Bubbles & Player Names */}
+                {hand.players.map((p) => {
+                  // Very rough positioning for 3D overlay based on seat index
+                  const angle = (p.seat / (hand.players.length || 6)) * Math.PI * 2 - Math.PI / 2;
+                  const x = 50 + Math.cos(angle) * 35;
+                  const y = 50 + Math.sin(angle) * 35;
+
+                  const actionAtStep =
+                    hand.actions[currentStep]?.player === p.name ? hand.actions[currentStep] : null;
+
+                  return (
+                    <div
+                      key={p.name}
+                      style={{
+                        position: 'absolute',
+                        left: `${x}%`,
+                        top: `${y}%`,
+                        transform: 'translate(-50%, -50%)',
+                        pointerEvents: 'none',
+                        textAlign: 'center',
+                        textShadow: '0 2px 4px rgba(0,0,0,0.8)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          background: 'rgba(0,0,0,0.6)',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          color: '#fff',
+                          fontSize: '12px',
+                        }}
+                      >
+                        {p.name}
+                      </div>
+                      {actionAtStep && (
+                        <div
+                          className="action-bubble"
+                          style={{ marginTop: '4px', animation: 'fadeInUp 0.3s forwards' }}
+                        >
+                          {actionAtStep.action.toUpperCase()}
+                          {actionAtStep.amount ? ` ${actionAtStep.amount}` : ''}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="replay-table">
+                <div className="table-felt">
+                  <div className="table-center">
+                    <div className="game-info">
+                      <span className="game-type">{hand.game_type}</span>
+                      <span className="stakes">{hand.stakes}</span>
+                    </div>
+                    <div className="pot-display">
+                      <span className="pot-label">POT</span>
+                      <span className="pot-amount">{hand.pot.toLocaleString()}</span>
+                    </div>
+                    <div className="community-cards">
+                      {currentBoard.map((card, idx) => (
+                        <div key={idx} className="card">
+                          <CardImage card={parseCard(card)} size="sm" />
                         </div>
                       ))}
                     </div>
-                  )}
-                  {/* Action bubble for current step */}
-                  {hand.actions[currentStep]?.player === player.name && (
-                    <div className="action-bubble">
-                      {(hand.actions[currentStep]?.action || '').toUpperCase()}
-                      {hand.actions[currentStep].amount && ` ${hand.actions[currentStep].amount}`}
-                    </div>
-                  )}
+                  </div>
                 </div>
-              ))}
-            </div>
 
-            {/* Playback controls */}
+                {hand.players.map((player, idx) => (
+                  <div
+                    key={player.seat}
+                    className={`player-seat seat-${player.seat} ${player.is_winner ? 'winner' : ''}`}
+                  >
+                    <div className="player-avatar">{player.avatar || player.name.charAt(0)}</div>
+                    <div className="player-info-pod">
+                      <span className="player-name">{player.name}</span>
+                      {player.stack !== undefined && (
+                        <span className="player-stack">{player.stack.toLocaleString()}</span>
+                      )}
+                    </div>
+                    {player.cards && (
+                      <div className="player-cards">
+                        {player.cards.map((card, cIdx) => (
+                          <div key={cIdx} className="hole-card">
+                            <CardImage card={parseCard(card)} size="xs" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {hand.actions[currentStep]?.player === player.name && (
+                      <div className="action-bubble">
+                        {(hand.actions[currentStep]?.action || '').toUpperCase()}
+                        {hand.actions[currentStep].amount && ` ${hand.actions[currentStep].amount}`}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="playback-controls">
               <button className="ctrl-btn" onClick={rewind}>
                 ⏮
               </button>
               <button className="ctrl-btn play" onClick={togglePlay}>
-                {isPlaying ? '▮' : '▶'}
+                {isPlaying ? '▮▮' : '▶'}
               </button>
               <button className="ctrl-btn" onClick={forward}>
                 ⏭
               </button>
             </div>
 
-            {/* Action timeline */}
             <div className="action-timeline">
               {hand.actions.map((action, idx) => (
                 <div key={idx} className={`timeline-step ${idx <= currentStep ? 'active' : ''}`} />
@@ -334,10 +423,8 @@ export default function HandReplayerPage() {
           </>
         )}
 
-        {/* Analysis view */}
         {activeTab === 'analysis' && hand && (
           <div className="analysis-container">
-            {/* Position and odds panels */}
             <div className="analysis-grid">
               {heroPlayer && (
                 <>
@@ -349,7 +436,6 @@ export default function HandReplayerPage() {
                       dealerSeat={0}
                     />
                   </div>
-
                   <div className="analysis-panel">
                     <OddsDisplay
                       holeCards={heroPlayer.cards || []}
@@ -362,7 +448,6 @@ export default function HandReplayerPage() {
               )}
             </div>
 
-            {/* Shareable highlight */}
             <div className="analysis-highlight">
               <ShareableHighlight
                 handId={hand.id}
@@ -378,14 +463,9 @@ export default function HandReplayerPage() {
           </div>
         )}
 
-        {/* Share button */}
         <button
           className="share-btn"
           onClick={() => {
-            // 2026-08-20: this was `navigator.share?.(...)`. The optional call
-            // swallows itself on every browser without Web Share — desktop
-            // Chrome and Firefox included — so the button did nothing at all
-            // there, with no clipboard fallback and no message.
             void (async () => {
               try {
                 if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
@@ -406,7 +486,6 @@ export default function HandReplayerPage() {
           {shareLabel}
         </button>
 
-        {/* Club Arena branding */}
         <div className="replayer-branding">
           <span>♠ Club Arena</span>
         </div>

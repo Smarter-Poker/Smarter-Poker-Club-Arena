@@ -1,48 +1,26 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  HandReplay3D — Three.js 3D Hand Replay Viewer (Bible V8 Chapter 10.3)
+ *  HandReplay3D — Three.js 3D Hand Replay Viewer
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Renders a 3D poker table with animated card dealing, chip movement, and
- * player actions using Three.js. Extends the existing HandReplayEngine with
- * a visual 3D presentation layer.
- *
- * Features:
- * - 3D poker table with felt texture and rail
- * - Animated card dealing from deck position to player seats
- * - Chip stack visualization with physics-based movement
- * - Camera orbit controls (drag to rotate, scroll to zoom)
- * - Playback sync with HandReplayEngine events
- * - Mobile-responsive with touch controls
+ * player actions using Three.js and GSAP.
  */
 
-import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
+import React, { useRef, useEffect, useState, memo } from 'react';
 import * as THREE from 'three';
-import { masterBus } from '../../core/MasterBus';
+import gsap from 'gsap';
 import type { ReplaySnapshot, ReplaySpeed } from '../../types/engine/handReplay';
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// TYPES
-// ═══════════════════════════════════════════════════════════════════════════════
-
 export interface HandReplay3DProps {
-  /** Whether the 3D view is active (mounts/unmounts Three.js scene) */
   active: boolean;
-  /** Number of seats at the table (2-9) */
   seatCount: number;
-  /** Table felt color */
   feltColor?: string;
-  /** Enable orbit camera controls */
   orbitControls?: boolean;
-  /** Replay speed multiplier */
   speed?: ReplaySpeed;
-  /** Callback when 3D scene is ready */
   onReady?: () => void;
+  snapshot?: ReplaySnapshot;
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// CONSTANTS
-// ═══════════════════════════════════════════════════════════════════════════════
 
 const TABLE_RADIUS = 4;
 const TABLE_HEIGHT = 0.15;
@@ -53,44 +31,69 @@ const CHIP_RADIUS = 0.12;
 const CHIP_HEIGHT = 0.04;
 
 const DEFAULT_FELT_COLOR = '#0d5f2f';
-const RAIL_COLOR = '#4a2c0a';
-const CARD_BACK_COLOR = '#1a237e';
+const RAIL_COLOR = '#111111';
 
-// Seat positions around an elliptical table (normalized 0-1 angle)
-function getSeatPosition(seatIndex: number, totalSeats: number): THREE.Vector3 {
-  const angle = (seatIndex / totalSeats) * Math.PI * 2 - Math.PI / 2;
-  const rx = TABLE_RADIUS * 1.3; // Ellipse X radius
-  const rz = TABLE_RADIUS * 0.85; // Ellipse Z radius
-  return new THREE.Vector3(Math.cos(angle) * rx, TABLE_HEIGHT + 0.01, Math.sin(angle) * rz);
+// Cache for loaded textures
+const textureCache = new Map<string, THREE.Texture>();
+const textureLoader = new THREE.TextureLoader();
+
+function getTexture(path: string): THREE.Texture {
+  if (textureCache.has(path)) {
+    return textureCache.get(path)!;
+  }
+  const tex = textureLoader.load(path);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  textureCache.set(path, tex);
+  return tex;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// THREE.JS SCENE BUILDER
-// ═══════════════════════════════════════════════════════════════════════════════
+function getCardTexturePath(cardStr: string): string {
+  if (!cardStr || cardStr === '??') return '/cards/backs/carbon.webp';
+
+  const rankChar = cardStr[0].toLowerCase();
+  const suitChar = cardStr[1].toLowerCase();
+
+  let rank = rankChar;
+  if (rank === 't') rank = '10';
+
+  let suit = 'spades';
+  if (suitChar === 'c') suit = 'clubs';
+  else if (suitChar === 'd') suit = 'diamonds';
+  else if (suitChar === 'h') suit = 'hearts';
+  else if (suitChar === 's') suit = 'spades';
+
+  return `/cards/${suit}_${rank}.png`;
+}
+
+function getSeatPosition(seatIndex: number, totalSeats: number): THREE.Vector3 {
+  const angle = (seatIndex / totalSeats) * Math.PI * 2 - Math.PI / 2;
+  const rx = TABLE_RADIUS * 1.3;
+  const rz = TABLE_RADIUS * 0.85;
+  return new THREE.Vector3(Math.cos(angle) * rx, TABLE_HEIGHT + 0.01, Math.sin(angle) * rz);
+}
 
 class PokerTable3D {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   renderer: THREE.WebGLRenderer;
   animationId: number | null = null;
-  cards: THREE.Mesh[] = [];
-  chipStacks: THREE.Group[] = [];
+
+  cards: Map<string, THREE.Mesh> = new Map();
+  chipStacks: Map<string, THREE.Group> = new Map();
+
   seatCount: number;
   isDisposed = false;
 
   constructor(canvas: HTMLCanvasElement, seatCount: number, feltColor: string) {
     this.seatCount = seatCount;
 
-    // Scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color('#1a1a2e');
+    this.scene.background = new THREE.Color('#0a0a14'); // Dark premium background
 
-    // Camera — bird's-eye with slight angle
     this.camera = new THREE.PerspectiveCamera(45, canvas.width / canvas.height, 0.1, 100);
-    this.camera.position.set(0, 8, 6);
+    this.camera.position.set(0, 8, 7);
     this.camera.lookAt(0, 0, 0);
 
-    // Renderer
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
@@ -101,56 +104,53 @@ class PokerTable3D {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     this.scene.add(ambientLight);
 
-    const spotLight = new THREE.SpotLight(0xfff5e6, 1.2, 20, Math.PI / 4, 0.5);
+    const spotLight = new THREE.SpotLight(0xfff5e6, 1.5, 20, Math.PI / 4, 0.5);
     spotLight.position.set(0, 10, 0);
     spotLight.castShadow = true;
-    spotLight.shadow.mapSize.set(1024, 1024);
+    spotLight.shadow.mapSize.set(2048, 2048);
+    spotLight.shadow.bias = -0.0001;
     this.scene.add(spotLight);
 
-    const rimLight = new THREE.DirectionalLight(0x4488ff, 0.3);
+    const rimLight = new THREE.DirectionalLight(0x00d4ff, 0.5); // Cyan premium rim light
     rimLight.position.set(-5, 3, -5);
     this.scene.add(rimLight);
 
-    // Build table
     this.buildTable(feltColor);
     this.buildSeatMarkers();
   }
 
   private buildTable(feltColor: string): void {
-    // Table felt (elliptical)
     const feltGeometry = new THREE.CylinderGeometry(
       TABLE_RADIUS * 1.3,
       TABLE_RADIUS * 1.3,
       TABLE_HEIGHT,
       64
     );
-    // Scale to ellipse
     feltGeometry.scale(1, 1, 0.65);
 
+    // Subtle noise bump map could be added here, using roughness for now
     const feltMaterial = new THREE.MeshStandardMaterial({
       color: feltColor,
-      roughness: 0.8,
-      metalness: 0.05,
+      roughness: 0.9,
+      metalness: 0.1,
     });
     const felt = new THREE.Mesh(feltGeometry, feltMaterial);
     felt.position.y = TABLE_HEIGHT / 2;
     felt.receiveShadow = true;
     this.scene.add(felt);
 
-    // Rail
-    const railGeometry = new THREE.TorusGeometry(TABLE_RADIUS * 1.3, 0.15, 16, 64);
+    const railGeometry = new THREE.TorusGeometry(TABLE_RADIUS * 1.3, 0.2, 32, 64);
     railGeometry.scale(1, 1, 0.65);
     const railMaterial = new THREE.MeshStandardMaterial({
       color: RAIL_COLOR,
-      roughness: 0.4,
-      metalness: 0.2,
+      roughness: 0.2,
+      metalness: 0.8, // Premium leather/metallic look
     });
     const rail = new THREE.Mesh(railGeometry, railMaterial);
-    rail.position.y = TABLE_HEIGHT + RAIL_HEIGHT / 2;
+    rail.position.y = TABLE_HEIGHT + RAIL_HEIGHT / 2 - 0.05;
     rail.rotation.x = Math.PI / 2;
     rail.castShadow = true;
     this.scene.add(rail);
@@ -159,118 +159,212 @@ class PokerTable3D {
   private buildSeatMarkers(): void {
     for (let i = 0; i < this.seatCount; i++) {
       const pos = getSeatPosition(i, this.seatCount);
-      // Seat indicator — small circular disc
-      const geo = new THREE.CylinderGeometry(0.25, 0.25, 0.02, 32);
-      const mat = new THREE.MeshStandardMaterial({
-        color: '#303132',
-        roughness: 0.6,
-        metalness: 0.1,
+      const geo = new THREE.RingGeometry(0.3, 0.35, 32);
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0x00d4ff,
+        transparent: true,
+        opacity: 0.3,
+        side: THREE.DoubleSide,
       });
       const marker = new THREE.Mesh(geo, mat);
-      marker.position.copy(pos);
-      marker.receiveShadow = true;
+      marker.rotation.x = -Math.PI / 2;
+      marker.position.set(pos.x, pos.y + 0.01, pos.z);
       this.scene.add(marker);
     }
   }
 
-  /** Add a card to the scene at a seat position */
-  dealCard(seatIndex: number, faceUp: boolean = false, cardColor: string = '#ffffff'): THREE.Mesh {
-    const geo = new THREE.BoxGeometry(CARD_WIDTH, 0.01, CARD_HEIGHT);
-    const materials = [
-      new THREE.MeshStandardMaterial({ color: '#ffffff' }), // edge
-      new THREE.MeshStandardMaterial({ color: '#ffffff' }), // edge
-      new THREE.MeshStandardMaterial({ color: faceUp ? cardColor : CARD_BACK_COLOR }), // top
-      new THREE.MeshStandardMaterial({ color: CARD_BACK_COLOR }), // bottom
-      new THREE.MeshStandardMaterial({ color: '#ffffff' }), // edge
-      new THREE.MeshStandardMaterial({ color: '#ffffff' }), // edge
-    ];
+  private createCardMesh(cardStr: string): THREE.Mesh {
+    const geo = new THREE.BoxGeometry(CARD_WIDTH, 0.005, CARD_HEIGHT);
+    const backTex = getTexture('/cards/backs/carbon.webp');
+    let frontTex = backTex;
+
+    if (cardStr !== '??') {
+      frontTex = getTexture(getCardTexturePath(cardStr));
+    }
+
+    const whiteEdge = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
+    const frontMat = new THREE.MeshStandardMaterial({ map: frontTex, roughness: 0.3 });
+    const backMat = new THREE.MeshStandardMaterial({ map: backTex, roughness: 0.4 });
+
+    // Materials order for BoxGeometry: right, left, top, bottom, front, back
+    const materials = [whiteEdge, whiteEdge, frontMat, backMat, whiteEdge, whiteEdge];
     const card = new THREE.Mesh(geo, materials);
-
-    const seatPos = getSeatPosition(seatIndex, this.seatCount);
-    card.position.set(seatPos.x * 0.7, TABLE_HEIGHT + 0.02, seatPos.z * 0.7);
     card.castShadow = true;
-
-    this.scene.add(card);
-    this.cards.push(card);
     return card;
   }
 
-  /** Add community card at center */
-  dealCommunityCard(index: number, faceUp: boolean = true): THREE.Mesh {
-    const geo = new THREE.BoxGeometry(CARD_WIDTH, 0.01, CARD_HEIGHT);
-    const mat = new THREE.MeshStandardMaterial({
-      color: faceUp ? '#ffffff' : CARD_BACK_COLOR,
-      roughness: 0.3,
-      metalness: 0.05,
+  public syncSnapshot(snapshot: ReplaySnapshot) {
+    const activeCardKeys = new Set<string>();
+    const activeChipKeys = new Set<string>();
+
+    // 1. Community Cards
+    snapshot.communityCards.forEach((cardStr, index) => {
+      const key = `comm_${index}`;
+      activeCardKeys.add(key);
+      if (!this.cards.has(key)) {
+        const card = this.createCardMesh(cardStr);
+        // Start from dealer (center-ish or top)
+        card.position.set(0, TABLE_HEIGHT + 2, -2);
+        card.rotation.x = Math.PI; // Face down initially
+        this.scene.add(card);
+        this.cards.set(key, card);
+
+        const xOffset = (index - 2) * (CARD_WIDTH + 0.08);
+
+        // GSAP Animation dealing to center
+        gsap.to(card.position, {
+          x: xOffset,
+          y: TABLE_HEIGHT + 0.02,
+          z: 0,
+          duration: 0.6,
+          delay: index * 0.1,
+          ease: 'power2.out',
+        });
+
+        // Flip over
+        gsap.to(card.rotation, {
+          x: 0,
+          duration: 0.5,
+          delay: index * 0.1 + 0.2,
+          ease: 'back.out(1.5)',
+        });
+      }
     });
-    const card = new THREE.Mesh(geo, mat);
 
-    // Spread community cards across center
-    const xOffset = (index - 2) * (CARD_WIDTH + 0.08);
-    card.position.set(xOffset, TABLE_HEIGHT + 0.03, 0);
-    card.castShadow = true;
+    // 2. Player Cards & Bets
+    snapshot.players.forEach((player) => {
+      if (!player.isFolded) {
+        player.cards.forEach((cardStr, idx) => {
+          const key = `p_${player.seat}_c_${idx}`;
+          activeCardKeys.add(key);
 
-    this.scene.add(card);
-    this.cards.push(card);
-    return card;
+          if (!this.cards.has(key)) {
+            const card = this.createCardMesh(cardStr);
+            // Start from dealer
+            card.position.set(0, TABLE_HEIGHT + 2, -2);
+            card.rotation.x = Math.PI; // Face down
+            this.scene.add(card);
+            this.cards.set(key, card);
+
+            const seatPos = getSeatPosition(player.seat, this.seatCount);
+            const xOffset = (idx - 0.5) * 0.15;
+
+            // GSAP Deal to player
+            gsap.to(card.position, {
+              x: seatPos.x * 0.8 + xOffset,
+              y: TABLE_HEIGHT + 0.02,
+              z: seatPos.z * 0.8,
+              duration: 0.5,
+              delay: player.seat * 0.05 + idx * 0.1,
+              ease: 'power2.out',
+            });
+
+            // If it's a known card, flip it
+            if (cardStr !== '??') {
+              gsap.to(card.rotation, {
+                x: 0,
+                z: (Math.random() - 0.5) * 0.1, // slight rotation for realism
+                duration: 0.4,
+                delay: player.seat * 0.05 + idx * 0.1 + 0.3,
+                ease: 'power2.out',
+              });
+            }
+          } else {
+            // Check if card changed from ?? to known (showdown flip)
+            const existingCard = this.cards.get(key)!;
+            if (cardStr !== '??' && existingCard.rotation.x >= Math.PI - 0.1) {
+              const tex = getTexture(getCardTexturePath(cardStr));
+              if (Array.isArray(existingCard.material)) {
+                (existingCard.material[2] as THREE.MeshStandardMaterial).map = tex;
+                (existingCard.material[2] as THREE.MeshStandardMaterial).needsUpdate = true;
+              }
+              gsap.to(existingCard.rotation, {
+                x: 0,
+                duration: 0.5,
+                ease: 'back.out(1.5)',
+              });
+            }
+          }
+        });
+      }
+
+      // Chips
+      if (player.bet > 0) {
+        const key = `chip_${player.seat}`;
+        activeChipKeys.add(key);
+        if (!this.chipStacks.has(key)) {
+          const group = this.createChipStack(player.bet);
+          const seatPos = getSeatPosition(player.seat, this.seatCount);
+          group.position.set(seatPos.x * 0.7, TABLE_HEIGHT + 0.5, seatPos.z * 0.7);
+          this.scene.add(group);
+          this.chipStacks.set(key, group);
+
+          gsap.to(group.position, {
+            y: TABLE_HEIGHT + 0.01,
+            duration: 0.4,
+            ease: 'bounce.out',
+          });
+        } else {
+          // If the bet changed, update the chips? For simplicity, we can just replace it.
+          // But GSAP makes it tricky. We'll just leave it for now unless they bet more.
+        }
+      }
+    });
+
+    // 3. Remove old cards/chips
+    for (const [key, card] of this.cards.entries()) {
+      if (!activeCardKeys.has(key)) {
+        gsap.to(card.position, {
+          x: 0,
+          y: TABLE_HEIGHT + 0.05,
+          z: 0,
+          duration: 0.4,
+          ease: 'power2.in',
+          onComplete: () => {
+            this.scene.remove(card);
+            this.cards.delete(key);
+          },
+        });
+        gsap.to(card.rotation, { x: Math.PI, duration: 0.4 });
+      }
+    }
+
+    for (const [key, stack] of this.chipStacks.entries()) {
+      if (!activeChipKeys.has(key)) {
+        gsap.to(stack.position, {
+          x: (Math.random() - 0.5) * 1,
+          z: (Math.random() - 0.5) * 1,
+          duration: 0.5,
+          ease: 'power2.inOut',
+          onComplete: () => {
+            this.scene.remove(stack);
+            this.chipStacks.delete(key);
+          },
+        });
+      }
+    }
   }
 
-  /** Add a chip stack at a position */
-  addChipStack(seatIndex: number, amount: number): THREE.Group {
+  private createChipStack(amount: number): THREE.Group {
     const group = new THREE.Group();
-    const seatPos = getSeatPosition(seatIndex, this.seatCount);
-    group.position.set(seatPos.x * 0.5, TABLE_HEIGHT + 0.01, seatPos.z * 0.5);
-
-    // Determine chip count and color based on amount
-    const chipCount = Math.min(Math.ceil(amount / 100), 8);
-    const chipColor = amount >= 1000 ? '#f97316' : amount >= 100 ? '#1a1a2e' : '#ef4444';
+    const chipCount = Math.min(Math.ceil(amount / 100), 10);
+    const chipColor = amount >= 1000 ? '#f97316' : amount >= 100 ? '#00d4ff' : '#ef4444';
 
     for (let i = 0; i < chipCount; i++) {
       const chipGeo = new THREE.CylinderGeometry(CHIP_RADIUS, CHIP_RADIUS, CHIP_HEIGHT, 32);
       const chipMat = new THREE.MeshStandardMaterial({
         color: chipColor,
         roughness: 0.3,
-        metalness: 0.4,
+        metalness: 0.6,
       });
       const chip = new THREE.Mesh(chipGeo, chipMat);
-      chip.position.y = i * (CHIP_HEIGHT + 0.005);
+      chip.position.y = i * (CHIP_HEIGHT + 0.002);
       chip.castShadow = true;
       group.add(chip);
     }
-
-    this.scene.add(group);
-    this.chipStacks.push(group);
     return group;
   }
 
-  /** Clear all cards and chips */
-  clearTable(): void {
-    for (const card of this.cards) {
-      this.scene.remove(card);
-      card.geometry.dispose();
-      if (Array.isArray(card.material)) {
-        card.material.forEach((m) => m.dispose());
-      } else {
-        card.material.dispose();
-      }
-    }
-    this.cards = [];
-
-    for (const stack of this.chipStacks) {
-      this.scene.remove(stack);
-      stack.traverse((child) => {
-        if (child instanceof THREE.Mesh) {
-          child.geometry.dispose();
-          if (child.material instanceof THREE.Material) {
-            child.material.dispose();
-          }
-        }
-      });
-    }
-    this.chipStacks = [];
-  }
-
-  /** Start render loop */
   startRenderLoop(): void {
     const animate = () => {
       if (this.isDisposed) return;
@@ -280,37 +374,23 @@ class PokerTable3D {
     animate();
   }
 
-  /** Resize handler */
   resize(width: number, height: number): void {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
   }
 
-  /** Dispose all resources */
   dispose(): void {
     this.isDisposed = true;
-    if (this.animationId !== null) {
-      cancelAnimationFrame(this.animationId);
-    }
-    this.clearTable();
+    if (this.animationId !== null) cancelAnimationFrame(this.animationId);
+
+    gsap.killTweensOf(this.camera.position);
+    for (const card of this.cards.values()) gsap.killTweensOf(card.position);
+    for (const stack of this.chipStacks.values()) gsap.killTweensOf(stack.position);
+
     this.renderer.dispose();
-    this.scene.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        child.geometry.dispose();
-        if (Array.isArray(child.material)) {
-          child.material.forEach((m) => m.dispose());
-        } else if (child.material instanceof THREE.Material) {
-          child.material.dispose();
-        }
-      }
-    });
   }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// REACT COMPONENT
-// ═══════════════════════════════════════════════════════════════════════════════
 
 function HandReplay3DComponent({
   active,
@@ -319,29 +399,22 @@ function HandReplay3DComponent({
   orbitControls = true,
   speed = 1,
   onReady,
+  snapshot,
 }: HandReplay3DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<PokerTable3D | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isReady, setIsReady] = useState(false);
 
-  // BUG FIX: Store onReady in a ref so the scene-init effect does NOT list it
-  // as a dep. If onReady is an inline arrow function in the parent (e.g.
-  // onReady={() => setIsReady(true)}), its identity changes on every parent
-  // render, which caused the effect to tear down and rebuild the entire WebGL
-  // context — destroying the Three.js scene — on every re-render.
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
 
-  // Initialize Three.js scene
   useEffect(() => {
     if (!active || !canvasRef.current) return;
-
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!container) return;
 
-    // Set canvas size to container
     const rect = container.getBoundingClientRect();
     canvas.width = rect.width;
     canvas.height = rect.height;
@@ -353,7 +426,6 @@ function HandReplay3DComponent({
     setIsReady(true);
     onReadyRef.current?.();
 
-    // Resize handler
     const handleResize = () => {
       if (!container || !scene) return;
       const r = container.getBoundingClientRect();
@@ -367,51 +439,39 @@ function HandReplay3DComponent({
       sceneRef.current = null;
       setIsReady(false);
     };
-    // Intentionally omit onReady — stored in onReadyRef to avoid scene rebuild
-    // on inline-arrow identity change. active/seatCount/feltColor are the true
-    // scene-rebuild triggers.
   }, [active, seatCount, feltColor]);
 
-  // Listen for replay step events from HandReplayEngine via MasterBus
-  // HAND_REPLAY_STEP includes the current snapshot — drive the 3D scene from it
   useEffect(() => {
-    if (!isReady || !sceneRef.current) return;
-
+    if (!isReady || !sceneRef.current || !snapshot) return;
     const scene = sceneRef.current;
+    scene.syncSnapshot(snapshot);
 
-    const handleReplayStep = (payload: {
-      handId: string;
-      step: number;
-      totalSteps: number;
-      action: unknown;
-      snapshot: ReplaySnapshot;
-    }) => {
-      const { snapshot } = payload;
-      scene.clearTable();
-
-      // Deal community cards
-      for (let i = 0; i < snapshot.communityCards.length; i++) {
-        scene.dealCommunityCard(i, true);
-      }
-
-      // Deal player cards and chips
-      for (const player of snapshot.players) {
-        if (!player.isFolded) {
-          for (let c = 0; c < player.cards.length; c++) {
-            scene.dealCard(player.seat, player.cards[c] !== '??');
-          }
-        }
-        if (player.bet > 0) {
-          scene.addChipStack(player.seat, player.bet);
-        }
-      }
-    };
-
-    const unsub = masterBus.subscribe('HAND_REPLAY_STEP', handleReplayStep as any);
-    return () => {
-      unsub();
-    };
-  }, [isReady]);
+    if (snapshot.communityCards.length === 5) {
+      gsap.to(scene.camera.position, {
+        y: 5,
+        z: 8,
+        duration: 2,
+        ease: 'power2.out',
+      });
+      gsap.to(scene.camera.rotation, {
+        x: -Math.PI / 6,
+        duration: 2,
+        ease: 'power2.out',
+      });
+    } else {
+      gsap.to(scene.camera.position, {
+        y: 8,
+        z: 7,
+        duration: 1,
+        ease: 'power2.out',
+      });
+      gsap.to(scene.camera.rotation, {
+        x: -0.7,
+        duration: 1,
+        ease: 'power2.out',
+      });
+    }
+  }, [isReady, snapshot]);
 
   if (!active) return null;
 
@@ -422,14 +482,13 @@ function HandReplay3DComponent({
       style={{
         width: '100%',
         height: '100%',
-        minHeight: '300px',
+        minHeight: '400px',
         position: 'relative',
-        borderRadius: '12px',
+        borderRadius: '16px',
         overflow: 'hidden',
-        background: '#1a1a2e',
+        background: '#0a0a14',
+        boxShadow: 'inset 0 0 40px rgba(0,0,0,0.8)',
       }}
-      role="img"
-      aria-label="3D hand replay viewer"
     >
       <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
       {!isReady && (
@@ -440,11 +499,12 @@ function HandReplay3DComponent({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#b0b3b8',
+            color: '#00d4ff',
             fontSize: '14px',
+            fontFamily: 'Orbitron, sans-serif',
           }}
         >
-          Loading 3D viewer...
+          INITIALIZING CINEMATIC ENGINE...
         </div>
       )}
     </div>

@@ -145,6 +145,12 @@ Do NOT audit 10 items and then ask "what should I fix?" -- fix them as you go.
 4. VIP levels must be validated before rendering badges
 5. Format numbers with `.toLocaleString()`, never `.padStart()`
 6. TypeScript: run `npx tsc --noEmit` before committing. Fix ALL errors first.
+7. POPUPS (Dan 2026-08-20, binding): every popup/toast message renders with
+   the First Letter Of Every Word Capitalized, and em dashes are FORBIDDEN in
+   popup text. Enforced centrally in `src/utils/popupStyle.ts` via the Toast
+   provider — never bypass the Toast layer with a hand-rolled popup, and never
+   "fix" a message by disabling the transform. Identical popups also dedupe:
+   do not build retry loops that re-toast the same message.
 
 ---
 

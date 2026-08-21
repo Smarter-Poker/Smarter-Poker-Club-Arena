@@ -459,6 +459,88 @@ export abstract class TournamentManagerBase {
       }
 
       // ═══════════════════════════════════════════════════════════════
+      // Dan 2026-08-20: "spins can NEVER START until 3 players are
+      // registered AND HAVE PAID."
+      //
+      // Headcount alone is forgeable: the legacy 3-arg
+      // register_for_tournament RPC created tournament_players rows WITHOUT
+      // debiting anyone — proven the hard way when an agent-seated entry
+      // played two full spins for free (kingfish, 2026-08-20; charged
+      // retroactively, RPC since dropped). Every legitimate path
+      // (fn_register_for_tournament for humans,
+      // fn_register_horse_for_tournament for horses) writes a
+      // 'tournament_buyin' DEBIT to wallet_transactions in the same
+      // transaction as the registration, so a paid seat always has its
+      // ledger row — that row is the evidence this gate demands.
+      //
+      // An unpaid registration is REMOVED (loudly), the head-count is
+      // corrected, and the start stands down: the discovery loop refills the
+      // seat with a paying horse on its next pass. Removing rather than
+      // refusing forever is what keeps "never start unpaid" from becoming
+      // "never start at all" — the freeloading row cannot pay, so waiting on
+      // it would deadlock the game.
+      if (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') {
+        const buyIn = Number(tournament.buy_in_amount || 0);
+        if (buyIn > 0) {
+          const { data: regs } = await supabase
+            .from('tournament_players')
+            .select('user_id')
+            .eq('tournament_id', this.tournamentId)
+            .in('status', ['registered', 'playing']);
+          const regIds = (regs ?? []).map((r: any) => r.user_id).filter(Boolean);
+
+          const { data: debits, error: debitErr } = await supabase
+            .from('wallet_transactions')
+            .select('user_id, amount')
+            .eq('related_entity_id', this.tournamentId)
+            .eq('category', 'tournament_buyin')
+            .eq('type', 'debit')
+            .in('user_id', regIds.length > 0 ? regIds : ['00000000-0000-0000-0000-000000000000']);
+
+          if (debitErr) {
+            // Evidence unreadable ≠ evidence of non-payment. Stand down and
+            // try again next pass rather than kicking players over a blip.
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Paid-entry check unreadable (${debitErr.message}) — standing down, will retry`
+              ),
+              'Tournament.spin_paid_check_unreadable'
+            );
+            this.running = false;
+            return;
+          }
+
+          const paidBy = new Map<string, number>();
+          for (const d of debits ?? []) {
+            paidBy.set(d.user_id, (paidBy.get(d.user_id) || 0) + Number(d.amount || 0));
+          }
+          const unpaid = regIds.filter((id) => (paidBy.get(id) || 0) + 1e-9 < buyIn);
+
+          if (unpaid.length > 0) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN PAID-GATE: ${unpaid.length} registration(s) with no ${buyIn}-chip buy-in ledger row (${unpaid
+                  .map((u) => u.slice(0, 8))
+                  .join(', ')}) — removing them; a spin NEVER starts until 3 players have paid`
+              ),
+              'Tournament.spin_unpaid_registration_removed'
+            );
+            await supabase
+              .from('tournament_players')
+              .delete()
+              .eq('tournament_id', this.tournamentId)
+              .in('user_id', unpaid);
+            await supabase
+              .from('tournaments')
+              .update({ current_players: Math.max(0, (regCount || 0) - unpaid.length) })
+              .eq('id', this.tournamentId);
+            this.running = false;
+            return; // discovery refills with PAYING horses and restarts
+          }
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════
       // SPIN & GO — settle the money through the Reserve Pool
       // ═══════════════════════════════════════════════════════════════
       // This block used to carry TWO hardcoded multiplier tables (EV 2.2415

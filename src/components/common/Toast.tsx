@@ -6,6 +6,7 @@
  */
 
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import { formatPopupText } from '../../utils/popupStyle';
 import './Toast.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -131,9 +132,18 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const showToast = useCallback((message: string, type: ToastType = 'info', duration = 4000) => {
+    // Dan's house rule (2026-08-20), enforced at the ONLY door every toast
+    // walks through: Title Case every word, no em dashes. See popupStyle.ts —
+    // a rule in the render path cannot drift, a rule in a doc does.
+    const styled = formatPopupText(message);
     const id = `toast-${++toastIdRef.current}`;
     setToasts((prev) => {
-      const next = [...prev, { id, type, message, duration }];
+      // DEDUPE (Dan, same session: "connection lost pop ups need to stop").
+      // An identical message already on screen does not stack a twin — the
+      // heartbeat loop and its friends retry on intervals, and a column of
+      // five matching warnings reads as five separate emergencies.
+      if (prev.some((t) => t.message === styled && t.type === type)) return prev;
+      const next = [...prev, { id, type, message: styled, duration }];
       // Cap at 5 visible toasts — dismiss oldest if overflow
       return next.length > 5 ? next.slice(-5) : next;
     });

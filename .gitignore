@@ -88,3 +88,17 @@ tests/e2e/.auth/
 # One-off debug screenshots dropped at the repo root (_cards_probe.png, etc).
 # The committed visual suite is e2e-live/; these are throwaways.
 _*_probe.png
+
+# Ad-hoc one-shot Python rewriters dropped at the repo root while iterating on
+# CSS/JSX (patch_cardimage.py, update_css.py, ...). They encode a single edit
+# that has already been applied and are meaningless afterwards, but `git add -A`
+# will happily commit them. The durable form of such a change is the diff it
+# produced, not the script that produced it.
+/patch_*.py
+/update_css.py
+/fix_*.py
+
+# Root-level probe leftovers: bare screenshots and dotfile scratch written by
+# ad-hoc production checks. Same rationale as _*_probe.png above.
+/.e2e.png
+/.ca_probe_*

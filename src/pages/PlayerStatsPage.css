@@ -462,18 +462,14 @@
 
 /* ─────────────────────────────────────────────────────────────────────────────
    STAGGER ANIMATION
+
+   `.stats-fade-in` / `.stats-fade-in.visible` lived here and were applied to
+   nothing — no TSX in the repo ever set the class, so the rules had never once
+   run. Removed 2026-08-21 along with the framer-motion migration rather than
+   left as a decoy for the next person looking for where the page animates.
+   Tab transitions now live in components/stats/statsMotion.ts; the real
+   row-by-row stagger is the statRowIn block further down this file.
    ───────────────────────────────────────────────────────────────────────────── */
-
-.stats-fade-in {
-  opacity: 0;
-  transform: translateY(8px);
-  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.stats-fade-in.visible {
-  opacity: 1;
-  transform: translateY(0);
-}
 
 /* ─────────────────────────────────────────────────────────────────────────────
    LOADING STATE

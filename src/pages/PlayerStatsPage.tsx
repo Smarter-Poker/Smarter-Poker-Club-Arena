@@ -14,6 +14,8 @@
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { tabTransition, instant } from '../components/stats/statsMotion';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -37,6 +39,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import PositionWinRates from '../components/stats/PositionWinRates';
+import PositionalRadar from '../components/stats/PositionalRadar';
 import SessionHistory from '../components/stats/SessionHistory';
 import BankrollTracker from '../components/stats/BankrollTracker';
 import AdvancedStatsSummary from '../components/stats/AdvancedStatsSummary';
@@ -580,6 +583,12 @@ export default function PlayerStatsPage() {
     activeTab: category,
     onTabChange: setCategory,
   });
+  // The page CSS already honours prefers-reduced-motion, but that only stops
+  // CSS keyframes. framer-motion drives transforms from JS and ignores the
+  // media query entirely, so without this hook moving the tab animation to
+  // framer-motion would have quietly broken an accessibility setting that
+  // used to work.
+  const reduceMotion = useReducedMotion();
   const toast = useToast();
   const isMounted = useIsMounted();
   const hasStatsRef = useRef(false);
@@ -1082,8 +1091,26 @@ export default function PlayerStatsPage() {
         ))}
       </div>
 
-      {/* ── STATS CONTENT ── */}
-      <div className="stats-content" {...statsSwipeHandlers}>
+      {/* ── STATS CONTENT ──
+          AnimatePresence keyed on `category` cross-fades the tab bodies.
+          mode="wait" so the outgoing tab finishes before the incoming one
+          starts and the page height never lurches mid-swap.
+
+          The swipe handlers stay spread on THIS element rather than moving to
+          a new outer wrapper: useSwipeTabs attaches touch listeners here, and
+          nesting them under a wrapper would leave the gesture reading a node
+          that no longer moves with the content. */}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={category}
+          className="stats-content"
+          variants={reduceMotion ? undefined : tabTransition}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          transition={reduceMotion ? instant : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          {...statsSwipeHandlers}
+        >
         {/* EMPTY STATE — shown on EVERY tab. Previously only Overview had one,
             so a player with no hands saw a wall of 0.0% rows and empty charts.
             Rake opts out: an agent who has played no hands themselves still has
@@ -1301,13 +1328,12 @@ export default function PlayerStatsPage() {
 
         {/* ── POSITIONS TAB ── */}
         {category === 'positions' && hasData && (
-          <div
-            style={{
-              opacity: 1,
-              transform: 'translateY(0)',
-              transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            }}
-          >
+          <div>
+            {/* Positional shape first: a player reads the SHAPE of their game
+                before they read any individual number, and a web that pinches
+                at the button is a leak no table of rates makes obvious. Pure
+                presentation over full.positions, which is already loaded. */}
+            <PositionalRadar positions={full?.positions} />
             <PositionWinRates userId={targetUserId} initialPositions={full?.positions} />
           </div>
         )}
@@ -1648,7 +1674,8 @@ export default function PlayerStatsPage() {
             </div>
           </div>
         )}
-      </div>
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 }

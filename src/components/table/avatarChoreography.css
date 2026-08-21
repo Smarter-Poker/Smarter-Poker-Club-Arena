@@ -50,12 +50,81 @@
   --sp-hop: -5px;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+   AMBIENT IDLE — the table is no longer a still life
+   ─────────────────────────────────────────────────────────────────────────────
+   Tier 0 gave the character motion when it ACTS. Between actions every seat was
+   frozen, which is what made a nine-handed table read as cardboard cut-outs: the
+   only thing moving was whoever had just bet.
+
+   ORDER IS LEAD-LOAD-BEARING. This rule is deliberately ABOVE the four gesture
+   rules below it. All five are single-class selectors, so they carry identical
+   specificity and the LAST one wins — which means a gesture cleanly replaces
+   the breathing for its duration and the breathing resumes when the class is
+   stripped. That is the behaviour you want anyway: nobody breathes mid-shove.
+   Move this block below the gestures and every gesture silently stops working.
+
+   TRANSFORM ONLY, NO PAINT. Dan 2026-08-15, still binding: "NO glow of any kind
+   behind the acting player" — the disc halo and then the light-pool spotlight
+   were both removed after being reported as rings. Anything that paints behind
+   a seat comes back as a ring complaint, so idle life is carried entirely by
+   movement.
+
+   AMPLITUDE IS NOT THE HUB'S. The World Hub's `ambientBreathe` (AvatarGallery)
+   moves 3px and rotates a full degree, which is right for a gallery tile the
+   size of a playing card. At the 84px seat slot the same numbers read as a
+   wobble, and on the 112px hero as a bobble. This moves ~1.5px and never
+   rotates: rotation on a small bust looks like the character is swaying, not
+   breathing.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.seat__avatar-wrap {
+  /* Per-seat values are set inline from seatNumber in SeatSlot.tsx. These are
+     the fallbacks for anything that renders a seat outside the table (SimPage). */
+  animation: spAvatarBreathe calc(var(--sp-breath-dur, 4s) * var(--animation-speed, 1)) ease-in-out
+    infinite;
+  animation-delay: var(--sp-breath-delay, 0s);
+}
+
+@keyframes spAvatarBreathe {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    /* Chest-rise, not a hop. Anchored at the feet by the wrap's own box, so the
+       character does not detach from the name box at the top of the cycle. */
+    transform: translateY(-1.5px) scale(1.008);
+  }
+}
+
+/* A folded player has slumped and gone still. `.seat--folded .seat__avatar-wrap`
+   below sets the resting pose as a static transform; leaving the breathing
+   running would fight it every 4 seconds and make the slump twitch. */
+.seat--folded .seat__avatar-wrap {
+  animation: none;
+}
+
+/* Sitting out / away / disconnected: the player is not there. Stillness is the
+   correct signal, and it makes "this seat is inert" readable at a glance
+   without painting anything extra behind it. */
+.seat--sitting_out .seat__avatar-wrap,
+.seat--away .seat__avatar-wrap,
+.seat--disconnected .seat__avatar-wrap {
+  animation: none;
+}
+
 .seat__avatar-wrap--push,
 .seat__avatar-wrap--check,
 .seat__avatar-wrap--fold,
-.seat__avatar-wrap--celebrate {
+.seat__avatar-wrap--celebrate,
+.seat__avatar-wrap--alert {
   /* Transient only — the class is removed when the gesture ends, so this never
-     pins nine seats onto their own compositor layers for the whole session. */
+     pins nine seats onto their own compositor layers for the whole session.
+     Deliberately NOT set on the idle breathing: that one runs forever, and a
+     permanent `will-change` on nine wraps (thirty-six, with MultiTablePage
+     holding four tables mounted) is exactly the case the property warns about.
+     A plain transform animation gets composited anyway. */
   will-change: transform;
 }
 
@@ -140,6 +209,40 @@
   transition: transform calc(0.3s * var(--animation-speed, 1)) var(--ease-out, ease-out);
 }
 
+/* ─── ALERT — "it's on you" ───────────────────────────────────────────────────
+   Fires on the isActive rising edge: the character sits up and leans a little
+   toward the table, then settles into a slightly forward posture rather than
+   snapping back. Reads as attention, which is the one thing the seat could not
+   previously express — the turn was announced entirely by chrome (the conic
+   countdown ring and the gold rim), never by the player.
+
+   Directional, so it uses --collect-dx the same way the push does: leaning
+   "toward the table" means toward the pot, and that vector is already computed
+   per seat. Smaller factor than the push (0.03 vs 0.08) because this is a
+   posture change, not a chip shove.
+
+   Safe against the existing active-seat styling: `.seat--active .seat__avatar`
+   sets `transform: scale(1.04)` and `animation: none` on a DIFFERENT element,
+   one level down. Nothing else animates the wrap while a seat is active. */
+.seat__avatar-wrap--alert {
+  animation: spAvatarAlert calc(0.45s * var(--animation-speed, 1))
+    cubic-bezier(0.25, 0.9, 0.35, 1.1) both;
+}
+
+@keyframes spAvatarAlert {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  45% {
+    /* sit up: rise and grow slightly, leaning in */
+    transform: translate(calc(var(--collect-dx, 0px) * 0.03), -2.5px) scale(1.03);
+  }
+  100% {
+    /* settle forward, not back to neutral — they are still in the hand */
+    transform: translate(calc(var(--collect-dx, 0px) * 0.012), -1px) scale(1.012);
+  }
+}
+
 /* ─── CELEBRATE — crouch, jump, wobble, land ─────────────────────────────────
    Fires on the isWinner rising edge, so it plays once per pot won. Rotation is
    safe here (unlike the push) because a celebration is not directional. */
@@ -174,9 +277,15 @@
    class, so this is the belt to that braces — it also covers a user who flips
    the OS setting while a gesture is mid-flight. */
 @media (prefers-reduced-motion: reduce) {
+  /* The idle breathing matters most here. A gesture is a half-second and then
+     over; breathing runs forever, so for a motion-sensitive player it is the
+     one animation on this table they cannot wait out. `.seat__avatar-wrap`
+     unqualified also catches the base rule, not just the gesture classes. */
+  .seat__avatar-wrap,
   .seat__avatar-wrap--push,
   .seat__avatar-wrap--check,
   .seat__avatar-wrap--fold,
+  .seat__avatar-wrap--alert,
   .seat__avatar-wrap--celebrate {
     animation: none;
   }

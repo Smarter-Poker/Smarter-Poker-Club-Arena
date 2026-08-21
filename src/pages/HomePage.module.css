@@ -1064,6 +1064,7 @@
   margin-left: auto;
   margin-right: auto;
   justify-content: center;
+  align-items: center;
   flex-wrap: nowrap;
   box-sizing: border-box;
 }
@@ -1120,6 +1121,8 @@
 }
 .tileCard:nth-child(3) {
   animation-delay: 560ms;
+  flex: 1.18 1 0;
+  max-width: 184px;
 }
 .tileCard:nth-child(4) {
   animation-delay: 640ms;
@@ -2021,6 +2024,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  align-items: center;
   background: linear-gradient(180deg, #0a0a12 0%, #050510 100%);
   color: #fff;
   text-align: center;

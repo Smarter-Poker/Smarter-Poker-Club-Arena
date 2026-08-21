@@ -71,7 +71,35 @@ export type LastAction = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' 
  * `scale(1.08)`. The wrap is the one box in the avatar subtree that nothing
  * else transforms or animates. Full rationale in avatarChoreography.css.
  */
-export type AvatarGesture = 'push' | 'check' | 'fold' | 'celebrate' | null;
+export type AvatarGesture = 'push' | 'check' | 'fold' | 'celebrate' | 'alert' | null;
+
+/**
+ * AMBIENT IDLE 2026-08-21 — per-seat breathing desync.
+ *
+ * Nine avatars breathing on the same 4s clock is worse than nine static ones:
+ * synchronised biological motion reads as machinery. Both the period and the
+ * phase are therefore derived from the seat number.
+ *
+ * The delay is NEGATIVE, which starts each seat part-way through its own cycle.
+ * A positive delay would hold every avatar still until its turn came round, so
+ * the table would visibly "start breathing" a few seconds after it loads, one
+ * seat at a time. Negative delays mean the table is already alive on frame one.
+ *
+ * Derived rather than random so a seat's rhythm survives re-renders — a random
+ * phase would resample on every mount and make avatars visibly jump.
+ */
+function breathingStyle(seatNumber: number): React.CSSProperties {
+  // 3.4s - 5.0s. Prime-ish spread so seats drift apart instead of re-syncing.
+  const duration = 3.4 + ((seatNumber * 7) % 9) * 0.2;
+  const delay = -((seatNumber * 13) % 40) * 0.1;
+  return {
+    ['--sp-breath-dur' as string]: `${duration.toFixed(2)}s`,
+    ['--sp-breath-delay' as string]: `${delay.toFixed(2)}s`,
+  };
+}
+
+/** How long the "it's on you" posture change plays. Matches spAvatarAlert. */
+const ALERT_MS = 480;
 
 /**
  * Action -> gesture, with the window (ms at 1x speed) the class stays on.
@@ -564,6 +592,31 @@ export const SeatSlot = memo(
         CELEBRATE_MS * getAnimationSpeed()
       );
     }, [isWinner]);
+    /**
+     * AMBIENT IDLE 2026-08-21 — "it's on you". The character sits up and leans
+     * toward the table when the turn arrives.
+     *
+     * Before this, a turn was announced entirely by chrome: the conic countdown
+     * ring and the gold rim. The player themselves did not react to being put
+     * on the clock, which is the single most-watched moment at the table.
+     *
+     * Rising edge, so it plays once when the turn ARRIVES rather than
+     * re-triggering on every timer tick that re-renders the seat. Runs after
+     * the action effect above and does not clash with it: a seat cannot be
+     * acting and have just acted in the same frame.
+     */
+    const prevGestureActiveRef = useRef(false);
+    useEffect(() => {
+      const rising = isActive && !prevGestureActiveRef.current;
+      prevGestureActiveRef.current = isActive;
+      if (!rising || prefersReducedMotion()) return;
+      setAvatarGesture('alert');
+      if (gestureTimerRef.current) clearTimeout(gestureTimerRef.current);
+      gestureTimerRef.current = setTimeout(
+        () => setAvatarGesture(null),
+        ALERT_MS * getAnimationSpeed()
+      );
+    }, [isActive]);
 
     // Showdown card flip animation — 3D flip when opponent cards are revealed
     const [isShowdownFlip, setIsShowdownFlip] = useState(false);
@@ -1005,12 +1058,19 @@ export const SeatSlot = memo(
           className={`seat__avatar-wrap${isBustArt ? ' seat__avatar-wrap--bust' : ''}${
             avatarGesture ? ` seat__avatar-wrap--${avatarGesture}` : ''
           }`}
-          /* Kept deliberately. Not rendering the <img> stops the download, but
-             the wrap also holds the circle chrome, the status dot and the
-             position badge, all of which this toggle has always hidden — and
-             the wrap must keep its box either way or every seat's geometry
-             shifts. Hiding stays visual; only the network cost goes away. */
-          style={showAvatar ? undefined : { visibility: 'hidden' }}
+          /* Two things share this style object.
+             `visibility` kept deliberately: not rendering the <img> stops the
+             download, but the wrap also holds the circle chrome, the status dot
+             and the position badge, all of which this toggle has always hidden —
+             and the wrap must keep its box either way or every seat's geometry
+             shifts. Hiding stays visual; only the network cost goes away.
+             `breathingStyle` supplies this seat's own idle period and phase, so
+             the nine avatars never breathe in lockstep. */
+          style={
+            showAvatar
+              ? breathingStyle(seatNumber)
+              : { ...breathingStyle(seatNumber), visibility: 'hidden' }
+          }
         >
           {/* Timer is shown via smooth conic-gradient border on the info box below */}
           <div

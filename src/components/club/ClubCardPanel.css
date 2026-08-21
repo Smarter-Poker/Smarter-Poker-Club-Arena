@@ -7,6 +7,7 @@
 
 /* ── Root Container ────────────────────────────────────────────────────────── */
 .club-card-panel {
+  box-sizing: border-box;
   position: relative;
   width: 100%;
   display: flex;
@@ -20,7 +21,7 @@
   transform: translateZ(0);
   backface-visibility: hidden;
   background-image: linear-gradient(180deg, #12192e 0%, #0a1120 40%, #0d1528 100%);
-  border: 1.5px solid rgba(100, 130, 180, 0.25);
+  border: 4px solid rgba(176, 181, 185, 0.95); /* Brushed nickel exterior */
   box-shadow:
     0 4px 20px rgba(0, 0, 0, 0.5),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
@@ -29,7 +30,7 @@
 
 /* Union variant — gold border accent */
 .club-card-panel--union {
-  border-color: rgba(218, 165, 32, 0.35);
+  border-color: rgba(218, 165, 32, 0.95); /* Thick Gold exterior */
 }
 
 /* ── Skeleton shimmer — visible until image loads ──────────────────────────── */
@@ -67,7 +68,7 @@
   justify-content: center;
   padding: 8px 12px;
   background: linear-gradient(180deg, rgba(60, 80, 120, 0.8) 0%, rgba(35, 50, 80, 0.9) 100%);
-  border-bottom: 1px solid rgba(120, 160, 220, 0.25);
+  border-bottom: 2px solid rgba(176, 181, 185, 0.6);
   /* Metal riveted look */
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.1),
@@ -89,6 +90,12 @@
 }
 
 /* Union variant — gold ID text */
+
+/* Union variant — gold interior line */
+.club-card-panel--union .club-card-id-plate {
+  border-bottom: 2px solid rgba(218, 165, 32, 0.75);
+}
+
 .club-card-panel--union .club-card-id-text {
   color: #f0d070;
   text-shadow:
@@ -112,8 +119,6 @@
   border-radius: 0;
   /* Recessed viewport look */
   background: linear-gradient(145deg, rgba(5, 10, 22, 0.9) 0%, rgba(8, 16, 32, 0.95) 100%);
-  border-top: 1px solid rgba(60, 80, 120, 0.15);
-  border-bottom: 1px solid rgba(60, 80, 120, 0.15);
 }
 
 /* Baked card image — covers entire viewport */
@@ -198,7 +203,7 @@
   padding: 6px 10px;
   margin: 0;
   background: linear-gradient(180deg, rgba(18, 28, 50, 0.9) 0%, rgba(12, 20, 38, 0.95) 100%);
-  border-top: 1px solid rgba(100, 140, 200, 0.1);
+  border-top: 2px solid rgba(176, 181, 185, 0.5);
   min-height: 30px;
 }
 
@@ -230,7 +235,7 @@
   align-items: center;
   padding: 8px 12px 10px;
   background: linear-gradient(180deg, rgba(10, 18, 32, 0.95) 0%, rgba(8, 14, 28, 1) 100%);
-  border-top: 1px solid rgba(100, 140, 200, 0.12);
+  border-top: 2px solid rgba(176, 181, 185, 0.5);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 }
 
@@ -410,4 +415,10 @@
   .club-card-level-fill {
     transition: none;
   }
+}
+
+/* Union variant — gold interior lines */
+.club-card-panel--union .club-card-name-plate,
+.club-card-panel--union .club-card-stats-bar {
+  border-top: 2px solid rgba(218, 165, 32, 0.75);
 }

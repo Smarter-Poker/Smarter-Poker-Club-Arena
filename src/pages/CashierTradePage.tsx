@@ -1178,8 +1178,8 @@ export default function CashierTradePage() {
                 : amountModal === 'ticket'
                   ? 'Send Ticket'
                   : 'Claim Back'}{' '}
-              &middot; {selected.size} Player
-              {selected.size === 1 ? '' : 's'}
+              &middot; {list.filter((r) => selected.has(r.userId)).length} Player
+              {list.filter((r) => selected.has(r.userId)).length === 1 ? '' : 's'}
             </div>
             <input
               type="number"

@@ -379,7 +379,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
                   </span>
                   <span className={h.net_bb >= 0 ? 'is-up' : 'is-down'}>
                     {h.net_bb >= 0 ? '+' : ''}
-                    {h.net_bb.toFixed(1)} bb
+                    {h.net_bb.toFixed(1)} BB
                   </span>
                 </li>
               ))}

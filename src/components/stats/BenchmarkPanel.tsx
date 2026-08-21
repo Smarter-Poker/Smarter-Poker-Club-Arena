@@ -193,9 +193,9 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
             .filter((r) => r.barPosition === null)
             .map((r) => r.def.label)
             .join(', ')}{' '}
-          {results.filter((r) => r.barPosition === null).length === 1 ? 'is' : 'are'} judged against
-          the range winning players hold rather than against the field. For these, both extremes are
-          leaks, so where the club happens to sit says nothing about where you should be.
+          {results.filter((r) => r.barPosition === null).length === 1 ? 'is' : 'are'} Judged Against
+          The Range Winning Players Hold Rather Than Against The Field. For These, Both Extremes Are
+          Leaks, So Where The Club Happens To Sit Says Nothing About Where You Should Be.
         </p>
       )}
     </div>

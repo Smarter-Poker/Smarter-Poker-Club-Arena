@@ -9176,3 +9176,25 @@ PUBLISH NOTE: CI builds were starved for ~50 minutes by concurrent pushes
 (cancel-in-progress), so this batch was published through the canonical
 scripts/sync-club-arena.sh using CA_SRC_OVERRIDE + a throwaway WH worktree —
 the documented escape hatch. Live build-info ca_sha 43645f9d1 contains it.
+
+## 2026-08-21 (round 8): a seat is a reservation, leaving refunds, heads-up only, the hand-completion law, and a fold that swooshes
+
+Dan, five items.
+
+1. **NO CHIPS UNTIL THE GAME IS DETERMINED.** "THEY ARE SIMPLY SECURING A SEAT, WHEN THEY BUY IN EARLY." The seat now carries stack 0 until the wheel decides the game — spin tiers run 300/400/500, so chips handed out before the draw were a guess, and a *visible* one since the seat renders its stack. Start assigns the real tier stack to every seat. Client says "Seat Reserved", never a fake number. (migration `20260821e`)
+
+2. **LEAVING A SEAT REFUNDS IN FULL.** `fn_leave_seat_and_refund` returns the ENTIRE charge and unwinds every trace of the entry: prize pool, bounty pool, rake total, player count, rake record, the seat. Refundable only while seats are still selling. A "Leave Seat" control sits in the footer of a reserved seat.
+   **Caught in live testing** (`20260821f`): the first version refunded via credit_player_wallet, but the buy-in debits the CLUB wallet (club_members.chip_balance) — it would have taken chips from one ledger and created them in another. Refunds now credit the same club wallet the debit resolved. Proven live: sit −2.00, leave +2.00, **NET 0.00**; a second leave refuses with `not_seated`.
+
+3. **HEADS-UP IS THE ONLY SIT-N-GO.** 6-max and 9-max shapes removed — the MTT-shaped middle ground nobody asked for. Spins cover three-handed, Heads-Up the duel, MTTs the field.
+
+4. **A HAND IS NOT COMPLETE UNTIL ITS BEATS HAVE PLAYED.** Winner shown and identified at showdown, bets swept, pot pushed to the winner CARRYING ITS TOTAL, cards mucked — then the next hand opens with the dealing animation. The engine's hold was three hand-written numbers that could drift from whatever the client animates; it is now DERIVED from `src/config/handCompletionSpec.ts`, mirrored byte-identical into the engine and pinned by test. **This fixed a live truncation my own pot-win float introduced**: the float runs 2200ms and only starts after the 700ms sweep, so 2900ms of animation sat inside a 2600ms hold and the next hand was dealt over the number telling you what you had won.
+
+5. **FOLD IS A SWOOSH, NOT A DING.** The old fold swept a SAWTOOTH 900→80Hz; a sawtooth has a fundamental, so it carried pitch, and a short pitched tone is a ding whatever the code calls it. The tone is gone: broadband noise through a bandpass sweeping 2600→420Hz, soft attack, a second brush for the second card, peak 0.11 (was 0.18).
+
+### Pipeline findings this round
+- **The client test gate was silently failing.** `vitest run tests/` exited 1 on clean main: canvas-confetti kept running rAF against a canvas jsdom had torn down, so an uncaught clearRect-on-null failed the run with every assertion green. Since that suite gates the bundle publish, it was blocking deploys. Confetti is mocked in the test that renders the chest, and the chest stops its own celebration on unmount. Client suite now exits 0.
+- **Every workflow died at ~15:12** (0 steps, 3s, no logs) — not billing, not YAML: a client TypeScript error landed on main (a ref callback returning a value in HandReplayerPage) and every workflow type-checks. Another agent fixed it; the pipeline recovered by 15:28 on its own.
+- **A manual engine deploy was attempted while CI was down and ROLLED BACK.** The hand-built image was missing /app/dist (wrong Docker context vs the workflow's), the container restart-looped, and :current had already been promoted. Restored :current to the last known-good image and restarted within a minute; production verified healthy immediately after (107 hands/3min, 62 running games, 41 cash tables). Lesson recorded: do not hand-roll the image build — the workflow's context is not reproducible from the repo root, and :current must never be promoted before the container is verified healthy.
+
+Suites: client 202 files / 2528 tests, server 92 files / 998 tests, both green.

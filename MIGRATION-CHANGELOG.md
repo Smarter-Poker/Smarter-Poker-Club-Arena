@@ -8998,3 +8998,29 @@ turned off and revoked."
   mint-chips) predates the diamond law and does not burn diamonds; the lobby
   UI no longer routes to it. Follow-up for the fleet: retire or diamond-back
   that API route.
+
+## 2026-08-21 — Multi-table audit round 4: the mux earns its test net (Cowork session)
+
+Full verification sweep first: every marker from rounds 1-3 and all six
+roadmap batches confirmed on main and in the production bundle after ~15
+concurrent sibling pushes. Then the line-by-line pass over the newest
+code found three real defects (cb2f029):
+
+- SUPERSEDED-SOCKET RACE (mux client): a dying physical socket in CLOSING
+  whose replacement already existed would, on its late close event, run
+  failAll and kill every facade on the NEW socket. Guarded on identity.
+- MIRROR DRIFT (settings): a failed multi_shared_socket save rolled the
+  setting back but left ca_ws_mux pointing the other way. Rollback now
+  re-mirrors.
+- BURST PAST THE CAP (mux server): the cap counted only settled
+  subscriptions, so a burst of 5+ SUBSCRIBEs - all pending behind their
+  async gates - sailed past it. In-flight now counts.
+
+Upgrade: EngineSocketMux got a client-side unit suite (7 tests over a
+fake WebSocket) covering routing, PING fan-out, RESYNC rewriting,
+per-table refusal, teardown, the supersede race, and linger-then-close;
+the server suite grew a burst test (now 10). 17 mux tests green.
+
+Verified: prod at WH d54c9b21 (sync of 5e8f88d3, round-4 ancestor
+confirmed), Hetzner deploy green with the full engine suite, engine
+dealing 180-236 hands/min post-deploy.

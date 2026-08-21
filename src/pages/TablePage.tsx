@@ -6175,7 +6175,11 @@ export default function TablePage({
           bombPotHoldTimerRef.current = setTimeout(() => {
             bombPotHoldTimerRef.current = null;
             setBombPotHoldFlop(false);
-          }, 2150 * getAnimationSpeed());
+            // ART UPGRADE 2026-08-21: detonation moved to 3.2s (the drop is
+            // now a 1.5s incoming whistle), so the board's flop hold follows
+            // it. Must stay >= BombPotOverlay's T_EXPLODE or the flop lands
+            // while the bomb is still sitting there with a lit wick.
+          }, 3200 * getAnimationSpeed());
           try {
             masterBus.emit('BOMB_POT_TRIGGERED', {
               tableId: tableId || '',
@@ -6211,7 +6215,8 @@ export default function TablePage({
                   events.push(...createChipToPotEvent(seatPos, potPos, post.amount));
                 }
                 if (events.length > 0) setChipAnimations((prev) => [...prev, ...events]);
-              }, 2000 * getAnimationSpeed());
+                // Fire at the blast (T_EXPLODE), not before it.
+              }, 3200 * getAnimationSpeed());
             }
           }
         }

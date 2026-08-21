@@ -9048,3 +9048,54 @@ They were MTT-shaped: a registration list, a scheduled start, horses pre-seeded 
 - Two more buy-ins landed -> engine started it automatically: RUNNING, 2x drawn through the reserve gate, ONE table (mine, ADOPTED not duplicated), my seat 2 preserved, all three stacks correct, first hand dealt.
 
 Pinned by tests/unit/seatFirstGames.test.ts (13 tests). Suites: client 2461, server 998, both green.
+## 2026-08-21 — Bomb pot ART UPGRADE: the actual cherry bomb, a burning wick, and exploding letters
+
+Dan, on the shipped sequence: "you have to improve the graphics and
+animations... it looks so cheap! use the bomb image from the throwables" and
+"DROP THE ACTUAL CHERRY BOMB, HAVE THE WICK BURNING AND THEN IT EXPLODES,
+WITH THE WORDS BOMB POT! EXPLODING ON THE SCREEN". Also: "IT NEEDS TO SOUND
+LIKE A BOMB INCOMING... LIKE THAT WHISTLE... FOLLOWED BY THE BOOOOOM".
+
+- THE BOMB IS THE REAL ASSET NOW. The hand-drawn SVG bomb is gone; the
+  overlay draws `throwables/bomb.jpg` — the same 3D render the throwables
+  catalog uses — through the existing getThrowableImageUrl transform helper,
+  radially masked so its black studio backdrop vanishes into the felt. The
+  helper gained a third bucket (320px, ~9 KB vs 3.7 KB at 160) because the
+  overlay draws it at 210px and the 160 bucket visibly softened. Image is
+  preloaded at mount (not at trigger — a cold fetch would show an empty box
+  during the drop), and an onError/no-URL path falls back to a CSS-drawn
+  bomb: missing art must never break a hand.
+- BURNING WICK: a teardrop flame body with a hot white core, each flickering
+  on its own cadence (0.16s / 0.11s, alternating), five sparks peeling
+  upward on staggered delays, and an ember glow pulsing on the felt beneath
+  the bomb. Lit for the whole drop AND the fuse phase.
+- THE DROP IS 1.5s (was 0.45s) so the whistle reads as incoming. Phase map
+  is now DROP 0-1.5s, FUSE 1.5-3.2s, EXPLODE 3.2s, TITLE 3.2-6.4s.
+- BIGGER BLAST: full-screen white flash, expanding fireball, TWO shockwave
+  rings at different speeds, 16 embers, 5 rolling smoke puffs, and the
+  screen shake raised to 'heavy' (note: ScreenShake's intensities are
+  light/medium/heavy — 'strong' does not exist and would have silently
+  no-op'd).
+- "BOMB POT!" EXPLODES OUT OF THE BLAST: each letter starts scattered up to
+  140px, rotated up to 78deg, blurred 6px and at 3x scale, then snaps into
+  place on a staggered 34ms cadence. Scatter values are a deterministic
+  per-index table, NOT Math.random() — a re-render mid-animation would
+  otherwise re-roll the offsets and make the letters jump.
+- SOUND: playBombDrop's whistle is now two detuned sine partials swept
+  2.3kHz -> 240Hz across the full 1.5s with a 9Hz LFO vibrato (the wobble is
+  what makes the ear hear "falling object" instead of "descending beep"),
+  held near level until the last quarter so the impact lands on top of it.
+  playBombExplosion: sub deepened to 80 -> 22Hz over 1.7s, louder crack, and
+  a delayed second rumble 300ms behind the first — the echo is what turns a
+  thud into a BOOOOOM.
+- DEPENDENT TIMINGS RE-SYNCED (these would have desynced silently): the
+  TablePage flop-hold and the seat->pot ante chip flights both moved from
+  2150/2000ms to 3200ms so the board still waits for the blast and the antes
+  still converge ON it, and the legacy one-shot playBombPot() sequence was
+  re-timed to 1500/3200.
+- prefers-reduced-motion: the whole sequence collapses to near-zero-duration
+  animations and the flash is suppressed. The player still learns a bomb pot
+  happened; nothing flies, flashes or shakes.
+- Verified: client tsc clean, vite prod build clean (new classes confirmed
+  present in the emitted TablePage CSS/JS chunks), 30 engine tests across 4
+  suites green including the double-board conservation corpus.

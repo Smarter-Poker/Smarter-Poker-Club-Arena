@@ -823,7 +823,12 @@ export function getThrowableRawUrl(id: string): string {
  * resize=contain (NOT the avatars' cover): items must never be cropped.
  */
 export function getThrowableImageUrl(id: string, displayPx?: number): string {
-  const bucket = displayPx !== undefined && displayPx <= 48 ? 96 : 160;
+  // BOMB POT ART 2026-08-21: a third, larger bucket. The bomb-pot overlay draws
+  // the bomb render at ~210px on the felt — at the 160 bucket it visibly
+  // softens. 320 measured at 9 KB (vs 3.7 KB at 160), which is nothing for a
+  // once-per-bomb-pot hero image, and the cache key is already bucket-aware.
+  const bucket =
+    displayPx !== undefined && displayPx <= 48 ? 96 : displayPx !== undefined && displayPx > 160 ? 320 : 160;
   const key = `${id}@${bucket}`;
   const cached = imageUrlCache.get(key);
   if (cached) return cached;

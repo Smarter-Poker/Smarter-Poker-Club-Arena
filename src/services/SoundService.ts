@@ -1189,34 +1189,57 @@ class SoundService {
     if (!this.shouldPlay('all_in', 'event') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
-    // Falling whistle (pitch drop sells the drop even at low volume)
-    const whistle = this.ctx!.createOscillator();
-    const wGain = this.ctx!.createGain();
-    whistle.type = 'sine';
-    whistle.frequency.setValueAtTime(1500, t);
-    whistle.frequency.exponentialRampToValueAtTime(320, t + 0.42);
-    wGain.gain.setValueAtTime(0.05, t);
-    wGain.gain.linearRampToValueAtTime(0.09, t + 0.35);
-    wGain.gain.exponentialRampToValueAtTime(0.001, t + 0.46);
-    whistle.connect(wGain);
-    wGain.connect(this.out);
-    whistle.start(t);
-    whistle.stop(t + 0.46);
+    // ART UPGRADE 2026-08-21 (Dan: "it needs to sound like a bomb incoming...
+    // like that whistle... followed by the BOOOOOM"): the classic falling
+    // bomb whistle, spanning the overlay's full 1.5s drop.
+    //
+    // Two detuned sine partials (a single one reads as a test tone), swept
+    // 2.3kHz -> 240Hz, with a slow vibrato from an LFO on the frequency —
+    // that wobble is what makes the ear hear "falling object" rather than
+    // "descending beep". Held near full level until the last quarter so the
+    // impact lands on top of it rather than after a fade-out.
+    const DROP = 1.5;
+    for (let k = 0; k < 2; k++) {
+      const detune = k === 0 ? 1 : 1.011;
+      const whistle = this.ctx!.createOscillator();
+      const wGain = this.ctx!.createGain();
+      whistle.type = 'sine';
+      whistle.frequency.setValueAtTime(2300 * detune, t);
+      whistle.frequency.exponentialRampToValueAtTime(240 * detune, t + DROP);
+
+      const lfo = this.ctx!.createOscillator();
+      const lfoGain = this.ctx!.createGain();
+      lfo.frequency.value = 9;
+      lfoGain.gain.value = 28;
+      lfo.connect(lfoGain);
+      lfoGain.connect(whistle.frequency);
+      lfo.start(t);
+      lfo.stop(t + DROP);
+
+      wGain.gain.setValueAtTime(0.0001, t);
+      wGain.gain.exponentialRampToValueAtTime(0.07, t + 0.15);
+      wGain.gain.setValueAtTime(0.07, t + DROP * 0.75);
+      wGain.gain.exponentialRampToValueAtTime(0.001, t + DROP);
+      whistle.connect(wGain);
+      wGain.connect(this.out);
+      whistle.start(t);
+      whistle.stop(t + DROP);
+    }
 
     // Landing: short 1-3kHz tick (matches the measured landing transient)
-    // plus a small felt thump underneath.
-    this.createNoiseBurst(t + 0.44, 0.06, 0.22, 2600);
+    // plus a felt thump underneath, both on the beat the bomb touches down.
+    this.createNoiseBurst(t + DROP, 0.07, 0.26, 2600);
     const thump = this.ctx!.createOscillator();
     const thGain = this.ctx!.createGain();
     thump.type = 'sine';
-    thump.frequency.setValueAtTime(170, t + 0.44);
-    thump.frequency.exponentialRampToValueAtTime(70, t + 0.56);
-    thGain.gain.setValueAtTime(0.16, t + 0.44);
-    thGain.gain.exponentialRampToValueAtTime(0.001, t + 0.58);
+    thump.frequency.setValueAtTime(170, t + DROP);
+    thump.frequency.exponentialRampToValueAtTime(65, t + DROP + 0.16);
+    thGain.gain.setValueAtTime(0.2, t + DROP);
+    thGain.gain.exponentialRampToValueAtTime(0.001, t + DROP + 0.18);
     thump.connect(thGain);
     thGain.connect(this.out);
-    thump.start(t + 0.44);
-    thump.stop(t + 0.58);
+    thump.start(t + DROP);
+    thump.stop(t + DROP + 0.18);
 
     haptic.light();
   }
@@ -1242,24 +1265,30 @@ class SoundService {
     const t = this.ctx!.currentTime;
 
     // Initial crack — the only non-bass content in the reference explosion
-    this.createNoiseBurst(t, 0.09, 0.28, 1200);
+    this.createNoiseBurst(t, 0.1, 0.34, 1400);
+
+    // ART UPGRADE 2026-08-21: a delayed second rumble ~300ms behind the first.
+    // Real blasts in an enclosed space return an echo, and it is what turns a
+    // "thud" into a "BOOOOOM" — Dan's word for what this should sound like.
+    this.createNoiseBurst(t + 0.3, 1.0, 0.16, 120);
 
     // Sub boom: builds for ~0.4s, then ~1s decay (measured envelope shape)
     const sub = this.ctx!.createOscillator();
     const subGain = this.ctx!.createGain();
     sub.type = 'sine';
-    sub.frequency.setValueAtTime(62, t);
-    sub.frequency.exponentialRampToValueAtTime(28, t + 1.3);
+    // Deeper and longer than the original: 80 -> 22Hz over 1.7s.
+    sub.frequency.setValueAtTime(80, t);
+    sub.frequency.exponentialRampToValueAtTime(22, t + 1.7);
     subGain.gain.setValueAtTime(0.06, t);
-    subGain.gain.linearRampToValueAtTime(0.5, t + 0.4);
-    subGain.gain.exponentialRampToValueAtTime(0.001, t + 1.45);
+    subGain.gain.linearRampToValueAtTime(0.6, t + 0.4);
+    subGain.gain.exponentialRampToValueAtTime(0.001, t + 1.8);
     sub.connect(subGain);
     subGain.connect(this.out);
     sub.start(t);
-    sub.stop(t + 1.45);
+    sub.stop(t + 1.8);
 
     // Low rumble bed (filtered noise under 200Hz, same slow attack)
-    const dur = 1.3;
+    const dur = 1.6;
     const bufferSize = Math.floor(this.ctx!.sampleRate * dur);
     const buffer = this.ctx!.createBuffer(1, bufferSize, this.ctx!.sampleRate);
     const data = buffer.getChannelData(0);
@@ -1288,8 +1317,8 @@ class SoundService {
    */
   playBombPot() {
     this.playBombDrop();
-    setTimeout(() => this.playBombFuse(1.2), 550);
-    setTimeout(() => this.playBombExplosion(), 1900);
+    setTimeout(() => this.playBombFuse(1.7), 1500);
+    setTimeout(() => this.playBombExplosion(), 3200);
   }
 
   /**

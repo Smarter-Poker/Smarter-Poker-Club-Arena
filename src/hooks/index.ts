@@ -437,6 +437,5 @@ export { useVirtualScroll } from './useVirtualScroll';
 export { useVisibilityRefresh } from './useVisibilityRefresh';
 export { useSwipeAction } from './useSwipeAction';
 export { useSwipeTabs } from './useSwipeTabs';
-export { useMessageDraft } from './useMessageDraft';
 export { useTabKeepAlive } from './useTabKeepAlive';
 export { useFrameBudgetMonitor } from './useFrameBudgetMonitor';

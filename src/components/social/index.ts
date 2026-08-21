@@ -1,6 +1,4 @@
 // Social Features
-export { PrivateChat } from './PrivateChat';
-export type { PrivateChatProps, ChatMessage } from './PrivateChat';
 
 export { FriendsList } from './FriendsList';
 export type { FriendsListProps, Friend } from './FriendsList';

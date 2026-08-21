@@ -135,7 +135,6 @@ const UnionDashboardPage = lazy(() => import('./pages/UnionDashboardPage'));
 
 // Q3: Social, Messaging & Discovery Pages
 const PublicProfilePage = lazy(() => import('./pages/PublicProfilePage'));
-const NewConversationPage = lazy(() => import('./pages/NewConversationPage'));
 
 // Shared/Public Pages
 const HandReplayerPage = lazy(() => import('./pages/share/HandReplayerPage'));
@@ -744,7 +743,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="New Message">
-                        <NewConversationPage />
+                        <MessagesPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

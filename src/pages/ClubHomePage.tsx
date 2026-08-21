@@ -38,6 +38,7 @@ import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
+import ChipMintModal from '../components/wallet/ChipMintModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
@@ -277,6 +278,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // last 5 hits, qualifying hands per game, payout % per stakes (Dan 2026-08-18).
   const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
   const [showBBJInfo, setShowBBJInfo] = useState(false);
+  // Dan 2026-08-21: Chip Mint (diamonds -> chips, 100 = 10,000).
+  const [showChipMint, setShowChipMint] = useState(false);
   const [gameType, setGameType] = useState<GameType>('ALL');
   const [sortKey, setSortKey] = useState<SortKey>('recommended');
   const [sortOpen, setSortOpen] = useState(false);
@@ -1709,7 +1712,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 }}
                 onMintChips={() => {
                   haptic.medium();
-                  navigate(`/clubs/${clubId}/cashier`);
+                  // Dan 2026-08-21: the Mint button IS the Chip Mint now
+                  // (diamonds -> chips, 100 = 10,000). The RPC enforces the
+                  // law: standalone clubs mint into their pool; union clubs
+                  // are revoked unless you own the union, in which case the
+                  // chips land in the union bank.
+                  setShowChipMint(true);
                 }}
                 onOpenBBJ={() => {
                   haptic.medium();
@@ -1731,6 +1739,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         )}
       </header>
 
+      <ChipMintModal
+        isOpen={showChipMint}
+        onClose={() => setShowChipMint(false)}
+        clubId={resolvedClubId || clubId || ''}
+      />
       <BBJInfoModal
         isOpen={showBBJInfo}
         onClose={() => setShowBBJInfo(false)}

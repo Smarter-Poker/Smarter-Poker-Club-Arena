@@ -8969,3 +8969,32 @@ settings, their labels, and the ca_ws_mux mirror.
 5. Quick-join upgrades: staged overlay (Reserving Your Seat -> Seat Taken, Game Starting -> Dealing You In), explicit insufficient_balance mapping, NeonCard tap feedback.
 
 **FULL LIFECYCLE PROVEN ON PRODUCTION (spin acb3ac4b):** test-account quick-join registration (charged 2.00) -> start-when-full (seated in 14.3s) -> 3x drawn through the reserve gate -> AFK strikes -> forced sit-out persisted to table_seats (observed live) -> dealt in + blinded off 300->0 -> eliminated pos 2 -> winner paid exactly the 6.00 pool -> COMPLETED. Every piece of this session's tournament work exercised by one real game.
+
+## 2026-08-21 — Cowork live-fix session, batch 6 + 7
+
+BATCH 6 (deployed earlier today, changelog entry re-landed after a sync-loop
+clobber): starting-soon ticker Title-Cased via formatPopupText and gated to
+/table routes only; fn_batch_active_player_counts v2 counts a club's ACTIVE
+MEMBERS seated anywhere (union-member clubs read real numbers, verified SHARK
+= 7 live); Player Stats depth pass (glass hero slab, glowing gauge, lit pill
+tabs, stat-row cards with rim light + staggered entrance, ledger tables,
+bevelled buttons) — verified live by screenshot.
+
+BATCH 7 — CHIP MINT (Dan directive, BINDING): "unions are where all the chips
+flow from... 100 diamonds equals 10,000 chips... mint inside all union
+wallets and all standalone clubs; a club that joins a union has its mint
+turned off and revoked."
+- fn_mint_chips_from_diamonds (migration 20260821): SECURITY DEFINER, rate
+  locked 1 diamond = 100 chips, diamond burn through the whitelisted
+  deduct_diamonds (profiles.diamonds is server-managed), standalone club ->
+  clubs.chip_pool (owner/co_owner/admin), union club -> REVOKED unless union
+  owner/admin, chips land in union_wallets.chip_balance. Whitelisted in
+  guard_wallet_balance_write. Verified live: two 1-diamond mints as the union
+  owner credited the union bank +100 each, burned exactly 2 diamonds.
+- ChipMintModal (new) wired to the wallet's Mint button in the club lobby
+  (was a dead navigate-to-cashier): balance readout, quick amounts, live
+  chips preview, Title Case popups.
+- NOTE: the legacy free-mint path (mint_club_chips via /api/club-arena/
+  mint-chips) predates the diamond law and does not burn diamonds; the lobby
+  UI no longer routes to it. Follow-up for the fleet: retire or diamond-back
+  that API route.

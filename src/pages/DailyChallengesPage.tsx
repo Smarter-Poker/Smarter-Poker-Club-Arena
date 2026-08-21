@@ -101,7 +101,7 @@ function msUntilNextMondayUtc(): number {
   return next - now.getTime();
 }
 
-/** ms until the 1st of next month 00:00 UTC */
+/** ms until 1st of next month 00:00 UTC */
 function msUntilNextMonthUtc(): number {
   const now = new Date();
   const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
@@ -118,12 +118,8 @@ function formatCountdown(ms: number): string {
   return `${mins}m`;
 }
 
-function todayUtcKey(): string {
-  return new Date().toISOString().split('T')[0];
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
-// SUBCOMPONENTS
+// CARDS
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function ChallengeCard({
@@ -141,52 +137,55 @@ function ChallengeCard({
 }) {
   const c = challenge.challenge;
   const pct = c.requirement > 0 ? Math.min((challenge.progress / c.requirement) * 100, 100) : 0;
-  const glyph = TYPE_GLYPHS[c.type] || '♠';
+  const done = challenge.completed;
+  const claimed = challenge.claimed;
+
+  const handleClaim = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (done && !claimed && !claiming) onClaim(challenge);
+  };
 
   return (
     <div
-      className={[
-        styles.card,
-        challenge.completed ? styles.cardComplete : '',
-        challenge.claimed ? styles.cardClaimed : '',
-        celebrating ? styles.cardCelebrate : '',
-      ].join(' ')}
-      style={{ '--tier-color': TIER_COLORS[tier] } as React.CSSProperties}
+      className={`
+        ${styles.challengeCard}
+        ${done ? styles.cardCompleted : ''}
+        ${claimed ? styles.cardClaimed : ''}
+        ${celebrating ? styles.cardCelebrating : ''}
+      `}
+      style={{ '--card-tier-color': TIER_COLORS[tier] } as React.CSSProperties}
     >
-      <div className={styles.cardGlyph}>{glyph}</div>
-      <div className={styles.cardBody}>
-        <div className={styles.cardTitleRow}>
-          <span className={styles.cardTitle}>{c.name}</span>
-          <span className={styles.cardReward}>
-            {c.diamondReward > 0 && (
-              <span className={styles.rewardDiamonds}>
-                {'\u25C6'} {c.diamondReward.toLocaleString()}
-              </span>
-            )}
-          </span>
+      <div className={styles.cardHeader}>
+        <div className={styles.iconBox} aria-hidden="true">
+          {TYPE_GLYPHS[c.type] || '\u2605'}
         </div>
-        <span className={styles.cardDesc}>{c.description}</span>
-        <div className={styles.progressTrack}>
-          <div className={styles.progressFill} style={{ width: `${pct}%` }} />
-          <span className={styles.progressText}>
-            {Math.min(challenge.progress, c.requirement)} / {c.requirement}
-          </span>
+        <div className={styles.cardTitles}>
+          <h3 className={styles.cardName}>{c.name}</h3>
+          <p className={styles.cardDesc}>{c.description}</p>
         </div>
-      </div>
-      <div className={styles.cardAction}>
-        {challenge.claimed ? (
-          <span className={styles.claimedBadge}>Claimed</span>
-        ) : challenge.completed ? (
+        {done && !claimed && (
           <button
             className={styles.claimButton}
+            onClick={handleClaim}
             disabled={claiming}
-            onClick={() => onClaim(challenge)}
+            aria-label={`Claim reward for ${c.name}`}
           >
-            {claiming ? '...' : 'Claim'}
+            {claiming ? 'Claiming' : 'Claim'}
           </button>
-        ) : (
-          <span className={styles.pctLabel}>{Math.floor(pct)}%</span>
         )}
+        {claimed && (
+          <div className={styles.claimedBadge} aria-label="Already claimed">
+            {'\u2713'} Claimed
+          </div>
+        )}
+      </div>
+
+      <div className={styles.progressTrack} aria-hidden="true">
+        <div className={styles.progressFill} style={{ width: `${pct}%` }} />
+        <span className={styles.progressText}>
+          {Math.min(challenge.progress, c.requirement).toLocaleString()} /{' '}
+          {c.requirement.toLocaleString()}
+        </span>
       </div>
     </div>
   );
@@ -197,25 +196,25 @@ function ChallengeCard({
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function DailyChallengesPage() {
-  useEffect(() => {
-    document.title = 'Daily Challenges | Smarter Poker';
-  }, []);
-
   const navigate = useNavigate();
-  const toast = useToast();
   const isMountedRef = useIsMounted();
+  const toast = useToast();
 
-  const [isLoading, setIsLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeTier, setActiveTier] = useState<Tier>('daily');
+
   const [challenges, setChallenges] = useState<TieredChallenge[]>([]);
   const [stats, setStats] = useState<ChallengeStats | null>(null);
   const [streak, setStreak] = useState<StreakInfo | null>(null);
-  const [activeTier, setActiveTier] = useState<Tier>('daily');
+
+  // Claiming state
   const [claimingIds, setClaimingIds] = useState<Set<string>>(new Set());
   const [claimingAll, setClaimingAll] = useState(false);
+  const claimGuardRef = useRef(new Set<string>()); // Prevent double-clicks bypassing React state
+
+  // Celebration state
   const [celebratingIds, setCelebratingIds] = useState<Set<string>>(new Set());
-  const [now, setNow] = useState(() => Date.now());
-  // Non-null while the celebration overlay is on screen.
   const [reward, setReward] = useState<{
     name: string;
     chips: number;
@@ -223,11 +222,12 @@ export default function DailyChallengesPage() {
     diamondBalance: number;
   } | null>(null);
 
-  const claimGuardRef = useRef<Set<string>>(new Set());
-  const celebrateTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const dateKeyRef = useRef(todayUtcKey());
+  const [, setNow] = useState(Date.now());
+  const dateKeyRef = useRef<string>('');
 
-  // ── Data loading ──
+  const todayUtcKey = () => new Date().toISOString().split('T')[0];
+
+  // ── Loaders ──
   const loadChallenges = useCallback(async (uid: string, withSpinner: boolean) => {
     if (withSpinner) setIsLoading(true);
     try {
@@ -237,42 +237,49 @@ export default function DailyChallengesPage() {
         dailyChallengeService.getStreak(uid),
       ]);
       if (!isMountedRef.current) return;
+
       setChallenges([...daily, ...weekly, ...monthly]);
       setStats(challengeStats);
       setStreak(streakInfo);
-    } catch (err) {
-      reportError(err, 'DailyChallengesPage.loadChallenges');
-      if (isMountedRef.current) toast.error('Failed to load challenges');
+    } catch (err: any) {
+      reportError(err, 'DailyChallengesPage.load_failed');
+      if (isMountedRef.current) toast.error('Could not load challenges. Please try again.');
     } finally {
       if (isMountedRef.current) setIsLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isMountedRef, toast]);
 
+  // ── Initialization ──
   useEffect(() => {
+    dateKeyRef.current = todayUtcKey();
     let cancelled = false;
     (async () => {
-      const {
-        data: { user: authUser },
-      } = await getAuthUser();
-      if (cancelled) return;
-      if (!authUser) {
-        setIsLoading(false);
-        return;
+      try {
+        const {
+          data: { user: authUser },
+        } = await getAuthUser();
+        if (cancelled) return;
+        if (!authUser) {
+          setIsLoading(false);
+          return;
+        }
+        setUserId(authUser.id);
+        await loadChallenges(authUser.id, true);
+      } catch (err) {
+        if (!cancelled) setIsLoading(false);
       }
-      setUserId(authUser.id);
-      await loadChallenges(authUser.id, true);
     })();
     return () => {
       cancelled = true;
     };
   }, [loadChallenges]);
 
-  // Auto-dismiss the celebration. Cleared on unmount and on manual dismiss so
-  // a quick tap-away followed by another claim cannot leave a stale timer that
-  // closes the NEXT celebration early.
+  // ── Reward Overlay auto-dismiss ──
   useEffect(() => {
     if (!reward) return undefined;
+    // Auto-dismiss the celebration. Cleared on unmount and on manual dismiss so
+    // a quick tap-away followed by another claim cannot leave a stale timer that
+    // closes the NEXT celebration early.
     const t = setTimeout(() => {
       if (isMountedRef.current) setReward(null);
     }, 5000);
@@ -286,7 +293,7 @@ export default function DailyChallengesPage() {
       clearTimeout(t);
       window.removeEventListener('keydown', onKey);
     };
-  }, [reward]);
+  }, [reward, isMountedRef]);
 
   // ── Live countdown + automatic daily rollover ──
   useEffect(() => {
@@ -314,24 +321,12 @@ export default function DailyChallengesPage() {
     return unsub;
   }, [userId, loadChallenges]);
 
-  // ── Cross-tab and cross-device progress ──
-  //
-  // Dan 2026-08-21: "IT NEEDS TO PULL THE REAL TIME INFO AND DATA AND UPDATE."
-  //
-  // The MasterBus subscription above only carries events raised inside THIS
-  // tab, and this app is explicitly built for multi-tabling: the normal way to
-  // watch a challenge fill is to have it open beside a table, which is a
-  // different tab and therefore a different bus. Postgres change events close
-  // that gap, so progress earned anywhere -- another tab, a phone, the same
-  // account on a second screen -- lands here without a manual refresh.
-  //
-  // Debounced, because at table speed a busy session updates several rows per
-  // hand and each one arrives as its own event; without this the page would
-  // refetch a dozen times a minute to redraw the same bars.
+  // ── Supabase Postgres Changes Subscription ──
   useEffect(() => {
     if (!userId) return;
-    let pending: ReturnType<typeof setTimeout> | null = null;
-
+    let pending: NodeJS.Timeout | null = null;
+    const timers = useRef<NodeJS.Timeout[]>([]);
+    
     const channel = supabase
       .channel(`daily-challenges:${userId}`)
       .on(
@@ -350,29 +345,26 @@ export default function DailyChallengesPage() {
             pending = null;
             // `false` = refresh in place. A spinner every time a hand ends
             // would make the page flicker for the whole session.
-            loadChallenges(userId, false);
+            // The MasterBus subscription above only carries events raised inside THIS
+            // tab, and this app is explicitly built for multi-tabling: the normal way to
+            // watch a challenge fill is to have it open beside a table, which is a
+            // different tab and therefore a different bus. Postgres change events close
+            // that gap, so progress earned anywhere -- another tab, a phone, the same
+            // account on a second screen -- lands here without a manual refresh.
+            if (isMountedRef.current) loadChallenges(userId, false);
           }, 1200);
+          if (pending) timers.current.push(pending);
         }
       )
       .subscribe();
 
     return () => {
+      supabase.removeChannel(channel);
       if (pending) clearTimeout(pending);
-      void supabase.removeChannel(channel);
-    };
-  }, [userId, loadChallenges]);
-
-  // Card-flash timers are cleared on UNMOUNT only. They used to be cleared in
-  // the bus-subscription cleanup above, which re-runs whenever userId settles --
-  // so a claim made around that moment had its flash cancelled and its id left
-  // in celebratingIds permanently. Separate concerns, separate effects.
-  useEffect(() => {
-    const timers = celebrateTimersRef;
-    return () => {
       timers.current.forEach(clearTimeout);
       timers.current = [];
     };
-  }, []);
+  }, [userId, loadChallenges, isMountedRef]);
 
   // ── Claim handler ──
   const handleClaim = useCallback(
@@ -381,17 +373,13 @@ export default function DailyChallengesPage() {
       if (claimGuardRef.current.has(challenge.id)) return;
       claimGuardRef.current.add(challenge.id);
       setClaimingIds((prev) => new Set(prev).add(challenge.id));
+
       try {
         const paid = await dailyChallengeService.claimChallenge(
           userId,
           challenge.id,
           challenge.challenge.chipReward
         );
-        if (!isMountedRef.current) return;
-
-        // Celebrate with what the SERVER actually paid, never the card's copy
-        // of the reward. If those two ever disagree, showing the client value
-        // would announce diamonds the balance never received.
         if (paid.alreadyClaimed) {
           toast.info('You already claimed this one');
         } else if (paid.claimed) {
@@ -402,20 +390,18 @@ export default function DailyChallengesPage() {
             diamondBalance: paid.diamondBalance,
           });
         } else {
-          // Neither paid nor already paid. The server declined without raising
-          // -- so nothing was credited, and celebrating here would announce a
-          // reward of nothing and then hide the Claim button for a reward the
-          // player never received. Re-read the truth instead.
           toast.error('That reward could not be claimed. Refreshing...');
           loadChallenges(userId, false);
           return;
         }
+
         setChallenges((prev) =>
           prev.map((c) => (c.id === challenge.id ? { ...c, claimed: true } : c))
         );
         triggerHaptic('success');
         setCelebratingIds((prev) => new Set(prev).add(challenge.id));
-        const t = setTimeout(() => {
+
+        setTimeout(() => {
           if (isMountedRef.current) {
             setCelebratingIds((prev) => {
               const next = new Set(prev);
@@ -423,14 +409,17 @@ export default function DailyChallengesPage() {
               return next;
             });
           }
-        }, 1500);
-        celebrateTimersRef.current.push(t);
+        }, 3000);
+
         masterBus.emit('MISSION_CLAIMED', {
           missionId: challenge.id,
           tier: challenge.tier,
           rewardType: paid.diamonds > 0 ? 'diamonds' : 'chips',
           rewardAmount: paid.diamonds > 0 ? paid.diamonds : paid.chips,
         });
+
+        // Refresh stats silently
+        if (isMountedRef.current) loadChallenges(userId, false);
       } catch (err: any) {
         reportError(err, 'DailyChallengesPage.claim_failed');
         if (isMountedRef.current) toast.error(err?.message || 'Failed to claim reward');
@@ -446,10 +435,10 @@ export default function DailyChallengesPage() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [userId]
+    [userId, loadChallenges, toast]
   );
 
-  // ── Claim everything that is ready ──
+  // ── Claim All ──
   //
   // Sequential, not Promise.all: each claim credits a wallet, and firing five
   // wallet writes at once invites lock contention on the same profile row for
@@ -516,9 +505,11 @@ export default function DailyChallengesPage() {
         `${failures} reward${failures === 1 ? '' : 's'} could not be claimed. Refreshing...`
       );
       loadChallenges(userId, false);
+    } else if (claimedIds.length > 0) {
+      loadChallenges(userId, false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, challenges, claimingAll]);
+  }, [userId, challenges, claimingAll, toast, loadChallenges]);
 
   // ── Derived ──
   const tierCounts = useMemo(() => {
@@ -535,37 +526,18 @@ export default function DailyChallengesPage() {
     return counts;
   }, [challenges]);
 
-  const visible = useMemo(
-    () =>
-      challenges
-        .filter((c) => c.tier === activeTier)
-        .sort((a, b) => {
-          // Claimable first, then in-progress by completion pct desc, claimed last
-          const rank = (c: TieredChallenge) =>
-            c.completed && !c.claimed ? 0 : !c.completed ? 1 : 2;
-          const r = rank(a) - rank(b);
-          if (r !== 0) return r;
-          const pa = a.challenge.requirement > 0 ? a.progress / a.challenge.requirement : 0;
-          const pb = b.challenge.requirement > 0 ? b.progress / b.challenge.requirement : 0;
-          return pb - pa;
-        }),
-    [challenges, activeTier]
-  );
-
-  // Diamonds are the premium currency and the reason to come back, so the
-  // "ready to claim" callout has to name them. Counting only chips undersold
-  // every unclaimed reward on the page.
   const unclaimed = useMemo(() => {
+    let count = 0;
     let chips = 0;
     let diamonds = 0;
-    let count = 0;
-    for (const c of challenges) {
-      if (!c.completed || c.claimed) continue;
-      count++;
-      chips += c.challenge.chipReward;
-      diamonds += c.challenge.diamondReward;
-    }
-    return { chips, diamonds, count };
+    challenges.forEach((c) => {
+      if (c.completed && !c.claimed) {
+        count++;
+        chips += c.challenge.chipReward;
+        diamonds += c.challenge.diamondReward;
+      }
+    });
+    return { count, chips, diamonds };
   }, [challenges]);
 
   const tierCountdown: Record<Tier, string> = {
@@ -573,46 +545,48 @@ export default function DailyChallengesPage() {
     weekly: formatCountdown(msUntilNextMondayUtc()),
     monthly: formatCountdown(msUntilNextMonthUtc()),
   };
-  void now; // countdown re-renders driven by the 30s interval
 
-  const dateLabel = new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  });
+  const visible = useMemo(
+    () => challenges.filter((c) => c.tier === activeTier),
+    [challenges, activeTier]
+  );
+
+  // ── Render ──
 
   if (isLoading) {
-    return <LoadingState message="Loading challenges..." />;
+    return <LoadingState message="Loading Challenges..." />;
   }
 
   if (!userId) {
     return (
-      <div className={styles.page}>
+      <div className={styles.container}>
         <div className={styles.emptyState}>
-          <p>Sign In To See Your Daily Challenges.</p>
+          <h2>Sign In To See Your Daily Challenges</h2>
+          <button className={styles.playButton} onClick={() => navigate('/auth')}>
+            Sign In
+          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={styles.page}>
-      {/* Header */}
+    <div className={styles.container}>
       <header className={styles.header}>
-        <div className={styles.headerText}>
+        <div className={styles.headerTitles}>
           <h1 className={styles.title}>Daily Challenges</h1>
-          <p className={styles.dateLine}>{dateLabel}</p>
+          <p className={styles.subtitle}>Complete goals to earn chips and diamonds</p>
         </div>
-        <div className={styles.resetBadge}>
-          <span className={styles.resetLabel}>New Challenges In</span>
-          <span className={styles.resetTime}>{tierCountdown.daily}</span>
-        </div>
+        <button
+          className={styles.closeButton}
+          onClick={() => navigate('/')}
+          aria-label="Close challenges"
+        >
+          {'\u2715'}
+        </button>
       </header>
 
-      {/* Streak banner — the streak now comes from the server so a freeze can
-          be spent atomically. Freezes are earned (one per 7 days, max 3) and
-          cover a single missed day, so being ill once does not wipe a month of
-          effort and send the most engaged players away for good. */}
+      {/* Streak banner */}
       <section className={styles.streakBanner}>
         <div className={styles.streakLeft}>
           <StreakFire streakCount={streak?.streak ?? stats?.currentStreak ?? 0} size="md" />
@@ -620,31 +594,13 @@ export default function DailyChallengesPage() {
             <span className={styles.streakCount}>
               {(streak?.streak ?? stats?.currentStreak ?? 0).toLocaleString()} Day Streak
             </span>
-            <span className={styles.streakSub}>
-              {streak?.usedFreeze && streak.frozenDate
-                ? `A streak freeze covered ${new Date(streak.frozenDate + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} for you`
-                : 'Complete a challenge every day to keep it alive'}
+            <span className={styles.streakDesc}>
+              Play every day to earn streak bonuses. Next reward at{' '}
+              {stats?.nextMilestone.toLocaleString()} days.
             </span>
           </div>
         </div>
-
-        <div className={styles.milestone}>
-          {stats && (
-            <>
-              <div className={styles.milestoneTrack}>
-                <div
-                  className={styles.milestoneFill}
-                  style={{
-                    width: `${Math.min(((streak?.streak ?? stats.currentStreak) / stats.nextMilestone) * 100, 100)}%`,
-                  }}
-                />
-              </div>
-              <span className={styles.milestoneText}>
-                {(streak?.streak ?? stats.currentStreak).toLocaleString()}/
-                {stats.nextMilestone.toLocaleString()} Days
-              </span>
-            </>
-          )}
+        <div className={styles.streakRight}>
           {streak && (
             <span className={styles.freezeLine}>
               {streak.freezesAvailable > 0
@@ -684,7 +640,10 @@ export default function DailyChallengesPage() {
       {unclaimed.count > 0 && (
         <div className={styles.unclaimedBar}>
           <span>
-            {[unclaimed.diamonds > 0 ? `${'◆'} ${unclaimed.diamonds.toLocaleString()}` : '']
+            {[
+              unclaimed.chips > 0 ? `+${unclaimed.chips.toLocaleString()}` : '',
+              unclaimed.diamonds > 0 ? `${'◆'} ${unclaimed.diamonds.toLocaleString()}` : '',
+            ]
               .filter(Boolean)
               .join('  +  ')}{' '}
             Ready To Claim

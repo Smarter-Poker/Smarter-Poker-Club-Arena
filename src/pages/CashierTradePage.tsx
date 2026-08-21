@@ -148,6 +148,17 @@ export default function CashierTradePage() {
   // real features now (chip_requests + tournament_tickets, migration 20260821).
   const [requests, setRequests] = useState<ChipRequestRow[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
+
+  // Agent Role Management
+  const [roleModalTarget, setRoleModalTarget] = useState<DownlineRow | null>(null);
+  const [roleModalBusy, setRoleModalBusy] = useState(false);
+  const [roleModalSelection, setRoleModalSelection] = useState<string>('player');
+
+  // Bulk Transfer Results
+  const [transferResults, setTransferResults] = useState<{
+    successes: string[];
+    failures: { name: string; error: string }[];
+  } | null>(null);
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [askOpen, setAskOpen] = useState(false);
@@ -512,6 +523,45 @@ export default function CashierTradePage() {
     if (tab === 'request') loadRequests();
   }, [tab, loadRequests]);
 
+  const ROLE_LABEL: Record<string, string> = {
+    owner: 'Club Owner',
+    admin: 'Administrator',
+    super_agent: 'Super Agent',
+    agent: 'Agent',
+    sub_agent: 'Sub Agent',
+    player: 'Player',
+  };
+
+  const getGrantableRoles = (promoterRole: string, targetCurrentRole: string) => {
+    if (promoterRole === 'owner') return ['admin', 'super_agent', 'agent', 'sub_agent', 'player'];
+    if (promoterRole === 'admin') return ['super_agent', 'agent', 'sub_agent', 'player'];
+    if (promoterRole === 'super_agent') return ['agent', 'sub_agent', 'player'];
+    return [];
+  };
+
+  const submitRoleChange = async () => {
+    if (!clubUuid || !roleModalTarget || !user?.id) return;
+    setRoleModalBusy(true);
+    try {
+      const { data, error } = await supabase.rpc('promote_member', {
+        p_club_id: clubUuid,
+        p_target_user_id: roleModalTarget.userId,
+        p_new_role: roleModalSelection,
+        p_promoted_by: user.id,
+      });
+      if (error) throw error;
+      const res = data as any;
+      if (!res.success) throw new Error(res.error || 'Failed to change role');
+      toast?.success?.(res.message || 'Role updated successfully');
+      setRoleModalTarget(null);
+      loadClub();
+    } catch (err: any) {
+      toast?.error?.(err.message || 'Failed to update role');
+    } finally {
+      setRoleModalBusy(false);
+    }
+  };
+
   const respondToRequest = async (id: string, action: 'approve' | 'decline' | 'cancel') => {
     try {
       const { data, error } = await supabase.rpc('fn_respond_chip_request', {
@@ -678,63 +728,71 @@ export default function CashierTradePage() {
     if (busyRef.current) return; // a fast double-tap must not send twice
     busyRef.current = true;
     setBusy(true);
-    let ok = 0;
+    const successes: string[] = [];
+    const failures: { name: string; error: string }[] = [];
     let skipped = 0;
     try {
-      for (const t of targets) {
-        try {
-          if (kind === 'send') {
-            // fn_cashier_send_chips (migration 20260821): sender is always
-            // auth.uid() server-side; owner/admin -> anyone, agents -> their
-            // own downline only. Moves club_members.chip_balance — the ledger
-            // that buys into games.
-            const { data, error } = await supabase.rpc('fn_cashier_send_chips', {
-              p_club_id: clubUuid,
-              p_to_user_id: t.userId,
-              p_amount: value,
-              p_reason: `Cashier send out to ${t.name}`,
-            });
-            if (error) throw error;
-            const res = data as { success?: boolean; error?: string } | null;
-            if (res && res.success === false) throw new Error(res.error || 'refused');
-          } else if (kind === 'ticket') {
-            // Tournament ticket: the value is ESCROWED off the issuer now and
-            // held on the ticket until the player redeems it.
-            const { data, error } = await supabase.rpc('fn_issue_tournament_ticket', {
-              p_club_id: clubUuid,
-              p_holder_id: t.userId,
-              p_value: value,
-              p_note: `Ticket from cashier`,
-            });
-            if (error) throw error;
-            const res = data as { success?: boolean; error?: string } | null;
-            if (res && res.success === false) throw new Error(res.error || 'refused');
-          } else {
-            const claim = Math.min(value, t.chipBalance);
-            // Nothing to take back. Counted, so the summary can say so instead
-            // of closing the modal in silence and leaving the user guessing.
-            if (claim <= 0) {
-              skipped++;
-              continue;
+      // Execute transfers in parallel batches to speed up bulk sending (up to 50 players)
+      const BATCH_SIZE = 5;
+      for (let i = 0; i < targets.length; i += BATCH_SIZE) {
+        const batch = targets.slice(i, i + BATCH_SIZE);
+        await Promise.all(
+          batch.map(async (t) => {
+            try {
+              if (kind === 'send') {
+                // fn_cashier_send_chips (migration 20260821): sender is always
+                // auth.uid() server-side; owner/admin -> anyone, agents -> their
+                // own downline only. Moves club_members.chip_balance — the ledger
+                // that buys into games.
+                const { data, error } = await supabase.rpc('fn_cashier_send_chips', {
+                  p_club_id: clubUuid,
+                  p_to_user_id: t.userId,
+                  p_amount: value,
+                  p_reason: `Cashier send out to ${t.name}`,
+                });
+                if (error) throw error;
+                const res = data as { success?: boolean; error?: string } | null;
+                if (res && res.success === false) throw new Error(res.error || 'refused');
+              } else if (kind === 'ticket') {
+                // Tournament ticket: the value is ESCROWED off the issuer now and
+                // held on the ticket until the player redeems it.
+                const { data, error } = await supabase.rpc('fn_issue_tournament_ticket', {
+                  p_club_id: clubUuid,
+                  p_holder_id: t.userId,
+                  p_value: value,
+                  p_note: `Ticket from cashier`,
+                });
+                if (error) throw error;
+                const res = data as { success?: boolean; error?: string } | null;
+                if (res && res.success === false) throw new Error(res.error || 'refused');
+              } else {
+                const claim = Math.min(value, t.chipBalance);
+                // Nothing to take back. Counted, so the summary can say so instead
+                // of closing the modal in silence and leaving the user guessing.
+                if (claim <= 0) {
+                  skipped++;
+                  return;
+                }
+                // fn_cashier_claim_back (migration 20260821): conserved player ->
+                // caller move on the club ledger. NOT fn_admin_remove_player_chips,
+                // which refuses agents and strands the chips in clubs.chip_pool.
+                const { data, error } = await supabase.rpc('fn_cashier_claim_back', {
+                  p_club_id: clubUuid,
+                  p_from_user_id: t.userId,
+                  p_amount: claim,
+                  p_reason: 'Cashier claim back',
+                });
+                if (error) throw error;
+                const res = data as { success?: boolean; error?: string } | null;
+                if (res && res.success === false) throw new Error(res.error || 'refused');
+              }
+              successes.push(t.name);
+            } catch (e) {
+              reportError(e, 'CashierTradePage.' + kind);
+              failures.push({ name: t.name, error: (e as Error).message || 'Transfer Failed' });
             }
-            // fn_cashier_claim_back (migration 20260821): conserved player ->
-            // caller move on the club ledger. NOT fn_admin_remove_player_chips,
-            // which refuses agents and strands the chips in clubs.chip_pool.
-            const { data, error } = await supabase.rpc('fn_cashier_claim_back', {
-              p_club_id: clubUuid,
-              p_from_user_id: t.userId,
-              p_amount: claim,
-              p_reason: 'Cashier claim back',
-            });
-            if (error) throw error;
-            const res = data as { success?: boolean; error?: string } | null;
-            if (res && res.success === false) throw new Error(res.error || 'refused');
-          }
-          ok++;
-        } catch (e) {
-          reportError(e, 'CashierTradePage.' + kind);
-          toast?.error?.(`${t.name}: ${(e as Error).message || 'Transfer Failed'}`);
-        }
+          })
+        );
       }
     } finally {
       // A throw between here and the end used to leave `busy` true forever,
@@ -748,21 +806,24 @@ export default function CashierTradePage() {
       }
     }
 
-    if (ok > 0) {
+    if (successes.length > 0) {
+      masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade', userId: user.id });
+    }
+
+    // If it's a bulk operation or there were failures, show the Bulk Results modal
+    if (targets.length > 1 || failures.length > 0) {
+      setTransferResults({ successes, failures });
+    } else if (successes.length > 0) {
+      // Single success, just toast
       toast?.success?.(
         kind === 'send'
-          ? `Sent ${fmt(value)} To ${ok} Player${ok === 1 ? '' : 's'}`
+          ? `Sent ${fmt(value)} To ${successes[0]}`
           : kind === 'ticket'
-            ? `Issued ${ok} Ticket${ok === 1 ? '' : 's'} Worth ${fmt(value)} Each`
-            : `Claimed Back From ${ok} Player${ok === 1 ? '' : 's'}`
+            ? `Issued Ticket Worth ${fmt(value)} To ${successes[0]}`
+            : `Claimed Back From ${successes[0]}`
       );
-      // The bus event is already wired to reload this page, so calling
-      // loadClub() as well fired two identical loads at once.
-      masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade', userId: user.id });
     } else if (skipped > 0) {
-      toast?.info?.(
-        `Nothing To Claim Back: ${skipped} Player${skipped === 1 ? ' Has' : 's Have'} No Chips`
-      );
+      toast?.info?.('Nothing To Claim Back: Player Has No Chips');
     }
   };
 
@@ -981,6 +1042,20 @@ export default function CashierTradePage() {
 
           {/* Footer actions — pinned */}
           <div className={styles.footer}>
+            {selected.size === 1 &&
+              getGrantableRoles(myRole, list.find((r) => selected.has(r.userId))?.role || 'player')
+                .length > 0 && (
+                <button
+                  className={styles.footerBtn}
+                  style={{ background: '#4169E1' }}
+                  disabled={busy}
+                  onClick={() =>
+                    setRoleModalTarget(list.find((r) => selected.has(r.userId)) || null)
+                  }
+                >
+                  Role
+                </button>
+              )}
             <button
               className={styles.footerBtn}
               disabled={selected.size === 0 || busy}
@@ -1168,6 +1243,109 @@ export default function CashierTradePage() {
         clubId={clubUuid || clubParam || ''}
         onMinted={() => loadClub()}
       />
+
+      {/* Role Assignment Modal */}
+      {roleModalTarget && (
+        <div
+          className={styles.modalOverlay}
+          onClick={() => !roleModalBusy && setRoleModalTarget(null)}
+        >
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalTitle}>Change Role: {roleModalTarget.name}</div>
+            <div
+              style={{ marginBottom: '1rem', color: 'rgba(255,255,255,0.7)', fontSize: '0.9rem' }}
+            >
+              Current Role: {ROLE_LABEL[roleModalTarget.role] || roleModalTarget.role}
+            </div>
+            <select
+              value={roleModalSelection}
+              onChange={(e) => setRoleModalSelection(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px',
+                background: 'rgba(0,0,0,0.5)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                color: 'white',
+                borderRadius: '8px',
+                marginBottom: '1rem',
+              }}
+            >
+              {getGrantableRoles(myRole, roleModalTarget.role).map((role) => (
+                <option key={role} value={role}>
+                  {ROLE_LABEL[role] || role}
+                </option>
+              ))}
+            </select>
+            <div className={styles.modalActions}>
+              <button disabled={roleModalBusy} onClick={() => setRoleModalTarget(null)}>
+                Cancel
+              </button>
+              <button
+                className={styles.modalConfirm}
+                disabled={roleModalBusy}
+                onClick={submitRoleChange}
+              >
+                {roleModalBusy ? 'Working...' : 'Save Role'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Transfer Results Modal */}
+      {transferResults && (
+        <div className={styles.modalOverlay} onClick={() => setTransferResults(null)}>
+          <div
+            className={styles.modal}
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxHeight: '80vh', overflowY: 'auto' }}
+          >
+            <div className={styles.modalTitle} style={{ textAlign: 'center' }}>
+              Transfer Results
+            </div>
+
+            <div style={{ margin: '1.5rem 0' }}>
+              <div style={{ color: '#4ade80', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                ✓ {transferResults.successes.length} Successful
+              </div>
+
+              {transferResults.failures.length > 0 && (
+                <div style={{ color: '#f87171', fontWeight: 'bold', marginTop: '1rem' }}>
+                  ✕ {transferResults.failures.length} Failed
+                </div>
+              )}
+              {transferResults.failures.length > 0 && (
+                <div
+                  style={{
+                    background: 'rgba(248, 113, 113, 0.1)',
+                    border: '1px solid rgba(248, 113, 113, 0.3)',
+                    borderRadius: '8px',
+                    padding: '10px',
+                    marginTop: '0.5rem',
+                    fontSize: '0.85rem',
+                  }}
+                >
+                  {transferResults.failures.map((f, i) => (
+                    <div key={i} style={{ marginBottom: '4px' }}>
+                      <span style={{ color: 'white' }}>{f.name}:</span> {f.error}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className={styles.modalActions} style={{ justifyContent: 'center' }}>
+              <button
+                className={styles.modalConfirm}
+                style={{ width: '100%' }}
+                onClick={() => setTransferResults(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Amount modal */}
       {amountModal && (

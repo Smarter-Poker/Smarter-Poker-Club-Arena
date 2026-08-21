@@ -1,15 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
-const SUPABASE_URL = 'https://kuklfnapbkmacvwxktbh.supabase.co';
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-
-async function main() {
-  const { data: moreProfiles, error: e2 } = await supabase
-    .from('profiles')
-    .select('*')
-    .or('username.ilike.%Fourbet%,username.ilike.%Diamond Dan%,username.ilike.%Darktunnel%,username.ilike.%Kickertrouble%,username.ilike.%Inposition%');
-    
-  console.log('Profiles:', JSON.stringify(moreProfiles, null, 2));
-}
-
-main();
+import dotenv from 'dotenv';
+dotenv.config();
+const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+const res = await supabase.rpc('exec_sql', { p_sql: "SELECT prosrc FROM pg_proc WHERE proname = 'fn_club_money_panel';" });
+console.log(res.data[0].prosrc);

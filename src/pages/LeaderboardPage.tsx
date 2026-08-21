@@ -50,18 +50,6 @@ function setCachedEntries(key: string, data: LeaderboardEntry[]) {
   }
 }
 
-const podiumAnimationStyle = {
-  opacity: 0,
-  transform: 'translateY(16px)',
-  animation: 'fadeInUp 0.7s ease-out forwards',
-};
-
-const rankingRowAnimationStyle = (index: number) => ({
-  opacity: 0,
-  transform: 'translateY(8px)',
-  animation: `fadeInUp 0.5s ease-out ${index * 60}ms forwards`,
-});
-
 type LeaderboardScope = 'my-clubs' | 'global';
 type LeaderboardTab = 'rankings' | 'tournaments';
 
@@ -492,7 +480,13 @@ export default function LeaderboardPage() {
       if (user?.id) {
         const rank = isGlobal
           ? await LeaderboardService.getGlobalUserRank(user.id, metric, period, periodOffset)
-          : await LeaderboardService.getUserRank(user.id, selectedClubId as string, metric, period, periodOffset);
+          : await LeaderboardService.getUserRank(
+              user.id,
+              selectedClubId as string,
+              metric,
+              period,
+              periodOffset
+            );
         if (myReq !== reqSeqRef.current) return;
         if (getIsMounted && !getIsMounted()) return;
         setUserRank(rank);
@@ -1004,11 +998,16 @@ export default function LeaderboardPage() {
           <>
             {/* ── TOP 3 PODIUM ── */}
             {top3.length >= 3 && (
-              <div className="podium-section" style={podiumAnimationStyle}>
+              <motion.div
+                className="podium-section"
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.7, ease: 'easeOut' }}
+              >
                 {renderPodiumPlace(top3[1], 2)}
                 {renderPodiumPlace(top3[0], 1)}
                 {renderPodiumPlace(top3[2], 3)}
-              </div>
+              </motion.div>
             )}
 
             {/* Show top 3 as list rows if less than 3 total */}

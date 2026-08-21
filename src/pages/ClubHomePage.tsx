@@ -1042,8 +1042,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             // UNION pool (that's the one that grows); a club-level pool row may exist
             // but is stale. Fetch by union_id when in a union, else club_id.
             const q = supabase.from('bbj_pools').select('id, main_balance');
-            const scoped = unionId ? q.eq('union_id', unionId) : q.eq('club_id', resolvedId);
-            return await scoped.limit(1).maybeSingle();
+            if (unionId) {
+              const allIds = [resolvedId, ...(unionClubIds || [])];
+              const filter = `union_id.eq.${unionId},club_id.in.(${allIds.join(',')})`;
+              return await q.or(filter);
+            } else {
+              return await q.eq('club_id', resolvedId).limit(1).maybeSingle();
+            }
           } catch (e) {
             reportError(e, 'ClubHomePage.async');
             return { data: null, error: null };
@@ -1098,9 +1103,22 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       // `typeof poolAmount === 'number'` ownership check and left the ticker
       // and the page disagreeing about who owns the value.
       if (bbjResult?.data && !(bbjResult as any).error) {
-        const initial = Number((bbjResult.data as any)?.main_balance);
-        setJackpotAmount(Number.isFinite(initial) ? initial : 0);
-        setBbjPoolId((bbjResult.data as any)?.id || null);
+        if (Array.isArray(bbjResult.data)) {
+          let sum = 0;
+          let unionPoolId = null;
+          for (const row of bbjResult.data) {
+            const bal = Number(row.main_balance);
+            if (Number.isFinite(bal)) sum += bal;
+            // Prefer the first pool ID we find (or we could specifically find the union's)
+            if (!unionPoolId) unionPoolId = row.id;
+          }
+          setJackpotAmount(sum);
+          setBbjPoolId(unionPoolId);
+        } else {
+          const initial = Number((bbjResult.data as any)?.main_balance);
+          setJackpotAmount(Number.isFinite(initial) ? initial : 0);
+          setBbjPoolId((bbjResult.data as any)?.id || null);
+        }
       }
 
       // Calculate Club Level from live metrics

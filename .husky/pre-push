@@ -185,6 +185,11 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
         *src/lib/supabase.ts) continue ;;
           *node_modules/*) continue ;;
         *.husky/*) continue ;;
+        # 2026-08-21: this gate is about CODE calling the raw auth API. It was
+        # matching prose too, so MIGRATION-CHANGELOG.md — which QUOTES the
+        # pattern in an audit entry from 2026 — blocked every push that
+        # touched the changelog. Docs and data cannot call anything.
+        *.md|*.markdown|*.txt|*.json|*.sql|*.lock) continue ;;
       esac
       if grep -qE 'supabase\.auth\.getUser\(\)' "$f" 2>/dev/null; then
         echo "[club-arena pre-push] BLOCKED: $f calls supabase.auth.getUser()"

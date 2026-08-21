@@ -64,7 +64,12 @@ export interface UseTableSessionReturn extends SessionRefs {
   resetSession: () => void;
 }
 
-export function useTableSession(): UseTableSessionReturn {
+/**
+ * @param tableId  The table THIS session belongs to. Every bus subscription
+ *   below is scoped to it. See the comment on the subscriptions for why that
+ *   is not optional.
+ */
+export function useTableSession(tableId?: string | null): UseTableSessionReturn {
   const sessionStartRef = useRef<number>(Date.now());
   const handsPlayedRef = useRef<number>(0);
   const handsWonRef = useRef<number>(0);
@@ -88,12 +93,44 @@ export function useTableSession(): UseTableSessionReturn {
   // inside TablePage (transport-blocked at 307KB); this covers every pot and
   // every chip-add without touching it.
   useEffect(() => {
+    /**
+     * SCOPE EVERY SUBSCRIPTION TO THIS TABLE.
+     *
+     * Dan 2026-08-21: "the Session Complete is not pulling the real time stats
+     * or data from the table you just left."
+     *
+     * The MasterBus is GLOBAL and these three handlers filtered on nothing.
+     * This app is built for multi-tabling: the lobby has a "+" to open another
+     * game, MultiTablePage renders several at once, and each mounted TablePage
+     * runs its own copy of this hook. So every table counted every OTHER
+     * table's hands, pots and top-ups into its own session.
+     *
+     * Leave one of four tables and the card reported the hands, the biggest
+     * pot and the peak stack of all four. The numbers were real, which is what
+     * made it convincing; they just belonged to the wrong table. On a single
+     * table it looked perfect, which is why it survived the last two passes at
+     * this card.
+     *
+     * A payload with no table on it is DROPPED rather than counted. An event
+     * that cannot be attributed is exactly the one that caused this bug, and a
+     * missing stat is cheaper than a wrong one on a card whose entire job is
+     * to report what just happened at one table.
+     */
+    const belongsHere = (payload: unknown): boolean => {
+      if (!tableId) return false;
+      const p = (payload ?? {}) as { tableId?: unknown; table_id?: unknown };
+      const id = p.tableId ?? p.table_id;
+      return typeof id === 'string' && id === tableId;
+    };
+
     const unsubPot = masterBus.subscribe('POT_DISTRIBUTED', (event) => {
+      if (!belongsHere(event.payload)) return;
       const p = event.payload as { total_pot?: number };
       const totalPot = typeof p?.total_pot === 'number' ? p.total_pot : 0;
       if (totalPot > biggestPotRef.current) biggestPotRef.current = totalPot;
     });
     const unsubChips = masterBus.subscribe('CHIPS_ADDED', (event) => {
+      if (!belongsHere(event.payload)) return;
       const p = event.payload as { newStack?: number };
       const stack = typeof p?.newStack === 'number' ? p.newStack : 0;
       if (stack > peakStackRef.current) peakStackRef.current = stack;
@@ -126,6 +163,7 @@ export function useTableSession(): UseTableSessionReturn {
      * table while they sat out or waited for the big blind.
      */
     const unsubHand = masterBus.subscribe('HAND_COMPLETED', (event) => {
+      if (!belongsHere(event.payload)) return;
       const p = event.payload as { won?: boolean; heroStack?: number };
       handsPlayedRef.current += 1;
       if (p?.won === true) handsWonRef.current += 1;
@@ -143,9 +181,12 @@ export function useTableSession(): UseTableSessionReturn {
       unsubChips();
       unsubHand();
     };
-    // Refs are stable for the hook's lifetime — subscribe exactly once.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // Refs are stable for the hook's lifetime; re-subscribe only if the table
+    // this session belongs to changes.
+     
+  }, [tableId]);
+
+  const resetSessionRef = useRef<() => void>(() => {});
 
   const resetSession = () => {
     sessionStartRef.current = Date.now();
@@ -160,6 +201,25 @@ export function useTableSession(): UseTableSessionReturn {
     heroWonCurrentHandRef.current = false;
     hadShowdownRef.current = false;
   };
+  resetSessionRef.current = resetSession;
+
+  /**
+   * A new table is a new session.
+   *
+   * The counters live in refs, which survive a prop change; only an unmount
+   * clears them. TablePage is not always remounted when the table changes (the
+   * multi-table view swaps the active table under one page, and /table/:id can
+   * navigate between tables), so without this the first table's hands, pot and
+   * peak followed the player to the second one and were reported as its
+   * session. Skips the very first run, where the refs are already fresh.
+   */
+  const scopedTableRef = useRef<string | null | undefined>(tableId);
+  useEffect(() => {
+    if (scopedTableRef.current === tableId) return;
+    scopedTableRef.current = tableId;
+    resetSessionRef.current();
+     
+  }, [tableId]);
 
   return {
     sessionStartRef,

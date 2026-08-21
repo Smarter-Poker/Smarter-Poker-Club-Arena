@@ -665,12 +665,60 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
               break;
             }
           }
+          /**
+           * WHICH CARDS WON (Dan 2026-08-21).
+           *
+           * Dan's completion law says the winning hand must be "SHOWN AT SHOW
+           * DOWN AND IDENTIFIED". We named it ("Straight") but never showed
+           * WHICH five cards made it — so a player had to work out their own
+           * showdown.
+           *
+           * Everything needed already existed and was never connected:
+           * evaluateHand() returns `cards` (the exact best five), Winner
+           * carries that as `hand`, and the board component has accepted
+           * `highlightedIndices` with a golden glow and pop animation since
+           * the day it was written. The client even reads `card_indices` off
+           * this very event. Nothing ever SENT it — dead on arrival, the same
+           * shape as the Spin's locked tiers.
+           *
+           * Board indices only: a winner's five cards may include hole cards,
+           * and those are drawn at the seat, not on the felt. Matching is by
+           * rank+suit against the community cards actually on the board.
+           */
+          const boardNow = (this.handController?.getState?.()?.communityCards ?? []) as Array<{
+            rank?: string;
+            suit?: string;
+          }>;
+          const cardKey = (c: { rank?: string; suit?: string }) => `${c?.rank}${c?.suit}`;
+          const winningBoardIndices = (() => {
+            try {
+              const used = new Set<string>();
+              for (const w of this.currentHandWinners) {
+                for (const c of (w.hand?.cards ?? []) as Array<{ rank?: string; suit?: string }>) {
+                  used.add(cardKey(c));
+                }
+              }
+              if (used.size === 0) return [];
+              const out: number[] = [];
+              boardNow.forEach((c, i) => {
+                if (used.has(cardKey(c))) out.push(i);
+              });
+              return out;
+            } catch {
+              // A highlight is decoration: never let it break the payout event.
+              return [];
+            }
+          })();
+
           this.hub?.emitEvent(this.tableId, {
             type: 'pot_win',
             table_id: this.tableId,
             hand_number: this.handCount,
             winner_ids: this.currentHandWinnerIds,
             pot: this.currentHandPotSize,
+            // The board cards that are part of the winning hand(s). The client
+            // reads this as `card_indices` and lights exactly these.
+            card_indices: winningBoardIndices,
             // Per-winner amounts for accurate sub-pot ship animations on chops
             winners: this.currentHandWinners.map((w) => ({
               user_id: w.userId,

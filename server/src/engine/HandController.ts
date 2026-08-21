@@ -1727,35 +1727,53 @@ export class HandController {
       // street and is not now facing a full raise since their last action.
       if (player.stack > toCall && this.canReopenBetting(player)) actions.push('raise');
     }
-    /**
-     * Dan 2026-08-21: "in PLO you can never go all in if the pot is less than
-     * the chips you have — the most you can ever bet is pot."
-     *
-     * `all_in` used to be pushed unconditionally. Once validateAction started
-     * enforcing the pot cap, this menu was advertising an action the engine
-     * would then refuse — the chip-conservation property test caught exactly
-     * that: "the engine OFFERED all_in to seat 4 and then REFUSED it. A player
-     * pressing that button gets the same rejection."
-     *
-     * A short stack can always shove: an all-in at or under the cap is legal.
-     * Only the over-cap jam disappears from the menu, and the pot-sized `raise`
-     * offered above is the biggest legal wager in its place.
-     */
-    const potLimitCapsTheJam = (): boolean => {
-      if (!this.config.gameVariant.startsWith('plo')) return false;
+    // ── Dan 2026-08-21 (fuzzer INV-LEGALITY) ──────────────────────────────
+    // all_in used to be pushed UNCONDITIONALLY, and in pot-limit that made the
+    // menu lie. performAction clamps a pot-limit shove down to the pot cap and
+    // re-validates it as a raise; when the cap is below a full raise (which
+    // antes and the big-blind ante make reachable) that clamped raise is
+    // ILLEGAL, so the engine offered all_in and then refused it. The property
+    // fuzzer found it on two independent seeds, and its note is the point:
+    // "a player pressing that button gets the same rejection."
+    //
+    // Offer it only when it would actually be accepted, using the same
+    // betting state and the same clamp performAction uses - so the menu and
+    // the rule can never disagree again. Calling all-in with a stack of zero
+    // is likewise not an action.
+    if (player.stack > 0) {
+      const isPotLimit = this.config.gameVariant.startsWith('plo');
       const bettingState = calculateBettingState(
         this.state.pot,
         this.state.currentBet,
         player.bet,
         this.config.bigBlind,
         this.state.lastRaise,
-        true
+        isPotLimit
       );
-      if (bettingState.maxRaise === undefined) return false;
-      const allInTo = player.bet + player.stack;
-      return allInTo > this.state.currentBet + bettingState.maxRaise + 0.005;
-    };
-    if (!potLimitCapsTheJam()) actions.push('all_in');
+      let probeAction: ActionType = 'all_in';
+      let probeAmount: number | undefined;
+      if (isPotLimit && bettingState.maxRaise !== undefined) {
+        const allInTo = player.bet + player.stack;
+        const capTo = this.state.currentBet + bettingState.maxRaise;
+        if (allInTo > capTo + 0.005) {
+          probeAction = this.state.currentBet > 0 ? 'raise' : 'bet';
+          probeAmount = Math.round(capTo * 100) / 100;
+        }
+      }
+      // A clamped pot-limit shove is a RAISE by the time performAction runs
+      // (that is where the "all_in is exempt" note stops applying - the clamp
+      // has already rewritten the action), so it must also pass the
+      // reopen-betting rule. A player who has acted and faces only a
+      // sub-full-raise may call or fold, never raise: TDA 44 / Bible V8
+      // 4.14. Offering all_in there is what the fuzzer caught.
+      const clamped = probeAction !== 'all_in';
+      const legal =
+        validateAction(probeAction, probeAmount, player.stack, bettingState).valid &&
+        (!clamped || this.canReopenBetting(player));
+      if (legal) {
+        actions.push('all_in');
+      }
+    }
     return actions;
   }
 

@@ -139,35 +139,30 @@ ChipConservation is the only remaining blocker.
 
 ---
 
-## RESOLVED 2026-08-21 by the agent that caused it
+## Merge note, 2026-08-21 (the agent that caused the bug)
 
-Root cause, and it was mine (the PLO pot cap, Dan's bug list item 2 of the
-2026-08-21 batch): adding the cap to `PokerEngine.validateAction` made `all_in`
-illegal above the pot, and **two other places went on producing exactly that
-action**.
+Two of us fixed this independently, minutes apart, and the two fixes are now
+merged rather than one overwriting the other:
 
-1. `HandController.getAvailableActions` pushed `all_in` unconditionally. The
-   engine was advertising an action it would then refuse — which is precisely
-   what `StateVerifier` reported: "the engine OFFERED all_in to seat 4 and then
-   REFUSED it. A player pressing that button gets the same rejection." Now the
-   over-cap jam is withheld in pot-limit; a short stack whose all-in is at or
-   under the cap can still shove, and the pot-sized `raise` already offered
-   alongside it is the biggest legal wager in its place.
+- **`HandController.getAvailableActions`** — kept the OTHER agent's version.
+  Mine only asked "is the jam over the pot cap?"; theirs PROBES the clamped
+  action through `validateAction` and then also requires `canReopenBetting`.
+  That second condition is the one mine missed: once `performAction` clamps a
+  pot-limit shove it is a RAISE, so TDA 44 / Bible V8 §4.14 applies to it, and
+  with antes in play the clamped raise can land below a full raise and be
+  illegal for a player who has already acted. Theirs is the correct fix.
 
-2. `HorseLogic.legalize` ended with `return d; // fold / check / all_in are
-   always legal here` — true when written, false the moment the cap landed. Its
-   bet and raise branches also short-circuit to `all_in` on their own (>=92% of
-   stack, >=95% of stack), so there was no single line inside it to fix. The
-   function is now wrapped by `capPotLimitJam`, which turns any over-cap jam
-   into a pot-sized raise, or a call when no raise is legal.
+- **`HorseLogic.legalize`** — kept mine (`capPotLimitJam`). The engine no longer
+  offering an over-cap jam does not stop the horses from CHOOSING one; that
+  function had its own short-circuits to `all_in` at >=92% and >=95% of stack,
+  plus a closing `return d; // ... all_in are always legal here` that the cap
+  had quietly falsified.
 
-Both build their betting state through `calculateBettingState` with exactly the
-arguments `HandController.performAction` uses, so the cap the horse respects and
-the cap the engine enforces are the same number to the cent.
+Both were needed. Verified together: server suite 93/93 files, 1004 tests green,
+including both chip-conservation property tests.
 
-Verified: `server` suite 93/93 files, 1004 tests green — including both
-chip-conservation property tests (the 10,000-hand fixed corpus and the 1,000
-fresh hands). Engine deploy unblocked.
-
-Thank you to the stats agent for writing this up instead of guess-fixing chip
-accounting in a shared clone. That was the right call.
+I also force-pushed over six commits while resolving this (`git-safe-push.sh`
+aborts a conflicted rebase and force-pushes by design). They were recovered from
+the reflog and merged back in the same commit as this note — nothing was lost,
+but that fallback is worth knowing about before running the script with a
+divergent branch.

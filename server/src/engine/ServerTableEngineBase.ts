@@ -227,7 +227,14 @@ export abstract class ServerTableEngineBase {
     userId: string;
     amount: number;
     potIndex?: number;
-    hand?: { name: string; ranking: number };
+    /**
+     * `cards` added 2026-08-21: the exact five cards the evaluator chose for
+     * this winner. It was always present on the Winner the engine receives
+     * (EvaluatedHand.cards) and was being narrowed away here, which is why
+     * the board could name a winning hand but never light the cards that
+     * made it. pot_win now carries the board indices.
+     */
+    hand?: { name: string; ranking: number; cards?: Array<{ rank?: string; suit?: string }> };
   }[] = [];
   protected currentHandContributions: Map<string, number> = new Map(); // userId → totalInvested
   protected currentHandInsuranceSettlements: InsuranceSettlement[] = [];

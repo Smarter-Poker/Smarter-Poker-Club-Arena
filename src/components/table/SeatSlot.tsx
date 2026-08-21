@@ -27,6 +27,7 @@ import { ChipPhysics } from './ChipPhysics';
 import { getAvatarWithFallback } from '../../utils/avatarGenerator';
 import { soundService, haptic } from '../../services/SoundService';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
+import RiveAvatar from './RiveAvatar';
 import './avatarChoreography.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -577,6 +578,14 @@ export const SeatSlot = memo(
      * `lastAction` and `isWinner` are both already compared there, which is
      * what makes the seat re-render on every action and every win.
      */
+    /**
+     * True only once a .riv has loaded AND exposed the expected state machine.
+     * Until then — and forever, for an unrigged avatar — the static <img> is
+     * what renders. Deliberately driven by the child rather than inferred here,
+     * because "a rig exists in the manifest" and "a rig is actually on screen"
+     * are different things and only the second should hide the artwork.
+     */
+    const [rigActive, setRigActive] = useState(false);
     const [avatarGesture, setAvatarGesture] = useState<AvatarGesture>(null);
     const gestureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const prevGestureActionRef = useRef<LastAction>(null);
@@ -1213,7 +1222,24 @@ export const SeatSlot = memo(
                 `alt=""`: the seat is a labelled region that already announces
                 the player's name, so a duplicate here is pure screen-reader
                 noise. The avatar carries no information the name does not. */}
-            {showAvatar && !avatarBroken ? (
+            {/* RIVE 2026-08-21 — a rigged character, when one exists.
+                Renders nothing and costs nothing while no avatar is rigged,
+                which is every avatar today: the registry's manifest 404s once
+                per session and every seat falls through to the <img> below.
+                When a rig IS present it hides the img and drives the same
+                gesture value the CSS choreography uses, so rigged and unrigged
+                seats stay in lockstep. Contract: docs/RIVE-AVATAR-CONTRACT.md */}
+            {showAvatar && !avatarBroken && isBustArt ? (
+              <RiveAvatar
+                avatarUrl={avatarUrl}
+                gesture={avatarGesture}
+                isActive={isActive}
+                isFolded={lastAction === 'fold' || player.status === 'folded'}
+                size={player.isHero ? SEAT_AVATAR_PX_HERO : SEAT_AVATAR_PX}
+                onRigActive={setRigActive}
+              />
+            ) : null}
+            {showAvatar && !avatarBroken && !rigActive ? (
               <img
                 src={avatarUrl}
                 srcSet={`${avatarUrl} 1x, ${avatarUrl.replace(/\.webp$/, '@2x.webp')} 2x`}

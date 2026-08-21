@@ -249,10 +249,18 @@ export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
    * because the bet it multiplies was itself made of this table's chips.
    */
   const finalizeExact = (label: string, raw: number): RaisePreset => {
-    if (minRaise > maxRaise) return { label, raw, value: maxRaise, cappedByMax: true };
+    /* CLAMP ONTO THE GRID, NOT ONTO THE RAW BOUND.
+       The exact multiple is preserved while it is legal, which is the whole
+       point of a button labelled 3X. But the moment it is NOT legal the value
+       stops being a multiple and becomes a clamp, and a clamp has no exact
+       value worth protecting: it must be a real amount the player can actually
+       bet. Clamping to the raw `maxRaise` put a fractional 27.5 on the button
+       at a table whose chips are whole, which is the same class of defect as
+       the ceil it replaced, just at the other end. */
+    if (minOnGrid > capOnGrid) return { label, raw, value: clean(capOnGrid), cappedByMax: true };
     const exact = clean(raw);
-    if (exact > maxRaise) return { label, raw, value: clean(maxRaise), cappedByMax: true };
-    if (exact < minRaise) return { label, raw, value: clean(minRaise), cappedByMax: false };
+    if (exact > capOnGrid) return { label, raw, value: clean(capOnGrid), cappedByMax: true };
+    if (exact < minOnGrid) return { label, raw, value: clean(minOnGrid), cappedByMax: false };
     return { label, raw, value: exact, cappedByMax: false };
   };
 

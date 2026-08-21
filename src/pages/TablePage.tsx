@@ -249,7 +249,7 @@ import { MiniStatsCard } from '../components/table/MiniStatsCard';
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
 import { reportError } from '../utils/errorReporter';
-import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage';
 import { serverNow } from '../utils/serverClock';
 // Dan 2026-08-21, item 15: hero's live hand strength under their seat box.
 import { bestFive } from '../utils/handEvaluator';
@@ -1618,7 +1618,7 @@ export default function TablePage({
     heroWonCurrentHandRef,
     hadShowdownRef,
     resetSession,
-  } = useTableSession();
+  } = useTableSession(tableId);
   const actionLockRef = useRef(false); // Debounce rapid action button taps (300ms)
 
   // LIVE E2E FIX 2026-08-15 (first change shipped via the agent-patch
@@ -5275,7 +5275,7 @@ export default function TablePage({
   useMasterBusSubscription('ACTION_REJECTED', (payload: any) => {
     if (payload.tableId !== tableId) return;
     if (payload.playerId === userId) {
-      setActionErrorData({
+      showActionError({
         error: payload.reason || 'Invalid action',
         code: payload.code,
         hint: payload.hint,
@@ -7751,6 +7751,29 @@ export default function TablePage({
    * actionErrorData so the toast renders. Network-level throws still hit the
    * fallback catch and surface as a generic 'Server unreachable' toast.
    */
+  /**
+   * The ONE door to the felt's error toast.
+   *
+   * Dan 2026-08-21, screenshot: "The Table Is Busy - Please Try Again" sitting
+   * over the felt. That message is a 429 that four backoff retries had already
+   * exhausted, so by the time a player reads it the client has moved on, and
+   * the loop that produced it produces it again on the next action. Same for
+   * "Server unreachable", "Table not ready - reconnecting" and the seat
+   * resync notice: all of them describe the client repairing itself, none of
+   * them asks the player to do anything.
+   *
+   * A genuine rejection still shows. "Raise is below the minimum" arrives with
+   * a hint and an Apply button, and swallowing that would leave a player
+   * pressing a button that silently does nothing.
+   */
+  const showActionError = useCallback((data: ActionErrorData | null) => {
+    if (data && !shouldSurfaceError(data.error)) {
+      console.warn('[Table] suppressed self-healing action error:', data.error);
+      return;
+    }
+    setActionErrorData(data);
+  }, []);
+
   const submitActionWithToast = useCallback(
     async (
       tid: string,
@@ -7762,7 +7785,7 @@ export default function TablePage({
       try {
         const res = await submitAction(tid, uid, action, amount);
         if (!res.success) {
-          setActionErrorData({
+          showActionError({
             error: safeErrorMessage(res.error, 'Action rejected'),
             code: res.code,
             hint: res.hint as ActionErrorData['hint'],
@@ -7772,7 +7795,7 @@ export default function TablePage({
         }
         return true;
       } catch (err) {
-        setActionErrorData({ error: 'Server unreachable' });
+        showActionError({ error: 'Server unreachable' });
         if (callsite) console.warn(`[Table] Server ${action} threw (${callsite}):`, err);
         return false;
       }
@@ -8124,7 +8147,7 @@ export default function TablePage({
     _amount?: number
   ) => {
     if (!tableId) {
-      setActionErrorData({ error: 'Table not ready - reconnecting' });
+      showActionError({ error: 'Table not ready - reconnecting' });
       return false;
     }
     // Auto-allow fold
@@ -8143,7 +8166,7 @@ export default function TablePage({
         heroSeat: live.heroSeat,
         heroPlayer,
       });
-      setActionErrorData({
+      showActionError({
         error: 'Your seat is out of sync with the table - resyncing',
         code: 'CLIENT_STATE_STALE',
       });

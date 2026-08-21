@@ -46,7 +46,7 @@ import NemesisPanel from '../components/stats/NemesisPanel';
 import BenchmarkPanel from '../components/stats/BenchmarkPanel';
 import TrophyRoom from '../components/stats/TrophyRoom';
 import StatsShareCard from '../components/stats/StatsShareCard';
-import { playerStyleClassifier } from '../services/PlayerStyleClassifier';
+import { playerStyleFromStats } from '../components/stats/playerStyleFromStats';
 import SessionHistory from '../components/stats/SessionHistory';
 import BankrollTracker from '../components/stats/BankrollTracker';
 import AdvancedStatsSummary from '../components/stats/AdvancedStatsSummary';
@@ -592,34 +592,40 @@ export default function PlayerStatsPage() {
     return () => window.removeEventListener('afterprint', done);
   }, []);
 
-  // Style label for the share card. Same conversion as TrophyRoom: the RPC
-  // returns rates as FRACTIONS and the classifier wants COUNTS.
-  const shareStyle = useMemo(() => {
-    const o = full?.overall;
-    if (!o || o.total_hands < 300) return null;
-    try {
-      return playerStyleClassifier.classify({
-        handsPlayed: o.total_hands,
-        vpipCount: Math.round(o.vpip * o.total_hands),
-        pfrCount: Math.round(o.pfr * o.total_hands),
-        threeBetCount: Math.round(o.three_bet_percent * o.total_hands),
-        wtsdCount: Math.round(o.wtsd * o.total_hands),
-      });
-    } catch {
-      return null;
-    }
-  }, [full?.overall]);
+  // Style label for the share card. Shared with TrophyRoom so the two can
+  // never disagree about what style a player is - see playerStyleFromStats.
+  const shareStyle = useMemo(() => playerStyleFromStats(full?.overall), [full?.overall]);
+
+  const printTimerRef = useRef<number | null>(null);
 
   const printDossier = useCallback(() => {
     setPrinting(true);
-    // Give React a frame to mount every tab and recharts time to measure its
-    // ResponsiveContainers. Printing immediately yields blank charts.
-    window.setTimeout(() => {
+    // Every tab has to mount, recharts has to measure its ResponsiveContainers,
+    // and the framer-motion entrances have to settle. Charts are handed
+    // `still` while printing so their own 1500ms recharts animation is off,
+    // but the layout pass still needs a moment. 1200ms is generous enough that
+    // nothing is caught mid-draw and short enough not to feel broken.
+    //
+    // There is deliberately NO timed fallback that clears `printing`. The
+    // previous one fired 1s after print(), and on Safari and mobile - where
+    // print() returns IMMEDIATELY rather than blocking - it collapsed the
+    // dossier back to a single tab while the print preview was still open,
+    // which is precisely the failure it was meant to guard against. `printing`
+    // is cleared by the afterprint listener, and worst case a stray true just
+    // means the page shows every section until the next tab change.
+    if (printTimerRef.current !== null) window.clearTimeout(printTimerRef.current);
+    printTimerRef.current = window.setTimeout(() => {
+      printTimerRef.current = null;
       window.print();
-      // Safety net for browsers that never fire afterprint.
-      window.setTimeout(() => setPrinting(false), 1000);
-    }, 700);
+    }, 1200);
   }, []);
+
+  useEffect(
+    () => () => {
+      if (printTimerRef.current !== null) window.clearTimeout(printTimerRef.current);
+    },
+    []
+  );
 
   // Component-scope so the fact-layer panels (EV curve, heatmap, rivals) share
   // the SAME range the main RPC was loaded with. It used to be a local inside
@@ -1329,8 +1335,16 @@ export default function PlayerStatsPage() {
                 they are converted exactly once, here, at the boundary. */}
             <BenchmarkPanel
               handsPlayed={overall.total_hands}
+              days={windowDays}
               values={{
                 bb100: overall.bb_per_100,
+                // Computed from the counts rather than reusing `handsWonPct`,
+                // which is a pre-formatted STRING for the gauge. Matches the
+                // field definition: hands won over hands dealt.
+                win_rate:
+                  overall.total_hands > 0
+                    ? (overall.hands_won / overall.total_hands) * 100
+                    : undefined,
                 vpip: overall.vpip * 100,
                 pfr: overall.pfr * 100,
                 three_bet: overall.three_bet_percent * 100,
@@ -1380,7 +1394,9 @@ export default function PlayerStatsPage() {
                 on; this is the one that tells them whether the results they are
                 staring at were earned or dealt. Owner only: it is derived from
                 their own per-hand records. */}
-            {isOwnProfile && <EVLuckChart userId={targetUserId} days={windowDays} />}
+            {isOwnProfile && (
+              <EVLuckChart userId={targetUserId} days={windowDays} still={printing} />
+            )}
 
             {/* Preflop */}
             <div>
@@ -1491,20 +1507,16 @@ export default function PlayerStatsPage() {
         )}
 
         {/* ── HANDS TAB — owner only, see the PRIVACY note on BASE_TABS ── */}
-        {showTab('hands') && isOwnProfile && (
+        {showTab('hands') && isOwnProfile && hasData && (
           <div>
             <HoleCardHeatmap userId={targetUserId} days={windowDays} />
           </div>
         )}
 
         {/* ── TROPHIES TAB — owner only ── */}
-        {showTab('trophies') && isOwnProfile && (
+        {showTab('trophies') && isOwnProfile && hasData && (
           <div>
-            <TrophyRoom
-              userId={targetUserId}
-              overall={full?.overall}
-              tournaments={full?.tournaments}
-            />
+            <TrophyRoom overall={full?.overall} tournaments={full?.tournaments} />
           </div>
         )}
 

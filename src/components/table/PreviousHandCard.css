@@ -136,3 +136,35 @@
     display: none;
   }
 }
+
+/* ── Dan 2026-08-21 (item 4): the tap-to-open-a-menu popover is gone. The card
+   itself opens the hand breakdown; Share lives inline as its own small button
+   so it never needs a menu. ────────────────────────────────────────────────── */
+.prev-hand-card__share {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 4px;
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--soft-white, #b0b3b8);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.prev-hand-card__share:hover {
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--off-white, #e4e6eb);
+}
+
+.prev-hand-card__share:active {
+  transform: scale(0.92);
+}

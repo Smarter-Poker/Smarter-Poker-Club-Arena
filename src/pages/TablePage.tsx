@@ -98,6 +98,8 @@ import DisconnectToast from '../components/table/DisconnectToast';
 import FoldProtectionDialog from '../components/table/FoldProtectionDialog';
 // Phase 2 T2-02 (spec §5.7): Always-visible timebank counter (bottom-left).
 import TimebankCounter from '../components/table/TimebankCounter';
+// Dan 2026-08-21, item 3: buy more time banks with diamonds (1/10/25/100/500).
+import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
 import RabbitHunt from '../components/table/RabbitHunt';
 import LeaderboardPanel from '../components/table/LeaderboardPanel';
@@ -248,6 +250,7 @@ import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { serverNow } from '../utils/serverClock';
 import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
 import { getAnimationSpeed } from '../utils/animationSpeed';
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
@@ -1258,10 +1261,23 @@ export default function TablePage({
    * Real diamond price of one time-bank extension, read from `feature_pricing`
    * (the same row `fn_purchase_feature` prices from, so the button cannot
    * advertise a number the server will not charge). The TimeBank component
-   * used to hard-code 5; the actual price is 1.
+   * used to hard-code 5; the price is whatever `feature_pricing` says.
+   * Dan 2026-08-21 (item 3) set it to 5 diamonds per bank; the seed below is
+   * only what renders for the ~1 frame before the real row lands.
    */
-  const [timeBankDiamondCost, setTimeBankDiamondCost] = useState(1);
-  const [timeBankTimeRemaining, setTimeBankTimeRemaining] = useState(15);
+  const [timeBankDiamondCost, setTimeBankDiamondCost] = useState(5);
+  /** Dan 2026-08-21, item 3: the buy-more sheet (1/10/25/100/500 presets). */
+  const [showTimeBankStore, setShowTimeBankStore] = useState(false);
+  const [diamondBalance, setDiamondBalance] = useState<number | null>(null);
+  // Bible V8 §6.2: one bank = 20 seconds, not the 15s decision clock.
+  const [timeBankTimeRemaining, setTimeBankTimeRemaining] = useState(20);
+  /**
+   * Seconds the CURRENT bank granted. The TimeBank panel's progress bar is
+   * `timeRemaining / totalTime`, and totalTime used to be the 15s action clock
+   * — so a 20s bank rendered a bar 133% wide that only reached 100% after five
+   * seconds had already burned. These are two different clocks; keep them apart.
+   */
+  const [timeBankGrantedSeconds, setTimeBankGrantedSeconds] = useState(20);
 
   // FIX 126: Cross-tab BroadcastChannel for multi-table time bank warnings
   // Players can have up to 4 tables open simultaneously — warnings must appear on ALL tabs
@@ -5282,26 +5298,36 @@ export default function TablePage({
   useMasterBusSubscription('TIME_BANK_ACTIVATED', (payload: any) => {
     if (payload.tableId !== tableId) return;
 
+    // Bible V8 §6.2: one bank is 20 seconds (TimeBankEngine secondsPerUse).
+    // The 15 that used to sit here was the DECISION clock, a different number.
     const seconds =
-      payload.secondsGranted ?? payload.additionalSeconds ?? payload.secondsAdded ?? 15;
+      payload.secondsGranted ?? payload.additionalSeconds ?? payload.secondsAdded ?? 20;
 
     // FIX 172: Play time bank activation sound (Bible V8 §5.3)
     // #175 gated for multi-table: only play on the active tab
     if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playTimeBankActivated();
 
-    // For OPPONENTS: extend the visual timer from the WebSocket broadcast
-    // For HERO: the local TimeBankEngine.activate() already extended the timer,
-    // so only extend from server echoes (payload._fromServer) to avoid double-counting.
-    // The local TimeBankEngine emit does NOT set _fromServer.
-    if (payload.playerId !== userId) {
-      // Opponent activated their time bank — extend our visual timer for their seat
-      extendTimer(seconds);
-    }
+    /**
+     * Dan 2026-08-21 (bug list item 2): hero was EXCLUDED from the extension.
+     *
+     * The comment that used to sit here said "the local TimeBankEngine.activate()
+     * already extended the timer" — but the local engine was deleted in the
+     * server-authoritative migration (see the [MIGRATION] note at the top of
+     * this file). Nothing extended hero's clock any more. The bank was spent,
+     * the engine granted the seconds, and the only clock the player could see
+     * sat at zero.
+     *
+     * Extend for everyone. Double-counting is not a risk: `extendTimer` adds to
+     * the live remainder, and the next engine snapshot reseeds the countdown
+     * from the authoritative `turn_deadline_ms` regardless.
+     */
+    extendTimer(seconds);
 
     // Update the Hero's specific localized UI if they are the one activating it
     if (payload.playerId === userId) {
       setTimeBankActive(true);
       setTimeBankTimeRemaining(seconds);
+      setTimeBankGrantedSeconds(seconds);
       setTimeBanksRemaining(payload.usesRemaining ?? 0);
     }
   });
@@ -7673,8 +7699,41 @@ export default function TablePage({
     [tableState.heroSeat]
   );
 
+  /**
+   * Dan 2026-08-21 (bug list item 2): "time banks are auto enabled but don't
+   * grant 20 additional seconds when used."
+   *
+   * This function was the reason. It is a CLIENT-side fold, fired the instant
+   * the local ring hit zero — and the local ring hits zero BEFORE the engine
+   * does anything at all:
+   *
+   *   t = 15.0s  client ring reaches 0 → onTimeout
+   *   t = 17.0s  engine's deadline (15s + the §6.1 2s network grace) fires and
+   *              auto-activates the 20s time bank
+   *
+   * So the fold landed two full seconds before the engine ever considered the
+   * bank. And on the path where the client DID ask for a bank first, any
+   * refusal — including "time bank already activated this turn", which means
+   * the engine had just granted one — dropped straight through to this fold.
+   * The bank was granted and the hand was thrown away anyway.
+   *
+   * The engine owns the fold. It force-resolves an expired seat itself
+   * (`forceResolveSeat`, check when free / fold when not) and its clock is the
+   * only one that can see the bank. So this now refuses to act while the
+   * authoritative deadline is still ahead of us, and only fires as a genuine
+   * last-resort failsafe: the deadline is well past AND nothing has moved,
+   * which means the engine is unreachable rather than merely slower than us.
+   */
   const handleTimerAutoFold = useCallback(() => {
     if (actionLockRef.current) return; // Prevent race with manual fold
+    const deadline = tableStateRef.current.actionTimerDeadline;
+    // §6.1 grace (2s) + a margin for the engine's own resolve round-trip.
+    const FAILSAFE_GRACE_MS = 6000;
+    if (deadline && serverNow() < deadline + FAILSAFE_GRACE_MS) {
+      // The engine still has time on its clock — it may be running a time bank
+      // for us right now. Folding here would throw the hand away.
+      return;
+    }
     // Bible V8 §1.4: Server is authoritative — only send HTTP action, no Realtime broadcast
     try {
       soundService.playFold();
@@ -7817,33 +7876,84 @@ export default function TablePage({
     };
   }, []);
 
-  const handleBuyTimeBank = useCallback(async () => {
-    if (!tableId || !userId || userId === 'guest') return;
-    if (buyingTimeBankRef.current) return; // no double-charge on a double-tap
-    buyingTimeBankRef.current = true;
-    try {
-      const { data, error } = await supabase.rpc('fn_purchase_feature', {
-        p_user_id: userId,
-        p_feature: 'time_bank_seconds',
+  // Diamond balance for the buy-more sheet. Display only — the purchase is
+  // priced and charged server-side by fn_purchase_time_banks either way; this
+  // just lets the sheet say "you need N more" instead of failing at the tap.
+  useEffect(() => {
+    if (!userId || userId === 'guest' || !showTimeBankStore) return;
+    let alive = true;
+    void supabase
+      .from('profiles')
+      .select('diamonds')
+      .eq('id', userId)
+      .maybeSingle()
+      .then(({ data }) => {
+        const d = Number((data as { diamonds?: number } | null)?.diamonds);
+        if (alive && Number.isFinite(d)) setDiamondBalance(d);
       });
-      if (error) throw error;
-      const result = (data ?? {}) as { success?: boolean; error?: string; cost?: number };
-      if (!result.success) {
-        toast?.error?.(result.error || 'Could not buy a time bank');
-        return;
+    return () => {
+      alive = false;
+    };
+  }, [userId, showTimeBankStore]);
+
+  /**
+   * Dan 2026-08-21, item 3: buy N time banks in ONE charge.
+   *
+   * The single-unit `fn_purchase_feature` call this replaced could only ever
+   * buy one, so the 500 preset would have meant 500 round trips and 500
+   * separate diamond deductions — any of which could fail halfway and leave
+   * the player part-charged for a pack they did not get. `fn_purchase_time_banks`
+   * does the whole quantity in one transaction and prices it server-side from
+   * `feature_pricing`, so the client cannot name its own price.
+   */
+  const handleBuyTimeBanks = useCallback(
+    async (quantity: number): Promise<boolean> => {
+      if (!userId || userId === 'guest') {
+        toast?.error?.('Sign in to buy time banks');
+        return false;
       }
-      setTimeBanksRemaining((n) => n + 1);
-      const cost = result.cost ?? 0;
-      toast?.success?.(
-        cost > 0 ? `Time bank added (${cost} diamond${cost === 1 ? '' : 's'})` : 'Time bank added'
-      );
-    } catch (err) {
-      reportError(err, 'TablePage.buyTimeBank');
-      toast?.error?.('Could not buy a time bank');
-    } finally {
-      buyingTimeBankRef.current = false;
-    }
-  }, [tableId, userId]);
+      if (buyingTimeBankRef.current) return false; // no double-charge on a double-tap
+      buyingTimeBankRef.current = true;
+      try {
+        const { data, error } = await supabase.rpc('fn_purchase_time_banks', {
+          p_quantity: quantity,
+        });
+        if (error) throw error;
+        const result = (data ?? {}) as {
+          success?: boolean;
+          error?: string;
+          total_cost?: number;
+          quantity?: number;
+          diamonds_remaining?: number | string | null;
+        };
+        if (!result.success) {
+          toast?.error?.(result.error || 'Could not buy time banks');
+          return false;
+        }
+        const bought = result.quantity ?? quantity;
+        setTimeBanksRemaining((n) => n + bought);
+        const remaining = Number(result.diamonds_remaining);
+        if (Number.isFinite(remaining)) setDiamondBalance(remaining);
+        const cost = result.total_cost ?? 0;
+        toast?.success?.(
+          `${bought} Time Bank${bought === 1 ? '' : 's'} Added (${cost.toLocaleString()} Diamonds)`
+        );
+        return true;
+      } catch (err) {
+        reportError(err, 'TablePage.buyTimeBanks');
+        toast?.error?.('Could not buy time banks');
+        return false;
+      } finally {
+        buyingTimeBankRef.current = false;
+      }
+    },
+    [userId, toast]
+  );
+
+  /** Legacy single-bank entry point (TimeBank's "+EXTENSION" button). */
+  const handleBuyTimeBank = useCallback(() => {
+    setShowTimeBankStore(true);
+  }, []);
 
   //Validation moved to server — client does basic guard only
   const validateAndExecuteAction = (
@@ -8530,6 +8640,17 @@ export default function TablePage({
           handleFold / panel-fold defer to this when canCheckRightNow() is
           true. onCheck dismisses + executes the free check; onFold dismisses
           + commits the fold the player already intended. */}
+      {/* Dan 2026-08-21, item 3: buy more time banks with diamonds. Opens from
+          the alarm-clock counter when the player is out, and from the TimeBank
+          panel's extension button. */}
+      <TimeBankStoreModal
+        open={showTimeBankStore}
+        onClose={() => setShowTimeBankStore(false)}
+        diamondCost={timeBankDiamondCost}
+        banksRemaining={timeBanksRemaining}
+        diamondBalance={diamondBalance}
+        onPurchase={handleBuyTimeBanks}
+      />
       <FoldProtectionDialog
         open={foldProtectOpen}
         onDismiss={() => setFoldProtectOpen(false)}
@@ -8805,7 +8926,11 @@ export default function TablePage({
               <TimebankCounter
                 count={timeBanksRemaining}
                 low={timeBanksRemaining <= 1}
-                onClick={() => setShowTimeBank(true)}
+                /* Dan 2026-08-21, item 3: out of banks → the buy sheet, not
+                   the (empty) time-bank panel. */
+                onClick={() =>
+                  timeBanksRemaining > 0 ? setShowTimeBank(true) : setShowTimeBankStore(true)
+                }
               />
             )}
             <PreviousHandCard
@@ -9263,7 +9388,7 @@ export default function TablePage({
                 isVisible={true}
                 isActive={timeBankActive}
                 banksRemaining={timeBanksRemaining}
-                totalTime={actionTimeSeconds}
+                totalTime={timeBankGrantedSeconds}
                 timeRemaining={timeBankTimeRemaining}
                 onActivate={handleActivateTimeBank}
                 onBuyMore={handleBuyTimeBank}

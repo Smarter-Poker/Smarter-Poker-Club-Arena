@@ -25,7 +25,7 @@
 
 import { useMemo } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { playerStyleClassifier } from '../../services/PlayerStyleClassifier';
+import { playerStyleFromStats, STYLE_MIN_HANDS } from './playerStyleFromStats';
 import { staggerContainer, fadeUp } from './statsMotion';
 import './TrophyRoom.css';
 
@@ -55,7 +55,6 @@ interface TournLike {
 }
 
 interface Props {
-  userId?: string;
   overall?: OverallLike | null;
   tournaments?: TournLike | null;
 }
@@ -80,9 +79,6 @@ const RARITY_COLORS: Record<Rarity, string> = {
   epic: '#a855f7',
   legendary: '#fbbf24',
 };
-
-/** Below this many hands a style label is a coin flip, not a read. */
-const STYLE_MIN_HANDS = 300;
 
 const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
 
@@ -206,19 +202,9 @@ function buildMilestones(o: OverallLike, t: TournLike | null): Milestone[] {
 export default function TrophyRoom({ overall, tournaments }: Props) {
   const reduceMotion = useReducedMotion();
 
-  const style = useMemo(() => {
-    if (!overall || overall.total_hands <= 0) return null;
-    // The RPC returns rates as FRACTIONS; the classifier wants COUNTS.
-    // Converting here, once, is what keeps the two scales from being mixed.
-    const hands = overall.total_hands;
-    return playerStyleClassifier.classify({
-      handsPlayed: hands,
-      vpipCount: Math.round(overall.vpip * hands),
-      pfrCount: Math.round(overall.pfr * hands),
-      threeBetCount: Math.round(overall.three_bet_percent * hands),
-      wtsdCount: Math.round(overall.wtsd * hands),
-    });
-  }, [overall]);
+  // Shared with the share card on PlayerStatsPage, so the two surfaces can
+  // never disagree about a player's style. Returns null below STYLE_MIN_HANDS.
+  const style = useMemo(() => playerStyleFromStats(overall), [overall]);
 
   const milestones = useMemo(
     () => (overall ? buildMilestones(overall, tournaments ?? null) : []),
@@ -242,7 +228,11 @@ export default function TrophyRoom({ overall, tournaments }: Props) {
     );
   }
 
-  const styleConfident = overall.total_hands >= STYLE_MIN_HANDS && (style?.confidence ?? 0) >= 0.5;
+  // playerStyleFromStats already returns null below STYLE_MIN_HANDS, so its
+  // result IS the confidence gate. The previous `confidence >= 0.5` check was a
+  // no-op: confidence is min(1, hands / 100), and hands is >= 300 by that point,
+  // so it was always exactly 1.
+  const styleConfident = style !== null;
 
   return (
     <div className="trophy-wrap">

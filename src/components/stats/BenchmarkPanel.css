@@ -111,9 +111,11 @@
   );
 }
 
+/* `left` is set inline from the real median position; there is no default,
+   because a hardcoded 50% would be a claim about the data rather than a
+   rendering of it. */
 .bench-bar-mid {
   position: absolute;
-  left: 50%;
   top: -2px;
   bottom: -2px;
   width: 1px;
@@ -195,3 +197,11 @@
     animation: none;
   }
 }
+
+/* --- orphan-modifier rules (added 2026-08-21 audit) --- */
+/* These were applied in TSX with no rule defined anywhere, so the empty
+   states rendered inconsistently - only .pos-radar-empty was centred. */
+
+.bench-head { text-align: left; }
+/* Keeps a metric's label, bar and sentence together when the dossier prints. */
+.bench-item { break-inside: avoid; page-break-inside: avoid; }

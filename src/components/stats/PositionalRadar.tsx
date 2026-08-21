@@ -157,13 +157,26 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
     return out;
   }, [rows]);
 
+  /**
+   * The reference shape is only drawn when EVERY axis has a reference value.
+   * Previously a position with no entry fell back to 0, spiking the dashed
+   * polygon to the centre and reading as "the reference says play 0% from
+   * here". POSITION_ORDER deliberately tolerates unknown positions by
+   * appending them, and the RPC can emit 'UNK', so this was reachable.
+   */
+  const referenceComplete = useMemo(
+    () => rows.length > 0 && rows.every((r) => REFERENCE[r.position] !== undefined),
+    [rows]
+  );
+
   const referenceSeries = useMemo(() => {
     const out: Record<MetricKey, number[]> = { vpip: [], pfr: [], three_bet: [] };
+    if (!referenceComplete) return out;
     for (const m of METRICS) {
       out[m.key] = rows.map((r) => (REFERENCE[r.position]?.[m.key] ?? 0) / m.ceiling);
     }
     return out;
-  }, [rows]);
+  }, [rows, referenceComplete]);
 
   // Three axes is the minimum that makes a closed polygon mean anything; below
   // that a radar is a line segment and misleads more than it shows.
@@ -199,9 +212,13 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
             className="pos-radar-svg"
             viewBox={`0 0 ${SIZE} ${SIZE}`}
             role="img"
-            aria-label={`Radar chart of ${METRICS.filter((m) => visible[m.key])
-              .map((m) => m.label)
-              .join(', ')} across ${total} positions`}
+            aria-label={
+              METRICS.some((m) => visible[m.key])
+                ? `Radar chart of ${METRICS.filter((m) => visible[m.key])
+                    .map((m) => m.label)
+                    .join(', ')} across ${total} positions`
+                : `Radar chart across ${total} positions, no metrics currently shown`
+            }
           >
             <defs>
               {METRICS.map((m) => (
@@ -239,6 +256,7 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
 
             {/* Reference shape, dashed and behind the data */}
             {showReference &&
+              referenceComplete &&
               METRICS.filter((m) => visible[m.key]).map((m) => (
                 <path
                   key={`ref-${m.key}`}
@@ -322,15 +340,17 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
                 {m.label}
               </button>
             ))}
-            <button
-              type="button"
-              className={`pos-radar-toggle pos-radar-toggle-ref${showReference ? ' is-on' : ''}`}
-              aria-pressed={showReference}
-              onClick={() => setShowReference((s) => !s)}
-            >
-              <span className="pos-radar-swatch is-dashed" />
-              Reference
-            </button>
+            {referenceComplete && (
+              <button
+                type="button"
+                className={`pos-radar-toggle pos-radar-toggle-ref${showReference ? ' is-on' : ''}`}
+                aria-pressed={showReference}
+                onClick={() => setShowReference((s) => !s)}
+              >
+                <span className="pos-radar-swatch is-dashed" />
+                Reference
+              </button>
+            )}
           </div>
 
           <table className="pos-radar-table">
@@ -384,7 +404,7 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
           {lowSample.map((r) => r.position).join(', ')}.
         </p>
       )}
-      {showReference && (
+      {showReference && referenceComplete && (
         <p className="pos-radar-note">
           The dashed shape is a general reference for solid positional play, not a target. Your own
           winning strategy may sit outside it.

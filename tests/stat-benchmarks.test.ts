@@ -121,3 +121,97 @@ describe('robustness', () => {
     expect(benchmark('vpip', 23, ROWS)!.sampleSize).toBe(571);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REGRESSION TESTS — 2026-08-21 audit
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('percentiles do not invert below a negative breakpoint', () => {
+  it('a player far worse than the bottom decile is not ranked ABOVE it', () => {
+    // The bug: below p10 the code extrapolated `p10Pct * (value / p10Value)`.
+    // With bb100's real p10 of -52.1, a player at -100 scored 19th percentile
+    // and a player at -60 scored 11.5th - i.e. the worse you ran, the better
+    // you ranked, and both above p10's own value of 10.
+    const worse = benchmark('bb100', -100, ROWS)!;
+    const bad = benchmark('bb100', -60, ROWS)!;
+    const atP10 = benchmark('bb100', -52.1, ROWS)!;
+
+    expect(worse.percentile!).toBeLessThanOrEqual(10);
+    expect(bad.percentile!).toBeLessThanOrEqual(10);
+    expect(atP10.percentile!).toBeLessThanOrEqual(10);
+    // Monotonic: worse can never rank higher than merely bad.
+    expect(worse.percentile!).toBeLessThanOrEqual(bad.percentile!);
+    expect(worse.tone).toBe('bad');
+  });
+
+  it('stays monotonic across the whole range', () => {
+    const samples = [-200, -100, -52.1, -30, -15.7, 0, 15.3, 50, 500];
+    const pcts = samples.map((v) => benchmark('bb100', v, ROWS)!.percentile!);
+    for (let i = 1; i < pcts.length; i++) {
+      expect(pcts[i]).toBeGreaterThanOrEqual(pcts[i - 1]);
+    }
+  });
+});
+
+describe('metrics with no comparable field statistic draw no bar', () => {
+  it('3-bet reports its band but never a percentile or a bar position', () => {
+    // The hero's 3-bet is per OPPORTUNITY (5-10%); the field distribution is
+    // per HAND DEALT (p90 = 3.8%). Comparing them pinned every normal 3-bettor
+    // to the far right as an outlier while the pill read "In Range".
+    const r = benchmark('three_bet', 7, ROWS)!;
+    expect(r.percentile).toBeNull();
+    expect(r.barPosition).toBeNull();
+    expect(r.bandPosition).toBe('inside');
+  });
+
+  it('metrics that DO have a comparable field statistic still draw a bar', () => {
+    expect(benchmark('vpip', 23, ROWS)!.barPosition).not.toBeNull();
+    expect(benchmark('bb100', 0, ROWS)!.barPosition).not.toBeNull();
+  });
+});
+
+describe('the median tick reflects the real median', () => {
+  it('is not the midpoint of the p10..p90 track', () => {
+    // bb100: p10 -52.1, p90 15.3 -> midpoint -18.4, but p50 is -15.7.
+    const r = benchmark('bb100', 0, ROWS)!;
+    expect(r.medianPosition).not.toBeNull();
+    const expected = (-15.7 - -52.1) / (15.3 - -52.1);
+    expect(r.medianPosition!).toBeCloseTo(expected, 3);
+    expect(r.medianPosition!).not.toBeCloseTo(0.5, 2);
+  });
+});
+
+describe('null and malformed breakpoints', () => {
+  const NULLED = [
+    {
+      cohort: 'field',
+      metric: 'bb100',
+      p10: null as unknown as number,
+      p25: 1,
+      p50: 2,
+      p75: 3,
+      p90: null as unknown as number,
+      sample_size: 10,
+    },
+  ];
+
+  it('does not produce a NaN bar position', () => {
+    const r = benchmark('bb100', 5, NULLED);
+    if (r) expect(r.barPosition === null || Number.isFinite(r.barPosition)).toBe(true);
+  });
+
+  it('rejects a non-finite hero value rather than rendering NaN', () => {
+    expect(benchmark('bb100', Number.NaN, ROWS)).toBeNull();
+    expect(benchmark('vpip', Number.POSITIVE_INFINITY, ROWS)).toBeNull();
+  });
+});
+
+describe('win_rate is a complete, working benchmark', () => {
+  it('resolves end to end', () => {
+    const r = benchmark('win_rate', 24.9, ROWS)!;
+    expect(r).not.toBeNull();
+    expect(r.percentile).not.toBeNull();
+    expect(r.barPosition).not.toBeNull();
+    expect(r.def.label).toBe('Hands Won');
+  });
+});

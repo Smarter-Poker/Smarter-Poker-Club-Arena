@@ -358,3 +358,160 @@ describe('computeTransfers — head-to-head chip attribution', () => {
     expect(computeTransfers(nets)).toEqual([]);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REGRESSION TESTS — 2026-08-21 audit
+//
+// Every test below pins a bug that was LIVE while the original suite was
+// green. That is the point: the first suite never had a player fold after the
+// flop, never had an all-in reached by calling, and never checked that the
+// pair-wise transfer split actually summed to what the winner won.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('saw_flop counts the flop you actually saw', () => {
+  const A = 'user-a';
+  const B = 'user-b';
+  const act = (userId: string, action: string, stage: string, amount = 0): HandAction => ({
+    seat: 1,
+    userId,
+    action,
+    amount,
+    stage,
+  });
+
+  it('a player who calls preflop and folds to a flop c-bet still SAW the flop', () => {
+    // The bug: `iFolded` scanned every street, so any postflop fold erased the
+    // fact that the player reached the flop at all. saw_flop collapsed into
+    // went_to_showdown and every continuation metric was wrong.
+    const actions = [
+      act(B, 'raise', 'preflop', 30),
+      act(A, 'call', 'preflop', 30),
+      act(B, 'bet', 'flop', 40),
+      act(A, 'fold', 'flop'),
+    ];
+    const f = deriveFlowFlags(A, actions, { boardLength: 3, returned: 0, nonFoldedCount: 1 });
+    expect(f.saw_flop).toBe(true);
+    expect(f.went_to_showdown).toBe(false);
+  });
+
+  it('a player who folds preflop did NOT see the flop', () => {
+    const actions = [act(B, 'raise', 'preflop', 30), act(A, 'fold', 'preflop')];
+    const f = deriveFlowFlags(A, actions, { boardLength: 5, returned: 0, nonFoldedCount: 1 });
+    expect(f.saw_flop).toBe(false);
+  });
+
+  it('a preflop raiser who c-bets and then folds still had the c-bet opportunity', () => {
+    // This is the spot the bug hid: cbet% was measured only over c-bets that
+    // WORKED, because the ones that got raised off were excluded entirely.
+    const actions = [
+      act(A, 'raise', 'preflop', 30),
+      act(B, 'call', 'preflop', 30),
+      act(A, 'bet', 'flop', 40),
+      act(B, 'raise', 'flop', 140),
+      act(A, 'fold', 'flop'),
+    ];
+    const f = deriveFlowFlags(A, actions, { boardLength: 3, returned: 0, nonFoldedCount: 1 });
+    expect(f.had_cbet_flop_opp).toBe(true);
+    expect(f.cbet_flop).toBe(true);
+  });
+});
+
+describe('4-bets are distinguished from 3-bets', () => {
+  const A = 'user-a';
+  const B = 'user-b';
+  const act = (userId: string, action: string, stage: string, amount = 0): HandAction => ({
+    seat: 1,
+    userId,
+    action,
+    amount,
+    stage,
+  });
+
+  it('the third voluntary raise is a 4-bet, not a 3-bet', () => {
+    const actions = [
+      act(B, 'raise', 'preflop', 30),
+      act(A, 'raise', 'preflop', 90),
+      act(B, 'raise', 'preflop', 240),
+    ];
+    const fb = deriveFlowFlags(B, actions, { boardLength: 0, returned: 0, nonFoldedCount: 2 });
+    expect(fb.four_bet).toBe(true);
+    expect(fb.three_bet).toBe(false);
+
+    const fa = deriveFlowFlags(A, actions, { boardLength: 0, returned: 0, nonFoldedCount: 2 });
+    expect(fa.three_bet).toBe(true);
+    expect(fa.four_bet).toBe(false);
+  });
+
+  it('folding to a 4-bet is NOT recorded as folding to a 3-bet', () => {
+    // The bug: faced_three_bet fired on any re-raise after our raise, so a
+    // 3-bettor folding to a 4-bet inflated fold-to-3-bet.
+    const actions = [
+      act(B, 'raise', 'preflop', 30),
+      act(A, 'raise', 'preflop', 90), // A 3-bets
+      act(B, 'raise', 'preflop', 240), // B 4-bets
+      act(A, 'fold', 'preflop'),
+    ];
+    const fa = deriveFlowFlags(A, actions, { boardLength: 0, returned: 0, nonFoldedCount: 1 });
+    expect(fa.faced_three_bet).toBe(false);
+    expect(fa.folded_to_three_bet).toBe(false);
+
+    // The OPENER genuinely did face a 3-bet.
+    const fb = deriveFlowFlags(B, actions, { boardLength: 0, returned: 0, nonFoldedCount: 1 });
+    expect(fb.faced_three_bet).toBe(true);
+  });
+});
+
+describe('computeTransfers conserves chips exactly', () => {
+  it('pair-wise shares sum to exactly what the winner won, with many losers', () => {
+    // The bug: each pair was rounded independently, so the split fell short by
+    // up to half a cent per loser and drifted monotonically in the aggregate.
+    const nets = new Map<string, number>([
+      ['w', 100],
+      ['l1', -33.33],
+      ['l2', -33.33],
+      ['l3', -33.34],
+    ]);
+    const t = computeTransfers(nets);
+    const total = t.reduce((s, x) => s + x.amount, 0);
+    expect(Math.round(total * 100)).toBe(10000);
+  });
+
+  it('conserves across an awkward three-way split that cannot divide evenly', () => {
+    const nets = new Map<string, number>([
+      ['w', 10],
+      ['l1', -3.33],
+      ['l2', -3.33],
+      ['l3', -3.34],
+    ]);
+    const total = computeTransfers(nets).reduce((s, x) => s + x.amount, 0);
+    expect(Math.round(total * 100)).toBe(1000);
+  });
+
+  it('conserves for every winner independently in a multi-winner pot', () => {
+    const nets = new Map<string, number>([
+      ['w1', 61.11],
+      ['w2', 38.89],
+      ['l1', -70],
+      ['l2', -30.01],
+    ]);
+    const t = computeTransfers(nets);
+    for (const [w, won] of [
+      ['w1', 61.11],
+      ['w2', 38.89],
+    ] as Array<[string, number]>) {
+      const sum = t.filter((x) => x.winnerId === w).reduce((s, x) => s + x.amount, 0);
+      expect(Math.round(sum * 100)).toBe(Math.round(won * 100));
+    }
+  });
+
+  it('still never emits a non-positive amount, which the DB CHECK forbids', () => {
+    const nets = new Map<string, number>([
+      ['w', 0.02],
+      ['l1', -0.01],
+      ['l2', -1000],
+    ]);
+    for (const t of computeTransfers(nets)) {
+      expect(t.amount).toBeGreaterThan(0);
+    }
+  });
+});

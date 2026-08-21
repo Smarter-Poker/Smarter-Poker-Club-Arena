@@ -383,3 +383,12 @@
   border-color: #eab308;
   color: #191919;
 }
+
+/* Empty state — see the "no completed hands yet" branch in the component. */
+.hdm-empty {
+  padding: 40px 24px;
+  text-align: center;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.6);
+}

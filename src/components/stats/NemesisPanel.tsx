@@ -25,7 +25,7 @@
  * true and engaging statement regardless. They are never called bots.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatsFactsService, {
   type NemesisPayload,
@@ -82,8 +82,11 @@ function FlowCard({
         <Avatar flow={flow} />
         <span className="nemesis-name">{flow.username ?? 'Unknown Player'}</span>
       </span>
-      <span className={`nemesis-amount ${isNemesis ? 'is-down' : 'is-up'}`}>
-        {isNemesis ? '-' : '+'}
+      {/* Sign and colour come from the VALUE, never from which card this is:
+          the two must agree with the expanded table below, which derives both
+          from net_chips. */}
+      <span className={`nemesis-amount ${flow.net_chips >= 0 ? 'is-up' : 'is-down'}`}>
+        {flow.net_chips >= 0 ? '+' : '-'}
         {chips(flow.net_chips)}
       </span>
       <span className="nemesis-meta">
@@ -98,15 +101,6 @@ export default function NemesisPanel({ userId, days = null }: Props) {
   const [data, setData] = useState<NemesisPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
-  const aliveRef = useRef(true);
-
-  useEffect(() => {
-    aliveRef.current = true;
-    return () => {
-      aliveRef.current = false;
-    };
-  }, []);
-
   useEffect(() => {
     if (!userId) {
       setLoading(false);
@@ -116,10 +110,10 @@ export default function NemesisPanel({ userId, days = null }: Props) {
     setLoading(true);
     StatsFactsService.getNemesis(userId, { days })
       .then((payload) => {
-        if (!cancelled && aliveRef.current) setData(payload);
+        if (!cancelled) setData(payload);
       })
       .finally(() => {
-        if (!cancelled && aliveRef.current) setLoading(false);
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
@@ -182,7 +176,7 @@ export default function NemesisPanel({ userId, days = null }: Props) {
             aria-expanded={expanded}
             onClick={() => setExpanded((e) => !e)}
           >
-            {expanded ? 'Hide Full List' : `Show All ${rows.length} Rivals`}
+            {expanded ? 'Hide Full List' : `Show Top ${rows.length} Rivals`}
           </button>
 
           {expanded && (
@@ -196,7 +190,19 @@ export default function NemesisPanel({ userId, days = null }: Props) {
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.opponent_id} onClick={() => openProfile(r.opponent_id)}>
+                  <tr
+                    key={r.opponent_id}
+                    tabIndex={0}
+                    role="link"
+                    aria-label={`View ${r.username ?? 'this player'}'s stats`}
+                    onClick={() => openProfile(r.opponent_id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openProfile(r.opponent_id);
+                      }
+                    }}
+                  >
                     <th scope="row">
                       <Avatar flow={r} />
                       <span className="nemesis-row-name">{r.username ?? 'Unknown Player'}</span>

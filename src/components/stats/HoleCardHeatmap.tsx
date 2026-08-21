@@ -29,7 +29,7 @@
  * grid. Rather than render an empty 13x13, the component explains why.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import StatsFactsService, { type HandGridCell } from '../../services/StatsFactsService';
 import './HoleCardHeatmap.css';
 
@@ -85,15 +85,6 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
   const [position, setPosition] = useState<string | null>(null);
   const [variant, setVariant] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
-  const aliveRef = useRef(true);
-
-  useEffect(() => {
-    aliveRef.current = true;
-    return () => {
-      aliveRef.current = false;
-    };
-  }, []);
-
   useEffect(() => {
     if (!userId) {
       setLoading(false);
@@ -101,12 +92,13 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
     }
     let cancelled = false;
     setLoading(true);
+    setHovered(null); // a key from the previous filter would read "never dealt"
     StatsFactsService.getHandGrid(userId, { position, variant, days })
       .then((payload) => {
-        if (!cancelled && aliveRef.current) setCells(payload.cells ?? []);
+        if (!cancelled) setCells(payload.cells ?? []);
       })
       .finally(() => {
-        if (!cancelled && aliveRef.current) setLoading(false);
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
@@ -230,8 +222,13 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
           aria-label="Starting hand grid, 13 by 13"
           onMouseLeave={() => setHovered(null)}
         >
-          {RANKS.map((_, rowIdx) =>
-            RANKS.map((__, colIdx) => {
+          {RANKS.map((rowRank, rowIdx) => (
+            // role="grid" requires a row layer. Without it the 169 gridcells
+            // were direct children of the grid, which screen readers report as
+            // a broken structure. `display: contents` keeps the CSS grid
+            // layout identical.
+            <div className="heatmap-row" role="row" key={`row-${rowRank}`}>
+              {RANKS.map((__, colIdx) => {
               const key = classFor(rowIdx, colIdx);
               const cell = byClass.get(key);
               const hands = cell?.hands ?? 0;
@@ -252,31 +249,42 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
               }
 
               return (
-                <button
-                  key={key}
-                  type="button"
-                  role="gridcell"
-                  className={`heatmap-cell${rowIdx === colIdx ? ' is-pair' : ''}${
-                    hovered === key ? ' is-hovered' : ''
-                  }${cell && mode !== 'frequency' && !confident ? ' is-thin' : ''}`}
-                  style={{ background: bg }}
-                  onMouseEnter={() => setHovered(key)}
-                  onFocus={() => setHovered(key)}
-                  aria-label={
-                    cell
-                      ? `${key}, ${hands} hands, ${cell.bb100} big blinds per 100`
-                      : `${key}, never dealt`
-                  }
-                >
-                  {key}
-                </button>
-              );
-            })
-          )}
+                  <button
+                    key={key}
+                    type="button"
+                    role="gridcell"
+                    className={`heatmap-cell${rowIdx === colIdx ? ' is-pair' : ''}${
+                      hovered === key ? ' is-hovered' : ''
+                    }${cell && mode !== 'frequency' && !confident ? ' is-thin' : ''}`}
+                    style={{ background: bg }}
+                    onMouseEnter={() => setHovered(key)}
+                    onFocus={() => setHovered(key)}
+                    // Touch has no hover. Without a click handler the readout
+                    // never populated on a phone, on a mobile-first product.
+                    onClick={() => setHovered(key)}
+                    aria-label={
+                      !cell
+                        ? `${key}, never dealt`
+                        : confident
+                          ? `${key}, ${hands} hands, ${cell.bb100.toFixed(0)} big blinds per 100`
+                          : // Deliberately does NOT state bb/100 below the
+                            // confidence threshold. The whole design refuses to
+                            // show that number for a thin cell; announcing it to
+                            // a screen reader anyway would be the same false
+                            // precision, just less visible.
+                            `${key}, ${hands} hands, too few to rate`
+                    }
+                  >
+                    {key}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </div>
       </div>
 
-      <div className="heatmap-readout" aria-live="polite">
+      <div className="heatmap-readout">
         {hoveredCell ? (
           <>
             <strong>{hoveredCell.hand_class}</strong>

@@ -225,3 +225,10 @@
     transition: none;
   }
 }
+
+/* --- orphan-modifier rules (added 2026-08-21 audit) --- */
+/* These were applied in TSX with no rule defined anywhere, so the empty
+   states rendered inconsistently - only .pos-radar-empty was centred. */
+
+.trophy-empty { text-align: center; }
+.trophy-next-item { break-inside: avoid; page-break-inside: avoid; }

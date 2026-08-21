@@ -1300,12 +1300,30 @@
   .export-btn,
   .assistant-export-btn,
   .view-hands-btn,
-  .stats-notice,
   .hand-mode-row,
-  .heatmap-controls,
+  .heatmap-modes,
   .nemesis-expand,
-  .pos-radar-legend {
+  .sharecard {
     display: none !important;
+  }
+
+  /* `.stats-notice` was in that list. It should not have been: it carries
+     "based on your most recent N hands", the small-sample warning and the
+     stale-cache warning. A printed dossier is the copy most likely to be read
+     months later as authoritative, so it is the copy that most needs its own
+     caveats attached. Same for the heatmap filters and radar legend, which say
+     WHICH slice of data produced the picture. */
+  .stats-notice {
+    border: 1px solid #d1d5db !important;
+    background: #f9fafb !important;
+  }
+
+  /* Filters and legends are read-only labels on paper: show them, but the
+     interactive affordance should not look clickable. */
+  .heatmap-select,
+  .pos-radar-toggle {
+    border-color: #d1d5db !important;
+    background: #ffffff !important;
   }
 
   /* Panels become bordered document sections rather than glass. */
@@ -1345,36 +1363,73 @@
     color: #111827 !important;
   }
 
-  .row-label,
-  .row-value,
-  .hero-stat,
-  .pos-radar-sub,
-  .evluck-sub,
-  .heatmap-sub,
-  .nemesis-sub,
-  .bench-sub,
-  .trophy-style-note,
-  .trophy-desc {
+  /* EVERY text node in the new panels, not a hand-picked subset.
+     The first version of this block whitelisted about eight selectors, so the
+     entire Rivals table, the positional numeric table, every benchmark
+     sentence and every trophy name printed white-on-white - and
+     `print-color-adjust: exact` above stops the browser from rescuing them.
+     A blanket rule scoped to the panels is the only version of this that
+     cannot silently miss a class someone adds later. */
+  .stats-page :is(p, span, td, th, li, h1, h2, h3, h4, h5, h6, strong, em, div, button, a) {
     color: #1f2937 !important;
   }
 
-  .stats-note,
+  .row-label,
+  .row-value,
+  .hero-stat,
+  .bench-label,
+  .bench-value,
+  .bench-readout,
+  .nemesis-name,
+  .trophy-name,
+  .heatmap-readout,
+  .pos-radar-readout {
+    color: #111827 !important;
+  }
+
+  /* Keep the semantic red/green: on paper these are the only thing telling a
+     reader whether a number is good or bad, and they are legible on white. */
+  .is-up,
+  .bench-pill.tone-good,
+  .nemesis-card.is-target .nemesis-amount {
+    color: #15803d !important;
+  }
+
+  .is-down,
+  .bench-pill.tone-bad,
+  .nemesis-card.is-nemesis .nemesis-amount {
+    color: #b91c1c !important;
+  }
+
+  .stats-notice,
   .pos-radar-note,
   .evluck-note,
   .heatmap-note,
   .nemesis-note,
   .bench-note,
-  .trophy-note {
+  .trophy-note,
+  .bench-bar-scale,
+  .trophy-desc,
+  .trophy-style-note {
     color: #4b5563 !important;
+  }
+
+  /* Any entrance animation prints mid-fade. The old rule covered only
+     .stat-row/.variant-row, so trophies (framer stagger) and the chart cards
+     printed part-faded. This covers every descendant, including elements
+     framer-motion has written an inline opacity onto. */
+  .stats-page *,
+  .stats-page *::before,
+  .stats-page *::after {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
   }
 
   .stat-row,
   .variant-row {
     border-color: #e5e7eb !important;
-    /* The nth-child entrance delays would otherwise print rows mid-fade. */
-    animation: none !important;
-    opacity: 1 !important;
-    transform: none !important;
   }
 
   /* Each major section starts a fresh page so the dossier reads as chapters. */

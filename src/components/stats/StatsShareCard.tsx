@@ -95,7 +95,14 @@ export default function StatsShareCard({ displayName, stats, styleLabel, styleCo
     ctx.fillStyle = '#e8f4ff';
     ctx.font = `700 54px ${FONT}`;
     ctx.textBaseline = 'top';
-    const name = displayName.length > 24 ? `${displayName.slice(0, 23)}...` : displayName;
+    // Measured, not counted: 23 wide glyphs at 54px can still reach the
+    // right-aligned "smarter.poker" footer, which sits in the same band.
+    const NAME_MAX_W = W - 64 - 260;
+    let name = displayName;
+    while (name.length > 1 && ctx.measureText(`${name}...`).width > NAME_MAX_W) {
+      name = name.slice(0, -1);
+    }
+    if (name !== displayName) name = `${name}...`;
     ctx.fillText(name, 64, 62);
 
     // Style badge
@@ -129,6 +136,19 @@ export default function StatsShareCard({ displayName, stats, styleLabel, styleCo
     ctx.fillStyle = 'rgba(200,224,245,0.6)';
     ctx.font = `600 30px ${FONT}`;
     ctx.fillText('bb/100', 64 + bbW + 16, 322);
+
+    // Profit, beside the win rate. This is the number people screenshot.
+    const profitColor = stats.profit >= 0 ? '#22c55e' : '#ef4444';
+    ctx.fillStyle = 'rgba(200,224,245,0.55)';
+    ctx.font = `600 22px ${FONT}`;
+    ctx.fillText('PROFIT', 470, 232);
+    ctx.fillStyle = profitColor;
+    ctx.font = `800 64px ${FONT}`;
+    ctx.fillText(
+      `${stats.profit >= 0 ? '+' : '-'}${Math.round(Math.abs(stats.profit)).toLocaleString()}`,
+      470,
+      278
+    );
 
     // Stat tiles
     const tiles: Array<[string, string]> = [
@@ -216,12 +236,19 @@ export default function StatsShareCard({ displayName, stats, styleLabel, styleCo
     <div className="sharecard">
       <h3 className="sharecard-title">Share Your Stats</h3>
       <div className="sharecard-preview">
-        <canvas ref={canvasRef} className="sharecard-canvas" aria-label="Your stats card" />
+        <canvas
+          ref={canvasRef}
+          className="sharecard-canvas"
+          role="img"
+          aria-label="A shareable image of your headline poker stats"
+        />
       </div>
       <button type="button" className="sharecard-btn" onClick={handleShare} disabled={busy}>
         {busy ? 'Preparing...' : 'Share Or Save Image'}
       </button>
-      {note && <p className="sharecard-note">{note}</p>}
+      <p className="sharecard-note" role="status" aria-live="polite">
+        {note}
+      </p>
     </div>
   );
 }

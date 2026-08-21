@@ -35,6 +35,26 @@ export interface MetricDef {
   /** Short, factual consequence shown when the value sits outside the band. */
   lowNote?: string;
   highNote?: string;
+  /**
+   * Row in `ca_stat_distribution` this metric may be compared against, when a
+   * comparable one exists. `null` means the field has no statistic measured the
+   * SAME WAY, so no percentile and no distribution bar may be drawn — only the
+   * healthy-band reading.
+   *
+   * This exists because of a real defect: the hero's 3-bet from
+   * ca_player_stats_full is 3-bets PER OPPORTUNITY (normally 5-10%), while the
+   * field distribution computes 3-bets PER HAND DEALT from
+   * player_position_stats (p90 = 3.8%). Comparing them pinned every normal
+   * 3-bettor to the far right of the bar as an extreme outlier while the pill
+   * simultaneously read "In Range" from the per-opportunity band. Two
+   * contradictory statements about one number.
+   *
+   * player_position_stats has no 3-bet-opportunity count, so a comparable field
+   * figure is not computable today. Rather than silently compare the wrong
+   * things, 3-bet keeps its band (which is genuinely useful coaching) and draws
+   * no bar.
+   */
+  fieldMetric: string | null;
 }
 
 export const METRIC_DEFS: Record<string, MetricDef> = {
@@ -43,12 +63,14 @@ export const METRIC_DEFS: Record<string, MetricDef> = {
     label: 'Win Rate',
     direction: 'higher_better',
     unit: 'bb/100',
+    fieldMetric: 'bb100',
   },
   win_rate: {
     metric: 'win_rate',
     label: 'Hands Won',
     direction: 'higher_better',
     unit: '%',
+    fieldMetric: 'win_rate',
   },
   vpip: {
     metric: 'vpip',
@@ -56,6 +78,7 @@ export const METRIC_DEFS: Record<string, MetricDef> = {
     direction: 'band_optimal',
     band: [18, 28],
     unit: '%',
+    fieldMetric: 'vpip',
     lowNote: 'You are folding a lot of playable hands and giving up the blinds cheaply.',
     highNote: 'You are entering too many pots, which is the most common and most expensive leak.',
   },
@@ -65,6 +88,7 @@ export const METRIC_DEFS: Record<string, MetricDef> = {
     direction: 'band_optimal',
     band: [14, 22],
     unit: '%',
+    fieldMetric: 'pfr',
     lowNote: 'You are calling where you could be raising, and taking the pot down less often.',
     highNote: 'You are opening very wide, which is only profitable against players who fold a lot.',
   },
@@ -74,6 +98,8 @@ export const METRIC_DEFS: Record<string, MetricDef> = {
     direction: 'band_optimal',
     band: [5, 10],
     unit: '%',
+    // No comparable field statistic — see the note on MetricDef.fieldMetric.
+    fieldMetric: null,
     lowNote: 'You rarely re-raise, so opponents can open against you almost risk-free.',
     highNote: 'You re-raise very often, which invites opponents to play back at you lighter.',
   },
@@ -88,8 +114,21 @@ export interface BenchmarkResult {
   bandPosition: 'below' | 'inside' | 'above' | null;
   /** Sentence for the player. Always safe to render. */
   readout: string;
-  /** Where to draw the marker on a p10..p90 bar, 0..1. */
-  barPosition: number;
+  /**
+   * Where to draw the marker on the p10..p90 bar, 0..1 — or NULL when this
+   * metric has no comparable field distribution and the bar must not be drawn.
+   * See `fieldMetric` on MetricDef.
+   */
+  barPosition: number | null;
+  /**
+   * Where the field MEDIAN actually falls on the same 0..1 track.
+   *
+   * The bar used to draw its "Field median" tick at a hardcoded 50%, but the
+   * track is linear over p10..p90 and the median is not its midpoint. For
+   * bb100 in production the midpoint is -18.4 while p50 is -15.7, so the tick
+   * was labelled as something it was not.
+   */
+  medianPosition: number | null;
   sampleSize: number;
   tone: 'good' | 'bad' | 'neutral';
 }
@@ -111,8 +150,17 @@ function percentileFrom(value: number, d: DistributionRow): number {
   ].filter(([v]) => typeof v === 'number' && Number.isFinite(v)) as Array<[number, number]>;
 
   if (pts.length === 0) return 50;
-  if (value <= pts[0][0]) return Math.max(1, pts[0][1] * (value / (pts[0][0] || 1)));
-  if (value >= pts[pts.length - 1][0]) return Math.min(99, pts[pts.length - 1][1]);
+
+  // FIX 2026-08-21: this used to extrapolate below p10 as
+  // `p10Percentile * (value / p10Value)`, which INVERTS whenever p10 is
+  // negative — and bb100's p10 in production is -52.1. A player at -100 bb/100
+  // scored 19th percentile: the worse they ran, the better they ranked, and
+  // above the p10 breakpoint's own value of 10.
+  //
+  // Outside the breakpoints there is nothing to interpolate between, so the
+  // honest answer is "at or beyond the outermost decile" and no further.
+  if (value <= pts[0][0]) return pts[0][1];
+  if (value >= pts[pts.length - 1][0]) return pts[pts.length - 1][1];
 
   for (let i = 0; i < pts.length - 1; i++) {
     const [v0, p0] = pts[i];
@@ -146,13 +194,30 @@ export function benchmark(
 ): BenchmarkResult | null {
   const def = METRIC_DEFS[metric];
   if (!def) return null;
-  const row = rows.find((r) => r.metric === metric);
-  if (!row) return null;
+  if (!Number.isFinite(value)) return null;
 
-  const lo = row.p10;
-  const hi = row.p90;
-  const span = hi - lo;
-  const barPosition = span === 0 ? 0.5 : Math.min(1, Math.max(0, (value - lo) / span));
+  // Only ever compare against the row this metric declares as comparable.
+  // `fieldMetric: null` means no like-for-like field statistic exists.
+  const row = def.fieldMetric ? (rows.find((r) => r.metric === def.fieldMetric) ?? null) : null;
+
+  // Breakpoints are nullable in the schema. Without finite p10/p90 there is no
+  // bar to draw — previously this produced `left: NaN%`, which browsers drop,
+  // leaving an invisible marker parked at zero.
+  const hasBar = !!row && Number.isFinite(row.p10) && Number.isFinite(row.p90);
+  const barPosition = hasBar
+    ? (() => {
+        const span = row!.p90 - row!.p10;
+        return span === 0 ? 0.5 : Math.min(1, Math.max(0, (value - row!.p10) / span));
+      })()
+    : null;
+  const sampleSize = row?.sample_size ?? 0;
+  const medianPosition =
+    hasBar && Number.isFinite(row!.p50)
+      ? (() => {
+          const span = row!.p90 - row!.p10;
+          return span === 0 ? 0.5 : Math.min(1, Math.max(0, (row!.p50 - row!.p10) / span));
+        })()
+      : null;
 
   if (def.direction === 'band_optimal' && def.band) {
     const [bandLo, bandHi] = def.band;
@@ -181,10 +246,14 @@ export function benchmark(
       bandPosition,
       readout: readout.trim(),
       barPosition,
-      sampleSize: row.sample_size,
+      medianPosition,
+      sampleSize,
       tone,
     };
   }
+
+  // Directional metrics are meaningless without a distribution to rank against.
+  if (!row) return null;
 
   const raw = percentileFrom(value, row);
   const percentile = def.direction === 'lower_better' ? 100 - raw : raw;
@@ -200,7 +269,8 @@ export function benchmark(
       percentile
     )} of the field.`,
     barPosition,
-    sampleSize: row.sample_size,
+    medianPosition,
+    sampleSize,
     tone,
   };
 }

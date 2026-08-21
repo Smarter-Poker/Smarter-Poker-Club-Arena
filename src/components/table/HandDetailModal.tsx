@@ -135,7 +135,47 @@ export function HandDetailModal({
       }));
   }, [hand, netOf]);
 
-  if (!isOpen || !hand) return null;
+  if (!isOpen) return null;
+
+  /**
+   * Dan 2026-08-21 (item 4): this used to `return null` when there was no hand
+   * to show, so a player who tapped the card before their history had loaded
+   * got absolute silence — indistinguishable from a dead button, which is
+   * exactly how the whole feature was reported. Open the panel and say why
+   * it's empty.
+   */
+  if (!hand) {
+    return (
+      <div className="hdm-overlay" role="dialog" aria-label="Hand detail" onClick={onClose}>
+        <div className="hdm-panel" onClick={(e) => e.stopPropagation()}>
+          <div className="hdm-header">
+            <span className="hdm-title">HAND DETAIL</span>
+            <div className="hdm-header__actions">
+              <button
+                type="button"
+                className="hdm-icon-btn"
+                aria-label="Close"
+                onClick={onClose}
+              >
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                  <path
+                    d="M5 5l10 10M15 5L5 15"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div className="hdm-empty">
+            No completed hands yet at this table. Play a hand to the end and it
+            will appear here.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const total = hands.length;
   const displayPos = total - index; // 1..N, N = newest

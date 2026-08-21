@@ -840,6 +840,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         player_id: userId,
         seat: player.seat,
         uses_remaining: manualUsesLeft,
+        // Dan 2026-08-21 (item 2): the client extends its countdown from this
+        // number. Without it the hub path fell back to a hard-coded default,
+        // so a bank of any other length was displayed wrong.
+        secondsGranted: bankSeconds,
+        usesRemaining: manualUsesLeft,
         timestamp: Date.now(),
       });
     } catch {

@@ -19,7 +19,7 @@
  * gathered yet", never "you have not played", and the copy below says so.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   ComposedChart,
@@ -38,6 +38,8 @@ import './EVLuckChart.css';
 
 interface Props {
   userId?: string;
+  /** Suppress entrance animation so the print dossier never catches a half-drawn chart. */
+  still?: boolean;
   /** Range in days, or null for all time. Mirrors the page's RANGES. */
   days?: number | null;
 }
@@ -60,19 +62,17 @@ const MEANINGFUL_ALL_INS = 30;
 const fmtBB = (n: number): string =>
   `${n >= 0 ? '+' : ''}${n.toLocaleString(undefined, { maximumFractionDigits: 1 })}`;
 
-export default function EVLuckChart({ userId, days = null }: Props) {
-  const reduceMotion = useReducedMotion();
+export default function EVLuckChart({ userId, days = null, still = false }: Props) {
+  // Recharts renders axis ticks with an INLINE fill, which no stylesheet can
+  // override - so on a printed white page the near-white ticks disappear and
+  // the chart loses both axes. `still` is only true while the dossier renders.
+  const axisTick = { fill: still ? '#374151' : 'rgba(200,224,245,0.45)', fontSize: 10 };
+  const gridStroke = still ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.06)';
+  const zeroStroke = still ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.18)';
+  const reduceMotionPref = useReducedMotion();
+  const reduceMotion = reduceMotionPref || still;
   const [data, setData] = useState<EVCurvePayload | null>(null);
   const [loading, setLoading] = useState(true);
-  const aliveRef = useRef(true);
-
-  useEffect(() => {
-    aliveRef.current = true;
-    return () => {
-      aliveRef.current = false;
-    };
-  }, []);
-
   useEffect(() => {
     if (!userId) {
       setLoading(false);
@@ -82,10 +82,10 @@ export default function EVLuckChart({ userId, days = null }: Props) {
     setLoading(true);
     StatsFactsService.getEVCurve(userId, days)
       .then((payload) => {
-        if (!cancelled && aliveRef.current) setData(payload);
+        if (!cancelled) setData(payload);
       })
       .finally(() => {
-        if (!cancelled && aliveRef.current) setLoading(false);
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
@@ -147,7 +147,8 @@ export default function EVLuckChart({ userId, days = null }: Props) {
   const allIns = summary?.all_in_hands ?? 0;
   const luck = summary?.luck_bb ?? 0;
   const luckPer100 = summary?.luck_bb_per_100 ?? 0;
-  const running = luck >= 0 ? 'above' : 'below';
+  const runningAbove = luck >= 0;
+  const running = runningAbove ? 'above' : 'below';
 
   return (
     <motion.div
@@ -183,22 +184,32 @@ export default function EVLuckChart({ userId, days = null }: Props) {
               {/* Gradient ids are document-global in recharts; two charts
                   sharing one silently render the wrong fill. These are
                   namespaced so they cannot collide with the page's existing
-                  `profitGradient`. */}
+                  `profitGradient`.
+
+                  FIX 2026-08-21: there was only a "good" gradient, applied to
+                  the gap regardless of sign — so a player running 200bb BELOW
+                  expectation saw a reassuring green band. Colour is the only
+                  encoding on this band, which inverted the chart's meaning for
+                  exactly the players who most need to read it correctly. */}
               <linearGradient id="evluckGoodGrad" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#22c55e" stopOpacity={0.35} />
                 <stop offset="100%" stopColor="#22c55e" stopOpacity={0.02} />
               </linearGradient>
+              <linearGradient id="evluckBadGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#ef4444" stopOpacity={0.35} />
+                <stop offset="100%" stopColor="#ef4444" stopOpacity={0.02} />
+              </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+            <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
             <XAxis
               dataKey="i"
-              tick={{ fill: 'rgba(200,224,245,0.45)', fontSize: 10 }}
+              tick={axisTick}
               tickLine={false}
               axisLine={false}
               minTickGap={40}
             />
             <YAxis
-              tick={{ fill: 'rgba(200,224,245,0.45)', fontSize: 10 }}
+              tick={axisTick}
               tickLine={false}
               axisLine={false}
               width={46}
@@ -213,14 +224,16 @@ export default function EVLuckChart({ userId, days = null }: Props) {
               labelFormatter={(v) => `Hand ${Number(v).toLocaleString()}`}
               formatter={(value, name) => [`${fmtBB(Number(value ?? 0))} bb`, String(name ?? '')]}
             />
-            <ReferenceLine y={0} stroke="rgba(255,255,255,0.18)" />
-            {/* The band is the story: how far actual has drifted from EV. */}
+            <ReferenceLine y={0} stroke={zeroStroke} />
+            {/* The band is the story: how far actual has drifted from EV.
+                Its colour follows the CURRENT sign of that drift, so it can
+                never reassure a player who is running badly. */}
             <Area
               type="monotone"
               dataKey="luck"
               name="Luck"
               stroke="none"
-              fill="url(#evluckGoodGrad)"
+              fill={runningAbove ? 'url(#evluckGoodGrad)' : 'url(#evluckBadGrad)'}
               isAnimationActive={!reduceMotion}
             />
             <Line
@@ -254,7 +267,11 @@ export default function EVLuckChart({ userId, days = null }: Props) {
           <i className="evluck-swatch is-dashed" style={{ borderColor: '#8b5cf6' }} /> Expected
         </span>
         <span className="evluck-key">
-          <i className="evluck-swatch" style={{ background: 'rgba(34,197,94,0.45)' }} /> Gap
+          <i
+            className="evluck-swatch"
+            style={{ background: runningAbove ? 'rgba(34,197,94,0.45)' : 'rgba(239,68,68,0.45)' }}
+          />{' '}
+          Gap ({running} expected)
         </span>
       </div>
 
@@ -267,7 +284,7 @@ export default function EVLuckChart({ userId, days = null }: Props) {
       )}
       {summary?.capped && (
         <p className="evluck-note">
-          Showing your most recent 5,000 cash hands.
+          Showing your most recent {summary.hands.toLocaleString()} cash hands.
         </p>
       )}
       <p className="evluck-note">

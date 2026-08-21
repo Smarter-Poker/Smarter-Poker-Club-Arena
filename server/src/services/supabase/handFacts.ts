@@ -328,6 +328,7 @@ export interface FlowFlags {
   vpip: boolean;
   pfr: boolean;
   three_bet: boolean;
+  four_bet: boolean;
   faced_three_bet: boolean;
   folded_to_three_bet: boolean;
   had_cbet_flop_opp: boolean;
@@ -386,6 +387,7 @@ export function deriveFlowFlags(
   let myRaiseIndex = -1; // which voluntary raise (0-based) was mine
   let pfr = false;
   let threeBet = false;
+  let fourBet = false;
   let vpip = false;
   let lastAggressorPreflop: string | null = null;
   let facedThreeBet = false;
@@ -407,9 +409,21 @@ export function deriveFlowFlags(
       if (isMine) {
         pfr = true;
         if (myRaiseIndex < 0) myRaiseIndex = raiseCount;
+        // Blinds never reach the action log, so the open is raise index 0,
+        // the 3-bet is index 1 and the 4-bet is index 2.
         if (raiseCount === 1) threeBet = true;
-      } else if (myRaiseIndex >= 0 && raiseCount > myRaiseIndex) {
-        // Someone re-raised after our raise.
+        if (raiseCount === 2) fourBet = true;
+      } else if (myRaiseIndex === 0 && raiseCount === 1) {
+        // FIX 2026-08-21: this used to be `myRaiseIndex >= 0 && raiseCount >
+        // myRaiseIndex`, i.e. "someone re-raised after me" — which also fired
+        // when WE were the 3-bettor and villain 4-bet. Fold-to-3-bet was
+        // therefore inflated by every fold to a 4-bet.
+        //
+        // A 3-bet is the SECOND voluntary raise, so facing one means we made
+        // the FIRST (myRaiseIndex === 0) and this is raise index 1. Note a
+        // cold-caller who then faces a squeeze is deliberately not counted:
+        // the standard definition scopes this stat to openers, which is also
+        // what makes it comparable to other trackers.
         facedThreeBet = true;
       }
       raiseCount++;
@@ -419,7 +433,17 @@ export function deriveFlowFlags(
   }
 
   const iFolded = mine.some((a) => a.action === 'fold');
-  const sawFlop = !iFolded && opts.boardLength >= 3;
+
+  // FIX 2026-08-21: this used to be `!iFolded`, which scans EVERY street — so a
+  // player who called preflop, saw the flop, and folded to a c-bet was recorded
+  // as never having seen the flop. That collapsed saw_flop into roughly
+  // went_to_showdown and biased every continuation metric: worst of all it made
+  // had_cbet_flop_opp false for a preflop raiser who c-bet and then folded to a
+  // raise, so cbet% was measured only over the c-bets that WORKED.
+  //
+  // The fold that decides whether you saw a flop is the PREFLOP one.
+  const foldedPreflop = mine.some((a) => a.stage === 'preflop' && a.action === 'fold');
+  const sawFlop = !foldedPreflop && opts.boardLength >= 3;
   const hadCbetOpp = sawFlop && lastAggressorPreflop === userId;
 
   let cbetFlop = false;
@@ -431,13 +455,16 @@ export function deriveFlowFlags(
 
   // A showdown happened iff two or more players were still live at the end.
   // This is exact, and unlike hand_history.hole_cards it does not conflate
-  // "reached showdown" with "had their cards revealed".
+  // "reached showdown" with "had their cards revealed". Here `iFolded` across
+  // all streets IS the right test - folding on the river still means you did
+  // not reach showdown.
   const wentToShowdown = !iFolded && opts.nonFoldedCount >= 2;
 
   return {
     vpip,
     pfr,
     three_bet: threeBet,
+    four_bet: fourBet,
     faced_three_bet: facedThreeBet,
     folded_to_three_bet: foldedToThreeBet,
     had_cbet_flop_opp: hadCbetOpp,
@@ -504,10 +531,41 @@ export function computeTransfers(nets: Map<string, number>): TransferRow[] {
 
   const out: TransferRow[] = [];
   for (const [winnerId, won] of winners) {
-    for (const [loserId, loss] of losers) {
-      if (winnerId === loserId) continue;
-      const amount = r2(won * (loss / totalLosses));
-      if (amount >= 0.01) out.push({ winnerId, loserId, amount });
+    // LARGEST REMAINDER, added 2026-08-21. Rounding each pair independently
+    // left the pair-sums short of `won` by up to half a cent per loser, and
+    // that drift accumulates monotonically in the Nemesis aggregate - the one
+    // number this table exists to produce. Allocating whole cents and then
+    // handing the leftover to the largest remainders makes the split sum to
+    // `won` EXACTLY, which is what lets the module claim chip conservation.
+    const eligible = losers.filter(([loserId]) => loserId !== winnerId);
+    if (eligible.length === 0) continue;
+
+    let eligibleLoss = 0;
+    for (const [, loss] of eligible) eligibleLoss += loss;
+    if (eligibleLoss <= 0) continue;
+
+    const wonCents = Math.round(won * 100);
+    const parts = eligible.map(([loserId, loss]) => {
+      const exact = (wonCents * loss) / eligibleLoss;
+      const floor = Math.floor(exact);
+      return { loserId, cents: floor, remainder: exact - floor };
+    });
+
+    let allocated = parts.reduce((s, p) => s + p.cents, 0);
+    let leftover = wonCents - allocated;
+    // Ties broken by the original order, so the same inputs always produce the
+    // same rows - this write is idempotent on (hand_id, winner_id, loser_id).
+    const byRemainder = [...parts].sort((a, b) => b.remainder - a.remainder);
+    for (let i = 0; leftover > 0 && i < byRemainder.length; i++, leftover--) {
+      byRemainder[i].cents += 1;
+    }
+
+    for (const p of parts) {
+      // The DB has CHECK (amount > 0); a zero-cent share is dropped, not
+      // clamped. Those are genuinely sub-cent slices of a tiny pot.
+      if (p.cents > 0) {
+        out.push({ winnerId, loserId: p.loserId, amount: p.cents / 100 });
+      }
     }
   }
   return out;
@@ -563,6 +621,14 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
     const playersDealt = dealtSeats.length || input.roster.length;
 
     // Gross awarded per user (post-rake — winners receive net of it).
+    //
+    // KNOWN SCOPE LIMIT: this is POT money only. Bad-beat jackpot payouts,
+    // insurance settlements and 7-2 bounties all move chips at this same
+    // settlement and are invisible here, so a player who hits a jackpot will
+    // show a large negative `net` on the very hand that paid them. Those flows
+    // live on their own tables and are not part of "how did I do at poker",
+    // which is what this column answers - but anyone reconciling ca_hand_facts
+    // against a wallet balance needs to know it.
     const returnedBy = new Map<string, number>();
     for (const w of input.winners ?? []) {
       if (!w?.userId) continue;
@@ -640,9 +706,30 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
       let evNet = net;
 
       const eq = equity?.byUser.get(uid);
-      if (flags.was_all_in && typeof eq === 'number') {
+
+      // FIX 2026-08-21: was_all_in used to come from the action log alone, and
+      // the action log CANNOT see an all-in made by calling. HandController
+      // sets is_all_in on a call that consumes the stack but still records the
+      // action as 'call' - so the covering player who snaps off a shove, and
+      // the short stack who calls one, both looked "not all-in" and were
+      // dropped from the EV adjustment. That is one whole side of most all-in
+      // confrontations missing from the luck graph.
+      //
+      // Presence in the equity map is the sound test: it is populated only for
+      // an ALL_IN_RUNOUT, and everyone in it had their committed chips run out
+      // with no further betting possible - which is exactly what the EV
+      // adjustment is measuring, whether they got there by shoving or calling.
+      const inAllInRunout = typeof eq === 'number';
+      const wasAllIn = flags.was_all_in || inAllInRunout;
+
+      if (inAllInRunout) {
         allInEquity = eq;
         const eligible = maxWinnable(invested, investedList) * rakeFactor;
+        // NOTE: `eq` is equity against the whole all-in field while `eligible`
+        // caps at this player's main pot. In a side-pot spot a short stack's
+        // true share of the main pot is higher than its share of the field, so
+        // ev_returned is biased slightly LOW for short stacks. Exact for the
+        // two-way case that dominates volume.
         evReturned = r2(eq * eligible);
         evNet = r2(evReturned - invested);
       }
@@ -655,7 +742,9 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
         tournament_id: input.tournamentId ?? null,
         played_at: input.playedAt,
         game_variant: input.gameVariant,
-        big_blind: input.bigBlind,
+        // `bb`, not the raw input: big_blind is NOT NULL, and a null here would
+        // be omitted from the JSON and 400 the entire batch upsert.
+        big_blind: bb,
         seat: seatInfo?.seat ?? null,
         position:
           typeof seatInfo?.seat === 'number' && typeof input.buttonSeat === 'number'
@@ -669,10 +758,19 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
         returned,
         net,
         net_bb: r2(net / bb),
-        rake_paid: 0,
+        // FIX 2026-08-21: this was hardcoded 0, so every row claimed the player
+        // paid no rake. It is the one column here that is genuinely
+        // unrecoverable later - hand_history.rake_amount is hand-level and is
+        // purged at 7 days - so "win rate net of rake" and any rake-contribution
+        // analysis would have been lost forever for hands written before now.
+        //
+        // Contribution-weighted, matching how the engine itself apportions rake
+        // (atomic_distribute_rake takes p_contributions).
+        rake_paid: totalInvested > 0 ? r2((input.rakeAmount ?? 0) * (invested / totalInvested)) : 0,
         vpip: flags.vpip,
         pfr: flags.pfr,
         three_bet: flags.three_bet,
+        four_bet: flags.four_bet,
         faced_three_bet: flags.faced_three_bet,
         folded_to_three_bet: flags.folded_to_three_bet,
         had_cbet_flop_opp: flags.had_cbet_flop_opp,
@@ -682,9 +780,15 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
         won_at_showdown: flags.won_at_showdown,
         aggressive_actions: flags.aggressive_actions,
         passive_actions: flags.passive_actions,
-        was_all_in: flags.was_all_in,
-        all_in_street: flags.was_all_in ? (equity?.street ?? flags.all_in_street) : null,
-        all_in_at_risk: flags.was_all_in ? invested : null,
+        was_all_in: wasAllIn,
+        // The player's OWN commit street wins over the runout street. equity
+        // .street is the board length when the runout broadcast fired, so a
+        // preflop shove into two opponents who then contest a flop was being
+        // recorded as an all-in "on the flop" - a street the player never
+        // chose to commit on. Fall back to the runout street only when the
+        // action log has nothing (i.e. they got all-in by calling).
+        all_in_street: wasAllIn ? (flags.all_in_street ?? equity?.street ?? null) : null,
+        all_in_at_risk: wasAllIn ? invested : null,
         all_in_equity: allInEquity,
         ev_returned: evReturned,
         ev_net: evNet,

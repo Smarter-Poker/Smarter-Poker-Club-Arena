@@ -11,7 +11,7 @@
  * Transparent glass design matching the other HUD corners.
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 import './PreviousHandCard.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -48,8 +48,6 @@ export function PreviousHandCard({
   onTap,
   onShareHand,
 }: PreviousHandCardProps) {
-  const [showActions, setShowActions] = useState(false);
-
   // Don't show if no hand has been played yet
   if (handNumber == null) return null;
 
@@ -67,18 +65,34 @@ export function PreviousHandCard({
         ? 'Push'
         : result.toLocaleString();
 
-  const handleClick = () => {
-    setShowActions((prev) => !prev);
-  };
-
+  /**
+   * Dan 2026-08-21 (bug list item 4): "previous hand still does not click and
+   * expand to review the previous hand(s)."
+   *
+   * It didn't, and the reason was here: tapping the card opened a two-button
+   * popover, and the button that actually opened the breakdown was labelled
+   * "Replay". So the tap that was supposed to expand the hand produced a tiny
+   * menu instead, and the obvious-looking button in it went somewhere else.
+   *
+   * The card is now what it looks like: one tap opens the hand breakdown
+   * (HandDetailModal, which pages through every hand of the session). Share
+   * keeps its own small button on the card, so it needs no menu either.
+   */
   return (
     <div className="prev-hand-card-wrapper">
       <div
         className="prev-hand-card"
-        onClick={handleClick}
+        onClick={() => onTap?.()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onTap?.();
+          }
+        }}
         role="button"
         tabIndex={0}
-        aria-label={`Previous hand #${handNumber}`}
+        aria-label={`Previous hand #${handNumber} — open hand history`}
+        title="Open hand history"
       >
         <div className="prev-hand-card__icon">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -110,50 +124,29 @@ export function PreviousHandCard({
           </span>
         </div>
         {handDescription && <span className="prev-hand-card__desc">{handDescription}</span>}
-      </div>
-
-      {/* Action buttons — shown on tap */}
-      {showActions && (
-        <div className="prev-hand-card__actions">
+        {onShareHand && (
           <button
-            className="prev-hand-card__action-btn"
+            type="button"
+            className="prev-hand-card__share"
+            aria-label="Share this hand"
+            title="Share this hand"
             onClick={(e) => {
               e.stopPropagation();
-              onTap?.();
-              setShowActions(false);
+              onShareHand();
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path
-                d="M2 3h10M2 5.5h6M2 8h8M2 10.5h4"
-                stroke="currentColor"
-                strokeWidth="1.2"
-                strokeLinecap="round"
-              />
-            </svg>
-            Replay
-          </button>
-          <button
-            className="prev-hand-card__action-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              onShareHand?.();
-              setShowActions(false);
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
               <path
                 d="M4 8l3-3 3 3M7 5v7M2 11h10"
                 stroke="currentColor"
-                strokeWidth="1.2"
+                strokeWidth="1.3"
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
             </svg>
-            Share
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

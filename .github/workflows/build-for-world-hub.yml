@@ -34,17 +34,25 @@ jobs:
       - name: Checkout Club Arena
         uses: actions/checkout@v4
 
-      # DIAGNOSTIC (2026-08-06): stage markers.
-      # `git push HEAD:refs/heads/...` publishes the already-checked-out commit
-      # under a new ref. It creates no commit and never touches the working
-      # tree, so it cannot influence the build. `|| true` guarantees a marker
-      # failure can never fail the deploy. Which markers exist tells us which
-      # stage died, without needing the Actions API.
-      - name: Marker - checkout reached
-        run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
-          git push --no-verify --force origin "HEAD:refs/heads/ci-marker/${SHORT_SHA}-checkout" || true
-
+      # STAGE MARKERS REMOVED (2026-08-21).
+      #
+      # Three steps here used to `git push HEAD:refs/heads/ci-marker/<sha>-*`
+      # after checkout, deps and build, so that "which markers exist" told you
+      # which stage died. They were added 2026-08-06 with the explicit
+      # justification "without needing the Actions API" — at the time that API
+      # was not readable from here.
+      #
+      # It is readable now. `gh run view <id> --json` and
+      # `gh api repos/.../actions/runs/<id>/jobs` return every step with its
+      # own conclusion, which is strictly more information than the markers
+      # ever carried: today that is how the failing step was identified as
+      # "Client tests must pass before the bundle ships", something the
+      # markers could only have narrowed to "somewhere after deps".
+      #
+      # The cost was not free. Three refs per push, never cleaned up, had
+      # accumulated 716 ci-marker branches out of 1025 total on this repo —
+      # every one of them a permanent ref that `actions/checkout` and every
+      # `git ls-remote` pays for. Deleted here so it stops growing.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -53,11 +61,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Marker - dependencies installed
-        run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
-          git push --no-verify --force origin "HEAD:refs/heads/ci-marker/${SHORT_SHA}-deps" || true
 
       # ═══════════════════════════════════════════════════════════════════
       # CLIENT TESTS GATE THE BUNDLE — added 2026-08-21.
@@ -103,11 +106,6 @@ jobs:
           JSON
           cat dist/build-info.json
 
-      - name: Marker - build succeeded
-        run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
-          git push --no-verify --force origin "HEAD:refs/heads/ci-marker/${SHORT_SHA}-build" || true
-
       - name: Commit dist to sync branch
         id: set-branch
         run: |
@@ -131,6 +129,12 @@ jobs:
   sync-to-world-hub:
     needs: build-and-store
     runs-on: ubuntu-latest
+    # Needed by the sync-branch cleanup at the end of this job. build-and-store
+    # already declares this because it PUSHES the branch; without it here the
+    # matching delete silently no-ops behind its `|| true` and the refs keep
+    # accumulating — which is the failure mode this cleanup exists to end.
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout Club Arena sync branch
@@ -177,6 +181,22 @@ jobs:
           done
           echo "World Hub push failed after 5 attempts."
           exit 1
+
+      # The sync branch is a courier, not a record. It exists only so this job
+      # can check out the dist/ that the previous job built; once World Hub has
+      # the files, nothing ever reads it again — and the bundle it carried is
+      # recorded permanently in the World Hub sync commit either way.
+      #
+      # Left behind, they accumulated 180 build/world-hub-sync-* refs. Deleting
+      # on success (and only on success — a failed sync's branch is the one
+      # thing worth keeping, so you can retry from it by hand) keeps the ref
+      # namespace flat. `|| true`: a cleanup failure must never turn a
+      # successful publish into a red run.
+      - name: Delete the sync branch now that World Hub has the files
+        if: success()
+        run: |
+          cd club-arena-build
+          git push --no-verify origin --delete "${{ needs.build-and-store.outputs.sync_branch }}" || true
 
       - name: Sync summary
         run: |

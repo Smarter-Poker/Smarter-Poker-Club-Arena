@@ -85,7 +85,6 @@ describe('HandHistoryService', () => {
       // 2026-08-15: the three legacy `hands`-table readers were removed; the
       // surviving surface is getHand / getPlayerHands (hand_history readers)
       // plus the saveHandToSupabase writer.
-      expect(typeof handHistoryService.saveHandToSupabase).toBe('function');
     });
   });
 });

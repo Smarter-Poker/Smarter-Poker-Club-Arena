@@ -410,11 +410,7 @@ export class HandPersistence {
       });
 
       if (handPlayerRows.length > 0) {
-        const { error: hpError } = await supabase.from('hand_players').insert(handPlayerRows);
-
-        if (hpError) {
-          reportError(hpError, 'HandPersistence.onHandComplete.insertPlayers', { handNumber });
-        }
+        // hand_players insertion removed in Phase 11
       }
 
       // NOTE: rake_records insertion is server-side. The engine writes it via

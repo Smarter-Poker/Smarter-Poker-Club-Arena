@@ -481,7 +481,7 @@ export default function LeaderboardPage() {
 
   const formatValue = (value: number, m: LeaderboardMetric): string => {
     const precise = Math.trunc(value * 100) / 100;
-    if (m === 'vpip' || m === 'roi') {
+    if (m === 'vpip' || m === 'pfr' || m === 'roi') {
       return `${precise}%`;
     }
     if (m === 'bb100') {
@@ -734,7 +734,7 @@ export default function LeaderboardPage() {
         ) : scope === 'my-clubs' && userClubs.length === 0 ? (
           <div className="empty-state">
             <span className="empty-icon">{'♠'}</span>
-            <p>Join A Club To See Leaderboard Rankings, Or Switch To Global.</p>
+            <p>Join a club to see leaderboard rankings, or switch to Global.</p>
             <button className="join-club-btn" onClick={() => navigate('/clubs')}>
               Browse Clubs
             </button>
@@ -759,7 +759,7 @@ export default function LeaderboardPage() {
               {'★'}
             </span>
             <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
-              No Rankings Yet For This Period.
+              No rankings yet for this period.
             </p>
             <p
               className="empty-sub"
@@ -769,10 +769,10 @@ export default function LeaderboardPage() {
                 margin: '0 0 1.5rem',
               }}
             >
-              Start Playing To Climb The Leaderboard.
+              Start playing to climb the leaderboard.
             </p>
             <button className="join-club-btn" onClick={() => navigate('/')}>
-              Find A Table
+              Find a Table
             </button>
           </div>
         ) : activeTab === 'tournaments' && tournamentsLoading ? (
@@ -784,8 +784,8 @@ export default function LeaderboardPage() {
         ) : activeTab === 'tournaments' && tournamentStats.length === 0 ? (
           <div className="empty-state">
             <span className="empty-icon">{'★'}</span>
-            <p>No Tournament Stats Yet.</p>
-            <p className="empty-sub">Register For A Tournament To See Your Stats.</p>
+            <p>No tournament stats yet.</p>
+            <p className="empty-sub">Register for a tournament to see your stats.</p>
           </div>
         ) : activeTab === 'rankings' && entries.length > 0 ? (
           <>

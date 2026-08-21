@@ -8370,7 +8370,7 @@ work was merged in a /tmp clone (mount git is unlinked-locked) with 3
 conflicts resolved, tsc + vite build verified on the exact merged tree
 before each push attempt. WH sync 0c505e05 confirmed serving from
 production /api/health, and the live bundle greps positive for
-table-tab-bar__mini-card and table-tab-bar__timer-bar.
+table-tab-bar**mini-card and table-tab-bar**timer-bar.
 
 ## 2026-08-20 — Bomb Pot improvement pass (same Cowork session, post-deploy)
 
@@ -8395,10 +8395,11 @@ reviewing it against the reference once more:
   HAND_COMPLETE (unconditionally — the overlay ignores it when idle, and
   bombPotActive could be stale in that closure), so a fast all-in runout
   dismisses the title instead of leaving it over the showdown.
-- Cleanup: SHIP-BOMB-POT.command + _bombpot-ship-20260820/ (the no-push-
-  route fallbacks, obsoleted by the working push route) moved to _to_delete/.
+- Cleanup: SHIP-BOMB-POT.command + \_bombpot-ship-20260820/ (the no-push-
+  route fallbacks, obsoleted by the working push route) moved to \_to_delete/.
 
 ENGINE FOLLOW-UP (Tier 3, needs plan approval — NOT in this change):
+
 1. Double-board bomb pot: deal two full boards at flop, evaluate each for
    half the pot at showdown (chip-conservation property tests mandatory).
    Client is ready: RIT board stack renders stacked boards; overlay takes
@@ -8411,3 +8412,30 @@ ENGINE FOLLOW-UP (Tier 3, needs plan approval — NOT in this change):
    the stopgap).
 
 Verified: tsc --noEmit clean, vite prod build clean (10.06s).
+
+## 2026-08-21 (00:00-00:30) — The split-brain session: two dealers, one table
+
+Dan's KK all-in resolved with no flop shown, hands ran 3.8s flat, turns
+skipped. Root cause found in the engine logs: during the 23:48Z deploy
+overlap TWO engine instances dealt his table simultaneously — "lost the
+lease on eab2e2e1 — another engine instance has taken it over (enforcement
+off; still dealing)". Commit `52ae9724c`:
+
+- [P0] ENGINE_LEASE_ENFORCE is ON BY DEFAULT (opt-out 'off'). Verified live
+  after cutover: /health lease {enforced:true, conflictCount:0,
+  claimErrors:0}. A split-brain loser now stops dealing in the same
+  discovery tick. Fail-open on RPC errors unchanged.
+- [P0] Dan's rule, verbatim: "spins can NEVER START until 3 players are
+  registered and have paid." The legacy 3-arg register_for_tournament RPC
+  seated players WITHOUT charging (proven: an agent-seated entry played two
+  spins free; charged retroactively). The RPC is DROPPED (migration
+  20260820q); the engine start gate now demands each registration's
+  tournament_buyin ledger row, removes freeloaders, and stands down until 3
+  PAID players are seated; SpinAndGoLobby repointed at the paid RPC.
+- [P1] Popup house rule (CODE SAFETY RULE 7): Title Case every word, em
+  dashes forbidden — enforced in formatPopupText at the Toast door, with
+  dedupe so "connection lost" cannot stack. 10 guard tests.
+- [P1] Tournament end flow: busted or victorious players are auto-removed
+  from the table and landed in the CLUB LOBBY with a TournamentResultCard
+  (place + winnings). TablePage navigation + heroSeat invariant merged to
+  main via the parallel agent's session-stats commit (12cfa4d78).

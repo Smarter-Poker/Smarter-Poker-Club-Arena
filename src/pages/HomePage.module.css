@@ -197,6 +197,8 @@
   padding: 0 16px 16px 16px;
   box-sizing: border-box;
   z-index: 10;
+  isolation: isolate;
+  background-color: #0a1120;
   position: relative;
   /* Fill remaining space and scroll internally */
   flex: 1;
@@ -341,6 +343,8 @@
   overflow: hidden;
   flex-shrink: 0;
   z-index: 10;
+  isolation: isolate;
+  background-color: #0a1120;
   box-shadow:
     0 20px 50px rgba(0, 0, 0, 0.5),
     0 0 30px rgba(0, 212, 255, 0.15);
@@ -423,6 +427,8 @@
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   z-index: 10;
+  isolation: isolate;
+  background-color: #0a1120;
   position: relative;
   /* Entrance animation — fade in + slide up */
   animation: carouselEntrance 0.6s ease-out 200ms both;
@@ -919,6 +925,8 @@
   /* Dan 2026-08-21: club cards are layer 1 — above the action-bar console's
      oversized image canvas (z-index 0). */
   z-index: 10;
+  isolation: isolate;
+  background-color: #0a1120;
 }
 
 .carouselScrollFade::before,
@@ -1037,6 +1045,8 @@
   display: flex;
   gap: 10px;
   z-index: 10;
+  isolation: isolate;
+  background-color: #0a1120;
   padding: 16px 8px 20px 8px;
   margin-top: 0;
   overflow: visible;

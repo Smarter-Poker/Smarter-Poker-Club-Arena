@@ -820,15 +820,6 @@ function HomePageInner() {
   // Stable string identity of club IDs — avoids .map().join() allocation on every render
   const displayClubIdsKey = useMemo(() => displayClubs.map((c) => c.id).join(','), [displayClubs]);
 
-  /* Realtime subscribes per club id, so it needs the ids themselves and not
-     just their joined identity. Keyed off displayClubIdsKey rather than
-     displayClubs so the array is only rebuilt when the MEMBERSHIP changes —
-     otherwise every stats refresh would tear down and rebuild every channel. */
-  const clubIdsForRealtime = useMemo(
-    () => (displayClubIdsKey ? displayClubIdsKey.split(',').filter(Boolean) : []),
-    [displayClubIdsKey]
-  );
-
   // ═══════════════════════════════════════════════════════════════════════════════
   // Per-club stats fetching — member count, club level, active players
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -871,15 +862,44 @@ function HomePageInner() {
 
             const activePlayers = activeCountMap.get(club.id) || 0;
 
-            /* AUDIT 2026-08-20 - this block is gone, and with it two network
-               round trips per club on the hottest page in the app.
+            // Auto-recompute club level if stuck at default
+            // Session dedup: only fire the RPC once per session per club
+            let effectiveLevel = club.level || 1;
+            const levelRecomputeKey = `level_recomputed_${club.id}`;
+            if (effectiveLevel <= 1 && !sessionStorage.getItem(levelRecomputeKey)) {
+              try {
+                const { error: rpcErr } = await supabase.rpc('recompute_club_levels', {
+                  p_club_id: club.id,
+                });
+                if (!rpcErr) {
+                  sessionStorage.setItem(levelRecomputeKey, '1');
+                  const { data: refreshed } = await supabase
+                    .from('clubs')
+                    .select(
+                      'level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+                    )
+                    .eq('id', club.id)
+                    .maybeSingle();
+                  if (refreshed && refreshed.level > 1) {
+                    effectiveLevel = refreshed.level;
+                    club.hierarchy_units_rounded_up =
+                      refreshed.hierarchy_units_rounded_up ?? club.hierarchy_units_rounded_up;
+                    club.player_threshold_current =
+                      refreshed.player_threshold_current ?? club.player_threshold_current;
+                    club.player_threshold_next =
+                      refreshed.player_threshold_next ?? club.player_threshold_next;
+                    club.hierarchy_threshold_current =
+                      refreshed.hierarchy_threshold_current ?? club.hierarchy_threshold_current;
+                    club.hierarchy_threshold_next =
+                      refreshed.hierarchy_threshold_next ?? club.hierarchy_threshold_next;
+                  }
+                }
+              } catch (e) {
+                reportError(e, 'HomePage');
+                // RPC not available
+              }
+            }
 
-               It recomputed the stored clubs.level and then re-SELECTed the
-               club to pick up that level and its threshold columns. Nothing
-               reads any of that any more: level is derived from member_count
-               below, client-side, on the published ladder. The recompute RPC
-               fired for every club sitting at level 1 - which, on a fresh
-               session, is every club a new player has just joined. */
             /* Dan 2026-08-20: "a true 'club level' level 1-55 that is
                determined based on how many players are inside a club."
 
@@ -887,9 +907,11 @@ function HomePageInner() {
                HIERARCHY curve — so a club levelled up by appointing agents,
                and the badge answered a question nobody was asking. Level is
                now purely member count, on the published 1-55 ladder that
-               public.fn_club_level_for_members mirrors. The stored clubs.level
-               is no longer read here at all. */
+               public.fn_club_level_for_members mirrors. `effectiveLevel` (the
+               stored clubs.level) is left alone for the progress bars that
+               still read the legacy threshold columns. */
             const clubLevel = getClubLevelFromMembers(memberCount);
+            void effectiveLevel;
 
             if (isMounted) {
               // Safety clamp: active players can never exceed member count
@@ -946,10 +968,9 @@ function HomePageInner() {
                  clubs, in one query. */
               const unionActiveMap: Record<string, number> = {};
               try {
-                const { data: unionCounts } = await supabase.rpc(
-                  'fn_union_active_player_counts',
-                  { p_union_ids: realUnionIds }
-                );
+                const { data: unionCounts } = await supabase.rpc('fn_union_active_player_counts', {
+                  p_union_ids: realUnionIds,
+                });
                 for (const r of unionCounts || []) {
                   unionActiveMap[(r as any).union_id] = Number((r as any).active_count) || 0;
                 }
@@ -1000,65 +1021,15 @@ function HomePageInner() {
     }
 
     fetchAllClubStats();
-
-    /* ── Dan 2026-08-20: "that needs to be real time updates." ──
-       A 20s poll means a card can be wrong for twenty seconds, and the number
-       it is wrong about is the one that tells a player whether a club is worth
-       opening. The listener was removed in 2026-07 "for write volume", and that
-       concern is real — horses seat and unseat constantly, so an unfiltered
-       table_seats subscription would fire hundreds of times a minute.
-
-       Two things decide the shape of this. table_seats is NOT in the
-       supabase_realtime publication — verified against production — so
-       subscribing to it would have fired exactly zero times, silently. `tables`
-       IS published, carries club_id, and its rows are touched whenever a table
-       moves, which is the same signal an order of magnitude cheaper: one event
-       per table instead of one per seat.
-
-       So: subscribe PER CLUB against `tables` (the filter runs server-side, so
-       we are only woken for clubs actually on screen) and DEBOUNCE the refetch.
-       The event is only a nudge — it says "something moved", never a count —
-       and the batched RPC stays the single source of truth, so a burst of
-       twelve table updates costs one query, not twelve.
-
-       The poll stays as a backstop at a longer interval. If realtime drops
-       silently — which it does — the cards still converge instead of freezing
-       on whatever they last saw. */
-    const debounceRef = { t: null as ReturnType<typeof setTimeout> | null };
-    const scheduleRefresh = () => {
-      if (debounceRef.t) return; // a refresh is already queued; coalesce into it
-      debounceRef.t = setTimeout(() => {
-        debounceRef.t = null;
-        if (isMounted) fetchAllClubStats();
-      }, 1500);
-    };
-
-    const seatChannels = clubIdsForRealtime.map((cid) =>
-      supabase
-        .channel(`club-active-${cid}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'tables', filter: `club_id=eq.${cid}` },
-          scheduleRefresh
-        )
-        .subscribe()
-    );
-
-    const allStatsPoll = setInterval(fetchAllClubStats, 60000);
+    // BUGFIX 2026-07-24: near-real-time active counts for every visible club card
+    // via a 20s poll (the table_seats realtime listener was removed for write volume).
+    const allStatsPoll = setInterval(fetchAllClubStats, 20000);
     return () => {
       isMounted = false;
       clearInterval(allStatsPoll);
-      if (debounceRef.t) clearTimeout(debounceRef.t);
-      for (const ch of seatChannels) {
-        try {
-          supabase.removeChannel(ch);
-        } catch {
-          /* channel already torn down */
-        }
-      }
     };
     // Stats re-fetch naturally when displayClubIdsKey changes (membership changes)
-  }, [displayClubs.length, displayClubIdsKey, clubIdsForRealtime]);
+  }, [displayClubs.length, displayClubIdsKey]);
 
   // Club quick links — shared resolution (utils/clubQuickLink): last-used
   // club if still a member, else first club; unions excluded

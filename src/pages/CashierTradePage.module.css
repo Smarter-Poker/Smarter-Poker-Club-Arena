@@ -484,3 +484,67 @@
   color: #0b1220 !important;
   border: none !important;
 }
+
+/* Retry affordance on a failed club load. A failure that offers no way
+   forward is only half-reported. */
+.retryBtn {
+  margin-left: 6px;
+  background: rgba(240, 180, 41, 0.14);
+  border: 1px solid rgba(240, 180, 41, 0.5);
+  color: #f0b429;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 6px;
+  padding: 8px 14px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.retryBtn:focus-visible { outline: 2px solid #f0b429; outline-offset: 2px; }
+
+/* ── 375px fixes (this file had no media queries at all) ─────────────────
+   The balance strip is three non-wrapping flex cells inside 14px margins,
+   about 91px of content each. A real balance - "1,234,567.89" in tabular
+   numerals - is wider than that, and with no min-width:0 the cells refused
+   to shrink and pushed the whole page into horizontal scroll. */
+.strip { flex-wrap: wrap; }
+.stripCell { min-width: 0; }
+.stripValue {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "get more chips" sat at 18px square, flush against the balance text, on a
+   control that mints money. */
+.plusBtn {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0;
+  margin-left: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 420px) {
+  /* Four tabs across 375px gave each about 87px with 2px of horizontal
+     padding, so a two-word tab wrapped inside its own pill. Let the row
+     scroll instead of crushing the labels. */
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: 0 0 auto;
+    padding: 10px 12px;
+    min-height: 44px;
+    white-space: nowrap;
+  }
+  .stripCell { flex: 1 1 45%; }
+}

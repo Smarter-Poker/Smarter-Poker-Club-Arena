@@ -108,6 +108,13 @@ export default function CashierTradePage() {
   const [downline, setDownline] = useState<DownlineRow[]>([]);
   const [mineOnly, setMineOnly] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // isMounted is an UNMOUNT guard, not a request guard. loadClub fires from
+  // three places at once - the effect, every balance bus event, and after each
+  // transfer - so without a version the response for the club you just left
+  // can land last and paint its balances under the club you are now looking
+  // at. On a page that moves chips that is not a cosmetic race.
+  const loadVersion = useRef(0);
 
   const [search, setSearch] = useState('');
   const [groupByRole, setGroupByRole] = useState(false);
@@ -121,6 +128,8 @@ export default function CashierTradePage() {
   // AUDIT 2026-08-21: the "+" on Available Chips used to punt to the classic
   // cashier. Chips originate at the mint, so it opens the Chip Mint here.
   const [showMint, setShowMint] = useState(false);
+  // Guards a double-submit that beats the re-render `busy` depends on.
+  const busyRef = useRef(false);
   const isMounted = useRef(true);
   useEffect(() => {
     isMounted.current = true;
@@ -188,8 +197,17 @@ export default function CashierTradePage() {
 
   // ── Load my role/balance + downline for the selected club ─────────────────
   const loadClub = useCallback(async () => {
-    if (!user?.id || !clubUuid) return;
+    // Bail-before-try left `loading` true forever, because the finally that
+    // clears it is inside the try: a signed-out moment or an unresolvable club
+    // gave a permanent "Loading members...". Clear it here instead.
+    if (!user?.id || !clubUuid) {
+      setLoading(false);
+      return;
+    }
+    const myVersion = ++loadVersion.current;
+    const stale = () => loadVersion.current !== myVersion;
     setLoading(true);
+    setLoadError(null);
     try {
       const [meRes, panelRes] = await Promise.all([
         supabase
@@ -200,6 +218,10 @@ export default function CashierTradePage() {
           .maybeSingle(),
         supabase.rpc('fn_club_money_panel', { p_club_id: clubUuid }),
       ]);
+      // Swallowing this error rendered an owner as a `player` with a 0.00
+      // balance and silently flipped the downline into agent scope. A failure
+      // has to look like a failure.
+      if (meRes.error) throw meRes.error;
       const role = (meRes.data?.role as string) || 'player';
       const bal = Number(meRes.data?.chip_balance) || 0;
       const panel = ((Array.isArray(panelRes.data) ? panelRes.data[0] : panelRes.data) ??
@@ -230,6 +252,7 @@ export default function CashierTradePage() {
         if (isAgent && !isStaff) q = q.eq('agent_id', user.id);
         const { data: page, error: dlErr } = await q;
         if (dlErr) throw dlErr;
+        if (stale()) return;
         dl.push(...((page || []) as Array<Record<string, unknown>>));
         if (!page || page.length < PAGE) break;
       }
@@ -268,7 +291,7 @@ export default function CashierTradePage() {
         };
       });
 
-      if (!isMounted.current) return;
+      if (!isMounted.current || stale()) return;
       setMyRole(role);
       setMyBalance(bal);
       // "Available Chips": for owners the club bank (mintable/distributable
@@ -279,8 +302,15 @@ export default function CashierTradePage() {
       setSelected(new Set());
     } catch (e) {
       reportError(e, 'CashierTradePage.loadClub');
+      // An empty list used to be the only symptom of a failed load, so the
+      // owner of a 588-member club was told they had no downline.
+      if (isMounted.current && !stale()) {
+        setDownline([]);
+        setSelected(new Set());
+        setLoadError('Could not load this club. Check your connection and try again.');
+      }
     } finally {
-      if (isMounted.current) setLoading(false);
+      if (isMounted.current && !stale()) setLoading(false);
     }
   }, [user?.id, clubUuid]);
 
@@ -382,6 +412,25 @@ export default function CashierTradePage() {
     [downline]
   );
 
+  // A selection had no relationship to what was on screen. Select three
+  // players, type a search, select a fourth, press Send Out - and chips went
+  // to all four, three of whom the sender could not see. Selection is now
+  // pruned to the visible list whenever that list changes, so what you send to
+  // is always what you can see.
+  useEffect(() => {
+    setSelected((prev) => {
+      if (prev.size === 0) return prev;
+      const visible = new Set(list.map((r) => r.userId));
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (visible.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [list]);
+
   const toggleSelect = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -398,14 +447,21 @@ export default function CashierTradePage() {
       toast?.error?.('Enter A Positive Amount');
       return;
     }
-    const targets = downline.filter((r) => selected.has(r.userId));
+    // `list`, not `downline`: the visible, filtered set. The pruning effect
+    // above already keeps these in step; reading the same source the user was
+    // looking at means a race can never widen the blast radius of a transfer.
+    const targets = list.filter((r) => selected.has(r.userId));
     if (targets.length === 0) return;
     if (kind === 'send' && value * targets.length > myBalance) {
       toast?.error?.(`Insufficient Chips: Sending ${fmt(value * targets.length)} Needs More Than ${fmt(myBalance)}`);
       return;
     }
+    if (busyRef.current) return; // a fast double-tap must not send twice
+    busyRef.current = true;
     setBusy(true);
     let ok = 0;
+    let skipped = 0;
+    try {
     for (const t of targets) {
       try {
         if (kind === 'send') {
@@ -424,7 +480,12 @@ export default function CashierTradePage() {
           if (res && res.success === false) throw new Error(res.error || 'refused');
         } else {
           const claim = Math.min(value, t.chipBalance);
-          if (claim <= 0) continue;
+          // Nothing to take back. Counted, so the summary can say so instead
+          // of closing the modal in silence and leaving the user guessing.
+          if (claim <= 0) {
+            skipped++;
+            continue;
+          }
           // fn_cashier_claim_back (migration 20260821): conserved player ->
           // caller move on the club ledger. NOT fn_admin_remove_player_chips,
           // which refuses agents and strands the chips in clubs.chip_pool.
@@ -444,17 +505,31 @@ export default function CashierTradePage() {
         toast?.error?.(`${t.name}: ${(e as Error).message || 'Transfer Failed'}`);
       }
     }
-    setBusy(false);
-    setAmountModal(null);
-    setAmount('');
+    } finally {
+      // A throw between here and the end used to leave `busy` true forever,
+      // and both Confirm and Cancel are disabled on it - the modal became a
+      // trap that only a page reload could escape.
+      busyRef.current = false;
+      if (isMounted.current) {
+        setBusy(false);
+        setAmountModal(null);
+        setAmount('');
+      }
+    }
+
     if (ok > 0) {
       toast?.success?.(
         kind === 'send'
           ? `Sent ${fmt(value)} To ${ok} Player${ok === 1 ? '' : 's'}`
           : `Claimed Back From ${ok} Player${ok === 1 ? '' : 's'}`
       );
+      // The bus event is already wired to reload this page, so calling
+      // loadClub() as well fired two identical loads at once.
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade', userId: user.id });
-      loadClub();
+    } else if (skipped > 0) {
+      toast?.info?.(
+        `Nothing To Claim Back: ${skipped} Player${skipped === 1 ? ' Has' : 's Have'} No Chips`
+      );
     }
   };
 
@@ -598,7 +673,15 @@ export default function CashierTradePage() {
           {/* Downline list */}
           <div className={styles.list}>
             {loading && <div className={styles.empty}>Loading members...</div>}
-            {!loading && list.length === 0 && (
+            {!loading && loadError && (
+              <div className={styles.empty} role="alert">
+                {loadError}{' '}
+                <button type="button" className={styles.retryBtn} onClick={() => void loadClub()}>
+                  Retry
+                </button>
+              </div>
+            )}
+            {!loading && !loadError && list.length === 0 && (
               <div className={styles.empty}>
                 {mineOnly
                   ? 'No players are assigned to you in this club.'
@@ -607,11 +690,26 @@ export default function CashierTradePage() {
                     : 'No members in your downline yet.'}
               </div>
             )}
-            {list.map((r) => (
+            {/*
+              Gated on !loading. These rows used to stay on screen, clickable,
+              with the footer buttons live, while a different club was loading -
+              so a player could be selected from the club you just left and the
+              transfer submitted against the club you had switched to.
+            */}
+            {!loading && !loadError && list.map((r) => (
               <div
                 key={r.userId}
                 className={`${styles.row} ${selected.has(r.userId) ? styles.rowSelected : ''}`}
                 onClick={() => toggleSelect(r.userId)}
+                onKeyDown={(e) => {
+                  // role="checkbox" + tabIndex advertises a control. Without
+                  // this, every row was reachable by keyboard and none of them
+                  // could be selected.
+                  if (e.key === ' ' || e.key === 'Enter') {
+                    e.preventDefault();
+                    toggleSelect(r.userId);
+                  }
+                }}
                 role="checkbox"
                 aria-checked={selected.has(r.userId)}
                 tabIndex={0}

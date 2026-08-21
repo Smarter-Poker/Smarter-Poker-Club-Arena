@@ -54,6 +54,7 @@ import {
   type ReactNode,
   type CSSProperties,
 } from 'react';
+import { CarouselDots } from './CarouselDots';
 import './Carousel.css';
 
 /* ── Constants, all from the World Hub engine ──────────────────────────── */
@@ -142,6 +143,10 @@ export interface CarouselProps<T> {
   edgeScale?: number;
   className?: string;
   ariaLabel?: string;
+  /** Show the position indicator below the strip. */
+  showIndicator?: boolean;
+  /** What one item is called, for the indicator's screen-reader labels. */
+  itemNoun?: string;
 }
 
 export function Carousel<T>({
@@ -157,6 +162,8 @@ export function Carousel<T>({
   edgeScale = 0.82,
   className,
   ariaLabel = 'Cards',
+  showIndicator = true,
+  itemNoun = 'Card',
 }: CarouselProps<T>) {
   const total = items.length;
   const trackRef = useRef<HTMLDivElement>(null);
@@ -237,10 +244,19 @@ export function Carousel<T>({
 
   /* ── The snap loop. useFrame in the 3D engine; rAF here. ──────────────── */
   useEffect(() => {
+    /* Someone who has asked the OS for reduced motion should not be given a
+       spring. Snapping straight to the target still moves the carousel and
+       still answers the swipe; it just does not animate the travel. */
+    const reduced =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+
     const tick = () => {
       if (!isDragging.current) {
         const diff = targetRef.current - positionRef.current;
-        if (Math.abs(diff) > 0.001) {
+        if (reduced && Math.abs(diff) > 0.001) {
+          setPosition(targetRef.current);
+        } else if (Math.abs(diff) > 0.001) {
           setPosition(positionRef.current + diff * SNAP_EASING);
         } else if (positionRef.current !== targetRef.current) {
           setPosition(targetRef.current);
@@ -381,6 +397,19 @@ export function Carousel<T>({
     if (!isFirst) onIndexChange?.(settledIndex);
   }, [settledIndex, total, onIndexChange]);
 
+  /**
+   * Go to a specific card, the short way.
+   *
+   * Naively setting the target to the index would walk the long way round
+   * whenever the wrap is closer: from card 1 of 20, tapping card 20 would
+   * animate backwards through eighteen cards instead of forward through one.
+   * The fold already knows which direction is nearer, so reuse it.
+   */
+  const goTo = useCallback((index: number) => {
+    const offset = foldOffset(index, targetRef.current, totalRef.current);
+    targetRef.current = Math.round(targetRef.current + offset);
+  }, []);
+
   /** Move by whole cards. Used by the keyboard and the wheel. */
   const nudge = useCallback((by: number) => {
     targetRef.current = Math.round(targetRef.current) + by;
@@ -431,6 +460,61 @@ export function Carousel<T>({
     return out.sort((a, b) => Math.abs(b.offset) - Math.abs(a.offset));
   }, [items, total, scrollPosition]);
 
+  /**
+   * Render each card ONCE per (identity, active) pair, not once per frame.
+   *
+   * `visible` recomputes on every animation frame because it depends on the
+   * scroll position, so the map below re-invoked renderItem 5 times a frame
+   * during a drag. Each of those is a ClubCardPanel: a lazy component with an
+   * image, live stats and its own effects. At 60fps that is ~300 renders a
+   * second of some of the heaviest markup on the page, to change nothing but a
+   * transform on the wrapper.
+   *
+   * Keyed on `isActive` as well as identity so a card entering or leaving the
+   * centre still re-renders: that is two renders per snap instead of five per
+   * frame. The wrapper's transform and opacity keep updating every frame, as
+   * they must, but they are compositor-only properties on an element whose
+   * children React now leaves alone.
+   */
+  const renderedRef = useRef(new Map<string, { active: boolean; node: ReactNode }>());
+  const renderCard = useCallback(
+    (item: T, index: number, isActive: boolean): ReactNode => {
+      const key = getKey(item, index);
+      const cached = renderedRef.current.get(key);
+      if (cached && cached.active === isActive) return cached.node;
+      const node = renderItem(item, index, isActive);
+      renderedRef.current.set(key, { active: isActive, node });
+      return node;
+    },
+    [getKey, renderItem]
+  );
+
+  /**
+   * The sizer's copy, memoised SEPARATELY from the visible cards.
+   *
+   * It must not share the cache above: the sizer always asks for isActive
+   * false while the same card, when centred, asks for true, so two calls with
+   * one key and different flags would invalidate each other on every single
+   * render. That is worse than no cache at all, and only for the first card,
+   * which is exactly the sort of bug that looks like "the carousel is janky on
+   * some clubs and not others".
+   *
+   * It is never interactive and never active, so identity is the only input.
+   */
+  const sizerNode = useMemo(
+    () => (items.length > 0 ? renderItem(items[0], 0, false) : null),
+    [items, renderItem]
+  );
+
+  /* Drop cached nodes for items that no longer exist, so leaving a club does
+     not leak its card for the life of the page. */
+  useEffect(() => {
+    const live = new Set(items.map((it, i) => getKey(it, i)));
+    for (const key of renderedRef.current.keys()) {
+      if (!live.has(key)) renderedRef.current.delete(key);
+    }
+  }, [items, getKey]);
+
   if (total === 0) return null;
 
   return (
@@ -467,7 +551,7 @@ export function Carousel<T>({
             point; aria-hidden and pointer-events:none keep it out of the
             accessibility tree and out of the way of the pointer. */}
         <div className="sp-carousel__sizer" aria-hidden="true">
-          {renderItem(items[0], 0, false)}
+          {sizerNode}
         </div>
 
         {visible.map(({ item, index, offset }) => {
@@ -493,11 +577,15 @@ export function Carousel<T>({
               inert={!isActive}
               onClick={() => handleCardClick(item, index, offset)}
             >
-              {renderItem(item, index, isActive)}
+              {renderCard(item, index, isActive)}
             </div>
           );
         })}
       </div>
+
+      {showIndicator && (
+        <CarouselDots total={total} current={settledIndex} onChange={goTo} itemNoun={itemNoun} />
+      )}
     </div>
   );
 }

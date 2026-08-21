@@ -86,6 +86,66 @@ async function swipe(dx: number, ms = 300) {
   await settle();
 }
 
+describe('Carousel position indicator', () => {
+  beforeEach(() => {
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get: () => 1000,
+    });
+  });
+
+  it('shows one tappable dot per club for a short list', () => {
+    render(
+      <Carousel
+        items={CLUBS}
+        getKey={(c) => c}
+        itemWidth={300}
+        itemNoun="Club"
+        renderItem={(c) => <div>{c}</div>}
+      />
+    );
+    // 5 clubs, under MAX_DOTS.
+    expect(document.querySelectorAll('.carousel-dots .dot')).toHaveLength(CLUBS.length);
+    expect(document.querySelector('.dot.active')).not.toBeNull();
+  });
+
+  it('switches to a counter once dots stop being a control', () => {
+    // Thirty dots is a texture, not something anyone aims at.
+    const many = Array.from({ length: 30 }, (_, i) => `Club ${i + 1}`);
+    render(
+      <Carousel items={many} getKey={(c) => c} itemWidth={300} renderItem={(c) => <div>{c}</div>} />
+    );
+    expect(document.querySelectorAll('.carousel-dots .dot')).toHaveLength(0);
+    expect(document.querySelector('.carousel-counter')?.textContent).toBe('1 / 30');
+  });
+
+  it('shows nothing at all for a single club', () => {
+    render(
+      <Carousel
+        items={['Solo']}
+        getKey={(c) => c}
+        itemWidth={300}
+        renderItem={(c) => <div>{c}</div>}
+      />
+    );
+    expect(document.querySelector('.carousel-dots')).toBeNull();
+  });
+
+  it('labels every dot for a screen reader', () => {
+    render(
+      <Carousel
+        items={CLUBS}
+        getKey={(c) => c}
+        itemWidth={300}
+        itemNoun="Club"
+        renderItem={(c) => <div>{c}</div>}
+      />
+    );
+    expect(screen.getByRole('tab', { name: 'Club 1 Of 5' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Club 5 Of 5' })).toBeInTheDocument();
+  });
+});
+
 describe('Carousel swipe', () => {
   beforeEach(() => {
     vi.useFakeTimers();

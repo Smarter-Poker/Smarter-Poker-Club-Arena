@@ -7344,7 +7344,18 @@ export default function TablePage({
         break;
       }
       case 'POT_DISTRIBUTED': {
-        masterBus.emit('POT_DISTRIBUTED', evt.data as any);
+        /* Stamp the table on the way out.
+           This socket only ever carries THIS table, so the id is known here
+           for certain. The engine does put table_id in the payload today, but
+           useTableSession now scopes the session's biggest-pot to the table
+           that owns it, and an event that arrives without a table is dropped
+           rather than misattributed. Deriving the id here instead of trusting
+           the payload means a future engine change cannot quietly turn
+           "Biggest Pot" back into a zero. */
+        masterBus.emit('POT_DISTRIBUTED', {
+          ...(evt.data as Record<string, unknown>),
+          tableId: tableId || (evt.data as { table_id?: string })?.table_id,
+        } as any);
         break;
       }
       case 'SHOWDOWN_CARDS_REVEALED': {
@@ -9536,9 +9547,7 @@ export default function TablePage({
                  dealt yet — the only players who genuinely get no cards are
                  those sitting out or away. */
               activeSeats={tableState.players
-                .map((p, i) =>
-                  p && p.status !== 'sitting_out' && p.status !== 'away' ? i : -1
-                )
+                .map((p, i) => (p && p.status !== 'sitting_out' && p.status !== 'away' ? i : -1))
                 .filter((i) => i >= 0)}
               dealerSeatIndex={Math.max(0, tableState.dealerSeat - 1)}
               seatPositions={seatPositions}
@@ -10075,12 +10084,11 @@ export default function TablePage({
           !isRabbitAvailable ? null : tableState.isHandInProgress &&
           (getPlayerAtSeat(tableState.heroSeat)?.status === 'folded' ||
             getPlayerAtSeat(tableState.heroSeat)?.status ===
-              'away') ? /* Dan: "YOU DO NOT NEED TO HAVE THIS DISPLAY ON THE BOTTOM... ITS
+              'away') /* Dan: "YOU DO NOT NEED TO HAVE THIS DISPLAY ON THE BOTTOM... ITS
              POINTLESS. REMOVE THIS." Both bars said only that nothing was
              happening, which the table already shows: your cards are gone and
              no action buttons are up. They cost a permanent strip of screen on
-             a phone to repeat it. */
-        null : (
+             a phone to repeat it. */ ? null : (
           <>
             {/* ─── CONTROL STRIP — Minimal: Time Bank + Timer during hand, Rabbit Hunt after hand ─── */}
             {tableState.isHandInProgress &&

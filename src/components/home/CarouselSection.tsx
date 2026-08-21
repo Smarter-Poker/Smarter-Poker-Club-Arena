@@ -126,6 +126,8 @@ export default function CarouselSection({
    * onIndexChange is the honest signal: it fires when a card has actually
    * landed in the middle, and never on mount.
    */
+  const getClubKey = useCallback((club: UserClub) => club.id, []);
+
   const handleIndexChange = useCallback(() => {
     haptic.light();
     PremiumSFX.scrollSnap();
@@ -272,8 +274,12 @@ export default function CarouselSection({
            portable from a WebGL carousel and what was not. */
         <Carousel
           items={orderedClubs}
-          getKey={(club) => club.id}
-          onSelect={(club) => handleClubCardClick(club)}
+          /* Stable identities. The carousel memoises each rendered card on
+             (getKey, renderItem) so it does not re-render five heavy
+             ClubCardPanels on every frame of a drag; inline arrows here would
+             be new functions on every render and would defeat that entirely. */
+          getKey={getClubKey}
+          onSelect={handleClubCardClick}
           /* A swipe must not also trigger the card's press-and-hold menu. The
              context menu opens after 500ms of touch and a deliberate slow
              swipe is easily longer than that, so without this the menu appears
@@ -281,7 +287,8 @@ export default function CarouselSection({
           onDragStart={handleLongPressEnd}
           onIndexChange={handleIndexChange}
           ariaLabel="Your Clubs"
-          renderItem={(club) => renderClubCard(club)}
+          itemNoun="Club"
+          renderItem={renderClubCard}
         />
       )}
 

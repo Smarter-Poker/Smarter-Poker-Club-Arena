@@ -637,7 +637,7 @@ const SPIN_BOARD_VARIANTS: { key: string; label: string }[] = [
 /** Every price point the spin board is open at. Whole chips, from the ladder. */
 const SPIN_BOARD_BUYINS = [1, 2, 3, 5, 10, 20, 50, 100];
 
-const SPIN_CONFIGS: SpinConfig[] = SPIN_BOARD_VARIANTS.flatMap((v) =>
+export const SPIN_CONFIGS: SpinConfig[] = SPIN_BOARD_VARIANTS.flatMap((v) =>
   SPIN_BOARD_BUYINS.map((buyIn) => ({
     name: `${buyIn} Chip Spin ${v.label}`,
     type: 'spin' as const,

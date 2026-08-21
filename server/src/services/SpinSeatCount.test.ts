@@ -13,7 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { SPIN_SEATS } from './TournamentRecurringService.js';
+import { SPIN_SEATS, SPIN_CONFIGS } from './TournamentRecurringService.js';
 
 const SRC = fs.readFileSync(
   path.join(process.cwd(), 'src/services/TournamentRecurringService.ts'),
@@ -80,14 +80,49 @@ describe('createSpin cannot build a Spin with any other seat count', () => {
 });
 
 describe('every shipped Spin config already agrees', () => {
+  /**
+   * Dan 2026-08-21: this used to SCRAPE THE SOURCE for `maxPlayers: <digits>`
+   * and assert every literal was 3. That worked while the configs were five
+   * hand-written objects, and broke the moment the spin board became generated
+   * (buy-in ladder x variants) - because the generator writes the CONSTANT,
+   * `maxPlayers: SPIN_SEATS`, which matches no digit. The regex found zero
+   * entries and the `toBeGreaterThan(0)` guard failed against code that is
+   * strictly MORE correct than what it was written to police: a literal can
+   * drift from SPIN_SEATS, the constant cannot.
+   *
+   * It asserts the real exported array now. Same intent, no dependence on how
+   * the configs happen to be written.
+   */
   it('declares 3 max and 3 min on every SPIN_CONFIG', () => {
-    const start = SRC.indexOf('const SPIN_CONFIGS');
-    const end = SRC.indexOf('\n];', start);
-    const block = SRC.slice(start, end);
-    const maxes = [...block.matchAll(/maxPlayers:\s*(\d+)/g)].map((m) => Number(m[1]));
-    const mins = [...block.matchAll(/minPlayers:\s*(\d+)/g)].map((m) => Number(m[1]));
-    expect(maxes.length).toBeGreaterThan(0);
-    for (const n of maxes) expect(n).toBe(SPIN_SEATS);
-    for (const n of mins) expect(n).toBe(SPIN_SEATS);
+    expect(SPIN_CONFIGS.length).toBeGreaterThan(0);
+    for (const c of SPIN_CONFIGS) {
+      expect(c.maxPlayers, `${c.name} maxPlayers`).toBe(SPIN_SEATS);
+      expect(c.minPlayers, `${c.name} minPlayers`).toBe(SPIN_SEATS);
+    }
+  });
+
+  /**
+   * The board must never start a game the instant it is created - Dan
+   * 2026-08-21: "the tables just stay open until players sit down". A full
+   * horse fill is what made every spin RUNNING and nothing joinable.
+   */
+  it('leaves at least one seat open for a human', () => {
+    for (const c of SPIN_CONFIGS) {
+      expect(c.horsesToRegister, `${c.name} horsesToRegister`).toBeLessThan(SPIN_SEATS);
+    }
+  });
+
+  /** Every price point on the board is a whole number of chips. */
+  it('prices every spin in whole chips', () => {
+    for (const c of SPIN_CONFIGS) {
+      expect(Number.isInteger(c.buyIn), `${c.name} buyIn ${c.buyIn}`).toBe(true);
+      expect(c.buyIn).toBeGreaterThan(0);
+    }
+  });
+
+  /** Names are the board's identity key - ensureBoardOpen dedupes on them. */
+  it('gives every board entry a unique name', () => {
+    const names = SPIN_CONFIGS.map((c) => c.name);
+    expect(new Set(names).size, 'duplicate spin config names').toBe(names.length);
   });
 });

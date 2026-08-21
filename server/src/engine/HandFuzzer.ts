@@ -220,7 +220,16 @@ export function randomTable(rnd: () => number): FuzzConfig {
     const straddleSeat = seatNumbers[Math.floor(rnd() * seatNumbers.length)];
     config.straddles = [{ seat: straddleSeat, amount: cents(bb * 2) }];
   }
-  if (rnd() < 0.08) config.bombPot = { anteMultiplier: [1, 2, 5][Math.floor(rnd() * 3)] };
+  if (rnd() < 0.08) {
+    config.bombPot = {
+      anteMultiplier: [1, 2, 5][Math.floor(rnd() * 3)],
+      // Round 2 (2026-08-20): half the fuzzed bomb pots run the double-board
+      // variant so the split-pot settlement and lockstep dealing sit inside
+      // the standing chip-conservation corpus, not just their own test file.
+      // HandController downgrades itself when the deck cannot cover it.
+      doubleBoard: rnd() < 0.5,
+    };
+  }
   if (rnd() < 0.12) {
     config.deadBlinds = [{ seat: seatNumbers[Math.floor(rnd() * seatNumbers.length)] }];
   }

@@ -199,6 +199,17 @@ export abstract class ServerTableEngineBase {
   protected currentHandCommunityCards: string[] = [];
   /** DOUBLE-BOARD BOMB POT 2026-08-20: board 2 accumulator (empty unless active). */
   protected currentHandCommunityCards2: string[] = [];
+  /**
+   * Round 2: per-board winner breakdown from the WINNERS event (double board
+   * only). Amounts are PRE-rake shares — clients use board + handName for
+   * labeling; the shipped amounts come from the merged winners list.
+   */
+  protected currentHandWinnersByBoard: Array<{
+    board: 1 | 2;
+    userId: string;
+    amount: number;
+    handName?: string;
+  }> = [];
   // Round 38: track wall-clock start so logHandHistory can write started_at +
   // ended_at (was missing — every completed hand_history row had null
   // ended_at, breaking replay timestamps and audit reconciliation).

@@ -546,6 +546,10 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // preserve the pre-set winner state when winners is empty; the contribution
         // capture + stack sync below still run unconditionally.
         const hasWinners = (event.winners || []).length > 0;
+        // Round 2 (double board): capture the per-board breakdown alongside
+        // the merged winners so pot_win can tell the client which board each
+        // winner took and with what hand.
+        this.currentHandWinnersByBoard = (event as any).winnersByBoard ?? [];
         if (hasWinners) {
           this.currentHandWinnerIds = (event.winners || []).map(
             (w: any) => w.userId || w.user_id || ''
@@ -672,6 +676,14 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
               user_id: w.userId,
               amount: w.amount,
               hand_name: w.hand?.name,
+            })),
+            // Round 2 (double board): board 1 / board 2 winner + hand-name
+            // breakdown. Empty array on single-board hands.
+            winners_by_board: this.currentHandWinnersByBoard.map((w) => ({
+              board: w.board,
+              user_id: w.userId,
+              amount: w.amount,
+              hand_name: w.handName,
             })),
           });
 

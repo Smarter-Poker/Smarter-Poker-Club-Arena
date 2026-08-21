@@ -1801,11 +1801,14 @@ export default function TablePage({
     handName: string;
     cardIndices: number[];
     amounts: Record<string, number>;
+    /** Round 2 (double board): winning hand name per board — [top, bottom]. */
+    boardHandNames?: [string, string] | null;
   }>({
     playerIds: [],
     handName: '',
     cardIndices: [],
     amounts: {},
+    boardHandNames: null,
   });
   /** Mirror of winnerInfo for the WS event handlers, which close over stale
    *  state. Read by the Share Hand snapshot at HAND_COMPLETE. */
@@ -2257,6 +2260,15 @@ export default function TablePage({
       if (potPushDelayTimerRef.current) clearTimeout(potPushDelayTimerRef.current);
     };
   }, []);
+
+  // Round 2 (double board): the table's bomb pot rules for GameRulesModal —
+  // players deserve to know a bomb pot is coming before it explodes on them.
+  const [bombPotRules, setBombPotRules] = useState<{
+    enabled: boolean;
+    frequency: number;
+    anteBB: number;
+    doubleBoard: boolean;
+  } | null>(null);
 
   // Straddle state
   const [isStraddleEnabled, setIsStraddleEnabled] = useState(false);
@@ -3920,7 +3932,7 @@ export default function TablePage({
       const { data: table, error } = await supabase
         .from('tables')
         .select(
-          'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, action_time_seconds, straddle_enabled'
+          'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, action_time_seconds, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board'
         )
         .eq('id', tableId)
         .maybeSingle();
@@ -3953,6 +3965,16 @@ export default function TablePage({
         // the control must know the table setting or it offers players a switch
         // that can only ever fail.
         setTableStraddleEnabled(table.straddle_enabled === true);
+        setBombPotRules(
+          (table as any).bomb_pot_enabled === true
+            ? {
+                enabled: true,
+                frequency: Number((table as any).bomb_pot_frequency) || 0,
+                anteBB: Number((table as any).bomb_pot_ante_multiplier) || 0,
+                doubleBoard: (table as any).bomb_pot_double_board === true,
+              }
+            : null
+        );
 
         // Store actual club_id for persistence and rake
         actualClubIdRef.current = table.club_id || '';
@@ -5954,7 +5976,13 @@ export default function TablePage({
         // "Three of a Kind" hand-strength label and winner banner cannot
         // bleed into the new hand if the table cycles faster than the 3s
         // HAND_COMPLETE cleanup timeout.
-        setWinnerInfo({ playerIds: [], handName: '', cardIndices: [], amounts: {} });
+        setWinnerInfo({
+          playerIds: [],
+          handName: '',
+          cardIndices: [],
+          amounts: {},
+          boardHandNames: null,
+        });
         setWinnerParticle((prev) => ({ ...prev, active: false }));
         setIsAllInMode(false);
         setAllInEquities([]);
@@ -6512,7 +6540,13 @@ export default function TablePage({
           }));
           setIsAllInMode(false);
           setAllInEquities([]);
-          setWinnerInfo({ playerIds: [], handName: '', cardIndices: [], amounts: {} });
+          setWinnerInfo({
+            playerIds: [],
+            handName: '',
+            cardIndices: [],
+            amounts: {},
+            boardHandNames: null,
+          });
           setWinnerParticle((prev) => ({ ...prev, active: false }));
           setMuckingSeats(Array(9).fill(false));
         }, 3000);
@@ -6558,6 +6592,22 @@ export default function TablePage({
           ((evt.data as any).card_indices as number[]) ||
           ((evt.data as any).winning_card_indices as number[]) ||
           [];
+        // Round 2 (double board): per-board winner hand names for the board
+        // labels — who won the top board with what, who won the bottom.
+        const winnersByBoard =
+          ((evt.data as any).winners_by_board as Array<{
+            board: 1 | 2;
+            user_id: string;
+            amount: number;
+            hand_name?: string;
+          }>) || [];
+        const boardHandNames: [string, string] | null =
+          winnersByBoard.length > 0
+            ? [
+                winnersByBoard.find((w) => w.board === 1)?.hand_name || '',
+                winnersByBoard.find((w) => w.board === 2)?.hand_name || '',
+              ]
+            : null;
 
         // Bible V8 §5.1: Set winner info for seat highlight + hand name display
         if (winnerIds.length > 0) {
@@ -6574,6 +6624,7 @@ export default function TablePage({
             handName: winHandName,
             cardIndices: winCardIndices,
             amounts,
+            boardHandNames,
           });
           // Write the mirror synchronously too. POT_WIN and HAND_COMPLETE can
           // arrive in the same WS frame, in which case React has not
@@ -6584,6 +6635,7 @@ export default function TablePage({
             handName: winHandName,
             cardIndices: winCardIndices,
             amounts,
+            boardHandNames,
           };
           // Bible V8 §5.1: Tiered celebration per docs/_archive/POKERBROS_UPGRADE_PLAN.md §3.7
           // < 10 BB = gold glow only (default), 10-50 BB = confetti,
@@ -8650,7 +8702,11 @@ export default function TablePage({
                         : tableState.boardStage
                     }
                     highlightedIndices={winnerInfo.cardIndices}
-                    winningHandName={winnerInfo.handName}
+                    winningHandName={
+                      // Round 2 (double board): label board 1 with ITS winning
+                      // hand; the merged single name stays for single-board.
+                      winnerInfo.boardHandNames?.[0] || winnerInfo.handName
+                    }
                     deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                     cardBack={activeCardBack}
                     playSounds={ambientSoundsAllowed}
@@ -8668,6 +8724,7 @@ export default function TablePage({
                             ? 'preflop'
                             : tableState.boardStage
                         }
+                        winningHandName={winnerInfo.boardHandNames?.[1] || undefined}
                         deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                         cardBack={activeCardBack}
                         playSounds={false}
@@ -9841,6 +9898,7 @@ export default function TablePage({
         // Game Rules
         showGameRules={showGameRules}
         isStraddleEnabled={isStraddleEnabled}
+        bombPotRules={bombPotRules}
         onCloseGameRules={() => setShowGameRules(false)}
         // Chips
         chipAnimations={chipAnimations}

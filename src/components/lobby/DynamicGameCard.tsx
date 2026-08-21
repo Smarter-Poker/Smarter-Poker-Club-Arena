@@ -321,6 +321,11 @@ export function CashGameCard({ table, isAdmin, onDelete }: CashCardProps) {
   const s = parseSettings(table.settings);
   const n = table.name.toLowerCase();
   const feats: string[] = [];
+  // Round 2 note (double board): the badge stays 'bomb-pot' for BOTH kinds —
+  // badges are PNG lookups and an invented name would 404 into the broken-art
+  // handler (placeholder + Sentry report) on every lobby render. The
+  // double-board distinction is announced in GameRulesModal and by the
+  // overlay's DOUBLE BOARD subtitle at the table.
   if (s.bomb_pot_enabled || s.bombPot || n.includes('bomb')) feats.push('bomb-pot');
   if (s.straddle_enabled || s.straddle || n.includes('straddle')) feats.push('straddle');
   if (s.run_it_twice || s.runItTwice || n.includes('rit')) feats.push('run-it-twice');

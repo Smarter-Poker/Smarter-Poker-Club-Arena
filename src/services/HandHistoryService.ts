@@ -53,6 +53,8 @@ export interface HandRecord {
   main_pot: number;
   side_pots: number[];
   community_cards: Card[];
+  /** Round 2 (double board): board 2, empty on single-board hands. */
+  community_cards2?: Card[];
   players: HandPlayer[];
   actions: HandAction[];
   game_type: string;
@@ -81,7 +83,7 @@ class HandHistoryServiceClass {
     const { data, error } = await supabase
       .from('hand_history')
       .select(
-        'id, created_at, table_id, hand_number, pot_size, community_cards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount'
+        'id, created_at, table_id, hand_number, pot_size, community_cards, community_cards2, players, actions, winners, game_variant, small_blind, big_blind, rake_amount'
       )
       .eq('id', handId)
       .maybeSingle();
@@ -230,6 +232,9 @@ class HandHistoryServiceClass {
       main_pot: Number(row.pot_size) || 0,
       side_pots: [],
       community_cards: Array.isArray(row.community_cards) ? row.community_cards : [],
+      community_cards2: Array.isArray((row as any).community_cards2)
+        ? (row as any).community_cards2
+        : [],
       players,
       actions,
       game_type: (row.game_variant || 'nlh').toUpperCase(),

@@ -466,6 +466,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandBBJFee = 0;
     this.currentHandCommunityCards = [];
     this.currentHandCommunityCards2 = [];
+    this.currentHandWinnersByBoard = [];
     this.currentHandActions = [];
     this.currentHandWinners = [];
     this.currentHandContributions.clear(); // Bible V8 §4.18: Reset equal-share rakeback tracking (FIX 144)

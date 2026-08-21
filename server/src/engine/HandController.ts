@@ -122,6 +122,10 @@ export class HandController {
    * consults this, never the raw config flag.
    */
   private doubleBoardActive = false;
+  /** Round 2: per-board winner breakdown for the next WINNERS emit (double board only). */
+  private pendingWinnersByBoard:
+    | Array<{ board: 1 | 2; userId: string; amount: number; handName?: string }>
+    | undefined;
   /** FIX-225: Bible V8 §1.6/§3.2 — Formal Hand State Machine */
   private handFSM = createHandStateMachine('idle');
 
@@ -1368,6 +1372,22 @@ export class HandController {
         userId,
         amount: cents / 100,
       }));
+      // Round 2: keep the per-board story for the WINNERS emit below —
+      // clients label each board with its own winner + hand name.
+      this.pendingWinnersByBoard = [
+        ...winners1.map((w) => ({
+          board: 1 as const,
+          userId: w.userId,
+          amount: w.amount,
+          handName: w.hand?.name,
+        })),
+        ...winners2.map((w) => ({
+          board: 2 as const,
+          userId: w.userId,
+          amount: w.amount,
+          handName: w.hand?.name,
+        })),
+      ];
     } else {
       winners = determineWinners(
         this.state.players,
@@ -1468,7 +1488,11 @@ export class HandController {
     // but += on binary floats is where cross-hand drift was born.
     this.snapChips();
 
-    this.emit({ type: 'WINNERS', winners: adjustedWinners });
+    this.emit({
+      type: 'WINNERS',
+      winners: adjustedWinners,
+      winnersByBoard: this.pendingWinnersByBoard,
+    });
     this.handFSM.transition('settlement');
     this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake, bbjFee });
     this.emitBombPotCompleted();

@@ -314,7 +314,17 @@ export type HandEvent =
   | { type: 'ALL_IN_RUNOUT'; board: Card[]; board2?: Card[]; pot: number; players: SeatPlayer[] }
   | { type: 'PINEAPPLE_DISCARD_REQUIRED'; seats: number[] } // FIX 120: Crazy Pineapple
   | { type: 'SHOWDOWN'; results: ShowdownResult[] }
-  | { type: 'WINNERS'; winners: Winner[] }
+  | {
+      type: 'WINNERS';
+      winners: Winner[];
+      /**
+       * DOUBLE-BOARD BOMB POT round 2 (2026-08-20): which board each share
+       * came from, with the winning hand's name — the merged `winners` list
+       * cannot say "Alice took the top board with a flush, Bob the bottom
+       * with a straight". Only present on double-board hands.
+       */
+      winnersByBoard?: Array<{ board: 1 | 2; userId: string; amount: number; handName?: string }>;
+    }
   | { type: 'UNCALLED_BET_RETURNED'; seat: number; userId: string; amount: number }
   /**
    * DEAD-WIRING FIX 2026-08-15. Bomb pot hands were running silently: the

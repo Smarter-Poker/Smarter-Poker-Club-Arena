@@ -41,6 +41,8 @@ interface HandData {
   total_hands: number;
   main_pot: number;
   community_cards: Card[];
+  /** Round 2 (double board): board 2, absent on single-board hands. */
+  community_cards2?: Card[];
   players: HandPlayer[];
   actions: PlayerAction[];
 }
@@ -171,6 +173,7 @@ export default function HandReplay({
             total_hands: data.total_hands,
             main_pot: data.main_pot,
             community_cards: data.community_cards,
+            community_cards2: data.community_cards2 ?? [],
             players: data.players.map((p) => ({
               seat: p.seat,
               user_id: p.user_id,
@@ -273,6 +276,20 @@ export default function HandReplay({
         second: '2-digit',
       })
       .replace(',', '');
+  };
+
+  // Round 2 (double board): the same street-slice logic for either board.
+  const sliceForStep = (cards: Card[]) => {
+    switch (currentStep) {
+      case 1:
+        return [];
+      case 2:
+        return cards.slice(0, 3);
+      case 3:
+        return cards.slice(0, 4);
+      default:
+        return cards;
+    }
   };
 
   // Get visible community cards based on current step
@@ -392,6 +409,16 @@ export default function HandReplay({
                 </div>
               ))}
             </div>
+            {/* Round 2 (double board): board 2 under board 1, same street slice */}
+            {(handData.community_cards2?.length ?? 0) > 0 && (
+              <div className="community-cards-row">
+                {sliceForStep(handData.community_cards2!).map((card, idx) => (
+                  <div key={`b2-${idx}`} className="card small">
+                    <CardImage card={toCardImage(card)} size="xs" />
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Result */}
             <div className={`player-result ${player.result >= 0 ? 'positive' : 'negative'}`}>

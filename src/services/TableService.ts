@@ -296,6 +296,12 @@ class TableService {
         bomb_pot_ante_multiplier: defaultSettings.bomb_pot_enabled
           ? defaultSettings.bomb_pot_ante_bb || 2
           : 0,
+        // DOUBLE-BOARD BOMB POT 2026-08-20 round 2: the CreateTableModal
+        // checkbox was dead wiring — this mapping is the only path from
+        // settings to the canonical column the engine reads.
+        bomb_pot_double_board: defaultSettings.bomb_pot_enabled
+          ? (defaultSettings.bomb_pot_double_board ?? false)
+          : false,
         // 2026-08-18: time_bank_enabled used to be derived from a
         // time_bank_seconds value the engine never read — a per-table "seconds
         // per activation" knob that has not existed since the rule became a

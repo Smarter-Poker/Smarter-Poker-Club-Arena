@@ -39,6 +39,17 @@ export interface GameRulesModalProps {
   ante?: number;
   currency?: string;
   customRules?: TableRule[];
+  /**
+   * Round 2 (double board, 2026-08-20): the table's bomb pot rules. Players
+   * deserve to know a forced-ante hand is coming — and whether it deals two
+   * boards — before the bomb lands on them.
+   */
+  bombPotRules?: {
+    enabled: boolean;
+    frequency: number;
+    anteBB: number;
+    doubleBoard: boolean;
+  } | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -60,6 +71,7 @@ export function GameRulesModal({
   ante = 0,
   currency = '',
   customRules = [],
+  bombPotRules = null,
 }: GameRulesModalProps) {
   const [mounted, setMounted] = useState(false);
 
@@ -171,8 +183,44 @@ export function GameRulesModal({
                 <span className="rules-modal__feature-icon">{isInsuranceEnabled ? '' : ''}</span>
                 <span className="rules-modal__feature-text">Insurance</span>
               </div>
+              <div
+                className={`rules-modal__feature ${bombPotRules?.enabled ? 'rules-modal__feature--active' : ''}`}
+              >
+                <span className="rules-modal__feature-text">
+                  {bombPotRules?.doubleBoard ? 'Double Board Bomb Pot' : 'Bomb Pot'}
+                </span>
+              </div>
             </div>
           </div>
+
+          {/* Round 2 (double board): the bomb pot deserves its own line —
+              a forced ante every N hands is a real cost, and a double-board
+              split changes strategy. Say exactly what will happen. */}
+          {bombPotRules?.enabled && (
+            <div className="rules-modal__section">
+              <h3 className="rules-modal__section-title">Bomb Pot</h3>
+              <div className="rules-modal__grid">
+                <div className="rules-modal__item">
+                  <span className="rules-modal__label">Every</span>
+                  <span className="rules-modal__value">
+                    {bombPotRules.frequency > 0 ? `${bombPotRules.frequency} hands` : '—'}
+                  </span>
+                </div>
+                <div className="rules-modal__item">
+                  <span className="rules-modal__label">Ante</span>
+                  <span className="rules-modal__value">
+                    {bombPotRules.anteBB > 0 ? `${bombPotRules.anteBB}x BB` : '—'}
+                  </span>
+                </div>
+                <div className="rules-modal__item">
+                  <span className="rules-modal__label">Boards</span>
+                  <span className="rules-modal__value">
+                    {bombPotRules.doubleBoard ? '2 (pot splits per board)' : '1'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Custom Rules Section */}
           {customRules.length > 0 && (

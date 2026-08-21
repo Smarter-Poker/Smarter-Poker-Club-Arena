@@ -8712,3 +8712,30 @@ copies).
 4. **`tournaments_whole_dollar_buyin` CHECK froze 9,814 legacy rows** (migration `20260821a`). The 20260820 CHECK was added NOT VALID believing that grandfathers old rows — but NOT VALID only skips the initial scan; the CHECK still fires on every UPDATE. Every pre-refactor row (old 1.1x pricing, e.g. 5.00+0.50=5.50) became read-only: level_started_at persists failed every cycle, the new watchdog's status flip was silently rejected, recovery was blocked. Replaced with `trg_whole_dollar_buyin`, a BEFORE INSERT OR UPDATE trigger that enforces the rule only on INSERT and on updates that CHANGE the buy-in columns. Within one discovery cycle of applying it, both stalled SNGs completed: winners crowned (pos 1, prize 19.50; 19.50+10.50 = 30.00 = exact 6x5.00 pool), tables closed, engine logs silent.
 
 **Verification:** engine container `club-arena-engine:1c141b8c1...` confirmed running on Hetzner; both deploy workflows green; post-fix DB sweep: 0 COMPLETING, 0 decided-RUNNING, 0 leftover open tables, 4 healthy RUNNING; 45s log sample: 0 constraint errors, 0 stalled-decided detections. Paid-gate confirmed non-blocking (3 spins started since 00:26Z, 0 stuck REGISTERING).
+
+## 2026-08-20 — Bomb Pot round 2: dead-wiring fix, per-board winner labels, fuzz coverage, rules surfacing
+
+- [P1] CreateTableModal's "Double Board Bomb Pots" checkbox was DEAD WIRING:
+  TableService.createTable maps settings to canonical columns explicitly and
+  never wrote bomb_pot_double_board. The checkbox now persists.
+- [P1] Per-board winner labels: the merged winners list could not say "Alice
+  took the top board with a flush, Bob the bottom with a straight". WINNERS
+  now carries winnersByBoard (board, userId, PRE-rake amount, handName) on
+  double-board hands; pot_win fans it out as winners_by_board; TablePage
+  labels board 1 and board 2 each with ITS winning hand name at showdown
+  (winnerInfo.boardHandNames -> CommunityCards winningHandName per board).
+- [P2] HandFuzzer: half of all fuzzed bomb pots now run doubleBoard, putting
+  the split-pot settlement inside the standing 10,000-hand chip-conservation
+  corpus the deploy gate runs — not just its own test file.
+- [P2] GameRulesModal: new Bomb Pot section (every N hands, ante in BB,
+  boards 1 or "2 (pot splits per board)") + feature chip, fed by a new
+  bombPotRules fetch in TablePage (bomb pot columns added to the table
+  select). Players know the rules before the bomb lands.
+- [P2] Hand replay: board 2 renders under board 1 with the same street
+  slicing; HandHistoryService fetches community_cards2.
+- Lobby cards deliberately keep the existing bomb-pot badge for both kinds —
+  badge names are PNG lookups and an invented name would 404 into the
+  broken-art handler (placeholder + Sentry) on every render. The distinction
+  lives in GameRulesModal and the overlay's DOUBLE BOARD subtitle.
+- Verified: client+server tsc clean, vite build clean, 34 tests across 5
+  suites green including the double-board-enriched conservation corpus.

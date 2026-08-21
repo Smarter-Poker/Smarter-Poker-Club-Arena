@@ -122,6 +122,13 @@ export interface TableModalsLayerProps {
   // Game Rules Modal
   showGameRules: boolean;
   isStraddleEnabled: boolean;
+  /** Round 2 (double board): the table's bomb pot rules for the rules modal. */
+  bombPotRules?: {
+    enabled: boolean;
+    frequency: number;
+    anteBB: number;
+    doubleBoard: boolean;
+  } | null;
   onCloseGameRules: () => void;
 
   // Chip Animations
@@ -408,6 +415,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     // Game Rules
     showGameRules,
     isStraddleEnabled,
+    bombPotRules,
     onCloseGameRules,
     // Chips
     chipAnimations,
@@ -624,6 +632,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         rakeCap={effectiveRake.rakeCap ?? rakeCap}
         isStraddleEnabled={!isTournament && isStraddleEnabled}
         isRunItTwiceEnabled={runItTwice ?? true}
+        bombPotRules={bombPotRules}
       />
 
       {/* Chip Animations - pass-through to parent's ChipAnimationManager */}

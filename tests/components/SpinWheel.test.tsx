@@ -97,10 +97,12 @@ describe('disc layout', () => {
   it('alternates small and large so a near-miss is REAL, not staged', () => {
     const order = buildWheelOrder(DEFAULT_SPIN_TIERS);
     // Interleaved from both ends: smallest, largest, 2nd smallest, 2nd
-    // largest... 2x sits directly beside 500x, which is the whole point: the
-    // most common result is adjacent to the rarest, so the chase runner walks
-    // through the jackpot on its way to almost every ordinary result.
-    expect(order.map((t) => t.multiplier)).toEqual([2, 500, 3, 100, 4, 50, 5, 25, 10]);
+    // largest... 2x sits directly beside the top tier, which is the whole
+    // point: the most common result is adjacent to the rarest, so the chase
+    // runner walks through the jackpot on its way to almost every ordinary
+    // result. Eight tiers since the 500x was retired (2026-08-21) — the layout
+    // is derived from the spec, so it re-interleaved on its own.
+    expect(order.map((t) => t.multiplier)).toEqual([2, 100, 3, 50, 4, 25, 5, 10]);
   });
 
   it('every big tier has a small neighbour, so no dead zone exists', () => {
@@ -315,10 +317,10 @@ describe('sequence', () => {
 describe('locked tiers and payout splits', () => {
   it('shows a tier the pool cannot fund as LOCKED rather than hiding it', () => {
     const { container } = render(
-      <SpinWheel data={{ ...SPIN, lockedMultipliers: [100, 500] }} onDone={() => {}} />
+      <SpinWheel data={{ ...SPIN, lockedMultipliers: [50, 100] }} onDone={() => {}} />
     );
     runToChase();
-    // Still on the disc — a visible 500x you cannot win yet is anticipation.
+    // Still on the disc — a visible 100x you cannot win yet is anticipation.
     expect(container.querySelectorAll('.sw__seg').length).toBe(DEFAULT_SPIN_TIERS.length);
     expect(container.querySelectorAll('.sw__seg--locked').length).toBe(2);
   });
@@ -336,8 +338,8 @@ describe('locked tiers and payout splits', () => {
         data={{
           ...SPIN,
           lockedTiers: [
-            { multiplier: 100, reason: 'threshold', unlocksAt: 750 },
-            { multiplier: 500, reason: 'threshold', unlocksAt: 5000 },
+            { multiplier: 50, reason: 'threshold', unlocksAt: 750 },
+            { multiplier: 100, reason: 'threshold', unlocksAt: 1500 },
           ],
         }}
         onDone={() => {}}
@@ -353,8 +355,8 @@ describe('locked tiers and payout splits', () => {
         data={{
           ...SPIN,
           lockedTiers: [
-            { multiplier: 500, reason: 'threshold', unlocksAt: 5000 },
-            { multiplier: 100, reason: 'threshold', unlocksAt: 750 },
+            { multiplier: 100, reason: 'threshold', unlocksAt: 1500 },
+            { multiplier: 50, reason: 'threshold', unlocksAt: 750 },
           ],
         }}
         onDone={() => {}}
@@ -363,13 +365,13 @@ describe('locked tiers and payout splits', () => {
     runToChase();
     const note = container.querySelector('.sw__status-locked');
     expect(note).toBeTruthy();
-    expect(note!.textContent).toContain('100');
+    expect(note!.textContent).toContain('50');
     expect(note!.textContent).toContain('750');
   });
 
   it('says nothing about unlocks when no threshold was recorded', () => {
     const { container } = render(
-      <SpinWheel data={{ ...SPIN, lockedMultipliers: [500] }} onDone={() => {}} />
+      <SpinWheel data={{ ...SPIN, lockedMultipliers: [100] }} onDone={() => {}} />
     );
     runToChase();
     expect(container.querySelectorAll('.sw__seg--locked').length).toBe(1);

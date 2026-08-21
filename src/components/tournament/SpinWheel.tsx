@@ -73,7 +73,7 @@ export interface SpinWheelData {
   playerNames?: string[];
   /**
    * Multipliers the Reserve Pool cannot currently fund. Shown on the disc as
-   * LOCKED rather than hidden: a visible 500x you cannot win yet is
+   * LOCKED rather than hidden: a visible 100x you cannot win yet is
    * anticipation and is honest about the ceiling. The engine excludes these
    * from the draw entirely, so a locked tier can never be the result.
    */
@@ -219,7 +219,7 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
 
   /**
    * The cheapest unlock we can honestly advertise: the smallest threshold
-   * among the locked tiers that told us one. "500x unlocks at 5,000" is
+   * among the locked tiers that told us one. "100x unlocks at 1,500" is
    * anticipation; a bare dimmed segment is just an absence.
    */
   const nextUnlock = useMemo(() => {

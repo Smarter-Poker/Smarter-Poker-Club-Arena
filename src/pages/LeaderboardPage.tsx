@@ -113,6 +113,13 @@ const METRIC_OPTIONS: {
     globalSupported: false,
   },
   {
+    value: 'pfr',
+    label: 'PFR',
+    icon: '▤',
+    description: 'Preflop raise %',
+    globalSupported: false,
+  },
+  {
     value: 'roi',
     label: 'ROI',
     icon: '▲',
@@ -185,15 +192,21 @@ export default function LeaderboardPage() {
     };
   }, []);
 
-  // Load user's clubs on mount
+  // Load user's clubs on mount or when user auth changes
   useEffect(() => {
     let isMounted = true;
-    loadUserClubs(() => isMounted);
+    if (user?.id) {
+      loadUserClubs(() => isMounted);
+    } else if (user === null) {
+      setClubsLoading(false);
+      setUserClubs([]);
+      setSelectedClubId(null);
+    }
     return () => {
       isMounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user?.id]);
 
   // Keep activeTabRef in sync
   useEffect(() => {
@@ -303,6 +316,10 @@ export default function LeaderboardPage() {
   useEffect(() => {
     let isMounted = true;
     if (activeTab === 'rankings' && (scope === 'global' || selectedClubId)) {
+      if (scope === 'global') {
+        const opt = METRIC_OPTIONS.find((m) => m.value === metric);
+        if (opt && !opt.globalSupported) return;
+      }
       loadLeaderboard(false, () => isMounted);
     } else if (scope === 'my-clubs' && !selectedClubId) {
       setEntries([]);
@@ -318,6 +335,7 @@ export default function LeaderboardPage() {
   useEffect(() => {
     let isMounted = true;
     if (selectedClubId && activeTab === 'tournaments') {
+      if (scope === 'global') return;
       loadTournamentStats(() => isMounted);
     } else if (!selectedClubId) {
       setTournamentStats([]);
@@ -327,7 +345,7 @@ export default function LeaderboardPage() {
       isMounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedClubId, activeTab]);
+  }, [selectedClubId, activeTab, scope]);
 
   const loadUserClubs = async (getIsMounted?: () => boolean) => {
     setClubsLoading(true);
@@ -446,7 +464,10 @@ export default function LeaderboardPage() {
           // The list may have been replaced while this was in flight.
           if (prev.length !== offset) return prev;
           const seen = new Set(prev.map((e) => e.userId));
-          return [...prev, ...more.filter((m) => !seen.has(m.userId))];
+          const next = [...prev, ...more.filter((m) => !seen.has(m.userId))];
+          const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}`;
+          setCachedEntries(cacheKey, next);
+          return next;
         });
       }
     } catch (e) {
@@ -481,7 +502,7 @@ export default function LeaderboardPage() {
 
   const formatValue = (value: number, m: LeaderboardMetric): string => {
     const precise = Math.trunc(value * 100) / 100;
-    if (m === 'vpip' || m === 'roi') {
+    if (m === 'vpip' || m === 'pfr' || m === 'roi') {
       return `${precise}%`;
     }
     if (m === 'bb100') {
@@ -680,42 +701,67 @@ export default function LeaderboardPage() {
           ))}
         </div>
 
-        {entries.length > 0 && activeTab === 'rankings' && (
-          <button
-            className="lb-csv-btn"
-            style={{
-              background: 'rgba(65,105,225,0.15)',
-              color: '#4169E1',
-              border: '1px solid rgba(65,105,225,0.3)',
-              padding: '6px 14px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-            onClick={() => {
-              try {
-                exportToCSV(entries, `leaderboard_${scope}_${metric}_${period}.csv`, [
-                  { key: 'rank', label: 'Rank' },
-                  { key: 'username', label: 'Username' },
-                  {
-                    key: 'value',
-                    label: METRIC_OPTIONS.find((m) => m.value === metric)?.label || 'Value',
-                  },
-                  { key: 'hands', label: 'Hands' },
-                  { key: 'change', label: 'Change' },
-                  { key: 'userId', label: 'User ID' },
-                ]);
-                toast.success('Leaderboard exported');
-              } catch (e) {
-                reportError(e, 'LeaderboardPage.export');
-                toast.error('Export failed');
-              }
-            }}
-          >
-            Export CSV
-          </button>
-        )}
+        <div
+          className="export-container"
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            padding: '0 1.5rem',
+            marginBottom: '0.5rem',
+          }}
+        >
+          {((entries.length > 0 && activeTab === 'rankings') ||
+            (tournamentStats.length > 0 && activeTab === 'tournaments')) && (
+            <button
+              className="lb-csv-btn"
+              style={{
+                background: 'rgba(65,105,225,0.15)',
+                color: '#4169E1',
+                border: '1px solid rgba(65,105,225,0.3)',
+                padding: '6px 14px',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+              onClick={() => {
+                try {
+                  if (activeTab === 'rankings') {
+                    exportToCSV(entries, `leaderboard_${scope}_${metric}_${period}.csv`, [
+                      { key: 'rank', label: 'Rank' },
+                      { key: 'username', label: 'Username' },
+                      {
+                        key: 'value',
+                        label: METRIC_OPTIONS.find((m) => m.value === metric)?.label || 'Value',
+                      },
+                      { key: 'hands', label: 'Hands' },
+                      { key: 'change', label: 'Change' },
+                      { key: 'userId', label: 'User ID' },
+                    ]);
+                  } else {
+                    exportToCSV(tournamentStats, `leaderboard_${scope}_tournaments.csv`, [
+                      { key: 'username', label: 'Username' },
+                      { key: 'tournamentsPlayed', label: 'Tournaments' },
+                      { key: 'wins', label: 'Wins' },
+                      { key: 'finalTables', label: 'Final Tables' },
+                      { key: 'itmFinishes', label: 'ITM' },
+                      { key: 'totalPrizes', label: 'Total Prizes' },
+                      { key: 'roi', label: 'ROI' },
+                      { key: 'biggestWin', label: 'Biggest Win' },
+                      { key: 'userId', label: 'User ID' },
+                    ]);
+                  }
+                  toast.success('Leaderboard exported');
+                } catch (e) {
+                  reportError(e, 'LeaderboardPage.export');
+                  toast.error('Export failed');
+                }
+              }}
+            >
+              Export CSV
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Leaderboard Content */}

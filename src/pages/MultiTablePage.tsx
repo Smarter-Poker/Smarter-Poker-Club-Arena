@@ -24,7 +24,8 @@ import { useUserTableSettings } from '../hooks/useUserTableSettings';
 import { useToast } from '../components/common/Toast';
 import { supabase } from '../lib/supabase';
 import { soundService, haptic } from '../services/SoundService';
-import { setSitOut } from '../services/GameServerAPI';
+import { setSitOut, submitAction } from '../services/GameServerAPI';
+import { sessionStatsService } from '../services/SessionStatsService';
 import './MultiTablePage.css';
 
 // Lazy-load TablePage for code splitting
@@ -880,6 +881,102 @@ export default function MultiTablePage() {
     if (ok < live.length) toast.error('Some Tables Could Not Return', 4000);
   }, [toast]);
 
+  // ─── Batch 5: aggregated session stats ────────────────────────────────
+  // SessionStatsService already tracks per-table P&L / hands client-side;
+  // this simply reads every live table's stats and presents the multi-table
+  // whole: total net, total hands, combined hands/hour (total hands over the
+  // LONGEST-running session - summing rates would double-count time).
+  interface AggRow {
+    id: string;
+    name: string;
+    hands: number;
+    net: number;
+    tracked: boolean;
+  }
+  const [sessionAgg, setSessionAgg] = useState<{
+    rows: AggRow[];
+    net: number;
+    hands: number;
+    handsPerHour: number;
+  } | null>(null);
+  const [showSessionAgg, setShowSessionAgg] = useState(false);
+
+  useEffect(() => {
+    if (hidden || tables.length < 2) {
+      setSessionAgg(null);
+      return;
+    }
+    const compute = () => {
+      const live = tablesRef.current.filter((t) => !isLobbyTab(t));
+      if (live.length === 0) {
+        setSessionAgg(null);
+        return;
+      }
+      let net = 0;
+      let hands = 0;
+      let earliestStart = Infinity;
+      const rows: AggRow[] = live.map((t) => {
+        const st = sessionStatsService.getStats(t.id);
+        if (!st) return { id: t.id, name: t.name, hands: 0, net: 0, tracked: false };
+        net += st.profitLoss;
+        hands += st.handsPlayed;
+        if (st.sessionStartTime < earliestStart) earliestStart = st.sessionStartTime;
+        return {
+          id: t.id,
+          name: t.name,
+          hands: st.handsPlayed,
+          net: st.profitLoss,
+          tracked: true,
+        };
+      });
+      const hours = earliestStart === Infinity ? 0 : (Date.now() - earliestStart) / 3_600_000;
+      setSessionAgg({
+        rows,
+        net,
+        hands,
+        handsPerHour: hours > 0.01 ? Math.round(hands / hours) : 0,
+      });
+    };
+    compute();
+    const iv = setInterval(compute, 5000);
+    return () => clearInterval(iv);
+  }, [hidden, tables.length]);
+
+  // ─── Batch 4: playable tile view ──────────────────────────────────────
+  // Fold / Check / Call directly from a 2x2 tile - true simultaneous play on
+  // desktop. Server-authoritative exactly like the in-table buttons (the
+  // engine validates turn ownership; check/call carry no client amount).
+  // Raise still means focusing the table - sizing needs the full panel.
+  // Fold-protect parity: when checking is free the strip offers ONLY Check,
+  // so a misclick can never throw away a free hand.
+  const tileActionLockRef = useRef<Map<string, number>>(new Map());
+  const [tilePending, setTilePending] = useState<Record<string, boolean>>({});
+  const handleTileAction = useCallback(
+    async (tblId: string, action: 'fold' | 'check' | 'call') => {
+      const now = Date.now();
+      if (now - (tileActionLockRef.current.get(tblId) ?? 0) < 400) return;
+      tileActionLockRef.current.set(tblId, now);
+      setTilePending((p) => ({ ...p, [tblId]: true }));
+      try {
+        const res = await submitAction(tblId, user?.id || '', action);
+        if (!res?.success) {
+          toast.error(res?.error || 'Action Failed', 3500);
+        } else if (soundService.isEnabled()) {
+          if (action === 'check') soundService.playCheck();
+          else if (action === 'call') soundService.playChips();
+          else soundService.playFold();
+        }
+      } finally {
+        setTilePending((p) => {
+          const n = { ...p };
+          delete n[tblId];
+          return n;
+        });
+      }
+    },
+    [user?.id, toast]
+  );
+
   // ─── Batch 3: drag-to-reorder tabs ────────────────────────────────────
   // The active TABLE follows the reorder (identity, not index).
   const handleReorder = useCallback((fromId: string, toIndex: number) => {
@@ -1488,6 +1585,25 @@ export default function MultiTablePage() {
               onSitOutAll={handleSitOutAll}
               onBackAll={handleBackAll}
             />
+            {/* Batch 5: live multi-table P&L chip -> session breakdown */}
+            {sessionAgg && (
+              <button
+                type="button"
+                className={`multi-table-page__pnl-chip${
+                  sessionAgg.net > 0
+                    ? ' multi-table-page__pnl-chip--up'
+                    : sessionAgg.net < 0
+                      ? ' multi-table-page__pnl-chip--down'
+                      : ''
+                }`}
+                onClick={() => setShowSessionAgg((v) => !v)}
+                title="Session across all tables"
+                aria-label="Session across all tables"
+              >
+                {sessionAgg.net > 0 ? '+' : ''}
+                {sessionAgg.net.toLocaleString('en-US')}
+              </button>
+            )}
             {tables.length > 1 && (
               <button
                 className="tile-toggle-btn"
@@ -1549,6 +1665,59 @@ export default function MultiTablePage() {
               </button>
             )}
           </div>
+        )}
+
+        {/* Batch 5: aggregated session popover */}
+        {showSessionAgg && sessionAgg && (
+          <>
+            <div
+              className="multi-table-page__quickjoin-backdrop"
+              onClick={() => setShowSessionAgg(false)}
+            />
+            <div className="multi-table-page__session-agg" role="dialog" aria-label="Session">
+              <div className="multi-table-page__quickjoin-title">Session - All Tables</div>
+              {sessionAgg.rows.map((r) => (
+                <div key={r.id} className="multi-table-page__session-row">
+                  <span className="multi-table-page__session-name">{r.name}</span>
+                  <span className="multi-table-page__session-hands">
+                    {r.tracked ? `${r.hands} hands` : 'observing'}
+                  </span>
+                  <span
+                    className={`multi-table-page__session-net${
+                      r.net > 0
+                        ? ' multi-table-page__session-net--up'
+                        : r.net < 0
+                          ? ' multi-table-page__session-net--down'
+                          : ''
+                    }`}
+                  >
+                    {r.tracked ? `${r.net > 0 ? '+' : ''}${r.net.toLocaleString('en-US')}` : ''}
+                  </span>
+                </div>
+              ))}
+              <div className="multi-table-page__session-row multi-table-page__session-row--total">
+                <span className="multi-table-page__session-name">
+                  {sessionAgg.rows.length} {sessionAgg.rows.length === 1 ? 'table' : 'tables'}
+                </span>
+                <span className="multi-table-page__session-hands">
+                  {sessionAgg.hands} hands
+                  {sessionAgg.handsPerHour > 0 ? ` - ${sessionAgg.handsPerHour}/hr` : ''}
+                </span>
+                <span
+                  className={`multi-table-page__session-net${
+                    sessionAgg.net > 0
+                      ? ' multi-table-page__session-net--up'
+                      : sessionAgg.net < 0
+                        ? ' multi-table-page__session-net--down'
+                        : ''
+                  }`}
+                >
+                  {sessionAgg.net > 0 ? '+' : ''}
+                  {sessionAgg.net.toLocaleString('en-US')}
+                </span>
+              </div>
+            </div>
+          </>
         )}
 
         {/* Batch 3: quick-join sheet (anchored under the tab bar) */}
@@ -1628,6 +1797,46 @@ export default function MultiTablePage() {
                     />
                   )}
                 </Suspense>
+                {/* Batch 4: per-tile action strip - acts without focusing. */}
+                {!isLobbyTab(table) && table.isMyTurn && (
+                  <div
+                    className="multi-table-grid__actions"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {(table.toCall ?? 0) > 0 ? (
+                      <>
+                        <button
+                          type="button"
+                          className="multi-table-grid__action multi-table-grid__action--fold"
+                          disabled={!!tilePending[table.id]}
+                          onClick={() => handleTileAction(table.id, 'fold')}
+                        >
+                          Fold
+                        </button>
+                        <button
+                          type="button"
+                          className="multi-table-grid__action multi-table-grid__action--call"
+                          disabled={!!tilePending[table.id]}
+                          onClick={() => handleTileAction(table.id, 'call')}
+                        >
+                          Call {(table.toCall ?? 0).toLocaleString('en-US')}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="multi-table-grid__action multi-table-grid__action--check"
+                        disabled={!!tilePending[table.id]}
+                        onClick={() => handleTileAction(table.id, 'check')}
+                      >
+                        Check
+                      </button>
+                    )}
+                    {secondsLeft(table) !== undefined && (
+                      <span className="multi-table-grid__action-clock">{secondsLeft(table)}s</span>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

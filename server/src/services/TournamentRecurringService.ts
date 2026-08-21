@@ -528,7 +528,37 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
  * with no other change — the fill-on-start path in GameServer keeps games
  * running either way, so this is purely about how fast they fill.
  */
-const HOLD_SEAT_FOR_HUMAN = false;
+/**
+ * Dan 2026-08-21: "the tables just stay open until players sit down, they don't
+ * need to be scheduled just always running."
+ *
+ * FLIPPED BACK TO TRUE. The reason it was false is recorded above: holding a
+ * seat produced 557 cancellations in two days, every one of them a game short
+ * by exactly one player. That reason no longer exists - the cancel path was
+ * removed on 2026-08-19 ("TOURNAMENTS RUN. THEY DO NOT CANCEL", GameServer
+ * ~1150), and the only remaining sweep walks a 12-hour-idle RUNNING event
+ * through a real finish with payouts. A game that waits can no longer be
+ * destroyed for waiting.
+ *
+ * What stops a held seat from freezing the board instead: GameServer's
+ * past-start top-up fills any short game to a full field once its start time
+ * passes, so a table nobody takes eventually runs anyway and ensureBoardOpen
+ * opens a fresh one behind it. Open first, churn second - which is exactly the
+ * mix the reference lobby shows (0/3, 1/3, 2/3 and running side by side).
+ */
+const HOLD_SEAT_FOR_HUMAN = true;
+
+/**
+ * How long a freshly opened spin/SNG waits for a human before the past-start
+ * top-up is allowed to fill it.
+ *
+ * Was 60 seconds, which is not "open" in any sense a player would recognise -
+ * a table created and auto-filled inside a minute is a scheduled game with
+ * extra steps. Ten minutes is long enough that the board genuinely reads as
+ * available, and short enough that an untouched table still cycles rather than
+ * sitting dead all night.
+ */
+const OPEN_TABLE_WAIT_MS = 10 * 60 * 1000;
 function horsesForSeatHeldGame(maxPlayers: number): { horses: number; isSim: boolean } {
   if (!HOLD_SEAT_FOR_HUMAN) return { horses: maxPlayers, isSim: true };
   return { horses: Math.max(1, maxPlayers - 1), isSim: false };
@@ -1235,6 +1265,8 @@ export class TournamentRecurringService {
     config: TournamentConfig
   ): Promise<{ tournamentId: string | null; registered: number }> {
     try {
+      // MTTs keep their own 60s lead-in. OPEN_TABLE_WAIT_MS is the seat-held
+      // wait for spins and SNGs only - an MTT is a scheduled event by nature.
       const startTime = new Date(Date.now() + 60 * 1000);
       const gameTypeMap: Record<string, string> = {
         nlh: 'NLH',
@@ -1380,7 +1412,7 @@ export class TournamentRecurringService {
     config: SNGConfig
   ): Promise<{ tournamentId: string | null; registered: number }> {
     try {
-      const startTime = new Date(Date.now() + 60 * 1000);
+      const startTime = new Date(Date.now() + OPEN_TABLE_WAIT_MS);
       const gameTypeMap: Record<string, string> = {
         nlh: 'NLH',
         plo4: 'PLO4',
@@ -1469,7 +1501,7 @@ export class TournamentRecurringService {
           'TournamentRecurring.spin_seat_count_override'
         );
       }
-      const startTime = new Date(Date.now() + 60 * 1000);
+      const startTime = new Date(Date.now() + OPEN_TABLE_WAIT_MS);
 
       // THE DRAW DOES NOT HAPPEN HERE ANY MORE (2026-08-20, second pass).
       //

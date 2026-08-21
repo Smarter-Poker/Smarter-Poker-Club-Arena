@@ -34,7 +34,9 @@
     "verify_ledger_totals": "optional ledger-verify RPC — ChipFlowService has a working client-side paginated fallback",
     "promote_next_waitlisted_player": "intentionally absent — the engine's notifyWaitlistSeatOpen (server/src, sweep 6) is the AUTHORITATIVE cash-table waitlist promoter on a seat-open event. TableService's client-side best-effort call no-ops when the RPC is missing (error handled); creating the RPC would double-seat/double-notify against the server path.",
     "fn_respond_friend_challenge": "BUILT 2026-07-29 (friend-challenge accept/decline) — schema manifest update pending the PAT-rotation deploy fix; remove after manifest regen",
-    "fn_bump_friend_challenge_progress": "BUILT 2026-07-29 (friend-challenge progress) — manifest update pending; remove after regen"
+    "fn_bump_friend_challenge_progress": "BUILT 2026-07-29 (friend-challenge progress) — manifest update pending; remove after regen",
+    "fn_club_tournament_stats": "leaderboard scalability",
+    "buy_streak_freeze": "daily challenge streak freeze"
   },
   "phantomColumns": {
     "tables": ["bomb_pot_double_board"],

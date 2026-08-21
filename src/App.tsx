@@ -19,6 +19,7 @@ import { realtimeChannelService } from './services/RealtimeChannelService';
 import { OfflineQueueService } from './services/OfflineQueueService';
 import { busEventLogger } from './services/BusEventLogger';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
+import { ChallengeToastListener } from './components/notifications/ChallengeToastListener';
 import LastClubTracker from './components/common/LastClubTracker';
 import WaitlistBanner from './components/common/WaitlistBanner';
 import { addBreadcrumb } from './core/SentryInit';
@@ -298,6 +299,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <ToastProvider>
+        <ChallengeToastListener />
         <GlobalBalanceSync />
         <LastClubTracker />
         <BusToastBridge />

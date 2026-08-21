@@ -65,9 +65,7 @@ describe('Club Arena never touches the social media photo column', () => {
         if (!/\bavatar_url\b/.test(body)) continue;
         // Aliased form `avatar_url:arena_avatar_url` is the correct one.
         if (/avatar_url\s*:\s*arena_avatar_url/.test(body)) continue;
-        offenders.push(
-          `${file.replace(ROOT + '/', '')} -> .select(${body.trim().slice(0, 90)})`
-        );
+        offenders.push(`${file.replace(ROOT + '/', '')} -> .select(${body.trim().slice(0, 90)})`);
       }
     }
 
@@ -100,17 +98,15 @@ describe('Club Arena never touches the social media photo column', () => {
     expect(
       offenders,
       'Club Arena must write arena_avatar_url. avatar_url is the social media ' +
-        'profile picture and belongs to the Hub:\n' + offenders.join('\n')
+        'profile picture and belongs to the Hub:\n' +
+        offenders.join('\n')
     ).toEqual([]);
   });
 
   it('still reads the engine seat avatar from the Arena column', () => {
     // The single highest-leverage read in the app: it feeds every seat at every
     // table. If this one regresses, the felt shows photographs again.
-    const engine = readFileSync(
-      join(ROOT, 'server/src/services/supabase/tables.ts'),
-      'utf8'
-    );
+    const engine = readFileSync(join(ROOT, 'server/src/services/supabase/tables.ts'), 'utf8');
     expect(engine).toMatch(/avatar_url\s*:\s*arena_avatar_url/);
   });
 

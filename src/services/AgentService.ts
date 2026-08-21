@@ -579,7 +579,10 @@ class AgentServiceClass {
       .maybeSingle();
 
     if (!agentRecord) {
-      reportError(`Agent ${agentUserId} not found in club ${clubId}`, 'AgentService.assignPlayerToAgent');
+      reportError(
+        `Agent ${agentUserId} not found in club ${clubId}`,
+        'AgentService.assignPlayerToAgent'
+      );
       return false;
     }
 
@@ -606,8 +609,8 @@ class AgentServiceClass {
     if (countErr) reportError(countErr, 'AgentService.updatePlayerCount');
 
     // Audit log — record who assigned the player
-    const { data: currentUser } = await supabase.auth.getUser();
-    const assignedBy = currentUser?.user?.id || 'system';
+    const currentUser = await import('../lib/authUtils').then((m) => m.readLocalSession());
+    const assignedBy = currentUser?.userId || 'system';
     await supabase
       .from('audit_trail')
       .insert({

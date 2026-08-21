@@ -417,7 +417,12 @@ class CashoutServiceClass {
       reportError(error, 'CashoutService.adminRemovePlayerChips');
       throw new Error(error.message || 'Failed to remove chips');
     }
-    const res = data as { success?: boolean; error?: string; removed?: number; balance_after?: number };
+    const res = data as {
+      success?: boolean;
+      error?: string;
+      removed?: number;
+      balance_after?: number;
+    };
     if (!res?.success) throw new Error(res?.error || 'Failed to remove chips');
 
     masterBus.emit('BALANCE_UPDATED', { source: 'admin_removal', userId: playerId });

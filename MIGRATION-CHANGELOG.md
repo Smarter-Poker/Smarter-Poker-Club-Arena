@@ -7,6 +7,95 @@
 
 ---
 
+## Cowork session 2026-08-21 — run it twice and insurance were dead after hand 1
+
+Dan: "INSURANCE AND RUN IT TWICE (OR 3 TIMES) ARE 100% BROKEN AND HAVE ZERO
+FUNCTIONALITY." He was precisely right, and the reason was four lines away from
+where everyone kept looking.
+
+### The bug
+
+`ServerTableEngineSettlement` step 6 cleaned up "advanced modules between hands":
+
+```ts
+this.runItTwiceEngine.dispose(this.tableId);
+this.insuranceEngine.dispose(this.tableId);
+```
+
+`dispose()` deleted the pending offer **and** `tableConfigs`. `configure()` runs
+exactly once, in `ServerTableEngine.start()`. Both engines gate on
+
+```ts
+isEnabled(id) { return this.tableConfigs.get(id)?.enabled ?? false; }
+```
+
+so from **hand 2 onward** every table reported both features OFF. Each table got
+exactly one eligible hand per engine restart, then nothing, forever.
+
+This is why the feature looked configured and behaved absent: the lobby said
+"run it twice", the DB said `run_it_twice = true` on 59,899 tables, the engine
+agreed at boot — and then hand 1 settled and it all went quiet.
+
+### How it was found
+
+Not by reading the code, which reads correctly. By counting.
+
+| window | measurement |
+|---|---|
+| 90 min of live traffic | 13,941 hands |
+| cash hands (RIT is tournament-gated) | 4,596 |
+| hands where betting stopped on a pre-river all-in | 54 |
+| RIT offers actually made | 3 |
+
+Three offers, and all three landed in the minutes right after the 18:08 engine
+deploy restarted every table — each table spending its one allowed hand. That
+clustering is the whole fingerprint of the bug.
+
+### The fix
+
+`endHand(tableId)` on both engines clears the hand's offers and cancels their
+expiry timers, keeping the table config. Settlement calls that between hands.
+`dispose()` still tears the table down completely for shutdown, and now
+delegates to `endHand()` so the two cannot drift apart.
+
+### Verified in production, not asserted
+
+Engine deploy `d78c21f` finished 19:02:57 UTC.
+
+- **Run it twice:** 17 offers in the four minutes 19:07-19:11, still firing at
+  the end of the window rather than clustering at the start. All 17 settled
+  across multiple boards (`rit_board_2` / `rit_board_3` in the hand log),
+  **5 of them across three boards**, 17/17 with winners recorded, 6,604.73 in
+  pots awarded, 80.01 rake taken once.
+- **Insurance:** on a purpose-built 25/50 table with 2-4bb stacks
+  (`a2183324`, NLH 25/50 INSURANCE TEST), **4 eligible spots -> 4 offers**, the
+  last on hand ~39. Hand 39 is the point: the first offer would have fired even
+  with the bug.
+
+### A second, quieter bug found while verifying
+
+The telemetry listened for `rit_resolved`; the hub actually carries
+`rit_result`. So production showed 17 offers, 17 chooser decisions and **zero**
+resolutions — which reads exactly like "RIT never completes" when in fact all 17
+had settled. A name mismatch between emitter and recorder is invisible by
+construction: nothing throws, a row simply never appears.
+
+`RitTelemetryNames.test.ts` now derives the emitted names from the engine source
+and asserts the recorder knows every one of them, so no future rename can blind
+it again.
+
+### Tests
+
+Every pre-existing RIT/insurance test configured an engine and played **one**
+hand, so not one of them could see this. `OfferConfigSurvivesHand.test.ts` tests
+hand N+1 — hand 2, hand 5, offer isolation between hands, the OFF case, full
+teardown, and a source assertion that settlement never calls per-hand
+`dispose()`. Reverting either half of the fix fails 4 of its 10 tests.
+
+Suite: 1022/1022, `tsc --noEmit` clean.
+
+---
+
 ## Cowork session 2026-08-20 — the last call, the ranking card, live counts
 
 Three things Dan asked for, plus the defects review turned up on the way.

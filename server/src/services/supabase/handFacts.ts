@@ -177,7 +177,15 @@ const RIT_EVENT_TYPES = new Set([
   'rit_chooser_decided',
   'rit_accepted',
   'rit_declined',
+  // 'rit_resolved' is the RunItTwiceEngine's INTERNAL event name. What actually
+  // travels over the hub when a multi-board hand settles is 'rit_result'
+  // (ServerTableEngineRunout). Listening only for 'rit_resolved' meant every
+  // resolution was invisible: on 2026-08-21 the table showed 17 offers, 17
+  // chooser decisions and ZERO resolutions, which reads as "RIT never
+  // completes" when in fact all 17 hands had settled across multiple boards.
+  // Both names are accepted so neither rename can blind this again.
   'rit_resolved',
+  'rit_result',
   'insurance_offers',
 ]);
 

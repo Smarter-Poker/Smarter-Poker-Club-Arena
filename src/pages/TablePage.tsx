@@ -4934,6 +4934,17 @@ export default function TablePage({
                 // engine broadcasts to the whole table), which is what makes
                 // both animations shared in real time with no new plumbing.
                 if (data.type === 'mystery_bounty_revealed') {
+                  // TABLE SCOPE 2026-08-21: this broadcast rides the TOURNAMENT
+                  // channel (t-break-<id>), which every table in the event is
+                  // subscribed to. Without this check, a knockout on table 3
+                  // played the chest on tables 1 and 2 as well — a full-screen
+                  // reveal, over a live hand, for something that happened to
+                  // strangers. The engine now stamps the knockout's table;
+                  // ignore anything that is not ours. Older engine builds send
+                  // no tableId, in which case behave exactly as before.
+                  if (b.tableId && b.tableId !== tableId) {
+                    return;
+                  }
                   chestQueue.enqueue({
                     knockerUserId: b.knockerUserId || '',
                     knockerName: b.knockerName || 'Player',

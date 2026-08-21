@@ -2812,3 +2812,15 @@ body.ca-raising .bankroll-widget {
     }
   }
 }
+
+/* Leave Seat — a released reservation is refunded in full, so the control is
+   neutral rather than alarming (Dan 2026-08-21). */
+.spectator-footer-bar__cta--leave {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.07) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.9);
+}
+.spectator-footer-bar__cta--leave:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

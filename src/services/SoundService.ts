@@ -672,27 +672,50 @@ class SoundService {
     if (!this.shouldPlay('fold', 'action') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
-    // Swoosh: filtered sawtooth sweep down
-    const osc = this.ctx!.createOscillator();
+    /**
+     * Dan 2026-08-21: "CHANGE THE FOLD SOUND EFFECT TO MORE OF A LIGHT SWOOSH
+     * SOUND, INSTEAD OF A DING."
+     *
+     * The old fold ran a SAWTOOTH oscillator swept 900Hz -> 80Hz. A sawtooth
+     * has a fundamental, so it carries PITCH — and a short pitched tone is
+     * heard as a ding, no matter that the code called it a swoosh. Two cards
+     * sliding across felt have no pitch at all: they are broadband noise,
+     * brightest at the start, darkening as they slow.
+     *
+     * So the tone is gone. What is left is air: a noise burst through a
+     * bandpass that sweeps DOWN and opens up, with a short second brush a
+     * beat later for the two cards. Quieter and lighter than before (0.11
+     * peak vs 0.18) so folding never out-shouts the action.
+     */
+    const bufferSize = Math.floor(this.ctx!.sampleRate * 0.26);
+    const buffer = this.ctx!.createBuffer(1, bufferSize, this.ctx!.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+    const noise = this.ctx!.createBufferSource();
+    noise.buffer = buffer;
+
+    // Bandpass sweeping down = the sound of something moving away from you.
+    const band = this.ctx!.createBiquadFilter();
+    band.type = 'bandpass';
+    band.Q.value = 0.7; // wide: airy, not whistly
+    band.frequency.setValueAtTime(2600, t);
+    band.frequency.exponentialRampToValueAtTime(420, t + 0.24);
+
     const gain = this.ctx!.createGain();
-    const filter = this.ctx!.createBiquadFilter();
+    // Soft attack (no click), gentle fall — a brush, not a hit.
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(0.11, t + 0.035);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
 
-    osc.type = 'sawtooth';
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(900, t);
-    filter.frequency.linearRampToValueAtTime(80, t + 0.18);
-
-    gain.gain.setValueAtTime(0.18, t);
-    gain.gain.linearRampToValueAtTime(0, t + 0.2);
-
-    osc.connect(filter);
-    filter.connect(gain);
+    noise.connect(band);
+    band.connect(gain);
     gain.connect(this.out);
-    osc.start(t);
-    osc.stop(t + 0.2);
+    noise.start(t);
+    noise.stop(t + 0.26);
 
-    // Noise tail (paper slide)
-    this.createNoiseBurst(t, 0.15, 0.08, 2000);
+    // The second card, a beat behind the first.
+    this.createNoiseBurst(t + 0.06, 0.12, 0.045, 1600);
 
     haptic.light();
   }

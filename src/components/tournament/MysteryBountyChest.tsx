@@ -113,10 +113,38 @@ export function getTier(amount: number, avgBounty: number): { label: string; col
   return { label: 'Min Prize', color: TIER_COLORS.min };
 }
 
+/**
+ * Timers this module armed, so an unmount can cancel them.
+ *
+ * canvas-confetti runs its own requestAnimationFrame loop against a canvas it
+ * owns. When the chest unmounts mid-celebration the canvas goes away but the
+ * queued frames do not, and the library calls clearRect on a null context:
+ * "Cannot read properties of null (reading 'clearRect')". In the browser that
+ * is a console error over a closed overlay; in CI it is an UNCAUGHT EXCEPTION
+ * that fails the whole run — and the client suite now gates the bundle
+ * publish, so a stray celebration could block a deploy.
+ *
+ * reset() tears the loop and the canvas down together.
+ */
+const confettiTimers = new Set<ReturnType<typeof setTimeout>>();
+let confettiReset: (() => void) | null = null;
+
+export function stopConfetti() {
+  for (const t of confettiTimers) clearTimeout(t);
+  confettiTimers.clear();
+  try {
+    confettiReset?.();
+  } catch {
+    /* the loop is already gone — nothing to tear down */
+  }
+  confettiReset = null;
+}
+
 function fireConfetti(isJackpot: boolean) {
   import('canvas-confetti')
     .then((mod) => {
       const confetti = mod.default;
+      confettiReset = () => (confetti as unknown as { reset?: () => void }).reset?.();
       const gold = ['#FFD700', '#FFC107', '#FFB300', '#FF8F00', '#FFECB3'];
       confetti({
         particleCount: isJackpot ? 300 : 140,
@@ -126,15 +154,19 @@ function fireConfetti(isJackpot: boolean) {
         scalar: isJackpot ? 1.3 : 1,
       });
       if (isJackpot) {
-        setTimeout(
-          () =>
-            confetti({ particleCount: 150, spread: 120, origin: { y: 0.2, x: 0.2 }, colors: gold }),
-          200
+        confettiTimers.add(
+          setTimeout(
+            () =>
+              confetti({ particleCount: 150, spread: 120, origin: { y: 0.2, x: 0.2 }, colors: gold }),
+            200
+          )
         );
-        setTimeout(
-          () =>
-            confetti({ particleCount: 150, spread: 120, origin: { y: 0.2, x: 0.8 }, colors: gold }),
-          380
+        confettiTimers.add(
+          setTimeout(
+            () =>
+              confetti({ particleCount: 150, spread: 120, origin: { y: 0.2, x: 0.8 }, colors: gold }),
+            380
+          )
         );
       }
     })
@@ -152,6 +184,8 @@ export default function MysteryBountyChest({
   queuedBehind = 0,
   playSounds = true,
 }: MysteryBountyChestProps) {
+  // The celebration must not outlive the overlay that fired it.
+  useEffect(() => stopConfetti, []);
   const [phase, setPhase] = useState<Phase>('idle');
   const [displayAmount, setDisplayAmount] = useState(0);
   /**

@@ -7425,9 +7425,13 @@ export default function TablePage({
           if (res.starts_now) {
             toast?.success?.('Seats Full, Game Starting');
           } else {
+            // Dan 2026-08-21: "THEY ARE SIMPLY SECURING A SEAT." Say exactly
+            // that — chips arrive when the spin resolves and play begins.
             const left = Math.max(0, (res.seats_needed ?? 0) - (res.seats_taken ?? 0));
             toast?.success?.(
-              left === 1 ? 'You Are In, Waiting For 1 More Player' : `You Are In, Waiting For ${left} More Players`
+              left === 1
+                ? 'Seat Reserved, Waiting For 1 More Player'
+                : `Seat Reserved, Waiting For ${left} More Players`
             );
           }
         } catch (err) {
@@ -9514,6 +9518,59 @@ export default function TablePage({
             <span className="spectator-footer-bar__label">
               Seat Reserved, You'll Be Dealt In Next Hand
             </span>
+          </div>
+        ) : seatFirstBuyIn && tableState.heroSeat > 0 ? (
+          /* SEAT RESERVED (Dan 2026-08-21). The buy-in secured a seat; no
+             chips exist yet and no hand is running. Say so, and offer the way
+             out — "IF THEY LEAVE THE SEAT THEY ARE FULLY REFUNDED." */
+          <div className="spectator-footer-bar" data-state="reserved">
+            <span className="spectator-footer-bar__label">
+              Seat Reserved, Waiting For Players
+            </span>
+            <button
+              type="button"
+              className="spectator-footer-bar__cta spectator-footer-bar__cta--leave"
+              disabled={seatFirstPending}
+              onClick={() => {
+                if (!tableId || seatFirstPending) return;
+                setSeatFirstPending(true);
+                void (async () => {
+                  try {
+                    const { data, error } = await supabase.rpc('fn_leave_seat_and_refund', {
+                      p_table_id: tableId,
+                    });
+                    const res = (data ?? {}) as {
+                      ok?: boolean;
+                      reason?: string;
+                      refunded?: number;
+                    };
+                    if (error || !res.ok) {
+                      const reason = error?.message || res.reason || '';
+                      toast?.error?.(
+                        /already_started/.test(reason)
+                          ? 'The Game Has Started, Your Seat Is In Play'
+                          : 'Could Not Release That Seat, Please Try Again'
+                      );
+                      return;
+                    }
+                    heroSeatRef.current = 0;
+                    setTableState((prev) => ({ ...prev, heroSeat: 0 }));
+                    toast?.success?.(
+                      `Seat Released, ${Number(res.refunded ?? 0).toLocaleString()} Chips Refunded`
+                    );
+                    const backTo = actualClubIdRef.current;
+                    if (backTo) navigate(`/clubs/${backTo}`);
+                  } catch (err) {
+                    reportError(err as Error, 'TablePage.leave_seat_refund');
+                    toast?.error?.('Could Not Release That Seat, Please Try Again');
+                  } finally {
+                    setSeatFirstPending(false);
+                  }
+                })();
+              }}
+            >
+              Leave Seat
+            </button>
           </div>
         ) : getPlayerAtSeat(tableState.heroSeat)?.status === 'sitting_out' ||
           sittingOutIdsRef.current.has(userId || '') ? (

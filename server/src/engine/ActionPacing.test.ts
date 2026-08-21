@@ -144,13 +144,16 @@ describe('celebrations are not superseded by the next hand either', () => {
   });
 
   it('a BAD BEAT JACKPOT pauses the table for its whole celebration', () => {
-    // BBJCelebration phases at 3.5s, fades at 8s, completes at ~8.5s. Without
-    // this the next hand was dealt underneath it at ~2.6-6s.
-    expect(dealing).toContain('BBJ_CELEBRATION_MS');
-    const m = dealing.match(/BBJ_CELEBRATION_MS\s*=\s*(\d+)/);
-    expect(Number(m![1])).toBeGreaterThanOrEqual(8500);
-    // and it must actually be selected when a jackpot hit
-    expect(dealing).toContain('this.currentHandBBJHit?.hit');
+    // The constant moved into the shared hand-completion spec (2026-08-21),
+    // where the client's celebration length and the engine's hold are the
+    // same number by construction.
+    const spec = readFileSync(
+      join(process.cwd(), 'src/config/handCompletionSpec.ts'),
+      'utf8'
+    );
+    expect(spec).toContain('BBJ_CELEBRATION_MS');
+    expect(Number(spec.match(/BBJ_CELEBRATION_MS:\s*(\d+)/)![1])).toBeGreaterThanOrEqual(9000);
+    expect(dealing).toContain('currentHandBBJHit');
   });
 });
 
@@ -179,10 +182,22 @@ describe('the end of a hand is not rushed either', () => {
   const dealing = read('ServerTableEngineDealing.ts');
 
   it('an uncontested win still gets time to sweep AND ship the pot', () => {
-    const m = dealing.match(/RESULT_DISPLAY_FOLD_MS\s*=\s*(\d+)/);
-    expect(m).toBeTruthy();
-    // sweep (700) + pot ship (700) + a beat to read the winner.
-    expect(Number(m![1])).toBeGreaterThanOrEqual(2000);
+    // 2026-08-21: the hold is no longer a hand-written constant here. Dan's
+    // hand-completion law made it DERIVED from the animation spec both sides
+    // share, so an animation change cannot silently truncate the sequence
+    // (the old 2600ms literal was already cutting off the 2900ms pot-win
+    // float). The pacing guarantee is unchanged; its source moved.
+    expect(dealing).toContain('handCompletionHoldMs(');
+    expect(dealing).toContain('boardClearMs(');
+    const spec = readFileSync(
+      join(process.cwd(), 'src/config/handCompletionSpec.ts'),
+      'utf8'
+    );
+    const sweep = Number(spec.match(/BETS_SWEEP_MS:\s*(\d+)/)![1]);
+    const push = Number(spec.match(/POT_PUSH_MS:\s*(\d+)/)![1]);
+    const muck = Number(spec.match(/MUCK_MS:\s*(\d+)/)![1]);
+    // sweep + the pot travelling with its total + the muck.
+    expect(sweep + push + muck).toBeGreaterThanOrEqual(2000);
   });
 
   it('an all-in runout is paced street by street, never dealt in one tick', () => {

@@ -601,10 +601,19 @@ function horsesForSeatHeldGame(maxPlayers: number): { horses: number; isSim: boo
  * whole buy-in ladder. horsesToRegister is seats-1 for the same reason it is
  * on spins - a full fill means the game is never joinable.
  */
+/**
+ * Dan, 2026-08-21: "WE AREN'T DOING ANY OTHER SIT N GO'S."
+ *
+ * Heads-Up is the only sit-n-go shape the platform runs. 6-Max and 9-Max are
+ * removed — they were the MTT-shaped middle ground nobody asked for: too slow
+ * to fill as a walk-up table, too small to be an event. Spins cover the
+ * three-handed fast game, Heads-Up covers the duel, MTTs cover the field.
+ *
+ * Heads-Up is seat-first (isSeatFirstFormat): two seats, first come first
+ * served, and the game begins the moment both are bought.
+ */
 const SNG_BOARD_SHAPES: { seats: number; label: string; turbo: boolean }[] = [
   { seats: 2, label: 'Heads-Up', turbo: false },
-  { seats: 6, label: '6-Max', turbo: true },
-  { seats: 9, label: '9-Max', turbo: false },
 ];
 
 const SNG_BOARD_VARIANTS: { key: string; label: string }[] = [

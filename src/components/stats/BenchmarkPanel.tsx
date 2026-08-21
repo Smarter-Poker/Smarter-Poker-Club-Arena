@@ -12,7 +12,7 @@
  * says "the field" and never implies a human population that does not exist.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import StatsFactsService, { type DistributionRow } from '../../services/StatsFactsService';
 import { benchmark, type BenchmarkResult } from './statBenchmarks';
 import './BenchmarkPanel.css';
@@ -44,11 +44,10 @@ function Bar({ result }: { result: BenchmarkResult }) {
   if (result.barPosition === null) return null;
 
   const pct = Math.round(result.barPosition * 100);
-  const medianPct =
-    result.medianPosition === null ? null : Math.round(result.medianPosition * 100);
+  const medianPct = result.medianPosition === null ? null : Math.round(result.medianPosition * 100);
 
   return (
-    <div className="bench-bar" aria-hidden="true">
+    <div className="bench-bar bench-bar-anchored" aria-hidden="true">
       <div className="bench-bar-track">
         {medianPct !== null && (
           // Positioned at the REAL median, not at the track's midpoint - the
@@ -57,11 +56,18 @@ function Bar({ result }: { result: BenchmarkResult }) {
         )}
         <span className={`bench-bar-marker tone-${result.tone}`} style={{ left: `${pct}%` }} />
       </div>
+      {/* The median LABEL used to sit centred by flexbox while the tick moved
+          to the real position - up to 12 points apart for PFR, so the word
+          named a place it was not. It is now anchored to the tick. */}
       <div className="bench-bar-scale">
         <span>Bottom 10%</span>
-        <span>Median</span>
         <span>Top 10%</span>
       </div>
+      {medianPct !== null && (
+        <span className="bench-bar-median-label" style={{ left: `${medianPct}%` }}>
+          Median
+        </span>
+      )}
     </div>
   );
 }
@@ -183,9 +189,13 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
       </p>
       {results.some((r) => r.barPosition === null) && (
         <p className="bench-note">
-          3-Bet Is Shown Against The Range Winning Players Hold Rather Than Against The Field: The
-          Club-Wide Figure Is Measured Per Hand Dealt While Yours Is Measured Per Opportunity, And
-          Comparing The Two Would Be Comparing Different Statistics.
+          {results
+            .filter((r) => r.barPosition === null)
+            .map((r) => r.def.label)
+            .join(', ')}{' '}
+          {results.filter((r) => r.barPosition === null).length === 1 ? 'is' : 'are'} Judged Against
+          The Range Winning Players Hold Rather Than Against The Field. For These, Both Extremes Are
+          Leaks, So Where The Club Happens To Sit Says Nothing About Where You Should Be.
         </p>
       )}
     </div>

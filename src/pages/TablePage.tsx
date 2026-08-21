@@ -4442,6 +4442,26 @@ export default function TablePage({
               } else if (data?.type === 'player_eliminated') {
                 // A player was eliminated from the tournament
                 const elimData = data.payload || {};
+
+                /* AUDIT 2026-08-20: PLAYER_ELIMINATED had a listener and no
+                   emitter. TournamentTimerService subscribes to it to re-check
+                   table size after a bust — the trigger for merging short
+                   tables and calling heads-up — and nothing in the codebase
+                   ever sent it, so that check only ever ran on its own timer.
+                   This broadcast IS the elimination; forward it. */
+                try {
+                  masterBus.emit('PLAYER_ELIMINATED', {
+                    tournamentId: String(
+                      table.tournament_id || tableStateRef.current.tournamentId || ''
+                    ),
+                    userId: String(elimData.userId || ''),
+                    position: Number(elimData.position) || 0,
+                    prize: Number(elimData.prize) || 0,
+                    username: String(elimData.username || ''),
+                  });
+                } catch {
+                  /* a bus publish must never break the elimination path */
+                }
                 console.debug(
                   `[TablePage] Player eliminated: ${elimData.userId?.slice(0, 8)} at position ${elimData.position}`
                 );

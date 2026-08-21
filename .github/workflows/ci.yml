@@ -201,6 +201,41 @@ jobs:
             exit 1
           fi
 
+      # BLOCKING: an event something LISTENS for that nothing EMITS is a
+      # feature that cannot fire. Sibling to the phantom-reference gate above:
+      # that one catches a query pointing at nothing, this one catches a
+      # subscription hearing nothing. Found 21 on 2026-08-20, every one a
+      # component wired up, styled, shipped and dead. Exceptions (unported
+      # engines, unbuilt producers) go in scripts/ci/bus-wiring.allowlist.json
+      # WITH A REASON.
+      - name: Bus Wiring — Listeners Without Emitters
+        run: |
+          set -o pipefail
+          echo "## Bus Wiring Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-bus-wiring.mjs 2>&1 | tee /tmp/buswiring.log; then
+            echo "OK — every masterBus listener has at least one emitter." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Dead listener(s) detected — see log for file:line. Emit the event, fix the" >> $GITHUB_STEP_SUMMARY
+            echo "name, or allowlist it (with a reason) in scripts/ci/bus-wiring.allowlist.json." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      # BLOCKING: navigate() to a path no <Route> declares renders nothing and
+      # reports nothing — the player lands on a blank screen. Allowlist paths
+      # owned outside this router in scripts/ci/route-targets.allowlist.json.
+      - name: Route Targets — navigate() Without a Route
+        run: |
+          set -o pipefail
+          echo "## Route Target Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-route-targets.mjs 2>&1 | tee /tmp/routes.log; then
+            echo "OK — every navigate() target matches a declared route." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Unrouted navigation target(s) — see log for file:line." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       # BLOCKING: a client-read table with NO writer anywhere (client
       # .from().insert/update, server/src, or an RPC/migration body) means the UI
       # reads a table nothing populates -> silent empty/stale values. Detection is

@@ -13,7 +13,6 @@
     "clawback_audit_log": "agent clawback audit — unbuilt (AgentAnalyticsDashboard degrades to empty)",
     "club_activity": "club activity feed — unbuilt (ClubActivityFeed degrades to empty)",
     "club_challenges": "club challenges — unbuilt",
-    "favorite_tables": "favorite-tables widget — unbuilt (degrades to empty)",
     "gto_solutions": "GTO solver storage — unbuilt (GTOQueryService)",
     "gto_solve_queue": "GTO solve queue — unbuilt (GTOQueryService)",
     "hand_results": "legacy hand-results read — superseded by hand_history (HorseOrchestrator)",
@@ -21,8 +20,7 @@
     "members": "legacy members alias — superseded by club_members",
     "message_read_receipts": "message read receipts — unbuilt (MessagingService)",
     "preflop_ranges": "preflop range storage — unbuilt (GTOQueryService)",
-    "scheduled_messages": "scheduled messages — unbuilt (MessagingService)",
-    "user_presence": "presence indicator — unbuilt (degrades to empty)"
+    "scheduled_messages": "scheduled messages — unbuilt (MessagingService)"
   },
   "unbuiltFeatureRpcs": {
     "_comment": "RPCs referenced by shipped UI that were never created in the DB. Callers handle the error and degrade. Build the function -> the entry auto-clears.",

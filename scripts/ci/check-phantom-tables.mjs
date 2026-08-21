@@ -179,7 +179,12 @@ function collect(regex) {
 // Match the opening `.from('name'` / `.rpc('name'` only — do NOT require a
 // closing paren, since .rpc('fn', {args}) and .from('t') as a base for a
 // chained query both continue past the name.
-const fromRefs = collect(/\.from\s*\(\s*['"]([a-z_][a-z0-9_]*)['"]/g);
+// AUDIT 2026-08-20: the negative lookbehind is the difference between a table
+// and a STORAGE BUCKET. `supabase.storage.from('images')` is a bucket, not a
+// relation, and matching it reported `images` as a phantom table with no way
+// to resolve it except allowlisting a bucket as if it were a table. Any new
+// bucket would have redded the build the same way.
+const fromRefs = collect(/(?<!storage)\.from\s*\(\s*['"]([a-z_][a-z0-9_]*)['"]/g);
 const rpcRefs = collect(/\.rpc\s*\(\s*['"]([a-z_][a-z0-9_]*)['"]/g);
 
 // ─── 3. Diff against the manifest ───────────────────────────────────────────

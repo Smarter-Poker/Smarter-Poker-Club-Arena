@@ -885,7 +885,8 @@ export default function LeaderboardPage() {
             <Virtuoso
               useWindowScroll
               data={rest}
-              itemContent={(index: number, entry: any) => (
+              computeItemKey={(index, item) => item.userId}
+              itemContent={(index: number, entry: LeaderboardEntry) => (
                 <div
                   className={`leaderboard-entry ${entry.userId === user?.id ? 'current-user' : ''}`}
                   onClick={() => navigate(`/profile/${entry.userId}`)}
@@ -987,7 +988,8 @@ export default function LeaderboardPage() {
             <Virtuoso
               useWindowScroll
               data={tournamentStats}
-              itemContent={(index: number, stat: any) => (
+              computeItemKey={(index, item) => item.userId}
+              itemContent={(index: number, stat: TournamentStats) => (
                 <div
                   className={`tournament-stats-entry animate-fade-in-up stagger-${Math.min(index + 1, 10)} ${stat.userId === user?.id ? 'current-user' : ''}`}
                   onClick={() => navigate(`/profile/${stat.userId}`)}

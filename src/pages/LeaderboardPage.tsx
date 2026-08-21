@@ -12,6 +12,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
+import { Virtuoso } from 'react-virtuoso';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { LeaderboardService } from '../services/LeaderboardService';
 import type {
@@ -231,13 +232,27 @@ export default function LeaderboardPage() {
 
   // ── Bus Listener: instant leaderboard refresh when engine completes a hand ──
   useEffect(() => {
-    const unsub = masterBus.subscribeDebounced(
-      'HAND_COMPLETED',
-      () => {
-        if (activeTabRef.current === 'rankings') {
-          loadLeaderboardRef.current(true);
-        } else {
-          loadTournamentStatsRef.current();
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const pendingClubs = new Set<string>();
+
+    const unsub = masterBus.subscribe('HAND_COMPLETED', (event) => {
+      if (event.payload?.clubId) {
+        pendingClubs.add(event.payload.clubId);
+      }
+
+      if (timeout) clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        const currentScope = scopeRef.current;
+        const currentClubId = selectedClubIdRef.current;
+        const shouldRefresh =
+          currentScope === 'global' || (currentClubId && pendingClubs.has(currentClubId));
+
+        if (shouldRefresh) {
+          if (activeTabRef.current === 'rankings') {
+            loadLeaderboardRef.current(true);
+          } else {
+            loadTournamentStatsRef.current();
+          }
         }
       },
       500
@@ -876,63 +891,64 @@ export default function LeaderboardPage() {
 
             {/* ── REMAINING RANKINGS (4th+) ── */}
             {rest.length > 0 && (
-              <div className="rankings-divider">
-                <span>Rankings</span>
-              </div>
-            )}
-            {rest.map((entry, index) => (
-              <div
-                key={entry.userId}
-                className={`leaderboard-entry ${entry.userId === user?.id ? 'current-user' : ''}`}
-                onClick={() => navigate(`/profile/${entry.userId}`)}
-                onKeyDown={rowKeyActivate(entry.userId)}
-                role="button"
-                tabIndex={0}
-                aria-label={`${getRankLabel(entry.rank)} ${entry.username}, ${formatValue(entry.value, metric)}`}
-                style={{ ...rankingRowAnimationStyle(index), cursor: 'pointer' }}
-              >
-                <span className="entry-rank">{getRankLabel(entry.rank)}</span>
-                <div className="entry-avatar">
-                  {entry.avatar ? (
-                    <img src={entry.avatar} alt="" loading="lazy" />
-                  ) : (
-                    <span>{(entry.username || '?')[0]?.toUpperCase()}</span>
+              <>
+                <div className="rankings-divider">
+                  <span>Rankings</span>
+                </div>
+                <Virtuoso
+                  useWindowScroll
+                  data={rest}
+                  endReached={loadMore}
+                  itemContent={(index, entry) => (
+                    <div
+                      className={`leaderboard-entry ${entry.userId === user?.id ? 'current-user' : ''}`}
+                      onClick={() => navigate(`/profile/${entry.userId}`)}
+                      onKeyDown={rowKeyActivate(entry.userId)}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${getRankLabel(entry.rank)} ${entry.username}, ${formatValue(entry.value, metric)}`}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <span className="entry-rank">{getRankLabel(entry.rank)}</span>
+                      <div className="entry-avatar">
+                        {entry.avatar ? (
+                          <img src={entry.avatar} alt="" loading="lazy" />
+                        ) : (
+                          <span>{(entry.username || '?')[0]?.toUpperCase()}</span>
+                        )}
+                      </div>
+                      <div className="entry-info">
+                        <span className="entry-name">
+                          {entry.username}
+                          {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
+                          {(entry.change || 0) >= 3 && (
+                            <span className="hot-streak-badge" title="Hot streak: climbing fast">
+                              {'↑'}
+                            </span>
+                          )}
+                        </span>
+                        {renderRowContext(entry)}
+                      </div>
+                      <div className={`entry-value ${entry.value >= 0 ? 'positive' : 'negative'}`}>
+                        {formatValue(entry.value, metric)}
+                        {renderChangeBadge(entry.change)}
+                      </div>
+                    </div>
                   )}
-                </div>
-                <div className="entry-info">
-                  <span className="entry-name">
-                    {entry.username}
-                    {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
-                    {(entry.change || 0) >= 3 && (
-                      <span className="hot-streak-badge" title="Hot streak: climbing fast">
-                        {'↑'}
-                      </span>
-                    )}
-                  </span>
-                  {renderRowContext(entry)}
-                </div>
-                <div className={`entry-value ${entry.value >= 0 ? 'positive' : 'negative'}`}>
-                  {formatValue(entry.value, metric)}
-                  {renderChangeBadge(entry.change)}
-                </div>
-              </div>
-            ))}
-
-            {totalRanked != null && entries.length < totalRanked && (
-              <button
-                className="lb-load-more"
-                onClick={loadMore}
-                disabled={loadingMore}
-                aria-label={`Load more, showing ${entries.length} of ${totalRanked}`}
-              >
-                {loadingMore
-                  ? 'Loading...'
-                  : `Show more (${entries.length.toLocaleString('en-US')} of ${totalRanked.toLocaleString('en-US')})`}
-              </button>
+                  components={{
+                    Footer: () => {
+                      if (loadingMore) {
+                        return (
+                          <div style={{ padding: '1rem', textAlign: 'center' }}>Loading...</div>
+                        );
+                      }
+                      return null;
+                    },
+                  }}
+                />
+              </>
             )}
 
-            {/* Ranked, but below the visible cut - pin their own row so the number
-                in the sticky card has something to sit against. */}
             {userRank && !entries.some((e) => e.userId === user?.id) && (
               <>
                 <div className="rankings-divider">
@@ -979,39 +995,42 @@ export default function LeaderboardPage() {
             </div>
 
             {/* Tournament Stats Rows */}
-            {tournamentStats.map((stat, index) => (
-              <div
-                key={stat.userId}
-                className={`tournament-stats-entry animate-fade-in-up stagger-${Math.min(index + 1, 10)} ${stat.userId === user?.id ? 'current-user' : ''}`}
-                onClick={() => navigate(`/profile/${stat.userId}`)}
-                style={{ cursor: 'pointer' }}
-              >
-                <div className="stats-cell player-cell">
-                  <span className="rank-badge">#{index + 1}</span>
-                  <div className="entry-avatar">
-                    {stat.avatar ? (
-                      <img src={stat.avatar} alt="" loading="lazy" />
-                    ) : (
-                      <span>{(stat.username || '?')[0]?.toUpperCase()}</span>
-                    )}
+            <Virtuoso
+              useWindowScroll
+              data={tournamentStats}
+              itemContent={(index, stat) => (
+                <div
+                  className={`tournament-stats-entry ${stat.userId === user?.id ? 'current-user' : ''}`}
+                  onClick={() => navigate(`/profile/${stat.userId}`)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <div className="stats-cell player-cell">
+                    <span className="rank-badge">#{index + 1}</span>
+                    <div className="entry-avatar">
+                      {stat.avatar ? (
+                        <img src={stat.avatar} alt="" loading="lazy" />
+                      ) : (
+                        <span>{(stat.username || '?')[0]?.toUpperCase()}</span>
+                      )}
+                    </div>
+                    <span className="player-name">{stat.username}</span>
                   </div>
-                  <span className="player-name">{stat.username}</span>
+                  <div className="stats-cell">{stat.tournamentsPlayed}</div>
+                  <div className="stats-cell wins">{stat.wins}</div>
+                  <div className="stats-cell">{stat.finalTables}</div>
+                  <div className="stats-cell">{stat.itmFinishes}</div>
+                  <div className="stats-cell prizes">
+                    {(Math.trunc(stat.totalPrizes * 100) / 100).toLocaleString()}
+                  </div>
+                  <div className={`stats-cell roi ${stat.roi >= 0 ? 'positive' : 'negative'}`}>
+                    {Math.trunc(stat.roi * 100) / 100}%
+                  </div>
+                  <div className="stats-cell biggest">
+                    {(Math.trunc(stat.biggestWin * 100) / 100).toLocaleString()}
+                  </div>
                 </div>
-                <div className="stats-cell">{stat.tournamentsPlayed}</div>
-                <div className="stats-cell wins">{stat.wins}</div>
-                <div className="stats-cell">{stat.finalTables}</div>
-                <div className="stats-cell">{stat.itmFinishes}</div>
-                <div className="stats-cell prizes">
-                  {(Math.trunc(stat.totalPrizes * 100) / 100).toLocaleString()}
-                </div>
-                <div className={`stats-cell roi ${stat.roi >= 0 ? 'positive' : 'negative'}`}>
-                  {Math.trunc(stat.roi * 100) / 100}%
-                </div>
-                <div className="stats-cell biggest">
-                  {(Math.trunc(stat.biggestWin * 100) / 100).toLocaleString()}
-                </div>
-              </div>
-            ))}
+              )}
+            />
           </>
         ) : null}
       </div>

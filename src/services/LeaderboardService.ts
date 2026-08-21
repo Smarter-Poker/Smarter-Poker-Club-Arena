@@ -531,116 +531,24 @@ export const LeaderboardService = {
   /**
    * Get tournament stats for all players in a club
    */
-  async getClubTournamentStats(clubId: string, limit: number = 50): Promise<TournamentStats[]> {
+  async getClubTournamentStats(
+    clubId: string,
+    limit: number = 50,
+    offset: number = 0
+  ): Promise<TournamentStats[]> {
     try {
-      const { data: playerResults, error: resultsError } = await supabase
-        .from('tournament_players')
-        .select(
-          `
-                    user_id,
-                    username,
-                    position,
-                    prize,
-                    tournaments!tournament_id (
-                        id,
-                        club_id,
-                        buy_in_amount,
-                        buy_in_fee
-                    )
-                `
-        )
-        .eq('tournaments.club_id', clubId)
-        .in('status', ['eliminated', 'winner'])
-        .limit(QUERY_LIMITS.AGGREGATE);
+      const { data, error } = await supabase.rpc('fn_club_tournament_stats', {
+        p_club_id: clubId,
+        p_limit: limit,
+        p_offset: offset,
+      });
 
-      if (resultsError || !playerResults) {
-        reportError(resultsError, 'LeaderboardService.getClubTournamentStats');
+      if (error) {
+        reportError(error, 'LeaderboardService.getClubTournamentStats');
         return [];
       }
 
-      const statsMap = new Map<
-        string,
-        {
-          username: string;
-          userId: string;
-          tournaments: Set<string>;
-          wins: number;
-          finalTables: number;
-          itmFinishes: number;
-          totalPrizes: number;
-          totalBuyins: number;
-          biggestWin: number;
-        }
-      >();
-
-      playerResults.forEach((result: any) => {
-        const userId = result.user_id as string;
-        const tourn = result.tournaments;
-        if (!tourn) return;
-
-        if (!statsMap.has(userId)) {
-          statsMap.set(userId, {
-            username: result.username || 'Player',
-            userId,
-            tournaments: new Set(),
-            wins: 0,
-            finalTables: 0,
-            itmFinishes: 0,
-            totalPrizes: 0,
-            totalBuyins: 0,
-            biggestWin: 0,
-          });
-        }
-
-        const stats = statsMap.get(userId)!;
-
-        if (tourn.club_id === clubId) {
-          const buyin = tourn.buy_in_amount || 0;
-          const fee = tourn.buy_in_fee || 0;
-          stats.tournaments.add(tourn.id);
-          stats.totalBuyins += buyin + fee;
-        }
-
-        if (result.position === 1) stats.wins++;
-        if (result.position && result.position <= 9) stats.finalTables++;
-        if (result.prize && result.prize > 0) stats.itmFinishes++;
-
-        const prize = result.prize || 0;
-        stats.totalPrizes += prize;
-        stats.biggestWin = Math.max(stats.biggestWin, prize);
-      });
-
-      const statsArray = Array.from(statsMap.values()).map((stats) => ({
-        userId: stats.userId,
-        username: stats.username,
-        tournamentsPlayed: stats.tournaments.size,
-        wins: stats.wins,
-        finalTables: stats.finalTables,
-        itmFinishes: stats.itmFinishes,
-        totalPrizes: stats.totalPrizes,
-        roi:
-          stats.totalBuyins > 0
-            ? ((stats.totalPrizes - stats.totalBuyins) / stats.totalBuyins) * 100
-            : 0,
-        biggestWin: stats.biggestWin,
-      }));
-
-      const userIds = statsArray.map((s) => s.userId);
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, username, avatar_url')
-        .in('id', userIds);
-
-      const profileMap = new Map((profiles || []).map((p: ProfileRow) => [p.id, p]));
-
-      return statsArray
-        .map((stats) => ({
-          ...stats,
-          avatar: profileMap.get(stats.userId)?.avatar_url,
-          username: profileMap.get(stats.userId)?.username || stats.username,
-        }))
-        .sort((a, b) => b.totalPrizes - a.totalPrizes)
-        .slice(0, limit);
+      return data as TournamentStats[];
     } catch (err: unknown) {
       reportError(err, 'LeaderboardService.getClubTournamentStats');
       return [];

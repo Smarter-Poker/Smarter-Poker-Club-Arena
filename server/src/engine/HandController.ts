@@ -745,8 +745,61 @@ export class HandController {
    * FIX 120: Auto-discard for players who didn't respond in time.
    * Discards the last (3rd) card by default.
    */
+  /**
+   * @deprecated Dan 2026-08-21 made a missed discard a FOLD, not a random
+   * throw-away. Kept only because older call sites and tests reference it;
+   * the live expiry path calls foldForMissedDiscard().
+   */
   autoDiscard(seat: number): boolean {
     return this.performDiscard(seat, 2); // Discard last card
+  }
+
+  /**
+   * Dan 2026-08-21: "FOR PINEAPPLE, THIS NEEDS TO BE A FULL ROUND OF DISCARDS.
+   * IF A PLAYER DOESN'T DISCARD IN THE AMOUNT OF TIME GIVEN, THEIR HAND IS
+   * FOLDED."
+   *
+   * The old expiry path auto-discarded the LAST card, which is a random
+   * discard dressed up as a decision: it silently kept playing a hand the
+   * player never chose, and on 103 pineapple tables that ran every hand. A
+   * discard is an ACTION - miss it and you are out of the pot, exactly like
+   * missing a turn.
+   *
+   * Returns true when this call folded the seat.
+   */
+  foldForMissedDiscard(seat: number): boolean {
+    if (this.state.stage !== 'pineapple_discard') return false;
+    if (!this.pineappleDiscardsRemaining.has(seat)) return false;
+    const player = this.state.players.find((p) => p.seat === seat);
+    if (!player || player.is_folded) {
+      this.pineappleDiscardsRemaining.delete(seat);
+      return false;
+    }
+
+    player.is_folded = true;
+    this.pineappleDiscardsRemaining.delete(seat);
+
+    // Announce it the same way any fold is announced, so seats grey out and
+    // the hand history records a fold rather than a phantom discard.
+    this.emit({
+      type: 'PLAYER_ACTION',
+      seat,
+      playerId: player.user_id,
+      action: 'fold',
+      amount: 0,
+      stage: this.state.stage,
+    } as unknown as HandEvent);
+
+    // Everyone else folding to one player ends the hand here - there is no
+    // flop to deal and no betting round to open.
+    if (this.getActivePlayers().length <= 1) {
+      this.pineappleDiscardsRemaining.clear();
+      this.completeHand();
+      return true;
+    }
+
+    this.checkPineappleDiscardsComplete();
+    return true;
   }
 
   /** FIX 120: Check if all players have discarded; if so, advance to flop betting */

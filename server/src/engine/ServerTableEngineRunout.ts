@@ -287,10 +287,12 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       if (!this.handController || this.handController !== discardControllerRef) return;
       for (const seat of seats) {
         try {
-          // Auto-discard last card for any player who hasn't responded
-          this.handController.autoDiscard(seat);
+          // Dan 2026-08-21: a missed discard FOLDS the hand. It used to
+          // auto-discard the last card - a random discard the player never
+          // chose, which then kept playing for them.
+          this.handController.foldForMissedDiscard(seat);
         } catch (err) {
-          reportError(err, 'ServerTableEngine.' + this.tableId + '.pineapple_autodiscard_threw', {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.pineapple_discard_fold_threw', {
             seat,
           });
           // Keep going — one bad seat must not strand the whole table.

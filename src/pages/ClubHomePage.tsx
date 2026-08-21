@@ -2019,16 +2019,89 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           );
         })}
 
-        {/* EMPTY STATE */}
-        {filteredTables.length === 0 && filteredTournaments.length === 0 && !isOwner && (
-          <div className="empty-tables">
-            <p>{showTournaments ? 'No tournaments available' : 'No tables available'}</p>
-            <p className="empty-hint">
-              Check back later or wait for the owner to create{' '}
-              {showTournaments ? 'tournaments' : 'tables'}.
-            </p>
-          </div>
-        )}
+        {/* ═══════════════════════════════════════════════════════════════
+            EMPTY STATE — say WHY, and offer the way out
+            ───────────────────────────────────────────────────────────────
+            AUDIT 2026-08-21. This said "No tables available / wait for the
+            owner to create tables" for every empty result, and hid itself from
+            owners entirely (`!isOwner`). Both are wrong, and the filter fix in
+            this same pass makes them dangerous: filters now genuinely filter,
+            so the most likely reason a lobby is empty is the player's own
+            search or saved preferences - and the screen was blaming the club
+            for it while offering no way back. An owner who over-filters saw a
+            blank grid with no message at all.
+
+            It now distinguishes the three real causes and, when the player
+            caused it, clears the cause in one tap.
+        ═══════════════════════════════════════════════════════════════ */}
+        {filteredTables.length === 0 &&
+          filteredTournaments.length === 0 &&
+          (() => {
+            const totalHere = tables.length + tournaments.length;
+            const searching = searchQuery.trim().length > 0;
+            const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+            const fVal = advFilters[gameType as FilterGameType];
+            const filtered = Boolean(fSpec && fVal && isFilterActive(fSpec, fVal));
+            const narrowed = searching || filtered || gameType !== 'ALL';
+
+            return (
+              <div className="empty-tables">
+                {!narrowed || totalHere === 0 ? (
+                  <>
+                    <p>{showTournaments ? 'No Tournaments Yet' : 'No Tables Yet'}</p>
+                    <p className="empty-hint">
+                      Nothing is running here right now. New games open all the time.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p>Nothing Matches Your Filters</p>
+                    <p className="empty-hint">
+                      {totalHere.toLocaleString()} game{totalHere === 1 ? '' : 's'} are open in this
+                      club, but {searching ? 'your search and ' : ''}
+                      the filters on this tab hide {totalHere === 1 ? 'it' : 'them all'}.
+                    </p>
+                    <div className="empty-actions">
+                      <button
+                        className="empty-action"
+                        onClick={() => {
+                          haptic.selection();
+                          /* Clear EVERY narrowing at once. Undoing them one at
+                             a time means guessing which one was responsible,
+                             and the player cannot see the saved filters from
+                             here. */
+                          setSearchQuery('');
+                          setSearchOpen(false);
+                          setGameType('ALL');
+                          if (fSpec) {
+                            const next: FilterStore = {
+                              ...advFilters,
+                              [gameType]: emptyFilterValue(fSpec),
+                            };
+                            setAdvFilters(next);
+                            if (resolvedClubId) saveFilters(resolvedClubId, next);
+                          }
+                        }}
+                      >
+                        Show All Games
+                      </button>
+                      {filtered && (
+                        <button
+                          className="empty-action empty-action--ghost"
+                          onClick={() => {
+                            haptic.light();
+                            setFiltersOpen(true);
+                          }}
+                        >
+                          Edit Filters
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })()}
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════

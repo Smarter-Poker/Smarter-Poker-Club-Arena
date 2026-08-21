@@ -1199,9 +1199,73 @@
   color: #888;
 }
 
+.empty-tables p:first-child {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #dfe6ef;
+  margin: 0 0 6px;
+}
+
 .empty-tables .empty-hint {
   font-size: 0.85rem;
-  color: #666;
+  color: #8892a4;
+  max-width: 34ch;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+/* The way OUT of an empty result. Only rendered when the player's own search
+   or filters caused it - there is no action to offer when the club genuinely
+   has no games. */
+.empty-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.empty-action {
+  min-height: 40px;
+  padding: 0 18px;
+  border-radius: 20px;
+  border: none;
+  background: linear-gradient(135deg, #1877f2, #0a5dc2);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    filter 0.16s ease,
+    transform 0.16s ease;
+}
+
+.empty-action:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.empty-action:focus-visible {
+  outline: 2px solid rgba(24, 119, 242, 0.85);
+  outline-offset: 2px;
+}
+
+/* Secondary: same size and shape, no fill. "Show All Games" is the recommended
+   escape; editing the filters is for someone who knows what they set. */
+.empty-action--ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 184, 0, 0.45);
+  color: #ffce5c;
+}
+
+.empty-action--ghost:hover {
+  background: rgba(255, 184, 0, 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .empty-action:hover {
+    transform: none;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

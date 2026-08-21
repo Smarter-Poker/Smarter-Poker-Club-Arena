@@ -311,6 +311,10 @@ export default function DynamicWallet({
     effectiveVariant === 'union' ? data.unionPromo : data.promoBalance
   );
   const animBackupBBJ = useAnimatedCounter(data.backupBBJ);
+  // Dan 2026-08-21: "even club owners need a player wallet, that's the only
+  // wallet they can play out of." The owner stack now leads with the viewer's
+  // own per-club chip balance — the money that actually buys into games.
+  const animPlayerWallet = useAnimatedCounter(data.chipBalance);
   const animTreasury = useAnimatedCounter(
     effectiveVariant === 'union' ? data.unionRake : data.clubTreasury
   );
@@ -677,25 +681,29 @@ export default function DynamicWallet({
 
   const ROW_CONFIG: Record<WalletVariant, WalletRow[]> = {
     player: [
-      { label: 'Chip Balance', icon: 'chip', value: animRow1 },
+      // Dan 2026-08-21: named for what it IS across every role — the wallet
+      // you play out of. (Was "Chip Balance".)
+      { label: 'Player Wallet', icon: 'chip', value: animRow1 },
       { label: 'Agent Wallet', icon: 'agent', value: animRow2 },
       { label: 'Promo Wallet', icon: 'promo', value: animRow3 },
     ],
     owner: [
+      // Dan 2026-08-21: "even club owners need a player wallet, that's the
+      // only wallet they can play out of. Agents must move chips from their
+      // agent wallets to player wallets to buy into games." Owners get the
+      // same row players see, first, so the money that buys in is never
+      // hidden behind club treasury figures.
+      {
+        label: 'Player Wallet',
+        icon: 'chip',
+        value: animPlayerWallet,
+        hint: 'The Wallet You Play From',
+      },
       { label: 'Club Bank', icon: 'bank', value: animRow1 },
-      // A club inside a union is paid 90% of the rake it generated at the
-      // weekly close. Showing what is owed turns an opaque balance into
-      // something an owner can plan against.
-      ...(isClubInUnion && data.clubProjectedRakeback > 0
-        ? [
-            {
-              label: 'Due at close',
-              icon: 'rakeback',
-              value: data.clubProjectedRakeback,
-              hint: `90% Rakeback · ${closeDay}`,
-            } as WalletRow,
-          ]
-        : []),
+      // Dan 2026-08-21: "Due at close" removed from the wallet stack — that
+      // figure lives on the Data tab (ClubDataPage settlement breakdown shows
+      // the 90% rakeback due line). A money panel lists wallets, not
+      // projections.
       { label: 'Agent Wallet', icon: 'agent', value: animRow2 },
       { label: 'Promo Wallet', icon: 'promo', value: animRow3 },
     ],

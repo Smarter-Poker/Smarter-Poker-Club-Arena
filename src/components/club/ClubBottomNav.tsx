@@ -43,7 +43,8 @@ export default function ClubBottomNav({
     // an item missing from here never gets its index added to visibleItems, so
     // it stays at opacity:0 forever. A nav tab that renders invisible is worse
     // than one that is absent.
-    const items = ['messages', 'players', 'cashier', 'marketplace', 'data', 'admin'];
+    // Dan 2026-08-21: Stats added.
+    const items = ['messages', 'players', 'cashier', 'marketplace', 'data', 'stats', 'admin'];
     staggerTimersRef.current.forEach((t) => clearTimeout(t));
     staggerTimersRef.current = items.map((_, i) =>
       setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
@@ -138,6 +139,7 @@ export default function ClubBottomNav({
     if (path.includes('/cashier')) return 'cashier';
     if (path.includes('/marketplace')) return 'marketplace';
     if (path.includes('/dashboard') || path.includes('/data')) return 'data';
+    if (path.includes('/stats')) return 'stats';
     if (path.includes('/settings') || path.includes('/admin')) return 'admin';
     return 'messages'; // default
   };
@@ -234,6 +236,24 @@ export default function ClubBottomNav({
           <span className={styles.label}>Data</span>
         </Link>
 
+        {/* Stats (Dan 2026-08-21: "stats should be on the bottom footer link
+            as well"). /stats is the player's own stats page — a top-level
+            route, like /marketplace above. */}
+        <Link
+          to="/stats"
+          className={`${styles.navItem} ${activeTab === 'stats' ? styles.active : ''}`}
+          style={{
+            opacity: visibleItems.has(5) ? 1 : 0,
+            transform: visibleItems.has(5) ? 'translateY(0)' : 'translateY(8px)',
+            transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+          }}
+        >
+          <svg className={styles.icon} viewBox="0 0 24 24" fill="currentColor">
+            <path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z" />
+          </svg>
+          <span className={styles.label}>Stats</span>
+        </Link>
+
         {/* Admin — staff only.
             `hasAdminAccess` was computed and then never referenced, so this
             link rendered unconditionally and every ordinary member saw an
@@ -244,8 +264,8 @@ export default function ClubBottomNav({
             to={`/clubs/${clubId}/settings`}
             className={`${styles.navItem} ${activeTab === 'admin' ? styles.active : ''}`}
             style={{
-              opacity: visibleItems.has(5) ? 1 : 0,
-              transform: visibleItems.has(5) ? 'translateY(0)' : 'translateY(8px)',
+              opacity: visibleItems.has(6) ? 1 : 0,
+              transform: visibleItems.has(6) ? 'translateY(0)' : 'translateY(8px)',
               transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
             }}
           >

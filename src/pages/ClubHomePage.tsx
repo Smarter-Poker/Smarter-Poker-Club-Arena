@@ -38,7 +38,6 @@ import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
-import BBJTicker from '../components/bbj/BBJTicker';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
@@ -55,7 +54,11 @@ import {
 } from '../components/icons/LobbyIcons';
 
 // Shark Club fallback logo — used when DB logo_url is null
-const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-card-v25.jpg`;
+/* Dan 2026-08-20: "replace the old logo image with the new one". v25 was a
+   wide CARD graphic being cropped into a square avatar slot, so most of the
+   art was thrown away by object-fit. shark-club-logo.jpg is the square
+   emblem and fills the box as intended. */
+const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo.jpg`;
 
 // SWR cache helpers for instant club data display
 function getClubHomeCache(clubId: string) {
@@ -160,11 +163,19 @@ type TournamentSubFilter = 'all' | 'running' | 'registering' | 'late_reg' | 'sta
 const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'MIXED'];
 const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
 
+/**
+ * Dan 2026-08-20: "remove Mixed games from the action bar."
+ *
+ * MIXED stays in the GameType union and in cashKind, because it is still the
+ * bucket every table that is neither Hold'em nor Omaha falls into — dropping
+ * the type would make those tables unclassifiable. It just has no tab of its
+ * own any more, so they surface under All, which is where a player browsing
+ * everything expects to find them.
+ */
 const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
   { key: 'ALL', label: 'All' },
   { key: 'HOLDEM', label: "Hold'em" },
   { key: 'OMAHA', label: 'Omaha' },
-  { key: 'MIXED', label: 'Mixed' },
   { key: 'MTT', label: 'MTT' },
   { key: 'SNG', label: 'Sit & Go' },
   { key: 'SPIN', label: 'Spin' },
@@ -256,6 +267,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [gameType, setGameType] = useState<GameType>('ALL');
   const [sortKey, setSortKey] = useState<SortKey>('recommended');
   const [sortOpen, setSortOpen] = useState(false);
+  // Dan 2026-08-21: the header search icon was wired to `setSortOpen(false)` —
+  // a literal no-op. It now toggles a real search box that filters both the
+  // cash tables and the tournament cards by name.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   // Status defaults are 'all' on BOTH axes now. They used to be 'live' and
   // 'running', which was invisible: picking a game type silently hid every
   // empty table and every tournament still taking registrations, so a club
@@ -1021,7 +1037,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const filteredTables = useMemo(() => {
     if (!showsCash) return [];
 
+    const q = searchQuery.trim().toLowerCase();
     const rows = tables.filter((table) => {
+      if (q && !(table.name || '').toLowerCase().includes(q)) return false;
       if (gameType !== 'ALL' && cashKind(table) !== gameType) return false;
 
       // Status refines a chosen type; on ALL there is no type to refine.
@@ -1052,13 +1070,15 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           (a, b) => cashRank(a) - cashRank(b) || (b.current_players || 0) - (a.current_players || 0)
         );
     }
-  }, [tables, gameType, showsCash, cashSubFilter, sortKey]);
+  }, [tables, gameType, showsCash, cashSubFilter, sortKey, searchQuery]);
 
   const filteredTournaments = useMemo(() => {
     if (!showsTournaments) return [];
 
     const variant: TournVariant = TOURN_VARIANT_FOR[gameType] ?? 'ALL';
+    const q = searchQuery.trim().toLowerCase();
     const rows = tournaments.filter((t) => {
+      if (q && !((t.name as string) || '').toLowerCase().includes(q)) return false;
       if (!matchesVariant(t, variant)) return false;
       if (gameType === 'ALL') return true;
       return matchesTournamentSubFilter(t, tournamentSubFilter);
@@ -1081,7 +1101,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       default:
         return rows.sort(tournamentOpenFirst);
     }
-  }, [tournaments, gameType, showsTournaments, tournamentSubFilter, sortKey]);
+  }, [tournaments, gameType, showsTournaments, tournamentSubFilter, sortKey, searchQuery]);
 
   const formatNumber = (num: number) => {
     return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1253,7 +1273,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               className="lobby-quick"
               onClick={() => {
                 haptic.selection();
-                navigate(`/clubs/${clubId}/detail`);
+                // Dan 2026-08-21: this navigated to /clubs/:id/detail — a route
+                // that does not exist, so the button did nothing. Events = the
+                // club's tournament schedule.
+                navigate(`/clubs/${clubId}/tournaments`);
               }}
             >
               <IconTrophy />
@@ -1277,24 +1300,37 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             onClick={() => {
               haptic.light();
               setSortOpen(false);
+              setSearchOpen((prev) => {
+                if (prev) setSearchQuery('');
+                return !prev;
+              });
             }}
           >
             <IconSearch />
           </button>
         </div>
 
-        {/* ── Bad Beat Jackpot — live pool + recent real hits ── */}
-        {(bbjScope.clubUuid || bbjScope.unionId) && (
-          <div className="lobby-top__bbj">
-            <BBJTicker
-              clubId={bbjScope.clubUuid}
-              unionId={bbjScope.unionId}
-              poolAmount={jackpotAmount}
-              onClick={() => {
-                haptic.selection();
-                setShowBBJInfo(true);
-              }}
+        {/* Dan 2026-08-21: real game search — filters cash tables and
+            tournament cards by name as you type. */}
+        {searchOpen && (
+          <div className="lobby-top__searchbox">
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search games and tournaments..."
+              autoFocus
+              aria-label="Search games and tournaments"
             />
+            {searchQuery && (
+              <button
+                className="lobby-top__searchclear"
+                aria-label="Clear search"
+                onClick={() => setSearchQuery('')}
+              >
+                &#10005;
+              </button>
+            )}
           </div>
         )}
 
@@ -1404,16 +1440,21 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               them; one wallet never gets access to the other. Union figures are
               managed on the union's own surfaces and appear nowhere here.
 
-              showBBJ is false because BBJTicker directly above already owns the
-              jackpot; two live copies of one number is how they eventually
-              disagree. */}
+              The BBJ now leads the wallet stack (see showBBJ below) rather
+              than sitting in its own strip above the club card. */}
           {currentUserId && resolvedClubId && (
             <div className="lobby-top__wallet">
+              {/* Dan 2026-08-20: "the BBJ amount should be on top of the rest
+                  of the wallet data." It was a full-width strip ABOVE the club
+                  card, which put it in a different column from the money it
+                  belongs with. showBBJ={true} renders it as the first row of
+                  the wallet stack instead, where it reads as the headline
+                  figure over the balances beneath it. */}
               <DynamicWallet
                 userId={currentUserId}
                 clubId={resolvedClubId}
                 variant={isOwner || userRole === 'owner' ? 'owner' : 'player'}
-                showBBJ={false}
+                showBBJ
                 onBuyDiamonds={() => {
                   haptic.medium();
                   navigate(`/clubs/${clubId}/detail`);

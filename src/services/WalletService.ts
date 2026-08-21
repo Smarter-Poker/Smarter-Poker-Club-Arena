@@ -164,8 +164,8 @@ export const WalletService = {
     // id — previously callers that passed no requestingUserId bypassed the lock.
     let minterId = requestingUserId;
     if (!minterId) {
-      const { data: authData } = await supabase.auth.getUser();
-      minterId = authData?.user?.id;
+      const authData = await import('../lib/authUtils').then((m) => m.readLocalSession());
+      minterId = authData?.userId;
     }
     if (!minterId) throw new Error('Authentication required to mint chips');
 

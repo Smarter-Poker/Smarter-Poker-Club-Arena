@@ -9288,3 +9288,57 @@ the average bounty' — it's just a random payout prize".
 - Verified: tsc clean, vite prod build clean, and the emitted bundle carries
   preserve-3d, mbc**cavity-gold, mbc**coin-canvas, rotateX(-104deg) and the
   chip-gold token.
+
+## 2026-08-21 — Dan's multi-table bug list: clocks, pineapple, the four limits
+
+Dan, playing four tables, filed five items. Four are shipped and verified;
+the fifth is reported below with evidence rather than a claim.
+
+1. ALL CLOCKS AT ONCE (8ba36ee). TablePage reported 16 things to the strip
+   and not one timed NON-TURN decision, and an inactive table lives inside
+   display:none - so a discard / insurance / RIT prompt on a background
+   table ran its clock invisibly and the engine decided for the player. The
+   insurance modal did not even keep its own deadline (the engine publishes
+   timeoutSeconds; the client dropped it). Now every decision records an
+   absolute deadline, the container's 1s clock runs while ANY table has ANY
+   live clock (it used to run only for turns), the 5-second alarm covers
+   every table and every kind of clock rather than only background turns,
+   the pill FLASHES red with a strong haptic at <=5s, and auto time bank
+   shows TIME BANK with a live countdown in the box.
+
+2. PINEAPPLE IS A REAL DISCARD ROUND (8109b73). Expiry called autoDiscard,
+   which threw away the LAST card - a random discard the player never made,
+   which then kept playing their hand, every hand, on every pineapple table.
+   A missed discard now FOLDS, broadcast as a real fold, and folding all but
+   one completes the hand instead of parking the table. Six new tests.
+
+3. THE FOUR LIMITATIONS (ff07fcf). Tile raise presets (1/2 pot, pot, all in,
+   server-validated); the wrap now SLIDES (the wrap target is rendered and
+   shifted one strip-width during an edge drag, so nothing drags in blank);
+   per-table time bank shipped with item 1; and the cash-table cap went 4 ->
+   6 (migration 20260821f, verified in place - cash only, tournaments still
+   uncapped) with the client offering 6 on >=1024px and 4 on a phone.
+
+4. INSURANCE AND RUN IT TWICE - WHAT IS ACTUALLY TRUE.
+   INSURANCE: enabled on 0 of 147 open tables. It cannot fire, and never
+   has. The toggle exists in CreateTableModal and TableConfigPage and
+   defaults false. This is NOT dead code - the engine's own suites pass (32
+   tests) and the client chain (offer event -> modal -> POST /insurance) is
+   complete. It has simply never been switched on. It cannot be defaulted on
+   without a product decision, because RIT and insurance are mutually
+   exclusive by design (FIX 92): turning insurance on turns RIT OFF at that
+   table.
+   RIT: every link verified sound - enabled on all 39 cash tables, the offer
+   gate is permissive (2+ active players, board < 5, parks BEFORE dealing),
+   getActivePlayers includes all-in players, the chooser is pre-seeded into
+   acceptedBy, horses respond with human delays, respondToRIT and the /rit
+   handler exist, and the engines pass their tests.
+   The "zero RIT hands in 24h" figure I first measured is NOT trustworthy:
+   RIT boards are never persisted. currentHandRitBoards reaches the chip
+   VERIFIER and stops there, hand_history has no RIT column, and
+   community_cards2 belongs to double-board bomb pots. A RIT hand is
+   therefore indistinguishable from a normal one in the database, so the
+   query could not have detected one either way.
+   NEXT STEP, and it is small: persist the extra board(s) so a RIT hand is
+   visible in hand history and countable in the DB. Until that exists,
+   nobody can answer "did it run" - which is the real defect here.

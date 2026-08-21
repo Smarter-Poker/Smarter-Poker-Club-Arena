@@ -55,6 +55,9 @@ import {
   CHALLENGE_POOL,
   WEEKLY_CHALLENGE_POOL,
   MONTHLY_CHALLENGE_POOL,
+  MAGNITUDE_TYPES,
+  handRankScore,
+  isStrongHand,
 } from '../../src/services/DailyChallengeService';
 
 describe('DailyChallengeService', () => {
@@ -105,8 +108,11 @@ describe('DailyChallengeService', () => {
         hands_played: 'AchievementTriggerService.onHandComplete',
         hands_won: 'AchievementTriggerService.onHandComplete',
         showdowns: 'AchievementTriggerService.onHandComplete',
+        showdowns_won: 'AchievementTriggerService.onHandComplete',
+        hands_won_no_showdown: 'AchievementTriggerService.onHandComplete',
         big_pots: 'AchievementTriggerService.onHandComplete',
         strong_hands: 'AchievementTriggerService.onHandComplete',
+        chips_won: 'AchievementTriggerService.onHandComplete',
         tournaments_played: 'AchievementTriggerService TOURNAMENT_REGISTERED subscriber',
         friends_added: 'AchievementTriggerService.onFriendAdded',
       };
@@ -120,6 +126,117 @@ describe('DailyChallengeService', () => {
       for (const t of CHALLENGE_TYPES) {
         expect(WRITTEN_BY_APP[t], `challenge type "${t}" has no writer in the app`).toBeTruthy();
       }
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  SPECIFICITY  (Dan 2026-08-21)
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  // "COME UP WITH SPECIFIC CHALLENGES, DO NOT USE GENERIC 'BIG POT 4' WIN 4
+  // BIG POTS SMH ITS NOT EVEN SPECIFIED HOW MUCH A BIG POT IS."
+  //
+  // These tests exist so that instruction cannot be quietly undone by a later
+  // edit that adds a vague entry back into the pool.
+  describe('challenge descriptions are self-describing', () => {
+    const ALL = [...CHALLENGE_POOL, ...WEEKLY_CHALLENGE_POOL, ...MONTHLY_CHALLENGE_POOL];
+
+    it('states a chip amount on every big_pots challenge', () => {
+      for (const c of ALL.filter((x) => x.type === 'big_pots')) {
+        expect(c.threshold, `"${c.id}" has no threshold`).toBeGreaterThan(0);
+        // The number the server enforces must appear in the text the player
+        // reads. This is the exact failure of "Win 4 big pots today".
+        const withCommas = (c.threshold as number).toLocaleString('en-US');
+        expect(
+          c.description.includes(withCommas),
+          `"${c.id}" says "${c.description}" but never states its ${withCommas} chip threshold`
+        ).toBe(true);
+      }
+    });
+
+    it('names the hand rank on every strong_hands challenge', () => {
+      const NAMED = ['straight', 'flush', 'full house', 'four of a kind'];
+      for (const c of ALL.filter((x) => x.type === 'strong_hands')) {
+        expect(c.threshold, `"${c.id}" has no threshold`).toBeGreaterThan(0);
+        const d = c.description.toLowerCase();
+        expect(
+          NAMED.some((n) => d.includes(n)),
+          `"${c.id}" says "${c.description}" without naming which hand qualifies`
+        ).toBe(true);
+      }
+    });
+
+    it('states its own count or amount in every description', () => {
+      for (const c of ALL) {
+        const n = c.requirement.toLocaleString('en-US');
+        // A requirement of 1 reads as an article in real English -- "Win A Pot
+        // Worth 500 Chips Or More" is correct and "Win 1 Pot" is not how a
+        // poker room writes it. Both spellings satisfy the rule that the
+        // player can read the count off the card.
+        const singular = c.requirement === 1 && /\b(a|an)\b/i.test(c.description);
+        expect(
+          c.description.includes(n) || c.description.includes(String(c.requirement)) || singular,
+          `"${c.id}" says "${c.description}" but never states its requirement of ${n}`
+        ).toBe(true);
+      }
+    });
+
+    it('gives every challenge a threshold only where the type uses one', () => {
+      for (const c of ALL) {
+        if ((MAGNITUDE_TYPES as readonly string[]).includes(c.type)) {
+          expect(c.threshold, `"${c.id}" is a magnitude type with no threshold`).toBeGreaterThan(0);
+        } else {
+          // A threshold on a pure counter would be silently ignored by the
+          // server, so a card could promise a bar that is never applied.
+          expect(c.threshold, `"${c.id}" carries a threshold its type ignores`).toBeUndefined();
+        }
+      }
+    });
+
+    it('pays chips on every challenge', () => {
+      // The whole feature read as broken because all 112 catalog rows paid
+      // chip_reward = 0 and only ever moved the diamond balance.
+      for (const c of ALL) {
+        expect(c.chipReward, `"${c.id}" pays no chips`).toBeGreaterThan(0);
+      }
+    });
+  });
+
+  describe('handRankScore', () => {
+    // ORDER MATTERS: 'straight flush' contains both 'straight' and 'flush',
+    // and 'royal flush' contains 'flush'. A naive substring ladder scores a
+    // royal flush as a 6 and fails every quads-or-better challenge the player
+    // legitimately earned.
+    it('ranks the overlapping names correctly', () => {
+      expect(handRankScore('Royal Flush')).toBe(10);
+      expect(handRankScore('Straight Flush')).toBe(9);
+      expect(handRankScore('Four of a Kind')).toBe(8);
+      expect(handRankScore('Full House')).toBe(7);
+      expect(handRankScore('Flush')).toBe(6);
+      expect(handRankScore('Straight')).toBe(5);
+    });
+
+    it('accepts the shapes the engine actually emits', () => {
+      // 'Full House', 'full_house' and 'FULL HOUSE' have all appeared.
+      expect(handRankScore('full_house')).toBe(7);
+      expect(handRankScore('FULL HOUSE')).toBe(7);
+      expect(handRankScore('  Four Of A Kind  ')).toBe(8);
+    });
+
+    it('returns 0 for unknown or missing ranks', () => {
+      expect(handRankScore(undefined)).toBe(0);
+      expect(handRankScore('')).toBe(0);
+      expect(handRankScore('banana')).toBe(0);
+      // 0 must never clear a threshold, or a folded hand completes
+      // "Win A Hand With Four Of A Kind Or Better".
+      expect(handRankScore(undefined) >= 5).toBe(false);
+    });
+
+    it('keeps isStrongHand consistent with the scorer', () => {
+      expect(isStrongHand('Royal Flush')).toBe(true);
+      expect(isStrongHand('Straight')).toBe(true);
+      expect(isStrongHand('Two Pair')).toBe(false);
+      expect(isStrongHand(undefined)).toBe(false);
     });
   });
 

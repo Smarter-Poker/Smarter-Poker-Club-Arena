@@ -11,7 +11,7 @@
 import { supabase, getAuthUser } from '../lib/supabase';
 import { achievementService, ACHIEVEMENTS, type Achievement } from './AchievementService';
 import { pushNotificationService } from './PushNotificationService';
-import { dailyChallengeService, BIG_POT_MIN, isStrongHand } from './DailyChallengeService';
+import { dailyChallengeService, handRankScore } from './DailyChallengeService';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
 
@@ -155,16 +155,42 @@ class AchievementTriggerServiceClass {
       // per matching row -- roughly 3 selects and 8 RPCs per player per hand at
       // table speed. bump_challenge_progress does it in a single statement and
       // returns only the challenges that just crossed into completion.
-      const { advanced, completed } = await dailyChallengeService.bumpProgress(userId, {
-        hands_played: 1,
-        ...(handData.won ? { hands_won: 1 } : {}),
-        ...(handData.showdown ? { showdowns: 1 } : {}),
-        // Skill/excitement counters, from data this callback already receives
-        // and used to discard. A big pot only counts if it was actually WON --
-        // being in a large pot you lost is not an achievement.
-        ...(handData.won && (handData.potSize || 0) >= BIG_POT_MIN ? { big_pots: 1 } : {}),
-        ...(isStrongHand(handData.handRank) ? { strong_hands: 1 } : {}),
-      });
+      // Everything below is derived from the payload this callback already
+      // receives -- { won, potSize, handRank, showdown } -- so richer, more
+      // specific challenges needed no new engine plumbing, only counters that
+      // stopped throwing the detail away.
+      const won = handData.won === true;
+      const pot = Math.max(0, Math.floor(Number(handData.potSize) || 0));
+      const rank = handRankScore(handData.handRank);
+
+      const { advanced, completed } = await dailyChallengeService.bumpProgress(
+        userId,
+        {
+          hands_played: 1,
+          ...(won ? { hands_won: 1 } : {}),
+          ...(handData.showdown ? { showdowns: 1 } : {}),
+          // Winning AT showdown and winning WITHOUT one are different skills,
+          // and a challenge set that cannot tell them apart cannot ask for
+          // either. They are mutually exclusive by construction.
+          ...(won && handData.showdown ? { showdowns_won: 1 } : {}),
+          ...(won && !handData.showdown ? { hands_won_no_showdown: 1 } : {}),
+          // A big pot counts only if it was actually WON. Sitting in a large
+          // pot you lost is not an achievement.
+          ...(won && pot > 0 ? { big_pots: 1 } : {}),
+          // Likewise hand strength: the catalog asks players to WIN with a
+          // flush or better, not merely to table one and lose.
+          ...(won && rank > 0 ? { strong_hands: 1 } : {}),
+          // Cumulative, so the amount is the chips themselves, not a count.
+          ...(won && pot > 0 ? { chips_won: pot } : {}),
+        },
+        {
+          // Magnitudes. The server compares each against the row's own
+          // threshold, so one hand can advance "500 Or More" while leaving
+          // "5,000 Or More" untouched.
+          big_pots: won ? pot : 0,
+          strong_hands: won ? rank : 0,
+        }
+      );
 
       // Fire on ANY movement, not just completion. This previously only emitted
       // when a challenge finished, so a challenges tab left open beside the

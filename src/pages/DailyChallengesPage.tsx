@@ -12,7 +12,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getAuthUser } from '../lib/supabase';
+import { getAuthUser, supabase } from '../lib/supabase';
 import { LoadingState } from '../components/common/EmptyState';
 import { StreakFire } from '../components/gamification/StreakFire';
 import { useToast } from '../components/common/Toast';
@@ -61,12 +61,16 @@ interface ChallengeStats {
 
 /** Unicode glyph per challenge type — no emoji (SWC-safe) */
 const TYPE_GLYPHS: Record<ChallengeType, string> = {
-  hands_played: '♠', // spade
-  hands_won: '★', // star
-  showdowns: '♦', // diamond suit
-  tournaments_played: '♛', // queen
-  big_pots: '◆', // diamond — the pot
-  strong_hands: '♥', // heart — the hand
+  hands_played: '\u2660', // spade
+  hands_won: '\u2605', // star
+  showdowns: '\u2666', // diamond suit
+  showdowns_won: '\u2617', // black shogi piece, a shown-down hand
+  hands_won_no_showdown: '\u25D1', // half-filled circle, cards never revealed
+  tournaments_played: '\u265B', // queen
+  big_pots: '\u25C6', // solid diamond, the pot
+  strong_hands: '\u2665', // heart, the hand
+  chips_won: '\u25CE', // bullseye, stacked chips
+  friends_added: '\u263A', // face
 };
 
 const TIER_LABELS: Record<Tier, string> = {
@@ -308,6 +312,54 @@ export default function DailyChallengesPage() {
       1000
     );
     return unsub;
+  }, [userId, loadChallenges]);
+
+  // ── Cross-tab and cross-device progress ──
+  //
+  // Dan 2026-08-21: "IT NEEDS TO PULL THE REAL TIME INFO AND DATA AND UPDATE."
+  //
+  // The MasterBus subscription above only carries events raised inside THIS
+  // tab, and this app is explicitly built for multi-tabling: the normal way to
+  // watch a challenge fill is to have it open beside a table, which is a
+  // different tab and therefore a different bus. Postgres change events close
+  // that gap, so progress earned anywhere -- another tab, a phone, the same
+  // account on a second screen -- lands here without a manual refresh.
+  //
+  // Debounced, because at table speed a busy session updates several rows per
+  // hand and each one arrives as its own event; without this the page would
+  // refetch a dozen times a minute to redraw the same bars.
+  useEffect(() => {
+    if (!userId) return;
+    let pending: ReturnType<typeof setTimeout> | null = null;
+
+    const channel = supabase
+      .channel(`daily-challenges:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_daily_challenges',
+          // Server-side filter. Without it every player's progress would be
+          // delivered to every open challenges page and thrown away here.
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          if (pending) clearTimeout(pending);
+          pending = setTimeout(() => {
+            pending = null;
+            // `false` = refresh in place. A spinner every time a hand ends
+            // would make the page flicker for the whole session.
+            loadChallenges(userId, false);
+          }, 1200);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (pending) clearTimeout(pending);
+      void supabase.removeChannel(channel);
+    };
   }, [userId, loadChallenges]);
 
   // Card-flash timers are cleared on UNMOUNT only. They used to be cleared in
@@ -552,7 +604,7 @@ export default function DailyChallengesPage() {
           <p className={styles.dateLine}>{dateLabel}</p>
         </div>
         <div className={styles.resetBadge}>
-          <span className={styles.resetLabel}>New challenges in</span>
+          <span className={styles.resetLabel}>New Challenges In</span>
           <span className={styles.resetTime}>{tierCountdown.daily}</span>
         </div>
       </header>

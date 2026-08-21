@@ -9024,3 +9024,27 @@ the server suite grew a burst test (now 10). 17 mux tests green.
 Verified: prod at WH d54c9b21 (sync of 5e8f88d3, round-4 ancestor
 confirmed), Hetzner deploy green with the full engine suite, engine
 dealing 180-236 hands/min post-deploy.
+
+## 2026-08-21 (round 7): SPINS AND HEADS-UP ARE SEAT-FIRST — you sit down and buy in, like a cash game
+
+Dan: "SPINS AND HEADS UP ARE FIRST COME FIRST SERVE, A PLAYER SITS DOWN AT A TABLE AND BUYS INTO THE SPIN OR HEADS UP, LIKE A CASH GAME, NOT LIKE A MTT TOURNAMENT. THE SPIN STARTS WHEN ALL 3 PLAYERS HAVE BOUGHT INTO THE SPIN, THE HEADS UP BEGINS WHEN BOTH PLAYERS BUY IN."
+
+They were MTT-shaped: a registration list, a scheduled start, horses pre-seeded into the field, tables that only existed once the game began. Now they are table-shaped.
+
+**Creation** — `createOpenSeatTable()` writes the table when the game is LISTED: status waiting, current_players 0, real seat count. createSpin pre-registers NOBODY (registerHorses removed from that path); createSNG does the same for 2-seat Heads-Up, while 6-max/9-max keep registration (fields, not tables).
+
+**Sitting down** — migration `20260821d`, `fn_take_seat_and_buy_in(table, seat)`: locks the table row FIRST so two taps on one seat serialise, charges through fn_register_for_tournament (the audited money path — never a second entry-fee formula), and seats by reusing the seat row (UPDATE before INSERT). Never charged without a seat, never a seat without paying; a lost race rolls the buy-in back. Re-tap is idempotent.
+
+**Starting** — each buy-in bumps current_players, so start-when-full now means literally what Dan said: the 3rd buy-in starts the Spin, the 2nd starts the Heads-Up. Horse top-up still backstops an untouched table so the board churns.
+
+**Stack sync** — an early sitter took the placeholder stack (smallest tier, the only honest pre-draw value); spin tiers run 300/400/500, so start now re-syncs seated stacks to the drawn tier's.
+
+**Client** — the tile OPENS THE TABLE (registering there would recreate the MTT shape). Tapping an empty seat at a not-yet-started spin/HU calls the RPC instead of the cash buy-in range, then reports "You Are In, Waiting For 1 More Player" or "Seats Full, Game Starting".
+
+**PROVEN LIVE (engine bc5ab3d60, spin 674e4fb5 "1 Chip Spin PLO4"):**
+- Spins now created as tables with 3 EMPTY seats, 0 players, status waiting (5 verified in the DB).
+- Test account sat at seat 2: charged 1.00, 300 chips, seats 1/3, starts_now false, game stayed REGISTERING.
+- Re-tapping seat 2 -> already_seated, NO second charge. Grabbing seat 3 while seated -> refused. Seat 9 -> invalid_seat.
+- Two more buy-ins landed -> engine started it automatically: RUNNING, 2x drawn through the reserve gate, ONE table (mine, ADOPTED not duplicated), my seat 2 preserved, all three stacks correct, first hand dealt.
+
+Pinned by tests/unit/seatFirstGames.test.ts (13 tests). Suites: client 2461, server 998, both green.

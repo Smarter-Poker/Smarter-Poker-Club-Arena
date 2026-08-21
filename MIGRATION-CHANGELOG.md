@@ -7,6 +7,93 @@
 
 ---
 
+## Cowork session 2026-08-20 — the last call, the ranking card, live counts
+
+Three things Dan asked for, plus the defects review turned up on the way.
+
+### The 5-minute last call
+
+`TournamentStartingTicker` — a scrolling announcement that fires when a
+scheduled MTT is five minutes out.
+
+A scheduled MTT with nobody registered is a dead tournament, and the players who
+would have filled it are sitting at cash tables in the same club seeing nothing.
+So the ticker mounts at the **app root, outside `<Routes>`**, beside the other
+global hosts: it rides over the felt, the club lobby and the tournament list
+alike. "Across all active club/union cash games and tournaments" means all of
+them, and a route-level mount reaches none of them.
+
+- Scoped to clubs the player is actually a member of — nobody is told about an
+  event they cannot enter.
+- Polls every 30s for `status in (ANNOUNCED, REGISTERING)` with a start time
+  inside the window, then counts down locally each second, so the number on
+  screen stays honest without asking the database sixty times a minute.
+- Dismissible per tournament, in `sessionStorage`. Silencing tonight's event
+  does not silence the next one, and it does not follow you into tomorrow.
+
+### The RANKING bust card
+
+Rebuilt to Dan's reference screenshot: `RANKING` title bar, a lit event banner
+carrying date + name + `#place(entrants)`, a medal, the place on a coloured
+band, who you were and what it paid, then Stay Observing / Play Again.
+
+The medal is **drawn, not shipped as artwork** — it has to carry an arbitrary
+finish (128th renders as well as 1st) and it takes gold, silver, bronze or steel
+from the place itself.
+
+It renders from `TournamentRankingHost` at the app root, reading the same feed
+as the cash summary and splitting on `payload.tournament`. **The split is on the
+data, not a flag**, so a tournament can never fall through to the cash card and
+report a chip profit for a seat where chips are not money. `SessionSummaryHost`
+stands down whenever a tournament result is present.
+
+### Active player counts are live
+
+They were a 20s poll, so a card could be wrong for twenty seconds about the one
+number that tells a player whether a club is worth opening.
+
+Subscribing to `table_seats` was the obvious fix and would have fired **zero
+times** — it is not in the `supabase_realtime` publication, verified against
+production before a line of it was written. `tables` *is* published, carries
+`club_id`, and is touched whenever a table moves: the same signal an order of
+magnitude cheaper, one event per table instead of one per seat. That volume is
+what got the original listener removed "for write volume" in 2026-07.
+
+- Subscription is **per club**, filtered server-side, so we are only woken for
+  clubs actually on screen.
+- **Debounced.** The event is a nudge, never a count; the batched RPC stays the
+  source of truth, so twelve table updates cost one query.
+- The poll survives at 60s as a backstop, because realtime drops silently and a
+  frozen card is worse than a slow one.
+
+### Defects found and fixed on the way
+
+| What | Why it mattered |
+| --- | --- |
+| Tournament result card was dead-wired | Sent to `/clubs/:clubId` (ClubHomePage) in router state; only ClubLobby (`/clubs/:clubId/lobby`) read it. Never rendered once. |
+| `22th Place` | Only 1/2/3 were special-cased; everything else got `th`. In a 128-runner field that is most of the table. |
+| Winner branch compared `=== 1` to untyped JSON | A string `"1"` would have skipped the champion's celebration and sent them out on the bust path. |
+| Entrants read off `current_players` | An entry counter that drifts; `TournamentClock` had already abandoned it. Now counts `tournament_players` rows. |
+| Empty club kept its old level | `getClubLevel` tested `pCount > 0`, so a club that lost its members kept the level it no longer had. |
+| Two dead round trips per club | HomePage still recomputed and re-read `clubs.level` on the hottest page. Nothing had read it since level became member-derived. |
+| `nl` / `pl` / `fl` / `hu` uppercased | Real abbreviations, also ordinary words. "Fl Keys Friday" and a host named Hu were being shouted at. |
+
+### Still open
+
+- `clubs.active_players` and `clubs.active_tables` are **0 for every club in the
+  database**. Nothing maintains them. They are the obvious column names for the
+  feature above, sitting there permanently wrong — populate or drop.
+- `TournamentResultCard` and ClubLobby's router-state plumbing are now
+  unreachable; the RANKING card superseded them.
+- `ClubStatsPanel.tsx` and `BBJTicker.tsx` have zero importers.
+- `sharkClubStats` on `CarouselSection` is declared but never passed or read.
+- 1,427 seats remain marked occupied on closed tables (185 users) — seats are
+  not released when a table closes.
+- Club JAQK and Shark Club have had **zero non-closed tables since 2026-08-19**,
+  so their ACTIVE will read 0 honestly until their fleets run again.
+
+---
+
 ## Phase U1 — Consolidation Cleanup (2026-04-23)
 
 ### Context

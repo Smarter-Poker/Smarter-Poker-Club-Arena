@@ -73,15 +73,21 @@ export default function LeakPanel({ overall, positions, still = false }: Props) 
         </p>
       </div>
 
-      <motion.ol
+      {/* Plain list semantics with the animation on a motion.div: motion.div
+          and motion.button are the only wrappers this codebase uses in
+          production, and this component is destined for the Personal
+          Assistant, so it should not carry a tag nothing else has proven. */}
+      <motion.div
         className="leak-list"
+        role="list"
         variants={reduceMotion ? undefined : staggerContainer}
         initial="initial"
         animate="animate"
       >
         {leaks.map((leak) => (
-          <motion.li
+          <motion.div
             key={leak.id}
+            role="listitem"
             className={`leak-item sev-${leak.severity}`}
             variants={reduceMotion ? undefined : fadeUp}
           >
@@ -93,9 +99,9 @@ export default function LeakPanel({ overall, positions, still = false }: Props) 
             </div>
             <p className="leak-evidence">{leak.evidence}</p>
             <p className="leak-action">{leak.action}</p>
-          </motion.li>
+          </motion.div>
         ))}
-      </motion.ol>
+      </motion.div>
 
       <p className="leak-note">
         These Are Frequency-Level Findings. They Cannot See How You Played Any Individual Hand, So

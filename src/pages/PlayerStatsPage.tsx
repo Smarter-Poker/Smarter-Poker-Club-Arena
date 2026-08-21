@@ -45,8 +45,8 @@ import HoleCardHeatmap from '../components/stats/HoleCardHeatmap';
 import NemesisPanel from '../components/stats/NemesisPanel';
 import BenchmarkPanel from '../components/stats/BenchmarkPanel';
 import TrophyRoom from '../components/stats/TrophyRoom';
-import LeakPanel from '../components/stats/LeakPanel';
 import StatsShareCard from '../components/stats/StatsShareCard';
+import PanelBoundary from '../components/stats/PanelBoundary';
 import { playerStyleFromStats } from '../components/stats/playerStyleFromStats';
 import SessionHistory from '../components/stats/SessionHistory';
 import BankrollTracker from '../components/stats/BankrollTracker';
@@ -1326,18 +1326,18 @@ export default function PlayerStatsPage() {
               </div>
             )}
 
-            {/* The only section on this page that answers "so what should I
-                change?". Pure function over stats already loaded - no fetch. */}
-            <LeakPanel
-              overall={full?.overall}
-              positions={full?.positions}
-              still={printing}
-            />
+            {/* Leak analysis deliberately does NOT live here. Dan, 2026-08-21:
+                it belongs in the Personal Assistant, which already owns
+                coaching and has the leak detector endpoint. This page reports
+                what the numbers ARE; the assistant says what to do about them.
+                findLeaks() and LeakPanel remain in components/stats/ for the
+                assistant to use - see the "Send To Personal Assistant" button
+                below. */}
 
             {/* Rivals: the most socially engaging stat on the page, so it sits
                 where a player looks first. Owner only — head-to-head chip flow
                 is private, and ca_player_nemesis refuses a cross-user read. */}
-            {isOwnProfile && <NemesisPanel userId={targetUserId} days={windowDays} />}
+            {isOwnProfile && <PanelBoundary name="Rivals"><NemesisPanel userId={targetUserId} days={windowDays} /></PanelBoundary>}
 
             {/* Where the player stands against the field. Rates arrive from the
                 RPC as FRACTIONS and the distribution is stored in PERCENT, so
@@ -1510,22 +1510,22 @@ export default function PlayerStatsPage() {
                 before they read any individual number, and a web that pinches
                 at the button is a leak no table of rates makes obvious. Pure
                 presentation over full.positions, which is already loaded. */}
-            <PositionalRadar positions={full?.positions} />
-            <PositionWinRates userId={targetUserId} initialPositions={full?.positions} />
+            <PanelBoundary name="Positional Shape"><PositionalRadar positions={full?.positions} /></PanelBoundary>
+            <PanelBoundary name="Position Win Rates"><PositionWinRates userId={targetUserId} initialPositions={full?.positions} /></PanelBoundary>
           </div>
         )}
 
         {/* ── HANDS TAB — owner only, see the PRIVACY note on BASE_TABS ── */}
         {showTab('hands') && isOwnProfile && hasData && (
           <div>
-            <HoleCardHeatmap userId={targetUserId} days={windowDays} />
+            <PanelBoundary name="Starting Hands"><HoleCardHeatmap userId={targetUserId} days={windowDays} /></PanelBoundary>
           </div>
         )}
 
         {/* ── TROPHIES TAB — owner only ── */}
         {showTab('trophies') && isOwnProfile && hasData && (
           <div>
-            <TrophyRoom overall={full?.overall} tournaments={full?.tournaments} />
+            <PanelBoundary name="Trophy Room"><TrophyRoom overall={full?.overall} tournaments={full?.tournaments} /></PanelBoundary>
           </div>
         )}
 

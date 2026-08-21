@@ -157,12 +157,16 @@
     },
     {
       "id": "throwable-cutout",
-      "title": "True alpha cutout for throwable renders (no black background box)",
+      "title": "True alpha cutout for throwable renders (any background colour)",
       "owner": "table",
       "since": "2026-08-21",
       "files": ["src/services/ThrowableCutout.ts", "tests/throwableCutout.test.ts"],
       "contains": {
-        "src/services/ThrowableCutout.ts": ["knockOutBackground", "getThrowableCutout"],
+        "src/services/ThrowableCutout.ts": [
+          "knockOutBackground",
+          "getThrowableCutout",
+          "sampleBackground"
+        ],
         "src/components/table/ThrowAnimation.css": [".throwable-img--cut"]
       },
       "bundleMarkers": ["throwable-img--cut"]

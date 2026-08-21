@@ -1117,3 +1117,55 @@
   font-size: 16px;
   line-height: 1;
 }
+
+/* =================================================================================
+   2026-08-21 — Dan: "3 emojis across so they appear larger"
+   Five 44px tiles made every item a thumbnail you had to squint at. Three
+   across on a 360px panel gives each tile ~96px, so the 3D renders are
+   actually readable — which is the whole point of having 3D renders.
+   ================================================================================= */
+
+.throwable-selector__grid {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding: 14px 14px 18px;
+  /* Taller too: three across means more rows, and VIP holds 14 items. */
+  max-height: 340px;
+}
+
+.throwable-selector__icon--img {
+  width: 92px;
+  height: 92px;
+  border-radius: 14px;
+}
+
+.throwable-selector__icon--img .throwable-img {
+  width: 84px;
+  height: 84px;
+}
+
+.throwable-selector__item {
+  gap: 6px;
+}
+
+/* The name can breathe now that the tile is wide. */
+.throwable-selector__name {
+  font-size: 11px;
+  max-width: 96px;
+}
+
+/* Stagger runs down the rows rather than across five columns. */
+.throwable-selector__grid .throwable-selector__item:nth-child(n + 15) {
+  animation-delay: 300ms;
+}
+
+/* Narrow phones: keep three across but let the tiles shrink with the panel
+   instead of overflowing it. */
+@media (max-width: 400px) {
+  .throwable-selector__icon--img {
+    width: 100%;
+    max-width: 92px;
+    aspect-ratio: 1;
+    height: auto;
+  }
+}

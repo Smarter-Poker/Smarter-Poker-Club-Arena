@@ -139,7 +139,7 @@ export function preloadThrowableImages(): void {
 
     // Cheap network warm first — both retina buckets, so either surface is hot.
     for (const t of items) {
-      for (const px of [40, 64]) {
+      for (const px of [84, 128]) {
         const url = getThrowableImageUrl(t.id, px);
         if (!url) continue;
         const img = new Image();
@@ -159,7 +159,7 @@ export function preloadThrowableImages(): void {
       });
 
     for (const t of items) {
-      for (const px of [40, 64]) {
+      for (const px of [84, 128]) {
         try {
           await getThrowableCutout(t.id, px);
         } catch {

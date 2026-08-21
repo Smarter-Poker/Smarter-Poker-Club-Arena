@@ -45,20 +45,69 @@
 
 import { getThrowableImageUrl, getThrowableRawUrl } from './ThrowableService';
 
-/** Luminance at/below which a border-connected pixel is definitely background. */
+/**
+ * Colour distance from the SAMPLED background at/below which a
+ * border-connected pixel is definitely background.
+ */
 const HARD = 26;
-/** Luminance above which a pixel is definitely NOT background. */
+/** Colour distance above which a pixel is definitely NOT background. */
 const SOFT = 74;
 
 const cache = new Map<string, Promise<string>>();
 const resolved = new Map<string, string>();
 const objectUrls: string[] = [];
 
-const bucketOf = (px: number) => (px <= 48 ? 96 : 160);
+// MUST mirror getThrowableImageUrl's buckets exactly, or a cutout gets cached
+// under a key no reader ever asks for and every lookup silently misses.
+const bucketOf = (px: number) => (px <= 96 ? 192 : 320);
 
-/** Rec. 709 luma — matches how the eye weights the channels. */
-function luma(r: number, g: number, b: number): number {
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+/**
+ * Median colour of the frame's border, i.e. the background.
+ *
+ * Dan 2026-08-21: "make sure all backgrounds are black, a couple are white."
+ * Rather than police the source assets — which only fixes the two we know
+ * about, and breaks again the next time someone generates a render on a light
+ * ground — the keyer now MEASURES the background instead of assuming it. Black,
+ * white, grey, or any future colour all key identically.
+ *
+ * Median, not mean: an item bleeding off the edge skews a mean toward the item
+ * and would make the keyer treat the background as "not background". A median
+ * ignores that minority.
+ */
+function sampleBackground(data: Uint8ClampedArray, w: number, h: number): [number, number, number] {
+  const rs: number[] = [];
+  const gs: number[] = [];
+  const bs: number[] = [];
+  const take = (idx: number) => {
+    rs.push(data[idx * 4]);
+    gs.push(data[idx * 4 + 1]);
+    bs.push(data[idx * 4 + 2]);
+  };
+  for (let x = 0; x < w; x++) {
+    take(x);
+    take((h - 1) * w + x);
+  }
+  for (let y = 0; y < h; y++) {
+    take(y * w);
+    take(y * w + (w - 1));
+  }
+  const mid = (arr: number[]) => {
+    arr.sort((a, b) => a - b);
+    return arr[Math.floor(arr.length / 2)];
+  };
+  return [mid(rs), mid(gs), mid(bs)];
+}
+
+/**
+ * Chebyshev (max-channel) distance from the background colour. Cheap, and for
+ * a UNIFORM background it separates subject from ground more crisply than
+ * Euclidean, which dilutes a single strongly-differing channel across three.
+ */
+function bgDistance(data: Uint8ClampedArray, i: number, bg: [number, number, number]): number {
+  const dr = Math.abs(data[i * 4] - bg[0]);
+  const dg = Math.abs(data[i * 4 + 1] - bg[1]);
+  const db = Math.abs(data[i * 4 + 2] - bg[2]);
+  return Math.max(dr, dg, db);
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -81,9 +130,13 @@ function loadImage(src: string): Promise<HTMLImageElement> {
  */
 export function knockOutBackground(data: Uint8ClampedArray, w: number, h: number): number {
   const n = w * h;
+  const bg = sampleBackground(data, w, h);
+  // `lum` is now "distance from the background colour", not luminance. On the
+  // black renders the two are numerically identical (distance from 0/0/0 IS
+  // the channel value), which is why the thresholds did not need retuning.
   const lum = new Float32Array(n);
   for (let i = 0; i < n; i++) {
-    lum[i] = luma(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]);
+    lum[i] = bgDistance(data, i, bg);
   }
 
   const isBg = new Uint8Array(n);
@@ -190,7 +243,7 @@ async function buildCutout(id: string, px: number): Promise<string> {
  * One cutout per (id, size bucket); the promise is cached so simultaneous
  * callers share a single decode.
  */
-export function getThrowableCutout(id: string, px = 160): Promise<string> {
+export function getThrowableCutout(id: string, px = 320): Promise<string> {
   const bucket = bucketOf(px);
   const key = `${id}@${bucket}`;
   const hit = cache.get(key);
@@ -204,7 +257,7 @@ export function getThrowableCutout(id: string, px = 160): Promise<string> {
 }
 
 /** Already-resolved cutout URL, or null. Lets render paths avoid a flash. */
-export function peekThrowableCutout(id: string, px = 160): string | null {
+export function peekThrowableCutout(id: string, px = 320): string | null {
   return resolved.get(`${id}@${bucketOf(px)}`) ?? null;
 }
 

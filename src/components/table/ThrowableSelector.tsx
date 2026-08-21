@@ -40,10 +40,10 @@ interface ThrowableSelectorProps {
  */
 const CATEGORY_LABELS: Record<ThrowableCategory, { label: string }> = {
   premium: { label: 'VIP' },
-  reactions: { label: 'Emoji' },
-  throws: { label: 'Throw' },
+  throws: { label: 'Toys' },
   sports: { label: 'Sports' },
   cheers: { label: 'Party' },
+  reactions: { label: 'Emoji' },
 };
 
 export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelectorProps) {
@@ -155,7 +155,7 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
             title={throwable.name}
           >
             <div className="throwable-selector__icon throwable-selector__icon--img">
-              <ThrowableImage throwableId={throwable.id} size={40} loading="lazy" />
+              <ThrowableImage throwableId={throwable.id} size={84} loading="lazy" />
             </div>
             <span className="throwable-selector__name">{throwable.name}</span>
           </button>

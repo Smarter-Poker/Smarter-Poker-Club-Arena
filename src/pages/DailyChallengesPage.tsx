@@ -228,26 +228,29 @@ export default function DailyChallengesPage() {
   const todayUtcKey = () => new Date().toISOString().split('T')[0];
 
   // ── Loaders ──
-  const loadChallenges = useCallback(async (uid: string, withSpinner: boolean) => {
-    if (withSpinner) setIsLoading(true);
-    try {
-      const [{ daily, weekly, monthly }, challengeStats, streakInfo] = await Promise.all([
-        dailyChallengeService.getAllChallenges(uid),
-        dailyChallengeService.getStats(uid),
-        dailyChallengeService.getStreak(uid),
-      ]);
-      if (!isMountedRef.current) return;
+  const loadChallenges = useCallback(
+    async (uid: string, withSpinner: boolean) => {
+      if (withSpinner) setIsLoading(true);
+      try {
+        const [{ daily, weekly, monthly }, challengeStats, streakInfo] = await Promise.all([
+          dailyChallengeService.getAllChallenges(uid),
+          dailyChallengeService.getStats(uid),
+          dailyChallengeService.getStreak(uid),
+        ]);
+        if (!isMountedRef.current) return;
 
-      setChallenges([...daily, ...weekly, ...monthly]);
-      setStats(challengeStats);
-      setStreak(streakInfo);
-    } catch (err: any) {
-      reportError(err, 'DailyChallengesPage.load_failed');
-      if (isMountedRef.current) toast.error('Could not load challenges. Please try again.');
-    } finally {
-      if (isMountedRef.current) setIsLoading(false);
-    }
-  }, [isMountedRef, toast]);
+        setChallenges([...daily, ...weekly, ...monthly]);
+        setStats(challengeStats);
+        setStreak(streakInfo);
+      } catch (err: any) {
+        reportError(err, 'DailyChallengesPage.load_failed');
+        if (isMountedRef.current) toast.error('Could not load challenges. Please try again.');
+      } finally {
+        if (isMountedRef.current) setIsLoading(false);
+      }
+    },
+    [isMountedRef, toast]
+  );
 
   // ── Initialization ──
   useEffect(() => {
@@ -324,9 +327,9 @@ export default function DailyChallengesPage() {
   // ── Supabase Postgres Changes Subscription ──
   useEffect(() => {
     if (!userId) return;
-    let pending: NodeJS.Timeout | null = null;
-    const timers = useRef<NodeJS.Timeout[]>([]);
-    
+    let pending: ReturnType<typeof setTimeout> | null = null;
+    let localTimers: ReturnType<typeof setTimeout>[] = [];
+
     const channel = supabase
       .channel(`daily-challenges:${userId}`)
       .on(
@@ -353,7 +356,7 @@ export default function DailyChallengesPage() {
             // account on a second screen -- lands here without a manual refresh.
             if (isMountedRef.current) loadChallenges(userId, false);
           }, 1200);
-          if (pending) timers.current.push(pending);
+          if (pending) localTimers.push(pending);
         }
       )
       .subscribe();
@@ -361,8 +364,8 @@ export default function DailyChallengesPage() {
     return () => {
       supabase.removeChannel(channel);
       if (pending) clearTimeout(pending);
-      timers.current.forEach(clearTimeout);
-      timers.current = [];
+      localTimers.forEach(clearTimeout);
+      localTimers = [];
     };
   }, [userId, loadChallenges, isMountedRef]);
 

@@ -185,14 +185,24 @@ for (const bp of BREAKPOINTS) {
     });
 
     test('hold-em hole cards are NOT resized', async ({ page }) => {
+      /* The point of this test is that the PLO enlargement — a 50% jump — did
+         not leak into hold-em. It was written as exact pixel equality, so a
+         later 1px nudge to the card tokens (58 -> 59 at tablet, 44 -> 45 on a
+         small phone) failed it four times a run and read as "hold-em cards were
+         resized". A tolerance of 2px is wide enough to let the art be tuned and
+         nowhere near wide enough to hide the thing being guarded against: the
+         smallest leak this could miss is 2px, and the failure it exists to
+         catch is 15 or more. */
       const HOLDEM: Record<string, [number, number]> = {
         desktop: [44, 62],
-        tablet: [42, 58],
+        tablet: [42, 59],
         phone: [36, 50],
-        'small phone': [32, 44],
+        'small phone': [32, 45],
       };
+      const [w, h] = HOLDEM[bp.label];
       const m = await measure(page, 2);
-      expect([m.cardW, m.cardH]).toEqual(HOLDEM[bp.label]);
+      expect(Math.abs(m.cardW - w), `hold-em card width at ${bp.label}`).toBeLessThanOrEqual(2);
+      expect(Math.abs(m.cardH - h), `hold-em card height at ${bp.label}`).toBeLessThanOrEqual(2);
     });
   });
 }

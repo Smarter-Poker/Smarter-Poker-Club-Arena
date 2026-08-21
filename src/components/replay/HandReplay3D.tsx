@@ -369,18 +369,35 @@ class PokerTable3D {
       const winner = snapshot.players.find((p) => p.isWinner);
       if (winner) {
         const seatPos = getSeatPosition(winner.seat, this.seatCount);
-        gsap.to(this.mainPotStack.position, {
-          x: seatPos.x * 0.8,
-          z: seatPos.z * 0.8,
-          duration: 0.8,
-          ease: 'power2.inOut',
-          onComplete: () => {
-            if (this.mainPotStack) {
-              this.scene.remove(this.mainPotStack);
-              this.mainPotStack = null;
-            }
-          },
+        const children = [...this.mainPotStack.children];
+        const potGroup = this.mainPotStack;
+        this.mainPotStack = null;
+
+        children.forEach((chip, i) => {
+          const targetX = seatPos.x * 0.8 + (Math.random() - 0.5) * 0.3;
+          const targetZ = seatPos.z * 0.8 + (Math.random() - 0.5) * 0.3;
+
+          gsap.to(chip.position, {
+            x: targetX - potGroup.position.x,
+            z: targetZ - potGroup.position.z,
+            duration: 0.6 + Math.random() * 0.4,
+            ease: 'power2.inOut',
+            delay: i * 0.02,
+          });
+
+          gsap.to(chip.position, {
+            y: chip.position.y + 1 + Math.random(),
+            duration: 0.3 + Math.random() * 0.2,
+            yoyo: true,
+            repeat: 1,
+            ease: 'power1.out',
+            delay: i * 0.02,
+          });
         });
+
+        setTimeout(() => {
+          if (potGroup) this.scene.remove(potGroup);
+        }, 1500);
       }
     }
 
@@ -434,10 +451,12 @@ class PokerTable3D {
 
     for (let i = 0; i < chipCount; i++) {
       const chipGeo = new THREE.CylinderGeometry(CHIP_RADIUS, CHIP_RADIUS, CHIP_HEIGHT, 32);
-      const chipMat = new THREE.MeshStandardMaterial({
+      const chipMat = new THREE.MeshPhysicalMaterial({
         color: chipColor,
-        roughness: 0.3,
-        metalness: 0.6,
+        roughness: 0.15,
+        metalness: 0.85,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.1,
       });
       const chip = new THREE.Mesh(chipGeo, chipMat);
       chip.position.y = i * (CHIP_HEIGHT + 0.002);

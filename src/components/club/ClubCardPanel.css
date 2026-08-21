@@ -30,7 +30,7 @@
 
 /* Union variant — gold border accent */
 .club-card-panel--union {
-  border-color: rgba(218, 165, 32, 0.95); /* Thick Gold exterior */
+  border-color: rgba(240, 208, 112, 0.95); /* Thick Gold exterior */
 }
 
 /* ── Skeleton shimmer — visible until image loads ──────────────────────────── */
@@ -93,14 +93,14 @@
 
 /* Union variant — gold interior line */
 .club-card-panel--union .club-card-id-plate {
-  border-bottom: 2px solid rgba(218, 165, 32, 0.75);
+  border-bottom: 2px solid rgba(240, 208, 112, 0.75);
 }
 
 .club-card-panel--union .club-card-id-text {
   color: #f0d070;
   text-shadow:
     0 0 6px rgba(0, 0, 0, 0.8),
-    0 0 10px rgba(218, 165, 32, 0.3);
+    0 0 10px rgba(240, 208, 112, 0.3);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -183,8 +183,8 @@
 
 /* Union fallback icon — gold */
 .club-card-panel--union .club-card-fallback-icon {
-  color: rgba(218, 165, 32, 0.7);
-  filter: drop-shadow(0 0 12px rgba(218, 165, 32, 0.3));
+  color: rgba(240, 208, 112, 0.7);
+  filter: drop-shadow(0 0 12px rgba(240, 208, 112, 0.3));
 }
 
 /* Vignette removed for cleaner logos */
@@ -368,15 +368,15 @@
 .club-card-panel--union .club-card-stat-label {
   color: #e8d090;
   text-shadow:
-    0 0 5px rgba(218, 165, 32, 0.4),
-    0 0 10px rgba(218, 165, 32, 0.2);
+    0 0 5px rgba(240, 208, 112, 0.4),
+    0 0 10px rgba(240, 208, 112, 0.2);
 }
 
 .club-card-panel--union .club-card-stat-value {
   color: #f0d878;
   text-shadow:
     0 0 4px rgba(255, 215, 0, 0.8),
-    0 0 12px rgba(218, 165, 32, 0.9),
+    0 0 12px rgba(240, 208, 112, 0.9),
     0 0 20px rgba(180, 140, 20, 0.7);
 }
 
@@ -420,5 +420,5 @@
 /* Union variant — gold interior lines */
 .club-card-panel--union .club-card-name-plate,
 .club-card-panel--union .club-card-stats-bar {
-  border-top: 2px solid rgba(218, 165, 32, 0.75);
+  border-top: 2px solid rgba(240, 208, 112, 0.75);
 }

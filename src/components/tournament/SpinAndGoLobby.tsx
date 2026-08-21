@@ -156,12 +156,14 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
 
     setRegistering(tournament.id);
     try {
+      // 2026-08-20: this used to call the legacy `register_for_tournament`
+      // RPC — with the wrong arity, so it could never have succeeded, and
+      // pointing at a function that seated players WITHOUT CHARGING them
+      // (now dropped from the database entirely). The paid path derives the
+      // cost server-side, debits the wallet, and writes the buy-in ledger
+      // row the spin start gate requires.
       const { error } = await retryAsync(
-        () =>
-          supabase.rpc('register_for_tournament', {
-            p_tournament_id: tournament.id,
-            p_user_id: user.id,
-          }),
+        () => supabase.rpc('fn_register_for_tournament', { p_tournament_id: tournament.id }),
         3
       );
 

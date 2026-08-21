@@ -64,8 +64,26 @@ export const INSTANCE_VERSION: string =
  */
 export const LEASE_STALE_SECONDS = 30;
 
-/** Enforcement is opt-in. See the fail-open note above. */
-export const LEASE_ENFORCED: boolean = process.env.ENGINE_LEASE_ENFORCE === 'on';
+/**
+ * Enforcement is ON BY DEFAULT as of 2026-08-20 (opt-OUT via
+ * ENGINE_LEASE_ENFORCE=off, kept for emergencies).
+ *
+ * The evidence phase this flag existed for is over, and it ended the hard
+ * way: during the 23:48Z deploy overlap, two engine instances dealt table
+ * eab2e2e1 SIMULTANEOUSLY — the incoming container logged "lost the lease…
+ * (enforcement off; still dealing)" and kept dealing anyway. Dan was SEATED
+ * at that table: hands completed in 3.8 seconds flat, his all-in with KK
+ * resolved with no flop ever shown, turns appeared to skip, pots teleported.
+ * Two dealers, one table, real money — the precise correctness failure the
+ * 2026-08-16 incident predicted and this module was built to stop.
+ *
+ * The teardown path this switch arms (GameServer's discovery loop: stop the
+ * engine, drop the hub) has been live and inert for four days; every claim
+ * and heartbeat has been logging cleanly. Fail-open behaviour on RPC ERRORS
+ * is unchanged — a database blip still never stops a table. What changes is
+ * only the split-brain case, where continuing to deal was never safe.
+ */
+export const LEASE_ENFORCED: boolean = process.env.ENGINE_LEASE_ENFORCE !== 'off';
 
 export interface LeaseConflict {
   tableId: string;
@@ -190,9 +208,7 @@ export async function heartbeatTables(tableIds: string[]): Promise<string[]> {
       }
       return [];
     }
-    const kept = new Set(
-      ((data ?? []) as Array<{ table_id: string }>).map((r) => r.table_id)
-    );
+    const kept = new Set(((data ?? []) as Array<{ table_id: string }>).map((r) => r.table_id));
     const lost = tableIds.filter((id) => !kept.has(id));
     for (const id of lost) {
       conflicts.set(id, { tableId: id, holder: null, holderAgeSeconds: null, at: Date.now() });

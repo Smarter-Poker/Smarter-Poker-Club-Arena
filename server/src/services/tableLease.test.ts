@@ -19,8 +19,11 @@ vi.mock('./supabase/client.js', () => ({ supabase: { rpc: (...a: unknown[]) => r
  */
 async function loadLease(enforce: boolean) {
   vi.resetModules();
+  // 2026-08-20: enforcement is ON BY DEFAULT (the 23:48Z split-brain on a
+  // table with a seated human ended the evidence phase). Off is now the
+  // explicit opt-out, so the "unenforced" cases here load with 'off'.
   if (enforce) process.env.ENGINE_LEASE_ENFORCE = 'on';
-  else delete process.env.ENGINE_LEASE_ENFORCE;
+  else process.env.ENGINE_LEASE_ENFORCE = 'off';
   return import('./tableLease.js');
 }
 
@@ -47,12 +50,18 @@ describe('INSTANCE_ID', () => {
 describe('claimTable', () => {
   it('grants when the database grants', async () => {
     const { claimTable } = await loadLease(true);
-    rpc.mockResolvedValue({ data: [{ granted: true, holder: 'me', holder_age_seconds: 0 }], error: null });
+    rpc.mockResolvedValue({
+      data: [{ granted: true, holder: 'me', holder_age_seconds: 0 }],
+      error: null,
+    });
     await expect(claimTable(TABLE)).resolves.toBe(true);
   });
 
   it('refuses a table another live instance holds — but only with enforcement on', async () => {
-    const denied = { data: [{ granted: false, holder: 'other-1', holder_age_seconds: 2.5 }], error: null };
+    const denied = {
+      data: [{ granted: false, holder: 'other-1', holder_age_seconds: 2.5 }],
+      error: null,
+    };
 
     const enforced = await loadLease(true);
     rpc.mockResolvedValue(denied);
@@ -99,7 +108,10 @@ describe('heartbeatTables', () => {
   it('reports the tables that were taken away', async () => {
     const { heartbeatTables } = await loadLease(true);
     rpc.mockResolvedValue({ data: [{ table_id: 'keep-1' }], error: null });
-    await expect(heartbeatTables(['keep-1', 'lost-1', 'lost-2'])).resolves.toEqual(['lost-1', 'lost-2']);
+    await expect(heartbeatTables(['keep-1', 'lost-1', 'lost-2'])).resolves.toEqual([
+      'lost-1',
+      'lost-2',
+    ]);
   });
 
   it('reports nothing lost while enforcement is off, even when the leases are gone', async () => {
@@ -107,7 +119,11 @@ describe('heartbeatTables', () => {
     rpc.mockResolvedValue({ data: [], error: null });
     await expect(heartbeatTables(['a', 'b'])).resolves.toEqual([]);
     // Still recorded, so /health shows the split-brain before we act on it.
-    expect(recentLeaseConflicts().map((c) => c.tableId).sort()).toEqual(['a', 'b']);
+    expect(
+      recentLeaseConflicts()
+        .map((c) => c.tableId)
+        .sort()
+    ).toEqual(['a', 'b']);
   });
 
   it('treats "could not ask" as "lost nothing" — the inversion that would freeze the platform', async () => {

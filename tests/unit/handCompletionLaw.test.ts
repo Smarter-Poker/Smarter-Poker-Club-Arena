@@ -23,8 +23,7 @@ import {
   boardClearMs,
 } from '../../src/config/handCompletionSpec';
 
-const strip = (src: string) =>
-  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
 describe('the spec is mirrored byte-for-byte into the engine', () => {
@@ -119,7 +118,10 @@ describe('the next hand opens with the dealing animation', () => {
 });
 
 describe('the fold sound is a swoosh, not a ding', () => {
-  const SOUND = read('src/services/soundService.ts');
+  // The file is SoundService.ts. macOS is case-insensitive so this resolved
+  // locally and then failed on Linux CI with ENOENT, taking the whole suite
+  // down and blocking the World Hub bundle for everyone.
+  const SOUND = read('src/services/SoundService.ts');
   // Anchor on the METHOD, not the file's doc header, which also names
   // playFold() and would slice the wrong region.
   const foldAt = SOUND.indexOf('\n  playFold() {');
@@ -149,7 +151,7 @@ describe('the fold sound is a swoosh, not a ding', () => {
   });
 });
 
-describe("heads-up is the only sit-n-go we run", () => {
+describe('heads-up is the only sit-n-go we run', () => {
   const REC = strip(read('server/src/services/TournamentRecurringService.ts'));
 
   it('6-max and 9-max sit-n-go shapes are gone', () => {

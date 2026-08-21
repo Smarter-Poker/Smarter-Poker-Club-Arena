@@ -1,37 +1,3 @@
--- 20260821_leaderboard_payouts_and_settings.sql
--- Create leaderboard prize settings and historical archive for payouts/trophies.
-
-CREATE TABLE IF NOT EXISTS club_leaderboard_settings (
-    club_id UUID PRIMARY KEY REFERENCES clubs(id) ON DELETE CASCADE,
-    payout_currency TEXT DEFAULT 'diamonds' CHECK (payout_currency IN ('diamonds', 'chips')),
-    weekly_prizes JSONB DEFAULT '[{"rank": 1, "amount": 500}, {"rank": 2, "amount": 250}, {"rank": 3, "amount": 100}]'::jsonb,
-    monthly_prizes JSONB DEFAULT '[{"rank": 1, "amount": 2000}, {"rank": 2, "amount": 1000}, {"rank": 3, "amount": 500}]'::jsonb,
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE club_leaderboard_settings ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "club_leaderboard_settings_select" ON club_leaderboard_settings FOR SELECT USING (true);
-CREATE POLICY "club_leaderboard_settings_update" ON club_leaderboard_settings FOR ALL USING (club_id IN (SELECT id FROM clubs WHERE owner_id = auth.uid()));
-
-CREATE TABLE IF NOT EXISTS leaderboard_payouts (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    club_id UUID NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
-    period TEXT NOT NULL, -- 'weekly', 'monthly'
-    metric TEXT NOT NULL,
-    start_date TIMESTAMPTZ NOT NULL,
-    end_date TIMESTAMPTZ NOT NULL,
-    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-    rank INTEGER NOT NULL,
-    payout_amount DECIMAL NOT NULL,
-    payout_currency TEXT NOT NULL,
-    awarded_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(club_id, period, metric, start_date, user_id)
-);
-
-ALTER TABLE leaderboard_payouts ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "leaderboard_payouts_select" ON leaderboard_payouts FOR SELECT USING (true);
-
-
 CREATE OR REPLACE FUNCTION fn_payout_leaderboard(
     p_club_id UUID,
     p_period TEXT,

@@ -67,7 +67,7 @@ interface UserPreferences {
 }
 
 // Action button images
-const ACTION_BAR_HORIZONTAL = `${MEDIA_BASE}images/icons/action-bar-horizontal.png`;
+const ACTION_BAR_HORIZONTAL = `${MEDIA_BASE}images/icons/action-bar-horizontal.webp`;
 
 // #12: Seasonal theme detection
 function getSeasonalTheme(): string {

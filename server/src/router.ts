@@ -41,6 +41,7 @@ import { handleAdminPause, handleAdminResume, handleAdminKick } from './handlers
 import { handlePostBB } from './handlers/postbb.js';
 import { handleInjectFault } from './handlers/faultInjection.js';
 import { handleGetActions, handleGetState } from './handlers/state.js';
+import { handleAssistantLeaksDetect } from './handlers/assistant.js';
 import type { ChannelHub } from './hub/ChannelHub.js';
 
 // ─── Internal API key (set in Hetzner env, same secret used by World Hub) ─────
@@ -187,6 +188,8 @@ export function createRouter(
     if (method === 'POST' && url === '/admin/kick')
       return handleAdminKick(req, res, { gameServer });
     if (method === 'POST' && url === '/post-bb') return handlePostBB(req, res, { gameServer });
+    if (method === 'POST' && url === '/assistant/leaks/detect')
+      return handleAssistantLeaksDetect(req, res);
 
     // Fault injection for freeze drills. 404s unless FAULT_INJECTION_TOKEN is
     // set, requires that token, and refuses any table with a human seated.

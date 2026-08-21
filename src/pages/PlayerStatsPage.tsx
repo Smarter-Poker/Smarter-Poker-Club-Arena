@@ -833,7 +833,8 @@ export default function PlayerStatsPage() {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
-      const res = await fetch('/api/assistant/leaks/detect', {
+      const ENGINE_URL = import.meta.env?.VITE_ENGINE_URL ?? 'https://engine.smarter.poker';
+      const res = await fetch(`${ENGINE_URL}/assistant/leaks/detect`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1185,7 +1186,7 @@ export default function PlayerStatsPage() {
             )}
 
             <div className="stats-action-row">
-              <button className="view-hands-btn" onClick={() => navigate('/hands')}>
+              <button className="view-hands-btn" onClick={() => navigate('/player-sessions')}>
                 View Hand Histories
               </button>
               <button
@@ -1617,7 +1618,7 @@ export default function PlayerStatsPage() {
                       </div>
                     </div>
                   ))}
-                  <button className="view-hands-btn" onClick={() => navigate('/hands')}>
+                  <button className="view-hands-btn" onClick={() => navigate('/player-sessions')}>
                     Open Full Hand History
                   </button>
                 </div>

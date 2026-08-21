@@ -16,6 +16,7 @@ import { getAuthUser, supabase } from '../lib/supabase';
 import { LoadingState } from '../components/common/EmptyState';
 import { StreakFire } from '../components/gamification/StreakFire';
 import { useToast } from '../components/common/Toast';
+import { motion, AnimatePresence } from 'framer-motion';
 import { masterBus } from '../core/MasterBus';
 import { triggerHaptic } from '../services/HapticService';
 import {
@@ -604,7 +605,7 @@ export default function DailyChallengesPage() {
   };
 
   const visible = useMemo(
-    () => challenges.filter((c) => c.tier === activeTier),
+    () => challenges.filter((c) => c.tier === activeTier && !c.claimed),
     [challenges, activeTier]
   );
 
@@ -761,16 +762,25 @@ export default function DailyChallengesPage() {
             <p>No {TIER_LABELS[activeTier].toLowerCase()} Challenges Available Right Now.</p>
           </div>
         ) : (
-          visible.map((c) => (
-            <ChallengeCard
-              key={c.id}
-              challenge={c}
-              tier={c.tier}
-              claiming={claimingIds.has(c.id)}
-              celebrating={celebratingIds.has(c.id)}
-              onClaim={handleClaim}
-            />
-          ))
+          <AnimatePresence>
+            {visible.map((c, i) => (
+              <motion.div
+                key={c.id}
+                initial={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, x: -50, scale: 0.95 }}
+                transition={{ duration: 0.3, delay: i * 0.05 }}
+                layout
+              >
+                <ChallengeCard
+                  challenge={c}
+                  tier={c.tier}
+                  claiming={claimingIds.has(c.id)}
+                  celebrating={celebratingIds.has(c.id)}
+                  onClaim={handleClaim}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
         )}
       </section>
 

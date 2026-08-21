@@ -266,8 +266,8 @@ export default function CashierTradePage() {
       // balance and silently flipped the downline into agent scope. A failure
       // has to look like a failure.
       if (meRes.error) throw meRes.error;
-      const role = (meRes.data?.role as string) || 'player';
-      const bal = Number(meRes.data?.chip_balance) || 0;
+      const role = meRes.data?.role ? (meRes.data.role as string) : 'player';
+      const bal = meRes.data?.chip_balance ? Number(meRes.data.chip_balance) : 0;
       const panel = ((Array.isArray(panelRes.data) ? panelRes.data[0] : panelRes.data) ??
         {}) as Record<string, unknown>;
 
@@ -1204,8 +1204,9 @@ export default function CashierTradePage() {
             )}
             {(amountModal === 'send' || amountModal === 'ticket') && (
               <div className={styles.modalHint}>
-                Total: {fmt((Number(amount) || 0) * selected.size)} &middot; Available:{' '}
-                {fmt(availableChips)}
+                Total:{' '}
+                {fmt((Number(amount) || 0) * list.filter((r) => selected.has(r.userId)).length)}{' '}
+                &middot; Available: {fmt(availableChips)}
               </div>
             )}
             <div className={styles.modalActions}>

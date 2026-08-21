@@ -40,25 +40,25 @@ const BLOCKS: VariantBlock[] = [
     key: 'nlh',
     games: "NLH / FLH",
     cards: [c('A', 's'), c('A', 'h'), c('A', 'c'), c('J', 's'), c('J', 'h')],
-    note: 'Aces full of Jacks or better must lose to Quads or a Straight Flush. The player holding the full house must have at least one Ace among their dealt cards.',
+    note: 'Aces Full Of Jacks Or Better Must Lose To Quads Or A Straight Flush. The Player Holding The Full House Must Have At Least One Ace Among Their Dealt Cards.',
   },
   {
     key: 'plo4',
     games: 'PLO4 / FLO4',
     cards: [c('K', 's'), c('K', 'h'), c('K', 'c'), c('K', 'd'), c('2', 's')],
-    note: 'Quad Kings or better must lose. Exactly two cards from the hand must play, for both players.',
+    note: 'Quad Kings Or Better Must Lose. Exactly Two Cards From The Hand Must Play, For Both Players.',
   },
   {
     key: 'plo8',
     games: 'PLO8 (Hi-Lo)',
     cards: [c('K', 's'), c('K', 'h'), c('K', 'c'), c('K', 'd'), c('2', 's')],
-    note: 'Quad Kings or better must lose, judged on the high hand only. The low hand never qualifies.',
+    note: 'Quad Kings Or Better Must Lose, Judged On The High Hand Only. The Low Hand Never Qualifies.',
   },
   {
     key: 'plo5',
     games: 'PLO5 / FLO5',
     cards: [c('8', 's'), c('7', 's'), c('6', 's'), c('5', 's'), c('4', 's')],
-    note: 'An 8-high Straight Flush or better must lose. Exactly two cards from the hand must play, for both players.',
+    note: 'An 8-High Straight Flush Or Better Must Lose. Exactly Two Cards From The Hand Must Play, For Both Players.',
   },
   {
     key: 'plo6',
@@ -95,12 +95,12 @@ export function BBJQualifyingHands({ highlightVariantKey = null }: BBJQualifying
   return (
     <div className="bbj-qh">
       <p className="bbj-qh__intro">
-        The losing player must hold at least the hand below.
+        The Losing Player Must Hold At Least The Hand Below.
         {BBJ_RULES.requireBothHoleCards
-          ? ' Both players must use two cards from their own hand.'
+          ? ' Both Players Must Use Two Cards From Their Own Hand.'
           : ''}
         {BBJ_RULES.splitIfMultipleQualify
-          ? ' If more than one player loses with a qualifying hand, the prize is divided between them.'
+          ? ' If More Than One Player Loses With A Qualifying Hand, The Prize Is Divided Between Them.'
           : ''}
       </p>
 
@@ -130,7 +130,7 @@ export function BBJQualifyingHands({ highlightVariantKey = null }: BBJQualifying
               </>
             ) : (
               <p className="bbj-qh__note bbj-qh__note--off">
-                The Bad Beat Jackpot is not available for {config?.label || b.games}.
+                The Bad Beat Jackpot Is Not Available For {config?.label || b.games}.
               </p>
             )}
           </section>

@@ -75,7 +75,11 @@ export function splitBuyIn(total: number, rakeRate: number = DEFAULT_RAKE_RATE):
   if (t === 0) return { total: 0, prize: 0, fee: 0 };
   // WHOLE fee: a 15 total takes 2, not 1.50. Nothing downstream then has a
   // decimal to store or print.
-  const fee = Math.min(t, Math.max(0, Math.round(t * rakeRate)));
+  // Dan 2026-08-21: EVERY buy-in pays the registration fee. round(4 * 0.1)
+  // is 0, so small buy-ins were entering rake-free; a positive total now
+  // always carries at least one chip of fee. A freeroll (0) returns above
+  // and stays 0/0.
+  const fee = Math.min(t, Math.max(1, Math.round(t * rakeRate)));
   // Subtraction, not a second independent rounding — otherwise prize + fee can
   // miss total, and money that does not reconcile is a real bug.
   return { total: t, prize: t - fee, fee };

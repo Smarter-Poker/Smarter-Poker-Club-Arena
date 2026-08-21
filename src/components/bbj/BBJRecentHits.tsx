@@ -29,6 +29,7 @@ import { supabase } from '../../lib/supabase';
 import CardImage from '../table/CardImage';
 import Avatar from '../common/Avatar';
 import { toDeckCards } from '../../utils/deckCards';
+import type { Card as DeckCard } from '../table/CardImage';
 import { bestFive } from '../../utils/handEvaluator';
 import { reportError } from '../../utils/errorReporter';
 import './BBJRecentHits.css';
@@ -42,6 +43,8 @@ export interface BBJRecentHitsProps {
   currentUserId?: string | null;
   /** Opens the hand rundown for a hit. Rows are inert when omitted. */
   onOpenHand?: (payoutId: string) => void;
+  /** Live pool, only used to size the example figures when nothing has hit. */
+  poolAmount?: number;
 }
 
 /** Card as stored in hand_history: full suit names, rank 2-9/T/J/Q/K/A. */
@@ -78,6 +81,61 @@ interface Hit {
   recipients: Recipient[];
 }
 
+/**
+ * WHAT A WIN LOOKS LIKE, when this pool has never paid one.
+ *
+ * Dan asked for the Winner page to be seeded so it does not read as broken on a
+ * club whose jackpot has not hit yet. These rows are RENDERED, not written to
+ * the ledger, and every one is stamped EXAMPLE and greyed.
+ *
+ * That distinction is the whole point. Three invented rows in bbj_payouts would
+ * have made the page look identical - and no player could then tell a jackpot
+ * this club really paid from one that never happened, because there would be
+ * nothing to tell them apart by. The page stops looking empty either way; only
+ * one of the two keeps a money surface honest.
+ *
+ * The hands are the published minimum qualifying hands from the Qualifying
+ * Hands tab, so all three tabs teach the same rule.
+ */
+const EXAMPLE_HITS: Array<{ id: string; hand: string; cards: DeckCard[]; share: number }> = [
+  {
+    id: 'ex-nlh',
+    hand: 'Aces Full Of Jacks',
+    cards: [
+      { rank: 'A', suit: 's' },
+      { rank: 'A', suit: 'h' },
+      { rank: 'A', suit: 'c' },
+      { rank: 'J', suit: 's' },
+      { rank: 'J', suit: 'h' },
+    ],
+    share: 0.5,
+  },
+  {
+    id: 'ex-plo',
+    hand: 'Four Of A Kind, Kings',
+    cards: [
+      { rank: 'K', suit: 's' },
+      { rank: 'K', suit: 'h' },
+      { rank: 'K', suit: 'c' },
+      { rank: 'K', suit: 'd' },
+      { rank: '2', suit: 's' },
+    ],
+    share: 0.5,
+  },
+  {
+    id: 'ex-sf',
+    hand: 'Straight Flush, Eight High',
+    cards: [
+      { rank: '8', suit: 's' },
+      { rank: '7', suit: 's' },
+      { rank: '6', suit: 's' },
+      { rank: '5', suit: 's' },
+      { rank: '4', suit: 's' },
+    ],
+    share: 0.5,
+  },
+];
+
 function money(n: number | null | undefined, dp = 2): string {
   return Number(n || 0).toLocaleString('en-US', {
     minimumFractionDigits: dp,
@@ -102,6 +160,7 @@ export function BBJRecentHits({
   currentUserName,
   currentUserId,
   onOpenHand,
+  poolAmount = 0,
 }: BBJRecentHitsProps) {
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -154,7 +213,7 @@ export function BBJRecentHits({
         hit,
         cards: made ? made.cards : hole,
         // Prefer what the engine actually recorded; fall back to what we derived.
-        label: hit.bad_beat_hand || made?.name || 'Qualifying hand',
+        label: hit.bad_beat_hand || made?.name || 'Qualifying Hand',
         derived: !!made,
       };
     });
@@ -164,7 +223,7 @@ export function BBJRecentHits({
 
   if (failed) {
     return (
-      <div className="bbj-hits__empty">Couldn&rsquo;t load recent jackpots. Try again shortly.</div>
+      <div className="bbj-hits__empty">Couldn&rsquo;t Load Recent Jackpots. Try Again Shortly.</div>
     );
   }
 
@@ -179,10 +238,42 @@ export function BBJRecentHits({
   }
 
   if (hits.length === 0) {
+    // A stakes tier has to be assumed to show any figure at all; Small (40% of
+    // the pool) is the middle of the published ladder. While the pool is still
+    // empty there is no honest figure, so the row names the share instead.
+    const examplePool = poolAmount > 0 ? (poolAmount * 40) / 100 : 0;
     return (
-      <div className="bbj-hits__empty">
-        No jackpot has hit here yet.
-        <span className="bbj-hits__empty-sub">The next one could be yours.</span>
+      <div className="bbj-hits">
+        <div className="bbj-hits__caption">No Jackpot Has Hit Here Yet</div>
+        <p className="bbj-hits__examplenote">
+          Here Is What A Win Looks Like. These Three Are Examples, Not Real Wins.
+        </p>
+        {EXAMPLE_HITS.map((ex) => (
+          <div className="bbj-hits__row is-example" key={ex.id} aria-label="Example jackpot win">
+            <Avatar name="?" size="medium" className="bbj-hits__avatar" />
+            <div className="bbj-hits__who">
+              <span className="bbj-hits__name">
+                Your Name Here
+                <span className="bbj-hits__tag">EXAMPLE</span>
+              </span>
+              <span className="bbj-hits__id">Not A Real Win</span>
+            </div>
+            <div className="bbj-hits__hand">
+              <div className="bbj-hits__cards">
+                {ex.cards.map((card, i) => (
+                  <CardImage key={`${ex.id}-${i}`} card={card} size="xs" />
+                ))}
+              </div>
+              <span className="bbj-hits__handname">{ex.hand}</span>
+            </div>
+            <div className="bbj-hits__right">
+              <span className="bbj-hits__amt">
+                {examplePool > 0 ? `+ ${money(examplePool * ex.share)}` : 'Bad Beat Share'}
+              </span>
+              <span className="bbj-hits__when">The Next One Could Be Yours</span>
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
@@ -263,7 +354,7 @@ export function BBJRecentHits({
         );
       })}
 
-      {onOpenHand && <p className="bbj-hits__hint">Tap a winner to see the hand.</p>}
+      {onOpenHand && <p className="bbj-hits__hint">Tap A Winner To See The Hand.</p>}
     </div>
   );
 }

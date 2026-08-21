@@ -1213,7 +1213,10 @@ class TournamentService {
     baseCost: number
   ): number {
     const base = Math.max(0, Math.round(Number(baseCost) || 0));
-    return Math.min(base, Math.max(0, Math.round(base * this.getTournamentFeeRatio(tournament))));
+    if (base <= 0) return 0;
+    // Floor of one chip so a small rebuy cannot slip through rake-free,
+    // mirroring fn_create_tournament and process_tournament_rebuy exactly.
+    return Math.min(base, Math.max(1, Math.round(base * this.getTournamentFeeRatio(tournament))));
   }
 
   /**
@@ -1266,12 +1269,15 @@ class TournamentService {
         tournament.starting_chips ||
         0
     );
-    // Dan 2026-08-20 (binding): add-ons are NOT raked, only rebuys.
+    // Dan 2026-08-21 (binding): the 10% is taken OUT of the advertised price,
+    // for entries and rebuys alike. The player pays the number on the button;
+    // the fee is a cut of it, never a surcharge on top of it. Add-ons stay
+    // unraked per the 2026-08-20 ruling.
     const fee = kind === 'rebuy' ? this.calcTournamentFee(tournament, baseCost) : 0;
     return {
-      baseCost,
+      baseCost: baseCost - fee,
       fee,
-      totalCost: baseCost + fee,
+      totalCost: baseCost,
       chips,
     };
   }
@@ -1378,8 +1384,12 @@ class TournamentService {
     // the prize pool and 0% to the house, breaking Dan's "10% on any and all
     // tournament/SNG buy-ins" rule. Fee is now charged on top of the rebuy cost
     // (base cost still feeds the prize pool; recalculatePrizePool strips the fee).
+    // Dan 2026-08-21 (binding): the 10% comes OUT of the rebuy price, exactly
+    // as it does out of an entry. The advertised price IS the total charged and
+    // the remainder feeds the prize pool. Until this, a 20 rebuy charged 22
+    // while a 20 entry charged 20 - two prices for one rule.
     const rebuyFee = this.calcTournamentFee(tournament, rebuyCost);
-    const rebuyTotalCost = rebuyCost + rebuyFee;
+    const rebuyTotalCost = rebuyCost;
 
     // Pre-validate wallet balance (better error messages)
     const { data: walletData } = await supabase
@@ -1391,7 +1401,7 @@ class TournamentService {
 
     if (!walletData || (walletData.balance || 0) < rebuyTotalCost) {
       throw new Error(
-        `Insufficient chips for rebuy. Need ${rebuyTotalCost} (incl. ${rebuyFee} fee), have ${walletData?.balance || 0}`
+        `Insufficient chips for rebuy. Need ${rebuyTotalCost} (${rebuyFee} of it is the fee), have ${walletData?.balance || 0}`
       );
     }
 
@@ -1624,8 +1634,10 @@ class TournamentService {
     const reentryCost = Math.max(0, Math.round(Number(tournament.buy_in_amount || 0)));
     // RAKE-AUDIT 2026-07-24: 10% house fee on re-entries (previously fee-free —
     // a re-entry is a full fresh buy-in and must carry the same fee as entry #1)
+    // A re-entry is a full fresh buy-in and carries the same fee as entry #1 -
+    // and since 2026-08-21, on the same terms: cut OUT of the advertised price.
     const reentryFee = this.calcTournamentFee(tournament, reentryCost);
-    const reentryTotalCost = reentryCost + reentryFee;
+    const reentryTotalCost = reentryCost;
 
     const { data: walletData } = await supabase
       .from('wallets')
@@ -1636,7 +1648,7 @@ class TournamentService {
 
     if (!walletData || (walletData.balance || 0) < reentryTotalCost) {
       throw new Error(
-        `Insufficient chips for re-entry. Need ${reentryTotalCost} (incl. ${reentryFee} fee), have ${walletData?.balance || 0}`
+        `Insufficient chips for re-entry. Need ${reentryTotalCost} (${reentryFee} of it is the fee), have ${walletData?.balance || 0}`
       );
     }
 
@@ -1735,7 +1747,6 @@ class TournamentService {
     // 'addon' category has never been written.)
     let rebuyTotal = 0;
     let addonTotal = 0;
-    const feeRatio = this.getTournamentFeeRatio(tournament);
     try {
       const { data: rebuyTxns } = await supabase
         .from('wallet_transactions')
@@ -1749,10 +1760,39 @@ class TournamentService {
           if (tx.category === 'addon') {
             addonTotal += Math.round(gross);
           } else {
-            rebuyTotal += Math.round(gross / (1 + feeRatio));
+            rebuyTotal += Math.round(gross);
           }
         }
       }
+
+      // THE FEE IS SUBTRACTED FROM THE LEDGER, NOT INFERRED FROM A RATIO.
+      //
+      // This used to divide each rebuy debit by (1 + feeRatio) to strip the fee
+      // back out. That only ever fitted the fee-ON-TOP era, and it was not exact
+      // even then, because the fee is a WHOLE chip: a 100 rebuy was debited 110
+      // and 110 / 1.1 gives 100, but the fee actually booked was 11, so the
+      // prize share was 99. Since Dan's 2026-08-21 rule the fee is cut OUT of
+      // the price, so a ratio-based guess is wrong in a second, different way -
+      // and both eras sit side by side in one tournament's history.
+      //
+      // rake_records holds the fee that was ACTUALLY booked, per purchase, in
+      // the same transaction that charged it. Subtracting it is exact for both
+      // eras and needs no knowledge of which rule was in force.
+      const { data: feeRows } = await supabase
+        .from('rake_records')
+        .select('rake_amount, metadata')
+        .eq('tournament_id', tournamentId)
+        .eq('source', 'process_tournament_rebuy');
+      if (feeRows) {
+        for (const row of feeRows) {
+          const kind = String((row as { metadata?: { kind?: string } })?.metadata?.kind || '');
+          // Add-ons are unraked so they never appear here; guard anyway so a
+          // future ruling change cannot double-subtract.
+          if (kind.includes('addon')) continue;
+          rebuyTotal -= Math.round(Number(row.rake_amount) || 0);
+        }
+      }
+      rebuyTotal = Math.max(0, rebuyTotal);
     } catch (e: unknown) {
       reportError(e, 'TournamentService.Could_not_query_rebuyaddon_transactions');
     }

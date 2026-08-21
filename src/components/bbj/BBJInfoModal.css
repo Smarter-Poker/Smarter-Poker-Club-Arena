@@ -18,9 +18,9 @@
   display: flex;
   flex-direction: column;
   border-radius: 16px 16px 0 0;
-  border: 1px solid rgba(255, 215, 0, 0.3);
+  border: 1px solid rgba(213, 218, 226, 0.3);
   border-bottom: none;
-  background: linear-gradient(180deg, #16130a 0%, #0e0e10 100%);
+  background: linear-gradient(180deg, #15171c 0%, #0e0e10 100%);
   box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.6);
   animation: bbj-modal-up 0.22s ease-out;
   /* iOS safe area */
@@ -51,7 +51,7 @@
 
   .bbj-modal {
     border-radius: 16px;
-    border-bottom: 1px solid rgba(255, 215, 0, 0.3);
+    border-bottom: 1px solid rgba(213, 218, 226, 0.3);
   }
 }
 
@@ -74,14 +74,14 @@
   font-size: 10px;
   letter-spacing: 1.6px;
   font-weight: 700;
-  color: rgba(255, 228, 181, 0.75);
+  color: rgba(226, 231, 238, 0.75);
 }
 
 .bbj-modal__amount {
   font-size: 26px;
   font-weight: 900;
-  color: #ffd700;
-  text-shadow: 0 0 16px rgba(255, 215, 0, 0.45);
+  color: #d5dae2;
+  text-shadow: 0 0 16px rgba(213, 218, 226, 0.45);
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
 }
@@ -116,8 +116,8 @@
 }
 
 .bbj-modal__tab.is-active {
-  color: #ffd700;
-  box-shadow: inset 0 -2px 0 #ffd700;
+  color: #d5dae2;
+  box-shadow: inset 0 -2px 0 #d5dae2;
 }
 
 .bbj-modal__body {
@@ -156,7 +156,7 @@
 }
 
 .bbj-modal__rule-text strong {
-  color: #ffd700;
+  color: #d5dae2;
 }
 
 .bbj-modal__rule-sub {
@@ -187,7 +187,7 @@
 }
 
 .bbj-modal__split-row span:last-child {
-  color: #ffd700;
+  color: #d5dae2;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -205,8 +205,8 @@
   margin-bottom: 14px;
   padding: 10px 12px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 215, 0, 0.3);
-  background: rgba(255, 215, 0, 0.06);
+  border: 1px solid rgba(213, 218, 226, 0.3);
+  background: rgba(213, 218, 226, 0.06);
 }
 
 .bbj-modal__here .bbj-modal__rule-text {

@@ -84,7 +84,7 @@ function prefersReducedMotion(): boolean {
   );
 }
 
-const GOLD_COLORS = ['#FFD700', '#FFA500', '#FFEC8B', '#DAA520', '#F5DEB3', '#FFE4B5'];
+const SILVER_COLORS = ['#d5dae2', '#b9c0ca', '#eef1f5', '#9aa2ae', '#e2e6ec', '#e2e7ee'];
 const DIAMOND_COLORS = ['#B9F2FF', '#E0FFFF', '#87CEEB', '#ADD8E6', '#F0F8FF', '#FFFFFF'];
 const CONFETTI_COLORS = [
   '#FF6B6B',
@@ -183,7 +183,7 @@ export function BBJCelebration({
         const angle = Math.random() * Math.PI * 2;
         const speed = type === 'firework' ? 3 + Math.random() * 6 : 1 + Math.random() * 4;
         const colors =
-          type === 'chip' ? GOLD_COLORS : type === 'spark' ? DIAMOND_COLORS : CONFETTI_COLORS;
+          type === 'chip' ? SILVER_COLORS : type === 'spark' ? DIAMOND_COLORS : CONFETTI_COLORS;
         newParticles.push({
           x: cx + (Math.random() - 0.5) * 40,
           y: cy + (Math.random() - 0.5) * 40,

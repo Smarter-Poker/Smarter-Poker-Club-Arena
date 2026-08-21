@@ -4,8 +4,8 @@
   margin: 4px 0 16px;
   padding: 14px 16px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 215, 0, 0.28);
-  background: rgba(255, 215, 0, 0.05);
+  border: 1px solid rgba(213, 218, 226, 0.28);
+  background: rgba(213, 218, 226, 0.05);
 }
 
 .bbj-admin__header {
@@ -18,7 +18,7 @@
   margin: 0;
   font-size: 15px;
   font-weight: 800;
-  color: #ffd700;
+  color: #d5dae2;
   letter-spacing: 0.5px;
 }
 
@@ -104,7 +104,7 @@
 }
 
 .bbj-admin__bar-main {
-  background: #ffd700;
+  background: #d5dae2;
 }
 
 .bbj-admin__bar-backup {

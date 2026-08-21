@@ -16,7 +16,7 @@
   left: 50%;
   transform: translateX(-50%);
   background: linear-gradient(135deg, #2d1b4e 0%, #1a102e 100%);
-  border: 1px solid rgba(255, 215, 0, 0.4);
+  border: 1px solid rgba(213, 218, 226, 0.4);
   border-radius: 8px;
   padding: 3px 10px;
   cursor: pointer;
@@ -24,7 +24,7 @@
   max-width: calc(100% - 200px);
   box-shadow:
     0 0 12px rgba(0, 0, 0, 0.4),
-    0 0 14px rgba(255, 215, 0, 0.08),
+    0 0 14px rgba(213, 218, 226, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
   transition:
     transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275),
@@ -39,13 +39,13 @@
   100% {
     box-shadow:
       0 0 16px rgba(0, 0, 0, 0.4),
-      0 0 20px rgba(255, 215, 0, 0.1),
+      0 0 20px rgba(213, 218, 226, 0.1),
       inset 0 1px 0 rgba(255, 255, 255, 0.06);
   }
   50% {
     box-shadow:
       0 0 16px rgba(0, 0, 0, 0.4),
-      0 0 40px rgba(255, 215, 0, 0.2),
+      0 0 40px rgba(213, 218, 226, 0.2),
       inset 0 1px 0 rgba(255, 255, 255, 0.06);
   }
 }
@@ -55,13 +55,13 @@
   box-shadow:
     0 0 20px rgba(163, 113, 247, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 215, 0, 0.6);
+  border-color: rgba(213, 218, 226, 0.6);
 }
 
 .bbj-widget__label {
   font-size: 0.5rem;
   font-weight: 700;
-  color: #ffd700;
+  color: #d5dae2;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   margin-bottom: 1px;
@@ -74,10 +74,10 @@
   font-weight: 800;
   color: #fff;
   font-family: 'JetBrains Mono', monospace;
-  text-shadow: 0 2px 6px rgba(255, 215, 0, 0.28);
+  text-shadow: 0 2px 6px rgba(213, 218, 226, 0.28);
   text-align: center;
   line-height: 1.05;
-  background: linear-gradient(135deg, #fff 20%, #ffd700 80%);
+  background: linear-gradient(135deg, #fff 20%, #d5dae2 80%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -95,7 +95,7 @@
   width: 200px;
   padding: 12px;
   background: rgba(20, 10, 30, 0.95);
-  border: 1px solid rgba(255, 215, 0, 0.2);
+  border: 1px solid rgba(213, 218, 226, 0.2);
   border-radius: 8px;
   box-shadow:
     0 0 30px rgba(0, 0, 0, 0.6),
@@ -110,7 +110,7 @@
 .bbj-info__title {
   font-size: 0.75rem;
   font-weight: 700;
-  color: #ffd700;
+  color: #d5dae2;
   margin: 0 0 6px 0;
   text-transform: uppercase;
 }
@@ -191,8 +191,8 @@
 .bbj-hit__title {
   font-size: 2rem;
   font-weight: 900;
-  color: #ffd700;
-  text-shadow: 0 4px 10px rgba(255, 215, 0, 0.5);
+  color: #d5dae2;
+  text-shadow: 0 4px 10px rgba(213, 218, 226, 0.5);
   letter-spacing: 0.1em;
   margin-bottom: 0px;
 }
@@ -200,10 +200,10 @@
 .bbj-hit__subtitle {
   font-size: 6rem;
   font-weight: 900;
-  background: linear-gradient(180deg, #ffffff 0%, #ffd700 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #d5dae2 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.6));
+  filter: drop-shadow(0 0 20px rgba(213, 218, 226, 0.6));
   line-height: 1;
   margin-bottom: 20px;
   animation: pulseText 0.5s infinite alternate;
@@ -212,12 +212,12 @@
 @keyframes pulseText {
   from {
     transform: scale(1);
-    filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.6));
+    filter: drop-shadow(0 0 20px rgba(213, 218, 226, 0.6));
   }
 
   to {
     transform: scale(1.05);
-    filter: drop-shadow(0 0 40px rgba(255, 215, 0, 0.9));
+    filter: drop-shadow(0 0 40px rgba(213, 218, 226, 0.9));
   }
 }
 
@@ -238,7 +238,7 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #ffd700;
+  background: #d5dae2;
   top: 50%;
   left: 50%;
   pointer-events: none;
@@ -309,9 +309,9 @@
 .bbj-info__payout {
   margin-top: 6px;
   padding-top: 6px;
-  border-top: 1px solid rgba(255, 215, 0, 0.25);
+  border-top: 1px solid rgba(213, 218, 226, 0.25);
   font-size: 11px;
-  color: #ffd700;
+  color: #d5dae2;
   line-height: 1.4;
 }
 
@@ -362,10 +362,10 @@
 
 .bbj-widget:focus-visible {
   outline: none;
-  border-color: #ffd700;
+  border-color: #d5dae2;
   box-shadow:
-    0 0 0 2px rgba(255, 215, 0, 0.5),
-    0 0 22px rgba(255, 215, 0, 0.35);
+    0 0 0 2px rgba(213, 218, 226, 0.5),
+    0 0 22px rgba(213, 218, 226, 0.35);
 }
 
 /* Amount bump on every increase (class toggled by the component) */
@@ -380,7 +380,7 @@
   }
   35% {
     transform: scale(1.13);
-    text-shadow: 0 0 14px rgba(255, 215, 0, 0.85);
+    text-shadow: 0 0 14px rgba(213, 218, 226, 0.85);
   }
   100% {
     transform: scale(1);

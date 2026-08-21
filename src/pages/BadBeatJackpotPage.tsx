@@ -384,8 +384,8 @@ export default function BadBeatJackpotPage() {
             margin: '0 1rem 0.75rem',
             padding: '12px 16px',
             background:
-              'linear-gradient(135deg, rgba(255,215,0,0.08) 0%, rgba(255,165,0,0.06) 100%)',
-            border: '1px solid rgba(255,215,0,0.25)',
+              'linear-gradient(135deg, rgba(213, 218, 226,0.08) 0%, rgba(186, 193, 203,0.06) 100%)',
+            border: '1px solid rgba(213, 218, 226,0.25)',
             borderRadius: '12px',
             display: 'flex',
             justifyContent: 'space-between',
@@ -396,7 +396,7 @@ export default function BadBeatJackpotPage() {
             <span
               style={{
                 fontSize: '0.75rem',
-                color: '#FFD700',
+                color: '#d5dae2',
                 fontWeight: 700,
                 textTransform: 'uppercase',
                 letterSpacing: '0.5px',
@@ -422,7 +422,7 @@ export default function BadBeatJackpotPage() {
               style={{
                 height: '100%',
                 width: `${Math.min(100, ((jackpot?.main_balance || 0) / 100000) * 100)}%`,
-                background: 'linear-gradient(90deg, #FFD700, #FF6B00)',
+                background: 'linear-gradient(90deg, #d5dae2, #8f97a3)',
                 borderRadius: '3px',
                 transition: 'width 1s ease',
               }}

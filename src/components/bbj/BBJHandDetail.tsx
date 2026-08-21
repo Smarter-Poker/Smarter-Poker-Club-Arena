@@ -40,6 +40,7 @@ import { toDeckCards } from '../../utils/deckCards';
 import { bestFive, cardKey } from '../../utils/handEvaluator';
 import { derivePositions, smallBlindSeat, bigBlindSeat } from '../../utils/pokerPositions';
 import { reportError } from '../../utils/errorReporter';
+import { formatPopupText } from '../../utils/popupStyle';
 import './BBJHandDetail.css';
 
 export interface BBJHandDetailProps {
@@ -127,26 +128,26 @@ const STREETS: Array<{ key: string; label: string; boardTo: number }> = [
 ];
 
 const ACTION_LABEL: Record<string, string> = {
-  fold: 'fold',
-  check: 'check',
-  call: 'call',
-  bet: 'bet',
-  raise: 'raise',
-  all_in: 'all in',
-  allin: 'all in',
-  'all-in': 'all in',
-  post: 'post',
-  show: 'show',
-  muck: 'muck',
-  discard: 'discard',
-  ante: 'ante',
-  straddle: 'straddle',
+  fold: 'Fold',
+  check: 'Check',
+  call: 'Call',
+  bet: 'Bet',
+  raise: 'Raise',
+  all_in: 'All In',
+  allin: 'All In',
+  'all-in': 'All In',
+  post: 'Post',
+  show: 'Show',
+  muck: 'Muck',
+  discard: 'Discard',
+  ante: 'Ante',
+  straddle: 'Straddle',
 };
 
 const ROLE_LABEL: Record<DetailRecipient['role'], string> = {
-  bad_beat: 'Bad beat',
-  hand_winner: 'Won the hand',
-  table: 'At the table',
+  bad_beat: 'Bad Beat',
+  hand_winner: 'Won The Hand',
+  table: 'At The Table',
 };
 
 /** Anything the engine did not name gets its own bucket, never dropped. */
@@ -181,7 +182,7 @@ function blindLabel(n: number): string {
 function Header({ onBack }: { onBack: () => void }) {
   return (
     <div className="bbjhd__head">
-      <button className="bbjhd__back" onClick={onBack} aria-label="Back to winners">
+      <button className="bbjhd__back" onClick={onBack} aria-label="Back To Winners">
         &lsaquo;
       </button>
       <span className="bbjhd__title">HAND DETAIL</span>
@@ -354,8 +355,8 @@ export function BBJHandDetail({
         <Header onBack={onBack} />
         <div className="bbjhd__empty">
           {state === 'missing'
-            ? 'The full hand for this jackpot is no longer available.'
-            : 'Could not load this hand. Try again shortly.'}
+            ? 'The Full Hand For This Jackpot Is No Longer Available.'
+            : 'Could Not Load This Hand. Try Again Shortly.'}
         </div>
       </div>
     );
@@ -385,7 +386,7 @@ export function BBJHandDetail({
       <div className="bbjhd__colkey">
         <span>Player</span>
         <span>Action</span>
-        <span>{model.potReconciles ? 'Pot after' : ''}</span>
+        <span>{model.potReconciles ? 'Pot After' : ''}</span>
       </div>
 
       <div className="bbjhd__streets">
@@ -421,7 +422,7 @@ export function BBJHandDetail({
                     <span className={`bbjhd__name${isYou(player?.username || '', player?.userId) ? ' is-you' : ''}`}>
                       {player?.username || 'Player'}
                     </span>
-                    <span className="bbjhd__act bbjhd__act--post">{p.label.toLowerCase()}</span>
+                    <span className="bbjhd__act bbjhd__act--post">{p.label}</span>
                     <span className="bbjhd__amt">{money(p.amount)}</span>
                     <span className="bbjhd__pot">
                       {model.potReconciles ? money(p.potAfter) : ''}
@@ -440,7 +441,7 @@ export function BBJHandDetail({
                       {player?.username || 'Player'}
                     </span>
                     <span className={`bbjhd__act bbjhd__act--${verb.replace(/[^a-z_]/g, '')}`}>
-                      {ACTION_LABEL[verb] || verb}
+                      {ACTION_LABEL[verb] || formatPopupText(verb)}
                     </span>
                     <span className="bbjhd__amt">{amount > 0 ? money(amount) : ''}</span>
                     <span className="bbjhd__pot">
@@ -468,10 +469,10 @@ export function BBJHandDetail({
           )}
           {bbjFee > 0 && (
             <span>
-              Jackpot fee <strong>{money(bbjFee)}</strong>
+              Jackpot Fee <strong>{money(bbjFee)}</strong>
             </span>
           )}
-          <span className="bbjhd__drop-note">taken from the pot</span>
+          <span className="bbjhd__drop-note">Taken From The Pot</span>
         </div>
       )}
 
@@ -488,7 +489,7 @@ export function BBJHandDetail({
                     {player.username}
                   </span>
                   {isBadBeat && <span className="bbjhd__sd-tag">BAD BEAT</span>}
-                  <span className="bbjhd__sd-hand">{handName}</span>
+                  <span className="bbjhd__sd-hand">{formatPopupText(handName)}</span>
                   <span className={`bbjhd__sd-net${net >= 0 ? ' is-up' : ' is-down'}`}>
                     {net >= 0 ? '+' : '-'}
                     {money(Math.abs(net))}
@@ -517,7 +518,7 @@ export function BBJHandDetail({
             );
           })}
           {model.showdown.some((s) => s.playing.size > 0) && (
-            <p className="bbjhd__sd-legend">The five cards that played are lit.</p>
+            <p className="bbjhd__sd-legend">The Five Cards That Played Are Lit.</p>
           )}
         </section>
       )}
@@ -525,7 +526,7 @@ export function BBJHandDetail({
       {model.recipients.length > 0 && (
         <section className="bbjhd__jackpot">
           <header className="bbjhd__section-head">
-            Jackpot paid
+            Jackpot Paid
             <span className="bbjhd__jackpot-total">{money(detail.jackpot.total)}</span>
           </header>
           {model.recipients.map((r, i) => (

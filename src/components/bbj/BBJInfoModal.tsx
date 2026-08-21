@@ -247,6 +247,7 @@ export function BBJInfoModal({
                 currentUserName={currentUserName}
                 currentUserId={currentUserId}
                 onOpenHand={setOpenHandPayoutId}
+                poolAmount={poolAmount}
               />
             ))}
 
@@ -254,28 +255,28 @@ export function BBJInfoModal({
             <div className="bbj-modal__rules">
               {hasTableContext && info.eligible && (
                 <div className="bbj-modal__here">
-                  <span className="bbj-modal__rule-label">If it hits at this table</span>
+                  <span className="bbj-modal__rule-label">If It Hits At This Table</span>
                   <p className="bbj-modal__rule-text">
-                    <strong>{pct}%</strong> of the pool
+                    <strong>{pct}%</strong> Of The Pool
                     {poolAmount > 0 && (
-                      <> (about {Math.trunc(tableShare).toLocaleString('en-US')} today)</>
+                      <> (About {Math.trunc(tableShare).toLocaleString('en-US')} Today)</>
                     )}
                   </p>
                   <div className="bbj-modal__split">
                     <div className="bbj-modal__split-row">
-                      <span>Bad beat hand</span>
+                      <span>Bad Beat Hand</span>
                       <span>
                         50% &middot; {Math.trunc(tableShare * 0.5).toLocaleString('en-US')}
                       </span>
                     </div>
                     <div className="bbj-modal__split-row">
-                      <span>Won the hand</span>
+                      <span>Won The Hand</span>
                       <span>
                         25% &middot; {Math.trunc(tableShare * 0.25).toLocaleString('en-US')}
                       </span>
                     </div>
                     <div className="bbj-modal__split-row">
-                      <span>Everyone else dealt in</span>
+                      <span>Everyone Else Dealt In</span>
                       <span>
                         25% &middot; {Math.trunc(tableShare * 0.25).toLocaleString('en-US')}
                       </span>
@@ -286,15 +287,15 @@ export function BBJInfoModal({
               {hasTableContext && !info.eligible && (
                 <div className="bbj-modal__here">
                   <p className="bbj-modal__rule-text">
-                    The Bad Beat Jackpot is not available for {info.variantLabel}, so no fee is
-                    taken at this table.
+                    The Bad Beat Jackpot Is Not Available For {info.variantLabel}, So No Fee Is
+                    Taken At This Table.
                   </p>
                 </div>
               )}
               <BBJBasicPanel poolAmount={poolAmount} highlightBB={bigBlind} />
               <p className="bbj-modal__fineprint">
-                Chips are credited to your stack at the table the moment it hits, and they leave
-                with you.
+                Chips Are Credited To Your Stack At The Table The Moment It Hits, And They Leave
+                With You.
               </p>
             </div>
           )}
@@ -305,13 +306,13 @@ export function BBJInfoModal({
                 <div className="bbj-modal__here">
                   {info.eligible ? (
                     <>
-                      <span className="bbj-modal__rule-label">At this table</span>
+                      <span className="bbj-modal__rule-label">At This Table</span>
                       <p className="bbj-modal__rule-text">{info.shortLabel}</p>
                       {info.subLabel && <p className="bbj-modal__rule-sub">{info.subLabel}</p>}
                     </>
                   ) : (
                     <p className="bbj-modal__rule-text">
-                      The Bad Beat Jackpot is not available for {info.variantLabel}.
+                      The Bad Beat Jackpot Is Not Available For {info.variantLabel}.
                     </p>
                   )}
                 </div>

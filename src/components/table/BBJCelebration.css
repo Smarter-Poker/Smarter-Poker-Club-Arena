@@ -34,7 +34,7 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background: radial-gradient(ellipse at center, #ffd700 0%, rgba(255, 215, 0, 0) 70%);
+  background: radial-gradient(ellipse at center, #d5dae2 0%, rgba(213, 218, 226, 0) 70%);
   opacity: 0;
   z-index: 2;
   transition: opacity 0.15s ease;
@@ -107,11 +107,11 @@
 .bbj-title-text {
   font-size: 36px;
   font-weight: 900;
-  color: #ffd700;
+  color: #d5dae2;
   text-shadow:
-    0 0 20px rgba(255, 215, 0, 0.8),
-    0 0 40px rgba(255, 215, 0, 0.4),
-    0 0 80px rgba(255, 215, 0, 0.2),
+    0 0 20px rgba(213, 218, 226, 0.8),
+    0 0 40px rgba(213, 218, 226, 0.4),
+    0 0 80px rgba(213, 218, 226, 0.2),
     0 2px 4px rgba(0, 0, 0, 0.5);
   margin: 0;
   letter-spacing: 3px;
@@ -122,15 +122,15 @@
   0%,
   100% {
     text-shadow:
-      0 0 20px rgba(255, 215, 0, 0.8),
-      0 0 40px rgba(255, 215, 0, 0.4),
-      0 0 80px rgba(255, 215, 0, 0.2);
+      0 0 20px rgba(213, 218, 226, 0.8),
+      0 0 40px rgba(213, 218, 226, 0.4),
+      0 0 80px rgba(213, 218, 226, 0.2);
   }
   50% {
     text-shadow:
-      0 0 30px rgba(255, 215, 0, 1),
-      0 0 60px rgba(255, 215, 0, 0.6),
-      0 0 120px rgba(255, 215, 0, 0.3);
+      0 0 30px rgba(213, 218, 226, 1),
+      0 0 60px rgba(213, 218, 226, 0.6),
+      0 0 120px rgba(213, 218, 226, 0.3);
   }
 }
 
@@ -146,11 +146,11 @@
 /* Per-variant qualifying rule under the title (2026-08-18) */
 .bbj-title-qualifier {
   font-size: 13px;
-  color: #ffe4b5;
+  color: #e2e7ee;
   letter-spacing: 1px;
   margin-top: 8px;
   padding: 4px 14px;
-  border: 1px solid rgba(255, 215, 0, 0.45);
+  border: 1px solid rgba(213, 218, 226, 0.45);
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.35);
   display: inline-block;
@@ -186,7 +186,7 @@
   color: #ffffff;
   text-shadow:
     0 0 20px rgba(255, 255, 255, 0.5),
-    0 0 40px rgba(255, 215, 0, 0.3);
+    0 0 40px rgba(213, 218, 226, 0.3);
   font-variant-numeric: tabular-nums;
 }
 
@@ -217,8 +217,8 @@
 }
 
 .bbj-breakdown-loser {
-  border-color: rgba(255, 215, 0, 0.4);
-  background: rgba(255, 215, 0, 0.08);
+  border-color: rgba(213, 218, 226, 0.4);
+  background: rgba(213, 218, 226, 0.08);
 }
 
 .bbj-breakdown-winner {
@@ -384,8 +384,8 @@
   display: inline-block;
   font-size: 22px;
   font-weight: 800;
-  color: #ffd700;
-  text-shadow: 0 0 18px rgba(255, 215, 0, 0.75);
+  color: #d5dae2;
+  text-shadow: 0 0 18px rgba(213, 218, 226, 0.75);
   letter-spacing: 1px;
   margin-bottom: 4px;
 }

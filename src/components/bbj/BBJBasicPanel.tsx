@@ -121,16 +121,16 @@ export function BBJBasicPanel({ poolAmount = 0, highlightBB = null }: BBJBasicPa
   return (
     <div className="bbj-basic">
       <p className="bbj-basic__rules">
-        The pot must be at least {BBJ_RULES.minPotBB} big blinds and{' '}
-        {BBJ_RULES.minPlayersDealt} players must be dealt in preflop.
+        The Pot Must Be At Least {BBJ_RULES.minPotBB} Big Blinds And{' '}
+        {BBJ_RULES.minPlayersDealt} Players Must Be Dealt In Preflop.
         {BBJ_RULES.requireBothHoleCards
-          ? ' Both hole cards must play, for the losing hand and the winning hand.'
+          ? ' Both Hole Cards Must Play, For The Losing Hand And The Winning Hand.'
           : ''}
         {BBJ_RULES.onlyFirstRunout
-          ? ' When a pot is run more than once, only the first runout counts.'
+          ? ' When A Pot Is Run More Than Once, Only The First Runout Counts.'
           : ''}
         {BBJ_RULES.excludeDoubleBoard
-          ? ' The Bad Beat Jackpot is not available on double and triple board games.'
+          ? ' The Bad Beat Jackpot Is Not Available On Double And Triple Board Games.'
           : ''}
       </p>
 
@@ -143,7 +143,7 @@ export function BBJBasicPanel({ poolAmount = 0, highlightBB = null }: BBJBasicPa
               <th>Fee</th>
               <th>
                 Payout
-                <span className="bbj-basic__subhead">Bad beat / Winner / Table / Total</span>
+                <span className="bbj-basic__subhead">Bad Beat / Winner / Table / Total</span>
               </th>
             </tr>
           </thead>
@@ -165,7 +165,7 @@ export function BBJBasicPanel({ poolAmount = 0, highlightBB = null }: BBJBasicPa
                       {trimNum(t.pct * 0.25)}% / {t.pct}%
                     </span>
                     {poolAmount > 0 && (
-                      <span className="bbj-basic__today">{chips(total)} today</span>
+                      <span className="bbj-basic__today">{chips(total)} Today</span>
                     )}
                   </td>
                 </tr>
@@ -176,9 +176,9 @@ export function BBJBasicPanel({ poolAmount = 0, highlightBB = null }: BBJBasicPa
       </div>
 
       <p className="bbj-basic__note">
-        The fee is taken from the pot, not from your stack, and only on hands that meet the
-        conditions above. A hit pays the share of the main pool set by the stakes you were playing,
-        never the whole pool.
+        The Fee Is Taken From The Pot, Not From Your Stack, And Only On Hands That Meet The
+        Conditions Above. A Hit Pays The Share Of The Main Pool Set By The Stakes You Were Playing,
+        Never The Whole Pool.
       </p>
     </div>
   );

@@ -692,3 +692,103 @@
     animation: none;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ROADMAP BATCH 3 — quick menu, muted marker
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.table-tab-bar__muted-dot {
+  font-size: 0.7rem;
+  color: #ef4444;
+  text-decoration: line-through;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.table-tab-bar__qmenu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: transparent;
+}
+
+.table-tab-bar__qmenu {
+  position: fixed;
+  z-index: 401;
+  width: 200px;
+  padding: 6px;
+  border-radius: 12px;
+  background: rgba(16, 19, 28, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: qmenuIn 0.14s ease-out;
+}
+
+@keyframes qmenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.table-tab-bar__qmenu-title {
+  padding: 6px 10px 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.table-tab-bar__qmenu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.table-tab-bar__qmenu-item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.table-tab-bar__qmenu-item:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.table-tab-bar__qmenu-item--danger {
+  color: #f87171;
+}
+
+.table-tab-bar__qmenu-item--danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.table-tab-bar__qmenu-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table-tab-bar__qmenu {
+    animation: none;
+  }
+}

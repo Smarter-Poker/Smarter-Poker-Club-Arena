@@ -24,6 +24,7 @@ import { useUserTableSettings } from '../hooks/useUserTableSettings';
 import { useToast } from '../components/common/Toast';
 import { supabase } from '../lib/supabase';
 import { soundService, haptic } from '../services/SoundService';
+import { setSitOut } from '../services/GameServerAPI';
 import './MultiTablePage.css';
 
 // Lazy-load TablePage for code splitting
@@ -81,6 +82,8 @@ interface TableInstance {
   toCall?: number;
   /** Hero's current stack at this table. */
   heroStack?: number;
+  /** Hero is sitting out at this table. */
+  sittingOut?: boolean;
   /**
    * Dan 2026-08-15: a tab is either a live table or a LOBBY placeholder.
    *
@@ -658,6 +661,7 @@ export default function MultiTablePage() {
           lastAction: t.lastAction,
           folded: t.folded,
           handResult: t.handResult,
+          sittingOut: t.sittingOut,
         };
       }),
     [tables, secondsLeft, nowMs]
@@ -814,6 +818,83 @@ export default function MultiTablePage() {
     };
   }, []);
 
+  // ─── Batch 3: per-table mute ──────────────────────────────────────────
+  // An audio decision only: the muted table stays fully live and visible.
+  const [mutedIds, setMutedIds] = useState<string[]>([]);
+
+  // ─── Batch 3: tab quick actions (long-press menu in the tab bar) ──────
+  const handleQuickAction = useCallback(
+    async (tabId: string, action: 'sitout' | 'back' | 'leave' | 'mute') => {
+      switch (action) {
+        case 'mute':
+          setMutedIds((prev) =>
+            prev.includes(tabId) ? prev.filter((id) => id !== tabId) : [...prev, tabId]
+          );
+          break;
+        case 'leave':
+          // The secure cashout path - the owning TablePage handles teardown.
+          masterBus.emit('TABLE_MENU_ACTION', { tableId: tabId, action: 'FORCE_LEAVE_TABLE' });
+          break;
+        case 'sitout': {
+          const res = await setSitOut(tabId, true);
+          if (res?.success) {
+            toast.info('Sitting Out', 2500);
+          } else {
+            toast.error(res?.error || 'Could Not Sit Out', 4000);
+          }
+          break;
+        }
+        case 'back': {
+          const res = await setSitOut(tabId, false);
+          if (res?.success) {
+            toast.info('Back In The Game', 2500);
+          } else {
+            toast.error(res?.error || 'Could Not Return', 4000);
+          }
+          break;
+        }
+      }
+    },
+    [toast]
+  );
+
+  // ─── Batch 3: sit out everywhere / back everywhere ────────────────────
+  // One tap instead of four trips through per-table menus. Direct engine
+  // calls, never the per-table SIT_OUT bus action - that opens each table's
+  // modal, which is exactly the ceremony this shortcut exists to skip.
+  const handleSitOutAll = useCallback(async () => {
+    const live = tablesRef.current.filter((t) => !isLobbyTab(t) && t.seated);
+    if (live.length === 0) return;
+    const results = await Promise.all(live.map((t) => setSitOut(t.id, true)));
+    const ok = results.filter((r) => r?.success).length;
+    if (ok > 0) toast.info(`Sitting Out At ${ok} ${ok === 1 ? 'Table' : 'Tables'}`, 3000);
+    if (ok < live.length) toast.error('Some Tables Could Not Sit Out', 4000);
+  }, [toast]);
+
+  const handleBackAll = useCallback(async () => {
+    const live = tablesRef.current.filter((t) => !isLobbyTab(t) && t.seated);
+    if (live.length === 0) return;
+    const results = await Promise.all(live.map((t) => setSitOut(t.id, false)));
+    const ok = results.filter((r) => r?.success).length;
+    if (ok > 0) toast.info(`Back At ${ok} ${ok === 1 ? 'Table' : 'Tables'}`, 3000);
+    if (ok < live.length) toast.error('Some Tables Could Not Return', 4000);
+  }, [toast]);
+
+  // ─── Batch 3: drag-to-reorder tabs ────────────────────────────────────
+  // The active TABLE follows the reorder (identity, not index).
+  const handleReorder = useCallback((fromId: string, toIndex: number) => {
+    const prev = tablesRef.current;
+    const fromIdx = prev.findIndex((t) => t.id === fromId);
+    if (fromIdx === -1) return;
+    const activeId = prev[activeIndexRef.current]?.id;
+    const next = [...prev];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(Math.max(0, Math.min(toIndex, next.length)), 0, moved);
+    setTables(next);
+    const newActive = next.findIndex((t) => t.id === activeId);
+    if (newActive !== -1) setActiveIndex(newActive);
+  }, []);
+
   // ─── Table Management ────────────────────────────────────────────────
   const handleTabSelect = useCallback(
     (tabId: string) => {
@@ -827,17 +908,96 @@ export default function MultiTablePage() {
     [tables, activeIndex]
   );
 
-  const handleAddTable = useCallback(() => {
+  // ─── Batch 3: quick-join sheet on "+" ─────────────────────────────────
+  // Two taps to a new seat: "+" now offers up to five joinable cash tables
+  // in the player's club (same stakes as the active table first, then
+  // fullest), with the full lobby one tap further. No club context yet =
+  // straight to the lobby tab, exactly as before.
+  interface QuickJoinRow {
+    id: string;
+    name: string;
+    stakes: string;
+    players: number;
+    max: number;
+  }
+  const [quickJoin, setQuickJoin] = useState<{
+    open: boolean;
+    loading: boolean;
+    rows: QuickJoinRow[];
+  }>({ open: false, loading: false, rows: [] });
+  const closeQuickJoin = useCallback(
+    () => setQuickJoin((q) => (q.open ? { ...q, open: false } : q)),
+    []
+  );
+
+  const handleAddTable = useCallback(async () => {
     if (tables.length >= MAX_TABLES) {
       notifyCapReached('add');
       return;
     }
-    // Dan 2026-08-15: was `navigate('/?returnToMulti=true')`. Nothing in the
-    // app ever read `returnToMulti`, so this unmounted MultiTablePage and tore
-    // down every open game just to browse the lobby. Route it through the same
-    // bus event the in-table "+" uses so both entry points behave identically.
-    masterBus.emit('OPEN_LOBBY_TAB', {});
+    const club = homeClubIdRef.current;
+    if (!club) {
+      // Dan 2026-08-15: was `navigate('/?returnToMulti=true')` (dead param,
+      // container unmounted). The lobby TAB keeps every game mounted.
+      masterBus.emit('OPEN_LOBBY_TAB', {});
+      return;
+    }
+    setQuickJoin({ open: true, loading: true, rows: [] });
+    try {
+      const openIds = new Set(tablesRef.current.map((t) => t.id));
+      const activeStakes = tablesRef.current[activeIndexRef.current]?.stakes || '';
+      const { data } = await supabase
+        .from('tables')
+        .select('id, name, small_blind, big_blind, max_players, current_players, status')
+        .eq('club_id', club)
+        .is('tournament_id', null)
+        .neq('status', 'closed')
+        .limit(30);
+      const rows: QuickJoinRow[] = (data ?? [])
+        .filter(
+          (r) =>
+            !openIds.has(r.id as string) &&
+            (Number(r.current_players) || 0) < (Number(r.max_players) || 0)
+        )
+        .map((r) => ({
+          id: r.id as string,
+          name: (r.name as string) || 'Table',
+          stakes:
+            r.small_blind != null && r.big_blind != null
+              ? `${r.small_blind}/${r.big_blind}`
+              : '',
+          players: Number(r.current_players) || 0,
+          max: Number(r.max_players) || 0,
+        }))
+        .sort((a, b) => {
+          const sameA = a.stakes === activeStakes ? 0 : 1;
+          const sameB = b.stakes === activeStakes ? 0 : 1;
+          if (sameA !== sameB) return sameA - sameB;
+          return b.players - a.players; // fullest first - games, not ghost towns
+        })
+        .slice(0, 5);
+      setQuickJoin((q) => (q.open ? { open: true, loading: false, rows } : q));
+    } catch {
+      // Query failed - fall back to the lobby tab rather than a dead sheet.
+      setQuickJoin({ open: false, loading: false, rows: [] });
+      masterBus.emit('OPEN_LOBBY_TAB', {});
+    }
   }, [tables.length, notifyCapReached]);
+
+  const handleQuickJoinPick = useCallback(
+    (row: QuickJoinRow) => {
+      closeQuickJoin();
+      navigate(
+        `/table/${row.id}?name=${encodeURIComponent(row.name)}&stakes=${encodeURIComponent(row.stakes)}`
+      );
+    },
+    [closeQuickJoin, navigate]
+  );
+
+  const handleQuickJoinLobby = useCallback(() => {
+    closeQuickJoin();
+    masterBus.emit('OPEN_LOBBY_TAB', {});
+  }, [closeQuickJoin]);
 
   // ─── Update table info (called by child TablePage instances) ─────────
   // P1-2 FIX: bail out when nothing actually changed so setTables returns the
@@ -1322,6 +1482,11 @@ export default function MultiTablePage() {
                  footage, where the ticker above the felt follows the table
                  you are looking at. */
               jackpotAmount={tables[activeIndex]?.jackpot}
+              onReorder={handleReorder}
+              mutedIds={mutedIds}
+              onQuickAction={handleQuickAction}
+              onSitOutAll={handleSitOutAll}
+              onBackAll={handleBackAll}
             />
             {tables.length > 1 && (
               <button
@@ -1386,6 +1551,46 @@ export default function MultiTablePage() {
           </div>
         )}
 
+        {/* Batch 3: quick-join sheet (anchored under the tab bar) */}
+        {quickJoin.open && (
+          <>
+            <div className="multi-table-page__quickjoin-backdrop" onClick={closeQuickJoin} />
+            <div className="multi-table-page__quickjoin" role="dialog" aria-label="Quick join">
+              <div className="multi-table-page__quickjoin-title">Quick Join</div>
+              {quickJoin.loading ? (
+                <div className="multi-table-page__quickjoin-empty">Finding Games…</div>
+              ) : quickJoin.rows.length === 0 ? (
+                <div className="multi-table-page__quickjoin-empty">No Open Seats Right Now</div>
+              ) : (
+                quickJoin.rows.map((row) => (
+                  <button
+                    key={row.id}
+                    type="button"
+                    className="multi-table-page__quickjoin-row"
+                    onClick={() => handleQuickJoinPick(row)}
+                  >
+                    <span className="multi-table-page__quickjoin-name">{row.name}</span>
+                    <span className="multi-table-page__quickjoin-meta">
+                      {row.stakes && <span>{row.stakes}</span>}
+                      <span>
+                        {row.players}/{row.max}
+                      </span>
+                    </span>
+                    <span className="multi-table-page__quickjoin-cta">Join</span>
+                  </button>
+                ))
+              )}
+              <button
+                type="button"
+                className="multi-table-page__quickjoin-lobby"
+                onClick={handleQuickJoinLobby}
+              >
+                Browse Full Lobby
+              </button>
+            </div>
+          </>
+        )}
+
         {/* Tile View Grid or Swipe Container */}
         {isTileView && tables.length > 1 ? (
           <div
@@ -1419,6 +1624,7 @@ export default function MultiTablePage() {
                       onTableInfoUpdate={getTableInfoCb(table.id)}
                       isMultiTable={true}
                       isActive={idx === activeIndex && !hidden}
+                      muted={mutedIds.includes(table.id)}
                     />
                   )}
                 </Suspense>
@@ -1478,6 +1684,7 @@ export default function MultiTablePage() {
                         key={table.id}
                         embeddedTableId={table.id}
                         onTableInfoUpdate={getTableInfoCb(table.id)}
+                        muted={mutedIds.includes(table.id)}
                         // Dan 2026-08-19: while hidden on another route no tab is
                         // "active" — ambient table sounds must not follow the
                         // player into the cashier (isMultiTable true when hidden

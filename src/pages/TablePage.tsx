@@ -556,6 +556,9 @@ interface TablePageProps {
     toCall?: number;
     /** Hero's current stack, for the aggregated session view. */
     heroStack?: number;
+    /** Hero is sitting out at this table (drives the long-press menu's
+     *  Sit Out / I'm Back label and the sit-out-everywhere control). */
+    sittingOut?: boolean;
   }) => void;
   /** Whether this table is part of a multi-table session (hides own header if tab bar is shown) */
   isMultiTable?: boolean;
@@ -567,6 +570,13 @@ interface TablePageProps {
    * single-table mode (no MultiTablePage wrapper) behaves identically.
    */
   isActive?: boolean;
+  /**
+   * Roadmap batch 3: per-table mute from the tab's long-press menu. Silences
+   * every sound this table makes (ambient, bell, tick-tock) without touching
+   * the global sound switch or any other table. Haptics stay - mute is an
+   * audio decision.
+   */
+  muted?: boolean;
 }
 
 /**
@@ -603,6 +613,7 @@ export default function TablePage({
   onTableInfoUpdate,
   isMultiTable = false,
   isActive = true,
+  muted = false,
 }: TablePageProps = {}) {
   const { tableId: routeTableId } = useParams<{ tableId: string }>();
   const tableId = embeddedTableId || routeTableId;
@@ -616,7 +627,7 @@ export default function TablePage({
   // fire so the user knows it's their turn even on a background table and
   // hears feedback for buttons they pressed. Single-table mode (no
   // MultiTablePage wrapper) defaults isActive=true so behavior is unchanged.
-  const ambientSoundsAllowed = !isMultiTable || isActive;
+  const ambientSoundsAllowed = (!isMultiTable || isActive) && !muted;
 
   // Prevent Chrome from throttling this tab (keeps horse timers alive)
   useTabKeepAlive();
@@ -1853,6 +1864,11 @@ export default function TablePage({
     [tableState.currentBet, tableState.lastBetAmounts, tableState.heroSeat]
   );
 
+  const heroTabSittingOut = useMemo(() => {
+    const hero = tableState.players[tableState.heroSeat - 1];
+    return !!hero && hero.status === 'sitting_out';
+  }, [tableState.players, tableState.heroSeat]);
+
   // Win/loss edge for the tab showdown flash. engineWinners only carries a
   // value while the engine is settling a hand, so this collapses back to ''
   // between hands; the hand number key makes back-to-back same outcomes
@@ -1895,6 +1911,7 @@ export default function TablePage({
       handResult: heroTabResult,
       toCall: isHeroTurn ? heroTabToCall : undefined,
       heroStack: heroTabStack,
+      sittingOut: heroTabSittingOut,
     });
   }, [
     tableState.tableName,
@@ -1908,6 +1925,7 @@ export default function TablePage({
     tableState.actionTimerStartTime,
     heroTabToCall,
     heroTabStack,
+    heroTabSittingOut,
     heroTabCards,
     heroTabLastAction,
     heroTabFolded,
@@ -6072,7 +6090,7 @@ export default function TablePage({
             // Batch 2 tiering: the BELL is the active table's sound; a
             // background table's turn start gets the softer ping from
             // MultiTablePage instead, so four tables never ring four bells.
-            if (soundService.isEnabled() && (isActive || !isMultiTable)) {
+            if (soundService.isEnabled() && (isActive || !isMultiTable) && !muted) {
               soundService.playTurnAlert();
             }
           }

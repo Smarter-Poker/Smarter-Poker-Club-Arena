@@ -48,6 +48,8 @@ export interface TabInfo {
    *  pulses green/red for a moment so a background table's result is
    *  visible without switching. */
   handResult?: string;
+  /** Hero is sitting out at this table (long-press menu label). */
+  sittingOut?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -110,6 +112,16 @@ export interface TableTabBarProps {
   onAddTable: () => void;
   jackpotAmount?: number;
   maxTables?: number;
+  /** Batch 3: reorder a tab to a new index (drag on desktop, long-press
+   *  menu Move Left/Right everywhere). */
+  onReorder?: (fromId: string, toIndex: number) => void;
+  /** Batch 3: per-table muted ids (audio only). */
+  mutedIds?: string[];
+  /** Batch 3: long-press quick actions. */
+  onQuickAction?: (tabId: string, action: 'sitout' | 'back' | 'leave' | 'mute') => void;
+  /** Batch 3: one-tap sit out / return across every seated table. */
+  onSitOutAll?: () => void;
+  onBackAll?: () => void;
   /**
    * Supabase realtime link is down or reconnecting. Multi-tabling players
    * cannot otherwise tell that their tables have stopped receiving updates —
@@ -130,6 +142,11 @@ export function TableTabBar({
   jackpotAmount,
   maxTables = 4,
   realtimeDown = false,
+  onReorder,
+  mutedIds,
+  onQuickAction,
+  onSitOutAll,
+  onBackAll,
 }: TableTabBarProps) {
   const emptySlots = maxTables - tabs.length;
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
@@ -233,6 +250,140 @@ export function TableTabBar({
     return () => timeouts.forEach((t) => clearTimeout(t));
   }, [tabs.length]);
 
+  // ─── Batch 3: long-press quick menu + mouse drag-to-reorder ───────────
+  // Touch drag fights the strip's own horizontal scroll, so touch gets the
+  // long-press menu (with Move Left/Right) and the mouse gets live dragging.
+  const [quickMenu, setQuickMenu] = useState<{ tabId: string; left: number; top: number } | null>(
+    null
+  );
+  const [dragState, setDragState] = useState<{ id: string; dx: number } | null>(null);
+  const gestureRef = useRef<{
+    id: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    dragging: boolean;
+    suppressClick: boolean;
+    isMouse: boolean;
+    longPressTimer: ReturnType<typeof setTimeout> | null;
+  } | null>(null);
+  const tabsRowRef = useRef<HTMLDivElement>(null);
+
+  const openQuickMenu = useCallback((tabId: string, anchor: DOMRect) => {
+    const MENU_W = 200;
+    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - MENU_W - 8));
+    setQuickMenu({ tabId, left, top: anchor.bottom + 6 });
+  }, []);
+
+  const endGesture = useCallback(() => {
+    const g = gestureRef.current;
+    if (g?.longPressTimer) clearTimeout(g.longPressTimer);
+    gestureRef.current = null;
+    setDragState(null);
+  }, []);
+
+  const handleTabPointerDown = useCallback(
+    (e: React.PointerEvent, tabId: string) => {
+      if (e.button !== 0) return;
+      const target = e.currentTarget as HTMLElement;
+      const rect = target.getBoundingClientRect();
+      const g = {
+        id: tabId,
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        dragging: false,
+        suppressClick: false,
+        isMouse: e.pointerType === 'mouse',
+        longPressTimer: null as ReturnType<typeof setTimeout> | null,
+      };
+      g.longPressTimer = setTimeout(() => {
+        const live = gestureRef.current;
+        if (live && live.id === tabId && !live.dragging) {
+          live.suppressClick = true;
+          openQuickMenu(tabId, rect);
+        }
+      }, 500);
+      gestureRef.current = g;
+    },
+    [openQuickMenu]
+  );
+
+  const handleTabPointerMove = useCallback((e: React.PointerEvent, tabId: string) => {
+    const g = gestureRef.current;
+    if (!g || g.id !== tabId) return;
+    const dx = e.clientX - g.startX;
+    const dy = e.clientY - g.startY;
+    if (!g.dragging) {
+      // Any real movement means this is not a long-press.
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+        if (g.longPressTimer) clearTimeout(g.longPressTimer);
+        g.longPressTimer = null;
+      }
+      if (g.isMouse && Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
+        g.dragging = true;
+        g.suppressClick = true;
+        try {
+          (e.currentTarget as HTMLElement).setPointerCapture(g.pointerId);
+        } catch {
+          /* capture is best-effort */
+        }
+      }
+    }
+    if (g.dragging) setDragState({ id: tabId, dx });
+  }, []);
+
+  const handleTabPointerUp = useCallback(
+    (e: React.PointerEvent, tabId: string) => {
+      const g = gestureRef.current;
+      if (!g || g.id !== tabId) return;
+      if (g.longPressTimer) clearTimeout(g.longPressTimer);
+      if (g.dragging && onReorder && tabsRowRef.current) {
+        // Insertion index = count of pills whose midpoint sits left of the
+        // pointer (excluding the dragged pill itself).
+        const pills = Array.from(
+          tabsRowRef.current.querySelectorAll<HTMLElement>('[data-tabid]')
+        ).filter((el) => el.dataset.tabid !== tabId);
+        let toIndex = 0;
+        for (const el of pills) {
+          const r = el.getBoundingClientRect();
+          if (e.clientX > r.left + r.width / 2) toIndex++;
+        }
+        onReorder(tabId, toIndex);
+      }
+      const suppress = g.suppressClick;
+      endGesture();
+      // Keep suppression alive for the click that follows pointerup.
+      if (suppress) {
+        gestureRef.current = {
+          id: tabId,
+          pointerId: -1,
+          startX: 0,
+          startY: 0,
+          dragging: false,
+          suppressClick: true,
+          isMouse: false,
+          longPressTimer: null,
+        };
+        setTimeout(() => {
+          if (gestureRef.current?.pointerId === -1) gestureRef.current = null;
+        }, 150);
+      }
+    },
+    [onReorder, endGesture]
+  );
+
+  const handleTabClick = useCallback(
+    (tabId: string) => {
+      if (gestureRef.current?.suppressClick && gestureRef.current.id === tabId) {
+        gestureRef.current = null;
+        return;
+      }
+      onTabSelect(tabId);
+    },
+    [onTabSelect]
+  );
+
   const handleClose = useCallback(
     (e: React.MouseEvent, tabId: string) => {
       e.stopPropagation();
@@ -313,7 +464,7 @@ export function TableTabBar({
       )}
 
       {/* Table Tabs */}
-      <div className="table-tab-bar__tabs">
+      <div className="table-tab-bar__tabs" ref={tabsRowRef}>
         {tabs.map((tab, i) => {
           const isActive = tab.id === activeTabId;
           // Urgency is a property of the clock, not of which tab is focused —
@@ -324,6 +475,8 @@ export function TableTabBar({
           const hasCards = !!tab.holeCards && tab.holeCards.length >= 2;
           const flash = actionFlash[tab.id];
           const result = resultFlash[tab.id];
+          const isMuted = !!mutedIds?.includes(tab.id);
+          const isDragging = dragState?.id === tab.id;
 
           return (
             <button
@@ -340,7 +493,18 @@ export function TableTabBar({
               ]
                 .filter(Boolean)
                 .join(' ')}
-              onClick={() => onTabSelect(tab.id)}
+              onClick={() => handleTabClick(tab.id)}
+              onPointerDown={(e) => handleTabPointerDown(e, tab.id)}
+              onPointerMove={(e) => handleTabPointerMove(e, tab.id)}
+              onPointerUp={(e) => handleTabPointerUp(e, tab.id)}
+              onPointerCancel={endGesture}
+              onContextMenu={(e) => {
+                // Right-click = the same quick menu (desktop parity with
+                // long-press), never the browser menu on a game control.
+                e.preventDefault();
+                openQuickMenu(tab.id, (e.currentTarget as HTMLElement).getBoundingClientRect());
+              }}
+              data-tabid={tab.id}
               // Audit 2026-08-20: when the tab shows mini cards the name span
               // is gone and MiniCards is aria-hidden, so the button had NO
               // accessible name at all. Announce the table and its state; the
@@ -348,11 +512,20 @@ export function TableTabBar({
               // without (the table view reads them properly).
               aria-label={`${formatGameTitle(tab.name)}${tab.isMyTurn ? ', your turn' : ''}`}
               aria-current={isActive ? 'true' : undefined}
-              style={{
-                opacity: visibleItems.has(i) ? 1 : 0,
-                transform: visibleItems.has(i) ? 'translateY(0)' : 'translateY(8px)',
-                transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              }}
+              style={
+                isDragging
+                  ? {
+                      opacity: 0.92,
+                      transform: `translateX(${dragState!.dx}px)`,
+                      transition: 'none',
+                      zIndex: 5,
+                    }
+                  : {
+                      opacity: visibleItems.has(i) ? 1 : 0,
+                      transform: visibleItems.has(i) ? 'translateY(0)' : 'translateY(8px)',
+                      transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                    }
+              }
             >
               {/* PokerBros parity (Dan 2026-08-20): a tab where the hero holds
                   live cards previews THOSE CARDS; the name only shows between
@@ -402,6 +575,14 @@ export function TableTabBar({
                   style={{ width: `${Math.round(tab.turnProgress * 100)}%` }}
                   aria-hidden="true"
                 />
+              )}
+
+              {/* Batch 3: muted marker (audio only; U+266A is a text symbol,
+                  not emoji, and SeatSlot already uses suit glyphs). */}
+              {isMuted && (
+                <span className="table-tab-bar__muted-dot" title="Table muted" aria-hidden="true">
+                  ♪
+                </span>
               )}
 
               {/* Close control — only on hover for non-sole tabs.
@@ -465,6 +646,70 @@ export function TableTabBar({
           </span>
         </div>
       )}
+
+      {/* Batch 3: long-press / right-click quick menu */}
+      {quickMenu &&
+        (() => {
+          const tab = tabs.find((t) => t.id === quickMenu.tabId);
+          if (!tab) return null;
+          const idx = tabs.findIndex((t) => t.id === quickMenu.tabId);
+          const muted = !!mutedIds?.includes(tab.id);
+          const item = (
+            label: string,
+            fn: () => void,
+            danger = false,
+            disabled = false
+          ) => (
+            <button
+              key={label}
+              type="button"
+              disabled={disabled}
+              className={`table-tab-bar__qmenu-item${danger ? ' table-tab-bar__qmenu-item--danger' : ''}`}
+              onClick={() => {
+                setQuickMenu(null);
+                fn();
+              }}
+            >
+              {label}
+            </button>
+          );
+          return (
+            <>
+              <div className="table-tab-bar__qmenu-backdrop" onClick={() => setQuickMenu(null)} />
+              <div
+                className="table-tab-bar__qmenu"
+                style={{ left: quickMenu.left, top: quickMenu.top }}
+                role="menu"
+                aria-label={`${tab.name} quick actions`}
+              >
+                <div className="table-tab-bar__qmenu-title">{formatGameTitle(tab.name)}</div>
+                {onQuickAction &&
+                  item(tab.sittingOut ? "I'm Back" : 'Sit Out', () =>
+                    onQuickAction(tab.id, tab.sittingOut ? 'back' : 'sitout')
+                  )}
+                {onQuickAction &&
+                  item(muted ? 'Unmute Table' : 'Mute Table', () => onQuickAction(tab.id, 'mute'))}
+                {onReorder &&
+                  item('Move Left', () => onReorder(tab.id, Math.max(0, idx - 1)), false, idx === 0)}
+                {onReorder &&
+                  item(
+                    'Move Right',
+                    () => onReorder(tab.id, Math.min(tabs.length - 1, idx + 1)),
+                    false,
+                    idx === tabs.length - 1
+                  )}
+                {onQuickAction &&
+                  tabs.length > 1 &&
+                  item('Leave Table', () => onQuickAction(tab.id, 'leave'), true)}
+                {(onSitOutAll || onBackAll) && tabs.length > 1 && (
+                  <div className="table-tab-bar__qmenu-sep" aria-hidden="true" />
+                )}
+                {onSitOutAll && tabs.length > 1 && item('Sit Out All Tables', onSitOutAll)}
+                {onBackAll && tabs.length > 1 && item('Back At All Tables', onBackAll)}
+              </div>
+            </>
+          );
+        })()}
 
       {/* Table Menu */}
       <div className="table-tab-bar__menu-container">

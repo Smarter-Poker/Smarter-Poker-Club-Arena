@@ -486,3 +486,130 @@
 .multi-table-page__lobby-back:hover {
   background: rgba(0, 212, 255, 0.12);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ROADMAP BATCH 3 — quick-join sheet (anchored under the tab bar)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.multi-table-page__quickjoin-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 390;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.multi-table-page__quickjoin {
+  position: fixed;
+  z-index: 391;
+  top: calc(56px + env(safe-area-inset-top, 0));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(340px, calc(100vw - 24px));
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(16, 19, 28, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: quickJoinIn 0.16s ease-out;
+}
+
+@keyframes quickJoinIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.multi-table-page__quickjoin-title {
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.multi-table-page__quickjoin-empty {
+  padding: 14px 6px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.85rem;
+}
+
+.multi-table-page__quickjoin-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.multi-table-page__quickjoin-row:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.multi-table-page__quickjoin-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.multi-table-page__quickjoin-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.55);
+  flex-shrink: 0;
+}
+
+.multi-table-page__quickjoin-cta {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.multi-table-page__quickjoin-lobby {
+  margin-top: 2px;
+  width: 100%;
+  padding: 9px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.multi-table-page__quickjoin-lobby:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .multi-table-page__quickjoin {
+    animation: none;
+  }
+}

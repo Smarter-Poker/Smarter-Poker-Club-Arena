@@ -1,0 +1,2 @@
+function n(){if(typeof window>"u")return 1;try{const t=getComputedStyle(document.documentElement).getPropertyValue("--animation-speed"),e=parseFloat(t);if(Number.isFinite(e)&&e>0)return Math.min(3,Math.max(.25,e))}catch{}return 1}function r(){if(typeof window>"u"||!window.matchMedia)return!1;try{return window.matchMedia("(prefers-reduced-motion: reduce)").matches}catch{return!1}}export{n as g,r as p};
+//# sourceMappingURL=animationSpeed-jQIPpwCR-v6.js.map

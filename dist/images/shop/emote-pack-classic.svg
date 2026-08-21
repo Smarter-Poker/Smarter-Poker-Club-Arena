@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 260"><defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#1e202a"/><stop offset="1" stop-color="#14161e"/>
+</linearGradient>
+<radialGradient id="glow" cx="0.5" cy="0.42" r="0.65">
+<stop offset="0" stop-color="#f7c52a" stop-opacity="0.35"/><stop offset="1" stop-color="#f7c52a" stop-opacity="0"/>
+</radialGradient>
+</defs>
+<rect width="400" height="260" rx="14" fill="url(#bg)"/>
+<rect width="400" height="260" rx="14" fill="url(#glow)"/>
+<rect x="1" y="1" width="398" height="258" rx="13" fill="none" stroke="#f7c52a" stroke-opacity="0.35" stroke-width="2"/><circle cx="200" cy="112" r="58" fill="#f7c52a"/>
+<circle cx="180" cy="98" r="8" fill="#18191A"/>
+<circle cx="220" cy="98" r="8" fill="#18191A"/>
+<path d="M172 128 q28 26 56 0" fill="none" stroke="#18191A" stroke-width="7" stroke-linecap="round"/><text x="200" y="238" text-anchor="middle" font-family="Inter,-apple-system,sans-serif" font-size="15" font-weight="700" fill="#e4e6eb" opacity="0.85">CLASSIC EMOTES</text></svg>

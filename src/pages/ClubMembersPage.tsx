@@ -472,13 +472,14 @@ export default function ClubMembersPage() {
           const userIds = data.map((m: any) => m.user_id);
           const profileMap: Record<string, any> = {};
           if (userIds.length > 0) {
-            const chunkSize = 150;
+            const chunkSize = 30;
             for (let i = 0; i < userIds.length; i += chunkSize) {
               const chunk = userIds.slice(i, i + chunkSize);
-              const { data: profiles } = await supabase
+              const { data: profiles, error: profileErr } = await supabase
                 .from('profiles')
                 .select('id, username, display_name, avatar_url:arena_avatar_url')
                 .in('id', chunk);
+              if (profileErr) console.error('Profiles error:', profileErr);
               if (profiles) {
                 for (const p of profiles) profileMap[p.id] = p;
               }

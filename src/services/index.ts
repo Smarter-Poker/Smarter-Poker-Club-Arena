@@ -125,7 +125,6 @@ export type { DailyBonus, SpecialBonus, BonusStatus } from './BonusService';
 
 // Messaging & Notifications
 export { messagingService } from './MessagingService';
-export type { Message, Conversation, MessageReaction } from './MessagingService';
 export { notificationService } from './NotificationService';
 export type { Notification } from './NotificationService';
 

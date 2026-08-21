@@ -153,13 +153,34 @@ export function snapToWholeBuyIn(amount: number): number {
 export function splitBuyIn(total: number, rakeRate: number = DEFAULT_RAKE_RATE): BuyInSplit {
   const t = Math.max(0, Math.round(Number(total) || 0));
   if (t === 0) return { total: 0, prize: 0, fee: 0 };
-  // WHOLE fee, not a cent-rounded one: see the header. A 15 total takes a 2
-  // fee, not 1.50, so nothing downstream ever has a decimal to print.
-  // Dan 2026-08-21: EVERY buy-in pays the registration fee. round(4 * 0.1)
-  // is 0, so small buy-ins were entering rake-free; a positive total now
-  // always carries at least one chip of fee. A freeroll (0) returns above
-  // and stays 0/0.
-  const fee = Math.min(t, Math.max(1, Math.round(t * rakeRate)));
+  /**
+   * Dan 2026-08-21 (second batch): "RAKE IS EXCEEDING 10% ON THIS TOURNAMENT."
+   * It was, and by a lot. Two earlier rules in this one line were fighting the
+   * cap, and both of them won:
+   *
+   *   Math.round  — a 15 total gave round(1.5) = 2, i.e. 13.33%. Rounding a
+   *                 fee UP is rounding the house's cut up past its own ceiling.
+   *   Math.max(1) — added so small games could not enter rake-free. It made
+   *                 them enter at ABSURD rake instead: a 5 total paid 1 (20%),
+   *                 a 3 paid 1 (33%), a 1 paid 1 (100%). Live proof: every
+   *                 Pre-Dawn Mystery Bounty today ran at 4 + 1 = 20%.
+   *
+   * 10% is a ceiling, not a target, so the fee FLOORS. It can never round up
+   * through the cap, and no minimum is imposed:
+   *
+   *     10 -> 1 (10.0%)   15 -> 1 (6.7%)   20 -> 2 (10.0%)
+   *     25 -> 2 (8.0%)   100 -> 10 (10.0%)
+   *
+   * The cost is that a total under 10 now takes NO rake, which reverses the
+   * "every buy-in pays a fee" rule from earlier today. That rule cannot coexist
+   * with a hard 10% cap while fees stay whole numbers — one chip on a 5 game is
+   * 20% whatever else is true — and a cap the house exceeds is the more serious
+   * of the two problems. Micro games are promotional; that is the trade.
+   *
+   * `assertRakeWithinCap` below is the guard that fails loudly if a third
+   * writer ever reintroduces a rounding that breaches this.
+   */
+  const fee = Math.min(t, Math.floor(t * rakeRate + 1e-9));
   // prize is computed by SUBTRACTION, never by its own rounding. Rounding both
   // ends independently is how prize + fee stops equalling total, and money that
   // does not reconcile on a money surface is a real bug later.
@@ -169,6 +190,55 @@ export function splitBuyIn(total: number, rakeRate: number = DEFAULT_RAKE_RATE):
 /** Snap first, then split. What every tournament generator should call. */
 export function buyInFor(amount: number, rakeRate: number = DEFAULT_RAKE_RATE): BuyInSplit {
   return splitBuyIn(snapToWholeBuyIn(amount), rakeRate);
+}
+
+/**
+ * THE CEILING (Dan 2026-08-21): the house never takes more than 10% of what a
+ * player pays for a tournament seat.
+ *
+ * Exported as its own predicate rather than left implicit inside splitBuyIn
+ * because splitBuyIn is not the only writer — owner-created tournaments come
+ * through a form, and the recurring generator has its own configs. Anything
+ * that writes `buy_in_amount` / `buy_in_fee` can check itself against this, and
+ * the CHECK constraint added in
+ * supabase/migrations/20260821_tournament_rake_cap.sql enforces it at the last
+ * possible moment for writers nobody remembered to update.
+ *
+ * Freerolls (total 0) are trivially within cap.
+ */
+export function rakePctOf(prize: number, fee: number): number {
+  const total = Number(prize || 0) + Number(fee || 0);
+  if (!(total > 0)) return 0;
+  return (Number(fee || 0) / total) * 100;
+}
+
+export function isRakeWithinCap(
+  prize: number,
+  fee: number,
+  rakeRate: number = DEFAULT_RAKE_RATE
+): boolean {
+  // 1e-9 absorbs float noise on exact-10% splits like 20 -> 2.
+  return rakePctOf(prize, fee) <= rakeRate * 100 + 1e-9;
+}
+
+/**
+ * Clamp any (prize, fee) pair onto the cap, preserving the total the player
+ * pays. Use at a write boundary that has a fee it did not derive from
+ * `splitBuyIn` — it keeps the advertised price identical and only moves the
+ * split, so a player is never charged more than they were shown.
+ */
+export function clampRakeToCap(
+  prize: number,
+  fee: number,
+  rakeRate: number = DEFAULT_RAKE_RATE
+): { prize: number; fee: number } {
+  const total = Math.max(0, Math.round(Number(prize || 0) + Number(fee || 0)));
+  if (total === 0) return { prize: 0, fee: 0 };
+  const capped = Math.min(
+    Math.max(0, Math.round(Number(fee || 0))),
+    Math.floor(total * rakeRate + 1e-9)
+  );
+  return { prize: total - capped, fee: capped };
 }
 
 /**

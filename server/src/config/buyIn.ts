@@ -73,13 +73,22 @@ export function snapToWholeBuyIn(amount: number): number {
 export function splitBuyIn(total: number, rakeRate: number = DEFAULT_RAKE_RATE): BuyInSplit {
   const t = Math.max(0, Math.round(Number(total) || 0));
   if (t === 0) return { total: 0, prize: 0, fee: 0 };
-  // WHOLE fee: a 15 total takes 2, not 1.50. Nothing downstream then has a
-  // decimal to store or print.
-  // Dan 2026-08-21: EVERY buy-in pays the registration fee. round(4 * 0.1)
-  // is 0, so small buy-ins were entering rake-free; a positive total now
-  // always carries at least one chip of fee. A freeroll (0) returns above
-  // and stays 0/0.
-  const fee = Math.min(t, Math.max(1, Math.round(t * rakeRate)));
+  /**
+   * Dan 2026-08-21 (second batch): "RAKE IS EXCEEDING 10% ON THIS TOURNAMENT."
+   *
+   * Two earlier rules on this line both pushed the fee ABOVE the cap:
+   * `Math.round` turned a 15 total into a 2 fee (13.33%), and the `Math.max(1)`
+   * floor — added so micro games could not enter rake-free — made a 5 total pay
+   * 20%, a 3 pay 33% and a 1 pay 100%. Every Pre-Dawn Mystery Bounty that ran
+   * today was 4 + 1 = 20%.
+   *
+   * 10% is a ceiling, so the fee FLOORS and no minimum is imposed. A total
+   * under 10 therefore takes no rake — that rule cannot coexist with a hard cap
+   * while fees are whole numbers, and a breached cap is the worse failure.
+   *
+   * MIRROR of src/utils/buyIn.ts — change one, change both.
+   */
+  const fee = Math.min(t, Math.floor(t * rakeRate + 1e-9));
   // Subtraction, not a second independent rounding — otherwise prize + fee can
   // miss total, and money that does not reconcile is a real bug.
   return { total: t, prize: t - fee, fee };
@@ -88,4 +97,42 @@ export function splitBuyIn(total: number, rakeRate: number = DEFAULT_RAKE_RATE):
 /** Snap, then split. Every generator calls THIS. */
 export function buyInFor(amount: number, rakeRate: number = DEFAULT_RAKE_RATE): BuyInSplit {
   return splitBuyIn(snapToWholeBuyIn(amount), rakeRate);
+}
+
+/**
+ * THE CEILING (Dan 2026-08-21): the house never takes more than 10% of what a
+ * player pays for a tournament seat. Mirror of src/utils/buyIn.ts; the CHECK
+ * constraint in supabase/migrations/20260821_tournament_rake_cap.sql is the
+ * backstop for any writer that forgets to call this.
+ */
+export function rakePctOf(prize: number, fee: number): number {
+  const total = Number(prize || 0) + Number(fee || 0);
+  if (!(total > 0)) return 0;
+  return (Number(fee || 0) / total) * 100;
+}
+
+export function isRakeWithinCap(
+  prize: number,
+  fee: number,
+  rakeRate: number = DEFAULT_RAKE_RATE
+): boolean {
+  return rakePctOf(prize, fee) <= rakeRate * 100 + 1e-9;
+}
+
+/**
+ * Clamp a (prize, fee) pair onto the cap without changing the total the player
+ * pays — only the split moves, so nobody is ever charged more than advertised.
+ */
+export function clampRakeToCap(
+  prize: number,
+  fee: number,
+  rakeRate: number = DEFAULT_RAKE_RATE
+): { prize: number; fee: number } {
+  const total = Math.max(0, Math.round(Number(prize || 0) + Number(fee || 0)));
+  if (total === 0) return { prize: 0, fee: 0 };
+  const capped = Math.min(
+    Math.max(0, Math.round(Number(fee || 0))),
+    Math.floor(total * rakeRate + 1e-9)
+  );
+  return { prize: total - capped, fee: capped };
 }

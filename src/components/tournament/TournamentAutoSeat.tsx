@@ -38,6 +38,14 @@ const POLL_MS = 12_000;
 /** Seats older than this were not "just started" — do not yank the player. */
 const FRESH_MS = 10 * 60 * 1000;
 const SEEN_KEY = 'ca_tourney_autoseat_seen';
+/**
+ * Dan 2026-08-21 (item 4): tables we have already warned the player they are
+ * being blinded off at. Separate from SEEN_KEY — that one is "we opened this
+ * table for you once", this one is "we told you your chips are draining".
+ * Re-armed as soon as the seat stops being away, so a player who sits back
+ * down and leaves again is warned again.
+ */
+const BLIND_WARNED_KEY = 'ca_tourney_blindoff_warned';
 
 function readSeen(): Set<string> {
   try {
@@ -54,11 +62,33 @@ function writeSeen(s: Set<string>) {
   }
 }
 
+function readWarned(): Set<string> {
+  try {
+    return new Set(JSON.parse(sessionStorage.getItem(BLIND_WARNED_KEY) || '[]') as string[]);
+  } catch {
+    return new Set();
+  }
+}
+function writeWarned(s: Set<string>) {
+  try {
+    sessionStorage.setItem(BLIND_WARNED_KEY, JSON.stringify([...s].slice(-40)));
+  } catch {
+    /* see writeSeen */
+  }
+}
+
 export default function TournamentAutoSeat() {
   const { user } = useAuthUser();
   const navigate = useNavigate();
   const seenRef = useRef<Set<string>>(readSeen());
+  const warnedRef = useRef<Set<string>>(readWarned());
   const [blocked, setBlocked] = useState<{ tableId: string; name: string } | null>(null);
+  /** Dan 2026-08-21, item 4: the "you are being blinded off" alert. */
+  const [blindingOff, setBlindingOff] = useState<{
+    tableId: string;
+    name: string;
+    chips: number;
+  } | null>(null);
   const pendingRef = useRef<Map<string, string>>(new Map()); // tableId -> tournament name
 
   // MultiTablePage answers with this when the player is already at the cap.
@@ -73,15 +103,25 @@ export default function TournamentAutoSeat() {
   const check = useCallback(async () => {
     if (!user?.id || document.visibilityState !== 'visible') return;
     try {
-      const since = new Date(Date.now() - FRESH_MS).toISOString();
+      /**
+       * One query serves both jobs. The auto-seat half only cares about FRESH
+       * seats (a tournament that just started); the blinding-off half
+       * (Dan 2026-08-21, item 4) cares about seats of ANY age — a player is
+       * usually an hour into a tournament by the time they get blinded off —
+       * so the `joined_at` floor moved out of the query and into the auto-seat
+       * branch that actually needs it.
+       */
       const { data, error } = await supabase
         .from('table_seats')
-        .select('table_id, joined_at, tables:table_id (id, name, tournament_id, status)')
+        .select(
+          'table_id, joined_at, stack, is_sitting_out, is_away, tables:table_id (id, name, tournament_id, status)'
+        )
         .eq('user_id', user.id)
         .is('left_at', null)
-        .gte('joined_at', since)
-        .limit(10);
+        .limit(12);
       if (error) throw error;
+
+      const freshFloor = Date.now() - FRESH_MS;
 
       for (const row of data || []) {
         const t = (Array.isArray(row.tables) ? row.tables[0] : row.tables) as {
@@ -92,13 +132,55 @@ export default function TournamentAutoSeat() {
         } | null;
         if (!t?.tournament_id) continue; // cash seat — not our business
         const tableId = (row.table_id as string) || t.id || '';
-        if (!tableId || seenRef.current.has(tableId)) continue;
+        if (!tableId) continue;
         if (t.status && ['closed', 'completed', 'cancelled', 'finished'].includes(t.status))
           continue;
 
+        const name = t.name || 'Your Tournament';
+
+        /**
+         * ── BLINDING OFF (item 4) ────────────────────────────────────────
+         * The engine flags a seat `is_sitting_out` after consecutive timeouts
+         * and `is_away` on a disconnect, and it keeps taking that player's
+         * blinds and antes either way. That flag on a TOURNAMENT seat is the
+         * server's own statement that this player is paying to not be there,
+         * which is exactly the condition Dan described — no client-side
+         * guessing about stack deltas required.
+         *
+         * Warn once per table, and re-arm the moment they are back in, so a
+         * player who sits down and wanders off again is told again.
+         */
+        const away = Boolean(row.is_sitting_out) || Boolean(row.is_away);
+        if (away) {
+          if (!warnedRef.current.has(tableId)) {
+            warnedRef.current.add(tableId);
+            writeWarned(warnedRef.current);
+            const chips = Number(row.stack) || 0;
+            setBlindingOff({ tableId, name, chips });
+            // The phone half. Fire-and-forget: a failed push must never stop
+            // the on-screen popup, which is the alert that actually matters
+            // when they are looking at the app.
+            void import('../../services/PushNotificationService')
+              .then(({ pushNotificationService }) =>
+                pushNotificationService.notifyBlindingOff(user.id, name, tableId, chips)
+              )
+              .catch(() => {
+                /* push is best-effort */
+              });
+          }
+        } else if (warnedRef.current.has(tableId)) {
+          warnedRef.current.delete(tableId);
+          writeWarned(warnedRef.current);
+          setBlindingOff((prev) => (prev?.tableId === tableId ? null : prev));
+        }
+
+        // ── AUTO-SEAT (batch 10) — fresh seats only ──────────────────────
+        if (seenRef.current.has(tableId)) continue;
+        const joinedAt = row.joined_at ? new Date(row.joined_at as string).getTime() : 0;
+        if (!joinedAt || joinedAt < freshFloor) continue;
+
         seenRef.current.add(tableId);
         writeSeen(seenRef.current);
-        const name = t.name || 'Your Tournament';
         pendingRef.current.set(tableId, name);
 
         // Hand it to the multi-table layer: it opens a tab when there is room
@@ -124,6 +206,47 @@ export default function TournamentAutoSeat() {
     };
   }, [user?.id, check]);
 
+  /**
+   * Blinding off takes precedence over the cap popup: one is "your tournament
+   * started", the other is "your chips are leaving right now."
+   */
+  if (blindingOff) {
+    return (
+      <div className="tas-overlay" role="dialog" aria-label="You are being blinded off">
+        <div className="tas-panel tas-panel--urgent">
+          <div className="tas-flag tas-flag--urgent">You Are Being Blinded Off</div>
+          <div className="tas-title">{blindingOff.name}</div>
+          <p className="tas-body">
+            Your Seat Is Posting Blinds Without You
+            {blindingOff.chips > 0
+              ? ` And You Have ${Math.round(blindingOff.chips).toLocaleString()} Chips Left`
+              : ''}
+            . Take Your Seat Now To Stop Losing Chips.
+          </p>
+          <div className="tas-actions">
+            <button className="tas-later" onClick={() => setBlindingOff(null)}>
+              Dismiss
+            </button>
+            <button
+              className="tas-go"
+              onClick={() => {
+                const id = blindingOff.tableId;
+                setBlindingOff(null);
+                // Open it as a table tab as well as navigating, so the
+                // multi-table layer knows about it — same hop the auto-seat
+                // path uses.
+                masterBus.emit('TABLE_SEATED', { tableId: id, seat: 0 });
+                navigate(`/table/${id}`);
+              }}
+            >
+              Take My Seat
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!blocked) return null;
 
   return (
@@ -132,8 +255,8 @@ export default function TournamentAutoSeat() {
         <div className="tas-flag">TOURNAMENT STARTED</div>
         <div className="tas-title">{blocked.name}</div>
         <p className="tas-body">
-          Has Just Started And Your Seat Is Waiting. Your Cash Tables Are Full - Please
-          Leave A Cash Game Or Close A Table To Sit Down.
+          Has Just Started And Your Seat Is Waiting. Your Cash Tables Are Full - Please Leave A Cash
+          Game Or Close A Table To Sit Down.
         </p>
         <div className="tas-actions">
           <button className="tas-later" onClick={() => setBlocked(null)}>

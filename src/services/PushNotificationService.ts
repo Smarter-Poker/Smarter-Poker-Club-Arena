@@ -344,6 +344,39 @@ class PushNotificationServiceClass {
   }
 
   /**
+   * Dan 2026-08-21 (item 4): "if a player is LIVE IN A TOURNAMENT and getting
+   * blinded off, push notifications should be sent to the phone as well as a
+   * pop up for the player to TAKE THEIR SEAT."
+   *
+   * This is the phone half. Filed under `tournament_start` rather than
+   * `table_available` on purpose: a player who has muted table-availability
+   * chatter has not consented to being blinded out of a tournament they paid
+   * to enter, and this is the same class of alert as "your tournament is
+   * starting" — money already committed, seat already yours.
+   *
+   * `url` deep-links straight at the table so tapping the notification IS
+   * taking the seat.
+   */
+  async notifyBlindingOff(
+    userId: string,
+    tournamentName: string,
+    tableId: string,
+    chipsLeft?: number
+  ): Promise<boolean> {
+    const stack =
+      typeof chipsLeft === 'number' && chipsLeft > 0
+        ? ` You have ${Math.round(chipsLeft).toLocaleString()} chips left.`
+        : '';
+    return this.sendToUser(userId, {
+      title: 'You Are Being Blinded Off',
+      message: `Your seat in ${tournamentName} is posting blinds without you.${stack} Tap to take your seat.`,
+      category: 'tournament_start',
+      url: `/table/${tableId}`,
+      data: { tableId, action: 'blinding_off' },
+    });
+  }
+
+  /**
    * Notify user that a club game is starting / has open seats
    */
   async notifyClubGameStarting(

@@ -3,7 +3,7 @@
  * Register and view upcoming tournaments
  */
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { isClubStaff } from '../types/clubRoles';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
@@ -41,6 +41,36 @@ import { spinMultiplierLabel } from '../utils/spinReveal';
 import { digitsOnly, formatBuyIn, money, splitBuyIn, totalBuyIn } from '../utils/buyIn';
 
 type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
+
+/**
+ * Is late registration still open on a RUNNING tournament?
+ *
+ * Dan 2026-08-21 (item 3): "it's showing users with more chips than they start
+ * with even though the tournament hasn't started yet." It HAD started — the
+ * badge just said REGISTERING because the row was still taking entries, so the
+ * live clock and the real chip counts underneath it read as a contradiction.
+ * A tournament in late registration is running; it is not un-started, and the
+ * two states now carry different labels.
+ *
+ * Levels take precedence over minutes when the tournament defines both, because
+ * that is how the engine closes the window.
+ */
+function isLateRegOpen(t: {
+  status?: string | null;
+  current_level?: number | null;
+  late_reg_levels?: number | null;
+  late_reg_mins?: number | null;
+  started_at?: string | null;
+}): boolean {
+  if (t.status !== 'RUNNING') return false;
+  const levels = Number(t.late_reg_levels ?? 0);
+  if (levels > 0) return Number(t.current_level ?? 0) <= levels;
+  const mins = Number(t.late_reg_mins ?? 0);
+  if (mins > 0 && t.started_at) {
+    return Date.now() - new Date(t.started_at).getTime() <= mins * 60_000;
+  }
+  return false;
+}
 
 // Default fallback for unauthed (shouldn't happen in real app)
 const GUEST_USER = { id: 'guest', username: 'Guest' };
@@ -85,6 +115,51 @@ export default function TournamentPage() {
   const [isProcessingRebuy, setIsProcessingRebuy] = useState(false);
   const selectedTournamentRef = useRef<Tournament | null>(null);
   const [visibleTournaments, setVisibleTournaments] = useState<Set<string>>(new Set());
+  /**
+   * Mirror of `visibleTournaments` for the stagger effect below to read without
+   * taking a dependency on it — depending on the state it also SETS is how that
+   * effect would re-enter itself on every card it reveals.
+   */
+  const visibleTournamentsRef = useRef<Set<string>>(new Set());
+  visibleTournamentsRef.current = visibleTournaments;
+
+  /**
+   * Dan 2026-08-21 (item 1): the other half of "the page is glitching and
+   * restarting over and over."
+   *
+   * `getTournaments` returns a brand-new array of brand-new objects every call,
+   * so `setTournaments(data)` re-rendered the entire list even when not one
+   * displayed value had changed — and this page refetches on EVERY realtime row
+   * change for the club, on a 20s poll, and on tab focus. With dozens of live
+   * tournaments writing `current_level` and `level_started_at` constantly, that
+   * was a full list re-render every couple of seconds.
+   *
+   * Compare on the fields the list actually renders and keep the previous array
+   * identity when they match. React then skips the re-render, the stagger
+   * effect above sees no change, and the cards hold still.
+   */
+  const tournamentSignature = (list: Tournament[]): string =>
+    list
+      .map((t) =>
+        [
+          t.id,
+          t.status,
+          t.current_players,
+          t.max_players,
+          t.prize_pool,
+          t.buy_in_amount,
+          t.buy_in_fee,
+          t.start_time,
+          t.current_level,
+        ].join(':')
+      )
+      .join('|');
+
+  const applyTournaments = useCallback((data: Tournament[]) => {
+    setTournaments((prev) =>
+      tournamentSignature(prev) === tournamentSignature(data) ? prev : data
+    );
+  }, []);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -189,7 +264,7 @@ export default function TournamentPage() {
 
         const data = await tournamentService.getTournaments(clubId);
         if (!isMounted) return;
-        setTournaments(data);
+        applyTournaments(data);
 
         // SWR: cache successful fetch
         try {
@@ -215,23 +290,47 @@ export default function TournamentPage() {
     };
   }, [clubId, tournamentId]);
 
-  // Stagger animation for tournament cards
+  /**
+   * Stagger the cards in — ONCE per card, not once per data refresh.
+   *
+   * Dan 2026-08-21 (second batch, item 1): "the page is glitching and
+   * restarting over and over."
+   *
+   * This effect was the restart. It depended on the `tournaments` ARRAY, and
+   * `setTournaments` is called with a freshly-fetched array on every realtime
+   * `postgres_changes` event for the club, on a 20s poll, and on tab focus. A
+   * RUNNING tournament writes `current_level`, `level_started_at`, `prize_pool`
+   * and `current_players` continuously, and there were 31 of them running under
+   * this club — so the identity of `tournaments` changed every couple of
+   * seconds. Each time, `setVisibleTournaments(new Set())` wiped every card to
+   * invisible and re-ran the whole 60ms-per-card entrance animation. The list
+   * blanked and re-dealt itself, over and over, exactly as reported.
+   *
+   * Two changes: the dependency is now the ID LIST (a stable string, so a
+   * refetch that returns the same tournaments is a no-op), and cards are only
+   * ADDED to the visible set — nothing that is already on screen is ever taken
+   * off it. A genuinely new tournament still animates in; the ones already
+   * there stay put.
+   */
+  const tournamentIdList = useMemo(() => tournaments.map((t) => t.id).join(','), [tournaments]);
   useEffect(() => {
     if (tournaments.length === 0) return;
-    setVisibleTournaments(new Set());
-    const timers = tournaments.map((tourn, index) =>
+    const unseen = tournaments.filter((t) => !visibleTournamentsRef.current.has(t.id));
+    if (unseen.length === 0) return;
+    const timers = unseen.map((tourn, index) =>
       setTimeout(() => {
         setVisibleTournaments((prev) => new Set(prev).add(tourn.id));
       }, index * 60)
     );
     return () => timers.forEach(clearTimeout);
-  }, [tournaments]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tournamentIdList]);
 
   // Refresh tournament list when user returns to tab
   useVisibilityRefresh(async () => {
     if (!clubId) return;
     const data = await tournamentService.getTournaments(clubId);
-    setTournaments(data);
+    applyTournaments(data);
     const updated = data.find((t) => t.id === selectedTournamentRef.current?.id);
     if (updated) setSelectedTournament(updated);
   });
@@ -263,7 +362,7 @@ export default function TournamentPage() {
               try {
                 const data = await tournamentService.getTournaments(clubId);
                 if (!isMounted) return;
-                setTournaments(data);
+                applyTournaments(data);
                 // Update selected tournament if it changed
                 const updated = data.find((t) => t.id === selectedTournamentRef.current?.id);
                 if (updated) setSelectedTournament(updated);
@@ -301,7 +400,7 @@ export default function TournamentPage() {
         try {
           const data = await tournamentService.getTournaments(clubId);
           if (!isMounted) return;
-          setTournaments(data);
+          applyTournaments(data);
         } catch (e) {
           reportError(e, 'TournamentPage.async');
           /* silent */
@@ -315,7 +414,7 @@ export default function TournamentPage() {
         try {
           const data = await tournamentService.getTournaments(clubId);
           if (!isMounted) return;
-          setTournaments(data);
+          applyTournaments(data);
           const updated = data.find((t) => t.id === selectedTournamentRef.current?.id);
           if (updated) setSelectedTournament(updated);
         } catch (e) {
@@ -438,7 +537,7 @@ export default function TournamentPage() {
       await tournamentService.startTournament(selectedTournament.id);
       // Refresh
       const data = await tournamentService.getTournaments(clubId);
-      setTournaments(data);
+      applyTournaments(data);
       const updated = data.find((t) => t.id === selectedTournament.id);
       if (updated) setSelectedTournament(updated);
     } catch (error) {
@@ -567,7 +666,70 @@ export default function TournamentPage() {
     return () => {
       isMounted = false;
     };
-  }, [selectedTournament, currentUser.id]);
+    // Dan 2026-08-21 (item 1): was `[selectedTournament, currentUser.id]`, i.e.
+    // the OBJECT. Every refetch handed it a new object identity and fired two
+    // more round trips, which then re-rendered, on a page that refetches on
+    // every realtime row change. Keyed on the identity that actually matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTournament?.id, selectedTournament?.status, currentUser.id]);
+
+  /**
+   * Keep the OPEN detail pane honest, on its own.
+   *
+   * Dan 2026-08-21 (item 3): the header said REGISTERING / 19-of-60 while the
+   * live pane directly below it showed a running clock and real chip counts.
+   * Two different data paths: `TournamentClock` and `TournamentStandings` query
+   * their tournament by id, but the header renders `selectedTournament`, which
+   * is only ever refreshed as a side effect of the whole-list refetch —
+   * `data.find(...)` inside handlers that can miss, race, or (for a union-hosted
+   * tournament viewed from a club) not be subscribed to that row at all.
+   *
+   * A detail pane that stays open on one tournament now watches THAT ROW, so it
+   * cannot disagree with the panel underneath it. Cheap: one row, by primary
+   * key, only while the pane is open.
+   */
+  useEffect(() => {
+    const id = selectedTournament?.id;
+    if (!id) return;
+    let alive = true;
+
+    const pull = async () => {
+      const { data, error } = await supabase
+        .from('tournaments')
+        .select(
+          'id, name, status, current_players, max_players, prize_pool, buy_in_amount, buy_in_fee, starting_chips, current_level, late_reg_levels, late_reg_mins, start_time, started_at'
+        )
+        .eq('id', id)
+        .maybeSingle();
+      if (!alive || error || !data) return;
+      setSelectedTournament((prev) =>
+        prev && prev.id === id ? ({ ...prev, ...data } as Tournament) : prev
+      );
+    };
+
+    const channelKey = `tournament-detail-${id}`;
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'tournaments', filter: `id=eq.${id}` },
+        () => {
+          void pull();
+        }
+      )
+      .subscribe();
+
+    // Backstop for the case realtime is degraded — the pane is open and being
+    // read, so a slow poll here is worth it.
+    const iv = setInterval(() => void pull(), 15_000);
+    void pull();
+
+    return () => {
+      alive = false;
+      clearInterval(iv);
+      masterBus.removeRegisteredChannel(channelKey);
+    };
+  }, [selectedTournament?.id]);
 
   // ── Broadcast: Tournament events (level_up, player_eliminated, etc) ──
   useEffect(() => {
@@ -921,7 +1083,9 @@ export default function TournamentPage() {
                     {tourn.status === 'REGISTERING'
                       ? ' Open'
                       : tourn.status === 'RUNNING'
-                        ? ' Running'
+                        ? isLateRegOpen(tourn)
+                          ? ' Late Reg'
+                          : ' Running'
                         : ' Soon'}
                   </span>
                 </div>
@@ -1007,8 +1171,15 @@ export default function TournamentPage() {
             <>
               <div className="detail-header">
                 <h2>{selectedTournament.name}</h2>
+                {/* Dan 2026-08-21 (item 3): a RUNNING tournament that is still
+                    taking entries said "REGISTERING" — next to a live clock and
+                    real chip counts. That is what "it hasn't started yet" was
+                    reading off. Late registration and not-yet-started are two
+                    different things and now say so. */}
                 <span className={`status-badge ${selectedTournament.status}`}>
-                  {selectedTournament.status}
+                  {selectedTournament.status === 'RUNNING' && isLateRegOpen(selectedTournament)
+                    ? 'LATE REG'
+                    : selectedTournament.status}
                 </span>
               </div>
 

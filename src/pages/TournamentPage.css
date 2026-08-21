@@ -515,8 +515,34 @@
    ACTIONS — Metal Buttons
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * Dan 2026-08-21 (item 2): "there needs to be an UNREGISTER button that players
+ * can unregister before a tournament starts."
+ *
+ * The button existed — it was just unreachable. This block sits at the BOTTOM
+ * of the detail pane, below the full blind structure and the whole payout
+ * ladder, so on a real tournament the only action on the page was several
+ * screens below the fold. A player looking at the tournament they had just
+ * registered for could not see any way to undo it, which is indistinguishable
+ * from it not being there.
+ *
+ * Sticky to the bottom of the pane, so Register / Unregister is on screen the
+ * whole time the tournament is open, wherever the reader has scrolled to.
+ */
 .detail-actions {
   margin-top: var(--space-6);
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  padding: var(--space-3) 0 var(--space-2);
+  background: linear-gradient(
+    180deg,
+    rgba(13, 21, 32, 0) 0%,
+    rgba(13, 21, 32, 0.92) 22%,
+    rgba(13, 21, 32, 0.98) 100%
+  );
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .detail-actions .btn-block {

@@ -7,7 +7,7 @@
  * live stats. Single-click navigates to the club's lobby.
  */
 
-import { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 import haptic from '../../services/HapticService';
 import PremiumSFX from '../../services/PremiumSFX';
@@ -16,6 +16,7 @@ import { SHARK_CLUB_ID } from '../../lib/constants';
 import styles from '../../pages/HomePage.module.css';
 import { PageErrorBoundary } from '../common/PageErrorBoundary';
 import { Carousel } from '../carousel';
+import { preloadClubLobby } from '../../utils/ChunkPreloader';
 import type { ToastContextValue } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 
@@ -131,7 +132,38 @@ export default function CarouselSection({
   const handleIndexChange = useCallback(() => {
     haptic.light();
     PremiumSFX.scrollSnap();
+    /* Warm the club lobby while the player is still deciding. It is the
+       heaviest screen in the app and it is where every tap on this carousel
+       goes, so fetching it at the moment a card settles turns the tap from
+       "wait for a chunk" into an immediate navigation. Idempotent and
+       failure-silent. */
+    preloadClubLobby();
   }, []);
+
+  /**
+   * Open on the club the player last used, not always the first one.
+   *
+   * LAST_CLUB is already written on every club visit (see clubQuickLink), and
+   * with an endless strip and "unlimited amounts of clubs" the difference
+   * between landing on your club and landing on somebody else's is several
+   * swipes, every single time you come back to this page.
+   *
+   * Falls back to 0 for a first visit, a cleared store, or a club that has
+   * since been left. Computed once per club list rather than per render so it
+   * cannot fight the player's own position mid-session.
+   */
+  const initialIndex = useMemo(() => {
+    try {
+      const lastId = localStorage.getItem(STORAGE_KEYS.LAST_CLUB);
+      if (!lastId) return 0;
+      const idx = orderedClubs.findIndex((c) => c.id === lastId);
+      return idx >= 0 ? idx : 0;
+    } catch {
+      return 0; // private mode / quota. Opening on the first club is fine.
+    }
+    // Deliberately keyed on the LIST, not on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderedClubs.length]);
 
   // Enhancement #8: Drag handlers
 
@@ -288,6 +320,7 @@ export default function CarouselSection({
           onIndexChange={handleIndexChange}
           ariaLabel="Your Clubs"
           itemNoun="Club"
+          initialIndex={initialIndex}
           renderItem={renderClubCard}
         />
       )}

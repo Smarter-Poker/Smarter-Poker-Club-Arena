@@ -477,8 +477,28 @@ export class RunItTwiceEngine {
     this.activeOffers.delete(tableId);
   }
 
-  dispose(tableId: string): void {
+  /**
+   * Per-HAND cleanup. Clears this hand's offer and cancels its timers but
+   * KEEPS the table's configuration.
+   *
+   * OFFER-CONFIG FIX 2026-08-21 (root cause of "RIT is 100% broken"):
+   * settlement called dispose() "to clean up advanced modules between hands",
+   * and dispose() also deleted tableConfigs. configure() runs exactly ONCE,
+   * in ServerTableEngine.start(). So isEnabled() - which is
+   * `tableConfigs.get(id)?.enabled ?? false` - went permanently false after
+   * the FIRST hand, and run-it-twice was never offered again until the engine
+   * restarted. Live proof (2026-08-21, 90 min of cash traffic): 54 hands where
+   * betting stopped on a pre-river all-in, 3 offers - and all 3 landed in the
+   * minutes right after an engine deploy restarted every table.
+   *
+   * Between hands, call this. Call dispose() only when the table is going away.
+   */
+  endHand(tableId: string): void {
     this.clearOffer(tableId);
+  }
+
+  dispose(tableId: string): void {
+    this.endHand(tableId);
     this.tableConfigs.delete(tableId);
   }
 

@@ -143,6 +143,12 @@ export interface CarouselProps<T> {
   edgeScale?: number;
   className?: string;
   ariaLabel?: string;
+  /**
+   * Which card to open on. Clamped and folded, so an index from stale storage
+   * or a club that has since been left cannot put the strip somewhere odd.
+   * The World Hub engine takes the same prop for the same reason.
+   */
+  initialIndex?: number;
   /** Show the position indicator below the strip. */
   showIndicator?: boolean;
   /** What one item is called, for the indicator's screen-reader labels. */
@@ -162,6 +168,7 @@ export function Carousel<T>({
   edgeScale = 0.82,
   className,
   ariaLabel = 'Cards',
+  initialIndex = 0,
   showIndicator = true,
   itemNoun = 'Card',
 }: CarouselProps<T>) {
@@ -171,9 +178,14 @@ export function Carousel<T>({
   const totalRef = useRef(total);
   totalRef.current = total;
 
-  const [scrollPosition, setScrollPosition] = useState(0);
-  const targetRef = useRef(0);
-  const positionRef = useRef(0);
+  /* Opening position. Read once: this is where the strip STARTS, not a
+     controlled value, so a later change must not yank a card out from under a
+     player mid-swipe. */
+  const [scrollPosition, setScrollPosition] = useState(() =>
+    total > 0 ? ((Math.round(initialIndex) % total) + total) % total : 0
+  );
+  const targetRef = useRef(scrollPosition);
+  const positionRef = useRef(scrollPosition);
 
   const isDragging = useRef(false);
   const startX = useRef(0);

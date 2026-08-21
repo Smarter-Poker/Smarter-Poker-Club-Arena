@@ -8439,3 +8439,32 @@ off; still dealing)". Commit `52ae9724c`:
   from the table and landed in the CLUB LOBBY with a TournamentResultCard
   (place + winnings). TablePage navigation + heroSeat invariant merged to
   main via the parallel agent's session-stats commit (12cfa4d78).
+
+## 2026-08-21 — Cowork live-fix session, batch 3 (money incident + failsafes)
+
+- [P0 INCIDENT + REFUND] Hand #1458859 (NLH Micro, table 5de06ef3): Dan won
+  34.18 but a cashout that ran MID-HAND returned only the stale pre-hand 20.00
+  and the settlement stack-write landed on a seat with left_at already set (a
+  silent no-op). Root cause is a race any leaver can hit: the engine's /leave
+  marks the seat sitting_out BEFORE the client's "in active hand?" status check
+  reads it, so the client fell through to atomic_table_cashout mid-hand.
+  Trigger in this instance was an agent probe-cleanup script using the same
+  account. REFUND: +14.18 credited (wallet_transactions category 'refund',
+  2026-08-21 00:06:33Z, balance_after 249,800.48). FIX: TableService.leaveTable
+  now honors the engine's `immediate` flag — immediate:false means the ENGINE
+  cashes out the true post-hand stack via processLeavePending, and the client
+  never touches the stack. The single-board "run it twice" in the same hand was
+  collateral of the same interference; RIT itself is healthy (149 multi-board
+  hands in the prior 24h).
+- [P0] Never-die connection failsafe: EngineStateClient retries forever
+  (maxRetries now only marks when 'failed' is announced), reconnects instantly
+  on the browser 'online' event, and TablePage hard-reloads once (2-min
+  sessionStorage guard, visible tabs only) if the socket stays failed 20s.
+- [P1] ActionPanel: postflop facing a bet now offers 2X/3X/4X of the bet + POT
+  (pot-limit: 2X/3X/POT). Tests updated to codify the law (23/23 green).
+- [P1] HandDetailModal (new): PokerBros-grammar hand breakdown from the
+  previous-hand card — Summary/Detail tabs, street-by-street action log with
+  running pot, showdown rows with cards + made hand + net, hand navigator,
+  Replay + Share buttons driving the existing HandReplayPlayer/ShareHand.
+- [P1] Time-bank alarm clock stacked directly above the previous-hand card in
+  the TableHUD bottom-left (no longer a free-floating fixed pill).

@@ -13,6 +13,13 @@ export { StatGrid } from './StatGrid';
 export { default as PositionalRadar } from './PositionalRadar';
 export type { PositionalRadarRow } from './PositionalRadar';
 
+export { default as EVLuckChart } from './EVLuckChart';
+export { default as HoleCardHeatmap } from './HoleCardHeatmap';
+export { default as NemesisPanel } from './NemesisPanel';
+export { default as BenchmarkPanel } from './BenchmarkPanel';
+export { default as TrophyRoom } from './TrophyRoom';
+export * from './statBenchmarks';
+
 export { default as AdvancedStatsSummary } from './AdvancedStatsSummary';
 export { default as BankrollTracker } from './BankrollTracker';
 export { default as PerformanceTrends } from './PerformanceTrends';

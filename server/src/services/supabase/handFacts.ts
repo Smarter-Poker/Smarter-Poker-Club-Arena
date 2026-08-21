@@ -533,6 +533,14 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
     const equity = takeEquity(input.tableId, input.handNumber);
     const bb = input.bigBlind > 0 ? input.bigBlind : 1;
 
+    // Everyone actually DEALT IN, which is the honest basis for "hands played
+    // together". Transfers cannot supply this: two players who both lose a
+    // hand exchange no chips and so produce no transfer row between them, and
+    // a transfer-derived count would silently omit exactly those hands.
+    const dealtIds = input.holeCardsAll.size > 0
+      ? [...input.holeCardsAll.keys()]
+      : [...participants];
+
     const factRows: Record<string, unknown>[] = [];
 
     for (const uid of participants) {
@@ -583,6 +591,7 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
             ? derivePosition(seatInfo.seat, input.buttonSeat, dealtSeats)
             : 'UNKNOWN',
         players_dealt: playersDealt,
+        opponent_ids: dealtIds.filter((id) => id !== uid),
         hole_cards: cards,
         hand_class: cards ? computeHandClass(cards) : null,
         invested,

@@ -40,6 +40,11 @@ import {
 } from 'recharts';
 import PositionWinRates from '../components/stats/PositionWinRates';
 import PositionalRadar from '../components/stats/PositionalRadar';
+import EVLuckChart from '../components/stats/EVLuckChart';
+import HoleCardHeatmap from '../components/stats/HoleCardHeatmap';
+import NemesisPanel from '../components/stats/NemesisPanel';
+import BenchmarkPanel from '../components/stats/BenchmarkPanel';
+import TrophyRoom from '../components/stats/TrophyRoom';
 import SessionHistory from '../components/stats/SessionHistory';
 import BankrollTracker from '../components/stats/BankrollTracker';
 import AdvancedStatsSummary from '../components/stats/AdvancedStatsSummary';
@@ -212,10 +217,25 @@ interface FullStats {
   recent_tournaments: RecentTournament[];
 }
 
-type StatCategory = 'overview' | 'performance' | 'positions' | 'tournaments' | 'analysis' | 'rake';
+type StatCategory =
+  | 'overview'
+  | 'performance'
+  | 'positions'
+  | 'hands'
+  | 'tournaments'
+  | 'analysis'
+  | 'trophies'
+  | 'rake';
 
 // Single source of truth for the tabs: the swipe handler and the pill row both
 // read this, so they can never drift out of sync.
+//
+// PRIVACY: 'hands' is NOT in this list. It renders the 13x13 hole-card grid,
+// which is built from ca_hand_facts.hole_cards — holdings that were never shown
+// at showdown. /stats/:userId is an existing route that renders this page for
+// any user, so the tab is appended for the profile owner only. The database
+// refuses a cross-user read regardless (ca_assert_self), but a tab that exists
+// and then errors is worse than a tab that was never offered.
 const BASE_TABS: StatCategory[] = [
   'overview',
   'performance',
@@ -228,8 +248,10 @@ const TAB_LABELS: Record<StatCategory, string> = {
   overview: 'Overview',
   performance: 'Performance',
   positions: 'Positions',
+  hands: 'Hands',
   tournaments: 'Tournaments',
   analysis: 'Analysis',
+  trophies: 'Trophies',
   rake: 'Rake',
 };
 
@@ -541,6 +563,14 @@ export default function PlayerStatsPage() {
   const [servingCache, setServingCache] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [rangeKey, setRangeKey] = useState<string>('all');
+  // Component-scope so the fact-layer panels (EV curve, heatmap, rivals) share
+  // the SAME range the main RPC was loaded with. It used to be a local inside
+  // the loader, which meant anything rendered outside that closure had no way
+  // to honour the range selector.
+  const windowDays = useMemo<number | null>(
+    () => RANGES.find((r) => r.key === rangeKey)?.days ?? null,
+    [rangeKey]
+  );
   const [handMode, setHandMode] = useState<HandMode>('biggest_won');
   const [hands, setHands] = useState<HandRow[] | null>(null);
   const [handsLoading, setHandsLoading] = useState(false);
@@ -568,13 +598,24 @@ export default function PlayerStatsPage() {
   }, [isOwnProfile, user?.id]);
 
   const canSeeRake = (agentRoles?.length ?? 0) > 0;
-  const TABS = useMemo<StatCategory[]>(
-    () => (canSeeRake ? [...BASE_TABS, 'rake'] : BASE_TABS),
-    [canSeeRake]
-  );
+  const TABS = useMemo<StatCategory[]>(() => {
+    // Owner-only tabs are spliced in next to the tab they belong with, so the
+    // order still derives from BASE_TABS and the two cannot drift.
+    const out: StatCategory[] = [];
+    for (const t of BASE_TABS) {
+      out.push(t);
+      if (isOwnProfile && t === 'positions') out.push('hands');
+      if (isOwnProfile && t === 'analysis') out.push('trophies');
+    }
+    return canSeeRake ? [...out, 'rake'] : out;
+  }, [canSeeRake, isOwnProfile]);
 
   // If the tab disappears (role revoked, or navigating to another profile),
   // do not strand the view on a tab that no longer exists.
+  useEffect(() => {
+    if (!TABS.includes(category)) setCategory('overview');
+  }, [TABS, category]);
+
   useEffect(() => {
     if (category === 'rake' && !canSeeRake) setCategory('overview');
   }, [category, canSeeRake]);
@@ -612,7 +653,6 @@ export default function PlayerStatsPage() {
     if (!hasStatsRef.current) setLoading(true);
 
     try {
-      const windowDays = RANGES.find((r) => r.key === rangeKey)?.days ?? null;
       const { data, error } = await retryFetch(
         () =>
           supabase
@@ -1212,6 +1252,24 @@ export default function PlayerStatsPage() {
               </div>
             )}
 
+            {/* Rivals: the most socially engaging stat on the page, so it sits
+                where a player looks first. Owner only — head-to-head chip flow
+                is private, and ca_player_nemesis refuses a cross-user read. */}
+            {isOwnProfile && <NemesisPanel userId={targetUserId} days={windowDays} />}
+
+            {/* Where the player stands against the field. Rates arrive from the
+                RPC as FRACTIONS and the distribution is stored in PERCENT, so
+                they are converted exactly once, here, at the boundary. */}
+            <BenchmarkPanel
+              handsPlayed={overall.total_hands}
+              values={{
+                bb100: overall.bb_per_100,
+                vpip: overall.vpip * 100,
+                pfr: overall.pfr * 100,
+                three_bet: overall.three_bet_percent * 100,
+              }}
+            />
+
             <div className="stats-action-row">
               <button className="view-hands-btn" onClick={() => navigate('/player-sessions')}>
                 View Hand Histories
@@ -1230,6 +1288,12 @@ export default function PlayerStatsPage() {
         {/* ── PERFORMANCE TAB ── */}
         {category === 'performance' && hasData && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            {/* Luck first. Every number below it is a rate the player can act
+                on; this is the one that tells them whether the results they are
+                staring at were earned or dealt. Owner only: it is derived from
+                their own per-hand records. */}
+            {isOwnProfile && <EVLuckChart userId={targetUserId} days={windowDays} />}
+
             {/* Preflop */}
             <div>
               <div className="stats-section-header">
@@ -1335,6 +1399,24 @@ export default function PlayerStatsPage() {
                 presentation over full.positions, which is already loaded. */}
             <PositionalRadar positions={full?.positions} />
             <PositionWinRates userId={targetUserId} initialPositions={full?.positions} />
+          </div>
+        )}
+
+        {/* ── HANDS TAB — owner only, see the PRIVACY note on BASE_TABS ── */}
+        {category === 'hands' && isOwnProfile && (
+          <div>
+            <HoleCardHeatmap userId={targetUserId} days={windowDays} />
+          </div>
+        )}
+
+        {/* ── TROPHIES TAB — owner only ── */}
+        {category === 'trophies' && isOwnProfile && (
+          <div>
+            <TrophyRoom
+              userId={targetUserId}
+              overall={full?.overall}
+              tournaments={full?.tournaments}
+            />
           </div>
         )}
 

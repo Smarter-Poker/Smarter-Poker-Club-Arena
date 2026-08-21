@@ -454,7 +454,7 @@ export default function TableConfigPage() {
       if (!result.allowed) {
         if (result.reason === 'union_only') {
           // Union governance: club staff may still build a PRIVATE club game.
-          toast.info('This club is in a union — the game will be private to your club.');
+          toast.info('This club is in a union - the game will be private to your club.');
         } else {
           toast.error(gameCreationDeniedMessage(result));
           navigate(`/clubs/${clubId}`);
@@ -831,8 +831,8 @@ export default function TableConfigPage() {
       );
       toast.success(
         config.gameMode === 'sng'
-          ? 'Sit & Go created — it starts as soon as it fills.'
-          : 'Tournament created — registration is open.'
+          ? 'Sit & Go created - it starts as soon as it fills.'
+          : 'Tournament created - registration is open.'
       );
       const createdId = (created as { id?: string } | null)?.id;
       if (createdId) {

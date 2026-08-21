@@ -150,7 +150,7 @@ export const AddOnModal: React.FC<AddOnModalProps> = ({
               onClick={handleAddOn}
               disabled={processing || countdown <= 0}
             >
-              {processing ? 'Processing...' : `Add-On — ${addOnCost.toLocaleString()}`}
+              {processing ? 'Processing...' : `Add-On - ${addOnCost.toLocaleString()}`}
             </button>
           )}
         </div>

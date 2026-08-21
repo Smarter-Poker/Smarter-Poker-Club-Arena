@@ -39,7 +39,7 @@ function StatusBadge({ status }: { status: string }) {
     completed: { bg: '#3A3B3C', color: '#B0B3B8', label: 'COMPLETE' },
     cancelled: { bg: '#FA383E22', color: '#FA383E', label: 'CANCELLED' },
   };
-  const c = map[status] || { bg: '#3A3B3C', color: '#B0B3B8', label: status?.toUpperCase() || '—' };
+  const c = map[status] || { bg: '#3A3B3C', color: '#B0B3B8', label: status?.toUpperCase() || '-' };
   return (
     <span className={styles.statusBadge} style={{ background: c.bg, color: c.color }}>
       {c.label}

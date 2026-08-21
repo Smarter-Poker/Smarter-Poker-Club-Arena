@@ -68,7 +68,7 @@ export default function ScheduledMessagePanel({
       await loadScheduled();
       onScheduled?.();
     } else {
-      setError('⚠ Failed to schedule message — please try again');
+      setError('⚠ Failed to schedule message - please try again');
     }
     setLoading(false);
   };

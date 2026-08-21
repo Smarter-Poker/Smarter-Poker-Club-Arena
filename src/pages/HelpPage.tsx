@@ -33,7 +33,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: 'What is the rake structure?',
     answer:
-      'Rake is 10% of the pot, up to a cap that depends on the stake — from $3 at the smallest blinds to $20 at the largest. The cap is a cash amount, not a number of big blinds, and it is reduced when a hand is played heads-up or three-handed. No flop, no drop: an uncontested pot is never raked. A small portion of the rake also funds the Bad Beat Jackpot.',
+      'Rake is 10% of the pot, up to a cap that depends on the stake - from $3 at the smallest blinds to $20 at the largest. The cap is a cash amount, not a number of big blinds, and it is reduced when a hand is played heads-up or three-handed. No flop, no drop: an uncontested pot is never raked. A small portion of the rake also funds the Bad Beat Jackpot.',
   },
   {
     question: 'How do settlements work?',

@@ -853,7 +853,7 @@ export default function PlayerStatsPage() {
         toast.info(
           body.message ||
             (analysed !== null
-              ? `Analysed ${analysed.toLocaleString()} hands — nothing to flag yet.`
+              ? `Analysed ${analysed.toLocaleString()} hands - nothing to flag yet.`
               : 'Nothing to flag yet.')
         );
       } else {
@@ -958,7 +958,7 @@ export default function PlayerStatsPage() {
           <span className="empty-icon">{'!'}</span>
           <span className="empty-title">Couldn't Load Your Stats</span>
           <span className="empty-description">
-            Your statistics are still there — we just could not reach them right now.
+            Your statistics are still there - we just could not reach them right now.
           </span>
           <button
             className="empty-cta"
@@ -1058,13 +1058,13 @@ export default function PlayerStatsPage() {
           confident-looking number invites the wrong conclusion. */}
       {hasData && overall.cash_hands > 0 && overall.cash_hands < 1000 && (
         <div className="stats-notice">
-          {overall.cash_hands.toLocaleString()} cash hands is a small sample — win rate is not yet
+          {overall.cash_hands.toLocaleString()} cash hands is a small sample - win rate is not yet
           meaningful.
         </div>
       )}
       {servingCache && (
         <div className="stats-notice stats-notice-warn">
-          Showing your last loaded stats — the refresh did not go through.
+          Showing your last loaded stats - the refresh did not go through.
         </div>
       )}
 
@@ -1632,7 +1632,7 @@ export default function PlayerStatsPage() {
               <SessionHistory userId={targetUserId} initialSessions={sessionRows} />
               {overall.tourney_hands > 0 && (
                 <div className="stats-notice">
-                  Cash tables only — tournament results are in the Tournaments tab, because a
+                  Cash tables only - tournament results are in the Tournaments tab, because a
                   tournament result is a prize, not chips won at a table.
                 </div>
               )}

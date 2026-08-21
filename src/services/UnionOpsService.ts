@@ -160,7 +160,7 @@ export function describeRpcError(e: unknown): string {
     return 'You do not have permission to view this. Union operations are visible to union owners and admins.';
   }
   if (/permission denied/i.test(msg)) return 'Permission denied by the database.';
-  if (/fetch|network/i.test(msg)) return 'Network error — could not reach the server.';
+  if (/fetch|network/i.test(msg)) return 'Network error - could not reach the server.';
   return msg;
 }
 

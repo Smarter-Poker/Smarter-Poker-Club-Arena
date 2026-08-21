@@ -340,7 +340,7 @@ class AchievementServiceClass {
       this._dbReadDisabled = true;
       reportError(error, 'AchievementService.getUserAchievements', {
         userId,
-        note: 'Disabling subsequent reads — likely missing table or RLS',
+        note: 'Disabling subsequent reads - likely missing table or RLS',
       });
       return [];
     }
@@ -413,7 +413,7 @@ class AchievementServiceClass {
         if (this._dbWriteFailures >= 3) {
           this._dbWriteDisabled = true;
           console.debug(
-            '[AchievementService] DB writes disabled — training_user_achievements table unavailable'
+            '[AchievementService] DB writes disabled - training_user_achievements table unavailable'
           );
         }
         // Report only first 3 failures — avoids Sentry flood from repeated RLS errors
@@ -439,7 +439,7 @@ class AchievementServiceClass {
         if (this._dbWriteFailures >= 3) {
           this._dbWriteDisabled = true;
           console.debug(
-            '[AchievementService] DB writes disabled — training_user_achievements table unavailable'
+            '[AchievementService] DB writes disabled - training_user_achievements table unavailable'
           );
         }
         // Report only first 3 failures — avoids Sentry flood from repeated RLS errors

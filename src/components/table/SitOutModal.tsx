@@ -207,7 +207,7 @@ export function SitOutModal({
                   handleReturn();
                 }}
               >
-                Return to Game
+                Return To Game
               </button>
               <button
                 type="button"

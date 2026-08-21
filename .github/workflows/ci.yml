@@ -49,6 +49,15 @@ jobs:
       - name: ESM Invariant — no CommonJS require() in server runtime code
         run: node scripts/ci/check-esm-require.mjs
 
+      # Copy invariant. Dan 2026-08-20: "forbid the use of em bars anywhere."
+      # A style rule that lives only in someone's head gets re-broken by the
+      # next person who writes a label — 444 of them had accumulated by the
+      # time it was first run. Comments are exempt (they never reach a player);
+      # JSX text, UI string literals and CSS content: values are not.
+      # Autofix locally with: node scripts/ci/check-ui-text.mjs --fix
+      - name: UI copy — no em dashes in player-facing text
+        run: node scripts/ci/check-ui-text.mjs
+
       # Money invariant. The rake schedule is declared twice — the engine copy
       # decides what is actually taken from the pot, the client copy decides
       # what the Game Rules modal tells the player. They cannot import each

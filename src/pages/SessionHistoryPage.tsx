@@ -356,7 +356,7 @@ export default function SessionHistoryPage() {
                   <span>{formatDuration(session.session_start, session.session_end)}</span>
                   <span>•</span>
                   <span>
-                    {session.big_blind ? `${session.big_blind / 2}/${session.big_blind}` : '—'}
+                    {session.big_blind ? `${session.big_blind / 2}/${session.big_blind}` : '-'}
                   </span>
                 </div>
               </div>

@@ -77,6 +77,10 @@
   transition: all 0.2s ease;
   flex-shrink: 0;
   touch-action: manipulation;
+  /* PokerBros parity (Dan 2026-08-20): the depleting timer bar rides the
+     pill's bottom edge inside it — clip so its square ends follow the pill's
+     rounded corners. */
+  overflow: hidden;
 }
 
 .table-tab-bar__tab:hover {
@@ -194,6 +198,153 @@
   50% {
     opacity: 0.6;
     transform: scale(0.8);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MINI HOLE-CARD PREVIEW (PokerBros parity — Dan 2026-08-20)
+   Each tab previews the hero's live hole cards at that table: white mini
+   cards, 4-color deck (spades black, hearts red, diamonds blue, clubs green).
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.table-tab-bar__mini-cards {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+}
+
+.table-tab-bar__mini-card {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 24px;
+  border-radius: 3px;
+  background: #f8f9fb;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.35),
+    inset 0 0 0 0.5px rgba(0, 0, 0, 0.12);
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* 4-card games (PLO4) squeeze tighter so four still fit in the pill. */
+.table-tab-bar__mini-cards--wide .table-tab-bar__mini-card {
+  width: 14px;
+  height: 22px;
+  border-radius: 2px;
+}
+
+.table-tab-bar__mini-card-rank {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+}
+
+.table-tab-bar__mini-card-suit {
+  font-size: 0.5rem;
+  margin-top: -1px;
+}
+
+.table-tab-bar__mini-cards--wide .table-tab-bar__mini-card-rank {
+  font-size: 0.55rem;
+}
+
+.table-tab-bar__mini-cards--wide .table-tab-bar__mini-card-suit {
+  font-size: 0.45rem;
+}
+
+/* 4-color deck */
+.table-tab-bar__mini-card--s {
+  color: #111318;
+}
+.table-tab-bar__mini-card--h {
+  color: #dc2626;
+}
+.table-tab-bar__mini-card--d {
+  color: #2563eb;
+}
+.table-tab-bar__mini-card--c {
+  color: #16a34a;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DEPLETING TURN-TIMER BAR (PokerBros parity — Dan 2026-08-20)
+   Gold bar on the pill's bottom edge whenever it is the hero's turn at that
+   table (active tab included). Drains left as the turn clock runs out; goes
+   red and pulses in the final seconds. Width updates once a second from the
+   container's clock; the linear transition smooths the steps.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.table-tab-bar__timer-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #eab308 0%, #facc15 100%);
+  box-shadow: 0 0 6px rgba(250, 204, 21, 0.55);
+  transition: width 1s linear;
+  pointer-events: none;
+}
+
+.table-tab-bar__timer-bar--urgent {
+  background: linear-gradient(90deg, #dc2626 0%, #ef4444 100%);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.7);
+  animation: timerBarUrgent 0.5s ease-in-out infinite;
+}
+
+@keyframes timerBarUrgent {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TRANSIENT LAST-ACTION CHIP (PokerBros parity — Dan 2026-08-20)
+   Flashes the hero's last action ("Fold", "Call", ...) on the tab for a
+   moment after they act at that table.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.table-tab-bar__action-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: rgba(37, 99, 235, 0.85);
+  color: #ffffff;
+  font-size: 0.575rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+  animation: actionChipIn 0.18s ease-out;
+}
+
+@keyframes actionChipIn {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table-tab-bar__timer-bar--urgent,
+  .table-tab-bar__action-chip {
+    animation: none;
   }
 }
 

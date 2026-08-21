@@ -30,7 +30,7 @@ export async function bootServices(options?: {
   enableSettlementCron?: boolean;
 }): Promise<BootResult> {
   if (booted) {
-    console.debug('[ServiceBootstrap] Already booted — skipping');
+    console.debug('[ServiceBootstrap] Already booted - skipping');
     return {
       offlineQueue: true,
       settlementCron: true,

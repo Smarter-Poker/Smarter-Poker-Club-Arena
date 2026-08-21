@@ -404,7 +404,7 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId, initialPosi
       )}
       {loaded && activeStats.length === 0 && (
         <div className="position-subtitle" style={{ textAlign: 'center', padding: '8px 0' }}>
-          No position data yet — play some hands and this fills in automatically.
+          No position data yet - play some hands and this fills in automatically.
         </div>
       )}
 

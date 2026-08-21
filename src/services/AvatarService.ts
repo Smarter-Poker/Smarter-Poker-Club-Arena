@@ -462,7 +462,7 @@ class AvatarServiceClass {
     const MAX_DECODE_BYTES = 25 * 1024 * 1024;
     if (file.size > MAX_DECODE_BYTES) {
       return {
-        error: `That image is ${(file.size / 1048576).toFixed(1)}MB — too large to process. Please pick one under 25MB.`,
+        error: `That image is ${(file.size / 1048576).toFixed(1)}MB - too large to process. Please pick one under 25MB.`,
       };
     }
 

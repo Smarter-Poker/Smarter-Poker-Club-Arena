@@ -284,12 +284,12 @@ export default function AddOnModal({
 
             {!priceKnown && (
               <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 12 }}>
-                Add-on price unavailable — cannot purchase right now
+                Add-on price unavailable - cannot purchase right now
               </div>
             )}
             {priceKnown && !canAfford && (
               <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 12 }}>
-                Insufficient balance — you need {totalCost.toLocaleString()} chips
+                Insufficient balance - you need {totalCost.toLocaleString()} chips
               </div>
             )}
 
@@ -346,7 +346,7 @@ export default function AddOnModal({
           <div style={{ padding: '16px 0' }}>
             {result === 'accepted' && (
               <div style={{ color: '#10b981', fontSize: 16, fontWeight: 600 }}>
-                Add-On Accepted — +{addOnChips.toLocaleString()} chips added
+                Add-On Accepted - +{addOnChips.toLocaleString()} chips added
               </div>
             )}
             {result === 'declined' && (
@@ -356,7 +356,7 @@ export default function AddOnModal({
             )}
             {result === 'insufficient' && (
               <div style={{ color: '#ef4444', fontSize: 16, fontWeight: 600 }}>
-                Insufficient Balance — Add-On Denied
+                Insufficient Balance - Add-On Denied
               </div>
             )}
             {result === 'failed' && (

@@ -132,7 +132,7 @@ export const SettlementService = {
       const period = data[0];
       if (!period.id) {
         throw new Error(
-          '[Settlement] get_current_settlement_period returned a row with no id — refusing to fabricate an orphaned period.'
+          '[Settlement] get_current_settlement_period returned a row with no id - refusing to fabricate an orphaned period.'
         );
       }
       return {
@@ -153,7 +153,7 @@ export const SettlementService = {
     // Empty result now means a genuine backend failure (the get-or-create RPC
     // should always return a period). Fail loudly rather than orphan a settlement.
     throw new Error(
-      '[Settlement] get_current_settlement_period returned no rows — settlement period unavailable.'
+      '[Settlement] get_current_settlement_period returned no rows - settlement period unavailable.'
     );
   },
 
@@ -326,7 +326,7 @@ export const SettlementService = {
     // autoExecutePayouts, useUnionStore) resolve cleanly; it moves no money. Do not
     // build on it — see .agent/architecture/CLUB-MONEY-LEDGERS-CANONICAL.md.
     console.debug(
-      `[Settlement] executeMondayPayouts is retired (no-op) for period ${periodId} — ` +
+      `[Settlement] executeMondayPayouts is retired (no-op) for period ${periodId} - ` +
         'agent payouts flow through credit_invoices; player rakeback through the engine ' +
         'RakebackSettlerService.'
     );
@@ -476,7 +476,7 @@ export const SettlementService = {
         }
         throw new Error(
           'Union rakeback failed: the rake treasury cannot cover this payout. ' +
-            'It was NOT partially paid — investigate before retrying.'
+            'It was NOT partially paid - investigate before retrying.'
         );
       }
       // Periods must be whole ISO weeks so a manual run addresses exactly the

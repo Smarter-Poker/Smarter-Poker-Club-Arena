@@ -27,11 +27,11 @@ import './BBJRulesPanel.css';
 
 /** Stakes tiers as the SERVER pays them (server/src/config/RakeConfig.ts). */
 const PAYOUT_TIERS: Array<{ label: string; blinds: string; sampleBB: number }> = [
-  { label: 'Nano', blinds: '0.05/0.10 – 0.10/0.20', sampleBB: 0.2 },
-  { label: 'Micro', blinds: '0.20/0.40 – 0.40/0.80', sampleBB: 0.8 },
-  { label: 'Small', blinds: '0.50/1 – 1.50/3', sampleBB: 3 },
-  { label: 'Mid', blinds: '2/4 – 4/8', sampleBB: 8 },
-  { label: 'High', blinds: '5/10 – 20/40', sampleBB: 40 },
+  { label: 'Nano', blinds: '0.05/0.10 - 0.10/0.20', sampleBB: 0.2 },
+  { label: 'Micro', blinds: '0.20/0.40 - 0.40/0.80', sampleBB: 0.8 },
+  { label: 'Small', blinds: '0.50/1 - 1.50/3', sampleBB: 3 },
+  { label: 'Mid', blinds: '2/4 - 4/8', sampleBB: 8 },
+  { label: 'High', blinds: '5/10 - 20/40', sampleBB: 40 },
   { label: 'Nosebleeds', blinds: '25/50+', sampleBB: 50 },
 ];
 

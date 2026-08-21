@@ -184,7 +184,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
             reportError(retryErr, 'useHeaderDataStore.Retry_also_failed');
             masterBus.emit('SHOW_TOAST', {
               severity: 'warning',
-              message: 'Could not load notifications — pull to refresh',
+              message: 'Could not load notifications - pull to refresh',
               source: 'HeaderDataStore',
             });
           }
@@ -269,7 +269,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
           }, 3000);
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[HeaderDataStore] Realtime channel timed out — retrying...');
+          console.warn('[HeaderDataStore] Realtime channel timed out - retrying...');
           // Same retry as CHANNEL_ERROR
           setTimeout(() => {
             if (get()._userId !== userId || get()._channelKey !== channelKey) return;

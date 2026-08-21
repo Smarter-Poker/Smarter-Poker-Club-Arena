@@ -172,10 +172,10 @@ const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'recommended', label: 'Recommended' },
-  { key: 'stakes_high', label: 'Stakes: high to low' },
-  { key: 'stakes_low', label: 'Stakes: low to high' },
-  { key: 'players', label: 'Most players' },
-  { key: 'starting_soon', label: 'Starting soonest' },
+  { key: 'stakes_high', label: 'Stakes: High To Low' },
+  { key: 'stakes_low', label: 'Stakes: Low To High' },
+  { key: 'players', label: 'Most Players' },
+  { key: 'starting_soon', label: 'Starting Soonest' },
 ];
 
 /** Which tournament tab a GameType maps onto, for the shared variant matcher. */
@@ -997,7 +997,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         if (prev && prev.level > 0 && levelInfo.level > prev.level) {
           // Level went up — celebrate!
           toast.success(
-            `Level Up! Your club reached Lv.${levelInfo.level} — ${levelInfo.tierLabel}!`
+            `Level Up! Your club reached Lv.${levelInfo.level} - ${levelInfo.tierLabel}!`
           );
           haptic.success();
         }
@@ -1088,7 +1088,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   };
 
   const formatJackpot = (num: number) => {
-    if (num === 0) return '—';
+    if (num === 0) return '-';
     return num.toLocaleString();
   };
 
@@ -1174,7 +1174,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         <h2>{loadStalled ? 'Still Loading' : 'Club Not Found'}</h2>
         <p style={{ color: '#888', fontSize: '0.9rem', margin: '0 0 1rem' }}>
           {loadStalled
-            ? 'This is taking longer than usual — the connection may be slow right now. Your chips and seats are safe.'
+            ? 'This is taking longer than usual - the connection may be slow right now. Your chips and seats are safe.'
             : 'The club may have been moved or deleted.'}
         </p>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
@@ -1342,7 +1342,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                   <span
                     className="club-level-badge"
                     style={{ background: clubLevel.gradient }}
-                    title={`Level ${clubLevel.level} — ${clubLevel.tierLabel}`}
+                    title={`Level ${clubLevel.level} - ${clubLevel.tierLabel}`}
                   >
                     <span className="club-level-badge__number">Lv.{clubLevel.level}</span>
                     <span className="club-level-badge__tier">{clubLevel.tierLabel}</span>
@@ -1687,7 +1687,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               const { data: deleted, error } = await query.select('id');
               if (error) throw error;
               if (!deleted || deleted.length === 0) {
-                toast.error('That table could not be deleted — you may not own it.');
+                toast.error('That table could not be deleted - you may not own it.');
                 return;
               }
               setTables((prev) => prev.filter((t) => t.id !== id));

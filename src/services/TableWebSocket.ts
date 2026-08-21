@@ -498,7 +498,7 @@ export class TableWebSocket {
    */
   private acceptGap(reason: string): void {
     reportError(
-      new Error(`resync failed (${reason}) — accepting the sequence gap to avoid a frozen table`),
+      new Error(`resync failed (${reason}) - accepting the sequence gap to avoid a frozen table`),
       'TableWS.resync.acceptedGap'
     );
     if (this.pendingEvents.length === 0) return;

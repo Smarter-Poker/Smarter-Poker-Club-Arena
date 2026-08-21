@@ -294,7 +294,7 @@ export function useTableChat(
         const p = playersRef.current.find((pl) => pl && pl.id === wId);
         return p?.name || wId.substring(0, 6);
       });
-      const potStr = typeof data.pot === 'number' ? ` — pot ${data.pot.toLocaleString()}` : '';
+      const potStr = typeof data.pot === 'number' ? ` - pot ${data.pot.toLocaleString()}` : '';
       const msg =
         winnerNames.length > 1
           ? `${winnerNames.join(' & ')} split the pot${potStr}`

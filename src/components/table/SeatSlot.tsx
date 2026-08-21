@@ -83,6 +83,12 @@ export interface SeatSlotProps {
   bigBlind?: number;
   isTournament?: boolean;
   bountyValue?: number;
+  /**
+   * BOMB POT 2026-08-20: true while a bomb pot's forced ante round is live.
+   * Shows the magenta "BOMB" pill over the seat (competitor-parity — every
+   * seated player is marked while the antes post and the flop plays out).
+   */
+  bombPotAnte?: boolean;
   isWinner?: boolean;
   winningHandName?: string; // e.g. "Straight", "Full House"
   /**
@@ -334,6 +340,7 @@ export const SeatSlot = memo(
       bigBlind = 2,
       isTournament = false,
       bountyValue,
+      bombPotAnte,
       isWinner = false,
       netWinAmount,
       bbjCreditAmount,
@@ -1228,6 +1235,13 @@ export const SeatSlot = memo(
         {/* All-In Badge */}
         {player.status === 'all_in' && !isWinner && <div className="seat__allin-badge">ALL IN</div>}
 
+        {/* Bomb Pot ante badge — every live seat is tagged while the bomb
+            pot's forced antes are in play (BOMB POT 2026-08-20). All-in
+            takes the slot if both apply; folded seats drop the pill. */}
+        {bombPotAnte && player.status !== 'all_in' && player.status !== 'folded' && !isWinner && (
+          <div className="seat__bombpot-badge">BOMB</div>
+        )}
+
         {/* Bounty Badge */}
         {bountyValue != null && bountyValue > 0 && (
           <div className="seat__bounty">
@@ -1253,6 +1267,7 @@ export const SeatSlot = memo(
     if (prev.isTournament !== next.isTournament) return false;
     if (prev.bigBlind !== next.bigBlind) return false;
     if (prev.bountyValue !== next.bountyValue) return false;
+    if (prev.bombPotAnte !== next.bombPotAnte) return false;
     if (prev.isWinner !== next.isWinner) return false;
     if (prev.winningHandName !== next.winningHandName) return false;
     if (prev.netWinAmount !== next.netWinAmount) return false;

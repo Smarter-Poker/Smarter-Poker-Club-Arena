@@ -73,7 +73,7 @@ function Street({
       )}
       {actions?.map((a, i) => (
         <div key={i} style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-          Seat {a.seat} — {a.action}
+          Seat {a.seat} - {a.action}
           {a.amount ? ` ${a.amount.toLocaleString()}` : ''}
         </div>
       ))}

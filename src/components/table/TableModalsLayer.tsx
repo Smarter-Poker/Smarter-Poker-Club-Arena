@@ -65,6 +65,12 @@ export interface TableModalsLayerProps {
   tableId: string | undefined;
   userId: string;
   username: string;
+  /**
+   * IMPROVEMENT PASS 2026-08-20 (#175 multi-table gate): background tables
+   * must not play the bomb-pot sequence's sounds or shake the screen.
+   * TablePage passes its ambientSoundsAllowed. Defaults true.
+   */
+  ambientSoundsAllowed?: boolean;
 
   // Table state (minimal surface needed by modals)
   tableName: string;
@@ -372,6 +378,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
   const {
     tableId,
     userId,
+    ambientSoundsAllowed = true,
     tableName,
     blinds,
     gameType,
@@ -695,7 +702,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
             );
             // Stay open. Closing here is what put players back in a queue they
             // believed they had left.
-            onWaitListError?.(res?.error || 'Could not leave the wait list — you are still queued.');
+            onWaitListError?.(res?.error || 'Could not leave the wait list - you are still queued.');
           });
         }}
       />
@@ -801,7 +808,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
       {/* Bomb Pot Overlay */}
       {tableId && (
         <TableErrorBoundary componentName="BombPotOverlay">
-          <BombPotOverlay tableId={tableId} />
+          <BombPotOverlay tableId={tableId} playSounds={ambientSoundsAllowed} />
         </TableErrorBoundary>
       )}
 

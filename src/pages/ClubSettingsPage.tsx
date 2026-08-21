@@ -174,7 +174,7 @@ export default function ClubSettingsPage() {
     const uncappedLow = Math.round(settings.rake_cap * 2 * 100) / 100;
     const uncappedHigh = Math.round(settings.rake_cap * 10 * 100) / 100;
     const limited = uncappedLow > low || uncappedHigh > high;
-    return `Currently ${settings.rake_cap} BB — $${low.toFixed(2)} per pot at 1/2 and $${high.toFixed(
+    return `Currently ${settings.rake_cap} BB - $${low.toFixed(2)} per pot at 1/2 and $${high.toFixed(
       2
     )} at 5/10${limited ? ', held down by the house cap for those stakes.' : '.'}`;
   })();
@@ -567,7 +567,7 @@ export default function ClubSettingsPage() {
           if (error) throw error;
           if (!updated || updated.length === 0) {
             throw new Error(
-              'Settings were not saved — you may no longer own this club, or it no longer exists.'
+              'Settings were not saved - you may no longer own this club, or it no longer exists.'
             );
           }
         }
@@ -665,7 +665,7 @@ export default function ClubSettingsPage() {
         .select('id');
       if (error) throw error;
       if (!updated || updated.length === 0) {
-        throw new Error('Logo was not removed — you may no longer own this club.');
+        throw new Error('Logo was not removed - you may no longer own this club.');
       }
       const stale = clubAssetPathFromPublicUrl(currentLogoUrl);
       if (stale) {
@@ -697,7 +697,7 @@ export default function ClubSettingsPage() {
       await navigator.clipboard.writeText(String(clubCode));
       toast.success('Club code copied');
     } catch {
-      toast.error('Could not copy — code is ' + String(clubCode));
+      toast.error('Could not copy - code is ' + String(clubCode));
     }
   };
 
@@ -741,7 +741,7 @@ export default function ClubSettingsPage() {
     // Belt and braces: the button is disabled for these cases, but a delete
     // that cascades 56 running tables deserves a second gate.
     if (!deleteImpact) {
-      toast.error('Still checking what this would delete — try again in a moment.');
+      toast.error('Still checking what this would delete - try again in a moment.');
       return;
     }
     const blocked = blockingDeletionReason(deleteImpact);
@@ -1030,7 +1030,7 @@ export default function ClubSettingsPage() {
           {privateClubNeedsApproval(settings.is_public, settings.requires_approval) && (
             <small className="form-hint" role="alert" style={{ color: '#ffb020' }}>
               This club is private but admits anyone instantly. Private only hides the club from
-              search — joining is gated by Require Approval.
+              search - joining is gated by Require Approval.
             </small>
           )}
           <div className="toggle-row">
@@ -1122,7 +1122,7 @@ export default function ClubSettingsPage() {
             />
             <small className="form-hint">
               Most that can be raked from one pot, in big blinds. Blank uses the house cap for each
-              stake ($3–$20 depending on blinds).{' '}
+              stake ($3-$20 depending on blinds).{' '}
               {settings.rake_cap < 0 ? 'Currently: house cap.' : capPreview}
             </small>
           </div>

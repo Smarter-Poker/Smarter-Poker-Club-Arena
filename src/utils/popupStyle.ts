@@ -34,10 +34,10 @@
 const WORD_START = /(^|[\s([{"'‘“-])([a-z])/g;
 
 /** An em/en dash used as a clause break: surrounded by spaces. */
-const DASH_CLAUSE = /\s+[—–]\s+/g;
+const DASH_CLAUSE = /\s+[--]\s+/g;
 
 /** Any stray em/en dash left over (unspaced, decorative, doubled). */
-const DASH_ANY = /[—–]/g;
+const DASH_ANY = /[--]/g;
 
 export function formatPopupText(message: string): string {
   if (!message) return message;

@@ -8309,3 +8309,105 @@ First human seated session at a Spin (commits `f9ea9730b` + follow-ups).
 - Open: spin quick-join (tap a stake tile → engine creates + seats + starts
   → client lands on the table). The parallel agent's Take Seat bar covers
   returning to a HELD seat, not this.
+
+## 2026-08-20 — Cowork live-fix session (Dan watching/playing)
+
+Three deploys, all verified in production (SPA build-info + engine_table_leases.engine_version):
+
+- [P0] LEAVE-TABLE STUCK-RESERVED: engine refused /leave for any player not in
+  the hand roster ("Player not found" → 400 → client refused cashout), which is
+  exactly the reserved-waiting state. Engine now acks not-in-roster leaves
+  (client does DB cleanup); client releases a stale seat claim instead of
+  stranding, and the tab X closes for spectators (was "your chips are still in
+  your seat" shown to people with no seat).
+- [P0] NEVER DEALT IN: wait_for_big_blind gated new joiners for MINUTES on slow
+  tables with zero explanation (reproduced live: fresh seat sat through 6
+  hands). Dealing loop now auto-enters every waiter as post-BB-to-enter
+  (bbOnlyPosts, one live BB) — "You'll Be Dealt In Next Hand" is literally true.
+- [P0] 6-SECOND COUNTDOWN: useTableTimer computed remaining from the DEVICE
+  clock (deadline - Date.now()); a fast device clock ate seconds off every
+  turn (numeric countdown, urgency window, timebank/auto-fold trigger). Now
+  uses serverNow() like the SeatSlot ring. Ring also floored at 15s and
+  recolored neon blue (#00e5ff) with 3s-remaining tick + heavy haptics.
+- [P1] IN-TAB LOBBY: flex min-height:auto blowout made the lobby tab grow to
+  content height (measured 3893px, unscrollable + clipped); ClubBottomNav's
+  position:fixed resolved against the transformed swipe track (parked at
+  y=3870, off-screen). min-height:0 on the container; nav sticky-bottom
+  inside the lobby tab.
+- [P1] Pot redesign (thin POT pill + street-bets pill, no per-action chip
+  flights, sweep on street end), masthead viewer-club • union (was union
+  twice), alarm-clock time-bank widget (20s face + banks remaining).
+
+## 2026-08-20 — PokerBros multi-table parity from Dan's live footage (Cowork session)
+
+Dan supplied a screen recording of a real PokerBros 4-table session and asked
+for full parity. Frame-by-frame extraction (57 frames) produced the feature
+catalog; an audit against MultiTablePage/TableTabBar found the navigation
+core already built (tabs, tap-to-switch, swipe, urgent pulse, auto-switch,
+keyboard shortcuts) and three signature features missing. All three shipped
+in `04c97be`:
+
+- **Tab hole-card previews** — each tab renders the hero's live hole cards at
+  that table as white mini-cards in the 4-color deck (spades black, hearts
+  red, diamonds blue, clubs green; T renders as 10; PLO's 4 cards squeeze
+  tighter). Between hands or after folding the tab reverts to the game name.
+  TablePage reports the cards as ONE comma-joined string so
+  updateTableInfo's shallow-compare bail-out (the P1-2 render-loop fix)
+  keeps working — an array identity would have defeated it.
+- **Depleting turn-timer bar** — gold bar riding the pill's bottom edge
+  whenever it is the hero's turn at that table, active tab included; drains
+  on the ENGINE clock (turnStartMs now reported beside the
+  server-authoritative deadline), goes red and pulses under 10s. Urgency
+  styling was also decoupled from tab focus — it is a property of the
+  clock, not of which tab the player is looking at.
+- **Transient last-action chips** — "Fold"/"Check"/"Call"/"Bet"/"Raise"/
+  "All In" flashes on the tab for 2.5s after acting at that table, derived
+  from lastActions[heroSeat]. Flash timers live in a ref keyed by tab id so
+  the once-a-second clock re-render cannot cancel a pending expiry.
+
+Deploy note: the session raced two concurrent pushes (0e15c70, a732483);
+work was merged in a /tmp clone (mount git is unlinked-locked) with 3
+conflicts resolved, tsc + vite build verified on the exact merged tree
+before each push attempt. WH sync 0c505e05 confirmed serving from
+production /api/health, and the live bundle greps positive for
+table-tab-bar__mini-card and table-tab-bar__timer-bar.
+
+## 2026-08-20 — Bomb Pot improvement pass (same Cowork session, post-deploy)
+
+The cinematic sequence shipped in 04c97be4 (swept to main by the host
+auto-push loop and verified live: TablePage-BxxvYVgu-v6.js on production
+serves playBombExplosion/bombPotAnte). This pass closes the gaps found
+reviewing it against the reference once more:
+
+- [P1] #175 multi-table gate: BombPotOverlay played its three sound beats
+  and fired the screen shake on BACKGROUND tables too. New playSounds prop
+  threaded TablePage -> TableModalsLayer -> overlay from
+  ambientSoundsAllowed, same pattern as CommunityCards.
+- [P1] Flop-after-explosion sequencing: the engine skips preflop betting, so
+  the flop arrived while the bomb was still falling — the reference deals
+  the flop only after the blast. TablePage now holds the board's VISUAL
+  stage at preflop for 2.15s (scaled) from BOMB_POT_TRIGGERED, then
+  releases; CommunityCards runs its normal face-down-and-fan flop animation
+  at that moment. Presentation only — pot, stacks, timers, action state are
+  never held; only 'flop' is remapped so an instant runout that reaches
+  turn/river renders immediately.
+- [P2] BOMB_POT_COMPLETED finally has an emitter: TablePage fires it on
+  HAND_COMPLETE (unconditionally — the overlay ignores it when idle, and
+  bombPotActive could be stale in that closure), so a fast all-in runout
+  dismisses the title instead of leaving it over the showdown.
+- Cleanup: SHIP-BOMB-POT.command + _bombpot-ship-20260820/ (the no-push-
+  route fallbacks, obsoleted by the working push route) moved to _to_delete/.
+
+ENGINE FOLLOW-UP (Tier 3, needs plan approval — NOT in this change):
+1. Double-board bomb pot: deal two full boards at flop, evaluate each for
+   half the pot at showdown (chip-conservation property tests mandatory).
+   Client is ready: RIT board stack renders stacked boards; overlay takes
+   doubleBoard payload.
+2. Antes as street bets: postBombPotAntes adds antes straight to the pot,
+   so no chips render at seats — the reference shows each ante in front of
+   its seat, swept at the flop. Needs the ante kept as a street bet through
+   the deal, or a postings array on BOMB_POT_TRIGGERED like BLINDS_POSTED.
+3. BOMB_POT_COMPLETED from the engine at settlement (client emit above is
+   the stopgap).
+
+Verified: tsc --noEmit clean, vite prod build clean (10.06s).

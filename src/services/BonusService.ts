@@ -282,7 +282,7 @@ class BonusServiceClass {
         loginStreak = ud.current_streak;
       }
     } catch (e: unknown) {
-      console.warn('[BonusService] Login streak lookup failed — defaulting to 1:', e);
+      console.warn('[BonusService] Login streak lookup failed - defaulting to 1:', e);
     }
 
     if (loginStreak >= 3 && loginStreak <= 6) {

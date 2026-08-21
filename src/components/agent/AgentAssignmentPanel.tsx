@@ -176,7 +176,7 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
           <option value="">Select agent… ({agents.length})</option>
           {agents.map((a) => (
             <option key={a.user_id} value={a.user_id}>
-              {a.label} — {a.role.replace('_', ' ')}
+              {a.label} - {a.role.replace('_', ' ')}
             </option>
           ))}
         </select>
@@ -204,7 +204,7 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
             .filter((m) => m.role === 'agent' || m.role === 'sub_agent')
             .map((a) => (
               <option key={a.user_id} value={a.user_id}>
-                {a.label} — {a.role.replace('_', ' ')}
+                {a.label} - {a.role.replace('_', ' ')}
               </option>
             ))}
         </select>

@@ -873,14 +873,14 @@ export default function SettlementPage() {
                   <span className={styles.timelineDot}>○</span>
                   <div>
                     <strong>Sunday Snapshot</strong>
-                    <p>11:59:59 PM PST — Invoice generation</p>
+                    <p>11:59:59 PM PST - Invoice generation</p>
                   </div>
                 </div>
                 <div className={styles.timelineItem}>
                   <span className={styles.timelineDot}>○</span>
                   <div>
                     <strong>Monday Payouts</strong>
-                    <p>4:00 AM PST — Commission injection</p>
+                    <p>4:00 AM PST - Commission injection</p>
                   </div>
                 </div>
               </div>

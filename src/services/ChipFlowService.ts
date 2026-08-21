@@ -75,7 +75,7 @@ export const ChipFlowService = {
 
     if (recentTransfers && recentTransfers.length >= 10) {
       throw new Error(
-        'Transfer rate limit exceeded — max 10 transfers per minute. Please wait and try again.'
+        'Transfer rate limit exceeded - max 10 transfers per minute. Please wait and try again.'
       );
     }
 
@@ -381,7 +381,7 @@ export const ChipFlowService = {
 
     // RPC missing (not yet deployed) — fall through to paginated client-side aggregation
     if (rpcError) {
-      console.debug('[ChipFlowService] verify_ledger_totals RPC not available — using fallback.');
+      console.debug('[ChipFlowService] verify_ledger_totals RPC not available - using fallback.');
     }
 
     // 2. Fallback to paginated client-side aggregation if RPC is missing

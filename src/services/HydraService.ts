@@ -50,7 +50,7 @@ function makeCircuitBreaker(threshold = 3, cooldownMs = 5 * 60_000, label = 'cir
       if (failures >= threshold && trippedAt === 0) {
         trippedAt = Date.now();
         console.debug(
-          `[HydraService] ${label} OPEN — silencing repeated errors for ${cooldownMs / 60_000} min`
+          `[HydraService] ${label} OPEN - silencing repeated errors for ${cooldownMs / 60_000} min`
         );
       }
     },
@@ -73,7 +73,7 @@ const _cb = {
     this.seatQueryFailures++;
     if (this.seatQueryFailures >= 3 && this.seatQueryTrippedAt === 0) {
       this.seatQueryTrippedAt = Date.now();
-      console.debug('[HydraService] Seat query circuit OPEN — silencing repeated errors for 5 min');
+      console.debug('[HydraService] Seat query circuit OPEN - silencing repeated errors for 5 min');
     }
   },
 };
@@ -439,7 +439,7 @@ export const HydraService = {
         .is('left_at', null);
       if ((currentSeats?.length || 0) >= maxHorses) {
         console.debug(
-          `[Hydra] Table ${tableId} already has ${currentSeats?.length} seats (max ${maxHorses}) — stopping seed`
+          `[Hydra] Table ${tableId} already has ${currentSeats?.length} seats (max ${maxHorses}) - stopping seed`
         );
         break;
       }
@@ -492,7 +492,7 @@ export const HydraService = {
       .is('left_at', null)
       .maybeSingle();
     if (existingHorseSeat) {
-      console.debug(`[Hydra] Horse ${horseId} already seated at table ${tableId} — skipping`);
+      console.debug(`[Hydra] Horse ${horseId} already seated at table ${tableId} - skipping`);
       return null;
     }
 
@@ -678,7 +678,7 @@ export const HydraService = {
       // No seat at all — just reset horse status to available
       await supabase.from('profiles').update({ horse_status: 'available' }).eq('id', horseId);
       console.debug(
-        `HydraService.removeHorse: No seat found for horse ${horseId} at table ${tableId} — reset to available`
+        `HydraService.removeHorse: No seat found for horse ${horseId} at table ${tableId} - reset to available`
       );
       return true; // Return true so caller can proceed with reseating
     }
@@ -789,7 +789,7 @@ export const HydraService = {
     if (!horseToRemove) return false;
 
     console.debug(
-      `[HydraService] Yielding seat for waiting real player — removing horse ${horseToRemove.name} (seat ${horseToRemove.seatNumber}) from table ${tableId}`
+      `[HydraService] Yielding seat for waiting real player - removing horse ${horseToRemove.name} (seat ${horseToRemove.seatNumber}) from table ${tableId}`
     );
 
     // Remove immediately — don't wait for orbit, real player is waiting

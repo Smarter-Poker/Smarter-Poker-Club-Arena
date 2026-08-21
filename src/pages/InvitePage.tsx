@@ -211,7 +211,7 @@ export default function InvitePage() {
 
       if (membership?.status === 'pending') {
         setPendingApproval(true);
-        toast.success('Request submitted — pending owner approval.');
+        toast.success('Request submitted - pending owner approval.');
         setJoining(false);
         return;
       }
@@ -292,7 +292,7 @@ export default function InvitePage() {
 
         {pendingApproval ? (
           <div className="already-member">
-            <span>Request submitted — pending approval.</span>
+            <span>Request submitted - pending approval.</span>
             <p style={{ color: '#aaa', fontSize: '0.85rem', margin: '8px 0 12px' }}>
               This club requires owner approval. You'll gain access once your request is reviewed.
             </p>

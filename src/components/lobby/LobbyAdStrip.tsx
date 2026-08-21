@@ -182,7 +182,7 @@ export default function LobbyAdStrip({
   if (ads.length === 0) return null;
 
   const ad = ads[Math.min(index, ads.length - 1)];
-  const text = ad.title ? (ad.body ? `${ad.title} — ${ad.body}` : ad.title) : ad.body;
+  const text = ad.title ? (ad.body ? `${ad.title} - ${ad.body}` : ad.title) : ad.body;
 
   return (
     <div className="lobby-ads">

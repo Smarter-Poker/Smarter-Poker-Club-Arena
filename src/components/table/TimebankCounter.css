@@ -4,10 +4,9 @@
  */
 
 .tbc-widget {
-  position: fixed;
-  left: 12px;
-  bottom: calc(96px + env(safe-area-inset-bottom, 0));
-  z-index: 1400;
+  /* Dan 2026-08-21: no longer a free-floating fixed pill — it lives in the
+     TableHUD bottom-left stack, directly above the previous-hand card. */
+  position: static;
   display: inline-flex;
   align-items: center;
   gap: 5px;

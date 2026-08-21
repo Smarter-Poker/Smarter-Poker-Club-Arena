@@ -47,7 +47,7 @@ export default function NotificationSettingsPanel({ onClose }: NotificationSetti
         {/* DND Status */}
         {dndActive && (
           <div className={styles.dndBanner}>
-            Do Not Disturb — {dndRemaining}m remaining
+            Do Not Disturb - {dndRemaining}m remaining
             <button
               onClick={() => {
                 notificationService.clearDnd();

@@ -91,7 +91,7 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
           </div>
           {!canAfford && (
             <div className="rebuyWarning">
-              Insufficient balance — you need {money(totalCost)} to rebuy
+              Insufficient balance - you need {money(totalCost)} to rebuy
             </div>
           )}
         </div>

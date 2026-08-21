@@ -41,14 +41,14 @@ export default function SecurityDashboard({
       status: requiresApproval ? 'pass' : 'warn',
       detail: requiresApproval
         ? 'New members require approval'
-        : 'Auto-join enabled — consider requiring approval',
+        : 'Auto-join enabled - consider requiring approval',
     });
 
     // Privacy
     list.push({
       label: 'Club Privacy',
       status: isPublic ? 'warn' : 'pass',
-      detail: isPublic ? 'Club is publicly discoverable' : 'Club is private — invite only',
+      detail: isPublic ? 'Club is publicly discoverable' : 'Club is private - invite only',
     });
 
     // Agent coverage

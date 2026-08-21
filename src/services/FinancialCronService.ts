@@ -88,7 +88,7 @@ export const FinancialCronService = {
     };
 
     console.debug(
-      '[FinancialCron] Started — reconciliation every',
+      '[FinancialCron] Started - reconciliation every',
       this._config.reconciliationIntervalMs / 3600000,
       'h, suspension check every',
       this._config.suspensionCheckIntervalMs / 3600000,
@@ -281,7 +281,7 @@ export const FinancialCronService = {
           if (consecutiveFailures >= 3) {
             this._suspensionCheckDisabled = true;
             console.debug(
-              '[FinancialCron] Suspension check disabled — CreditService.checkSuspension unavailable'
+              '[FinancialCron] Suspension check disabled - CreditService.checkSuspension unavailable'
             );
             break;
           }

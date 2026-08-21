@@ -211,7 +211,7 @@ export function BBJRecentHits({ poolId, limit = 5, currentUserName }: BBJRecentH
                 </span>
               </div>
               <span className="bbj-hits__chev" aria-hidden="true">
-                {isOpen ? '–' : '+'}
+                {isOpen ? '-' : '+'}
               </span>
             </button>
 

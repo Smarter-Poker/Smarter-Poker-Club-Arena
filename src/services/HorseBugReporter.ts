@@ -140,7 +140,7 @@ class HorseBugReporterService {
     };
     window.addEventListener('unhandledrejection', this.rejectionListener);
 
-    console.debug('[HorseBugReporter] Mini-agent QA system ACTIVE — capturing bugs');
+    console.debug('[HorseBugReporter] Mini-agent QA system ACTIVE - capturing bugs');
   }
 
   /** Stop capturing */

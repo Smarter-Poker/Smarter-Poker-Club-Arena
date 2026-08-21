@@ -132,7 +132,19 @@
 
   /* ─────────────── Layout ─────────────── */
   --header-height: 56px;
-  --bottom-nav-height: 60px;
+  /* Dan 2026-08-20: this said 60px and the nav has never been 60px. Measured
+     in headless Chrome against the real ClubBottomNav markup: 74px (8px row
+     padding x2, 8px item padding x2, a 24px icon, a 4px gap and a ~12px
+     label). Every page that reserved `var(--bottom-nav-height)` was therefore
+     14px short and its last row of content sat UNDER the nav — which is the
+     "footer links are not at the bottom" symptom. .bottomNav now also carries
+     `min-height: var(--bottom-nav-height)` so the token and the component can
+     never silently disagree again. */
+  --bottom-nav-height: 74px;
+  /* What a page must actually reserve: the bar plus the phone's home-indicator
+     inset, which the bar adds to its own padding on iOS. Reserving the bar
+     alone is why content still hid behind it on notched devices. */
+  --bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   --sidebar-width: 280px;
 
   /* ─────────────── FUTURISTIC METAL UI ─────────────── */

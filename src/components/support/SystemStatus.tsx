@@ -34,7 +34,7 @@ export function SystemStatus({ status, message }: SystemStatusProps) {
             ? 'System Issues'
             : 'System Operational'}
       </span>
-      {message && <span className="status-message"> — {message}</span>}
+      {message && <span className="status-message"> - {message}</span>}
     </div>
   );
 }

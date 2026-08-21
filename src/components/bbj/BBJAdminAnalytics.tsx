@@ -118,7 +118,7 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
           <span className="bbj-admin__stat-value">
             {data.days_since_last_hit != null
               ? `${Number(data.days_since_last_hit).toFixed(1)}d`
-              : '—'}
+              : '-'}
           </span>
           <span className="bbj-admin__stat-sub">
             {data.last_hit_at ? new Date(data.last_hit_at).toLocaleDateString() : 'never hit'}

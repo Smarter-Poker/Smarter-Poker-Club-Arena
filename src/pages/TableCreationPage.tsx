@@ -270,7 +270,7 @@ export default function TableCreationPage() {
                 max={100}
               />
             </div>
-            <span className="range-divider">—</span>
+            <span className="range-divider">-</span>
             <div className="buyin-input">
               <label>Max</label>
               <input

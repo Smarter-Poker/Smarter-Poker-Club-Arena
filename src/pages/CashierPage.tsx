@@ -1317,7 +1317,7 @@ export default function CashierPage() {
           if (isMounted.current)
             setMessage({
               type: 'info',
-              text: 'Cash out from the table itself — taking you there now.',
+              text: 'Cash out from the table itself - taking you there now.',
             });
           navigate(`/table/${tableId}`);
         } else {
@@ -1338,7 +1338,7 @@ export default function CashierPage() {
           // global figure because atomic_chip_transfer really does debit that.
           if (myClubChips === null) {
             if (isMounted.current)
-              setMessage({ type: 'error', text: 'Still loading your club balance — try again.' });
+              setMessage({ type: 'error', text: 'Still loading your club balance - try again.' });
             if (isMounted.current) setIsProcessing(false);
             return;
           }
@@ -1547,7 +1547,7 @@ export default function CashierPage() {
             {hasNoClubs ? (
               <>
                 <div className={`${styles.message} ${styles.messageInfo}`}>
-                  The cashier belongs to a club — chips are held per club, so there is no cashier
+                  The cashier belongs to a club - chips are held per club, so there is no cashier
                   until you join one.
                 </div>
                 <button type="button" className={styles.btnPrimary} onClick={() => navigate('/')}>
@@ -1615,7 +1615,7 @@ export default function CashierPage() {
           ) : (
             <>
               <span className={styles.connectionDot} style={{ background: '#ef4444' }} /> Live
-              connection lost — data may be stale
+              connection lost - data may be stale
             </>
           )}
         </div>
@@ -1887,7 +1887,7 @@ export default function CashierPage() {
                   <option value="">Select player...</option>
                   {recipients.map((r) => (
                     <option key={r.id} value={r.id}>
-                      {r.username} ({r.role}) — {r.balance.toLocaleString()} chips
+                      {r.username} ({r.role}) - {r.balance.toLocaleString()} chips
                     </option>
                   ))}
                 </select>
@@ -2014,7 +2014,7 @@ export default function CashierPage() {
                     if (isMounted.current)
                       setMessage({
                         type: 'error',
-                        text: 'Too many distributions — please wait 60 seconds',
+                        text: 'Too many distributions - please wait 60 seconds',
                       });
                   } else if (msg.includes('Insufficient promo')) {
                     if (isMounted.current)
@@ -2029,7 +2029,7 @@ export default function CashierPage() {
                     if (isMounted.current)
                       setMessage({
                         type: 'error',
-                        text: 'Your agent record was not found — contact club owner',
+                        text: 'Your agent record was not found - contact club owner',
                       });
                   } else {
                     if (isMounted.current) setMessage({ type: 'error', text: msg });
@@ -2100,7 +2100,7 @@ export default function CashierPage() {
                 <div className={styles.escrowCheckItem}>
                   <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckAmber}`}>◷</div>
                   <span className={styles.escrowCheckLabel}>
-                    Escrow holding — chips are reserved until review completes
+                    Escrow holding - chips are reserved until review completes
                   </span>
                 </div>
                 <div className={styles.escrowCheckItem}>

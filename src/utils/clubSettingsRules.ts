@@ -141,7 +141,7 @@ export function blockingDeletionReason(impact: ClubDeletionImpact): string | nul
   if (impact.runningTables > 0) {
     return `Close the ${impact.runningTables} running table${
       impact.runningTables === 1 ? '' : 's'
-    } before deleting this club — deleting now would remove them with players seated.`;
+    } before deleting this club - deleting now would remove them with players seated.`;
   }
   if (impact.walletChips > 0) {
     return `This club still holds ${impact.walletChips.toLocaleString()} chips. Settle the club wallet before deleting.`;

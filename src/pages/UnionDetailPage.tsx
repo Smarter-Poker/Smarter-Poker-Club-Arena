@@ -131,9 +131,9 @@ export default function UnionDetailPage() {
         totalPlayers: union.totalPlayers || union.memberCount,
       });
       if (currentLevel > prevLevelRef.current) {
-        toast.success(`Union leveled up to Lv.${currentLevel} — ${uLevel.tierLabel}!`);
+        toast.success(`Union leveled up to Lv.${currentLevel} - ${uLevel.tierLabel}!`);
       } else {
-        toast.info(`Union level changed to Lv.${currentLevel} — ${uLevel.tierLabel}`);
+        toast.info(`Union level changed to Lv.${currentLevel} - ${uLevel.tierLabel}`);
       }
     }
     prevLevelRef.current = currentLevel;
@@ -197,7 +197,7 @@ export default function UnionDetailPage() {
 
         // Self-healing: if Midway Union is missing, auto-create it
         if (!unionData && unionId === 'fade0000-0000-0000-0000-000000000001') {
-          console.warn('[UnionDetailPage] Midway Union missing — auto-creating...');
+          console.warn('[UnionDetailPage] Midway Union missing - auto-creating...');
           const ok = await ensureMidwayUnionSetup();
           if (ok) {
             unionData = await unionService.getUnion(unionId);
@@ -576,7 +576,7 @@ export default function UnionDetailPage() {
         setApplying(true);
         try {
           await unionApi.requestLeave(unionId!, memberClub.id);
-          toast.success('Leave request submitted — the union lead will review it.');
+          toast.success('Leave request submitted - the union lead will review it.');
         } catch (leaveErr: any) {
           toast.error(leaveErr.message || 'Failed to submit leave request.');
         } finally {
@@ -907,7 +907,7 @@ export default function UnionDetailPage() {
                 >
                   <div style={{ fontSize: '1.5rem', marginBottom: '6px' }}>◆</div>
                   <p style={{ margin: 0, fontSize: '0.75rem' }}>
-                    No active tables — games will appear here when clubs start playing
+                    No active tables - games will appear here when clubs start playing
                   </p>
                 </div>
               ) : (

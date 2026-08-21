@@ -297,7 +297,7 @@ export default function NotificationCenter() {
             <p className="notif-empty-subtitle">
               {filter === 'unread'
                 ? 'Every notification has been read. Nice work keeping things tidy!'
-                : 'Join a club, sit at a table, or enter a tournament — your activity feed will light up here.'}
+                : 'Join a club, sit at a table, or enter a tournament - your activity feed will light up here.'}
             </p>
           </div>
         ) : (

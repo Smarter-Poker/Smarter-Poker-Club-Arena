@@ -415,7 +415,7 @@ class TableService {
           chipsReturned: 0,
           error:
             serverLeave?.error ||
-            'Could not reach the game server — your chips were not moved. Please try again.',
+            'Could not reach the game server - your chips were not moved. Please try again.',
         };
       }
 
@@ -453,6 +453,32 @@ class TableService {
       }
       // Authoritative seat number from the DB — used for every downstream op.
       const seatNo = seat.seat_number;
+
+      // ── Dan 2026-08-21 P0 (hand #1458859, chips vanished): honor the
+      // ENGINE's word on whether the player is mid-hand, not the seat row's
+      // status. The engine's own /leave handler marks the seat
+      // status='sitting_out' + leave_pending BEFORE this code reads it, so
+      // the old `status === 'playing'` guard could never fire for a mid-hand
+      // leave — we fell through to atomic_table_cashout with the STALE
+      // pre-hand stack while the player's real chips were still in the pot.
+      // The settlement then wrote the true final stack into a seat whose
+      // left_at was already stamped — a silent no-op. A player who WON the
+      // hand was paid their old stack and the winnings were destroyed.
+      //
+      // `immediate:false` from the engine means exactly "a hand is running
+      // and I have marked you leave_pending — processLeavePending will cash
+      // out your true post-hand stack at settlement." Trust it and stop here.
+      if (serverLeave.immediate === false) {
+        // Belt & suspenders: make sure leave_pending is set even if the
+        // engine's async DB write hasn't landed yet.
+        await supabase
+          .from('table_seats')
+          .update({ status: 'sitting_out', leave_pending: true })
+          .eq('table_id', tableId)
+          .eq('seat_number', seatNo)
+          .is('left_at', null);
+        return { success: true, chipsReturned: 0 };
+      }
 
       // Check if player is in active hand (server already folded them, but seat may still be 'playing')
       if (seat.status === 'playing') {
@@ -702,7 +728,7 @@ class TableService {
       return false;
     }
     if (!updated) {
-      console.warn('[TableService] Pause conflict — table status already changed');
+      console.warn('[TableService] Pause conflict - table status already changed');
       return false;
     }
     masterBus.emit('TABLE_UPDATED', { tableId, status: 'paused' });
@@ -727,7 +753,7 @@ class TableService {
       return false;
     }
     if (!updated) {
-      console.warn('[TableService] Resume conflict — table is not paused');
+      console.warn('[TableService] Resume conflict - table is not paused');
       return false;
     }
     masterBus.emit('TABLE_UPDATED', { tableId, status: 'running' });
@@ -794,7 +820,7 @@ class TableService {
       return false;
     }
     if (!updated) {
-      console.warn('[TableService] Delete conflict — table status changed concurrently');
+      console.warn('[TableService] Delete conflict - table status changed concurrently');
       return false;
     }
 

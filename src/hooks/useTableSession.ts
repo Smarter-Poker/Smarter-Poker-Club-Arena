@@ -98,9 +98,50 @@ export function useTableSession(): UseTableSessionReturn {
       const stack = typeof p?.newStack === 'number' ? p.newStack : 0;
       if (stack > peakStackRef.current) peakStackRef.current = stack;
     });
+
+    /**
+     * SESSION DATA FIX 2026-08-20 (Dan: "there is a bug inside the Session
+     * Complete, it's not using any real or accurate data").
+     *
+     * handsPlayedRef and handsWonRef were declared in this hook, exported in
+     * its return, read by publishSessionSummary in TablePage — and WRITTEN BY
+     * NOTHING. Not here, not in TablePage, not anywhere in the repo. So three
+     * of the six tiles on the Session Complete card were structurally pinned
+     * to zero for every session that has ever been played:
+     *
+     *   Hands Played  = handsPlayedRef                     -> always 0
+     *   Hands/Hour    = handsPlayed / duration * 3600       -> always 0
+     *   Win Rate      = handsWon / handsPlayed              -> always 0%
+     *
+     * This is the identical defect the 2026-08-15 comment above describes for
+     * biggestPotRef; that pass fixed the pot and the stack and left these two
+     * behind, which is why a card can show a real 40-chip biggest pot and a
+     * real +300 profit next to "0 hands played". The numbers that WERE wired
+     * looked right, so the ones that were not read as a quiet session rather
+     * than as broken.
+     *
+     * HAND_COMPLETED is the correct source: TablePage emits it exactly once
+     * per hand, inside a guard that requires `outcome.dealtIn`, so it counts
+     * hands the hero was actually IN — not every pot that happened at the
+     * table while they sat out or waited for the big blind.
+     */
+    const unsubHand = masterBus.subscribe('HAND_COMPLETED', (event) => {
+      const p = event.payload as { won?: boolean; heroStack?: number };
+      handsPlayedRef.current += 1;
+      if (p?.won === true) handsWonRef.current += 1;
+
+      // Peak stack, properly. CHIPS_ADDED above only fires on a top-up, so a
+      // player who never rebought reported a peak of 0 while holding chips the
+      // whole session. Sampling at end-of-hand catches the real high-water mark
+      // for anyone who ever won a pot.
+      const stack = typeof p?.heroStack === 'number' ? p.heroStack : 0;
+      if (stack > peakStackRef.current) peakStackRef.current = stack;
+    });
+
     return () => {
       unsubPot();
       unsubChips();
+      unsubHand();
     };
     // Refs are stable for the hook's lifetime — subscribe exactly once.
     // eslint-disable-next-line react-hooks/exhaustive-deps

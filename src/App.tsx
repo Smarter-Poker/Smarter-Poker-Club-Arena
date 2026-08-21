@@ -342,7 +342,7 @@ export default function App() {
                 letterSpacing: '0.5px',
               }}
             >
-              Reconnecting — your actions are saved and will sync automatically
+              Reconnecting - your actions are saved and will sync automatically
             </div>
           )}
           <OfflineQueueBadge />

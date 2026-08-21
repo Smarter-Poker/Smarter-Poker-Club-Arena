@@ -245,7 +245,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
         label: 'BB/100',
         value: d.bb_per_100 || 0,
         format: (val) => `${val >= 0 ? '+' : ''}${val.toFixed(2)}`,
-        description: 'Big blinds won per 100 hands — key profitability metric',
+        description: 'Big blinds won per 100 hands - key profitability metric',
         benchmark: BENCHMARKS.bbPer100,
       },
     ];
@@ -445,15 +445,15 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
       <div className="stats-legend">
         <div className="legend-item">
           <span className="legend-label">BB/100</span>
-          <p>Big Blinds won per 100 hands — primary win rate metric</p>
+          <p>Big Blinds won per 100 hands - primary win rate metric</p>
         </div>
         <div className="legend-item">
           <span className="legend-label">C-Bet</span>
-          <p>Continuation Bet — betting on the flop after raising preflop</p>
+          <p>Continuation Bet - betting on the flop after raising preflop</p>
         </div>
         <div className="legend-item">
           <span className="legend-label">AF</span>
-          <p>Aggression Factor — ratio of aggressive to passive actions</p>
+          <p>Aggression Factor - ratio of aggressive to passive actions</p>
         </div>
       </div>
     </div>

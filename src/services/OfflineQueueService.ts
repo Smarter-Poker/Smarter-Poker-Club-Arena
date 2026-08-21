@@ -57,7 +57,7 @@ export const OfflineQueueService = {
     // Auto-replay when coming back online
     if (typeof window !== 'undefined') {
       this._onlineHandler = () => {
-        console.debug('[OfflineQueue] Back online — replaying queue');
+        console.debug('[OfflineQueue] Back online - replaying queue');
         this.replayQueue();
       };
       window.addEventListener('online', this._onlineHandler);
@@ -88,7 +88,7 @@ export const OfflineQueueService = {
     const existing = await this.findByOperationId(mutation.operationId);
     if (existing) {
       reportError(
-        new Error(`[OfflineQueue] Duplicate operation ${mutation.operationId} — skipping`),
+        new Error(`[OfflineQueue] Duplicate operation ${mutation.operationId} - skipping`),
         'OfflineQueueService.Duplicate_operation_mutationoperationId_'
       );
       return false;
@@ -131,7 +131,7 @@ export const OfflineQueueService = {
 
     // Concurrency guard — prevent double-execution from rapid 'online' events
     if (this._isReplaying) {
-      console.debug('[OfflineQueue] Replay already in progress — skipping (not an error)');
+      console.debug('[OfflineQueue] Replay already in progress - skipping (not an error)');
       return { replayed: 0, failed: 0 };
     }
     this._isReplaying = true;
@@ -159,7 +159,7 @@ export const OfflineQueueService = {
             mutation.retries++;
             if (mutation.retries >= 3) {
               reportError(
-                new Error(`[OfflineQueue] Mutation ${mutation.id} failed 3 times — dropping`),
+                new Error(`[OfflineQueue] Mutation ${mutation.id} failed 3 times - dropping`),
                 'OfflineQueueService.Mutation_mutationid_failed_3_times__drop'
               );
               await this.remove(mutation.id);

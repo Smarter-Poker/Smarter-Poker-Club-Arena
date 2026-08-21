@@ -411,7 +411,7 @@ export default function NotificationsPage() {
       {/* Q3: DND Active Banner */}
       {dndActive && (
         <div className="dnd-banner">
-          Do Not Disturb — {notificationService.getDndRemaining()}m remaining
+          Do Not Disturb - {notificationService.getDndRemaining()}m remaining
           <button className="dnd-clear" onClick={handleDndClear}>
             Resume
           </button>

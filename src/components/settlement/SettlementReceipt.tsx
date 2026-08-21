@@ -84,7 +84,7 @@ export default function SettlementReceipt({
         <div className="sr-title-block">
           <span className="sr-title">Settlement Receipt</span>
           <span className="sr-period">
-            {new Date(periodStart).toLocaleDateString()} —{' '}
+            {new Date(periodStart).toLocaleDateString()} -{' '}
             {new Date(periodEnd).toLocaleDateString()}
           </span>
         </div>

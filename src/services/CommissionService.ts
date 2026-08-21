@@ -119,7 +119,7 @@ export const CommissionService = {
     }
     if (targetRole === 'SUB_AGENT') {
       throw new Error(
-        'Sub-agent rates are managed server-side (sub_agents.commission_pct) — no client write path.'
+        'Sub-agent rates are managed server-side (sub_agents.commission_pct) - no client write path.'
       );
     }
 
@@ -385,7 +385,7 @@ export const CommissionService = {
    */
   async approvePayout(payoutId: string, approvedBy: string): Promise<boolean> {
     console.debug(
-      `[Commission] approvePayout is retired (no-op) for ${payoutId} by ${approvedBy} — ` +
+      `[Commission] approvePayout is retired (no-op) for ${payoutId} by ${approvedBy} - ` +
         'commissions accrue in agent_commissions and settle via credit_invoices.'
     );
     return false;

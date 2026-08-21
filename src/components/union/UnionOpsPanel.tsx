@@ -122,8 +122,8 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
     try {
       const res = await UnionOpsService.runIntegritySweep(unionId, 24);
       const n = Number((res as Record<string, unknown>)?.signals ?? 0);
-      if (n === 0) toast.success('Integrity sweep clean — no signals');
-      else toast.info(`Integrity sweep raised ${n} signal(s) — see alerts`);
+      if (n === 0) toast.success('Integrity sweep clean - no signals');
+      else toast.info(`Integrity sweep raised ${n} signal(s) - see alerts`);
       await load();
     } catch (e) {
       reportError(e, 'UnionOpsPanel.runSweep');
@@ -309,7 +309,7 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
           <Stat
             label="Rates out of policy"
             value={coverage.commission_rates_out_of_policy}
-            sub={`band ${Math.round(coverage.policy_band.min * 100)}–${Math.round(coverage.policy_band.max * 100)}%`}
+            sub={`band ${Math.round(coverage.policy_band.min * 100)}-${Math.round(coverage.policy_band.max * 100)}%`}
             bad={coverage.commission_rates_out_of_policy > 0}
           />
         </div>
@@ -430,7 +430,7 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
               }}
             >
               <strong style={{ color: law.healthy ? '#37e7c7' : '#ff7676' }}>
-                Union law {law.healthy ? 'healthy' : `— ${law.breaches.length} breach(es)`}
+                Union law {law.healthy ? 'healthy' : `- ${law.breaches.length} breach(es)`}
               </strong>
               {law.breaches.length > 0 && (
                 <ul style={{ color: '#ff9c9c', fontSize: '0.82rem', margin: '8px 0 0 18px' }}>
@@ -521,7 +521,7 @@ function SettlementConfirm({
       >
         <h3 style={{ margin: '0 0 2px', color: '#e6f1f5' }}>Run settlement</h3>
         <p style={{ color: '#7d919b', fontSize: '0.8rem', marginTop: 0 }}>
-          {new Date(preview.period_start).toLocaleDateString()} –{' '}
+          {new Date(preview.period_start).toLocaleDateString()} -{' '}
           {new Date(preview.period_end).toLocaleDateString()}
         </p>
 
@@ -576,13 +576,13 @@ function SettlementConfirm({
             <ul style={{ margin: 0, paddingLeft: 18, color: '#d8b784', fontSize: '0.8rem' }}>
               {preview.round2.detail.slice(0, 6).map((d, i) => (
                 <li key={`c${i}`}>
-                  {d.club ?? 'club'} owes {money(d.owed)}, treasury {money(d.treasury)} — short{' '}
+                  {d.club ?? 'club'} owes {money(d.owed)}, treasury {money(d.treasury)} - short{' '}
                   {money(d.short_by)}
                 </li>
               ))}
               {preview.round3.detail.slice(0, 6).map((d, i) => (
                 <li key={`a${i}`}>
-                  {d.agent ?? 'agent'} owes {money(d.owed)}, balance {money(d.agent_balance)} —
+                  {d.agent ?? 'agent'} owes {money(d.owed)}, balance {money(d.agent_balance)} -
                   short {money(d.short_by)}
                 </li>
               ))}
@@ -592,7 +592,7 @@ function SettlementConfirm({
 
         {nothingToDo && (
           <p style={{ color: '#8fa3ad', fontSize: '0.85rem' }}>
-            Nothing outstanding for this period — running again is safe and will move nothing.
+            Nothing outstanding for this period - running again is safe and will move nothing.
           </p>
         )}
 

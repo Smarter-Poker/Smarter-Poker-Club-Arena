@@ -506,7 +506,7 @@ export default function ClubCarouselPage() {
       } = await getAuthUser();
       if (!isMounted.current) return;
       if (!authUser) {
-        console.warn('[ClubCarouselPage] getUser() returned null — skipping data load');
+        console.warn('[ClubCarouselPage] getUser() returned null - skipping data load');
         setLoading(false);
         return;
       }
@@ -796,7 +796,7 @@ export default function ClubCarouselPage() {
         {/* #3: Offline banner */}
         {!isOnline && (
           <div className="carousel-offline-banner" role="alert">
-            <span>⚠ Offline — showing cached data</span>
+            <span>⚠ Offline - showing cached data</span>
           </div>
         )}
 
@@ -1170,7 +1170,7 @@ export default function ClubCarouselPage() {
                                         marginRight: '6px',
                                       }}
                                     >
-                                      Lv.{uLevel.level} — {uLevel.tierLabel}
+                                      Lv.{uLevel.level} - {uLevel.tierLabel}
                                     </span>
                                     <span className="member-count">
                                       {union.memberCount.toLocaleString()}

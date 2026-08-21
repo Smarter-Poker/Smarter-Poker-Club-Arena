@@ -84,7 +84,7 @@ const SimPage: React.FC = () => {
     <div className="sim-page">
       <div className="sim-page__header">
         <div className="sim-page__title-row">
-          <h1 className="sim-page__title">Club Arena — Sim</h1>
+          <h1 className="sim-page__title">Club Arena - Sim</h1>
         </div>
         <p className="sim-page__subtitle">
           Deterministic scenario playback. No live engine. Each step is a scripted state snapshot of

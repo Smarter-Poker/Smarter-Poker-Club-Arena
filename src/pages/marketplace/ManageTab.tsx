@@ -317,7 +317,7 @@ export default function ManageTab({
     if (processing) return;
     if ((item.purchase_count || 0) > 0) {
       toast.error(
-        'This item has sales. Deleting it would erase its purchase history — hide it instead.'
+        'This item has sales. Deleting it would erase its purchase history - hide it instead.'
       );
       return;
     }
@@ -518,14 +518,14 @@ export default function ManageTab({
               maxLength={64}
             />
             <span className={styles.grantHint}>
-              Unique per item — two items sharing an id unlock the same thing.
+              Unique per item - two items sharing an id unlock the same thing.
             </span>
           </div>
         )}
         {grantInfo && !grantInfo.grantUnit && (
           <div className={styles.grantHint}>
             {grantInfo.grantType === 'none'
-              ? 'Exclusive items grant nothing automatically — your club fulfils them.'
+              ? 'Exclusive items grant nothing automatically - your club fulfils them.'
               : 'Redeeming unlocks this permanently for the member.'}
           </div>
         )}
@@ -749,7 +749,7 @@ export default function ManageTab({
                         onChange={(e) => setDraft({ ...draft, stackable: e.target.checked })}
                         style={{ marginRight: 8 }}
                       />
-                      Stackable — members may hold several unredeemed copies
+                      Stackable - members may hold several unredeemed copies
                     </label>
                   </div>
                   {(() => {

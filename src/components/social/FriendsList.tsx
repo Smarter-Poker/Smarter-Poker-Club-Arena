@@ -139,7 +139,7 @@ export function FriendsList({
             {/* Online Section */}
             {onlineFriends.length > 0 && (
               <div className="friends-section">
-                <h4 className="section-label">Online — {onlineFriends.length}</h4>
+                <h4 className="section-label">Online - {onlineFriends.length}</h4>
                 {onlineFriends.map((friend, i) => (
                   <div
                     key={friend.id}
@@ -163,7 +163,7 @@ export function FriendsList({
             {/* Offline Section */}
             {offlineFriends.length > 0 && (
               <div className="friends-section">
-                <h4 className="section-label">Offline — {offlineFriends.length}</h4>
+                <h4 className="section-label">Offline - {offlineFriends.length}</h4>
                 {offlineFriends.map((friend, i) => (
                   <div
                     key={friend.id}

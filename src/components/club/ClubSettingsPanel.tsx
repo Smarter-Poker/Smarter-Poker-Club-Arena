@@ -247,7 +247,7 @@ export function ClubSettingsPanel({ clubId, isOpen, onClose, onSave }: ClubSetti
                 <input type="checkbox" checked={settings.isPrivate} disabled />
                 <span>
                   Require Approval{' '}
-                  {settings.isPrivate ? '(auto — private clubs)' : '(public — open join)'}
+                  {settings.isPrivate ? '(auto - private clubs)' : '(public - open join)'}
                 </span>
               </label>
             </section>

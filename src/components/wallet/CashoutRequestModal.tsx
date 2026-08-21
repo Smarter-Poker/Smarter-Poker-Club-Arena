@@ -312,7 +312,7 @@ export default function CashoutRequestModal({
     try {
       const lockResult = await checkSettlementLock(clubId);
       if (lockResult.locked) {
-        if (isMounted.current) setError('🔒 Settlement in progress — cashout requests frozen');
+        if (isMounted.current) setError('🔒 Settlement in progress - cashout requests frozen');
         if (isMounted.current) setIsSubmitting(false);
         return;
       }

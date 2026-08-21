@@ -14,8 +14,12 @@
   background: linear-gradient(180deg, #0a0a0f 0%, #1a1a2e 100%);
   position: relative;
   overflow-x: hidden;
-  padding-bottom: 80px;
-  /* Space for fixed bottom navigation */
+  /* Dan 2026-08-20: was a hardcoded 80px against a bar that measures 74px and
+     then ADDS env(safe-area-inset-bottom) on a notched phone — so on an
+     iPhone the bar grew past the reservation and covered the last row of game
+     cards. Use the token that tracks the component, plus the inset, plus a
+     little breathing room. */
+  padding-bottom: calc(var(--bottom-nav-clearance, 74px) + 12px);
 }
 
 .club-home.loading,

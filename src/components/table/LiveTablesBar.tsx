@@ -18,6 +18,7 @@
  * Read-only: it never mutates seats, it only asks the container to navigate.
  */
 
+import { formatGameTitle } from '../../utils/formatGameTitle';
 import './LiveTablesBar.css';
 
 export interface LiveTablesBarProps {
@@ -37,21 +38,28 @@ export default function LiveTablesBar({ tables, urgent, onReturn }: LiveTablesBa
       <button
         className="live-tables-bar live-tables-bar--urgent"
         onClick={() => onReturn(urgent.tableId)}
-        title="Your turn — return to the table"
+        title="Your turn - return to the table"
       >
         <span className="live-tables-bar__dot live-tables-bar__dot--urgent" aria-hidden="true">
           ●
         </span>
-        <span className="live-tables-bar__label">Action needed — {urgent.name}</span>
+        <span className="live-tables-bar__label">
+          Action Needed - {formatGameTitle(urgent.name)}
+        </span>
         {urgent.secondsLeft !== undefined && (
           <span className="live-tables-bar__timer">{urgent.secondsLeft}s</span>
         )}
-        <span className="live-tables-bar__cta">Act now →</span>
+        <span className="live-tables-bar__cta">Act Now →</span>
       </button>
     );
   }
 
-  const label = tables.length === 1 ? tables[0].name : `${tables.length} live tables`;
+  /* Dan 2026-08-20: the variant is an acronym and must read as one — the dock
+     was showing "nlh 0.1/0.2" because that name was assembled from the
+     lowercase game_variant enum. formatGameTitle fixes it for every producer,
+     including club owners who type the name by hand. */
+  const label =
+    tables.length === 1 ? formatGameTitle(tables[0].name) : `${tables.length} Live Tables`;
 
   return (
     <button
@@ -61,7 +69,7 @@ export default function LiveTablesBar({ tables, urgent, onReturn }: LiveTablesBa
     >
       <span className="live-tables-bar__dot" aria-hidden="true">●</span>
       <span className="live-tables-bar__label">{label}</span>
-      <span className="live-tables-bar__cta">Return to game →</span>
+      <span className="live-tables-bar__cta">Return To Game →</span>
     </button>
   );
 }

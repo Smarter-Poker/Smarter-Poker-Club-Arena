@@ -366,7 +366,7 @@ export default function TournamentDetails({
         if (event.payload.tournamentId !== tournamentId) return;
         // Remove the closed source table from the tables list
         setTables((prev) => prev.filter((t) => t.id !== event.payload.sourceTableId));
-        toast.info(`Table merged — ${event.payload.playersMoved} players moved`);
+        toast.info(`Table merged - ${event.payload.playersMoved} players moved`);
       },
       300
     );
@@ -388,7 +388,7 @@ export default function TournamentDetails({
       'TOURNAMENT_BREAK',
       (event) => {
         if (event.payload.tournamentId !== tournamentId) return;
-        toast.info('Tournament break — play resumes shortly');
+        toast.info('Tournament break - play resumes shortly');
       },
       300
     );
@@ -397,7 +397,7 @@ export default function TournamentDetails({
       'TOURNAMENT_BREAK_END',
       (event) => {
         if (event.payload.tournamentId !== tournamentId) return;
-        toast.info('Break over — play resuming');
+        toast.info('Break over - play resuming');
       },
       300
     );
@@ -641,7 +641,7 @@ export default function TournamentDetails({
     try {
       await tournamentService.unregisterPlayer(tournament.id, user.id);
       setIsRegistered(false);
-      toast.success('Unregistered — buy-in refunded to your wallet');
+      toast.success('Unregistered - buy-in refunded to your wallet');
       // Defer reload so the UI updates instantly (fixes INP)
       setTimeout(() => loadTournament(), 50);
     } catch (error) {
@@ -838,8 +838,8 @@ export default function TournamentDetails({
             <p style={{ color: '#fbbf24', fontWeight: 700 }}>
               SPIN & GO{' '}
               {spinMultiplierLabel(tournament as any)
-                ? `— ${spinMultiplierLabel(tournament as any)} MULTIPLIER`
-                : '— Multiplier revealed at start'}
+                ? `- ${spinMultiplierLabel(tournament as any)} MULTIPLIER`
+                : '- Multiplier revealed at start'}
             </p>
           )}
         </div>
@@ -916,7 +916,7 @@ export default function TournamentDetails({
                 {tournament.status === 'RUNNING' ? (
                   <span>Running since {formatDate(tournament.started_at)}</span>
                 ) : tournament.status === 'COMPLETED' ? (
-                  <span>Completed — Total Duration</span>
+                  <span>Completed - Total Duration</span>
                 ) : (
                   <span>Starts {formatDate(tournament.start_time)}</span>
                 )}
@@ -964,7 +964,7 @@ export default function TournamentDetails({
                 <span className="stat-value">
                   {(() => {
                     void clockTick; // re-render every second
-                    if (tournament.status !== 'RUNNING') return '—';
+                    if (tournament.status !== 'RUNNING') return '-';
                     try {
                       const ls = tournamentService.getCurrentLevelState(tournament);
                       const secs = Math.max(0, Math.floor(ls.timeRemainingSeconds));
@@ -972,7 +972,7 @@ export default function TournamentDetails({
                       const ss = (secs % 60).toString().padStart(2, '0');
                       return `${mm}:${ss}`;
                     } catch {
-                      return '—';
+                      return '-';
                     }
                   })()}
                 </span>
@@ -1028,7 +1028,7 @@ export default function TournamentDetails({
                       ).toLocaleString()
                     : tournament.starting_chips
                       ? tournament.starting_chips.toLocaleString()
-                      : '—'}
+                      : '-'}
                 </span>
               </div>
               <div className="stat">
@@ -1102,9 +1102,9 @@ export default function TournamentDetails({
                   <span className="info-label">Rebuy:</span>
                   <span className="info-value">
                     {(tournament as any).is_rebuy
-                      ? `${((tournament as any).rebuy_chips || tournament.starting_chips || 0).toLocaleString()} chips — through Level ${(tournament as any).late_reg_levels ?? (tournament as any).rebuy_levels ?? 8}`
+                      ? `${((tournament as any).rebuy_chips || tournament.starting_chips || 0).toLocaleString()} chips - through Level ${(tournament as any).late_reg_levels ?? (tournament as any).rebuy_levels ?? 8}`
                       : (tournament as any).is_reentry
-                        ? `Re-Entry — through Level ${(tournament as any).late_reg_levels ?? (tournament as any).rebuy_levels ?? 8}`
+                        ? `Re-Entry - through Level ${(tournament as any).late_reg_levels ?? (tournament as any).rebuy_levels ?? 8}`
                         : 'Not Available'}
                   </span>
                 </div>
@@ -1112,14 +1112,14 @@ export default function TournamentDetails({
                   <span className="info-label">Add-on:</span>
                   <span className="info-value">
                     {(tournament as any).add_on_available
-                      ? `${((tournament as any).addon_chips || tournament.starting_chips || 0).toLocaleString()} chips — Level ${(tournament as any).late_reg_levels ?? (tournament as any).rebuy_levels ?? 8} to ${((tournament as any).late_reg_levels ?? (tournament as any).rebuy_levels ?? 8) + ((tournament as any).addon_levels ?? 1)}`
+                      ? `${((tournament as any).addon_chips || tournament.starting_chips || 0).toLocaleString()} chips - Level ${(tournament as any).late_reg_levels ?? (tournament as any).rebuy_levels ?? 8} to ${((tournament as any).late_reg_levels ?? (tournament as any).rebuy_levels ?? 8) + ((tournament as any).addon_levels ?? 1)}`
                       : 'Not Available'}
                   </span>
                 </div>
                 <div className="info-row half">
                   <span className="info-label">Starting Chips:</span>
                   <span className="info-value">
-                    {tournament.starting_chips ? tournament.starting_chips.toLocaleString() : '—'}
+                    {tournament.starting_chips ? tournament.starting_chips.toLocaleString() : '-'}
                   </span>
                 </div>
                 <div className="info-row half">
@@ -1275,7 +1275,7 @@ export default function TournamentDetails({
                       margin: '8px 0',
                     }}
                   >
-                    BUBBLE — {playingCount} players left, {payoutCount} get paid
+                    BUBBLE - {playingCount} players left, {payoutCount} get paid
                   </div>
                 )}
                 {sorted.length === 0 ? (
@@ -1285,7 +1285,7 @@ export default function TournamentDetails({
                 ) : (
                   sorted.map((entry, idx) => {
                     const isPlaying = entry.status === 'playing';
-                    const rank = isPlaying ? idx + 1 : entry.position || '—';
+                    const rank = isPlaying ? idx + 1 : entry.position || '-';
                     return (
                       <div
                         key={entry.id}
@@ -1574,7 +1574,7 @@ export default function TournamentDetails({
                       margin: '4px 0 8px',
                     }}
                   >
-                    Estimated payouts based on {entryCount} entries — final structure determined at
+                    Estimated payouts based on {entryCount} entries - final structure determined at
                     start
                   </p>
                 )}
@@ -1594,7 +1594,7 @@ export default function TournamentDetails({
                             ? (
                                 Math.trunc(effectivePrizePool * payout.percentage) / 100
                               ).toLocaleString()
-                            : '—'}
+                            : '-'}
                         </span>
                       </div>
                     ))

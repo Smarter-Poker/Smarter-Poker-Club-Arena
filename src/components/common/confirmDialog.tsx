@@ -46,7 +46,7 @@ let counter = 0;
 export function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
     if (!enqueue) {
-      console.warn('[confirmDialog] ConfirmHost not mounted — resolving false');
+      console.warn('[confirmDialog] ConfirmHost not mounted - resolving false');
       resolve(false);
       return;
     }

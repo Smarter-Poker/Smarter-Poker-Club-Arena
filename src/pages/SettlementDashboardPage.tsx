@@ -393,7 +393,7 @@ export default function SettlementDashboardPage() {
         );
       } else {
         toast.error(
-          `Canary check FAILED — Difference: ${result.difference.toLocaleString()} chips`
+          `Canary check FAILED - Difference: ${result.difference.toLocaleString()} chips`
         );
       }
     } catch (err) {
@@ -424,13 +424,13 @@ export default function SettlementDashboardPage() {
     const pending = rakebackStatus?.pendingPeriods ?? 0;
     const owed = rakebackStatus?.estimatedOwed ?? 0;
     if (pending === 0) {
-      toast.info('No pending rakeback to settle — the engine is already up to date.');
+      toast.info('No pending rakeback to settle - the engine is already up to date.');
       return;
     }
     if (
       !(await confirmDialog({
         title: 'Settle pending rakeback now',
-        message: `Settle ${pending} pending rakeback period(s) across ${rakebackStatus?.pendingClubs ?? 0} club(s), paying out ~${owed.toLocaleString()} chips? This is idempotent — it can't pay the same period twice.`,
+        message: `Settle ${pending} pending rakeback period(s) across ${rakebackStatus?.pendingClubs ?? 0} club(s), paying out ~${owed.toLocaleString()} chips? This is idempotent - it can't pay the same period twice.`,
         confirmText: 'Settle now',
         variant: 'default',
       }))
@@ -443,7 +443,7 @@ export default function SettlementDashboardPage() {
       toast.success(
         `Settled ${result.periodsSettled} period(s) across ${result.clubsProcessed} club(s): ${result.totalPayout.toLocaleString()} chips paid.` +
           (result.clubsRemaining > 0
-            ? ` ${result.clubsRemaining} club(s) still pending — run again.`
+            ? ` ${result.clubsRemaining} club(s) still pending - run again.`
             : '')
       );
       loadRakebackStatus();
@@ -459,7 +459,7 @@ export default function SettlementDashboardPage() {
   // ─── Helpers ──────────────────────────────────────────────────────────────────
 
   const formatDate = (iso: string): string => {
-    if (!iso) return '—';
+    if (!iso) return '-';
     return new Date(iso).toLocaleDateString(undefined, {
       month: 'short',
       day: 'numeric',
@@ -468,7 +468,7 @@ export default function SettlementDashboardPage() {
   };
 
   const formatDateTime = (iso: string): string => {
-    if (!iso) return '—';
+    if (!iso) return '-';
     return new Date(iso).toLocaleString(undefined, {
       month: 'short',
       day: 'numeric',
@@ -775,7 +775,7 @@ export default function SettlementDashboardPage() {
           },
           {
             label: 'Canary',
-            value: canaryResult ? (canaryResult.passed ? 'PASS' : 'FAIL') : '—',
+            value: canaryResult ? (canaryResult.passed ? 'PASS' : 'FAIL') : '-',
             icon: canaryResult?.passed === false ? '✕' : canaryResult?.passed ? '✓' : '○',
             color:
               canaryResult?.passed === false
@@ -920,11 +920,11 @@ export default function SettlementDashboardPage() {
                 {rakebackStatus.pendingPeriods} period(s)
               </strong>{' '}
               across {rakebackStatus.pendingClubs} club(s) pending (~
-              {rakebackStatus.estimatedOwed.toLocaleString()} chips) — use “Settle Rakeback” to
+              {rakebackStatus.estimatedOwed.toLocaleString()} chips) - use “Settle Rakeback” to
               clear now.
             </>
           ) : (
-            <strong style={{ color: '#10b981' }}>All rakeback settled — up to date.</strong>
+            <strong style={{ color: '#10b981' }}>All rakeback settled - up to date.</strong>
           )}
           {rakebackStatus.lastPaidAt && (
             <span style={{ color: 'rgba(255,255,255,0.45)' }}>
@@ -1164,7 +1164,7 @@ export default function SettlementDashboardPage() {
                   </span>
                   <div style={{ flex: 1 }} role="cell">
                     <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#fff' }}>
-                      {formatDate(period.start)} — {formatDate(period.end)}
+                      {formatDate(period.start)} - {formatDate(period.end)}
                     </span>
                   </div>
                   <span

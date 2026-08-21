@@ -142,11 +142,11 @@ const s01: SimViewState = {
 
 export const scenario01: Scenario = {
   id: 'scenario-01',
-  name: '01 — Normal hand (baseline)',
+  name: '01 - Normal hand (baseline)',
   description: '4 players, limp preflop, bet/fold turn. Sanity check for the sim itself.',
   steps: [
     {
-      label: 'Hand started — blinds posted, hole cards dealt',
+      label: 'Hand started - blinds posted, hole cards dealt',
       event: 'HAND_STARTED',
       state: cloneState(s01, {
         players: [
@@ -199,7 +199,7 @@ export const scenario01: Scenario = {
       }),
     },
     {
-      label: 'SB (seat 2) completes — calls 1 more',
+      label: 'SB (seat 2) completes - calls 1 more',
       event: 'PLAYER_ACTION',
       state: cloneState(s01, {
         players: [
@@ -227,7 +227,7 @@ export const scenario01: Scenario = {
       }),
     },
     {
-      label: 'Flop dealt — chips collected into pot',
+      label: 'Flop dealt - chips collected into pot',
       event: 'COMMUNITY_CARDS_DEALT',
       state: cloneState(s01, {
         boardStage: 'flop',
@@ -270,13 +270,13 @@ export const scenario01: Scenario = {
 
 export const scenario02: Scenario = {
   id: 'scenario-02',
-  name: '02 — BUG 029: turn bet clears on river',
+  name: '02 - BUG 029: turn bet clears on river',
   bug: 'BUG 029',
   description:
     'Seat 1 bets 20 on turn, seat 2 calls. River is dealt. The bet-chip in front of both seats MUST disappear. Before the mapEngineSnapshot street-filter fix, those chips persisted.',
   steps: [
     {
-      label: 'State at end of turn — seat1 bet 20, seat2 called',
+      label: 'State at end of turn - seat1 bet 20, seat2 called',
       event: 'PLAYER_ACTION',
       state: {
         handNumber: 7,
@@ -306,7 +306,7 @@ export const scenario02: Scenario = {
       expect: 'Both seats show bet-20 chip in front. Pot = 48.',
     },
     {
-      label: 'River dealt — street advanced (BUG 029: chips must clear)',
+      label: 'River dealt - street advanced (BUG 029: chips must clear)',
       event: 'COMMUNITY_CARDS_DEALT',
       state: {
         handNumber: 7,
@@ -352,13 +352,13 @@ export const scenario02: Scenario = {
 
 export const scenario03: Scenario = {
   id: 'scenario-03',
-  name: '03 — BUG 030: "Three of a Kind" cleared on new hand',
+  name: '03 - BUG 030: "Three of a Kind" cleared on new hand',
   bug: 'BUG 030',
   description:
     'Previous hand ended with Lockdown winning with Three of a Kind. Next hand starts in under 3 seconds. The floating "Three of a Kind" label MUST be gone before the next hand renders its pot and hole cards.',
   steps: [
     {
-      label: 'Hand #7 complete — Lockdown wins with Three of a Kind',
+      label: 'Hand #7 complete - Lockdown wins with Three of a Kind',
       event: 'HAND_COMPLETE',
       state: {
         handNumber: 7,
@@ -395,7 +395,7 @@ export const scenario03: Scenario = {
         '"Three of a Kind" hand-strength label visible in center of board. Lockdown (seat 4) highlighted.',
     },
     {
-      label: 'Hand #8 starts < 3s later — stale label MUST be gone',
+      label: 'Hand #8 starts < 3s later - stale label MUST be gone',
       event: 'HAND_STARTED',
       state: {
         handNumber: 8,
@@ -435,13 +435,13 @@ export const scenario03: Scenario = {
 
 export const scenario04: Scenario = {
   id: 'scenario-04',
-  name: '04 — BUG 031: blinds-to-pot atomicity',
+  name: '04 - BUG 031: blinds-to-pot atomicity',
   bug: 'BUG 031',
   description:
-    'User reported: SB/BB taken from stacks but pot showed 0. Snapshot must be atomic — the SB + BB amounts must be in pot in the SAME tick that shows the stacks reduced.',
+    'User reported: SB/BB taken from stacks but pot showed 0. Snapshot must be atomic - the SB + BB amounts must be in pot in the SAME tick that shows the stacks reduced.',
   steps: [
     {
-      label: 'Hand start — pre-blinds (freshly dealt)',
+      label: 'Hand start - pre-blinds (freshly dealt)',
       event: 'HAND_STARTED',
       state: {
         handNumber: 10,
@@ -470,7 +470,7 @@ export const scenario04: Scenario = {
       },
     },
     {
-      label: 'Blinds posted — stacks AND pot both update atomically',
+      label: 'Blinds posted - stacks AND pot both update atomically',
       event: 'BLINDS_POSTED',
       state: {
         handNumber: 10,

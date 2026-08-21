@@ -270,7 +270,7 @@ class PushNotificationServiceClass {
     const message =
       position === 1
         ? `You won ${tournamentName}! Prize: ${prize.toLocaleString()} chips`
-        : `You finished ${position}${this.ordinal(position)} in ${tournamentName}${prize > 0 ? ` — ${prize.toLocaleString()} chips` : ''}`;
+        : `You finished ${position}${this.ordinal(position)} in ${tournamentName}${prize > 0 ? ` - ${prize.toLocaleString()} chips` : ''}`;
 
     return this.sendToUser(userId, {
       title: position === 1 ? 'Tournament Victory!' : 'Tournament Complete',
@@ -353,7 +353,7 @@ class PushNotificationServiceClass {
     tableId: string
   ): Promise<boolean> {
     return this.sendToUsers(userIds, {
-      title: `${clubName} — Game Starting`,
+      title: `${clubName} - Game Starting`,
       message: `${tableName} has open seats. Join now!`,
       category: 'table_available',
       url: `/table/${tableId}`,
@@ -383,7 +383,7 @@ class PushNotificationServiceClass {
   async notifyDailyReward(userId: string, streak: number): Promise<boolean> {
     return this.sendToUser(userId, {
       title: 'Daily Reward Ready!',
-      message: `Day ${streak} streak — claim your bonus now`,
+      message: `Day ${streak} streak - claim your bonus now`,
       category: 'general',
       url: '/bonus',
     });
@@ -413,7 +413,7 @@ class PushNotificationServiceClass {
   ): Promise<boolean> {
     return this.sendToUser(userId, {
       title: 'Seat Available!',
-      message: `You're #${position} — a seat opened at ${tableName}`,
+      message: `You're #${position} - a seat opened at ${tableName}`,
       category: 'table_available',
       url: `/table/${tableId}`,
       data: { tableId, waitlistPosition: position },

@@ -65,7 +65,7 @@ export default function DisconnectToast({
     return (
       <div className="disconnect-toast disconnect-toast--missing" role="status" aria-live="polite">
         <span className="disconnect-toast__spinner" aria-hidden="true" />
-        <span>Reconnecting — {remainingSec ?? '...'}s until auto-action</span>
+        <span>Reconnecting - {remainingSec ?? '...'}s until auto-action</span>
       </div>
     );
   }

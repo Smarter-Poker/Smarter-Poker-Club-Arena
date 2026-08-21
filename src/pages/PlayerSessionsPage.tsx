@@ -860,7 +860,7 @@ export default function PlayerSessionsPage() {
               onClick={() => setTab('retention')}
             >
               <strong>{retSummary.atRisk + retSummary.churned}</strong> player
-              {retSummary.atRisk + retSummary.churned !== 1 ? 's' : ''} need attention —{' '}
+              {retSummary.atRisk + retSummary.churned !== 1 ? 's' : ''} need attention -{' '}
               {retSummary.atRisk} at-risk, {retSummary.churned} churned
             </div>
           )}
@@ -1243,7 +1243,7 @@ export default function PlayerSessionsPage() {
                       className="admin-text-secondary"
                       style={{ marginBottom: '8px', fontSize: '12px' }}
                     >
-                      Inactive for 5-14 days — reach out before they churn
+                      Inactive for 5-14 days - reach out before they churn
                     </div>
                     <div className="admin-table-scroll">
                       <table className="admin-data-table">

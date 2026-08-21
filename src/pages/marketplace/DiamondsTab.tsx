@@ -50,7 +50,7 @@ export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabPro
           ) : (
             <>Your current balance is unavailable right now.</>
           )}{' '}
-          Secure payment via Stripe — you will be redirected to checkout and returned here.
+          Secure payment via Stripe - you will be redirected to checkout and returned here.
         </p>
       </div>
 
@@ -77,7 +77,7 @@ export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabPro
 
       <div className={styles.infoNote}>
         1 diamond = $0.01. Purchases are credited automatically after payment. If your balance does
-        not update right away, use Refresh — Stripe confirmation can take a few seconds.
+        not update right away, use Refresh - Stripe confirmation can take a few seconds.
       </div>
     </>
   );

@@ -96,17 +96,17 @@ export default function MyItemsTab({
       // fn_redeem_shop_item now grants a real entitlement and reports it back.
       const g = data?.granted as { type?: string; uses?: number; seconds?: number } | undefined;
       if (g?.type === 'time_bank' && g.seconds) {
-        toast.success(`Redeemed — +${g.seconds}s of table time added`);
+        toast.success(`Redeemed - +${g.seconds}s of table time added`);
       } else if (g?.type === 'throwable' && g.uses) {
-        toast.success(`Redeemed — ${g.uses} free throws added`);
+        toast.success(`Redeemed - ${g.uses} free throws added`);
       } else if (g?.type === 'emote_pack') {
-        toast.success('Redeemed — emote pack unlocked');
+        toast.success('Redeemed - emote pack unlocked');
       } else if (g?.type === 'table_skin') {
-        toast.success('Redeemed — table theme unlocked');
+        toast.success('Redeemed - table theme unlocked');
       } else if (g?.type === 'avatar') {
-        toast.success('Redeemed — avatar unlocked');
+        toast.success('Redeemed - avatar unlocked');
       } else {
-        toast.success('Redeemed — your club will fulfil this perk');
+        toast.success('Redeemed - your club will fulfil this perk');
       }
       onRedeemed();
     } catch (err: unknown) {
@@ -290,7 +290,7 @@ export default function MyItemsTab({
                               server answers "already refunded". Say so here
                               instead of offering the action. */}
                           {p.refunded_at ? (
-                            <span style={{ fontSize: '11px', color: '#8b8d91' }}>—</span>
+                            <span style={{ fontSize: '11px', color: '#8b8d91' }}>-</span>
                           ) : (
                             <button
                               className={styles.btnDeleteSmall}

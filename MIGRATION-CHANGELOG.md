@@ -8526,3 +8526,35 @@ NOTE (session ops): the working-tree edits for this feature were wiped once
 mid-session by the host reset loop; everything was rebuilt in an isolated
 clone and pushed from there. Do not develop long-running changes directly in
 the shared working tree.
+
+## 2026-08-20 — Multi-table audit round 2: five findings, one clobber, all recovered (Cowork session)
+
+Dan: "go through it all line by line, check for any bugs, stubs, gaps,
+errors, regressions or wiring issues... then improve to the max." Findings
+and fixes (d7163db + 75a7298 + 2c211c1):
+
+- INVALID HTML: per-tab close was a button nested inside the tab button.
+  Now span[role=button] with Enter/Space handling.
+- NO ACCESSIBLE NAME: a tab showing mini cards had no name (MiniCards is
+  aria-hidden, name span unrendered). aria-label with turn state +
+  aria-current on the active tab.
+- DEAD WIRING: TableTabBar's JACKPOT badge had never been passed a value.
+  TablePage now reports its live BBJ pool; the bar shows the active
+  table's, as in the reference footage.
+- SILENT BACKGROUND CLOCK: the tick-tock loop belongs to the active tab
+  only (singleton), so a background table's final seconds were silent.
+  MultiTablePage now fires a one-shot playTimerWarning + strong haptic on
+  the rising edge of the <=6s window per turn deadline.
+- UNREACHABLE CLOSE: hover-only close was invisible on touch and outside
+  keyboard reach. Shown on hover, focus-within, and always on the active
+  tab. Plus flash-store pruning on tab close and tighter cards-mode pill
+  padding.
+
+Incident, for the record: the first round-2 push (d7163db) was a worktree
+snapshot that silently reverted all seven files of 6eb5cd7 (the Mac tree
+predated it). The Silent Revert Guard caught 3 byte-exact reverts; 4 more
+hid inside mixed diffs. 75a7298 three-way-merged every file back (base
+12cfa4d), and 2c211c1 re-landed the TableTabBar fixes a concurrent editor
+buffer had separately overwritten. Lesson repeated in .agent terms: diff
+the snapshot against fresh origin/main per file BEFORE committing, and
+push single-file commits when a sibling session is mid-flight.

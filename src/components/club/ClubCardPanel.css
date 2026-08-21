@@ -125,11 +125,31 @@
 }
 
 /* Logo — fill the entire viewport */
+.club-card-logo-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 16px;
+}
+
+.club-card-logo-backdrop {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.08) 0%, transparent 65%);
+  animation: clubCardFadeIn 0.8s ease-out;
+  pointer-events: none;
+}
+
 .club-card-viewport-logo {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.7));
   animation: clubCardFadeIn 0.4s ease-out;
+  z-index: 2;
 }
 
 @keyframes clubCardFadeIn {

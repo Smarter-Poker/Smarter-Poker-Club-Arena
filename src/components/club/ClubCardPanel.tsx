@@ -94,18 +94,21 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
             onError={() => setCardFailed(true)}
           />
         ) : showLogo ? (
-          <img
-            src={logoUrl}
-            alt={`${clubName} logo`}
-            className="club-card-viewport-logo"
-            loading="lazy"
-            decoding="async"
-            onLoad={() => setImgLoaded(true)}
-            onError={() => {
-              setLogoFailed(true);
-              setImgLoaded(true);
-            }}
-          />
+          <div className="club-card-logo-container">
+            <div className="club-card-logo-backdrop"></div>
+            <img
+              src={logoUrl}
+              alt={`${clubName} logo`}
+              className="club-card-viewport-logo"
+              loading="lazy"
+              decoding="async"
+              onLoad={() => setImgLoaded(true)}
+              onError={() => {
+                setLogoFailed(true);
+                setImgLoaded(true);
+              }}
+            />
+          </div>
         ) : (
           <div className="club-card-viewport-fallback">
             <span className="club-card-fallback-icon">{isUnion ? '◈' : '♠'}</span>

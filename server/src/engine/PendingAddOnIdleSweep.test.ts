@@ -71,7 +71,16 @@ function idleEngine() {
     registerPlayer: vi.fn(),
     checkStaleHeartbeats: vi.fn(),
     onAutoAction: vi.fn(),
+    // Added 2026-08-21 with the sit-out eviction rule. dealingLoop now calls
+    // this near the top of every tick, BEFORE the add-on sweep, so a stub
+    // without it throws and the loop never reaches the behaviour under test -
+    // which is what this file exists to protect. Returns no evictions.
+    tickSitOutsAndCollectEvictions: () => [] as string[],
+    unregisterPlayer: vi.fn(),
   };
+  engine.timeBankEngine = { removePlayer: vi.fn() };
+  engine.straddleEngine = { removePlayer: vi.fn() };
+  engine.preActionEngine = { removePlayer: vi.fn() };
   engine.waitingForBB = new Set<string>();
   engine.tableFSM = { state: 'waiting', transition: vi.fn() };
   return { engine, busted };

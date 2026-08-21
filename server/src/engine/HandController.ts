@@ -1727,7 +1727,35 @@ export class HandController {
       // street and is not now facing a full raise since their last action.
       if (player.stack > toCall && this.canReopenBetting(player)) actions.push('raise');
     }
-    actions.push('all_in');
+    /**
+     * Dan 2026-08-21: "in PLO you can never go all in if the pot is less than
+     * the chips you have — the most you can ever bet is pot."
+     *
+     * `all_in` used to be pushed unconditionally. Once validateAction started
+     * enforcing the pot cap, this menu was advertising an action the engine
+     * would then refuse — the chip-conservation property test caught exactly
+     * that: "the engine OFFERED all_in to seat 4 and then REFUSED it. A player
+     * pressing that button gets the same rejection."
+     *
+     * A short stack can always shove: an all-in at or under the cap is legal.
+     * Only the over-cap jam disappears from the menu, and the pot-sized `raise`
+     * offered above is the biggest legal wager in its place.
+     */
+    const potLimitCapsTheJam = (): boolean => {
+      if (!this.config.gameVariant.startsWith('plo')) return false;
+      const bettingState = calculateBettingState(
+        this.state.pot,
+        this.state.currentBet,
+        player.bet,
+        this.config.bigBlind,
+        this.state.lastRaise,
+        true
+      );
+      if (bettingState.maxRaise === undefined) return false;
+      const allInTo = player.bet + player.stack;
+      return allInTo > this.state.currentBet + bettingState.maxRaise + 0.005;
+    };
+    if (!potLimitCapsTheJam()) actions.push('all_in');
     return actions;
   }
 

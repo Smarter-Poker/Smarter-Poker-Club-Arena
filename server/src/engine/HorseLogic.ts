@@ -1534,6 +1534,86 @@ export class HorseLogic {
     gs: HorseGameStateV2,
     vi: VariantInfo
   ): HorseDecision {
+    return this.capPotLimitJam(this.legalizeInner(d, player, gs, vi), player, gs, vi);
+  }
+
+  /**
+   * Dan 2026-08-21: "in PLO you can never go all in if the pot is less than the
+   * chips you have — the most you can ever bet is pot."
+   *
+   * That rule shipped in PokerEngine.validateAction, and it made a decision the
+   * horses were still perfectly happy to produce ILLEGAL. `legalizeInner` ends
+   * with `return d; // fold / check / all_in are always legal here`, which had
+   * been true for as long as it had been written and stopped being true the
+   * moment the cap landed. Several branches above also short-circuit to
+   * `all_in` on their own (a bet at >=92% of stack, a raise at >=95%), so there
+   * is no single place inside that function to fix it.
+   *
+   * This wraps the whole thing instead: whatever comes out, if it is an all-in
+   * that exceeds the pot-limit cap, it becomes the largest LEGAL wager — a
+   * pot-sized raise — or a call when no raise is legal at all. Shoving a short
+   * stack is untouched: an all-in at or under the cap is legal and stays.
+   *
+   * The betting state is built exactly as `verifyAmount` and
+   * `HandController.performAction` build theirs, so the cap the horse respects
+   * is the same number the engine will check it against, to the cent.
+   */
+  private static capPotLimitJam(
+    d: HorseDecision,
+    player: SeatPlayer,
+    gs: HorseGameStateV2,
+    vi: VariantInfo
+  ): HorseDecision {
+    if (d.action !== 'all_in' || !vi.isPotLimit) return d;
+
+    const currentBet = isFinite(gs.currentBet) ? Math.max(0, gs.currentBet) : 0;
+    const pot = isFinite(gs.pot) ? Math.max(0, gs.pot) : 0;
+    const playerBet = isFinite(player.bet) ? Math.max(0, player.bet) : 0;
+    const stack = isFinite(player.stack) ? Math.max(0, player.stack) : 0;
+    if (stack <= 0) return d;
+
+    const bs = calculateBettingState(
+      pot,
+      currentBet,
+      playerBet,
+      gs.bigBlind || 0.02,
+      gs.lastRaise ?? gs.minRaise,
+      true
+    );
+    if (bs.maxRaise === undefined) return d;
+
+    const allInTo = playerBet + stack;
+    const capTo = currentBet + bs.maxRaise;
+    if (allInTo <= capTo + 0.005) return d; // a legal jam — leave it alone
+
+    const toCall = Math.max(0, currentBet - playerBet);
+    const legalTo = floorCents(capTo);
+    const minTo = ceilCents(currentBet + Math.max(gs.minRaise || 0, 0.01));
+
+    if (legalTo >= minTo) {
+      // Betting the pot IS the biggest legal wager here. Route it back through
+      // the ordinary sizing path so it picks up chip-step snapping and the
+      // engine-parity amount verification.
+      return this.legalizeInner(
+        { action: currentBet > 0 ? 'raise' : 'bet', amount: legalTo, thinkTime: 0 },
+        player,
+        gs,
+        vi
+      );
+    }
+
+    // No legal raise sizing exists at all: call what is owed, or check.
+    return toCall > 0
+      ? { action: 'call', amount: toCents(Math.min(toCall, stack)), thinkTime: 0 }
+      : { action: 'check', thinkTime: 0 };
+  }
+
+  private static legalizeInner(
+    d: HorseDecision,
+    player: SeatPlayer,
+    gs: HorseGameStateV2,
+    vi: VariantInfo
+  ): HorseDecision {
     const currentBet = isFinite(gs.currentBet) ? Math.max(0, gs.currentBet) : 0;
     const pot = isFinite(gs.pot) ? Math.max(0, gs.pot) : 0;
     const playerBet = isFinite(player.bet) ? Math.max(0, player.bet) : 0;
@@ -1619,7 +1699,11 @@ export class HorseLogic {
       );
     }
 
-    return d; // fold / check / all_in are always legal here
+    // fold / check are always legal here. all_in is legal in no-limit and, in
+    // pot-limit, only up to the pot — capPotLimitJam (the wrapper above) is
+    // what enforces that, on every branch of this function including the ones
+    // that short-circuit to all_in on their own.
+    return d;
   }
 
   /**

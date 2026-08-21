@@ -4032,16 +4032,26 @@ export default function TablePage({
               duration_minutes?: number;
               durationMinutes?: number;
             }> | null;
-            const currentLevel = (tournData.current_level as number) ?? 1;
-            // The masthead level clock (Dan 2026-08-20, from the table: line 2
-            // is "Level #, Blinds, and the clock"). Blind structures store the
-            // level length as `duration` (seconds) on engine-written rows and
-            // `duration_minutes`/`durationMinutes` on older configs.
+            // LEVEL INDEXING 2026-08-21: tournaments.current_level is a
+            // 0-BASED INDEX into blind_structure (engine convention: the
+            // active entry is struct[current_level], whose 'level' field is
+            // current_level + 1). The old code treated it as the 1-based
+            // display number: the masthead read "Level 1" during level 2,
+            // and at tournament start entryFor(0) fell through to
+            // struct[-1] = undefined, so there was NO level clock at all
+            // until the first level-up.
+            const levelIdx = Number(tournData.current_level ?? 0);
+            const currentLevel = levelIdx + 1; // display number
             blindStructRef.current = blindStructure || [];
-            const entryFor = (lvl: number) =>
-              (blindStructure || []).find((bl) => bl.level === lvl) ||
-              (blindStructure || [])[Math.min(lvl - 1, (blindStructure || []).length - 1)];
-            const levelEntry = entryFor(currentLevel);
+            const entryAt = (idx: number) => {
+              const struct = blindStructure || [];
+              if (struct.length === 0) return undefined;
+              return (
+                struct[Math.min(Math.max(idx, 0), struct.length - 1)] ||
+                struct.find((bl) => bl.level === idx + 1)
+              );
+            };
+            const levelEntry = entryAt(levelIdx);
             const durSec = levelEntry
               ? Number(levelEntry.duration) ||
                 (Number(levelEntry.duration_minutes ?? levelEntry.durationMinutes) || 0) * 60
@@ -4630,20 +4640,22 @@ export default function TablePage({
               } else if (data?.type === 'level_up') {
                 // Blind level increased
                 const levelData = data.payload || {};
+                // LEVEL INDEXING 2026-08-21: payload.level is the engine's
+                // 0-based structure index; the masthead shows index + 1.
+                const lvlIdx = Number(levelData.level) || 0;
                 setTableState((prev) => ({
                   ...prev,
-                  currentLevel: levelData.level,
+                  currentLevel: lvlIdx + 1,
                   blinds: levelData.blinds,
                 }));
                 // Restart the masthead level clock. The broadcast names the
                 // new level but not its duration, so that comes from the
                 // structure captured at load.
                 {
-                  const lvl = Number(levelData.level) || 0;
                   const struct = blindStructRef.current;
                   const entry =
-                    struct.find((bl) => bl.level === lvl) ||
-                    struct[Math.min(Math.max(lvl - 1, 0), Math.max(struct.length - 1, 0))];
+                    struct[Math.min(Math.max(lvlIdx, 0), Math.max(struct.length - 1, 0))] ||
+                    struct.find((bl) => bl.level === lvlIdx + 1);
                   const durSec = entry
                     ? Number(entry.duration) ||
                       (Number(entry.duration_minutes ?? entry.durationMinutes) || 0) * 60

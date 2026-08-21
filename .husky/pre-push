@@ -31,6 +31,73 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     FILES=$(git diff --name-only "$REMOTE_SHA" "$LOCAL_SHA")
   fi
 
+  # ═══════════════════════════════════════════════════════════════════════
+  # 5. NON-FAST-FORWARD PUSH TO main — added 2026-08-21 after a real loss.
+  #
+  # WHAT HAPPENED: main was rewound to ada755ab3 and four commits that were
+  # already built, synced and SERVING IN PRODUCTION were dropped from it:
+  # 5d42741e4 (seat-as-reservation), d884f5fd2 (BBJ palette re-land),
+  # ea6d53082 (throwables sizing) and e0f707a09 (the case-sensitivity CI
+  # fix). Production was left running code that main no longer contained,
+  # so the next sync would have quietly deleted four features. The round-8
+  # changelog on main still described that work as shipped, which is how you
+  # know it was an accident and not a revert — nobody writes a changelog for
+  # work they meant to drop.
+  #
+  # WHY A HOOK AND NOT BRANCH PROTECTION: branch protection is unavailable on
+  # a private repo without GitHub Pro (see the note under check 0). Server
+  # side there is nothing left to refuse a force-push, so the last place it
+  # can be caught is here, on the machine doing it.
+  #
+  # This is deliberately not a lint. Every other check in this file is about
+  # the CONTENT of a push; this one is about whether the push DESTROYS
+  # published history. Losing commits is the only failure here that cannot
+  # be fixed forward by another commit.
+  case "$REMOTE_REF" in
+    refs/heads/main)
+      if [ "$REMOTE_SHA" != "0000000000000000000000000000000000000000" ]; then
+        # The remote tip must be reachable from what we are about to push.
+        # If it is not, this push deletes commits that are already on main.
+        if ! git cat-file -e "$REMOTE_SHA" 2>/dev/null; then
+          git fetch -q "$REMOTE" "$REMOTE_SHA" 2>/dev/null || true
+        fi
+        if ! git cat-file -e "$REMOTE_SHA" 2>/dev/null; then
+          echo "[club-arena pre-push] BLOCKED: cannot verify this push is fast-forward."
+          echo "                      The current remote tip ($REMOTE_SHA) is not in"
+          echo "                      this clone, so whether it drops commits is unknowable."
+          echo "                      Run: git fetch $REMOTE main   then push again."
+          FAIL=1
+        elif ! git merge-base --is-ancestor "$REMOTE_SHA" "$LOCAL_SHA" 2>/dev/null; then
+          DROPPED=$(git rev-list --count "$LOCAL_SHA..$REMOTE_SHA" 2>/dev/null || echo "?")
+          echo ""
+          echo "[club-arena pre-push] BLOCKED: this push REWINDS main."
+          echo ""
+          echo "  Remote main is at $REMOTE_SHA, which is NOT an ancestor of what you"
+          echo "  are pushing. $DROPPED commit(s) currently on main would stop existing."
+          echo ""
+          echo "  Commits that would be dropped:"
+          git log --oneline --max-count=15 "$LOCAL_SHA..$REMOTE_SHA" 2>/dev/null | sed 's/^/    /'
+          echo ""
+          echo "  This is how four production-serving commits were lost on 2026-08-21."
+          echo "  Almost always the fix is to REBASE ONTO them rather than over them:"
+          echo ""
+          echo "      git pull --rebase $REMOTE main && git push"
+          echo ""
+          echo "  If you are deliberately reverting, revert with a commit - that keeps"
+          echo "  the history and is reviewable. A rewind leaves no trace of what went."
+          echo ""
+          echo "  Genuine emergency override:  CA_ALLOW_MAIN_REWIND=1 git push ..."
+          echo ""
+          if [ "${CA_ALLOW_MAIN_REWIND:-0}" = "1" ]; then
+            echo "  [CA_ALLOW_MAIN_REWIND=1 set - allowing this rewind]"
+          else
+            FAIL=1
+          fi
+        fi
+      fi
+      ;;
+  esac
+
   # 0. Repo-wide invariants. These normally run in CI as blocking checks, but
   #    branch protection is UNAVAILABLE on a private repo without GitHub Pro —
   #    making the repos private (correctly, after keys leaked into history) also

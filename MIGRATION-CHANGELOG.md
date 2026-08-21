@@ -8956,3 +8956,16 @@ Housekeeping: check-ui-text --fix swept 8 em dashes out of
 RealTimeResultPanel / GameRulesModal before they failed the copy gate.
 Verified live: prod bundle (WH 6816a6b1) greps positive for both
 settings, their labels, and the ca_ws_mux mirror.
+
+## 2026-08-21 (round 6): full publish verification + line-by-line review — a broken BINDING rule caught, the pipeline hole that let it ship closed
+
+**Publish verification:** every client-facing commit confirmed in the production bundle; engine confirmed serving f9191a381+ (RIT verifier fix live); migrations 20260821a/b/c all applied and listed.
+
+**LINE-BY-LINE REVIEW FINDINGS (all fixed, pushed d60065425 + 08bca5f8d):**
+1. **Dan's binding popup rule was DEAD in production.** A format pass mangled the literal em/en dashes in popupStyle.ts's regex classes into ASCII hyphens: em dashes passed through untouched and spaced hyphens were wrongly converted. Restored with formatter-proof \u2014/\u2013 escapes; 10/10 tests green.
+2. **Why it shipped: the client test gate never runs to completion.** ci.yml's unit job exists but push cadence outruns the ~6-min CI and cancel-in-progress kills every run, while build-for-world-hub publishes on push regardless. The ~15s client suite now runs INSIDE the sync workflow before the build — red suite, no bundle (the engine deploy's existing pattern).
+3. **19 stale client tests on main, all rewritten against current shipped contracts:** horsesFillAllSeats (now pins the open-board held-seat policy), clubLevels (member-threshold invariants), ThrowableService (structural pins + 25-item floor over the grown 49-item catalog), AvatarService (unified Hub /api/avatars mapping + fail-soft), ClubQuickLinkTile (title follows the no-em-dash rule), useMessageDraft (orphaned test removed with its deleted hook). Client suite: 2420/2420.
+4. Sit-out review fixes: footer branch order (sat-out hero between hands saw Waiting For Next Hand), greyed seat surviving the snapshot stream via sittingOutIdsRef, pot-float timers cleared on unmount.
+5. Quick-join upgrades: staged overlay (Reserving Your Seat -> Seat Taken, Game Starting -> Dealing You In), explicit insufficient_balance mapping, NeonCard tap feedback.
+
+**FULL LIFECYCLE PROVEN ON PRODUCTION (spin acb3ac4b):** test-account quick-join registration (charged 2.00) -> start-when-full (seated in 14.3s) -> 3x drawn through the reserve gate -> AFK strikes -> forced sit-out persisted to table_seats (observed live) -> dealt in + blinded off 300->0 -> eliminated pos 2 -> winner paid exactly the 6.00 pool -> COMPLETED. Every piece of this session's tournament work exercised by one real game.

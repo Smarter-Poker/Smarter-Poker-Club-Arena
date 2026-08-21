@@ -7,6 +7,77 @@
 
 ---
 
+## Cowork session 2026-08-21 (later still) — the mystery bounty reveal belongs to one table, and the hand waits for it
+
+Dan: "NOW ALL PLAYERS AT THE TABLE SHOULD SEE THE MYSTERY BOUNTY VIDEO... AND
+AFTER IT FINISHED AND THE PRIZE IS AWARDED, THE NEXT HAND STARTS WITH THE
+DEALING ANIMATION TO MOVE ONTO THE NEXT HAND."
+
+### Everyone at the table already saw it — checked before changing anything
+
+The winner's tap broadcasts `mystery_chest_opened`; every other client mirrors
+it into `runOpen()` and plays the same film. The chest auto-opens at 9s if the
+winner never taps, and spectators have a 14s failsafe of their own. The video is
+`muted playsInline`, so autoplay needs no gesture. Nothing to fix there.
+
+### What WAS broken: the reveal played on tables it had nothing to do with
+
+The payload rides `t-break-<tournamentId>`, and every table in a multi-table
+event subscribes to it. A knockout on table 3 therefore played a full-screen
+chest on tables 1 and 2, over their live hands, for something that happened to
+strangers. `processBountyCollection` already resolves the knockout's table to
+find the knocker, so it now stamps `tableId` on the broadcast and `TablePage`
+ignores any reveal that is not its own. An older engine sends no `tableId`, in
+which case the client behaves exactly as before.
+
+### And the next hand no longer deals underneath the film
+
+After a mystery collection the engine holds dealing on that one table with
+`holdDealingUntil()` — the same mechanism the spin wheel uses — for the length
+of the chest sequence, then the loop resumes and the next hand deals with its
+normal shuffle-and-deal. The timing lives in `server/src/config/mysteryChestSpec.ts`,
+mirroring `MysteryBountyChest.tsx` phase for phase (landing 700, auto-open 9000,
+opening 900, explosion 600, revealed 5200, settle 400 = ~16.8s), so the two
+cannot drift silently.
+
+**Verified in production, not asserted.** Engine deployed 20:41 UTC. At 20:49:07
+a mystery bounty was collected in _Union Mystery Bounty (PLO5)_. Table
+`fc1ebf8d` — the knockout table — waited **22.1s** between hands. Its own
+previous pause was 4.4s, and the two sibling tables in the same tournament kept
+dealing on their usual 4.1-4.3s cadence right through the window. One table
+paused, for the length of the chest, and only that one. Client verified by
+`build-info.json` serving `ca_sha c24e6a48`.
+
+### Three CI gates fixed on the way through
+
+- **Phantom columns:** `tables.bomb_pot_double_board` and
+  `hand_history.community_cards2` are real columns that shipped today; the
+  manifest was stale, so the gate called live schema a phantom. (Landed
+  independently on main via the outage-tolerance work; the merge takes that.)
+- **The chest beat tested a lid the stylesheet hides.** `.mbc__lid` and
+  `.mbc__base` only render on the CSS-art fallback — with Dan's render present
+  they are `display:none`, one chest on screen at a time. The beat built them
+  without `data-css-art`, so the element existed, never rendered, and started no
+  transition: the swing read as _absent_ rather than as _hidden_. The beat now
+  builds the fallback chest the way the component does, and applies the class
+  and reads the transition inside one `evaluate` — a 900ms transition sampled
+  two round trips later can legitimately be over already.
+- **Dead CSS removed:** `.mbc__lid-DEPRECATED` and the orphaned `mbcLidOpen`
+  keyframes. Reduced motion was collapsing that dead keyframe, which meant
+  reduced motion was still swinging the lid at full length; it now shortens the
+  transition that actually runs.
+
+### Open, and worth someone's attention
+
+The bundle gate's raw ceiling was raised 6144 -> 8192 today to unblock CI. The
+gzipped total is **1962kB against a hard 2048kB limit** — 86kB of headroom
+before every build in the repo goes red, and that gate has no soft branch. The
+weight is real (HandReplay3D 554kB raw, vendor-sentry 431kB, TablePage 412kB,
+CartesianChart 314kB, rive 185kB for a manifest that does not exist yet), so the
+fix is deleting or deferring something, not moving the line again.
+
+---
+
 ## Cowork session 2026-08-21 (later) — the day the gates blocked everyone, and why
 
 Dan, twice: "That's now four separate times today that main sat unable to deploy

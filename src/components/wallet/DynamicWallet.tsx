@@ -677,6 +677,7 @@ export default function DynamicWallet({
     value: number;
     hint?: string;
     known?: boolean;
+    canMint?: boolean;
   };
 
   const ROW_CONFIG: Record<WalletVariant, WalletRow[]> = {
@@ -712,6 +713,7 @@ export default function DynamicWallet({
         label: 'Union Bank',
         icon: 'bank',
         value: animRow1,
+        canMint: true,
         known: unionFiguresKnown,
         // Dan 2026-08-20: rake used to be credited to the bank AND the
         // treasury, so the bank climbed with every hand and this hint had to
@@ -852,7 +854,7 @@ export default function DynamicWallet({
             <span className="dw__row-value">
               {row.known === false ? '-' : formatBalance(row.value)}
             </span>
-            {idx === 0 && showMintButton && (
+            {row.canMint && showMintButton && (
               <button
                 className="dw__plus"
                 onClick={(e) => {
@@ -874,7 +876,7 @@ export default function DynamicWallet({
             backup figure by fn_club_money_panel, so rendering it here would
             put union money back on a club screen through the side door —
             the same leak as Union Bank, one row further down. */}
-        {(effectiveVariant === 'union' || (!isClubInUnion && data.backupBBJ > 0)) && (
+        {(effectiveVariant === 'union' || (effectiveVariant === 'owner' && isClubInUnion) || (!isClubInUnion && data.backupBBJ > 0)) && (
           <div className="dw__row dw__row--backup-bbj">
             <span className="dw__row-icon" aria-hidden="true">
               <WalletIcon name="reserve" />

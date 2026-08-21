@@ -491,8 +491,8 @@ export default function LeaderboardPage() {
       // Get user's rank in the same scope
       if (user?.id) {
         const rank = isGlobal
-          ? await LeaderboardService.getGlobalUserRank(user.id, metric, period)
-          : await LeaderboardService.getUserRank(user.id, selectedClubId as string, metric, period);
+          ? await LeaderboardService.getGlobalUserRank(user.id, metric, period, periodOffset)
+          : await LeaderboardService.getUserRank(user.id, selectedClubId as string, metric, period, periodOffset);
         if (myReq !== reqSeqRef.current) return;
         if (getIsMounted && !getIsMounted()) return;
         setUserRank(rank);

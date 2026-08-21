@@ -170,6 +170,24 @@
         "src/components/table/ThrowAnimation.css": [".throwable-img--cut"]
       },
       "bundleMarkers": ["throwable-img--cut"]
+    },
+    {
+      "id": "throwable-voice",
+      "title": "Spoken taunts + impact captions for throwables",
+      "owner": "table",
+      "since": "2026-08-21",
+      "files": ["src/services/ThrowableVoice.ts"],
+      "contains": {
+        "src/services/ThrowableVoice.ts": ["VOICE_LINES", "speechSynthesis", "speakFor"],
+        "src/components/table/ThrowAnimation.tsx": ["throwableVoice.speakFor", "IMPACT_CAPTION"]
+      },
+      "minCount": {
+        "src/services/ThrowableVoice.ts": {
+          "pattern": "^  \\w+: \\{ text:",
+          "min": 15
+        }
+      },
+      "bundleMarkers": ["throw-animation__caption"]
     }
   ]
 }

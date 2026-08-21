@@ -996,3 +996,55 @@
     animation: none !important;
   }
 }
+
+/* =================================================================================
+   IMPACT CAPTION (2026-08-21) — the shout you can read with the sound off
+   ================================================================================= */
+
+.throw-animation__caption {
+  position: absolute;
+  left: 0;
+  top: -54px;
+  transform: translate(-50%, 0);
+  white-space: nowrap;
+  font-family: 'Rajdhani', system-ui, sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #fff;
+  text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.75),
+    0 0 14px var(--c1, #fff);
+  animation: throwable-caption 1500ms cubic-bezier(0.16, 1.11, 0.36, 1.2) forwards;
+  pointer-events: none;
+  z-index: 2;
+}
+
+@keyframes throwable-caption {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 14px) scale(0.5);
+  }
+  22% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1.18);
+  }
+  34% {
+    transform: translate(-50%, 0) scale(1);
+  }
+  75% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -18px) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .throw-animation__caption {
+    animation: none;
+    opacity: 1;
+  }
+}

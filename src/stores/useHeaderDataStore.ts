@@ -128,7 +128,11 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       try {
         // Parallel fetch: avatar + notification count + message count
         const [profileResult, notifResult, msgResult] = await Promise.all([
-          supabase.from('profiles').select('avatar_url:arena_avatar_url').eq('id', userId).maybeSingle(),
+          supabase
+            .from('profiles')
+            .select('avatar_url:arena_avatar_url')
+            .eq('id', userId)
+            .maybeSingle(),
           supabase
             .from('notifications')
             .select('*', { count: 'exact', head: true })
@@ -160,7 +164,11 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
           if (get()._userId !== userId) return; // User switched — abort retry
           try {
             const [pR, nR, mR] = await Promise.all([
-              supabase.from('profiles').select('avatar_url:arena_avatar_url').eq('id', userId).maybeSingle(),
+              supabase
+                .from('profiles')
+                .select('avatar_url:arena_avatar_url')
+                .eq('id', userId)
+                .maybeSingle(),
               supabase
                 .from('notifications')
                 .select('*', { count: 'exact', head: true })

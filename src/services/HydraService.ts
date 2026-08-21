@@ -250,7 +250,9 @@ export const HydraService = {
     // Direct query instead of RPC (get_available_horses RPC doesn't exist in Supabase)
     let query = supabase
       .from('profiles')
-      .select('id, display_name, username, player_number, avatar_url:arena_avatar_url, horse_profile, horse_status')
+      .select(
+        'id, display_name, username, player_number, avatar_url:arena_avatar_url, horse_profile, horse_status'
+      )
       .eq('is_horse', true)
       .eq('horse_status', 'available')
       .limit(count);

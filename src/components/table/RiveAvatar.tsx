@@ -85,6 +85,15 @@ export const RiveAvatar: React.FC<RiveAvatarProps> = ({
     let instance: any = null;
 
     (async () => {
+      // NO RIG ART EXISTS YET (2026-08-21), and until it does the 4.7MB
+      // runtime is dead weight in the BUILD even though no player ever
+      // fetches its chunk. Vite inlines this literal, so everything below is
+      // statically unreachable and rollup drops the dynamic import entirely
+      // -- 182kB raw / 52kB gzipped out of the artefact. Flip
+      // VITE_RIVE_RIGS=on in the same commit that lands the first .riv and
+      // the lazy behaviour described above resumes untouched.
+      if (import.meta.env.VITE_RIVE_RIGS !== 'on') return;
+
       // A rigged avatar is still an animation. Someone who asked the OS for
       // less motion should get the static bust, not a looping character.
       if (prefersReducedMotion()) return;

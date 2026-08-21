@@ -121,8 +121,8 @@ export function TournamentStartingTicker() {
   const loadScope = useCallback(async (): Promise<string[]> => {
     if (clubIdsRef.current) return clubIdsRef.current;
     try {
-      const { data: auth } = await supabase.auth.getUser();
-      const uid = auth?.user?.id;
+      const auth = await import('../../lib/authUtils').then((m) => m.readLocalSession());
+      const uid = auth?.userId;
       if (!uid) return [];
       const { data } = await supabase
         .from('club_members')

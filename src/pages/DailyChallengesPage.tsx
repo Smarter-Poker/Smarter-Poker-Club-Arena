@@ -16,6 +16,7 @@ import { getAuthUser, supabase } from '../lib/supabase';
 import { LoadingState } from '../components/common/EmptyState';
 import { StreakFire } from '../components/gamification/StreakFire';
 import { useToast } from '../components/common/Toast';
+import { motion, AnimatePresence } from 'framer-motion';
 import { masterBus } from '../core/MasterBus';
 import { triggerHaptic } from '../services/HapticService';
 import {
@@ -376,6 +377,16 @@ export default function DailyChallengesPage() {
       if (claimGuardRef.current.has(challenge.id)) return;
       claimGuardRef.current.add(challenge.id);
       setClaimingIds((prev) => new Set(prev).add(challenge.id));
+      setStats((prev) =>
+        prev
+          ? {
+              ...prev,
+              totalChipsEarned: prev.totalChipsEarned + (challenge.challenge.chipReward || 0),
+              totalDiamondsEarned:
+                prev.totalDiamondsEarned + (challenge.challenge.diamondReward || 0),
+            }
+          : prev
+      );
 
       try {
         const paid = await dailyChallengeService.claimChallenge(
@@ -447,12 +458,56 @@ export default function DailyChallengesPage() {
   // wallet writes at once invites lock contention on the same profile row for
   // no user-visible gain. The overlay shows the COMBINED total rather than
   // flashing five times in a row.
+
+  const [buyingFreeze, setBuyingFreeze] = useState(false);
+  const handleBuyFreeze = useCallback(async () => {
+    if (!userId || buyingFreeze) return;
+    if ((stats?.totalDiamondsEarned || 0) < 5000) {
+      toast.error('Not enough diamonds. You need 5,000 💎 to buy a freeze.');
+      return;
+    }
+
+    setBuyingFreeze(true);
+    // Optimistic UI
+    setStats((prev) =>
+      prev ? { ...prev, totalDiamondsEarned: prev.totalDiamondsEarned - 5000 } : prev
+    );
+    setStreak((prev) => (prev ? { ...prev, freezesAvailable: prev.freezesAvailable + 1 } : prev));
+
+    try {
+      const res = await dailyChallengeService.buyStreakFreeze(userId);
+      if (res.success) {
+        toast.success('Streak Freeze purchased! ❄️');
+      } else {
+        toast.error(res.error || 'Failed to buy freeze');
+        // Revert UI on fail
+        loadChallenges(userId, false);
+      }
+    } catch (err) {
+      toast.error('Failed to buy freeze');
+      loadChallenges(userId, false);
+    } finally {
+      if (isMountedRef.current) setBuyingFreeze(false);
+    }
+  }, [userId, buyingFreeze, stats?.totalDiamondsEarned, toast, loadChallenges]);
+
   const handleClaimAll = useCallback(async () => {
     if (!userId || claimingAll) return;
     const ready = challenges.filter((c) => c.completed && !c.claimed);
     if (ready.length === 0) return;
 
     setClaimingAll(true);
+    const optChips = ready.reduce((acc, c) => acc + (c.challenge.chipReward || 0), 0);
+    const optDiamonds = ready.reduce((acc, c) => acc + (c.challenge.diamondReward || 0), 0);
+    setStats((prev) =>
+      prev
+        ? {
+            ...prev,
+            totalChipsEarned: prev.totalChipsEarned + optChips,
+            totalDiamondsEarned: prev.totalDiamondsEarned + optDiamonds,
+          }
+        : prev
+    );
     let chips = 0;
     let diamonds = 0;
     let balance = 0;
@@ -550,7 +605,7 @@ export default function DailyChallengesPage() {
   };
 
   const visible = useMemo(
-    () => challenges.filter((c) => c.tier === activeTier),
+    () => challenges.filter((c) => c.tier === activeTier && !c.claimed),
     [challenges, activeTier]
   );
 
@@ -605,14 +660,32 @@ export default function DailyChallengesPage() {
         </div>
         <div className={styles.streakRight}>
           {streak && (
-            <span className={styles.freezeLine}>
-              {streak.freezesAvailable > 0
-                ? `${streak.freezesAvailable} streak freeze${streak.freezesAvailable === 1 ? '' : 's'} banked`
-                : 'No streak freeze banked'}
-              {streak.nextFreezeIn != null
-                ? ` - next in ${streak.nextFreezeIn} day${streak.nextFreezeIn === 1 ? '' : 's'}`
-                : ''}
-            </span>
+            <div className={styles.freezeLine}>
+              <div className={styles.freezeInfo}>
+                {streak.freezesAvailable > 0
+                  ? `${streak.freezesAvailable} streak freeze${streak.freezesAvailable === 1 ? '' : 's'} banked`
+                  : 'No streak freeze banked'}
+                {streak.nextFreezeIn != null
+                  ? ` - next in ${streak.nextFreezeIn} day${streak.nextFreezeIn === 1 ? '' : 's'}`
+                  : ''}
+              </div>
+              <button
+                className={styles.buyFreezeBtn}
+                onClick={handleBuyFreeze}
+                disabled={buyingFreeze || (stats?.totalDiamondsEarned || 0) < 5000}
+                style={{
+                  marginLeft: '12px',
+                  padding: '6px 12px',
+                  background: 'rgba(255,255,255,0.1)',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  color: '#fff',
+                  cursor: 'pointer',
+                }}
+              >
+                {buyingFreeze ? 'Buying...' : 'Buy ❄️ (5K 💎)'}
+              </button>
+            </div>
           )}
         </div>
       </section>
@@ -689,16 +762,25 @@ export default function DailyChallengesPage() {
             <p>No {TIER_LABELS[activeTier].toLowerCase()} Challenges Available Right Now.</p>
           </div>
         ) : (
-          visible.map((c) => (
-            <ChallengeCard
-              key={c.id}
-              challenge={c}
-              tier={c.tier}
-              claiming={claimingIds.has(c.id)}
-              celebrating={celebratingIds.has(c.id)}
-              onClaim={handleClaim}
-            />
-          ))
+          <AnimatePresence>
+            {visible.map((c, i) => (
+              <motion.div
+                key={c.id}
+                initial={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, x: -50, scale: 0.95 }}
+                transition={{ duration: 0.3, delay: i * 0.05 }}
+                layout
+              >
+                <ChallengeCard
+                  challenge={c}
+                  tier={c.tier}
+                  claiming={claimingIds.has(c.id)}
+                  celebrating={celebratingIds.has(c.id)}
+                  onClaim={handleClaim}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
         )}
       </section>
 

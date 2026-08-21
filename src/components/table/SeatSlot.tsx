@@ -28,6 +28,7 @@ import { getAvatarWithFallback } from '../../utils/avatarGenerator';
 import { soundService, haptic } from '../../services/SoundService';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import RiveAvatar from './RiveAvatar';
+import { startMotionBudget } from '../../utils/motionBudget';
 import './avatarChoreography.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -595,6 +596,17 @@ export const SeatSlot = memo(
      * because "a rig exists in the manifest" and "a rig is actually on screen"
      * are different things and only the second should hide the artwork.
      */
+    /**
+     * Started from here rather than from TablePage on purpose: it is a one-shot
+     * singleton, so every seat calling it is free after the first, and keeping
+     * it self-contained means the avatar system carries its own performance
+     * budget instead of depending on a change in a file three workstreams are
+     * editing at once.
+     */
+    useEffect(() => {
+      startMotionBudget();
+    }, []);
+
     const [rigActive, setRigActive] = useState(false);
     const [avatarGesture, setAvatarGesture] = useState<AvatarGesture>(null);
     const gestureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -652,7 +664,18 @@ export const SeatSlot = memo(
      * the action effect above and does not clash with it: a seat cannot be
      * acting and have just acted in the same frame.
      */
-    const prevGestureActiveRef = useRef(false);
+    /**
+     * Seeded with the CURRENT value rather than false, so mounting into a seat
+     * that is already acting is not treated as a transition.
+     *
+     * With `useRef(false)` the first effect run always saw a rising edge, so a
+     * player opening a table mid-hand watched the acting seat sit up as though
+     * the turn had just arrived — and on MultiTablePage, which mounts and
+     * unmounts tables as you switch tabs, that replayed on every visit. An
+     * alert is a reaction to the turn ARRIVING; arriving late to someone else's
+     * turn is not that.
+     */
+    const prevGestureActiveRef = useRef(isActive);
     useEffect(() => {
       const rising = isActive && !prevGestureActiveRef.current;
       prevGestureActiveRef.current = isActive;

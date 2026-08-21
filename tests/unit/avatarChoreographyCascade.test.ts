@@ -186,6 +186,31 @@ describe('avatarChoreography.css cascade', () => {
     expect(rive.slice(0, 320)).toContain('transform-origin');
   });
 
+  it('sheds ONLY the infinite animations under the motion budget', () => {
+    // The point of the lite mode is that it cuts decoration, not information.
+    // A one-shot gesture is under a second and fires on a real event — a fold
+    // you cannot see is a worse outcome than a dropped frame — so gestures must
+    // survive. If a future edit adds them here, the table stops communicating
+    // on exactly the devices that most need it to.
+    const lite = CSS.split('\n')
+      .map((l, i) => [l, i] as const)
+      .filter(([l]) => l.includes("[data-sp-motion='lite']"));
+    expect(lite.length, 'no motion-budget rules found').toBeGreaterThan(0);
+
+    const litSelectors = lite.map(([l]) => l);
+    for (const g of GESTURES) {
+      expect(
+        litSelectors.some((l) => l.includes(`--${g}`) && !l.includes('--tense')),
+        `lite mode must NOT disable the one-shot "${g}" gesture — it carries meaning`
+      ).toBe(false);
+    }
+    // ...and it must actually cover all three infinite ones.
+    const joined = litSelectors.join('\n');
+    expect(joined, 'breathing not shed').toContain('.seat__avatar-wrap,');
+    expect(joined, 'tense tremor not shed').toContain('--tense');
+    expect(joined, 'holo sweep not shed').toContain('--holo');
+  });
+
   it('keeps every gesture keyframe defined exactly once', () => {
     // @keyframes is a global namespace across all loaded stylesheets. This repo
     // has already been bitten: `winnerAvatarGlow` existed in two files with

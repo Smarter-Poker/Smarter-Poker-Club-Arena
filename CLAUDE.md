@@ -285,3 +285,66 @@ ask Dan for a manual handoff again:
   claim deployed until a DB-visible behavioral change confirms it.
 - After deploy, mirror the exact pushed content back to Dan's working tree
   with device_commit_files so his next host-side `git pull` is clean.
+
+---
+
+## 12. LOCAL CLONE HYGIENE — never rebase main (added 2026-08-21, binding)
+
+**`git pull --rebase origin main` on Dan's Mac is refused by a hook. This is
+deliberate. Do not bypass it to "get unstuck" — that is how you get stuck.**
+
+### What went wrong
+
+On 2026-08-21 the Mac clone sat stranded at step 1 of a 10-commit rebase with
+conflict markers in 12+ files. That clone's reflog held **54 local commits, 40
+`pull --rebase origin main`, and 10 emergency `reset --hard origin/main`
+rescues** — a loop, not an accident.
+
+### Why this repo breaks where a normal repo would not
+
+Several agents ship here at once, and they do **not** all push the local commit
+object: the GitHub-MCP path re-creates the same CONTENT under a **different
+SHA**. So the Mac routinely holds commits whose work is already upstream with
+another id. `git pull --rebase` then replays each one onto a branch that already
+contains its changes — every hunk conflicts, and origin/main has moved again by
+the time anyone looks. Git's own duplicate detection cannot rescue it (the
+stranded state even carried a `drop_redundant_commits` marker).
+
+### The guard
+
+`.husky/pre-rebase` (committed — the `.husky/_/pre-rebase` shim already exists,
+so every clone gets it) refuses a rebase of `main` that would **replay** commits.
+Still allowed, because neither can strand:
+
+- a **fast-forward** (nothing to replay) — the normal way to sync;
+- any **feature branch** — rebase those freely.
+
+`scripts/git-safe-push.sh` exports `CA_GIT_GUARD_ALLOW=1` and is unaffected: it
+wraps its own rebase in an abort-and-force-push fallback.
+
+### If a clone is already stranded
+
+```bash
+bash scripts/git-unstick.sh
+```
+
+Aborts any rebase/merge/cherry-pick, clears a stale `index.lock` (only when no
+git process is running), saves local-only commits to a dated `backup/unstick-*`
+branch, stashes uncommitted edits, and resets `main` to `origin/main`. **Nothing
+is deleted** — the backup branch and the stash are both printed at the end.
+
+### The rule
+
+1. The Mac's `main` is a **mirror of origin**, not a place work originates.
+   Ship through `scripts/git-safe-push.sh` or the GitHub MCP.
+2. To sync it, **fetch + fast-forward** (or `git-unstick.sh`). Never rebase it.
+3. Deliberate override, when you actually know why:
+   `CA_GIT_GUARD_ALLOW=1 git pull --rebase origin main`.
+4. Never run git WRITE commands against the mounted worktree from a sandbox —
+   that mount cannot `unlink`, so a `.git/index.lock` it creates is stranded and
+   then blocks git on the Mac host too (verified 2026-08-21: write and chmod
+   succeed on that mount, unlink fails).
+
+World Hub note: that clone already carries an equivalent hook, but only in
+`.git/hooks/` — untracked, so it dies on any fresh clone. This repo's version is
+committed precisely so it cannot be lost that way.

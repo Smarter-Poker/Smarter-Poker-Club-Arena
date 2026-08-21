@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+
+# 2026-08-21: this script owns its own rebase and always aborts+force-pushes on
+# conflict, so it can never leave a stranded rebase. Tell .husky/pre-rebase to
+# stand aside for it (that guard blocks ad-hoc `git pull --rebase` on main).
+export CA_GIT_GUARD_ALLOW=1
 # ═══════════════════════════════════════════════════════════════════════════════
 # git-safe-push.sh v1.0 — Fully Autonomous Git Push for Club Arena
 # ═══════════════════════════════════════════════════════════════════════════════

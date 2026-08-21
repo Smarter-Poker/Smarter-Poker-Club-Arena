@@ -157,6 +157,7 @@ export default function LeaderboardPage() {
   const [payouts, setPayouts] = useState<any[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [finalizeLoading, setFinalizeLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [metric, setMetric] = useState<LeaderboardMetric>('profit');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [totalRanked, setTotalRanked] = useState<number | null>(null);
@@ -593,8 +594,11 @@ export default function LeaderboardPage() {
     (m) => scope === 'my-clubs' || m.globalSupported
   );
 
-  const top3 = entries.slice(0, 3);
-  const rest = entries.slice(3);
+  const filteredEntries = entries.filter((e) => 
+    !searchQuery || e.username.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  const top3 = filteredEntries.slice(0, 3);
+  const rest = filteredEntries.slice(3);
 
   // Rate metrics are meaningless without volume, so every row carries the hand
   // count for the selected period, and rows that fail the ROI qualifier say so
@@ -733,7 +737,27 @@ export default function LeaderboardPage() {
         )}
 
         {/* Scope Toggle */}
-        <div className="filter-group scope-toggle">
+        {/* Search Bar */}
+        <div className="filter-group">
+          <input
+            type="text"
+            className="lb-search-input"
+            placeholder="Search players..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '8px',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              background: 'rgba(0, 0, 0, 0.3)',
+              color: '#fff',
+              fontSize: '14px',
+              width: '180px'
+            }}
+          />
+        </div>
+        
+        {/* Scope Toggle */}
           <button
             className={scope === 'my-clubs' ? 'active' : ''}
             onClick={() => setScope('my-clubs')}

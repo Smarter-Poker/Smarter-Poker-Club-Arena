@@ -259,13 +259,28 @@ export const LeaderboardService = {
       let statsData: PlayerStatsRow[] | null = null;
 
       if (!isRatio) {
-        const { data, error } = await supabase.rpc('fn_club_leaderboard_period_v2', {
-          p_club_id: resolvedClubId,
-          p_metric: metric,
-          p_period: period,
-          p_limit: limit,
-          p_offset: offset,
-        });
+        let data, error;
+        if (periodOffset < 0) {
+          const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+          const result = await supabase.rpc('fn_club_leaderboard_by_dates', {
+            p_club_id: resolvedClubId,
+            p_metric: metric,
+            p_start_date: start.toISOString().split('T')[0],
+            p_end_date: end.toISOString().split('T')[0],
+            p_limit: limit,
+            p_offset: offset,
+          });
+          data = result.data; error = result.error;
+        } else {
+          const result = await supabase.rpc('fn_club_leaderboard_period_v2', {
+            p_club_id: resolvedClubId,
+            p_metric: metric,
+            p_period: period,
+            p_limit: limit,
+            p_offset: offset,
+          });
+          data = result.data; error = result.error;
+        }
         if (error) {
           reportError(error, 'LeaderboardService.getClubLeaderboard_v2');
         } else {
@@ -320,12 +335,26 @@ export const LeaderboardService = {
   ): Promise<LeaderboardEntry[]> {
     try {
       if (metric === 'vpip' || metric === 'pfr') return [];
-      const { data, error } = await supabase.rpc('fn_global_leaderboard_period', {
-        p_metric: metric,
-        p_period: period,
-        p_limit: limit,
-        p_offset: offset,
-      });
+      let data, error;
+      if (periodOffset < 0) {
+        const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+        const result = await supabase.rpc('fn_global_leaderboard_by_dates', {
+          p_metric: metric,
+          p_start_date: start.toISOString().split('T')[0],
+          p_end_date: end.toISOString().split('T')[0],
+          p_limit: limit,
+          p_offset: offset,
+        });
+        data = result.data; error = result.error;
+      } else {
+        const result = await supabase.rpc('fn_global_leaderboard_period', {
+          p_metric: metric,
+          p_period: period,
+          p_limit: limit,
+          p_offset: offset,
+        });
+        data = result.data; error = result.error;
+      }
       if (error || !data) {
         reportError(error, 'LeaderboardService.getGlobalLeaderboard');
         return [];
@@ -421,68 +450,40 @@ export const LeaderboardService = {
   },
 
   /**
-   * Update player stats after a completed hand.
-   * NOTE (2026-08-19): winnings/losses are now accumulated server-side (DB
-   * trigger + engine contribution RPC). This client-side call remains only
-   * for the profiles.total_hands_played counter and POY tracking.
-   */
-  async updateHandStats(
-    result: HandResultForStats & { clubId?: string; clubName?: string }
-  ): Promise<void> {
-    const { error } = await retryAsync(
-      () =>
-        supabase.rpc('update_player_hand_stats', {
-          p_user_id: result.userId,
-          p_profit: result.profit,
-          p_is_voluntary: result.isVoluntary,
-          p_is_preflop_raise: result.isPreflopRaise,
-          p_went_to_showdown: result.wentToShowdown,
-          p_won_at_showdown: result.wonAtShowdown,
-        }),
-      3
-    );
-
-    if (error) {
-      reportError(error, 'LeaderboardService.updateHandStats_error');
-    }
-
-    // Track for POY batched submission (cash games)
-    if (result.clubId) {
-      try {
-        const { POYService } = await import('./POYService');
-        POYService.trackHandResult({
-          userId: result.userId,
-          clubId: result.clubId,
-          clubName: result.clubName,
-          profit: result.profit,
-        });
-      } catch (_e: unknown) {
-        // Silent fail for POY tracking
-      }
-    }
-  },
-
-  /**
    * Get user's rank on a specific club leaderboard.
    */
   async getUserRank(
     userId: string,
     clubId: string,
     metric: LeaderboardMetric = 'profit',
-    period: LeaderboardPeriod = 'weekly'
+    period: LeaderboardPeriod = 'weekly',
+    periodOffset: number = 0
   ): Promise<{ rank: number; total: number; value: number } | null> {
     try {
       const resolvedClubId = await resolveClubUUID(clubId);
       const isRatio = metric === 'vpip' || metric === 'pfr';
 
       if (!isRatio) {
-        // fn_user_rank_period handles every period including all_time.
-        const { data, error } = await supabase.rpc('fn_user_rank_period', {
-          p_user_id: userId,
-          p_club_id: resolvedClubId,
-          p_metric: metric,
-          p_period: period,
-        });
+        let data, error;
+        if (periodOffset < 0) {
+          const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+          const result = await supabase.rpc('fn_user_rank_by_dates', {
+            p_user_id: userId,
+            p_club_id: resolvedClubId,
+            p_metric: metric,
+            p_start_date: start.toISOString().split('T')[0],
+            p_end_date: end.toISOString().split('T')[0],
+          });
+          data = result.data; error = result.error;
+        } else {
+          const result = await supabase.rpc('fn_user_rank_period', {
+            p_user_id: userId,
+            p_club_id: resolvedClubId,
+            p_metric: metric,
+            p_period: period,
+          });
+          data = result.data; error = result.error;
+        }
         if (error || !data?.found) {
           if (error) reportError(error, 'LeaderboardService.getUserRank_period');
           return null;
@@ -527,15 +528,29 @@ export const LeaderboardService = {
   async getGlobalUserRank(
     userId: string,
     metric: LeaderboardMetric = 'profit',
-    period: LeaderboardPeriod = 'weekly'
+    period: LeaderboardPeriod = 'weekly',
+    periodOffset: number = 0
   ): Promise<{ rank: number; total: number; value: number } | null> {
     try {
       if (metric === 'vpip' || metric === 'pfr') return null;
-      const { data, error } = await supabase.rpc('fn_user_rank_global_period', {
-        p_user_id: userId,
-        p_metric: metric,
-        p_period: period,
-      });
+      let data, error;
+      if (periodOffset < 0) {
+        const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+        const result = await supabase.rpc('fn_user_rank_global_by_dates', {
+          p_user_id: userId,
+          p_metric: metric,
+          p_start_date: start.toISOString().split('T')[0],
+          p_end_date: end.toISOString().split('T')[0],
+        });
+        data = result.data; error = result.error;
+      } else {
+        const result = await supabase.rpc('fn_user_rank_global_period', {
+          p_user_id: userId,
+          p_metric: metric,
+          p_period: period,
+        });
+        data = result.data; error = result.error;
+      }
       if (error || !data?.found) {
         if (error) reportError(error, 'LeaderboardService.getGlobalUserRank');
         return null;

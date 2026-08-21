@@ -156,6 +156,20 @@ export abstract class ServerTableEngineBase {
 
   // Bible V8 §6.17: Admin pause/maintenance lock — prevents new hands from starting
   protected adminPauseLock: boolean = false;
+  /**
+   * Wall-clock instant before which this table must not deal (2026-08-21).
+   *
+   * pauseAfterHand() pauses AFTER the current hand, which is right for
+   * hand-for-hand and breaks but cannot protect the FIRST deal — and the
+   * first deal is exactly what the Spin reveal needs held, or cards land
+   * underneath a spinning wheel.
+   */
+  protected dealHoldUntilMs: number = 0;
+
+  /** Hold dealing until `atMs`. Only ever extends the hold, never shortens it. */
+  public holdDealingUntil(atMs: number): void {
+    if (atMs > this.dealHoldUntilMs) this.dealHoldUntilMs = atMs;
+  }
   protected maintenanceLock: boolean = false;
 
   // FIX 143: Bible V8 §7.12: Deferred sit-out — can't fold mid-hand

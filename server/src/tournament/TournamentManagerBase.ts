@@ -15,6 +15,7 @@ import { ChipRaceEngine } from '../engine/ChipRaceEngine.js';
 import { TableBalancer } from '../engine/TableBalancer.js';
 import {
   SPIN_TIERS,
+  spinRevealTotalMs,
   SPIN_SEATS as SPEC_SPIN_SEATS,
   spinTier,
   spinRakeRate,
@@ -786,6 +787,59 @@ export abstract class TournamentManagerBase {
 
       // Create tables and seat players
       await this.createTablesAndSeatPlayers(tournament);
+
+      /**
+       * THE SHARED REVEAL (Dan 2026-08-21).
+       *
+       * "THE WHEEL STARTS SPINNING THE MOMENT THE 3RD PLAYER PAYS FOR HIS
+       *  SEAT... ONE SECOND LATER, A 3...2...1... COUNT DOWN CLOCK MUST BEGIN
+       *  WITH A WHEEL SPIN."
+       *
+       * The engine names the moment ONCE, here, and every seat renders
+       * against that same timestamp. Before this each client started its own
+       * wheel whenever it finished loading, so three players watched three
+       * different wheels and anyone arriving late missed the reveal for good.
+       *
+       * The tables are HELD for the whole sequence, so cards can never be
+       * dealt underneath a spinning wheel. Until now nothing reserved the
+       * moment — the wheel merely escaped being dealt over because engine
+       * start-up happened to take about 22 seconds, which is luck, not a
+       * contract.
+       */
+      const revealVariant = String(tournament.variant ?? '').toLowerCase();
+      const revealIsSpin =
+        revealVariant === 'spin' ||
+        String(tournament.tournament_type ?? '').toUpperCase() === 'SPIN';
+      // The draw wrote this onto the in-memory row above; it is the value the
+      // wheel must land on.
+      const revealMultiplier = Number(tournament.spin_multiplier) || 0;
+      if (revealIsSpin && revealMultiplier > 0) {
+        const revealAt = Date.now();
+        const holdUntil = revealAt + spinRevealTotalMs();
+        for (const [tableId, engine] of this.tableEngines) {
+          try {
+            engine.holdDealingUntil(holdUntil);
+            tableStateHub.emitEvent(tableId, {
+              type: 'spin_reveal',
+              table_id: tableId,
+              tournament_id: this.tournamentId,
+              multiplier: revealMultiplier,
+              buy_in: Number(tournament.buy_in_amount) || 0,
+              locked_tiers: tournament.spin_locked_tiers ?? null,
+              // Clients animate against THIS instant, not their own load time.
+              reveal_at: revealAt,
+              prize_pool: Number(tournament.prize_pool) || 0,
+              timestamp: revealAt,
+            });
+          } catch (err) {
+            // The reveal is theatre; it must never stop a game from starting.
+            reportError(err, 'Tournament.' + this.tournamentId.slice(0, 8) + '.spin_reveal_emit');
+          }
+        }
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reveal broadcast — ${revealMultiplier}x, dealing held ${spinRevealTotalMs()}ms`
+        );
+      }
 
       // Set tournament to RUNNING
       // Guard: only transition REGISTERING → RUNNING (prevents re-starting)

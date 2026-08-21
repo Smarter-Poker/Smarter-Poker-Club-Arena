@@ -424,3 +424,46 @@ export function requiredSeed(highestStake: number): number {
   const top = SPIN_TIERS[SPIN_TIERS.length - 1];
   return Math.round(highestStake * top.multiplier * 2 * 100) / 100;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  THE REVEAL — one wheel, watched together (Dan 2026-08-21)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Verbatim: "THE WHEEL STARTS SPINNING THE MOMENT THE 3RD PLAYER PAYS FOR HIS
+// SEAT... ONE SECOND LATER, A 3...2...1... COUNT DOWN CLOCK MUST BEGIN WITH A
+// WHEEL SPIN." (PokerBros reference video.)
+//
+// WHY THIS IS A SHARED CLOCK AND NOT A LOCAL ONE. The wheel used to be decided
+// per client: each one loaded the tournament row, saw a multiplier stamped
+// within the last 90 seconds, and started its own wheel whenever it happened to
+// finish loading. Three players therefore watched three different wheels at
+// three different moments, and anyone who arrived late — or simply refreshed —
+// missed the reveal entirely and had it marked as seen forever. The reveal is
+// the whole drama of the format; it has to be one moment the table shares.
+//
+// So the ENGINE names the moment. It stamps `reveal_at` when the last seat is
+// bought, broadcasts it to every seat, and HOLDS THE DEAL for the full sequence
+// below. Clients render against that timestamp, so they are in step with each
+// other regardless of when they connected, and cards can no longer be dealt
+// underneath a spinning wheel.
+//
+// (Before this, nothing reserved the moment at all: the wheel only escaped
+// being dealt over because engine start-up happened to take ~22 seconds. That
+// was luck, not a contract.)
+
+export const SPIN_REVEAL = {
+  /** Dan: "ONE SECOND LATER" — the beat between the last buy-in and the count. */
+  LEAD_IN_MS: 1000,
+  /** 3 ... 2 ... 1 */
+  COUNTDOWN_MS: 3000,
+  /** The wheel chases and lands on the drawn tier. */
+  SPIN_MS: 4200,
+  /** The winning segment flashes and the multiplier is read. */
+  RESULT_HOLD_MS: 2200,
+} as const;
+
+/** Total wall time from the last buy-in to the first card being dealt. */
+export function spinRevealTotalMs(): number {
+  const R = SPIN_REVEAL;
+  return R.LEAD_IN_MS + R.COUNTDOWN_MS + R.SPIN_MS + R.RESULT_HOLD_MS;
+}

@@ -649,6 +649,110 @@
   outline-offset: 2px;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   QUICK PREFERENCES — the two shortcut rows under the game action bar
+   ───────────────────────────────────────────────────────────────────────────
+   Dan 2026-08-21, from the reference: a stakes-tier row with a filter icon on
+   the right, and a seat-status row beneath it. Both scroll horizontally rather
+   than wrapping - a wrapped chip row changes HEIGHT as you switch game type,
+   and the game grid below it visibly jumps every time.
+═══════════════════════════════════════════════════════════════════════════ */
+.quickprefs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 1rem 8px;
+}
+
+.quickprefs__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.quickprefs__row::-webkit-scrollbar {
+  display: none;
+}
+
+.quickprefs__label {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #7f8ba0;
+  white-space: nowrap;
+  padding-right: 2px;
+}
+
+.quickprefs__chip {
+  flex: 1 1 0;
+  /* min-width:0 so four chips divide 375px instead of overflowing - the same
+     auto-minimum trap that blew out the filter sheet's feature grid. */
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 184, 0, 0.32);
+  background: #0f1420;
+  color: #cfd8e5;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.quickprefs__chip:hover {
+  border-color: rgba(255, 184, 0, 0.6);
+  color: #fff;
+}
+
+.quickprefs__chip.is-on {
+  background: linear-gradient(135deg, #ffb800, #ff9d00);
+  border-color: #ffb800;
+  color: #17130a;
+  font-weight: 800;
+}
+
+.quickprefs__chip:focus-visible {
+  outline: 2px solid rgba(255, 184, 0, 0.8);
+  outline-offset: 2px;
+}
+
+/* The icon that opens the full sheet. Fixed width and flex-shrink:0 so it is
+   always reachable no matter how many tier chips the active spec declares. */
+.quickprefs__more {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffb800;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.quickprefs__more:hover {
+  border-color: rgba(255, 184, 0, 0.55);
+  background: rgba(255, 184, 0, 0.1);
+}
+
+.quickprefs__more:focus-visible {
+  outline: 2px solid rgba(255, 184, 0, 0.8);
+  outline-offset: 2px;
+}
+
 /* ── Advanced Filters button ─────────────────────────────────────────────── */
 .game-bar__filter-btn {
   flex-shrink: 0;

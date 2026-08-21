@@ -195,7 +195,7 @@ export default function TournamentRankingCard({
           {/* ── Medal ── */}
           <div className={`trc2__medal ${medalClass(place)}`}>
             <div className="trc2__medal-ring">
-              <span className="trc2__medal-place">{place ?? '—'}</span>
+              <span className="trc2__medal-place">{place ?? '-'}</span>
             </div>
             <span className="trc2__medal-glow" aria-hidden="true" />
           </div>

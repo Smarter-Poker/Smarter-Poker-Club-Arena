@@ -1410,8 +1410,49 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       reportError(reconcileThrew, 'Tournament.payout_reconcile_threw');
     }
 
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * RELEASE THE PLAYERS (Dan 2026-08-21)
+     * ───────────────────────────────────────────────────────────────────────
+     * "ONCE A SPIN OR SIT N GO FINISHES, YOU KICK THE CURRENT PLAYERS, PAY OUT
+     *  THE WINNER(S) AND MOVE THEM TO THE LOBBY AND RE OPEN THE TABLE AGAIN."
+     *
+     * Payouts already happen above. What did NOT happen was the kick: this
+     * loop closed the TABLE but never touched `table_seats`, so every seat
+     * stayed open with `left_at IS NULL` forever. Measured before this change:
+     * 1,476 live seats stranded across 1,420 closed tournament tables.
+     *
+     * That is not cosmetic. `table_seats WHERE left_at IS NULL` is the query
+     * the multi-table container uses to rebuild a player's tabs on return, so
+     * a player who finished a spin days ago still had that dead table restored
+     * as a tab, and MultiTablePage's `seated` flag treated it as a live seat.
+     * Releasing the seats is what actually puts the player back in the lobby.
+     *
+     * Done BEFORE the table is closed and per-table, so a failure on one table
+     * cannot strand the rest, and never fatal: the event is over and the money
+     * is already paid: a seat-release error must not undo that.
+     */
     for (const [tableId, engine] of this.tableEngines) {
       await engine.stop();
+
+      try {
+        const { error: seatErr } = await supabase
+          .from('table_seats')
+          .update({ left_at: new Date().toISOString() })
+          .eq('table_id', tableId)
+          .is('left_at', null);
+        if (seatErr) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] seat release failed on ${tableId.slice(0, 8)}: ${seatErr.message}`
+            ),
+            'Tournament.seat_release_failed'
+          );
+        }
+      } catch (seatThrew) {
+        reportError(seatThrew, 'Tournament.seat_release_threw');
+      }
+
       await supabase.from('tables').update({ status: 'closed' }).eq('id', tableId);
     }
 

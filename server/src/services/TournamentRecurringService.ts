@@ -15,7 +15,7 @@
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
-import { buyInFor } from '../config/buyIn.js';
+import { buyInFor, wholeChips } from '../config/buyIn.js';
 
 /**
  * Derive the two buy-in columns from ONE whole-dollar total.
@@ -534,53 +534,62 @@ function horsesForSeatHeldGame(maxPlayers: number): { horses: number; isSim: boo
   return { horses: Math.max(1, maxPlayers - 1), isSim: false };
 }
 
-const SNG_CONFIGS: SNGConfig[] = [
-  {
-    name: '5 Chip Turbo SNG 6-Max NLH',
-    type: 'sng',
-    gameVariant: 'nlh',
-    buyIn: 5,
-    rake: 0.5,
-    startingStack: 1500,
-    maxPlayers: 6,
-    minPlayers: 6,
-    horsesToRegister: 6,
-    blindStructure: BLIND_STRUCTURES.SNG_6MAX,
-    payoutStructure: [
-      { place: 1, percentage: 65 },
-      { place: 2, percentage: 35 },
-    ],
-  },
-  {
-    name: '10 Chip SNG 9-Max NLH',
-    type: 'sng',
-    gameVariant: 'nlh',
-    buyIn: 10,
-    rake: 1.0,
-    startingStack: 2000,
-    maxPlayers: 9,
-    minPlayers: 9,
-    horsesToRegister: 9,
-    blindStructure: BLIND_STRUCTURES.SNG_6MAX,
-    payoutStructure: PAYOUT_STRUCTURES.THREE,
-  },
-  {
-    name: '5 Chip Turbo SNG 6-Max PLO4',
-    type: 'sng',
-    gameVariant: 'plo4',
-    buyIn: 5,
-    rake: 0.5,
-    startingStack: 1500,
-    maxPlayers: 6,
-    minPlayers: 6,
-    horsesToRegister: 6,
-    blindStructure: BLIND_STRUCTURES.SNG_6MAX,
-    payoutStructure: [
-      { place: 1, percentage: 65 },
-      { place: 2, percentage: 35 },
-    ],
-  },
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * SNG BOARD — Dan 2026-08-21
+ * ───────────────────────────────────────────────────────────────────────────
+ * Same rule as the spin board above: every price point permanently open,
+ * generated rather than hand-written, and one seat left free so the table
+ * WAITS rather than starting the moment it is created.
+ *
+ * Heads-up and 6-max are the two shapes the reference lobby shows, across the
+ * whole buy-in ladder. horsesToRegister is seats-1 for the same reason it is
+ * on spins - a full fill means the game is never joinable.
+ */
+const SNG_BOARD_SHAPES: { seats: number; label: string; turbo: boolean }[] = [
+  { seats: 2, label: 'Heads-Up', turbo: false },
+  { seats: 6, label: '6-Max', turbo: true },
+  { seats: 9, label: '9-Max', turbo: false },
 ];
+
+const SNG_BOARD_VARIANTS: { key: string; label: string }[] = [
+  { key: 'nlh', label: 'NLH' },
+  { key: 'plo4', label: 'PLO4' },
+];
+
+const SNG_BOARD_BUYINS = [1, 2, 5, 10, 20, 25, 50, 100];
+
+const SNG_CONFIGS: SNGConfig[] = SNG_BOARD_SHAPES.flatMap((shape) =>
+  SNG_BOARD_VARIANTS.flatMap((v) =>
+    SNG_BOARD_BUYINS.map((buyIn) => ({
+      name: `${v.label} ${shape.label} ${buyIn}${shape.turbo ? ' Turbo' : ''}`,
+      type: 'sng' as const,
+      gameVariant: v.key,
+      buyIn,
+      // Derived, never authored - see src/utils/buyIn.ts. The value is unused
+      // by createSNG (which calls buyInColumns) but kept for config parity.
+      rake: 0,
+      startingStack: shape.seats <= 2 ? 1500 : 2000,
+      maxPlayers: shape.seats,
+      minPlayers: shape.seats,
+      horsesToRegister: shape.seats - 1,
+      blindStructure: shape.turbo ? BLIND_STRUCTURES.TURBO : BLIND_STRUCTURES.STANDARD,
+      payoutStructure:
+        shape.seats <= 2
+          ? [{ place: 1, percentage: 100 }]
+          : shape.seats <= 6
+            ? [
+                { place: 1, percentage: 65 },
+                { place: 2, percentage: 35 },
+              ]
+            : [
+                { place: 1, percentage: 50 },
+                { place: 2, percentage: 30 },
+                { place: 3, percentage: 20 },
+              ],
+    }))
+  )
+);
 
 /**
  * Dan 2026-08-19: "SPINS ARE ALWAYS 3 HANDED."
@@ -596,78 +605,61 @@ const SNG_CONFIGS: SNGConfig[] = [
  */
 export const SPIN_SEATS = 3;
 
-const SPIN_CONFIGS: SpinConfig[] = [
-  {
-    name: '1 Chip Spin NLH',
-    type: 'spin',
-    gameVariant: 'nlh',
-    buyIn: 1,
-    rake: 0.1,
-    startingStack: 500,
-    maxPlayers: 3,
-    minPlayers: 3,
-    horsesToRegister: 3,
-    blindStructure: BLIND_STRUCTURES.SPIN,
-    payoutStructure: [{ place: 1, percentage: 100 }],
-  },
-  {
-    name: '3 Chip Spin NLH',
-    type: 'spin',
-    gameVariant: 'nlh',
-    buyIn: 3,
-    rake: 0.3,
-    startingStack: 500,
-    maxPlayers: 3,
-    minPlayers: 3,
-    horsesToRegister: 3,
-    blindStructure: BLIND_STRUCTURES.SPIN,
-    payoutStructure: [{ place: 1, percentage: 100 }],
-  },
-  {
-    name: '5 Chip Spin PLO4',
-    type: 'spin',
-    gameVariant: 'plo4',
-    buyIn: 5,
-    rake: 0.5,
-    startingStack: 500,
-    maxPlayers: 3,
-    minPlayers: 3,
-    horsesToRegister: 3,
-    blindStructure: BLIND_STRUCTURES.SPIN,
-    payoutStructure: [{ place: 1, percentage: 100 }],
-  },
-  // SPIN_GAME_TYPES has advertised PLO5 and PLO6 since the spec was written,
-  // and gameTypeMap gained their entries on 2026-08-20 — but no config
-  // actually offered them, so the two game types existed only as a promise.
-  // Both are 3-handed here, comfortably inside the deck-safety caps (PLO5 is
-  // 7-max, PLO6 is 6-max — the seat-cap law in config/tableSeating.ts).
-  {
-    name: '3 Chip Spin PLO5',
-    type: 'spin',
-    gameVariant: 'plo5',
-    buyIn: 3,
-    rake: 0.3,
-    startingStack: 500,
-    maxPlayers: 3,
-    minPlayers: 3,
-    horsesToRegister: 3,
-    blindStructure: BLIND_STRUCTURES.SPIN,
-    payoutStructure: [{ place: 1, percentage: 100 }],
-  },
-  {
-    name: '5 Chip Spin PLO6',
-    type: 'spin',
-    gameVariant: 'plo6',
-    buyIn: 5,
-    rake: 0.5,
-    startingStack: 500,
-    maxPlayers: 3,
-    minPlayers: 3,
-    horsesToRegister: 3,
-    blindStructure: BLIND_STRUCTURES.SPIN,
-    payoutStructure: [{ place: 1, percentage: 100 }],
-  },
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * SPIN BOARD — Dan 2026-08-21
+ * ───────────────────────────────────────────────────────────────────────────
+ * "create and open lots of spins, at once, and the tables just stay open until
+ *  players sit down, they don't need to be scheduled just always running."
+ *
+ * This was FIVE hand-written configs and a global cap of 5 live spins, so the
+ * lobby showed whichever five the rotation happened to reach - and, measured
+ * just now, exactly ONE spin existed platform-wide and it was already RUNNING,
+ * meaning a player arriving at the Spin-It tab had nothing to sit down at.
+ *
+ * The board is now the cross product of the buy-in ladder and the variants, so
+ * every price point is permanently on the board at every variant it is offered
+ * at. Generated rather than hand-written for the same reason buy-ins are
+ * derived rather than authored: 20 hand-maintained literals drift.
+ *
+ * Buy-ins come off BUY_IN_LADDER via buyInFor(), so a spin's advertised price
+ * is a whole number like everything else. Spins carry NO separate rake - the
+ * house edge is engineered into the multiplier distribution (spinSpec.ts) -
+ * so `rake` stays 0 here and createSpin writes buy_in_fee: 0.
+ */
+const SPIN_BOARD_VARIANTS: { key: string; label: string }[] = [
+  { key: 'nlh', label: 'NLH' },
+  { key: 'plo4', label: 'PLO4' },
+  { key: 'plo5', label: 'PLO5' },
+  { key: 'plo6', label: 'PLO6' },
 ];
+
+/** Every price point the spin board is open at. Whole chips, from the ladder. */
+const SPIN_BOARD_BUYINS = [1, 2, 3, 5, 10, 20, 50, 100];
+
+const SPIN_CONFIGS: SpinConfig[] = SPIN_BOARD_VARIANTS.flatMap((v) =>
+  SPIN_BOARD_BUYINS.map((buyIn) => ({
+    name: `${buyIn} Chip Spin ${v.label}`,
+    type: 'spin' as const,
+    gameVariant: v.key,
+    buyIn,
+    // Spins are rake-free by product rule; the edge lives in the multipliers.
+    rake: 0,
+    startingStack: 500,
+    maxPlayers: SPIN_SEATS,
+    minPlayers: SPIN_SEATS,
+    /* Seat all but ONE chair with horses.
+       Dan: "the tables just stay open until players sit down." A full horse
+       fill (the old value was 3 of 3) starts the spin the instant it is
+       created, so the table is never actually available - which is why the
+       board kept showing RUNNING games and nothing joinable. Leaving the last
+       seat empty means the table sits open indefinitely, and the first human
+       to take that seat starts the game, which is the whole point of a spin. */
+    horsesToRegister: SPIN_SEATS - 1,
+    blindStructure: BLIND_STRUCTURES.SPIN,
+    payoutStructure: [{ place: 1, percentage: 100 }],
+  }))
+);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // XMTT (UNION) TOURNAMENT CONFIGS — Cross-Club Events
@@ -903,30 +895,7 @@ export class TournamentRecurringService {
   // ─────────────────────────────────────────────────────────────────────────
 
   private async checkAndLaunchSNGs(): Promise<void> {
-    try {
-      const activeCount = await this.getActiveCount('sng');
-      const threshold = 3;
-
-      if (activeCount >= threshold) return;
-
-      const toLaunch = threshold - activeCount;
-      let launched = 0;
-
-      for (let i = 0; i < toLaunch; i++) {
-        const config = SNG_CONFIGS[i % SNG_CONFIGS.length];
-        const result = await this.createSNG(config);
-        if (result.tournamentId) launched++;
-      }
-
-      if (launched > 0) {
-        console.log(`[TournamentRecurring] Launched ${launched} SNGs`);
-      }
-    } catch (err: any) {
-      reportError(
-        new Error(`[TournamentRecurring] SNG check error: ${err.message}`),
-        'TournamentRecurring.SNG_check_error'
-      );
-    }
+    await this.ensureBoardOpen('sng', SNG_CONFIGS, (c) => this.createSNG(c as any));
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -934,28 +903,85 @@ export class TournamentRecurringService {
   // ─────────────────────────────────────────────────────────────────────────
 
   private async checkAndLaunchSpins(): Promise<void> {
+    await this.ensureBoardOpen('spin', SPIN_CONFIGS, (c) => this.createSpin(c as any));
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * ALWAYS-ON BOARD (Dan 2026-08-21)
+   * ───────────────────────────────────────────────────────────────────────
+   * "the tables just stay open until players sit down, they don't need to be
+   *  scheduled just always running."
+   *
+   * The old rule was a GLOBAL cap - at most 5 live spins and 3 live SNGs,
+   * whichever configs the rotation happened to reach. Two things fell out of
+   * that, both measured in production before this change:
+   *
+   *   - Exactly ONE spin and ONE SNG existed platform-wide, and BOTH were
+   *     already RUNNING. A player opening the Spin-It tab had nothing at all
+   *     to sit down at.
+   *   - Because the cap counted RUNNING games too, a full board of in-progress
+   *     games satisfied the threshold and suppressed every new opening. The
+   *     busier the platform got, the fewer joinable games it offered.
+   *
+   * The guarantee is now PER CONFIG and counts only what a player can actually
+   * JOIN: for every entry on the board, if there is no REGISTERING instance,
+   * open one. A game that fills and starts is replaced on the next pass, so
+   * every price point is permanently available.
+   *
+   * One query for the whole board, not one per config: at 32 spins and 48 SNGs
+   * a per-config count would be 80 round trips every tick.
+   */
+  private async ensureBoardOpen<T extends { name: string }>(
+    variant: 'spin' | 'sng',
+    configs: T[],
+    create: (config: T) => Promise<{ tournamentId: string | null }>
+  ): Promise<void> {
     try {
-      const activeCount = await this.getActiveCount('spin');
-      const threshold = 5;
+      const { data: openRows, error } = await supabase
+        .from('tournaments')
+        .select('name')
+        .eq('variant', variant)
+        // REGISTERING only. ANNOUNCED is not joinable and RUNNING is too late;
+        // counting either is what let a board of live games starve the lobby.
+        .eq('status', 'REGISTERING');
 
-      if (activeCount >= threshold) return;
+      if (error) {
+        // Fail CLOSED, exactly as getActiveCount does: on a transient read
+        // error assume the board is fine and skip a cycle, rather than
+        // recreating all 80 games because the count came back empty.
+        reportError(
+          new Error(`[TournamentRecurring] ${variant} board read failed: ${error.message}`),
+          'TournamentRecurring.board_read_failed'
+        );
+        return;
+      }
 
-      const toLaunch = threshold - activeCount;
+      const open = new Set((openRows ?? []).map((r) => String(r.name)));
+      const missing = configs.filter((c) => !open.has(c.name));
+      if (missing.length === 0) return;
+
+      /* Cap the per-tick burst. A cold start has all 80 missing, and creating
+         80 tournaments in one tick means 80 inserts plus 80 horse-registration
+         batches against the same connection - enough to stall the engine loop
+         that also has live hands to deal. The board fills over a few ticks
+         instead, newest price points last. */
+      const BURST = 12;
       let launched = 0;
-
-      for (let i = 0; i < toLaunch; i++) {
-        const config = SPIN_CONFIGS[i % SPIN_CONFIGS.length];
-        const result = await this.createSpin(config);
+      for (const config of missing.slice(0, BURST)) {
+        const result = await create(config);
         if (result.tournamentId) launched++;
       }
 
       if (launched > 0) {
-        console.log(`[TournamentRecurring] Launched ${launched} Spins`);
+        console.log(
+          `[TournamentRecurring] Opened ${launched} ${variant}(s); ${missing.length - launched} still to fill`
+        );
       }
     } catch (err: any) {
       reportError(
-        new Error(`[TournamentRecurring] Spin check error: ${err.message}`),
-        'TournamentRecurring.Spin_check_error'
+        new Error(`[TournamentRecurring] ${variant} board error: ${err.message}`),
+        'TournamentRecurring.board_error'
       );
     }
   }
@@ -1043,13 +1069,18 @@ export class TournamentRecurringService {
         config.type === 'progressive_bounty' ||
         config.type === 'mystery_bounty';
       const bountyPercent = config.bountyPercent || 30;
-      // Round 40 RE-RUN: Math.round (not Math.trunc) for IEEE 754 drift safety
-      // on bounty / mystery-max calculation — same family as the other Round 40
-      // fixes (calculateRake, completeHand, prizePool, totalRake, mysteryValue).
-      const bountyAmount = isBountyType ? Math.round(config.buyIn * bountyPercent) / 100 : 0;
+      // WHOLE CHIPS (Dan 2026-08-20): "Sit and Go and any tournament buy-ins
+      // must never be decimal buy-ins, whole numbers only." `split` is the
+      // authoritative whole-dollar price this row is created at - a rebuy or an
+      // add-on costs the SAME snapped total, not the raw (possibly off-ladder)
+      // config value. The bounty is a whole cut of that total; it used to be
+      // round(buyIn * pct) / 100, which produced 4.5 on a 15 buy-in.
+      const split = buyInFor(config.buyIn);
+      const bountyAmount = isBountyType
+        ? Math.min(split.prize, Math.max(0, Math.round((split.total * bountyPercent) / 100)))
+        : 0;
       const mysteryMin = config.type === 'mystery_bounty' ? bountyAmount : 0;
-      const mysteryMax =
-        config.type === 'mystery_bounty' ? Math.round(bountyAmount * 10 * 100) / 100 : 0;
+      const mysteryMax = config.type === 'mystery_bounty' ? Math.round(bountyAmount * 10) : 0;
 
       let tournament = null;
       let lastError = null;
@@ -1065,7 +1096,7 @@ export class TournamentRecurringService {
             variant: config.type === 'mtt' ? 'freezeout' : config.type,
             tournament_type: 'MTT',
             ...buyInColumns(config.buyIn),
-            guaranteed_prize: config.guarantee || 0,
+            guaranteed_prize: wholeChips(config.guarantee),
             starting_chips: config.startingStack,
             max_players: config.maxPlayers,
             min_players: config.minPlayers || 3,
@@ -1087,13 +1118,13 @@ export class TournamentRecurringService {
             // matching what process_tournament_rebuy computes server-side.
             is_rebuy: (config as { rebuy?: boolean }).rebuy === true,
             is_reentry: (config as { rebuy?: boolean }).rebuy === true,
-            rebuy_cost: (config as { rebuy?: boolean }).rebuy ? config.buyIn : null,
+            rebuy_cost: (config as { rebuy?: boolean }).rebuy ? split.total : null,
             rebuy_chips: (config as { rebuy?: boolean }).rebuy ? config.startingStack : null,
             rebuy_levels: (config as { rebuy?: boolean }).rebuy ? 6 : null,
             max_rebuys: (config as { rebuy?: boolean }).rebuy ? 2 : null,
             max_reentries: (config as { rebuy?: boolean }).rebuy ? 1 : null,
             add_on_available: (config as { addOn?: boolean }).addOn === true,
-            addon_cost: (config as { addOn?: boolean }).addOn ? config.buyIn : null,
+            addon_cost: (config as { addOn?: boolean }).addOn ? split.total : null,
             addon_chips: (config as { addOn?: boolean }).addOn ? config.startingStack : null,
             addon_levels: (config as { addOn?: boolean }).addOn ? 1 : null,
           })
@@ -1223,11 +1254,17 @@ export class TournamentRecurringService {
       // Round 40 RE-RUN: Math.round (not Math.trunc) for IEEE 754 drift safety —
       // mirrors the same fix applied to the other bounty-config branch in this file.
       const bountyPercent = config.bountyPercent || 30;
-      const bountyAmount = isBountyType ? Math.round(config.buyIn * bountyPercent) / 100 : 0;
+      // WHOLE CHIPS (Dan 2026-08-20) - mirrors the XMTT branch above. `split`
+      // is the snapped whole-dollar price the row is actually created at, so
+      // the bounty, the rebuy and the add-on all key off it rather than off the
+      // raw config value.
+      const split = buyInFor(config.buyIn);
+      const bountyAmount = isBountyType
+        ? Math.min(split.prize, Math.max(0, Math.round((split.total * bountyPercent) / 100)))
+        : 0;
       // Mystery bounty range: min = base bounty, max = 10x base
       const mysteryMin = config.type === 'mystery_bounty' ? bountyAmount : 0;
-      const mysteryMax =
-        config.type === 'mystery_bounty' ? Math.round(bountyAmount * 10 * 100) / 100 : 0;
+      const mysteryMax = config.type === 'mystery_bounty' ? Math.round(bountyAmount * 10) : 0;
 
       let tournament = null;
       let lastError = null;
@@ -1242,7 +1279,7 @@ export class TournamentRecurringService {
             variant: config.type === 'mtt' ? 'freezeout' : config.type,
             tournament_type: 'MTT',
             ...buyInColumns(config.buyIn),
-            guaranteed_prize: config.guarantee || 0,
+            guaranteed_prize: wholeChips(config.guarantee),
             starting_chips: config.startingStack,
             max_players: config.maxPlayers,
             min_players: config.minPlayers || 3,
@@ -1264,13 +1301,13 @@ export class TournamentRecurringService {
             // matching what process_tournament_rebuy computes server-side.
             is_rebuy: (config as { rebuy?: boolean }).rebuy === true,
             is_reentry: (config as { rebuy?: boolean }).rebuy === true,
-            rebuy_cost: (config as { rebuy?: boolean }).rebuy ? config.buyIn : null,
+            rebuy_cost: (config as { rebuy?: boolean }).rebuy ? split.total : null,
             rebuy_chips: (config as { rebuy?: boolean }).rebuy ? config.startingStack : null,
             rebuy_levels: (config as { rebuy?: boolean }).rebuy ? 6 : null,
             max_rebuys: (config as { rebuy?: boolean }).rebuy ? 2 : null,
             max_reentries: (config as { rebuy?: boolean }).rebuy ? 1 : null,
             add_on_available: (config as { addOn?: boolean }).addOn === true,
-            addon_cost: (config as { addOn?: boolean }).addOn ? config.buyIn : null,
+            addon_cost: (config as { addOn?: boolean }).addOn ? split.total : null,
             addon_chips: (config as { addOn?: boolean }).addOn ? config.startingStack : null,
             addon_levels: (config as { addOn?: boolean }).addOn ? 1 : null,
           })
@@ -1500,7 +1537,11 @@ export class TournamentRecurringService {
           game_type: dbGameType,
           variant: 'spin',
           tournament_type: 'SPIN',
-          buy_in_amount: config.buyIn,
+          // Whole chips only (Dan 2026-08-20): "Sit and Go and any tournament
+          // buy-ins must never be decimal buy-ins, whole numbers only." A Spin
+          // carries no fee, so the buy-in IS the whole charge and is snapped to
+          // an integer here rather than trusting the config.
+          buy_in_amount: wholeChips(config.buyIn),
           // A SPIN IS NOT PRICED LIKE AN MTT. Dan, 2026-08-20: "THEY ARE
           // STRAIGHT JUST 10 BUY IN... NO ADDITIONAL RAKE IS ADDED." The rake
           // is engineered into the multiplier distribution instead — the

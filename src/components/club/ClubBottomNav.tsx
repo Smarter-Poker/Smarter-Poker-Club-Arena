@@ -26,7 +26,6 @@ export default function ClubBottomNav({
 }: ClubBottomNavProps) {
   const location = useLocation();
   const { user } = useAuthUser();
-  const [unreadCount, setUnreadCount] = useState(0);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -44,89 +43,19 @@ export default function ClubBottomNav({
     // it stays at opacity:0 forever. A nav tab that renders invisible is worse
     // than one that is absent.
     // Dan 2026-08-21: Stats added.
-    const items = ['messages', 'players', 'cashier', 'marketplace', 'data', 'stats', 'admin'];
+    const items = ['players', 'cashier', 'marketplace', 'data', 'stats', 'admin'];
     staggerTimersRef.current.forEach((t) => clearTimeout(t));
     staggerTimersRef.current = items.map((_, i) =>
       setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
     );
   }, []);
 
-  // ── Live unread notification badge ──
-  useEffect(() => {
-    if (!user?.id) return;
-
-    // Initial count
-    supabase
-      .from('notifications')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id)
-      .eq('read', false)
-      .then(({ count, error }) => {
-        if (error) {
-          console.warn('[ClubBottomNav] Unread count query error:', error.message);
-          return;
-        }
-        setUnreadCount(count || 0);
-      });
-
-    // Subscribe to new notifications
-    const channelKey = `nav-notif-badge-${user.id}`;
-
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          setUnreadCount((prev) => prev + 1);
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          // If marked as read, decrement
-          const newRow = payload.new as Record<string, unknown>;
-          const oldRow = payload.old as Record<string, unknown>;
-          if (newRow.read === true && oldRow.read === false) {
-            setUnreadCount((prev) => Math.max(0, prev - 1));
-          }
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'ClubBottomNav._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[ClubBottomNav] Realtime channel timed out');
-        }
-      });
-
-    // BUG-08/09 FIX: Listen to NOTIFICATION_COUNT_CHANGED for instant badge sync.
-    // DO NOT also subscribe to NOTIFICATION_READ — the store already transforms
-    // NOTIFICATION_READ into NOTIFICATION_COUNT_CHANGED with the absolute count.
-    // Subscribing to both causes a double-decrement bug.
-    const unsubCountChanged = masterBus.subscribe('NOTIFICATION_COUNT_CHANGED', (event) => {
-      if (event.payload?.count !== undefined && typeof event.payload.count === 'number') {
-        setUnreadCount(event.payload.count);
-      }
-    });
-
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-      unsubCountChanged();
-    };
-  }, [user?.id]);
+  /* The unread-badge block that used to live here was REMOVED with the
+     Messenger tab on 2026-08-21. It ran a count query, opened a realtime
+     channel on `notifications` and held a MasterBus listener - all of it
+     feeding one number that nothing renders any more. Leaving it would have
+     kept a live socket open per mounted nav for a badge that cannot appear.
+     The header messenger owns unread now. */
 
   // Check if user has elevated permissions (can see Players/Admin tabs)
   const hasAdminAccess = userRole === 'owner' || userRole === 'admin' || userRole === 'agent';
@@ -150,32 +79,25 @@ export default function ClubBottomNav({
     <nav className={styles.bottomNav}>
       {/* Navigation icons */}
       <div className={styles.navItems}>
-        {/* Messages */}
-        <Link
-          to={`/clubs/${clubId}/messages`}
-          className={`${styles.navItem} ${activeTab === 'messages' ? styles.active : ''}`}
-          style={{
-            opacity: visibleItems.has(0) ? 1 : 0,
-            transform: visibleItems.has(0) ? 'translateY(0)' : 'translateY(8px)',
-            transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-          }}
-        >
-          <svg className={styles.icon} viewBox="0 0 24 24" fill="currentColor">
-            <path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4V4c0-1.1-.9-2-2-2zm0 15.17L18.83 16H4V4h16v13.17zM7 9h10v2H7zm0-3h10v2H7zm0 6h7v2H7z" />
-          </svg>
-          {unreadCount > 0 && (
-            <span className={styles.badge}>{unreadCount > 99 ? '99+' : unreadCount}</span>
-          )}
-          <span className={styles.label}>Msgs</span>
-        </Link>
+        {/* Dan 2026-08-21: the Messenger tab is GONE from this bar.
+            It is already in the global header, so the footer copy was a second
+            door to the same room - and it was the one carrying the unread
+            badge, which is why the badge appeared to float in the wrong place:
+            .badge is absolutely positioned against .navItem, and this item's
+            icon is narrower than the cell, so `right: 8px` put the dot in the
+            gap between two tabs rather than on the icon.
+
+            Removing the tab removes the badge with it, and the whole unread
+            subscription that fed it (see above) - that query, its realtime
+            channel and its bus listener existed ONLY for this badge. */}
 
         {/* Players - Always visible */}
         <Link
           to={`/clubs/${clubId}/members`}
           className={`${styles.navItem} ${activeTab === 'players' ? styles.active : ''}`}
           style={{
-            opacity: visibleItems.has(1) ? 1 : 0,
-            transform: visibleItems.has(1) ? 'translateY(0)' : 'translateY(8px)',
+            opacity: visibleItems.has(0) ? 1 : 0,
+            transform: visibleItems.has(0) ? 'translateY(0)' : 'translateY(8px)',
             transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
           }}
         >
@@ -190,8 +112,8 @@ export default function ClubBottomNav({
           to={`/clubs/${clubId}/cashier`}
           className={`${styles.navItem} ${activeTab === 'cashier' ? styles.active : ''}`}
           style={{
-            opacity: visibleItems.has(2) ? 1 : 0,
-            transform: visibleItems.has(2) ? 'translateY(0)' : 'translateY(8px)',
+            opacity: visibleItems.has(1) ? 1 : 0,
+            transform: visibleItems.has(1) ? 'translateY(0)' : 'translateY(8px)',
             transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
           }}
         >
@@ -209,8 +131,8 @@ export default function ClubBottomNav({
           to="/marketplace"
           className={`${styles.navItem} ${activeTab === 'marketplace' ? styles.active : ''}`}
           style={{
-            opacity: visibleItems.has(3) ? 1 : 0,
-            transform: visibleItems.has(3) ? 'translateY(0)' : 'translateY(8px)',
+            opacity: visibleItems.has(2) ? 1 : 0,
+            transform: visibleItems.has(2) ? 'translateY(0)' : 'translateY(8px)',
             transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
           }}
         >
@@ -225,8 +147,8 @@ export default function ClubBottomNav({
           to={`/clubs/${clubId}/dashboard`}
           className={`${styles.navItem} ${activeTab === 'data' ? styles.active : ''}`}
           style={{
-            opacity: visibleItems.has(4) ? 1 : 0,
-            transform: visibleItems.has(4) ? 'translateY(0)' : 'translateY(8px)',
+            opacity: visibleItems.has(3) ? 1 : 0,
+            transform: visibleItems.has(3) ? 'translateY(0)' : 'translateY(8px)',
             transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
           }}
         >
@@ -243,8 +165,8 @@ export default function ClubBottomNav({
           to="/stats"
           className={`${styles.navItem} ${activeTab === 'stats' ? styles.active : ''}`}
           style={{
-            opacity: visibleItems.has(5) ? 1 : 0,
-            transform: visibleItems.has(5) ? 'translateY(0)' : 'translateY(8px)',
+            opacity: visibleItems.has(4) ? 1 : 0,
+            transform: visibleItems.has(4) ? 'translateY(0)' : 'translateY(8px)',
             transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
           }}
         >

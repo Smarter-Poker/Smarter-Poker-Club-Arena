@@ -6,8 +6,12 @@
  * The rule, in full, lives in src/utils/buyIn.ts. The short version:
  *
  *   total  — what the player pays. A whole number off BUY_IN_LADDER.
- *   fee    — DEFAULT_RAKE_RATE of the total  -> tournaments.buy_in_fee
- *   prize  — total - fee                     -> tournaments.buy_in_amount
+ *   fee    — DEFAULT_RAKE_RATE of the total, ROUNDED WHOLE -> tournaments.buy_in_fee
+ *   prize  — total - fee, therefore also whole              -> tournaments.buy_in_amount
+ *
+ * Dan 2026-08-20 (second pass): "Sit and Go and any tournament buy-ins must
+ * never be decimal buy-ins, whole numbers only." All THREE numbers are whole
+ * now, not just the total — a 15 game is 13 + 2, never 13.50 + 1.50.
  *
  * Rake is a cut OF the buy-in, not a surcharge ON TOP of it. The generator used
  * to store a hand-written `buyIn` and `rake` pair and let the player pay the
@@ -23,6 +27,11 @@
 
 export const DEFAULT_RAKE_RATE = 0.1;
 
+/**
+ * Generator price points. The fee is whole at every rung (splitBuyIn rounds
+ * it), so 1/2/3 carry a 0 fee and 5/15/25/75 round their fee up - see
+ * src/utils/buyIn.ts for why that trade was made.
+ */
 export const BUY_IN_LADDER = [
   1, 2, 3, 5, 10, 15, 20, 25, 30, 50, 75, 100, 150, 200, 250, 300, 500, 750, 1000, 1500, 2000, 5000,
 ] as const;
@@ -33,8 +42,15 @@ export interface BuyInSplit {
   fee: number;
 }
 
-function cents(n: number): number {
-  return Math.round(n * 100) / 100;
+/**
+ * The one gate every tournament/SNG money field goes through: a positive whole
+ * number of chips, or 0 for a freeroll. Mirror of wholeChips in
+ * src/utils/buyIn.ts.
+ */
+export function wholeChips(n: unknown): number {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v <= 0) return 0;
+  return Math.round(v);
 }
 
 /** Snap onto the ladder. Exact ties resolve UPWARD to the recognisable price. */
@@ -57,10 +73,12 @@ export function snapToWholeBuyIn(amount: number): number {
 export function splitBuyIn(total: number, rakeRate: number = DEFAULT_RAKE_RATE): BuyInSplit {
   const t = Math.max(0, Math.round(Number(total) || 0));
   if (t === 0) return { total: 0, prize: 0, fee: 0 };
-  const fee = cents(t * rakeRate);
+  // WHOLE fee: a 15 total takes 2, not 1.50. Nothing downstream then has a
+  // decimal to store or print.
+  const fee = Math.min(t, Math.max(0, Math.round(t * rakeRate)));
   // Subtraction, not a second independent rounding — otherwise prize + fee can
-  // miss total by a cent, and money that does not reconcile is a real bug.
-  return { total: t, prize: cents(t - fee), fee };
+  // miss total, and money that does not reconcile is a real bug.
+  return { total: t, prize: t - fee, fee };
 }
 
 /** Snap, then split. Every generator calls THIS. */

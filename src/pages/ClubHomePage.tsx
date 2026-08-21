@@ -46,10 +46,12 @@ import { useUserStore } from '../stores/useUserStore';
 import LobbyAdStrip from '../components/lobby/LobbyAdStrip';
 import AdvancedFilters, {
   loadFilters,
+  saveFilters,
   type FilterStore,
 } from '../components/lobby/AdvancedFilters';
 import {
   FILTER_SPECS,
+  emptyFilterValue,
   matchesAdvancedFilter,
   type FilterGameType,
 } from '../components/lobby/advancedFilterSpec';
@@ -1533,7 +1535,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                   card, which put it in a different column from the money it
                   belongs with. showBBJ={true} renders it as the first row of
                   the wallet stack instead, where it reads as the headline
-                  figure over the balances beneath it. */}
+                  figure over the balances beneath it.
+
+                  Dan 2026-08-20: tapping that BBJ figure opens the jackpot
+                  POPUP (total + last 5 winners + fee schedule + qualifying
+                  hands), not a route change. It used to navigate to the BBJ
+                  page, which left showBBJInfo with no way to ever become true
+                  and no popup anywhere in the lobby. */}
               <DynamicWallet
                 userId={currentUserId}
                 clubId={resolvedClubId}
@@ -1549,7 +1557,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 }}
                 onOpenBBJ={() => {
                   haptic.medium();
-                  navigate(`/clubs/${clubId}/bbj`);
+                  setShowBBJInfo(true);
                 }}
               />
             </div>
@@ -1661,6 +1669,111 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════
+          QUICK PREFERENCES — the one-tap shortcuts under the action bar
+          ───────────────────────────────────────────────────────────────────
+          Dan 2026-08-21: "you never added the quick preference link under the
+          action bar."
+
+          Two rows, matching the reference: the stakes/buy-in TIERS, and the
+          seat-status chips. The tier chips are not a separate filter - they
+          write the same saved range the Advanced Filters sheet does, so the
+          two can never disagree, and the icon on the right opens that sheet
+          for everything the row has no space for.
+      ═══════════════════════════════════════════════════════════════════ */}
+      {gameType !== 'ALL' &&
+        (() => {
+          const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+          if (!qSpec) return null;
+          const qVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
+
+          const applyRange = (min: number, max: number) => {
+            const next: FilterStore = {
+              ...advFilters,
+              [gameType]: { ...qVal, rangeMin: min, rangeMax: max },
+            };
+            setAdvFilters(next);
+            if (resolvedClubId) saveFilters(resolvedClubId, next);
+          };
+
+          return (
+            <div className="quickprefs">
+              <div className="quickprefs__row">
+                {qSpec.range.presets.map((p) => {
+                  const on = qVal.rangeMin === p.min && qVal.rangeMax === p.max;
+                  return (
+                    <button
+                      key={p.key}
+                      className={`quickprefs__chip ${on ? 'is-on' : ''}`}
+                      aria-pressed={on}
+                      onClick={() => {
+                        haptic.selection();
+                        /* Tapping the active tier CLEARS it back to the full
+                           range. Without that the only way to undo a tier is to
+                           open the sheet and hit Reset, which is three taps to
+                           undo one. */
+                        if (on) applyRange(qSpec.range.min, qSpec.range.max);
+                        else applyRange(p.min, p.max);
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+                <button
+                  className="quickprefs__more"
+                  aria-label="Advanced filters"
+                  title="Advanced Filters"
+                  onClick={() => {
+                    haptic.light();
+                    setSortOpen(false);
+                    setFiltersOpen(true);
+                  }}
+                >
+                  <IconSort />
+                </button>
+              </div>
+
+              <div className="quickprefs__row quickprefs__row--status">
+                <span className="quickprefs__label">{showsCash ? 'Tables:' : 'Games:'}</span>
+                {(showsCash
+                  ? ([
+                      { key: 'all', label: 'All Tables' },
+                      { key: 'live', label: 'Live Games' },
+                      { key: 'empty', label: 'Empty' },
+                      { key: 'full', label: 'Full' },
+                    ] as { key: CashSubFilter; label: string }[])
+                  : ([
+                      { key: 'all', label: 'All' },
+                      { key: 'running', label: 'Running' },
+                      { key: 'registering', label: 'Registering' },
+                      { key: 'late_reg', label: 'Late Reg' },
+                      { key: 'starting_soon', label: 'Starting Soon' },
+                    ] as { key: TournamentSubFilter; label: string }[])
+                ).map((sf) => {
+                  const on = showsCash
+                    ? cashSubFilter === (sf.key as CashSubFilter)
+                    : tournamentSubFilter === (sf.key as TournamentSubFilter);
+                  return (
+                    <button
+                      key={sf.key}
+                      className={`quickprefs__chip ${on ? 'is-on' : ''}`}
+                      aria-pressed={on}
+                      onClick={() => {
+                        haptic.selection();
+                        if (showsCash) setCashSubFilter(sf.key as CashSubFilter);
+                        else setTournamentSubFilter(sf.key as TournamentSubFilter);
+                      }}
+                    >
+                      {sf.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
+      {/* ═══════════════════════════════════════════════════════════════════
           CLUB / UNION AD STRIP — directly under the action bar
       ═══════════════════════════════════════════════════════════════════ */}
       {filtersOpen && resolvedClubId && (
@@ -1681,51 +1794,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         }}
       />
 
-      {/* ── STATUS REFINEMENT — only once a game type is chosen ── */}
-      {gameType !== 'ALL' && (
-        <div className="club-home__sub-filters">
-          {showsCash
-            ? (
-                [
-                  { key: 'all', label: 'All Tables' },
-                  { key: 'live', label: 'Live Games' },
-                  { key: 'empty', label: 'Empty' },
-                  { key: 'full', label: 'Full' },
-                ] as { key: CashSubFilter; label: string }[]
-              ).map((sf) => (
-                <button
-                  key={sf.key}
-                  className={`sub-filter-tab ${cashSubFilter === sf.key ? 'active' : ''}`}
-                  onClick={() => {
-                    haptic.selection();
-                    setCashSubFilter(sf.key);
-                  }}
-                >
-                  {sf.label}
-                </button>
-              ))
-            : (
-                [
-                  { key: 'all', label: 'All' },
-                  { key: 'running', label: 'Running' },
-                  { key: 'registering', label: 'Registering' },
-                  { key: 'late_reg', label: 'Late Reg' },
-                  { key: 'starting_soon', label: 'Starting Soon' },
-                ] as { key: TournamentSubFilter; label: string }[]
-              ).map((sf) => (
-                <button
-                  key={sf.key}
-                  className={`sub-filter-tab ${tournamentSubFilter === sf.key ? 'active' : ''}`}
-                  onClick={() => {
-                    haptic.selection();
-                    setTournamentSubFilter(sf.key);
-                  }}
-                >
-                  {sf.label}
-                </button>
-              ))}
-        </div>
-      )}
+      {/* The standalone STATUS REFINEMENT row was folded into the quick
+          preferences block above on 2026-08-21. Keeping both would have shown
+          the same four chips twice, a few pixels apart, with the lower copy
+          the only working one. */}
 
       {/* ═══════════════════════════════════════════════════════════════════
                 GAMES GRID - Tables & Create New Table Button

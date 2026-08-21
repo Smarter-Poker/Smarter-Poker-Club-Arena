@@ -81,7 +81,14 @@ export function loadFilters(clubId: string): FilterStore {
   }
 }
 
-function saveFilters(clubId: string, store: FilterStore) {
+/**
+ * Exported so the lobby's QUICK preference row writes through the same door.
+ * Dan 2026-08-21 asked for tier shortcuts under the action bar; those are not a
+ * second, parallel filter state - they are the same saved preference, reachable
+ * in one tap instead of three. If they wrote anywhere else the sheet and the
+ * row would disagree about what is filtered the moment you opened it.
+ */
+export function saveFilters(clubId: string, store: FilterStore) {
   try {
     localStorage.setItem(storageKey(clubId), JSON.stringify(store));
   } catch (e) {

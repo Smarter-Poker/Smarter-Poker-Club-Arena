@@ -8911,3 +8911,19 @@ hand_history row) still consumed a tick, so a recorded-hand gap can read
 N+1 around such an abort. That is self-limiting (aborts are rare and the
 skew is one hand, not compounding) and arguably correct: a hand WAS dealt
 at the table. Not worth coupling the counter to settlement for.
+
+## 2026-08-21 (round 5): SNG quick-join, live e2e proof, RIT verifier false-positive, legacy RPC overload dropped
+
+1. **SNG tiles quick-join** — same tap-to-seat flow as spins (re-entry, register-with-hop, Taking Your Seat overlay, land on table). MTTs keep the scheduled-event details route.
+
+2. **Quick-join proven END TO END on production via the real API path** (Chrome extension unavailable): authenticated as the test account, registered into a live 2/3 "2 Chip Spin PLO5" exactly as the client does -> charged 2.00, engine started on fill, **SEATED in 14.3 seconds** with the 300 starting stack. Post-start state exact: RUNNING, 3x drawn through the reserve gate, pool 6 = 3 x 2.00, hands dealing.
+
+3. **The abandoned test seat then live-verified tonight's entire AFK chain**: strikes accumulated -> FORCED sit-out -> engine persisted table_seats.is_sitting_out=true (the new write path, observed in production) -> still dealt in, still blinding off (300 -> 205 across 6 hands), tournament untouched. Dan's spec, working on real hands.
+
+4. **Locked-tier draw proven live** (transactional probe, rolled back): reserve 40 / stake 5 -> draw returned 2x with locked [10x unlocksAt 150, 25x, 100x, 500x] — the exact payload the wheel greys out.
+
+5. **Legacy fn_spin_draw_multiplier(uuid,numeric,jsonb) overload DROPPED** (migration 20260821c). With the 5-arg version's defaults, ANY 3-arg call was ambiguous (42725/PostgREST 300) — a live trap. The engine's 5-named-arg call is unaffected; rollback wrapper documented in the migration.
+
+6. **RIT verifier false positive fixed** (f9191a381): every Run It Twice resolution fired STATE_INTEGRITY_VIOLATION COMMUNITY_CARD_COUNT at showdown — the multi-board runout keeps only the shared prefix in communityCards by design. Engine now passes ritBoards in the verification context and the verifier skips board-behind-stage for multi-board hands. Three false warnings in 30 min of live traffic silenced; real violations still fire.
+
+7. **Full server suite green on main**: 92 files, 997 tests passing — deploy gate healthy for all agents.

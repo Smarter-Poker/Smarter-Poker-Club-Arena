@@ -243,6 +243,15 @@ export function SessionSummaryHost() {
               )
             )}
           </h2>
+          {payload.sessionEnd && (
+            <div className="ssh-date">
+              {new Date(payload.sessionEnd).toLocaleDateString()} At{' '}
+              {new Date(payload.sessionEnd).toLocaleTimeString([], {
+                hour: 'numeric',
+                minute: '2-digit',
+              })}
+            </div>
+          )}
         </header>
 
         {isTournament ? (

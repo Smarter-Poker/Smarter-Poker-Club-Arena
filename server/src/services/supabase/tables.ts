@@ -66,7 +66,19 @@ export async function loadSeatedPlayers(tableId: string) {
   const userIds = seats.map((d) => d.user_id);
   const { data: profiles, error: profileErr } = await supabase
     .from('profiles')
-    .select('id, display_name, username, is_horse, horse_profile, avatar_url, use_real_name')
+    /* Dan 2026-08-21: the felt shows the CLUB ARENA avatar, never the social
+       media photo. `arena_avatar_url` is library art only; `avatar_url` is the
+       player's (or horse's) social profile picture and is not ours to read.
+
+       Aliased rather than renamed: the returned key stays `avatar_url`, so the
+       engine types, the snapshot mapper and every seat component downstream are
+       untouched. Only the source column moves.
+
+       Highest-leverage avatar read in the app - it feeds every seat at every
+       table. If it regresses, the felt shows photographs again. */
+    .select(
+      'id, display_name, username, is_horse, horse_profile, avatar_url:arena_avatar_url, use_real_name'
+    )
     .in('id', userIds);
   if (profileErr) {
     // The filter below drops every seat whose profile is missing, so a silent

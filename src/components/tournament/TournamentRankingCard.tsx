@@ -121,7 +121,7 @@ export default function TournamentRankingCard({
         if (!uid) return;
         const { data } = await supabase
           .from('profiles')
-          .select('username, display_name, avatar_url, player_number')
+          .select('username, display_name, avatar_url:arena_avatar_url, player_number')
           .eq('id', uid)
           .maybeSingle();
         if (cancelled || !data) return;

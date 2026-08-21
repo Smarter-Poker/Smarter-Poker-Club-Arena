@@ -140,10 +140,10 @@ export default function ChipTransferModal({
           `
                     user_id,
                     role,
-                    users:user_id (
+                    users:user_id(
                         id,
                         username,
-                        avatar_url
+                        avatar_url:arena_avatar_url
                     )
                 `
         )

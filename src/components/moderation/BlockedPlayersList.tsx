@@ -59,9 +59,9 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
                     blocked_user_id,
                     blocked_at,
                     reason,
-                    blocked_user:blocked_user_id (
+                    blocked_user:blocked_user_id(
                         username,
-                        avatar_url
+                        avatar_url:arena_avatar_url
                     )
                 `
         )

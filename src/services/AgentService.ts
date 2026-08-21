@@ -143,7 +143,7 @@ class AgentServiceClass {
     if (allUserIds.size > 0) {
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url')
+        .select('id, display_name, avatar_url:arena_avatar_url')
         .in('id', [...allUserIds]);
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
@@ -201,7 +201,7 @@ class AgentServiceClass {
       if (data.user_id) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('display_name, avatar_url')
+          .select('display_name, avatar_url:arena_avatar_url')
           .eq('id', data.user_id)
           .maybeSingle();
         displayName = profile?.display_name;
@@ -751,7 +751,7 @@ class AgentServiceClass {
     try {
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url, is_online')
+        .select('id, display_name, avatar_url:arena_avatar_url, is_online')
         .in('id', userIds);
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;

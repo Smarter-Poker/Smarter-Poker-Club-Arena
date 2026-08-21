@@ -339,7 +339,7 @@ export default function UnionDashboardPage() {
         const agentUserIds = [...new Set(agentRows.map((a: any) => a.user_id))];
         const { data: agentProfiles } = await supabase
           .from('profiles')
-          .select('id, display_name, username, avatar_url')
+          .select('id, display_name, username, avatar_url:arena_avatar_url')
           .in('id', agentUserIds);
         const agentProfileMap: Record<string, any> = {};
         if (agentProfiles) {
@@ -360,7 +360,7 @@ export default function UnionDashboardPage() {
     // Load admins
     const { data: adminRows } = await supabase
       .from('union_admins')
-      .select('*, profile:user_id(display_name, username, avatar_url)')
+      .select('*, profile:user_id(display_name, username, avatar_url:arena_avatar_url)')
       .eq('union_id', uid);
     if (mountedRef.current) setAdmins(adminRows || []);
 

@@ -105,7 +105,7 @@ export default function AgentPromoPanel({
         const pIds = players.map((p: any) => p.user_id);
         const { data: profiles } = await supabase
           .from('profiles')
-          .select('id, display_name, username, avatar_url')
+          .select('id, display_name, username, avatar_url:arena_avatar_url')
           .in('id', pIds);
         if (profiles) {
           for (const pr of profiles) playerProfileMap[pr.id] = pr;

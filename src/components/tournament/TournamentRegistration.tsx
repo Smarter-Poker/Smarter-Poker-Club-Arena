@@ -92,7 +92,7 @@ export function TournamentRegistration({
     try {
       const { data, error } = await supabase
         .from('tournament_players')
-        .select('*, player:profiles!user_id(username, avatar_url)')
+        .select('*, player:profiles!user_id(username, avatar_url:arena_avatar_url)')
         .eq('tournament_id', tournamentId)
         .order('created_at', { ascending: true });
 

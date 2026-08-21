@@ -248,7 +248,7 @@ class AvatarServiceClass {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('avatar_url, display_name')
+        .select('avatar_url:arena_avatar_url, display_name')
         .eq('id', userId)
         .maybeSingle();
 
@@ -275,7 +275,7 @@ class AvatarServiceClass {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, avatar_url, display_name')
+        .select('id, avatar_url:arena_avatar_url, display_name')
         .in('id', userIds);
 
       if (!error && data) {
@@ -323,10 +323,16 @@ class AvatarServiceClass {
         return false;
       }
 
-      // Update the profile avatar_url (the canonical source)
+      /* Dan 2026-08-21: writes go to arena_avatar_url, NEVER avatar_url.
+         avatar_url is the player's social media profile picture. This picker
+         lives in Club Arena and chooses the Club Arena avatar; writing the old
+         column is what silently changed 17 people's social pictures earlier
+         today. The two columns are now separate precisely so that cannot
+         recur - and tests/unit/arenaAvatarSeparation.test.ts fails the build
+         if any write in this app names avatar_url again. */
       const { error: profileError } = await supabase
         .from('profiles')
-        .update({ avatar_url: avatarUrl })
+        .update({ arena_avatar_url: avatarUrl })
         .eq('id', userId);
 
       if (profileError) {

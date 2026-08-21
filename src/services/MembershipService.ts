@@ -118,7 +118,7 @@ export const MembershipService = {
     try {
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url')
+        .select('id, display_name, avatar_url:arena_avatar_url')
         .in('id', userIds);
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
@@ -284,7 +284,7 @@ export const MembershipService = {
     try {
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url')
+        .select('id, display_name, avatar_url:arena_avatar_url')
         .in('id', userIds);
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;

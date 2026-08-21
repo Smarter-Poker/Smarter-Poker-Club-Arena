@@ -84,10 +84,12 @@ export const AvatarGenerator: React.FC<{
     }
 
     try {
-      // Update profile with new avatar
+      /* Club Arena avatar, not the social media photo. See
+         AvatarService.setUserAvatar - avatar_url belongs to the social profile
+         and is never written from inside Club Arena. */
       const { error } = await supabase
         .from('profiles')
-        .update({ avatar_url: selectedImage })
+        .update({ arena_avatar_url: selectedImage })
         .eq('id', user?.id);
 
       if (error) throw error;

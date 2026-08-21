@@ -326,7 +326,7 @@ export default function CashierTradePage() {
       if (ids.length > 0) {
         const { data: profs } = await supabase
           .from('profiles')
-          .select('id, username, display_name, avatar_url, is_horse')
+          .select('id, username, display_name, avatar_url:arena_avatar_url, is_horse')
           .in('id', ids);
         for (const pr of profs || []) profMap.set(pr.id as string, pr);
       }

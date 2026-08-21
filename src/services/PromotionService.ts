@@ -312,7 +312,7 @@ class PromotionServiceClass {
                 rank,
                 score,
                 prize,
-                profiles(id, username, display_name, avatar_url)
+                profiles(id, username, display_name, avatar_url:arena_avatar_url)
             `
       )
       .eq('promotion_id', promotionId)

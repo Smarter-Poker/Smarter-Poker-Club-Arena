@@ -731,7 +731,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       try {
         const { data: avatarRow } = await supabase
           .from('profiles')
-          .select('avatar_url')
+          .select('avatar_url:arena_avatar_url')
           .eq('id', eliminatedUserId)
           .maybeSingle();
         eliminatedAvatar = avatarRow?.avatar_url || undefined;

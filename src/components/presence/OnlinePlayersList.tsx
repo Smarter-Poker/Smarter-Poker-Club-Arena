@@ -111,7 +111,7 @@ export const OnlinePlayersList: React.FC<OnlinePlayersListProps> = ({
           const chunk = memberIds.slice(i, i + chunkSize);
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, username, full_name, avatar_url, is_online, last_seen')
+            .select('id, username, full_name, avatar_url:arena_avatar_url, is_online, last_seen')
             .in('id', chunk)
             .eq('is_online', true);
           if (profiles) allProfiles.push(...profiles);
@@ -137,7 +137,7 @@ export const OnlinePlayersList: React.FC<OnlinePlayersListProps> = ({
         // Global fetch — get online profiles
         const { data: profiles, count } = await supabase
           .from('profiles')
-          .select('id, username, full_name, avatar_url, is_online, last_seen', { count: 'exact' })
+          .select('id, username, full_name, avatar_url:arena_avatar_url, is_online, last_seen', { count: 'exact' })
           .eq('is_online', true)
           .order('last_seen', { ascending: false })
           .limit(limit);

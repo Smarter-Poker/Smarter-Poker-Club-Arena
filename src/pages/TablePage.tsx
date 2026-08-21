@@ -899,7 +899,7 @@ export default function TablePage({
         if (isMounted.current) setUserId(user.id);
         const { data: profile } = await supabase
           .from('profiles')
-          .select('display_name, username, avatar_url')
+          .select('display_name, username, avatar_url:arena_avatar_url')
           .eq('id', user.id)
           .maybeSingle();
         if (isMounted.current) {
@@ -5043,7 +5043,7 @@ export default function TablePage({
           const userIds = existingSeats.map((s) => s.user_id).filter(Boolean);
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, username, display_name, avatar_url, is_horse, horse_profile')
+            .select('id, username, display_name, avatar_url:arena_avatar_url, is_horse, horse_profile')
             .in('id', userIds);
 
           const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
@@ -5693,7 +5693,7 @@ export default function TablePage({
           // Fetch the player's profile
           const { data: profile } = await supabase
             .from('profiles')
-            .select('id, username, display_name, avatar_url, is_horse, horse_profile')
+            .select('id, username, display_name, avatar_url:arena_avatar_url, is_horse, horse_profile')
             .eq('id', newSeat.user_id)
             .maybeSingle();
 
@@ -8711,7 +8711,7 @@ export default function TablePage({
       if (ids.length > 0) {
         const { data: profiles } = await supabase
           .from('profiles')
-          .select('id, username, display_name, avatar_url, is_horse')
+          .select('id, username, display_name, avatar_url:arena_avatar_url, is_horse')
           .in('id', ids);
         for (const pr of profiles || []) profileById.set(pr.id, pr);
       }

@@ -217,7 +217,7 @@ export default function PlayerSessionsPage() {
             () =>
               supabase
                 .from('profiles')
-                .select('id, username, display_name, avatar_url, last_seen')
+                .select('id, username, display_name, avatar_url:arena_avatar_url, last_seen')
                 .in('id', userIds)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: mountedRef }

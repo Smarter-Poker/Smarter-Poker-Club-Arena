@@ -936,10 +936,10 @@ class TableService {
                 seat_number,
                 stack,
                 created_at,
-                profiles (
+                profiles(
                     display_name,
                     username,
-                    avatar_url,
+                    avatar_url:arena_avatar_url,
                     is_horse
                 )
             `

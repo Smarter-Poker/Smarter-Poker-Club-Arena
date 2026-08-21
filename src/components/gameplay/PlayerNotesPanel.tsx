@@ -107,7 +107,7 @@ export default function PlayerNotesPanel({
         try {
           const { data: profs } = await supabase
             .from('profiles')
-            .select('id, display_name, avatar_url')
+            .select('id, display_name, avatar_url:arena_avatar_url')
             .in('id', tIds);
           if (profs) for (const p of profs) pMap[p.id] = p;
         } catch (e) {

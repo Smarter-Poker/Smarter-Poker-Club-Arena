@@ -8371,3 +8371,43 @@ conflicts resolved, tsc + vite build verified on the exact merged tree
 before each push attempt. WH sync 0c505e05 confirmed serving from
 production /api/health, and the live bundle greps positive for
 table-tab-bar__mini-card and table-tab-bar__timer-bar.
+
+## 2026-08-20 — Bomb Pot improvement pass (same Cowork session, post-deploy)
+
+The cinematic sequence shipped in 04c97be4 (swept to main by the host
+auto-push loop and verified live: TablePage-BxxvYVgu-v6.js on production
+serves playBombExplosion/bombPotAnte). This pass closes the gaps found
+reviewing it against the reference once more:
+
+- [P1] #175 multi-table gate: BombPotOverlay played its three sound beats
+  and fired the screen shake on BACKGROUND tables too. New playSounds prop
+  threaded TablePage -> TableModalsLayer -> overlay from
+  ambientSoundsAllowed, same pattern as CommunityCards.
+- [P1] Flop-after-explosion sequencing: the engine skips preflop betting, so
+  the flop arrived while the bomb was still falling — the reference deals
+  the flop only after the blast. TablePage now holds the board's VISUAL
+  stage at preflop for 2.15s (scaled) from BOMB_POT_TRIGGERED, then
+  releases; CommunityCards runs its normal face-down-and-fan flop animation
+  at that moment. Presentation only — pot, stacks, timers, action state are
+  never held; only 'flop' is remapped so an instant runout that reaches
+  turn/river renders immediately.
+- [P2] BOMB_POT_COMPLETED finally has an emitter: TablePage fires it on
+  HAND_COMPLETE (unconditionally — the overlay ignores it when idle, and
+  bombPotActive could be stale in that closure), so a fast all-in runout
+  dismisses the title instead of leaving it over the showdown.
+- Cleanup: SHIP-BOMB-POT.command + _bombpot-ship-20260820/ (the no-push-
+  route fallbacks, obsoleted by the working push route) moved to _to_delete/.
+
+ENGINE FOLLOW-UP (Tier 3, needs plan approval — NOT in this change):
+1. Double-board bomb pot: deal two full boards at flop, evaluate each for
+   half the pot at showdown (chip-conservation property tests mandatory).
+   Client is ready: RIT board stack renders stacked boards; overlay takes
+   doubleBoard payload.
+2. Antes as street bets: postBombPotAntes adds antes straight to the pot,
+   so no chips render at seats — the reference shows each ante in front of
+   its seat, swept at the flop. Needs the ante kept as a street bet through
+   the deal, or a postings array on BOMB_POT_TRIGGERED like BLINDS_POSTED.
+3. BOMB_POT_COMPLETED from the engine at settlement (client emit above is
+   the stopgap).
+
+Verified: tsc --noEmit clean, vite prod build clean (10.06s).

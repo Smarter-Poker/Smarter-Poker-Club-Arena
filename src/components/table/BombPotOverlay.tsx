@@ -38,6 +38,12 @@ import './BombPotOverlay.css';
 
 interface BombPotOverlayProps {
   tableId: string;
+  /**
+   * IMPROVEMENT PASS 2026-08-20 (#175 multi-table gate): background tables
+   * must stay silent and must not shake the screen. TableModalsLayer passes
+   * the table's ambientSoundsAllowed. Defaults true (single-table).
+   */
+  playSounds?: boolean;
 }
 
 type BombPhase = 'idle' | 'drop' | 'fuse' | 'explode' | 'title';
@@ -48,7 +54,7 @@ const T_EXPLODE = 2000;
 const T_TITLE = 2150;
 const T_HIDE = 4500;
 
-export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId }) => {
+export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSounds = true }) => {
   const [phase, setPhase] = useState<BombPhase>('idle');
   const [anteAmount, setAnteAmount] = useState(0);
   const [doubleBoard, setDoubleBoard] = useState(false);
@@ -75,16 +81,18 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId }) => {
     };
 
     setPhase('drop');
-    soundService.playBombDrop(); // whistle covers the fall, tick on landing
+    if (playSounds) soundService.playBombDrop(); // whistle covers the fall, tick on landing
 
     at(T_FUSE, () => {
       setPhase('fuse');
-      soundService.playBombFuse(((T_EXPLODE - T_FUSE) / 1000) * s);
+      if (playSounds) soundService.playBombFuse(((T_EXPLODE - T_FUSE) / 1000) * s);
     });
     at(T_EXPLODE, () => {
       setPhase('explode');
-      soundService.playBombExplosion();
-      triggerScreenShake('medium', containerRef.current);
+      if (playSounds) {
+        soundService.playBombExplosion();
+        triggerScreenShake('medium', containerRef.current);
+      }
     });
     at(T_TITLE, () => setPhase('title'));
     at(T_HIDE, () => setPhase('idle'));

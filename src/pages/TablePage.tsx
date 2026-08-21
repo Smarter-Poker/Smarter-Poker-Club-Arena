@@ -1081,6 +1081,15 @@ export default function TablePage({
   // HAND_STARTED. Drives the magenta "BOMB" pill on every live seat
   // (SeatSlot bombPotAnte) for the duration of the bomb-pot hand.
   const [bombPotActive, setBombPotActive] = useState(false);
+  // IMPROVEMENT PASS 2026-08-20: in the reference capture the flop is dealt
+  // only AFTER the bomb's explosion finishes — the engine, which skips
+  // preflop betting, sends the flop while the bomb is still falling. Hold
+  // the board's visual stage at preflop until the overlay's explosion beat
+  // (2.15s, scaled), then release — CommunityCards then runs its normal
+  // face-down-land-and-fan flop animation, exactly like the reference.
+  // Purely presentational: pot, stacks and action state are never held.
+  const [bombPotHoldFlop, setBombPotHoldFlop] = useState(false);
+  const bombPotHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Time Bank State
   const [showTimeBank, setShowTimeBank] = useState(false);
@@ -5574,6 +5583,11 @@ export default function TablePage({
         // the hand. If THIS hand is a bomb pot, its own BOMB_POT_TRIGGERED
         // (emitted after HAND_STARTED in the engine's dealing path) re-arms it.
         setBombPotActive(false);
+        setBombPotHoldFlop(false);
+        if (bombPotHoldTimerRef.current) {
+          clearTimeout(bombPotHoldTimerRef.current);
+          bombPotHoldTimerRef.current = null;
+        }
         // AUDIT 2026-08-19: drop any in-flight pot push. It is otherwise
         // cleared only by a 700ms timer, and a hand that starts inside that
         // window would render its FRESH pot with .pot-display--collect still
@@ -5733,6 +5747,16 @@ export default function TablePage({
           // BOMB POT 2026-08-20: tag every live seat with the "BOMB" pill
           // for the rest of the hand (cleared by the next HAND_STARTED).
           setBombPotActive(true);
+          // Hold the flop reveal until the bomb explodes (see state decl).
+          setBombPotHoldFlop(true);
+          if (bombPotHoldTimerRef.current) clearTimeout(bombPotHoldTimerRef.current);
+          bombPotHoldTimerRef.current = setTimeout(
+            () => {
+              bombPotHoldTimerRef.current = null;
+              setBombPotHoldFlop(false);
+            },
+            2150 * getAnimationSpeed()
+          );
           try {
             masterBus.emit('BOMB_POT_TRIGGERED', {
               tableId: tableId || '',
@@ -5896,6 +5920,18 @@ export default function TablePage({
       }
       case 'HAND_COMPLETE_EVENT':
       case 'HAND_COMPLETE': {
+        // IMPROVEMENT PASS 2026-08-20: BOMB_POT_COMPLETED had a listener in
+        // BombPotOverlay since 2026-08-15 but no emitter anywhere — dead
+        // wiring. If an everyone-all-in bomb pot runs out and completes
+        // while the 4.5s sequence is still playing, dismiss it with the
+        // hand instead of letting the title sit over the showdown.
+        // Emitted unconditionally (not gated on bombPotActive, which could
+        // be stale in this closure): the overlay ignores it when idle.
+        try {
+          masterBus.emit('BOMB_POT_COMPLETED', { tableId: tableId || '' });
+        } catch {
+          /* bus publish is best-effort */
+        }
         // ── Share Hand: capture the hand that just finished ─────────────────
         // DEAD-WIRING FIX 2026-08-15. setSharedHandData had zero call sites,
         // and TableModalsLayer gates the modal on `showShareHand &&
@@ -8243,7 +8279,15 @@ export default function TablePage({
                 <div className="community-area">
                   <CommunityCards
                     cards={tableState.communityCards}
-                    stage={tableState.boardStage}
+                    stage={
+                      // Bomb pot: keep the board visually preflop until the
+                      // explosion finishes (see bombPotHoldFlop). Only the
+                      // flop is ever held — if the stage has already moved
+                      // past flop (instant all-in runout) show it.
+                      bombPotHoldFlop && tableState.boardStage === 'flop'
+                        ? 'preflop'
+                        : tableState.boardStage
+                    }
                     highlightedIndices={winnerInfo.cardIndices}
                     winningHandName={winnerInfo.handName}
                     deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
@@ -9329,6 +9373,7 @@ export default function TablePage({
         tableId={tableId}
         userId={userId}
         username={username}
+        ambientSoundsAllowed={ambientSoundsAllowed}
         tableName={tableState.tableName}
         blinds={tableState.blinds}
         gameType={tableState.gameType}

@@ -543,6 +543,19 @@ interface TablePageProps {
      *  badge (audit 2026-08-20: the badge existed in TableTabBar but nothing
      *  ever passed it — dead wiring since the component was written). */
     jackpot?: number;
+    /** Roadmap batch 1 (Dan 2026-08-20): hero folded this hand — the tab
+     *  dims so "nothing to do here" reads at a glance. */
+    folded?: boolean;
+    /** Showdown outcome edge for the tab flash: "win:<hand>" / "loss:<hand>"
+     *  ("" = no settled result). Keyed by hand number so consecutive
+     *  same-outcome hands still re-flash; a string so the container's
+     *  shallow-compare bail-out (P1-2) holds. */
+    handResult?: string;
+    /** Amount the hero must call right now (0 = check is legal). Only
+     *  meaningful while isMyTurn; drives the tile-view action strip. */
+    toCall?: number;
+    /** Hero's current stack, for the aggregated session view. */
+    heroStack?: number;
   }) => void;
   /** Whether this table is part of a multi-table session (hides own header if tab bar is shown) */
   isMultiTable?: boolean;
@@ -1819,6 +1832,46 @@ export default function TablePage({
     return typeof a === 'string' ? a : '';
   }, [tableState.lastActions, tableState.heroSeat]);
 
+  // Roadmap batch 1 (Dan 2026-08-20): folded state for tab dimming.
+  const heroTabFolded = useMemo(() => {
+    const hero = tableState.players[tableState.heroSeat - 1];
+    return !!hero && tableState.isHandInProgress && hero.status === 'folded';
+  }, [tableState.players, tableState.heroSeat, tableState.isHandInProgress]);
+
+  // Primitive memos (same pattern/reason as heroTabCards): the effect below
+  // must not depend on array identities that change every snapshot.
+  const heroTabStack = useMemo(
+    () => tableState.players[tableState.heroSeat - 1]?.stack,
+    [tableState.players, tableState.heroSeat]
+  );
+  const heroTabToCall = useMemo(
+    () =>
+      Math.max(
+        0,
+        (tableState.currentBet || 0) - (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0)
+      ),
+    [tableState.currentBet, tableState.lastBetAmounts, tableState.heroSeat]
+  );
+
+  // Win/loss edge for the tab showdown flash. engineWinners only carries a
+  // value while the engine is settling a hand, so this collapses back to ''
+  // between hands; the hand number key makes back-to-back same outcomes
+  // distinct edges.
+  const heroTabResult = useMemo(() => {
+    const winners = tableState.engineWinners;
+    if (!winners || winners.length === 0 || !userId) return '';
+    const hero = tableState.players[tableState.heroSeat - 1];
+    if (!hero || hero.status === 'sitting_out') return '';
+    const won = winners.some((w) => w.userId === userId);
+    return `${won ? 'win' : 'loss'}:${tableState.handNumber ?? 0}`;
+  }, [
+    tableState.engineWinners,
+    tableState.players,
+    tableState.heroSeat,
+    tableState.handNumber,
+    userId,
+  ]);
+
   useEffect(() => {
     if (!onTableInfoUpdate) return;
     const isHeroTurn =
@@ -1838,6 +1891,10 @@ export default function TablePage({
       pot: tableState.pot,
       holeCards: heroTabCards,
       lastAction: heroTabLastAction,
+      folded: heroTabFolded,
+      handResult: heroTabResult,
+      toCall: isHeroTurn ? heroTabToCall : undefined,
+      heroStack: heroTabStack,
     });
   }, [
     tableState.tableName,
@@ -1849,8 +1906,12 @@ export default function TablePage({
     tableState.isHandInProgress,
     tableState.actionTimerDeadline,
     tableState.actionTimerStartTime,
+    heroTabToCall,
+    heroTabStack,
     heroTabCards,
     heroTabLastAction,
+    heroTabFolded,
+    heroTabResult,
     onTableInfoUpdate,
   ]);
 
@@ -1862,9 +1923,12 @@ export default function TablePage({
   // separate effect (not folded into the main reporting effect above) because
   // bbjAmount is declared here, after that effect's deps close over their
   // values — and the pool moves on its own realtime cadence anyway.
+  // Roadmap batch 1: trailing 2s debounce — the pool ticks after every hand
+  // at every table, and each report re-renders the whole tab strip.
   useEffect(() => {
     if (!onTableInfoUpdate || bbjAmount <= 0) return;
-    onTableInfoUpdate({ jackpot: bbjAmount });
+    const t = setTimeout(() => onTableInfoUpdate({ jackpot: bbjAmount }), 2000);
+    return () => clearTimeout(t);
   }, [bbjAmount, onTableInfoUpdate]);
 
   // Resolved pool id — the last-5-jackpots modal reads its history from this.

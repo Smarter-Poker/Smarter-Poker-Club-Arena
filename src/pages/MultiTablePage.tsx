@@ -71,6 +71,15 @@ interface TableInstance {
   lastAction?: string;
   /** Live Bad Beat Jackpot pool at this table (0/undefined = no BBJ). */
   jackpot?: number;
+  /** Hero folded this hand (tab dims). */
+  folded?: boolean;
+  /** Showdown outcome edge: "win:<hand>" / "loss:<hand>" / "". */
+  handResult?: string;
+  /** Amount the hero must call right now (0 = check legal); set while it is
+   *  the hero's turn. Drives the tile-view action strip. */
+  toCall?: number;
+  /** Hero's current stack at this table. */
+  heroStack?: number;
   /**
    * Dan 2026-08-15: a tab is either a live table or a LOBBY placeholder.
    *
@@ -643,6 +652,8 @@ export default function MultiTablePage() {
           pot: t.pot,
           holeCards: t.holeCards,
           lastAction: t.lastAction,
+          folded: t.folded,
+          handResult: t.handResult,
         };
       }),
     [tables, secondsLeft, nowMs]

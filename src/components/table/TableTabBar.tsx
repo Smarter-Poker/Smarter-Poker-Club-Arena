@@ -42,6 +42,12 @@ export interface TabInfo {
   /** Hero's last action this street ('fold', 'call', ...) for the
    *  transient badge under the tab. */
   lastAction?: string;
+  /** Hero folded this hand — the tab dims (roadmap batch 1). */
+  folded?: boolean;
+  /** Showdown outcome edge: "win:<hand>" / "loss:<hand>" / "". The tab
+   *  pulses green/red for a moment so a background table's result is
+   *  visible without switching. */
+  handResult?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -59,7 +65,10 @@ const SUIT_CLASS: Record<string, string> = {
   c: 'table-tab-bar__mini-card--c',
 };
 
-function MiniCards({ cards }: { cards: string }) {
+/** Memoized (roadmap batch 1): the container's 1s turn clock rebuilds
+ *  tabInfos every tick, and without the memo every tick re-rendered the
+ *  card DOM of every tab for no visual change. */
+const MiniCards = React.memo(function MiniCards({ cards }: { cards: string }) {
   const parsed = cards
     .split(',')
     .map((c) => c.trim())
@@ -82,7 +91,7 @@ function MiniCards({ cards }: { cards: string }) {
       })}
     </span>
   );
-}
+});
 
 /** Display labels for the transient last-action chip. */
 const ACTION_LABEL: Record<string, string> = {
@@ -174,6 +183,46 @@ export function TableTabBar({
   // Clear all pending flash timers on unmount only.
   useEffect(() => {
     const timers = flashTimersRef.current;
+    return () => Object.values(timers).forEach(clearTimeout);
+  }, []);
+
+  // ─── Showdown result flash (roadmap batch 1) ──────────────────────────
+  // Same rising-edge machinery as the action chips: when a tab's handResult
+  // becomes a new non-empty value, pulse the tab green (win) or red (loss)
+  // for 2.5s. Timers in a ref so the 1s clock cannot cancel a pending expiry.
+  const [resultFlash, setResultFlash] = useState<Record<string, 'win' | 'loss'>>({});
+  const prevResultsRef = useRef<Record<string, string>>({});
+  const resultTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  useEffect(() => {
+    for (const tab of tabs) {
+      const prev = prevResultsRef.current[tab.id] ?? '';
+      const cur = tab.handResult ?? '';
+      if (cur && cur !== prev) {
+        const kind: 'win' | 'loss' = cur.startsWith('win') ? 'win' : 'loss';
+        setResultFlash((p) => ({ ...p, [tab.id]: kind }));
+        clearTimeout(resultTimersRef.current[tab.id]);
+        resultTimersRef.current[tab.id] = setTimeout(() => {
+          setResultFlash((p) => {
+            if (!(tab.id in p)) return p;
+            const next = { ...p };
+            delete next[tab.id];
+            return next;
+          });
+        }, 2500);
+      }
+      prevResultsRef.current[tab.id] = cur;
+    }
+    const liveIds = new Set(tabs.map((t) => t.id));
+    for (const id of Object.keys(prevResultsRef.current)) {
+      if (!liveIds.has(id)) {
+        delete prevResultsRef.current[id];
+        clearTimeout(resultTimersRef.current[id]);
+        delete resultTimersRef.current[id];
+      }
+    }
+  }, [tabs]);
+  useEffect(() => {
+    const timers = resultTimersRef.current;
     return () => Object.values(timers).forEach(clearTimeout);
   }, []);
 
@@ -274,6 +323,7 @@ export function TableTabBar({
             tab.isMyTurn && tab.timeRemaining !== undefined && tab.timeRemaining < 10;
           const hasCards = !!tab.holeCards && tab.holeCards.length >= 2;
           const flash = actionFlash[tab.id];
+          const result = resultFlash[tab.id];
 
           return (
             <button
@@ -282,6 +332,9 @@ export function TableTabBar({
                 'table-tab-bar__tab',
                 isActive && 'table-tab-bar__tab--active',
                 hasCards && 'table-tab-bar__tab--cards',
+                tab.folded && 'table-tab-bar__tab--folded',
+                result === 'win' && 'table-tab-bar__tab--won',
+                result === 'loss' && 'table-tab-bar__tab--lost',
                 !isActive && tab.isMyTurn && 'table-tab-bar__tab--turn',
                 !isActive && isUrgent && 'table-tab-bar__tab--urgent',
               ]
@@ -307,8 +360,18 @@ export function TableTabBar({
               {hasCards ? (
                 <MiniCards cards={tab.holeCards!} />
               ) : (
-                // Dan 2026-08-20: variants are acronyms — NLH, not nlh.
-                <span className="table-tab-bar__tab-name">{formatGameTitle(tab.name)}</span>
+                <span className="table-tab-bar__tab-label">
+                  {/* Dan 2026-08-20: variants are acronyms — NLH, not nlh. */}
+                  <span className="table-tab-bar__tab-name">{formatGameTitle(tab.name)}</span>
+                  {/* Roadmap batch 1: an idle tab shows the live pot (a hand
+                      is running without the hero, or just settled) so tabs
+                      stay informative between hands. */}
+                  {tab.pot !== undefined && tab.pot > 0 && (
+                    <span className="table-tab-bar__tab-sub">
+                      Pot {tab.pot.toLocaleString('en-US')}
+                    </span>
+                  )}
+                </span>
               )}
 
               {/* Transient last-action chip ("Fold", "Call", ...) */}

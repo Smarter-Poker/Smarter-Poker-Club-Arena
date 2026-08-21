@@ -8439,3 +8439,165 @@ off; still dealing)". Commit `52ae9724c`:
   from the table and landed in the CLUB LOBBY with a TournamentResultCard
   (place + winnings). TablePage navigation + heroSeat invariant merged to
   main via the parallel agent's session-stats commit (12cfa4d78).
+
+## 2026-08-21 — Cowork live-fix session, batch 3 (money incident + failsafes)
+
+- [P0 INCIDENT + REFUND] Hand #1458859 (NLH Micro, table 5de06ef3): Dan won
+  34.18 but a cashout that ran MID-HAND returned only the stale pre-hand 20.00
+  and the settlement stack-write landed on a seat with left_at already set (a
+  silent no-op). Root cause is a race any leaver can hit: the engine's /leave
+  marks the seat sitting_out BEFORE the client's "in active hand?" status check
+  reads it, so the client fell through to atomic_table_cashout mid-hand.
+  Trigger in this instance was an agent probe-cleanup script using the same
+  account. REFUND: +14.18 credited (wallet_transactions category 'refund',
+  2026-08-21 00:06:33Z, balance_after 249,800.48). FIX: TableService.leaveTable
+  now honors the engine's `immediate` flag — immediate:false means the ENGINE
+  cashes out the true post-hand stack via processLeavePending, and the client
+  never touches the stack. The single-board "run it twice" in the same hand was
+  collateral of the same interference; RIT itself is healthy (149 multi-board
+  hands in the prior 24h).
+- [P0] Never-die connection failsafe: EngineStateClient retries forever
+  (maxRetries now only marks when 'failed' is announced), reconnects instantly
+  on the browser 'online' event, and TablePage hard-reloads once (2-min
+  sessionStorage guard, visible tabs only) if the socket stays failed 20s.
+- [P1] ActionPanel: postflop facing a bet now offers 2X/3X/4X of the bet + POT
+  (pot-limit: 2X/3X/POT). Tests updated to codify the law (23/23 green).
+- [P1] HandDetailModal (new): PokerBros-grammar hand breakdown from the
+  previous-hand card — Summary/Detail tabs, street-by-street action log with
+  running pot, showdown rows with cards + made hand + net, hand navigator,
+  Replay + Share buttons driving the existing HandReplayPlayer/ShareHand.
+- [P1] Time-bank alarm clock stacked directly above the previous-hand card in
+  the TableHUD bottom-left (no longer a free-floating fixed pill).
+
+## 2026-08-20 — DOUBLE-BOARD BOMB POTS: engine, client, config (Cowork session, Dan's "proceed")
+
+The full Tier-3 feature behind the bomb-pot cinematic sequence. Engine deals
+TWO boards on opted-in bomb pots and splits every pot across them; client
+renders the stacked boards and flies the antes; config exposes the toggle.
+
+ENGINE (server/):
+
+- HandController: communityCards2 in GameState; doubleBoardActive set at
+  ante time with a deck-feasibility guard (players x holeCards + 10 <= deck;
+  9-handed PLO5 downgrades to single board with a warn). Flop/turn/river,
+  dealNextStreet (insurance pacing) and runOutCommunityCards all deal board
+  2 in lockstep and carry cards2 on COMMUNITY_CARDS. ALL_IN_RUNOUT carries
+  board2. SHOWDOWN results carry hand2 (board-2 evaluation).
+- Split-pot settlement: every pot halved in integer cents (odd cent to the
+  TOP board), each half awarded by determineWinners on its own board,
+  winners merged by user in cents — the merged sum equals the original pot
+  exactly, so rake scaling and conservation are untouched downstream.
+- BOMB_POT_TRIGGERED now carries doubleBoard + per-seat postings.
+  BOMB_POT_COMPLETED (listener-only dead wiring since 2026-08-15) is emitted
+  after every HAND_COMPLETE of a bomb-pot hand, all four completion paths.
+- RIT and insurance offers suppressed on double-board hands (already two
+  boards; no single-board equity to insure).
+- hand_history persists community_cards2 (text[], NULL on single-board
+  hands). ServerTableEngine broadcast/getTableState/getObserverState carry
+  community_cards2.
+- Tests: HandController.doubleboard.test.ts — lockstep dealing, 10 unique
+  board cards, exact cent conservation across 300 randomized double-board
+  hands (nlh + plo4), PLO5 downgrade, single-board unchanged, completion
+  beat ordering. Full sweep: 8 suites / 36 tests green, including the
+  10,000-hand chip-conservation property corpus. Server + client tsc clean,
+  vite prod build clean.
+
+CLIENT (src/):
+
+- mapEngineSnapshot + TablePage carry communityCards2 (never-shrink rule,
+  reconnect sync, discrete street events, both new-hand clears).
+- Board 2 renders directly under board 1 (community-area\_\_board2 — NOT the
+  RIT run class, which would swap the flop flip for the RIT pop-in), same
+  stage, silent (playSounds=false), felt masthead shifts via data-boards=2.
+- BOMB_POT_TRIGGERED passes the engine's real doubleBoard through to the
+  overlay (the honest hardcoded false is gone), and postings drive seat->pot
+  ante chip flights at the explosion beat (2.0s scaled) via
+  createChipToPotEvent — reference parity for the ante sweep.
+- BOMB_POT_COMPLETED WS case forwards to the bus (HAND_COMPLETE fallback
+  emit stays for older engine builds; the overlay no-ops duplicates).
+
+CONFIG:
+
+- Migration 20260821003445 bomb_pot_double_board APPLIED TO PRODUCTION via
+  Supabase MCP and saved to supabase/migrations/: tables.
+  bomb_pot_double_board boolean NOT NULL DEFAULT false + hand_history.
+  community_cards2 text[] NULL, with post-apply type assertions.
+- CreateTableModal: "Double Board Bomb Pots" checkbox under Bomb Pots.
+- TableConfigPage: Bomb Pot + Double Board toggles combined now write
+  bomb_pot_double_board.
+
+NOTE (session ops): the working-tree edits for this feature were wiped once
+mid-session by the host reset loop; everything was rebuilt in an isolated
+clone and pushed from there. Do not develop long-running changes directly in
+the shared working tree.
+
+## 2026-08-20 — Multi-table audit round 2: five findings, one clobber, all recovered (Cowork session)
+
+Dan: "go through it all line by line, check for any bugs, stubs, gaps,
+errors, regressions or wiring issues... then improve to the max." Findings
+and fixes (d7163db + 75a7298 + 2c211c1):
+
+- INVALID HTML: per-tab close was a button nested inside the tab button.
+  Now span[role=button] with Enter/Space handling.
+- NO ACCESSIBLE NAME: a tab showing mini cards had no name (MiniCards is
+  aria-hidden, name span unrendered). aria-label with turn state +
+  aria-current on the active tab.
+- DEAD WIRING: TableTabBar's JACKPOT badge had never been passed a value.
+  TablePage now reports its live BBJ pool; the bar shows the active
+  table's, as in the reference footage.
+- SILENT BACKGROUND CLOCK: the tick-tock loop belongs to the active tab
+  only (singleton), so a background table's final seconds were silent.
+  MultiTablePage now fires a one-shot playTimerWarning + strong haptic on
+  the rising edge of the <=6s window per turn deadline.
+- UNREACHABLE CLOSE: hover-only close was invisible on touch and outside
+  keyboard reach. Shown on hover, focus-within, and always on the active
+  tab. Plus flash-store pruning on tab close and tighter cards-mode pill
+  padding.
+
+Incident, for the record: the first round-2 push (d7163db) was a worktree
+snapshot that silently reverted all seven files of 6eb5cd7 (the Mac tree
+predated it). The Silent Revert Guard caught 3 byte-exact reverts; 4 more
+hid inside mixed diffs. 75a7298 three-way-merged every file back (base
+12cfa4d), and 2c211c1 re-landed the TableTabBar fixes a concurrent editor
+buffer had separately overwritten. Lesson repeated in .agent terms: diff
+the snapshot against fresh origin/main per file BEFORE committing, and
+push single-file commits when a sibling session is mid-flight.
+
+## 2026-08-21 (00:30-00:50) — "never again" made structural, and the live audit
+
+Dan: "safe guards in place to prevent that from happening ever again … do a
+live e2e audit to insure everything is working, every single animation is
+live and functional, that nothing gets skipped ever."
+
+SAFEGUARDS (now four independent layers against two-dealers-one-table):
+
+1. ENGINE_LEASE_ENFORCE defaults ON — live-verified {enforced:true}.
+2. leaseEnforcementGuard.test.ts pins the default, the teardown loop, the
+   claim-before-start, and the shutdown lease release. A quiet code edit
+   flipping any of them fails CI.
+3. fn_detect_double_dealing — the hand_history overlap fingerprint,
+   service-role only.
+4. The 15-minute spin-sweep probe now reads the ENGINE'S OWN lease
+   diagnostics from /health (cache-busted; alerts on enforcement off, any
+   conflict, or unreachable engine) AND runs the overlap detector. The
+   watcher does not trust the watched.
+
+LIVE E2E AUDIT — 8/8 in real Chrome against the CSS production serves:
+the complete hand beat by beat (deal fly, cards land, TRUE 15s turn
+clock, chip slide, flop land+fan, pot collect, turn, river, showdown
+flips, winner pop, pot ship, fold muck), the all-in moment (banner slam,
+shockwave, equity pop), the SPIN-IT intro v2 (dim, beam, countdown,
+disc, winner flash, confetti), the knockout (vignette, shockwave, head
+slam + 1.1s fall), the mystery chest (drop, tension breathing, lid), the
+tournament winner overlay (entrance, trophy, sparkles, prize counter),
+the lobby result card (backdrop fade, card pop), and reduced-motion
+collapse of everything.
+
+PACING VERIFIED SERVER-SIDE: the TURN_CHANGE settle is unconditional (no
+human gate to fail); measured cycles match design (7.2s minimum for an
+insta-fold 3-max hand = 1500 start + 2x(2200 think + 650 settle); cash avg
+39.8s). The "3.8s hands" in history are the narrow started->ended window of
+one CORRECTLY paced dealer; Dan's chaos was the second dealer, now
+impossible. Keyframe namespace audited: 827 keyframes, 0 genuine collisions
+(the 9 `shimmer` definitions are byte-identical globals + module-scoped
+copies).

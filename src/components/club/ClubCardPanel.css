@@ -13,7 +13,9 @@
   flex-direction: column;
   overflow: hidden;
   border-radius: 10px;
-  background-color: #0a1120;
+  background-color: #0a1120 !important;
+  opacity: 1 !important;
+  isolation: isolate;
   background-image: linear-gradient(180deg, #12192e 0%, #0a1120 40%, #0d1528 100%);
   border: 1.5px solid rgba(100, 130, 180, 0.25);
   box-shadow:

@@ -162,24 +162,21 @@ export function CashierModal({
     };
   }, []);
 
-  const handleTabChange = useCallback(
-    (tab: CashierTab) => {
-      if (busyRef.current) return;
-      setActiveTab(tab);
-      setAmount(0);
-      setSubmitError(null);
-      setVisibleQuick([]);
-      animTimers.current.forEach(clearTimeout);
-      animTimers.current = [];
-      [0, 1, 2, 3].forEach((i) => {
-        const t = setTimeout(() => {
-          setVisibleQuick((prev) => [...prev, true]);
-        }, i * 50);
-        animTimers.current.push(t);
-      });
-    },
-    []
-  );
+  const handleTabChange = useCallback((tab: CashierTab) => {
+    if (busyRef.current) return;
+    setActiveTab(tab);
+    setAmount(0);
+    setSubmitError(null);
+    setVisibleQuick([]);
+    animTimers.current.forEach(clearTimeout);
+    animTimers.current = [];
+    [0, 1, 2, 3].forEach((i) => {
+      const t = setTimeout(() => {
+        setVisibleQuick((prev) => [...prev, true]);
+      }, i * 50);
+      animTimers.current.push(t);
+    });
+  }, []);
 
   // Handle confirm
   const handleConfirm = useCallback(async () => {
@@ -224,39 +221,36 @@ export function CashierModal({
   }, [amount, activeTab, canAddAmount, canWithdrawAmount]);
 
   // ── Focus Trap: trap focus inside modal when open ──
-  const handleFocusTrap = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        // Never dismiss mid-request: the player would lose the only surface
-        // that tells them whether the chips moved.
-        if (busyRef.current) return;
-        onCloseRef.current();
-        return;
+  const handleFocusTrap = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      // Never dismiss mid-request: the player would lose the only surface
+      // that tells them whether the chips moved.
+      if (busyRef.current) return;
+      onCloseRef.current();
+      return;
+    }
+    if (e.key !== 'Tab' || !modalRef.current) return;
+
+    const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusable.length === 0) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (e.shiftKey) {
+      if (document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
       }
-      if (e.key !== 'Tab' || !modalRef.current) return;
-
-      const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      );
-      if (focusable.length === 0) return;
-
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
+    } else {
+      if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
       }
-    },
-    []
-  );
+    }
+  }, []);
 
   // Fresh state on every open. Without this the modal reopens showing the
   // previous attempt's amount and error banner.

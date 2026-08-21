@@ -250,6 +250,11 @@ export default function CarouselSection({
           onDragOver={(e) => handleDragOver(e, club.id)}
           onDrop={() => handleDrop(club.id)}
           onDragEnd={handleDragEnd}
+          onMouseMove={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            e.currentTarget.style.setProperty('--x', `${e.clientX - rect.left}px`);
+            e.currentTarget.style.setProperty('--y', `${e.clientY - rect.top}px`);
+          }}
           role="button"
           aria-label={`${club.name || 'Club'} - Click to enter lobby`}
           tabIndex={0}

@@ -52,9 +52,9 @@ export default function AddOnModal({
   const [countdown, setCountdown] = useState(initialTime);
   const [processing, setProcessing] = useState(false);
   const [decided, setDecided] = useState(false);
-  const [result, setResult] = useState<
-    'accepted' | 'declined' | 'insufficient' | 'failed' | null
-  >(null);
+  const [result, setResult] = useState<'accepted' | 'declined' | 'insufficient' | 'failed' | null>(
+    null
+  );
   const [failureMessage, setFailureMessage] = useState<string | null>(null);
   const processingRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);

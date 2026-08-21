@@ -11,7 +11,7 @@
   text-align: center;
   font-size: 12px;
   font-weight: 700;
-  color: #aab3c0;
+  color: #ffb020;
   letter-spacing: 0.3px;
 }
 
@@ -36,8 +36,8 @@
 
 .bbj-hits__row.is-clickable:hover,
 .bbj-hits__row.is-clickable:focus-visible {
-  background: rgba(213, 218, 226, 0.07);
-  border-color: rgba(213, 218, 226, 0.3);
+  background: rgba(255, 215, 0, 0.07);
+  border-color: rgba(255, 215, 0, 0.3);
   outline: none;
 }
 
@@ -112,7 +112,7 @@
 .bbj-hits__amt {
   font-size: 13px;
   font-weight: 800;
-  color: #aab3c0;
+  color: #ffb020;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -183,45 +183,4 @@
   .bbj-hits__hand {
     grid-column: 2 / -1;
   }
-}
-
-/* The winning hand: the five cards that played, with the made hand under them. */
-.bbj-hits__hand {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.bbj-hits__handname {
-  font-size: 9.5px;
-  color: rgba(255, 255, 255, 0.45);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Example rows: unmistakably not a real win. Greyed, dashed, tagged, inert. */
-.bbj-hits__row.is-example {
-  opacity: 0.72;
-  border-style: dashed;
-  cursor: default;
-}
-
-.bbj-hits__tag {
-  flex-shrink: 0;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 8.5px;
-  font-weight: 800;
-  letter-spacing: 0.5px;
-}
-
-.bbj-hits__examplenote {
-  margin: 0 0 2px;
-  text-align: center;
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.42);
 }

@@ -219,7 +219,8 @@
   font-weight: 800;
   color: #fff;
   letter-spacing: 0.02em;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(0, 0, 0, 0.18)),
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(0, 0, 0, 0.18)),
     var(--trc2-band, #7a3a1f);
 }
 .trc2__placeband.trc2__medal--gold {

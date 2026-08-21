@@ -31,7 +31,7 @@
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 1.2px;
-  color: rgba(226, 231, 238, 0.9);
+  color: rgba(255, 228, 181, 0.9);
 }
 
 .bbjhd__meta {
@@ -49,7 +49,7 @@
 }
 
 .bbjhd__meta-stakes {
-  color: #d5dae2;
+  color: #ffd700;
   font-weight: 700;
 }
 
@@ -110,7 +110,7 @@
 .bbjhd__street-pot {
   margin-left: auto;
   flex-shrink: 0;
-  color: #d5dae2;
+  color: #ffd700;
   font-variant-numeric: tabular-nums;
 }
 
@@ -137,8 +137,8 @@
   height: 17px;
   padding: 0 4px;
   border-radius: 4px;
-  background: rgba(170, 179, 192, 0.16);
-  color: #aab3c0;
+  background: rgba(255, 176, 32, 0.16);
+  color: #ffb020;
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.3px;
@@ -165,9 +165,7 @@
   border-radius: 4px;
   font-size: 9.5px;
   font-weight: 700;
-  /* NO text-transform. Dan's house rule is the first letter of every word,
-     and a CSS lowercase here silently overrode every label the component
-     sets. */
+  text-transform: lowercase;
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.65);
   white-space: nowrap;
@@ -201,8 +199,8 @@
 }
 
 .bbjhd__act--post {
-  background: rgba(213, 218, 226, 0.14);
-  color: #d5dae2;
+  background: rgba(255, 215, 0, 0.14);
+  color: #ffd700;
 }
 
 .bbjhd__amt,
@@ -217,7 +215,7 @@
 }
 
 .bbjhd__pot {
-  color: rgba(213, 218, 226, 0.75);
+  color: rgba(255, 215, 0, 0.75);
   font-size: 10.5px;
 }
 
@@ -226,11 +224,11 @@
   justify-content: space-between;
   padding: 8px 10px;
   border-radius: 8px;
-  background: rgba(213, 218, 226, 0.07);
-  border: 1px solid rgba(213, 218, 226, 0.2);
+  background: rgba(255, 215, 0, 0.07);
+  border: 1px solid rgba(255, 215, 0, 0.2);
   font-size: 12px;
   font-weight: 700;
-  color: #d5dae2;
+  color: #ffd700;
   font-variant-numeric: tabular-nums;
 }
 
@@ -309,7 +307,7 @@
 }
 
 .bbjhd__jackpot-total {
-  color: #d5dae2;
+  color: #ffd700;
   font-variant-numeric: tabular-nums;
 }
 
@@ -341,11 +339,11 @@
 }
 
 .bbjhd__pay--bad_beat {
-  background: rgba(213, 218, 226, 0.07);
+  background: rgba(255, 215, 0, 0.07);
 }
 
 .bbjhd__pay--bad_beat .bbjhd__pay-amt {
-  color: #d5dae2;
+  color: #ffd700;
 }
 
 .bbjhd__empty {
@@ -387,62 +385,4 @@
   .bbjhd__skeleton {
     animation: none;
   }
-}
-
-/* ── Rake / jackpot fee taken out of the pot ─────────────────────────────── */
-.bbjhd__drop {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-  padding: 6px 10px;
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.5);
-  font-variant-numeric: tabular-nums;
-}
-
-.bbjhd__drop strong {
-  color: rgba(255, 255, 255, 0.8);
-  font-weight: 700;
-}
-
-.bbjhd__drop-note {
-  margin-left: auto;
-  opacity: 0.65;
-}
-
-/* ── Showdown: the bad-beat hand leads, and the five that played are lit ── */
-.bbjhd__sd.is-badbeat {
-  background: rgba(213, 218, 226, 0.06);
-  box-shadow: inset 3px 0 0 #d5dae2;
-}
-
-.bbjhd__sd-tag {
-  flex-shrink: 0;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(213, 218, 226, 0.2);
-  color: #d5dae2;
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.5px;
-}
-
-/* Cards that do not play recede; the made hand stays fully lit. Opacity only,
-   so a colour-blind viewer still reads it and nothing depends on hue. */
-.bbjhd__sd-cards .bbjhd-idle {
-  opacity: 0.34;
-  filter: grayscale(0.55);
-}
-
-.bbjhd__sd-cards .bbjhd-plays {
-  opacity: 1;
-  filter: drop-shadow(0 0 5px rgba(213, 218, 226, 0.5));
-}
-
-.bbjhd__sd-legend {
-  margin: 0;
-  padding: 6px 10px 8px;
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.38);
 }

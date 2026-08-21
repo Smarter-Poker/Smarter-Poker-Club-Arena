@@ -58,7 +58,7 @@
 }
 
 .bbj-basic__table tr.is-current {
-  background: rgba(213, 218, 226, 0.08);
+  background: rgba(255, 215, 0, 0.08);
 }
 
 .bbj-basic__tier {
@@ -73,7 +73,7 @@
   font-size: 8px;
   font-weight: 800;
   letter-spacing: 0.5px;
-  color: #d5dae2;
+  color: #ffd700;
   white-space: nowrap;
 }
 
@@ -85,7 +85,7 @@
 }
 
 .bbj-basic__fee {
-  color: #aab3c0;
+  color: #ffb020;
   font-weight: 700;
 }
 
@@ -104,7 +104,7 @@
   display: block;
   margin-top: 2px;
   font-size: 9.5px;
-  color: rgba(213, 218, 226, 0.7);
+  color: rgba(255, 215, 0, 0.7);
   font-variant-numeric: tabular-nums;
 }
 

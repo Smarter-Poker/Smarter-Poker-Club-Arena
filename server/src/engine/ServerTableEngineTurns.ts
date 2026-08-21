@@ -323,7 +323,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       if (applied) {
         this.recordRecoveryEvent(
           'watchdog_forced_action',
-          'forced ' + forced + ' at seat ' + seat + ' after ' + Math.round(idleMs / 1000) + 's stall'
+          'forced ' +
+            forced +
+            ' at seat ' +
+            seat +
+            ' after ' +
+            Math.round(idleMs / 1000) +
+            's stall'
         );
         this.markProgress();
       } else {
@@ -717,52 +723,57 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     );
 
     // Activate via TimeBankEngine — it handles pool depletion, per-hand limit, and event emission
-    const activated = this.timeBankEngine.activate(this.tableId, userId, () => {
-      // This callback fires when the manual time bank expires
-      if (!this.running || !this.handController) return;
-      const tbState = this.handController.getState();
-      if (tbState.currentPlayerSeat !== player.seat) return;
+    const activated = this.timeBankEngine.activate(
+      this.tableId,
+      userId,
+      () => {
+        // This callback fires when the manual time bank expires
+        if (!this.running || !this.handController) return;
+        const tbState = this.handController.getState();
+        if (tbState.currentPlayerSeat !== player.seat) return;
 
-      const tbPlayer = tbState.players.find((p) => p.seat === player.seat);
-      const tbToCall = tbPlayer ? Math.max(0, tbState.currentBet - (tbPlayer.bet ?? 0)) : 0;
-      const tbCanCheck = tbToCall === 0;
+        const tbPlayer = tbState.players.find((p) => p.seat === player.seat);
+        const tbToCall = tbPlayer ? Math.max(0, tbState.currentBet - (tbPlayer.bet ?? 0)) : 0;
+        const tbCanCheck = tbToCall === 0;
 
-      if (tbCanCheck) {
-        try {
-          this.handController!.performAction(player.seat, 'check');
-        } catch {
+        if (tbCanCheck) {
+          try {
+            this.handController!.performAction(player.seat, 'check');
+          } catch {
+            try {
+              this.handController!.performAction(player.seat, 'fold');
+            } catch {
+              /* done */
+            }
+          }
+        } else {
           try {
             this.handController!.performAction(player.seat, 'fold');
           } catch {
             /* done */
           }
         }
-      } else {
+
+        // FIX 149: Wire telemetry — manual time bank expiry
+        this.engineTelemetry.recordTimerExpired(this.tableId);
+
+        // FIX 124c: Manual time bank expired → broadcast timeout event (same as FIX 124b for auto path)
+        const tbUsesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
         try {
-          this.handController!.performAction(player.seat, 'fold');
+          this.hub?.emitEvent(this.tableId, {
+            type: 'time_bank_timeout',
+            table_id: this.tableId,
+            player_id: userId,
+            uses_remaining: tbUsesLeft,
+            timed_out_action: tbCanCheck ? 'check' : 'fold',
+            show_buy_more: tbUsesLeft <= 0,
+          });
         } catch {
-          /* done */
+          /* broadcast failure is non-fatal */
         }
-      }
-
-      // FIX 149: Wire telemetry — manual time bank expiry
-      this.engineTelemetry.recordTimerExpired(this.tableId);
-
-      // FIX 124c: Manual time bank expired → broadcast timeout event (same as FIX 124b for auto path)
-      const tbUsesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
-      try {
-        this.hub?.emitEvent(this.tableId, {
-          type: 'time_bank_timeout',
-          table_id: this.tableId,
-          player_id: userId,
-          uses_remaining: tbUsesLeft,
-          timed_out_action: tbCanCheck ? 'check' : 'fold',
-          show_buy_more: tbUsesLeft <= 0,
-        });
-      } catch {
-        /* broadcast failure is non-fatal */
-      }
-    }, remainingBeforeBank);
+      },
+      remainingBeforeBank
+    );
 
     if (!activated) {
       return { success: false, error: 'Time bank activation failed (per-hand limit or depleted)' };

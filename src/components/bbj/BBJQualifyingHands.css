@@ -21,8 +21,8 @@
 }
 
 .bbj-qh__block.is-current {
-  border-color: rgba(213, 218, 226, 0.35);
-  background: rgba(213, 218, 226, 0.07);
+  border-color: rgba(255, 215, 0, 0.35);
+  background: rgba(255, 215, 0, 0.07);
 }
 
 .bbj-qh__block.is-ineligible {
@@ -45,8 +45,8 @@
 .bbj-qh__here {
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(213, 218, 226, 0.18);
-  color: #d5dae2;
+  background: rgba(255, 215, 0, 0.18);
+  color: #ffd700;
   font-size: 8.5px;
   font-weight: 800;
   letter-spacing: 0.5px;

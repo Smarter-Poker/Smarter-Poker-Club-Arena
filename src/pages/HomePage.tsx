@@ -828,6 +828,9 @@ function HomePageInner() {
     let isMounted = true;
 
     async function fetchAllClubStats() {
+      // Offline Guard: Prevent Sentry log spam and failed network requests
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+
       const clubIds = displayClubs.map((c) => c.id);
       try {
         // Batch fetch club rows for level info

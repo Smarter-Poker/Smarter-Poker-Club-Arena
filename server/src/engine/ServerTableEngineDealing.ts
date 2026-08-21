@@ -528,12 +528,18 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       cards: [],
       is_folded: false,
       is_all_in: false,
-      // 2026-08-21: truthful, not hardcoded false. In CASH games every dealt
-      // player is active (sat-out players are excluded from the deal above),
-      // so this stays false there. In TOURNAMENTS a sat-out player IS dealt
-      // in — the flag lets the client grey the seat and lets the pre-action /
-      // timer-rearm guards skip a seat that onPlayerTurn will insta-fold.
-      is_sitting_out: this.disconnectEngine.isSittingOut(this.tableId, p.user_id),
+      // 2026-08-21 (round 2 — Dan: "they just get blinded out, it should
+      // never affect the actual tournament functionality"): this MUST stay
+      // hardcoded false. HandController's is_sitting_out filters mean "deal
+      // AROUND this seat" — no cards, NO BLINDS — which is the opposite of
+      // blind-off. Every player in hcPlayers is a full hand participant:
+      // cash sit-outs were excluded from the roster above; tournament
+      // sit-outs are dealt in, post blinds, and are insta-folded by
+      // DisconnectEngine.onPlayerTurn when action reaches them. The
+      // sitting-out UI state lives on table_seats.is_sitting_out, persisted
+      // by the PLAYER_SAT_OUT/PLAYER_SAT_BACK handler in
+      // ServerTableEngineBase and streamed to clients via realtime.
+      is_sitting_out: false,
       // Bible V8 §2.3: Carry through identity fields for broadcast
       is_horse: p.is_horse ?? false,
       avatar_url: p.avatar_url ?? '',

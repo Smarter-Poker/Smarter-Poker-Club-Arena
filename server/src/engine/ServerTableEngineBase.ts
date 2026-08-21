@@ -441,6 +441,30 @@ export abstract class ServerTableEngineBase {
       // armed (onPlayerTurn returned false and handleTurnChange bailed). The
       // hand then stalls until the 10-minute void — a griefing / stack-reclaim
       // exploit. Re-arm the normal turn timer for the reconnecting player.
+      // SIT-OUT VISIBILITY 2026-08-21: DisconnectEngine state was in-memory
+      // only — nothing ever wrote table_seats.is_sitting_out, yet that column
+      // is the client's source of truth (initial seat load AND the realtime
+      // table_seats subscription both map it to the greyed seat state). A
+      // sat-out player — voluntary or forced after 3 timeouts — looked fully
+      // active to everyone, including themselves. Persist both transitions;
+      // fire-and-forget, the UI write must never affect gameplay.
+      if (event.type === 'PLAYER_SAT_OUT' || event.type === 'PLAYER_SAT_BACK') {
+        const sittingOut = event.type === 'PLAYER_SAT_OUT';
+        void supabase
+          .from('table_seats')
+          .update({ is_sitting_out: sittingOut })
+          .eq('table_id', this.tableId)
+          .eq('user_id', event.playerId)
+          .is('left_at', null)
+          .then(({ error }) => {
+            if (error) {
+              reportError(
+                new Error(`persist is_sitting_out=${sittingOut} failed: ${error.message}`),
+                'ServerTableEngine.' + this.tableId + '.sitout_persist_failed'
+              );
+            }
+          });
+      }
       if (event.type === 'PLAYER_RECONNECTED') {
         // ── ADDITIVE observability (#5): WS reconnect counter ──
         try {

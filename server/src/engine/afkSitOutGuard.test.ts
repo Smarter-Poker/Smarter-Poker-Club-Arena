@@ -127,10 +127,23 @@ describe('tournament sit-outs are dealt in and blinded off (bug 2)', () => {
     expect((turns.match(gated) || []).length, 'Turns: watchdog dealable count').toBe(1);
   });
 
-  it('the dealt hand state carries a truthful is_sitting_out flag', () => {
+  it('the dealt hand state NEVER marks a player sitting-out (deal-around = skipped blinds)', () => {
+    // Dan: "they just get blinded out, it should never affect the actual
+    // tournament functionality." HandController's is_sitting_out filters
+    // deal AROUND the seat — no cards, no blinds — so the hand-state flag
+    // must stay hardcoded false; sit-out UI state lives on table_seats.
     const dealing = strip(read('src/engine/ServerTableEngineDealing.ts'));
-    expect(dealing).toMatch(
-      /is_sitting_out:\s*this\.disconnectEngine\.isSittingOut\(this\.tableId,\s*p\.user_id\)/
+    expect(dealing).toMatch(/is_sitting_out:\s*false,/);
+    expect(dealing).not.toMatch(
+      /is_sitting_out:\s*this\.disconnectEngine\.isSittingOut/
     );
+  });
+
+  it('sit-out transitions are persisted to table_seats for the clients', () => {
+    const base = strip(read('src/engine/ServerTableEngineBase.ts'));
+    expect(base).toMatch(/PLAYER_SAT_OUT/);
+    expect(base).toMatch(/PLAYER_SAT_BACK/);
+    expect(base).toMatch(/\.update\(\{ is_sitting_out: sittingOut \}\)/);
+    expect(base).toMatch(/\.is\('left_at', null\)/);
   });
 });

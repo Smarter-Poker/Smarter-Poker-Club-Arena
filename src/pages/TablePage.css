@@ -1254,6 +1254,32 @@
   text-align: center;
 }
 
+/* SIT-OUT VISIBILITY 2026-08-21: "You Are Sitting Out" + I'm Back CTA. */
+.spectator-footer-bar[data-state='sitting-out'] {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.spectator-footer-bar__cta {
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 8px 20px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+
+.spectator-footer-bar__cta:active {
+  transform: scale(0.96);
+  filter: brightness(0.92);
+}
+
 /* Single-button action bar — used for footer-pinned prompts like Show Hand,
    post-fold offers, etc. Dan rule 2026-04-17: ALL action buttons on footer. */
 .footer-action-bar {

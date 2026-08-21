@@ -5410,6 +5410,7 @@ export default function TablePage({
             seat_number: number;
             stack: number;
             left_at: string | null;
+            is_sitting_out?: boolean | null;
           };
 
           // Player left — remove from state
@@ -5435,9 +5436,18 @@ export default function TablePage({
               const updatedPlayers = [...prev.players];
               const existing = updatedPlayers[seatIdx];
               if (existing) {
+                // SIT-OUT VISIBILITY 2026-08-21: the engine now persists
+                // is_sitting_out on the seat row. Flip only between
+                // sitting_out and active — never clobber a transient in-hand
+                // status (folded/all_in) the snapshot stream owns.
+                let status = (existing as any).status;
+                if (updated.is_sitting_out === true) status = 'sitting_out';
+                else if (updated.is_sitting_out === false && status === 'sitting_out')
+                  status = 'active';
                 updatedPlayers[seatIdx] = {
                   ...existing,
                   stack: updated.stack,
+                  status,
                 } as typeof existing;
               }
               return { ...prev, players: updatedPlayers };
@@ -9140,6 +9150,42 @@ export default function TablePage({
         ) : !tableState.isHandInProgress && !isRabbitAvailable ? (
           <div className="spectator-footer-bar" data-state="waiting">
             <span className="spectator-footer-bar__label">Waiting For Next Hand…</span>
+          </div>
+        ) : getPlayerAtSeat(tableState.heroSeat)?.status === 'sitting_out' ? (
+          /* SIT-OUT VISIBILITY 2026-08-21: whether the hero sat out from the
+             settings panel or was force-sat-out after 3 straight timeouts,
+             the footer says so plainly and offers the way back. In
+             tournaments the seat keeps posting blinds while sat out (Dan:
+             "they just get blinded out") — all the more reason the CTA must
+             be impossible to miss. */
+          <div className="spectator-footer-bar" data-state="sitting-out">
+            <span className="spectator-footer-bar__label">You Are Sitting Out</span>
+            <button
+              type="button"
+              className="spectator-footer-bar__cta"
+              onClick={() => {
+                if (!tableId) return;
+                void setSitOut(tableId, false).then((res) => {
+                  if (res?.success) {
+                    setSitOutNextHand(false);
+                    setTableState((prev) => {
+                      const seatIdx = prev.heroSeat - 1;
+                      const players = [...prev.players];
+                      const hero = players[seatIdx];
+                      if (hero && (hero as any).status === 'sitting_out') {
+                        players[seatIdx] = { ...hero, status: 'active' } as any;
+                      }
+                      return { ...prev, players };
+                    });
+                    toast?.success?.("Welcome Back, You'll Be Dealt Into The Next Hand");
+                  } else {
+                    toast?.error?.(res?.error || 'Could not sit you back in');
+                  }
+                });
+              }}
+            >
+              I'm Back
+            </button>
           </div>
         ) : tableState.isHandInProgress &&
           (getPlayerAtSeat(tableState.heroSeat)?.status === 'folded' ||

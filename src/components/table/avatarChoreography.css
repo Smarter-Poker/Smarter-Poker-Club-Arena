@@ -513,6 +513,30 @@
   opacity: 0;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+   MOTION BUDGET — the ambient layer is the luxury, so it is what gets cut
+   ─────────────────────────────────────────────────────────────────────────────
+   `data-sp-motion="lite"` is set on <html> by src/utils/motionBudget.ts when
+   measured frame health says this device cannot afford ambient motion. Three
+   animations here run FOREVER — breathing, the time-pressure tremor and the VIP
+   holo sweep — and MultiTablePage keeps up to four tables mounted, so a weak
+   phone can be carrying dozens of them at once.
+
+   ONE-SHOT GESTURES ARE DELIBERATELY NOT LISTED. They are under a second, they
+   fire on a real event, and they are the half of this system that carries
+   MEANING: a fold you cannot see is a worse outcome than a dropped frame.
+   Ambient life is decoration, so ambient life is what goes.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+:root[data-sp-motion='lite'] .seat__avatar-wrap,
+:root[data-sp-motion='lite'] .seat__avatar-wrap--tense {
+  animation: none;
+}
+
+:root[data-sp-motion='lite'] .seat__avatar--holo::after {
+  animation: none;
+  opacity: 0;
+}
+
 /* ─── REDUCED MOTION ─────────────────────────────────────────────────────────
    SeatSlot.tsx also checks prefersReducedMotion() before it ever applies the
    class, so this is the belt to that braces — it also covers a user who flips

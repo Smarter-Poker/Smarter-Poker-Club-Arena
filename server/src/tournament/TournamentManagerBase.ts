@@ -741,6 +741,49 @@ export abstract class TournamentManagerBase {
         .eq('tournament_id', this.tournamentId)
         .eq('status', 'registered');
 
+      /**
+       * SEAT-FIRST STACK SYNC (Dan 2026-08-21, seat-first spins).
+       *
+       * A player who SAT DOWN before the game started was seated with the
+       * placeholder starting stack (the smallest tier's, the only honest
+       * value before the draw). The draw above may have landed on a tier with
+       * a different stack — spin tiers run 300/400/500 — and the seat row
+       * would have kept the placeholder, so an early sitter could start a 500
+       * -chip Spin holding 300. The migration above fixes tournament_players;
+       * this fixes the SEATS, which is what the engine actually deals from.
+       * Cheap and idempotent: it only ever writes the value start already
+       * decided, and only for seats that disagree.
+       */
+      if (tournament.starting_chips > 0) {
+        const { data: seatRows } = await supabase
+          .from('table_seats')
+          .select('id, stack, tables!inner(tournament_id)')
+          .is('left_at', null)
+          .eq('tables.tournament_id', this.tournamentId);
+        const stale = (seatRows ?? []).filter(
+          (r: any) => Number(r.stack) !== Number(tournament.starting_chips)
+        );
+        if (stale.length > 0) {
+          const { error: syncErr } = await supabase
+            .from('table_seats')
+            .update({ stack: tournament.starting_chips })
+            .in(
+              'id',
+              stale.map((r: any) => r.id)
+            );
+          if (syncErr) {
+            reportError(
+              new Error(`seat stack sync failed: ${syncErr.message}`),
+              'Tournament.' + this.tournamentId.slice(0, 8) + '.seat_stack_sync_failed'
+            );
+          } else {
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Synced ${stale.length} pre-seated stack(s) to ${tournament.starting_chips}`
+            );
+          }
+        }
+      }
+
       // Create tables and seat players
       await this.createTablesAndSeatPlayers(tournament);
 

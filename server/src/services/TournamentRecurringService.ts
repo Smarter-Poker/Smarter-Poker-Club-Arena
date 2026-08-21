@@ -559,6 +559,31 @@ const HOLD_SEAT_FOR_HUMAN = true;
  * sitting dead all night.
  */
 const OPEN_TABLE_WAIT_MS = 10 * 60 * 1000;
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  SEAT-FIRST GAMES (Dan, 2026-08-21)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * "SPINS AND HEADS UP ARE FIRST COME FIRST SERVE, A PLAYER 'SITS DOWN' AT A
+ *  TABLE AND BUYS INTO THE SPIN OR HEADS UP, LIKE A CASH GAME, NOT LIKE A MTT
+ *  TOURNAMENT. THE SPIN STARTS WHEN ALL 3 PLAYERS HAVE BOUGHT INTO THE SPIN,
+ *  THE HEADS UP BEGINS WHEN BOTH PLAYERS BUY IN."
+ *
+ * Spins (3 seats) and Heads-Up (2 seats) are created as a TABLE WITH OPEN
+ * SEATS, not as a registration list. Nobody is pre-seated: the seats are
+ * genuinely empty and first come, first served. A player takes a seat and pays
+ * in one atomic step (fn_take_seat_and_buy_in), and the game starts the moment
+ * the last seat is bought — GameServer's start-when-full rule, which for these
+ * formats now means "every seat sold" rather than "the registration list is
+ * long enough".
+ *
+ * Larger SNG fields (6-max, 9-max) and MTTs keep the scheduled-registration
+ * model: they are events, not tables you walk up to.
+ */
+export function isSeatFirstFormat(variant: string, maxPlayers: number): boolean {
+  return String(variant).toLowerCase() === 'spin' || maxPlayers <= 2;
+}
+
 function horsesForSeatHeldGame(maxPlayers: number): { horses: number; isSim: boolean } {
   if (!HOLD_SEAT_FOR_HUMAN) return { horses: maxPlayers, isSim: true };
   return { horses: Math.max(1, maxPlayers - 1), isSim: false };
@@ -1456,10 +1481,24 @@ export class TournamentRecurringService {
         return { tournamentId: null, registered: 0 };
       }
 
-      // TOURNEY-AUDIT 2026-07-24 (sweep 6): hold one seat for a human (full
-      // fill only on periodic verification games).
-      const seatPlan = horsesForSeatHeldGame(config.maxPlayers);
-      const registered = await this.registerHorses(sng.id, seatPlan.horses);
+      // SEAT-FIRST (Dan 2026-08-21): "THE HEADS UP BEGINS WHEN BOTH PLAYERS
+      // BUY IN." A 2-seat game is a table you sit down at, not an event you
+      // register for — it opens with both seats EMPTY and nobody pre-seated.
+      // 6-max and 9-max SNGs are fields, not tables, and keep the
+      // seat-held registration model.
+      let registered = 0;
+      if (isSeatFirstFormat('sng', config.maxPlayers)) {
+        const hu = (config.blindStructure?.[0] as { smallBlind: number; bigBlind: number }) ?? {
+          smallBlind: 10,
+          bigBlind: 20,
+        };
+        await this.createOpenSeatTable(sng, config.maxPlayers, dbGameType, hu);
+      } else {
+        // TOURNEY-AUDIT 2026-07-24 (sweep 6): hold one seat for a human (full
+        // fill only on periodic verification games).
+        const seatPlan = horsesForSeatHeldGame(config.maxPlayers);
+        registered = await this.registerHorses(sng.id, seatPlan.horses);
+      }
       const prizePool = config.buyIn * registered;
 
       const { error: sngUpdateErr } = await supabase
@@ -1481,6 +1520,63 @@ export class TournamentRecurringService {
         'TournamentRecurring.createSNG_error'
       );
       return { tournamentId: null, registered: 0 };
+    }
+  }
+
+  /**
+   * Create the table a seat-first game is played at, with its seats EMPTY and
+   * waiting. This is the whole difference between "a tournament you register
+   * for" and "a table you sit down at": the table exists from the moment the
+   * game is listed, so the lobby can show 0/3 and a player can take seat 2.
+   *
+   * status 'waiting' (not 'running') — the engine has nothing to deal yet.
+   * TournamentManagerBase.createTablesAndSeatPlayers already ADOPTS tables in
+   * ['running','waiting'] and skips players who are already seated, so when
+   * the game starts it inherits this table and the people sitting at it
+   * instead of building a second one.
+   *
+   * Cash-table discovery cannot touch it: `cash_tables_with_players` filters
+   * on `tournament_id IS NULL`.
+   */
+  private async createOpenSeatTable(
+    tournament: { id: string; club_id?: string | null; name: string },
+    seats: number,
+    dbGameType: string,
+    firstLevel: { smallBlind: number; bigBlind: number }
+  ): Promise<string | null> {
+    try {
+      const { data: table, error } = await supabase
+        .from('tables')
+        .insert({
+          club_id: tournament.club_id ?? this.ownerClubId,
+          tournament_id: tournament.id,
+          name: tournament.name,
+          game_type: 'tournament',
+          game_variant: dbGameType.toLowerCase(),
+          stakes: `${firstLevel.smallBlind}/${firstLevel.bigBlind}`,
+          small_blind: firstLevel.smallBlind,
+          big_blind: firstLevel.bigBlind,
+          min_buy_in: 0,
+          max_buy_in: 0,
+          max_players: seats,
+          current_players: 0,
+          status: 'waiting',
+        })
+        .select('id')
+        .maybeSingle();
+      if (error || !table) {
+        reportError(
+          new Error(
+            `[TournamentRecurring] open-seat table creation failed for ${tournament.id.slice(0, 8)}: ${error?.message || 'unknown'}`
+          ),
+          'TournamentRecurring.open_seat_table_failed'
+        );
+        return null;
+      }
+      return table.id as string;
+    } catch (err: any) {
+      reportError(err, 'TournamentRecurring.createOpenSeatTable_threw');
+      return null;
     }
   }
 
@@ -1619,10 +1715,16 @@ export class TournamentRecurringService {
         return { tournamentId: null, registered: 0 };
       }
 
-      // TOURNEY-AUDIT 2026-07-24 (sweep 6): hold one seat for a human (full
-      // fill only on periodic verification games).
-      const spinSeatPlan = horsesForSeatHeldGame(config.maxPlayers);
-      const registered = await this.registerHorses(spin.id, spinSeatPlan.horses);
+      // SEAT-FIRST (Dan 2026-08-21): a Spin opens as a TABLE WITH THREE EMPTY
+      // SEATS. No horse is pre-registered — that is what made it an MTT with
+      // extra steps, and it is why a player could never simply walk up and sit
+      // down. Players take seats first come, first served via
+      // fn_take_seat_and_buy_in; the game starts the instant the third seat is
+      // bought. If nobody takes the seats before the open-table window
+      // expires, GameServer's past-start top-up fills the field with horses so
+      // the board still churns — open first, churn second.
+      await this.createOpenSeatTable(spin, SPIN_SEATS, dbGameType, spinBlinds[0]);
+      const registered = 0;
       // prize_pool stays 0 until start. It used to be set to
       // buyIn x multiplier here, which was the arithmetic spoiler described
       // above — the pool amount IS the multiplier, just divided by the

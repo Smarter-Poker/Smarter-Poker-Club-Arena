@@ -619,7 +619,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     ) => {
       if (spinJoin) return; // one join at a time
       spinJoinCancelRef.current = false;
-      setSpinJoin({ name: t.name, stage: 'Reserving Your Seat' });
+      setSpinJoin({ name: t.name, stage: 'Opening The Table' });
       const fail = (msg: string) => {
         setSpinJoin(null);
         toast?.error?.(msg);
@@ -627,110 +627,62 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       try {
         const { data: authData } = await getAuthUser();
         const uid = authData?.user?.id;
-        if (!uid) return fail('Sign In To Play A Spin');
+        if (!uid) return fail('Sign In To Play');
 
-        // Already seated in THIS spin (tapped their running game to return)?
-        // Registration would answer 'registration_closed' and wrongly hop
-        // them to a sibling game — go straight back to their seat instead.
-        {
-          const { data: myTbls } = await supabase
+        // ── SEAT-FIRST (Dan 2026-08-21) ──────────────────────────────────
+        // "A PLAYER SITS DOWN AT A TABLE AND BUYS INTO THE SPIN OR HEADS UP,
+        // LIKE A CASH GAME." So a tile does NOT register anybody. It opens
+        // the TABLE, where the seats are visible and one tap buys the seat
+        // the player chose. Registering here instead would put them in the
+        // game without a seat — the MTT shape Dan is replacing.
+        const { data: tbls } = await supabase
+          .from('tables')
+          .select('id, status')
+          .eq('tournament_id', t.id)
+          .neq('status', 'closed')
+          .limit(3);
+        const tableId = (tbls || [])[0]?.id;
+        if (tableId) {
+          setSpinJoin(null);
+          navigate(`/table/${tableId}`);
+          return;
+        }
+
+        // No table yet: a game created before seat-first shipped, or one
+        // whose table has closed. Fall back to the old registration path so
+        // those legacy rows stay playable, then land on their table.
+        setSpinJoin({ name: t.name, stage: 'Reserving Your Seat' });
+        const { data: regData, error: regErr } = await supabase.rpc(
+          'fn_register_for_tournament',
+          { p_tournament_id: t.id }
+        );
+        const reg = regData as { ok?: boolean; reason?: string } | null;
+        const reason = regErr?.message || (reg?.ok === false ? reg.reason : null);
+        if (reason && reason !== 'already_registered') {
+          return fail(
+            /insufficient/i.test(reason)
+              ? 'Not Enough Chips For This Buy In'
+              : variant === 'sng'
+                ? 'Could Not Join The Sit N Go, Please Try Again'
+                : 'Could Not Join The Spin, Please Try Again'
+          );
+        }
+        setSpinJoin((prev) => (prev ? { ...prev, stage: 'Dealing You In' } : prev));
+        const deadline = Date.now() + 45_000;
+        while (Date.now() < deadline) {
+          if (spinJoinCancelRef.current) return;
+          const { data: t2 } = await supabase
             .from('tables')
             .select('id')
             .eq('tournament_id', t.id)
             .neq('status', 'closed')
             .limit(3);
-          const myIds = (myTbls || []).map((x) => x.id);
-          if (myIds.length > 0) {
-            const { data: mySeat } = await supabase
-              .from('table_seats')
-              .select('table_id')
-              .in('table_id', myIds)
-              .eq('user_id', uid)
-              .is('left_at', null)
-              .limit(1)
-              .maybeSingle();
-            if (mySeat?.table_id) {
-              setSpinJoin(null);
-              navigate(`/table/${mySeat.table_id}`);
-              return;
-            }
-          }
-        }
-
-        let targetId = t.id;
-        const tryRegister = async (tid: string): Promise<string | null> => {
-          const { data, error } = await supabase.rpc('fn_register_for_tournament', {
-            p_tournament_id: tid,
-          });
-          if (error) return error.message || 'registration_failed';
-          const res = data as { ok?: boolean; reason?: string } | null;
-          if (res?.ok === false && res.reason !== 'already_registered') {
-            return res.reason || 'registration_failed';
-          }
-          return null; // ok, or already in — both mean "this is my game"
-        };
-
-        let reason = await tryRegister(targetId);
-        if (reason === 'tournament_full' || reason === 'registration_closed') {
-          // This one filled or launched — take the next open spin at the
-          // same stake instead of bouncing the player back to the lobby.
-          const { data: alts } = await supabase
-            .from('tournaments')
-            .select('id, name, current_players, max_players')
-            .eq('club_id', resolvedClubId || '')
-            .eq('variant', variant)
-            .eq('status', 'REGISTERING')
-            .eq('buy_in_amount', t.buy_in_amount)
-            .order('created_at', { ascending: true })
-            .limit(10);
-          const open = (alts || []).find(
-            (a) => (a.current_players || 0) < (a.max_players || 3) && a.id !== targetId
-          );
-          if (!open) {
-            return fail(
-              variant === 'sng'
-                ? 'All Heads Up Tables At This Stake Are Full, A Fresh One Opens Shortly'
-                : 'All Spins At This Stake Are Full, A Fresh One Opens Shortly'
-            );
-          }
-          targetId = open.id;
-          setSpinJoin({ name: open.name || t.name, stage: 'Reserving Your Seat' });
-          reason = await tryRegister(targetId);
-        }
-        if (reason) {
-          // fn_register_for_tournament's exact reason string is
-          // 'insufficient_balance'; the regex keeps any variant covered.
-          const pretty =
-            reason === 'insufficient_balance' || /insufficient/i.test(reason)
-              ? 'Not Enough Chips For This Buy In'
-              : 'Could Not Join The Spin, Please Try Again';
-          return fail(pretty);
-        }
-        setSpinJoin((prev) => (prev ? { ...prev, stage: 'Seat Taken, Game Starting' } : prev));
-
-        // Registered (or already in). Wait for the engine to seat us: the
-        // held-seat spin starts when full (5s discovery cadence), tables are
-        // created and every registered player is seated automatically.
-        const deadline = Date.now() + 45_000;
-        while (Date.now() < deadline) {
-          if (spinJoinCancelRef.current) return; // user backed out of the wait
-          const { data: tbls } = await supabase
-            .from('tables')
-            .select('id')
-            .eq('tournament_id', targetId)
-            .neq('status', 'closed')
-            .limit(3);
-          const tableIds = (tbls || []).map((x) => x.id);
-          if (tableIds.length > 0) {
-            setSpinJoin((prev) =>
-              prev && prev.stage !== 'Dealing You In'
-                ? { ...prev, stage: 'Dealing You In' }
-                : prev
-            );
+          const ids = (t2 || []).map((x) => x.id);
+          if (ids.length > 0) {
             const { data: seat } = await supabase
               .from('table_seats')
               .select('table_id')
-              .in('table_id', tableIds)
+              .in('table_id', ids)
               .eq('user_id', uid)
               .is('left_at', null)
               .limit(1)
@@ -743,17 +695,15 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           }
           await new Promise((r) => setTimeout(r, 1500));
         }
-        // Registration stands; the game will still start. Send them to the
-        // game page rather than stranding them on a spinner forever.
         setSpinJoin(null);
-        toast?.info?.('Your Spin Is Filling, It Will Start Momentarily');
-        navigate(`/tournaments/${targetId}`);
+        toast?.info?.('Your Game Is Filling, It Will Start Momentarily');
+        navigate(`/tournaments/${t.id}`);
       } catch (err: unknown) {
         reportError?.(err as Error, 'ClubHomePage.spinQuickJoin');
-        fail('Could Not Join The Spin, Please Try Again');
+        fail('Could Not Open That Game, Please Try Again');
       }
     },
-    [spinJoin, resolvedClubId, navigate, toast]
+    [spinJoin, navigate, toast]
   );
 
   useEffect(() => {

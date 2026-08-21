@@ -1658,6 +1658,19 @@ export default function TablePage({
   // Which tournament family this table belongs to — drives the format word on
   // masthead line 1. null = cash table, which keeps its own layout.
   const [tournamentFormat, setTournamentFormat] = useState<'spin' | 'sng' | 'mtt' | null>(null);
+  /**
+   * SEAT-FIRST (Dan 2026-08-21): "A PLAYER SITS DOWN AT A TABLE AND BUYS INTO
+   * THE SPIN OR HEADS UP, LIKE A CASH GAME." When this table is a Spin or a
+   * Heads-Up whose game has not started yet, an empty seat is BOUGHT, not
+   * bought-into with a cash range: one price, one tap, atomic via
+   * fn_take_seat_and_buy_in. Null means the ordinary cash buy-in modal.
+   */
+  const [seatFirstBuyIn, setSeatFirstBuyIn] = useState<{
+    cost: number;
+    seats: number;
+    label: string;
+  } | null>(null);
+  const [seatFirstPending, setSeatFirstPending] = useState(false);
   // The running level countdown. Kept OUT of tableState on purpose: the clock
   // ticks every second, and a per-second re-render belongs in the tiny
   // MastheadLevelClock component, not in a 9,000-line page.
@@ -4082,7 +4095,7 @@ export default function TablePage({
           const { data: tournData } = await supabase
             .from('tournaments')
             .select(
-              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, buy_in_amount, blind_structure, current_level, level_started_at, started_at, variant, tournament_type'
+              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, buy_in_amount, buy_in_fee, max_players, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -4143,6 +4156,27 @@ export default function TablePage({
                   ? ('sng' as const)
                   : ('mtt' as const);
             setTournamentFormat(fmt);
+            // Seat-first = a Spin (3 seats) or a Heads-Up (2 seats) that has
+            // not started. Once it is RUNNING the seats are no longer for
+            // sale and the normal tournament table rules apply.
+            {
+              const maxP = Number(tournData.max_players ?? 0);
+              const openForSeats =
+                String(tournData.status ?? '') === 'REGISTERING' ||
+                String(tournData.status ?? '') === 'ANNOUNCED';
+              const isSeatFirst = fmt === 'spin' || maxP <= 2;
+              if (isSeatFirst && openForSeats) {
+                const cost =
+                  Number(tournData.buy_in_amount ?? 0) + Number(tournData.buy_in_fee ?? 0);
+                setSeatFirstBuyIn({
+                  cost,
+                  seats: maxP || (fmt === 'spin' ? 3 : 2),
+                  label: fmt === 'spin' ? 'Spin' : 'Heads Up',
+                });
+              } else {
+                setSeatFirstBuyIn(null);
+              }
+            }
             if (blindStructure && blindStructure.length > 0) {
               if (levelEntry) {
                 const sb = levelEntry.smallBlind ?? levelEntry.small_blind ?? 0;
@@ -7315,6 +7349,62 @@ export default function TablePage({
       console.debug('[Seat] A seat reservation is already pending - ignoring click');
       return;
     }
+    // ── SEAT-FIRST: buy the seat, do not open the cash buy-in range ──
+    if (seatFirstBuyIn) {
+      if (seatFirstPending) return;
+      setSeatFirstPending(true);
+      setPendingSeat(seatNumber); // paint it taken this frame
+      void (async () => {
+        try {
+          const { data, error } = await supabase.rpc('fn_take_seat_and_buy_in', {
+            p_table_id: tableId,
+            p_seat_number: seatNumber,
+          });
+          const res = (data ?? {}) as {
+            ok?: boolean;
+            reason?: string;
+            seat_number?: number;
+            seats_taken?: number;
+            seats_needed?: number;
+            starts_now?: boolean;
+          };
+          if (error || !res.ok) {
+            setPendingSeat(null);
+            const reason = error?.message || res.reason || '';
+            const msg = /seat_taken/.test(reason)
+              ? 'That Seat Was Just Taken'
+              : /insufficient/.test(reason)
+                ? 'Not Enough Chips For This Buy In'
+                : /already_started/.test(reason)
+                  ? 'This Game Has Already Started'
+                  : 'Could Not Take That Seat, Please Try Again';
+            toast?.error?.(msg);
+            return;
+          }
+          // Seated. The realtime seats subscription paints the seat; the
+          // engine starts the game the moment the last seat is sold.
+          const mySeat = res.seat_number ?? seatNumber;
+          heroSeatRef.current = mySeat;
+          setTableState((prev) => ({ ...prev, heroSeat: mySeat }));
+          if (res.starts_now) {
+            toast?.success?.('Seats Full, Game Starting');
+          } else {
+            const left = Math.max(0, (res.seats_needed ?? 0) - (res.seats_taken ?? 0));
+            toast?.success?.(
+              left === 1 ? 'You Are In, Waiting For 1 More Player' : `You Are In, Waiting For ${left} More Players`
+            );
+          }
+        } catch (err) {
+          setPendingSeat(null);
+          reportError(err as Error, 'TablePage.seat_first_buy_in');
+          toast?.error?.('Could Not Take That Seat, Please Try Again');
+        } finally {
+          setSeatFirstPending(false);
+        }
+      })();
+      return;
+    }
+
     console.debug('[Seat] Opening buy-in modal for seat', seatNumber);
     // Paint the seat as taken THIS FRAME, before any network work starts.
     setPendingSeat(seatNumber);

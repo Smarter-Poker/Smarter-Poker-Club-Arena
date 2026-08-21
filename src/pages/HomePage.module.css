@@ -459,6 +459,8 @@
   animation: homePageScaleIn 0.7s ease-out 100ms both;
   border-radius: 12px;
   z-index: 10;
+  isolation: isolate;
+  background-color: #0a1120;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
   transition:
     transform 0.25s ease,

@@ -9099,3 +9099,43 @@ LIKE A BOMB INCOMING... LIKE THAT WHISTLE... FOLLOWED BY THE BOOOOOM".
 - Verified: client tsc clean, vite prod build clean (new classes confirmed
   present in the emitted TablePage CSS/JS chunks), 30 engine tests across 4
   suites green including the double-board conservation corpus.
+
+## 2026-08-21 — Dan played it: the strip is permanent, labeled, and swipes in a ring
+
+Live feedback while multi-tabling, all three shipped (ea25551, 1f26bd2):
+
+THE STRIP IS PERMANENT. It rendered only at 2+ tables. One table meant no
+strip at all, and opening a second one shoved the felt down 48px mid-hand.
+It now renders from the first table on - identical layout at 1 table and
+at 4 - so the box is always there to switch, add and read from.
+
+TABS SAY THE GAME TYPE. With no live hand a tab showed the table NAME:
+unreliable (club owners type them), often "Table 2" before the page had
+loaded, and unreadable on a 100px pill. The primary line is now a CODE -
+NLH / PLO / PLO5 / PLO6 / PLO8 / SHORT / PINE / OFC - with SPIN, MTT/SNG
+and HU outranking the variant because that is what you are sitting in.
+Stakes moved to the sub-line; a live pot still takes that line while a
+hand runs without the hero. Resolved three ways so the box is never
+blank: the seat rebuild selects game_type/max_players, quick-join carries
+the code through the URL, and TablePage reports the authoritative value
+(it alone knows the tournament format).
+
+SWIPING IS A RING. Both ends were dead - the guards read `if (activeIndex
+> 0)` / `if (activeIndex < length - 1)`. Swiping left past the last table
+restarts at the first and right past the first lands on the last, so a
+player can keep flicking one way and cycle forever. The decision moved
+into a pure helper so the wrap is unit tested, not thumb tested.
+
+ONE PLUS BUTTON. It rendered up to TWO empty circles beside a single
+table. Now exactly one trailing plus: a new tab takes the spot it
+occupied, it shifts along, and it disappears at 4 - which is what Dan
+described ("the previous + area turns into the box with the hand preview
+or the game type, until the user maxes out at 4 games").
+
+17 new unit tests (every production game_variant, the SPIN/MTT/SNG/HU
+precedence, the name fallback, the wrap both ways, flick-vs-tap, and an
+exhaustive range check) plus a new live-Chrome beat asserting an idle tab
+reads its code above its stakes. Verified in production at WH ad683b3b:
+the strip's `.length>=1`, the single-plus `>0?1:0`, the wrap helper's
+flickMinOffset/velocityThreshold, and the full variant map (PLO5, PLO6,
+SHORT, SPIN, MTT, SNG, HU) are all in the served bundle.

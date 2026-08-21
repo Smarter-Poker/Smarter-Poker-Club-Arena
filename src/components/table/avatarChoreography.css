@@ -99,18 +99,27 @@
 }
 
 /* A folded player has slumped and gone still. `.seat--folded .seat__avatar-wrap`
-   below sets the resting pose as a static transform; leaving the breathing
-   running would fight it every 4 seconds and make the slump twitch. */
-.seat--folded .seat__avatar-wrap {
-  animation: none;
-}
-
-/* Sitting out / away / disconnected: the player is not there. Stillness is the
-   correct signal, and it makes "this seat is inert" readable at a glance
-   without painting anything extra behind it. */
-.seat--sitting_out .seat__avatar-wrap,
-.seat--away .seat__avatar-wrap,
-.seat--disconnected .seat__avatar-wrap {
+   further down sets that resting pose as a static transform; leaving the
+   breathing running would fight it every few seconds and make the slump twitch.
+   Sitting out / away / disconnected get the same treatment for a different
+   reason: the player is not there, and stillness says so without painting
+   anything extra behind the seat.
+   ─────────────────────────────────────────────────────────────────────────────
+   THE `:not()` IS NOT OPTIONAL — it is the whole reason this rule is correct.
+   `.seat--folded .seat__avatar-wrap` is two classes (0,2,0); the gesture class
+   `.seat__avatar-wrap--fold` is one (0,1,0). Specificity beats source order, so
+   without the guard this `animation: none` would win and the fold gesture would
+   NEVER PLAY — the character would teleport into the slump instead of flicking
+   their cards toward the muck.
+   And the two really do co-occur: SeatSlot pushes `seat--folded` the instant
+   `lastAction === 'fold'`, which is the same render that applies the gesture
+   class. `--fold` is the only gesture that can overlap these four states (an
+   away or sitting-out player reaches them by being auto-folded), so it is the
+   only one that needs excluding. */
+.seat--folded .seat__avatar-wrap:not(.seat__avatar-wrap--fold),
+.seat--sitting_out .seat__avatar-wrap:not(.seat__avatar-wrap--fold),
+.seat--away .seat__avatar-wrap:not(.seat__avatar-wrap--fold),
+.seat--disconnected .seat__avatar-wrap:not(.seat__avatar-wrap--fold) {
   animation: none;
 }
 

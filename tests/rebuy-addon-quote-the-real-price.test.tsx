@@ -52,7 +52,11 @@ describe('RebuyModal charges what it advertises', () => {
     );
     const confirm = screen.getByRole('button', { name: /Rebuy 110/ }) as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
-    expect(screen.getByText(/you need 110\.00 to rebuy/i)).toBeTruthy();
+    // Dan 2026-08-20: tournament and SNG money renders in WHOLE chips, so the
+    // shortfall line reads "110", not "110.00". The point of the assertion is
+    // unchanged: it must name the TOTAL the server will charge, not the base.
+    expect(screen.getByText(/you need 110 to rebuy/i)).toBeTruthy();
+    expect(screen.queryByText(/110\.00/)).toBeNull();
   });
 
   it('enables Confirm once the wallet covers the total', () => {

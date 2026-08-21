@@ -15,6 +15,7 @@ import './CashoutRequestModal.css';
 import { reportError } from '../../utils/errorReporter';
 import { fireVibration } from '../../utils/vibrationGate';
 
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
 // Haptic feedback for mobile-first financial interactions
 const triggerHaptic = (pattern: number | number[] = 10) => {
   try {
@@ -338,7 +339,7 @@ export default function CashoutRequestModal({
         autoCloseTimer.current = null;
       }, 2000);
     } catch (err: any) {
-      if (isMounted.current) setError(err.message || 'Failed to request cashout');
+      if (isMounted.current) setError(safeErrorMessage(err, 'Failed to request cashout'));
     }
     if (isMounted.current) setIsSubmitting(false);
   };
@@ -359,7 +360,7 @@ export default function CashoutRequestModal({
       // The inline error element only renders inside the `!success` branch, so
       // after a successful request a later cancel failure was invisible.
       // Clearing `success` puts the form back on screen with the error on it.
-      const msg = err?.message || 'Failed to cancel cashout';
+      const msg = safeErrorMessage(err, 'Failed to cancel cashout');
       if (isMounted.current) {
         setSuccess(false);
         setError(msg);

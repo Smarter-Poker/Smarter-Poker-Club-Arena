@@ -122,8 +122,17 @@
 
 .bbj-modal__body {
   padding: 12px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+/* Wrapper for the two rules tabs, so their blocks breathe the same way. */
+.bbj-modal__rules {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .bbj-modal__rule-block {

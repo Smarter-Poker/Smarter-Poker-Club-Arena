@@ -8,6 +8,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { tournamentService } from '../../services/TournamentService';
 import { masterBus } from '../../core/MasterBus';
 import { soundService } from '../../services/SoundService';
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
+// Whole-number tournament money (Dan 2026-08-20).
+import { money } from '../../utils/buyIn';
 import './RebuyModal.css'; // Shared styles
 
 interface AddOnModalProps {
@@ -69,7 +72,7 @@ export const AddOnModal: React.FC<AddOnModalProps> = ({
         onSuccess(result.newStack || currentStack + addOnChips);
       }
     } catch (err: any) {
-      setError(err.message || 'Add-on failed');
+      setError(safeErrorMessage(err, 'Add-on failed'));
     } finally {
       setProcessing(false);
     }
@@ -121,7 +124,7 @@ export const AddOnModal: React.FC<AddOnModalProps> = ({
           <div className="am-details">
             <div className="am-detail-row">
               <span className="am-detail-label">Add-On Cost</span>
-              <span className="am-detail-value">{addOnCost.toLocaleString()} chips</span>
+              <span className="am-detail-value">{money(addOnCost)} chips</span>
             </div>
             <div className="am-detail-row">
               <span className="am-detail-label">Chips Received</span>
@@ -150,7 +153,7 @@ export const AddOnModal: React.FC<AddOnModalProps> = ({
               onClick={handleAddOn}
               disabled={processing || countdown <= 0}
             >
-              {processing ? 'Processing...' : `Add-On - ${addOnCost.toLocaleString()}`}
+              {processing ? 'Processing...' : `Add-On - ${money(addOnCost)}`}
             </button>
           )}
         </div>

@@ -27,6 +27,7 @@ import { WalletService } from '../services/WalletService';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 /* ═══════════════════════════════════════════════════════════════════════════════
    TYPES
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -324,7 +325,7 @@ function PlayerActionModal({
         onClose();
       }, 1200);
     } catch (err: any) {
-      setError(err.message || 'Failed to update role');
+      setError(safeErrorMessage(err, 'Failed to update role'));
     } finally {
       setPromoting(false);
     }

@@ -1,38 +1,47 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  BBJ RECENT HITS — the last jackpots, PokerBros style (2026-08-18)
+ *  BBJ RECENT HITS — "Last 5 Bad Beat Jackpot Winners"
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Dan: tapping the jackpot amount at the top of a table should show the last 5
- * jackpots — the hands, the payouts, and who got paid what.
+ * The Winner tab of the jackpot popup: one row per hit, PokerBros grammar -
+ * avatar, name, player number, the five-card hand that won it, the payout, the
+ * timestamp. Tapping a row opens the full hand rundown (BBJHandDetail).
+ *
+ * THE FIVE CARDS ARE DERIVED, and that matters. hand_history stores hole cards
+ * and a board but never which five made the hand, so the row used to be able to
+ * show only a Hold'em player's two hole cards where the reference shows five.
+ * bestFive() reconstructs the made hand under the variant's own rules (Omaha
+ * must use exactly two from hand), and returns null rather than guessing when
+ * the stored cards are incomplete - in which case the row falls back to the hole
+ * cards, and then to the engine's own hand name. It never draws a hand it cannot
+ * prove.
  *
  * Every figure comes from fn_bbj_recent_hits, which reads the payout ledger and
  * derives each player's ROLE from which uid actually received which share. It
  * deliberately does not trust the stored column names: in bbj_payouts /
  * bbj_winners, "winner" means winner OF THE JACKPOT (the bad-beat holder, who
  * LOST the hand) and "loser" means the player who won the pot. Reading those
- * columns naively puts the wrong name against the wrong hand — which is exactly
- * what the old jackpot-page history line did.
+ * columns naively puts the wrong name against the wrong hand.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import CardImage from '../table/CardImage';
-import type { Card as DeckCard } from '../table/CardImage';
+import Avatar from '../common/Avatar';
+import { toDeckCards } from '../../utils/deckCards';
+import { bestFive } from '../../utils/handEvaluator';
 import { reportError } from '../../utils/errorReporter';
 import './BBJRecentHits.css';
 
 export interface BBJRecentHitsProps {
   poolId: string | null;
   limit?: number;
-  /** Highlights the viewer's own name in the payout list. */
+  /** Highlights the viewer's own row. Name is the fallback when no id is known. */
   currentUserName?: string | null;
-}
-
-interface Recipient {
-  name: string;
-  amount: number;
-  role: 'bad_beat' | 'hand_winner' | 'table';
+  /** The viewer's user id - unique, unlike a display name. */
+  currentUserId?: string | null;
+  /** Opens the hand rundown for a hit. Rows are inert when omitted. */
+  onOpenHand?: (payoutId: string) => void;
 }
 
 /** Card as stored in hand_history: full suit names, rank 2-9/T/J/Q/K/A. */
@@ -41,11 +50,20 @@ interface HistoryCard {
   suit: string;
 }
 
+interface Recipient {
+  name: string;
+  amount: number;
+  role: 'bad_beat' | 'hand_winner' | 'table';
+}
+
 interface Hit {
   payout_id: string;
   awarded_at: string;
   hand_number: number;
   total_payout: number;
+  bad_beat_user_id: string | null;
+  bad_beat_player_number: string | null;
+  bad_beat_avatar_url: string | null;
   bad_beat_name: string;
   bad_beat_hand: string | null;
   bad_beat_amount: number | null;
@@ -60,31 +78,6 @@ interface Hit {
   recipients: Recipient[];
 }
 
-const SUIT_LETTER: Record<string, DeckCard['suit']> = {
-  hearts: 'h',
-  diamonds: 'd',
-  clubs: 'c',
-  spades: 's',
-};
-
-/**
- * hand_history stores full suit names and uses 'T' for ten; CardImage wants a
- * one-letter suit. Anything unrecognised is dropped rather than rendered as a
- * broken card.
- */
-function toDeckCards(cards: HistoryCard[] | null | undefined): DeckCard[] {
-  if (!Array.isArray(cards)) return [];
-  return cards
-    .map((c) => {
-      const suit = SUIT_LETTER[String(c?.suit || '').toLowerCase()];
-      const rank = String(c?.rank || '').toUpperCase();
-      const normRank = rank === '10' ? 'T' : rank;
-      if (!suit || !/^([2-9]|T|J|Q|K|A)$/.test(normRank)) return null;
-      return { rank: normRank as DeckCard['rank'], suit };
-    })
-    .filter((c): c is DeckCard => c !== null);
-}
-
 function money(n: number | null | undefined, dp = 2): string {
   return Number(n || 0).toLocaleString('en-US', {
     minimumFractionDigits: dp,
@@ -92,28 +85,25 @@ function money(n: number | null | undefined, dp = 2): string {
   });
 }
 
-function when(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return '';
-  const mins = Math.max(0, Math.floor((Date.now() - t) / 60000));
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
+/** Absolute timestamp, the way a jackpot board states one. */
+function stamp(iso: string): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  );
 }
 
-const ROLE_LABEL: Record<Recipient['role'], string> = {
-  bad_beat: 'Bad beat',
-  hand_winner: 'Won the hand',
-  table: 'At the table',
-};
-
-export function BBJRecentHits({ poolId, limit = 5, currentUserName }: BBJRecentHitsProps) {
+export function BBJRecentHits({
+  poolId,
+  limit = 5,
+  currentUserName,
+  currentUserId,
+  onOpenHand,
+}: BBJRecentHitsProps) {
   const [hits, setHits] = useState<Hit[] | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -131,7 +121,7 @@ export function BBJRecentHits({ poolId, limit = 5, currentUserName }: BBJRecentH
           reportError(error, 'BBJRecentHits.load_failed');
           return;
         }
-        // jsonb arrives parsed, but this renders money — never let a shape
+        // jsonb arrives parsed, but this renders money - never let a shape
         // surprise throw inside the map and blank the whole panel.
         const rows = ((data || []) as Hit[]).map((h) => ({
           ...h,
@@ -141,8 +131,6 @@ export function BBJRecentHits({ poolId, limit = 5, currentUserName }: BBJRecentH
           hand_winner_cards: Array.isArray(h.hand_winner_cards) ? h.hand_winner_cards : null,
         }));
         setHits(rows);
-        // Open the most recent hit by default — the one people came to see.
-        if (rows.length > 0) setExpanded(rows[0].payout_id);
       } catch (e) {
         if (alive) {
           setFailed(true);
@@ -155,6 +143,23 @@ export function BBJRecentHits({ poolId, limit = 5, currentUserName }: BBJRecentH
     };
   }, [poolId, limit]);
 
+  // Reconstructing a made hand walks up to 150 combinations per row. Cheap, but
+  // there is no reason to redo it on every keystroke-level re-render.
+  const shown = useMemo(() => {
+    return (hits || []).map((hit) => {
+      const hole = toDeckCards(hit.bad_beat_cards);
+      const board = toDeckCards(hit.board);
+      const made = bestFive(hole, board, hit.game_variant);
+      return {
+        hit,
+        cards: made ? made.cards : hole,
+        // Prefer what the engine actually recorded; fall back to what we derived.
+        label: hit.bad_beat_hand || made?.name || 'Qualifying hand',
+        derived: !!made,
+      };
+    });
+  }, [hits]);
+
   if (!poolId) return null;
 
   if (failed) {
@@ -166,7 +171,7 @@ export function BBJRecentHits({ poolId, limit = 5, currentUserName }: BBJRecentH
   if (hits === null) {
     return (
       <div className="bbj-hits">
-        {[0, 1, 2].map((i) => (
+        {[0, 1, 2, 3, 4].map((i) => (
           <div key={i} className="bbj-hits__skeleton" />
         ))}
       </div>
@@ -184,119 +189,81 @@ export function BBJRecentHits({ poolId, limit = 5, currentUserName }: BBJRecentH
 
   return (
     <div className="bbj-hits">
-      {hits.map((hit) => {
-        const isOpen = expanded === hit.payout_id;
-        const badBeatCards = toDeckCards(hit.bad_beat_cards);
-        const handWinnerCards = toDeckCards(hit.hand_winner_cards);
-        const boardCards = toDeckCards(hit.board);
+      <div className="bbj-hits__caption">
+        Last {hits.length} Bad Beat Jackpot {hits.length === 1 ? 'Winner' : 'Winners'}
+      </div>
+
+      {shown.map(({ hit, cards, label }) => {
+        // Id first: two players can share a display name, and lighting up the
+        // wrong row on a money surface is not a cosmetic mistake.
+        const isYou = currentUserId
+          ? hit.bad_beat_user_id === currentUserId
+          : !!currentUserName && hit.bad_beat_name.toLowerCase() === currentUserName.toLowerCase();
+        const clickable = !!onOpenHand;
+        const amount = hit.bad_beat_amount ?? hit.total_payout;
+
         return (
-          <div className={`bbj-hits__card${isOpen ? ' is-open' : ''}`} key={hit.payout_id}>
-            <button
-              className="bbj-hits__head"
-              onClick={() => setExpanded(isOpen ? null : hit.payout_id)}
-              aria-expanded={isOpen}
-            >
-              <div className="bbj-hits__head-left">
-                <span className="bbj-hits__total">${money(hit.total_payout, 0)}</span>
-                <span className="bbj-hits__when">{when(hit.awarded_at)}</span>
-              </div>
-              <div className="bbj-hits__head-right">
-                {/* The bad-beat holder LOST the hand — say so plainly. */}
-                <span className="bbj-hits__matchup">
-                  <strong>{hit.bad_beat_hand || 'Qualifying hand'}</strong> lost to{' '}
-                  <strong>{hit.hand_winner_hand || 'a bigger hand'}</strong>
-                </span>
-                <span className="bbj-hits__names">
-                  {hit.bad_beat_name} &middot; {hit.table_player_count || 0} at the table
-                </span>
-              </div>
-              <span className="bbj-hits__chev" aria-hidden="true">
-                {isOpen ? '-' : '+'}
+          <div
+            className={`bbj-hits__row${isYou ? ' is-you' : ''}${clickable ? ' is-clickable' : ''}`}
+            key={hit.payout_id}
+            role={clickable ? 'button' : undefined}
+            tabIndex={clickable ? 0 : undefined}
+            aria-label={
+              clickable
+                ? `${hit.bad_beat_name} won ${money(amount, 0)} with ${label}. Open the hand.`
+                : undefined
+            }
+            onClick={clickable ? () => onOpenHand(hit.payout_id) : undefined}
+            onKeyDown={
+              clickable
+                ? (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onOpenHand(hit.payout_id);
+                    }
+                  }
+                : undefined
+            }
+          >
+            <Avatar
+              src={hit.bad_beat_avatar_url || undefined}
+              name={hit.bad_beat_name}
+              size="medium"
+              className="bbj-hits__avatar"
+            />
+
+            <div className="bbj-hits__who">
+              <span className="bbj-hits__name">
+                {hit.bad_beat_name}
+                {isYou && <span className="bbj-hits__you">YOU</span>}
               </span>
-            </button>
+              <span className="bbj-hits__id">{hit.bad_beat_player_number || ''}</span>
+            </div>
 
-            {isOpen && (
-              <div className="bbj-hits__body">
-                {/* THE HAND — real Club Arena cards (2026-08-18). Hole-card
-                    coverage in history is partial, so each side renders only
-                    when we actually have its cards; the board almost always
-                    resolves and carries the story on its own. */}
-                {(badBeatCards.length > 0 ||
-                  handWinnerCards.length > 0 ||
-                  boardCards.length > 0) && (
-                  <div className="bbj-hits__showdown">
-                    {badBeatCards.length > 0 && (
-                      <div className="bbj-hits__hand bbj-hits__hand--badbeat">
-                        <span className="bbj-hits__hand-label">
-                          {hit.bad_beat_name} &middot; bad beat
-                        </span>
-                        <div className="bbj-hits__cards">
-                          {badBeatCards.map((c, i) => (
-                            <CardImage key={`bb-${i}`} card={c} size="sm" />
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {handWinnerCards.length > 0 && (
-                      <div className="bbj-hits__hand">
-                        <span className="bbj-hits__hand-label">
-                          {hit.hand_winner_name} &middot; won the hand
-                        </span>
-                        <div className="bbj-hits__cards">
-                          {handWinnerCards.map((c, i) => (
-                            <CardImage key={`hw-${i}`} card={c} size="sm" />
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {boardCards.length > 0 && (
-                      <div className="bbj-hits__hand bbj-hits__hand--board">
-                        <span className="bbj-hits__hand-label">Board</span>
-                        <div className="bbj-hits__cards">
-                          {boardCards.map((c, i) => (
-                            <CardImage key={`b-${i}`} card={c} size="sm" />
-                          ))}
-                        </div>
-                      </div>
-                    )}
+            <div className="bbj-hits__hand">
+              {cards.length > 0 ? (
+                <>
+                  <div className="bbj-hits__cards" title={label}>
+                    {cards.map((card, i) => (
+                      <CardImage key={`${hit.payout_id}-${i}`} card={card} size="xs" />
+                    ))}
                   </div>
-                )}
+                  <span className="bbj-hits__handname">{label}</span>
+                </>
+              ) : (
+                <span className="bbj-hits__handname">{label}</span>
+              )}
+            </div>
 
-                <div className="bbj-hits__payouts">
-                  {hit.recipients.map((r, i) => {
-                    const isYou =
-                      !!currentUserName && r.name.toLowerCase() === currentUserName.toLowerCase();
-                    return (
-                      <div
-                        className={`bbj-hits__row bbj-hits__row--${r.role}${isYou ? ' is-you' : ''}`}
-                        key={`${hit.payout_id}-${i}`}
-                      >
-                        <span className="bbj-hits__who">
-                          {r.name}
-                          {isYou && <span className="bbj-hits__you">YOU</span>}
-                        </span>
-                        <span className="bbj-hits__role">{ROLE_LABEL[r.role]}</span>
-                        <span className="bbj-hits__amt">+${money(r.amount)}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="bbj-hits__foot">
-                  <span>
-                    {hit.bad_beat_name} held {hit.bad_beat_hand || 'a qualifying hand'} and lost to{' '}
-                    {hit.hand_winner_name}
-                    {hit.hand_winner_hand ? `'s ${hit.hand_winner_hand}` : ''}.
-                  </span>
-                  <span className="bbj-hits__hand-no">Hand #{hit.hand_number}</span>
-                </div>
-              </div>
-            )}
+            <div className="bbj-hits__right">
+              <span className="bbj-hits__amt">+ {money(amount)}</span>
+              <span className="bbj-hits__when">{stamp(hit.awarded_at)}</span>
+            </div>
           </div>
         );
       })}
+
+      {onOpenHand && <p className="bbj-hits__hint">Tap a winner to see the hand.</p>}
     </div>
   );
 }

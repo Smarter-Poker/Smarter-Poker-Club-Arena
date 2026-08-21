@@ -27,11 +27,25 @@
  * THE RULE
  * --------
  *   total  — what the player pays. A whole number off BUY_IN_LADDER.
- *   fee    — the house cut, DEFAULT_RAKE_RATE of the total.
- *   prize  — total - fee. What reaches the prize pool.
+ *   fee    — the house cut, DEFAULT_RAKE_RATE of the total, ROUNDED TO A WHOLE.
+ *   prize  — total - fee. What reaches the prize pool. Also whole.
  *
  * `total` is the input; the other two are derived and never authored by hand.
  * The two-numbers-that-must-agree problem disappears with them.
+ *
+ * ALL THREE ARE WHOLE (Dan 2026-08-20, second pass): "Sit and Go and any
+ * tournament buy-ins must never be decimal buy-ins, whole numbers only." The
+ * first pass made only the TOTAL whole, which still left a 15 game splitting
+ * into 13.50 + 1.50 and printing those decimals on the lobby card, the details
+ * page and the register button. The fee is now rounded to a whole number and
+ * the prize is what remains, so every money figure a tournament surface shows
+ * is an integer and prize + fee still equals total exactly.
+ *
+ * The cost of that is fee granularity at the bottom of the ladder: a 1/2/3
+ * total rounds to a zero fee (the house takes nothing on a micro game rather
+ * than a fraction of a chip) and a 5/15/25/75 total rounds its fee up (so 5
+ * pays 1 rather than 0.50). That is deliberate — a whole number of chips that
+ * reconciles beats a decimal that is technically 10%.
  *
  * MIRROR: server/src/config/buyIn.ts holds the same rule for the tournament
  * generator. The server tsconfig sets `rootDir: ./src`, so it cannot import
@@ -49,7 +63,13 @@ export const DEFAULT_RAKE_RATE = 0.1;
  * Deliberately a fixed ladder rather than "any integer". Dan's examples were
  * "20 10 50 5" — a room advertises recognisable price points, and a generator
  * left free to emit 18 or 37 produces whole numbers that still read as
- * arbitrary. Every entry is divisible into a clean 10% fee.
+ * arbitrary.
+ *
+ * The fee is a whole number at every rung (splitBuyIn rounds it), so the low
+ * rungs are not exactly 10%: 1/2/3 round down to a 0 fee and 5/15/25/75 round
+ * up. That is the deliberate trade — see the header. Note this ladder governs
+ * the GENERATORS only; an owner creating a game by hand may price it at any
+ * positive whole number.
  */
 export const BUY_IN_LADDER = [
   1, 2, 3, 5, 10, 15, 20, 25, 30, 50, 75, 100, 150, 200, 250, 300, 500, 750, 1000, 1500, 2000, 5000,
@@ -58,15 +78,47 @@ export const BUY_IN_LADDER = [
 export interface BuyInSplit {
   /** What the player pays. Always a whole number. */
   total: number;
-  /** Goes to the prize pool -> tournaments.buy_in_amount */
+  /** Goes to the prize pool -> tournaments.buy_in_amount. Always whole. */
   prize: number;
-  /** House cut -> tournaments.buy_in_fee */
+  /** House cut -> tournaments.buy_in_fee. Always whole. */
   fee: number;
 }
 
 /** Round to cents without float drift (0.1 * 3 = 0.30000000000000004). */
 function cents(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/**
+ * The one gate every tournament/SNG money field goes through: a positive whole
+ * number of chips, or 0 for a freeroll. Anything fractional, negative, NaN or
+ * Infinite collapses to a whole number rather than being allowed through.
+ */
+export function wholeChips(n: unknown): number {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v <= 0) return 0;
+  return Math.round(v);
+}
+
+/**
+ * Validation backstop for creation forms. `''` and `'12.5'` are both rejected;
+ * only a positive integer passes. The forms also block decimal ENTRY, so this
+ * should never fire in normal use.
+ */
+export function isWholeBuyIn(value: unknown): boolean {
+  const v = typeof value === 'string' ? (value.trim() === '' ? NaN : Number(value)) : Number(value);
+  return Number.isInteger(v) && v > 0;
+}
+
+/**
+ * Change handler for a whole-number money input. Strips everything that is not
+ * a digit, so a decimal point cannot be typed or pasted in the first place, and
+ * drops leading zeroes so "0050" cannot be submitted.
+ */
+export function digitsOnly(value: string): string {
+  const stripped = String(value ?? '').replace(/[^0-9]/g, '');
+  const trimmed = stripped.replace(/^0+(?=\d)/, '');
+  return trimmed;
 }
 
 /**
@@ -101,11 +153,13 @@ export function snapToWholeBuyIn(amount: number): number {
 export function splitBuyIn(total: number, rakeRate: number = DEFAULT_RAKE_RATE): BuyInSplit {
   const t = Math.max(0, Math.round(Number(total) || 0));
   if (t === 0) return { total: 0, prize: 0, fee: 0 };
-  const fee = cents(t * rakeRate);
+  // WHOLE fee, not a cent-rounded one: see the header. A 15 total takes a 2
+  // fee, not 1.50, so nothing downstream ever has a decimal to print.
+  const fee = Math.min(t, Math.max(0, Math.round(t * rakeRate)));
   // prize is computed by SUBTRACTION, never by its own rounding. Rounding both
-  // ends independently is how prize + fee stops equalling total by a cent, and
-  // a cent that does not reconcile on a money surface is a real bug later.
-  return { total: t, prize: cents(t - fee), fee };
+  // ends independently is how prize + fee stops equalling total, and money that
+  // does not reconcile on a money surface is a real bug later.
+  return { total: t, prize: t - fee, fee };
 }
 
 /** Snap first, then split. What every tournament generator should call. */
@@ -113,17 +167,23 @@ export function buyInFor(amount: number, rakeRate: number = DEFAULT_RAKE_RATE): 
   return splitBuyIn(snapToWholeBuyIn(amount), rakeRate);
 }
 
-/** Whole numbers print bare; anything else keeps exactly two decimals. */
+/**
+ * Tournament money always prints as a whole number.
+ *
+ * Dan 2026-08-20: no decimal buy-ins anywhere. New games are created whole end
+ * to end, but the ~9.8k pre-2026-08-20 rows are settled financial history that
+ * the migration deliberately did NOT rewrite, so they still carry 19.8 / 5.5 /
+ * 13.5. Rounding at the render is what keeps those off the screen without
+ * falsifying the ledger they came from.
+ */
 export function money(n: number): string {
-  const v = Number(n) || 0;
-  return Number.isInteger(v)
-    ? v.toLocaleString('en-US')
-    : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const v = Number(n);
+  return (Number.isFinite(v) ? Math.round(v) : 0).toLocaleString('en-US');
 }
 
-/** The total a player pays, from the two stored columns. */
+/** The total a player pays, from the two stored columns. Always whole. */
 export function totalBuyIn(prize: number, fee: number | null | undefined): number {
-  return cents((Number(prize) || 0) + (Number(fee) || 0));
+  return Math.round(cents((Number(prize) || 0) + (Number(fee) || 0)));
 }
 
 /**
@@ -140,7 +200,11 @@ export function formatBuyIn(prize: number, fee: number | null | undefined): stri
   const total = totalBuyIn(p, f);
   if (total <= 0) return 'FREE';
   if (f <= 0) return money(total);
-  return `${money(total)} (${money(p)} + ${money(f)})`;
+  // Round the FEE and take the prize as the remainder, rather than rounding
+  // both ends. Rounding each independently is how a legacy 13.5 + 1.5 row
+  // renders as "15 (14 + 2)" and the parts stop adding up to the total.
+  const shownFee = Math.min(total, Math.max(0, Math.round(f)));
+  return `${money(total)} (${money(total - shownFee)} + ${money(shownFee)})`;
 }
 
 /** Compact form for a narrow lobby card: just the total. */

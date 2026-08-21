@@ -12,6 +12,7 @@
 
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 
 export const MIDWAY_UNION_ID = 'fade0000-0000-0000-0000-000000000001';
 
@@ -159,9 +160,12 @@ export function describeRpcError(e: unknown): string {
   if (/not_authorised|not_authorized/i.test(msg)) {
     return 'You do not have permission to view this. Union operations are visible to union owners and admins.';
   }
-  if (/permission denied/i.test(msg)) return 'Permission denied by the database.';
-  if (/fetch|network/i.test(msg)) return 'Network error - could not reach the server.';
-  return msg;
+  if (/permission denied/i.test(msg)) return 'You do not have permission to do that.';
+  if (/fetch|network/i.test(msg)) return 'Connection problem. Please check your internet.';
+  // Anything unrecognised goes through the allowlist sanitiser rather than
+  // straight to the screen — this used to `return msg`, which put raw
+  // PostgREST text in front of players. See utils/safeErrorMessage.ts.
+  return safeErrorMessage(e, 'That request could not be completed.');
 }
 
 function num(v: unknown): number {

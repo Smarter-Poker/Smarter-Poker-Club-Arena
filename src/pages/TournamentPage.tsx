@@ -35,6 +35,9 @@ import { TournamentClock } from '../components/tournament/TournamentClock';
 import TournamentStandings from '../components/tournament/TournamentStandings';
 import { reportError } from '../utils/errorReporter';
 import { spinMultiplierLabel } from '../utils/spinReveal';
+// WHOLE-NUMBER TOURNAMENT MONEY (Dan 2026-08-20). Every buy-in / fee / prize
+// figure on this page renders through these, never as a raw column value.
+import { digitsOnly, formatBuyIn, money, splitBuyIn, totalBuyIn } from '../utils/buyIn';
 
 type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
 
@@ -390,8 +393,13 @@ export default function TournamentPage() {
       );
       setIsRegistered(true);
 
-      // Update tournament in list (prize pool = buy_in + rake)
-      const prizeContribution = selectedTournament.buy_in_amount;
+      // Update tournament in list. Only the PRIZE half of the split feeds the
+      // pool; the fee half is the house cut. Whole chips either way.
+      const prizeContribution = Math.round(Number(selectedTournament.buy_in_amount) || 0);
+      const chargedTotal = totalBuyIn(
+        selectedTournament.buy_in_amount,
+        selectedTournament.buy_in_fee
+      );
       setTournaments((prev) =>
         prev.map((t) =>
           t.id === selectedTournament.id
@@ -413,9 +421,11 @@ export default function TournamentPage() {
           : null
       );
 
-      notifyWalletChange(selectedTournament.buy_in_amount, true);
+      // The wallet is debited the TOTAL (prize + fee), not the prize half, so
+      // that is the figure the player is told about.
+      notifyWalletChange(chargedTotal, true);
 
-      toast.success(`Registered! ${selectedTournament.buy_in_amount} chips deducted.`);
+      toast.success(`Registered! ${money(chargedTotal)} chips deducted.`);
     } catch (error) {
       toast.error('Registration failed: ' + (error as Error).message);
     }
@@ -490,7 +500,13 @@ export default function TournamentPage() {
 
       setIsRegistered(false);
 
-      const prizeContribution = selectedTournament.buy_in_amount;
+      // Mirror of the registration debit: the pool gives back the prize half,
+      // the wallet gets the whole total back. Same integers both directions.
+      const prizeContribution = Math.round(Number(selectedTournament.buy_in_amount) || 0);
+      const refundedTotal = totalBuyIn(
+        selectedTournament.buy_in_amount,
+        selectedTournament.buy_in_fee
+      );
       setTournaments((prev) =>
         prev.map((t) =>
           t.id === selectedTournament.id
@@ -512,9 +528,9 @@ export default function TournamentPage() {
           : null
       );
 
-      notifyWalletChange(selectedTournament.buy_in_amount, false);
+      notifyWalletChange(refundedTotal, false);
 
-      toast.success(`Unregistered! ${selectedTournament.buy_in_amount} chips refunded.`);
+      toast.success(`Unregistered! ${money(refundedTotal)} chips refunded.`);
     } catch (error) {
       toast.error('Unregister failed: ' + (error as Error).message);
     }
@@ -930,7 +946,7 @@ export default function TournamentPage() {
                       'NLH'}
                   </span>
                   <span className="tourn-buyin">
-                    {tourn.buy_in_amount} + {tourn.buy_in_fee}
+                    {formatBuyIn(tourn.buy_in_amount, tourn.buy_in_fee)}
                   </span>
                 </div>
                 <div className="tourn-meta">
@@ -938,7 +954,7 @@ export default function TournamentPage() {
                     {' '}
                     {tourn.current_players}/{tourn.max_players}
                   </span>
-                  <span> {tourn.prize_pool?.toLocaleString?.() || tourn.prize_pool}</span>
+                  <span> {money(tourn.prize_pool)}</span>
                 </div>
                 {/* Registration Progress Bar (Initiative 2) */}
                 {(tourn.max_players ?? 0) > 0 && (
@@ -999,7 +1015,7 @@ export default function TournamentPage() {
                 <div className="stat">
                   <span className="stat-label">Buy-in</span>
                   <span className="stat-value">
-                    {selectedTournament.buy_in_amount} + {selectedTournament.buy_in_fee}
+                    {formatBuyIn(selectedTournament.buy_in_amount, selectedTournament.buy_in_fee)}
                   </span>
                 </div>
                 <div className="stat">
@@ -1019,7 +1035,7 @@ export default function TournamentPage() {
                 </div>
                 <div className="stat highlight">
                   <span className="stat-label">Prize Pool</span>
-                  <span className="stat-value gold">{selectedTournament.prize_pool}</span>
+                  <span className="stat-value gold">{money(selectedTournament.prize_pool)}</span>
                 </div>
 
                 {/* Bounty Info */}
@@ -1028,7 +1044,9 @@ export default function TournamentPage() {
                   !selectedTournament.is_mystery_bounty && (
                     <div className="stat">
                       <span className="stat-label">Bounty</span>
-                      <span className="stat-value">{selectedTournament.bounty_amount} chips</span>
+                      <span className="stat-value">
+                        {money(selectedTournament.bounty_amount)} chips
+                      </span>
                     </div>
                   )}
 
@@ -1037,7 +1055,7 @@ export default function TournamentPage() {
                   <div className="stat">
                     <span className="stat-label">PKO</span>
                     <span className="stat-value">
-                      {selectedTournament.bounty_amount} chips starting bounty
+                      {money(selectedTournament.bounty_amount)} chips starting bounty
                     </span>
                   </div>
                 )}
@@ -1221,7 +1239,14 @@ export default function TournamentPage() {
                     </button>
                   ) : (
                     <button className="btn btn-primary btn-block" onClick={handleRegister}>
-                      Register ({selectedTournament.buy_in_amount + selectedTournament.buy_in_fee})
+                      Register (
+                      {money(
+                        totalBuyIn(
+                          selectedTournament.buy_in_amount,
+                          selectedTournament.buy_in_fee
+                        )
+                      )}
+                      )
                     </button>
                   )
                 ) : selectedTournament.status === 'RUNNING' ? (
@@ -1244,7 +1269,12 @@ export default function TournamentPage() {
                       >
                         {isProcessingRebuy
                           ? ' Processing...'
-                          : ` Rebuy (${selectedTournament.buy_in_amount})`}
+                          : /* Quote the price actually charged (base + fee),
+                               as whole chips, not the raw buy-in column. */
+                            ` Rebuy (${money(
+                              tournamentService.quoteFromTournament(selectedTournament, 'rebuy')
+                                .totalCost
+                            )})`}
                       </button>
                     )}
 
@@ -1258,7 +1288,12 @@ export default function TournamentPage() {
                       >
                         {isProcessingRebuy
                           ? ' Processing...'
-                          : `Add-On (${selectedTournament.buy_in_amount})`}
+                          : /* Add-ons are not raked (Dan 2026-08-20), so the
+                               quote is the face value, in whole chips. */
+                            `Add-On (${money(
+                              tournamentService.quoteFromTournament(selectedTournament, 'addon')
+                                .totalCost
+                            )})`}
                       </button>
                     )}
                   </>
@@ -1369,18 +1404,29 @@ interface CreateModalProps {
 }
 
 function LegacyCreateTournamentModal({ clubId, onClose, onCreate }: CreateModalProps) {
+  const toast = useToast();
+  // WHOLE-DOLLAR BUY-IN (Dan 2026-08-20): `buyIn` is the TOTAL the player pays
+  // and is always a whole number. The fee is a cut OUT of it, derived, never
+  // typed - the old free-form Rake field let an owner author a second number
+  // that disagreed with the 10% house rule and turned the advertised price into
+  // 1.1x a round number.
   const [form, setForm] = useState({
     name: '',
     type: 'sng' as 'sng' | 'mtt',
-    buyIn: 10,
-    rake: 1,
+    buyIn: '10',
     startingStack: 1500,
     maxPlayers: 6,
     blindSpeed: 'turbo' as 'turbo' | 'regular' | 'deepStack',
   });
 
+  const split = splitBuyIn(Number(form.buyIn) || 0);
+
   const handleCreate = async () => {
     if (!form.name) return;
+    if (!Number.isInteger(Number(form.buyIn)) || Number(form.buyIn) <= 0) {
+      toast.error('Buy-in must be a whole number of chips, with no decimals.');
+      return;
+    }
 
     const payoutKey =
       form.type === 'sng'
@@ -1396,8 +1442,8 @@ function LegacyCreateTournamentModal({ clubId, onClose, onCreate }: CreateModalP
     const tournament = await tournamentService.createTournament(clubId, {
       name: form.name,
       type: form.type,
-      buyIn: form.buyIn,
-      rake: form.rake,
+      buyIn: split.total,
+      rake: split.fee,
       startingStack: form.startingStack,
       maxPlayers: form.maxPlayers,
       minPlayers: form.type === 'sng' ? form.maxPlayers : 2,
@@ -1458,19 +1504,22 @@ function LegacyCreateTournamentModal({ clubId, onClose, onCreate }: CreateModalP
             <input
               type="number"
               min={1}
+              step={1}
+              inputMode="numeric"
               value={form.buyIn}
-              onChange={(e) => setForm({ ...form, buyIn: Number(e.target.value) })}
+              onChange={(e) => setForm({ ...form, buyIn: digitsOnly(e.target.value) })}
             />
+            <small>Whole chips only. The total the player pays.</small>
           </div>
 
           <div className="form-group">
-            <label>Rake</label>
-            <input
-              type="number"
-              min={0}
-              value={form.rake}
-              onChange={(e) => setForm({ ...form, rake: Number(e.target.value) })}
-            />
+            <label>Fee (10% of buy-in)</label>
+            <input type="number" min={0} step={1} value={split.fee} readOnly disabled />
+            <small>
+              {split.total > 0
+                ? `${money(split.prize)} to the prize pool + ${money(split.fee)} fee`
+                : 'Taken out of the buy-in, not added on top'}
+            </small>
           </div>
         </div>
 

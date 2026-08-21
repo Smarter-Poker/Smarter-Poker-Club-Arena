@@ -112,6 +112,8 @@ const TOURNAMENT_CREATE_ERRORS: Record<string, string> = {
   not_authorised:
     'Only the owner or an admin can create tournaments here. A club inside a union does not create its own - the union creates them.',
   buy_in_must_not_be_negative: 'Buy-in cannot be negative.',
+  buy_in_must_be_whole: 'Buy-in must be a whole number of chips, with no decimals.',
+  bounty_must_be_whole: 'Bounty amount must be a whole number of chips, with no decimals.',
   max_players_must_be_positive: 'Set a maximum number of players. Zero means nobody can register.',
   blind_structure_required: 'Choose a blind structure.',
   payout_structure_required: 'Choose a payout structure.',
@@ -126,7 +128,17 @@ const TOURNAMENT_CREATE_ERRORS: Record<string, string> = {
 export interface TournamentConfig {
   name: string;
   type: TournamentType;
+  /**
+   * The TOTAL a player pays to enter, as a whole number of chips.
+   *
+   * Dan 2026-08-20: "Sit and Go and any tournament buy-ins must never be
+   * decimal buy-ins, whole numbers only." The 10% house fee is a cut OUT of
+   * this number, never a surcharge on top of it, so `buyIn` is exactly what the
+   * lobby advertises and exactly what leaves the wallet. Non-integers are
+   * refused by createTournament and by fn_create_tournament.
+   */
   buyIn: number;
+  /** Display only. The fee half of the split; recomputed server-side. */
   rake: number;
   startingStack: number;
   maxPlayers: number;
@@ -241,7 +253,9 @@ export const BOUNTY_PRESETS: Record<string, BountyConfig> = {
   },
   progressive: {
     bountyType: 'progressive',
-    baseBounty: 2.5, // 25% of buy-in as starting bounty
+    // Whole chips only (Dan 2026-08-20). Was 2.5 - roughly a quarter of a 10
+    // buy-in, but a decimal bounty, which the rule forbids.
+    baseBounty: 2,
     progressiveStartLevel: 1,
   },
   mystery: {
@@ -489,6 +503,26 @@ class TournamentService {
           }
         }
         prevPlaying = level;
+      }
+    }
+
+    // ── WHOLE-NUMBER BUY-INS (Dan 2026-08-20, binding) ──
+    // "Sit and Go and any tournament buy-ins must never be decimal buy-ins,
+    // whole numbers only." The creation forms block decimal entry; this is the
+    // service-of-record backstop for any other caller. It REFUSES rather than
+    // rounding, so a caller can never quietly ship a game at a price it did not
+    // ask for. fn_create_tournament applies the identical rule server-side.
+    const wholeMoney: Array<[string, number | undefined]> = [
+      ['Buy-in', config.buyIn],
+      ['Rebuy cost', config.rebuyCost],
+      ['Add-on cost', config.addOnCost],
+      ['Guaranteed prize', config.guaranteedPrize],
+      ['Bounty amount', config.bountyConfig?.baseBounty],
+    ];
+    for (const [label, value] of wholeMoney) {
+      if (value === undefined || value === null) continue;
+      if (!Number.isInteger(value) || value < 0) {
+        throw new Error(`${label} must be a whole number of chips, with no decimals.`);
       }
     }
 
@@ -1157,18 +1191,29 @@ class TournamentService {
     buy_in_amount?: number | null;
     buy_in_fee?: number | null;
   }): number {
-    const buyIn = Number(tournament.buy_in_amount || 0);
+    const prize = Number(tournament.buy_in_amount || 0);
     const fee = Number(tournament.buy_in_fee || 0);
-    if (buyIn > 0 && fee > 0) return fee / buyIn;
+    // 2026-08-20: this divided the fee by buy_in_amount, but buy_in_amount is
+    // the PRIZE half of the split, not the price. A 20 game stored as 18 + 2
+    // therefore reported an 11.1% ratio instead of 10%. The advertised buy-in
+    // is prize + fee, so that is what the fee is a fraction OF.
+    if (prize + fee > 0 && fee > 0) return fee / (prize + fee);
     return 0.1;
   }
 
-  /** Fee for a given base cost, rounded to the cent. */
+  /**
+   * Fee for a given base cost, as a WHOLE number of chips.
+   *
+   * Dan 2026-08-20: "Sit and Go and any tournament buy-ins must never be
+   * decimal buy-ins, whole numbers only." That covers rebuys and re-entries,
+   * so the fee they carry is rounded to a whole chip rather than to the cent.
+   */
   private calcTournamentFee(
     tournament: { buy_in_amount?: number | null; buy_in_fee?: number | null },
     baseCost: number
   ): number {
-    return Math.round(baseCost * this.getTournamentFeeRatio(tournament) * 100) / 100;
+    const base = Math.max(0, Math.round(Number(baseCost) || 0));
+    return Math.min(base, Math.max(0, Math.round(base * this.getTournamentFeeRatio(tournament))));
   }
 
   /**
@@ -1204,21 +1249,29 @@ class TournamentService {
   ): { baseCost: number; fee: number; totalCost: number; chips: number } {
     // Mirrors processRebuy / processAddOn exactly. If these ever diverge the
     // player is quoted one price and charged another, so keep them together.
-    const baseCost = Number(
-      (kind === 'rebuy' ? tournament.rebuy_cost : tournament.addon_cost) ||
-        tournament.buy_in_amount ||
-        0
+    // Whole chips only (Dan 2026-08-20). Legacy rows carry decimal costs, so
+    // the round here is what keeps a 2026-era rebuy off a decimal price tag.
+    const baseCost = Math.max(
+      0,
+      Math.round(
+        Number(
+          (kind === 'rebuy' ? tournament.rebuy_cost : tournament.addon_cost) ||
+            tournament.buy_in_amount ||
+            0
+        )
+      )
     );
     const chips = Number(
       (kind === 'rebuy' ? tournament.rebuy_chips : tournament.addon_chips) ||
         tournament.starting_chips ||
         0
     );
-    const fee = this.calcTournamentFee(tournament, baseCost);
+    // Dan 2026-08-20 (binding): add-ons are NOT raked, only rebuys.
+    const fee = kind === 'rebuy' ? this.calcTournamentFee(tournament, baseCost) : 0;
     return {
       baseCost,
       fee,
-      totalCost: Math.round((baseCost + fee) * 100) / 100,
+      totalCost: baseCost + fee,
       chips,
     };
   }
@@ -1316,13 +1369,17 @@ class TournamentService {
     if (!tournament) throw new Error('Tournament not found');
 
     const rebuyChips = tournament.rebuy_chips || tournament.starting_chips;
-    const rebuyCost = tournament.rebuy_cost || tournament.buy_in_amount;
+    // Whole chips only (Dan 2026-08-20) - no decimal rebuy prices.
+    const rebuyCost = Math.max(
+      0,
+      Math.round(Number(tournament.rebuy_cost || tournament.buy_in_amount || 0))
+    );
     // RAKE-AUDIT 2026-07-24: rebuys were fee-free — 100% of rebuy money went to
     // the prize pool and 0% to the house, breaking Dan's "10% on any and all
     // tournament/SNG buy-ins" rule. Fee is now charged on top of the rebuy cost
     // (base cost still feeds the prize pool; recalculatePrizePool strips the fee).
     const rebuyFee = this.calcTournamentFee(tournament, rebuyCost);
-    const rebuyTotalCost = Math.round((rebuyCost + rebuyFee) * 100) / 100;
+    const rebuyTotalCost = rebuyCost + rebuyFee;
 
     // Pre-validate wallet balance (better error messages)
     const { data: walletData } = await supabase
@@ -1428,12 +1485,16 @@ class TournamentService {
     if (!tournament) throw new Error('Tournament not found');
 
     const addonChips = tournament.addon_chips || tournament.starting_chips;
-    const addonCost = tournament.addon_cost || tournament.buy_in_amount;
+    // Whole chips only (Dan 2026-08-20) - no decimal add-on prices.
+    const addonCost = Math.max(
+      0,
+      Math.round(Number(tournament.addon_cost || tournament.buy_in_amount || 0))
+    );
     // Dan 2026-08-20 (binding): "ADD ON'S AREN'T RAKED. ONLY REBUYS."
     // This reverses the 2026-07-24 change that put a 10% house fee on add-ons.
     // process_tournament_rebuy now charges an add-on at face value and books
     // no rake for it; the whole add-on goes to the prize pool.
-    const addonTotalCost = Math.round(addonCost * 100) / 100;
+    const addonTotalCost = addonCost;
 
     // Check if player already used their add-on (each player gets max 1 add-on)
     const { data: existingAddon } = await supabase
@@ -1559,11 +1620,12 @@ class TournamentService {
 
     // Check wallet balance for buy-in
     const reentryChips = tournament.starting_chips;
-    const reentryCost = tournament.buy_in_amount;
+    // Whole chips only (Dan 2026-08-20) - no decimal re-entry prices.
+    const reentryCost = Math.max(0, Math.round(Number(tournament.buy_in_amount || 0)));
     // RAKE-AUDIT 2026-07-24: 10% house fee on re-entries (previously fee-free —
     // a re-entry is a full fresh buy-in and must carry the same fee as entry #1)
     const reentryFee = this.calcTournamentFee(tournament, reentryCost);
-    const reentryTotalCost = Math.round((reentryCost + reentryFee) * 100) / 100;
+    const reentryTotalCost = reentryCost + reentryFee;
 
     const { data: walletData } = await supabase
       .from('wallets')
@@ -1685,9 +1747,9 @@ class TournamentService {
         for (const tx of rebuyTxns) {
           const gross = Math.abs(tx.amount || 0);
           if (tx.category === 'addon') {
-            addonTotal += Math.round(gross * 100) / 100;
+            addonTotal += Math.round(gross);
           } else {
-            rebuyTotal += Math.round((gross / (1 + feeRatio)) * 100) / 100;
+            rebuyTotal += Math.round(gross / (1 + feeRatio));
           }
         }
       }
@@ -1695,13 +1757,13 @@ class TournamentService {
       reportError(e, 'TournamentService.Could_not_query_rebuyaddon_transactions');
     }
 
-    // Calculate total prize pool
-    // Math.round, not Math.trunc: every term is already 2dp, so the only
-    // difference is IEEE 754 error. 482.99999999999 truncates to 482.99 and
-    // quietly loses a cent that players actually paid in. Same reasoning as
-    // the Round 40 trunc->round fixes on the payout side.
-    const calculatedPool =
-      Math.round(((entryCount || 0) * buyIn + rebuyTotal + addonTotal) * 100) / 100;
+    // Calculate total prize pool.
+    // Math.round, not Math.trunc: 482.99999999999 truncates to 482 and quietly
+    // loses a chip that players actually paid in. Same reasoning as the Round
+    // 40 trunc->round fixes on the payout side. Whole chips (Dan 2026-08-20):
+    // every contributing term is whole, and legacy decimal buy_in_amount rows
+    // are rounded rather than carried into a decimal pool.
+    const calculatedPool = Math.round((entryCount || 0) * buyIn + rebuyTotal + addonTotal);
     const finalPool = guarantee > 0 ? Math.max(calculatedPool, guarantee) : calculatedPool;
 
     // Update tournament
@@ -2074,10 +2136,12 @@ class TournamentService {
    * winner-take-all placeholder payout (start rewrites it from the tier).
    */
   async createSpin(clubId: string, buyIn: number): Promise<Tournament> {
+    // Whole chips only (Dan 2026-08-20) - a Spin is priced at a round number.
+    const wholeBuyIn = Math.max(0, Math.round(Number(buyIn) || 0));
     const config: TournamentConfig = {
-      name: `Spin & Go ${buyIn}`,
+      name: `Spin & Go ${wholeBuyIn}`,
       type: 'spin',
-      buyIn,
+      buyIn: wholeBuyIn,
       rake: 0,
       startingStack: 500,
       maxPlayers: 3,
@@ -2122,7 +2186,10 @@ class TournamentService {
    * Roll mystery bounty value
    */
   rollMysteryBounty(config: BountyConfig): number {
-    if (!config.mysteryTiers) return config.baseBounty;
+    // Whole chips only (Dan 2026-08-20): a x0.5 tier on a 5 base would
+    // otherwise hand out a 2.5 head.
+    const base = Math.max(0, Math.round(Number(config.baseBounty) || 0));
+    if (!config.mysteryTiers) return base;
 
     const random = Math.random() * 100;
     let cumulative = 0;
@@ -2136,11 +2203,11 @@ class TournamentService {
             ? tier.minMultiplier
             : Math.floor(Math.random() * (tier.maxMultiplier - tier.minMultiplier + 1)) +
               tier.minMultiplier;
-        return config.baseBounty * multiplier;
+        return Math.max(0, Math.round(base * multiplier));
       }
     }
 
-    return config.baseBounty;
+    return base;
   }
 
   /**

@@ -22,6 +22,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { fmt, fmtChips, timeAgo } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 interface PlayerSession {
   userId: string;
   displayName: string;
@@ -312,7 +313,7 @@ export default function PlayerSessionsPage() {
           }
         }
       } catch (err: any) {
-        if (mountedRef.current) setError(err.message);
+        if (mountedRef.current) setError(safeErrorMessage(err));
       } finally {
         loadingRef.current = false;
         if (mountedRef.current) setLoading(false);
@@ -619,7 +620,7 @@ export default function PlayerSessionsPage() {
       setWbAmount('');
       loadRetention(true);
     } catch (err: any) {
-      setError(err.message);
+      setError(safeErrorMessage(err));
     } finally {
       setProcessing(false);
     }
@@ -648,7 +649,7 @@ export default function PlayerSessionsPage() {
       setSuccess('Note saved!');
       setNoteTarget(null);
     } catch (err: any) {
-      setError(err.message);
+      setError(safeErrorMessage(err));
     } finally {
       setSavingNote(false);
     }

@@ -157,6 +157,7 @@ const CATEGORY_ICONS: Record<string, string> = {
 
 import { useRealtimeFinancials } from '../hooks/useRealtimeFinancials';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 export default function CashierPage() {
   useRealtimeFinancials();
   useEffect(() => {
@@ -1258,7 +1259,7 @@ export default function CashierPage() {
           if (isMounted.current)
             setMessage({
               type: 'error',
-              text: mintResult.error || 'Minting failed. Please try again.',
+              text: safeErrorMessage(mintResult.error, 'Minting failed. Please try again.'),
             });
           if (isMounted.current) setIsProcessing(false);
           return;

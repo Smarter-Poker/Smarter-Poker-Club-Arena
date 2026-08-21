@@ -45,6 +45,8 @@ import TournamentResultCard, {
 } from '../../components/tournament/TournamentResultCard';
 import './ClubLobby.css';
 import { reportError } from '../../utils/errorReporter';
+// Whole-number tournament money (Dan 2026-08-20).
+import { formatBuyInShort } from '../../utils/buyIn';
 
 // Animation utilities
 const cardAnimationStyle = (index: number) => ({
@@ -746,7 +748,10 @@ function TournamentCard({ tournament }: { tournament: Tournament }) {
       <div className="card-body">
         <div className="buyin-row">
           <span className="buyin-label">Buy-in</span>
-          <span className="buyin-amount">{(tournament.buy_in_amount || 0).toLocaleString()}</span>
+          {/* The advertised buy-in is the TOTAL (prize + fee), whole chips. */}
+          <span className="buyin-amount">
+            {formatBuyInShort(tournament.buy_in_amount || 0, (tournament as any).buy_in_fee)}
+          </span>
         </div>
         <div className="timer-row">
           <span className="timer-icon">◷</span>

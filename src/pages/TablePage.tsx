@@ -244,6 +244,7 @@ import { MiniStatsCard } from '../components/table/MiniStatsCard';
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
 import { reportError } from '../utils/errorReporter';
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
 import { getAnimationSpeed } from '../utils/animationSpeed';
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
@@ -4311,9 +4312,9 @@ export default function TablePage({
                     // buy at a price the modal had never shown them. Fall back to
                     // the authoritative tournament row, and include the house fee
                     // that processAddOn charges on top.
-                    let cost = Number(addonData.addOnCost) || 0;
+                    let cost = Math.round(Number(addonData.addOnCost)) || 0;
                     let chips = Number(addonData.addOnChips) || 0;
-                    let fee = Number(addonData.addOnFee) || 0;
+                    let fee = Math.round(Number(addonData.addOnFee)) || 0;
                     if (!cost || !chips || !fee) {
                       const quote = await tournamentService.getChipPurchaseQuote(
                         table.tournament_id as string,
@@ -7340,7 +7341,7 @@ export default function TablePage({
         const res = await submitAction(tid, uid, action, amount);
         if (!res.success) {
           setActionErrorData({
-            error: res.error || 'Action rejected',
+            error: safeErrorMessage(res.error, 'Action rejected'),
             code: res.code,
             hint: res.hint as ActionErrorData['hint'],
           });

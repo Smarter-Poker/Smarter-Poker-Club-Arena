@@ -14,6 +14,7 @@ import { MembershipService } from '@/services/MembershipService';
 import type { ClubMembership, MemberRole } from '@/services/MembershipService';
 import { reportError } from '../utils/errorReporter';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 // ═══════════════════════════════════════════════════════════════════════════════
 // CLUB HOOKS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -290,7 +291,7 @@ export function useNearbyClubs(radiusKm = 50) {
           });
         },
         (error) => {
-          setGeoError(error.message);
+          setGeoError(safeErrorMessage(error));
         }
       );
     }

@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import type { BlacklistEntry } from '../types/club.types';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 // ── Styles ──────────────────────────────────────────────────────────────────
 
 const styles = {
@@ -185,7 +186,7 @@ export default function BlacklistManagerPage() {
       if (fetchErr) throw fetchErr;
       setEntries(data || []);
     } catch (err: any) {
-      setError(err.message || 'Failed to load blacklist');
+      setError(safeErrorMessage(err, 'Failed to load blacklist'));
     } finally {
       setLoading(false);
     }
@@ -223,7 +224,7 @@ export default function BlacklistManagerPage() {
       setShowAddForm(false);
       await loadEntries();
     } catch (err: any) {
-      setError(err.message || 'Failed to add to blacklist');
+      setError(safeErrorMessage(err, 'Failed to add to blacklist'));
     } finally {
       setAdding(false);
     }
@@ -240,7 +241,7 @@ export default function BlacklistManagerPage() {
       if (delErr) throw delErr;
       setEntries((prev) => prev.filter((e) => e.id !== entryId));
     } catch (err: any) {
-      setError(err.message || 'Failed to remove from blacklist');
+      setError(safeErrorMessage(err, 'Failed to remove from blacklist'));
     } finally {
       setRemoving(null);
     }

@@ -25,7 +25,7 @@ import { HandForHandBanner } from '../../components/tournament/HandForHandBanner
 import { FinalTableOverlay } from '../../components/tournament/FinalTableOverlay';
 import { reportError } from '../../utils/errorReporter';
 import { spinMultiplierLabel } from '../../utils/spinReveal';
-import { formatBuyIn } from '../../utils/buyIn';
+import { formatBuyIn, money, totalBuyIn } from '../../utils/buyIn';
 
 type TabId =
   | 'detail'
@@ -798,7 +798,9 @@ export default function TournamentDetails({
         <div className="tournament-desc">
           <p>{tournament.name}</p>
           <p>
-            {tournament.buy_in_amount}+{tournament.buy_in_fee || 0} CHIPS BUY-IN
+            {/* Whole chips only (Dan 2026-08-20) - formatBuyIn leads with the
+                total the player actually pays and never prints a decimal. */}
+            {formatBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)} CHIPS BUY-IN
           </p>
           <p>
             {(tournament as any).variant === 'sng'
@@ -821,7 +823,7 @@ export default function TournamentDetails({
           </p>
           {(tournament as any).is_bounty && (
             <p style={{ color: '#f87171', fontWeight: 600 }}>
-              BOUNTY: {(tournament as any).bounty_amount || 0} CHIPS PER KO
+              BOUNTY: {money((tournament as any).bounty_amount || 0)} CHIPS PER KO
               {(tournament as any).is_pko && ' (50/50 SPLIT)'}
             </p>
           )}
@@ -1155,7 +1157,7 @@ export default function TournamentDetails({
                 <div className="info-row">
                   <span className="info-label">Bounty:</span>
                   <span className="info-value" style={{ color: '#f87171' }}>
-                    {(tournament as any).bounty_amount || 0} chips per knockout
+                    {money((tournament as any).bounty_amount || 0)} chips per knockout
                     {(tournament as any).is_pko &&
                       ' (Progressive: 50% to knocker, 50% added to bounty)'}
                     {(tournament as any).is_mystery_bounty &&
@@ -1762,7 +1764,7 @@ export default function TournamentDetails({
                 <div className="signup-row">
                   <span className="signup-label">Bounty:</span>
                   <span className="signup-value" style={{ color: '#f87171' }}>
-                    {(tournament as any).bounty_amount || 0} chips
+                    {money((tournament as any).bounty_amount || 0)} chips
                     {(tournament as any).is_pko && ' (PKO)'}
                     {(tournament as any).is_mystery_bounty && ' (Mystery)'}
                   </span>
@@ -1785,15 +1787,15 @@ export default function TournamentDetails({
                   className="signup-value"
                   style={{
                     color:
-                      walletBalance >= tournament.buy_in_amount + (tournament.buy_in_fee || 0)
+                      walletBalance >= totalBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)
                         ? '#10b981'
                         : '#ef4444',
                   }}
                 >
-                  {walletBalance.toLocaleString()} chips
+                  {money(walletBalance)} chips
                 </span>
               </div>
-              {walletBalance < tournament.buy_in_amount + (tournament.buy_in_fee || 0) && (
+              {walletBalance < totalBuyIn(tournament.buy_in_amount, tournament.buy_in_fee) && (
                 <p className="signup-note" style={{ color: '#ef4444' }}>
                   Insufficient balance. Please add chips via your Cashier.
                 </p>
@@ -1808,7 +1810,7 @@ export default function TournamentDetails({
                   onClick={handleRegister}
                   disabled={
                     isProcessing ||
-                    walletBalance < tournament.buy_in_amount + (tournament.buy_in_fee || 0)
+                    walletBalance < totalBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)
                   }
                 >
                   {isProcessing ? 'Processing...' : 'Confirm'}

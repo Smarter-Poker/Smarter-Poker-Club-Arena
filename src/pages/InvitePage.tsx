@@ -18,6 +18,7 @@ import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { reportError } from '../utils/errorReporter';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 const inviteStepAnimationStyle = {
   opacity: 0,
   transform: 'translateY(12px)',
@@ -236,7 +237,7 @@ export default function InvitePage() {
     } catch (err: any) {
       reportError(err, 'InvitePage.Failed_to_join');
       toast.error(err.message || 'Failed to join club');
-      setError(err.message || 'Failed to join club');
+      setError(safeErrorMessage(err, 'Failed to join club'));
     }
     setJoining(false);
   };

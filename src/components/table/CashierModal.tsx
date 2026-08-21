@@ -15,6 +15,7 @@ import { haptic } from '../../services/SoundService';
 import './CashierModal.css';
 import { reportError } from '../../utils/errorReporter';
 
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -205,9 +206,7 @@ export function CashierModal({
     } catch (error) {
       reportError(error, 'CashierModal.Cashier_error');
       setSubmitError(
-        error instanceof Error && error.message
-          ? error.message
-          : 'Something went wrong. Nothing was moved - please try again.'
+        safeErrorMessage(error, 'Something went wrong. Nothing was moved - please try again.')
       );
     } finally {
       busyRef.current = false;

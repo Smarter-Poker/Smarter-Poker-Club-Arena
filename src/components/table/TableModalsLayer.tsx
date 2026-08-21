@@ -797,6 +797,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         gameType={gameType}
         bigBlind={safeBB(blinds)}
         currentUserName={bbjHeroName}
+        currentUserId={userId}
       />
 
       {/* BBJ Celebration Overlay */}

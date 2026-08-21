@@ -123,9 +123,19 @@ describe('blind structure', () => {
 });
 
 describe('money', () => {
-  it('the fee shown is 10% of the buy-in', () => {
+  it('the fee is 10% of the buy-in, rounded to whole chips', () => {
+    // Dan 2026-08-20: tournament and SNG buy-ins are whole numbers, so the fee
+    // cut out of one is whole too. A 33 buy-in is 3 fee + 30 prize, not 3.3 -
+    // a fractional fee made the total non-integer and the DB CHECK refused the
+    // INSERT outright.
     expect(buildTournamentConfig({ ...base, buyIn: 50 }, 'nlh').rake).toBe(5);
-    expect(buildTournamentConfig({ ...base, buyIn: 33 }, 'nlh').rake).toBe(3.3);
+    expect(buildTournamentConfig({ ...base, buyIn: 33 }, 'nlh').rake).toBe(3);
+    for (const buyIn of [1, 5, 15, 25, 33, 50, 99, 100, 250]) {
+      const c = buildTournamentConfig({ ...base, buyIn }, 'nlh');
+      expect(Number.isInteger(c.rake)).toBe(true);
+      expect(Number.isInteger(c.buyIn)).toBe(true);
+      expect(c.buyIn).toBe(buyIn);
+    }
   });
 
   it('a bounty tournament leaves something for the prize pool', () => {

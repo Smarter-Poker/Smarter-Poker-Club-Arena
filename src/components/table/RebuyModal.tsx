@@ -1,5 +1,9 @@
 import React from 'react';
 import { soundService } from '../../services/SoundService';
+// Whole-number tournament money (Dan 2026-08-20): "Sit and Go and any
+// tournament buy-ins must never be decimal buy-ins, whole numbers only."
+// This file used to define its own money() that FORCED two decimals.
+import { money } from '../../utils/buyIn';
 import './RebuyModal.css';
 
 interface RebuyModalProps {
@@ -21,9 +25,6 @@ interface RebuyModalProps {
   isProcessing: boolean;
 }
 
-const money = (n: number) =>
-  n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
 const RebuyModal: React.FC<RebuyModalProps> = ({
   isOpen,
   rebuyCost,
@@ -36,7 +37,8 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  const totalCost = Math.round((rebuyCost + rebuyFee) * 100) / 100;
+  // Whole chips both halves, so the total is whole and matches the debit.
+  const totalCost = Math.round(rebuyCost) + Math.round(rebuyFee);
   // Gate on the TOTAL — this is the number the server debits.
   const canAfford = walletBalance >= totalCost;
 

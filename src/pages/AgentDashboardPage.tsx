@@ -30,6 +30,7 @@ import { fmt, fmtChips, timeAgo } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import AgentBackOffice from '../components/agent/AgentBackOffice';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 type AgentTab =
   | 'overview'
   | 'players'
@@ -299,7 +300,7 @@ export default function AgentDashboardPage() {
           /* storage full */
         }
       } catch (err: unknown) {
-        if (mountedRef.current) setError(err instanceof Error ? err.message : String(err));
+        if (mountedRef.current) setError(safeErrorMessage(err));
       } finally {
         dashLoadingRef.current = false;
         if (mountedRef.current) setLoading(false);
@@ -470,7 +471,7 @@ export default function AgentDashboardPage() {
       masterBus.emit('CASHOUT_APPROVED', { cashoutId, clubId: clubId || '' });
       loadDashboard(clubId);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(safeErrorMessage(err));
     } finally {
       setProcessing(false);
     }
@@ -492,7 +493,7 @@ export default function AgentDashboardPage() {
       masterBus.emit('CASHOUT_CANCELLED', { cashoutId, clubId: clubId || '' });
       loadDashboard(clubId);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(safeErrorMessage(err));
     } finally {
       setProcessing(false);
     }
@@ -516,7 +517,7 @@ export default function AgentDashboardPage() {
       setTransferNotes('');
       loadDashboard(clubId);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(safeErrorMessage(err));
     } finally {
       setProcessing(false);
     }
@@ -1307,7 +1308,7 @@ export default function AgentDashboardPage() {
                       setCreditAmount('');
                       loadDashboard(clubId);
                     } catch (err: unknown) {
-                      setError(err instanceof Error ? err.message : String(err));
+                      setError(safeErrorMessage(err));
                     } finally {
                       setProcessing(false);
                     }
@@ -1459,7 +1460,7 @@ export default function AgentDashboardPage() {
                       setCreditNotes('');
                       loadDashboard(clubId);
                     } catch (err: unknown) {
-                      setError(err instanceof Error ? err.message : String(err));
+                      setError(safeErrorMessage(err));
                     } finally {
                       setProcessing(false);
                     }

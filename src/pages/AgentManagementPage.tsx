@@ -43,6 +43,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -146,7 +147,7 @@ export default function AgentManagementPage() {
         if (isMounted.current) setAgents(data);
       })
       .catch((err) => {
-        if (isMounted.current) setError(err.message);
+        if (isMounted.current) setError(safeErrorMessage(err));
       })
       .finally(() => {
         if (isMounted.current) setIsLoading(false);
@@ -233,7 +234,7 @@ export default function AgentManagementPage() {
         if (!isMounted.current) return;
         reportError(err, 'AgentManagementPage.Failed_to_reload_agents');
         toast.error('Failed to load agents');
-        setError(err instanceof Error ? err.message : 'Failed to reload agents');
+        setError(safeErrorMessage(err, 'Failed to reload agents'));
       } finally {
         if (isMounted.current) setIsLoading(false);
       }

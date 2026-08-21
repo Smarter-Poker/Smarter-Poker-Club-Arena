@@ -14,6 +14,7 @@ import { reportError } from '../../utils/errorReporter';
 import { STORAGE_KEYS } from '../../lib/storage';
 import styles from './CompleteProfileModal.module.css';
 
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
 interface CompleteProfileModalProps {
   isOpen: boolean;
   onComplete: () => void;
@@ -87,7 +88,7 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
       onComplete();
     } catch (err: any) {
       reportError(err, 'CompleteProfileModal.SaveFailed');
-      setError(err.message || 'Failed to save profile. Try again.');
+      setError(safeErrorMessage(err, 'Failed to save profile. Try again.'));
     } finally {
       setIsSaving(false);
     }

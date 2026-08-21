@@ -7,6 +7,8 @@
 
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { formatPopupText } from '../../utils/popupStyle';
+import { safeErrorMessage, wasSanitized } from '../../utils/safeErrorMessage';
+import { reportError } from '../../utils/errorReporter';
 import './Toast.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -126,6 +128,10 @@ function ToastContainer({
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastIdRef = useRef(0);
+  // Originals already sent to Sentry, with the time they were sent. A retrying
+  // caller (heartbeat, poll loop) throws the same error every few seconds; the
+  // toast dedupes on screen, so the Sentry report dedupes here to match.
+  const reportedRef = useRef<Map<string, number>>(new Map());
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -135,7 +141,32 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     // Dan's house rule (2026-08-20), enforced at the ONLY door every toast
     // walks through: Title Case every word, no em dashes. See popupStyle.ts —
     // a rule in the render path cannot drift, a rule in a doc does.
-    const styled = formatPopupText(message);
+    //
+    // SAME DOOR, SECOND LOCK (Dan, 2026-08-20): "stop allowing server error
+    // messages to appear for users." Hundreds of call sites do
+    // `toast.error(e?.message || '...')`. Sanitising HERE makes every one of
+    // them safe without editing any of them, and no caller can opt out by
+    // passing `e.message` straight through. See utils/safeErrorMessage.ts.
+    let text = message;
+    if (type === 'error') {
+      const original = typeof message === 'string' ? message : String(message ?? '');
+      text = safeErrorMessage(original);
+      if (wasSanitized(original, text)) {
+        // The player is spared the detail; Sentry is not. Diagnostics survive.
+        const now = Date.now();
+        const lastSeen = reportedRef.current.get(original);
+        if (lastSeen === undefined || now - lastSeen > 30_000) {
+          reportedRef.current.set(original, now);
+          if (reportedRef.current.size > 50) {
+            for (const [k, t] of reportedRef.current) {
+              if (now - t > 30_000) reportedRef.current.delete(k);
+            }
+          }
+          reportError(new Error(original), 'Toast.error.sanitized', { shownToPlayer: text });
+        }
+      }
+    }
+    const styled = formatPopupText(text);
     const id = `toast-${++toastIdRef.current}`;
     setToasts((prev) => {
       // DEDUPE (Dan, same session: "connection lost pop ups need to stop").

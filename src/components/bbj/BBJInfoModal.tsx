@@ -1,24 +1,35 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  BBJ INFO MODAL — opened by tapping the jackpot amount at the table
+ *  BBJ INFO MODAL — opened by tapping the jackpot, in the lobby or at the table
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Dan: "we should be showing the last 5 jackpots, what the hands were, what the
- * payouts were, who got paid what (PokerBros style) ... displayed inside one of
- * the pages when you click on the BBJ amount at the top of a table."
+ * Dan (2026-08-20): tapping the BBJ anywhere should open one popup with three
+ * pages — the total and the last 5 winners first, then the fee schedule and
+ * payouts by stakes, then the qualifying hands. And inside the winners page you
+ * should be able to tap any winner and see a rundown of the hand.
  *
- * Three tabs: the recent hits (default — it is what the tap is for), the
- * qualifying hand for EVERY game we spread, and the payout ladder for EVERY
- * stakes tier. When opened from a table, that table's game and stakes rows are
- * marked "YOUR GAME" / "YOUR STAKES" and a summary of what a hit would pay
- * right here sits at the top of the payouts tab. Opened from the lobby (no
- * table context) the same tabs show the full tables without the highlight.
+ * Tabs, in that order:
+ *   Winner           the pool total in the header, then the last 5 hits.
+ *                    Tapping a hit swaps the body for BBJHandDetail.
+ *   Basic            what the hand is charged and how a hit splits, per stake.
+ *   Qualifying Hands the minimum losing hand for every game we spread, as cards.
+ *
+ * When opened from a table, that table's game and stakes rows are marked
+ * "YOUR GAME" / "YOUR STAKES" and a summary of what a hit would pay right here
+ * sits at the top of Basic. Opened from the lobby (no table context) the same
+ * tabs show the full tables without the highlight.
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import BBJRecentHits from './BBJRecentHits';
-import BBJRulesPanel from './BBJRulesPanel';
-import { getBBJQualifyingInfo, getBBJPayoutPercentForBB } from '../../config/RakeConfig';
+import BBJBasicPanel from './BBJBasicPanel';
+import BBJQualifyingHands from './BBJQualifyingHands';
+import BBJHandDetail from './BBJHandDetail';
+import {
+  getBBJQualifyingInfo,
+  getBBJPayoutPercentForBB,
+  normalizeVariantKey,
+} from '../../config/RakeConfig';
 import './BBJInfoModal.css';
 
 export interface BBJInfoModalProps {
@@ -31,7 +42,22 @@ export interface BBJInfoModalProps {
   /** Table's big blind, for the "what this table pays" figure. Omit in a lobby. */
   bigBlind?: number;
   currentUserName?: string | null;
+  /**
+   * The viewer's own user id. Preferred over the name for "this is you"
+   * highlighting: display names are not unique, and two players called "Dan" at
+   * the same table would both light up. The name stays as a fallback for
+   * surfaces that only know it.
+   */
+  currentUserId?: string | null;
 }
+
+type Tab = 'winner' | 'basic' | 'qualifying';
+
+const TABS: Array<{ key: Tab; label: string }> = [
+  { key: 'winner', label: 'Winner' },
+  { key: 'basic', label: 'Basic' },
+  { key: 'qualifying', label: 'Qualifying Hands' },
+];
 
 export function BBJInfoModal({
   isOpen,
@@ -41,14 +67,67 @@ export function BBJInfoModal({
   gameType,
   bigBlind = 0,
   currentUserName,
+  currentUserId,
 }: BBJInfoModalProps) {
-  const [tab, setTab] = useState<'hits' | 'qualifying' | 'payouts'>('hits');
+  const [tab, setTab] = useState<Tab>('winner');
+  /** Non-null while the winners tab is drilled into one hand. */
+  const [openHandPayoutId, setOpenHandPayoutId] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
 
-  // Escape closes; body scroll locked while open.
+  /**
+   * Focus management. Without it, opening this over the lobby leaves focus on
+   * the wallet behind the backdrop: a keyboard or screen-reader user tabs
+   * straight through the page underneath and never reaches the dialog they just
+   * opened. Focus moves in on open, is held inside while open, and is handed
+   * back to whatever opened it on close.
+   */
+  useEffect(() => {
+    if (!isOpen) return;
+    restoreFocusRef.current = (document.activeElement as HTMLElement) || null;
+    const node = dialogRef.current;
+    if (node) {
+      const first = node.querySelector<HTMLElement>('button, [href], [tabindex]:not([tabindex="-1"])');
+      (first || node).focus({ preventScroll: true });
+    }
+    return () => {
+      const back = restoreFocusRef.current;
+      if (back && typeof back.focus === 'function' && document.contains(back)) {
+        back.focus({ preventScroll: true });
+      }
+    };
+  }, [isOpen]);
+
+  const onDialogKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Tab') return;
+    const node = dialogRef.current;
+    if (!node) return;
+    const focusable = Array.from(
+      node.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }, []);
+
+  // Escape closes the drilldown first, then the modal — otherwise a player deep
+  // in a hand loses the whole popup on one keypress. Body scroll locked while
+  // open.
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      if (openHandPayoutId) setOpenHandPayoutId(null);
+      else onClose();
     };
     window.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
@@ -57,7 +136,16 @@ export function BBJInfoModal({
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, openHandPayoutId]);
+
+  // A reopened popup starts on the winners list, never inside the last hand
+  // someone happened to look at.
+  useEffect(() => {
+    if (!isOpen) {
+      setTab('winner');
+      setOpenHandPayoutId(null);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -68,11 +156,35 @@ export function BBJInfoModal({
   const pct = getBBJPayoutPercentForBB(bigBlind);
   const tableShare = (poolAmount * pct) / 100;
 
+  const switchTab = (next: Tab) => {
+    setOpenHandPayoutId(null);
+    setTab(next);
+  };
+
+  // Left/right move between tabs, Home/End jump to the ends - the ARIA tabs
+  // pattern. Without it a keyboard user has to Tab through a whole panel to
+  // reach the next tab.
+  const onTabsKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const i = TABS.findIndex((t) => t.key === tab);
+    if (i < 0) return;
+    let next = i;
+    if (e.key === 'ArrowRight') next = (i + 1) % TABS.length;
+    else if (e.key === 'ArrowLeft') next = (i - 1 + TABS.length) % TABS.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = TABS.length - 1;
+    else return;
+    e.preventDefault();
+    switchTab(TABS[next].key);
+  };
+
   return (
     <div className="bbj-modal__backdrop" onClick={onClose} role="presentation">
       <div
         className="bbj-modal"
+        ref={dialogRef}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={onDialogKeyDown}
         role="dialog"
         aria-modal="true"
         aria-label="Bad Beat Jackpot"
@@ -81,7 +193,10 @@ export function BBJInfoModal({
           <div className="bbj-modal__title">
             <span className="bbj-modal__label">BAD BEAT JACKPOT</span>
             <span className="bbj-modal__amount">
-              ${Math.trunc(poolAmount).toLocaleString('en-US')}
+              {Number(poolAmount || 0).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
             </span>
           </div>
           <button className="bbj-modal__close" onClick={onClose} aria-label="Close">
@@ -89,36 +204,99 @@ export function BBJInfoModal({
           </button>
         </div>
 
-        <div className="bbj-modal__tabs" role="tablist">
-          <button
-            role="tab"
-            aria-selected={tab === 'hits'}
-            className={`bbj-modal__tab${tab === 'hits' ? ' is-active' : ''}`}
-            onClick={() => setTab('hits')}
-          >
-            Last 5 jackpots
-          </button>
-          <button
-            role="tab"
-            aria-selected={tab === 'qualifying'}
-            className={`bbj-modal__tab${tab === 'qualifying' ? ' is-active' : ''}`}
-            onClick={() => setTab('qualifying')}
-          >
-            Qualifying hands
-          </button>
-          <button
-            role="tab"
-            aria-selected={tab === 'payouts'}
-            className={`bbj-modal__tab${tab === 'payouts' ? ' is-active' : ''}`}
-            onClick={() => setTab('payouts')}
-          >
-            Payouts
-          </button>
+        <div
+          className="bbj-modal__tabs"
+          role="tablist"
+          aria-label="Bad Beat Jackpot sections"
+          onKeyDown={onTabsKeyDown}
+        >
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              role="tab"
+              id={`bbj-tab-${t.key}`}
+              aria-selected={tab === t.key}
+              aria-controls="bbj-tabpanel"
+              tabIndex={tab === t.key ? 0 : -1}
+              className={`bbj-modal__tab${tab === t.key ? ' is-active' : ''}`}
+              onClick={() => switchTab(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
-        <div className="bbj-modal__body">
-          {tab === 'hits' && (
-            <BBJRecentHits poolId={poolId} limit={5} currentUserName={currentUserName} />
+        <div
+          className="bbj-modal__body"
+          id="bbj-tabpanel"
+          role="tabpanel"
+          aria-labelledby={`bbj-tab-${tab}`}
+        >
+          {tab === 'winner' &&
+            (openHandPayoutId ? (
+              <BBJHandDetail
+                payoutId={openHandPayoutId}
+                onBack={() => setOpenHandPayoutId(null)}
+                currentUserName={currentUserName}
+                currentUserId={currentUserId}
+              />
+            ) : (
+              <BBJRecentHits
+                poolId={poolId}
+                limit={5}
+                currentUserName={currentUserName}
+                currentUserId={currentUserId}
+                onOpenHand={setOpenHandPayoutId}
+              />
+            ))}
+
+          {tab === 'basic' && (
+            <div className="bbj-modal__rules">
+              {hasTableContext && info.eligible && (
+                <div className="bbj-modal__here">
+                  <span className="bbj-modal__rule-label">If it hits at this table</span>
+                  <p className="bbj-modal__rule-text">
+                    <strong>{pct}%</strong> of the pool
+                    {poolAmount > 0 && (
+                      <> (about {Math.trunc(tableShare).toLocaleString('en-US')} today)</>
+                    )}
+                  </p>
+                  <div className="bbj-modal__split">
+                    <div className="bbj-modal__split-row">
+                      <span>Bad beat hand</span>
+                      <span>
+                        50% &middot; {Math.trunc(tableShare * 0.5).toLocaleString('en-US')}
+                      </span>
+                    </div>
+                    <div className="bbj-modal__split-row">
+                      <span>Won the hand</span>
+                      <span>
+                        25% &middot; {Math.trunc(tableShare * 0.25).toLocaleString('en-US')}
+                      </span>
+                    </div>
+                    <div className="bbj-modal__split-row">
+                      <span>Everyone else dealt in</span>
+                      <span>
+                        25% &middot; {Math.trunc(tableShare * 0.25).toLocaleString('en-US')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {hasTableContext && !info.eligible && (
+                <div className="bbj-modal__here">
+                  <p className="bbj-modal__rule-text">
+                    The Bad Beat Jackpot is not available for {info.variantLabel}, so no fee is
+                    taken at this table.
+                  </p>
+                </div>
+              )}
+              <BBJBasicPanel poolAmount={poolAmount} highlightBB={bigBlind} />
+              <p className="bbj-modal__fineprint">
+                Chips are credited to your stack at the table the moment it hits, and they leave
+                with you.
+              </p>
+            </div>
           )}
 
           {tab === 'qualifying' && (
@@ -138,60 +316,9 @@ export function BBJInfoModal({
                   )}
                 </div>
               )}
-              <BBJRulesPanel
-                section="qualifying"
-                embedded
-                poolAmount={poolAmount}
-                highlightVariantKey={gameType}
-                highlightBB={bigBlind}
+              <BBJQualifyingHands
+                highlightVariantKey={gameType ? normalizeVariantKey(gameType) : null}
               />
-            </div>
-          )}
-
-          {tab === 'payouts' && (
-            <div className="bbj-modal__rules">
-              {hasTableContext && info.eligible && (
-                <div className="bbj-modal__here">
-                  <span className="bbj-modal__rule-label">If it hits at this table</span>
-                  <p className="bbj-modal__rule-text">
-                    <strong>{pct}%</strong> of the pool
-                    {poolAmount > 0 && (
-                      <> &mdash; about ${Math.trunc(tableShare).toLocaleString('en-US')} today</>
-                    )}
-                  </p>
-                  <div className="bbj-modal__split">
-                    <div className="bbj-modal__split-row">
-                      <span>Bad beat hand</span>
-                      <span>
-                        50% &middot; ${Math.trunc(tableShare * 0.5).toLocaleString('en-US')}
-                      </span>
-                    </div>
-                    <div className="bbj-modal__split-row">
-                      <span>Won the hand</span>
-                      <span>
-                        25% &middot; ${Math.trunc(tableShare * 0.25).toLocaleString('en-US')}
-                      </span>
-                    </div>
-                    <div className="bbj-modal__split-row">
-                      <span>Everyone else dealt in</span>
-                      <span>
-                        25% &middot; ${Math.trunc(tableShare * 0.25).toLocaleString('en-US')}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-              <BBJRulesPanel
-                section="payout"
-                embedded
-                poolAmount={poolAmount}
-                highlightVariantKey={gameType}
-                highlightBB={bigBlind}
-              />
-              <p className="bbj-modal__fineprint">
-                Chips are credited to your stack at the table the moment it hits &mdash; and they
-                leave with you.
-              </p>
             </div>
           )}
         </div>

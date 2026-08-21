@@ -21,6 +21,8 @@ import styles from './TournamentLobbyPage.module.css';
 
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { reportError } from '../../utils/errorReporter';
+// Whole-number tournament money (Dan 2026-08-20).
+import { totalBuyIn } from '../../utils/buyIn';
 
 type TournamentStatus = 'all' | 'upcoming' | 'REGISTERING' | 'RUNNING' | 'COMPLETED';
 type TournamentTypeFilter = 'all' | 'mtt' | 'sng' | 'spin' | 'bounty' | 'pko' | 'mystery';
@@ -124,7 +126,7 @@ export default function TournamentLobbyPage() {
             ? {
                 ...t,
                 currentPlayers: payload.new.current_players,
-                prizePool: payload.new.prize_pool,
+                prizePool: Math.round(Number(payload.new.prize_pool) || 0),
                 status: payload.new.status,
               }
             : t
@@ -492,8 +494,11 @@ export default function TournamentLobbyPage() {
           name: t.name,
           clubId: t.club_id,
           clubName: (t.clubs as any)?.name || 'Club',
-          buyIn: t.buy_in_amount || 0,
-          prizePool: t.prize_pool || 0,
+          // The card advertises and charges the TOTAL, not the prize half of
+          // the split - buy_in_amount alone understated every price by the fee.
+          // totalBuyIn also rounds, so no decimal reaches the lobby.
+          buyIn: totalBuyIn(t.buy_in_amount || 0, t.buy_in_fee),
+          prizePool: Math.round(Number(t.prize_pool) || 0),
           startTime: t.start_time,
           status: t.status,
           currentPlayers: t.current_players || 0,

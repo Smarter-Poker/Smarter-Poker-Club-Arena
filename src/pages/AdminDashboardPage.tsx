@@ -27,6 +27,7 @@ import { reportError } from '../utils/errorReporter';
 import { clubGamesOrFilter } from '../utils/unionScope';
 import { confirmDialog } from '../components/common/confirmDialog';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 // ── Helpers ─────────────────────────────────────────────────
 const formatDate = (ts: string | null | undefined) => {
   if (!ts) return '';
@@ -366,7 +367,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
       if (isMounted.current)
         setLoadError(
           err instanceof Error
-            ? err.message || 'Failed to load dashboard'
+            ? safeErrorMessage(err, 'Failed to load dashboard')
             : 'Failed to load dashboard'
         );
     } finally {
@@ -654,7 +655,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
 
       if (isMounted.current) setData({ currentPeriod, pendingCommissions: commissions });
     } catch (err: unknown) {
-      if (isMounted.current) setError(err instanceof Error ? err.message : String(err));
+      if (isMounted.current) setError(safeErrorMessage(err));
     } finally {
       loadingRef.current = false;
       if (isMounted.current) setLoading(false);
@@ -711,7 +712,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
       }
       load();
     } catch (err: unknown) {
-      if (isMounted.current) setError(err instanceof Error ? err.message : String(err));
+      if (isMounted.current) setError(safeErrorMessage(err));
     } finally {
       if (isMounted.current) setProcessing(false);
     }
@@ -945,7 +946,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
         );
         setTotal(count || 0);
       } catch (err: unknown) {
-        if (isMounted.current) setLoadError(err instanceof Error ? err.message : String(err));
+        if (isMounted.current) setLoadError(safeErrorMessage(err));
       } finally {
         if (isMounted.current) setLoading(false);
       }
@@ -1192,7 +1193,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
       load();
       masterBus.emit('ANNOUNCEMENT_CHANGED', { clubId, action: 'created' });
     } catch (err: unknown) {
-      if (isMounted.current) setActionError(err instanceof Error ? err.message : String(err));
+      if (isMounted.current) setActionError(safeErrorMessage(err));
     } finally {
       if (isMounted.current) setSaving(false);
     }
@@ -1218,7 +1219,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
       load();
       masterBus.emit('ANNOUNCEMENT_CHANGED', { clubId, action: 'deleted' });
     } catch (err: unknown) {
-      if (isMounted.current) setActionError(err instanceof Error ? err.message : String(err));
+      if (isMounted.current) setActionError(safeErrorMessage(err));
     }
   };
 
@@ -1233,7 +1234,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
       load();
       masterBus.emit('ANNOUNCEMENT_CHANGED', { clubId, action: 'created' });
     } catch (err: unknown) {
-      if (isMounted.current) setActionError(err instanceof Error ? err.message : String(err));
+      if (isMounted.current) setActionError(safeErrorMessage(err));
     }
   };
 
@@ -1410,7 +1411,7 @@ function SettingsTab({ clubId }: { clubId: string }) {
       masterBus.emit('CLUB_UPDATED', { clubId: uuid });
       if (isMounted.current) setMsg('Settings saved!');
     } catch (e: unknown) {
-      if (isMounted.current) setErr(e instanceof Error ? e.message : String(e));
+      if (isMounted.current) setErr(safeErrorMessage(e));
     } finally {
       if (isMounted.current) setProcessing(false);
     }
@@ -1519,7 +1520,7 @@ function HierarchyTab({ clubId }: { clubId: string }) {
       }
       if (isMounted.current) setTree(treeData);
     } catch (err: unknown) {
-      if (isMounted.current) setLoadError(err instanceof Error ? err.message : String(err));
+      if (isMounted.current) setLoadError(safeErrorMessage(err));
     } finally {
       if (isMounted.current) setLoading(false);
     }
@@ -1748,7 +1749,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
       masterBus.emit('CLUB_UPDATED', { clubId: uuid });
       if (isMounted.current) setMsg('Branding saved!');
     } catch (e: unknown) {
-      if (isMounted.current) setErr(e instanceof Error ? e.message : String(e));
+      if (isMounted.current) setErr(safeErrorMessage(e));
     } finally {
       if (isMounted.current) setSaving(false);
     }
@@ -1871,7 +1872,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
                 setMsg('Ownership transferred! Reloading...');
                 setTimeout(() => window.location.reload(), 1500);
               } catch (e: unknown) {
-                setErr('Transfer failed: ' + (e instanceof Error ? e.message : String(e)));
+                setErr(safeErrorMessage(e, 'Transfer failed. Please try again.'));
               }
             }}
           >
@@ -2038,7 +2039,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
       if (error) throw error;
       if (isMounted.current) setTemplates(data || []);
     } catch (err: unknown) {
-      if (isMounted.current) setLoadError(err instanceof Error ? err.message : String(err));
+      if (isMounted.current) setLoadError(safeErrorMessage(err));
     } finally {
       if (isMounted.current) setLoading(false);
     }
@@ -2131,7 +2132,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                         masterBus.emit('TABLE_CREATED', { tableId: newTable?.id || '', clubId });
                       } catch (e: unknown) {
                         setActionError(
-                          `Launch failed: ${e instanceof Error ? e.message : String(e)}`
+                          `Launch failed: ${safeErrorMessage(e)}`
                         );
                       }
                     }}
@@ -2160,7 +2161,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                         load();
                       } catch (e: unknown) {
                         setActionError(
-                          `Delete failed: ${e instanceof Error ? e.message : String(e)}`
+                          `Delete failed: ${safeErrorMessage(e)}`
                         );
                       }
                     }}
@@ -2384,7 +2385,7 @@ function MintChipsTab({ clubId }: { clubId: string }) {
                 setAmount('');
                 setNotes('');
               } catch (e: unknown) {
-                setErr(e instanceof Error ? e.message : String(e));
+                setErr(safeErrorMessage(e));
               } finally {
                 setProcessing(false);
               }
@@ -2461,7 +2462,7 @@ export default function AdminDashboardPage() {
           setError('No club found or selected.');
         }
       } catch (err: unknown) {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        if (!cancelled) setError(safeErrorMessage(err));
       } finally {
         if (!cancelled) setLoading(false);
       }

@@ -25,6 +25,7 @@ import { resolveClubIdFilter, resolveClubUUID } from '../../utils/clubIdResolver
 import './ChipTransferModal.css';
 import { reportError } from '../../utils/errorReporter';
 
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
 interface Recipient {
   id: string;
   username: string;
@@ -299,7 +300,7 @@ export default function ChipTransferModal({
       }, 1500);
     } catch (err: any) {
       reportError(err, 'ChipTransferModal.Transfer_error');
-      if (isMounted.current) setError(err.message || 'Transfer failed. Please try again.');
+      if (isMounted.current) setError(safeErrorMessage(err, 'Transfer failed. Please try again.'));
     }
     setIsLoading(false);
   };

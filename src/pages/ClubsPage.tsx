@@ -27,6 +27,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { STORAGE_KEYS } from '../lib/storage';
 import { reportError } from '../utils/errorReporter';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 type Tab = 'discover' | 'my-clubs' | 'create';
 
 interface Club {
@@ -289,7 +290,7 @@ export default function ClubsPage() {
     } catch (err: any) {
       reportError(err, 'ClubsPage.Join_failed');
       toast.error(err.message || 'Failed to join club');
-      setJoinError(err.message || 'Failed to join club');
+      setJoinError(safeErrorMessage(err, 'Failed to join club'));
     } finally {
       setIsJoining(false);
     }
@@ -327,7 +328,7 @@ export default function ClubsPage() {
     } catch (err: any) {
       reportError(err, 'ClubsPage.Create_failed');
       toast.error(err.message || 'Failed to create club');
-      setCreateError(err.message || 'Failed to create club');
+      setCreateError(safeErrorMessage(err, 'Failed to create club'));
     } finally {
       setIsCreating(false);
     }

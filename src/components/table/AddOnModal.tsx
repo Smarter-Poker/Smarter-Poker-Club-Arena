@@ -11,6 +11,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { haptic, soundService } from '../../services/SoundService';
 
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
+// Whole-number tournament money (Dan 2026-08-20).
+import { money } from '../../utils/buyIn';
+
 interface AddOnModalProps {
   isVisible: boolean;
   /** Base add-on cost — the part that feeds the prize pool. */
@@ -58,7 +62,8 @@ export default function AddOnModal({
   onDeclineRef.current = onDecline;
   const decidedRef = useRef(false);
 
-  const totalCost = Math.round((addOnCost + addOnFee) * 100) / 100;
+  // Whole chips (Dan 2026-08-20) - no decimal add-on prices.
+  const totalCost = Math.round(addOnCost) + Math.round(addOnFee);
   // Gate on the TOTAL, and never on a zero price. `addOnCost` is fed from a
   // realtime broadcast that defaults it to 0 when the field is missing; a 0
   // price made canAfford unconditionally true and let players buy at a price
@@ -125,9 +130,7 @@ export default function AddOnModal({
       } else {
         setResult('failed');
         setFailureMessage(
-          typeof err?.message === 'string' && err.message
-            ? err.message
-            : 'The add-on was not completed. Your wallet was not charged.'
+          safeErrorMessage(err, 'The add-on was not completed. Your wallet was not charged.')
         );
       }
     } finally {
@@ -218,7 +221,7 @@ export default function AddOnModal({
             >
               <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Add-On Cost</span>
               <span style={{ color: '#fff', fontWeight: 600, fontSize: 14 }}>
-                {addOnCost.toLocaleString()} chips
+                {money(addOnCost)} chips
               </span>
             </div>
             {addOnFee > 0 && (
@@ -232,7 +235,7 @@ export default function AddOnModal({
               >
                 <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>House Fee</span>
                 <span style={{ color: '#fff', fontWeight: 600, fontSize: 14 }}>
-                  {addOnFee.toLocaleString()} chips
+                  {money(addOnFee)} chips
                 </span>
               </div>
             )}
@@ -248,7 +251,7 @@ export default function AddOnModal({
             >
               <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Total Charged</span>
               <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>
-                {totalCost.toLocaleString()} chips
+                {money(totalCost)} chips
               </span>
             </div>
             <div

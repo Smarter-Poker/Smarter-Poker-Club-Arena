@@ -12,6 +12,7 @@ import { BLIND_STRUCTURES, SPIN_BLIND_STRUCTURE } from '../config/blindStructure
 // client that TournamentService constructs at import.
 import type { TournamentConfig } from '../services/TournamentService';
 import { payoutEngine } from '../services/PayoutEngine';
+import { splitBuyIn } from '../utils/buyIn';
 
 /**
  * The route's :gameType -> the tournament engine's variant vocabulary.
@@ -107,13 +108,23 @@ export function buildTournamentConfig(
     ? [{ place: 1, percentage: 100 }]
     : payoutEngine.normalizePayouts(payoutEngine.autoSelectPayouts(maxPlayers));
 
+  // WHOLE-DOLLAR BUY-IN (Dan 2026-08-20): "Sit and Go and any tournament
+  // buy-ins must never be decimal buy-ins, whole numbers only." The Buy-in
+  // slider on the create-table form already steps in whole chips; rounding here
+  // is the backstop for a restored draft or a programmatic config. `buyIn` is
+  // the TOTAL the player pays and the 10% fee is a cut OUT of it, so both
+  // halves of the split are whole numbers too.
+  const buyIn = Math.max(0, Math.round(Number(config.buyIn) || 0));
+  const split = splitBuyIn(buyIn);
+
   return {
     name: config.name.trim() || 'Tournament',
     type: isSpins ? 'spin' : isSng ? 'sng' : config.koBounty ? 'bounty' : 'mtt',
-    buyIn: config.buyIn,
-    // The house takes 10% of the buy-in on every tournament. It is recomputed
-    // server-side in fn_create_tournament; this is only what the UI shows.
-    rake: Math.round(config.buyIn * 0.1 * 100) / 100,
+    buyIn: split.total,
+    // The house takes 10% of the buy-in on every tournament, rounded to a whole
+    // number. It is recomputed identically server-side in fn_create_tournament;
+    // this is only what the UI shows.
+    rake: split.fee,
     startingStack: config.startingChips,
     maxPlayers,
     minPlayers,
@@ -136,17 +147,19 @@ export function buildTournamentConfig(
       : undefined,
     isRebuy: config.numberOfRebuysReentries > 0,
     isReentry: config.numberOfRebuysReentries > 0,
-    rebuyCost: config.buyIn,
+    rebuyCost: split.total,
     rebuyChips: config.startingChips,
     addOnAvailable: config.addOnMultiplier > 0,
-    addOnCost: config.buyIn,
+    addOnCost: split.total,
     addOnChips: Math.round(config.startingChips * Math.max(1, config.addOnMultiplier)),
     addOnLevels: 1,
     guaranteedPrize: 0,
     gameVariant: TOURNAMENT_GAME_VARIANTS[gameType ?? 'nlh'] ?? 'NLH',
     spinType: isSpins ? 'standard' : undefined,
+    // Half the buy-in as the head, floored to a whole number so the bounty can
+    // never be a decimal and can never exceed the prize half of the split.
     bountyConfig: config.koBounty
-    ? { baseBounty: Math.round(config.buyIn * 0.5 * 100) / 100 }
+    ? { baseBounty: Math.min(split.prize, Math.floor(split.total * 0.5)) }
     : undefined,
   } as TournamentConfig;
 }

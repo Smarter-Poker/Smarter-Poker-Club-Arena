@@ -10,6 +10,7 @@ import styles from './CreateTableModal.module.css';
 import { reportError } from '../../utils/errorReporter';
 import { clampSeatsForVariant, seatOptionsForVariant } from '../../config/tableSeating';
 
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
 interface CreateTableModalProps {
   clubId: string;
   onClose: () => void;
@@ -155,7 +156,7 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
     } catch (err) {
       reportError(err, 'CreateTableModal.Failed_to_create_table');
       if (isMounted.current) {
-        setError((err as Error).message || 'Failed to create table. Please try again.');
+        setError(safeErrorMessage(err, 'Failed to create table. Please try again.'));
       }
     } finally {
       if (isMounted.current) {

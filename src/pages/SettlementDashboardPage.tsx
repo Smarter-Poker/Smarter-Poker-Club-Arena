@@ -27,6 +27,7 @@ import { reportError } from '../utils/errorReporter';
 import UnionOpsPanel from '../components/union/UnionOpsPanel';
 import UnionAgentStatements from '../components/union/UnionAgentStatements';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -280,7 +281,7 @@ export default function SettlementDashboardPage() {
     } catch (err) {
       reportError(err, 'SettlementDashboardPage.Load_failed');
       if (isMounted.current) {
-        setLoadError((err as Error).message || 'Failed to load settlement data');
+        setLoadError(safeErrorMessage(err, 'Failed to load settlement data'));
         toast.error('Failed to load settlement data');
       }
     } finally {

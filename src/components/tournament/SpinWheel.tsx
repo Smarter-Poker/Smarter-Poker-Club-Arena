@@ -248,7 +248,9 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
     return best;
   }, [data, order]);
 
-  const prize = data ? Math.round(data.buyIn * data.multiplier * 100) / 100 : 0;
+  // Whole chips (Dan 2026-08-20) - the Spin prize is buy-in x multiplier and
+  // the buy-in is whole, so the prize is shown whole too.
+  const prize = data ? Math.round(data.buyIn * data.multiplier) : 0;
 
   useEffect(() => {
     timersRef.current.forEach(clearTimeout);
@@ -460,7 +462,7 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
           <div className="sw__status">
             <span className="sw__status-sub">
               {currency}
-              {data.buyIn.toLocaleString()} buy-in
+              {Math.round(data.buyIn).toLocaleString('en-US')} buy-in
             </span>
             {nextUnlock && (
               <span className="sw__status-locked">

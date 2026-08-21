@@ -19,6 +19,7 @@ import { sanitizeInput } from '../utils/sanitizeInput';
 import { buildClubSlug, escapeIlikePattern } from '../utils/clubSlug';
 import { reportError } from '../utils/errorReporter';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES & CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -659,7 +660,7 @@ export default function CreateClubPage() {
       navigate(`/clubs/${data.id}`);
     } catch (err: any) {
       reportError(err, 'CreateClubPage.Failed_to_create_club');
-      if (isMounted.current) setError(err.message || 'Failed to create club');
+      if (isMounted.current) setError(safeErrorMessage(err, 'Failed to create club'));
     } finally {
       if (isMounted.current) setCreating(false);
     }

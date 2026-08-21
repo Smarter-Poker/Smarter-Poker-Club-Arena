@@ -1736,6 +1736,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         onClose={() => setShowBBJInfo(false)}
         poolId={bbjPoolId}
         poolAmount={jackpotAmount}
+        currentUserId={currentUserId}
       />
 
       {/* ═══════════════════════════════════════════════════════════════════

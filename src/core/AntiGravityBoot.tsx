@@ -17,6 +17,7 @@
 import React, { useEffect, useState, useCallback, ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -80,7 +81,7 @@ async function testSupabaseConnection(): Promise<{ success: boolean; error?: str
   } catch (err) {
     return {
       success: false,
-      error: err instanceof Error ? err.message : 'Unknown connection error',
+      error: safeErrorMessage(err, 'Could not reach the game servers.'),
     };
   }
 }
@@ -231,7 +232,7 @@ export function AntiGravityBoot({ children, onBootComplete }: AntiGravityBootPro
     // STEP 2: Test Supabase connection
     const supabaseCheck = await testSupabaseConnection();
     if (!supabaseCheck.success && supabaseCheck.error) {
-      errors.push(`Database: ${supabaseCheck.error}`);
+      errors.push(safeErrorMessage(supabaseCheck.error, 'Could not reach the game servers.'));
     }
 
     // STEP 3: Determine final status

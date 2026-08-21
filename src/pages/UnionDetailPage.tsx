@@ -29,6 +29,8 @@ import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import { ensureMidwayUnionSetup } from '../services/HorseOrchestrator';
 import { getUnionLevel, getClubLevel } from '../utils/clubLevels';
 import { reportError } from '../utils/errorReporter';
+// Whole-number tournament money (Dan 2026-08-20).
+import { formatBuyInShort } from '../utils/buyIn';
 import UnionClubGovernance from '../components/union/UnionClubGovernance';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1266,7 +1268,9 @@ export default function UnionDetailPage() {
                     </div>
                     <div className={styles.tableCardDetails}>
                       <span> {union?.name || t.clubs?.name || 'Union'}</span>
-                      <span> {t.buy_in_amount?.toLocaleString() || 0}</span>
+                      {/* The advertised buy-in is the TOTAL (prize + fee), in
+                          whole chips - never the prize half on its own. */}
+                      <span> {formatBuyInShort(t.buy_in_amount || 0, t.buy_in_fee)}</span>
                       <span>
                         {' '}
                         {t.current_players || 0}

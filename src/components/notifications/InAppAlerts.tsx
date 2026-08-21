@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
 import './InAppAlerts.css';
 
 export interface Alert {
@@ -129,7 +130,17 @@ export const useAlerts = () => {
 
   const error = useCallback(
     (title: string, message?: string) => {
-      return addAlert({ type: 'error', title, message, duration: 0 });
+      // This is a SECOND popup surface, separate from the Toast provider, so it
+      // needs its own lock on Dan's rule (2026-08-20): no server error text in
+      // front of a player. Titles are always hand-written literals at the call
+      // site; the detail body is where a caught `e.message` would land, so that
+      // is what gets sanitised. See utils/safeErrorMessage.ts.
+      return addAlert({
+        type: 'error',
+        title,
+        message: message === undefined ? undefined : safeErrorMessage(message),
+        duration: 0,
+      });
     },
     [addAlert]
   );

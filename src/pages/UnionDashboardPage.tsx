@@ -25,6 +25,7 @@ import { reportError } from '../utils/errorReporter';
 import UnionOpsPanel from '../components/union/UnionOpsPanel';
 import UnionClubGovernance from '../components/union/UnionClubGovernance';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 // ── Helpers ─────────────────────────────────────────────────
 const pct = (n: number | null | undefined) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
 
@@ -283,7 +284,7 @@ export default function UnionDashboardPage() {
           await loadUnionData(id);
         }
       } catch (err: any) {
-        if (mountedRef.current) setError(err.message);
+        if (mountedRef.current) setError(safeErrorMessage(err));
         // Clear stale SWR cache on error to prevent ghost data
         try {
           sessionStorage.removeItem(`union_dashboard_swr_${user?.id}`);
@@ -828,7 +829,7 @@ export default function UnionDashboardPage() {
                       setEditCommClub(null);
                       loadDashboard(unionId);
                     } catch (err: any) {
-                      setError(err.message);
+                      setError(safeErrorMessage(err));
                     } finally {
                       setProcessing(false);
                     }
@@ -1054,7 +1055,7 @@ export default function UnionDashboardPage() {
                         setAnnMsg('');
                         loadDashboard(unionId);
                       } catch (err: any) {
-                        setError(err.message);
+                        setError(safeErrorMessage(err));
                       } finally {
                         setProcessing(false);
                       }
@@ -1345,7 +1346,7 @@ export default function UnionDashboardPage() {
                         setDepositForm({ amount: '', notes: '' });
                         loadDashboard(unionId);
                       } catch (err: any) {
-                        setError(err.message || 'Deposit failed');
+                        setError(safeErrorMessage(err, 'Deposit failed'));
                       } finally {
                         setProcessing(false);
                       }
@@ -1403,7 +1404,7 @@ export default function UnionDashboardPage() {
                         masterBus.emit('BALANCE_UPDATED', { source: 'bbj_fund' });
                         loadDashboard(unionId);
                       } catch (err: any) {
-                        setError(err.message || 'BBJ funding failed');
+                        setError(safeErrorMessage(err, 'BBJ funding failed'));
                       } finally {
                         setProcessing(false);
                       }
@@ -1527,7 +1528,7 @@ export default function UnionDashboardPage() {
                         setClawbackForm({ target: '', amount: '', reason: '' });
                         loadDashboard(unionId);
                       } catch (err: any) {
-                        setError(err.message || 'Clawback failed');
+                        setError(safeErrorMessage(err, 'Clawback failed'));
                       } finally {
                         setProcessing(false);
                       }
@@ -1601,7 +1602,7 @@ export default function UnionDashboardPage() {
                         setTransferForm({ clubId: '', amount: '', notes: '' });
                         loadDashboard(unionId);
                       } catch (err: any) {
-                        setError(err.message);
+                        setError(safeErrorMessage(err));
                       } finally {
                         setProcessing(false);
                       }
@@ -1991,7 +1992,7 @@ export default function UnionDashboardPage() {
                               loadApps();
                               loadDashboard(unionId);
                             } catch (err: any) {
-                              setError(err.message);
+                              setError(safeErrorMessage(err));
                             } finally {
                               setProcessing(false);
                             }
@@ -2021,7 +2022,7 @@ export default function UnionDashboardPage() {
                               setAppsLoaded(false);
                               loadApps();
                             } catch (err: any) {
-                              setError(err.message);
+                              setError(safeErrorMessage(err));
                             } finally {
                               setProcessing(false);
                             }
@@ -2086,7 +2087,7 @@ export default function UnionDashboardPage() {
                               loadLeaveReqs();
                               loadDashboard(unionId);
                             } catch (err: any) {
-                              setError(err.message);
+                              setError(safeErrorMessage(err));
                             } finally {
                               setProcessing(false);
                             }
@@ -2105,7 +2106,7 @@ export default function UnionDashboardPage() {
                               setSuccess(`${lr.club_name}'s leave request denied`);
                               loadLeaveReqs();
                             } catch (err: any) {
-                              setError(err.message);
+                              setError(safeErrorMessage(err));
                             } finally {
                               setProcessing(false);
                             }
@@ -2274,7 +2275,7 @@ export default function UnionDashboardPage() {
                       setSuccess('Settings saved');
                       loadDashboard(unionId);
                     } catch (err: any) {
-                      setError(err.message);
+                      setError(safeErrorMessage(err));
                     } finally {
                       setProcessing(false);
                     }
@@ -2367,7 +2368,7 @@ export default function UnionDashboardPage() {
                                     setSuccess('Admin removed');
                                     loadDashboard(unionId);
                                   } catch (err: any) {
-                                    setError(err.message);
+                                    setError(safeErrorMessage(err));
                                   } finally {
                                     setProcessing(false);
                                   }
@@ -2409,7 +2410,7 @@ export default function UnionDashboardPage() {
                             .limit(5);
                           setAdminResults(users || []);
                         } catch (err: any) {
-                          setError(err.message);
+                          setError(safeErrorMessage(err));
                         } finally {
                           setProcessing(false);
                         }
@@ -2456,7 +2457,7 @@ export default function UnionDashboardPage() {
                                 setAdminSearch('');
                                 loadDashboard(unionId);
                               } catch (err: any) {
-                                setError(err.message);
+                                setError(safeErrorMessage(err));
                               } finally {
                                 setProcessing(false);
                               }

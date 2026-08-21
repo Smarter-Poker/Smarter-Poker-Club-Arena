@@ -23,6 +23,7 @@ import haptic from '../../services/HapticService';
 import styles from './CreateClubModal.module.css';
 import { reportError } from '../../utils/errorReporter';
 
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
 interface CreateClubModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -556,11 +557,11 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
       if (result.success && result.logoUrl) {
         setPreviewUrl(result.logoUrl);
       } else {
-        if (isMounted.current) setError(result.error || 'Failed to generate logo');
+        if (isMounted.current) setError(safeErrorMessage(result.error, 'Failed to generate logo'));
       }
     } catch (err) {
       reportError(err, 'CreateClubModal.Failed_to_generate_logo');
-      if (isMounted.current) setError(err instanceof Error ? err.message : 'Unknown error');
+      if (isMounted.current) setError(safeErrorMessage(err, 'Unknown error'));
     } finally {
       if (isMounted.current) setIsGenerating(false);
     }

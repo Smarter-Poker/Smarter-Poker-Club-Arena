@@ -14,6 +14,7 @@
 
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 
 export interface AgentRoleRow {
   club_id: string;
@@ -88,8 +89,9 @@ export function describeRakeError(e: unknown): string {
   if (/not_authorised|not_authorized/i.test(msg)) {
     return 'You can only view your own downline, or someone beneath you in it.';
   }
-  if (/permission denied/i.test(msg)) return 'Permission denied by the database.';
-  return msg;
+  if (/permission denied/i.test(msg)) return 'You do not have permission to do that.';
+  // Unrecognised text is sanitised, never shown raw. See utils/safeErrorMessage.ts.
+  return safeErrorMessage(e, 'That request could not be completed.');
 }
 
 export const AgentRakeService = {

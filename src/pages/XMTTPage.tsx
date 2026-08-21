@@ -18,10 +18,13 @@ import styles from './XMTTPage.module.css';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { fmt, fmtChips } from '../utils/format';
+// Whole-number tournament money (Dan 2026-08-20).
+import { formatBuyIn, money, totalBuyIn } from '../utils/buyIn';
 import { reportError } from '../utils/errorReporter';
 import { clubGamesOrFilter } from '../utils/unionScope';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 const formatDate = (ts: string | null) => {
   if (!ts) return '';
   return new Date(ts).toLocaleDateString(undefined, {
@@ -52,7 +55,9 @@ interface Tournament {
   name: string;
   status: string;
   type?: string;
+  /** The PRIZE half of the split. Never render it alone - see totalBuyIn. */
   buy_in: number;
+  buy_in_fee?: number | null;
   max_players: number;
   registered_count?: number;
   start_time?: string;
@@ -103,7 +108,7 @@ export default function XMTTPage() {
         let query = supabase
           .from('tournaments')
           .select(
-            'id, name, status, type:tournament_type, buy_in:buy_in_amount, max_players, registered_count:current_players, start_time, created_at, prize_pool, club_id'
+            'id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, club_id'
           )
           .or(await clubGamesOrFilter(uuid))
           .order('start_time', { ascending: false });
@@ -128,7 +133,7 @@ export default function XMTTPage() {
         supabase
           .from('tournaments')
           .select(
-            'id, name, status, type:tournament_type, buy_in:buy_in_amount, max_players, registered_count:current_players, start_time, created_at, prize_pool'
+            'id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool'
           )
           .eq('id', tournamentId)
           .maybeSingle(),
@@ -235,7 +240,7 @@ export default function XMTTPage() {
       loadTournaments(clubId);
       if (selectedTournament === tournamentId) loadDetail(tournamentId);
     } catch (err: any) {
-      setActionError(err.message);
+      setActionError(safeErrorMessage(err));
       clearTimeout(errorTimerRef.current);
       errorTimerRef.current = setTimeout(() => setActionError(null), 5000);
     }
@@ -249,7 +254,7 @@ export default function XMTTPage() {
       loadTournaments(clubId);
       if (selectedTournament === tournamentId) loadDetail(tournamentId);
     } catch (err: any) {
-      setActionError(err.message);
+      setActionError(safeErrorMessage(err));
       clearTimeout(errorTimerRef.current);
       errorTimerRef.current = setTimeout(() => setActionError(null), 5000);
     }
@@ -287,7 +292,7 @@ export default function XMTTPage() {
       const { position } = await tournamentService.joinTournamentWaitlist(tournamentId, user.id);
       setWaitlistPositions((prev) => ({ ...prev, [tournamentId]: position }));
     } catch (err: any) {
-      setActionError(err.message);
+      setActionError(safeErrorMessage(err));
       clearTimeout(errorTimerRef.current);
       errorTimerRef.current = setTimeout(() => setActionError(null), 5000);
     } finally {
@@ -302,7 +307,7 @@ export default function XMTTPage() {
       await tournamentService.leaveTournamentWaitlist(tournamentId, user.id);
       setWaitlistPositions((prev) => ({ ...prev, [tournamentId]: null }));
     } catch (err: any) {
-      setActionError(err.message);
+      setActionError(safeErrorMessage(err));
       clearTimeout(errorTimerRef.current);
       errorTimerRef.current = setTimeout(() => setActionError(null), 5000);
     } finally {
@@ -380,7 +385,10 @@ export default function XMTTPage() {
                   <StatusBadge status={t.status} />
                 </div>
                 <div className={styles.tournMeta}>
-                  <span> Buy-in: {fmtChips(t.buy_in)}</span>
+                  {/* The advertised buy-in is the TOTAL (prize + fee), as whole
+                      chips. buy_in_amount alone understated it by the fee and
+                      could print a decimal on legacy rows. */}
+                  <span> Buy-in: {money(totalBuyIn(t.buy_in, t.buy_in_fee))}</span>
                   <span>
                     {t.registered_count || 0} / {t.max_players || '∞'}
                   </span>
@@ -467,13 +475,16 @@ export default function XMTTPage() {
                   <div>
                     <div className={styles.detailLabel}>Buy-In</div>
                     <div className={styles.detailValueGold}>
-                      {fmtChips(detail.tournament?.buy_in)}
+                      {formatBuyIn(
+                        detail.tournament?.buy_in ?? 0,
+                        detail.tournament?.buy_in_fee
+                      )}
                     </div>
                   </div>
                   <div>
                     <div className={styles.detailLabel}>Prize Pool</div>
                     <div className={styles.detailValueGreen}>
-                      {fmtChips(detail.tournament?.prize_pool || 0)}
+                      {money(detail.tournament?.prize_pool || 0)}
                     </div>
                   </div>
                   <div>

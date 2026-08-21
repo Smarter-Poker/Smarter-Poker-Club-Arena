@@ -16,6 +16,7 @@ import { masterBus } from '../core/MasterBus';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import { reportError } from '../utils/errorReporter';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -178,7 +179,7 @@ export default function CreateUnionPage() {
       navigate(`/unions/${data.id}`);
     } catch (err: any) {
       reportError(err, 'CreateUnionPage.Failed_to_create_union');
-      setError(err.message || 'Failed to create union');
+      setError(safeErrorMessage(err, 'Failed to create union'));
     } finally {
       setCreating(false);
     }

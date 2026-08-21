@@ -16,6 +16,7 @@ import './AgentCashoutPanel.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { reportError } from '../../utils/errorReporter';
 
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
 interface AgentCashoutPanelProps {
   clubId?: string;
   onCashoutProcessed?: () => void;
@@ -136,7 +137,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
       // Emit bus event so DynamicWallet and CashierPage refresh
       masterBus.emit('BALANCE_UPDATED', { source: 'cashout_approved', playerId: cashout.playerId });
     } catch (err: any) {
-      if (isMounted.current) setError(err.message || 'Failed to approve cashout');
+      if (isMounted.current) setError(safeErrorMessage(err, 'Failed to approve cashout'));
     }
     if (isMounted.current) setProcessing(null);
   };
@@ -167,7 +168,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
       // Emit bus event so DynamicWallet and CashierPage refresh
       masterBus.emit('BALANCE_UPDATED', { source: 'cashout_rejected', playerId: cashout.playerId });
     } catch (err: any) {
-      if (isMounted.current) setError(err.message || 'Failed to reject cashout');
+      if (isMounted.current) setError(safeErrorMessage(err, 'Failed to reject cashout'));
     }
     if (isMounted.current) setProcessing(null);
   };

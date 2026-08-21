@@ -11,11 +11,14 @@ import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import styles from './TournamentLobbyCard.module.css';
 import { reportError } from '../../utils/errorReporter';
+// Whole-number tournament money (Dan 2026-08-20).
+import { money } from '../../utils/buyIn';
 
 interface Tournament {
   id: string;
   name: string;
   type: 'sng' | 'mtt' | 'satellite' | 'spin' | 'bounty' | 'pko' | 'mystery';
+  /** The TOTAL a player pays, whole chips. Never the prize half on its own. */
   buyIn: number;
   prizePool: number;
   maxPlayers: number;
@@ -310,7 +313,8 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
       <div className={styles.info}>
         <div className={styles.infoItem}>
           <span className={styles.infoLabel}>Buy-in</span>
-          <span className={styles.infoValue}>{tournament.buyIn.toLocaleString()}</span>
+          {/* Whole chips only (Dan 2026-08-20) - never a decimal buy-in. */}
+          <span className={styles.infoValue}>{money(tournament.buyIn)}</span>
         </div>
         <div className={styles.infoItem}>
           <span className={styles.infoLabel}>Prize Pool</span>
@@ -319,7 +323,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
               const gtd = tournament.guaranteedPrize || 0;
               const displayPool =
                 gtd > 0 ? Math.max(tournament.prizePool, gtd) : tournament.prizePool;
-              return displayPool.toLocaleString();
+              return money(displayPool);
             })()}
             {tournament.guaranteedPrize && tournament.guaranteedPrize > 0 && (
               <span className={styles.gtdBadge}>GTD</span>
@@ -461,7 +465,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
                 ? 'Registering...'
                 : isFull
                   ? 'Tournament Full'
-                  : `Register (${tournament.buyIn.toLocaleString()})`}
+                  : `Register (${money(tournament.buyIn)})`}
             </button>
           ))}
         {tournament.status === 'running' && isRegistered && (

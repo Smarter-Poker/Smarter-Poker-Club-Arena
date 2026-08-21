@@ -8,6 +8,9 @@ import React, { useState, useCallback } from 'react';
 import { tournamentService } from '../../services/TournamentService';
 import { masterBus } from '../../core/MasterBus';
 import { soundService } from '../../services/SoundService';
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
+// Whole-number tournament money (Dan 2026-08-20).
+import { money } from '../../utils/buyIn';
 import './RebuyModal.css';
 
 interface RebuyModalProps {
@@ -52,7 +55,7 @@ export const RebuyModal: React.FC<RebuyModalProps> = ({
         onSuccess(result.newStack || rebuyChips);
       }
     } catch (err: any) {
-      setError(err.message || 'Rebuy failed');
+      setError(safeErrorMessage(err, 'Rebuy failed'));
     } finally {
       setProcessing(false);
     }
@@ -90,7 +93,7 @@ export const RebuyModal: React.FC<RebuyModalProps> = ({
           <div className="rm-details">
             <div className="rm-detail-row">
               <span className="rm-detail-label">Rebuy Cost</span>
-              <span className="rm-detail-value">{rebuyCost.toLocaleString()} chips</span>
+              <span className="rm-detail-value">{money(rebuyCost)} chips</span>
             </div>
             <div className="rm-detail-row">
               <span className="rm-detail-label">Chips Received</span>
@@ -114,7 +117,7 @@ export const RebuyModal: React.FC<RebuyModalProps> = ({
             Decline
           </button>
           <button className="rm-btn rm-btn-rebuy" onClick={handleRebuy} disabled={processing}>
-            {processing ? 'Processing...' : `Rebuy - ${rebuyCost.toLocaleString()}`}
+            {processing ? 'Processing...' : `Rebuy - ${money(rebuyCost)}`}
           </button>
         </div>
       </div>

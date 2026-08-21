@@ -127,7 +127,8 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
         setTournaments(
           data.map((t) => ({
             id: t.id,
-            buyIn: t.buy_in_amount,
+            // Whole chips only (Dan 2026-08-20) - no decimal Spin buy-ins.
+            buyIn: Math.max(0, Math.round(Number(t.buy_in_amount) || 0)),
             players: t.player_count || 0,
             maxPlayers: t.max_players || 3,
             multipliers: t.multipliers || SPIN_MULTIPLIERS,
@@ -169,7 +170,7 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
 
       if (error) throw error;
 
-      toast.success(`Registered for ${tournament.buyIn} Spin!`);
+      toast.success(`Registered for ${Math.round(tournament.buyIn).toLocaleString('en-US')} Spin!`);
       onRegister?.(tournament.id);
       loadTournaments();
     } catch (error: any) {

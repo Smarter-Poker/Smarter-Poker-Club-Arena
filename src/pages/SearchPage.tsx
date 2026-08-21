@@ -13,6 +13,8 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import './SearchPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { reportError } from '../utils/errorReporter';
+// Whole-number tournament money (Dan 2026-08-20).
+import { formatBuyInShort } from '../utils/buyIn';
 
 type SearchCategory = 'all' | 'clubs' | 'players' | 'tables' | 'tournaments';
 
@@ -167,7 +169,7 @@ export default function SearchPage() {
         if (category === 'all' || category === 'tournaments') {
           const { data: tournaments } = await supabase
             .from('tournaments')
-            .select('id, name, buy_in_amount, status, current_players, max_players')
+            .select('id, name, buy_in_amount, buy_in_fee, status, current_players, max_players')
             .ilike('name', `%${sanitized}%`)
             .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
             // Private club tournaments are not platform-searchable.
@@ -180,7 +182,8 @@ export default function SearchPage() {
                 id: t.id,
                 type: 'tournament' as const,
                 name: t.name,
-                subtitle: `${t.status} • ${t.buy_in_amount || 0} buy-in • ${t.current_players || 0}/${t.max_players || '∞'}`,
+                // The advertised buy-in is the TOTAL (prize + fee), whole chips.
+                subtitle: `${t.status} • ${formatBuyInShort(t.buy_in_amount || 0, t.buy_in_fee)} buy-in • ${t.current_players || 0}/${t.max_players || '∞'}`,
               }))
             );
           }

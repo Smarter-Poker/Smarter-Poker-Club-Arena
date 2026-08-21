@@ -17,6 +17,7 @@ import { referralService } from '../services/ReferralService';
 import styles from './AuthPage.module.css';
 import { reportError } from '../utils/errorReporter';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 type AuthMode = 'login' | 'signup' | 'reset';
 
 export default function AuthPage() {
@@ -231,7 +232,7 @@ export default function AuthPage() {
       }
     } catch (err: any) {
       reportError(err, 'AuthPage.Signup_failed');
-      if (isMounted.current) setError(err.message || 'Signup failed. Please try again.');
+      if (isMounted.current) setError(safeErrorMessage(err, 'Signup failed. Please try again.'));
     } finally {
       if (isMounted.current) setIsLoading(false);
     }
@@ -252,7 +253,7 @@ export default function AuthPage() {
       setSuccess('If an account exists with this email, you will receive a password reset link.');
     } catch (err: any) {
       reportError(err, 'AuthPage.Password_reset_failed');
-      if (isMounted.current) setError(err.message || 'Failed to send reset email.');
+      if (isMounted.current) setError(safeErrorMessage(err, 'Failed to send reset email.'));
     } finally {
       if (isMounted.current) setIsLoading(false);
     }

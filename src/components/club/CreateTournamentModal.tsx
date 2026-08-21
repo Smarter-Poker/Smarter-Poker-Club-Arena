@@ -10,6 +10,7 @@ import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { digitsOnly, isWholeBuyIn, money, splitBuyIn } from '../../utils/buyIn';
 
 interface Props {
   clubId: string;
@@ -49,9 +50,12 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
   const [gameVariant, setGameVariant] = useState<'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'SHORT_DECK'>(
     'NLH'
   );
+  // WHOLE-DOLLAR BUY-INS (Dan 2026-08-20): `buyIn` is the TOTAL the player
+  // pays, always a positive whole number. The 10% house fee is a cut OUT of
+  // that total, never a surcharge on top of it, so the advertised price is the
+  // number typed here and nothing downstream ever holds a decimal. Every money
+  // field in this form is digits-only for the same reason.
   const [buyIn, setBuyIn] = useState('10');
-  // RAKE-AUDIT 2026-07-24: fee auto-tracks 10% of buy-in (house rule)
-  const [rake, setRake] = useState('1');
   const [startingChips, setStartingChips] = useState('1500');
   const [maxPlayers, setMaxPlayers] = useState('50');
   const [blindSpeed, setBlindSpeed] = useState<'turbo' | 'regular' | 'deepStack'>('turbo');
@@ -99,6 +103,12 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
   const [totalDays, setTotalDays] = useState('2');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ── The buy-in, split ──
+  // total = what the player pays (the typed whole number)
+  // fee   = the 10% house cut, rounded to a whole number
+  // prize = total - fee, what reaches the prize pool. Also whole.
+  const split = useMemo(() => splitBuyIn(Number(buyIn) || 0), [buyIn]);
 
   // ── Auto-select payout structure ──
   // SNG/Spin: based on max players. MTT/Bounty/PKO/Mystery: default MTT structure (no max player cap)
@@ -206,31 +216,63 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
         return;
       }
 
+      // ── WHOLE-NUMBER MONEY BACKSTOP (Dan 2026-08-20) ──
+      // The inputs already strip anything that is not a digit, so this can only
+      // fire on a pasted or programmatically-set value. It refuses rather than
+      // silently rounding: a club owner has to know the price changed.
+      const wholeFields: Array<[string, string, boolean]> = [
+        ['Buy-in', buyIn, true],
+        ['Guaranteed prize', guaranteedPrize, false],
+        ...((isRebuy || isReentry) && rebuyCost.trim()
+          ? ([[isRebuy ? 'Rebuy cost' : 'Re-entry cost', rebuyCost, true]] as Array<
+              [string, string, boolean]
+            >)
+          : []),
+        ...(addOnAvailable && addOnCost.trim()
+          ? ([['Add-on cost', addOnCost, true]] as Array<[string, string, boolean]>)
+          : []),
+        ...(isBountyFormat
+          ? ([['Bounty amount', bountyAmount, true]] as Array<[string, string, boolean]>)
+          : []),
+      ];
+      for (const [label, raw, mustBePositive] of wholeFields) {
+        const value = raw.trim();
+        if (!mustBePositive && (value === '' || Number(value) === 0)) continue;
+        if (!isWholeBuyIn(value)) {
+          toast.error(`${label} must be a whole number of chips, with no decimals.`);
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      const parsedBuyIn = Math.round(Number(buyIn));
+      // The 10% house fee is a CUT OF the buy-in, not a surcharge on top. Both
+      // halves are whole numbers, and prize + fee is exactly what the player
+      // pays. fn_create_tournament recomputes the identical split server-side.
+      const parsedRake = splitBuyIn(parsedBuyIn).fee;
+
       // ── Bounty validation (defense-in-depth) ──
       if (isBountyFormat) {
-        const ba = parseFloat(bountyAmount);
+        const ba = Math.round(Number(bountyAmount));
         if (!ba || ba <= 0) {
           toast.error('Bounty amount is required for bounty tournaments');
           setIsSubmitting(false);
           return;
         }
-        // The bounty is funded out of the buy-in, so bounty + 10% rake can
-        // never exceed it — otherwise the prize pool would go negative and
-        // registration would reject every entrant with 'misconfigured_bounty'.
-        {
-          const bi = parseFloat(buyIn) || 0;
-          const rk = Math.round(bi * 0.1 * 100) / 100;
-          if (ba + rk > bi) {
-            toast.error(
-              `Bounty ${ba} + ${rk} rake exceeds the ${bi} buy-in. Lower the bounty or raise the buy-in.`
-            );
-            setIsSubmitting(false);
-            return;
-          }
+        // The bounty is funded out of the buy-in, so it can never exceed the
+        // prize half of the split — otherwise the prize pool would go negative
+        // and registration would reject every entrant with
+        // 'misconfigured_bounty'.
+        if (ba > splitBuyIn(parsedBuyIn).prize) {
+          toast.error(
+            `Bounty ${money(ba)} plus the ${money(parsedRake)} fee exceeds the ${money(parsedBuyIn)} buy-in. Lower the bounty or raise the buy-in.`
+          );
+          setIsSubmitting(false);
+          return;
         }
         if (format === 'mystery_bounty') {
-          const min = parseFloat(mysteryBountyMin);
-          const max = parseFloat(mysteryBountyMax);
+          const min = Math.round(Number(mysteryBountyMin));
+          const max = Math.round(Number(mysteryBountyMax));
           if (!min || min <= 0 || !max || max <= 0) {
             toast.error('Mystery bounty min and max multipliers are required');
             setIsSubmitting(false);
@@ -243,12 +285,6 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
           }
         }
       }
-
-      const parsedBuyIn = parseFloat(buyIn);
-      // RAKE-AUDIT 2026-07-24: fee is ALWAYS 10% of buy-in (house rule) —
-      // computed at submit so a stale field value can never leak through.
-      const parsedRake = Math.round((parsedBuyIn || 0) * 0.1 * 100) / 100;
-      void rake;
 
       // Build start time
       let startTime: Date | undefined;
@@ -288,12 +324,12 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
         rebuyLevels: isRebuy || isReentry ? parseInt(lateRegLevels) || 8 : undefined,
         rebuyChips:
           isRebuy || isReentry ? parseInt(rebuyChips) || parseInt(startingChips) : undefined,
-        rebuyCost: isRebuy || isReentry ? parseFloat(rebuyCost) || parsedBuyIn : undefined,
+        rebuyCost: isRebuy || isReentry ? Math.round(Number(rebuyCost)) || parsedBuyIn : undefined,
         addOnAvailable,
         addOnChips: addOnAvailable ? parseInt(addOnChips) || parseInt(startingChips) : undefined,
-        addOnCost: addOnAvailable ? parseFloat(addOnCost) || parsedBuyIn : undefined,
+        addOnCost: addOnAvailable ? Math.round(Number(addOnCost)) || parsedBuyIn : undefined,
         addOnLevels: addOnAvailable ? parseInt(addOnLevels) || 1 : undefined,
-        guaranteedPrize: parseFloat(guaranteedPrize) || 0,
+        guaranteedPrize: Math.max(0, Math.round(Number(guaranteedPrize)) || 0),
         satelliteTarget:
           isSatellite && satelliteTargetId
             ? {
@@ -314,11 +350,11 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                     : format === 'progressive_bounty'
                       ? 'progressive'
                       : 'mystery',
-                baseBounty: parseFloat(bountyAmount) || 5,
+                baseBounty: Math.round(Number(bountyAmount)) || 5,
                 ...(format === 'mystery_bounty'
                   ? (() => {
-                      const minMult = parseFloat(mysteryBountyMin) || 1;
-                      const maxMult = parseFloat(mysteryBountyMax) || 100;
+                      const minMult = Math.round(Number(mysteryBountyMin)) || 1;
+                      const maxMult = Math.round(Number(mysteryBountyMax)) || 100;
                       // Generate tiers from min to max with probability distribution
                       // Bottom tier (most common), middle tiers, top tier (rarest)
                       const tiers: Array<{
@@ -400,23 +436,26 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
   // configure a bounty that leaves nothing for the prize pool. Compute the
   // split here so the form can both block it and show the owner the breakdown.
   const bountySplit = (() => {
-    const buyInNum = parseFloat(buyIn);
-    if (!isBountyFormat || !buyInNum || buyInNum <= 0) return null;
-    const bountyNum = parseFloat(bountyAmount) || 0;
-    const rakeNum = Math.round(buyInNum * 0.1 * 100) / 100;
-    const prizeNum = Math.round((buyInNum - rakeNum - bountyNum) * 100) / 100;
-    return { buyIn: buyInNum, bounty: bountyNum, rake: rakeNum, prize: prizeNum };
+    if (!isBountyFormat || split.total <= 0) return null;
+    const bountyNum = Math.round(Number(bountyAmount)) || 0;
+    // Every figure here is a whole number of chips: the split itself is whole,
+    // and the bounty input is digits-only.
+    return {
+      buyIn: split.total,
+      bounty: bountyNum,
+      rake: split.fee,
+      prize: split.prize - bountyNum,
+    };
   })();
 
   const bountyValid = (() => {
     if (!isBountyFormat) return true;
-    const ba = parseFloat(bountyAmount);
-    if (!ba || ba <= 0) return false;
+    if (!isWholeBuyIn(bountyAmount)) return false;
     // The split must leave a non-negative prize pool.
     if (bountySplit && bountySplit.prize < 0) return false;
     if (format === 'mystery_bounty') {
-      const min = parseFloat(mysteryBountyMin);
-      const max = parseFloat(mysteryBountyMax);
+      const min = Math.round(Number(mysteryBountyMin));
+      const max = Math.round(Number(mysteryBountyMax));
       if (!min || min <= 0 || !max || max <= 0 || max <= min) return false;
     }
     return true;
@@ -424,7 +463,8 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
 
   const coreValid = (() => {
     if (!name.trim()) return false;
-    if (isNaN(parseFloat(buyIn)) || parseFloat(buyIn) <= 0) return false;
+    // Whole numbers only — no decimal buy-ins on any tournament or SNG.
+    if (!isWholeBuyIn(buyIn)) return false;
     if (isNaN(parseInt(startingChips)) || parseInt(startingChips) <= 0) return false;
     // Max players only required for SNG and Spin (they need a fixed table size)
     if (isSngOrSpin && parseInt(maxPlayers) < 2) return false;
@@ -589,23 +629,22 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                 <label>
                   Buy-in <span style={{ color: '#ef4444' }}>*</span>
                 </label>
+                {/* WHOLE NUMBERS ONLY (Dan 2026-08-20). step/min/inputMode set
+                    the browser and the mobile keypad, and digitsOnly stops a
+                    decimal point being typed or pasted at all. */}
                 <input
                   type="number"
                   className={styles.input}
                   value={buyIn}
-                  onChange={(e) => {
-                    setBuyIn(e.target.value);
-                    // RAKE-AUDIT 2026-07-24: fee auto-tracks 10% of buy-in
-                    const b = parseFloat(e.target.value);
-                    setRake(
-                      Number.isFinite(b) && b > 0
-                        ? (Math.round(b * 0.1 * 100) / 100).toString()
-                        : '0'
-                    );
-                  }}
-                  min="0"
-                  step="0.01"
+                  onChange={(e) => setBuyIn(digitsOnly(e.target.value))}
+                  min={1}
+                  step={1}
+                  inputMode="numeric"
+                  style={!isWholeBuyIn(buyIn) ? { borderColor: '#ef4444' } : undefined}
                 />
+                <span className={styles.helperText}>
+                  Whole chips only. This is the total the player pays.
+                </span>
               </div>
             </div>
             <div className={styles.col}>
@@ -613,18 +652,26 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                 {/* RAKE-AUDIT 2026-07-24: fee is the HOUSE RULE 10% of buy-in,
                     auto-computed and read-only. It was a free-form field (any
                     value incl. 0), so the platform-wide 10% rule was only a
-                    coincidence of defaults. TournamentService.createTournament
-                    also enforces 10% server-of-record side. */}
+                    coincidence of defaults. fn_create_tournament recomputes the
+                    same split server-of-record side.
+                    2026-08-20: the fee is a CUT OUT OF the buy-in, rounded to a
+                    whole number, so the player pays exactly the figure typed on
+                    the left and never a decimal. */}
                 <label>Fee (10% of buy-in)</label>
                 <input
                   type="number"
                   className={styles.input}
-                  value={rake}
+                  value={split.fee}
                   readOnly
                   disabled
-                  min="0"
-                  step="0.01"
+                  min={0}
+                  step={1}
                 />
+                <span className={styles.helperText}>
+                  {split.total > 0
+                    ? `${money(split.total)} entry = ${money(split.prize)} to the prize pool + ${money(split.fee)} fee`
+                    : 'Taken out of the buy-in, not added on top'}
+                </span>
               </div>
             </div>
           </div>
@@ -650,9 +697,10 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                   type="number"
                   className={styles.input}
                   value={guaranteedPrize}
-                  onChange={(e) => setGuaranteedPrize(e.target.value)}
-                  min="0"
-                  step="0.01"
+                  onChange={(e) => setGuaranteedPrize(digitsOnly(e.target.value))}
+                  min={0}
+                  step={1}
+                  inputMode="numeric"
                 />
                 <span className={styles.helperText}>0 = no guarantee</span>
               </div>
@@ -797,15 +845,12 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                       type="number"
                       className={styles.input}
                       value={bountyAmount}
-                      onChange={(e) => setBountyAmount(e.target.value)}
-                      min="0.01"
-                      step="0.01"
+                      onChange={(e) => setBountyAmount(digitsOnly(e.target.value))}
+                      min={1}
+                      step={1}
+                      inputMode="numeric"
                       required
-                      style={
-                        !bountyAmount || parseFloat(bountyAmount) <= 0
-                          ? { borderColor: '#ef4444' }
-                          : undefined
-                      }
+                      style={!isWholeBuyIn(bountyAmount) ? { borderColor: '#ef4444' } : undefined}
                     />
                     <span className={styles.helperText}>Amount awarded for each knockout</span>
                   </div>
@@ -821,14 +866,13 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                           type="number"
                           className={styles.input}
                           value={mysteryBountyMin}
-                          onChange={(e) => setMysteryBountyMin(e.target.value)}
-                          min="1"
-                          step="1"
+                          onChange={(e) => setMysteryBountyMin(digitsOnly(e.target.value))}
+                          min={1}
+                          step={1}
+                          inputMode="numeric"
                           required
                           style={
-                            !mysteryBountyMin || parseFloat(mysteryBountyMin) <= 0
-                              ? { borderColor: '#ef4444' }
-                              : undefined
+                            !isWholeBuyIn(mysteryBountyMin) ? { borderColor: '#ef4444' } : undefined
                           }
                         />
                         <span className={styles.helperText}>Lowest multiplier (e.g. 1x)</span>
@@ -843,12 +887,13 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                           type="number"
                           className={styles.input}
                           value={mysteryBountyMax}
-                          onChange={(e) => setMysteryBountyMax(e.target.value)}
-                          min="2"
-                          step="1"
+                          onChange={(e) => setMysteryBountyMax(digitsOnly(e.target.value))}
+                          min={2}
+                          step={1}
+                          inputMode="numeric"
                           required
                           style={
-                            parseFloat(mysteryBountyMax) <= parseFloat(mysteryBountyMin)
+                            Number(mysteryBountyMax) <= Number(mysteryBountyMin)
                               ? { borderColor: '#ef4444' }
                               : undefined
                           }
@@ -888,18 +933,18 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                     lineHeight: 1.6,
                   }}
                 >
-                  <strong style={{ color: '#ffd700' }}>Each {bountySplit.buyIn} entry splits:</strong>
+                  <strong style={{ color: '#ffd700' }}>
+                    Each {money(bountySplit.buyIn)} entry splits:
+                  </strong>
                   <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 2 }}>
                     <span>
-                      Bounty pool <strong>{bountySplit.bounty}</strong>
+                      Bounty pool <strong>{money(bountySplit.bounty)}</strong>
                     </span>
                     <span>
-                      Rake <strong>{bountySplit.rake}</strong>
+                      Rake <strong>{money(bountySplit.rake)}</strong>
                     </span>
-                    <span
-                      style={{ color: bountySplit.prize < 0 ? '#ef4444' : undefined }}
-                    >
-                      Prize pool <strong>{bountySplit.prize}</strong>
+                    <span style={{ color: bountySplit.prize < 0 ? '#ef4444' : undefined }}>
+                      Prize pool <strong>{money(bountySplit.prize)}</strong>
                     </span>
                   </div>
                   <span style={{ opacity: 0.65 }}>
@@ -910,10 +955,10 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
               )}
               {!bountyValid && (
                 <p style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: 6 }}>
-                  {!bountyAmount || parseFloat(bountyAmount) <= 0
-                    ? 'Bounty amount is required and must be greater than 0'
+                  {!isWholeBuyIn(bountyAmount)
+                    ? 'Bounty amount is required and must be a whole number greater than 0'
                     : bountySplit && bountySplit.prize < 0
-                      ? `Bounty ${bountySplit.bounty} + ${bountySplit.rake} rake exceeds the ${bountySplit.buyIn} buy-in - nothing left for the prize pool`
+                      ? `Bounty ${money(bountySplit.bounty)} + ${money(bountySplit.rake)} rake exceeds the ${money(bountySplit.buyIn)} buy-in - nothing left for the prize pool`
                       : 'Mystery max multiplier must be greater than min multiplier'}
                 </p>
               )}
@@ -986,10 +1031,11 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                           type="number"
                           className={styles.input}
                           value={rebuyCost}
-                          onChange={(e) => setRebuyCost(e.target.value)}
+                          onChange={(e) => setRebuyCost(digitsOnly(e.target.value))}
                           placeholder={buyIn}
-                          min="0"
-                          step="0.01"
+                          min={1}
+                          step={1}
+                          inputMode="numeric"
                         />
                         <span className={styles.helperText}>Blank = same as buy-in</span>
                       </div>
@@ -1027,10 +1073,11 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                         type="number"
                         className={styles.input}
                         value={addOnCost}
-                        onChange={(e) => setAddOnCost(e.target.value)}
+                        onChange={(e) => setAddOnCost(digitsOnly(e.target.value))}
                         placeholder={buyIn}
-                        min="0"
-                        step="0.01"
+                        min={1}
+                        step={1}
+                        inputMode="numeric"
                       />
                       <span className={styles.helperText}>Blank = same as buy-in</span>
                     </div>
@@ -1127,8 +1174,8 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
           {!canSubmit && !isSubmitting && (
             <div style={{ color: '#ef4444', fontSize: '0.75rem', padding: '4px 0' }}>
               {!name.trim() && <p>Tournament name is required</p>}
-              {(isNaN(parseFloat(buyIn)) || parseFloat(buyIn) <= 0) && (
-                <p>Buy-in must be greater than 0</p>
+              {!isWholeBuyIn(buyIn) && (
+                <p>Buy-in must be a whole number of chips greater than 0</p>
               )}
               {parseInt(startingChips) <= 0 && <p>Starting chips must be greater than 0</p>}
               {startTimeMode === 'scheduled' && (!scheduledDate || !scheduledTime) && (

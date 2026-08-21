@@ -10,6 +10,7 @@ import { sanitizeInput } from '../utils/sanitizeInput';
 import './ReportPlayerPage.css';
 import { reportError } from '../utils/errorReporter';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 const reportSectionAnimationStyle = (index: number) => ({
   opacity: 0,
   transform: 'translateY(8px)',
@@ -67,7 +68,7 @@ export default function ReportPlayerPage() {
       setSubmitted(true);
     } catch (err: any) {
       reportError(err, 'ReportPlayerPage.Failed_to_submit_report');
-      setError(err.message || 'Failed to submit report');
+      setError(safeErrorMessage(err, 'Failed to submit report'));
     }
     setSubmitting(false);
   };

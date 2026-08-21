@@ -9,6 +9,7 @@
 
 import { useState, useRef, ChangeEvent } from 'react';
 import { uploadClubLogo } from '@/services/ClubsService';
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 import './ClubLogoSelector.css';
 
 interface ClubLogoSelectorProps {
@@ -91,7 +92,7 @@ export default function ClubLogoSelector({
       onLogoChange(logoUrl);
       setSelectedPreset(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      setError(safeErrorMessage(err, 'Upload failed'));
     } finally {
       setUploading(false);
     }

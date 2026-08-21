@@ -11,6 +11,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import './TableCreationPage.css';
 import { reportError } from '../utils/errorReporter';
 
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 const sectionAnimationStyle = (index: number) => ({
   opacity: 0,
   transform: 'translateY(8px)',
@@ -135,7 +136,7 @@ export default function TableCreationPage() {
       navigate(`/table/${data.id}`);
     } catch (err: any) {
       reportError(err, 'TableCreationPage.Failed_to_create_table');
-      setError(err.message || 'Failed to create table');
+      setError(safeErrorMessage(err, 'Failed to create table'));
     }
     setCreating(false);
   };

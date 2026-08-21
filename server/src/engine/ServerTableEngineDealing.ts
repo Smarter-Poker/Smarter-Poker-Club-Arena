@@ -23,6 +23,7 @@ import {
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
+import { handCompletionHoldMs, boardClearMs } from '../config/handCompletionSpec.js';
 
 export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -323,40 +324,35 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // (700) + ship (700) + ~1200ms to register the winner. Hands/hour
           // drops slightly and that is the intended trade — Dan's rule is that
           // no beat is ever skipped.
-          const RESULT_DISPLAY_FOLD_MS = 2600;
-          const SHOWDOWN_BASE_MS = 2600; // heads-up showdown
-          const SHOWDOWN_PER_EXTRA_HAND_MS = 700; // each additional hand to read
-          const SHOWDOWN_MAX_MS = 6000; // a big multiway pot must not stall the table
-
-          // ── Dan 2026-08-20 (systematic sweep): the BAD BEAT JACKPOT ──
+          // ── Dan's hand-completion law (2026-08-21) ──────────────────────
           //
-          // Same bug class as the turn bug, on the biggest moment the game
-          // has. A BBJ is real money and often life-changing, and the client
-          // plays a full-screen celebration that runs ~9s (phases at 3.5s,
-          // fade at 8s, complete at 8.5s). The table did NOT pause for it: the
-          // window here is at most 6s and typically 2.6s, so the NEXT HAND was
-          // being dealt underneath the celebration while it was still running.
+          // "A HAND IS NOT COMPLETED, UNTIL THE WINNING HAND IS SHOWN AT SHOW
+          //  DOWN AND IDENTIFIED, THE PUSH POT ANIMATION, WITH THE POT TOTAL
+          //  HAS RAN. AND ACTUALLY PUSHED THE POT TO THE WINNER, THAT THE
+          //  CARDS ARE MUCKED."
           //
-          // Nothing about a jackpot should be rushed. Hold the table until the
-          // celebration has actually finished.
-          const BBJ_CELEBRATION_MS = 9000;
-          const bbjHitThisHand = !!this.currentHandBBJHit?.hit;
+          // The hold is no longer three hand-written numbers that drift from
+          // whatever the client actually animates. It is DERIVED from the
+          // animation spec both sides share (src/config/handCompletionSpec.ts,
+          // mirrored under server/src/config/), so the table always waits for
+          // the real sequence: showdown read -> bets sweep -> pot push
+          // carrying its total -> muck.
+          //
+          // This fixed a live truncation: the pot-win float runs 2200ms and
+          // only starts after the 700ms sweep, so 2900ms of animation was
+          // being cut off by a 2600ms hold and the next hand was dealt over
+          // the number telling the player what they had just won.
+          const resultDisplayMs = handCompletionHoldMs({
+            wentToShowdown,
+            showdownHands,
+            bbjHit: !!this.currentHandBBJHit?.hit,
+          });
 
-          const resultDisplayMs = bbjHitThisHand
-            ? BBJ_CELEBRATION_MS
-            : wentToShowdown
-              ? Math.min(
-                  SHOWDOWN_MAX_MS,
-                  SHOWDOWN_BASE_MS + (showdownHands - 2) * SHOWDOWN_PER_EXTRA_HAND_MS
-                )
-              : RESULT_DISPLAY_FOLD_MS;
-
-          // Phase 1: Result display time (clients show winner popups during this window)
+          // Phase 1: the completion sequence actually plays out.
           await this.sleep(resultDisplayMs);
-          // Phase 2: Board clear (clients animate card/chip sweep). Given more
-          // room after a showdown too - 500ms was clipping the sweep.
+          // Phase 2: board clear (clients animate the card/chip sweep).
           this.broadcastCurrentState(); // Sends clean state (no hand in progress)
-          await this.sleep(wentToShowdown ? 900 : 500);
+          await this.sleep(boardClearMs(wentToShowdown));
         }
       } catch (err) {
         const errMsg =

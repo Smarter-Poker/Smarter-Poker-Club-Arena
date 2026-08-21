@@ -9139,3 +9139,40 @@ reads its code above its stakes. Verified in production at WH ad683b3b:
 the strip's `.length>=1`, the single-plus `>0?1:0`, the wrap helper's
 flickMinOffset/velocityThreshold, and the full variant map (PLO5, PLO6,
 SHORT, SPIN, MTT, SNG, HU) are all in the served bundle.
+
+## 2026-08-21 — Cowork live-fix session, batch 8 (full audit + money hardening)
+
+AUDIT (all 29 session markers verified present on origin/main; live SPA build
+confirmed to BE the main tip; engine cb2f0299 confirmed to contain both engine
+fixes; all four RPCs confirmed granted to authenticated).
+
+Defects found reviewing this session's own code, and fixed:
+- [P0 ECONOMY] /api/club-arena/mint-chips still called mint_club_chips, which
+  credits the club pool and burns NOTHING. Two doors, two prices, one free:
+  an owner could mint to the daily ceiling for free while the Chip Mint UI
+  charged diamonds. The route now calls fn_mint_chips_from_diamonds AS THE
+  CALLER (so union revocation applies) at 1 diamond per 100 chips. Verified
+  live against production: 100 chips minted, exactly 1 diamond burned, union
+  bank +100.
+- [P1] MINT RATE SPLIT-BRAIN: WalletService and the classic cashier quoted the
+  retired "38 diamonds per 100 chips" law while the mint charged 1-per-100.
+  One rate everywhere now (Dan 2026-08-21: 100 diamonds = 10,000 chips).
+- [P1] ChipMintModal passed its route param straight into a uuid RPC arg —
+  ClubHomePage can hand it a 6-digit club CODE, which failed only AFTER the
+  user pressed Mint, as a raw postgres error. It now resolves the uuid and
+  PRE-FLIGHTS the destination: the panel states where the chips land ("Minting
+  Into Midway Union Bank"), or shows the revoked/denied reason and hides the
+  confirm button entirely, before a diamond is at risk.
+- [P1] Mint validity passed while the diamond balance was still loading (a
+  fast tap could submit an unaffordable amount); added MAX, per-preset
+  affordability gating and an explicit insufficient-diamonds line.
+- [P1] The Trade cashier's "+" punted to the classic cashier; chips originate
+  at the mint, so it opens the Chip Mint in place.
+- [P1] The Trade cashier refreshed only on BALANCE_UPDATED, so mints,
+  distributions and settlement credits left the strip stale. Now listens to
+  the full wallet event set.
+
+PUBLISH NOTE: CI builds were starved for ~50 minutes by concurrent pushes
+(cancel-in-progress), so this batch was published through the canonical
+scripts/sync-club-arena.sh using CA_SRC_OVERRIDE + a throwaway WH worktree —
+the documented escape hatch. Live build-info ca_sha 43645f9d1 contains it.

@@ -204,6 +204,23 @@ export default function DailyChallengesPage() {
   const toast = useToast();
 
   const [userId, setUserId] = useState<string | null>(null);
+
+  const [buyingFreeze, setBuyingFreeze] = useState(false);
+
+  const handleBuyFreeze = async () => {
+    if (!userId) return;
+    setBuyingFreeze(true);
+    try {
+      await dailyChallengeService.buyStreakFreeze();
+      toast?.success?.('Streak frozen for today!');
+      // Refresh local challenges
+      loadChallenges(userId, true);
+    } catch (e: any) {
+      toast?.error?.(e.message || 'Failed to buy streak freeze');
+    } finally {
+      setBuyingFreeze(false);
+    }
+  };
   const [isLoading, setIsLoading] = useState(true);
   const [activeTier, setActiveTier] = useState<Tier>('daily');
 

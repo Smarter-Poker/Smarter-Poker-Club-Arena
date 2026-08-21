@@ -6068,8 +6068,13 @@ export default function TablePage({
             // street. If hero can act, the panel is fully lit and fully live.
             setIsAllInMode(false);
             import('../services/HapticService').then(({ haptic }) => haptic.medium());
-            // Bible V8 §5.3: turn alert sound for hero
-            if (soundService.isEnabled()) soundService.playTurnAlert();
+            // Bible V8 §5.3: turn alert sound for hero.
+            // Batch 2 tiering: the BELL is the active table's sound; a
+            // background table's turn start gets the softer ping from
+            // MultiTablePage instead, so four tables never ring four bells.
+            if (soundService.isEnabled() && (isActive || !isMultiTable)) {
+              soundService.playTurnAlert();
+            }
           }
         }
         break;

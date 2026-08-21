@@ -52,6 +52,12 @@ export interface UserTableSettings {
   use_alias: boolean;
   /** Custom club alias text — shown at table when use_alias is true */
   table_alias: string;
+  /** Multi-table (roadmap batch 2): jump to a table when its turn clock is
+   *  nearly out. Some grinders hate being yanked mid-read — their call. */
+  multi_auto_switch: boolean;
+  /** Multi-table (roadmap batch 2): after acting, advance to the next table
+   *  already waiting on you (GG-style action queue). */
+  multi_action_queue: boolean;
 }
 
 export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
@@ -71,6 +77,8 @@ export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
   skip_animations: false,
   use_alias: false,
   table_alias: '',
+  multi_auto_switch: true,
+  multi_action_queue: true,
 };
 
 // Metadata for rendering toggles
@@ -158,6 +166,16 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
     label: 'Use Club Alias',
     description: 'Display your club alias instead of your smarter.poker name at the table',
   },
+  {
+    key: 'multi_auto_switch',
+    label: 'Multi-Table Auto-Switch',
+    description: 'Jump to a table automatically when its turn clock is nearly out',
+  },
+  {
+    key: 'multi_action_queue',
+    label: 'Multi-Table Action Queue',
+    description: 'After you act, advance to the next table already waiting on you',
+  },
 ];
 
 const LOCAL_CACHE_KEY = 'user_table_settings_cache';
@@ -224,6 +242,10 @@ export function useUserTableSettings(userId: string | null | undefined) {
             skip_animations: data.skip_animations ?? DEFAULT_USER_TABLE_SETTINGS.skip_animations,
             use_alias: data.use_alias ?? DEFAULT_USER_TABLE_SETTINGS.use_alias,
             table_alias: data.table_alias ?? DEFAULT_USER_TABLE_SETTINGS.table_alias,
+            multi_auto_switch:
+              data.multi_auto_switch ?? DEFAULT_USER_TABLE_SETTINGS.multi_auto_switch,
+            multi_action_queue:
+              data.multi_action_queue ?? DEFAULT_USER_TABLE_SETTINGS.multi_action_queue,
           };
           setSettings(loaded);
           // Cache locally for instant loads

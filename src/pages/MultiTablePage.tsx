@@ -20,6 +20,7 @@ import LiveTablesBar from '../components/table/LiveTablesBar';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { useUserTableSettings } from '../hooks/useUserTableSettings';
 import { useToast } from '../components/common/Toast';
 import { supabase } from '../lib/supabase';
 import { soundService, haptic } from '../services/SoundService';
@@ -172,6 +173,9 @@ const dockStateFor = (
 
 export default function MultiTablePage() {
   const { user } = useAuthUser();
+  /** Roadmap batch 2: multi-table behavior toggles (auto-switch, action
+   *  queue) live with the rest of the user's table settings. */
+  const { settings: userSettings } = useUserTableSettings(user?.id);
   /**
    * Dan 2026-08-19 (persistence upgrade): this container no longer lives under
    * the /table/:tableId route — App.tsx mounts it ONCE via
@@ -685,6 +689,131 @@ export default function MultiTablePage() {
     }
   }, [tables, activeIndex, secondsLeft]);
 
+  // ─── Soft ping when a turn STARTS on a background table (batch 2) ─────
+  // Three alert tiers now exist: soft ping (background turn start, here),
+  // bell (active-table turn start, TablePage), tick-tock + one-shot warning
+  // (final seconds). Rising edge per table; pruned with the tabs.
+  const prevTurnMapRef = useRef<Map<string, boolean>>(new Map());
+  useEffect(() => {
+    for (let i = 0; i < tables.length; i++) {
+      const t = tables[i];
+      const was = prevTurnMapRef.current.get(t.id) ?? false;
+      if (t.isMyTurn && !was && i !== activeIndex) {
+        if (soundService.isEnabled()) soundService.playChatMessage();
+        haptic.light();
+      }
+      prevTurnMapRef.current.set(t.id, t.isMyTurn);
+    }
+    const live = new Set(tables.map((t) => t.id));
+    for (const id of prevTurnMapRef.current.keys()) {
+      if (!live.has(id)) prevTurnMapRef.current.delete(id);
+    }
+  }, [tables, activeIndex]);
+
+  // ─── Action queue (batch 2, GG-style) ─────────────────────────────────
+  // The moment the hero's turn ENDS on the focused table (they acted, or the
+  // clock resolved it), advance to the table that has been waiting on them
+  // the longest — most pressing deadline first. A short beat lets the action
+  // animation land before the view moves.
+  const prevActiveTurnRef = useRef(false);
+  const queueSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const active = tables[activeIndex];
+    const activeTurn = !!active && !isLobbyTab(active) && active.isMyTurn;
+    if (
+      prevActiveTurnRef.current &&
+      !activeTurn &&
+      !hidden &&
+      userSettings.multi_action_queue
+    ) {
+      const next = tables
+        .filter((t, i) => i !== activeIndex && !isLobbyTab(t) && t.isMyTurn)
+        .sort((a, b) => (a.turnDeadlineMs ?? Infinity) - (b.turnDeadlineMs ?? Infinity))[0];
+      if (next) {
+        if (queueSwitchTimerRef.current) clearTimeout(queueSwitchTimerRef.current);
+        queueSwitchTimerRef.current = setTimeout(() => {
+          queueSwitchTimerRef.current = null;
+          const idx = tablesRef.current.findIndex((t) => t.id === next.id);
+          // Only move if that table is still waiting on the hero.
+          if (idx !== -1 && tablesRef.current[idx].isMyTurn) {
+            setIsTransitioning(true);
+            setActiveIndex(idx);
+            setTimeout(() => setIsTransitioning(false), 320);
+          }
+        }, 400);
+      }
+    }
+    prevActiveTurnRef.current = activeTurn;
+  }, [tables, activeIndex, hidden, userSettings.multi_action_queue]);
+  useEffect(
+    () => () => {
+      if (queueSwitchTimerRef.current) clearTimeout(queueSwitchTimerRef.current);
+    },
+    []
+  );
+
+  // ─── Backgrounded-browser alerts (batch 2) ────────────────────────────
+  // Everything above assumes the app is visible. When the BROWSER tab is
+  // hidden and a table needs the hero, flip the page title, badge the
+  // favicon, and (when permission is already granted - never prompt from
+  // here) post one Notification per turn. All restored on visibility.
+  const notifiedDeadlineRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    const iconLink = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    const originalTitle = document.title;
+    const originalIcon = iconLink?.href ?? null;
+    const BADGE_ICON =
+      'data:image/svg+xml,' +
+      encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+          '<text y=".9em" font-size="90">♠</text>' +
+          '<circle cx="78" cy="24" r="20" fill="#ef4444"/></svg>'
+      );
+
+    const apply = () => {
+      const live = tablesRef.current.filter((t) => !isLobbyTab(t));
+      const urgent = live
+        .filter((t) => t.isMyTurn)
+        .sort((a, b) => (a.turnDeadlineMs ?? Infinity) - (b.turnDeadlineMs ?? Infinity))[0];
+      if (document.visibilityState === 'hidden' && urgent) {
+        document.title = `YOUR TURN - ${urgent.name}`;
+        if (iconLink) iconLink.href = BADGE_ICON;
+        if (
+          typeof Notification !== 'undefined' &&
+          Notification.permission === 'granted' &&
+          urgent.turnDeadlineMs !== undefined &&
+          notifiedDeadlineRef.current.get(urgent.id) !== urgent.turnDeadlineMs
+        ) {
+          notifiedDeadlineRef.current.set(urgent.id, urgent.turnDeadlineMs);
+          try {
+            const n = new Notification('Your Turn', {
+              body: urgent.name,
+              tag: `ca-turn-${urgent.id}`,
+            });
+            n.onclick = () => {
+              window.focus();
+              n.close();
+            };
+          } catch {
+            /* notification construction can throw on some platforms */
+          }
+        }
+      } else {
+        document.title = originalTitle;
+        if (iconLink && originalIcon) iconLink.href = originalIcon;
+      }
+    };
+
+    const iv = setInterval(apply, 1000);
+    document.addEventListener('visibilitychange', apply);
+    return () => {
+      clearInterval(iv);
+      document.removeEventListener('visibilitychange', apply);
+      document.title = originalTitle;
+      if (iconLink && originalIcon) iconLink.href = originalIcon;
+    };
+  }, []);
+
   // ─── Table Management ────────────────────────────────────────────────
   const handleTabSelect = useCallback(
     (tabId: string) => {
@@ -927,6 +1056,8 @@ export default function MultiTablePage() {
     // surfaces the alert instead — yanking the route out from under them
     // mid-cashier would be hostile.
     if (hidden) return;
+    // Batch 2: the yank is now the player's choice (defaults on).
+    if (!userSettings.multi_auto_switch) return;
     const urgentTable = tables.find((t, idx) => {
       if (idx === activeIndex) return false;
       const left = secondsLeft(t);
@@ -940,7 +1071,7 @@ export default function MultiTablePage() {
         setTimeout(() => setIsTransitioning(false), 320);
       }
     }
-  }, [tables, activeIndex, secondsLeft, hidden]);
+  }, [tables, activeIndex, secondsLeft, hidden, userSettings.multi_auto_switch]);
 
   // ─── Keyboard shortcuts for table switching ───────────────────────────
   useEffect(() => {

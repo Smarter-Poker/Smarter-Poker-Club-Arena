@@ -67,6 +67,8 @@ type LeaderboardTab = 'rankings' | 'tournaments';
 interface UserClub {
   id: string;
   name: string;
+  role?: string;
+  union_id?: string;
 }
 
 // Metric definitions. Unicode symbols only (no emoji: build rule).
@@ -150,6 +152,11 @@ export default function LeaderboardPage() {
   const toast = useToast();
   const [scope, setScope] = useState<LeaderboardScope>('my-clubs');
   const [period, setPeriod] = useState<LeaderboardPeriod>('weekly');
+  const [periodOffset, setPeriodOffset] = useState<number>(0);
+  const [settings, setSettings] = useState<any>(null);
+  const [payouts, setPayouts] = useState<any[]>([]);
+  const [showSettings, setShowSettings] = useState(false);
+  const [finalizeLoading, setFinalizeLoading] = useState(false);
   const [metric, setMetric] = useState<LeaderboardMetric>('profit');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [totalRanked, setTotalRanked] = useState<number | null>(null);
@@ -173,6 +180,65 @@ export default function LeaderboardPage() {
   const activeTabRef = useRef<LeaderboardTab>('rankings');
   const [tournamentStats, setTournamentStats] = useState<TournamentStats[]>([]);
   const [tournamentsLoading, setTournamentsLoading] = useState(false);
+
+  const isOwner =
+    scope === 'my-clubs' && selectedClubId
+      ? userClubs.find((c) => c.id === selectedClubId)?.role === 'owner'
+      : false;
+  const isPastPeriod = periodOffset < 0;
+  const isPaidOut = payouts.length > 0;
+
+  useEffect(() => {
+    let isMounted = true;
+    if (scope === 'my-clubs' && selectedClubId) {
+      LeaderboardService.getLeaderboardSettings(selectedClubId).then((data) => {
+        if (isMounted) setSettings(data);
+      });
+      const { start } = LeaderboardService.getPeriodBoundaries(period, periodOffset);
+      LeaderboardService.getPayoutsForPeriod(
+        selectedClubId,
+        period,
+        metric,
+        start.toISOString()
+      ).then((data) => {
+        if (isMounted) setPayouts(data);
+      });
+    } else {
+      setSettings(null);
+      setPayouts([]);
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [scope, selectedClubId, period, metric, periodOffset]);
+
+  const handleFinalize = async () => {
+    if (!selectedClubId || periodOffset >= 0) return;
+    setFinalizeLoading(true);
+    try {
+      const { start, end } = LeaderboardService.getPeriodBoundaries(period, periodOffset);
+      await LeaderboardService.payoutLeaderboardPeriod(
+        selectedClubId,
+        period,
+        metric,
+        start.toISOString(),
+        end.toISOString()
+      );
+      toast.success('Period finalized and payouts distributed.');
+      // Reload payouts
+      const newPayouts = await LeaderboardService.getPayoutsForPeriod(
+        selectedClubId,
+        period,
+        metric,
+        start.toISOString()
+      );
+      setPayouts(newPayouts);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to finalize period.');
+    } finally {
+      setFinalizeLoading(false);
+    }
+  };
 
   // Refs for realtime callbacks to avoid stale closures
   const loadLeaderboardRef = useRef(async (_silent?: boolean, _getIsMounted?: () => boolean) => {});
@@ -355,8 +421,10 @@ export default function LeaderboardPage() {
         .map((m) => ({
           id: (m.club?.id || m.club_id) as string,
           name: m.club?.name || 'Unknown Club',
+          role: m.role || m.status,
+          union_id: m.club?.union_id,
         }))
-        .filter((c): c is UserClub => Boolean(c.id));
+        .filter((c) => Boolean(c.id)) as UserClub[];
 
       if (getIsMounted && !getIsMounted()) return;
       setUserClubs(clubs as UserClub[]);
@@ -398,12 +466,14 @@ export default function LeaderboardPage() {
       const data = await retryFetch(
         () =>
           isGlobal
-            ? LeaderboardService.getGlobalLeaderboard(metric, period, PAGE_SIZE)
+            ? LeaderboardService.getGlobalLeaderboard(metric, period, PAGE_SIZE, 0, periodOffset)
             : LeaderboardService.getClubLeaderboard(
                 selectedClubId as string,
                 metric,
                 period,
-                PAGE_SIZE
+                PAGE_SIZE,
+                0,
+                periodOffset
               ),
         { maxRetries: 2 }
       );
@@ -995,7 +1065,14 @@ export default function LeaderboardPage() {
                       <span>{(stat.username || '?')[0]?.toUpperCase()}</span>
                     )}
                   </div>
-                  <span className="player-name">{stat.username}</span>
+                  <span className="player-name">
+                    {stat.username}
+                    {payouts.find((p) => p.user_id === stat.userId) && (
+                      <span title="Trophy Winner" className="ml-2 text-lg">
+                        🏆
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <div className="stats-cell">{stat.tournamentsPlayed}</div>
                 <div className="stats-cell wins">{stat.wins}</div>
@@ -1031,6 +1108,55 @@ export default function LeaderboardPage() {
             {!entries.some((e) => e.userId === user?.id) && entries.length > 0 && (
               <span className="rank-offlist">Not In The Top {entries.length}</span>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && isOwner && (
+        <div className="modal-overlay z-50">
+          <div className="modal-content glass-panel p-6 max-w-md w-full">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold font-display text-white">Prize Settings</h2>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="text-white/60 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4 text-white/90">
+              <div className="form-group">
+                <label className="text-sm font-semibold mb-2 block">Payout Currency</label>
+                <select
+                  className="w-full bg-black/40 border border-white/10 rounded px-3 py-2 text-white"
+                  value={settings?.payout_currency || 'diamonds'}
+                  onChange={(e) => setSettings({ ...settings, payout_currency: e.target.value })}
+                >
+                  <option value="diamonds">Diamonds</option>
+                  <option value="chips">Chips</option>
+                </select>
+                <p className="text-xs text-white/50 mt-1">
+                  Diamonds Are Deducted From The Club Diamond Wallet. Chips Are Minted.
+                </p>
+              </div>
+
+              <button
+                className="btn-primary w-full mt-4"
+                onClick={async () => {
+                  if (selectedClubId) {
+                    await LeaderboardService.updateLeaderboardSettings(selectedClubId, {
+                      payout_currency: settings?.payout_currency || 'diamonds',
+                    });
+                    toast.success('Saved');
+                    setShowSettings(false);
+                  }
+                }}
+              >
+                Save Settings
+              </button>
+            </div>
           </div>
         </div>
       )}

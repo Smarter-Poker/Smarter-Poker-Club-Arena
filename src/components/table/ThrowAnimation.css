@@ -1,15 +1,23 @@
 /**
  * =================================================================================
- *  THROW ANIMATION -- Dynamic 3D Throwable FX (2026-08-20 rebuild)
+ *  THROW ANIMATION -- Dynamic 3D Throwable FX (2026-08-20, v2)
  * =================================================================================
  *
  *  Drives the 49 Supabase 3D renders (pure-black JPGs) through:
  *  - mix-blend-mode: screen  -> black background becomes perfectly transparent
  *  - 7 flight physics profiles (arc / fastball / lob / float / drop / swoop / spiral)
+ *    with tumble spin, velocity tilt and motion-trail ghosts
  *  - 9 impact profiles (splat / splash / bounce / thud / explode / shatter /
- *    zap / sparkle / burst) with squash-and-stretch, shockwave, particles
+ *    zap / sparkle / burst) with squash-and-stretch, shockwave, particles,
+ *    smoke, additive glows, target-seat flinch
  *  - linger stains for messy items, screen shake for heavy ones
  *  - reduced-motion support
+ *
+ *  v2 NOTE ON GLOWS: drop-shadow() is unusable on these images -- it keys off
+ *  the alpha channel and a JPG's alpha is a solid rectangle, so the "shadow"
+ *  renders as a glowing BOX. Every glow here is a separate radial-gradient
+ *  layer that is itself screen-blended (additive light), which is also cheaper
+ *  to composite than a filter.
  *
  *  Choreography (timed from ThrowAnimation.tsx):
  *    WINDUP (140ms) -> FLIGHT (420-1100ms) -> IMPACT (820ms) -> LINGER (2.5s)
@@ -27,6 +35,8 @@
   -webkit-user-drag: none;
   /* Pure-black JPG background disappears over ANY arena surface */
   mix-blend-mode: screen;
+  /* Slight punch: dark-item detail otherwise washes out over bright felt */
+  filter: saturate(1.12) contrast(1.05);
 }
 
 .throwable-img--fallback {
@@ -34,6 +44,38 @@
   text-align: center;
   color: #ffd93d;
   mix-blend-mode: normal;
+  filter: none;
+}
+
+/* =================================================================================
+   ADDITIVE GLOW LAYERS (replace the v1 rectangular drop-shadows)
+   ================================================================================= */
+
+.throw-animation__glow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 150%;
+  height: 150%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--c1) 0%, transparent 62%);
+  opacity: 0.42;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+.throw-animation__glow--flight {
+  animation: throwable-glow-pulse 320ms ease-in-out infinite alternate;
+}
+
+@keyframes throwable-glow-pulse {
+  from {
+    opacity: 0.3;
+  }
+  to {
+    opacity: 0.5;
+  }
 }
 
 /* =================================================================================
@@ -62,7 +104,6 @@
   position: absolute;
   transform: translate(-50%, -50%);
   animation: throwable-windup 140ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-  filter: drop-shadow(0 0 10px var(--c1));
 }
 
 @keyframes throwable-windup {
@@ -80,6 +121,7 @@
    PHASE 2 -- FLIGHT
    Outer element = straight-line travel (custom-prop keyframes).
    Inner spinner = vertical arc offset + tumble spin (per-physics profile).
+   Tilt wrapper  = static lean into the line of travel (fastball / swoop).
    Trail ghosts  = delayed low-opacity copies for a motion smear.
    ================================================================================= */
 
@@ -87,18 +129,24 @@
   position: absolute;
   left: 0;
   top: 0;
-  width: 48px;
-  height: 48px;
+  width: var(--size, 48px);
+  height: var(--size, 48px);
   animation: throwable-travel var(--flight-dur) linear forwards;
   will-change: transform;
 }
 
 @keyframes throwable-travel {
   from {
-    transform: translate(calc(var(--from-x) - 24px), calc(var(--from-y) - 24px));
+    transform: translate(
+      calc(var(--from-x) - var(--half, 24px)),
+      calc(var(--from-y) - var(--half, 24px))
+    );
   }
   to {
-    transform: translate(calc(var(--to-x) - 24px), calc(var(--to-y) - 24px));
+    transform: translate(
+      calc(var(--to-x) - var(--half, 24px)),
+      calc(var(--to-y) - var(--half, 24px))
+    );
   }
 }
 
@@ -106,7 +154,12 @@
   position: absolute;
   inset: 0;
   will-change: transform;
-  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.45));
+}
+
+.throw-animation__tilt {
+  position: absolute;
+  inset: 0;
+  transform: rotate(var(--tilt, 0deg));
 }
 
 .throw-animation__trail {
@@ -153,7 +206,7 @@
   }
 }
 
-/* -- fastball: flat, fast, slight rising tilt ------------------------------ */
+/* -- fastball: flat, fast, leaning into the travel line -------------------- */
 .throw-animation__projectile--fastball .throw-animation__spinner,
 .throw-animation__projectile--fastball .throw-animation__trail {
   animation: throwable-fastball var(--flight-dur) ease-in forwards;
@@ -189,7 +242,8 @@
   animation-delay: 90ms;
 }
 
-/* -- float: bobbing emoji drift -------------------------------------------- */
+/* -- float: bobbing emoji drift (v2: lands AT the impact point, the v1
+      curve ended 20% high and the impact icon visibly snapped down) -------- */
 .throw-animation__projectile--float .throw-animation__spinner,
 .throw-animation__projectile--float .throw-animation__trail {
   animation: throwable-float var(--flight-dur) ease-in-out forwards;
@@ -212,10 +266,10 @@
     transform: translateY(calc(var(--arc-height) * -0.4)) scale(1);
   }
   75% {
-    transform: translateY(calc(var(--arc-height) * -1)) scale(1.05);
+    transform: translateY(calc(var(--arc-height) * -0.9)) scale(1.05);
   }
   100% {
-    transform: translateY(calc(var(--arc-height) * -0.2)) scale(1);
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -321,13 +375,35 @@
   height: 0;
 }
 
+/* additive glow bloom behind the impact */
+.throw-animation__impact-glow {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--c1) 0%, transparent 60%);
+  mix-blend-mode: screen;
+  animation: throwable-impact-glow 600ms ease-out forwards;
+}
+
+@keyframes throwable-impact-glow {
+  0% {
+    opacity: 0.6;
+    scale: 0.4;
+  }
+  100% {
+    opacity: 0;
+    scale: 1.3;
+  }
+}
+
 /* -- squash-and-stretch item ----------------------------------------------- */
 
 .throw-animation__impact-icon {
   position: absolute;
   transform: translate(-50%, -50%);
   animation: throwable-impact-squash 820ms cubic-bezier(0.16, 1.11, 0.36, 1.2) forwards;
-  filter: drop-shadow(0 0 14px var(--c1));
 }
 
 @keyframes throwable-impact-squash {
@@ -448,10 +524,11 @@
   animation-duration: 620ms;
 }
 
-/* -- flash + fireball (explode / zap only) ---------------------------------- */
+/* -- flash + fireball + smoke (explode / zap only) --------------------------- */
 
 .throw-animation__flash,
-.throw-animation__fireball {
+.throw-animation__fireball,
+.throw-animation__smoke {
   display: none;
   position: absolute;
   transform: translate(-50%, -50%);
@@ -505,6 +582,45 @@
   100% {
     opacity: 0;
     scale: 1.35;
+  }
+}
+
+/* rising smoke puffs after the fireball */
+.throw-animation__impact--explode .throw-animation__smoke {
+  display: block;
+  width: 46px;
+  height: 46px;
+  background: radial-gradient(circle, rgba(90, 84, 78, 0.55) 0%, rgba(60, 56, 52, 0) 70%);
+  filter: blur(3px);
+  animation: throwable-smoke 900ms ease-out forwards;
+}
+
+.throw-animation__impact--explode .throw-animation__smoke--1 {
+  animation-delay: 180ms;
+  --sx: -22px;
+}
+.throw-animation__impact--explode .throw-animation__smoke--2 {
+  animation-delay: 280ms;
+  --sx: 4px;
+  scale: 1.25;
+}
+.throw-animation__impact--explode .throw-animation__smoke--3 {
+  animation-delay: 400ms;
+  --sx: 24px;
+  scale: 0.85;
+}
+
+@keyframes throwable-smoke {
+  0% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--sx, 0px)), -50%);
+  }
+  25% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--sx, 0px) * 1.6), calc(-50% - 54px));
   }
 }
 
@@ -717,7 +833,47 @@
 }
 
 /* =================================================================================
-   SCREEN SHAKE (applied to the table element for heavy impacts)
+   TARGET SEAT FLINCH -- SeatSlot carries data-seat-num; ThrowAnimation adds
+   this class to the victim's seat for 500ms on impact.
+   ================================================================================= */
+
+.seat--throw-flinch {
+  animation: throwable-seat-flinch 450ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+/* Uses the INDIVIDUAL translate/rotate properties, not `transform` --
+   .seat states carry their own `transform: scale(...)` (hero/active/winner)
+   and a transform keyframe here would stomp that scale for 450ms. The
+   individual properties compose with `transform`, so the jolt rides on top. */
+@keyframes throwable-seat-flinch {
+  0% {
+    translate: 0 0;
+    rotate: 0deg;
+  }
+  15% {
+    translate: -3px 2px;
+    rotate: -2deg;
+  }
+  35% {
+    translate: 3px -1px;
+    rotate: 1.5deg;
+  }
+  55% {
+    translate: -2px 1px;
+    rotate: -1deg;
+  }
+  75% {
+    translate: 1px 0;
+    rotate: 0.5deg;
+  }
+  100% {
+    translate: 0 0;
+    rotate: 0deg;
+  }
+}
+
+/* =================================================================================
+   SCREEN SHAKE (applied to .table-scaler for heavy impacts)
    ================================================================================= */
 
 .throw-animation--shake {
@@ -759,6 +915,9 @@
   .throw-animation__trail,
   .throw-animation__flash,
   .throw-animation__fireball,
+  .throw-animation__smoke,
+  .throw-animation__glow,
+  .throw-animation__impact-glow,
   .throw-animation__particle {
     display: none !important;
   }
@@ -776,7 +935,8 @@
     }
   }
 
-  .throw-animation--shake {
+  .throw-animation--shake,
+  .seat--throw-flinch {
     animation: none !important;
   }
 }

@@ -8,7 +8,7 @@
  * and confetti trigger state.
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { throwableService, type Throwable, type ThrowEvent } from '../services/ThrowableService';
 import { roomService } from '../services/RoomService';
 import type { ChipAnimationEvent } from '../components/table/ChipAnimation';
@@ -42,8 +42,12 @@ export function useTableAnimations(
   heroSeat: number
 ): UseTableAnimationsReturn {
   // Warm the 49-render image cache during idle time so the first throw
-  // (ours or an opponent's) never rasterizes mid-flight.
-  preloadThrowableImages();
+  // (ours or an opponent's) never rasterizes mid-flight. v2: effect, not a
+  // render-body side effect (it is idempotent either way, but React render
+  // purity matters -- and StrictMode double-render made the guard load-bearing).
+  useEffect(() => {
+    preloadThrowableImages();
+  }, []);
 
   // Throwable state
   const lastThrowAtRef = useRef(0);

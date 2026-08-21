@@ -1,14 +1,26 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  THROWABLE SOUND SERVICE — Per-Item Procedural SFX (2026-08-20)
+ *  THROWABLE SOUND SERVICE — Per-Item Procedural SFX (2026-08-20, v2)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * PokerBros-style audio: every one of the 49 throwables has its own impact
  * sound, synthesized in real time with the Web Audio API — no audio files.
  *
- * Two moments per throw:
- *   playLaunch(weight)   whoosh as the item leaves the thrower's seat
- *   playImpact(soundKey) item-specific landing SFX (splat / boom / quack / …)
+ * Three moments per throw:
+ *   playLaunch(weight, pan)         whoosh as the item leaves the thrower
+ *   playFlight(id, durationMs, pan) optional per-item travel sound
+ *                                   (bomb fuse, rocket engine, ufo hover,
+ *                                   chicken flap, ghost moan, firework whistle)
+ *   playImpact(soundKey, weight, pan) item-specific landing SFX
+ *
+ * v2 upgrades:
+ *   - MASTER BUS: every voice routes through a shared GainNode into a
+ *     DynamicsCompressor, so simultaneous throws sum without clipping.
+ *   - STEREO POSITIONING: callers pass the impact's normalized screen X
+ *     (-1..1); a StereoPanner places each SFX where it lands.
+ *   - HUMANIZATION: every oscillator gets ±14 cents of random detune and
+ *     every voice ±8% gain variance, so repeated throws never sound
+ *     machine-identical. (Cents-scale detune keeps chords in tune.)
  *
  * ARCHITECTURE NOTE — this deliberately does NOT live inside SoundService.ts
  * (the table-tier engine). It follows the same three-tier separation as
@@ -24,6 +36,9 @@ type Wave = OscillatorType;
 
 class ThrowableSoundServiceClass {
   private ctx: AudioContext | null = null;
+  private bus: GainNode | null = null;
+  /** Per-voice output set at the start of each play*() call (panner → bus). */
+  private out: AudioNode | null = null;
 
   private ensureContext(): boolean {
     if (!soundService.isEnabled()) return false;
@@ -32,11 +47,24 @@ class ThrowableSoundServiceClass {
         const AC = window.AudioContext || (window as any).webkitAudioContext;
         if (!AC) return false;
         this.ctx = new AC();
+        // Master chain: bus → compressor → speakers. The compressor is a
+        // safety limiter: three bombs landing together squash gracefully
+        // instead of hard-clipping the DAC.
+        const comp = this.ctx.createDynamicsCompressor();
+        comp.threshold.value = -18;
+        comp.knee.value = 12;
+        comp.ratio.value = 6;
+        comp.attack.value = 0.002;
+        comp.release.value = 0.12;
+        comp.connect(this.ctx.destination);
+        this.bus = this.ctx.createGain();
+        this.bus.gain.value = 1;
+        this.bus.connect(comp);
       }
       if (this.ctx.state === 'suspended') {
         void this.ctx.resume();
       }
-      return true;
+      return !!this.bus;
     } catch {
       return false;
     }
@@ -46,7 +74,38 @@ class ThrowableSoundServiceClass {
     return soundService.getMasterVolume() * soundService.getEffectsVolume();
   }
 
-  // ─── Synth primitives ────────────────────────────────────────────────────────
+  /**
+   * Route the next voice through a stereo panner at `pan` (-1 left … 1 right).
+   * Every primitive connects to `this.out`.
+   */
+  private setVoice(pan: number) {
+    if (!this.ctx || !this.bus) return;
+    const clamped = Math.max(-0.8, Math.min(0.8, pan || 0));
+    if (typeof this.ctx.createStereoPanner === 'function') {
+      const panner = this.ctx.createStereoPanner();
+      panner.pan.value = clamped;
+      panner.connect(this.bus);
+      this.out = panner;
+    } else {
+      this.out = this.bus; // Older WebKit: mono fallback
+    }
+  }
+
+  /** ±8% per-voice gain variance so repeats never sound stamped-out. */
+  private humanGain(vol: number): number {
+    return vol * (0.92 + Math.random() * 0.16) * this.volume;
+  }
+
+  /** ±14 cents detune — organic, never sour. */
+  private humanDetune(osc: OscillatorNode) {
+    try {
+      osc.detune.value = (Math.random() - 0.5) * 28;
+    } catch {
+      /* detune unsupported — fine */
+    }
+  }
+
+  // ─── Synth primitives (all route through this.out) ──────────────────────────
 
   /** Single tone with optional pitch glide. */
   private tone(
@@ -57,19 +116,20 @@ class ThrowableSoundServiceClass {
     glideTo?: number,
     delay = 0
   ) {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.out) return;
     const t0 = this.ctx.currentTime + delay;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = type;
     osc.frequency.setValueAtTime(freq, t0);
+    this.humanDetune(osc);
     if (glideTo !== undefined) {
       osc.frequency.exponentialRampToValueAtTime(Math.max(20, glideTo), t0 + dur);
     }
     gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(vol * this.volume, t0 + 0.008);
+    gain.gain.exponentialRampToValueAtTime(this.humanGain(vol), t0 + 0.008);
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    osc.connect(gain).connect(this.ctx.destination);
+    osc.connect(gain).connect(this.out);
     osc.start(t0);
     osc.stop(t0 + dur + 0.05);
   }
@@ -83,7 +143,7 @@ class ThrowableSoundServiceClass {
     delay = 0,
     q = 1
   ) {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.out) return;
     const t0 = this.ctx.currentTime + delay;
     const len = Math.max(1, Math.floor(this.ctx.sampleRate * dur));
     const buffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
@@ -93,12 +153,43 @@ class ThrowableSoundServiceClass {
     src.buffer = buffer;
     const filter = this.ctx.createBiquadFilter();
     filter.type = filterType;
-    filter.frequency.value = filterFreq;
+    filter.frequency.value = filterFreq * (0.94 + Math.random() * 0.12);
     filter.Q.value = q;
     const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(vol * this.volume, t0);
+    gain.gain.setValueAtTime(this.humanGain(vol), t0);
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    src.connect(filter).connect(gain).connect(this.ctx.destination);
+    src.connect(filter).connect(gain).connect(this.out);
+    src.start(t0);
+  }
+
+  /** Filtered noise with a moving filter — risers, engines, gusts. */
+  private noiseSweep(
+    dur: number,
+    vol: number,
+    fromFreq: number,
+    toFreq: number,
+    filterType: BiquadFilterType = 'bandpass',
+    delay = 0,
+    q = 1
+  ) {
+    if (!this.ctx || !this.out) return;
+    const t0 = this.ctx.currentTime + delay;
+    const len = Math.max(1, Math.floor(this.ctx.sampleRate * dur));
+    const buffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = filterType;
+    filter.frequency.setValueAtTime(Math.max(40, fromFreq), t0);
+    filter.frequency.exponentialRampToValueAtTime(Math.max(40, toFreq), t0 + dur);
+    filter.Q.value = q;
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(this.humanGain(vol), t0 + Math.min(0.05, dur * 0.2));
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(filter).connect(gain).connect(this.out);
     src.start(t0);
   }
 
@@ -121,7 +212,7 @@ class ThrowableSoundServiceClass {
     vol: number,
     delay = 0
   ) {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.out) return;
     const t0 = this.ctx.currentTime + delay;
     const osc = this.ctx.createOscillator();
     const mod = this.ctx.createOscillator();
@@ -129,14 +220,15 @@ class ThrowableSoundServiceClass {
     const gain = this.ctx.createGain();
     osc.type = 'sine';
     osc.frequency.value = carrier;
+    this.humanDetune(osc);
     mod.type = 'sine';
     mod.frequency.value = modFreq;
     modGain.gain.value = modDepth;
     mod.connect(modGain).connect(osc.frequency);
     gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(vol * this.volume, t0 + 0.02);
+    gain.gain.exponentialRampToValueAtTime(this.humanGain(vol), t0 + 0.02);
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    osc.connect(gain).connect(this.ctx.destination);
+    osc.connect(gain).connect(this.out);
     osc.start(t0);
     osc.stop(t0 + dur + 0.05);
     mod.start(t0);
@@ -146,19 +238,66 @@ class ThrowableSoundServiceClass {
   // ─── Launch (flight start) ───────────────────────────────────────────────────
 
   /** Whoosh as the throwable leaves the sender — weight scales the heft. */
-  playLaunch(weight: ThrowWeight = 'medium') {
+  playLaunch(weight: ThrowWeight = 'medium', pan = 0) {
     if (!this.ensureContext()) return;
+    this.setVoice(pan);
     const base = weight === 'heavy' ? 500 : weight === 'medium' ? 900 : 1400;
     const vol = weight === 'heavy' ? 0.22 : 0.15;
-    this.noise(0.22, vol, base, 'bandpass', 0, 0.8);
+    // Doppler-ish falling gust
+    this.noiseSweep(0.24, vol, base * 1.4, base * 0.5, 'bandpass', 0, 0.8);
     this.tone(base * 0.5, 0.2, vol * 0.5, 'sine', base * 0.22);
     haptic.light();
   }
 
+  // ─── Flight (travel loop for the drama items) ────────────────────────────────
+
+  /**
+   * Per-item travel sound, scheduled to span the flight. Only items where a
+   * travel sound reads clearly get one — everything else keeps the whoosh.
+   */
+  playFlight(throwableId: string, durationMs: number, pan = 0) {
+    if (!this.ensureContext()) return;
+    const dur = Math.min(1.4, Math.max(0.25, durationMs / 1000));
+    this.setVoice(pan);
+    try {
+      switch (throwableId) {
+        case 'bomb': // burning fuse all the way down
+          this.noiseSweep(dur, 0.07, 5200, 6800, 'highpass', 0, 0.5);
+          break;
+        case 'rocket': // engine roar rising
+          this.noiseSweep(dur, 0.16, 300, 950, 'bandpass', 0, 0.8);
+          this.tone(120, dur, 0.1, 'sawtooth', 260);
+          break;
+        case 'ufo': // hover throb
+          this.warble(650, 8, 220, dur, 0.1);
+          break;
+        case 'ghost': // rising moan
+          this.warble(420, 4, 60, dur, 0.08);
+          break;
+        case 'chicken': // panicked wing flutter
+          for (let d = 0; d < dur - 0.05; d += 0.09) {
+            this.noise(0.04, 0.08, 2400, 'bandpass', d, 1.8);
+          }
+          break;
+        case 'fireworks': // classic rising whistle
+          this.tone(400, dur, 0.09, 'sine', 1400);
+          break;
+        case 'lightning_bolt': // crackling static approach
+          this.noiseSweep(dur, 0.08, 2000, 6000, 'highpass', 0, 0.6);
+          break;
+        default:
+          break;
+      }
+    } catch {
+      /* audio is best-effort */
+    }
+  }
+
   // ─── Impact recipes (one per sound key) ──────────────────────────────────────
 
-  playImpact(soundKey: string, weight: ThrowWeight = 'medium') {
+  playImpact(soundKey: string, weight: ThrowWeight = 'medium', pan = 0) {
     if (!this.ensureContext()) return;
+    this.setVoice(pan);
     const recipe = this.recipes[soundKey] || this.recipes.splat_wet;
     try {
       recipe();
@@ -223,7 +362,7 @@ class ThrowableSoundServiceClass {
       this.warble(400, 28, 60, 0.35, 0.04, 0.15); // fly buzz
     },
     squirt: () => {
-      this.noise(0.3, 0.2, 2200, 'bandpass', 0, 1.5);
+      this.noiseSweep(0.32, 0.2, 2600, 1200, 'bandpass', 0, 1.5);
       this.tone(1200, 0.25, 0.08, 'sine', 500);
     },
     punch: () => {
@@ -331,27 +470,24 @@ class ThrowableSoundServiceClass {
       this.thump(130, 0.15, 0.12, 0.36);
     },
     firework: () => {
-      this.tone(300, 0.35, 0.1, 'sine', 1200); // rising whistle
-      this.noise(0.05, 0.35, 1500, 'bandpass', 0.35, 1); // BANG
-      this.thump(90, 0.25, 0.3, 0.35);
+      this.noise(0.05, 0.35, 1500, 'bandpass', 0, 1); // BANG
+      this.thump(90, 0.25, 0.3);
       // crackle rain
-      [0.45, 0.5, 0.56, 0.62, 0.7, 0.78].forEach((d) =>
+      [0.1, 0.15, 0.21, 0.27, 0.35, 0.43].forEach((d) =>
         this.noise(0.03, 0.1, 4000 + Math.random() * 3000, 'bandpass', d, 3)
       );
     },
 
     // ── Premium ──
     bomb_boom: () => {
-      this.noise(0.25, 0.06, 5000, 'highpass'); // fuse sizzle
-      this.thump(55, 0.5, 0.4, 0.22); // sub BOOM
-      this.noise(0.4, 0.35, 700, 'lowpass', 0.22);
-      this.noise(0.6, 0.12, 250, 'lowpass', 0.4); // rumble tail
+      this.thump(55, 0.5, 0.4); // sub BOOM (fuse already burned during flight)
+      this.noise(0.4, 0.35, 700, 'lowpass');
+      this.noise(0.6, 0.12, 250, 'lowpass', 0.18); // rumble tail
     },
     rocket_boom: () => {
-      this.noise(0.3, 0.25, 900, 'bandpass', 0, 0.7); // engine roar
-      this.tone(180, 0.3, 0.15, 'sawtooth', 500);
-      this.thump(60, 0.45, 0.38, 0.28);
-      this.noise(0.35, 0.3, 800, 'lowpass', 0.28);
+      this.thump(60, 0.45, 0.38);
+      this.noise(0.35, 0.3, 800, 'lowpass');
+      this.noiseSweep(0.3, 0.12, 1200, 300, 'bandpass', 0.1, 0.8); // debris fall
     },
     ufo_warble: () => {
       this.warble(700, 9, 250, 0.55, 0.14);

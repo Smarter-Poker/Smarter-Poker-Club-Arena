@@ -825,6 +825,7 @@ export const SeatSlot = memo(
       <div
         className={containerClasses}
         onClick={onAction}
+        data-seat-num={seatNumber}
         role="region"
         aria-label={`Seat ${seatNumber}: ${player.name}${isActive ? ' (acting now)' : ''}${player.status === 'folded' ? ' (folded)' : ''}${player.status === 'all_in' ? ' (all in)' : ''}, stack ${player.stack}`}
         aria-live={isActive ? 'polite' : 'off'}

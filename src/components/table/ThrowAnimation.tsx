@@ -1,6 +1,6 @@
 /**
  * =================================================================================
- *  THROW ANIMATION -- Dynamic 3D Throwable Display (2026-08-20 rebuild)
+ *  THROW ANIMATION -- Dynamic 3D Throwable Display (2026-08-20, v2)
  * =================================================================================
  *
  * PokerBros-style multi-phase throw choreography, driven entirely by the
@@ -10,21 +10,26 @@
  *   WINDUP  (140ms)  item pops + scales up at the thrower's seat
  *   FLIGHT  (420-1100ms, per physics) parabola / fastball / lob / float /
  *                    drop-from-above / S-curve swoop / corkscrew spiral,
- *                    with tumble spin and a motion trail
+ *                    with tumble spin, velocity tilt and a motion trail
  *   IMPACT  (~820ms) per-profile FX: splat goo, liquid splash, elastic
- *                    bounce, dust thud, fireball explosion, shard shatter,
- *                    electric zap, glitter sparkle, confetti burst --
- *                    plus squash-and-stretch, shockwave ring, particle
- *                    scatter, screen shake for heavy items
+ *                    bounce, dust thud, fireball explosion + smoke, shard
+ *                    shatter, electric zap, glitter sparkle, confetti
+ *                    burst -- plus squash-and-stretch, shockwave ring,
+ *                    particle scatter, target-seat flinch, screen shake
  *   LINGER  (2.5s)   stain/scorch residue for messy items
  *
- * AUDIO -- owned HERE, not by the send/receive hooks, so the whoosh fires at
- * launch and the item-specific SFX lands exactly on impact for both the
- * thrower and every receiving client. (useTableAnimations used to play a
- * generic thud at SEND time -- before anything had landed.)
+ * AUDIO -- owned HERE, not by the send/receive hooks: launch whoosh at
+ * flight start, optional per-item travel sound (bomb fuse, rocket engine,
+ * ufo hover...) spanning the flight, and the item-specific SFX exactly on
+ * landing -- for the thrower AND every receiving client. All SFX are
+ * stereo-panned to where the impact happens on screen.
  *
- * Renders the 49 3D images from Supabase storage; pure-black backgrounds are
- * erased by mix-blend-mode: screen (see .throwable-img in ThrowAnimation.css).
+ * BLEND NOTE -- the 49 renders are opaque JPGs on pure black, erased by
+ * mix-blend-mode: screen. That also means CSS drop-shadow() is USELESS on
+ * them (it keys off the alpha channel, and a JPG's alpha is a solid
+ * rectangle -- the "shadow" would be a glowing box). All glow here comes
+ * from separate radial-gradient layers that are themselves screen-blended,
+ * so they read as additive light and cost nothing over dark felt.
  */
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
@@ -66,6 +71,17 @@ const PARTICLES: Record<string, number> = {
   burst: 16,
 };
 
+/** Projectile size per weight -- an anvil should LOOK heavier than a tennis ball */
+const FLIGHT_SIZE: Record<string, number> = { light: 42, medium: 48, heavy: 58 };
+const IMPACT_SIZE: Record<string, number> = { light: 56, medium: 64, heavy: 76 };
+
+/** Normalized stereo position (-1..1) for a screen x coordinate. */
+function panForX(x: number): number {
+  const w = typeof window !== 'undefined' ? window.innerWidth : 0;
+  if (!w) return 0;
+  return Math.max(-0.8, Math.min(0.8, (x / w) * 2 - 1));
+}
+
 // =================================================================================
 // SINGLE THROW ANIMATION
 // =================================================================================
@@ -93,6 +109,19 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
   const t = event.throwable;
   const physics = PHYSICS[t.physics] || PHYSICS.arc;
   const isHeavy = t.weight === 'heavy';
+  const flightSize = FLIGHT_SIZE[t.weight] || 48;
+  const impactSize = IMPACT_SIZE[t.weight] || 64;
+
+  // Velocity tilt: fast, spinless items lean into their line of travel
+  // (rocket, water gun, boxing glove...). Fraction of the true angle so an
+  // unknown render orientation can never point completely the wrong way.
+  const travelTilt = useMemo(() => {
+    if (!fromPos || !toPos) return 0;
+    if (t.physics !== 'fastball' && t.physics !== 'swoop') return 0;
+    const deg = (Math.atan2(toPos.y - fromPos.y, toPos.x - fromPos.x) * 180) / Math.PI;
+    return deg * (t.physics === 'fastball' ? 0.35 : 0.2);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event.id]);
 
   // UI-AUDIT #1 (kept from the previous system): the container passes a new
   // `() => handleComplete(event.id)` arrow on every render. Keeping onComplete
@@ -105,26 +134,48 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
     const timers: ReturnType<typeof setTimeout>[] = [];
     const at = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
 
-    // WINDUP -> FLIGHT (launch whoosh)
+    const launchPan = fromPos ? panForX(fromPos.x) : 0;
+    const impactPan = toPos ? panForX(toPos.x) : 0;
+
+    // WINDUP -> FLIGHT (launch whoosh + optional travel sound)
     at(WINDUP_DURATION, () => {
       setPhase('flight');
       try {
-        throwableSoundService.playLaunch(t.weight);
+        throwableSoundService.playLaunch(t.weight, launchPan);
+        throwableSoundService.playFlight(t.id, physics.duration, impactPan);
       } catch {
         /* audio is best-effort */
       }
     });
 
-    // FLIGHT -> IMPACT (item SFX + shake)
+    // FLIGHT -> IMPACT (item SFX + seat flinch + shake)
     at(WINDUP_DURATION + physics.duration, () => {
       setPhase('impact');
       try {
-        throwableSoundService.playImpact(t.sound, t.weight);
+        throwableSoundService.playImpact(t.sound, t.weight, impactPan);
       } catch {
         /* audio is best-effort */
       }
+
+      // Target seat flinches (SeatSlot exposes data-seat-num)
+      try {
+        const seatEl = document.querySelector(`[data-seat-num="${event.toSeat}"]`);
+        if (seatEl) {
+          seatEl.classList.add('seat--throw-flinch');
+          setTimeout(() => seatEl.classList.remove('seat--throw-flinch'), 500);
+        }
+      } catch {
+        /* flinch is decorative */
+      }
+
       if (isHeavy) {
-        const table = document.querySelector('.poker-table, .table-layout, [data-table]');
+        // v2 FIX: the old selector list (.poker-table, .table-layout,
+        // [data-table]) matched NOTHING in the real DOM -- heavy impacts
+        // never shook the screen. The animation container mounts inside
+        // .table-scaler, which is the element the seats render in.
+        const table = document.querySelector(
+          '.table-scaler, .poker-table, .table-layout, [data-table]'
+        );
         if (table) {
           table.classList.add('throw-animation--shake');
           setTimeout(() => table.classList.remove('throw-animation--shake'), 450);
@@ -181,11 +232,12 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
       {/* WINDUP -- pop at the thrower's seat */}
       {phase === 'windup' && (
         <div className="throw-animation__windup" style={{ left: fromPos.x, top: fromPos.y }}>
-          <ThrowableImage throwableId={t.id} size={44} />
+          <div className="throw-animation__glow" />
+          <ThrowableImage throwableId={t.id} size={Math.round(flightSize * 0.92)} />
         </div>
       )}
 
-      {/* FLIGHT -- physics-profiled trajectory with spin + trail */}
+      {/* FLIGHT -- physics-profiled trajectory with spin, tilt + trail */}
       {phase === 'flight' && (
         <div
           className={`throw-animation__projectile throw-animation__projectile--${t.physics}`}
@@ -198,18 +250,24 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
               '--flight-dur': `${physics.duration}ms`,
               '--arc-height': `${physics.arc}px`,
               '--spin': `${t.spin}deg`,
+              '--tilt': `${travelTilt}deg`,
+              '--size': `${flightSize}px`,
+              '--half': `${flightSize / 2}px`,
             } as React.CSSProperties
           }
         >
           {/* trail ghosts (staggered, fading copies) */}
           <div className="throw-animation__trail throw-animation__trail--1">
-            <ThrowableImage throwableId={t.id} size={48} />
+            <ThrowableImage throwableId={t.id} size={flightSize} />
           </div>
           <div className="throw-animation__trail throw-animation__trail--2">
-            <ThrowableImage throwableId={t.id} size={48} />
+            <ThrowableImage throwableId={t.id} size={flightSize} />
           </div>
           <div className="throw-animation__spinner">
-            <ThrowableImage throwableId={t.id} size={48} />
+            <div className="throw-animation__glow throw-animation__glow--flight" />
+            <div className="throw-animation__tilt">
+              <ThrowableImage throwableId={t.id} size={flightSize} />
+            </div>
           </div>
         </div>
       )}
@@ -220,13 +278,17 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
           className={`throw-animation__impact throw-animation__impact--${t.impact}`}
           style={{ left: toPos.x, top: toPos.y }}
         >
-          {/* explosion flash / fireball layers (explode + zap only, CSS-gated) */}
+          {/* explosion flash / fireball / smoke layers (CSS-gated by profile) */}
           <div className="throw-animation__flash" />
           <div className="throw-animation__fireball" />
+          <div className="throw-animation__smoke throw-animation__smoke--1" />
+          <div className="throw-animation__smoke throw-animation__smoke--2" />
+          <div className="throw-animation__smoke throw-animation__smoke--3" />
 
-          {/* squash-and-stretch item */}
+          {/* squash-and-stretch item with additive glow */}
+          <div className="throw-animation__impact-glow" />
           <div className="throw-animation__impact-icon">
-            <ThrowableImage throwableId={t.id} size={64} />
+            <ThrowableImage throwableId={t.id} size={impactSize} />
           </div>
 
           {/* shockwave ring */}

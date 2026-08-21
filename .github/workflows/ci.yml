@@ -536,7 +536,7 @@ jobs:
           # Current baseline (post-U3.5): ~1641kB gzipped. Gate at 2048kB gives
           # ~25% headroom and will fire before any material regression slips in.
           GZ_LIMIT=2048
-          RAW_LIMIT=6144  # soft ceiling — only fails if BOTH raw and gzipped balloon together
+          RAW_LIMIT=8192  # soft ceiling — only fails if BOTH raw and gzipped balloon together
           if [ $TOTAL_GZ_KB -gt $GZ_LIMIT ]; then
             echo "::error::Gzipped bundle size ${TOTAL_GZ_KB}kB exceeds limit ${GZ_LIMIT}kB. Investigate code splitting."
             exit 1

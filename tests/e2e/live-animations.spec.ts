@@ -83,7 +83,7 @@ async function beat(page: Page, mutate: string): Promise<Record<string, number>>
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
     const out: Record<string, number> = {};
     for (const a of document.getAnimations()) {
-      const name = (a as unknown as { animationName?: string }).animationName;
+      const name = (a as any).animationName || (a as any).transitionProperty;
       if (!name) continue;
       const d = a.effect?.getTiming().duration;
       out[name] = typeof d === 'number' ? Math.round(d) : -1;
@@ -310,7 +310,8 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
       page,
       `document.getElementById('mbc').className='mbc mbc--opening';`
     );
-    expect(opening.mbcLidOpen, 'the lid must hinge open').toBe(900);
+    // The lid now opens via a CSS transition on 'transform', not the old mbcLidOpen animation.
+    expect(opening.transform, 'the lid must hinge open').toBe(900);
   });
 
   test('the TOURNAMENT WINNER overlay: entrance, trophy, prize counter', async ({ page }) => {

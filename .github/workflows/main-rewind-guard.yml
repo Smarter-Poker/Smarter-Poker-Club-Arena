@@ -139,6 +139,55 @@ jobs:
               labels: ['incident'],
             });
 
+      - name: Is production running code main no longer has?
+        # The issue body above tells a human to compare production's ca_sha
+        # against main by hand. Nobody ever does, and that comparison is the
+        # only thing that distinguishes "a commit was dropped" from "a live
+        # feature is about to be deleted by the next sync". So do it here, on
+        # every push, not only after a rewind — drift also appears when a sync
+        # is starved or a build fails, with no rewind involved at all.
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -u
+          BI=https://smarter.poker/hub/club-arena/build-info.json
+          # Cache-bust: the CDN happily serves a stale build-info for minutes,
+          # which would make a drifted production look perfectly in sync.
+          JSON=$(curl -fsSL --max-time 25 "$BI?ci=$GITHUB_RUN_ID" 2>/dev/null || true)
+          if [ -z "$JSON" ]; then
+            echo "::warning::Could not read $BI — skipping drift check."
+            exit 0
+          fi
+          PROD=$(printf '%s' "$JSON" | sed -n 's/.*"ca_sha"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{7,40\}\)".*/\1/p')
+          if [ -z "$PROD" ]; then
+            echo "::warning::build-info.json has no ca_sha — skipping."
+            exit 0
+          fi
+          echo "production ca_sha: $PROD"
+          echo "main tip:          $GITHUB_SHA"
+
+          if ! git cat-file -e "${PROD}^{commit}" 2>/dev/null; then
+            git fetch --no-tags origin "$PROD" 2>/dev/null || true
+          fi
+          if ! git cat-file -e "${PROD}^{commit}" 2>/dev/null; then
+            echo "::error::Production is serving $PROD, which does not exist in this repo at all."
+            echo "PROD_ORPHAN=1" >> "$GITHUB_ENV"
+            exit 1
+          fi
+
+          if git merge-base --is-ancestor "$PROD" "$GITHUB_SHA"; then
+            AHEAD=$(git rev-list --count "${PROD}..${GITHUB_SHA}")
+            echo "In sync: main is $AHEAD commit(s) ahead of production, and contains it."
+            exit 0
+          fi
+
+          echo "::error::DRIFT — production is serving $PROD, which is NOT an ancestor of main."
+          echo "Commits live in production but missing from main:"
+          git log --oneline --max-count=30 "${GITHUB_SHA}..${PROD}" || true
+          echo "The next successful sync will DELETE that code from smarter.poker."
+          exit 1
+
       - name: Fail the run so it is visible
         if: steps.check.outputs.dropped == 'yes'
         run: exit 1

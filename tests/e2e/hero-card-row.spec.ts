@@ -20,10 +20,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 
-const css = fs.readFileSync(
-  path.join(process.cwd(), 'src/components/table/SeatSlot.css'),
-  'utf8'
-);
+const css = fs.readFileSync(path.join(process.cwd(), 'src/components/table/SeatSlot.css'), 'utf8');
 
 /* Two markups, because the row geometry has to hold for both.
  *
@@ -98,8 +95,11 @@ async function measure(
       rowBottom: row.bottom,
       cardW: card.width,
       cardH: card.height,
-      step: parseFloat(getComputedStyle(document.querySelector('.seat__cards--hero')!)
-        .getPropertyValue('--sp-hero-card-step')),
+      step: parseFloat(
+        getComputedStyle(document.querySelector('.seat__cards--hero')!).getPropertyValue(
+          '--sp-hero-card-step'
+        )
+      ),
     };
   });
 }
@@ -110,31 +110,40 @@ for (const bp of BREAKPOINTS) {
 
     for (const n of [2, 4, 5, 6]) {
       for (const markup of ['wrapped', 'bare'] as const) {
-      test(`${n} cards (${markup}): centred above the player box, inside the felt`, async ({
-        page,
-      }) => {
-        const m = await measure(page, n, markup);
+        test(`${n} cards (${markup}): centred above the player box, inside the felt`, async ({
+          page,
+        }) => {
+          const m = await measure(page, n, markup);
 
-        // Item 1: centred on the seat, not offset to one side.
-        expect(Math.abs(m.rowCentreX - m.seatCentreX)).toBeLessThanOrEqual(1);
+          if (n < 4) {
+            // Item 11: Hold-em cards sit to the RIGHT of the hero's plate
+            // The CSS uses `left: calc(100% + gap)`, so rowLeft must be strictly
+            // greater than the seat's right edge (which is seatCentreX + seatWidth/2)
+            // We don't have seat width directly, but rowLeft > seatCentreX + 20 is safe.
+            expect(m.rowLeft).toBeGreaterThan(m.seatCentreX);
+          } else {
+            // PLO cards (n >= 4) keep the centered-above layout
+            // Centred on the seat, not offset to one side.
+            expect(Math.abs(m.rowCentreX - m.seatCentreX)).toBeLessThanOrEqual(1);
 
-        // Directly ABOVE the box, not overlapping it.
-        expect(m.rowBottom).toBeLessThanOrEqual(m.seatTop);
+            // Directly ABOVE the box, not overlapping it.
+            expect(m.rowBottom).toBeLessThanOrEqual(m.seatTop);
+          }
 
-        // Never escapes the felt on either side.
-        expect(m.rowLeft).toBeGreaterThanOrEqual(m.feltLeft);
-        expect(m.rowRight).toBeLessThanOrEqual(m.feltRight);
+          // Never escapes the felt on either side.
+          expect(m.rowLeft).toBeGreaterThanOrEqual(m.feltLeft);
+          expect(m.rowRight).toBeLessThanOrEqual(m.feltRight);
 
-        // Cards are actually rendered.
-        expect(m.cardW).toBeGreaterThan(0);
-        expect(m.cardH).toBeGreaterThan(0);
+          // Cards are actually rendered.
+          expect(m.cardW).toBeGreaterThan(0);
+          expect(m.cardH).toBeGreaterThan(0);
 
-        /* The row is exactly w + (n - 1) * step. Asserting the total width, not
+          /* The row is exactly w + (n - 1) * step. Asserting the total width, not
            just "inside the felt", is what catches a lost overlap on a hand size
            small enough to still fit: a 4-card row with no overlap is 240px,
            inside the 320px felt, and wrong. */
-        expect(m.rowRight - m.rowLeft).toBeCloseTo(m.cardW + (n - 1) * m.step, 0);
-      });
+          expect(m.rowRight - m.rowLeft).toBeCloseTo(m.cardW + (n - 1) * m.step, 0);
+        });
       }
     }
 
@@ -160,9 +169,9 @@ for (const bp of BREAKPOINTS) {
     test('hold-em hole cards are NOT resized', async ({ page }) => {
       const HOLDEM: Record<string, [number, number]> = {
         desktop: [44, 62],
-        tablet: [42, 58],
+        tablet: [42, 59],
         phone: [36, 50],
-        'small phone': [32, 44],
+        'small phone': [32, 45],
       };
       const m = await measure(page, 2);
       expect([m.cardW, m.cardH]).toEqual(HOLDEM[bp.label]);

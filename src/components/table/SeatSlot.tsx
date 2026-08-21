@@ -26,7 +26,8 @@ import type { PlayerStyleResult } from '../../services/PlayerStyleClassifier';
 import { ChipPhysics } from './ChipPhysics';
 import { getAvatarWithFallback } from '../../utils/avatarGenerator';
 import { soundService, haptic } from '../../services/SoundService';
-import { getAnimationSpeed } from '../../utils/animationSpeed';
+import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
+import './avatarChoreography.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -54,6 +55,43 @@ export type PositionBadge =
   | 'CO'
   | null;
 export type LastAction = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | null;
+
+/**
+ * AVATAR CHOREOGRAPHY 2026-08-21 (Dan: "if they could move to put chips in the
+ * pot, or actually make a fold motion when folding, or celebrating when
+ * winning a pot").
+ *
+ * Tier 0 of the avatar-animation plan: the character is animated as a rigid
+ * body, so EVERY avatar in the library gets motion with no new art and no new
+ * runtime dependency. The gesture class lands on `.seat__avatar-wrap` —
+ * deliberately NOT on `.seat__avatar-img`, which already carries the bust-art
+ * `translateY(--sp-bust-clip) scale(--sp-bust-scale)` that anchors the
+ * character's feet to the name box, and NOT on `.seat__avatar`, which
+ * `.seat--winner` already drives with `seatWinnerAvatarGlow` plus a static
+ * `scale(1.08)`. The wrap is the one box in the avatar subtree that nothing
+ * else transforms or animates. Full rationale in avatarChoreography.css.
+ */
+export type AvatarGesture = 'push' | 'check' | 'fold' | 'celebrate' | null;
+
+/**
+ * Action -> gesture, with the window (ms at 1x speed) the class stays on.
+ * Each window is the keyframe duration plus a small tail so the class is never
+ * stripped mid-flight — the mistake that made `cardFoldOut` snap when its
+ * window was 350ms against a 435ms animation (see the fold effect below).
+ */
+const GESTURE_FOR_ACTION: Partial<
+  Record<NonNullable<LastAction>, { gesture: AvatarGesture; ms: number }>
+> = {
+  bet: { gesture: 'push', ms: 560 },
+  raise: { gesture: 'push', ms: 560 },
+  call: { gesture: 'push', ms: 560 },
+  all_in: { gesture: 'push', ms: 560 },
+  check: { gesture: 'check', ms: 440 },
+  fold: { gesture: 'fold', ms: 660 },
+};
+
+/** Celebration window — must outlast spAvatarCelebrate (900ms) by a hair. */
+const CELEBRATE_MS = 940;
 
 export interface SeatPlayer {
   id: string;
@@ -469,6 +507,63 @@ export const SeatSlot = memo(
       }
       prevActionRef.current = lastAction;
     }, [lastAction]);
+
+    /**
+     * AVATAR CHOREOGRAPHY 2026-08-21 — the character reacts to its own action.
+     *
+     * Deliberately a SEPARATE effect from the all-in/fold one above rather than
+     * another branch inside it. That effect early-returns per branch to scope
+     * its cleanup to a single timer, so an added branch would either be
+     * unreachable (all_in and fold both return before it) or would silently
+     * change which timeout gets cleaned up. One ref, one timer, one concern.
+     *
+     * No new prop is needed, so the memo comparator below is untouched:
+     * `lastAction` and `isWinner` are both already compared there, which is
+     * what makes the seat re-render on every action and every win.
+     */
+    const [avatarGesture, setAvatarGesture] = useState<AvatarGesture>(null);
+    const gestureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const prevGestureActionRef = useRef<LastAction>(null);
+    const prevGestureWinnerRef = useRef(false);
+    useEffect(() => {
+      return () => {
+        if (gestureTimerRef.current) clearTimeout(gestureTimerRef.current);
+      };
+    }, []);
+    useEffect(() => {
+      // Keep the ref in step even when we bail, or the seat fires a stale
+      // gesture the next time this effect actually runs.
+      const changed = lastAction !== prevGestureActionRef.current;
+      prevGestureActionRef.current = lastAction;
+      if (!changed || !lastAction) return;
+      // The stylesheet also guards via @media, but the class still has to not
+      // be applied at all so `will-change: transform` stays off the compositor
+      // on nine simultaneous seats.
+      if (prefersReducedMotion()) return;
+      const g = GESTURE_FOR_ACTION[lastAction];
+      if (!g) return;
+      setAvatarGesture(g.gesture);
+      if (gestureTimerRef.current) clearTimeout(gestureTimerRef.current);
+      gestureTimerRef.current = setTimeout(
+        () => setAvatarGesture(null),
+        g.ms * getAnimationSpeed()
+      );
+    }, [lastAction]);
+    useEffect(() => {
+      // Rising edge only — replays once per win, like the winner-pop above.
+      const rising = isWinner && !prevGestureWinnerRef.current;
+      prevGestureWinnerRef.current = isWinner;
+      if (!rising || prefersReducedMotion()) return;
+      // Celebrate outranks whatever the player's last action was: isWinner
+      // flips at HAND_COMPLETE, after PLAYER_ACTION, so this effect runs last
+      // and its setState is the one that lands.
+      setAvatarGesture('celebrate');
+      if (gestureTimerRef.current) clearTimeout(gestureTimerRef.current);
+      gestureTimerRef.current = setTimeout(
+        () => setAvatarGesture(null),
+        CELEBRATE_MS * getAnimationSpeed()
+      );
+    }, [isWinner]);
 
     // Showdown card flip animation — 3D flip when opponent cards are revealed
     const [isShowdownFlip, setIsShowdownFlip] = useState(false);
@@ -907,7 +1002,9 @@ export const SeatSlot = memo(
         {/* Avatar Circle — large, sits on top of info box */}
         {/* Bible V8 §11.1: show_avatars toggle */}
         <div
-          className={`seat__avatar-wrap${isBustArt ? ' seat__avatar-wrap--bust' : ''}`}
+          className={`seat__avatar-wrap${isBustArt ? ' seat__avatar-wrap--bust' : ''}${
+            avatarGesture ? ` seat__avatar-wrap--${avatarGesture}` : ''
+          }`}
           /* Kept deliberately. Not rendering the <img> stops the download, but
              the wrap also holds the circle chrome, the status dot and the
              position badge, all of which this toggle has always hidden — and

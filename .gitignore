@@ -77,3 +77,14 @@ e2e-work/
 # Playwright's authenticated storageState, written fresh by
 # tests/e2e/global-setup.ts on every run. Never commit a session token.
 tests/e2e/.auth/
+
+# FUSE mount artifacts. The Cowork/device sandbox mounts this repo over FUSE,
+# which cannot unlink a file that is still open — the kernel renames it to
+# .fuse_hiddenXXXXXXXX instead and leaves it behind. Three of these were sitting
+# untracked in src/ on 2026-08-21, one `git add -A` away from being committed.
+# They are never source. Same story as _to_delete/ above.
+.fuse_hidden*
+
+# One-off debug screenshots dropped at the repo root (_cards_probe.png, etc).
+# The committed visual suite is e2e-live/; these are throwaways.
+_*_probe.png

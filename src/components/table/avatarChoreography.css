@@ -1,0 +1,186 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   AVATAR ACTION CHOREOGRAPHY — Tier 0
+   Dan 2026-08-21: "if they could move to put chips in the pot, or actually make
+   a fold motion when folding, or celebrate when winning a pot."
+   ─────────────────────────────────────────────────────────────────────────────
+   The character is animated as a RIGID BODY, so every avatar in the library
+   gets motion with no new art and no new runtime dependency.
+
+   WHY THE GESTURE LANDS ON `.seat__avatar-wrap` AND NOWHERE ELSE
+   ---------------------------------------------------------------
+   The avatar subtree has three boxes and two of them are already spoken for:
+
+     .seat__avatar-wrap   <- FREE. Nothing transforms or animates it.
+       .seat__avatar      <- `.seat--winner` sets a static scale(1.08) AND runs
+                             `seatWinnerAvatarGlow` on it. A second animation
+                             here would replace that whole shorthand.
+         .seat__avatar-img<- bust art lives on this transform:
+                             translateY(--sp-bust-clip) scale(--sp-bust-scale).
+                             That is what anchors the character's feet to the
+                             name box. Overwrite it and every bust detaches.
+
+   So the wrap is the only box where a gesture composes with the winner glow,
+   the bust anchoring, and the hover zoom all at once.
+
+   DIRECTION IS DERIVED, NOT HARDCODED
+   -----------------------------------
+   `--collect-dx/--collect-dy` are px offsets from this seat to the pot centre,
+   set per seat on `.seat-wrapper` by TablePage. Custom properties inherit, so
+   the wrap can read them and lean toward the pot correctly from ANY seat.
+   Scaling them by a small factor (0.02-0.08) turns a full chip flight into a
+   body lean. Same convention as ChipPhysics.css `calc(var(--collect-dx) * 0.15)`.
+
+   Rotation is deliberately NOT tied to dx: `calc(var(--collect-dx) / 1px * Ndeg)`
+   would need length/length division, and a fixed rotation would lean the wrong
+   way for every seat on the opposite side of the table. Anticipation is
+   expressed as scale + directional translate instead, which reads correctly
+   from all nine seats.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.seat__avatar-wrap {
+  /* Hop height for the celebration. Overridden on the top rail — see below. */
+  --sp-hop: -10px;
+}
+
+/* Dan 2026-08-19, bug list item 10: the top row already caps --sp-bust-scale to
+   1.15 because bust art scaled about its feet climbs into the BBJ banner. A
+   celebration that jumps the full 10px would put the head straight back into
+   it, so the top rail hops half as high. Same trade-off, same reason. */
+.seat-wrapper--top .seat__avatar-wrap {
+  --sp-hop: -5px;
+}
+
+.seat__avatar-wrap--push,
+.seat__avatar-wrap--check,
+.seat__avatar-wrap--fold,
+.seat__avatar-wrap--celebrate {
+  /* Transient only — the class is removed when the gesture ends, so this never
+     pins nine seats onto their own compositor layers for the whole session. */
+  will-change: transform;
+}
+
+/* ─── PUSH — bet / raise / call / all-in ──────────────────────────────────────
+   Classic anticipation: settle back and squat, thrust toward the pot, recover.
+   The forward beat lands at 58% so it reads against the chips leaving the seat
+   (ChipPhysics cpSlideIn), not before them. */
+.seat__avatar-wrap--push {
+  animation: spAvatarPush calc(0.52s * var(--animation-speed, 1))
+    cubic-bezier(0.22, 0.85, 0.3, 1.15) both;
+}
+
+@keyframes spAvatarPush {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  24% {
+    /* wind-up: pull back from the table and drop a little */
+    transform: translate(calc(var(--collect-dx, 0px) * -0.025), 3px) scale(0.97);
+  }
+  58% {
+    /* the push itself: reach toward the pot and grow into it */
+    transform: translate(calc(var(--collect-dx, 0px) * 0.08), calc(var(--collect-dy, -30px) * 0.06))
+      scale(1.05);
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+/* ─── CHECK — the two-finger table tap ─────────────────────────────────────── */
+.seat__avatar-wrap--check {
+  animation: spAvatarCheck calc(0.4s * var(--animation-speed, 1)) ease-out both;
+}
+
+@keyframes spAvatarCheck {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(3px);
+  }
+  55% {
+    transform: translateY(0);
+  }
+  78% {
+    transform: translateY(2px);
+  }
+}
+
+/* ─── FOLD — flick the cards in, then sit back ───────────────────────────────
+   Ends EXACTLY on the resting pose defined by `.seat--folded` below, so when
+   the gesture class is stripped there is no snap. The player visibly sits back
+   and STAYS back for the rest of the hand. */
+.seat__avatar-wrap--fold {
+  animation: spAvatarFold calc(0.6s * var(--animation-speed, 1)) cubic-bezier(0.3, 0, 0.2, 1) both;
+}
+
+@keyframes spAvatarFold {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  30% {
+    /* the flick — a short shove toward the muck */
+    transform: translate(
+        calc(var(--collect-dx, 0px) * 0.045),
+        calc(var(--collect-dy, -30px) * 0.035)
+      )
+      scale(1.02);
+  }
+  100% {
+    transform: translate(0, 3px) scale(0.97);
+  }
+}
+
+/* The persistent slump. Matches spAvatarFold's 100% frame exactly. Pairs with
+   the existing `.seat--folded .seat__avatar--bust .seat__avatar-img`
+   brightness dim — that rule handles colour, this one handles posture. */
+.seat--folded .seat__avatar-wrap {
+  transform: translateY(3px) scale(0.97);
+  transition: transform calc(0.3s * var(--animation-speed, 1)) var(--ease-out, ease-out);
+}
+
+/* ─── CELEBRATE — crouch, jump, wobble, land ─────────────────────────────────
+   Fires on the isWinner rising edge, so it plays once per pot won. Rotation is
+   safe here (unlike the push) because a celebration is not directional. */
+.seat__avatar-wrap--celebrate {
+  animation: spAvatarCelebrate calc(0.9s * var(--animation-speed, 1))
+    cubic-bezier(0.2, 0.7, 0.3, 1.2) both;
+}
+
+@keyframes spAvatarCelebrate {
+  0% {
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+  15% {
+    transform: translateY(4px) scale(0.96) rotate(0deg);
+  }
+  40% {
+    transform: translateY(var(--sp-hop, -10px)) scale(1.09) rotate(-4deg);
+  }
+  60% {
+    transform: translateY(calc(var(--sp-hop, -10px) * 0.6)) scale(1.06) rotate(4deg);
+  }
+  78% {
+    transform: translateY(0) scale(1.02) rotate(-2deg);
+  }
+  100% {
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+}
+
+/* ─── REDUCED MOTION ─────────────────────────────────────────────────────────
+   SeatSlot.tsx also checks prefersReducedMotion() before it ever applies the
+   class, so this is the belt to that braces — it also covers a user who flips
+   the OS setting while a gesture is mid-flight. */
+@media (prefers-reduced-motion: reduce) {
+  .seat__avatar-wrap--push,
+  .seat__avatar-wrap--check,
+  .seat__avatar-wrap--fold,
+  .seat__avatar-wrap--celebrate {
+    animation: none;
+  }
+  .seat--folded .seat__avatar-wrap {
+    transition: none;
+  }
+}

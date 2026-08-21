@@ -182,7 +182,6 @@ const IMPACT_MS: Record<string, number> = {
   ghost: 1000,
   doge: 950,
   shark: 950,
-  mouse_card: 700,
 };
 
 /**

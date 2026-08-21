@@ -56,7 +56,18 @@ interface TableInstance {
   isMyTurn: boolean;
   /** Absolute epoch-ms deadline of the hero's turn on this table. */
   turnDeadlineMs?: number;
+  /** Absolute epoch-ms the hero's turn clock started (with the deadline it
+   *  drives the depleting timer bar under the tab — PokerBros parity). */
+  turnStartMs?: number;
   pot: number;
+  /**
+   * Hero's hole cards at this table as ONE comma-joined string ("Ah,Qc"; ""
+   * when not in a hand or folded). A string, not an array, so
+   * updateTableInfo's shallow !== bail-out keeps working (P1-2 fix).
+   */
+  holeCards?: string;
+  /** Hero's last action this street at this table ('fold', 'call', ...). */
+  lastAction?: string;
   /**
    * Dan 2026-08-15: a tab is either a live table or a LOBBY placeholder.
    *
@@ -573,15 +584,33 @@ export default function MultiTablePage() {
 
   const tabInfos: TabInfo[] = useMemo(
     () =>
-      tables.map((t) => ({
-        id: t.id,
-        name: t.name,
-        stakes: t.stakes,
-        isMyTurn: t.isMyTurn,
-        timeRemaining: secondsLeft(t),
-        pot: t.pot,
-      })),
-    [tables, secondsLeft]
+      tables.map((t) => {
+        /**
+         * PokerBros parity (Dan 2026-08-20): fraction of the turn clock left,
+         * 0..1, driving the depleting bar under the tab. nowMs ticks at 1s
+         * while any turn is live; a CSS linear width transition smooths the
+         * steps. undefined when it is not the hero's turn at that table.
+         */
+        let turnProgress: number | undefined;
+        if (t.isMyTurn && t.turnDeadlineMs !== undefined && t.turnStartMs !== undefined) {
+          const total = t.turnDeadlineMs - t.turnStartMs;
+          if (total > 0) {
+            turnProgress = Math.max(0, Math.min(1, (t.turnDeadlineMs - nowMs) / total));
+          }
+        }
+        return {
+          id: t.id,
+          name: t.name,
+          stakes: t.stakes,
+          isMyTurn: t.isMyTurn,
+          timeRemaining: secondsLeft(t),
+          turnProgress,
+          pot: t.pot,
+          holeCards: t.holeCards,
+          lastAction: t.lastAction,
+        };
+      }),
+    [tables, secondsLeft, nowMs]
   );
 
   // ─── Table Management ────────────────────────────────────────────────

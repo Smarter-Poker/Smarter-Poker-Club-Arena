@@ -508,7 +508,23 @@ interface TablePageProps {
      *  here was the bug (it froze at a constant and the urgent auto-switch
      *  could never fire). */
     turnDeadlineMs?: number;
+    /** Absolute epoch-ms the hero's turn clock started (server-authoritative).
+     *  With the deadline it gives the tab bar a true depleting timer bar —
+     *  fraction remaining = (deadline - now) / (deadline - start). */
+    turnStartMs?: number;
     pot?: number;
+    /**
+     * PokerBros parity (Dan 2026-08-20, from live multi-table footage): each
+     * tab previews the hero's hole cards AT THAT TABLE. Reported as ONE
+     * comma-joined string ("Ah,Qc" / "" when not in a hand or folded) rather
+     * than an array on purpose — updateTableInfo in MultiTablePage bails out
+     * on shallow !== comparison, and a fresh array identity every snapshot
+     * would defeat that and resurrect the P1-2 render-loop bug.
+     */
+    holeCards?: string;
+    /** Hero's last action this street ('fold' | 'check' | 'call' | 'bet' |
+     *  'raise' | ...), for the transient badge under the tab. */
+    lastAction?: string;
   }) => void;
   /** Whether this table is part of a multi-table session (hides own header if tab bar is shown) */
   isMultiTable?: boolean;
@@ -1060,6 +1076,11 @@ export default function TablePage({
   // Per-seat deal animation — true for ~600ms after HAND_STARTED so SeatSlot
   // applies seat__cards--dealing class (card slide-in at each seat)
   const [isSeatDealing, setIsSeatDealing] = useState(false);
+
+  // BOMB POT 2026-08-20: true from BOMB_POT_TRIGGERED until the next
+  // HAND_STARTED. Drives the magenta "BOMB" pill on every live seat
+  // (SeatSlot bombPotAnte) for the duration of the bomb-pot hand.
+  const [bombPotActive, setBombPotActive] = useState(false);
 
   // Time Bank State
   const [showTimeBank, setShowTimeBank] = useState(false);
@@ -1710,6 +1731,28 @@ export default function TablePage({
 
   // ─── Multi-table info reporting ─────────────────────────────────────
   // When embedded in MultiTablePage, report table name/pot/turn status
+  //
+  // PokerBros parity (Dan 2026-08-20): the tab bar previews the hero's hole
+  // cards per table. Derived as a STRING memo so the reporting effect only
+  // re-fires when the cards actually change — tableState.players gets a new
+  // identity on every engine snapshot, and depending on it directly would
+  // re-run the effect (and updateTableInfo's compare loop) many times a hand.
+  const heroTabCards = useMemo(() => {
+    const hero = tableState.players[tableState.heroSeat - 1];
+    if (!hero || !tableState.isHandInProgress || hero.status === 'folded') return '';
+    return (hero.holeCards ?? [])
+      .filter((c): c is NonNullable<typeof c> => c != null)
+      .map((c) => `${c.rank}${c.suit}`)
+      .join(',');
+  }, [tableState.players, tableState.heroSeat, tableState.isHandInProgress]);
+
+  // Hero's last action this street, for the transient badge under the tab.
+  // Same memo-to-primitive pattern as heroTabCards, same reason.
+  const heroTabLastAction = useMemo(() => {
+    const a = tableState.lastActions?.[tableState.heroSeat - 1];
+    return typeof a === 'string' ? a : '';
+  }, [tableState.lastActions, tableState.heroSeat]);
+
   useEffect(() => {
     if (!onTableInfoUpdate) return;
     const isHeroTurn =
@@ -1725,7 +1768,10 @@ export default function TablePage({
       // deadline. The previous hardcoded `timeRemaining: 15` froze the tab
       // countdown and made the container's urgent auto-switch (< 5s) dead code.
       turnDeadlineMs: isHeroTurn ? tableState.actionTimerDeadline : undefined,
+      turnStartMs: isHeroTurn ? tableState.actionTimerStartTime : undefined,
       pot: tableState.pot,
+      holeCards: heroTabCards,
+      lastAction: heroTabLastAction,
     });
   }, [
     tableState.tableName,
@@ -1736,6 +1782,9 @@ export default function TablePage({
     tableState.heroSeat,
     tableState.isHandInProgress,
     tableState.actionTimerDeadline,
+    tableState.actionTimerStartTime,
+    heroTabCards,
+    heroTabLastAction,
     onTableInfoUpdate,
   ]);
 
@@ -5521,6 +5570,10 @@ export default function TablePage({
           const hn = Number((evt.data as any)?.hand_number) || 0;
           if (hn > 0) heroHandRef.current = hn;
         }
+        // BOMB POT 2026-08-20: the previous hand's bomb-pot state ends with
+        // the hand. If THIS hand is a bomb pot, its own BOMB_POT_TRIGGERED
+        // (emitted after HAND_STARTED in the engine's dealing path) re-arms it.
+        setBombPotActive(false);
         // AUDIT 2026-08-19: drop any in-flight pot push. It is otherwise
         // cleared only by a 700ms timer, and a hand that starts inside that
         // window would render its FRESH pot with .pot-display--collect still
@@ -5677,6 +5730,9 @@ export default function TablePage({
         // toggle exists in CreateTableModal and TableConfigPage.)
         {
           const d = evt.data as any;
+          // BOMB POT 2026-08-20: tag every live seat with the "BOMB" pill
+          // for the rest of the hand (cleared by the next HAND_STARTED).
+          setBombPotActive(true);
           try {
             masterBus.emit('BOMB_POT_TRIGGERED', {
               tableId: tableId || '',
@@ -8559,6 +8615,7 @@ export default function TablePage({
                       ? tableState.bountyMap[player.id]
                       : undefined
                   }
+                  bombPotAnte={bombPotActive}
                   isWinner={player ? winnerInfo.playerIds.includes(player.id) : false}
                   winningHandName={
                     player && winnerInfo.playerIds.includes(player.id)

@@ -1,7 +1,11 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  BOMB POT OVERLAY — Styles
+ *  BOMB POT OVERLAY — Styles (cinematic four-phase sequence)
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Phase timings mirror the constants in BombPotOverlay.tsx (T_FUSE etc.) and
+ * scale with --animation-speed, the table-wide multiplier. All artwork is
+ * original CSS/SVG.
  */
 
 .bomb-pot-overlay {
@@ -12,123 +16,300 @@
   justify-content: center;
   z-index: 8000;
   pointer-events: none;
-  animation: bpo-fade-in 0.3s ease-out;
+  --bpo-s: var(--animation-speed, 1);
 }
 
-@keyframes bpo-fade-in {
-  from {
+/* ── Phase 1-2: the bomb ─────────────────────────────────────────────── */
+
+.bpo-bomb {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  width: 88px;
+  height: 106px;
+  margin-left: -44px;
+  margin-top: -53px;
+  filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.55));
+}
+
+.bpo-bomb-svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Falls in from above the felt, growing as it "approaches", then squashes. */
+.bpo-bomb--drop {
+  animation: bpoBombDrop calc(0.45s * var(--bpo-s)) cubic-bezier(0.55, 0, 0.85, 0.36) both;
+}
+
+@keyframes bpoBombDrop {
+  0% {
+    transform: translateY(-46vh) scale(0.4) rotate(-14deg);
     opacity: 0;
   }
-  to {
+  12% {
     opacity: 1;
   }
-}
-
-.bpo-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 32px 48px;
-  background: radial-gradient(
-    ellipse at center,
-    rgba(239, 68, 68, 0.2) 0%,
-    rgba(15, 15, 25, 0.92) 70%
-  );
-  border: 2px solid rgba(239, 68, 68, 0.4);
-  border-radius: 20px;
-  animation: bpo-scale-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-@keyframes bpo-scale-in {
-  from {
-    transform: scale(0.5);
-    opacity: 0;
+  86% {
+    transform: translateY(0) scale(1) rotate(4deg);
   }
-  to {
-    transform: scale(1);
-    opacity: 1;
+  93% {
+    /* landing squash */
+    transform: translateY(2%) scale(1.08, 0.88) rotate(0deg);
+  }
+  100% {
+    transform: translateY(0) scale(1) rotate(0deg);
   }
 }
 
-.bpo-icon {
-  font-size: 56px;
-  animation: bpo-shake 0.5s ease-in-out 0.3s;
+/* Rocks in place while the fuse burns and antes post. */
+.bpo-bomb--fuse {
+  animation: bpoBombRock calc(0.5s * var(--bpo-s)) ease-in-out infinite;
+  transform-origin: 50% 82%;
 }
 
-@keyframes bpo-shake {
+@keyframes bpoBombRock {
   0%,
   100% {
-    transform: translateX(0) rotate(0);
+    transform: rotate(-4deg);
   }
-  25% {
-    transform: translateX(-8px) rotate(-5deg);
-  }
-  75% {
-    transform: translateX(8px) rotate(5deg);
+  50% {
+    transform: rotate(4deg);
   }
 }
 
-.bpo-title {
-  font-size: 36px;
-  font-weight: 900;
-  letter-spacing: 6px;
-  color: #ef4444;
-  text-shadow: 0 0 40px rgba(239, 68, 68, 0.5);
-}
-
-.bpo-subtitle {
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 3px;
-  color: #f59e0b;
-}
-
-.bpo-ante {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.bpo-action {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
-  font-style: italic;
-}
-
-/* ── Particles ── */
-.bpo-particles {
+/* Fuse spark: jittering glow + rays at the fuse tip. */
+.bpo-spark {
   position: absolute;
-  inset: 0;
-  overflow: hidden;
+  top: -4px;
+  right: 12px;
+  width: 22px;
+  height: 22px;
+  animation: bpoSparkJitter calc(0.12s * var(--bpo-s)) steps(2, jump-none) infinite;
 }
 
-.bpo-particle {
+.bpo-spark-core {
   position: absolute;
-  bottom: 40%;
+  inset: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff9d8 0%, #ffd23e 55%, rgba(255, 122, 0, 0) 100%);
+  box-shadow: 0 0 10px 3px rgba(255, 190, 60, 0.8);
+}
+
+.bpo-spark-ray {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 16px;
+  margin: -8px 0 0 -1px;
+  background: linear-gradient(to bottom, rgba(255, 240, 180, 0) 0%, #ffd23e 50%, rgba(255, 240, 180, 0) 100%);
+}
+
+.bpo-spark-ray:nth-child(1) {
+  transform: rotate(0deg);
+}
+.bpo-spark-ray:nth-child(2) {
+  transform: rotate(60deg);
+}
+.bpo-spark-ray:nth-child(3) {
+  transform: rotate(120deg);
+}
+
+@keyframes bpoSparkJitter {
+  0% {
+    transform: scale(0.8) rotate(0deg);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(1.15) rotate(24deg);
+    opacity: 1;
+  }
+}
+
+/* ── Phase 3: explosion ──────────────────────────────────────────────── */
+
+.bpo-explosion {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  width: 0;
+  height: 0;
+}
+
+.bpo-burst-svg {
+  position: absolute;
+  left: -110px;
+  top: -110px;
+  width: 220px;
+  height: 220px;
+  animation: bpoBurst calc(0.55s * var(--bpo-s)) cubic-bezier(0.18, 0.9, 0.32, 1) both;
+  filter: drop-shadow(0 0 24px rgba(255, 160, 30, 0.85));
+}
+
+@keyframes bpoBurst {
+  0% {
+    transform: scale(0) rotate(-20deg);
+    opacity: 1;
+  }
+  55% {
+    transform: scale(1.25) rotate(6deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.05) rotate(0deg);
+    opacity: 0;
+  }
+}
+
+/* Expanding shockwave ring */
+.bpo-shockwave {
+  position: absolute;
+  left: -20px;
+  top: -20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 170, 40, 0.9);
+  box-shadow:
+    0 0 18px rgba(255, 150, 20, 0.6),
+    inset 0 0 12px rgba(255, 150, 20, 0.4);
+  animation: bpoShockwave calc(0.7s * var(--bpo-s)) ease-out both;
+}
+
+@keyframes bpoShockwave {
+  0% {
+    transform: scale(0.3);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(7);
+    opacity: 0;
+  }
+}
+
+/* Embers thrown radially out of the blast */
+.bpo-embers {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.bpo-ember {
+  position: absolute;
+  left: -3px;
+  top: -3px;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #ef4444;
-  animation: bpo-rise 1.5s ease-out forwards;
-  opacity: 0;
+  background: #ffb84d;
+  box-shadow: 0 0 8px rgba(255, 150, 20, 0.9);
+  animation: bpoEmber calc(0.8s * var(--bpo-s)) ease-out both;
 }
 
-.bpo-particle:nth-child(odd) {
-  background: #f59e0b;
-}
-.bpo-particle:nth-child(3n) {
-  background: #eab308;
+.bpo-ember:nth-child(odd) {
+  background: #ff7a3d;
   width: 4px;
   height: 4px;
 }
 
-@keyframes bpo-rise {
+@keyframes bpoEmber {
   0% {
-    transform: translateY(0) scale(1);
-    opacity: 0.8;
+    transform: rotate(var(--ember-angle)) translateY(0) scale(1);
+    opacity: 1;
   }
   100% {
-    transform: translateY(-200px) scale(0);
+    transform: rotate(var(--ember-angle)) translateY(calc(-1 * var(--ember-dist))) scale(0.2);
+    opacity: 0;
+  }
+}
+
+/* ── Phase 4: BOMB POT title ─────────────────────────────────────────── */
+
+.bpo-title-block {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.bpo-title {
+  display: flex;
+  white-space: nowrap;
+}
+
+.bpo-letter {
+  display: inline-block;
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  color: #ffb020;
+  background: linear-gradient(180deg, #ffe28a 0%, #ffb020 55%, #e07800 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 24px rgba(255, 150, 20, 0.45);
+  animation: bpoLetter calc(0.42s * var(--bpo-s)) cubic-bezier(0.18, 0.9, 0.32, 1.4) both;
+}
+
+.bpo-letter--space {
+  width: 14px;
+}
+
+@keyframes bpoLetter {
+  0% {
+    transform: scale(2.4);
+    opacity: 0;
+    filter: blur(3px);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+.bpo-subtitle {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: #f59e0b;
+  animation: bpoFadeUp calc(0.4s * var(--bpo-s)) ease-out calc(0.25s * var(--bpo-s)) both;
+}
+
+.bpo-ante {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+  animation: bpoFadeUp calc(0.4s * var(--bpo-s)) ease-out calc(0.35s * var(--bpo-s)) both;
+}
+
+@keyframes bpoFadeUp {
+  0% {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Whole block fades before the overlay unmounts (T_HIDE - fade duration) */
+.bomb-pot-overlay[data-phase='title'] .bpo-title-block {
+  animation: bpoTitleHold calc(2.35s * var(--bpo-s)) ease-in both;
+}
+
+@keyframes bpoTitleHold {
+  0%,
+  82% {
+    opacity: 1;
+  }
+  100% {
     opacity: 0;
   }
 }

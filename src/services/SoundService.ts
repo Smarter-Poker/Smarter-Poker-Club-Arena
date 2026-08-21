@@ -31,7 +31,10 @@
  * - playTimeBankActivated() Hourglass chime
  *
  * Premium Event Sounds:
- * - playBombPot()              Dramatic bass swell + chip cascade
+ * - playBombPot()              Three-beat bomb sequence (drop, fuse, boom)
+ * - playBombDrop()             Bomb falls + lands (whistle + tick)
+ * - playBombFuse()             Burning-fuse crackle
+ * - playBombExplosion()        Slow-attack sub boom + rumble
  * - playBadBeatJackpot()       Epic ascending fanfare
  * - playInsurancePurchase()    Tense minor resolve
  * - playInsuranceDecline()     Quick dismissive sweep
@@ -1167,58 +1170,126 @@ class SoundService {
   // ═══════════════════════════════════════════════════════════════════════
 
   /**
-   * Bomb Pot — dramatic bass swell + chip cascade + tension chord
-   * Fires when a bomb pot round is announced
+   * Bomb Pot — REBUILT 2026-08-20 against Dan's reference capture of the
+   * competitor's double-board PLO bomb pot. The reference plays a three-beat
+   * sequence, not one swell: (1) the bomb lands on the felt with a short
+   * mid-band tick (measured ~1-3kHz, no bass at all), (2) the fuse crackles
+   * as a broadband sizzle while antes post, (3) the explosion is almost pure
+   * sub + low energy (52%/40% under 400Hz, spectral centroid 2.5kHz only
+   * because of the initial crack) with a SLOW attack — the rumble builds for
+   * ~450ms before peaking, then decays for ~1s. All three are synthesized
+   * here from oscillators/noise (original audio — nothing sampled from the
+   * capture). BombPotOverlay drives each beat at its animation phase; the
+   * legacy playBombPot() below now just runs the full sequence for any
+   * caller that doesn't manage phases itself.
    */
-  playBombPot() {
+
+  /** Beat 1 — bomb falls in and lands: descending whistle + mid-band tick. */
+  playBombDrop() {
     if (!this.shouldPlay('all_in', 'event') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
-    // Deep sub-bass swell (building tension)
-    const bass = this.ctx!.createOscillator();
-    const bassGain = this.ctx!.createGain();
-    bass.type = 'sine';
-    bass.frequency.setValueAtTime(40, t);
-    bass.frequency.exponentialRampToValueAtTime(80, t + 0.5);
-    bassGain.gain.setValueAtTime(0.0, t);
-    bassGain.gain.linearRampToValueAtTime(0.35, t + 0.2);
-    bassGain.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
-    bass.connect(bassGain);
-    bassGain.connect(this.out);
-    bass.start(t);
-    bass.stop(t + 0.6);
+    // Falling whistle (pitch drop sells the drop even at low volume)
+    const whistle = this.ctx!.createOscillator();
+    const wGain = this.ctx!.createGain();
+    whistle.type = 'sine';
+    whistle.frequency.setValueAtTime(1500, t);
+    whistle.frequency.exponentialRampToValueAtTime(320, t + 0.42);
+    wGain.gain.setValueAtTime(0.05, t);
+    wGain.gain.linearRampToValueAtTime(0.09, t + 0.35);
+    wGain.gain.exponentialRampToValueAtTime(0.001, t + 0.46);
+    whistle.connect(wGain);
+    wGain.connect(this.out);
+    whistle.start(t);
+    whistle.stop(t + 0.46);
 
-    // Impact noise burst at peak
-    this.createNoiseBurst(t + 0.2, 0.1, 0.25, 400);
+    // Landing: short 1-3kHz tick (matches the measured landing transient)
+    // plus a small felt thump underneath.
+    this.createNoiseBurst(t + 0.44, 0.06, 0.22, 2600);
+    const thump = this.ctx!.createOscillator();
+    const thGain = this.ctx!.createGain();
+    thump.type = 'sine';
+    thump.frequency.setValueAtTime(170, t + 0.44);
+    thump.frequency.exponentialRampToValueAtTime(70, t + 0.56);
+    thGain.gain.setValueAtTime(0.16, t + 0.44);
+    thGain.gain.exponentialRampToValueAtTime(0.001, t + 0.58);
+    thump.connect(thGain);
+    thGain.connect(this.out);
+    thump.start(t + 0.44);
+    thump.stop(t + 0.58);
 
-    // Rapid 6-chip cascade (everyone's chips in the pot)
-    for (let i = 0; i < 6; i++) {
-      setTimeout(
-        () => {
-          if (!this.ctx) return;
-          const tc = this.ctx.currentTime;
-          const osc = this.ctx.createOscillator();
-          const g = this.ctx.createGain();
-          osc.frequency.setValueAtTime(1400 + i * 350, tc);
-          osc.frequency.exponentialRampToValueAtTime(100, tc + 0.04);
-          g.gain.setValueAtTime(0.12, tc);
-          g.gain.exponentialRampToValueAtTime(0.001, tc + 0.05);
-          osc.connect(g);
-          g.connect(this.out);
-          osc.start(tc);
-          osc.stop(tc + 0.05);
-        },
-        250 + i * 25
-      );
+    haptic.light();
+  }
+
+  /** Beat 2 — the fuse burns: irregular broadband crackle for ~1.2s. */
+  playBombFuse(durationSec = 1.2) {
+    if (!this.shouldPlay('all_in', 'event') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+    // ~12 crackles/second with random spacing, level and brightness —
+    // regular spacing reads as a machine, irregular reads as a burning fuse.
+    const crackles = Math.max(4, Math.floor(durationSec * 12));
+    for (let i = 0; i < crackles; i++) {
+      const at = t + (i / crackles) * durationSec + Math.random() * 0.04;
+      const bright = 3000 + Math.random() * 3500; // 3-6.5kHz band
+      const vol = 0.04 + Math.random() * 0.06;
+      this.createNoiseBurst(at, 0.03 + Math.random() * 0.04, vol, bright);
     }
+  }
 
-    // Minor tension chord (drama)
-    const chord = [261.63, 311.13, 392.0]; // C4, Eb4, G4 (Cm chord)
-    chord.forEach((freq, i) => {
-      this.playTone(freq, 0.5, 0.08, 'triangle', 0.4 + i * 0.02);
-    });
+  /** Beat 3 — the explosion: slow-attack sub boom + low rumble + crack. */
+  playBombExplosion() {
+    if (!this.shouldPlay('all_in', 'event') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // Initial crack — the only non-bass content in the reference explosion
+    this.createNoiseBurst(t, 0.09, 0.28, 1200);
+
+    // Sub boom: builds for ~0.4s, then ~1s decay (measured envelope shape)
+    const sub = this.ctx!.createOscillator();
+    const subGain = this.ctx!.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(62, t);
+    sub.frequency.exponentialRampToValueAtTime(28, t + 1.3);
+    subGain.gain.setValueAtTime(0.06, t);
+    subGain.gain.linearRampToValueAtTime(0.5, t + 0.4);
+    subGain.gain.exponentialRampToValueAtTime(0.001, t + 1.45);
+    sub.connect(subGain);
+    subGain.connect(this.out);
+    sub.start(t);
+    sub.stop(t + 1.45);
+
+    // Low rumble bed (filtered noise under 200Hz, same slow attack)
+    const dur = 1.3;
+    const bufferSize = Math.floor(this.ctx!.sampleRate * dur);
+    const buffer = this.ctx!.createBuffer(1, bufferSize, this.ctx!.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+    const noise = this.ctx!.createBufferSource();
+    noise.buffer = buffer;
+    const lp = this.ctx!.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 190;
+    const nGain = this.ctx!.createGain();
+    nGain.gain.setValueAtTime(0.02, t);
+    nGain.gain.linearRampToValueAtTime(0.32, t + 0.42);
+    nGain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    noise.connect(lp);
+    lp.connect(nGain);
+    nGain.connect(this.out);
+    noise.start(t);
 
     haptic.bombPot();
+  }
+
+  /**
+   * Bomb Pot — full three-beat sequence (drop → fuse → explosion) for
+   * callers that don't run the overlay's phase machine. The overlay itself
+   * calls the three beats individually so audio stays locked to the visuals.
+   */
+  playBombPot() {
+    this.playBombDrop();
+    setTimeout(() => this.playBombFuse(1.2), 550);
+    setTimeout(() => this.playBombExplosion(), 1900);
   }
 
   /**

@@ -148,7 +148,7 @@ export abstract class TournamentManagerBase {
       if (blindStructure && blindStructure.length > 0) {
         const currentLevelData =
           blindStructure[Math.min(this.currentLevel, blindStructure.length - 1)];
-        const totalMs = (currentLevelData?.durationMinutes || 10) * 60 * 1000;
+        const totalMs = this.levelDurationMs(currentLevelData);
         this.savedBlindTimerRemaining = Math.max(totalMs - elapsed, 1000);
       } else {
         this.savedBlindTimerRemaining = 0;
@@ -937,7 +937,7 @@ export abstract class TournamentManagerBase {
         const levelData =
           (tournament.blind_structure || [])[this.currentLevel] ||
           (tournament.blind_structure || [])[0];
-        const durationMs = (levelData?.durationMinutes || 10) * 60 * 1000;
+        const durationMs = this.levelDurationMs(levelData);
         let remainingMs: number | undefined;
         if (tournament.level_started_at) {
           const elapsed = Date.now() - new Date(tournament.level_started_at).getTime();
@@ -1322,10 +1322,28 @@ export abstract class TournamentManagerBase {
     }
   }
 
+  /**
+   * SPIN LEVELS 2026-08-21: level length in ms, format-normalized. Blind
+   * structures carry their length as `durationMinutes` (MTT/SNG configs),
+   * `duration_minutes` (snake-case writers), or `duration` in SECONDS (the
+   * spin spec, mirrored client/server). The timer arms read ONLY
+   * `durationMinutes || 10`, so every spin level silently became 10 minutes
+   * — observed live: spins started 02:27Z levelled up at exactly +10:00
+   * against Dan's 3-minute spec. The client masthead already normalizes all
+   * three formats; this is the engine-side twin.
+   */
+  protected levelDurationMs(levelData: any): number {
+    const mins = Number(levelData?.durationMinutes ?? levelData?.duration_minutes);
+    if (Number.isFinite(mins) && mins > 0) return mins * 60 * 1000;
+    const secs = Number(levelData?.duration);
+    if (Number.isFinite(secs) && secs > 0) return secs * 1000;
+    return 10 * 60 * 1000;
+  }
+
   protected startBlindTimer(blindStructure: any[], remainingOverrideMs?: number): void {
     if (blindStructure.length === 0) return;
     const currentLevelData = blindStructure[this.currentLevel] || blindStructure[0];
-    const durationMs = (currentLevelData?.durationMinutes || 10) * 60 * 1000;
+    const durationMs = this.levelDurationMs(currentLevelData);
     const armMs =
       remainingOverrideMs !== undefined
         ? Math.min(Math.max(1000, remainingOverrideMs), durationMs)
@@ -1391,7 +1409,8 @@ export abstract class TournamentManagerBase {
             smallBlind: Math.min(lastLevel.smallBlind * escalationFactor, MAX_BLIND_VALUE),
             bigBlind: Math.min(lastLevel.bigBlind * escalationFactor, MAX_BLIND_VALUE),
             ante: Math.min((lastLevel.ante || 0) * escalationFactor, MAX_BLIND_VALUE),
-            durationMinutes: Math.max(lastLevel.durationMinutes || 3, 2), // Keep same duration, min 2 min
+            // Keep same duration (format-normalized), min 2 min
+            durationMinutes: Math.max(this.levelDurationMs(lastLevel) / 60000, 2),
           };
           blindStructure.push(autoLevel);
           console.log(

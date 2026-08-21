@@ -120,9 +120,23 @@ describe('a rebuilt Spin structure pays out exactly the pool', () => {
   it('80/20 and 80/12/8 sum to the pool to the cent', () => {
     // 33.33 is deliberately awkward: 80/12/8 of it rounds to 26.66 + 4.00 +
     // 2.67 = 33.33 only because the last place absorbs the residual.
+    // Driven from SPIN_TIERS rather than a hand-written list. It used to read
+    // [10, 25, 100, 500]; when the 500x tier was retired, spinTier(500) started
+    // returning undefined, resolvePayoutStructure returned null, and the `!`
+    // below asserted that away into "Cannot read properties of null (reading
+    // 'map')" -- a null-deref standing in for what is really "that tier no
+    // longer exists". Deriving the list means retiring or adding a tier can
+    // never leave this test asserting about a tier the spec has never heard of.
+    //
+    // Multi-place tiers only: the 2x-5x tiers pay a single place, so they say
+    // nothing about a split summing to the pool, which is what this pins.
+    const multipliers = SPIN_TIERS.filter((t) => t.payouts.length > 1).map((t) => t.multiplier);
+    expect(multipliers.length).toBeGreaterThan(0);
+
     for (const pool of [10, 25, 33.33, 100, 0.03, 1234.56]) {
-      for (const mult of [10, 25, 100, 500]) {
+      for (const mult of multipliers) {
         const structure = resolvePayoutStructure({ variant: 'spin', spin_multiplier: mult })!;
+        expect(structure, `${mult}x has no structure`).not.toBeNull();
         const total = structure
           .map((p) => computePlacePrize(pool, structure, p.place))
           .reduce((s, n) => s + n, 0);

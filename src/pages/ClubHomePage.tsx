@@ -13,6 +13,7 @@
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import type { ClubRole } from '../types/clubRoles';
 import { MEDIA_BASE } from '../utils/mediaBase';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
@@ -308,7 +309,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
      branched on it. One mechanism, no dead state. */
   const [isOwner, setIsOwner] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+  const [userRole, setUserRole] = useState<ClubRole>('player');
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null);
   const [isInUnion, setIsInUnion] = useState(false);
   const [clubLevel, setClubLevel] = useState<ClubLevelInfo | null>(null);
@@ -322,7 +323,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // React Router reuses the component when only the clubId param changes.
   useEffect(() => {
     setIsOwner(false);
-    setUserRole('member');
+    setUserRole('player');
     setIsInUnion(false);
     setDeletingTableId(null);
     setDeleteTableConfirm({ show: false, tableId: null, tableName: null });

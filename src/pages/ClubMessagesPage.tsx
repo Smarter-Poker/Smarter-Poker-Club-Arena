@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import type { ClubRole } from '../types/clubRoles';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -29,7 +30,7 @@ export default function ClubMessagesPage() {
   }, [setMessengerPageActive]);
 
   const { clubId: urlClubId } = useParams<{ clubId?: string }>();
-  const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+  const [userRole, setUserRole] = useState<ClubRole>('player');
   const [clubId, setClubId] = useState<string | undefined>(urlClubId);
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [iframeError, setIframeError] = useState(false);
@@ -40,7 +41,7 @@ export default function ClubMessagesPage() {
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
-    setUserRole('member');
+    setUserRole('player');
     setClubId(urlClubId);
     // Reset skeleton so it shows again for the new club's load
     setIframeLoaded(false);
@@ -69,7 +70,7 @@ export default function ClubMessagesPage() {
           .eq('user_id', user.id)
           .maybeSingle();
         if (!cancelled && data?.role) {
-          setUserRole(data.role as 'owner' | 'admin' | 'agent' | 'member');
+          setUserRole(data.role as ClubRole);
         }
       } catch (e) {
         reportError(e, 'ClubMessagesPage.async');

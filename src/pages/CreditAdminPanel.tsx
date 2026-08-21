@@ -54,7 +54,7 @@ export default function CreditAdminPanel() {
           .from('club_members')
           .select('role')
           .eq('user_id', user.id)
-          .in('role', ['owner', 'admin'])
+          .in('role', ['owner', 'co_owner', 'admin'])
           .limit(1)
           .maybeSingle();
         if (isMounted.current) setAuthorized(!!data);

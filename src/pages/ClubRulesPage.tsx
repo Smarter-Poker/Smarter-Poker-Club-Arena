@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { isClubStaff, normaliseRole, type ClubRole } from '../types/clubRoles';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -42,14 +43,14 @@ export default function ClubRulesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [clubName, setClubName] = useState('');
-  const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+  const [userRole, setUserRole] = useState<ClubRole>('player');
   const [loadError, setLoadError] = useState(false);
   const loadingRef = useRef(false);
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
     setIsAdmin(false);
-    setUserRole('member');
+    setUserRole('player');
     setIsEditing(false);
     setSaving(false);
     setLoadError(false);
@@ -180,9 +181,12 @@ export default function ClubRulesPage() {
 
         if (getIsMounted && !getIsMounted()) return;
 
-        if (membership?.role === 'owner' || membership?.role === 'admin') {
+        if (isClubStaff(membership?.role)) {
           setIsAdmin(true);
-          setUserRole(membership.role as 'owner' | 'admin');
+          // isClubStaff narrows nothing for the compiler, and the cast used to
+          // exclude co_owner - a co-owner would have been admitted here and
+          // then stored under a type that says they cannot exist.
+          setUserRole(normaliseRole(membership?.role) as 'owner' | 'co_owner' | 'admin');
         }
       }
     } catch (err) {

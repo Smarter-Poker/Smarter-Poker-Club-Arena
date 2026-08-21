@@ -397,7 +397,7 @@ export default function MarketplacePage() {
     [inventory]
   );
   const ownedCount = useMemo(() => inventory.filter(isOwnedRow).length, [inventory]);
-  const isAdmin = ['owner', 'admin'].includes(role);
+  const isAdmin = ['owner', 'co_owner', 'admin'].includes(role);
 
   const switchTab = (t: TabKey) => {
     setTab(t);

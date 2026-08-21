@@ -3,6 +3,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import type { ClubRole } from '../types/clubRoles';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -48,14 +49,14 @@ export default function ClubAnnouncementsPage() {
   const [newTitle, setNewTitle] = useState('');
   const [newContent, setNewContent] = useState('');
   const [posting, setPosting] = useState(false);
-  const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+  const [userRole, setUserRole] = useState<ClubRole>('player');
   const [loadError, setLoadError] = useState(false);
   const loadingRef = useRef(false);
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
     setIsAdmin(false);
-    setUserRole('member');
+    setUserRole('player');
     setPosting(false);
     setShowComposer(false);
     setNewTitle('');
@@ -223,8 +224,8 @@ export default function ClubAnnouncementsPage() {
 
         if (getIsMounted && !getIsMounted()) return;
         const memberRole = membership?.role || '';
-        setIsAdmin(['owner', 'admin'].includes(memberRole));
-        if (['owner', 'admin', 'agent'].includes(memberRole)) {
+        setIsAdmin(['owner', 'co_owner', 'admin'].includes(memberRole));
+        if (['owner', 'co_owner', 'admin', 'agent'].includes(memberRole)) {
           setUserRole(memberRole as 'owner' | 'admin' | 'agent');
         }
       }

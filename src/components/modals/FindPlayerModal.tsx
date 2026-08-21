@@ -16,6 +16,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { isClubStaff } from '../../types/clubRoles';
 import { useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../../lib/supabase';
 import haptic from '../../services/HapticService';
@@ -252,7 +253,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
         // Set scope label
         if (scope.role === 'union') {
           setScopeLabel('Searching union members');
-        } else if (scope.role === 'owner' || scope.role === 'admin') {
+        } else if (isClubStaff(scope.role)) {
           setScopeLabel('Searching club members');
         } else if (scope.role === 'agent') {
           setScopeLabel('Searching club members');

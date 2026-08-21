@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useRef, Component, type ReactNode, type ErrorInfo } from 'react';
+import { isClubStaff, type ClubRole } from '../types/clubRoles';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import styles from './ClubDetailPage.module.css';
 import { getLocalStorage, setLocalStorage } from '../lib/storage';
@@ -65,7 +66,7 @@ interface ClubSettings {
 interface ClubMember {
   id: string;
   username: string;
-  role: 'owner' | 'admin' | 'agent' | 'member';
+  role: ClubRole;
   chipBalance: number;
   status: 'active' | 'pending' | 'suspended';
   joinedAt: string;
@@ -383,7 +384,7 @@ export default function ClubDetailPage() {
   const [showMemberMenu, setShowMemberMenu] = useState<string | null>(null);
   // #3: Member pagination — start at 50, expand on demand
   const [memberLimit, setMemberLimit] = useState(50);
-  const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+  const [userRole, setUserRole] = useState<ClubRole>('player');
   const [isInUnion, setIsInUnion] = useState(false);
   const [wsConnected, setWsConnected] = useState(true);
 
@@ -426,7 +427,7 @@ export default function ClubDetailPage() {
   // so state from club A leaks into club B without this explicit reset.
   useEffect(() => {
     setIsInUnion(false);
-    setUserRole('member');
+    setUserRole('player');
     setAgents([]);
     setAgentsLoading(false);
     setMemberLimit(50);
@@ -558,7 +559,7 @@ export default function ClubDetailPage() {
   // fn_list_pending_members RPC (itself gated on is_club_admin).
   useEffect(() => {
     let isMounted = true;
-    const canManage = userRole === 'owner' || userRole === 'admin';
+    const canManage = isClubStaff(userRole);
     if (activeTab === 'members' && clubId && canManage) {
       (async () => {
         try {
@@ -1195,7 +1196,7 @@ export default function ClubDetailPage() {
           icon={Icons.shield}
           label="Agents"
         />
-        {(userRole === 'owner' || userRole === 'admin') && (
+        {(isClubStaff(userRole)) && (
           <TabButton
             active={activeTab === 'operations'}
             onClick={() => setActiveTab('operations')}
@@ -1454,7 +1455,7 @@ export default function ClubDetailPage() {
                       <h4>{table.name}</h4>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <StatusBadge status={table.status} />
-                        {(userRole === 'owner' || userRole === 'admin') && (
+                        {(isClubStaff(userRole)) && (
                           <button
                             className={styles.deleteTableBtn}
                             onClick={(e) => {
@@ -1507,7 +1508,7 @@ export default function ClubDetailPage() {
             </div>
 
             {/* Pending join requests — owner/admin approval queue */}
-            {(userRole === 'owner' || userRole === 'admin') && pendingMembers.length > 0 && (
+            {(isClubStaff(userRole)) && pendingMembers.length > 0 && (
               <div
                 style={{
                   marginBottom: 16,

@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { isClubStaff, type ClubRole } from '../../types/clubRoles';
 import { Link, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -15,13 +16,13 @@ import { reportError } from '../../utils/errorReporter';
 
 interface ClubBottomNavProps {
   clubId: string;
-  userRole?: 'owner' | 'admin' | 'agent' | 'member';
+  userRole?: ClubRole;
   clubName?: string;
 }
 
 export default function ClubBottomNav({
   clubId,
-  userRole = 'member',
+  userRole = 'player',
   clubName,
 }: ClubBottomNavProps) {
   const location = useLocation();
@@ -58,7 +59,7 @@ export default function ClubBottomNav({
      The header messenger owns unread now. */
 
   // Check if user has elevated permissions (can see Players/Admin tabs)
-  const hasAdminAccess = userRole === 'owner' || userRole === 'admin' || userRole === 'agent';
+  const hasAdminAccess = isClubStaff(userRole) || userRole === 'agent';
 
   // Determine active tab from URL
   const getActiveTab = () => {

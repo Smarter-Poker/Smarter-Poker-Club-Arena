@@ -3,6 +3,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import type { ClubRole } from '../types/clubRoles';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -55,7 +56,7 @@ export default function ClubFinancialsPage() {
   );
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<'week' | 'month' | 'all'>('week');
-  const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+  const [userRole, setUserRole] = useState<ClubRole>('player');
   const toast = useToast();
   useVisibilityRefresh(() => loadFinancials());
   const [visibleTransactions, setVisibleTransactions] = useState<Set<string>>(new Set());
@@ -68,7 +69,7 @@ export default function ClubFinancialsPage() {
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
-    setUserRole('member');
+    setUserRole('player');
     setExporting(false);
     setVisibleTransactions(new Set());
     loadingRef.current = false;
@@ -92,7 +93,7 @@ export default function ClubFinancialsPage() {
           .eq('user_id', user.id)
           .maybeSingle();
         if (data?.role && isMounted.current) {
-          setUserRole(data.role as 'owner' | 'admin' | 'agent' | 'member');
+          setUserRole(data.role as ClubRole);
         }
       } catch (e) {
         reportError(e, 'ClubFinancialsPage.async');

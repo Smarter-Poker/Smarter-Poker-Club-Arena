@@ -15,6 +15,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
+import { isClubStaff, type ClubRole } from '../../types/clubRoles';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -222,7 +223,7 @@ export default function ClubDashboard() {
 
   const [visiblePlayers, setVisiblePlayers] = useState<Set<string>>(new Set());
   const [isRecalculating, setIsRecalculating] = useState(false);
-  const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+  const [userRole, setUserRole] = useState<ClubRole>('player');
 
   // Members tab
   const [members, setMembers] = useState<ClubMemberRow[]>([]);
@@ -951,7 +952,7 @@ export default function ClubDashboard() {
           <Link to={`/clubs/${clubId}/settings`} className={styles.actionBtn}>
             Settings
           </Link>
-          {(userRole === 'owner' || userRole === 'admin') && (
+          {(isClubStaff(userRole)) && (
             <button
               onClick={handleRecalculateLevel}
               className={styles.actionBtn}
@@ -1520,7 +1521,7 @@ export default function ClubDashboard() {
               </div>
             )}
 
-            {clubId && (userRole === 'owner' || userRole === 'admin') && (
+            {clubId && (isClubStaff(userRole)) && (
               <ClubMemberManagement clubId={clubId} isAdmin={true} />
             )}
           </div>

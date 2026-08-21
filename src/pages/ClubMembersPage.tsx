@@ -26,21 +26,21 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { WalletService } from '../services/WalletService';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
+import {
+  type ClubRole,
+  ROLE_DESCRIPTION,
+  normaliseRole,
+  roleLabel,
+  roleRank,
+} from '../types/clubRoles';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 /* ═══════════════════════════════════════════════════════════════════════════════
    TYPES
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-type MemberRole =
-  | 'owner'
-  | 'super_agent'
-  | 'agent'
-  | 'sub_agent'
-  | 'admin'
-  | 'manager'
-  | 'member'
-  | 'guest';
+// The seven live in src/types/clubRoles.ts and mirror the database exactly.
+type MemberRole = ClubRole;
 
 interface ClubMember {
   id: string;
@@ -66,71 +66,21 @@ type MemberFilter = 'all' | 'online' | 'agents' | 'admins';
    ROLE HIERARCHY & PERMISSIONS
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-const ROLE_RANK: Record<MemberRole, number> = {
-  owner: 100,
-  admin: 80,
-  super_agent: 70,
-  agent: 60,
-  sub_agent: 50,
-  manager: 40,
-  member: 10,
-  guest: 0,
-};
+/*
+ * The vocabulary, the ranks and the grant matrix moved to
+ * src/types/clubRoles.ts, which mirrors fn_club_grantable_roles in Postgres.
+ * What used to sit here disagreed with the database three ways at once: no
+ * co_owner, an admin able to appoint a super agent, and a super agent able to
+ * promote ANY member rather than only their own downline. The screen now asks
+ * the server what it may offer, so the two cannot drift again.
+ */
 
-/** What roles can the current user promote others TO? */
-function getPromotableRoles(myRole: MemberRole, targetRole: MemberRole): MemberRole[] {
-  if (myRole === 'owner') {
-    // Owner can promote to anything below owner
-    if (ROLE_RANK[targetRole] < ROLE_RANK['owner']) {
-      return ['admin', 'super_agent', 'agent', 'manager', 'member'].filter(
-        (r) => r !== targetRole
-      ) as MemberRole[];
-    }
-  }
-  if (myRole === 'admin') {
-    // Admin can promote to super_agent, agent, manager, member
-    if (ROLE_RANK[targetRole] < ROLE_RANK['admin']) {
-      return ['super_agent', 'agent', 'manager', 'member'].filter(
-        (r) => r !== targetRole
-      ) as MemberRole[];
-    }
-  }
-  if (myRole === 'super_agent') {
-    // Super agent can promote players under them to sub_agent or agent
-    if (['member', 'sub_agent', 'agent'].includes(targetRole)) {
-      return ['agent', 'sub_agent', 'member'].filter((r) => r !== targetRole) as MemberRole[];
-    }
-  }
-  return [];
-}
-
-function getRoleLabel(role: MemberRole): string {
-  switch (role) {
-    case 'owner':
-      return 'Owner';
-    case 'admin':
-      return 'Admin';
-    case 'super_agent':
-      return 'Super Agent';
-    case 'agent':
-      return 'Agent';
-    case 'sub_agent':
-      return 'Sub Agent';
-    case 'manager':
-      return 'Manager';
-    case 'member':
-      return 'Member';
-    case 'guest':
-      return 'Guest';
-    default:
-      return role;
-  }
-}
-
-function getRoleColor(role: MemberRole): string {
+function getRoleColor(role: ClubRole): string {
   switch (role) {
     case 'owner':
       return '#FFD700';
+    case 'co_owner':
+      return '#F0B429';
     case 'admin':
       return '#FF6B6B';
     case 'super_agent':
@@ -139,21 +89,17 @@ function getRoleColor(role: MemberRole): string {
       return '#00d4ff';
     case 'sub_agent':
       return '#38BDF8';
-    case 'manager':
-      return '#F59E0B';
-    case 'member':
-      return '#6a7a8a';
-    case 'guest':
-      return '#4a5a6a';
     default:
       return '#6a7a8a';
   }
 }
 
-function getRoleBadgeIcon(role: MemberRole): string {
+function getRoleBadgeIcon(role: ClubRole): string {
   switch (role) {
     case 'owner':
       return '\u2605'; // ★
+    case 'co_owner':
+      return '\u2606'; // ☆
     case 'admin':
       return '\u25B2'; // ▲
     case 'super_agent':
@@ -162,8 +108,6 @@ function getRoleBadgeIcon(role: MemberRole): string {
       return '\u25CF'; // ●
     case 'sub_agent':
       return '\u25CB'; // ○
-    case 'manager':
-      return '\u25A0'; // ■
     default:
       return '';
   }
@@ -213,8 +157,49 @@ function PlayerActionModal({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const promotableRoles = getPromotableRoles(myRole, member.role);
+  // The server decides what may be offered. fn_club_grantable_roles is the
+  // rule; this asks it rather than guessing, so the buttons on screen and the
+  // write that follows cannot disagree - and "is this player in my downline",
+  // which the client has no way to answer, is answered where the tree lives.
+  const [promotableRoles, setPromotableRoles] = useState<MemberRole[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(true);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      setRolesLoading(true);
+      try {
+        const resolvedClubId = await resolveClubUUID(clubId);
+        if (!resolvedClubId) throw new Error('club not found');
+        const { data, error: rolesErr } = await supabase.rpc('ca_club_grantable_roles', {
+          p_club_id: resolvedClubId,
+          p_target_user_id: member.user_id,
+        });
+        if (!live) return;
+        if (rolesErr) throw rolesErr;
+        const roles = (data as { roles?: string[] } | null)?.roles ?? [];
+        setPromotableRoles(roles.map(normaliseRole));
+      } catch (e) {
+        reportError(e, 'ClubMembersPage.grantable_roles');
+        // Offering nothing is the safe direction to be wrong in: the user is
+        // told, rather than shown a button the server will refuse.
+        if (live) setPromotableRoles([]);
+      } finally {
+        if (live) setRolesLoading(false);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [clubId, member.user_id]);
+
   const canManage = promotableRoles.length > 0 && member.role !== 'owner';
+  const noRolesReason =
+    member.role === 'owner'
+      ? 'The club owner cannot be changed from here.'
+      : roleRank(myRole) <= roleRank('sub_agent')
+        ? 'Your role does not allow changing anyone else\u2019s.'
+        : 'You can only change the role of players in your own downline.';
 
   const handlePromote = async (newRole: MemberRole) => {
     setPromoting(true);
@@ -222,94 +207,33 @@ function PlayerActionModal({
     setSuccess('');
 
     try {
-      const currentUser = useUserStore.getState().user;
-      if (!currentUser?.id) throw new Error('Not authenticated');
-
       const resolvedClubId = await resolveClubUUID(clubId);
+      if (!resolvedClubId) throw new Error('Club not found');
 
-      // Try RPC first (atomic with audit logging), fall back to direct updates
-      const { data: rpcResult, error: rpcError } = await retryAsync(
-        () =>
-          supabase.rpc('promote_member', {
-            p_club_id: resolvedClubId,
-            p_target_user_id: member.user_id,
-            p_new_role: newRole,
-            p_promoted_by: currentUser.id,
-          }),
-        3
-      );
+      // ONE WRITE PATH. This used to fall back to
+      // `.from('club_members').update({ role })` whenever the RPC errored,
+      // which skipped every rule the RPC enforces - a club admin could appoint
+      // a co-owner, or promote outside their downline, by making one request
+      // fail. A trigger on club_members now refuses that update outright, so
+      // the fallback could not work even if someone put it back.
+      const { data, error: rpcError } = await supabase.rpc('fn_club_set_member_role', {
+        p_club_id: resolvedClubId,
+        p_user_id: member.user_id,
+        p_role: newRole,
+      });
+      if (rpcError) throw rpcError;
 
-      if (rpcError) {
-        // RPC not available yet — fall back to direct table update
-        // RPC not available yet — fall back to direct table update (expected during rollout)
+      const result = data as { success?: boolean; error?: string } | null;
+      if (!result?.success) throw new Error(result?.error || 'Role change refused');
 
-        const { error: updateError } = await supabase
-          .from('club_members')
-          .update({ role: newRole })
-          .eq('club_id', await resolveClubUUID(clubId))
-          .eq('user_id', member.user_id);
-
-        if (updateError) throw updateError;
-
-        // Handle agents table for agent-type roles
-        const isAgentRole = ['super_agent', 'agent', 'sub_agent'].includes(newRole);
-        const wasAgentRole = ['super_agent', 'agent', 'sub_agent'].includes(member.role);
-
-        if (isAgentRole) {
-          const { data: existingAgent } = await supabase
-            .from('agents')
-            .select('id')
-            .eq('club_id', resolvedClubId)
-            .eq('user_id', member.user_id)
-            .maybeSingle();
-
-          if (existingAgent) {
-            const { error: agentUpdateErr } = await supabase
-              .from('agents')
-              .update({ role: newRole, status: 'active' })
-              .eq('id', existingAgent.id);
-            if (agentUpdateErr) throw agentUpdateErr;
-          } else {
-            const { error: agentInsertErr } = await supabase.from('agents').insert({
-              club_id: resolvedClubId,
-              user_id: member.user_id,
-              role: newRole,
-              status: 'active',
-              commission_rate: newRole === 'super_agent' ? 0.6 : 0.5,
-              player_rakeback_rate: newRole === 'super_agent' ? 0.15 : 0.1,
-              credit_limit: 100000,
-              is_prepaid: false,
-              parent_agent_id: null,
-            });
-            if (agentInsertErr) throw agentInsertErr;
-
-            // Create BUSINESS and PROMO wallets (required for agents to receive commissions)
-            await WalletService.ensureWalletsExist(member.user_id, ['BUSINESS', 'PROMO']);
-          }
-        } else if (wasAgentRole && !isAgentRole) {
-          const { error: suspendErr } = await supabase
-            .from('agents')
-            .update({ status: 'suspended' })
-            .eq('club_id', resolvedClubId)
-            .eq('user_id', member.user_id);
-          if (suspendErr) throw suspendErr;
-        }
-      } else if (rpcResult && !rpcResult.success) {
-        throw new Error(rpcResult.error || 'Promotion failed');
-      }
-
-      setSuccess(`${member.username} is now ${getRoleLabel(newRole)}`);
+      setSuccess(`${member.username} is now ${roleLabel(newRole)}`);
       setConfirmRole(null);
 
-      // Emit bus event so AgentManagement, ClubDetail, and other pages refresh
       masterBus.emit('CLUB_UPDATED', { clubId });
-      // Emit AGENT_UPDATED so agent-focused pages (AgentDashboard, SuperAgentDashboard,
-      // AgentManagementPage, UnionDashboard, AdminDashboard) auto-refresh
       const agentRoles = ['super_agent', 'agent', 'sub_agent'];
       if (agentRoles.includes(newRole) || agentRoles.includes(member.role)) {
         masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId: member.user_id });
       }
-      // Always emit MEMBER_ROLE_CHANGED so level-aware pages refresh
       masterBus.emit('MEMBER_ROLE_CHANGED', {
         clubId: clubId || '',
         userId: member.user_id,
@@ -317,7 +241,6 @@ function PlayerActionModal({
         previousRole: member.role,
       });
 
-      // Brief delay to show success, then refresh
       if (roleChangeTimerRef.current) clearTimeout(roleChangeTimerRef.current);
       roleChangeTimerRef.current = setTimeout(() => {
         roleChangeTimerRef.current = null;
@@ -353,7 +276,7 @@ function PlayerActionModal({
           <div className="player-modal__info">
             <h3>{member.username}</h3>
             <span className="player-modal__role-badge" style={{ color: getRoleColor(member.role) }}>
-              {getRoleBadgeIcon(member.role)} {getRoleLabel(member.role)}
+              {getRoleBadgeIcon(member.role)} {roleLabel(member.role)}
             </span>
           </div>
           <button className="player-modal__close" onClick={onClose} aria-label="Close modal">
@@ -395,7 +318,7 @@ function PlayerActionModal({
                 <p>
                   Promote <strong>{member.username}</strong> to{' '}
                   <strong style={{ color: getRoleColor(confirmRole) }}>
-                    {getRoleLabel(confirmRole)}
+                    {roleLabel(confirmRole)}
                   </strong>
                   ?
                 </p>
@@ -428,15 +351,8 @@ function PlayerActionModal({
                     <span className="role-option__icon" style={{ color: getRoleColor(role) }}>
                       {getRoleBadgeIcon(role)}
                     </span>
-                    <span className="role-option__label">{getRoleLabel(role)}</span>
-                    <span className="role-option__desc">
-                      {role === 'admin' && 'Full club management'}
-                      {role === 'super_agent' && 'Manage agents & players'}
-                      {role === 'agent' && 'Recruit & manage players'}
-                      {role === 'sub_agent' && 'Recruit players under agent'}
-                      {role === 'manager' && 'Limited management'}
-                      {role === 'member' && 'Regular member'}
-                    </span>
+                    <span className="role-option__label">{roleLabel(role)}</span>
+                    <span className="role-option__desc">{ROLE_DESCRIPTION[role]}</span>
                   </button>
                 ))}
               </div>
@@ -444,15 +360,17 @@ function PlayerActionModal({
           </div>
         )}
 
-        {/* Not promotable info */}
-        {!canManage && member.role === 'owner' && (
+        {/* Why nothing is on offer. "You don't have permission" was the same
+            sentence for four different situations, one of which was simply
+            still loading. */}
+        {rolesLoading && !canManage && (
           <div className="player-modal__info-section">
-            <p>Club Owner cannot be modified.</p>
+            <p>Checking what you can change...</p>
           </div>
         )}
-        {!canManage && member.role !== 'owner' && (
+        {!rolesLoading && !canManage && (
           <div className="player-modal__info-section">
-            <p>You don't have permission to manage this member's role.</p>
+            <p>{noRolesReason}</p>
           </div>
         )}
       </div>
@@ -479,7 +397,7 @@ export default function ClubMembersPage() {
   const [filter, setFilter] = useState<MemberFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
-  const [userRole, setUserRole] = useState<MemberRole>('member');
+  const [userRole, setUserRole] = useState<MemberRole>('player');
   const [visibleMembers, setVisibleMembers] = useState<Set<string>>(new Set());
   const [selectedMember, setSelectedMember] = useState<ClubMember | null>(null);
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
@@ -497,7 +415,7 @@ export default function ClubMembersPage() {
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
-    setUserRole('member');
+    setUserRole('player');
     setFilter('all');
     setSearchQuery('');
     setSelectedMember(null);
@@ -578,7 +496,7 @@ export default function ClubMembersPage() {
             username:
               profileMap[m.user_id]?.display_name || profileMap[m.user_id]?.username || 'Unknown',
             avatar_url: profileMap[m.user_id]?.avatar_url,
-            role: m.role || 'member',
+            role: normaliseRole(m.role),
             chip_balance: m.chip_balance || 0,
             joined_at: m.joined_at,
             is_online: onlineUserIds.has(m.user_id),
@@ -610,7 +528,7 @@ export default function ClubMembersPage() {
 
             if (getIsMounted && !getIsMounted()) return;
             if (memberData) {
-              setUserRole(memberData.role || 'member');
+              setUserRole(normaliseRole(memberData.role));
             }
           }
         }
@@ -848,7 +766,7 @@ export default function ClubMembersPage() {
         if (filter === 'online' && !m.is_online) return false;
         if (filter === 'agents' && !['super_agent', 'agent', 'sub_agent'].includes(m.role))
           return false;
-        if (filter === 'admins' && !['owner', 'admin'].includes(m.role)) return false;
+        if (filter === 'admins' && !['owner', 'co_owner', 'admin'].includes(m.role)) return false;
         if (searchQuery && !(m.username || '').toLowerCase().includes(searchQuery.toLowerCase()))
           return false;
         return true;
@@ -1005,7 +923,7 @@ export default function ClubMembersPage() {
                     {member.username}
                   </span>
                   <span className="member-role" style={{ color: getRoleColor(member.role) }}>
-                    {getRoleLabel(member.role)}
+                    {roleLabel(member.role)}
                   </span>
                 </div>
                 <div className="member-balance">{(member.chip_balance ?? 0).toLocaleString()}</div>

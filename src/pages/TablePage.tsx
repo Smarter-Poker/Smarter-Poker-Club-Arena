@@ -1796,7 +1796,7 @@ export default function TablePage({
         if (membership) {
           const role = membership.role?.toLowerCase() || '';
           // Club Owner, Club Admin, Super Agent can chat as observer
-          if (['owner', 'admin', 'super_agent'].includes(role)) {
+          if (['owner', 'co_owner', 'admin', 'super_agent'].includes(role)) {
             setCanChatAsObserver(true);
             return;
           }
@@ -1822,7 +1822,7 @@ export default function TablePage({
           ]);
 
           const unionRole = unionAdmin?.role?.toLowerCase() || '';
-          if (unionRow?.owner_id === userId || ['owner', 'admin'].includes(unionRole)) {
+          if (unionRow?.owner_id === userId || ['owner', 'co_owner', 'admin'].includes(unionRole)) {
             setCanChatAsObserver(true);
             return;
           }

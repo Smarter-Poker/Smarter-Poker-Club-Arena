@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import type { ClubRole } from '../../types/clubRoles';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -22,7 +23,7 @@ interface Member {
   id: string;
   username: string;
   avatarUrl: string;
-  role: 'owner' | 'admin' | 'agent' | 'member';
+  role: ClubRole;
   balance: number;
   totalRake: number;
   handsPlayed: number;

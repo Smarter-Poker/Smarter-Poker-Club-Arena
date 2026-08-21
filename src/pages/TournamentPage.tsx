@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { isClubStaff } from '../types/clubRoles';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   tournamentService,
@@ -108,7 +109,7 @@ export default function TournamentPage() {
           .maybeSingle();
 
         if (!isMounted) return;
-        setIsOwner(data?.role === 'owner' || data?.role === 'admin');
+        setIsOwner(isClubStaff(data?.role));
       } catch (e) {
         reportError(e, 'TournamentPage.checkOwnership');
         if (isMounted) setIsOwner(false);

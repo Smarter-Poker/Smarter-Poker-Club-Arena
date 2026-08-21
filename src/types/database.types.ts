@@ -11,6 +11,7 @@
 export type { Club, ClubSettings as ClubTypeSettings } from './club.types';
 import type { Club } from './club.types';
 
+import type { ClubRole } from './clubRoles';
 // Legacy ClubSettings alias — database.types consumers expect this shape.
 export interface ClubSettings {
   default_rake_percent: number;
@@ -80,7 +81,7 @@ export interface ClubMember {
   profile?: { username?: string; avatar_url?: string }[];
 }
 
-export type MemberRole = 'owner' | 'admin' | 'agent' | 'member';
+export type MemberRole = ClubRole;
 export type MemberStatus = 'active' | 'pending' | 'suspended' | 'banned';
 
 export interface PokerTable {

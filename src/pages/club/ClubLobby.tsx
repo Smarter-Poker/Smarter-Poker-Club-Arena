@@ -18,6 +18,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { isClubStaff, type ClubRole } from '../../types/clubRoles';
 import { useParams, Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { ClubsService } from '../../services/ClubsService';
 import { tableService } from '../../services/TableService';
@@ -131,13 +132,13 @@ export default function ClubLobby() {
   const [ownerDisplayName, setOwnerDisplayName] = useState<string | null>(null);
   const currentUser = useUserStore((s) => s.user);
   const isMountedRef = useIsMounted();
-  const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+  const [userRole, setUserRole] = useState<ClubRole>('player');
   const loadingRef = useRef(false);
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const loadClubDataRef = useRef<() => void>(() => {});
 
-  const hasAdminAccess = userRole === 'owner' || userRole === 'admin';
+  const hasAdminAccess = isClubStaff(userRole);
 
   // UNION-FIRST: Check if this club is in a union and redirect
   useEffect(() => {
@@ -386,7 +387,7 @@ export default function ClubLobby() {
         setChipBalance(walletBalance);
         if (diamondResult.data) setDiamondBalance(diamondResult.data.balance || 0);
         if (membershipResult.data?.role) {
-          setUserRole(membershipResult.data.role as 'owner' | 'admin' | 'agent' | 'member');
+          setUserRole(membershipResult.data.role as ClubRole);
         }
       }
 

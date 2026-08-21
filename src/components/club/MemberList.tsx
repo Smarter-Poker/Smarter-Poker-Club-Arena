@@ -10,6 +10,12 @@
  */
 
 import React, { useState, useMemo, memo, useRef, useEffect } from 'react';
+import {
+  type ClubRole,
+  isClubPrincipal,
+  normaliseRole,
+  roleRank,
+} from '../../types/clubRoles';
 import { useNavigate } from 'react-router-dom';
 import './MemberList.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
@@ -18,7 +24,7 @@ import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export type MemberRole = 'owner' | 'admin' | 'agent' | 'member';
+export type MemberRole = ClubRole;
 
 export interface ClubMember {
   id: string;
@@ -84,10 +90,15 @@ function MemberListInner({
     return filtered;
   }, [members, searchQuery, roleFilter]);
 
-  // Permission check helper
+  // Mirrors fn_club_grantable_roles: an owner may act on anyone but the
+  // owner, a co-owner or admin on anyone strictly below them. The server is
+  // still the authority - this only decides whether to draw the control.
   const canManage = (targetRole: MemberRole) => {
-    if (currentUserRole === 'owner') return targetRole !== 'owner';
-    if (currentUserRole === 'admin') return targetRole === 'member' || targetRole === 'agent';
+    if (targetRole === 'owner') return false;
+    if (isClubPrincipal(currentUserRole)) return true;
+    if (normaliseRole(currentUserRole) === 'admin') {
+      return roleRank(targetRole) < roleRank('admin');
+    }
     return false;
   };
 

@@ -798,7 +798,7 @@ class TableService {
       }
 
       // Only owner or admin can delete tables
-      if (!['owner', 'admin'].includes(clubMember.role)) {
+      if (!['owner', 'co_owner', 'admin'].includes(clubMember.role)) {
         reportError('User lacks permission', 'TableService.deleteTable.noPermission');
         return false;
       }

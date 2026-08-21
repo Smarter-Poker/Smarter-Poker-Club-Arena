@@ -1500,7 +1500,7 @@ function HierarchyTab({ clubId }: { clubId: string }) {
         .from('club_members')
         .select('user_id, role, parent_agent_id')
         .eq('club_id', uuid)
-        .in('role', ['owner', 'admin', 'super_agent', 'agent', 'sub_agent']);
+        .in('role', ['owner', 'co_owner', 'admin', 'super_agent', 'agent', 'sub_agent']);
       if (error) throw error;
       // Batch-fetch profiles (no FK between club_members → profiles)
       const treeData = data || [];
@@ -2434,7 +2434,7 @@ export default function AdminDashboardPage() {
             .from('club_members')
             .select('club_id, role')
             .eq('user_id', user.id)
-            .in('role', ['owner', 'admin', 'manager']);
+            .in('role', ['owner', 'co_owner', 'admin', 'manager']);
           if (mems && mems.length > 0) targetClub = mems[0].club_id;
         }
 
@@ -2450,7 +2450,7 @@ export default function AdminDashboardPage() {
 
           if (memRole) {
             setRole(memRole.role);
-            if (!['owner', 'admin', 'manager'].includes(memRole.role)) {
+            if (!['owner', 'co_owner', 'admin', 'manager'].includes(memRole.role)) {
               setError(
                 'ACCESS DENIED: Operations center requires Club Owner, Admin, or Manager privileges.'
               );
@@ -2516,7 +2516,7 @@ export default function AdminDashboardPage() {
   if (!clubId) return null;
 
   const isOwner = role === 'owner';
-  const isAdmin = ['owner', 'admin'].includes(role || '');
+  const isAdmin = ['owner', 'co_owner', 'admin'].includes(role || '');
 
   return (
     <div className="admin-page">

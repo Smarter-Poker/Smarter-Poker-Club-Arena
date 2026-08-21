@@ -257,7 +257,7 @@ class ClubMessagingPermissionsClass {
                 .from('club_members')
                 .select('user_id')
                 .eq('club_id', resolvedId)
-                .in('role', ['owner', 'admin', 'agent'])
+                .in('role', ['owner', 'co_owner', 'admin', 'agent'])
                 .neq('user_id', userId),
             ]);
           if (pErr)
@@ -279,7 +279,7 @@ class ClubMessagingPermissionsClass {
             .from('club_members')
             .select('user_id')
             .eq('club_id', await resolveClubUUID(clubId))
-            .in('role', ['owner', 'admin']);
+            .in('role', ['owner', 'co_owner', 'admin']);
           if (adErr)
             reportError(adErr, 'ClubMessagingPermissions.getMessagableUsers_playeradmins_error');
           admins?.forEach((a) => messagableUserIds.push(a.user_id));

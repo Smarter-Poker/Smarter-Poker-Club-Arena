@@ -3,6 +3,7 @@
  */
 
 import { useState, useEffect, useRef, useMemo, type ChangeEvent } from 'react';
+import type { ClubRole } from '../types/clubRoles';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { retryFetch } from '../utils/retryFetch';
@@ -154,7 +155,7 @@ export default function ClubSettingsPage() {
   const [showStatsExport, setShowStatsExport] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmText, setConfirmText] = useState('');
-  const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+  const [userRole, setUserRole] = useState<ClubRole>('player');
   // Mirrors the audit_trail SELECT policies: owner, or is_club_admin() which
   // accepts role IN ('owner','admin','manager','agent').
   const canSeeAuditLog = isOwner || userRole === 'admin' || userRole === 'agent';
@@ -191,7 +192,7 @@ export default function ClubSettingsPage() {
   useEffect(() => {
     setSaving(false);
     setIsOwner(false);
-    setUserRole('member');
+    setUserRole('player');
     setShowDeleteModal(false);
     setDeleteImpact(null);
     setImpactLoading(false);
@@ -476,7 +477,7 @@ export default function ClubSettingsPage() {
               .maybeSingle();
             if (getIsMounted && !getIsMounted()) return;
             if (membership?.role) {
-              setUserRole(membership.role as 'owner' | 'admin' | 'agent' | 'member');
+              setUserRole(membership.role as ClubRole);
             }
           } catch (e) {
             reportError(e, 'ClubSettingsPage');

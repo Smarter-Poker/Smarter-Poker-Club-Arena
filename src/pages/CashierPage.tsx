@@ -19,6 +19,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { isClubStaff, type ClubRole } from '../types/clubRoles';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
@@ -345,7 +346,7 @@ export default function CashierPage() {
     setShowCashoutModal(false);
     setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' });
     setLoadingContext(true);
-    setUserRole('member');
+    setUserRole('player');
     setIsInUnion(false);
     setIsUnionOwner(false);
     setSelectedRecipient('');
@@ -520,7 +521,7 @@ export default function CashierPage() {
       // 'admin' was missing from every branch, so a club admin fell through to
       // the else below and was told "regular members can't send chips" - on a
       // page whose own comment two lines down says admins see everyone.
-      if (userRole === 'owner' || userRole === 'admin' || isUnionOwner) {
+      if (isClubStaff(userRole) || isUnionOwner) {
         roleFilter = ['agent', 'super_agent', 'sub_agent', 'member', 'player'];
       } else if (userRole === 'agent' || userRole === 'super_agent') {
         roleFilter = ['sub_agent', 'member', 'player'];
@@ -2412,7 +2413,7 @@ export default function CashierPage() {
       {clubId && (
         <ClubBottomNav
           clubId={clubId}
-          userRole={userRole as 'owner' | 'admin' | 'agent' | 'member'}
+          userRole={userRole as ClubRole}
         />
       )}
 

@@ -17,6 +17,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import type { ClubRole } from '../types/clubRoles';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -56,7 +57,7 @@ export default function MessagesPage() {
   // Conversation deep-link from path params or query param:
   const activeConversationId = conversationId || searchParams.get('conversation') || undefined;
 
-  const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+  const [userRole, setUserRole] = useState<ClubRole>('player');
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 

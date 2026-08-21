@@ -25,6 +25,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { isClubStaff } from '../types/clubRoles';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -270,7 +271,7 @@ export default function CashierTradePage() {
       const panel = ((Array.isArray(panelRes.data) ? panelRes.data[0] : panelRes.data) ??
         {}) as Record<string, unknown>;
 
-      const isStaff = role === 'owner' || role === 'admin';
+      const isStaff = isClubStaff(role);
       const isAgent = role === 'agent' || role === 'super_agent' || role === 'sub_agent';
 
       // NOTE: no PostgREST embed here - club_members.user_id has no FK to

@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { isClubStaff } from '../types/clubRoles';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -193,8 +194,7 @@ export default function AgentDashboardPage() {
         // Filter to downline for non-owners
         const myDownline = (downline || []).filter(
           (m: DownlineMember) =>
-            membership?.role === 'owner' ||
-            membership?.role === 'admin' ||
+            isClubStaff(membership?.role) ||
             m.referred_by === user.id
         );
 
@@ -572,7 +572,7 @@ export default function AgentDashboardPage() {
     );
   }
 
-  const isOwnerOrAdmin = ['owner', 'admin'].includes(role);
+  const isOwnerOrAdmin = ['owner', 'co_owner', 'admin'].includes(role);
   const isOwner = role === 'owner';
 
   return (

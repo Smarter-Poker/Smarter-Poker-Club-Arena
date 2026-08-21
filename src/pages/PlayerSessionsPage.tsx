@@ -459,7 +459,7 @@ export default function PlayerSessionsPage() {
           .from('club_members')
           .select('club_id, role')
           .eq('user_id', user.id)
-          .in('role', ['owner', 'admin', 'manager', 'super_agent', 'agent']);
+          .in('role', ['owner', 'co_owner', 'admin', 'manager', 'super_agent', 'agent']);
         if (mems && mems.length > 0) targetClub = mems[0].club_id;
       }
 

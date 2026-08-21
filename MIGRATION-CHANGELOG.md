@@ -8739,3 +8739,23 @@ copies).
   lives in GameRulesModal and the overlay's DOUBLE BOARD subtitle.
 - Verified: client+server tsc clean, vite build clean, 34 tests across 5
   suites green including the double-board-enriched conservation corpus.
+
+## 2026-08-21 (round 3): sit-out done right, 3-minute spin levels proven, masthead off-by-one, floating pot-win amount
+
+**Dan's directives this round:** "players can choose to sit out, but they just get blinded out, it should never affect the actual tournament functionality" + "keep fixing and upgrading and bug hunting everything inside of the tournament play until we are 100% complete" + (with PokerBros screenshot) the floating +N pot-win number.
+
+### Shipped (engine `ed33d2374` live on Hetzner, verified)
+
+1. **Sit-out, corrected end to end.** The truthful hand-state is_sitting_out flag from round 2 was WRONG: HandController's filters treat it as deal-AROUND (no cards, NO BLINDS) — the opposite of blind-off. Reverted to hardcoded false; a sat-out tournament player is a full participant who posts blinds and is insta-folded by onPlayerTurn. Sit-out state now lives where the client actually reads it: the engine persists PLAYER_SAT_OUT/PLAYER_SAT_BACK to table_seats.is_sitting_out (previously NOTHING wrote that column — sat-out players looked active to everyone). Client patches sitting_out <-> active live off the realtime seats subscription, and the persistent footer bar shows "You Are Sitting Out" + an I'm Back CTA (covers forced sit-outs the settings toggle never knew about). Migration `20260821b`: trg_clear_sitout_on_turnover — seat rows are reused by UPDATE, so a sat-out leaver would bequeath the flag to the next occupant; leaving clears it, reactivating clears it unless explicitly set; engine reuse sites also reset explicitly. Deploy-gate lesson: the fire-and-forget persist needed a literal .catch (noUnhandledRejections guard) — two deploys bounced before it shipped.
+
+2. **Spin levels ran 10 minutes, not 3.** The spin spec stores level length as `duration` in SECONDS; every blind-timer arm site read `durationMinutes || 10`. All four sites now use a format-normalizing levelDurationMs helper (minutes-camel, minutes-snake, or seconds). PROVEN live post-deploy: seven fresh spins levelled 0 -> 1 at exactly 180s each (first_level_secs 180,180,180,180,180,180,180); the stalled pre-fix spin jumped to level 3 on resume. Pinned by levelDurationGuard.test.ts.
+
+3. **Masthead level off-by-one + missing level-1 clock.** tournaments.current_level is the engine's 0-based structure index; the client displayed it raw ("Level 1" during level 2) and entryFor(0) resolved struct[-1] = undefined, so the level clock was blank until the first level-up. Client now maps index -> index+1 and looks entries up by index.
+
+4. **Floating pot-win amount (Dan's +243).** Gold "+share" launches from the pot in the same frame as each winner's chip fan, rides to their seat (first 30% of a 2.2s CSS animation), holds above the avatar, rises, fades — accurate per-winner share so chops read true. Reduced-motion variant static. `.pot-win-float` + potWinFloatRide keyframes in TablePage.css.
+
+### Lifecycle sweep findings (no further action needed)
+- Late reg: fn_register_for_tournament gates by level/minutes window; ensureLateRegSeated self-heals seating with row reuse. Wired.
+- Table balancing: hand-safe move deferral, seat-reuse, source-seat restore on failure. Wired.
+- Eliminations: distinct positions by construction, double-pay guards, rebuy-before-elimination. Audited previously, sound.
+- current_players count||0 at TournamentManagerBase:1217 is display-only (tables row), not a decision input.

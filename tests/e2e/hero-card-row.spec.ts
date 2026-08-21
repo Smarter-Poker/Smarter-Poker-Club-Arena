@@ -89,9 +89,12 @@ async function measure(
       feltRight: scaler.right,
       seatCentreX: seat.left + seat.width / 2,
       seatTop: seat.top,
+      seatRight: seat.right,
+      seatBottom: seat.bottom,
       rowLeft: row.left,
       rowRight: row.right,
       rowCentreX: row.left + row.width / 2,
+      rowCentreY: row.top + row.height / 2,
       rowBottom: row.bottom,
       cardW: card.width,
       cardH: card.height,
@@ -116,11 +119,43 @@ for (const bp of BREAKPOINTS) {
           const m = await measure(page, n, markup);
 
           if (n < 4) {
-            // Item 11: Hold-em cards sit to the RIGHT of the hero's plate
-            // The CSS uses `left: calc(100% + gap)`, so rowLeft must be strictly
-            // greater than the seat's right edge (which is seatCentreX + seatWidth/2)
-            // We don't have seat width directly, but rowLeft > seatCentreX + 20 is safe.
-            expect(m.rowLeft).toBeGreaterThan(m.seatCentreX);
+            /* Item 11 (2026-08-21): "Hero cards sit to the RIGHT of the plate,
+               not over it."
+
+               The contract is exact, so assert it exactly. SeatSlot.css:
+
+                 .seat__cards--hero:not(:has(> *:nth-child(4))) {
+                   left: calc(100% + var(--sp-hero-gap, 8px));
+                   bottom: var(--sp-hero-box-half, 21px);
+                   transform: translateY(50%);
+                 }
+
+               NOT OVER IT is the half that needs teeth. `rowLeft > seatCentreX`
+               would pass with the cards lying across the right half of the
+               plate, which is the exact thing item 11 was about — so the edge
+               to clear is the seat's RIGHT edge, not its centre. */
+            expect(m.rowLeft, 'hold-em cards overlap the plate').toBeGreaterThanOrEqual(
+              m.seatRight
+            );
+
+            /* ...and BESIDE it, not adrift on the felt. `left: calc(100% +
+               gap)` puts the row one small gap off the edge; without an upper
+               bound a row that floated away from its owner would still pass. */
+            expect(m.rowLeft - m.seatRight, 'hold-em cards drifted off the plate').toBeLessThanOrEqual(
+              24
+            );
+
+            /* Vertically it is level with the seat, not stacked above it. The
+               row's centre is anchored inside the plate's height, so checking
+               the centre lands within the seat's vertical span catches drift
+               without hard-coding a box half-height that varies by breakpoint.
+               This axis had no assertion at all after the redesign. */
+            expect(m.rowCentreY, 'hold-em cards sit above the seat').toBeGreaterThanOrEqual(
+              m.seatTop
+            );
+            expect(m.rowCentreY, 'hold-em cards sit below the seat').toBeLessThanOrEqual(
+              m.seatBottom
+            );
           } else {
             // PLO cards (n >= 4) keep the centered-above layout
             // Centred on the seat, not offset to one side.
@@ -167,12 +202,22 @@ for (const bp of BREAKPOINTS) {
     });
 
     test('hold-em hole cards are NOT resized', async ({ page }) => {
+      /* Heights are round(width x 1.4) — the 2.5:3.5 playing-card ratio made
+         exact in 833a34d9a to kill the blur. Every entry is derived, not
+         observed: 44->61.6->62, 42->58.8->59, 36->50.4->50, 32->44.8->45.
+         Two of them moved by 1px in that commit and this map was still
+         carrying the pre-ratio values, which is what failed CI rather than
+         anything on the felt. Recompute rather than copy from a browser if
+         these ever change again. */
       const HOLDEM: Record<string, [number, number]> = {
         desktop: [44, 62],
         tablet: [42, 59],
         phone: [36, 50],
         'small phone': [32, 45],
       };
+      for (const [label, [w, h]] of Object.entries(HOLDEM)) {
+        expect(Math.round(w * 1.4), `${label} height is not the 2.5:3.5 ratio`).toBe(h);
+      }
       const m = await measure(page, 2);
       expect([m.cardW, m.cardH]).toEqual(HOLDEM[bp.label]);
     });

@@ -8846,3 +8846,34 @@ deploy confirmed by the hand-count dip-and-recover at 02:47-02:51 UTC
 2. **Keyframe-collision guard (tests/styles/keyframeCollisions.test.ts).** @keyframes is a global namespace across plain CSS files; the parity audit counted 827 names and found zero differing collisions (nine byte-identical `shimmer`s). The guard makes that luck a law: any duplicate name across files with differing bodies fails the suite and names both files. Verified green on live code.
 
 3. **Lease forensics: the 02:57:11Z burst of 44 lease_lost was the deploy cutover working as designed** — the outgoing container (ed33d2374) logging its handoff to the incoming one (d12725af, which carries all this session's engine fixes). Multi-table MTT engine rebuilds in the same window are per-table cutover noise; post-cutover state verified healthy: 9 RUNNING tournaments, 0 stuck, 545 hands in 5 minutes, e43dbfbc's 5 tables all live with 35 playing.
+## 2026-08-20 — Bomb Pot round 3: line-by-line audit — cadence bug, wrong equity, hot-reload, countdown
+
+Full audit of both bomb-pot rounds (marker sweep across all 23 touched
+files confirmed nothing was reverted by concurrent sessions). Three real
+defects found and fixed, one enhancement added:
+
+- [P0] CADENCE WAS A COIN FLIP, NOT A SCHEDULE: the bomb-pot trigger ran
+  `handCount % frequency === 0`, but handCount is the GLOBAL hand-number
+  allocator shared by the whole fleet — consecutive hands at one table draw
+  numbers spaced by whatever every other table dealt in between, so
+  "every 3 hands" was a ~1/3 coin flip per hand. Observed live on the demo
+  table: three bomb pots inside 4 minutes, then droughts. New per-table
+  handsSinceBombPot counter in Base fires at exactly N and resets;
+  deterministic, restart-safe (worst case: first bomb N hands post-deploy).
+- [P1] WRONG EQUITY SHOWN ON DOUBLE-BOARD RUNOUTS: broadcastAllInEquity
+  solves board 1 only, and its percentages were broadcast to every player
+  and observer on all-in double-board hands — numbers that are simply wrong
+  for a pot half-riding on board 2. Suppressed (doubleBoardHand computed
+  before the equity call now).
+- [P1] BOMB SETTINGS REQUIRED AN ENGINE RESTART: tableInfo loads once per
+  engine lifetime, so an owner toggling bomb pots (or double board) waited
+  for the next deploy. The bomb pot columns now ride the existing throttled
+  refreshRakeConfig re-read, same fix rake got on 2026-08-18.
+- [P2] FELT COUNTDOWN: broadcast + getTableState carry bomb_pot_in (hands
+  until the next bomb pot, 1 = next hand; null when off). The client shows
+  a small pill above the board — "BOMB POT IN 3", turning hot and pulsing
+  as "(DOUBLE BOARD) BOMB POT NEXT HAND" — gated on the snapshot value only
+  (server truth; the one-shot bombPotRules fetch would hold it hostage
+  across a mid-session enable), hidden while the bomb sequence plays.
+- Verified: client+server tsc clean, vite build clean, 30 tests across 4
+  suites green including the double-board-enriched conservation corpus.

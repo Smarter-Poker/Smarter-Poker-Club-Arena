@@ -85,6 +85,10 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       pot: state.pot ?? 0,
       community_cards: state.communityCards ?? [],
       community_cards2: state.communityCards2 ?? [],
+      bomb_pot_in:
+        this.tableInfo?.bomb_pot_enabled && (this.tableInfo?.bomb_pot_frequency ?? 0) > 0
+          ? Math.max(1, (this.tableInfo!.bomb_pot_frequency ?? 0) - this.handsSinceBombPot)
+          : null,
       current_bet: state.currentBet ?? 0,
       current_player: currentSeatPlayer?.user_id ?? null,
       dealer_seat: state.dealerSeat ?? this.currentHandDealerSeat,
@@ -196,6 +200,12 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       community_cards: state.communityCards ?? [],
       // DOUBLE-BOARD BOMB POT 2026-08-20: second board (empty unless active).
       community_cards2: state.communityCards2 ?? [],
+      // ROUND 3 (2026-08-20): hands until the next bomb pot (1 = next hand).
+      // null when the table doesn't run bomb pots. Drives the felt countdown.
+      bomb_pot_in:
+        this.tableInfo?.bomb_pot_enabled && (this.tableInfo?.bomb_pot_frequency ?? 0) > 0
+          ? Math.max(1, (this.tableInfo!.bomb_pot_frequency ?? 0) - this.handsSinceBombPot)
+          : null,
       current_bet: state.currentBet ?? 0,
       current_player: currentSeatPlayer?.user_id ?? null,
       dealer_seat: state.dealerSeat ?? this.currentHandDealerSeat,

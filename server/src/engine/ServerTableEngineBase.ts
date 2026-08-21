@@ -1482,6 +1482,20 @@ export abstract class ServerTableEngineBase {
   protected lastRakeRefreshAtMs = 0;
 
   /**
+   * ROUND 3 AUDIT FIX (2026-08-20): hands dealt at THIS table since the last
+   * bomb pot. The trigger used to be `handCount % frequency === 0`, but
+   * handCount is the GLOBAL hand-number allocator shared by every table —
+   * consecutive hands at one table draw numbers spaced by however many hands
+   * the whole fleet dealt in between, so divisibility was a ~1/N coin flip
+   * per hand. "Every 3 hands" produced back-to-back bomb pots and 15-hand
+   * droughts (observed live on the demo table). This counter makes the
+   * cadence exactly what the setting promises. Resets on engine restart —
+   * deterministic, no DB write, worst case the first bomb arrives N hands
+   * after a deploy.
+   */
+  protected handsSinceBombPot = 0;
+
+  /**
    * Re-read the table's and club's rake settings so an owner's change takes
    * effect without restarting the engine. Called at the top of each hand and
    * throttled — tableInfo is otherwise loaded once per engine lifetime, and at
@@ -1498,12 +1512,23 @@ export abstract class ServerTableEngineBase {
     try {
       const { data: tableRow } = await supabase
         .from('tables')
-        .select('rake_percent, rake_cap_bb')
+        .select(
+          // ROUND 3 (2026-08-20): bomb pot settings ride the same throttled
+          // re-read — an owner toggling bomb pots (or double board) no longer
+          // waits for an engine restart, same reason rake got this in
+          // 2026-08-18.
+          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board'
+        )
         .eq('id', this.tableId)
         .maybeSingle();
       if (tableRow && this.tableInfo) {
         this.tableInfo.rake_percent = tableRow.rake_percent ?? undefined;
         this.tableInfo.rake_cap_bb = tableRow.rake_cap_bb ?? undefined;
+        this.tableInfo.bomb_pot_enabled = (tableRow as any).bomb_pot_enabled ?? false;
+        this.tableInfo.bomb_pot_frequency = (tableRow as any).bomb_pot_frequency ?? 0;
+        this.tableInfo.bomb_pot_ante_multiplier =
+          (tableRow as any).bomb_pot_ante_multiplier ?? 2;
+        this.tableInfo.bomb_pot_double_board = (tableRow as any).bomb_pot_double_board ?? false;
       }
       const clubId = this.tableInfo?.club_id;
       if (clubId) {

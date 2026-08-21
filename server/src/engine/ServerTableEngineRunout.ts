@@ -368,14 +368,6 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // Broadcast current state so clients see the all-in board
     this.broadcastCurrentState();
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // EQUITY DISPLAY: Calculate and broadcast equity for ALL all-in players
-    // This is shown on every table (insurance or not) for all players/observers.
-    // ═══════════════════════════════════════════════════════════════════════
-    if (allInPlayers.length >= 2) {
-      void this.broadcastAllInEquity(allInPlayers, board, pot);
-    }
-
     // DOUBLE-BOARD BOMB POT 2026-08-20: a hand already running two boards
     // neither needs a second runout (RIT) nor has a single-board equity to
     // insure. Both offers are suppressed; the plain runout path fills both
@@ -383,6 +375,17 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // Optional call: RIT test harnesses inject minimal HandController mocks
     // that predate this method — absent method means single board.
     const doubleBoardHand = this.handController.isDoubleBoardActive?.() ?? false;
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // EQUITY DISPLAY: Calculate and broadcast equity for ALL all-in players
+    // This is shown on every table (insurance or not) for all players/observers.
+    // ROUND 3 AUDIT FIX (2026-08-20): suppressed on double-board hands — the
+    // solver runs board 1 only, so the percentages it would show players are
+    // simply wrong for a pot that half-rides on board 2.
+    // ═══════════════════════════════════════════════════════════════════════
+    if (allInPlayers.length >= 2 && !doubleBoardHand) {
+      void this.broadcastAllInEquity(allInPlayers, board, pot);
+    }
     const insuranceEnabled = this.insuranceEngine.isEnabled(this.tableId) && !doubleBoardHand;
 
     if (insuranceEnabled && board.length < 5 && allInPlayers.length >= 2) {

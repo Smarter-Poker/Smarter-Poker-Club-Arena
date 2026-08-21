@@ -347,6 +347,8 @@ interface TableState {
   communityCards: Card[];
   /** DOUBLE-BOARD BOMB POT 2026-08-20: board 2, empty unless active. */
   communityCards2: Card[];
+  /** ROUND 3: hands until the next bomb pot (1 = next hand); null = off. */
+  bombPotIn: number | null;
   boardStage: BoardStage;
   /**
    * The engine's OWN stage string, unnormalised.
@@ -901,6 +903,7 @@ export default function TablePage({
     sidePots: [],
     communityCards: [],
     communityCards2: [],
+    bombPotIn: null,
     boardStage: 'preflop',
     engineStage: 'preflop',
     dealerSeat: 0,
@@ -997,6 +1000,7 @@ export default function TablePage({
         pot: mapped.pot,
         communityCards: nextCards,
         communityCards2: nextCards2,
+        bombPotIn: mapped.bombPotIn,
         boardStage: nextStage,
         engineStage: mapped.boardStage,
         dealerSeat: mapped.dealerSeat,
@@ -8789,6 +8793,25 @@ export default function TablePage({
                       </div>
                     ))}
                 </div>
+
+                {/* ROUND 3 (2026-08-20): bomb pot countdown — players see the
+                    forced ante coming instead of being ambushed by it. Server
+                    truth (tableState.bombPotIn from the snapshot), hidden
+                    while the bomb sequence itself is playing. */}
+                {/* Gate on the SNAPSHOT value only — it is server truth and
+                    goes non-null the moment an owner enables bomb pots, while
+                    bombPotRules is a one-shot fetch that would hold the pill
+                    hostage until a page reload. */}
+                {tableState.bombPotIn != null && !bombPotActive && (
+                    <div
+                      className={`bomb-pot-eta ${tableState.bombPotIn === 1 ? 'bomb-pot-eta--next' : ''}`}
+                    >
+                      <span className="bomb-pot-eta__dot" />
+                      {tableState.bombPotIn === 1
+                        ? `${bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
+                        : `BOMB POT IN ${tableState.bombPotIn}`}
+                    </div>
+                  )}
 
                 {/* Dan 2026-08-15: the "Game Info Strip" that lived here is
                     gone. It printed the stakes a second and third time

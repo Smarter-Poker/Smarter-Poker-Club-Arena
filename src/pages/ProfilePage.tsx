@@ -361,7 +361,7 @@ export default function ProfilePage() {
                   vipLevel: profile.tier || 'bronze',
                   memberSince: profile.created_at,
                 },
-                stats: null, // Stats loaded separately from poker_session_stats
+                stats: null, // Stats loaded separately
                 diamonds: profile.diamonds || 0,
                 isVIP: profile.is_vip || false,
                 dailyStreak: profile.login_streak || 0,
@@ -537,7 +537,7 @@ export default function ProfilePage() {
           .getUser()
           .then(({ data: { user: authUser } }) => {
             if (authUser && isMounted) {
-              // Stats column doesn't exist in profiles table — stats come from poker_session_stats
+              // Stats column doesn't exist in profiles table
               // For now, use total_hands_played from profiles as the only available stat
               supabase
                 .from('profiles')

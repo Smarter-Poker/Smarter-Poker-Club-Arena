@@ -3381,6 +3381,11 @@ export default function TablePage({
           biggestPot: biggestPotRef.current,
           peakStack: peakStackRef.current,
           tableName: tableState.tableName,
+          vpipPercent: sessionStatsService.getStats(tableId ?? '')?.vpipPercent || 0,
+          totalBuyIn:
+            sessionStatsService.getStats(tableId ?? '')?.buyInTotal || totalBuyInRef.current,
+          sessionStart: sessionStartRef.current,
+          sessionEnd: Date.now(),
           tournament: tournamentResult,
         });
 
@@ -4796,6 +4801,13 @@ export default function TablePage({
                           biggestPot: biggestPotRef.current,
                           peakStack: peakStackRef.current,
                           tableName: tableStateRef.current.tableName,
+                          vpipPercent:
+                            sessionStatsService.getStats(tableId ?? '')?.vpipPercent || 0,
+                          totalBuyIn:
+                            sessionStatsService.getStats(tableId ?? '')?.buyInTotal ||
+                            totalBuyInRef.current,
+                          sessionStart: sessionStartRef.current,
+                          sessionEnd: Date.now(),
                           tournament: {
                             ...(full ?? {
                               entrants: null,

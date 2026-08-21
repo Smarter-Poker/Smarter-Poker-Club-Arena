@@ -84,6 +84,26 @@ interface TradeRecordRow {
   counterparty: string;
 }
 
+interface ChipRequestRow {
+  id: string;
+  requesterId: string;
+  requesterName: string;
+  amount: number;
+  note: string | null;
+  status: string;
+  createdAt: string;
+  mine: boolean;
+}
+
+interface InvoiceRow {
+  id: string;
+  createdAt: string;
+  type: string;
+  gross: number;
+  net: number;
+  status: string;
+}
+
 type TabKey = 'trade' | 'record' | 'leaderboard' | 'request';
 
 const fmt = (n: number) =>
@@ -123,9 +143,18 @@ export default function CashierTradePage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [records, setRecords] = useState<TradeRecordRow[]>([]);
+  // Dan 2026-08-21: the three tabs/buttons that used to say "coming soon" are
+  // real features now (chip_requests + tournament_tickets, migration 20260821).
+  const [requests, setRequests] = useState<ChipRequestRow[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(false);
+  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const [askOpen, setAskOpen] = useState(false);
+  const [askAmount, setAskAmount] = useState('');
+  const [askNote, setAskNote] = useState('');
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [recordsError, setRecordsError] = useState<string | null>(null);
-  const [amountModal, setAmountModal] = useState<'send' | 'claim' | null>(null);
+  const [amountModal, setAmountModal] = useState<'send' | 'claim' | 'ticket' | null>(null);
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
   // AUDIT 2026-08-21: the "+" on Available Chips used to punt to the classic
@@ -414,6 +443,135 @@ export default function CashierTradePage() {
     };
   }, [tab, user?.id, clubUuid]);
 
+  // ── Chip requests (Chip Request tab) ───────────────────────────────────────
+  const loadRequests = useCallback(async () => {
+    if (!user?.id || !clubUuid) return;
+    setRequestsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('chip_requests')
+        .select('id, requester_id, amount, note, status, created_at')
+        .eq('club_id', clubUuid)
+        .in('status', ['pending'])
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      const ids = [...new Set((data || []).map((r) => r.requester_id as string))];
+      const names = new Map<string, string>();
+      if (ids.length > 0) {
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id, display_name, username')
+          .in('id', ids);
+        for (const pr of profs || [])
+          names.set(pr.id as string, (pr.display_name as string) || (pr.username as string) || 'Player');
+      }
+      if (!isMounted.current) return;
+      setRequests(
+        (data || []).map((r) => ({
+          id: r.id as string,
+          requesterId: r.requester_id as string,
+          requesterName: names.get(r.requester_id as string) || 'Player',
+          amount: Number(r.amount) || 0,
+          note: (r.note as string) || null,
+          status: (r.status as string) || 'pending',
+          createdAt: r.created_at as string,
+          mine: r.requester_id === user.id,
+        }))
+      );
+    } catch (e) {
+      reportError(e, 'CashierTradePage.loadRequests');
+    } finally {
+      if (isMounted.current) setRequestsLoading(false);
+    }
+  }, [user?.id, clubUuid]);
+
+  useEffect(() => {
+    if (tab === 'request') loadRequests();
+  }, [tab, loadRequests]);
+
+  const respondToRequest = async (id: string, action: 'approve' | 'decline' | 'cancel') => {
+    try {
+      const { data, error } = await supabase.rpc('fn_respond_chip_request', {
+        p_request_id: id,
+        p_action: action,
+      });
+      if (error) throw error;
+      const res = data as { success?: boolean; error?: string } | null;
+      if (!res?.success) throw new Error(res?.error || 'Refused');
+      toast?.success?.(
+        action === 'approve' ? 'Request Approved' : action === 'decline' ? 'Request Declined' : 'Request Cancelled'
+      );
+      masterBus.emit('BALANCE_UPDATED', { source: 'chip_request', userId: user?.id || '' });
+      loadRequests();
+      loadClub();
+    } catch (e) {
+      reportError(e, 'CashierTradePage.respondToRequest');
+      toast?.error?.((e as Error).message || 'Could Not Answer That Request');
+    }
+  };
+
+  const askForChips = async () => {
+    const v = Number(askAmount);
+    if (!Number.isFinite(v) || v <= 0) {
+      toast?.error?.('Enter A Positive Amount');
+      return;
+    }
+    try {
+      const { data, error } = await supabase.rpc('fn_request_chips', {
+        p_club_id: clubUuid,
+        p_amount: v,
+        p_note: askNote || null,
+      });
+      if (error) throw error;
+      const res = data as { success?: boolean; error?: string } | null;
+      if (!res?.success) throw new Error(res?.error || 'Refused');
+      toast?.success?.('Chip Request Sent');
+      setAskOpen(false);
+      setAskAmount('');
+      setAskNote('');
+      loadRequests();
+    } catch (e) {
+      reportError(e, 'CashierTradePage.askForChips');
+      toast?.error?.((e as Error).message || 'Could Not Send That Request');
+    }
+  };
+
+  // ── Settlement invoices (Leaderboard Record tab) ───────────────────────────
+  useEffect(() => {
+    if (tab !== 'leaderboard' || !clubUuid) return;
+    let live = true;
+    setInvoicesLoading(true);
+    (async () => {
+      const { data, error } = await supabase
+        .from('settlement_invoices')
+        .select('id, created_at, invoice_type, gross_amount, net_amount, status')
+        .eq('club_id', clubUuid)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (!live) return;
+      if (error) {
+        reportError(error, 'CashierTradePage.loadInvoices');
+        setInvoices([]);
+      } else {
+        setInvoices(
+          (data || []).map((r) => ({
+            id: r.id as string,
+            createdAt: r.created_at as string,
+            type: (r.invoice_type as string) || 'settlement',
+            gross: Number(r.gross_amount) || 0,
+            net: Number(r.net_amount) || 0,
+            status: (r.status as string) || 'pending',
+          }))
+        );
+      }
+      setInvoicesLoading(false);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [tab, clubUuid]);
+
   // ── Derived list ───────────────────────────────────────────────────────────
   const mineCount = useMemo(() => downline.filter((r) => r.isMine).length, [downline]);
 
@@ -476,7 +634,7 @@ export default function CashierTradePage() {
     });
 
   // ── Money actions ──────────────────────────────────────────────────────────
-  const runTransfers = async (kind: 'send' | 'claim') => {
+  const runTransfers = async (kind: 'send' | 'claim' | 'ticket') => {
     if (!user?.id || !clubUuid) return;
     const value = Number(amount);
     if (!Number.isFinite(value) || value <= 0) {
@@ -488,7 +646,7 @@ export default function CashierTradePage() {
     // looking at means a race can never widen the blast radius of a transfer.
     const targets = list.filter((r) => selected.has(r.userId));
     if (targets.length === 0) return;
-    if (kind === 'send' && value * targets.length > myBalance) {
+    if ((kind === 'send' || kind === 'ticket') && value * targets.length > myBalance) {
       toast?.error?.(`Insufficient Chips: Sending ${fmt(value * targets.length)} Needs More Than ${fmt(myBalance)}`);
       return;
     }
@@ -510,6 +668,18 @@ export default function CashierTradePage() {
             p_to_user_id: t.userId,
             p_amount: value,
             p_reason: `Cashier send out to ${t.name}`,
+          });
+          if (error) throw error;
+          const res = data as { success?: boolean; error?: string } | null;
+          if (res && res.success === false) throw new Error(res.error || 'refused');
+        } else if (kind === 'ticket') {
+          // Tournament ticket: the value is ESCROWED off the issuer now and
+          // held on the ticket until the player redeems it.
+          const { data, error } = await supabase.rpc('fn_issue_tournament_ticket', {
+            p_club_id: clubUuid,
+            p_holder_id: t.userId,
+            p_value: value,
+            p_note: `Ticket from cashier`,
           });
           if (error) throw error;
           const res = data as { success?: boolean; error?: string } | null;
@@ -557,7 +727,9 @@ export default function CashierTradePage() {
       toast?.success?.(
         kind === 'send'
           ? `Sent ${fmt(value)} To ${ok} Player${ok === 1 ? '' : 's'}`
-          : `Claimed Back From ${ok} Player${ok === 1 ? '' : 's'}`
+          : kind === 'ticket'
+            ? `Issued ${ok} Ticket${ok === 1 ? '' : 's'} Worth ${fmt(value)} Each`
+            : `Claimed Back From ${ok} Player${ok === 1 ? '' : 's'}`
       );
       // The bus event is already wired to reload this page, so calling
       // loadClub() as well fired two identical loads at once.
@@ -792,7 +964,7 @@ export default function CashierTradePage() {
             <button
               className={styles.footerBtn}
               disabled={selected.size === 0 || busy}
-              onClick={() => toast?.info?.('Tournament Tickets Are Coming Soon')}
+              onClick={() => setAmountModal('ticket')}
             >
               Send Ticket
             </button>
@@ -845,16 +1017,116 @@ export default function CashierTradePage() {
       )}
 
       {tab === 'leaderboard' && (
-        <div className={styles.empty}>
-          Leaderboard settlement records are coming soon. Weekly results live on the Data tab for
-          now.
+        <div className={styles.list}>
+          {invoicesLoading && <div className={styles.empty}>Loading settlement records...</div>}
+          {!invoicesLoading && invoices.length === 0 && (
+            <div className={styles.empty}>
+              No settlement records yet. They appear here after the first weekly close.
+            </div>
+          )}
+          {invoices.map((iv) => (
+            <div key={iv.id} className={styles.row}>
+              <div className={styles.rowInfo}>
+                <span className={styles.rowName}>{iv.type.replace(/_/g, ' ')}</span>
+                <span className={styles.rowSub}>
+                  {new Date(iv.createdAt).toLocaleDateString([], {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}{' '}
+                  &middot; {iv.status}
+                </span>
+              </div>
+              <span className={styles.rowSub}>gross {fmt(iv.gross)}</span>
+              <span className={`${styles.rowBalance} ${iv.net >= 0 ? styles.amtIn : styles.amtOut}`}>
+                {iv.net >= 0 ? '+' : ''}
+                {fmt(iv.net)}
+              </span>
+            </div>
+          ))}
         </div>
       )}
 
       {tab === 'request' && (
-        <div className={styles.empty}>
-          Chip requests are coming soon. Players can request chips from you here; for now use the
-          Advanced Cashier.
+        <div className={styles.list}>
+          <button className={styles.classicLink} onClick={() => setAskOpen(true)}>
+            Request Chips From Your Agent
+          </button>
+          {requestsLoading && <div className={styles.empty}>Loading requests...</div>}
+          {!requestsLoading && requests.length === 0 && (
+            <div className={styles.empty}>No open chip requests.</div>
+          )}
+          {requests.map((r) => (
+            <div key={r.id} className={styles.row}>
+              <div className={styles.rowInfo}>
+                <span className={styles.rowName}>{r.mine ? 'You' : r.requesterName}</span>
+                <span className={styles.rowSub}>
+                  {new Date(r.createdAt).toLocaleString([], {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                  {r.note ? ` · ${r.note}` : ''}
+                </span>
+              </div>
+              <span className={styles.rowBalance}>{fmt(r.amount)}</span>
+              {r.mine ? (
+                <button className={styles.reqBtn} onClick={() => respondToRequest(r.id, 'cancel')}>
+                  Cancel
+                </button>
+              ) : (
+                <>
+                  <button
+                    className={styles.reqBtn}
+                    onClick={() => respondToRequest(r.id, 'decline')}
+                  >
+                    Decline
+                  </button>
+                  <button
+                    className={`${styles.reqBtn} ${styles.reqBtnGo}`}
+                    onClick={() => respondToRequest(r.id, 'approve')}
+                  >
+                    Approve
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Ask-for-chips modal */}
+      {askOpen && (
+        <div className={styles.modalOverlay} onClick={() => setAskOpen(false)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalTitle}>Request Chips</div>
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              value={askAmount}
+              onChange={(e) => setAskAmount(e.target.value)}
+              placeholder="How many chips?"
+              autoFocus
+            />
+            <input
+              type="text"
+              value={askNote}
+              onChange={(e) => setAskNote(e.target.value)}
+              placeholder="Note (optional)"
+              maxLength={120}
+            />
+            <div className={styles.modalHint}>
+              Goes to your agent, or the club owner if you have none.
+            </div>
+            <div className={styles.modalActions}>
+              <button onClick={() => setAskOpen(false)}>Cancel</button>
+              <button className={styles.modalConfirm} onClick={askForChips}>
+                Send Request
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -871,7 +1143,12 @@ export default function CashierTradePage() {
         <div className={styles.modalOverlay} onClick={() => !busy && setAmountModal(null)}>
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalTitle}>
-              {amountModal === 'send' ? 'Send Out' : 'Claim Back'} &middot; {selected.size} player
+              {amountModal === 'send'
+                ? 'Send Out'
+                : amountModal === 'ticket'
+                  ? 'Send Ticket'
+                  : 'Claim Back'}{' '}
+              &middot; {selected.size} player
               {selected.size === 1 ? '' : 's'}
             </div>
             <input
@@ -881,11 +1158,21 @@ export default function CashierTradePage() {
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder={
-                amountModal === 'send' ? 'Amount per player' : 'Amount per player (max = balance)'
+                amountModal === 'claim'
+                  ? 'Amount per player (max = balance)'
+                  : amountModal === 'ticket'
+                    ? 'Ticket value per player'
+                    : 'Amount per player'
               }
               autoFocus
             />
-            {amountModal === 'send' && (
+            {amountModal === 'ticket' && (
+              <div className={styles.modalHint}>
+                Tickets are paid now and held until the player redeems them. Cancel an unredeemed
+                ticket to get the chips back.
+              </div>
+            )}
+            {(amountModal === 'send' || amountModal === 'ticket') && (
               <div className={styles.modalHint}>
                 Total: {fmt((Number(amount) || 0) * selected.size)} &middot; Your balance:{' '}
                 {fmt(myBalance)}

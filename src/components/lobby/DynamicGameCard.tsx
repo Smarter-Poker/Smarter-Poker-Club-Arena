@@ -561,19 +561,21 @@ export function SpinCard({
   // canonical spec rather than a literal. It used to read the drawn
   // `spin_multiplier`, which was wrong twice over: it printed the answer on
   // the lobby tile before the wheel ever span, and on a 2x it advertised
-  // "Win up to 2" for a format whose whole pitch is 500.
+  // "Win up to 2" for a format whose whole pitch is the top of the ladder.
   const maxMult = SPIN_TIERS[SPIN_TIERS.length - 1].multiplier;
 
   // Is the top of the ladder actually ON the wheel right now? The public
   // availability view answers with two booleans and nothing else — see
-  // useSpinTierAvailability. "500x LIVE" only renders when the Reserve Pool
+  // useSpinTierAvailability. "100x LIVE" only renders when the Reserve Pool
   // genuinely clears the same threshold the draw enforces, which makes it
   // the one lobby claim here backed by money rather than copy. No club_id or
   // an unfunded pool renders nothing: an absent boast, never a wrong one.
   const availability = useSpinTierAvailability(
     (tournament as unknown as { club_id?: string }).club_id
   );
-  const liveTop = availability?.can_draw_500x ? 500 : availability?.can_draw_100x ? 100 : null;
+  // 500x retired 2026-08-21 — 100x is the entire top of the ladder now, so
+  // this reads one boolean instead of a cascade.
+  const liveTop = availability?.can_draw_100x ? 100 : null;
 
   return (
     <NeonCard

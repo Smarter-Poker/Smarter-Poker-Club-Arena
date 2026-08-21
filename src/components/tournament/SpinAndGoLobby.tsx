@@ -35,7 +35,7 @@ interface SpinTournament {
 // Pool-based multipliers — display values for the wheel UI.
 // Balanced probabilities: expected payout = 3× buy_in, club net = 10%.
 // AUDIT FIX 2026-08-20: this was a hardcoded [2,3,5,10,25,50,100] — it omitted
-// 4x and 500x entirely, so the lobby advertised a shorter ladder than the
+// 4x and the top tier entirely, so the lobby advertised a shorter ladder than the
 // engine actually draws from and never mentioned the top jackpot at all.
 // Derived from the canonical spec so it cannot drift again.
 const SPIN_MULTIPLIERS = SPIN_TIERS.map((t) => t.multiplier);
@@ -235,7 +235,7 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
                       // a hardcoded bonusBuyIns ladder belonging to the retired
                       // pool model. It happened to agree for the tiers it listed
                       // (2 + bonus == multiplier) but silently had no answer for
-                      // 4x or 500x. The prize IS buy-in x multiplier.
+                      // 4x or 100x. The prize IS buy-in x multiplier.
                       const prize = Math.trunc(t.buyIn * multiplier);
                       return (
                         <div key={multiplier} className="prize-tier">

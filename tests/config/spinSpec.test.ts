@@ -102,7 +102,7 @@ describe('payout splits', () => {
     expect(spinTier(5)!.payouts).toEqual([1]);
     expect(spinTier(10)!.payouts).toEqual([0.8, 0.2]);
     expect(spinTier(25)!.payouts).toEqual([0.8, 0.12, 0.08]);
-    expect(spinTier(500)!.payouts).toEqual([0.8, 0.12, 0.08]);
+    expect(spinTier(100)!.payouts).toEqual([0.8, 0.12, 0.08]);
   });
 
   it('every split sums to exactly 1', () => {
@@ -125,22 +125,22 @@ describe('payout splits', () => {
     }
   });
 
-  it('matches the published 500x example exactly', () => {
-    // $1 -> $500 pool -> 400 / 60 / 40
-    const e = spinEconomics(1, 500);
-    expect(e.prizePool).toBe(500);
-    expect(e.payouts).toEqual([400, 60, 40]);
+  it('matches the published top-tier example exactly', () => {
+    // $1 -> $100 pool -> 80 / 12 / 8
+    const e = spinEconomics(1, 100);
+    expect(e.prizePool).toBe(100);
+    expect(e.payouts).toEqual([80, 12, 8]);
 
-    const e100 = spinEconomics(100, 500);
-    expect(e100.prizePool).toBe(50000);
-    expect(e100.payouts).toEqual([40000, 6000, 4000]);
+    const e100 = spinEconomics(100, 100);
+    expect(e100.prizePool).toBe(10000);
+    expect(e100.payouts).toEqual([8000, 1200, 800]);
   });
 });
 
 describe('per-game economics', () => {
   it('books the fixed advertised rake on EVERY game, win or lose', () => {
     const small = spinEconomics(1, 2);
-    const jackpot = spinEconomics(1, 500);
+    const jackpot = spinEconomics(1, 100);
     // The house takes 8% of $3 either way. The pool absorbs the variance.
     expect(small.houseRake).toBe(0.24);
     expect(jackpot.houseRake).toBe(0.24);
@@ -183,7 +183,6 @@ describe('structure scales with the multiplier', () => {
       [25, 500, 3],
       [50, 500, 3],
       [100, 500, 3],
-      [500, 500, 3],
     ];
     for (const [mult, stack, mins] of expected) {
       const t = spinTier(mult)!;
@@ -207,7 +206,7 @@ describe('structure scales with the multiplier', () => {
   });
 
   it('keeps climbing past the published ladder', () => {
-    // A 5-minute 500x can outrun ten levels; a structure that stalls turns a
+    // A deep 100x can outrun ten levels; a structure that stalls turns a
     // hyper-turbo into a grind.
     const l11 = spinBlindsForLevel(11);
     const l12 = spinBlindsForLevel(12);
@@ -225,13 +224,13 @@ describe('reserve gating — an unpayable jackpot must be impossible', () => {
   it('allows 2x through 50x when the pool can afford them', () => {
     // Well-funded pool at a $100 stake: everything below the jackpot gates.
     const tiers = eligibleSpinTiers(1_000_000, 100, 100);
-    expect(tiers.map((t) => t.multiplier)).toEqual([2, 3, 4, 5, 10, 25, 50, 100, 500]);
+    expect(tiers.map((t) => t.multiplier)).toEqual([2, 3, 4, 5, 10, 25, 50, 100]);
   });
 
   it('THE REGRESSION: an unaffordable 4x must not be selectable', () => {
     // Found in production. A 4x pays 4B while three buy-ins bring in only
     // 2.76B, so on a thin pool it CANNOT be covered. The original gate only
-    // guarded 100x/500x, so a 4x was offered, settlement aborted on the
+    // guarded the top two tiers, so a 4x was offered, settlement aborted on the
     // non-negative constraint, and the game ran UNBOOKED — no ledger row, no
     // rake record. Three live spins hit this within 20 minutes of cutover.
     const thin = eligibleSpinTiers(0, 10, 10);
@@ -264,10 +263,9 @@ describe('reserve gating — an unpayable jackpot must be impossible', () => {
     }
   });
 
-  it('locks 100x and 500x out of the DRAW when the pool is empty', () => {
+  it('locks the 100x out of the DRAW when the pool is empty', () => {
     const tiers = eligibleSpinTiers(0, 10, 10);
     expect(tiers.some((t) => t.multiplier === 100)).toBe(false);
-    expect(tiers.some((t) => t.multiplier === 500)).toBe(false);
   });
 
   it('flags a thin pool before players notice the ladder shrinking', () => {
@@ -285,14 +283,30 @@ describe('reserve gating — an unpayable jackpot must be impossible', () => {
     expect(eligibleSpinTiers(need, stake, stake).some((t) => t.multiplier === 100)).toBe(true);
   });
 
-  it('unlocks 500x at 2.0x its own jackpot, and not before', () => {
-    const stake = 10;
-    const need = unlockThreshold(spinTier(500)!, stake); // 10 * 500 * 2
-    expect(need).toBe(10000);
-    expect(eligibleSpinTiers(need - 0.01, stake, stake).some((t) => t.multiplier === 500)).toBe(
-      false
-    );
-    expect(eligibleSpinTiers(need, stake, stake).some((t) => t.multiplier === 500)).toBe(true);
+  it('THE 500x IS RETIRED: it is off the ladder and can never be drawn', () => {
+    // Dan, 2026-08-21: "REMOVE THE 500X WE WILL ONLY EVER DO 100X."
+    // Asserted at the source AND through the draw, because a tier surviving
+    // only in some fallback path is precisely the shape of bug this file was
+    // written to catch.
+    expect(spinTier(500)).toBeUndefined();
+    expect(SPIN_TIERS.some((t) => t.multiplier === 500)).toBe(false);
+    expect(Math.max(...SPIN_TIERS.map((t) => t.multiplier))).toBe(100);
+    for (const balance of [0, 1_000, 1_000_000, 1_000_000_000]) {
+      expect(
+        eligibleSpinTiers(balance, 100, 100).some((t) => t.multiplier === 500),
+        `a 500x was drawable at balance ${balance}`
+      ).toBe(false);
+    }
+  });
+
+  it('retiring it did NOT quietly raise the house edge', () => {
+    // Deleting the row without moving its 50,000 weighted units would have
+    // taken the expectation to 2.7588 — an 8.04% edge on a 7.87% product.
+    // The mass went to 100x (+508) and 3x (+16), paid for out of 2x (-424).
+    expect(expectedMultiplier()).toBeCloseTo(2.763773, 6);
+    expect(SPIN_TIERS.reduce((s, t) => s + t.freq, 0)).toBe(10_000_099);
+    expect(SPIN_TIERS.reduce((s, t) => s + t.multiplier * t.freq, 0)).toBe(27_638_000);
+    expect(spinTier(100)!.freq).toBe(1_008);
   });
 
   it('measures the threshold against the HIGHEST stake running, not this table', () => {
@@ -322,11 +336,20 @@ describe('reserve gating — an unpayable jackpot must be impossible', () => {
 
 describe('seed and ceiling', () => {
   it('requires two full top jackpots as the operator seed', () => {
-    expect(requiredSeed(10)).toBe(10000); // 10 * 500 * 2
+    // DERIVED from the top tier, so retiring the 500x cut it 5x. That is the
+    // intended consequence and worth stating out loud: a club needs $2,000 of
+    // operator seed at a $10 stake now, not $10,000.
+    expect(requiredSeed(10)).toBe(2000); // 10 * 100 * 2
   });
 
   it('caps the pool so money cannot sit idle forever', () => {
-    expect(reserveCeiling(10)).toBe(40000); // 10 * 500 * 8
+    expect(reserveCeiling(10)).toBe(8000); // 10 * 100 * 8
     expect(reserveCeiling(10)).toBeGreaterThan(requiredSeed(10));
+  });
+
+  it('both track the TOP tier, whatever it currently is', () => {
+    const top = Math.max(...SPIN_TIERS.map((t) => t.multiplier));
+    expect(requiredSeed(10)).toBe(10 * top * 2);
+    expect(reserveCeiling(10)).toBe(10 * top * 8);
   });
 });

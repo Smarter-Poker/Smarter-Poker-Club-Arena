@@ -1,13 +1,18 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  SPIN TIER AVAILABILITY — "is the 500x actually on the wheel right now?"
+ *  SPIN TIER AVAILABILITY — "is the 100x actually on the wheel right now?"
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Reads `v_spin_tier_availability`, the deliberately tiny public view over the
- * Reserve Pool: two booleans per club (can_draw_100x, can_draw_500x) and
- * nothing that lets a reader recover the pool's balance. The booleans use the
- * same jackpot-threshold arithmetic as the draw itself, so what a lobby badge
- * advertises is what the wheel will actually offer.
+ * Reserve Pool: one boolean per club (can_draw_100x) and nothing that lets a
+ * reader recover the pool's balance. It uses the same jackpot-threshold
+ * arithmetic as the draw itself, so what a lobby badge advertises is what the
+ * wheel will actually offer.
+ *
+ * It was two booleans until 2026-08-21, when the 500x was retired and the view
+ * dropped `can_draw_500x`. A stale bundle still asking for that column gets a
+ * PostgREST error, which lands in the `error` branch below and simply keeps the
+ * previous cache: the badge disappears, nothing breaks.
  *
  * Everything else about the reserve is service-role only, on purpose. If a
  * surface needs more than these two bits, that is a conversation about the
@@ -17,7 +22,7 @@
  * tiles for the same club, so the fetch is module-cached with a short TTL and
  * shared across every subscriber. The pool moves with every settled game, but
  * a 60-second-stale badge is fine — the DRAW is still gated server-side, so a
- * stale "500x live" can never produce an unpayable jackpot, only a moment of
+ * stale "100x live" can never produce an unpayable jackpot, only a moment of
  * optimism.
  */
 
@@ -26,7 +31,6 @@ import { supabase } from '../lib/supabase';
 
 export interface SpinTierAvailability {
   can_draw_100x: boolean;
-  can_draw_500x: boolean;
 }
 
 const TTL_MS = 60_000;
@@ -42,14 +46,13 @@ async function refresh(): Promise<void> {
     try {
       const { data, error } = await supabase
         .from('v_spin_tier_availability')
-        .select('club_id, can_draw_100x, can_draw_500x');
+        .select('club_id, can_draw_100x');
       if (error || !Array.isArray(data)) return; // keep the old cache — stale beats wrong-empty
       const next = new Map<string, SpinTierAvailability>();
       for (const row of data) {
         if (row?.club_id) {
           next.set(String(row.club_id), {
             can_draw_100x: !!row.can_draw_100x,
-            can_draw_500x: !!row.can_draw_500x,
           });
         }
       }

@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * In a Spin the draw is the product. The seconds in which the wheel decides
- * whether you are playing for 2x or 500x are the whole reason the format
+ * whether you are playing for 2x or 100x are the whole reason the format
  * exists, and every surface that prints the number before the wheel lands
  * spends that moment for nothing.
  *

@@ -126,6 +126,35 @@ export const SPIN_FREQ_DENOMINATOR = 10_000_000;
  * only ~1.1% (10x and up) pay more than first place. That concentration is the
  * format — spreading the money would flatten exactly the variance people show
  * up for.
+ *
+ * ─── 500x RETIRED, 2026-08-21 ───────────────────────────────────────────────
+ *
+ * Dan: "REMOVE THE 500X WE WILL ONLY EVER DO 100X." 100x is now the top of the
+ * ladder and the tier every derived number keys off.
+ *
+ * Deleting the row is NOT enough, because the one rule at the top of this file
+ * is an equality: E[multiplier] = seats × (1 − rake). The 500x carried
+ * 100 × 500 = 50,000 weighted units out of 27,638,000, so simply dropping it
+ * would have moved the expectation to 2.7588 — an 8.04% edge on a product
+ * advertised at 7.87%. Taking 0.17% more from every player as a side effect of
+ * a wheel change is exactly the failure this file exists to make impossible.
+ *
+ * So the mass was MOVED, not deleted, holding both totals invariant:
+ *
+ *   100x   500 → 1,008    (+508)
+ *   2x   4,772,497 → 4,772,073  (−424)
+ *   3x   3,968,502 → 3,968,518  (+16)
+ *
+ *   total freq   10,000,099  (unchanged)
+ *   Σ mult×freq  27,638,000  (unchanged)
+ *   E            2.763773    (unchanged to every digit the tests assert)
+ *
+ * The visible consequence is real and intended: a 100x now lands about 1 in
+ * 9,921 games instead of 1 in 20,000. The top prize got smaller, so it has to
+ * get commoner, or the money the 500x used to carry would quietly become house
+ * margin. Two further numbers move on their own because they are DERIVED from
+ * the top tier — `reserveCeiling` and `requiredSeed` both drop 5x, so a club
+ * now needs far less operator seed money to switch Spins on.
  */
 export const SPIN_TIERS: SpinTierSpec[] = [
   // Dan 2026-08-20, from a seat at a live table, twice in one session: first
@@ -135,7 +164,8 @@ export const SPIN_TIERS: SpinTierSpec[] = [
   // the level clock is one number a player can internalise across the ladder.
   {
     multiplier: 2,
-    freq: 4_772_497,
+    // 4_772_497 before the 500x retirement; see the note above the array.
+    freq: 4_772_073,
     payouts: [1],
     startingStack: 300,
     levelMinutes: 3,
@@ -143,7 +173,8 @@ export const SPIN_TIERS: SpinTierSpec[] = [
   },
   {
     multiplier: 3,
-    freq: 3_968_502,
+    // 3_968_502 before the 500x retirement.
+    freq: 3_968_518,
     payouts: [1],
     startingStack: 300,
     levelMinutes: 3,
@@ -191,25 +222,22 @@ export const SPIN_TIERS: SpinTierSpec[] = [
   },
   {
     multiplier: 100,
-    freq: 500,
+    // 500 before the 500x retirement: this tier absorbed that one's frequency
+    // plus the extra mass needed to hold the expectation flat.
+    freq: 1_008,
     payouts: [0.8, 0.12, 0.08],
     startingStack: 500,
     levelMinutes: 3,
+    // Deliberately still 1.5, not the 2.0 the 500x used. Raising it would lock
+    // the top of the ladder out of thin pools far more often than before, now
+    // that this tier is drawn twice as frequently.
     reserveThresholdX: 1.5,
-  },
-  {
-    multiplier: 500,
-    freq: 100,
-    payouts: [0.8, 0.12, 0.08],
-    startingStack: 500,
-    levelMinutes: 3,
-    reserveThresholdX: 2.0,
   },
 ];
 
 /**
- * Blind ladder. Identical at every multiplier — only the LEVEL LENGTH and the
- * starting stack change, which is what turns one structure into nine.
+ * Blind ladder. Identical at every multiplier — only the starting stack
+ * changes, which is what turns one structure into eight.
  */
 export const SPIN_BLINDS: Array<{ small: number; big: number }> = [
   { small: 10, big: 20 },
@@ -225,9 +253,9 @@ export const SPIN_BLINDS: Array<{ small: number; big: number }> = [
 ];
 
 /**
- * Levels past the published ladder keep climbing rather than stalling. A
- * 5-minute 500x can outrun ten levels, and a structure that stops raising
- * blinds turns a hyper-turbo into a grind.
+ * Levels past the published ladder keep climbing rather than stalling. A deep
+ * 100x can outrun ten levels, and a structure that stops raising blinds turns
+ * a hyper-turbo into a grind.
  */
 export function spinBlindsForLevel(level: number): { small: number; big: number } {
   const idx = Math.max(1, Math.floor(level)) - 1;
@@ -355,7 +383,8 @@ export function eligibleSpinTiers(
     // AUDIT FIX 2026-08-20: this check did not exist, and its absence was a
     // real production defect rather than a theoretical one.
     //
-    // The jackpot thresholds below only ever guarded 100x and 500x. But ANY
+    // The jackpot thresholds below only ever guarded the top two tiers (100x
+    // and the since-retired 500x). But ANY
     // tier above ~2.76x pays out more than the three buy-ins bring in — a 4x
     // pays 4B against a 2.76B contribution — so on a pool without a cushion
     // even a 4x cannot be covered. In production this aborted the settlement
@@ -395,7 +424,7 @@ export function isReserveThin(
 
 /**
  * The reserve balance at which a tier unlocks. Drives the "locked" state on
- * the wheel — showing a locked 500x with its unlock condition is honest and
+ * the wheel — showing a locked 100x with its unlock condition is honest and
  * builds anticipation, where hiding it entirely just makes the wheel smaller.
  */
 export function unlockThreshold(tier: SpinTierSpec, highestStake: number): number {
@@ -454,16 +483,43 @@ export function requiredSeed(highestStake: number): number {
 export const SPIN_REVEAL = {
   /** Dan: "ONE SECOND LATER" — the beat between the last buy-in and the count. */
   LEAD_IN_MS: 1000,
-  /** 3 ... 2 ... 1 */
+  /**
+   * 3 ... 2 ... 1 on the starting tree: red, then yellow, then green, one
+   * second apart. Dan 2026-08-21: "THE 3, 2, 1 SHOULD FEEL LIKE A NASCAR
+   * COUNT DOWN." A NASCAR tree is evenly spaced whole seconds; anything
+   * quicker reads as a stopwatch rather than a start.
+   */
   COUNTDOWN_MS: 3000,
-  /** The wheel chases and lands on the drawn tier. */
-  SPIN_MS: 4200,
-  /** The winning segment flashes and the multiplier is read. */
-  RESULT_HOLD_MS: 2200,
+  /**
+   * The chase light runs the disc and lands on the drawn tier.
+   *
+   * Dan 2026-08-21: "THE ROTATING SELECTOR SHOULD GO A LITTLE FASTER AND LAST
+   * A LITTLE LONGER." Both at once, which is only possible by adding laps: the
+   * chase went from 3 laps in 4200ms (5.5 steps/sec) to 5 laps in 6000ms
+   * (~7.7 steps/sec). Faster light, longer sequence.
+   */
+  SPIN_MS: 6000,
+  /**
+   * The winning multiplier's outline flashes on its own before the result
+   * card takes the screen. Dan: "FLASH ALONG THE OUTER EDGES OF THE
+   * MULTIPLIER THAT ONE" — which needs a beat of its own, or the result card
+   * lands on top of the thing it is announcing.
+   */
+  WINNER_FLASH_MS: 1600,
+  /** The prize is read. Long enough that the choral landing is not cut off. */
+  RESULT_HOLD_MS: 3200,
 } as const;
 
 /** Total wall time from the last buy-in to the first card being dealt. */
+/**
+ * The whole sequence, and therefore exactly how long the engine holds the
+ * deal. Every beat is summed here rather than hand-totalled anywhere else:
+ * the client used to carry its OWN result duration (4200ms) against an engine
+ * hold built from 2200ms, so for two full seconds a player could be dealt
+ * cards on top of the card announcing what they were playing for. Same class
+ * of bug as the hand-completion hold, same fix — one number, derived.
+ */
 export function spinRevealTotalMs(): number {
   const R = SPIN_REVEAL;
-  return R.LEAD_IN_MS + R.COUNTDOWN_MS + R.SPIN_MS + R.RESULT_HOLD_MS;
+  return R.LEAD_IN_MS + R.COUNTDOWN_MS + R.SPIN_MS + R.WINNER_FLASH_MS + R.RESULT_HOLD_MS;
 }

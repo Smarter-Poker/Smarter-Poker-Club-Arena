@@ -43,6 +43,7 @@ import { soundService } from '../../services/SoundService';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import { fireVibration } from '../../utils/vibrationGate';
 import CoinShower from './CoinShower';
+import { mediaUrl } from '../../utils/mediaBase';
 import './MysteryBountyChest.css';
 
 export interface MysteryChestData {
@@ -81,6 +82,29 @@ export interface MysteryBountyChestProps {
 type Phase = 'idle' | 'landing' | 'locked' | 'opening' | 'explosion' | 'revealed';
 
 /** Winner's grace period before the chest opens itself. */
+/**
+ * ART 2026-08-21 — Dan supplied rendered assets, so the chest is no longer
+ * drawn in CSS:
+ *
+ *   mystery-chest.webp        the closed chest, alpha-keyed off its black
+ *                             studio backdrop. This is the IDLE state: it
+ *                             floats, its seam glows, and it is the tap target.
+ *   mystery-chest-burst.mp4   the same chest bursting open into a gold geyser.
+ *                             Plays at the moment of opening, composited with
+ *                             `screen` blending so its pure-black background
+ *                             drops out and only the light survives.
+ *
+ * Both are centered in their frames and their chests occupy nearly the same
+ * fraction of frame width (0.79 still vs 0.765 video), so the video is drawn
+ * ~3.7% wider than the still and the swap lands on the same silhouette.
+ *
+ * The CSS chest and the canvas CoinShower are both KEPT as the fallback path:
+ * if the video cannot load or cannot autoplay, the sequence still runs. A
+ * missing asset must never cost a player their bounty reveal.
+ */
+const CHEST_IMG = mediaUrl('images/mystery-chest.webp');
+const CHEST_BURST_VIDEO = mediaUrl('videos/mystery-chest-burst.mp4');
+
 const AUTO_OPEN_MS = 9000;
 /** Spectator failsafe: only used if no broadcast ever lands. */
 const SPECTATOR_FAILSAFE_MS = 14000;
@@ -211,6 +235,10 @@ export default function MysteryBountyChest({
    */
   const [tension, setTension] = useState(0);
   const [pressed, setPressed] = useState(false);
+  /** False once the still or the video proves unusable — falls back to CSS art. */
+  const [artOk, setArtOk] = useState(true);
+  const [videoOk, setVideoOk] = useState(true);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const rafRef = useRef<number | null>(null);
   const openedRef = useRef(false);
@@ -240,6 +268,23 @@ export default function MysteryBountyChest({
     const speed = getAnimationSpeed();
     const reduced = prefersReducedMotion();
     setPhase('opening');
+
+    // Roll the burst film on the same tick the lid starts moving. Autoplay is
+    // permitted because the element is muted + playsInline, and this is inside
+    // a user gesture on the winner's client; a rejected promise simply means
+    // we keep the CSS/canvas path, which is why videoOk exists.
+    if (!reduced) {
+      const v = videoRef.current;
+      if (v) {
+        try {
+          v.currentTime = 0;
+          const pr = v.play();
+          if (pr && typeof pr.catch === 'function') pr.catch(() => setVideoOk(false));
+        } catch {
+          setVideoOk(false);
+        }
+      }
+    }
 
     if (playSounds) {
       try {
@@ -429,6 +474,22 @@ export default function MysteryBountyChest({
       )}
 
       <div className="mbc__stage">
+        {/* Burst film. Mounted from the start (so it is buffered and ready to
+            play on the tap with no stall) but invisible until the open beat.
+            `screen` blending drops its pure-black backdrop, leaving only the
+            chest, the light and the coins over the table. */}
+        {videoOk && (
+          <video
+            ref={videoRef}
+            className="mbc__burst-video"
+            src={CHEST_BURST_VIDEO}
+            muted
+            playsInline
+            preload="auto"
+            aria-hidden="true"
+            onError={() => setVideoOk(false)}
+          />
+        )}
         <div className="mbc__eyebrow">Mystery Bounty</div>
         <div className="mbc__subject">
           <span className="mbc__winner-name">{data.knockerName}</span>
@@ -454,6 +515,19 @@ export default function MysteryBountyChest({
         >
           <span className="mbc__glow" aria-hidden="true" />
 
+          {/* The rendered chest — the idle object the player actually taps.
+              Hidden the moment the burst film takes over, so the still is
+              never seen sitting behind an exploding copy of itself. */}
+          {artOk && (
+            <img
+              className="mbc__chest-img"
+              src={CHEST_IMG}
+              alt=""
+              draggable={false}
+              onError={() => setArtOk(false)}
+            />
+          )}
+
           {/* Sparks escaping the seam while it is locked — the chest is
               straining to open, which is the whole feeling of the beat. */}
           {phase === 'locked' && (
@@ -474,7 +548,7 @@ export default function MysteryBountyChest({
               as it swings the front face sweeps away and you look INTO the
               box. The wood grain and the brass bands are painted on the faces
               that carry them, which is what sells the thickness. */}
-          <span className="mbc__lid" aria-hidden="true">
+          <span className="mbc__lid" data-css-art={!artOk || undefined} aria-hidden="true">
             <span className="mbc__lid-top">
               <span className="mbc__lid-band" />
               <span className="mbc__lid-stud mbc__lid-stud--l" />
@@ -501,7 +575,7 @@ export default function MysteryBountyChest({
             </span>
           )}
 
-          <span className="mbc__base" aria-hidden="true">
+          <span className="mbc__base" data-css-art={!artOk || undefined} aria-hidden="true">
             {/* The cavity is drawn BEHIND the front wall, so when the lid
                 lifts there is a dark interior with gold light in it rather
                 than a flat panel that changed colour. */}
@@ -535,7 +609,7 @@ export default function MysteryBountyChest({
                 particle system — hundreds of coins on ballistic arcs that
                 spin, foreshorten, land and bounce. See CoinShower.tsx. */}
             <CoinShower
-              active
+              active={!videoOk}
               isJackpot={!!isJackpot}
               originX={0.5}
               originY={0.46}

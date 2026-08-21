@@ -9346,6 +9346,7 @@ the fifth is reported below with evidence rather than a claim.
 ## 2026-08-21 — Cowork live-fix session, batch 9 (finish the stubs) + batch 10 (five binding table rules)
 
 BATCH 9 — the three cashier surfaces that were only pretending:
+
 - chip_requests + tournament_tickets tables and five RPCs (migration
   20260821_chip_requests_and_tickets). Chip Request: a player asks their agent
   (or the club owner when they have none), the agent approves in one tap, and
@@ -9358,6 +9359,7 @@ BATCH 9 — the three cashier surfaces that were only pretending:
   self-approve refused, net zero across the whole test.
 
 BATCH 10 — Dan's five binding rules:
+
 - [P0 RULES] PLO CAN NEVER SHOVE ABOVE THE POT. `case 'all_in'` in
   validateAction returned `{valid:true}` unconditionally — it was the ONE
   action that walked past the pot-limit ceiling every other branch enforces, so
@@ -9388,3 +9390,38 @@ BATCH 10 — Dan's five binding rules:
   TABLE_SEATED so the table opens itself; when they are already on four tables
   MultiTablePage answers with the new TABLE_CAP_BLOCKED event and a large
   popup asks them to free a slot ("Take My Seat" / "Not Now").
+
+## 2026-08-21 — Mystery bounty: Dan's rendered chest + burst film replace the CSS art
+
+Dan generated the assets ("I've added two treasure boxes and the video...
+so I also sent a video of the treasure box exploding with coins") and they
+are now the chest.
+
+- public/images/mystery-chest.webp — TREASURE BOX 2, cropped to content with
+  even margin, alpha-keyed off its black studio backdrop with a luma ramp
+  (transparent below 9, opaque from 26, feathered between) so the dark wood
+  survives while the backdrop goes. 520x439, 152 KB.
+- public/videos/mystery-chest-burst.mp4 — TREASURE BOX EXPLOSION, trimmed to
+  the useful 5.2s, 480x716, 24fps, no audio, H.264 CRF 33. 21.8 MB -> 1.2 MB.
+- public/videos/mystery-coin-shower.mp4 — COIN EXPLOSION, 4.6s, same
+  treatment, 1.6 MB. Held for the jackpot layer / future use.
+- Both are resolved through mediaUrl(), so they follow VITE_MEDIA_BASE to the
+  CDN with every other large asset instead of being pinned same-origin.
+
+HOW THEY COMPOSITE: the still is the idle object — it floats on a 3.6s
+cycle, its bloom breathes, it dips under the finger, and its glow tightens as
+the unopened seconds accumulate (--mbc-tension). On the tap the burst film
+plays with mix-blend-mode:screen, which drops its pure-black backdrop and
+adds only light to the table, and the still hands over in 120ms. The film is
+drawn 3.7% wider than the still because the render's chest spans 0.793 of its
+frame and the film's spans 0.765 — measured, not guessed — so the two chests
+share one silhouette and the swap is invisible.
+
+FALLBACKS KEPT: the CSS chest and the canvas CoinShower both remain and take
+over automatically if the image 404s, the video 404s, or autoplay is refused
+(muted + playsInline means it normally is not). A missing asset must never
+cost a player their bounty reveal. Video is preloaded at mount so the tap
+never stalls, and prefers-reduced-motion drops the film entirely.
+
+Verified: tsc clean, vite build clean, and the emitted bundle carries the
+webp, both mp4s, and the mbcChestFloat / mbcChestStrain / screen-blend rules.

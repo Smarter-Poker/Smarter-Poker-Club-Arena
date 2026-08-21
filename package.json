@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/stamp-build-provenance.mjs && node -e \"require('fs').copyFileSync('tests/protected-features.json','dist/protected-features.json')\"",
     "preview": "vite preview",
     "analyze": "vite build --mode production && npx vite-bundle-visualizer",
     "lint": "eslint src/",

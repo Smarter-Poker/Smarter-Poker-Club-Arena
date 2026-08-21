@@ -281,6 +281,16 @@ export default function CashierTradePage() {
       // An agent may only ever SEE their own players, so that stays a server
       // filter. Staff see the whole club and narrow it with the "Assigned to
       // me" toggle below - a filter they can turn off, not a wall.
+      let downlineIds: string[] | null = null;
+      if (isAgent && !isStaff) {
+        const { data: scopeRow } = await supabase.rpc('ca_club_my_downline', {
+          p_club_id: clubUuid,
+        });
+        if (stale()) return;
+        const scope = scopeRow as { scoped?: boolean; user_ids?: string[] | null } | null;
+        downlineIds = scope?.scoped === false ? null : (scope?.user_ids ?? []);
+      }
+
       const dl: Array<Record<string, unknown>> = [];
       for (let from = 0; from < MAX_MEMBERS; from += PAGE) {
         let q = supabase
@@ -293,7 +303,14 @@ export default function CashierTradePage() {
           .order('joined_at', { ascending: true })
           .order('user_id', { ascending: true })
           .range(from, from + PAGE - 1);
-        if (isAgent && !isStaff) q = q.eq('agent_id', user.id);
+        if (isAgent && !isStaff && downlineIds !== null) {
+          // Was .eq('agent_id', user.id) - the caller's DIRECT assignees only.
+          // A super agent carries agents, and those agents carry players, so
+          // direct assignment hides most of the people they are responsible
+          // for. The server walks the whole chain.
+          if (downlineIds.length === 0) break;
+          q = q.in('user_id', downlineIds);
+        }
         const { data: page, error: dlErr } = await q;
         if (dlErr) throw dlErr;
         if (stale()) return;

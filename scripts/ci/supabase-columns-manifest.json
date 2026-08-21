@@ -92,7 +92,8 @@
       "source_type",
       "source_id",
       "notes",
-      "created_at"
+      "created_at",
+      "settled_at"
     ],
     "agents": [
       "id",
@@ -393,6 +394,7 @@
     "autofix_budget": ["source", "daily_cap_usd", "notes"],
     "autofix_config": ["id", "paused", "paused_reason", "paused_by", "paused_at", "updated_at"],
     "autofix_projects": ["id", "source", "name", "dry_run", "enabled", "notes", "updated_at"],
+    "avatar_photo_migration_backup": ["user_id", "old_avatar_url", "new_avatar_url", "migrated_at"],
     "avatar_unlocks": ["id", "user_id", "avatar_id", "unlocked_at", "unlock_method"],
     "backtest_accuracy": [
       "backtest_date",
@@ -776,6 +778,48 @@
       "updated_at"
     ],
     "bus_event_log": ["id", "event_type", "payload", "user_id", "created_at"],
+    "ca_hand_facts": [
+      "hand_id",
+      "user_id",
+      "club_id",
+      "table_id",
+      "tournament_id",
+      "played_at",
+      "game_variant",
+      "big_blind",
+      "seat",
+      "position",
+      "players_dealt",
+      "hole_cards",
+      "hand_class",
+      "invested",
+      "returned",
+      "net",
+      "net_bb",
+      "rake_paid",
+      "vpip",
+      "pfr",
+      "three_bet",
+      "faced_three_bet",
+      "folded_to_three_bet",
+      "had_cbet_flop_opp",
+      "cbet_flop",
+      "saw_flop",
+      "went_to_showdown",
+      "won_at_showdown",
+      "aggressive_actions",
+      "passive_actions",
+      "was_all_in",
+      "all_in_street",
+      "all_in_at_risk",
+      "all_in_equity",
+      "ev_returned",
+      "ev_net",
+      "ev_net_bb",
+      "created_at",
+      "opponent_ids",
+      "four_bet"
+    ],
     "ca_hand_player_idx": ["user_id", "created_at", "hand_id"],
     "ca_hand_player_idx_state": [
       "id",
@@ -785,6 +829,26 @@
       "idx_floor",
       "idx_ceil",
       "backfill_complete"
+    ],
+    "ca_hand_transfers": [
+      "hand_id",
+      "winner_id",
+      "loser_id",
+      "amount",
+      "played_at",
+      "club_id",
+      "table_id"
+    ],
+    "ca_stat_distribution": [
+      "cohort",
+      "metric",
+      "p10",
+      "p25",
+      "p50",
+      "p75",
+      "p90",
+      "sample_size",
+      "computed_at"
     ],
     "cashout_requests": [
       "id",
@@ -920,6 +984,18 @@
       "table_id",
       "hand_id",
       "tournament_id",
+      "created_at"
+    ],
+    "chip_requests": [
+      "id",
+      "club_id",
+      "requester_id",
+      "approver_id",
+      "amount",
+      "note",
+      "status",
+      "responded_by",
+      "responded_at",
       "created_at"
     ],
     "chip_supply_snapshots": [
@@ -1169,6 +1245,7 @@
       "status",
       "created_at"
     ],
+    "club_level_thresholds": ["level", "min_members", "tier", "tier_label"],
     "club_live_games": [
       "id",
       "page_id",
@@ -1250,8 +1327,7 @@
       "promo_received_total",
       "promo_wagered",
       "promo_playthrough_required",
-      "missions_completed",
-      "reputation_xp"
+      "missions_completed"
     ],
     "club_memberships": [
       "club_id",
@@ -1280,6 +1356,8 @@
       "trust_score",
       "sessions_played"
     ],
+    "club_rake_daily_user": ["club_id", "day", "user_id", "rake_amount", "hands", "computed_at"],
+    "club_rake_rollup_complete": ["club_id", "day", "rows_written", "computed_at"],
     "club_shop_inventory": [
       "id",
       "user_id",
@@ -1332,6 +1410,20 @@
       "cursor_id",
       "complete",
       "hands_done"
+    ],
+    "club_table_daily": [
+      "club_id",
+      "table_id",
+      "stat_date",
+      "union_id",
+      "rake",
+      "hands",
+      "players",
+      "buyins",
+      "cashouts",
+      "net",
+      "source_rows",
+      "updated_at"
     ],
     "club_wallet_transactions": [
       "id",
@@ -1839,6 +1931,17 @@
       "completed_at",
       "expires_at",
       "created_at"
+    ],
+    "commander_finish_position_backup_20260820": [
+      "id",
+      "tournament_id",
+      "player_name",
+      "finish_position",
+      "payout_amount",
+      "payout_position",
+      "status",
+      "eliminated_at",
+      "backed_up_at"
     ],
     "commander_floor_calls": [
       "id",
@@ -2721,6 +2824,25 @@
       "created_at",
       "updated_at"
     ],
+    "commander_print_jobs": [
+      "id",
+      "venue_id",
+      "tournament_id",
+      "job_type",
+      "status",
+      "title",
+      "payload",
+      "receipt_count",
+      "source",
+      "table_number",
+      "created_by",
+      "created_at",
+      "claimed_at",
+      "printed_at",
+      "printed_by",
+      "reprint_of",
+      "error"
+    ],
     "commander_progressive_jackpots": [
       "id",
       "promotion_id",
@@ -3145,7 +3267,9 @@
       "w2g_document_url",
       "player_acknowledged",
       "acknowledged_at",
-      "notes"
+      "notes",
+      "tournament_id",
+      "entry_id"
     ],
     "commander_time_clock": [
       "id",
@@ -3216,7 +3340,11 @@
       "paid_at",
       "paid_by",
       "cashier_staff_id",
-      "payment_method"
+      "payment_method",
+      "is_reentry",
+      "reentry_of",
+      "bounty_value",
+      "bounty_winnings"
     ],
     "commander_tournament_leaderboards": [
       "id",
@@ -3708,7 +3836,8 @@
       "chip_reward",
       "diamond_reward",
       "name",
-      "description"
+      "description",
+      "threshold"
     ],
     "daily_challenges": [
       "id",
@@ -3926,6 +4055,7 @@
       "success",
       "error_details"
     ],
+    "favorite_tables": ["id", "user_id", "table_id", "created_at"],
     "fct_portfolio": [
       "id",
       "official_date",
@@ -4284,7 +4414,9 @@
       "board",
       "reported",
       "reported_at",
-      "button_seat"
+      "button_seat",
+      "has_human",
+      "community_cards2"
     ],
     "hand_players": [
       "id",
@@ -5281,6 +5413,14 @@
       "opp_pitcher_hr9",
       "park_factor",
       "matchup_due_score"
+    ],
+    "money_flow_checkpoint": [
+      "metric_key",
+      "as_of",
+      "total",
+      "rows_seen",
+      "last_verified_at",
+      "updated_at"
     ],
     "news_articles": [
       "id",
@@ -6961,7 +7101,8 @@
       "message_sent_at",
       "notes",
       "created_at",
-      "updated_at"
+      "updated_at",
+      "due_at"
     ],
     "settlement_journal": [
       "id",
@@ -7482,7 +7623,26 @@
       "spin_count",
       "bonus_count",
       "created_at",
-      "updated_at"
+      "updated_at",
+      "seeded_amount",
+      "ceiling_amount",
+      "highest_stake",
+      "surplus_returned",
+      "is_active"
+    ],
+    "spin_reserve_ledger": [
+      "id",
+      "club_id",
+      "tournament_id",
+      "kind",
+      "amount",
+      "balance_after",
+      "multiplier",
+      "buy_in",
+      "seats",
+      "house_rake",
+      "note",
+      "created_at"
     ],
     "spin_tournaments": [
       "id",
@@ -7718,7 +7878,6 @@
       "notified_at",
       "created_at"
     ],
-    "table_waitlists": ["id", "table_id", "user_id", "created_at", "notified_at", "status"],
     "tables": [
       "id",
       "club_id",
@@ -7851,7 +8010,8 @@
       "wait_for_big_blind",
       "seven_deuce_amount",
       "hands_dealt",
-      "avg_pot"
+      "avg_pot",
+      "bomb_pot_double_board"
     ],
     "theme_unlocks": ["id", "user_id", "theme_id", "unlock_method", "unlocked_at"],
     "throw_usage": ["id", "user_id", "throwable_id", "paid_diamonds", "created_at"],
@@ -8218,80 +8378,92 @@
       "scrape_batch_id",
       "is_suppressed"
     ],
+    "tournament_tickets": [
+      "id",
+      "club_id",
+      "issued_by",
+      "holder_id",
+      "value",
+      "note",
+      "status",
+      "redeemed_at",
+      "cancelled_at",
+      "created_at"
+    ],
     "tournament_waitlists": ["id", "tournament_id", "user_id", "position", "created_at"],
     "tournaments": [
-      "add_on_available",
-      "addon_chips",
-      "addon_cost",
-      "addon_levels",
-      "addon_period_triggered",
-      "blind_speed",
-      "blind_structure",
-      "bounty_amount",
-      "bounty_pool",
-      "bounty_pool_paid",
-      "break_ends_at",
-      "break_started_at",
+      "id",
+      "name",
+      "description",
+      "game_type",
+      "variant",
       "buy_in_amount",
       "buy_in_fee",
-      "club_id",
-      "created_at",
-      "current_level",
-      "current_players",
-      "day_number",
-      "description",
-      "ended_at",
-      "final_table_triggered",
-      "flight_end_chips_snapshot",
-      "flight_number",
-      "game_type",
       "guaranteed_prize",
-      "id",
-      "is_bounty",
-      "is_multi_day",
-      "is_mystery_bounty",
-      "is_pinned",
-      "is_pko",
-      "is_premium_spin",
-      "is_private",
-      "is_rebuy",
-      "is_reentry",
-      "is_turbo",
-      "is_xmtt",
-      "late_reg_levels",
-      "late_reg_mins",
-      "level_started_at",
+      "start_time",
+      "status",
+      "current_players",
       "max_players",
+      "late_reg_mins",
+      "starting_chips",
+      "blind_structure",
+      "payout_structure",
+      "created_at",
+      "updated_at",
+      "club_id",
+      "started_at",
+      "ended_at",
+      "current_level",
+      "prize_pool",
+      "is_rebuy",
+      "add_on_available",
+      "rebuy_cost",
+      "rebuy_chips",
+      "rebuy_levels",
+      "addon_cost",
+      "addon_chips",
+      "min_players",
+      "tournament_type",
+      "is_bounty",
+      "bounty_amount",
+      "is_pko",
+      "is_mystery_bounty",
+      "mystery_bounty_min",
+      "mystery_bounty_max",
+      "is_xmtt",
+      "union_id",
+      "is_multi_day",
+      "parent_tournament_id",
+      "flight_number",
+      "day_number",
+      "total_days",
+      "flight_end_chips_snapshot",
+      "survivors_advance_to",
+      "is_pinned",
+      "spin_multiplier",
+      "is_premium_spin",
+      "prize_pool_finalized",
+      "is_turbo",
+      "blind_speed",
+      "spin_type",
+      "total_rake",
+      "late_reg_levels",
+      "addon_levels",
+      "is_reentry",
+      "satellite_target",
       "max_rebuys",
       "max_reentries",
-      "min_players",
-      "mystery_bounty_max",
-      "mystery_bounty_min",
-      "name",
-      "on_break",
-      "parent_tournament_id",
-      "payout_structure",
-      "prize_pool",
-      "prize_pool_finalized",
-      "rebuy_chips",
-      "rebuy_cost",
-      "rebuy_levels",
-      "satellite_target",
+      "level_started_at",
+      "addon_period_triggered",
       "satellite_target_id",
-      "spin_locked_tiers",
-      "spin_multiplier",
-      "spin_type",
-      "start_time",
-      "started_at",
-      "starting_chips",
-      "status",
-      "survivors_advance_to",
-      "total_days",
-      "total_rake",
-      "tournament_type",
-      "union_id",
-      "updated_at",
-      "variant"
+      "final_table_triggered",
+      "bounty_pool",
+      "bounty_pool_paid",
+      "on_break",
+      "break_started_at",
+      "break_ends_at",
+      "is_private",
+      "spin_locked_tiers"
     ],
     "tours_due_for_refresh": [
       "tour_code",
@@ -9019,7 +9191,37 @@
       "reviewed_at",
       "review_note"
     ],
+    "union_club_terms": [
+      "union_id",
+      "club_id",
+      "security_deposit",
+      "stop_loss_limit",
+      "stakes_cap_bb",
+      "status",
+      "suspended_at",
+      "suspended_reason",
+      "notes",
+      "created_at",
+      "updated_at"
+    ],
     "union_clubs": ["id", "union_id", "club_id", "joined_at", "club_commission_rate"],
+    "union_eco_ledger": [
+      "union_id",
+      "club_id",
+      "period_start",
+      "period_end",
+      "eco_base",
+      "eco_rate",
+      "eco_amount",
+      "settlement_id",
+      "computed_at",
+      "eco_base_mode",
+      "cash_players_won",
+      "total_rake_generated",
+      "rake_earned",
+      "club_commission_rate",
+      "include_horses"
+    ],
     "union_leave_requests": [
       "id",
       "union_id",
@@ -9046,6 +9248,28 @@
       "settled_at",
       "house_residual"
     ],
+    "union_presettlements": [
+      "id",
+      "union_id",
+      "club_id",
+      "amount",
+      "received_at",
+      "method",
+      "reference",
+      "note",
+      "recorded_by",
+      "applied_settlement_id",
+      "created_at"
+    ],
+    "union_rake_ledger_checkpoint": [
+      "union_id",
+      "as_of",
+      "credits",
+      "debits",
+      "rows_seen",
+      "last_verified_at",
+      "updated_at"
+    ],
     "union_rake_paid_daily_user": ["union_id", "day", "user_id", "rake_amount"],
     "union_rake_rollup_days": ["union_id", "day", "records_seen", "computed_at"],
     "union_rakeback_log": [
@@ -9054,6 +9278,20 @@
       "period_start",
       "period_end",
       "total_rakeback",
+      "executed_at"
+    ],
+    "union_settlement_rounds": [
+      "id",
+      "union_id",
+      "period_start",
+      "period_end",
+      "round_no",
+      "round_name",
+      "payers",
+      "payees",
+      "amount",
+      "shortfalls",
+      "detail",
       "executed_at"
     ],
     "union_wallet_transactions": [
@@ -9433,7 +9671,11 @@
       "updated_at",
       "use_alias",
       "table_alias",
-      "card_squeeze"
+      "card_squeeze",
+      "multi_auto_switch",
+      "multi_action_queue",
+      "multi_desktop_alerts",
+      "multi_shared_socket"
     ],
     "user_theme_settings": [
       "id",
@@ -9554,6 +9796,26 @@
       "total_live_recs"
     ],
     "v_pitcher_profile": ["player_id", "full_name", "team_id", "fip", "siera", "bf", "updated_at"],
+    "v_spin_reserve_health": [
+      "club_id",
+      "club_name",
+      "balance",
+      "seeded_amount",
+      "highest_stake",
+      "ceiling_amount",
+      "spin_count",
+      "total_deposited",
+      "total_drawn",
+      "top_jackpot",
+      "need_for_500x",
+      "need_for_100x",
+      "can_draw_500x",
+      "can_draw_100x",
+      "is_thin",
+      "shortfall_events",
+      "unbooked_24h"
+    ],
+    "v_spin_tier_availability": ["club_id", "can_draw_100x", "can_draw_500x"],
     "v_system_health_cron": [
       "jobid",
       "jobname",

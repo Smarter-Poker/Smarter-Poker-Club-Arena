@@ -157,6 +157,114 @@ if (phantoms.size === 0) {
   process.exit(0);
 }
 
+/**
+ * ─── Stale-snapshot rescue ──────────────────────────────────────────────────
+ * Dan 2026-08-21: the sibling gate (check-phantom-tables) learned this lesson
+ * twice; this gate had never learned it at all. It trusted the snapshot as an
+ * absolute authority, and the snapshot is stale BY CONSTRUCTION — schema lands
+ * in prod continuously via the Supabase MCP while the manifest is refreshed
+ * once a day.
+ *
+ * On 2026-08-21 that took the whole repo down: 46 tables/rpcs and 3 columns
+ * were flagged, 45 of the 46 and 2 of the 3 existed in prod, and every open PR
+ * was unmergeable — on the same day branch protection started REQUIRING this
+ * job. A gate that goes red because a colleague shipped correctly is a gate
+ * people learn to route around.
+ *
+ * So, exactly as the tables gate does: before failing, ASK THE LIVE SCHEMA.
+ *   - live says the column exists  -> the snapshot is stale, the code is fine.
+ *   - live says it is still absent -> a genuine phantom; still fails.
+ *   - live cannot be reached       -> no trustworthy evidence either way.
+ *     Report and pass: absence of evidence is not evidence of a phantom, and
+ *     blocking every merge in the repo on someone else's downtime is not a
+ *     trade worth making. The next run minutes later catches a real one.
+ * With no credentials (forks, local runs) the snapshot is all there is, so
+ * behaviour is unchanged.
+ */
+const UNAVAILABLE = Symbol('live-columns-unavailable');
+
+async function liveColumns() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+
+  // fn_columns_manifest returns every column of ~800 tables. Normally ~2s, but
+  // under load it has been measured past 30s, so the budget is generous and a
+  // momentary blip costs a retry rather than the build.
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(`${url}/rest/v1/rpc/fn_columns_manifest`, {
+        method: 'POST',
+        headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: '{}',
+        signal: AbortSignal.timeout(60000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const raw = data?.columns || data || {};
+        const map = new Map();
+        for (const [t, cs] of Object.entries(raw)) {
+          if (Array.isArray(cs)) map.set(t, new Set(cs));
+        }
+        return map.size ? map : UNAVAILABLE;
+      }
+      console.log(
+        `[check-phantom-columns] live re-check attempt ${attempt}/3 failed (HTTP ${res.status})`
+      );
+    } catch (err) {
+      console.log(
+        `[check-phantom-columns] live re-check attempt ${attempt}/3 failed (${err.message})`
+      );
+    }
+    if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 3000));
+  }
+  return UNAVAILABLE;
+}
+
+const live = await liveColumns();
+
+if (live === UNAVAILABLE) {
+  console.log('');
+  console.log(
+    '[check-phantom-columns] the live schema could not be reached, so the stale ' +
+      'snapshot is the only evidence — not enough to block a merge. Would have flagged:'
+  );
+  for (const key of phantoms.keys()) console.log(`    ${key}`);
+  console.log('    Re-run once Supabase is answering to check these for real.');
+  process.exit(0);
+}
+
+if (live) {
+  const stale = [];
+  for (const key of [...phantoms.keys()]) {
+    const dot = key.lastIndexOf('.');
+    const table = key.slice(0, dot);
+    const col = key.slice(dot + 1);
+    const known = live.get(table);
+    // Table absent from the live map is the phantom-TABLE gate's business, and
+    // this gate never judges a table it does not know.
+    if (!known || known.has(col)) {
+      stale.push(key);
+      phantoms.delete(key);
+    }
+  }
+  if (stale.length) {
+    console.log('');
+    console.log(
+      `[check-phantom-columns] ${stale.length} column(s) are MISSING FROM THE SNAPSHOT but ` +
+        `PRESENT IN THE LIVE SCHEMA — the manifest is stale, the code is fine:`
+    );
+    for (const k of stale) console.log(`    ${k}`);
+    console.log('    Refresh it with:  node scripts/ci/gen-schema-manifest.mjs');
+    console.log('    (the Schema Manifest Refresh workflow does this daily)');
+  }
+  if (phantoms.size === 0) {
+    console.log('');
+    console.log('OK — every resolvable .select() column exists in the LIVE schema.');
+    process.exit(0);
+  }
+}
+
 console.log('');
 console.log('PHANTOM COLUMNS DETECTED (.select() names a column the table does not have):');
 console.log('');

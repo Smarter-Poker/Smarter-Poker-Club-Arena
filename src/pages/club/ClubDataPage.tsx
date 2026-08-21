@@ -36,6 +36,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
 import { isAuthzError } from '../../utils/clubDashboard';
 import { reportError } from '../../utils/errorReporter';
+import { downloadCsv, csvEscape } from '../../utils/downloadCsv';
 import styles from './ClubDataPage.module.css';
 
 type PresetId = 1 | 7 | 14;
@@ -178,10 +179,7 @@ function badgeClass(row: SnapshotRow): string {
 }
 
 function rowsToCsv(rows: SnapshotRow[]): string {
-  const esc = (v: unknown) => {
-    const s = v === null || v === undefined ? '' : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
+  const esc = csvEscape;
   const head = [
     'started_at', 'kind', 'name', 'variant', 'blinds', 'rake_percent',
     'hands', 'players', 'fee', 'winnings',
@@ -193,10 +191,7 @@ function rowsToCsv(rows: SnapshotRow[]): string {
 }
 
 function playersToCsv(rows: PlayerRow[]): string {
-  const esc = (v: unknown) => {
-    const s = v === null || v === undefined ? '' : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
+  const esc = csvEscape;
   const head = ['user_id', 'username', 'is_horse', 'hands', 'rake', 'net', 'cash_net', 'tournament_net'];
   const lines = rows.map((r) =>
     [r.user_id, r.username, r.is_horse, r.hands, r.rake, r.net, r.cash_net, r.tournament_net]
@@ -232,7 +227,13 @@ export default function ClubDataPage() {
   const [playersError, setPlayersError] = useState<string | null>(null);
   const [playerSort, setPlayerSort] = useState<PlayerSort>('winners');
 
-  // guards every async write so nothing lands in an unmounted tree
+  // cancelledRef guards UNMOUNT. It cannot tell a stale response from a fresh
+  // one, and this page reloads on six different inputs plus a 60s poll plus
+  // every visibilitychange - so tapping HOLDEM then OMAHA could land the older
+  // payload last, leaving the chips saying one thing and the money another.
+  // A version per request fixes the ordering; the ref still handles unmount.
+  const loadVersion = useRef(0);
+  const playersVersion = useRef(0);
   const cancelledRef = useRef(false);
   useEffect(() => {
     cancelledRef.current = false;
@@ -282,16 +283,33 @@ export default function ClubDataPage() {
     return () => { cancelled = true; };
   }, [clubParam]);
 
+  // Every piece of per-club state is cleared the moment the club changes.
+  // Before this, clubName was only written on success (so a club with no name
+  // row kept the PREVIOUS club's name in the footer), and snapshot, invoices
+  // and players simply stayed put - the old club's money under the new club's
+  // heading, with no skeleton, because the skeleton is gated on !snapshot.
+  useEffect(() => {
+    setSnapshot(null);
+    setInvoices([]);
+    setPlayers(null);
+    setPlayersError(null);
+    setClubName('');
+    setExportNote(null);
+    setShowInvoiceDetail(false);
+  }, [clubUuid]);
+
   useEffect(() => {
     if (!clubUuid) return;
     let cancelled = false;
     supabase.from('clubs').select('name').eq('id', clubUuid).maybeSingle()
-      .then(({ data }) => { if (!cancelled && data?.name) setClubName(data.name); });
+      .then(({ data }) => { if (!cancelled) setClubName(data?.name || ''); });
     return () => { cancelled = true; };
   }, [clubUuid]);
 
   const load = useCallback(async (showSpinner: boolean) => {
     if (!clubUuid) return;
+    const myVersion = ++loadVersion.current;
+    const stale = () => cancelledRef.current || loadVersion.current !== myVersion;
     if (showSpinner) setLoading(true);
     try {
       const { data, error: rpcError } = await supabase.rpc('ca_club_data_snapshot', {
@@ -303,7 +321,7 @@ export default function ClubDataPage() {
         p_search: search || null,
         p_limit: 200,
       });
-      if (cancelledRef.current) return;
+      if (stale()) return;
       if (rpcError) {
         if (isAuthzError(rpcError)) {
           setError('You need to be an owner or admin of this club to see its data.');
@@ -312,12 +330,21 @@ export default function ClubDataPage() {
           setError('Could not load club data.');
         }
         setSnapshot(null);
+      } else if (!data || !Array.isArray((data as Snapshot).rows)) {
+        // A null or shapeless payload used to be stored as success, leaving a
+        // page with no data, no skeleton and no message.
+        reportError(new Error('snapshot payload was empty'), 'ClubDataPage.snapshot_shape');
+        setError('Could not load club data.');
+        setSnapshot(null);
       } else {
         setError(null);
         setSnapshot(data as Snapshot);
       }
     } finally {
-      if (!cancelledRef.current) setLoading(false);
+      // Only the newest request may clear the skeleton. A background poll that
+      // finished first used to pull it out from under a load the user had just
+      // started, leaving stale rows looking settled.
+      if (!stale()) setLoading(false);
     }
   }, [clubUuid, startDate, endDate, game, stakes, search]);
 
@@ -327,6 +354,8 @@ export default function ClubDataPage() {
   // the same window and there is no reason to pay for it on every visit.
   const loadPlayers = useCallback(async () => {
     if (!clubUuid) return;
+    const myVersion = ++playersVersion.current;
+    const stale = () => cancelledRef.current || playersVersion.current !== myVersion;
     setPlayersLoading(true);
     try {
       const { data, error: rpcError } = await supabase.rpc('ca_club_player_breakdown', {
@@ -335,7 +364,7 @@ export default function ClubDataPage() {
         p_end: endDate,
         p_limit: 500,
       });
-      if (cancelledRef.current) return;
+      if (stale()) return;
       if (rpcError) {
         if (isAuthzError(rpcError)) {
           setPlayersError('You need to be an owner or admin of this club to see player data.');
@@ -344,12 +373,16 @@ export default function ClubDataPage() {
           setPlayersError('Could not load player data.');
         }
         setPlayers(null);
+      } else if (!data || !Array.isArray((data as PlayerBreakdown).players)) {
+        reportError(new Error('player payload was empty'), 'ClubDataPage.players_shape');
+        setPlayersError('Could not load player data.');
+        setPlayers(null);
       } else {
         setPlayersError(null);
         setPlayers(data as PlayerBreakdown);
       }
     } finally {
-      if (!cancelledRef.current) setPlayersLoading(false);
+      if (!stale()) setPlayersLoading(false);
     }
   }, [clubUuid, startDate, endDate]);
 
@@ -417,13 +450,9 @@ export default function ClubDataPage() {
           `Exported ${sortedPlayers.length} of ${players.player_count} players. Narrow the date range to export the rest.`
         );
       }
-      const pblob = new Blob([playersToCsv(sortedPlayers)], { type: 'text/csv;charset=utf-8;' });
-      const purl = URL.createObjectURL(pblob);
-      const pa = document.createElement('a');
-      pa.href = purl;
-      pa.download = `club_players_${startDate}_${endDate}.csv`;
-      pa.click();
-      URL.revokeObjectURL(purl);
+      if (!downloadCsv(`club_players_${startDate}_${endDate}.csv`, playersToCsv(sortedPlayers))) {
+        setExportNote('This browser could not start the download.');
+      }
       return;
     }
 
@@ -440,24 +469,22 @@ export default function ClubDataPage() {
           p_search: search || null,
           p_limit: 500,
         });
-        if (!exportError && data) rows = (data as Snapshot).rows;
+        if (!exportError && Array.isArray((data as Snapshot)?.rows)) {
+          rows = (data as Snapshot).rows;
+        }
       }
     } catch (e) {
       reportError(e, 'ClubDataPage.export_refetch');
     }
-    if (!rows.length) return;
+    if (!rows?.length) return;
     if (snapshot.row_count > rows.length) {
       setExportNote(
         `Exported the ${rows.length} most recent of ${snapshot.row_count} games. Narrow the date range to export the rest.`
       );
     }
-    const blob = new Blob([rowsToCsv(rows)], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `club_data_${startDate}_${endDate}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (!downloadCsv(`club_data_${startDate}_${endDate}.csv`, rowsToCsv(rows))) {
+      setExportNote('This browser could not start the download.');
+    }
   }, [clubUuid, snapshot, startDate, endDate, game, stakes, search, tab, players, sortedPlayers]);
 
   const latestInvoice = invoices[0] || null;
@@ -469,7 +496,9 @@ export default function ClubDataPage() {
   // zero, and nothing is a percentage of nothing - so nothing is shown.
   const pctNote = (pct: number | null | undefined) => {
     if (pct === null || pct === undefined || !Number.isFinite(Number(pct))) return null;
-    const v = Number(pct);
+    // The RPC rounds to one decimal; rounding again here means a hand-rolled
+    // caller cannot push 33.33333333333333% into a 93px tile.
+    const v = Math.round(Number(pct) * 10) / 10;
     const cls = v > 0 ? styles.deltaUp : v < 0 ? styles.deltaDown : styles.deltaFlat;
     return (
       <div className={`${styles.delta} ${cls}`} title={prevRange ? `previous period ${prevRange.start} to ${prevRange.end}` : undefined}>
@@ -854,9 +883,16 @@ export default function ClubDataPage() {
           {players && !playersError && (
             <div className={styles.footNote}>
               A positive net means the player is up.
-              {players.rake_complete_through && players.rake_complete_through < endDate
-                ? ` Per-player rake is complete through ${players.rake_complete_through}; today's rake lands in tomorrow's rollup.`
-                : ''}
+              {(() => {
+                // Sliced, not compared raw: this is typed `string` and a
+                // timestamp would both fail the comparison - silently
+                // suppressing the caveat exactly when it matters - and print
+                // its time component into the sentence.
+                const through = String(players.rake_complete_through || '').slice(0, 10);
+                return through && through < endDate
+                  ? ` Per-player rake is complete through ${through}; today's rake lands in tomorrow's rollup.`
+                  : '';
+              })()}
               {players.player_count > sortedPlayers.length
                 ? ` Showing ${sortedPlayers.length} of ${compactInt(players.player_count)} players, taken from the top by net.`
                 : ''}

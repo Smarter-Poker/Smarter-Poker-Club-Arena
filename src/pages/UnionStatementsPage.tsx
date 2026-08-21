@@ -21,12 +21,13 @@
  * not a second billing path.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { isAuthzError } from '../utils/clubDashboard';
 import { reportError } from '../utils/errorReporter';
+import { downloadCsv, csvEscape } from '../utils/downloadCsv';
 import { useToast } from '../components/common/Toast';
 import styles from './UnionStatementsPage.module.css';
 
@@ -102,10 +103,7 @@ function compactInt(n: number | null | undefined): string {
 }
 
 function boardToCsv(rows: BoardClub[]): string {
-  const esc = (v: unknown) => {
-    const s = v === null || v === undefined ? '' : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
+  const esc = csvEscape;
   const head = [
     'club_name', 'club_code', 'status', 'amount', 'direction', 'delivered',
     'due_at', 'paid_total', 'outstanding', 'rake_generated', 'rakeback_due',
@@ -132,6 +130,9 @@ export default function UnionStatementsPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [issuing, setIssuing] = useState(false);
   const [confirmIssue, setConfirmIssue] = useState(false);
+  // Switching period, and issuing, can both leave two reads in flight. Without
+  // a version the older one may land last and show the wrong week's money.
+  const loadVersion = useRef(0);
   const [settlingId, setSettlingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -140,12 +141,19 @@ export default function UnionStatementsPage() {
       setLoading(false);
       return;
     }
+    const myVersion = ++loadVersion.current;
+    const stale = () => loadVersion.current !== myVersion;
+    // Raised on every load, not just the first: tapping a period chip used to
+    // leave the previous period's totals and rows on screen with no spinner,
+    // which reads as the new period's money.
+    setLoading(true);
     try {
       const { data, error: rpcError } = await supabase.rpc('ca_union_statement_board', {
         p_union_id: unionId,
         p_period_end: period,
         p_history: 12,
       });
+      if (stale()) return;
       if (rpcError) {
         if (isAuthzError(rpcError)) {
           setError('You need to be a union owner or admin to see statements.');
@@ -154,12 +162,21 @@ export default function UnionStatementsPage() {
           setError('Could not load statements.');
         }
         setBoard(null);
+      } else if (!data || !Array.isArray((data as Board).clubs)) {
+        // A null payload was being stored as success. loading was already
+        // false, the skeleton wants !board && !error, the empty state wants a
+        // board - so the page rendered a header over nothing, permanently.
+        reportError(new Error('statement board payload was empty'),
+          'UnionStatementsPage.board_shape');
+        setError('Could not load statements.');
+        setBoard(null);
       } else {
         setError(null);
         setBoard(data as Board);
+        setExpanded(null);
       }
     } finally {
-      setLoading(false);
+      if (!stale()) setLoading(false);
     }
   }, [unionId, period]);
 
@@ -194,8 +211,10 @@ export default function UnionStatementsPage() {
           ? `Issued and delivered ${n} statements`
           : 'Every club for this period already has a statement'
       );
+      // setPeriod(null) already re-runs the effect below with a NEW load
+      // closure. Calling load() here as well fired a second read bound to the
+      // period the user had been browsing, and whichever landed last won.
       setPeriod(null);
-      await load();
     } catch (e) {
       reportError(e, 'UnionStatementsPage.issue');
       toast.error('Could not issue statements');
@@ -244,13 +263,7 @@ export default function UnionStatementsPage() {
 
   const exportCsv = useCallback(() => {
     if (!board?.clubs?.length) return;
-    const blob = new Blob([boardToCsv(board.clubs)], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `union_statements_${board.period_end || 'latest'}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(`union_statements_${board.period_end || 'latest'}.csv`, boardToCsv(board.clubs));
   }, [board]);
 
   const totals = board?.totals;
@@ -294,9 +307,9 @@ export default function UnionStatementsPage() {
         {board?.union_name && <div className={styles.unionName}>{board.union_name}</div>}
       </div>
 
-      {board && board.history.length > 1 && (
+      {board && (board.history?.length ?? 0) > 1 && (
         <div className={styles.periodChips} role="tablist" aria-label="Statement period">
-          {board.history.map((h) => (
+          {(board.history || []).map((h) => (
             <button
               key={h.period_end}
               type="button"
@@ -394,11 +407,11 @@ export default function UnionStatementsPage() {
 
         {error && <div className={`${styles.state} ${styles.error}`}>{error}</div>}
 
-        {!loading && !error && board && board.clubs.length === 0 && (
+        {!loading && !error && board && (board.clubs?.length ?? 0) === 0 && (
           <div className={styles.state}>No clubs in this union.</div>
         )}
 
-        {!error && board?.clubs.map((c) => {
+        {!error && (board?.clubs || []).map((c) => {
           const open = expanded === c.club_id;
           const pillClass =
             c.status === 'missing' ? styles.pillMissing
@@ -432,7 +445,11 @@ export default function UnionStatementsPage() {
                     {c.status === 'missing' ? '--' : money(c.amount)}
                   </div>
                   <div className={styles.amountLabel}>
-                    {c.direction === 'union owes club' ? 'union owes' : 'club owes'}
+                    {c.status === 'missing'
+                      ? 'not billed'
+                      : c.direction === 'union owes club'
+                        ? 'union owes'
+                        : 'club owes'}
                   </div>
                 </div>
               </button>
@@ -496,7 +513,10 @@ export default function UnionStatementsPage() {
       {board && (
         <div className={styles.footNote}>
           Marking a statement paid records that it was settled. It moves no
-          chips. Read {new Date(board.generated_at).toLocaleTimeString()}.
+          chips.
+          {board.generated_at && !Number.isNaN(Date.parse(board.generated_at))
+            ? ` Read ${new Date(board.generated_at).toLocaleTimeString()}.`
+            : ''}
           {totals && totals.missing > 0
             ? ' A club shown as "no statement" was never billed for this period.'
             : ''}

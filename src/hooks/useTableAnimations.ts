@@ -11,8 +11,8 @@
 import { useState, useCallback, useRef } from 'react';
 import { throwableService, type Throwable, type ThrowEvent } from '../services/ThrowableService';
 import { roomService } from '../services/RoomService';
-import { soundService } from '../services/SoundService';
 import type { ChipAnimationEvent } from '../components/table/ChipAnimation';
+import { preloadThrowableImages } from '../components/table/ThrowableImage';
 
 /** Minimum gap between outgoing throws (ms) — prevents spam + diamond drain. */
 const THROW_RATE_LIMIT_MS = 1500;
@@ -41,6 +41,10 @@ export function useTableAnimations(
   userId: string,
   heroSeat: number
 ): UseTableAnimationsReturn {
+  // Warm the 49-render image cache during idle time so the first throw
+  // (ours or an opponent's) never rasterizes mid-flight.
+  preloadThrowableImages();
+
   // Throwable state
   const lastThrowAtRef = useRef(0);
   const [showThrowableSelector, setShowThrowableSelector] = useState(false);
@@ -67,11 +71,10 @@ export function useTableAnimations(
 
       if (event) {
         setActiveThrows((prev) => [...prev, event]);
-        try {
-          soundService.playThrowableImpact();
-        } catch {
-          /* audio is best-effort */
-        }
+        // 2026-08-20: impact audio moved INTO ThrowAnimation, which now plays a
+        // launch whoosh at flight start and the item-specific SFX exactly on
+        // landing (both sender and receivers). Playing the old generic thud
+        // here fired at SEND time, before anything had hit.
         roomService.sendChat(tableId, userId, `[THROW:${throwable.id}:${throwTargetSeat}]`);
       }
 
@@ -90,11 +93,7 @@ export function useTableAnimations(
     const event = throwableService.createThrowEvent(fromSeat, toSeat, throwableId);
     if (!event) return;
     setActiveThrows((prev) => (prev.length >= 12 ? prev : [...prev, event]));
-    try {
-      soundService.playThrowableImpact();
-    } catch {
-      /* audio is best-effort */
-    }
+    // Audio handled by ThrowAnimation (launch + per-item impact), see above.
   }, []);
 
   const handleThrowComplete = useCallback((eventId: string) => {

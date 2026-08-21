@@ -1,11 +1,14 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  THROWABLE SELECTOR — Pick Emote/Throw Item
+ *  THROWABLE SELECTOR — Pick from the 49 Dynamic 3D Throwables (2026-08-20)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Custom SVG graphics — NO EMOJIS!
- * VIP: 500 free throws/month, then 1 Diamond each
- * Non-VIP: 1 Diamond per throw
+ * The grid now renders the Supabase 3D renders (throwables/<id>.jpg) instead
+ * of the retired hand-drawn SVGs. Pure-black image backgrounds vanish via
+ * mix-blend-mode: screen (.throwable-img), so items float on the panel.
+ *
+ * Five tabs: React · Throw · Sports · Cheer · VIP
+ * VIP: 500 free throws/month, then 1 Diamond each; Non-VIP: 1 Diamond per throw.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -16,7 +19,7 @@ import {
   ThrowableCategory,
   ThrowAllowance,
 } from '../../services/ThrowableService';
-import { THROWABLE_ICONS } from './ThrowableIcons';
+import { ThrowableImage, preloadThrowableImages } from './ThrowableImage';
 import { useToast } from '../common/Toast';
 import { showDiamondTopUp } from '../common/DiamondTopUpToast';
 import './ThrowableSelector.css';
@@ -34,11 +37,8 @@ const CATEGORY_LABELS: Record<ThrowableCategory, { icon: React.ReactNode; label:
     label: 'React',
   },
   throws: { icon: <span className="category-icon category-icon--throws">◆</span>, label: 'Throw' },
+  sports: { icon: <span className="category-icon category-icon--sports">●</span>, label: 'Sports' },
   cheers: { icon: <span className="category-icon category-icon--cheers">★</span>, label: 'Cheer' },
-  expressions: {
-    icon: <span className="category-icon category-icon--expressions">♠</span>,
-    label: 'Poker',
-  },
   premium: { icon: <span className="category-icon category-icon--premium">♛</span>, label: 'VIP' },
 };
 
@@ -46,8 +46,8 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
   const [throwables, setThrowables] = useState<Record<ThrowableCategory, Throwable[]>>({
     reactions: [],
     throws: [],
+    sports: [],
     cheers: [],
-    expressions: [],
     premium: [],
   });
   const [activeCategory, setActiveCategory] = useState<ThrowableCategory>('reactions');
@@ -57,6 +57,9 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Warm the 49-image cache the moment the panel opens
+    preloadThrowableImages();
+
     async function load() {
       const data = throwableService.getThrowablesByCategory();
       const allowanceData = await throwableService.getThrowAllowance(userId);
@@ -86,15 +89,6 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
     setAllowance(newAllowance);
     onSelect(throwable);
     onClose();
-  };
-
-  // Get SVG icon component for a throwable
-  const renderIcon = (throwableId: string) => {
-    const IconComponent = THROWABLE_ICONS[throwableId];
-    if (IconComponent) {
-      return <IconComponent size={36} />;
-    }
-    return <span className="throwable-selector__fallback">?</span>;
   };
 
   if (loading) {
@@ -143,7 +137,7 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
         ))}
       </div>
 
-      {/* Throwable Grid — Custom SVG Icons */}
+      {/* Throwable Grid — 3D renders on black, blended transparent */}
       <div className="throwable-selector__grid">
         {throwables[activeCategory].map((throwable) => (
           <button
@@ -155,7 +149,9 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
             }}
             title={throwable.name}
           >
-            <div className="throwable-selector__icon">{renderIcon(throwable.id)}</div>
+            <div className="throwable-selector__icon throwable-selector__icon--img">
+              <ThrowableImage throwableId={throwable.id} size={40} loading="lazy" />
+            </div>
             <span className="throwable-selector__name">{throwable.name}</span>
           </button>
         ))}

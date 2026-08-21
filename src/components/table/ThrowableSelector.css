@@ -796,3 +796,41 @@
     opacity: 0.6;
   }
 }
+
+/* =================================================================================
+   2026-08-20 -- 49 DYNAMIC 3D THROWABLES (Supabase renders, black bg blended out)
+   Appended patch: the grid tiles now hold <img> renders instead of inline SVGs.
+   ================================================================================= */
+
+/* Dark tile behind each render so mix-blend-mode: screen has a clean floor */
+.throwable-selector__icon--img {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: #000;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--ts-border-subtle);
+}
+
+.throwable-selector__icon--img .throwable-img {
+  width: 40px;
+  height: 40px;
+  transition: transform 0.18s var(--ts-ease-spring);
+}
+
+.throwable-selector__item:hover .throwable-selector__icon--img .throwable-img,
+.throwable-selector__item:focus-visible .throwable-selector__icon--img .throwable-img {
+  transform: scale(1.16) rotate(-4deg);
+}
+
+.throwable-selector__item:active .throwable-selector__icon--img .throwable-img {
+  transform: scale(0.92);
+}
+
+/* Sports tab accent (new category, replaces the retired "expressions" tab) */
+.category-icon--sports {
+  color: #66bb6a;
+}

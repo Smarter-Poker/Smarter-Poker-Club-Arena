@@ -1,11 +1,21 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  THROWABLE SERVICE — Emotes & Animations
+ *  THROWABLE SERVICE — 49-Item Dynamic Throwables (2026-08-20 rebuild)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Poker Bros / PokerStars style throwables:
- * - VIP: 500 free throws per month, then 1 Diamond each
- * - Non-VIP: 1 Diamond per throw
+ * PokerBros-style throwables, fully replaced:
+ * - 49 3D-rendered items live in the Supabase `images` bucket under `throwables/`
+ *   (pure-black backgrounds — rendered with mix-blend-mode: screen so the black
+ *   disappears over the arena UI; see ThrowableImage.tsx).
+ * - Every item carries its own PHYSICS profile (flight path), IMPACT profile
+ *   (what happens on landing), SOUND key (procedural Web Audio recipe in
+ *   ThrowableSoundService), weight (screen shake), spin, and splat color.
+ * - VIP: 500 free throws per month, then 1 Diamond each (server-authoritative
+ *   via fn_use_throwable — advisory-locked, pack-credit aware).
+ *
+ * Wire format is unchanged: `[THROW:<id>:<seat>]` broadcast over the engine
+ * WebSocket chat channel. IDs match the storage filenames exactly
+ * (`throwables/<id>.jpg`), so the catalog IS the asset manifest.
  */
 
 import { supabase } from '../lib/supabase';
@@ -15,12 +25,63 @@ import { reportError } from '../utils/errorReporter';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export type ThrowableCategory = 'reactions' | 'throws' | 'cheers' | 'expressions' | 'premium';
+export type ThrowableCategory = 'reactions' | 'throws' | 'sports' | 'cheers' | 'premium';
+
+/**
+ * Flight physics profiles (how the item travels sender → target):
+ * - arc      classic parabolic toss with tumble
+ * - fastball flat, fast, aggressive line drive
+ * - lob      high, slow, dramatic rainbow arc
+ * - float    gentle drift with bobbing (emoji reactions)
+ * - drop     travels above the target, then slams straight DOWN (anvil!)
+ * - swoop    S-curve glide (ufo, ghost, shark)
+ * - spiral   corkscrew wobble flight (chicken, football spiral)
+ */
+export type ThrowPhysics = 'arc' | 'fastball' | 'lob' | 'float' | 'drop' | 'swoop' | 'spiral';
+
+/**
+ * Impact profiles (what happens when it lands):
+ * - splat    squashes flat, sprays goo particles, leaves a stain
+ * - splash   liquid burst, droplet particles, wet sheen stain
+ * - bounce   elastic squash-and-stretch rebound, no mess
+ * - thud     heavy stop-dead hit, dust ring, shake
+ * - explode  flash + fireball + shockwave + scorch mark
+ * - shatter  breaks into shard particles
+ * - zap      electric flash + jagged spark particles
+ * - sparkle  glitter burst (celebratory / reactions)
+ * - burst    confetti-pop scatter (cash, champagne, fireworks)
+ */
+export type ThrowImpact =
+  | 'splat'
+  | 'splash'
+  | 'bounce'
+  | 'thud'
+  | 'explode'
+  | 'shatter'
+  | 'zap'
+  | 'sparkle'
+  | 'burst';
+
+export type ThrowWeight = 'light' | 'medium' | 'heavy';
 
 export interface Throwable {
-  id: string;
+  id: string; // == storage filename stem (throwables/<id>.jpg)
   name: string;
   category: ThrowableCategory;
+  physics: ThrowPhysics;
+  impact: ThrowImpact;
+  /** Sound recipe key — see ThrowableSoundService.playImpact() */
+  sound: string;
+  /** heavy ⇒ screen shake on impact */
+  weight: ThrowWeight;
+  /** Leaves a stain/residue that lingers after impact */
+  linger: boolean;
+  /** Particle + stain color */
+  color: string;
+  /** Secondary particle color (defaults to color) */
+  color2?: string;
+  /** Total tumble rotation during flight, degrees (0 = no spin) */
+  spin: number;
 }
 
 export interface ThrowEvent {
@@ -39,45 +100,711 @@ export interface ThrowAllowance {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// THROWABLE LIBRARY (25 Items) — All 2 Diamonds or Free for VIP
+// THROWABLE LIBRARY — 49 items, ids match Supabase storage filenames
 // ═══════════════════════════════════════════════════════════════════════════════
 
+const T = (
+  id: string,
+  name: string,
+  category: ThrowableCategory,
+  physics: ThrowPhysics,
+  impact: ThrowImpact,
+  sound: string,
+  weight: ThrowWeight,
+  linger: boolean,
+  color: string,
+  spin: number,
+  color2?: string
+): Throwable => ({
+  id,
+  name,
+  category,
+  physics,
+  impact,
+  sound,
+  weight,
+  linger,
+  color,
+  spin,
+  color2,
+});
+
 const THROWABLES: Throwable[] = [
-  // ── REACTIONS ─────────────────────────────────────────────────────────────────
-  { id: 'thumbs-up', name: 'Thumbs Up', category: 'reactions' },
-  { id: 'clap', name: 'Applause', category: 'reactions' },
-  { id: 'lol', name: 'LOL', category: 'reactions' },
-  { id: 'sad', name: 'Sad', category: 'reactions' },
-  { id: 'mad', name: 'Mad', category: 'reactions' },
+  // ── REACTIONS (8) — floaty emoji, sparkle finishes ────────────────────────────
+  T(
+    'thumbs_up',
+    'Thumbs Up',
+    'reactions',
+    'float',
+    'sparkle',
+    'pop_up',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T(
+    'thumbs_down',
+    'Thumbs Down',
+    'reactions',
+    'float',
+    'sparkle',
+    'pop_down',
+    'light',
+    false,
+    '#FF6B6B',
+    0
+  ),
+  T(
+    'laughing_emoji',
+    'LOL',
+    'reactions',
+    'float',
+    'bounce',
+    'giggle',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T(
+    'crying_emoji',
+    'Crying',
+    'reactions',
+    'float',
+    'splash',
+    'weep',
+    'light',
+    false,
+    '#6EC6FF',
+    0,
+    '#B3E5FC'
+  ),
+  T(
+    'angry_emoji',
+    'Rage',
+    'reactions',
+    'fastball',
+    'burst',
+    'growl',
+    'medium',
+    false,
+    '#FF5252',
+    180
+  ),
+  T(
+    'cool_sunglasses_emoji',
+    'Too Cool',
+    'reactions',
+    'float',
+    'sparkle',
+    'smooth',
+    'light',
+    false,
+    '#40C4FF',
+    0
+  ),
+  T(
+    'heart',
+    'Heart',
+    'reactions',
+    'float',
+    'sparkle',
+    'kiss',
+    'light',
+    false,
+    '#FF4081',
+    0,
+    '#F8BBD0'
+  ),
+  T(
+    'star',
+    'Star',
+    'reactions',
+    'arc',
+    'sparkle',
+    'twinkle',
+    'light',
+    false,
+    '#FFD93D',
+    360,
+    '#FFF59D'
+  ),
 
-  // ── THROWS ────────────────────────────────────────────────────────────────────
-  { id: 'tomato', name: 'Tomato', category: 'throws' },
-  { id: 'egg', name: 'Egg', category: 'throws' },
-  { id: 'snowball', name: 'Snowball', category: 'throws' },
-  { id: 'water-balloon', name: 'Water Balloon', category: 'throws' },
-  { id: 'pie', name: 'Pie', category: 'throws' },
+  // ── THROWS (12) — the messy classics ──────────────────────────────────────────
+  T(
+    'tomato',
+    'Tomato',
+    'throws',
+    'arc',
+    'splat',
+    'splat_wet',
+    'medium',
+    true,
+    '#E53935',
+    540,
+    '#FF8A80'
+  ),
+  T(
+    'cracked_egg',
+    'Egg',
+    'throws',
+    'arc',
+    'splat',
+    'egg_crack',
+    'medium',
+    true,
+    '#FFF3C4',
+    480,
+    '#FFC107'
+  ),
+  T(
+    'banana_peel',
+    'Banana Peel',
+    'throws',
+    'lob',
+    'bounce',
+    'slip',
+    'light',
+    false,
+    '#FFEB3B',
+    720
+  ),
+  T(
+    'pizza_slice',
+    'Pizza',
+    'throws',
+    'arc',
+    'splat',
+    'splat_cheese',
+    'medium',
+    true,
+    '#FF9800',
+    540,
+    '#FFCC80'
+  ),
+  T(
+    'cake',
+    'Cake',
+    'throws',
+    'lob',
+    'splat',
+    'splat_heavy',
+    'heavy',
+    true,
+    '#F48FB1',
+    360,
+    '#FFF9C4'
+  ),
+  T(
+    'poop',
+    'Poop',
+    'throws',
+    'lob',
+    'splat',
+    'splat_gross',
+    'medium',
+    true,
+    '#795548',
+    360,
+    '#A1887F'
+  ),
+  T(
+    'water_gun',
+    'Water Gun',
+    'throws',
+    'fastball',
+    'splash',
+    'squirt',
+    'light',
+    true,
+    '#29B6F6',
+    0,
+    '#B3E5FC'
+  ),
+  T(
+    'boxing_glove',
+    'Boxing Glove',
+    'throws',
+    'fastball',
+    'thud',
+    'punch',
+    'heavy',
+    false,
+    '#E53935',
+    0
+  ),
+  T(
+    'anvil',
+    'Anvil',
+    'throws',
+    'drop',
+    'thud',
+    'anvil_clang',
+    'heavy',
+    true,
+    '#78909C',
+    0,
+    '#B0BEC5'
+  ),
+  T(
+    'trash_can',
+    'Trash Can',
+    'throws',
+    'arc',
+    'thud',
+    'metal_crash',
+    'heavy',
+    true,
+    '#8D9BA6',
+    420,
+    '#CFD8DC'
+  ),
+  T(
+    'snowman',
+    'Snowman',
+    'throws',
+    'arc',
+    'splat',
+    'snow_poof',
+    'medium',
+    true,
+    '#E1F5FE',
+    360,
+    '#FFFFFF'
+  ),
+  T(
+    'magnet',
+    'Magnet',
+    'throws',
+    'fastball',
+    'zap',
+    'magnet_clink',
+    'medium',
+    false,
+    '#EF5350',
+    360,
+    '#90A4AE'
+  ),
 
-  // ── CHEERS ────────────────────────────────────────────────────────────────────
-  { id: 'beer', name: 'Beer', category: 'cheers' },
-  { id: 'champagne', name: 'Champagne', category: 'cheers' },
-  { id: 'trophy', name: 'Trophy', category: 'cheers' },
-  { id: 'fireworks', name: 'Fireworks', category: 'cheers' },
-  { id: 'confetti', name: 'Confetti', category: 'cheers' },
+  // ── SPORTS (7) — bouncers and rollers ─────────────────────────────────────────
+  T(
+    'basketball',
+    'Basketball',
+    'sports',
+    'arc',
+    'bounce',
+    'ball_bounce',
+    'medium',
+    false,
+    '#FF7043',
+    720
+  ),
+  T(
+    'football',
+    'Football',
+    'sports',
+    'spiral',
+    'thud',
+    'football_hit',
+    'medium',
+    false,
+    '#8D6E63',
+    1080
+  ),
+  T(
+    'tennis_ball',
+    'Tennis Ball',
+    'sports',
+    'fastball',
+    'bounce',
+    'tennis_pop',
+    'light',
+    false,
+    '#CDDC39',
+    900
+  ),
+  T(
+    'bowling_ball',
+    'Bowling Ball',
+    'sports',
+    'lob',
+    'thud',
+    'bowling_strike',
+    'heavy',
+    false,
+    '#5C6BC0',
+    360
+  ),
+  T(
+    'horseshoe',
+    'Horseshoe',
+    'sports',
+    'arc',
+    'bounce',
+    'lucky_clang',
+    'medium',
+    false,
+    '#B0BEC5',
+    720,
+    '#FFD93D'
+  ),
+  T(
+    'dice',
+    'Dice',
+    'sports',
+    'arc',
+    'bounce',
+    'dice_rattle',
+    'light',
+    false,
+    '#FFFFFF',
+    1080,
+    '#EF5350'
+  ),
+  T(
+    'magic_8_ball',
+    'Magic 8-Ball',
+    'sports',
+    'arc',
+    'bounce',
+    'mystic',
+    'medium',
+    false,
+    '#7E57C2',
+    540,
+    '#B39DDB'
+  ),
 
-  // ── EXPRESSIONS ───────────────────────────────────────────────────────────────
-  { id: 'good-luck', name: 'Good Luck', category: 'expressions' },
-  { id: 'nice-hand', name: 'Nice Hand', category: 'expressions' },
-  { id: 'fish', name: 'Fish', category: 'expressions' },
-  { id: 'shark', name: 'Shark', category: 'expressions' },
-  { id: 'all-in', name: 'All-In!', category: 'expressions' },
+  // ── CHEERS (8) — celebrate (or gloat) ─────────────────────────────────────────
+  T(
+    'beer',
+    'Beer',
+    'cheers',
+    'arc',
+    'splash',
+    'glass_fizz',
+    'medium',
+    true,
+    '#FFB300',
+    240,
+    '#FFF8E1'
+  ),
+  T(
+    'champagne',
+    'Champagne',
+    'cheers',
+    'lob',
+    'burst',
+    'cork_pop',
+    'medium',
+    true,
+    '#FFD93D',
+    240,
+    '#FFF9C4'
+  ),
+  T(
+    'coffee',
+    'Coffee',
+    'cheers',
+    'arc',
+    'splash',
+    'hot_splash',
+    'medium',
+    true,
+    '#6D4C41',
+    240,
+    '#D7CCC8'
+  ),
+  T(
+    'cash_stack',
+    'Cash Stack',
+    'cheers',
+    'lob',
+    'burst',
+    'cash_count',
+    'medium',
+    false,
+    '#66BB6A',
+    360,
+    '#A5D6A7'
+  ),
+  T(
+    'diamond',
+    'Diamond',
+    'cheers',
+    'arc',
+    'shatter',
+    'crystal_chime',
+    'medium',
+    false,
+    '#4DD0E1',
+    540,
+    '#E0F7FA'
+  ),
+  T(
+    'rose',
+    'Rose',
+    'cheers',
+    'float',
+    'sparkle',
+    'romance',
+    'light',
+    false,
+    '#EC407A',
+    180,
+    '#F8BBD0'
+  ),
+  T(
+    'trophy',
+    'Trophy',
+    'cheers',
+    'lob',
+    'sparkle',
+    'fanfare',
+    'medium',
+    false,
+    '#FFD93D',
+    180,
+    '#FFF59D'
+  ),
+  T(
+    'fireworks',
+    'Fireworks',
+    'cheers',
+    'lob',
+    'explode',
+    'firework',
+    'heavy',
+    false,
+    '#FF4081',
+    360,
+    '#40C4FF'
+  ),
 
-  // ── PREMIUM ───────────────────────────────────────────────────────────────────
-  { id: 'diamond-rain', name: 'Diamond Rain', category: 'premium' },
-  { id: 'dragon', name: 'Dragon', category: 'premium' },
-  { id: 'lightning', name: 'Lightning', category: 'premium' },
-  { id: 'tsunami', name: 'Tsunami', category: 'premium' },
-  { id: 'crown', name: 'Crown', category: 'premium' },
+  // ── PREMIUM (14) — the big-ticket chaos ───────────────────────────────────────
+  T(
+    'bomb',
+    'Bomb',
+    'premium',
+    'lob',
+    'explode',
+    'bomb_boom',
+    'heavy',
+    true,
+    '#FF7043',
+    360,
+    '#FFD93D'
+  ),
+  T(
+    'rocket',
+    'Rocket',
+    'premium',
+    'fastball',
+    'explode',
+    'rocket_boom',
+    'heavy',
+    true,
+    '#FF5252',
+    0,
+    '#FFD93D'
+  ),
+  T(
+    'ufo',
+    'UFO',
+    'premium',
+    'swoop',
+    'zap',
+    'ufo_warble',
+    'medium',
+    false,
+    '#69F0AE',
+    720,
+    '#B9F6CA'
+  ),
+  T(
+    'alien',
+    'Alien',
+    'premium',
+    'swoop',
+    'zap',
+    'alien_blip',
+    'medium',
+    false,
+    '#76FF03',
+    360,
+    '#CCFF90'
+  ),
+  T(
+    'robot',
+    'Robot',
+    'premium',
+    'fastball',
+    'zap',
+    'robo_zap',
+    'heavy',
+    false,
+    '#90A4AE',
+    180,
+    '#4DD0E1'
+  ),
+  T(
+    'ghost',
+    'Ghost',
+    'premium',
+    'swoop',
+    'burst',
+    'ghost_woo',
+    'light',
+    false,
+    '#E8EAF6',
+    0,
+    '#C5CAE9'
+  ),
+  T(
+    'skull',
+    'Skull',
+    'premium',
+    'arc',
+    'shatter',
+    'doom_rattle',
+    'medium',
+    false,
+    '#ECEFF1',
+    540,
+    '#B0BEC5'
+  ),
+  T(
+    'lightning_bolt',
+    'Lightning',
+    'premium',
+    'fastball',
+    'zap',
+    'thunder',
+    'heavy',
+    false,
+    '#FFEE58',
+    0,
+    '#FFFFFF'
+  ),
+  T(
+    'doge',
+    'Doge',
+    'premium',
+    'arc',
+    'bounce',
+    'doge_bark',
+    'medium',
+    false,
+    '#D7A86E',
+    360,
+    '#FFECB3'
+  ),
+  T('shark', 'Shark', 'premium', 'swoop', 'thud', 'chomp', 'heavy', false, '#546E7A', 0, '#B0BEC5'),
+  T(
+    'bear',
+    'Bear',
+    'premium',
+    'lob',
+    'thud',
+    'bear_roar',
+    'heavy',
+    false,
+    '#8D6E63',
+    180,
+    '#BCAAA4'
+  ),
+  T(
+    'chicken',
+    'Chicken',
+    'premium',
+    'spiral',
+    'bounce',
+    'cluck',
+    'light',
+    false,
+    '#FFF8E1',
+    720,
+    '#FF7043'
+  ),
+  T(
+    'rubber_duck',
+    'Rubber Duck',
+    'premium',
+    'lob',
+    'bounce',
+    'squeak',
+    'light',
+    false,
+    '#FFEB3B',
+    360,
+    '#FF9800'
+  ),
+  T(
+    'mouse_card',
+    'Card Shark',
+    'premium',
+    'fastball',
+    'sparkle',
+    'card_flick',
+    'light',
+    false,
+    '#ECEFF1',
+    1080,
+    '#EF5350'
+  ),
 ];
+
+// Fast lookup
+const THROWABLE_MAP: Map<string, Throwable> = new Map(THROWABLES.map((t) => [t.id, t]));
+
+// ── Legacy ID bridge ─────────────────────────────────────────────────────────
+// Old clients broadcast the 25 retired ids over `[THROW:id:seat]` during the
+// rollout window. Map them onto the nearest new item so a mixed-version table
+// still renders every throw instead of silently dropping it.
+const LEGACY_ID_MAP: Record<string, string> = {
+  'thumbs-up': 'thumbs_up',
+  clap: 'star',
+  lol: 'laughing_emoji',
+  sad: 'crying_emoji',
+  mad: 'angry_emoji',
+  tomato: 'tomato',
+  egg: 'cracked_egg',
+  snowball: 'snowman',
+  'water-balloon': 'water_gun',
+  pie: 'cake',
+  beer: 'beer',
+  champagne: 'champagne',
+  trophy: 'trophy',
+  fireworks: 'fireworks',
+  confetti: 'fireworks',
+  'good-luck': 'horseshoe',
+  'nice-hand': 'thumbs_up',
+  fish: 'shark',
+  shark: 'shark',
+  'all-in': 'cash_stack',
+  'diamond-rain': 'diamond',
+  dragon: 'bomb',
+  lightning: 'lightning_bolt',
+  tsunami: 'water_gun',
+  crown: 'trophy',
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// IMAGE URLS — Supabase `images` bucket, throwables/<id>.jpg
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const imageUrlCache = new Map<string, string>();
+
+/** Public CDN URL for a throwable's 3D render (pure-black background JPG). */
+export function getThrowableImageUrl(id: string): string {
+  const cached = imageUrlCache.get(id);
+  if (cached) return cached;
+  const { data } = supabase.storage.from('images').getPublicUrl(`throwables/${id}.jpg`);
+  const url = data?.publicUrl || '';
+  if (url) imageUrlCache.set(id, url);
+  return url;
+}
 
 const VIP_FREE_THROWS_PER_MONTH = 500;
 const DIAMOND_COST_PER_THROW = 1;
@@ -87,22 +814,18 @@ const DIAMOND_COST_PER_THROW = 1;
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class ThrowableServiceClass {
-  /**
-   * Get all throwables
-   */
+  /** All 49 throwables */
   getThrowables(): Throwable[] {
     return THROWABLES;
   }
 
-  /**
-   * Get throwables grouped by category
-   */
+  /** Grouped by category (tab order: reactions → throws → sports → cheers → premium) */
   getThrowablesByCategory(): Record<ThrowableCategory, Throwable[]> {
     return {
       reactions: THROWABLES.filter((t) => t.category === 'reactions'),
       throws: THROWABLES.filter((t) => t.category === 'throws'),
+      sports: THROWABLES.filter((t) => t.category === 'sports'),
       cheers: THROWABLES.filter((t) => t.category === 'cheers'),
-      expressions: THROWABLES.filter((t) => t.category === 'expressions'),
       premium: THROWABLES.filter((t) => t.category === 'premium'),
     };
   }
@@ -157,7 +880,7 @@ class ThrowableServiceClass {
     userId: string,
     throwableId: string
   ): Promise<{ success: boolean; error?: string }> {
-    const throwable = THROWABLES.find((t) => t.id === throwableId);
+    const throwable = THROWABLE_MAP.get(throwableId);
     if (!throwable) {
       return { success: false, error: 'Throwable not found' };
     }
@@ -179,27 +902,8 @@ class ThrowableServiceClass {
         return { success: false, error: (atomic as any).error || 'Throw failed' };
       }
       // The legacy client-side fallback that used to live here is GONE.
-      //
-      // It called deduct_diamonds(p_user_id, p_amount, ...) straight from the
-      // browser, and was the only reason `authenticated` still held EXECUTE on
-      // that RPC. deduct_diamonds does self-check auth.uid() = p_user_id, so it
-      // could never drain another player - but a browser could still bypass the
-      // /api/diamonds/spend ALLOWED_SOURCES validation to write arbitrary
-      // source/type/description rows into diamond_transactions, and replay a
-      // known p_reference_id to get {success:true, idempotent:true} back with
-      // no new deduction.
-      //
-      // The fallback was also wrong on its own terms: it checked only
-      // `deductError` and never the returned `success` flag, and an
-      // insufficient-funds result comes back as data.success=false with NO
-      // postgres error - so it fell through and recorded a free throw.
-      //
-      // Safe to delete outright: fn_use_throwable is live in production
-      // (SECURITY DEFINER, derives the user from auth.uid(), takes no user_id
-      // or amount parameter, advisory-locked), and diamond_transactions holds
-      // 0 rows with transaction_type='throwable' all-time - this paid path
-      // never once charged a real player. Keeping it would also have left a
-      // path that cannot work at all once the EXECUTE grant is revoked.
+      // (See 2026-08-17 session notes: fn_use_throwable is SECURITY DEFINER,
+      // derives the user from auth.uid(), and is the only sanctioned path.)
       if (atomicErr) {
         reportError(atomicErr, 'ThrowableService.fn_use_throwable_failed');
       }
@@ -211,27 +915,29 @@ class ThrowableServiceClass {
   }
 
   /**
-   * Create throw event for WebSocket broadcast
+   * Create throw event for WebSocket broadcast / local render.
+   * Accepts legacy (pre-2026-08-20) ids from old clients and bridges them.
    */
   createThrowEvent(fromSeat: number, toSeat: number, throwableId: string): ThrowEvent | null {
-    const throwable = THROWABLES.find((t) => t.id === throwableId);
+    const throwable = this.getThrowableById(throwableId);
     if (!throwable) return null;
 
     return {
       id: crypto.randomUUID(),
       fromSeat,
       toSeat,
-      throwableId,
+      throwableId: throwable.id,
       throwable,
       timestamp: Date.now(),
     };
   }
 
-  /**
-   * Get a single throwable by ID
-   */
+  /** Get a single throwable by ID (legacy ids bridged) */
   getThrowableById(id: string): Throwable | null {
-    return THROWABLES.find((t) => t.id === id) || null;
+    const direct = THROWABLE_MAP.get(id);
+    if (direct) return direct;
+    const bridged = LEGACY_ID_MAP[id];
+    return bridged ? THROWABLE_MAP.get(bridged) || null : null;
   }
 }
 

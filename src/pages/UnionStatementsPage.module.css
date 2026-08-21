@@ -363,3 +363,43 @@
 
 .linkBtnMuted:focus-visible { outline: 2px solid #f0b429; outline-offset: 2px; }
 .linkBtn:disabled, .linkBtnMuted:disabled { opacity: 0.4; cursor: default; }
+
+/* Recording a payment received during a period, so the next statement asks
+   for less. */
+.payRow {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.5rem 0 0.25rem;
+}
+
+.payInput {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  padding: 0 0.75rem;
+  min-height: 44px;
+}
+
+.payInput:focus-visible { outline: 2px solid #f0b429; outline-offset: 2px; }
+
+.payBtn {
+  flex: 0 0 auto;
+  background: rgba(53, 208, 127, 0.14);
+  border: 1px solid rgba(53, 208, 127, 0.5);
+  color: #35d07f;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 0 1rem;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.payBtn:disabled { opacity: 0.4; cursor: default; }
+.payBtn:focus-visible { outline: 2px solid #f0b429; outline-offset: 2px; }

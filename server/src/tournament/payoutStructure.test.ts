@@ -121,7 +121,7 @@ describe('a rebuilt Spin structure pays out exactly the pool', () => {
     // 33.33 is deliberately awkward: 80/12/8 of it rounds to 26.66 + 4.00 +
     // 2.67 = 33.33 only because the last place absorbs the residual.
     for (const pool of [10, 25, 33.33, 100, 0.03, 1234.56]) {
-      for (const mult of [10, 25, 100, 500]) {
+      for (const mult of [10, 25, 100]) {
         const structure = resolvePayoutStructure({ variant: 'spin', spin_multiplier: mult })!;
         const total = structure
           .map((p) => computePlacePrize(pool, structure, p.place))
@@ -129,6 +129,16 @@ describe('a rebuilt Spin structure pays out exactly the pool', () => {
         expect(Math.round(total * 100) / 100, `${mult}x on ${pool}`).toBe(pool);
       }
     }
+  });
+});
+
+describe('the retired 500x tier', () => {
+  it('resolves to nothing — 100x is the top of the ladder', () => {
+    // Retired in #160. This lived in the loop above as a fourth multiplier,
+    // where `!` hid its disappearance from the compiler and the suite died on
+    // `null.map` instead of saying what had changed. Asserted explicitly now:
+    // if 500x is ever reinstated, this is the line that says so out loud.
+    expect(resolvePayoutStructure({ variant: 'spin', spin_multiplier: 500 })).toBeNull();
   });
 });
 

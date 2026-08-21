@@ -1627,7 +1627,7 @@ export default function CashierPage() {
         <div className={styles.connectionBanner} role="status" aria-live="polite">
           {realtimeStatus === 'reconnecting' ? (
             <>
-              <span className={styles.connectionDot} style={{ background: '#f59e0b' }} />{' '}
+              <span className={styles.connectionDot} style={{ background: '#ffb800' }} />{' '}
               Reconnecting to live updates…
             </>
           ) : (

@@ -196,52 +196,65 @@ else
   }
 fi
 
-# ── Phase 4: Push with retries ──
-echo "📤 Phase 4: Pushing to ${REMOTE}/${BRANCH}..."
-attempt=0
-while [ $attempt -lt $MAX_RETRIES ]; do
-  attempt=$((attempt + 1))
-  echo "   Attempt $attempt/$MAX_RETRIES..."
+# ── Phase 4: Land on main through a pull request ──
+#
+# WHAT THIS USED TO DO, AND WHY IT DOESN'T ANYMORE
+#
+# This phase rebased onto main and pushed, with --force-with-lease on every
+# failure path and --no-verify on every push. Three consequences, all of them
+# real and all of them observed on 2026-08-21:
+#
+#   * --force-with-lease REWOUND main and dropped four commits that were
+#     already built, synced and serving in production.
+#   * --no-verify meant the pre-push hook - nine house rules, and since #149
+#     the test suite - never ran from the one command every agent is told to
+#     use. Red tests reached main four times and stopped every deploy.
+#   * a rebase of main is exactly what CLAUDE.md section 12 forbids, and this
+#     script was doing it automatically on every conflict.
+#
+# main is now protected by a ruleset, so a force-push is refused by GitHub
+# regardless. Landing goes through a pull request instead: the branch push runs
+# the hook, the PR runs the required checks, and the merge is a fast-forward
+# that cannot rewind anything.
+echo "📤 Phase 4: Landing on ${REMOTE}/${BRANCH} through a pull request..."
 
-  # Fetch and rebase before push
-  git fetch "$REMOTE" "$BRANCH" 2>/dev/null || true
-
-  REMOTE_HEAD=$(git rev-parse "${REMOTE}/${BRANCH}" 2>/dev/null || echo "")
-  LOCAL_HEAD=$(git rev-parse HEAD 2>/dev/null)
-
-  if [ -n "$REMOTE_HEAD" ] && [ "$REMOTE_HEAD" != "$LOCAL_HEAD" ]; then
-    echo "   ↕️  Rebasing onto ${REMOTE}/${BRANCH}..."
-    if ! git rebase "${REMOTE}/${BRANCH}" 2>/dev/null; then
-      echo "   ⚠️  Rebase conflict. Aborting rebase and force-pushing..."
-      git rebase --abort 2>/dev/null || true
-      if git push "$REMOTE" "$BRANCH" --force-with-lease --no-verify 2>/dev/null; then
-        echo "✅ Force-pushed successfully."
+if [ "$BRANCH" != "main" ]; then
+  # Feature branches are not protected. Push them straight, hook included.
+  if git push "$REMOTE" "$BRANCH"; then
+    echo "✅ Pushed ${BRANCH}."
+  else
+    echo "❌ Push of ${BRANCH} was refused - see the hook output above."
+    exit 2
+  fi
+else
+  # The token lives in the club-arena .env. Load it only if the caller has not
+  # already provided one.
+  if [ -z "${GITHUB_TOKEN:-}${GH_PAT:-}" ]; then
+    for candidate in "$HOME/Documents/club-arena/.env" \
+                     "$HOME/Documents/Smarter-Poker-World-Hub/.env.vercel.prod.new"; do
+      [ -f "$candidate" ] || continue
+      found=$(grep -m1 -E '^(GITHUB_TOKEN|GH_PAT)=' "$candidate" 2>/dev/null | cut -d= -f2- | tr -d '\r"' | tr -d "'" | xargs)
+      if [ -n "$found" ]; then
+        export GITHUB_TOKEN="$found"
         break
       fi
-      sleep $((attempt * 2))
-      continue
-    fi
+    done
   fi
 
-  if git push "$REMOTE" "$BRANCH" --no-verify 2>/dev/null; then
-    echo "✅ Pushed successfully."
-    break
-  fi
-
-  if [ $attempt -eq $MAX_RETRIES ]; then
-    echo "❌ Push failed after $MAX_RETRIES attempts."
-    # Last resort: force push
-    echo "   🔥 Last resort: force-with-lease push..."
-    if git push "$REMOTE" "$BRANCH" --force-with-lease --no-verify 2>/dev/null; then
-      echo "✅ Force-pushed successfully on final attempt."
-      break
-    fi
-    echo "❌ All push attempts exhausted."
+  if [ -z "${GITHUB_TOKEN:-}${GH_PAT:-}" ]; then
+    echo "❌ No GitHub token found, so a pull request cannot be opened."
+    echo "   main only accepts pull requests now. Put GITHUB_TOKEN in"
+    echo "   ~/Documents/club-arena/.env, or export it, and re-run."
     exit 2
   fi
 
-  sleep $((attempt * 2))
-done
+  if node "$(dirname "$0")/ci/pr-push.mjs" "$MSG"; then
+    echo "✅ Landed on main."
+  else
+    echo "❌ Did not land. Nothing was force-pushed and nothing was lost."
+    exit 2
+  fi
+fi
 
 # ── Phase 5: Deploy log ──
 TOTAL_END=$(date +%s)

@@ -107,6 +107,15 @@ function recentPatchIds() {
   return _recent;
 }
 
+/** A shallow clone cannot answer ancestry questions past its boundary. */
+function isShallow() {
+  try {
+    return execSync('git rev-parse --is-shallow-repository', { encoding: 'utf8' }).trim() === 'true';
+  } catch {
+    return false;
+  }
+}
+
 for (const entry of pinned) {
   const sha = String(entry?.sha ?? '').trim();
   if (!sha) continue;
@@ -122,7 +131,36 @@ for (const entry of pinned) {
     execSync(`git merge-base --is-ancestor ${sha} HEAD`, { stdio: 'ignore' });
     continue; // still on main by SHA: the simple, happy case
   } catch {
-    /* not an ancestor — fall through to the patch-id check */
+    /* not an ancestor — but in a SHALLOW clone that proves nothing */
+  }
+
+  // THE SHALLOW TRAP (2026-08-21). The check above already skips a commit whose
+  // OBJECT is missing. This is the other half: in a shallow clone the object can
+  // be present - fetched along with some ref - while the ancestry chain between
+  // it and HEAD is cut by the shallow boundary. merge-base then answers "not an
+  // ancestor" for a commit that is sitting on main perfectly happily, and the
+  // patch-id fallback below cannot rescue it either, because `git log -n 400`
+  // also stops at that boundary.
+  //
+  // Measured: at --depth 50 this guard reported four commits as lost and
+  // refused the push twice; at --depth 135 all four resolved as ancestors. They
+  // had never left main. Every agent working from a shallow checkout - which is
+  // most of them, and CI - would hit this.
+  //
+  // So: deepen once, and re-ask. A guard that cries wolf gets switched off,
+  // which is how you lose the work for real.
+  if (isShallow()) {
+    try {
+      execSync('git fetch --quiet --deepen 250 origin', { stdio: 'ignore' });
+    } catch {
+      /* offline or no remote: fall through, we will classify as unverifiable */
+    }
+    try {
+      execSync(`git merge-base --is-ancestor ${sha} HEAD`, { stdio: 'ignore' });
+      continue; // it was there all along
+    } catch {
+      /* still not an ancestor - now the patch-id check is worth running */
+    }
   }
   // NOT an ancestor. Before crying wolf, check whether the same WORK is on
   // main under a different SHA. This repo does that routinely and by design:
@@ -131,6 +169,12 @@ for (const entry of pinned) {
   // necessarily produces a new SHA. A guard that cannot tell "restored" from
   // "lost" would false-alarm on its own fix, and a guard that cries wolf gets
   // switched off — which is how you lose the work for real.
+  if (isShallow()) {
+    // Deepening did not settle it and we are still shallow: say so, do not
+    // accuse. Full clones (a developer machine) still get the hard failure.
+    unknown.push(entry);
+    continue;
+  }
   const id = patchId(sha);
   if (id && recentPatchIds().has(id)) {
     moved.push(entry);

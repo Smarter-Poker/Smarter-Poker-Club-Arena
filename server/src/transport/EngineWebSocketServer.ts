@@ -648,8 +648,10 @@ export class EngineWebSocketServer {
       this.onResync?.(tableId, conn.userId);
       return;
     }
-    const realSubs = [...conn.subs.values()].filter((v) => v !== 'pending');
-    if (realSubs.length >= MUX_MAX_TABLES) {
+    // Audit round 4: counting only SETTLED subscriptions let a client that
+    // fired 5+ SUBSCRIBEs in one burst sail past the cap while they were all
+    // still 'pending'. In-flight counts against the limit.
+    if (conn.subs.size >= MUX_MAX_TABLES) {
       this.sendMuxError(conn, tableId, 'SUB_LIMIT', `At most ${MUX_MAX_TABLES} tables per connection`);
       return;
     }

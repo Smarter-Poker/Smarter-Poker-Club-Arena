@@ -177,6 +177,28 @@ describe('EngineWebSocketServer /ws/multi', () => {
     expect(tables).toEqual([T1, T2]);
   });
 
+  it('a BURST of subscribes cannot sail past the cap while pending (audit round 4)', async () => {
+    const ids = [
+      T1,
+      T2,
+      '44444444-4444-4444-8444-444444444444',
+      '55555555-5555-4555-8555-555555555555',
+      '66666666-6666-4666-8666-666666666666',
+      '77777777-7777-4777-8777-777777777777',
+    ];
+    const { server: burstServer, hub: burstHub } = makeServer({ tableExists: () => true });
+    const burstWs = makeFakeWs();
+    (burstServer as unknown as { onUpgradedMux: Handler }).onUpgradedMux(burstWs, 'user-1', null);
+    // No flush between sends - every gate is still in flight when the later
+    // SUBSCRIBEs arrive, which is exactly the hole the settled-only count had.
+    for (const id of ids) burstWs.emitMessage({ type: 'SUBSCRIBE', tableId: id });
+    await flush();
+    await flush();
+    expect(burstHub.subscribe.mock.calls.length).toBeLessThanOrEqual(4);
+    const errs = burstWs.sent.map((s) => JSON.parse(s));
+    expect(errs.some((m) => m.type === 'ERROR' && m.code === 'SUB_LIMIT')).toBe(true);
+  });
+
   it('action-like messages are ignored on the mux path (REST stays the only ingress)', async () => {
     ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
     await flush();

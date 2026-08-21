@@ -235,11 +235,21 @@ class EngineSocketMuxImpl {
     };
 
     ws.onerror = () => {
+      if (this.ws !== ws) return; // superseded socket - its facades are gone
       for (const f of this.facades.values()) f.onerror?.({});
     };
 
     ws.onclose = (e) => {
-      if (this.ws === ws) this.ws = null;
+      /**
+       * Audit round 4: failAll used to run UNCONDITIONALLY here. In the
+       * narrow window where a dying socket sits in CLOSING and a reconnect
+       * has already created its replacement, the OLD socket's close event
+       * then killed every facade registered on the NEW one. A superseded
+       * socket's facades were already failed when it was superseded; its
+       * close is history, not news.
+       */
+      if (this.ws !== ws) return;
+      this.ws = null;
       this.failAll(e.code, e.reason);
     };
   }

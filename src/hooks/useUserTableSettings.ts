@@ -403,6 +403,16 @@ export function useUserTableSettings(userId: string | null | undefined) {
             }
             return reverted;
           });
+          // Audit round 4: the ca_ws_mux mirror was written optimistically
+          // above; a failed save rolled the SETTING back but left the mirror
+          // pointing the other way until the next load. Re-mirror the revert.
+          if (key === 'multi_shared_socket') {
+            try {
+              localStorage.setItem('ca_ws_mux', !newValue ? '1' : '0');
+            } catch {
+              /* private mode */
+            }
+          }
         }
       } catch (err) {
         reportError(err, 'useUserTableSettings.Unexpected_save_error');

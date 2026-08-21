@@ -27,13 +27,15 @@
 
 import { test, expect, type Page } from '@playwright/test';
 
-const ARENA = 'https://smarter.poker/hub/club-arena';
+/** CI runs these beats against THIS COMMIT's own build served locally
+ *  (ARENA_BASE_URL); a bare local run still defaults to production. */
+const ARENA = process.env.ARENA_BASE_URL || 'https://smarter.poker/hub/club-arena';
 
 /** Stylesheets that carry the multi-table styles. Resolved from the live index. */
 async function loadLiveCss(page: Page) {
   await page.goto(`${ARENA}/index.html`, { waitUntil: 'domcontentloaded' });
-  await page.evaluate(async () => {
-    const base = 'https://smarter.poker/hub/club-arena/';
+  await page.evaluate(async (arenaBase: string) => {
+    const base = arenaBase;
     const html = await fetch(base + 'index.html').then((r) => r.text());
     const entry = html.match(/assets\/index-[A-Za-z0-9_-]+\.js/)?.[0];
     const js = entry ? await fetch(base + entry).then((r) => r.text()) : '';
@@ -51,7 +53,7 @@ async function loadLiveCss(page: Page) {
         /* a chunk that 404s is not this test's problem */
       }
     }
-  });
+  }, `${ARENA}/`);
 }
 
 /** Mount the tab bar DOM exactly as TableTabBar renders it. */

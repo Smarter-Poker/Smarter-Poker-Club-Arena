@@ -203,13 +203,13 @@ export function GameRulesModal({
                 <div className="rules-modal__item">
                   <span className="rules-modal__label">Every</span>
                   <span className="rules-modal__value">
-                    {bombPotRules.frequency > 0 ? `${bombPotRules.frequency} hands` : '—'}
+                    {bombPotRules.frequency > 0 ? `${bombPotRules.frequency} hands` : '-'}
                   </span>
                 </div>
                 <div className="rules-modal__item">
                   <span className="rules-modal__label">Ante</span>
                   <span className="rules-modal__value">
-                    {bombPotRules.anteBB > 0 ? `${bombPotRules.anteBB}x BB` : '—'}
+                    {bombPotRules.anteBB > 0 ? `${bombPotRules.anteBB}x BB` : '-'}
                   </span>
                 </div>
                 <div className="rules-modal__item">

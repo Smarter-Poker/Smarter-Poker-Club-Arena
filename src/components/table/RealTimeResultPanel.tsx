@@ -281,15 +281,15 @@ export default function RealTimeResultPanel({
         .join('&') || 'None';
 
     return [
-      { label: 'Game Name', value: gameName || '—' },
-      { label: 'Game ID', value: tableId ? gameIdFor(tableId) : '—' },
-      { label: 'Table creation', value: created ? stamp(created) : '—' },
-      { label: 'Running Time', value: created ? hhmmss(now - created) : '—' },
+      { label: 'Game Name', value: gameName || '-' },
+      { label: 'Game ID', value: tableId ? gameIdFor(tableId) : '-' },
+      { label: 'Table creation', value: created ? stamp(created) : '-' },
+      { label: 'Running Time', value: created ? hhmmss(now - created) : '-' },
       { label: 'Extension Time', value: extension },
-      { label: 'Table', value: meta?.variant || '—' },
+      { label: 'Table', value: meta?.variant || '-' },
       {
         label: 'Blinds',
-        value: meta && meta.bigBlind ? `${meta.smallBlind}/${meta.bigBlind}` : '—',
+        value: meta && meta.bigBlind ? `${meta.smallBlind}/${meta.bigBlind}` : '-',
       },
       { label: 'Restriction', value: restrictions },
     ];

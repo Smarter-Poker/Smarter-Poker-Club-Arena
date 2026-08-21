@@ -58,6 +58,15 @@ export interface UserTableSettings {
   /** Multi-table (roadmap batch 2): after acting, advance to the next table
    *  already waiting on you (GG-style action queue). */
   multi_action_queue: boolean;
+  /** Desktop alerts (2026-08-21): browser Notification when a table needs
+   *  you while the browser tab is hidden. Enabling this is the user gesture
+   *  that requests Notification permission - the app never prompts on its
+   *  own. */
+  multi_desktop_alerts: boolean;
+  /** BETA (2026-08-21): all tables share ONE engine socket (/ws/multi)
+   *  instead of one socket per table. Mirrors to the ca_ws_mux localStorage
+   *  flag that EngineStateClient reads at (re)connect time. */
+  multi_shared_socket: boolean;
 }
 
 export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
@@ -79,6 +88,8 @@ export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
   table_alias: '',
   multi_auto_switch: true,
   multi_action_queue: true,
+  multi_desktop_alerts: false,
+  multi_shared_socket: false,
 };
 
 // Metadata for rendering toggles
@@ -176,6 +187,16 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
     label: 'Multi-Table Action Queue',
     description: 'After you act, advance to the next table already waiting on you',
   },
+  {
+    key: 'multi_desktop_alerts',
+    label: 'Desktop Turn Alerts',
+    description: 'Browser notification when a table needs you and this tab is in the background',
+  },
+  {
+    key: 'multi_shared_socket',
+    label: 'Shared Connection (Beta)',
+    description: 'All tables share one game connection - fewer reconnects, better battery',
+  },
 ];
 
 const LOCAL_CACHE_KEY = 'user_table_settings_cache';
@@ -246,6 +267,10 @@ export function useUserTableSettings(userId: string | null | undefined) {
               data.multi_auto_switch ?? DEFAULT_USER_TABLE_SETTINGS.multi_auto_switch,
             multi_action_queue:
               data.multi_action_queue ?? DEFAULT_USER_TABLE_SETTINGS.multi_action_queue,
+            multi_desktop_alerts:
+              data.multi_desktop_alerts ?? DEFAULT_USER_TABLE_SETTINGS.multi_desktop_alerts,
+            multi_shared_socket:
+              data.multi_shared_socket ?? DEFAULT_USER_TABLE_SETTINGS.multi_shared_socket,
           };
           setSettings(loaded);
           // Cache locally for instant loads
@@ -253,6 +278,14 @@ export function useUserTableSettings(userId: string | null | undefined) {
             localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(loaded));
           } catch {
             /* */
+          }
+          // Shared-socket BETA: the flag follows the account onto every
+          // device - mirror the loaded value so EngineStateClient's next
+          // (re)connect sees it here too.
+          try {
+            localStorage.setItem('ca_ws_mux', loaded.multi_shared_socket ? '1' : '0');
+          } catch {
+            /* private mode */
           }
         }
         // If no row exists, defaults are already set — row will be created on first toggle
@@ -313,6 +346,31 @@ export function useUserTableSettings(userId: string | null | undefined) {
       // Broadcast for cross-component sync
       localOriginRef.current = true;
       masterBus.emit('SETTINGS_CHANGED', { setting: key, value: newValue });
+
+      // Desktop alerts (2026-08-21): the toggle tap IS the user gesture -
+      // this is the one place the app may ask for Notification permission.
+      // Denied permission leaves the setting on; the alert path re-checks
+      // Notification.permission before posting, so it simply stays quiet.
+      if (key === 'multi_desktop_alerts' && newValue) {
+        try {
+          if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+            void Notification.requestPermission();
+          }
+        } catch {
+          /* some webviews throw on access */
+        }
+      }
+
+      // Shared socket BETA (2026-08-21): EngineStateClient reads the
+      // localStorage flag at (re)connect time, so mirroring here makes the
+      // toggle take effect on the next reconnect without a reload.
+      if (key === 'multi_shared_socket') {
+        try {
+          localStorage.setItem('ca_ws_mux', newValue ? '1' : '0');
+        } catch {
+          /* private mode */
+        }
+      }
 
       // Backward compat: sync show_stack_in_bb to old localStorage key used by HamburgerMenu
       if (key === 'show_stack_in_bb') {

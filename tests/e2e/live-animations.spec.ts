@@ -21,13 +21,15 @@
 
 import { test, expect, type Page } from '@playwright/test';
 
-const ARENA = 'https://smarter.poker/hub/club-arena';
+/** CI runs these beats against THIS COMMIT's own build served locally
+ *  (ARENA_BASE_URL); a bare local run still defaults to production. */
+const ARENA = process.env.ARENA_BASE_URL || 'https://smarter.poker/hub/club-arena';
 
 /** Stylesheets that carry the gameplay animations. Resolved from the live index. */
 async function loadLiveCss(page: Page) {
   await page.goto(`${ARENA}/index.html`, { waitUntil: 'domcontentloaded' });
-  await page.evaluate(async () => {
-    const base = 'https://smarter.poker/hub/club-arena/';
+  await page.evaluate(async (arenaBase: string) => {
+    const base = arenaBase;
     // The component stylesheets are lazy chunks, so they are NOT linked from
     // index.html. Discover them from the module graph the entry advertises.
     const html = await fetch(base + 'index.html').then((r) => r.text());
@@ -48,7 +50,7 @@ async function loadLiveCss(page: Page) {
       }
     }
     document.documentElement.style.setProperty('--animation-speed', '1');
-  });
+  }, `${ARENA}/`);
 }
 
 /** Build the table DOM exactly as the real components render it. */

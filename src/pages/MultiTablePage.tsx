@@ -797,6 +797,13 @@ export default function MultiTablePage() {
   // favicon, and (when permission is already granted - never prompt from
   // here) post one Notification per turn. All restored on visibility.
   const notifiedDeadlineRef = useRef<Map<string, number>>(new Map());
+  // 2026-08-21: Notifications now ride the multi_desktop_alerts setting (the
+  // settings toggle is also the permission-request gesture). Ref, because the
+  // alerts effect below is deliberately mount-once.
+  const desktopAlertsRef = useRef(false);
+  useEffect(() => {
+    desktopAlertsRef.current = userSettings.multi_desktop_alerts;
+  }, [userSettings.multi_desktop_alerts]);
   useEffect(() => {
     const iconLink = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
     const originalTitle = document.title;
@@ -818,6 +825,7 @@ export default function MultiTablePage() {
         document.title = `YOUR TURN - ${urgent.name}`;
         if (iconLink) iconLink.href = BADGE_ICON;
         if (
+          desktopAlertsRef.current &&
           typeof Notification !== 'undefined' &&
           Notification.permission === 'granted' &&
           urgent.turnDeadlineMs !== undefined &&

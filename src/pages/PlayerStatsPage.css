@@ -5,6 +5,14 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+.stats-page,
+.stats-page button,
+.stats-page input,
+.stats-page select,
+.stats-page textarea {
+  text-transform: capitalize;
+}
+
 .stats-page {
   min-height: 100vh;
   background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);

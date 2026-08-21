@@ -5,7 +5,7 @@
 #   1. Contain merge-conflict markers (lesson from f490f61bf)
 #   2. Introduce vercel.json crons (Open Claw exclusive policy)
 #   3. Introduce client-side PIN-gate storage (Phase 3.6 server-side only)
-#   4. Use raw supabase.auth.getUser() outside src/lib/auth/*
+#   4. Use raw supabase.auth.getUser() outside src/lib/authUtils.ts
 #
 # Bypass with `git push --no-verify` only in genuine emergencies.
 
@@ -87,17 +87,40 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     fi
   done
 
-  # 4. Raw supabase.auth.getUser() outside src/lib/auth
+  # 4. Raw supabase.auth.getUser() outside the canonical auth module
+  #
+  # 2026-08-21: this rule was unenforceable as written. It told you to "use
+  # validateBearer() from src/lib/auth", but `src/lib/auth/` has never existed
+  # in this repo's history and `validateBearer` has never been defined
+  # anywhere. Phase 6 Rule 4 named a migration target that was never built, so
+  # the only way past this gate was --no-verify — which also switches off the
+  # merge-conflict-marker check in the same hook, the one guard here that has
+  # actually caught a production break (f490f61bf).
+  #
+  # The canonical module is src/lib/authUtils.ts, and the helper is
+  # readLocalSession(): it parses the shared 'smarter-poker-auth' JWT, honours
+  # expiry, and is already documented in-file as "the SINGLE canonical
+  # implementation - all auth code should use this". The rule now names it.
+  #
+  # src/lib/supabase.ts is exempt on purpose: it is the SDK wrapper, and
+  # somebody has to be allowed to call the SDK.
+  #
+  # Known remaining callers, not yet migrated (this gate only fires on files
+  # you actually touch, so they are a to-do, not a wall):
+  #   src/services/WalletService.ts        src/services/AvatarService.ts
+  #   src/services/AgentService.ts         src/components/table/RealTimeResultPanel.tsx
+  #   src/components/tournament/TournamentStartingTicker.tsx
+  #   src/components/tournament/TournamentRankingCard.tsx
   for f in $FILES; do
     if [ -f "$f" ]; then
       case "$f" in
-        *src/lib/auth/*) continue ;;
         *src/lib/authUtils*) continue ;;
+        *src/lib/supabase.ts) continue ;;
         *node_modules/*) continue ;;
       esac
       if grep -qE 'supabase\.auth\.getUser\(\)' "$f" 2>/dev/null; then
         echo "[club-arena pre-push] BLOCKED: $f calls supabase.auth.getUser()"
-        echo "                      use validateBearer() from src/lib/auth instead."
+        echo "                      use readLocalSession() from src/lib/authUtils instead."
         FAIL=1
       fi
     fi

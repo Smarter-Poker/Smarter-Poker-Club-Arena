@@ -27,6 +27,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { readLocalSession } from '../lib/authUtils';
 import { reportError, reportWarning } from '../utils/errorReporter';
 
 export type WaitlistStatus = 'waiting' | 'notified' | 'seated' | 'cancelled' | 'expired';
@@ -86,10 +87,20 @@ function mapRow(
   };
 }
 
+/**
+ * 2026-08-21: was `supabase.auth.getUser()`, which the pre-push gate blocks
+ * (Phase 6 Rule 4) — go through the canonical auth module instead.
+ *
+ * `readLocalSession()` parses the shared 'smarter-poker-auth' JWT and honours
+ * expiry, so this is the same identity the SDK would report, without the
+ * network round-trip that getUser() makes on every join. Trusting a
+ * client-read id is safe here because it is not what authorises anything:
+ * every table_waitlists write is checked against auth.uid() by RLS, so a
+ * stale or tampered local id gets rejected by the database, not by this
+ * function. Kept `async` so the call sites are unchanged.
+ */
 async function currentUserId(): Promise<string | null> {
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data?.user?.id) return null;
-  return data.user.id;
+  return readLocalSession()?.userId ?? null;
 }
 
 export const WaitlistService = {

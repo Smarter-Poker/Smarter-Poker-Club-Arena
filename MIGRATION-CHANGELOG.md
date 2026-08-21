@@ -8927,3 +8927,32 @@ at the table. Not worth coupling the counter to settlement for.
 6. **RIT verifier false positive fixed** (f9191a381): every Run It Twice resolution fired STATE_INTEGRITY_VIOLATION COMMUNITY_CARD_COUNT at showdown — the multi-board runout keeps only the shared prefix in communityCards by design. Engine now passes ritBoards in the verification context and the verifier skips board-behind-stage for multi-board hands. Three false warnings in 30 min of live traffic silenced; real violations still fire.
 
 7. **Full server suite green on main**: 92 files, 997 tests passing — deploy gate healthy for all agents.
+
+## 2026-08-21 — Dan said "you decide what's next" (Cowork session)
+
+Three picks, chosen for what they protect and unlock (f70c4f7):
+
+1. THE E2E NET GOES AUTOMATIC. Both beat suites (multi-table +
+   gameplay animations) now take ARENA_BASE_URL so CI can run them
+   against the pushed commit's OWN build, served locally under the
+   production /hub/club-arena prefix - true pre-deploy testing, not
+   testing yesterday's production. The exact CI recipe was executed in
+   the sandbox first: 18/18. The ci.yml job itself needs workflow scope
+   this session's PAT lacks; it is parked, tested, and ready to land in
+   .agent/handoffs/2026-08-21-css-beats-e2e-ci-job.md (also delivered
+   in-chat per the handoff rule).
+
+2. DESKTOP TURN ALERTS become a real setting (multi_desktop_alerts,
+   default off). The settings toggle is the permission-request gesture -
+   the app never prompts on its own - and the alert path re-checks
+   permission before posting.
+
+3. THE SHARED-SOCKET BETA gets its soak switch (multi_shared_socket,
+   default off, labeled Beta). Mirrors to ca_ws_mux on toggle and on
+   settings load so the choice follows the account across devices.
+   Migration 20260821000002 applied via MCP.
+
+Housekeeping: check-ui-text --fix swept 8 em dashes out of
+RealTimeResultPanel / GameRulesModal before they failed the copy gate.
+Verified live: prod bundle (WH 6816a6b1) greps positive for both
+settings, their labels, and the ca_ws_mux mirror.

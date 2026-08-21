@@ -1,4 +1,20 @@
 import '@testing-library/jest-dom';
+import { cleanup } from '@testing-library/react';
+
+/**
+ * Unmount between tests.
+ *
+ * TEST-INFRA FIX 2026-08-21. React Testing Library only auto-cleans when it
+ * can see a global afterEach at import time; with this setup it does not, so
+ * every render() in a file PILED UP in the same document.body. The symptom is
+ * not an obvious leak, it is "Found multiple elements with the text ..." on a
+ * component that renders exactly one, which reads as a bug in the component
+ * and is a bug in the harness. It also means each test inherits the DOM of
+ * every test before it, so a passing test can be passing on the wrong element.
+ */
+afterEach(() => {
+  cleanup();
+});
 
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {

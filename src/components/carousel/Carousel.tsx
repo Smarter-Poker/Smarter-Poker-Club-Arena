@@ -112,6 +112,24 @@ export interface CarouselProps<T> {
   /** Opening the centre card. Not called when the gesture was a drag. */
   onSelect?: (item: T, index: number) => void;
   /**
+   * Fired once, the moment a gesture is judged to be a DRAG rather than a tap.
+   *
+   * Exists because a card can own press-and-hold behaviour of its own. The
+   * club cards open a context menu after 500ms of touch, and a deliberate slow
+   * swipe is easily longer than that, so without this the menu opens in the
+   * middle of the swipe and the gesture is lost. The carousel is the only
+   * thing that knows the difference between a hold and a drag, so it is the
+   * thing that has to say so.
+   */
+  onDragStart?: () => void;
+  /**
+   * The centred card changed. Fires on the SETTLED index, not on every frame
+   * of the animation, so it is a "you landed on a card" signal rather than a
+   * scroll position. The World Hub engine exposes the same callback for the
+   * same reason.
+   */
+  onIndexChange?: (index: number) => void;
+  /**
    * Card width. Omit to size responsively from the track, mirroring the
    * card's own `clamp(200px, 55vw, 300px)`.
    */
@@ -131,6 +149,8 @@ export function Carousel<T>({
   renderItem,
   getKey,
   onSelect,
+  onDragStart,
+  onIndexChange,
   itemWidth,
   spacing,
   spacingRatio = 0.88,
@@ -140,6 +160,9 @@ export function Carousel<T>({
 }: CarouselProps<T>) {
   const total = items.length;
   const trackRef = useRef<HTMLDivElement>(null);
+  /* The loop is bound once; it reads the live count through this. */
+  const totalRef = useRef(total);
+  totalRef.current = total;
 
   const [scrollPosition, setScrollPosition] = useState(0);
   const targetRef = useRef(0);
@@ -151,6 +174,12 @@ export function Carousel<T>({
   const velocityX = useRef(0);
   const lastTime = useRef(0);
   const rafRef = useRef<number | null>(null);
+  /** Guards onDragStart to one call per gesture. */
+  const announcedDrag = useRef(false);
+  /* Held in a ref so the pointer listeners, which are bound once, always call
+     the CURRENT callback without re-binding on every render. */
+  const onDragStartRef = useRef(onDragStart);
+  onDragStartRef.current = onDragStart;
 
   /**
    * Size from the track, not from the viewport.
@@ -215,6 +244,22 @@ export function Carousel<T>({
           setPosition(positionRef.current + diff * SNAP_EASING);
         } else if (positionRef.current !== targetRef.current) {
           setPosition(targetRef.current);
+        } else if (totalRef.current > 0) {
+          /* SETTLED: fold the position back into one lap.
+             Nothing bounds it otherwise. Every fling adds whole cards to it
+             and it is never subtracted, so a long session walks it upward
+             indefinitely and float precision degrades under the modulo that
+             every frame depends on. Doing it only once the animation has come
+             to rest means the fold can never produce a visible jump: the
+             rendered layout is a function of the FOLDED offset, which this
+             does not change. */
+          const total = totalRef.current;
+          const wrapped = ((positionRef.current % total) + total) % total;
+          if (wrapped !== positionRef.current) {
+            positionRef.current = wrapped;
+            targetRef.current = wrapped;
+            setScrollPosition(wrapped);
+          }
         }
       }
       rafRef.current = requestAnimationFrame(tick);
@@ -236,6 +281,7 @@ export function Carousel<T>({
       lastX.current = clientX;
       lastTime.current = Date.now();
       velocityX.current = 0;
+      announcedDrag.current = false;
       el.classList.add('sp-carousel--grabbing');
     };
 
@@ -245,6 +291,13 @@ export function Carousel<T>({
       const now = Date.now();
       const deltaTime = now - lastTime.current;
       if (deltaTime > 0) velocityX.current = deltaX / deltaTime;
+
+      // Announce the drag exactly once, at the same threshold that decides a
+      // tap is not a click, so "this is a drag" means one thing everywhere.
+      if (!announcedDrag.current && Math.abs(clientX - startX.current) >= CLICK_SLOP_PX) {
+        announcedDrag.current = true;
+        onDragStartRef.current?.();
+      }
 
       const width = el.clientWidth || window.innerWidth || SENSITIVITY_REFERENCE_WIDTH;
       const sensitivity = SENSITIVITY_BASE * (SENSITIVITY_REFERENCE_WIDTH / width);
@@ -308,6 +361,26 @@ export function Carousel<T>({
     };
   }, [total, setPosition]);
 
+  /**
+   * Announce the centred card, once it has actually settled there.
+   *
+   * Deliberately keyed off the ROUNDED position rather than the raw one: mid
+   * swipe the position sweeps continuously through every value between two
+   * cards, and firing on that would be a scroll event wearing a different
+   * name. The consumer wants "the player landed on this club".
+   */
+  const settledIndex = total > 0 ? ((Math.round(scrollPosition) % total) + total) % total : 0;
+  const lastAnnouncedIndex = useRef<number | null>(null);
+  useEffect(() => {
+    if (total === 0) return;
+    if (lastAnnouncedIndex.current === settledIndex) return;
+    const isFirst = lastAnnouncedIndex.current === null;
+    lastAnnouncedIndex.current = settledIndex;
+    // Never on mount. The old scroll-based version fired its snap sound on
+    // page load, with the player having touched nothing.
+    if (!isFirst) onIndexChange?.(settledIndex);
+  }, [settledIndex, total, onIndexChange]);
+
   /** Move by whole cards. Used by the keyboard and the wheel. */
   const nudge = useCallback((by: number) => {
     targetRef.current = Math.round(targetRef.current) + by;
@@ -315,10 +388,13 @@ export function Carousel<T>({
 
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
-      // Trackpads report horizontal intent; a mouse wheel only has deltaY.
-      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-      if (Math.abs(delta) < 2) return;
-      nudge(delta > 0 ? 1 : -1);
+      /* HORIZONTAL INTENT ONLY. Reading deltaY here as well felt clever and
+         was a trap: the carousel is one section of a scrolling page, so every
+         ordinary mouse wheel scroll over it moved the cards INSTEAD of
+         scrolling the page, and there was no way past it with a wheel. A
+         trackpad two-finger swipe reports deltaX and still works. */
+      if (Math.abs(e.deltaX) < 2 || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      nudge(e.deltaX > 0 ? 1 : -1);
     },
     [nudge]
   );
@@ -378,6 +454,22 @@ export function Carousel<T>({
           }
         }}
       >
+        {/* HEIGHT SIZER. Every real card is absolutely positioned, so the track
+            has no intrinsic height; it used to carry a hand-picked
+            `clamp(320px, 62vw, 430px)` and `overflow: hidden`, which is a
+            guess about a card whose height is content-driven (club name, logo,
+            live stats). Guess low and the card is silently clipped.
+
+            One extra copy of the first card, in normal flow and invisible,
+            gives the track exactly the height of a real card at whatever the
+            current width is, with no magic number and no measurement code to
+            drift. visibility:hidden still occupies layout, which is the whole
+            point; aria-hidden and pointer-events:none keep it out of the
+            accessibility tree and out of the way of the pointer. */}
+        <div className="sp-carousel__sizer" aria-hidden="true">
+          {renderItem(items[0], 0, false)}
+        </div>
+
         {visible.map(({ item, index, offset }) => {
           const absOffset = Math.abs(offset);
           const isActive = absOffset < ACTIVE_OFFSET;
@@ -392,7 +484,13 @@ export function Carousel<T>({
                 zIndex: Math.round(100 - absOffset * 10),
                 opacity: Math.max(0, 1 - absOffset * 0.28),
               }}
-              aria-hidden={!isActive}
+              /* `inert` rather than aria-hidden. The club card inside is
+                 focusable (role="button", tabIndex 0), and aria-hidden on
+                 something reachable by Tab is an outright a11y violation: a
+                 keyboard user lands on a control screen readers were told does
+                 not exist. inert removes it from BOTH, and React 19 passes it
+                 through to the DOM. The centre card stays fully interactive. */
+              inert={!isActive}
               onClick={() => handleCardClick(item, index, offset)}
             >
               {renderItem(item, index, isActive)}

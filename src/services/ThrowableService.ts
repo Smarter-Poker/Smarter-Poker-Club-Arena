@@ -828,7 +828,11 @@ export function getThrowableImageUrl(id: string, displayPx?: number): string {
   // softens. 320 measured at 9 KB (vs 3.7 KB at 160), which is nothing for a
   // once-per-bomb-pot hero image, and the cache key is already bucket-aware.
   const bucket =
-    displayPx !== undefined && displayPx <= 48 ? 96 : displayPx !== undefined && displayPx > 160 ? 320 : 160;
+    displayPx !== undefined && displayPx <= 48
+      ? 96
+      : displayPx !== undefined && displayPx > 160
+        ? 320
+        : 160;
   const key = `${id}@${bucket}`;
   const cached = imageUrlCache.get(key);
   if (cached) return cached;
@@ -857,14 +861,18 @@ class ThrowableServiceClass {
     return THROWABLES;
   }
 
-  /** Grouped by category (tab order: reactions → throws → sports → cheers → premium) */
+  /**
+   * Grouped by category. Dan 2026-08-21: VIP leads — it is the tab that sells
+   * something, so it should not be the one you have to scroll to find.
+   * Insertion order here IS the tab order.
+   */
   getThrowablesByCategory(): Record<ThrowableCategory, Throwable[]> {
     return {
+      premium: THROWABLES.filter((t) => t.category === 'premium'),
       reactions: THROWABLES.filter((t) => t.category === 'reactions'),
       throws: THROWABLES.filter((t) => t.category === 'throws'),
       sports: THROWABLES.filter((t) => t.category === 'sports'),
       cheers: THROWABLES.filter((t) => t.category === 'cheers'),
-      premium: THROWABLES.filter((t) => t.category === 'premium'),
     };
   }
 

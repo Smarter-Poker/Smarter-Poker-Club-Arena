@@ -24,13 +24,21 @@
    ================================================================================= */
 
 :root {
-  --ts-bg-primary: rgba(12, 12, 28, 0.98);
-  --ts-bg-secondary: rgba(18, 18, 38, 0.96);
-  --ts-border-gold: rgba(212, 168, 75, 0.35);
-  --ts-border-subtle: rgba(255, 255, 255, 0.08);
-  --ts-gold: #d4a84b;
-  --ts-gold-light: #e8c87a;
-  --ts-gold-glow: rgba(212, 168, 75, 0.25);
+  /* Dan 2026-08-21: "should be blue instead of yellow with a grey background."
+     The gold-on-navy palette read as a casino promo panel and fought the felt.
+     Blue on neutral grey sits back and lets the 3D items be the colour.
+     The --ts-gold* names are kept as aliases so no rule elsewhere in this
+     798-line file silently loses its colour; they now resolve to the blue. */
+  --ts-bg-primary: rgba(38, 41, 48, 0.98);
+  --ts-bg-secondary: rgba(30, 33, 39, 0.96);
+  --ts-blue: #4c9dff;
+  --ts-blue-light: #8dc2ff;
+  --ts-blue-glow: rgba(76, 157, 255, 0.28);
+  --ts-border-gold: rgba(76, 157, 255, 0.35);
+  --ts-border-subtle: rgba(255, 255, 255, 0.09);
+  --ts-gold: var(--ts-blue);
+  --ts-gold-light: var(--ts-blue-light);
+  --ts-gold-glow: var(--ts-blue-glow);
   --ts-text-primary: rgba(255, 255, 255, 0.9);
   --ts-text-secondary: rgba(255, 255, 255, 0.55);
   --ts-text-muted: rgba(255, 255, 255, 0.35);
@@ -53,7 +61,10 @@
   bottom: 100%;
   left: 50%;
   transform: translateX(-50%);
-  width: 300px;
+  /* 300px clipped the fifth tab. 360 fits five without truncation and still
+     leaves margin at 375px, the narrowest phone this app targets. */
+  width: 360px;
+  max-width: calc(100vw - 24px);
   background: var(--ts-bg-primary);
   border: 1.5px solid var(--ts-border-gold);
   border-radius: 16px;
@@ -1001,4 +1012,108 @@
   .throwable-selector__grid[data-cat='premium'] .throwable-selector__icon--img::after {
     display: none;
   }
+}
+
+/* =================================================================================
+   2026-08-21 — Dan's panel pass
+   "too small, doesn't show all the categories at once, VIP should be first,
+    blue instead of yellow with a grey background, and a quick link to buy
+    more throwables with diamonds."
+   ================================================================================= */
+
+/* All five tabs, always, on one row. A flex row let the last tab clip once the
+   labels grew; five equal columns cannot. */
+.throwable-selector__tabs {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2px;
+}
+
+.throwable-selector__tab {
+  padding: 9px 2px;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Category accents restated in the blue palette. VIP keeps a violet so the
+   paid tier still reads as special next to four blues. */
+.throwable-selector__tab[data-cat='premium'].throwable-selector__tab--active {
+  color: #b79dff;
+  box-shadow: inset 0 -2px 0 #b79dff;
+}
+.throwable-selector__tab[data-cat='reactions'].throwable-selector__tab--active,
+.throwable-selector__tab[data-cat='throws'].throwable-selector__tab--active,
+.throwable-selector__tab[data-cat='sports'].throwable-selector__tab--active,
+.throwable-selector__tab[data-cat='cheers'].throwable-selector__tab--active {
+  color: var(--ts-blue);
+  box-shadow: inset 0 -2px 0 var(--ts-blue);
+}
+
+/* The grid gets more room now that the panel is wider — 5 across still, but
+   the taller max-height means VIP's 14 items need one scroll instead of two. */
+.throwable-selector__grid {
+  max-height: 268px;
+}
+
+/* Tile rings follow the new palette. */
+.throwable-selector__grid[data-cat='premium'] .throwable-selector__icon--img {
+  box-shadow:
+    inset 0 0 0 1px rgba(183, 157, 255, 0.4),
+    0 0 8px rgba(183, 157, 255, 0.18);
+}
+.throwable-selector__grid[data-cat='reactions'] .throwable-selector__icon--img,
+.throwable-selector__grid[data-cat='throws'] .throwable-selector__icon--img,
+.throwable-selector__grid[data-cat='sports'] .throwable-selector__icon--img,
+.throwable-selector__grid[data-cat='cheers'] .throwable-selector__icon--img {
+  box-shadow: inset 0 0 0 1px rgba(76, 157, 255, 0.22);
+}
+
+/* ── Buy more throwables ─────────────────────────────────────────────────── */
+
+.throwable-selector__buy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 14px;
+  border: none;
+  border-top: 1px solid var(--ts-border-subtle);
+  background: rgba(76, 157, 255, 0.1);
+  color: var(--ts-blue-light);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.18s var(--ts-ease-smooth),
+    color 0.18s var(--ts-ease-smooth);
+}
+
+.throwable-selector__buy:hover,
+.throwable-selector__buy:focus-visible {
+  background: rgba(76, 157, 255, 0.18);
+  color: #ffffff;
+}
+
+.throwable-selector__buy:active {
+  background: rgba(76, 157, 255, 0.26);
+}
+
+.throwable-selector__buy-icon {
+  color: #6fd3ff;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.throwable-selector__buy-label {
+  flex: 1;
+  text-align: left;
+}
+
+.throwable-selector__buy-chevron {
+  opacity: 0.7;
+  font-size: 16px;
+  line-height: 1;
 }

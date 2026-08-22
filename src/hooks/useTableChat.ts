@@ -342,57 +342,59 @@ export function useTableChat(
   }, [tableId]);
 
   // Parse incoming messages — returns true if message was a special command (reaction/throw)
-  const parseIncomingMessage = useCallback((content: string, senderId: string): boolean => {
-    // Check for reaction messages
-    const reactionMatch = content.match(REACTION_MSG_REGEX);
-    if (reactionMatch) {
-      // DoS Protection: Cap max concurrent animations to 20
-      if (pendingTimersRef.current.size >= 20) return true;
+  const parseIncomingMessage = useCallback(
+    (content: string, senderId: string): boolean => {
+      // Check for reaction messages
+      const reactionMatch = content.match(REACTION_MSG_REGEX);
+      if (reactionMatch) {
+        // DoS Protection: Cap max concurrent animations to 20
+        if (pendingTimersRef.current.size >= 20) return true;
 
-      const emoji = reactionMatch[1];
-      const seatIndex = parseInt(reactionMatch[2], 10);
-      const reactionId = `rx_${++reactionIdRef.current}`;
+        const emoji = reactionMatch[1];
+        const seatIndex = parseInt(reactionMatch[2], 10);
+        const reactionId = `rx_${++reactionIdRef.current}`;
 
-      setActiveReactions((prev) => [
-        ...prev,
-        { id: reactionId, emoji, seatIndex, timestamp: Date.now() },
-      ]);
+        setActiveReactions((prev) => [
+          ...prev,
+          { id: reactionId, emoji, seatIndex, timestamp: Date.now() },
+        ]);
 
-      // Auto-remove after lifetime (tracked for cleanup)
-      const timerId = setTimeout(() => {
-        setActiveReactions((prev) => prev.filter((r) => r.id !== reactionId));
-        pendingTimersRef.current.delete(timerId);
-      }, REACTION_LIFETIME_MS);
-      pendingTimersRef.current.add(timerId);
+        // Auto-remove after lifetime (tracked for cleanup)
+        const timerId = setTimeout(() => {
+          setActiveReactions((prev) => prev.filter((r) => r.id !== reactionId));
+          pendingTimersRef.current.delete(timerId);
+        }, REACTION_LIFETIME_MS);
+        pendingTimersRef.current.add(timerId);
 
-      return true; // Don't add to chat
-    }
+        return true; // Don't add to chat
+      }
 
-    // Throw messages: render the incoming throw for everyone EXCEPT the
-    // thrower, who already animated it locally when they sent it.
-    const throwMatch = content.match(THROW_MSG_REGEX);
-    if (throwMatch) {
-      if (senderId && senderId !== userId) {
-        // DoS guard, same ceiling as reactions.
-        if (pendingTimersRef.current.size < 20) {
-          const throwableId = throwMatch[1];
-          const toSeat = parseInt(throwMatch[2], 10);
-          // players[] is seat-ordered (index 0 = seat 1), matching the rest of
-          // the table; resolve the thrower's seat from their id.
-          const fromIdx = players.findIndex((pl) => pl && pl.id === senderId);
-          const fromSeat = fromIdx >= 0 ? fromIdx + 1 : 0;
-          if (Number.isFinite(toSeat) && toSeat > 0) {
-            onThrowReceivedRef.current?.(fromSeat, toSeat, throwableId);
+      // Throw messages: render the incoming throw for everyone EXCEPT the
+      // thrower, who already animated it locally when they sent it.
+      const throwMatch = content.match(THROW_MSG_REGEX);
+      if (throwMatch) {
+        if (senderId && senderId !== userId) {
+          // DoS guard, same ceiling as reactions.
+          if (pendingTimersRef.current.size < 20) {
+            const throwableId = throwMatch[1];
+            const toSeat = parseInt(throwMatch[2], 10);
+            // players[] is seat-ordered (index 0 = seat 1), matching the rest of
+            // the table; resolve the thrower's seat from their id.
+            const fromIdx = players.findIndex((pl) => pl && pl.id === senderId);
+            const fromSeat = fromIdx >= 0 ? fromIdx + 1 : 0;
+            if (Number.isFinite(toSeat) && toSeat > 0) {
+              onThrowReceivedRef.current?.(fromSeat, toSeat, throwableId);
+            }
           }
         }
+        return true; // Don't add to chat
       }
-      return true; // Don't add to chat
-    }
 
-    return false; // Normal message — add to chat
-    // players/userId are read through refs where they must stay fresh.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [players, userId]);
+      return false; // Normal message — add to chat
+      // players/userId are read through refs where they must stay fresh.
+    },
+    [players, userId]
+  );
 
   const handleSendChatMessage = useCallback(
     async (message: string) => {

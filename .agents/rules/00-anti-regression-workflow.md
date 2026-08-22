@@ -23,6 +23,35 @@ gh pr create --fill
 auto-merge within seconds, keeps the branch fresh as main moves, and GitHub
 merges it the moment the required checks go green.
 
+## 1a. One working tree per agent — NEVER share a checkout
+
+Three to five agents work in this repo at once. A git working tree has exactly
+one HEAD, one index, and one set of uncommitted files. So when a second agent
+runs `git checkout -b` in the same directory, the first agent's in-progress
+edits either ride onto the wrong branch or get stashed out from under it — and
+neither agent is told. Then the Antigravity `git reset --hard origin/main` loop
+destroys whatever is still uncommitted.
+
+This repo was carrying the evidence: **eight abandoned stashes and six
+`backup/*` branches** from `git-unstick.sh` rescues, each one somebody's work
+being saved from somebody else's checkout. Branch protection cannot help — the
+damage happens before anything is pushed.
+
+**Start every task by claiming your own tree:**
+
+```bash
+eval "$(bash scripts/agent-workspace.sh <your-agent-name> fix/<slug>)"
+```
+
+That puts you in `~/Documents/.agent-trees/<repo>/<your-agent-name>` on
+`agent/<your-agent-name>/fix/<slug>`, branched from a freshly fetched
+`origin/main`, sharing one object store. Agents become physically unable to
+disturb each other. If your tree has uncommitted work, the script refuses to
+move you off it and says so.
+
+Never `git checkout` in `~/Documents/club-arena` itself — that clone is the
+shared object store and a mirror of origin, not a place to work.
+
 ## 2. FORBIDDEN — every one of these caused a real incident
 
 | Never do this                                                                      | What actually happened                                                                                                             |

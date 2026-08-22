@@ -120,6 +120,85 @@ path regardless.
 
 ---
 
+## Cowork session 2026-08-22 (6) — THE SAME BUG, ONE LAYER UP
+
+### What session (5) revealed by fixing the layer below it
+
+PR #281 merged at 20:06 UTC and deployed to Hetzner at 20:10. Fifteen minutes
+later `dealing_loop_dead` was **zero** — down from ~4.5/min sustained. The fix
+holds.
+
+What it uncovered is that `start_failed` was never a footnote. In that same
+fifteen minutes: **117 of them**, arriving in bursts — 86 across 43 tables
+inside a single minute, another 43 across 23 tables, and so on.
+
+### Why — the identical mistake, one call earlier
+
+`loadTable` is the **first statement** of `ServerTableEngineBase.start()` and
+it is a database read. A throw from it landed in start()'s catch as
+`start_failed` -> `killForRestart` -> GameServer rebuilds the engine within 5s
+-> the same read -> the same throw. A transient blip became a permanent
+respawn loop.
+
+And the kill costs **more** database work than a retry: a rebuilt engine also
+re-runs `seedHandCountFromHistory`, `checkCrashRecovery` and
+`resolveOrphanedAddOns`. Same self-feeding spiral as session (5), one layer up.
+
+The asymmetry is the whole bug. `dealingLoop` has always treated exactly these
+errors as transient and backed off. `start()` treated them as fatal. **Same
+database, same error, opposite response** — and the fatal response was the
+expensive one.
+
+The reason the two could disagree is that the transient-error list was written
+out **three separate times**, inline, and never shared:
+
+| Where                 | Missing from its copy                                                                                                |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `dealingLoop` catch   | (the reference list)                                                                                                 |
+| `refreshBlinds` retry | `supabase_timeout` — the wording `DB_TIMEOUT_MS` actually emits, so its retry did not fire for the commonest timeout |
+| `start()`             | the entire list; it had no concept of transient at all                                                               |
+
+### What shipped
+
+1. **One definition.** `ServerTableEngineBase.isTransientDbError(err)`. All
+   three call sites now ask it. Two places that must agree cannot agree while
+   only one of them has the list.
+2. **The opening read retries** — 5 attempts, exponential backoff to ~8s,
+   transient only. Deliberately retried at the call site rather than in the
+   catch: nothing is configured and no timer is armed yet, so a retry is a
+   clean re-attempt. `refreshBlinds` already retried this very call three
+   times for this very reason.
+3. **A failed seat sweep costs one sweep, not the engine.** The
+   wait-for-players loop's `loadSeatedPlayers` is a poll that already runs
+   every 5s; letting a blip escape it aborted start() outright, on a table
+   with players waiting to be dealt to. `broadcastCurrentState` beside it has
+   been guarded since it was added — the read never was.
+4. **`start_failed:<stage>`**, matching the `dealing_loop_dead:<phase>`
+   vocabulary from session (5). A kill reason that is the same string for
+   every possible cause is how 1,603 rows produced no diagnosis at all.
+
+### Tests
+
+`EngineStartResilience.test.ts` (new, 7): the predicate says yes to the
+wordings production actually produces and **no** to a real bug
+(`TypeError: ... is not a function`, `column ... does not exist`) — excusing a
+code error as a network blip would be the worse failure; and start() retries a
+blip, bounds its attempts, refuses to retry a real bug, and survives a failed
+seat sweep. Server suite **1,104 passed / 106 files**; `tsc --noEmit` clean on
+`server/tsconfig.json`.
+
+### Watch after deploy
+
+`SELECT detail, COUNT(*) FROM engine_recovery_events WHERE created_at >
+NOW()-INTERVAL '30 minutes' GROUP BY 1 ORDER BY 2 DESC;` — the `start_failed`
+bursts should collapse the way `dealing_loop_dead` did, and anything left now
+names the stage it died in. Note the bursts cluster around engine deploys and
+around the top of the hour (synchronized breaks resume at :00), both of which
+start many engines at once; the stagger in `GameServer` already spreads those,
+this stops a blip during one from being fatal.
+
+---
+
 ## Cowork session 2026-08-22 (5) — THE WATCHDOG WAS THE OUTAGE
 
 ### What the database said

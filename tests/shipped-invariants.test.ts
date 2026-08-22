@@ -64,6 +64,18 @@ const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
     'table action buttons are scoped so an unrelated stylesheet cannot repaint them'],
   ['src/components/table/tableGeometry.ts', 'betChipOffsetPx',
     'every seat’s chips sit the same distance from the player'],
+
+  // Leaderboard — lost once already, on 2026-08-21: this method's body was
+  // reverted by a merge while the migration creating the function sat in the
+  // repo unapplied. Losing it does not break the page, which is why nothing
+  // caught it — the client fallback aggregates from raw rows capped at 10,000,
+  // and every club is past that cap with no ORDER BY before it, so the page
+  // silently ranks an arbitrary half of a club's history. Measured on SHARK
+  // CLUB while it was lost: true #1 shown at #5, true #2 at #28, true #3 at
+  // #116 with $0, true #10 absent. Anchored on the CALL, so a rename trips it
+  // deliberately and a passing mention in a comment cannot satisfy it.
+  ['src/services/LeaderboardService.ts', "rpc('fn_club_tournament_stats',",
+    'the club tournament leaderboard is aggregated in the database, not from a capped page of rows'],
 ];
 
 /** Things that were removed on purpose and must not come back. */
@@ -81,6 +93,22 @@ describe('shipped functionality is still here', () => {
 
   it.each(MUST_NOT_EXIST)('%s stays deleted', (file, why) => {
     expect(existsSync(root(file)), `${file} came back — ${why}`).toBe(false);
+  });
+
+  /* A spec that no job runs is not a gate, it is a document. hero-card-row
+     lived in that state: 40 assertions covering bug list item 11, referenced by
+     no workflow, so the layout it guards could regress with every check green.
+     Anchored on the FILE NAME inside the required job's command, because that
+     is the thing whose absence makes the spec stop mattering. */
+  it.each([
+    ['tests/e2e/multi-table.spec.ts'],
+    ['tests/e2e/live-animations.spec.ts'],
+    ['tests/e2e/hero-card-row.spec.ts'],
+  ])('the required CSS Beat E2E job actually runs %s', (spec) => {
+    const ci = readFileSync(root('.github/workflows/ci.yml'), 'utf8');
+    const job = ci.slice(ci.indexOf('CSS Beat E2E (multi-table + animations)'));
+    expect(job.length, 'the CSS Beat E2E job is gone from ci.yml').toBeGreaterThan(0);
+    expect(job.includes(spec), `the CSS Beat E2E job no longer runs ${spec}`).toBe(true);
   });
 
   it('the sentinel list is not empty or trivially passing', () => {

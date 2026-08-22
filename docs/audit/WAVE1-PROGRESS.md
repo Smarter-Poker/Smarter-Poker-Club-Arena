@@ -9,7 +9,7 @@ permission-denied on every single invocation.
 
 ---
 
-## M1 — Idempotent cash-out credit (LANDED, BUT INERT — REOPENED 2026-08-06)
+## M1 — Idempotent cash-out credit (DB LANDED, client merged and fixed via M17)
 
 **Merged:** PR #33 -> `main` as `6b56ef4a` (2026-08-06)
 
@@ -271,7 +271,7 @@ reconciliation. Merged **and** running.
 
 ---
 
-## M6 — Rakeback settler watermark can skip rows forever (DB LANDED, code complete, PR BLOCKED)
+## M6 — Rakeback settler watermark can skip rows forever (DB LANDED, code complete, PR MERGED)
 
 **Migration applied to production:** `20260806_daemon_state_hwm_id`
 
@@ -367,7 +367,7 @@ the cycle following boot (the settler runs every 30 minutes).
 
 ---
 
-## M17 — The browser money-write surface is inert in production, and is a latent mint (FILED)
+## M17 — The browser money-write surface is inert in production, and is a latent mint (DB LANDED, client merged)
 
 Discovered by generalizing the M1 reopening above from one call site to all of
 them. Nothing is fixed yet; this entry records the finding and the fix

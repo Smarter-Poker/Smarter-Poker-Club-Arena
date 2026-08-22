@@ -37,6 +37,7 @@ import { supabase } from '../../lib/supabase';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import { formatPopupText } from '../../utils/popupStyle';
 import { reportError } from '../../utils/errorReporter';
+import { busToast } from '../../core/MasterBus';
 import './TournamentStartingTicker.css';
 
 /** How far ahead an event counts as "about to start". */
@@ -101,18 +102,33 @@ export function TournamentStartingTicker() {
   const [headerBottom, setHeaderBottom] = useState(0);
   useEffect(() => {
     const measure = () => {
-      const el = document.querySelector('header');
+      const el = document.getElementById('global-header') || document.querySelector('header');
       setHeaderBottom(el ? Math.max(0, Math.round(el.getBoundingClientRect().bottom)) : 0);
+      return el;
     };
     measure();
     window.addEventListener('resize', measure);
-    // The header also changes height after fonts and avatars load, not just
-    // on resize, so watch the element itself.
-    const el = document.querySelector('header');
-    const ro = typeof ResizeObserver !== 'undefined' && el ? new ResizeObserver(measure) : null;
-    if (ro && el) ro.observe(el);
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(measure);
+    }
+
+    // The header might render slightly after the ticker during initial mount.
+    // Poll briefly to ensure we measure it and attach the observer.
+    let attempts = 0;
+    const poll = setInterval(() => {
+      const el = measure();
+      if (el && ro) {
+        ro.observe(el);
+        clearInterval(poll);
+      }
+      if (++attempts > 10) clearInterval(poll); // Give up after 1s
+    }, 100);
+
     return () => {
       window.removeEventListener('resize', measure);
+      clearInterval(poll);
       ro?.disconnect();
     };
   }, [location.pathname]);
@@ -202,11 +218,54 @@ export function TournamentStartingTicker() {
     [upcoming, dismissed, now]
   );
 
+  const notifiedRef = useRef<Record<string, { fiveMin: boolean; ninetySec: boolean }>>({});
+  const upcomingRef = useRef(upcoming);
   useEffect(() => {
-    if (live.length === 0) return undefined;
-    const tick = setInterval(() => setNow(Date.now()), 1000);
+    upcomingRef.current = upcoming;
+  }, [upcoming]);
+
+  useEffect(() => {
+    if (upcoming.length === 0) return undefined;
+    const tick = setInterval(() => {
+      const currentNow = Date.now();
+      setNow(currentNow);
+
+      upcomingRef.current.forEach((t) => {
+        const msLeft = t.startsAt - currentNow;
+        const sLeft = Math.round(msLeft / 1000);
+
+        if (sLeft <= 300 && sLeft >= 0) {
+          const state = notifiedRef.current[t.id] || { fiveMin: false, ninetySec: false };
+          let changed = false;
+
+          // 5-minute mark (300 seconds)
+          if (!state.fiveMin && sLeft <= 300) {
+            state.fiveMin = true;
+            changed = true;
+            // If the event starts in more than 2 minutes, give them the 5 minute warning
+            if (sLeft > 120) {
+              busToast(`MTT "${t.name}" starts in 5 minutes!`, 'info', 8000);
+            }
+          }
+
+          // 90-second mark
+          if (!state.ninetySec && sLeft <= 90) {
+            state.ninetySec = true;
+            changed = true;
+            // If it starts in more than 10 seconds, give the 90s warning
+            if (sLeft > 10) {
+              busToast(`MTT "${t.name}" starts in 90 seconds!`, 'warning', 8000);
+            }
+          }
+
+          if (changed) {
+            notifiedRef.current[t.id] = state;
+          }
+        }
+      });
+    }, 1000);
     return () => clearInterval(tick);
-  }, [live.length]);
+  }, [upcoming.length]);
 
   const dismiss = useCallback((id: string) => {
     setDismissed((prev) => {

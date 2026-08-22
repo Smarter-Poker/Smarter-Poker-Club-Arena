@@ -59,6 +59,7 @@ interface DownlineRow {
   agentId: string | null;
   /** true when this player is assigned to the person looking at the screen */
   isMine: boolean;
+  playerNumber: string | null;
 }
 
 // A membership row means "in this club". The column carries two words for it:
@@ -321,14 +322,30 @@ export default function CashierTradePage() {
       const ids = (dl || []).map((r) => r.user_id as string);
       const profMap = new Map<
         string,
-        { username?: string; display_name?: string; avatar_url?: string; is_horse?: boolean }
+        {
+          username?: string;
+          display_name?: string;
+          avatar_url?: string;
+          is_horse?: boolean;
+          player_number?: number;
+        }
       >();
       if (ids.length > 0) {
         const { data: profs } = await supabase
           .from('profiles')
-          .select('id, username, display_name, avatar_url:arena_avatar_url, is_horse')
+          .select(
+            'id, username, display_name, avatar_url:arena_avatar_url, player_number, is_horse'
+          )
           .in('id', ids);
-        for (const pr of profs || []) profMap.set(pr.id as string, pr);
+        for (const pr of profs || []) {
+          profMap.set(pr.id as string, {
+            username: pr.username,
+            display_name: pr.display_name,
+            avatar_url: pr.avatar_url,
+            is_horse: pr.is_horse,
+            player_number: pr.player_number,
+          });
+        }
       }
 
       const rows: DownlineRow[] = (dl || []).map((r) => {
@@ -349,6 +366,7 @@ export default function CashierTradePage() {
           isHorse: Boolean(p?.is_horse),
           agentId,
           isMine: agentId === user.id,
+          playerNumber: p?.player_number ? String(p.player_number) : null,
         };
       });
 
@@ -462,8 +480,10 @@ export default function CashierTradePage() {
   }, [tab, user?.id, clubUuid]);
 
   // ── Chip requests (Chip Request tab) ───────────────────────────────────────
+  const reqSeqRef = useRef(0);
   const loadRequests = useCallback(async () => {
     if (!user?.id || !clubUuid) return;
+    const seq = ++reqSeqRef.current;
     setRequestsLoading(true);
     try {
       const { data, error } = await supabase
@@ -487,7 +507,7 @@ export default function CashierTradePage() {
             (pr.display_name as string) || (pr.username as string) || 'Player'
           );
       }
-      if (!isMounted.current) return;
+      if (!isMounted.current || seq !== reqSeqRef.current) return;
       setRequests(
         (data || []).map((r) => ({
           id: r.id as string,
@@ -503,7 +523,7 @@ export default function CashierTradePage() {
     } catch (e) {
       reportError(e, 'CashierTradePage.loadRequests');
     } finally {
-      if (isMounted.current) setRequestsLoading(false);
+      if (isMounted.current && seq === reqSeqRef.current) setRequestsLoading(false);
     }
   }, [user?.id, clubUuid]);
 
@@ -959,8 +979,12 @@ export default function CashierTradePage() {
                   <div className={styles.rowInfo}>
                     <span className={styles.rowName}>{r.name}</span>
                     <span className={styles.rowSub}>
-                      {r.role !== 'player' ? r.role.replace('_', ' ') : r.isHorse ? 'horse' : ''}
-                      {r.username ? ` @${r.username}` : ''}
+                      {r.playerNumber ? `ID: ${r.playerNumber} · ` : ''}
+                      <span style={{ textTransform: 'capitalize' }}>
+                        {r.role.replace('_', ' ')}
+                        {r.isHorse ? ' (horse)' : ''}
+                      </span>
+                      {r.username ? ` · @${r.username}` : ''}
                     </span>
                   </div>
                   <span className={styles.rowBalance}>{fmt(r.chipBalance)}</span>

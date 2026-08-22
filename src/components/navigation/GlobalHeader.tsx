@@ -190,7 +190,7 @@ export default function GlobalHeader() {
         <HamburgerMenu isOpen={menuOpen} onClose={handleMenuClose} />
       </Suspense>
 
-      <header className={styles.header} style={headerStyle}>
+      <header id="global-header" className={styles.header} style={headerStyle}>
         {/* LEFT: Hamburger, then Back and Hub sitting immediately left of the
             brand. All three are always rendered — see the note on the component. */}
         <div className={styles.headerLeft}>

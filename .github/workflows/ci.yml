@@ -23,6 +23,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4.3.1
+        with:
+          # The new-migration gate diffs this branch against its base, so it
+          # needs more than the single commit a default checkout brings.
+          fetch-depth: 0
 
       - name: Setup Node 20
         uses: actions/setup-node@v4.1.0
@@ -291,7 +295,29 @@ jobs:
             exit 1
           fi
 
+      # BLOCKING: a migration this branch adds must already exist in the live
+      # schema. 20260821_club_tournament_stats.sql sat in the repo for a day
+      # having never been applied, while the code that called its function was
+      # reverted by a bad merge — a feature the repo claimed and the database
+      # had never heard of, found by hand a day later. Every other gate here
+      # checks the CODE against the schema; nothing checked the MIGRATIONS.
+      - name: Supabase Invariants — New Migrations Were Applied
+        run: |
+          set -o pipefail
+          echo "## New-Migration Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-migrations-applied.mjs 2>&1 | tee /tmp/migapplied.log; then
+            echo "OK — every object this branch's migrations declare exists in production." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "A migration here was never applied (or the manifest is stale). Apply it via" >> $GITHUB_STEP_SUMMARY
+            echo "the Supabase MCP apply_migration, or regenerate the manifest in this PR." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       - name: Supabase Invariants — Phantom Columns
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -o pipefail
           echo "## Supabase Phantom-Column Check" >> $GITHUB_STEP_SUMMARY
@@ -493,6 +519,33 @@ jobs:
         # correct code-splitting score exactly as badly as shipping the code
         # eagerly. See the header of the script for the measurements.
         run: node scripts/ci/bundle-size.mjs
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # LIVE PRODUCTION E2E (split out of `Production Build` 2026-08-22).
+  #
+  # WHY THIS IS ITS OWN JOB, AND WHY IT ONLY RUNS ON main:
+  # these specs drive https://smarter.poker — the DEPLOYED site. On a pull
+  # request that is not the pull request's code, it is whatever main last
+  # shipped. So as a PR gate it could never validate the change under review;
+  # it only imported production's current health (and Vercel's deploy timing)
+  # into an unrelated PR as a red X. That is why `Production Build` went red on
+  # branches whose own build was fine, and why agents started reaching for
+  # `--admin` to get past it.
+  #
+  # `Production Build` is now purely deterministic (vite build + bundle budget)
+  # and is a REQUIRED check. This job runs after main deploys, as verification,
+  # and files an issue when production actually breaks.
+  #
+  # The PR-time E2E gate is `CSS Beat E2E (multi-table + animations)`, which
+  # serves THIS COMMIT'S OWN BUILD locally — that one is required.
+  # ───────────────────────────────────────────────────────────────────────────
+  live-e2e:
+    name: Live Production E2E
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
       - name: Checkout
         uses: actions/checkout@v4.3.1
         with:
@@ -590,6 +643,25 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 4: Post-deploy smoke test on smarter.poker
   # ─────────────────────────────────────────────────────────────────────────────
+
+      - name: Open an issue if production E2E failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="Live production E2E failed on main ($(echo "$SHA" | cut -c1-8))"
+          EXISTING=$(gh issue list --repo "$REPO" --state open --label live-e2e --limit 1 --json number --jq '.[0].number' || echo "")
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "$REPO" --body "Still failing on \`$SHA\`. Run: $RUN"
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" \
+              --label live-e2e \
+              --body "Production E2E went red after a merge to main.\n\nCommit: \`$SHA\`\nRun: $RUN\n\nThis job tests the DEPLOYED site, so this means smarter.poker itself is degraded — not that a PR is bad." || true
+          fi
+
   post-deploy-check:
     name: Post-Deploy Verification
     needs: build
@@ -694,7 +766,13 @@ jobs:
       - name: Run the beats against this commit's CSS
         env:
           ARENA_BASE_URL: http://127.0.0.1:4173/hub/club-arena
-        run: npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts --reporter=line --retries=1
+        # hero-card-row.spec.ts was written to gate bug list item 11 and then
+        # ran in NO job at all - 40 pure-geometry assertions that nobody ever
+        # executed, which is why PR #178 could sit for 39 commits proposing
+        # changes to a spec whose result could not affect anything. It needs no
+        # server and no login (it renders SeatSlot.css with page.setContent) and
+        # the whole file runs in ~2.5s, so it belongs in the required gate.
+        run: npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/hero-card-row.spec.ts --reporter=line --retries=1
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 5: AUTO-REVERT — DISABLED (was causing revert loops during migration)

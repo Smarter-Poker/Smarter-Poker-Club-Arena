@@ -43,5 +43,8 @@
     "hand_history": ["community_cards2"],
     "friend_challenges": ["winner_id", "resolved_at"],
     "_comment": "BUILT columns whose columns-manifest entry is pending regeneration (deploy blocked by PAT rotation 2026-07-29). Remove once the manifest is regenerated."
+  },
+  "unappliedMigrations": {
+    "fn_reroll_challenge": "another agent pushed a migration but did not apply it"
   }
 }

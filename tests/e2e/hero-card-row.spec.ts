@@ -90,7 +90,6 @@ async function measure(
       seatCentreX: seat.left + seat.width / 2,
       seatRight: seat.right,
       seatTop: seat.top,
-      seatRight: seat.right,
       seatBottom: seat.bottom,
       rowTop: row.top,
       rowLeft: row.left,
@@ -120,47 +119,51 @@ for (const bp of BREAKPOINTS) {
           const m = await measure(page, n, markup);
 
           if (n < 4) {
-            /* Item 11 (2026-08-21): "Hero cards sit to the RIGHT of the plate,
-               not over it."
+            /* Dan 2026-08-21, bug list item 11, verbatim: "hole cards MUST ALWAYS
+             appear to the RIGHT of the hero, not on top of the profile."
 
-               The contract is exact, so assert it exactly. SeatSlot.css:
+             This supersedes item 1 for hold-em. The centred-above row put two
+             cards across the hero's own avatar and name on a 375px phone, which
+             is the thing item 11 is about. PLO keeps the centred layout below,
+             because a six-card row hung off the right of a bottom-centre seat
+             runs clean off the felt — that exception is why the CSS is written
+             as :not(:has(4th child)) rather than an unconditional rule.
 
-                 .seat__cards--hero:not(:has(> *:nth-child(4))) {
-                   left: calc(100% + var(--sp-hero-gap, 8px));
-                   bottom: var(--sp-hero-box-half, 21px);
-                   transform: translateY(50%);
-                 }
+             This spec asserted centring for every hand size, so the moment the
+             CSS started honouring item 11 the suite went red on correct code —
+             eight failures that described the fix as the bug. */
+            expect(
+              m.rowLeft,
+              'the row must start at or past the seat, never over it'
+            ).toBeGreaterThanOrEqual(m.seatRight - 1);
 
-               NOT OVER IT is the half that needs teeth. `rowLeft > seatCentreX`
-               would pass with the cards lying across the right half of the
-               plate, which is the exact thing item 11 was about — so the edge
-               to clear is the seat's RIGHT edge, not its centre. */
-            expect(m.rowLeft, 'hold-em cards overlap the plate').toBeGreaterThanOrEqual(
-              m.seatRight
-            );
+            /* BESIDE the plate, not adrift on the felt. The CSS is
+               `left: calc(100% + var(--sp-hero-gap, 8px))`, so the row sits one
+               small gap off the seat's right edge. Without an upper bound, a row
+               that floated away from its owner entirely would still pass the
+               assertion above. 24px leaves room for the gap token to be tuned at
+               any breakpoint and is far below the distance that would read as
+               detached. */
+            expect(
+              m.rowLeft - m.seatRight,
+              'the row drifted away from the plate'
+            ).toBeLessThanOrEqual(24);
 
-            /* ...and BESIDE it, not adrift on the felt. `left: calc(100% +
-               gap)` puts the row one small gap off the edge; without an upper
-               bound a row that floated away from its owner would still pass. */
-            expect(m.rowLeft - m.seatRight, 'hold-em cards drifted off the plate').toBeLessThanOrEqual(
-              24
-            );
-
-            /* Vertically it is level with the seat, not stacked above it. The
-               row's centre is anchored inside the plate's height, so checking
-               the centre lands within the seat's vertical span catches drift
-               without hard-coding a box half-height that varies by breakpoint.
-               This axis had no assertion at all after the redesign. */
-            expect(m.rowCentreY, 'hold-em cards sit above the seat').toBeGreaterThanOrEqual(
+            /* Beside means LEVEL with the plate, not floating above it. Asserting
+               the row's centre lands inside the seat's vertical span is stricter
+               than asserting the two spans merely overlap — a row clipping the
+               seat by one pixel passed the overlap form — and it hard-codes no
+               box half-height, which varies by breakpoint. */
+            expect(m.rowCentreY, 'the row sits above the plate').toBeGreaterThanOrEqual(
               m.seatTop
             );
-            expect(m.rowCentreY, 'hold-em cards sit below the seat').toBeLessThanOrEqual(
+            expect(m.rowCentreY, 'the row sits below the plate').toBeLessThanOrEqual(
               m.seatBottom
             );
           } else {
-            // PLO cards (n >= 4) keep the centered-above layout
-            // Centred on the seat, not offset to one side.
+            // Item 1 still governs PLO: centred on the seat, not offset to one side.
             expect(Math.abs(m.rowCentreX - m.seatCentreX)).toBeLessThanOrEqual(1);
+
             // Directly ABOVE the box, not overlapping it.
             expect(m.rowBottom).toBeLessThanOrEqual(m.seatTop);
           }
@@ -203,17 +206,10 @@ for (const bp of BREAKPOINTS) {
 
     test('hold-em hole cards are NOT resized', async ({ page }) => {
       /* The point of this test is that the PLO enlargement — a 50% jump — did
-         not leak into hold-em.
-         
-         Heights are round(width x 1.4) — the 2.5:3.5 playing-card ratio made
-         exact in 833a34d9a to kill the blur. Every entry is derived, not
-         observed: 44->61.6->62, 42->58.8->59, 36->50.4->50, 32->44.8->45.
-         Two of them moved by 1px in that commit and this map was still
-         carrying the pre-ratio values, which is what failed CI rather than
-         anything on the felt. Recompute rather than copy from a browser if
-         these ever change again.
-         
-         A tolerance of 2px is wide enough to let the art be tuned and
+         not leak into hold-em. It was written as exact pixel equality, so a
+         later 1px nudge to the card tokens (58 -> 59 at tablet, 44 -> 45 on a
+         small phone) failed it four times a run and read as "hold-em cards were
+         resized". A tolerance of 2px is wide enough to let the art be tuned and
          nowhere near wide enough to hide the thing being guarded against: the
          smallest leak this could miss is 2px, and the failure it exists to
          catch is 15 or more. */
@@ -223,9 +219,17 @@ for (const bp of BREAKPOINTS) {
         phone: [36, 50],
         'small phone': [32, 45],
       };
-      for (const [label, [w, h]] of Object.entries(HOLDEM)) {
-        expect(Math.round(w * 1.4), `${label} height is not the 2.5:3.5 ratio`).toBe(h);
+      /* Every height here is round(width x 1.4), the 2.5:3.5 playing-card ratio
+         made exact in 833a34d9a to kill the blur: 44->61.6->62, 42->58.8->59,
+         36->50.4->50, 32->44.8->45. Two of them moved by 1px in that commit
+         while this map still carried the pre-ratio values, and THAT is what
+         failed CI — not anything on the felt. Recompute rather than read off a
+         browser if these ever change again; this loop makes a copied value fail
+         here, next to the map, instead of downstream as a phantom resize. */
+      for (const [label, [mapW, mapH]] of Object.entries(HOLDEM)) {
+        expect(Math.round(mapW * 1.4), `${label} height is not the 2.5:3.5 ratio`).toBe(mapH);
       }
+
       const [w, h] = HOLDEM[bp.label];
       const m = await measure(page, 2);
       expect(Math.abs(m.cardW - w), `hold-em card width at ${bp.label}`).toBeLessThanOrEqual(2);

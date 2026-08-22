@@ -15,6 +15,12 @@ name: Silent Revert Guard
 on:
   push:
     branches: [main]
+  # 2026-08-22: this used to run on push ONLY, which meant a silent revert
+  # LANDED on main and was reported afterwards. Detection after the fact is how
+  # the leaderboard RPC call stayed dead for a day. Running it on the pull
+  # request turns the same check into prevention: the revert never lands.
+  pull_request:
+    branches: [main]
 
 concurrency:
   group: silent-revert-${{ github.ref }}
@@ -22,11 +28,20 @@ concurrency:
 
 jobs:
   detect:
+    # Named explicitly because this is a REQUIRED status check and the ruleset
+    # matches on the job name. Renaming it silently un-gates main.
+    name: Silent Revert Guard
     runs-on: ubuntu-latest
     steps:
       - name: Checkout with full history
         uses: actions/checkout@v4
         with:
+          # On pull_request, checkout defaults to the MERGE commit
+          # (refs/pull/N/merge). That merge is synthesised against main's tip,
+          # so `merge-base origin/main HEAD` collapses to main and the range
+          # stops describing the PR. Check out the PR's real head instead.
+          # Empty on push events, where the default is already correct.
+          ref: ${{ github.event.pull_request.head.sha }}
           # The check compares blobs against commits up to 45 days back, so a
           # shallow clone would make every prior commit invisible and the guard
           # would pass by knowing nothing.
@@ -39,11 +54,20 @@ jobs:
 
       - name: Detect unannounced reverts
         run: |
-          BASE="${{ github.event.before }}"
-          if [ -z "$BASE" ] \
-             || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
-             || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
-            echo "No usable push base (first push, or force-push); falling back to HEAD~1."
-            BASE="HEAD~1"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Compare the PR's own commits against the point it diverged from
+            # main. Using origin/main directly would treat every commit that
+            # landed on main since the branch started as part of this PR.
+            git fetch origin "${{ github.base_ref }}" --quiet
+            BASE=$(git merge-base "origin/${{ github.base_ref }}" HEAD)
+            echo "PR range: ${BASE}..HEAD"
+          else
+            BASE="${{ github.event.before }}"
+            if [ -z "$BASE" ] \
+               || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
+               || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+              echo "No usable push base (first push, or force-push); falling back to HEAD~1."
+              BASE="HEAD~1"
+            fi
           fi
           node scripts/ci/detect-silent-revert.mjs --base "$BASE" --days 45

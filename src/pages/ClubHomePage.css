@@ -113,7 +113,7 @@
   border-radius: 4px;
   font-size: 0.8rem;
   font-weight: bold;
-  box-shadow: 0 0 10px rgba(255, 184, 0, 0.3);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.08);
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
@@ -219,13 +219,13 @@
 }
 
 .lobby-quick:hover {
-  border-color: rgba(255, 184, 0, 0.4);
+  border-color: rgba(255, 255, 255, 0.2);
   color: #fff;
   transform: translateY(-1px);
 }
 
 .lobby-quick:focus-visible {
-  outline: 2px solid rgba(255, 184, 0, 0.6);
+  outline: 2px solid rgba(255, 255, 255, 0.2);
   outline-offset: 2px;
 }
 
@@ -297,7 +297,7 @@
   border-radius: 12px;
   overflow: hidden;
   background: linear-gradient(135deg, #2a2a3e, #1a1a2e);
-  border: 1px solid rgba(255, 184, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -526,7 +526,7 @@
 }
 
 .wallet-row.gold {
-  border-color: rgba(255, 184, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .wallet-row.diamond {
@@ -694,7 +694,7 @@
   min-height: 32px;
   padding: 0 10px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 184, 0, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   background: #0f1420;
   color: #cfd8e5;
   font-size: 0.72rem;
@@ -708,7 +708,7 @@
 }
 
 .quickprefs__chip:hover {
-  border-color: rgba(255, 184, 0, 0.6);
+  border-color: rgba(255, 255, 255, 0.2);
   color: #fff;
 }
 
@@ -720,7 +720,7 @@
 }
 
 .quickprefs__chip:focus-visible {
-  outline: 2px solid rgba(255, 184, 0, 0.8);
+  outline: 2px solid rgba(255, 255, 255, 0.3);
   outline-offset: 2px;
 }
 
@@ -744,12 +744,12 @@
 }
 
 .quickprefs__more:hover {
-  border-color: rgba(255, 184, 0, 0.55);
-  background: rgba(255, 184, 0, 0.1);
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .quickprefs__more:focus-visible {
-  outline: 2px solid rgba(255, 184, 0, 0.8);
+  outline: 2px solid rgba(255, 255, 255, 0.3);
   outline-offset: 2px;
 }
 
@@ -791,7 +791,7 @@
 }
 
 .game-bar__filter-btn:focus-visible {
-  outline: 2px solid rgba(255, 184, 0, 0.8);
+  outline: 2px solid rgba(255, 255, 255, 0.3);
   outline-offset: 2px;
 }
 
@@ -941,11 +941,11 @@
 
 .lobby-count__clear:hover {
   color: #fff;
-  border-color: rgba(255, 184, 0, 0.45);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .lobby-count__clear:focus-visible {
-  outline: 2px solid rgba(255, 184, 0, 0.6);
+  outline: 2px solid rgba(255, 255, 255, 0.2);
   outline-offset: 2px;
 }
 
@@ -1302,12 +1302,12 @@
    escape; editing the filters is for someone who knows what they set. */
 .empty-action--ghost {
   background: transparent;
-  border: 1px solid rgba(255, 184, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   color: #ffce5c;
 }
 
 .empty-action--ghost:hover {
-  background: rgba(255, 184, 0, 0.1);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1669,7 +1669,7 @@
   height: 2px;
   background: linear-gradient(90deg, #ffb800, #ff8c00);
   border-radius: 1px;
-  box-shadow: 0 0 8px rgba(255, 184, 0, 0.4);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
 }
 
 .filter-tab {

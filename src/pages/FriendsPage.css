@@ -83,6 +83,21 @@
   display: flex;
   border-bottom: 2px solid #1a2332;
   margin: 0 1rem;
+  /* Mobile-fit sweep (2026-08-22): the tab row plus the filter chips measured
+     401px at a 375px viewport — the chips ran off the right edge. Same
+     treatment the social pages give a chip row: one line that scrolls
+     sideways under the thumb, scrollbar hidden. Desktop is unaffected — the
+     row only scrolls when it genuinely does not fit. */
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.friends-tabs::-webkit-scrollbar {
+  display: none;
+}
+.friends-tabs > * {
+  flex-shrink: 0;
 }
 
 .friends-tabs button {

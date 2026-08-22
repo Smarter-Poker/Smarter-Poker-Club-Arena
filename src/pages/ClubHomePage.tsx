@@ -86,20 +86,55 @@ import {
    emblem and fills the box as intended. */
 const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo.jpg`;
 
-// SWR cache helpers for instant club data display
+// SWR cache helpers for instant club data display.
+//
+// PERF PASS 2026-08-22 (handoff item 7): moved from sessionStorage to
+// localStorage. sessionStorage dies with the tab, so the one load that
+// matters most — a returning player cold-opening their club — always sat
+// on the skeleton while the heaviest screen in the app fetched from zero.
+// localStorage gives that visit the same instant paint the in-session
+// revisits already had; loadClubData still revalidates immediately after.
+// Only public club metadata and the table list are cached — never wallet,
+// role, or member data. Entries carry their own timestamp because the
+// staleCacheReaper only sweeps sessionStorage: reads ignore anything older
+// than the TTL, and a quota failure drops every club-home entry and retries
+// once, so the cache can never wedge itself full.
+const CLUB_HOME_CACHE_VER = 'v2';
+const CLUB_HOME_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 function getClubHomeCache(clubId: string) {
   try {
-    const raw = sessionStorage.getItem(`club_home_cache_${clubId}`);
-    return raw ? JSON.parse(raw) : null;
+    const raw =
+      localStorage.getItem(`club_home_cache_${CLUB_HOME_CACHE_VER}_${clubId}`) ??
+      // Pre-v2 entries (unwrapped, sessionStorage) still hydrate one last
+      // time during the transition; the next write lands in localStorage.
+      sessionStorage.getItem(`club_home_cache_${clubId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && 'at' in parsed && 'data' in parsed) {
+      if (Date.now() - parsed.at > CLUB_HOME_CACHE_TTL_MS) return null;
+      return parsed.data;
+    }
+    return parsed;
   } catch {
     return null;
   }
 }
 function setClubHomeCache(clubId: string, data: { club: any; tables: any[] }) {
+  const key = `club_home_cache_${CLUB_HOME_CACHE_VER}_${clubId}`;
+  const value = JSON.stringify({ at: Date.now(), data });
   try {
-    sessionStorage.setItem(`club_home_cache_${clubId}`, JSON.stringify(data));
+    localStorage.setItem(key, value);
   } catch {
-    /* storage full */
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('club_home_cache_')) localStorage.removeItem(k);
+      }
+      localStorage.setItem(key, value);
+    } catch {
+      /* storage unavailable — instant paint is best-effort */
+    }
   }
 }
 

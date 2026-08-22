@@ -884,8 +884,8 @@
 }
 
 .game-bar__sort-menu button.is-active {
-  color: #ffce5c;
-  background: rgba(255, 184, 0, 0.12);
+  color: #0088ff;
+  background: rgba(0, 136, 255, 0.12);
   font-weight: 700;
 }
 

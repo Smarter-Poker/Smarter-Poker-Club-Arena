@@ -229,25 +229,70 @@ jobs:
         # construction.
         #
         # The one thing that must not happen is publishing an OLDER bundle over
-        # a newer one, which is how a "retry" turns into a regression. Before
-        # each attempt we read the build-info.json already on World Hub main
-        # and stand down if it is newer than ours.
+        # a newer one, which is how a "retry" turns into a regression.
+        #
+        # 2026-08-22: the stand-down guard used to compare built_at TIMES, and
+        # that let the race through twice in one day. concurrency
+        # cancel-in-progress: false allows an OLDER-sha run to FINISH after a
+        # newer one — and because the older run was still building, its
+        # built_at is the LATER timestamp, so a wall-clock comparison waves the
+        # regression straight through. "Newer" must mean git history, not
+        # clock. The deployed build-info.json carries ca_sha, so before each
+        # attempt we ask the compare API where the deployed sha stands relative
+        # to ours:
+        #   ahead / identical -> publish;  behind -> stand down (we are the
+        #   older commit);  diverged / unknown sha / API failure / no ca_sha
+        #   in the deployed file -> fall back to the built_at comparison,
+        #   which is still better than publishing blind.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -u
           cd world-hub
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
 
+          OURS_SHA="${{ github.sha }}"
           OURS_AT=$(sed -n 's/.*"built_at"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
                     ../club-arena-build/dist/build-info.json 2>/dev/null || true)
-          echo "this bundle was built at: ${OURS_AT:-unknown}"
+          echo "this bundle: sha ${OURS_SHA}, built at ${OURS_AT:-unknown}"
 
           for attempt in 1 2 3 4 5; do
+            THEIRS_SHA=$(sed -n 's/.*"ca_sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+                         public/hub/club-arena/build-info.json 2>/dev/null || true)
             THEIRS_AT=$(sed -n 's/.*"built_at"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
                         public/hub/club-arena/build-info.json 2>/dev/null || true)
-            # ISO-8601 UTC sorts lexically, so > is a real time comparison.
-            if [ -n "$OURS_AT" ] && [ -n "$THEIRS_AT" ] && [ "$THEIRS_AT" \> "$OURS_AT" ]; then
-              echo "World Hub already carries a NEWER bundle ($THEIRS_AT > $OURS_AT)."
+
+            VERDICT=""
+            if [ -n "$THEIRS_SHA" ] && [ "$THEIRS_SHA" != "$OURS_SHA" ]; then
+              STATUS=$(gh api "repos/${{ github.repository }}/compare/${THEIRS_SHA}...${OURS_SHA}" \
+                       --jq .status 2>/dev/null || echo unknown)
+              echo "deployed sha ${THEIRS_SHA} relative to ours: ${STATUS}"
+              case "$STATUS" in
+                ahead|identical) VERDICT=publish ;;
+                behind)          VERDICT=standdown ;;
+                *)               VERDICT="" ;;
+              esac
+            elif [ -n "$THEIRS_SHA" ]; then
+              # Same sha as deployed: a rebuild of the same commit. Publish;
+              # the "No changes to sync" check below decides if it is a no-op.
+              VERDICT=publish
+            fi
+
+            if [ -z "$VERDICT" ]; then
+              # Ancestry could not answer (no deployed ca_sha, sha unknown to
+              # the repo after a rewind, diverged history, API failure). Fall
+              # back to the time comparison rather than publishing blind.
+              # ISO-8601 UTC sorts lexically, so > is a real time comparison.
+              if [ -n "$OURS_AT" ] && [ -n "$THEIRS_AT" ] && [ "$THEIRS_AT" \> "$OURS_AT" ]; then
+                VERDICT=standdown
+              else
+                VERDICT=publish
+              fi
+            fi
+
+            if [ "$VERDICT" = "standdown" ]; then
+              echo "World Hub already carries a NEWER bundle (deployed ${THEIRS_SHA:-unknown sha} @ ${THEIRS_AT:-unknown time})."
               echo "Standing down rather than regressing production to an older build."
               exit 0
             fi

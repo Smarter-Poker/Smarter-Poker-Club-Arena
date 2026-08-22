@@ -159,6 +159,28 @@ describe('shipped functionality is still here', () => {
       expect(publisher().includes('npx vitest run tests/')).toBe(true);
     });
 
+    it('an older build cannot overwrite a newer one — ancestry, not wall clock', () => {
+      /* 2026-08-22, twice in one day: cancel-in-progress: false lets an
+         OLDER-sha run FINISH after a newer one, and because the older run was
+         still building, its built_at is the LATER timestamp — so a stand-down
+         guard comparing times waves the regression straight through. "Newer"
+         must mean git history. Pinned on the mechanism: the sync step reads
+         the deployed ca_sha and asks the compare API where it stands. */
+      const wf = publisher();
+      expect(
+        wf.includes('"ca_sha"'),
+        'the sync step no longer reads the deployed ca_sha'
+      ).toBe(true);
+      expect(
+        /\/compare\/\$\{THEIRS_SHA\}\.\.\.\$\{OURS_SHA\}/.test(wf),
+        'the sync step no longer asks the compare API for ancestry'
+      ).toBe(true);
+      expect(
+        /behind\)\s+VERDICT=standdown/.test(wf),
+        'a behind (older) build no longer stands down'
+      ).toBe(true);
+    });
+
     it('something asks production what it is actually serving', () => {
       // Without this, "merged" and "published" have the same green tick, and
       // three separate incidents here were merges that never published.

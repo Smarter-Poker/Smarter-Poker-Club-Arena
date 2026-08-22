@@ -7,6 +7,44 @@
 
 ---
 
+## Cowork session 2026-08-22 (11) — the rake cap froze two live tournaments for 29 hours (PR #320)
+
+Follow-up to the session-10 handoff's first pending item: postgres was logging
+`tournaments_rake_within_10_pct` violations continuously — hundreds per hour,
+all day, not just at engine boot. The suspected cause (a legacy
+TournamentRecurringService config authoring an over-cap split) was WRONG:
+every current writer goes through buyInFor/splitBuyIn, which floors the fee
+and cannot violate the check.
+
+THE ACTUAL BUG: a NOT VALID constraint skips validating existing rows when it
+is ADDED, but still checks every UPDATE, because an update writes a new row
+version. Two tournaments created 2026-08-21 18:02-18:03 UTC by the
+pre-floor-fix engine (Prime Time Main Event 22+3 = 12%, Evening Mystery
+Bounty 13+2 = 13.3%) were mid-flight when the constraint landed minutes
+later. From then on NO engine write to either row could ever succeed: both
+sat RUNNING with updated_at frozen at created_at for 29 hours while the
+engine retried on every tick — that retry loop WAS the "boot noise".
+
+FIX (migration 20260822230000_repair_overcap_rake_active_tournaments.sql,
+applied to prod via Supabase MCP before merging): re-cut the fee out of the
+unchanged player-paid total (fee = floor(total x 0.1), prize = total - fee —
+the same arithmetic as splitBuyIn and the CHECK), generically for any active
+violating row, idempotent, with post-apply assertions. Completed rows keep
+their true over-cap history — rewriting settled money would falsify books.
+
+VERIFIED IN PROD: repair ran 22:55:51 UTC; both tournaments were COMPLETED by
+the engine within minutes, and the violation count since 22:56 is ZERO (was
+~20/minute). Also verified this session: production serves the parity bundle
+(build-info ca_sha matches World Hub main), the 38 Midway schedules are
+active with 9 spawns in the trailing 3h, and the stranded session-10
+changelog entry was rebased onto main and landed as PR #301. One new orphan
+timed spawn (Saturday Speedway 21:30, key claimed, insert lost to the #302
+DB-starvation window) is inert; next Saturday gets a fresh key.
+
+LESSON FOR FUTURE CONSTRAINT MIGRATIONS: adding a CHECK ... NOT VALID to a
+table the engine continuously updates MUST ship a data repair for in-flight
+rows in the same migration, or those rows become permanently unwritable.
+
 ## Cowork session 2026-08-22 (10) — TOURNAMENT TEMPLATE PARITY + THE MIDWAY WEEKLY SCHEDULE (PR #279)
 
 Two asks from Dan: (1) study how PokerStars runs its daily/weekly/monthly MTT

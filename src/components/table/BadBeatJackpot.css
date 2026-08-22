@@ -12,7 +12,9 @@
   /* Dan 2026-04-17: shrunk — fits between the hamburger/+ on the left
      and the stats icon on the right at 375px. Padding + font smaller. */
   position: absolute;
-  top: 6px;
+  /* Dan 2026-08-22 mobile audit item 1: the banner sat UNDER the iPhone
+     status bar (clock/battery). Respect the notch safe area. */
+  top: calc(6px + env(safe-area-inset-top, 0px));
   left: 50%;
   transform: translateX(-50%);
   background: linear-gradient(135deg, #2d1b4e 0%, #1a102e 100%);

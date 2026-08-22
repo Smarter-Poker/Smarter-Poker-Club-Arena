@@ -7,7 +7,9 @@
 .table-chat {
   position: fixed;
   right: 8px;
-  bottom: 120px;
+  /* Dan 2026-08-22 item 6: anchored just above the action bar, on the line
+     where the background meets the black action box. */
+  bottom: calc(112px + env(safe-area-inset-bottom, 0px));
   z-index: 100;
   display: flex;
   flex-direction: column;
@@ -44,7 +46,9 @@
 .chat-collapsed {
   position: fixed;
   right: 8px;
-  bottom: 120px;
+  /* Dan 2026-08-22 item 6: same anchor line as the expanded chat + the
+     bottom-left HUD stack — just above the action bar. */
+  bottom: calc(112px + env(safe-area-inset-bottom, 0px));
   z-index: 100;
   width: 44px;
   height: 44px;
@@ -512,12 +516,13 @@
     width: calc(100% - 16px);
     left: 8px;
     right: 8px;
-    bottom: 100px;
+    /* Dan 2026-08-22 item 6: same anchor as desktop — just above the bar. */
+    bottom: calc(112px + env(safe-area-inset-bottom, 0px));
     max-height: 280px;
   }
 
   .chat-collapsed {
     right: 8px;
-    bottom: 100px;
+    bottom: calc(112px + env(safe-area-inset-bottom, 0px));
   }
 }

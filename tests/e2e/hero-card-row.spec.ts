@@ -114,63 +114,52 @@ for (const bp of BREAKPOINTS) {
 
     for (const n of [2, 4, 5, 6]) {
       for (const markup of ['wrapped', 'bare'] as const) {
-        const placement = n < 4 ? 'beside the plate' : 'centred above the plate';
-        test(`${n} cards (${markup}): ${placement}, inside the felt`, async ({ page }) => {
+        test(`${n} cards (${markup}): beside the plate, inside the viewport`, async ({ page }) => {
           const m = await measure(page, n, markup);
 
-          if (n < 4) {
-            /* Dan 2026-08-21, bug list item 11, verbatim: "hole cards MUST ALWAYS
-             appear to the RIGHT of the hero, not on top of the profile."
+          /* Dan 2026-08-22, mobile audit item 2, verbatim: "THE HERO CARDS
+             NEED TO BE NEXT TO THE HERO, NOT ON TOP OF THE TABLE."
 
-             This supersedes item 1 for hold-em. The centred-above row put two
-             cards across the hero's own avatar and name on a 375px phone, which
-             is the thing item 11 is about. PLO keeps the centred layout below,
-             because a six-card row hung off the right of a bottom-centre seat
-             runs clean off the felt — that exception is why the CSS is written
-             as :not(:has(4th child)) rather than an unconditional rule.
+             This retires the 2026-08-19/-21 split (hold-em beside, PLO centred
+             above). EVERY hand size now hangs off the right of the seat,
+             vertically centred on the avatar. It fits because the hero avatar
+             itself moved to y:100 of the scaler - the space to the seat's
+             right is backdrop, not felt - and the row tucks 10px behind the
+             avatar's right edge (`left: calc(100% - 10px)`), which is what
+             keeps a PLO6 row inside a 375px viewport.
 
-             This spec asserted centring for every hand size, so the moment the
-             CSS started honouring item 11 the suite went red on correct code —
-             eight failures that described the fix as the bug. */
-            expect(
-              m.rowLeft,
-              'the row must start at or past the seat, never over it'
-            ).toBeGreaterThanOrEqual(m.seatRight - 1);
+             The horizontal bound that matters is therefore the VIEWPORT, not
+             the felt: the row deliberately overhangs the scaler's right edge
+             on a desktop-width felt, and that is fine as long as every card
+             stays on screen at phone width. */
+          expect(
+            m.rowLeft,
+            'the row must start beside the seat (10px tuck allowed), never across it'
+          ).toBeGreaterThanOrEqual(m.seatRight - 11);
 
-            /* BESIDE the plate, not adrift on the felt. The CSS is
-               `left: calc(100% + var(--sp-hero-gap, 8px))`, so the row sits one
-               small gap off the seat's right edge. Without an upper bound, a row
-               that floated away from its owner entirely would still pass the
-               assertion above. 24px leaves room for the gap token to be tuned at
-               any breakpoint and is far below the distance that would read as
-               detached. */
-            expect(
-              m.rowLeft - m.seatRight,
-              'the row drifted away from the plate'
-            ).toBeLessThanOrEqual(24);
+          /* BESIDE the plate, not adrift on the felt. Without an upper bound,
+             a row that floated away from its owner entirely would still pass
+             the assertion above. 24px leaves room for the gap/tuck tokens to
+             be tuned at any breakpoint and is far below the distance that
+             would read as detached. */
+          expect(
+            m.rowLeft - m.seatRight,
+            'the row drifted away from the plate'
+          ).toBeLessThanOrEqual(24);
 
-            /* Beside means LEVEL with the plate, not floating above it. Asserting
-               the row's centre lands inside the seat's vertical span is stricter
-               than asserting the two spans merely overlap — a row clipping the
-               seat by one pixel passed the overlap form — and it hard-codes no
-               box half-height, which varies by breakpoint. */
-            expect(m.rowCentreY, 'the row sits above the plate').toBeGreaterThanOrEqual(
-              m.seatTop
-            );
-            expect(m.rowCentreY, 'the row sits below the plate').toBeLessThanOrEqual(
-              m.seatBottom
-            );
-          } else {
-            // Item 1 still governs PLO: centred on the seat, not offset to one side.
-            expect(Math.abs(m.rowCentreX - m.seatCentreX)).toBeLessThanOrEqual(1);
+          /* Beside means LEVEL with the plate, not floating above it. The row
+             is centred on the avatar half of the seat, so its centre must land
+             inside the seat's vertical span at every breakpoint. */
+          expect(m.rowCentreY, 'the row sits above the plate').toBeGreaterThanOrEqual(
+            m.seatTop
+          );
+          expect(m.rowCentreY, 'the row sits below the plate').toBeLessThanOrEqual(
+            m.seatBottom
+          );
 
-            // Directly ABOVE the box, not overlapping it.
-            expect(m.rowBottom).toBeLessThanOrEqual(m.seatTop);
-          }
-
-          // Never escapes the felt on either side.
+          // Never escapes the viewport - every card stays visible on screen.
           expect(m.rowLeft).toBeGreaterThanOrEqual(m.feltLeft);
-          expect(m.rowRight).toBeLessThanOrEqual(m.feltRight);
+          expect(m.rowRight).toBeLessThanOrEqual(bp.width);
 
           // Cards are actually rendered.
           expect(m.cardW).toBeGreaterThan(0);

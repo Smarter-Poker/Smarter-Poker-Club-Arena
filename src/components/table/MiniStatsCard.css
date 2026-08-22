@@ -176,10 +176,19 @@
 
 /* ── Responsive ── */
 @media (max-width: 480px) {
-  .mini-stats-card {
+  /* Dan 2026-08-22 mobile audit item 4: this block used to hit the ICON
+     variant too (same 0-1-0 specificity, later in the file), stretching the
+     square 32px button into a 100px-wide pill on every phone. Scope it to
+     the expanded card only — the icon stays a square. */
+  .mini-stats-card:not(.mini-stats-card--icon) {
     padding: 6px 10px;
     min-width: 100px;
     border-radius: 10px;
+  }
+
+  .mini-stats-card--icon {
+    width: 36px;
+    height: 36px;
   }
 
   .mini-stats-card__compact {

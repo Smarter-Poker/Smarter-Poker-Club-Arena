@@ -95,6 +95,16 @@ function formatChips(n: number): string {
   return Math.abs(v) >= 1000 ? v.toLocaleString() : String(v);
 }
 
+/**
+ * Dan 2026-08-22 (mobile audit item 8): "ALL GAMES OVER .50/1 SHOULD BE
+ * DISPLAYED PLO4 5/10" — whole-number stakes drop their trailing zeros.
+ * "PLO4 5.00/10.00" -> "PLO4 5/10", while genuine sub-unit stakes keep their
+ * decimals: "NLH 0.50/1.00" -> "NLH 0.50/1" and "0.10/0.25" is untouched.
+ */
+function stripWholeDecimals(title: string): string {
+  return title.replace(/(\d+)\.0+(?=\D|$)/g, '$1');
+}
+
 /** 1 -> "1st", 2 -> "2nd", 3 -> "3rd", 11 -> "11th", 22 -> "22nd". */
 function ordinal(n: number): string {
   const abs = Math.abs(Math.round(n));
@@ -181,14 +191,19 @@ export function SessionSummaryHost() {
     const winRate =
       payload.handsPlayed > 0 ? Math.round((payload.handsWon / payload.handsPlayed) * 100) : 0;
 
+    /* Dan 2026-08-22 (mobile audit item 8): Hands Per Hour is gone from the
+       cash card — VPIP takes its slot — and the total buy-in gets a tile. */
     const out = [
       { label: 'Duration', value: formatDuration(payload.duration) },
       { label: 'Hands Played', value: String(payload.handsPlayed) },
-      { label: 'Hands Per Hour', value: String(handsPerHour) },
+      { label: 'VPIP', value: `${payload.vpipPercent ?? 0}%` },
       { label: 'Biggest Pot', value: formatChips(payload.biggestPot) },
       { label: 'Peak Stack', value: formatChips(payload.peakStack) },
       { label: 'Win Rate', value: `${winRate}%` },
     ];
+    if (payload.totalBuyIn != null && payload.totalBuyIn > 0) {
+      out.push({ label: 'Total Buy In', value: formatChips(payload.totalBuyIn) });
+    }
     if (payload.totalRebuys > 0) {
       out.push({ label: 'Rebuys', value: String(payload.totalRebuys) });
     }
@@ -235,11 +250,13 @@ export function SessionSummaryHost() {
                 and strips any em dash out of a club-authored table name, then
                 formatGameTitle shouts the variant acronyms back to NLH/PLO4.
                 Reversing the order would let titleCase re-case "NLH" to "Nlh". */}
-            {formatGameTitle(
-              titleCase(
-                (isTournament ? tourney?.name : undefined) ||
-                  payload.tableName ||
-                  (isTournament ? 'Tournament' : 'Table Session')
+            {stripWholeDecimals(
+              formatGameTitle(
+                titleCase(
+                  (isTournament ? tourney?.name : undefined) ||
+                    payload.tableName ||
+                    (isTournament ? 'Tournament' : 'Table Session')
+                )
               )
             )}
           </h2>

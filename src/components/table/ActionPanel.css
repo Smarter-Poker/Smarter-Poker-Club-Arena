@@ -346,7 +346,9 @@
   min-width: 120px;
   padding: 8px 20px;
   background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 215, 0, 0.25);
+  /* Dan 2026-08-22: yellow frame gone — same neutral border as the other
+     boxes (presets use rgba(255,255,255,0.08) chrome). */
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 10px;
 }
 
@@ -356,7 +358,8 @@
 .raise-value__amount {
   font-size: 1.75rem;
   font-weight: 800;
-  color: #ffd700;
+  /* Dan 2026-08-22: amount digits are white, not yellow. */
+  color: #ffffff;
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
   line-height: 1.1;
   background: transparent;
@@ -369,7 +372,7 @@
 }
 
 .raise-value__amount:focus-visible {
-  outline: 2px solid #ffd700;
+  outline: 2px solid #ffffff;
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -379,11 +382,11 @@
 .raise-value__input {
   font-size: 1.75rem;
   font-weight: 800;
-  color: #ffd700;
+  color: #ffffff;
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
   line-height: 1.1;
   background: rgba(0, 0, 0, 0.65);
-  border: 1px solid rgba(255, 215, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: 6px;
   padding: 2px 6px;
   width: 7ch;
@@ -652,23 +655,24 @@
     #e8f2ff 0%,
     #79b4ff 30%,
     #2f80ed 65%,
-    #c47f08 100%
+    #1b5fc4 100%
   );
   border-radius: 50%;
   cursor: grab;
   /* Stacked shadow gives a real 3D coin look — outer glow, drop shadow,
-     inner-rim highlight, base shadow for depth. */
+     inner-rim highlight, base shadow for depth.
+     Dan 2026-08-22: gold/yellow rim replaced with white to match the blue thumb. */
   box-shadow:
     0 6px 16px rgba(0, 0, 0, 0.6),
     0 2px 4px rgba(0, 0, 0, 0.5),
     0 0 0 2px rgba(255, 255, 255, 0.18),
     0 0 22px var(--color-raise-glow, rgba(47, 128, 237, 0.55)),
     inset 0 2px 3px rgba(255, 255, 255, 0.4),
-    inset 0 -3px 6px rgba(140, 80, 0, 0.45);
+    inset 0 -3px 6px rgba(10, 40, 90, 0.45);
   transition:
     transform 0.1s var(--ease-spring),
     box-shadow 0.15s ease;
-  border: 2px solid #d4870c;
+  border: 2px solid #ffffff;
 }
 
 .raise-slider:active {
@@ -699,16 +703,16 @@
     #e8f2ff 0%,
     #79b4ff 30%,
     #2f80ed 65%,
-    #c47f08 100%
+    #1b5fc4 100%
   );
   border-radius: 50%;
   cursor: grab;
-  border: 2px solid #d4870c;
+  border: 2px solid #ffffff;
   box-shadow:
     0 6px 16px rgba(0, 0, 0, 0.6),
     0 0 22px var(--color-raise-glow, rgba(47, 128, 237, 0.55)),
     inset 0 2px 3px rgba(255, 255, 255, 0.4),
-    inset 0 -3px 6px rgba(140, 80, 0, 0.45);
+    inset 0 -3px 6px rgba(10, 40, 90, 0.45);
 }
 
 .raise-slider::-moz-range-track {

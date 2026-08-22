@@ -3041,8 +3041,15 @@ export default function TablePage({
   // Hand history panel — hydrate from the service the Hand History PAGE
   // already uses. The local list only ever held what localStorage had cached,
   // and nothing wrote to it, so it was empty for everyone.
+  //
+  // Dan 2026-08-22 mobile audit item 5: "THE PREVIOUS HAND HAS NO
+  // FUNCTIONALITY, IT NEVER LOGS ANY OF THE HANDS." It didn't, and the reason
+  // was here: this effect only fired for showHandHistory (the panel), while
+  // the Previous Hand card opens showHandDetail (the breakdown modal) — which
+  // therefore paged through an empty array for anyone without a localStorage
+  // cache. Both openers hydrate now.
   useEffect(() => {
-    if (!showHandHistory || !userId || userId === 'guest') return;
+    if ((!showHandHistory && !showHandDetail) || !userId || userId === 'guest') return;
     let cancelled = false;
     (async () => {
       try {
@@ -3057,7 +3064,7 @@ export default function TablePage({
     return () => {
       cancelled = true;
     };
-  }, [showHandHistory, userId]);
+  }, [showHandHistory, showHandDetail, userId]);
 
   // Hand replay — resolve the most recent hand id lazily when the panel opens
   // rather than paying a lookup on every completed hand.
@@ -3355,8 +3362,17 @@ export default function TablePage({
         // Q3: Clear "Playing At" status when leaving table
         playerStatusService.clearPlayingAt(userId);
 
-        // P/L = chips returned to wallet minus total chips invested at table
-        sessionPLRef.current = (result.chipsReturned || 0) - totalBuyInRef.current;
+        // P/L = chips returned to wallet minus total chips invested at table.
+        //
+        // Dan 2026-08-22 (Session Complete "not pulling the real stats"): a
+        // mid-hand leave defers the cashout to settlement and reports
+        // chipsReturned 0, which used to render the ENTIRE buy-in as a loss
+        // (screenshot: stack 1,157 at leave, card said LOSS -1,000). When the
+        // service says the cashout is deferred, estimate with the live stack
+        // captured above — that is what settlement will return, give or take
+        // the hand in flight.
+        sessionPLRef.current =
+          (result.deferred ? stackAtLeave : result.chipsReturned || 0) - totalBuyInRef.current;
 
         // ── Dan 2026-08-18: leaving always lands you in the lobby ──
         //
@@ -3392,6 +3408,15 @@ export default function TablePage({
           peakStack: peakStackRef.current,
           tableName: tableState.tableName,
           tournament: tournamentResult,
+          // Dan 2026-08-22: the card shows VPIP (not hands/hour), the total
+          // buy-in, and the session's date + time.
+          vpipPercent:
+            handsPlayedRef.current > 0
+              ? Math.round((vpipCountRef.current / handsPlayedRef.current) * 100)
+              : 0,
+          totalBuyIn: totalBuyInRef.current,
+          sessionStart: sessionStartRef.current,
+          sessionEnd: Date.now(),
         });
 
         // Now actually leave. These three used to fire together from the
@@ -4567,6 +4592,8 @@ export default function TablePage({
                   biggestPot: biggestPotRef.current,
                   peakStack: peakStackRef.current,
                   tableName: tableStateRef.current.tableName,
+                  sessionStart: sessionStartRef.current,
+                  sessionEnd: Date.now(),
                   tournament: {
                     ...(full ?? {
                       entrants: null,

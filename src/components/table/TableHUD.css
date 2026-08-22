@@ -43,8 +43,10 @@
   align-items: flex-end;
   justify-content: space-between;
   padding: 6px 4px;
-  /* Stay above the action panel area */
-  padding-bottom: max(env(safe-area-inset-bottom, 0px), 130px);
+  /* Dan 2026-08-22 item 3: the clock + previous-hand card sit LOW — resting
+     just on top of the action panel, where the background meets the black
+     action box. 112px clears the collapsed 3-button action bar. */
+  padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px));
   gap: 8px;
 }
 
@@ -77,9 +79,9 @@
 
   .table-hud__lower {
     padding: 4px 2px;
-    /* Dan 2026-08-17 (audit round 3): 110px put the PreviousHandCard's green
-       result figure UNDER the TimebankCounter pill (fixed at bottom 124px,
-       ~36px tall, same left edge). 168px stacks the card clear above it. */
-    padding-bottom: max(env(safe-area-inset-bottom, 0px), 168px);
+    /* Dan 2026-08-22 item 3: both widgets are stacked in one flex column now
+       (no more fixed-position overlap), so the whole stack can drop to just
+       above the action bar. */
+    padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px));
   }
 }

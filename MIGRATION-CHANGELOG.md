@@ -7,6 +7,100 @@
 
 ---
 
+## Cowork session 2026-08-22 (5) — THE SPIN RESERVE: a wallet nobody could see, and a tier nobody could win
+
+Two of the three follow-ups from
+`.agent/audits/2026-08-22-union-level-spin-reserve-wallet.md`, closed in the
+order that audit specified, because the order was the whole point.
+
+### The wallet had no way in and no way to look at it
+
+`union_wallets.spin_reserve_wallet` shipped on 2026-08-22 holding the capital
+every Spin bonus pool a union owns is seeded from, and a 100x is paid out of.
+Nothing returned it and nothing could put money in it. Which is exactly why the
+live pool had been seeded 20,000 out of `promo_wallet` — money earmarked for
+promotions, chosen because `promo_wallet` was the only balance anyone could see.
+
+- `get_balances` selects, returns and totals `spin_reserve_wallet` (World Hub
+  PR #659). The union dashboard shows it on the overview and the wallet tab.
+- A **Fund Spin Reserve** control moves chips in from promo, rake or the chip
+  balance. Union lead only, like every other transfer on that page.
+
+**The two functions that differ by a suffix.** `fn_spin_reserve_wallet_fund`
+moves the money and has no replay protection at all; a NULL source wallet makes
+it an operator deposit that MINTS the chips. `fn_spin_reserve_wallet_fund_op`
+(new, migration `20260822210000`) wraps it, claims the op id on the ledger row
+through `uq_union_wallet_tx_op`, rolls the entire move back on a replay, and
+refuses a NULL source. They return the same shape, so calling the wrong one
+would be invisible in every log — which is why a test pins the endpoint to the
+safe one.
+
+**The first version of that wrapper was wrong, and the behavioural check caught
+it.** It stamped BOTH rows the inner call writes — the credit into the reserve
+and the debit out of the source — and they collided with each other on
+`(union_id, tx_type, period_id)` inside a single statement. Every genuine fund
+tripped its own replay guard, rolled itself back and reported `duplicate: true`.
+Nothing was ever broken by it: the function had no caller in any repo and the
+ledger held zero rows of that type. Exactly one row claims the op id now. Run
+against production inside a transaction that was then rolled back: a real fund
+moves 100 and stamps 1 row, the same op id again returns a duplicate **with both
+balances unchanged**, a new op id funds again, and an overdraw is refused with
+the available and requested figures rather than silently clamped.
+
+**The envelope.** This RPC returns `{ ok }`, not the `{ success }` every
+neighbouring money RPC in `union-wallet.js` returns. Reading the wrong key is
+`undefined` on every response, which reports insufficient funds as a completed
+transfer — the shape `tests/unchecked-money-rpc.test.mjs` was written for. The
+handler reads `ok`, and a test fails if that changes.
+
+### The 500x tier stopped being published
+
+`v_spin_reserve_health` still carried `top_jackpot`, `need_for_500x` and
+`can_draw_500x` for a tier retired on 2026-08-21. They survived because
+PostgREST refuses the ENTIRE request with 42703 when a select names an unknown
+column — that is how the Spin badge went dark for every club at once on
+2026-08-21 — and the World Hub's `/api/cron/spin-sweep` still named
+`can_draw_500x` in its select. That cron is the only thing watching whether a
+pool can still pay its ladder, so dropping the column underneath it would have
+blinded the alarm rather than a badge.
+
+Two steps, reader first:
+
+1. World Hub `0162ff08da` removed the column from the select. It had never been
+   read — it rode in through the select and out again through `health: pools`.
+   Live in production `80a29487` at 2026-08-22 19:57 UTC.
+2. Migration `20260822220000` recreated the view without the three columns,
+   asserting on the way out that every column the cron _does_ select survived.
+   Verified by running the cron's exact select against the new view.
+
+`tests/spin-500x-retired.test.mjs` (World Hub) scans every select string in the
+repo and fails on any that names a retired column, so the coupling cannot come
+back now that the columns are gone.
+
+### Tests
+
+| File                                                | Repo | What it pins                                                                                                                                                                                           |
+| --------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tests/config/spinReserveFundControl.test.ts`       | CA   | 15 cases: the wrapper's guards, that the fund call sits INSIDE the block that rolls back, one row claims the op id, the index keeps all six tx_types it already guarded, the UI offers no minting path |
+| `tests/config/spinReserveHealth500xRetired.test.ts` | CA   | 8 cases: the view loses the three and keeps the nine the cron reads, no CASCADE, no anon grant, no CA source selects a retired column                                                                  |
+| `tests/spin-500x-retired.test.mjs`                  | WH   | repo-wide select scan                                                                                                                                                                                  |
+| `tests/spin-reserve-fund-contract.test.mjs`         | WH   | 7 cases: op-scoped RPC not the bare one, reads `ok`, requires an op id, contract requires a real source wallet                                                                                         |
+
+Every one was checked the only way that means anything — reverted the source and
+re-run. 5 of 15 fail with the client and UI reverted; 2 of 15 fail with the
+stamping bug reintroduced; 1 of 8 fails if the view quietly loses `is_thin`;
+1 of 8 fails if `top_jackpot` comes back; 7 of 7 fail against `origin/main`.
+
+Full CA suite at the time of this entry: 235 files, 2996 passed, 5 skipped.
+
+### Still open from that audit
+
+`fn_reroll_challenge` / `20260821_challenge_rerolls.sql` is closed (#248). The
+three permanently unbooked spins and the owner-scoped seed idempotency key
+decision are not.
+
+---
+
 ## Cowork session 2026-08-22 (4) — CONNECTIVITY HARDENING ROUND 2: adversarial review + deferred items
 
 An adversarial line-by-line review of round 2's own diff (PR #240) found 13
@@ -92,6 +186,7 @@ real defects it introduced or left; all are fixed here, plus every item round
 
 ConnectivityHardening.test.ts extended (hand-boundary countdown cleanup).
 Client 2915 passed / 5 skipped, server 1038 passed, tsc clean on both configs.
+
 ## Cowork session 2026-08-22 (4) — Phase 2 table audit: stat truth + dead code (PR #252)
 
 Dan: "KEEP GOING AND FIXING, IMPROVING AND OPTIMIZING. MOVE ONTO PHASE 2."
@@ -144,7 +239,7 @@ tests) and through the PR gate.
 3. **Timebank + previous-hand card** lowered to just above the action bar
    (112px + inset anchor in TableHUD, replacing 130/168px).
 4. **Stats button.** The mobile media block `.mini-stats-card { min-width:
-   100px }` out-ordered the icon variant's `min-width: 0`, stretching the
+100px }` out-ordered the icon variant's `min-width: 0`, stretching the
    square icon into the wide pill in Dan's screenshot. Scoped with
    `:not(.mini-stats-card--icon)`. The stats panel (RealTimeResultPanel) is
    width-capped at 75vw and the left hamburger dropdown became a full-height

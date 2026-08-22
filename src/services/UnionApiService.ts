@@ -185,6 +185,32 @@ export const unionApi = {
   fundBbjPool(unionId: string, amount: number, notes?: string) {
     return callUnionApi('union-wallet', { action: 'fund_bbj_pool', unionId, amount, notes });
   },
+  /**
+   * Move chips into the union's Spin reserve wallet, the capital every Spin
+   * bonus pool this union owns is seeded from.
+   *
+   * fromWallet is required and is one of three real wallets. The database
+   * function behind this reads a missing source as an operator deposit and
+   * MINTS the chips, so there is deliberately no way to omit it from here.
+   *
+   * callUnionApi sends a fresh X-Idempotency-Key per call, which the endpoint
+   * passes to the RPC as its op id. Two deliberate clicks are two funds; a
+   * retry of one request is one.
+   */
+  fundSpinReserve(
+    unionId: string,
+    amount: number,
+    fromWallet: 'promo_wallet' | 'rake_wallet' | 'chip_balance',
+    notes?: string
+  ) {
+    return callUnionApi('union-wallet', {
+      action: 'fund_spin_reserve',
+      unionId,
+      amount,
+      fromWallet,
+      notes,
+    });
+  },
 };
 
 export default unionApi;

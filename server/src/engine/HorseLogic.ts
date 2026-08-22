@@ -578,6 +578,16 @@ export interface HorseDecideOpts {
    *  donk leads with medium hands), and board-domination call discipline
    *  (default: enabled) */
   v11?: boolean;
+  /** disable the V12 layer: board-conditioned opponent sampling — postflop
+   *  aggressors are sampled toward hands that CONNECT with the actual board,
+   *  passive checked lines get their monsters down-sampled (default: enabled) */
+  v12?: boolean;
+  /** ablation hook (benchmarks only) — defaults to the v12 master flag */
+  v12Ranges?: boolean;
+  /** disable the V12 river-sizing polish: OOP block bets, nut-advantage
+   *  overbets + blocker overbet bluffs, extended blocker-aware catches
+   *  (defaults to the v12 master flag) */
+  v12River?: boolean;
 }
 
 /**
@@ -643,10 +653,14 @@ export class HorseLogic {
     try {
       // V3: ingest the action stream into the opponent-intelligence layer.
       // Wrapped so observation can never take down a decision.
-      try {
-        HorseMind.observe(gameState.actionHistory, gameState.players);
-      } catch {
-        /* observation is best-effort */
+      // V12: benchmark/league decisions pass mind:false — they must never
+      // write synthetic hands into the live opponent memory.
+      if (opts.mind !== false) {
+        try {
+          HorseMind.observe(gameState.actionHistory, gameState.players);
+        } catch {
+          /* observation is best-effort */
+        }
       }
       return this.decideInternal(player, gameState, style, mods, opts);
     } catch {
@@ -1060,6 +1074,7 @@ export class HorseLogic {
     // Range reads from each live opponent's preflop line this hand, exploit
     // profile from their accumulated tendencies, board texture, blockers.
     let bands: Array<[number, number] | null> | undefined;
+    let oppReads: Array<{ aggrW: number; checked: number } | null> | undefined;
     let exploit = { bluffMod: 1, callDownMod: 1, valueThinMod: 1 };
     let wetness = 0.35;
     let blocker = false;
@@ -1071,13 +1086,18 @@ export class HorseLogic {
           ? gs.actionHistory
           : (gs.actionHistory || []).filter((a) => a.stage === 'preflop');
         // V7: size-aware narrowing + counter-adaptation recency blending.
+        // V12: parallel postflop reads feed board-contact conditioning.
+        if ((opts.v12Ranges ?? opts.v12) !== false && useHR) {
+          oppReads = [];
+        }
         bands = HorseMind.bandsForOpponents(
           player.seat,
           gs.players,
           bandHistory,
           gs.bigBlind,
           useSizeReads,
-          gs.communityCards
+          gs.communityCards,
+          oppReads
         );
         exploit = HorseMind.tableExploit(player.seat, gs.players, useCounterAdapt);
         const tex = HorseMind.texture(gs.communityCards);
@@ -1103,7 +1123,8 @@ export class HorseLogic {
       vi.iterations,
       bands,
       useAdaptiveMC,
-      hiLoSplit
+      hiLoSplit,
+      oppReads
     );
 
     // V9 TIMING: how CLOSE is this decision? Distance of the MC equity from
@@ -1271,6 +1292,20 @@ export class HorseLogic {
         ) {
           return { action: 'check', thinkTime: 0 };
         }
+        // V12 RIVER OVERBET (G): with a nut-class hand heads-up on the river,
+        // the value target is the opponent's whole continuing range — geometric
+        // sizing leaves money on the table. Overbet 1.3-1.6x pot at a mixed
+        // frequency; the blocker overbet-bluff below keeps it unexploitable.
+        if (
+          (opts.v12River ?? opts.v12) !== false &&
+          isRiver &&
+          oppCount === 1 &&
+          cat >= 6 &&
+          !vi.isPotLimit &&
+          fastRandom() < 0.35
+        ) {
+          return this.betSize(pot, 1.3 + fastRandom() * 0.3, player, gs, vi, params, useSizing);
+        }
         const monsterFrac =
           geomFrac > 0
             ? Math.max(sizeBase + 0.2, geomFrac) + fastRandom() * 0.1
@@ -1293,6 +1328,23 @@ export class HorseLogic {
           params,
           useSizing
         );
+      }
+      // V12 RIVER BLOCK BET (G): a medium showdown hand OUT OF POSITION on
+      // the river sets its own price — a quarter-pot bet folds out overcards,
+      // extracts thin value from worse, and denies the opponent the chance to
+      // bomb a check. Heads-up only, never into the prior-street aggressor
+      // (the V11 initiative gate above owns that node).
+      if (
+        (opts.v12River ?? opts.v12) !== false &&
+        isRiver &&
+        !ip &&
+        oppCount === 1 &&
+        equity >= 0.45 &&
+        equity < 0.62 + mw &&
+        initiative !== 'opp' &&
+        fastRandom() < 0.4
+      ) {
+        return this.betSize(pot, 0.27 + fastRandom() * 0.06, player, gs, vi, params, useSizing);
       }
       // Thin value / protection — thinner into stations (valueThinMod > 1).
       // V4: vulnerable made hands always bet-protect; dangered hands check.
@@ -1422,9 +1474,18 @@ export class HorseLogic {
         fastRandom() < params.bluffFreq * bluffScale * scareBluffBoost * (isRiver ? 0.55 : 0.8)
       ) {
         planBarrel(equity);
+        // V12 (G): river bluffs holding a nut blocker occasionally use the
+        // SAME overbet size as the nut-class value hands — the pairing is
+        // what makes the value overbets unexploitable.
+        const overbetBluff =
+          (opts.v12River ?? opts.v12) !== false &&
+          isRiver &&
+          blocker &&
+          !vi.isPotLimit &&
+          fastRandom() < 0.3;
         return this.betSize(
           pot,
-          sizeBase + 0.15 + fastRandom() * 0.2,
+          overbetBluff ? 1.3 + fastRandom() * 0.3 : sizeBase + 0.15 + fastRandom() * 0.2,
           player,
           gs,
           vi,
@@ -1597,6 +1658,17 @@ export class HorseLogic {
     // V7 overbet polarity: an overbet is nuts-or-bluffs. Medium hands without
     // a nut blocker fold more; holding the blocker shifts toward the catch.
     if (useSizeReads && betRatio > 1.2) respect += blocker ? -0.05 : 0.08;
+    // V12 (G): the same blocker logic extends into the big-bet band (0.8-1.2
+    // pot) on the river — large river bets are already polarized enough that
+    // the blocker meaningfully changes the catch.
+    if (
+      (opts.v12River ?? opts.v12) !== false &&
+      isRiver &&
+      betRatio >= 0.8 &&
+      betRatio <= 1.2
+    ) {
+      respect += blocker ? -0.04 : 0.04;
+    }
     // (V10 explored a river blocker-aware bluff-catch adjustment here; the
     // duplicate-deal A/B showed it LEAKED in both directions — the V4/V7 river
     // logic is already well-calibrated — so it was dropped, not shipped.)

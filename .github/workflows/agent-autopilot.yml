@@ -55,6 +55,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Checkout
+        # WITHOUT THIS the job has no working tree and
+        # `.github/scripts/queue-pr.sh` exits 127. That is how this workflow
+        # failed on its own first run.
+        uses: actions/checkout@v4.3.1
+
+      - name: Verify the token actually works
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN_FALLBACK: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/check-token.sh
+
       - name: Enable squash auto-merge
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
@@ -83,6 +95,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4.3.1
+
+      - name: Verify the token actually works
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN_FALLBACK: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/check-token.sh
 
       - name: Queue and refresh every open PR
         env:

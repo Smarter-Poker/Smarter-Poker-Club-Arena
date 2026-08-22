@@ -48,6 +48,12 @@ const CLUB_MEMBERSHIP_CACHE_MAX = 10_000;
 
 const HEARTBEAT_INTERVAL_MS = 25_000;
 const HEARTBEAT_TIMEOUT_MS = 60_000;
+/**
+ * How long a closing socket is given to flush its close frame before the fd is
+ * reclaimed. Without it the frame is written and discarded in the same tick and
+ * the peer only ever sees 1006, so the reason never reaches a single client.
+ */
+const TERMINATE_GRACE_MS = 250;
 const INBOUND_RATE_LIMIT = 30; // messages per second per connection
 const INBOUND_RATE_WINDOW_MS = 1_000;
 const MAX_INBOUND_MESSAGE_BYTES = 8 * 1024;
@@ -496,13 +502,25 @@ export class ChannelWebSocketServer {
         } catch {
           /* ignore */
         }
-        // FIX 2026-08-22: terminate — a half-open socket never completes the
-        // graceful close handshake and the fd lingers until OS TCP timeout.
-        try {
-          ws.terminate();
-        } catch {
-          /* ignore */
-        }
+        // FIX 2026-08-22: close() starts a graceful handshake a half-open
+        // socket can never finish, so the fd lingered until the OS TCP
+        // timeout. A peer that missed 60s of pongs is gone — terminate.
+        //
+        // ...but terminating in the SAME TICK discarded the close frame we had
+        // just written, so every client saw 1006 "abnormal" and none ever
+        // learned it was a heartbeat timeout. A socket that is merely slow
+        // rather than half-open can still receive that frame if given a moment,
+        // and a truly half-open one loses nothing by waiting: it is already off
+        // the connection map above, so the sweep will not see it again.
+        const doomed = ws;
+        const reaper = setTimeout(() => {
+          try {
+            doomed.terminate();
+          } catch {
+            /* ignore */
+          }
+        }, TERMINATE_GRACE_MS);
+        (reaper as { unref?: () => void }).unref?.();
         this.onClose(ws);
         continue;
       }

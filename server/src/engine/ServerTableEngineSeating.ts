@@ -435,13 +435,28 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       const enginePlayer = state.players.find((p) => p.user_id === userId);
 
       if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in) {
+        // FIX 2026-08-22: performAction RETURNS FALSE when it isn't the
+        // player's turn — it does not throw (FreezeRegression pins this), so
+        // the old catch-and-assume-"they'll be skipped" comment was wrong:
+        // the leaving player stayed live in the hand and the disconnect
+        // auto-action later CHECKED them down every street. If the immediate
+        // fold doesn't land, queue an auto_fold pre-action so they fold the
+        // moment action reaches them.
+        let folded = false;
         try {
-          this.handController.performAction(enginePlayer.seat, 'fold');
-          console.log(`[ServerTableEngine:${this.tableId}] Player ${userId} auto-folded on leave`);
+          folded = this.handController.performAction(enginePlayer.seat, 'fold') === true;
+          if (folded) {
+            console.log(
+              `[ServerTableEngine:${this.tableId}] Player ${userId} auto-folded on leave`
+            );
+          }
         } catch (err) {
-          // Player might not be the current actor — that's fine, they'll be skipped
-          console.warn(
-            `[ServerTableEngine:${this.tableId}] Auto-fold on leave failed (not their turn): ${err}`
+          console.warn(`[ServerTableEngine:${this.tableId}] Auto-fold on leave threw: ${err}`);
+        }
+        if (!folded) {
+          this.preActionEngine.setPreAction(this.tableId, userId, 'auto_fold');
+          console.log(
+            `[ServerTableEngine:${this.tableId}] Player ${userId} left out of turn — auto_fold queued`
           );
         }
       }

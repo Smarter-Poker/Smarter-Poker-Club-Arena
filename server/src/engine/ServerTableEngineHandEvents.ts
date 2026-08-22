@@ -208,6 +208,19 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // the real-time event and snapshot, THEN arm the enforcement timer.
         // The timer call below skips re-stamping when the deadline already
         // matches, so there is no drift.
+        // STALE-HANDLER GUARD (2026-08-22): TURN_CHANGE handlers are
+        // dispatched fire-and-forget, so a fast action landing during the
+        // settle beat spawns a SECOND handler for the next seat while this one
+        // is still pending. Without this check the stale handler re-stamped
+        // playerTurnStartTime/Duration and re-armed the clock for a seat that
+        // had already acted — the live player's deadline jumped (countdown
+        // ring reset / over-ran) and DisconnectEngine.onPlayerTurn could start
+        // a spurious 30s countdown against the OLD player. Only the handler
+        // whose seat is still on the clock may proceed.
+        if (this.handController?.getState().currentPlayerSeat !== event.seat) {
+          break;
+        }
+
         const tcSeatedPlayer = players.find((p) => p.seat_number === event.seat);
 
         const baseActionTime = this.tableInfo?.action_time_seconds || 15;
@@ -388,10 +401,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             if (event.stage === 'flop') {
               this.currentHandCommunityCards2 = newCards2;
             } else {
-              this.currentHandCommunityCards2 = [
-                ...this.currentHandCommunityCards2,
-                ...newCards2,
-              ];
+              this.currentHandCommunityCards2 = [...this.currentHandCommunityCards2, ...newCards2];
             }
           }
           // Bible V8 §1.16 (Real-Time Law): emit discrete community_cards_dealt

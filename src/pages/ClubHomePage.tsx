@@ -1642,7 +1642,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // ── LOBBY V2 view models — the SAME filtered/sorted rows, normalized ──
   const lobbyEntries = useMemo<LobbyEntry[]>(() => {
     const tourns = filteredTournaments.map((t) =>
-      tournamentEntry(t as unknown as LobbyTournamentRow, classifyTournament(t as unknown as LobbyTournamentRow))
+      tournamentEntry(
+        t as unknown as LobbyTournamentRow,
+        classifyTournament(t as unknown as LobbyTournamentRow)
+      )
     );
     let cash = filteredTables.map(cashEntry);
     if (favoritesOnly) cash = cash.filter((e) => favoriteTableIds.has(e.id));
@@ -1849,62 +1852,67 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                   <IconMembers />
                   {(club.member_count || 0).toLocaleString()}
                 </span>
-                {club.online_count > 0 && (
-                  <span className="lobby-club__online">
-                    {club.online_count.toLocaleString()} Online
-                  </span>
-                )}
               </div>
 
-              {/* Club level.
-                  Dan 2026-08-20: this page already loaded the level, already
-                  called the recompute_club_levels RPC to correct a stale one,
-                  and already fired a "Level Up!" toast when it rose — while
-                  rendering the level itself NOWHERE. Players were congratulated
-                  on reaching a level they could not see, and the stylesheet had
-                  carried .club-level-badge / .club-level-progress rules with no
-                  markup behind them. The work was being done; it just was not
-                  reaching the screen. */}
-              {clubLevel && (
-                <div className="lobby-club__level">
-                  <span
-                    className="club-level-badge"
-                    style={{ background: clubLevel.gradient }}
-                    title={`Level ${clubLevel.level} - ${clubLevel.tierLabel}`}
-                  >
-                    <span className="club-level-badge__number">Lv.{clubLevel.level}</span>
-                    <span className="club-level-badge__tier">{clubLevel.tierLabel}</span>
-                  </span>
-                </div>
-              )}
-            </div>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  marginTop: '6px',
+                  flexDirection: 'column',
+                }}
+              >
+                {clubLevel && (
+                  <div className="lobby-club__level">
+                    <span
+                      className="club-level-badge"
+                      style={{ background: clubLevel.gradient }}
+                      title={`Level ${clubLevel.level} - ${clubLevel.tierLabel}`}
+                    >
+                      <span className="club-level-badge__number">Level {clubLevel.level}</span>
+                      <span className="club-level-badge__tier">{clubLevel.tierLabel}</span>
+                    </span>
+                  </div>
+                )}
 
-            <button
-              className="lobby-club__share"
-              aria-label="Share club invite link"
-              title="Share"
-              onClick={async () => {
-                haptic.medium();
-                const shareUrl = `${window.location.origin}/clubs/${clubId}`;
-                try {
-                  if (navigator.share) {
-                    await navigator.share({
-                      title: club.name,
-                      text: `Join ${club.name} on Smarter Poker!`,
-                      url: shareUrl,
-                    });
-                  } else {
-                    await navigator.clipboard.writeText(shareUrl);
-                    toast.success('Club link copied!');
-                  }
-                } catch (e) {
-                  reportError(e, 'ClubHomePage.async');
-                  /* user cancelled share */
-                }
-              }}
-            >
-              <IconShareLink />
-            </button>
+                <div
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}
+                >
+                  {club.online_count >= 0 && (
+                    <div style={{ fontSize: '0.8rem', color: '#9aa5b6' }}>
+                      {club.online_count.toLocaleString()} Players Currently Playing
+                    </div>
+                  )}
+
+                  <button
+                    className="lobby-club__share"
+                    aria-label="Share club invite link"
+                    title="Share"
+                    onClick={async () => {
+                      haptic.medium();
+                      const shareUrl = `${window.location.origin}/clubs/${clubId}`;
+                      try {
+                        if (navigator.share) {
+                          await navigator.share({
+                            title: club.name,
+                            text: `Join ${club.name} on Smarter Poker!`,
+                            url: shareUrl,
+                          });
+                        } else {
+                          await navigator.clipboard.writeText(shareUrl);
+                          toast.success('Club link copied!');
+                        }
+                      } catch (e) {
+                        reportError(e, 'ClubHomePage.async');
+                        /* user cancelled share */
+                      }
+                    }}
+                  >
+                    <IconShareLink />
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* ── Wallet ──

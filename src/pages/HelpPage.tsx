@@ -1,18 +1,14 @@
 /**
- * ❓ HELP PAGE
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  HELP PAGE — Club Arena Neon Redesign
+ * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import FeedbackForm from '../components/support/FeedbackForm';
 import SystemStatus from '../components/support/SystemStatus';
-import './HelpPage.css';
-
-const faqItemAnimationStyle = (index: number) => ({
-  opacity: 0,
-  transform: 'translateY(6px)',
-  animation: `fadeInUp 0.4s ease-out ${index * 50}ms forwards`,
-});
+import { motion, AnimatePresence } from 'framer-motion';
+import styles from './HelpPage.module.css';
 
 interface FAQItem {
   question: string;
@@ -50,10 +46,6 @@ const FAQ_ITEMS: FAQItem[] = [
     answer:
       'The BBJ is a progressive jackpot for losing a monster hand. In Hold\u2019em, Aces full of Jacks or better must lose to Quads or better, and both of your hole cards must play. In Omaha games, Quad Kings or better must lose. When it hits, the losing hand takes 50%, the winning hand 25%, and everyone else dealt into the hand splits the remaining 25% \u2014 credited straight to your table stack.',
   },
-  {
-    question: 'How do I report a problem?',
-    answer: 'Use the support chat below to contact our team, or email support@clubarena.poker',
-  },
 ];
 
 export default function HelpPage() {
@@ -61,7 +53,6 @@ export default function HelpPage() {
     document.title = 'Help | Smarter Poker';
   }, []);
 
-  const navigate = useNavigate();
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showFeedbackForm, setShowFeedbackForm] = useState(false);
@@ -73,47 +64,106 @@ export default function HelpPage() {
   );
 
   return (
-    <div className="help-page">
-      <div className="help-search">
-        <input
-          type="text"
-          placeholder="Search for help..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
+    <div className={styles.page}>
+      {/* Header */}
+      <header className={styles.header}>
+        <div className={styles.titleRow}>
+          <div className={styles.iconWrap}>{'\u003F'}</div>
+          <div>
+            <h1>Help Center</h1>
+            <span className={styles.subtitle}>Support & Frequently Asked Questions</span>
+          </div>
+        </div>
+      </header>
+
+      {/* System Status */}
+      <div className={styles.systemStatusWrapper}>
+        <SystemStatus status="operational" />
       </div>
 
-      <div className="faq-list">
-        {filteredFAQ.map((item, index) => (
-          <div
-            key={index}
-            style={faqItemAnimationStyle(index)}
-            className={`faq-item ${expandedIndex === index ? 'expanded' : ''}`}
-          >
-            <button
-              className="faq-question"
-              onClick={() => setExpandedIndex(expandedIndex === index ? null : index)}
-            >
-              <span>{item.question}</span>
-              <span className="faq-toggle">{expandedIndex === index ? '−' : '+'}</span>
-            </button>
-            {expandedIndex === index && <div className="faq-answer">{item.answer}</div>}
-          </div>
-        ))}
-
-        {filteredFAQ.length === 0 && (
-          <div className="empty-state">
-            <p>No Results For "{searchQuery}"</p>
-          </div>
-        )}
-      </div>
-
-      <div className="help-footer">
-        <h3>Still Need Help?</h3>
-        <p>Our Support Team Is Available 24/7</p>
-        <button className="btn btn-primary" onClick={() => setShowFeedbackForm(true)}>
-          Contact Support
+      {/* Support Actions */}
+      <div className={styles.supportGrid}>
+        <button
+          className={styles.supportCard}
+          onClick={() => setShowFeedbackForm(true)}
+          aria-label="Live Chat with Geeves"
+        >
+          <div className={styles.supportIcon}>💬</div>
+          <h2 className={styles.supportTitle}>Live Chat With Geeves</h2>
+          <p className={styles.supportDesc}>Get Instant Help From Our AI Support Agent</p>
         </button>
+
+        <a
+          href="mailto:support@clubarena.poker"
+          className={styles.supportCard}
+          aria-label="Email Support"
+        >
+          <div className={styles.supportIcon}>✉️</div>
+          <h2 className={styles.supportTitle}>Email Support</h2>
+          <p className={styles.supportDesc}>Support@Clubarena.Poker</p>
+        </a>
+      </div>
+
+      {/* Search */}
+      <div className={styles.searchSection}>
+        <div className={styles.searchInputWrapper}>
+          <span className={styles.searchIcon}>🔍</span>
+          <input
+            type="text"
+            className={styles.searchInput}
+            placeholder="SEARCH FOR HELP..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {/* FAQ Section */}
+      <div className={styles.faqSection}>
+        <h2 className={styles.sectionTitle}>Frequently Asked Questions</h2>
+
+        <div className={styles.faqList}>
+          {filteredFAQ.map((item, index) => {
+            const isExpanded = expandedIndex === index;
+            return (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: index * 0.05 }}
+                className={`${styles.faqItem} ${isExpanded ? styles.faqItemExpanded : ''}`}
+              >
+                <button
+                  className={styles.faqQuestion}
+                  onClick={() => setExpandedIndex(isExpanded ? null : index)}
+                  aria-expanded={isExpanded}
+                >
+                  <span>{item.question}</span>
+                  <span className={styles.faqToggle}>{isExpanded ? '−' : '+'}</span>
+                </button>
+                <AnimatePresence>
+                  {isExpanded && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className={styles.faqAnswerWrapper}
+                    >
+                      <div className={styles.faqAnswer}>{item.answer}</div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            );
+          })}
+
+          {filteredFAQ.length === 0 && (
+            <div className={styles.emptyState}>
+              <p>NO RESULTS FOUND FOR "{searchQuery.toUpperCase()}"</p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Feedback Form Modal */}

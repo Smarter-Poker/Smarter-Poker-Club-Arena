@@ -33,6 +33,13 @@ import LeaderboardPanel from './LeaderboardPanel';
 import LeaveTableConfirm from './LeaveTableConfirm';
 import { SessionHUD } from './SessionHUD';
 import RealTimeResultPanel from './RealTimeResultPanel';
+/* Phase 2 2026-08-22: SessionAnalytics (the four-tab PokerCraft panel) was
+   imported by TablePage and never rendered anywhere, which left the
+   "Detailed Analytics" button RealTimeResultPanel supports permanently
+   hidden — the panel's own header comment promised the deeper view was
+   "still reachable" and it was not. It mounts here, behind that button. */
+import SessionAnalytics from './SessionAnalytics';
+import { sessionStatsService } from '../../services/SessionStatsService';
 import SettingsPanel from './SettingsPanel';
 import ShareHand from './ShareHand';
 import AddOnModal from './AddOnModal';
@@ -41,7 +48,6 @@ import TournamentBreakScreen from './TournamentBreakScreen';
 import TournamentAnnouncementOverlay from './TournamentAnnouncementOverlay';
 import TournamentWinnerOverlay from './TournamentWinnerOverlay';
 import HandHistoryPanel, { type HandRecord } from './HandHistoryPanel';
-import SessionSummary from './SessionSummary';
 import { ConfettiCanvas } from './ConfettiCanvas';
 import { ParticleSystem } from './ParticleSystem';
 // ChipAnimationManager is inline in TablePage — imported via parent
@@ -353,17 +359,10 @@ export interface TableModalsLayerProps {
   handHistory: HandRecord[];
   onCloseHandHistory: () => void;
 
-  // Session Summary
-  showSessionSummary: boolean;
-  sessionStartTime: number;
-  handsPlayed: number;
-  handsWon: number;
-  totalRebuys: number;
-  sessionPL: number;
-  biggestPot: number;
-  peakStack: number;
-  onCloseSessionSummary: () => void;
-  onResetSessionRefs: () => void;
+  /* Session Summary props REMOVED (Phase 2 audit 2026-08-22): the in-table
+     SessionSummary modal was dead code — `showSessionSummary` was never set
+     true anywhere after the app-root SessionSummaryHost (2026-08-18) took
+     over the Session Complete card. Ten props existed solely to feed it. */
 
   // Session HUD (Cash games)
   showSessionHUD: boolean;
@@ -548,17 +547,6 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     showHandHistory,
     handHistory,
     onCloseHandHistory,
-    // Session Summary
-    showSessionSummary,
-    sessionStartTime,
-    handsPlayed,
-    handsWon,
-    totalRebuys,
-    sessionPL,
-    biggestPot,
-    peakStack,
-    onCloseSessionSummary,
-    onResetSessionRefs,
     // Session HUD
     showSessionHUD,
     onCloseSessionHUD,
@@ -577,6 +565,10 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
   const bbjInfo = getBBJQualifyingInfo(gameType);
   // Tapping the jackpot banner opens the last-5-jackpots view (Dan, 2026-08-18).
   const [showBBJDetails, setShowBBJDetails] = React.useState(false);
+  // Phase 2 2026-08-22: the deeper analytics panel behind RealTimeResultPanel's
+  // "Detailed Analytics" button. Local state — nothing outside this layer
+  // needs to open it.
+  const [showDetailedAnalytics, setShowDetailedAnalytics] = React.useState(false);
 
   return (
     <>
@@ -1021,6 +1013,16 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           userId={userId}
           initialStack={heroStack}
           bigBlind={safeBB(blinds)}
+          onOpenDetailed={() => setShowDetailedAnalytics(true)}
+        />
+      )}
+
+      {/* Detailed Analytics — the four-tab panel behind the button above. */}
+      {tableId && showDetailedAnalytics && sessionStatsService.getStats(tableId) && (
+        <SessionAnalytics
+          isOpen={showDetailedAnalytics}
+          onClose={() => setShowDetailedAnalytics(false)}
+          stats={sessionStatsService.getStats(tableId)!}
         />
       )}
 
@@ -1133,34 +1135,10 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         heroId={userId || ''}
       />
 
-      {/* Session Summary Modal */}
-      {showSessionSummary && (
-        <SessionSummary
-          duration={Math.floor((Date.now() - sessionStartTime) / 1000)}
-          handsPlayed={handsPlayed}
-          handsWon={handsWon}
-          totalRebuys={totalRebuys}
-          profitLoss={sessionPL}
-          biggestPot={biggestPot}
-          peakStack={peakStack}
-          onClose={() => {
-            onResetSessionRefs();
-            onCloseSessionSummary();
-            masterBus.emit('TABLE_LEFT', { tableId: tableId ?? '', seat: heroSeat });
-            masterBus.emit('SESSION_SUMMARY_DISMISSED', { tableId: tableId ?? '' });
-            /* Dan 2026-08-19: leaving must land you in the LOBBY. In
-               multi-table mode the path is /hub/club-arena (no "/table/"), so
-               the old guard skipped the navigation and left the player staring
-               at the table they just left. Close the tab if we're embedded,
-               otherwise route to the lobby unconditionally. */
-            masterBus.emit('TABLE_MENU_ACTION', {
-              tableId: tableId ?? '',
-              action: 'CLOSE_TABLE_TAB',
-            });
-            navigate('/');
-          }}
-        />
-      )}
+      {/* Session Summary modal REMOVED (Phase 2 audit 2026-08-22). It could
+          never render: no code path ever set showSessionSummary true. The
+          Session Complete card lives in SessionSummaryHost at the app root,
+          fed by services/pendingSessionSummary — see that file's header. */}
 
       {/* Session HUD Modal (Cash Games Only) */}
       {!isTournament && tableId && userId !== 'guest' && (

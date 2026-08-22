@@ -72,10 +72,6 @@
   }
 }
 
-/* Mobile: pull the widget up further so it clears the larger action panel. */
-@media (max-width: 767px) {
-  .tbc-widget {
-    bottom: calc(124px + env(safe-area-inset-bottom, 0));
-    left: 8px;
-  }
-}
+/* Phase 2 cleanup 2026-08-22: the old mobile block set bottom/left on this
+   widget, but it has been `position: static` inside the TableHUD stack since
+   2026-08-21 — those offsets were dead on every phone. Removed. */

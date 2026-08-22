@@ -141,10 +141,11 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
     // not harmless: 988 unresolved criticals is how the nine real ones stay
     // invisible. Check whether the fee actually landed before declaring the
     // chips unrecoverable.
-    if (await feeAlreadyBanked(kind, fee)) {
+    if (await feeIsAccountedFor(kind, fee)) {
       console.warn(
         `[A5] Queue insert for ${kind} on hand ${fee.handId ?? fee.handNumber} reported ` +
-          `"${lastError}", but the fee is already banked — no chips at risk, not alarming.`
+          `"${lastError}", but the fee is already queued or banked — no chips at risk, ` +
+          `not alarming.`
       );
       return;
     }
@@ -174,14 +175,39 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
 }
 
 /**
- * Did this fee reach its destination after all?
+ * Are these chips accounted for somewhere after all?
+ *
+ * TWO places count, and the first one is the common case:
+ *
+ *   1. THE QUEUE ALREADY HAS THE ROW. A timeout is the absence of an answer,
+ *      not a rejection — the insert usually committed. Auditing the 1,020 open
+ *      alerts on 2026-08-22: 830 of them referred to a fee that was already
+ *      queued or already banked. The row is in `pending_fee_distributions`,
+ *      `reconcilePendingFees` owns it, and nothing is at risk. The duplicate-
+ *      key path above catches this only when Postgres gets to answer; a
+ *      timeout is precisely when it does not.
+ *   2. THE FEE IS ALREADY BANKED — the banking call succeeded and only its
+ *      response was lost.
  *
  * Fails CLOSED: anything unknown — a thrown query, a missing hand number —
  * returns false, so the alarm is raised. Suppressing a money alert on a guess
  * would be worse than the noise it removes.
  */
-async function feeAlreadyBanked(kind: PendingFeeKind, fee: UnbankedFee): Promise<boolean> {
+async function feeIsAccountedFor(kind: PendingFeeKind, fee: UnbankedFee): Promise<boolean> {
   try {
+    // Cheapest check, and the one that is true most often.
+    if (Number(fee.handNumber) > 0) {
+      const { data: queued } = await supabase
+        .from('pending_fee_distributions')
+        .select('id')
+        .eq('table_id', fee.tableId)
+        .eq('hand_number', fee.handNumber)
+        .eq('kind', kind)
+        .limit(1)
+        .maybeSingle();
+      if (queued) return true;
+    }
+
     if (kind === 'rake') {
       if (fee.handId) {
         const { data } = await supabase

@@ -826,6 +826,7 @@
     "w2g_forms",
     "wallet_credit_idempotency",
     "wallet_transactions",
+    "wallet_transactions_phantom_archive",
     "wallets",
     "wishlists",
     "youtube_embed_failures"
@@ -1595,6 +1596,7 @@
     "fn_spin_reserve_seed_from_union",
     "fn_spin_reserve_state",
     "fn_spin_reserve_wallet_fund",
+    "fn_spin_reserve_wallet_fund_op",
     "fn_spin_settle_game",
     "fn_spin_sweep_unbooked",
     "fn_staff_pin_taken",

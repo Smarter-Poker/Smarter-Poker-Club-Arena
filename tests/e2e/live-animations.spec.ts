@@ -260,6 +260,7 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
       page,
       `const w=document.querySelector('.sw__disc');
        w.querySelector('.sw__seg--lit').className='sw__seg sw__seg--c0 sw__seg--winner';
+       w.querySelector('.sw__seg--winner').innerHTML += '<svg><path class="sw__edge sw__edge--halo"></path></svg>';
        w.querySelector('.sw__hub').innerHTML='<span class="sw__hub-mult">25×</span>';
        const st=document.querySelector('.sw__stage');
        const r=document.createElement('div');r.className='sw__result';

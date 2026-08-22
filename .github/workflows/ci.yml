@@ -519,6 +519,33 @@ jobs:
         # correct code-splitting score exactly as badly as shipping the code
         # eagerly. See the header of the script for the measurements.
         run: node scripts/ci/bundle-size.mjs
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # LIVE PRODUCTION E2E (split out of `Production Build` 2026-08-22).
+  #
+  # WHY THIS IS ITS OWN JOB, AND WHY IT ONLY RUNS ON main:
+  # these specs drive https://smarter.poker — the DEPLOYED site. On a pull
+  # request that is not the pull request's code, it is whatever main last
+  # shipped. So as a PR gate it could never validate the change under review;
+  # it only imported production's current health (and Vercel's deploy timing)
+  # into an unrelated PR as a red X. That is why `Production Build` went red on
+  # branches whose own build was fine, and why agents started reaching for
+  # `--admin` to get past it.
+  #
+  # `Production Build` is now purely deterministic (vite build + bundle budget)
+  # and is a REQUIRED check. This job runs after main deploys, as verification,
+  # and files an issue when production actually breaks.
+  #
+  # The PR-time E2E gate is `CSS Beat E2E (multi-table + animations)`, which
+  # serves THIS COMMIT'S OWN BUILD locally — that one is required.
+  # ───────────────────────────────────────────────────────────────────────────
+  live-e2e:
+    name: Live Production E2E
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
       - name: Checkout
         uses: actions/checkout@v4.3.1
         with:
@@ -616,6 +643,25 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 4: Post-deploy smoke test on smarter.poker
   # ─────────────────────────────────────────────────────────────────────────────
+
+      - name: Open an issue if production E2E failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="Live production E2E failed on main ($(echo "$SHA" | cut -c1-8))"
+          EXISTING=$(gh issue list --repo "$REPO" --state open --label live-e2e --limit 1 --json number --jq '.[0].number' || echo "")
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "$REPO" --body "Still failing on \`$SHA\`. Run: $RUN"
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" \
+              --label live-e2e \
+              --body "Production E2E went red after a merge to main.\n\nCommit: \`$SHA\`\nRun: $RUN\n\nThis job tests the DEPLOYED site, so this means smarter.poker itself is degraded — not that a PR is bad." || true
+          fi
+
   post-deploy-check:
     name: Post-Deploy Verification
     needs: build

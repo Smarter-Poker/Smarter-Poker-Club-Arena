@@ -1,44 +1,88 @@
-# 100% AUTOMATIC CI/CD PUBLISHING WORKFLOW (MANDATORY)
+---
+description: The one and only way agents ship code in this repo. Binding on Claude, Antigravity, Cowork and every other agent.
+trigger: always_on
+---
 
-You are operating in a high-velocity repository where multiple AI agents commit to `main` simultaneously. To prevent silent regressions, merge conflicts, and lost work, ALL agents must adhere to this 100% automated workflow without ANY human intervention.
+# 100% AUTOMATIC PUBLISHING — ZERO HUMAN INTERVENTION
 
-## 1. One Push Path Only (No Direct Pushes to Main)
+Multiple agents commit here at once (128 commits in 26 hours is a normal day).
+Every regression we have traced ended at the same root cause: **an agent trying
+to drive the merge itself.** So agents no longer merge. At all.
 
-- **NEVER push directly to `main` or merge locally.**
-- ALWAYS create and checkout a new branch (e.g. `git checkout -b fix/feature-name`).
-- ALWAYS commit and push the branch.
-- ALWAYS create a Pull Request (`gh pr create --title "..." --body "..."`).
-- ALWAYS enable auto-merge immediately via `gh pr merge --auto --squash`. GitHub will merge it automatically the millisecond CI passes.
-- DO NOT run background scripts to manually poll and merge PRs.
+## 1. Your job ends when the PR exists
 
-## 2. No Wholesale Conflict Resolution
+```bash
+git checkout -b fix/<short-slug> origin/main   # ALWAYS branch from fresh main
+# ... make the change ...
+git add -A && git commit -m "fix(scope): what changed"
+git push -u origin HEAD
+gh pr create --fill
+```
 
-When a merge conflict occurs, NEVER accept "ours" or "theirs" for the entire file. This destroys concurrent work.
+**Then stop.** `.github/workflows/agent-autopilot.yml` enables squash
+auto-merge within seconds, keeps the branch fresh as main moves, and GitHub
+merges it the moment the required checks go green.
 
-- Use hunk-by-hunk resolution.
-- Ensure that you are rebasing onto a fresh `main` immediately before merging.
+## 2. FORBIDDEN — every one of these caused a real incident
 
-## 3. Pin Behaviour, Not Mechanism
+| Never do this                                                                      | What actually happened                                                                                                             |
+| ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `gh pr merge --admin`                                                              | Bypasses required checks. Red code reached main four times.                                                                        |
+| `gh pr merge --merge`                                                              | Merge commits are **disabled** on this repo. The API call fails **silently**; the PR sits open for hours while you report success. |
+| `gh pr merge --rebase`                                                             | Also disabled. Same silent failure.                                                                                                |
+| Background polling scripts (`wait_and_merge.sh`, `while true; do gh run list ...`) | Fragile, unobservable, and the source of both failures above. Autopilot already does this, server-side.                            |
+| `git push` directly to `main`                                                      | Blocked by the ruleset. Attempting it wastes a cycle.                                                                              |
+| `git push --force` / `--force-with-lease` on main                                  | Rewound main and dropped four commits that were already live in production.                                                        |
+| `git pull --rebase origin main` on the Mac clone                                   | Strands the clone mid-rebase. Use `bash scripts/git-unstick.sh`.                                                                   |
+| Asking Dan to click merge, run a script, or "approve" anything                     | The entire point of this file.                                                                                                     |
 
-To prevent silent regressions (e.g., a function reverting while its signature survives), you MUST add invariant tests.
+If a PR is not merging, **read the failing check and fix the code**. Never
+reach for a flag that makes the check stop applying.
 
-- When creating or modifying a feature that touches the database or RPCs, add an assertion in `tests/shipped-invariants.test.ts`.
-- Anchor the test to RPC names, DB effects, and crucial paths. Make sure the behaviour is actually invoked.
+## 3. Never resolve a conflict by taking a whole side
 
-## 4. Respect the Mac Clone Guard
+`--ours` / `--theirs` on a whole file is how the leaderboard RPC call
+disappeared while its function signature survived — code that compiled, passed
+typecheck, and was silently wrong for a day.
 
-If you get blocked by the pre-rebase hook (or the "production is running code main doesn't have" guard):
+Resolve hunk by hunk. Then run the test that covers the file you touched.
 
-- DO NOT force push or blindly `git reset --hard origin/main`.
-- ALWAYS run `bash scripts/git-unstick.sh` to safely backup local commits and sync with `origin/main`.
+## 4. Pin behaviour, not mechanism
 
-## 5. Fix Stale Tests in the Same PR
+A signature surviving while a body reverts is invisible to TypeScript. When you
+ship anything touching the database, an RPC, or a published path, add an
+assertion to `tests/shipped-invariants.test.ts` anchored to the **RPC name / DB
+effect / route**, not to phrasing. One line would have caught the leaderboard.
 
-If your UI or CSS changes cause a test (like E2E Playwright tests) to fail, YOU MUST FIX THE TEST in the same PR. Do not ignore it or bypass CI. A test suite that cries wolf allows real regressions to slip through.
+## 5. Fix stale tests in the same PR
 
-## 6. Zero Human Intervention
+If your change intentionally replaces behaviour a test pins, update that test in
+the **same commit**. Never commit a red spec "for someone else". Writing the
+spec first is encouraged — commit it `it.skip()` with a note, and remove the
+`.skip` in the commit that implements it.
 
-- If a CI job fails, read the failure (`gh run view --log-failed`), fix the issue, commit, push, and trust `--auto` to merge it when the next run passes.
-- Never ask the user to "merge it for you".
-- Never ask the user to "click the button".
-- Do not stop until the feature is successfully merged to `main` and deploying.
+A suite that cries wolf is how a real regression walks in unnoticed.
+
+## 6. Which checks gate a merge, and why
+
+Required (a PR cannot merge until these are green):
+
+- **TypeScript Check**
+- **Client Unit Tests (vitest)**
+- **Server Engine (typecheck + tests)**
+- **Production Build** — vite build + bundle budget. Deterministic.
+- **CSS Beat E2E (multi-table + animations)** — Playwright against **this
+  commit's own build**, served locally.
+
+Not required, and deliberately so:
+
+- **Live Production E2E** — drives the deployed `smarter.poker`. On a PR that is
+  not your code, it is whatever main last shipped, so it can never validate the
+  change under review. It runs after main deploys and opens an issue when
+  production genuinely breaks.
+
+## 7. If something is genuinely stuck
+
+Fix it, or open an issue describing it. Do not hand it to a human, do not write
+a handoff asking someone to push, and do not leave work uncommitted — the
+Antigravity `git reset --hard origin/main` loop destroys uncommitted work.

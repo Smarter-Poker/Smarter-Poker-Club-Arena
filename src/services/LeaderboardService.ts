@@ -66,6 +66,27 @@ export type LeaderboardMetric =
   | 'bb100'
   | 'tournaments_won';
 
+export interface LeaderboardSettings {
+  club_id: string;
+  payout_currency: 'diamonds' | 'chips';
+  weekly_prizes: { rank: number; amount: number }[];
+  monthly_prizes: { rank: number; amount: number }[];
+}
+
+export interface LeaderboardPayout {
+  id: string;
+  club_id: string;
+  period: string;
+  metric: string;
+  start_date: string;
+  end_date: string;
+  user_id: string;
+  rank: number;
+  payout_amount: number;
+  payout_currency: string;
+  awarded_at: string;
+}
+
 export interface LeaderboardEntry {
   rank: number;
   userId: string;
@@ -246,7 +267,8 @@ export const LeaderboardService = {
     metric: LeaderboardMetric = 'profit',
     period: LeaderboardPeriod = 'weekly',
     limit: number = 10,
-    offset: number = 0
+    offset: number = 0,
+    periodOffset: number = 0
   ): Promise<LeaderboardEntry[]> {
     try {
       const resolvedClubId = await resolveClubUUID(clubId);
@@ -255,13 +277,30 @@ export const LeaderboardService = {
       let statsData: PlayerStatsRow[] | null = null;
 
       if (!isRatio) {
-        const { data, error } = await supabase.rpc('fn_club_leaderboard_period_v2', {
-          p_club_id: resolvedClubId,
-          p_metric: metric,
-          p_period: period,
-          p_limit: limit,
-          p_offset: offset,
-        });
+        let data, error;
+        if (periodOffset < 0) {
+          const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+          const result = await supabase.rpc('fn_club_leaderboard_by_dates', {
+            p_club_id: resolvedClubId,
+            p_metric: metric,
+            p_start_date: start.toISOString().split('T')[0],
+            p_end_date: end.toISOString().split('T')[0],
+            p_limit: limit,
+            p_offset: offset,
+          });
+          data = result.data;
+          error = result.error;
+        } else {
+          const result = await supabase.rpc('fn_club_leaderboard_period_v2', {
+            p_club_id: resolvedClubId,
+            p_metric: metric,
+            p_period: period,
+            p_limit: limit,
+            p_offset: offset,
+          });
+          data = result.data;
+          error = result.error;
+        }
         if (error) {
           reportError(error, 'LeaderboardService.getClubLeaderboard_v2');
         } else {
@@ -311,16 +350,33 @@ export const LeaderboardService = {
     metric: LeaderboardMetric = 'profit',
     period: LeaderboardPeriod = 'weekly',
     limit: number = 50,
-    offset: number = 0
+    offset: number = 0,
+    periodOffset: number = 0
   ): Promise<LeaderboardEntry[]> {
     try {
       if (metric === 'vpip' || metric === 'pfr') return [];
-      const { data, error } = await supabase.rpc('fn_global_leaderboard_period', {
-        p_metric: metric,
-        p_period: period,
-        p_limit: limit,
-        p_offset: offset,
-      });
+      let data, error;
+      if (periodOffset < 0) {
+        const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+        const result = await supabase.rpc('fn_global_leaderboard_by_dates', {
+          p_metric: metric,
+          p_start_date: start.toISOString().split('T')[0],
+          p_end_date: end.toISOString().split('T')[0],
+          p_limit: limit,
+          p_offset: offset,
+        });
+        data = result.data;
+        error = result.error;
+      } else {
+        const result = await supabase.rpc('fn_global_leaderboard_period', {
+          p_metric: metric,
+          p_period: period,
+          p_limit: limit,
+          p_offset: offset,
+        });
+        data = result.data;
+        error = result.error;
+      }
       if (error || !data) {
         reportError(error, 'LeaderboardService.getGlobalLeaderboard');
         return [];
@@ -451,7 +507,7 @@ export const LeaderboardService = {
           clubName: result.clubName,
           profit: result.profit,
         });
-      } catch (_e: unknown) {
+      } catch {
         // Silent fail for POY tracking
       }
     }
@@ -464,20 +520,36 @@ export const LeaderboardService = {
     userId: string,
     clubId: string,
     metric: LeaderboardMetric = 'profit',
-    period: LeaderboardPeriod = 'weekly'
+    period: LeaderboardPeriod = 'weekly',
+    periodOffset: number = 0
   ): Promise<{ rank: number; total: number; value: number } | null> {
     try {
       const resolvedClubId = await resolveClubUUID(clubId);
       const isRatio = metric === 'vpip' || metric === 'pfr';
 
       if (!isRatio) {
-        // fn_user_rank_period handles every period including all_time.
-        const { data, error } = await supabase.rpc('fn_user_rank_period', {
-          p_user_id: userId,
-          p_club_id: resolvedClubId,
-          p_metric: metric,
-          p_period: period,
-        });
+        let data, error;
+        if (periodOffset < 0) {
+          const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+          const result = await supabase.rpc('fn_user_rank_by_dates', {
+            p_user_id: userId,
+            p_club_id: resolvedClubId,
+            p_metric: metric,
+            p_start_date: start.toISOString().split('T')[0],
+            p_end_date: end.toISOString().split('T')[0],
+          });
+          data = result.data;
+          error = result.error;
+        } else {
+          const result = await supabase.rpc('fn_user_rank_period', {
+            p_user_id: userId,
+            p_club_id: resolvedClubId,
+            p_metric: metric,
+            p_period: period,
+          });
+          data = result.data;
+          error = result.error;
+        }
         if (error || !data?.found) {
           if (error) reportError(error, 'LeaderboardService.getUserRank_period');
           return null;
@@ -522,15 +594,31 @@ export const LeaderboardService = {
   async getGlobalUserRank(
     userId: string,
     metric: LeaderboardMetric = 'profit',
-    period: LeaderboardPeriod = 'weekly'
+    period: LeaderboardPeriod = 'weekly',
+    periodOffset: number = 0
   ): Promise<{ rank: number; total: number; value: number } | null> {
     try {
       if (metric === 'vpip' || metric === 'pfr') return null;
-      const { data, error } = await supabase.rpc('fn_user_rank_global_period', {
-        p_user_id: userId,
-        p_metric: metric,
-        p_period: period,
-      });
+      let data, error;
+      if (periodOffset < 0) {
+        const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+        const result = await supabase.rpc('fn_user_rank_global_by_dates', {
+          p_user_id: userId,
+          p_metric: metric,
+          p_start_date: start.toISOString().split('T')[0],
+          p_end_date: end.toISOString().split('T')[0],
+        });
+        data = result.data;
+        error = result.error;
+      } else {
+        const result = await supabase.rpc('fn_user_rank_global_period', {
+          p_user_id: userId,
+          p_metric: metric,
+          p_period: period,
+        });
+        data = result.data;
+        error = result.error;
+      }
       if (error || !data?.found) {
         if (error) reportError(error, 'LeaderboardService.getGlobalUserRank');
         return null;
@@ -708,10 +796,116 @@ export const LeaderboardService = {
   /**
    * Get period date boundaries
    */
-  getPeriodBoundaries(period: LeaderboardPeriod): { start: Date; end: Date } {
+
+  async getLeaderboardSettings(clubId: string): Promise<LeaderboardSettings | null> {
+    try {
+      const { data, error } = await supabase
+        .from('club_leaderboard_settings')
+        .select('*')
+        .eq('club_id', clubId)
+        .maybeSingle();
+      if (error) throw error;
+      return data as LeaderboardSettings;
+    } catch (err) {
+      reportError(err, 'LeaderboardService.getLeaderboardSettings');
+      return null;
+    }
+  },
+
+  async updateLeaderboardSettings(
+    clubId: string,
+    updates: Partial<LeaderboardSettings>
+  ): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('club_leaderboard_settings')
+        .upsert({ club_id: clubId, ...updates }, { onConflict: 'club_id' });
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      reportError(err, 'LeaderboardService.updateLeaderboardSettings');
+      return false;
+    }
+  },
+
+  async getPayoutsForPeriod(
+    clubId: string,
+    period: string,
+    metric: string,
+    startDate: string
+  ): Promise<LeaderboardPayout[]> {
+    try {
+      const { data, error } = await supabase
+        .from('leaderboard_payouts')
+        .select('*')
+        .eq('club_id', clubId)
+        .eq('period', period)
+        .eq('metric', metric)
+        .eq('start_date', startDate);
+      if (error) throw error;
+      return (data as LeaderboardPayout[]) || [];
+    } catch (err) {
+      reportError(err, 'LeaderboardService.getPayoutsForPeriod');
+      return [];
+    }
+  },
+
+  async payoutLeaderboardPeriod(
+    clubId: string,
+    period: string,
+    metric: string,
+    startDate: string,
+    endDate: string
+  ): Promise<boolean> {
+    try {
+      const { error } = await supabase.rpc('fn_payout_leaderboard', {
+        p_club_id: clubId,
+        p_period: period,
+        p_metric: metric,
+        p_start_date: startDate,
+        p_end_date: endDate,
+      });
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      reportError(err, 'LeaderboardService.payoutLeaderboardPeriod');
+      throw err;
+    }
+  },
+
+  async getUserTrophies(userId: string): Promise<LeaderboardPayout[]> {
+    try {
+      const { data, error } = await supabase
+        .from('leaderboard_payouts')
+        .select('*')
+        .eq('user_id', userId)
+        .order('awarded_at', { ascending: false });
+      if (error) throw error;
+      return (data as LeaderboardPayout[]) || [];
+    } catch (err) {
+      reportError(err, 'LeaderboardService.getUserTrophies');
+      return [];
+    }
+  },
+
+  getPeriodBoundaries(
+    period: LeaderboardPeriod,
+    periodOffset: number = 0
+  ): { start: Date; end: Date } {
     const now = new Date();
-    const end = new Date(now);
     let start: Date;
+
+    // Apply offset logic based on period type
+    if (period === 'weekly') {
+      const offsetDays = periodOffset * 7;
+      now.setDate(now.getDate() + offsetDays);
+    } else if (period === 'monthly') {
+      now.setMonth(now.getMonth() + periodOffset);
+    } else if (period === 'daily') {
+      now.setDate(now.getDate() + periodOffset);
+    }
+
+    const end = new Date(now);
 
     switch (period) {
       case 'daily':

@@ -157,6 +157,7 @@ export default function LeaderboardPage() {
   const toast = useToast();
   const [scope, setScope] = useState<LeaderboardScope>('my-clubs');
   const [period, setPeriod] = useState<LeaderboardPeriod>('weekly');
+  const [periodOffset, setPeriodOffset] = useState<number>(0);
   const [metric, setMetric] = useState<LeaderboardMetric>('profit');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [totalRanked, setTotalRanked] = useState<number | null>(null);
@@ -424,12 +425,14 @@ export default function LeaderboardPage() {
       const data = await retryFetch(
         () =>
           isGlobal
-            ? LeaderboardService.getGlobalLeaderboard(metric, period, PAGE_SIZE)
+            ? LeaderboardService.getGlobalLeaderboard(metric, period, PAGE_SIZE, 0, periodOffset)
             : LeaderboardService.getClubLeaderboard(
                 selectedClubId as string,
                 metric,
                 period,
-                PAGE_SIZE
+                PAGE_SIZE,
+                0,
+                periodOffset
               ),
         { maxRetries: 2 }
       );
@@ -444,8 +447,14 @@ export default function LeaderboardPage() {
       // Get user's rank in the same scope
       if (user?.id) {
         const rank = isGlobal
-          ? await LeaderboardService.getGlobalUserRank(user.id, metric, period)
-          : await LeaderboardService.getUserRank(user.id, selectedClubId as string, metric, period);
+          ? await LeaderboardService.getGlobalUserRank(user.id, metric, period, periodOffset)
+          : await LeaderboardService.getUserRank(
+              user.id,
+              selectedClubId as string,
+              metric,
+              period,
+              periodOffset
+            );
         if (myReq !== reqSeqRef.current) return;
         if (getIsMounted && !getIsMounted()) return;
         setUserRank(rank);
@@ -476,7 +485,13 @@ export default function LeaderboardPage() {
     setLoadingMore(true);
     try {
       const more = isGlobal
-        ? await LeaderboardService.getGlobalLeaderboard(metric, period, PAGE_SIZE, offset)
+        ? await LeaderboardService.getGlobalLeaderboard(
+            metric,
+            period,
+            PAGE_SIZE,
+            offset,
+            periodOffset
+          )
         : await LeaderboardService.getClubLeaderboard(
             selectedClubId as string,
             metric,
@@ -710,15 +725,76 @@ export default function LeaderboardPage() {
             <button
               key={opt.value}
               className={`lb-filter-chip ${period === opt.value ? 'active' : ''}`}
-              onClick={() => setPeriod(opt.value)}
+              onClick={() => {
+                setPeriod(opt.value);
+                setPeriodOffset(0);
+              }}
             >
               {opt.label}
             </button>
           ))}
+          {period !== 'all_time' && (
+            <div style={{ display: 'flex', alignItems: 'center', marginLeft: '12px', gap: '4px' }}>
+              <button
+                className="lb-filter-chip"
+                style={{ padding: '0 8px' }}
+                onClick={() => setPeriodOffset((o) => o - 1)}
+                title="Previous"
+              >
+                {'<'}
+              </button>
+              <span
+                style={{ color: '#aaa', fontSize: '12px', minWidth: '40px', textAlign: 'center' }}
+              >
+                {periodOffset === 0 ? 'Current' : periodOffset === -1 ? 'Last' : `${periodOffset}`}
+              </span>
+              <button
+                className="lb-filter-chip"
+                style={{ padding: '0 8px' }}
+                onClick={() => setPeriodOffset((o) => Math.min(0, o + 1))}
+                disabled={periodOffset >= 0}
+                title="Next"
+              >
+                {'>'}
+              </button>
+            </div>
+          )}
         </div>
 
         {isOwner && activeTab === 'rankings' && (
-          <div className="filter-group ml-auto">
+          <div className="filter-group ml-auto" style={{ display: 'flex', gap: '8px' }}>
+            <button
+              className="lb-filter-chip"
+              onClick={async () => {
+                if (window.confirm(`Pay out ${period} ${metric} leaderboard now?`)) {
+                  try {
+                    const { start, end } = LeaderboardService.getPeriodBoundaries(
+                      period,
+                      periodOffset
+                    );
+                    await LeaderboardService.payoutLeaderboardPeriod(
+                      selectedClubId as string,
+                      period,
+                      metric,
+                      start.toISOString().split('T')[0],
+                      end.toISOString().split('T')[0]
+                    );
+                    toast.success('Payouts issued successfully!');
+                  } catch (err: any) {
+                    toast.error(err.message || 'Payout failed');
+                  }
+                }
+              }}
+              title="Pay Out Current Leaderboard"
+              style={{
+                padding: '0 12px',
+                background: 'rgba(255, 215, 0, 0.2)',
+                color: '#FFD700',
+                border: '1px solid rgba(255, 215, 0, 0.5)',
+              }}
+            >
+              {'💰'} Pay Out
+            </button>
             <button
               className="lb-filter-chip"
               onClick={() => setShowSettings(true)}
@@ -1139,7 +1215,14 @@ export default function LeaderboardPage() {
 
             <div
               className="space-y-4 text-white/90"
-              style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px',
+                maxHeight: '70vh',
+                overflowY: 'auto',
+                paddingRight: '8px',
+              }}
             >
               <div className="form-group">
                 <label
@@ -1175,6 +1258,108 @@ export default function LeaderboardPage() {
                 >
                   Diamonds Are Deducted From The Club Diamond Wallet. Chips Are Minted.
                 </p>
+              </div>
+
+              <div className="form-group" style={{ marginTop: '16px' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    marginBottom: '8px',
+                    color: '#fff',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  Weekly Prizes
+                </label>
+                {[1, 2, 3].map((rank) => {
+                  const currentPrize =
+                    settings?.weekly_prizes?.find((p) => p.rank === rank)?.amount || 0;
+                  return (
+                    <div
+                      key={`weekly-${rank}`}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        marginBottom: '8px',
+                        gap: '8px',
+                      }}
+                    >
+                      <span style={{ width: '60px', color: '#aaa' }}>Rank {rank}</span>
+                      <input
+                        type="number"
+                        style={{
+                          flex: 1,
+                          background: 'rgba(0,0,0,0.4)',
+                          color: '#fff',
+                          border: '1px solid #444',
+                          padding: '6px',
+                          borderRadius: '4px',
+                        }}
+                        value={currentPrize || ''}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          const newPrizes = (settings?.weekly_prizes || []).filter(
+                            (p) => p.rank !== rank
+                          );
+                          if (val > 0) newPrizes.push({ rank, amount: val });
+                          setSettings({ ...settings!, weekly_prizes: newPrizes });
+                        }}
+                        placeholder="Amount"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="form-group" style={{ marginTop: '16px' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    marginBottom: '8px',
+                    color: '#fff',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  Monthly Prizes
+                </label>
+                {[1, 2, 3].map((rank) => {
+                  const currentPrize =
+                    settings?.monthly_prizes?.find((p) => p.rank === rank)?.amount || 0;
+                  return (
+                    <div
+                      key={`monthly-${rank}`}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        marginBottom: '8px',
+                        gap: '8px',
+                      }}
+                    >
+                      <span style={{ width: '60px', color: '#aaa' }}>Rank {rank}</span>
+                      <input
+                        type="number"
+                        style={{
+                          flex: 1,
+                          background: 'rgba(0,0,0,0.4)',
+                          color: '#fff',
+                          border: '1px solid #444',
+                          padding: '6px',
+                          borderRadius: '4px',
+                        }}
+                        value={currentPrize || ''}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          const newPrizes = (settings?.monthly_prizes || []).filter(
+                            (p) => p.rank !== rank
+                          );
+                          if (val > 0) newPrizes.push({ rank, amount: val });
+                          setSettings({ ...settings!, monthly_prizes: newPrizes });
+                        }}
+                        placeholder="Amount"
+                      />
+                    </div>
+                  );
+                })}
               </div>
 
               <button

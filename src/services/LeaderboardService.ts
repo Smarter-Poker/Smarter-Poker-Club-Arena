@@ -267,7 +267,8 @@ export const LeaderboardService = {
     metric: LeaderboardMetric = 'profit',
     period: LeaderboardPeriod = 'weekly',
     limit: number = 10,
-    offset: number = 0
+    offset: number = 0,
+    periodOffset: number = 0
   ): Promise<LeaderboardEntry[]> {
     try {
       const resolvedClubId = await resolveClubUUID(clubId);
@@ -332,7 +333,8 @@ export const LeaderboardService = {
     metric: LeaderboardMetric = 'profit',
     period: LeaderboardPeriod = 'weekly',
     limit: number = 50,
-    offset: number = 0
+    offset: number = 0,
+    periodOffset: number = 0
   ): Promise<LeaderboardEntry[]> {
     try {
       if (metric === 'vpip' || metric === 'pfr') return [];
@@ -485,20 +487,36 @@ export const LeaderboardService = {
     userId: string,
     clubId: string,
     metric: LeaderboardMetric = 'profit',
-    period: LeaderboardPeriod = 'weekly'
+    period: LeaderboardPeriod = 'weekly',
+    periodOffset: number = 0
   ): Promise<{ rank: number; total: number; value: number } | null> {
     try {
       const resolvedClubId = await resolveClubUUID(clubId);
       const isRatio = metric === 'vpip' || metric === 'pfr';
 
       if (!isRatio) {
-        // fn_user_rank_period handles every period including all_time.
-        const { data, error } = await supabase.rpc('fn_user_rank_period', {
-          p_user_id: userId,
-          p_club_id: resolvedClubId,
-          p_metric: metric,
-          p_period: period,
-        });
+        let data, error;
+        if (periodOffset < 0) {
+          const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+          const result = await supabase.rpc('fn_user_rank_by_dates', {
+            p_user_id: userId,
+            p_club_id: resolvedClubId,
+            p_metric: metric,
+            p_start_date: start.toISOString().split('T')[0],
+            p_end_date: end.toISOString().split('T')[0],
+          });
+          data = result.data;
+          error = result.error;
+        } else {
+          const result = await supabase.rpc('fn_user_rank_period', {
+            p_user_id: userId,
+            p_club_id: resolvedClubId,
+            p_metric: metric,
+            p_period: period,
+          });
+          data = result.data;
+          error = result.error;
+        }
         if (error || !data?.found) {
           if (error) reportError(error, 'LeaderboardService.getUserRank_period');
           return null;
@@ -543,15 +561,31 @@ export const LeaderboardService = {
   async getGlobalUserRank(
     userId: string,
     metric: LeaderboardMetric = 'profit',
-    period: LeaderboardPeriod = 'weekly'
+    period: LeaderboardPeriod = 'weekly',
+    periodOffset: number = 0
   ): Promise<{ rank: number; total: number; value: number } | null> {
     try {
       if (metric === 'vpip' || metric === 'pfr') return null;
-      const { data, error } = await supabase.rpc('fn_user_rank_global_period', {
-        p_user_id: userId,
-        p_metric: metric,
-        p_period: period,
-      });
+      let data, error;
+      if (periodOffset < 0) {
+        const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+        const result = await supabase.rpc('fn_user_rank_global_by_dates', {
+          p_user_id: userId,
+          p_metric: metric,
+          p_start_date: start.toISOString().split('T')[0],
+          p_end_date: end.toISOString().split('T')[0],
+        });
+        data = result.data;
+        error = result.error;
+      } else {
+        const result = await supabase.rpc('fn_user_rank_global_period', {
+          p_user_id: userId,
+          p_metric: metric,
+          p_period: period,
+        });
+        data = result.data;
+        error = result.error;
+      }
       if (error || !data?.found) {
         if (error) reportError(error, 'LeaderboardService.getGlobalUserRank');
         return null;
@@ -821,10 +855,24 @@ export const LeaderboardService = {
     }
   },
 
-  getPeriodBoundaries(period: LeaderboardPeriod): { start: Date; end: Date } {
+  getPeriodBoundaries(
+    period: LeaderboardPeriod,
+    periodOffset: number = 0
+  ): { start: Date; end: Date } {
     const now = new Date();
-    const end = new Date(now);
     let start: Date;
+
+    // Apply offset logic based on period type
+    if (period === 'weekly') {
+      const offsetDays = periodOffset * 7;
+      now.setDate(now.getDate() + offsetDays);
+    } else if (period === 'monthly') {
+      now.setMonth(now.getMonth() + periodOffset);
+    } else if (period === 'daily') {
+      now.setDate(now.getDate() + periodOffset);
+    }
+
+    const end = new Date(now);
 
     switch (period) {
       case 'daily':

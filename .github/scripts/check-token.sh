@@ -40,8 +40,11 @@ if OUT=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .full_name 2>&1); then
       if [ "$DAYS" -le 21 ]; then
         echo "::warning::GH_PAT expires in ${DAYS} day(s). When it lapses, NOTHING will auto-merge or publish. Rotate it: gh secret set GH_PAT --repo ${GITHUB_REPOSITORY:-<repo>} --body <fresh PAT>"
         if [ -n "${GITHUB_TOKEN_FALLBACK:-}" ]; then
+          # Not --search: that reads the eventually-consistent search index, so
+          # two runs minutes apart both see nothing and both file one. Ask the
+          # list endpoint, which is current.
           GH_TOKEN="$GITHUB_TOKEN_FALLBACK" gh issue list --repo "$GITHUB_REPOSITORY" --state open \
-            --search "Agent Autopilot token expires in:title" --limit 1 --json number --jq '.[0].number' 2>/dev/null | grep -q . \
+            --limit 100 --json title --jq '.[].title' 2>/dev/null | grep -q "^Agent Autopilot token expires" \
           || GH_TOKEN="$GITHUB_TOKEN_FALLBACK" gh issue create --repo "$GITHUB_REPOSITORY" \
                --title "Agent Autopilot token expires ${EXP}" \
                --body "\`GH_PAT\` expires in ${DAYS} day(s) (\`${EXP}\`).
@@ -68,7 +71,9 @@ echo "::error::A key rotated in the App settings invalidates the old PEM immedia
 if [ -n "${GITHUB_TOKEN_FALLBACK:-}" ]; then
   export GH_TOKEN="$GITHUB_TOKEN_FALLBACK"
   TITLE="Agent Autopilot is down: GH_PAT is invalid"
-  EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --limit 1 --json number --jq '.[0].number' 2>/dev/null || echo "")
+  # The list endpoint, not --search: see the note above.
+  EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,title \
+               --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty" 2>/dev/null || echo "")
   if [ -z "$EXISTING" ]; then
     gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" \
       --body "\`gh api user\` returned:

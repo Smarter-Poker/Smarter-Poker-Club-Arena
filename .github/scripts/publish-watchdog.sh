@@ -46,6 +46,21 @@ summary() { echo "$@" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
 # GITHUB_TOKEN, with `issues: write` declared in the workflow, is guaranteed to
 # have the permission, where an App's installation scopes can be narrowed
 # without anyone here noticing. Use the narrow token for the narrow job.
+# FIND THE EXISTING ISSUE WITHOUT USING SEARCH.
+#
+# `gh issue list --search "<title> in:title"` reads GitHub's SEARCH INDEX, which
+# is eventually consistent - a freshly created issue is not findable for a
+# minute or two. Two sweeps 87 seconds apart both looked, both saw nothing, and
+# both created one: PepNationLab #79 and #80, same title, same content. A
+# de-duplicating guard that duplicates is worse than none, because the noise
+# teaches people to ignore it.
+#
+# The plain list endpoint is not an index. It is current.
+find_issue() {
+  gh issue list --repo "$REPO" --state open --limit 100 --json number,title \
+    --jq "[.[] | select(.title == \"$1\")] | .[0].number // empty" 2>/dev/null
+}
+
 gh_write() {
   local what="$1"; shift
   local out
@@ -82,8 +97,7 @@ say "main HEAD : $HEAD_SHORT ($HEAD_TIME, ${AGE_MIN}m ago)"
 say "production: ${SERVED_SHORT:-<unreadable>}"
 
 close_issue() {
-  N=$(gh issue list --repo "$REPO" --state open --search "$ISSUE_TITLE in:title" \
-        --limit 1 --json number --jq '.[0].number' 2>/dev/null || true)
+  N=$(find_issue "$ISSUE_TITLE")
   [ -n "${N:-}" ] || return 0
   gh_write "comment on #$N" issue comment "$N" --repo "$REPO" \
     --body "Recovered. Production is serving \`$HEAD_SHORT\`, which is main's HEAD. Closing." || true
@@ -190,8 +204,7 @@ ${DIAG:-A merge that does not publish is indistinguishable from a regression: ma
 
 _Raised automatically by \`.github/workflows/publish-watchdog.yml\`. It closes itself when production catches up._"
 
-EXISTING=$(gh issue list --repo "$REPO" --state open --search "$ISSUE_TITLE in:title" \
-             --limit 1 --json number --jq '.[0].number' 2>/dev/null || true)
+EXISTING=$(find_issue "$ISSUE_TITLE")
 if [ -n "${EXISTING:-}" ]; then
   gh_write "update issue #$EXISTING" issue comment "$EXISTING" --repo "$REPO" --body "$BODY" || true
 else

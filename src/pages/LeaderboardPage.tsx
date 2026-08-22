@@ -15,6 +15,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
+import type { LeaderboardSettings } from '../services/LeaderboardService';
 import { LeaderboardService } from '../services/LeaderboardService';
 import type {
   LeaderboardEntry,
@@ -72,6 +73,7 @@ type LeaderboardTab = 'rankings' | 'tournaments';
 interface UserClub {
   id: string;
   name: string;
+  role: any;
 }
 
 // Metric definitions. Unicode symbols only (no emoji: build rule).
@@ -169,6 +171,10 @@ export default function LeaderboardPage() {
   const isMountedRef = useRef(true);
 
   // Club selection
+
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettings] = useState<LeaderboardSettings | null>(null);
+
   const [userClubs, setUserClubs] = useState<UserClub[]>([]);
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [clubsLoading, setClubsLoading] = useState(true);
@@ -287,6 +293,20 @@ export default function LeaderboardPage() {
   // A channel on player_stats itself is deliberately NOT used: it changes on
   // every seat of every hand (~1.1M writes/day) and would flood the client.
 
+  useEffect(() => {
+    let isMounted = true;
+    if (selectedClubId && userClubs.find((c) => c.id === selectedClubId)?.role === 'owner') {
+      LeaderboardService.getLeaderboardSettings(selectedClubId).then((data) => {
+        if (isMounted && data) {
+          setSettings(data);
+        }
+      });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedClubId, userClubs]);
+
   // Callback for tournament updates
   const handleTournamentLeaderboardUpdate = useCallback(() => {
     if (activeTabRef.current === 'tournaments')
@@ -360,6 +380,7 @@ export default function LeaderboardPage() {
         .map((m) => ({
           id: (m.club?.id || m.club_id) as string,
           name: m.club?.name || 'Unknown Club',
+          role: m.role,
         }))
         .filter((c): c is UserClub => Boolean(c.id));
 
@@ -522,6 +543,10 @@ export default function LeaderboardPage() {
     if (rank === 3) return '3rd';
     return `#${rank}`;
   };
+
+  const isOwner = selectedClubId
+    ? userClubs.find((c) => c.id === selectedClubId)?.role === 'owner'
+    : false;
 
   const visibleMetricOptions = METRIC_OPTIONS.filter(
     (m) => scope === 'my-clubs' || m.globalSupported
@@ -691,6 +716,19 @@ export default function LeaderboardPage() {
             </button>
           ))}
         </div>
+
+        {isOwner && activeTab === 'rankings' && (
+          <div className="filter-group ml-auto">
+            <button
+              className="lb-filter-chip"
+              onClick={() => setShowSettings(true)}
+              title="Leaderboard Settings"
+              style={{ padding: '0 12px' }}
+            >
+              {'⚙️'} Settings
+            </button>
+          </div>
+        )}
 
         {/* Metric Selector */}
         <div className="filter-group lb-chip-bar lb-chip-scroll">
@@ -1044,6 +1082,127 @@ export default function LeaderboardPage() {
             {!entries.some((e) => e.userId === user?.id) && entries.length > 0 && (
               <span className="rank-offlist">Not In The Top {entries.length}</span>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && isOwner && (
+        <div
+          className="modal-overlay"
+          style={{
+            zIndex: 50,
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.75)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            className="modal-content glass-panel p-6 max-w-md w-full"
+            style={{
+              background: '#1a1a1a',
+              border: '1px solid #333',
+              borderRadius: '12px',
+              padding: '24px',
+            }}
+          >
+            <div
+              className="flex justify-between items-center mb-6"
+              style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}
+            >
+              <h2
+                className="text-xl font-bold font-display text-white"
+                style={{ fontSize: '1.25rem', color: '#fff', margin: 0 }}
+              >
+                Prize Settings
+              </h2>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="text-white/60 hover:text-white"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#aaa',
+                  cursor: 'pointer',
+                  fontSize: '1.2rem',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div
+              className="space-y-4 text-white/90"
+              style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
+            >
+              <div className="form-group">
+                <label
+                  className="text-sm font-semibold mb-2 block"
+                  style={{ display: 'block', marginBottom: '8px', color: '#fff' }}
+                >
+                  Payout Currency
+                </label>
+                <select
+                  className="w-full bg-black/40 border border-white/10 rounded px-3 py-2 text-white"
+                  style={{
+                    width: '100%',
+                    background: 'rgba(0,0,0,0.4)',
+                    color: '#fff',
+                    border: '1px solid #444',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                  }}
+                  value={settings?.payout_currency || 'diamonds'}
+                  onChange={(e) =>
+                    setSettings({
+                      ...(settings as LeaderboardSettings),
+                      payout_currency: e.target.value as 'diamonds' | 'chips',
+                    })
+                  }
+                >
+                  <option value="diamonds">Diamonds</option>
+                  <option value="chips">Chips</option>
+                </select>
+                <p
+                  className="text-xs text-white/50 mt-1"
+                  style={{ fontSize: '12px', color: '#888', marginTop: '8px' }}
+                >
+                  Diamonds Are Deducted From The Club Diamond Wallet. Chips Are Minted.
+                </p>
+              </div>
+
+              <button
+                className="btn-primary w-full mt-4"
+                style={{
+                  width: '100%',
+                  background: '#4169E1',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '10px',
+                  borderRadius: '6px',
+                  fontWeight: 'bold',
+                  marginTop: '16px',
+                  cursor: 'pointer',
+                }}
+                onClick={async () => {
+                  if (selectedClubId) {
+                    await LeaderboardService.updateLeaderboardSettings(selectedClubId, {
+                      payout_currency: settings?.payout_currency || 'diamonds',
+                    });
+                    toast.success('Saved');
+                    setShowSettings(false);
+                  }
+                }}
+              >
+                Save Settings
+              </button>
+            </div>
           </div>
         </div>
       )}

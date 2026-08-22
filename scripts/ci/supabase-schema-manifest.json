@@ -2831,6 +2831,8 @@
     "word_similarity_dist_op",
     "word_similarity_op",
     "xp_ban_guard_fn",
-    "fn_reroll_challenge"
+    "fn_reroll_challenge",
+    "ca_club_grantable_roles",
+    "fn_club_set_member_role"
   ]
 }

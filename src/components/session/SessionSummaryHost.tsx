@@ -34,9 +34,11 @@ import { createPortal } from 'react-dom';
 import {
   clearSessionSummary,
   peekSessionSummary,
+  settlePendingSummary,
   subscribeSessionSummary,
   type SessionSummaryPayload,
 } from '../../services/pendingSessionSummary';
+import { supabase } from '../../lib/supabase';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import { titleCase } from '../../utils/titleCase';
 import './SessionSummaryHost.css';
@@ -130,6 +132,65 @@ export function SessionSummaryHost() {
   const close = useCallback(() => {
     clearSessionSummary();
   }, []);
+
+  /* ── Settlement reconciliation (Phase 4, 2026-08-22) ──
+     While the card shows a deferred estimate, poll for the ledger row the
+     engine's processLeavePending writes at settlement (wallet_transactions,
+     category 'cashout', this table, this user, after the leave). When it
+     lands, the module swaps the estimate for `amount - totalBuyIn` and the
+     card re-renders without the annotation — the count-up re-runs on the
+     corrected number, which doubles as the "this just updated" cue.
+
+     Polling, not realtime: the card lives on screen for seconds and the
+     settlement lands within one hand's tail. A realtime channel would spend
+     its whole life in setup/teardown, and its failure mode (silently no
+     events) is exactly the one this feature exists to close. 3s cadence,
+     3 minute cap; if the row never appears the annotation simply stays,
+     which remains an honest card. */
+  useEffect(() => {
+    const pc = payload?.plPending ? payload.pendingCashout : undefined;
+    if (!pc) return undefined;
+
+    const totalBuyIn = payload?.totalBuyIn ?? 0;
+    /* 2 min of slack: the engine stamps the row from its own clock, which can
+       run ahead of the client's `sinceMs`. The tableId + category filters do
+       the real disambiguation; the time bound only fences off past sessions. */
+    const sinceIso = new Date(pc.sinceMs - 120_000).toISOString();
+    let stopped = false;
+
+    const check = async () => {
+      try {
+        const { data } = await supabase
+          .from('wallet_transactions')
+          .select('amount, created_at')
+          .eq('user_id', pc.userId)
+          .eq('table_id', pc.tableId)
+          .eq('category', 'cashout')
+          .gte('created_at', sinceIso)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (stopped) return;
+        if (data && data.amount != null) {
+          settlePendingSummary(Number(data.amount) - totalBuyIn);
+        }
+      } catch {
+        /* transient read failure — the next tick retries */
+      }
+    };
+
+    void check();
+    const interval = window.setInterval(() => void check(), 3000);
+    const cap = window.setTimeout(() => {
+      stopped = true;
+      window.clearInterval(interval);
+    }, 180_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+      window.clearTimeout(cap);
+    };
+  }, [payload]);
 
   // Escape closes. The old modal had no keyboard dismissal at all.
   useEffect(() => {

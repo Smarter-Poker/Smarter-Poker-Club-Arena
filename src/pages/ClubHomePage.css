@@ -637,15 +637,15 @@
 }
 
 .game-bar__type.is-active {
-  background: linear-gradient(135deg, #ffb800, #ff8c00);
-  border-color: rgba(255, 184, 0, 0.75);
-  color: #17130a;
+  background: linear-gradient(135deg, #0088ff, #0055ff);
+  border-color: rgba(0, 136, 255, 0.75);
+  color: #ffffff;
   font-weight: 800;
-  box-shadow: 0 0 14px rgba(255, 184, 0, 0.35);
+  box-shadow: 0 0 14px rgba(0, 136, 255, 0.35);
 }
 
 .game-bar__type:focus-visible {
-  outline: 2px solid rgba(255, 184, 0, 0.75);
+  outline: 2px solid rgba(0, 136, 255, 0.75);
   outline-offset: 2px;
 }
 

@@ -7,6 +7,68 @@
 
 ---
 
+## Cowork session 2026-08-22 (12) — MOBILE FIT SWEEP: every page fits one screen, the social-page way (PR #326)
+
+Dan: "the mobile layout needs to use the same type of mobile layout as we use
+inside the social media pages, where everything shrinks down and fits into one
+screen ... duplicate it for every single page of the Club Arena."
+
+### The deep dive
+
+World Hub social pages' mobile system, extracted: fixed 56px header + fixed
+56px bottom nav (safe-area padded) frame one viewport; <main> has ZERO side
+padding, width 100%, overflow-x hidden; one column (680px desktop cap -> 100%
+at <=768px); sidebars become slide-out drawers; cards are width-relative and
+carry their own internal spacing.
+
+### What was measured (verify against reality, not per-page guessing)
+
+All 58 static routes PLUS all 23 club-scoped routes (as owner of club
+a0000000-...-0001) rendered against production at 375x812, signed in as the
+test account, measuring documentElement.scrollWidth and naming every element
+escaping the right edge. 77 of 81 routes already fit one screen. The four
+violations, fixed in PR #326:
+
+1. friends (401px) — the tab row's filter chips ran off-screen. Now a
+   one-line chip rail that scrolls under the thumb, scrollbar hidden (the
+   social chip-row treatment).
+2. history (402px) — stakes + players + 3 buttons in one non-wrapping
+   .hand-footer. Now wraps.
+3. profile (429px) — three 120px SVG gauges cannot fit a 375px row and CSS
+   cannot resize an SVG attribute; the gauges themselves shrink to 92px under
+   a 480px matchMedia listener (3x92 + gaps + padding = 340px).
+4. clubs/:id/table-creation (427px) — number inputs' intrinsic width plus
+   flex min-width:auto refused to shrink; min-width: 0 on .stake-input and
+   its input.
+
+### The shell change (every page at once)
+
+AppLayout's <main> added 12px side padding ON TOP of each page's own ~16px
+container padding — ~28px gutters everywhere the social pages wear 16px. At
+<=600px the shell now gives zero side padding + overflow-x hidden, exactly
+like .social-page-container. Pages keep their own internal spacing (sampled:
+settings, cashier, leaderboard, promotions, legal all pad themselves).
+
+### The permanent gate
+
+tests/e2e/mobile-fit-audit.spec.ts: every static route at 375px, zero
+horizontal overflow, offenders named by selector. Audit mode locally (JSON
+report); STRICT in CI, where the e2e job runs against production post-deploy
+— a regression names its route without blocking merges. Parked slide-out
+drawers (fully off-screen left) are excluded as false positives.
+AUDIT_CLUB_ID adds the 23 club routes to the sweep.
+
+ALSO: repo secrets SP_EMAIL/SP_PASS were NOT set, so CI's whole e2e suite had
+been running signed out — 47 route specs permanently self-skipping. Both are
+set now (test account, value piped from the Mac's .env.local, never
+displayed); the post-deploy suite asserts signed-in for the first time.
+
+Verification: tsc clean; vitest 245 files / 3,111 passed; fixes verified in a
+headless render of the real stylesheets (tabs rail 363px and scrolling
+internally, footer children <=375, stake inputs 359).
+
+---
+
 ## Cowork session 2026-08-22 (11) — the rake cap froze two live tournaments for 29 hours (PR #320)
 
 Follow-up to the session-10 handoff's first pending item: postgres was logging

@@ -38,6 +38,7 @@ import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import ClubContextMenu from '../components/home/ClubContextMenu';
 import ClubQuickLinkTile from '../components/home/ClubQuickLinkTile';
 import LOBBY_TILES from '../config/lobbyTiles.config';
+import { preloadRoute } from '../utils/ChunkPreloader';
 import {
   eligibleQuickLinkClubs,
   resolveTargetClub,
@@ -1330,6 +1331,15 @@ function HomePageInner() {
                     navigate(tile.route);
                   }
                 }}
+                /* PERF PASS 2026-08-22 (handoff item 8): warm the destination
+                   chunk on first intent, exactly like the quick-link tiles
+                   above. Matters most for Player Stats, whose recharts chunk
+                   (~314KB) is deliberately not in the boot-time preload list.
+                   preloadRoute is idempotent — a repeated dynamic import of a
+                   loaded module resolves from cache — so no dedupe ref. */
+                onMouseEnter={() => tile.route && preloadRoute(tile.route)}
+                onTouchStart={() => tile.route && preloadRoute(tile.route)}
+                onFocus={() => tile.route && preloadRoute(tile.route)}
                 aria-label={`${tile.alt} (press ${tile.shortcutKey})`}
               >
                 <div className={styles.tilePedestal}></div>

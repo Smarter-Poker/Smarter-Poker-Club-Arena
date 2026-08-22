@@ -33,7 +33,7 @@ import {
   type FilterableTournament,
 } from '../../utils/tournamentFilters';
 
-export type FilterGameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'MTT' | 'SPIN' | 'SNG';
+export type FilterGameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MTT' | 'SPIN' | 'SNG';
 
 export interface FeatureOption {
   /** Stable key persisted in saved preferences. Never rename. */
@@ -168,6 +168,17 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
     seats: { min: 2, max: 9 },
     seatsLabel: 'Table Size',
     features: OMAHA_FEATURES,
+  },
+  LIMIT: {
+    // No "Games:" row - like Omaha, the Limit tab already IS the variant
+    // selection (cashKind routes FLH and every fixed/mixed-limit variant
+    // here), and inventing sub-variant chips without a reference screen
+    // risks hiding real tables behind keys variantKey has not learnt.
+    range: BLIND_RANGE,
+    statuses: CASH_STATUSES,
+    seats: { min: 2, max: 9 },
+    seatsLabel: 'Table Size',
+    features: CASH_FEATURES,
   },
   MTT: {
     games: [

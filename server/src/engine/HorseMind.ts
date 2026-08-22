@@ -128,6 +128,8 @@ export class HorseMind {
   /** V12 ANTI-EXPLOIT: per-(attacker|victim) aggression targeting counters. */
   private static pairs = new Map<string, { n3: number; opp3: number; nR: number; oppR: number }>();
   private static readonly MAX_PAIRS = 20_000;
+  /** V12 persistence: pair keys whose counters changed since the last flush. */
+  private static dirtyPairs = new Set<string>();
 
   // ───────────────────────────────────────────────────────────────────────
   // OBSERVATION — ingest the action stream (idempotent, bounded)
@@ -154,7 +156,10 @@ export class HorseMind {
     let preflopRaises = 0;
     // V12 anti-exploit: who opened this hand, and who bet each street —
     // needed to attribute 3-bets and bet-raises to (attacker, victim) pairs.
-    if (this.pairs.size > this.MAX_PAIRS) this.pairs.clear();
+    if (this.pairs.size > this.MAX_PAIRS) {
+      this.pairs.clear();
+      this.dirtyPairs.clear(); // stale keys — the DB merge is GREATEST-monotonic anyway
+    }
     let openerId: string | null = null;
     let streetBettor: string | null = null;
     let curStage: string = 'preflop';
@@ -165,6 +170,9 @@ export class HorseMind {
         p = { n3: 0, opp3: 0, nR: 0, oppR: 0 };
         this.pairs.set(k, p);
       }
+      // V12 persistence: every pairOf() call site mutates a counter, so the
+      // key is dirty by construction.
+      this.dirtyPairs.add(k);
       return p;
     };
 
@@ -335,6 +343,7 @@ export class HorseMind {
     this.plans.clear();
     this.dirty.clear();
     this.pairs.clear();
+    this.dirtyPairs.clear();
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -392,6 +401,83 @@ export class HorseMind {
         rAggr: num(r.rAggr),
         rPassive: num(r.rPassive),
       });
+      applied++;
+    }
+    return applied;
+  }
+
+  /**
+   * Pair rows changed since the last flush. Snapshots AND clears the dirty
+   * set — the caller owns delivery; on failure it should re-mark via
+   * requeueDirtyPairs().
+   */
+  static exportDirtyPairs(): Array<{
+    attacker_id: string;
+    victim_id: string;
+    n3: number;
+    opp3: number;
+    nR: number;
+    oppR: number;
+  }> {
+    const out: Array<{
+      attacker_id: string;
+      victim_id: string;
+      n3: number;
+      opp3: number;
+      nR: number;
+      oppR: number;
+    }> = [];
+    for (const k of this.dirtyPairs) {
+      const p = this.pairs.get(k);
+      if (!p) continue;
+      const sep = k.indexOf('|');
+      if (sep <= 0 || sep >= k.length - 1) continue;
+      out.push({ attacker_id: k.slice(0, sep), victim_id: k.slice(sep + 1), ...p });
+    }
+    this.dirtyPairs.clear();
+    return out;
+  }
+
+  /** Put pair keys back on the dirty list after a failed flush. */
+  static requeueDirtyPairs(keys: Array<{ attacker_id: string; victim_id: string }>): void {
+    for (const k of keys) {
+      const key = `${k.attacker_id}|${k.victim_id}`;
+      if (this.pairs.has(key)) this.dirtyPairs.add(key);
+    }
+  }
+
+  static dirtyPairsCount(): number {
+    return this.dirtyPairs.size;
+  }
+
+  /**
+   * Boot-time pair hydration from the DB. A row is applied only when it has
+   * seen MORE opportunities (opp3 + oppR) than memory has — a late hydrate
+   * must never downgrade counters the engine has been accumulating live.
+   * Returns the number of rows applied.
+   */
+  static importPairs(
+    rows: Array<{
+      attacker_id: string;
+      victim_id: string;
+      n3?: number;
+      opp3?: number;
+      nR?: number;
+      oppR?: number;
+    }>
+  ): number {
+    let applied = 0;
+    const num = (v: unknown): number =>
+      typeof v === 'number' && isFinite(v) && v >= 0 ? Math.floor(v) : 0;
+    for (const r of rows) {
+      if (!r || typeof r.attacker_id !== 'string' || r.attacker_id.length === 0) continue;
+      if (typeof r.victim_id !== 'string' || r.victim_id.length === 0) continue;
+      const key = `${r.attacker_id}|${r.victim_id}`;
+      const incoming = { n3: num(r.n3), opp3: num(r.opp3), nR: num(r.nR), oppR: num(r.oppR) };
+      const existing = this.pairs.get(key);
+      if (existing && existing.opp3 + existing.oppR >= incoming.opp3 + incoming.oppR) continue;
+      if (!existing && this.pairs.size >= this.MAX_PAIRS) continue;
+      this.pairs.set(key, incoming);
       applied++;
     }
     return applied;

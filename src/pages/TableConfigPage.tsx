@@ -29,6 +29,10 @@ import {
 } from '../lib/tournamentFromTableConfig';
 import { gameCreationDeniedMessage, type GameCreationAccess } from '../lib/gameCreationAccess';
 import { fetchGameCreationAccess } from '../services/GameAccessService';
+import { tournamentScheduleService } from '../services/TournamentScheduleService';
+import WeeklyScheduleEditor, {
+  validateWeeklySchedule,
+} from '../components/tournament/WeeklyScheduleEditor';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -46,8 +50,9 @@ interface TableTemplate {
   config: TableConfig;
 }
 
-// SNG Player Count Options (3=Spins, 9=Single Table, then multi-table)
+// SNG Player Count Options (2=Heads-Up, 3=Spins, 9=Single Table, then multi-table)
 const SNG_PLAYER_OPTIONS = [
+  { value: 2, label: '2 Players (Heads-Up)', isSpins: false, tables: 1 },
   { value: 3, label: '3 Players (Spins)', isSpins: true, tables: 1 },
   { value: 9, label: '9 Players (Single Table)', isSpins: false, tables: 1 },
   { value: 18, label: '18 Players (2 Tables)', isSpins: false, tables: 2 },
@@ -154,6 +159,23 @@ interface TableConfig {
   restartTournamentEvery: boolean;
   tournamentSchedule: boolean;
   synchronizedBreaks: boolean;
+
+  // PokerBros parity (2026-08-22): the value halves of toggles that used to
+  // exist without their number, plus the weekly recurrence for the
+  // Tournament Schedule toggle above.
+  tableSize: number;
+  rebuyReentryCost: number;
+  customAddOnCost: number;
+  gtdPrizeAmount: number;
+  earlyBirdChips: number;
+  totalDays: number;
+  restartEveryMinutes: number;
+  satelliteTargetId: string;
+  satelliteSeats: number;
+  scheduleDays: number[];
+  scheduleTimes: string[];
+  scheduleMode: 'times' | 'interval';
+  scheduleIntervalMinutes: number;
 
   // Security Settings
   //
@@ -296,6 +318,21 @@ const DEFAULT_CONFIG: TableConfig = {
   tournamentSchedule: false,
   synchronizedBreaks: true,
 
+  // PokerBros parity (2026-08-22)
+  tableSize: 9,
+  rebuyReentryCost: 0,
+  customAddOnCost: 0,
+  gtdPrizeAmount: 0,
+  earlyBirdChips: 0,
+  totalDays: 2,
+  restartEveryMinutes: 60,
+  satelliteTargetId: '',
+  satelliteSeats: 1,
+  scheduleDays: [],
+  scheduleTimes: ['18:00'],
+  scheduleMode: 'times',
+  scheduleIntervalMinutes: 60,
+
   // Security Settings.
   // OFF by default. The column default was `true`, so all 56,053 existing
   // tables carry ip_restriction = true — not because anyone chose it, but
@@ -387,6 +424,56 @@ const Slider = ({
   </div>
 );
 
+/**
+ * Whole-number entry row (2026-08-22). Used wherever a "Custom ..." toggle
+ * switches a slider to free numeric entry — buy-in, rebuy cost, add-on cost,
+ * GTD amount, early-bird chips, total days. Whole numbers only: anything a
+ * player pays must never be a decimal (Dan 2026-08-20), so the field rounds
+ * on input rather than letting a fraction sit in state.
+ */
+const NumberField = ({
+  label,
+  value,
+  onChange,
+  min = 0,
+  max,
+  tooltip,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  tooltip?: string;
+}) => (
+  <div className="config-toggle">
+    <span className="toggle-label">
+      {label}
+      {tooltip && (
+        <span className="tooltip-icon" title={tooltip}>
+          ?
+        </span>
+      )}
+    </span>
+    <input
+      type="number"
+      className="config-datetime"
+      inputMode="numeric"
+      min={min}
+      max={max}
+      step={1}
+      value={value}
+      onChange={(e) => {
+        let v = Math.round(Number(e.target.value) || 0);
+        if (v < min) v = min;
+        if (max !== undefined && v > max) v = max;
+        onChange(v);
+      }}
+      style={{ width: 110, textAlign: 'right' }}
+    />
+  </div>
+);
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -402,6 +489,9 @@ export default function TableConfigPage() {
   const [templates, setTemplates] = useState<TableTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [savingTemplate, setSavingTemplate] = useState(false);
+  // Next Step (Satellite): upcoming non-satellite tournaments in this club
+  // that a satellite here can feed seats into.
+  const [satelliteTargets, setSatelliteTargets] = useState<{ id: string; name: string }[]>([]);
 
   // PERMISSION GATE: who is allowed to build a game for this club.
   //
@@ -540,6 +630,56 @@ export default function TableConfigPage() {
       isMounted = false;
       masterBus.removeRegisteredChannel(channelKey);
     };
+  }, [clubId]);
+
+  // ── Next Step (Satellite): load candidate target tournaments once the
+  // toggle is on, mirroring CreateTournamentModal's satellite picker. ──
+  useEffect(() => {
+    if (!config.nextStepSatellite || config.gameMode !== 'mtt' || !clubId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const resolved = await resolveClubUUID(clubId);
+        const { data } = await supabase
+          .from('tournaments')
+          .select('id, name, tournament_type, status, start_time')
+          .eq('club_id', resolved)
+          .neq('tournament_type', 'satellite')
+          .in('status', ['REGISTERING', 'ANNOUNCED'])
+          .order('start_time', { ascending: true })
+          .limit(50);
+        if (alive) {
+          setSatelliteTargets(
+            ((data as Array<{ id: string; name: string }> | null) || []).map((t) => ({
+              id: t.id,
+              name: t.name,
+            }))
+          );
+        }
+      } catch (e) {
+        reportError(e, 'TableConfigPage.loadSatelliteTargets');
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [config.nextStepSatellite, config.gameMode, clubId]);
+
+  // ── "Save the Start Time": prefill the last saved start time for this club
+  // (localStorage — see the comment on the toggle) when it is still in the
+  // future. ──
+  useEffect(() => {
+    if (!clubId) return;
+    try {
+      const saved = localStorage.getItem(`ca_saved_start_time_${clubId}`);
+      if (saved && new Date(saved).getTime() > Date.now()) {
+        setConfig((prev) =>
+          prev.startTime ? prev : { ...prev, startTime: saved, saveStartTime: true }
+        );
+      }
+    } catch {
+      /* storage unavailable — the picker still works */
+    }
   }, [clubId]);
 
   // Generate default table name
@@ -788,6 +928,13 @@ export default function TableConfigPage() {
 
     setSaving(true);
     try {
+      // Save also lands the recurring schedule when the MTT tab has the
+      // Tournament Schedule toggle on — Start and Save behave the same way.
+      if (config.gameMode === 'mtt' && config.tournamentSchedule) {
+        const ok = await saveTournamentSchedule();
+        if (!ok) return;
+      }
+
       const {
         data: { user },
       } = await getAuthUser();
@@ -823,21 +970,84 @@ export default function TableConfigPage() {
    * client-side startTournament() path exists but duplicates the engine's
    * seating with hardcoded 9-max, so it is not used here.
    */
+  /**
+   * Save the weekly recurrence (Tournament Schedule toggle) via
+   * fn_upsert_tournament_schedule. Shared by Start and Save so either button
+   * lands the schedule. Returns false when validation refused (already
+   * toasted); throws on RPC failure so callers surface the server's reason.
+   */
+  const saveTournamentSchedule = async (): Promise<boolean> => {
+    const scheduleValue = {
+      daysOfWeek: config.scheduleDays,
+      startTimesUtc: config.scheduleTimes.filter((t) => t.trim() !== ''),
+      mode: config.scheduleMode,
+      intervalMinutes: config.scheduleIntervalMinutes,
+    };
+    const problem = validateWeeklySchedule(scheduleValue);
+    if (problem) {
+      toast.error(problem);
+      return false;
+    }
+    const resolvedId = await resolveClubUUID(clubId || '');
+    const rpcConfig = tournamentService.buildRpcConfig(buildTournamentConfig(config, gameType));
+    delete rpcConfig.startTime;
+    await tournamentScheduleService.upsert({
+      clubId: resolvedId,
+      unionId: privateOnly ? null : (access?.unionId ?? null),
+      name: config.name.trim() || 'Tournament',
+      daysOfWeek: scheduleValue.daysOfWeek,
+      startTimesUtc: scheduleValue.mode === 'times' ? scheduleValue.startTimesUtc : [],
+      intervalMinutes: scheduleValue.mode === 'interval' ? scheduleValue.intervalMinutes : null,
+      active: true,
+      config: rpcConfig,
+    });
+    toast.success('Recurring schedule saved.');
+    return true;
+  };
+
   const handleStartTournament = async () => {
     setStarting(true);
     try {
-      const created = await tournamentService.createTournament(
-        clubId || '',
-        buildTournamentConfig(config, gameType)
-      );
-      toast.success(
-        config.gameMode === 'sng'
-          ? 'Heads Up created - it starts as soon as it fills.'
-          : 'Tournament created - registration is open.'
-      );
-      const createdId = (created as { id?: string } | null)?.id;
-      if (createdId) {
-        masterBus.emit('TOURNAMENT_UPDATED', { tournamentId: createdId, status: 'REGISTERING' });
+      // Next Step (Satellite) sanity: an ON toggle with no target would
+      // silently build a cash-paying MTT, so refuse before any round trip.
+      if (config.gameMode === 'mtt' && config.nextStepSatellite && !config.satelliteTargetId) {
+        toast.error('Pick the target tournament this satellite awards seats into.');
+        return;
+      }
+
+      const tournamentConfig = buildTournamentConfig(config, gameType);
+
+      // ── Tournament Schedule (2026-08-22): with the toggle ON, save a
+      // tournament_schedules row carrying the exact p_config a hand-created
+      // tournament would send (minus startTime — the spawner owns that). A
+      // one-off is ALSO created only when the owner picked a start time. ──
+      const scheduleOn = config.gameMode === 'mtt' && config.tournamentSchedule;
+      if (scheduleOn) {
+        const ok = await saveTournamentSchedule();
+        if (!ok) return;
+      }
+
+      // "Save the Start Time": remember the picked time for next visit.
+      if (config.gameMode === 'mtt' && config.saveStartTime && config.startTime) {
+        try {
+          localStorage.setItem(`ca_saved_start_time_${clubId}`, config.startTime);
+        } catch {
+          /* storage unavailable */
+        }
+      }
+
+      const createOneOff = !scheduleOn || Boolean(tournamentConfig.startTime);
+      if (createOneOff) {
+        const created = await tournamentService.createTournament(clubId || '', tournamentConfig);
+        toast.success(
+          config.gameMode === 'sng'
+            ? 'Heads Up created - it starts as soon as it fills.'
+            : 'Tournament created - registration is open.'
+        );
+        const createdId = (created as { id?: string } | null)?.id;
+        if (createdId) {
+          masterBus.emit('TOURNAMENT_UPDATED', { tournamentId: createdId, status: 'REGISTERING' });
+        }
       }
       navigate(`/clubs/${clubId}/tournaments`);
     } catch (error) {
@@ -1319,14 +1529,117 @@ export default function TableConfigPage() {
               </div>
             )}
 
-            <Slider
-              label="Buy-in"
-              value={config.buyIn}
-              onChange={(v) => updateConfig('buyIn', v)}
-              min={10}
-              max={1000}
-              step={10}
+            {/* ── Shared tournament settings (2026-08-22): every one of these
+                maps to an fn_create_tournament p_config key, so nothing here
+                is a dead switch. Same Toggle/Slider components and CSS as the
+                Regular tab. ── */}
+            <Toggle
+              label="Private Game"
+              value={config.isPrivate || privateOnly}
+              onChange={(v) => updateConfig('isPrivate', v)}
+              tooltip="Visible only inside your club, never in the union lobby"
             />
+            <Toggle
+              label="VIP Only"
+              value={config.isVipOnly}
+              onChange={(v) => updateConfig('isVipOnly', v)}
+            />
+            <div className="config-textarea">
+              <span className="textarea-label">Short Description</span>
+              <textarea
+                className="config-textarea-input"
+                maxLength={200}
+                placeholder="Optional line shown on the tournament page..."
+                value={config.shortDescription}
+                onChange={(e) => updateConfig('shortDescription', e.target.value)}
+              />
+            </div>
+            <Toggle
+              label="Ban Chat"
+              value={config.banChat}
+              onChange={(v) => updateConfig('banChat', v)}
+              tooltip="Table chat is disabled for players in this tournament"
+            />
+            <Toggle
+              label="All-in or Fold"
+              value={config.allInOrFold}
+              onChange={(v) => updateConfig('allInOrFold', v)}
+              tooltip="Players may only move all-in or fold"
+            />
+            <Toggle
+              label="Label as NEW"
+              value={config.labelAsNew}
+              onChange={(v) => updateConfig('labelAsNew', v)}
+              tooltip="Show NEW badge in the lobby"
+            />
+            <Toggle
+              label="Featured Tournament"
+              value={config.featuredTournament}
+              onChange={(v) => updateConfig('featuredTournament', v)}
+              tooltip="Pinned to the top of every tournament list"
+            />
+            <Toggle
+              label="Hide Club Name"
+              value={config.hideClubName}
+              onChange={(v) => updateConfig('hideClubName', v)}
+            />
+            <Slider
+              label="Table Size"
+              value={config.tableSize}
+              onChange={(v) => updateConfig('tableSize', v)}
+              min={2}
+              max={10}
+              suffix=" seats"
+            />
+            <Slider
+              label="Action Time"
+              value={config.actionTimeSeconds}
+              onChange={(v) => updateConfig('actionTimeSeconds', v)}
+              min={5}
+              max={60}
+              suffix=" sec"
+            />
+            {/* Fee is the HOUSE RULE 10% cut OUT of the buy-in — read-only,
+                recomputed server-side in fn_create_tournament. */}
+            <div className="config-toggle">
+              <span className="toggle-label">
+                Fee
+                <span
+                  className="tooltip-icon"
+                  title="10% of the buy-in, taken out of it, never added on top. Spins carry no fee."
+                >
+                  ?
+                </span>
+              </span>
+              <span style={{ color: '#1877f2', fontWeight: 600, fontSize: '0.85rem' }}>
+                10% Of Buy-In
+              </span>
+            </div>
+
+            <Toggle
+              label="Custom Buy-in"
+              value={config.customBuyIn}
+              onChange={(v) => updateConfig('customBuyIn', v)}
+              tooltip="Type any whole-number buy-in instead of using the slider"
+            />
+            {config.customBuyIn ? (
+              <NumberField
+                label="Buy-in"
+                value={config.buyIn}
+                onChange={(v) => updateConfig('buyIn', v)}
+                min={0}
+                tooltip="Whole chips only. 0 = freeroll."
+              />
+            ) : (
+              <Slider
+                label="Buy-in"
+                value={config.buyIn}
+                onChange={(v) => updateConfig('buyIn', v)}
+                min={10}
+                max={1000}
+                step={10}
+              />
+            )}
 
             {/* Blind Structure Radio */}
             <div className="config-radio-group">
@@ -1408,12 +1721,38 @@ export default function TableConfigPage() {
               max={15}
               suffix=" min"
             />
+
+            <Toggle
+              label="Big Blind Ante"
+              value={config.bigBlindAnte}
+              onChange={(v) => updateConfig('bigBlindAnte', v)}
+              tooltip="The big blind posts the ante for the whole table"
+            />
+            <Toggle
+              label="Authorized to Register"
+              value={config.authorizedToRegister}
+              onChange={(v) => updateConfig('authorizedToRegister', v)}
+              tooltip="Only players you approve can register"
+            />
+            <Toggle
+              label="Synchronized Breaks"
+              value={config.synchronizedBreaks}
+              onChange={(v) => updateConfig('synchronizedBreaks', v)}
+              tooltip="All tables break at the same time"
+            />
           </>
         )}
 
         {/* MTT-ONLY OPTIONS */}
         {config.gameMode === 'mtt' && (
           <>
+            <Toggle
+              label="Accelerated MTT"
+              value={config.acceleratedMtt}
+              onChange={(v) => updateConfig('acceleratedMtt', v)}
+              tooltip="Faster level progression once the field shrinks"
+            />
+
             <Slider
               label="Number of Rebuys/Re-entries"
               value={config.numberOfRebuysReentries}
@@ -1421,23 +1760,99 @@ export default function TableConfigPage() {
               min={0}
               max={10}
             />
+            {config.numberOfRebuysReentries > 0 && (
+              <>
+                <Toggle
+                  label="Custom Rebuy/Re-entry Cost"
+                  value={config.customRebuyReentryCost}
+                  onChange={(v) => updateConfig('customRebuyReentryCost', v)}
+                  tooltip="Charge a different price than the buy-in"
+                />
+                {config.customRebuyReentryCost && (
+                  <NumberField
+                    label="Rebuy/Re-entry Cost"
+                    value={config.rebuyReentryCost}
+                    onChange={(v) => updateConfig('rebuyReentryCost', v)}
+                    min={0}
+                    tooltip="Whole chips only. 0 = same as the buy-in."
+                  />
+                )}
+              </>
+            )}
 
             {/* Add-on Options */}
             <Slider
               label="Add-on"
               value={config.addOnMultiplier}
               onChange={(v) => updateConfig('addOnMultiplier', v)}
-              min={0.5}
+              min={0}
               max={3}
               step={0.5}
               suffix="x"
+              tooltip="Add-on chips as a multiple of the starting stack. 0 = no add-on."
             />
+            {config.addOnMultiplier > 0 && (
+              <>
+                <Toggle
+                  label="Custom Add-on"
+                  value={config.customAddOn}
+                  onChange={(v) => updateConfig('customAddOn', v)}
+                  tooltip="Charge a different add-on price than the buy-in"
+                />
+                {config.customAddOn && (
+                  <NumberField
+                    label="Add-on Cost"
+                    value={config.customAddOnCost}
+                    onChange={(v) => updateConfig('customAddOnCost', v)}
+                    min={0}
+                    tooltip="Whole chips only. 0 = same as the buy-in."
+                  />
+                )}
+                <Slider
+                  label="Add-on Break Length"
+                  value={config.addOnBreakLengthMinutes}
+                  onChange={(v) => updateConfig('addOnBreakLengthMinutes', v)}
+                  min={1}
+                  max={10}
+                  suffix=" min"
+                />
+              </>
+            )}
+
             {/* Tournament Features */}
             <Toggle
-              label="KOBounty"
+              label="KO Bounty"
               value={config.koBounty}
               onChange={(v) => updateConfig('koBounty', v)}
             />
+            <Toggle
+              label="GTD Prize Pool"
+              value={config.gtdPrizePool}
+              onChange={(v) => updateConfig('gtdPrizePool', v)}
+              tooltip="Guarantee a minimum prize pool. The club covers any overlay."
+            />
+            {config.gtdPrizePool && (
+              <NumberField
+                label="Guaranteed Prize"
+                value={config.gtdPrizeAmount}
+                onChange={(v) => updateConfig('gtdPrizeAmount', v)}
+                min={0}
+                tooltip="Whole chips only"
+              />
+            )}
+            <Toggle
+              label="Final Table Deal"
+              value={config.finalTableDeal}
+              onChange={(v) => updateConfig('finalTableDeal', v)}
+              tooltip="Final table players may vote to split the remaining prizes"
+            />
+            <Toggle
+              label="Bubble Protection"
+              value={config.bubbleProtection}
+              onChange={(v) => updateConfig('bubbleProtection', v)}
+              tooltip="The bubble finisher gets their buy-in back"
+            />
+
             {/* Registration & Players */}
             <Slider
               label="Late Registration"
@@ -1447,6 +1862,67 @@ export default function TableConfigPage() {
               max={20}
               suffix=" level"
             />
+            <Toggle
+              label="Early Bird Registration"
+              value={config.earlyBirdRegistration}
+              onChange={(v) => updateConfig('earlyBirdRegistration', v)}
+              tooltip="Players who register before the start get bonus chips"
+            />
+            {config.earlyBirdRegistration && (
+              <NumberField
+                label="Early Bird Chips"
+                value={config.earlyBirdChips}
+                onChange={(v) => updateConfig('earlyBirdChips', v)}
+                min={0}
+                tooltip="Extra starting chips for registering before the start"
+              />
+            )}
+            <Toggle
+              label="Next Step (Satellite)"
+              value={config.nextStepSatellite}
+              onChange={(v) => updateConfig('nextStepSatellite', v)}
+              tooltip="Winners earn seats into a bigger tournament instead of cash"
+            />
+            {config.nextStepSatellite && (
+              <>
+                <div className="config-toggle">
+                  <span className="toggle-label">Awards Seats Into</span>
+                  <select
+                    className="config-select"
+                    value={config.satelliteTargetId}
+                    onChange={(e) => updateConfig('satelliteTargetId', e.target.value)}
+                  >
+                    <option value="">Select Target Tournament...</option>
+                    {satelliteTargets.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <NumberField
+                  label="Seats Awarded"
+                  value={config.satelliteSeats}
+                  onChange={(v) => updateConfig('satelliteSeats', v)}
+                  min={1}
+                  tooltip="Top N finishers win a seat"
+                />
+              </>
+            )}
+            <Toggle
+              label="Multi-Day MTT"
+              value={config.multiDayMtt}
+              onChange={(v) => updateConfig('multiDayMtt', v)}
+            />
+            {config.multiDayMtt && (
+              <NumberField
+                label="Total Days"
+                value={config.totalDays}
+                onChange={(v) => updateConfig('totalDays', v)}
+                min={2}
+                max={7}
+              />
+            )}
             {/* Player Number Range */}
             <div className="config-slider">
               <div className="slider-header">
@@ -1484,6 +1960,65 @@ export default function TableConfigPage() {
                 onChange={(e) => updateConfig('startTime', e.target.value)}
               />
             </div>
+            {/* "Save the Start Time" (2026-08-22): table_templates snapshots
+                the whole config including startTime, but a saved datetime goes
+                stale the moment it passes. This toggle instead remembers the
+                picked start time in localStorage per club and prefills it on
+                the next visit — simple and honest about what it does. */}
+            <Toggle
+              label="Save the Start Time"
+              value={config.saveStartTime}
+              onChange={(v) => updateConfig('saveStartTime', v)}
+              tooltip="Remember this start time on this device and prefill it next time"
+            />
+
+            <Toggle
+              label="Restart the Tournament"
+              value={config.restartTournamentEvery}
+              onChange={(v) => updateConfig('restartTournamentEvery', v)}
+              tooltip="Automatically respawn this tournament on a fixed interval"
+            />
+            {config.restartTournamentEvery && (
+              <Slider
+                label="Restart Every"
+                value={config.restartEveryMinutes}
+                onChange={(v) => updateConfig('restartEveryMinutes', v)}
+                min={5}
+                max={1440}
+                step={5}
+                suffix=" min"
+              />
+            )}
+
+            {/* Tournament Schedule: weekly recurrence. Saving with this ON
+                writes a tournament_schedules row via
+                fn_upsert_tournament_schedule; the engine's spawner creates the
+                tournaments from it. */}
+            <Toggle
+              label="Tournament Schedule"
+              value={config.tournamentSchedule}
+              onChange={(v) => updateConfig('tournamentSchedule', v)}
+              tooltip="Repeat this tournament weekly. With no start time picked, only the schedule is created."
+            />
+            {config.tournamentSchedule && (
+              <WeeklyScheduleEditor
+                value={{
+                  daysOfWeek: config.scheduleDays,
+                  startTimesUtc: config.scheduleTimes,
+                  mode: config.scheduleMode,
+                  intervalMinutes: config.scheduleIntervalMinutes,
+                }}
+                onChange={(next) =>
+                  setConfig((prev) => ({
+                    ...prev,
+                    scheduleDays: next.daysOfWeek,
+                    scheduleTimes: next.startTimesUtc,
+                    scheduleMode: next.mode,
+                    scheduleIntervalMinutes: next.intervalMinutes,
+                  }))
+                }
+              />
+            )}
           </>
         )}
 

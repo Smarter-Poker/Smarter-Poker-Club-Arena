@@ -583,6 +583,19 @@ export class HandController {
     // trusts currentPlayerSeat is now safe by construction.
     if (player.is_folded || player.is_all_in || player.is_sitting_out) return false;
 
+    // ── ALL-IN-OR-FOLD (2026-08-22 parity) ──────────────────────────────────
+    // Preflop the only actions are fold or all-in; the BB (or anyone owing
+    // nothing) may check when unraised. Bet/raise/call are rejected outright —
+    // this is the authoritative server enforcement, getAvailableActions is
+    // only the menu. Postflop needs no restriction: with every live player
+    // all-in or folded preflop, no postflop decision exists.
+    if (this.config.allInOrFold && this.state.stage === 'preflop') {
+      const owesNothing = this.state.currentBet - player.bet <= 0;
+      const aofLegal =
+        action === 'fold' || action === 'all_in' || (action === 'check' && owesNothing);
+      if (!aofLegal) return false;
+    }
+
     // Bible V8 §4.14: PLO variants use pot-limit betting
     const isPotLimit = this.config.gameVariant.startsWith('plo');
     const bettingState = calculateBettingState(
@@ -1712,6 +1725,15 @@ export class HandController {
   }
 
   private getAvailableActions(player: SeatPlayer): ActionType[] {
+    // ── ALL-IN-OR-FOLD (2026-08-22 parity) ──────────────────────────────────
+    // The menu mirrors the performAction gate exactly: preflop offers fold,
+    // all-in (stack permitting), and check only when nothing is owed.
+    if (this.config.allInOrFold && this.state.stage === 'preflop') {
+      const aofActions: ActionType[] = ['fold'];
+      if (this.state.currentBet - player.bet <= 0) aofActions.push('check');
+      if (player.stack > 0) aofActions.push('all_in');
+      return aofActions;
+    }
     const actions: ActionType[] = ['fold'];
     const toCall = this.state.currentBet - player.bet;
     if (toCall === 0) {

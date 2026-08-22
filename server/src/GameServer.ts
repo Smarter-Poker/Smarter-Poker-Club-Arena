@@ -18,6 +18,7 @@ import {
 } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { TournamentRecurringService } from './services/TournamentRecurringService.js';
+import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
 import { AutoRebuyService } from './services/AutoRebuyService.js';
 // BUG 008 FIX: Periodic rakeback settler - flushes per-hand rake_records into rakeback_periods.
@@ -83,6 +84,9 @@ export class GameServer {
   // Server-side services (replaces browser-based DealerPage services)
   private horseFleet = new HorseFleetManager();
   private tournamentRecurring = new TournamentRecurringService();
+  // Data-driven recurring schedules (tournament_schedules) — runs alongside the
+  // hardcoded recurring blocks, acting only on rows written into the database.
+  private scheduledTournaments = new ScheduledTournamentService();
   private lifecycle = new HorseLifecycleManager();
   private autoRebuy = new AutoRebuyService();
   // BUG 008 FIX: settler reads rake_records (durable per-hand log) every 30 min and
@@ -146,6 +150,9 @@ export class GameServer {
 
       // Step 3: Start tournament recurring service (creates MTTs, SNGs, Spins)
       this.tournamentRecurring.start();
+
+      // Step 3b: Start the data-driven scheduler (tournament_schedules rows)
+      this.scheduledTournaments.start();
 
       // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
       this.lifecycle.start();
@@ -244,6 +251,7 @@ export class GameServer {
     // Stop services
     this.horseFleet.stop();
     this.tournamentRecurring.stop();
+    this.scheduledTournaments.stop();
     this.lifecycle.stop();
     this.autoRebuy.stop();
     this.rakebackSettler.stop();
@@ -697,7 +705,11 @@ export class GameServer {
 
     const mttEngines: TournamentManager[] = [];
     for (const tm of this.tournamentEngines.values()) {
-      if (tm.isRunning() && tm.isMttOrXmtt()) {
+      // synchronized_breaks=false (2026-08-22 parity): the tournament opted out
+      // of the platform-wide :55 break and keeps playing straight through it.
+      // See TournamentManagerBase.synchronizedBreaksEnabled for the per-
+      // structure-break note.
+      if (tm.isRunning() && tm.isMttOrXmtt() && tm.synchronizedBreaksEnabled()) {
         mttEngines.push(tm);
       }
     }

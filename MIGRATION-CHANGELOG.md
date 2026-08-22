@@ -7,6 +7,98 @@
 
 ---
 
+## Cowork session 2026-08-22 (10) — the hunters' memory now survives a deploy (PR #291)
+
+The V12 anti-exploit defense (#268) taught the horses to notice a player who
+3-bets their opens and raises their bets at rates his own global profile cannot
+explain — and to fight back. But the per-(attacker, victim) counters behind
+`targetingOf()` lived only in process memory, rebuilt by the 72h hand_history
+replay. A hunter who worked a horse over for a week and came back after a
+deploy met a horse with no memory of him, while the opponent STATS had already
+been given an unlimited horizon in #256. This session closed that asymmetry —
+it was the first deferred item in the 2026-08-22 handoff.
+
+**DB.** `horse_mind_pairs` (PK attacker_id+victim_id; n3/opp3 preflop, n_r/opp_r
+postflop; generated `opps = opp3 + opp_r` column for hydrate ordering; RLS with
+no policies — service-role only) + `upsert_horse_mind_pairs(jsonb)` with the
+same GREATEST-merge contract as `upsert_horse_mind_stats`: counters only grow
+in engine memory between bounded-memory generation swaps, so a post-swap flush
+that restarts from zero can never clobber accumulated history. Applied to
+production via the Supabase MCP before the PR (CHECK 17), merge semantics
+smoke-tested live (two overlapping upserts, per-column GREATEST verified), and
+the schema manifest regenerated from the live schema rather than hand-edited.
+
+**Engine.** `HorseMind` grew a `dirtyPairs` set marked inside `pairOf()` —
+every call site of that helper mutates a counter, so the key is dirty by
+construction, and all call sites are already isNew-gated so a replayed history
+never re-dirties. `exportDirtyPairs` / `requeueDirtyPairs` / `importPairs`
+mirror the stats trio; `importPairs` never downgrades (a row applies only when
+its opp3+oppR exceeds memory's) and respects the 20k pair cap. The generation
+swap and `reset()` clear the dirty set alongside the pairs map.
+
+**Persistence.** The pairs ride the existing machinery end to end: the same
+5-minute flush timer (chunks of 400, failed chunks requeued), the same SIGTERM
+drain flush, and a boot hydrate of the top 3000 most-contested pairs that runs
+inside `hydrateHorseMindFromDb()` with its own fail-safe — a pairs failure
+costs nothing to the stats hydration, and vice versa. The replay tail then
+stacks live counts on top, exactly as it does for stats.
+
+**Tests.** 8 new specs in `HorseMindPairs.persistence.test.ts` pin the
+contract: dirty tracking, idempotent re-observe, requeue-on-failure,
+never-downgrade import, and the one that matters — a hunter profile imported
+straight from the DB drives `targetingOf()` past the counter threshold with
+zero live observation this process. Full server suite 1105/1105 green.
+
+**Also in the PR:** main was red on `check-title-case` (two GameLobbyPanel
+notes from the phase 3 lobby work) and blocked every push; fixed with the
+sanctioned `--fix` script per fix-first, in its own commit.
+
+**Verified in production:** Hetzner auto-deploy green, hand_history restart dip
+at 20:29 UTC, and the loop observed end to end — first periodic flush landed
+126 pair rows at 20:37:53 UTC, seconds after the stats flush, with sane
+counters accumulating from the replay tail plus live play.
+
+---
+
+## Cowork session 2026-08-22 (9) — MOBILE TABLE PHASE 4: the estimate settles for real, the raise panel wins its taps (PR #294)
+
+Follow-on to Phase 3 (PR #280). Two changes, both measured before they were
+made.
+
+1. DEFERRED P/L RECONCILIATION — #280's "Pending Settlement" annotation now
+   closes its own loop. The engine's processLeavePending writes exactly one
+   wallet_transactions row at settlement (category 'cashout', that table,
+   that user, via atomic_credit_wallet_and_log) and RLS lets a user read
+   their own rows. The payload carries `pendingCashout` (tableId/userId/leave
+   time — TablePage unmounts right after publishing, so the app-root host
+   must find the row itself) and SessionSummaryHost polls while the pending
+   card is open: 3s cadence, 3-minute cap, time-bounded query so an older
+   session at the same table can never be mistaken for this settlement. On a
+   hit `settlePendingSummary` swaps in `amount - totalBuyIn`, the annotation
+   drops, and the count-up re-runs on the corrected figure. Polling over
+   realtime ON PURPOSE: the card lives seconds, and realtime's failure mode
+   (silently no events) is the one this feature exists to close. If the row
+   never lands, the annotation stays — still an honest card. Spec grew to 4
+   cases, including a guard that a payload without pendingCashout never
+   touches the ledger.
+2. RAISE PANEL vs CHAT BUTTON — the 112px widget line clears the COLLAPSED
+   3-button bar, but the OPEN raise panel measures 270px tall at 375px, and
+   TableChat rendered after the panel at the same z-100: the chat bubble
+   floated on top of the raise presets and stole their taps (elementFromPoint
+   at the bubble's centre returned the button). TableChat is now z-99, one
+   below --z-action-panel: normal play unchanged, and while raising the panel
+   wins. The HUD's bottom corners don't interact (BR is empty, BL is the
+   other side, and the HUD renders before the panel). Pinned by
+   tests/e2e/raise-panel-covers-chat.spec.ts, with a premise guard that goes
+   red if a redesign ever shrinks the open panel under 112px and would make
+   the overlap assertions vacuous.
+
+Also verified green on this branch before shipping: the 53 pure-geometry
+playwright specs (hero-card-row, pot-above-chips), tsc, and vitest 236
+files / 2,998 passed.
+
+---
+
 ## Cowork session 2026-08-22 (9) — DB starvation fix: sp_prune_hand_state_snapshots full scan
 
 Investigating the Lobby V2 handoff's "Still Loading" QA item led to the root
@@ -140,6 +232,85 @@ Verification: tsc clean; vitest 235 files, 2,983 passed / 5 skipped.
 GitHub MCP note: its static token was refreshed in config (takes effect on
 next Claude restart); gh on the Mac is authenticated and is the sanctioned
 path regardless.
+
+---
+
+## Cowork session 2026-08-22 (6) — THE SAME BUG, ONE LAYER UP
+
+### What session (5) revealed by fixing the layer below it
+
+PR #281 merged at 20:06 UTC and deployed to Hetzner at 20:10. Fifteen minutes
+later `dealing_loop_dead` was **zero** — down from ~4.5/min sustained. The fix
+holds.
+
+What it uncovered is that `start_failed` was never a footnote. In that same
+fifteen minutes: **117 of them**, arriving in bursts — 86 across 43 tables
+inside a single minute, another 43 across 23 tables, and so on.
+
+### Why — the identical mistake, one call earlier
+
+`loadTable` is the **first statement** of `ServerTableEngineBase.start()` and
+it is a database read. A throw from it landed in start()'s catch as
+`start_failed` -> `killForRestart` -> GameServer rebuilds the engine within 5s
+-> the same read -> the same throw. A transient blip became a permanent
+respawn loop.
+
+And the kill costs **more** database work than a retry: a rebuilt engine also
+re-runs `seedHandCountFromHistory`, `checkCrashRecovery` and
+`resolveOrphanedAddOns`. Same self-feeding spiral as session (5), one layer up.
+
+The asymmetry is the whole bug. `dealingLoop` has always treated exactly these
+errors as transient and backed off. `start()` treated them as fatal. **Same
+database, same error, opposite response** — and the fatal response was the
+expensive one.
+
+The reason the two could disagree is that the transient-error list was written
+out **three separate times**, inline, and never shared:
+
+| Where                 | Missing from its copy                                                                                                |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `dealingLoop` catch   | (the reference list)                                                                                                 |
+| `refreshBlinds` retry | `supabase_timeout` — the wording `DB_TIMEOUT_MS` actually emits, so its retry did not fire for the commonest timeout |
+| `start()`             | the entire list; it had no concept of transient at all                                                               |
+
+### What shipped
+
+1. **One definition.** `ServerTableEngineBase.isTransientDbError(err)`. All
+   three call sites now ask it. Two places that must agree cannot agree while
+   only one of them has the list.
+2. **The opening read retries** — 5 attempts, exponential backoff to ~8s,
+   transient only. Deliberately retried at the call site rather than in the
+   catch: nothing is configured and no timer is armed yet, so a retry is a
+   clean re-attempt. `refreshBlinds` already retried this very call three
+   times for this very reason.
+3. **A failed seat sweep costs one sweep, not the engine.** The
+   wait-for-players loop's `loadSeatedPlayers` is a poll that already runs
+   every 5s; letting a blip escape it aborted start() outright, on a table
+   with players waiting to be dealt to. `broadcastCurrentState` beside it has
+   been guarded since it was added — the read never was.
+4. **`start_failed:<stage>`**, matching the `dealing_loop_dead:<phase>`
+   vocabulary from session (5). A kill reason that is the same string for
+   every possible cause is how 1,603 rows produced no diagnosis at all.
+
+### Tests
+
+`EngineStartResilience.test.ts` (new, 7): the predicate says yes to the
+wordings production actually produces and **no** to a real bug
+(`TypeError: ... is not a function`, `column ... does not exist`) — excusing a
+code error as a network blip would be the worse failure; and start() retries a
+blip, bounds its attempts, refuses to retry a real bug, and survives a failed
+seat sweep. Server suite **1,104 passed / 106 files**; `tsc --noEmit` clean on
+`server/tsconfig.json`.
+
+### Watch after deploy
+
+`SELECT detail, COUNT(*) FROM engine_recovery_events WHERE created_at >
+NOW()-INTERVAL '30 minutes' GROUP BY 1 ORDER BY 2 DESC;` — the `start_failed`
+bursts should collapse the way `dealing_loop_dead` did, and anything left now
+names the stage it died in. Note the bursts cluster around engine deploys and
+around the top of the hour (synchronized breaks resume at :00), both of which
+start many engines at once; the stagger in `GameServer` already spreads those,
+this stops a blip during one from being fatal.
 
 ---
 

@@ -108,6 +108,42 @@ describe('it asks whether the fee landed before calling the chips lost', () => {
   });
 });
 
+describe('the alarm carries what it takes to put the chips back', () => {
+  /**
+   * An alarm that says money is missing and cannot say how to return it is
+   * half an alarm. `atomic_distribute_rake` needs pot, num_players and the
+   * per-player `contributions` split; `auditBBJDrift` in the same file spells
+   * out what happens without the last one — "guessing it would corrupt
+   * rakeback attribution". The 190 alerts open on 2026-08-22 name chips
+   * nobody can safely re-drive purely because the context summarised a
+   * payload the function was already holding in full.
+   */
+  const REQUIRED = ['pot', 'numPlayers', 'contributions', 'tournamentId', 'bigBlind'];
+
+  it('queue_failed carries the full re-drive payload', () => {
+    const i = code.indexOf("raiseFinancialAlert('critical', 'FeeReconciler.queue_failed'");
+    expect(i).toBeGreaterThan(-1);
+    const ctx = code.slice(i, code.indexOf('});', i));
+    for (const k of REQUIRED)
+      expect(ctx, `queue_failed context missing ${k}`).toMatch(new RegExp(`\\b${k}:`));
+  });
+
+  it('exhausted carries it too', () => {
+    const i = code.indexOf("raiseFinancialAlert('critical', 'FeeReconciler.exhausted'");
+    expect(i).toBeGreaterThan(-1);
+    const ctx = code.slice(i, code.indexOf('});', i));
+    for (const k of REQUIRED)
+      expect(ctx, `exhausted context missing ${k}`).toMatch(new RegExp(`\\b${k}:`));
+  });
+
+  it('contributions is never left undefined', () => {
+    // A missing key and an empty map are different claims. `?? {}` says
+    // "there were none", `undefined` says "I did not record it".
+    expect(code).toMatch(/contributions: fee\.contributions \?\? \{\}/);
+    expect(code).toMatch(/contributions: row\.contributions \?\? \{\}/);
+  });
+});
+
 describe('the alarm still fires when chips really are at risk', () => {
   it('the critical alert is still raised, and says it was verified', () => {
     expect(code).toMatch(/raiseFinancialAlert\('critical', 'FeeReconciler\.queue_failed'/);

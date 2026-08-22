@@ -37,6 +37,10 @@ interface Tournament {
   bountyAmount?: number;
   isMultiDay?: boolean;
   isPinned?: boolean;
+  /** PokerBros parity (2026-08-22): label_as_new / is_vip_only / all_in_or_fold. */
+  isNew?: boolean;
+  isVipOnly?: boolean;
+  isAllInOrFold?: boolean;
   blindDuration?: number;
   blindsUp?: number;
   rebuyAllowed?: boolean;
@@ -291,6 +295,9 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
       {/* Header */}
       <div className={styles.header}>
         {tournament.isPinned && <span className={styles.pinnedBadge}>PINNED</span>}
+        {tournament.isNew && <span className={styles.newBadge}>NEW</span>}
+        {tournament.isVipOnly && <span className={styles.vipBadge}>VIP</span>}
+        {tournament.isAllInOrFold && <span className={styles.aofBadge}>AoF</span>}
         <span className={styles.type}>{getTypeLabel(tournament.type)}</span>
         <span className={styles.status} style={{ color: getStatusColor(tournament.status) }}>
           {getStatusLabel(tournament.status)}

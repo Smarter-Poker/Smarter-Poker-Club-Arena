@@ -102,18 +102,33 @@ export function TournamentStartingTicker() {
   const [headerBottom, setHeaderBottom] = useState(0);
   useEffect(() => {
     const measure = () => {
-      const el = document.getElementById('global-header');
+      const el = document.getElementById('global-header') || document.querySelector('header');
       setHeaderBottom(el ? Math.max(0, Math.round(el.getBoundingClientRect().bottom)) : 0);
+      return el;
     };
     measure();
     window.addEventListener('resize', measure);
-    // The header also changes height after fonts and avatars load, not just
-    // on resize, so watch the element itself.
-    const el = document.getElementById('global-header');
-    const ro = typeof ResizeObserver !== 'undefined' && el ? new ResizeObserver(measure) : null;
-    if (ro && el) ro.observe(el);
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(measure);
+    }
+
+    // The header might render slightly after the ticker during initial mount.
+    // Poll briefly to ensure we measure it and attach the observer.
+    let attempts = 0;
+    const poll = setInterval(() => {
+      const el = measure();
+      if (el && ro) {
+        ro.observe(el);
+        clearInterval(poll);
+      }
+      if (++attempts > 10) clearInterval(poll); // Give up after 1s
+    }, 100);
+
     return () => {
       window.removeEventListener('resize', measure);
+      clearInterval(poll);
       ro?.disconnect();
     };
   }, [location.pathname]);
@@ -227,8 +242,8 @@ export function TournamentStartingTicker() {
           if (!state.fiveMin && sLeft <= 300) {
             state.fiveMin = true;
             changed = true;
-            // Only fire toast if we just crossed the boundary (protects against stale polls)
-            if (sLeft > 285) {
+            // If the event starts in more than 2 minutes, give them the 5 minute warning
+            if (sLeft > 120) {
               busToast(`MTT "${t.name}" starts in 5 minutes!`, 'info', 8000);
             }
           }
@@ -237,7 +252,8 @@ export function TournamentStartingTicker() {
           if (!state.ninetySec && sLeft <= 90) {
             state.ninetySec = true;
             changed = true;
-            if (sLeft > 75) {
+            // If it starts in more than 10 seconds, give the 90s warning
+            if (sLeft > 10) {
               busToast(`MTT "${t.name}" starts in 90 seconds!`, 'warning', 8000);
             }
           }

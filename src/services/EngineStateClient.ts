@@ -837,8 +837,28 @@ export class EngineChannelClient {
   private lastInboundAt = 0;
   private watchdogTimer: number | null = null;
   private onOnline: (() => void) | null = null;
+  /** 2026-08-22: bounded wake grace — see startWatchdog. */
+  private onVisibility: (() => void) | null = null;
   private static readonly WATCHDOG_TICK_MS = 10_000;
   private static readonly STALE_HARD_MS = 60_000;
+  /**
+   * How much of the staleness budget a backgrounded tab is forgiven on wake.
+   *
+   * The watchdog skips its check while the tab is hidden but did NOT reset the
+   * clock on the way back, so the first tick after any background longer than
+   * STALE_HARD_MS saw a full minute of "silence" and tore down a socket that
+   * was very probably fine — dropping club presence, lobby, tournament events
+   * and FINANCIAL_UPDATE for a reconnect nobody needed. Every phone user who
+   * left the app for a minute paid that.
+   *
+   * A full reset would be the opposite error: that is exactly the hole that
+   * let a half-open socket survive forever in EngineStateClient under frequent
+   * tab switching. So the link is forgiven down to a bounded debt and gets one
+   * watchdog interval to prove itself — a genuinely dead one is still caught
+   * within WATCHDOG_TICK_MS of the wake.
+   */
+  private static readonly WAKE_GRACE_MS =
+    EngineChannelClient.STALE_HARD_MS - EngineChannelClient.WATCHDOG_TICK_MS;
 
   constructor(opts: EngineChannelClientOptions) {
     this.opts = {
@@ -1157,12 +1177,35 @@ export class EngineChannelClient {
       }
       this.scheduleReconnect();
     }, EngineChannelClient.WATCHDOG_TICK_MS);
+
+    // 2026-08-22: the tick above returns early while the tab is hidden, so
+    // without this the first tick after a long background reads the entire
+    // background as silence and tears down a healthy socket. Grant a BOUNDED
+    // grace on wake, never a full reset — the mirror of the game socket's
+    // handler, which learned both halves of this the hard way.
+    if (typeof document !== 'undefined' && this.onVisibility === null) {
+      this.onVisibility = () => {
+        if (document.visibilityState !== 'visible') return;
+        this.lastInboundAt = Math.max(
+          this.lastInboundAt,
+          Date.now() - EngineChannelClient.WAKE_GRACE_MS
+        );
+      };
+      document.addEventListener('visibilitychange', this.onVisibility);
+    }
   }
 
   private stopWatchdog(): void {
     if (this.watchdogTimer !== null) {
       window.clearInterval(this.watchdogTimer);
       this.watchdogTimer = null;
+    }
+    // Must be removed with the timer: a listener that outlives the client keeps
+    // firing against a dead socket, and on MultiTablePage several of these come
+    // and go as tabs open and close.
+    if (this.onVisibility !== null && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.onVisibility);
+      this.onVisibility = null;
     }
   }
 

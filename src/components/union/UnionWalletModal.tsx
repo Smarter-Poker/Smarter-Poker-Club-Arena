@@ -86,7 +86,13 @@ export function UnionWalletModal({
    */
   const [liveBalance, setLiveBalance] = useState(balance);
   const [recent, setRecent] = useState<
-    { id: string; amount: number; notes: string | null; transaction_type: string; created_at: string }[]
+    {
+      id: string;
+      amount: number;
+      notes: string | null;
+      transaction_type: string;
+      created_at: string;
+    }[]
   >([]);
 
   // The chip SOURCE follows the wallet that was clicked. BBJ is a reserve, so
@@ -391,8 +397,16 @@ export function UnionWalletModal({
                   fontSize: 12,
                 }}
               >
-                <span style={{ color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {r.notes || (r.transaction_type === 'union_promo_send' ? 'Promo send' : 'Chip send')}
+                <span
+                  style={{
+                    color: '#aaa',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {r.notes ||
+                    (r.transaction_type === 'union_promo_send' ? 'Promo send' : 'Chip send')}
                 </span>
                 <span style={{ color: '#e74c3c', fontWeight: 700, flexShrink: 0 }}>
                   -{fmt(r.amount)}

@@ -215,7 +215,6 @@ import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import { retryAsync } from '../utils/retryAsync';
 //monteCarloEquity import removed — server-authoritative
 import './TablePage.css';
-import SessionSummary from '../components/table/SessionSummary';
 import { SessionHUD } from '../components/table/SessionHUD';
 import { BombPotOverlay } from '../components/table/BombPotOverlay';
 import { ConnectionHUD } from '../components/table/ConnectionHUD';
@@ -238,7 +237,6 @@ import { StreamerMode } from '../components/table/StreamerMode';
 import { BankrollWidget } from '../components/table/BankrollWidget';
 import { HandReveal } from '../components/table/HandReveal';
 import PositionStatsPopup from '../components/table/PositionStatsPopup';
-import { SessionAnalytics } from '../components/table/SessionAnalytics';
 import { SessionTrajectoryMini } from '../components/table/SessionTrajectoryMini';
 import { StreakBadge } from '../components/table/StreakBadge';
 
@@ -1618,8 +1616,9 @@ export default function TablePage({
     });
   }, [heroIsSittingOut]);
 
-  // Session tracking for end-of-session summary
-  const [showSessionSummary, setShowSessionSummary] = useState(false);
+  // showSessionSummary REMOVED (Phase 2 2026-08-22): it was never set true —
+  // the Session Complete card is published to SessionSummaryHost at the app
+  // root (services/pendingSessionSummary) and renders in the lobby.
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [showSessionHUD, setShowSessionHUD] = useState(false);
   const {
@@ -3511,11 +3510,9 @@ export default function TablePage({
   const handleForceLeaveTable = async () => {
     if (!tableId || !userId) return;
     try {
-      if (showSessionSummary) {
-        // Player already explicitly left and is viewing summary; just close the tab.
-        masterBus.emit('TABLE_LEFT', { tableId, seat: tableState.heroSeat });
-        return;
-      }
+      // (The old "already viewing summary" early-return is gone with the dead
+      // in-table SessionSummary modal — the summary now renders in the lobby,
+      // after this table is already torn down.)
       // Force cashout instantly without triggering the UI summary.
       //
       // 2026-08-20: this discarded the result. `leaveTable` never throws — its
@@ -8628,7 +8625,12 @@ export default function TablePage({
         live.boardStage === 'preflop' &&
         (action === 'call' || action === 'raise' || action === 'allin')
       ) {
-        vpipCountRef.current++;
+        // Phase 2 audit 2026-08-22: VPIP is a PER-HAND stat. This incremented
+        // on every voluntary preflop action, so limp-then-call-a-raise (or
+        // call-then-shove) counted one hand twice — vpip/handsPlayed could
+        // exceed 100%. The per-hand flag below already exists precisely to
+        // answer "did hero VPIP this hand"; use it as the increment guard.
+        if (!heroVpipThisHandRef.current) vpipCountRef.current++;
         // Dan 2026-08-15: also flag it for THIS hand so recordHand() can post
         // a real VPIP%. Raise/all-in additionally counts as a preflop raise.
         heroVpipThisHandRef.current = true;
@@ -8810,7 +8812,6 @@ export default function TablePage({
       showInsurance ||
       showRIT ||
       showBuyInModal ||
-      showSessionSummary ||
       showHandHistory ||
       showPlayerNotes ||
       showWaitList ||
@@ -11295,17 +11296,8 @@ export default function TablePage({
         showHandHistory={showHandHistory}
         handHistory={handHistory}
         onCloseHandHistory={() => setShowHandHistory(false)}
-        // Session Summary
-        showSessionSummary={showSessionSummary}
-        sessionStartTime={sessionStartRef.current}
-        handsPlayed={handsPlayedRef.current}
-        handsWon={handsWonRef.current}
-        totalRebuys={totalRebuysRef.current}
-        sessionPL={sessionPLRef.current}
-        biggestPot={biggestPotRef.current}
-        peakStack={peakStackRef.current}
-        onCloseSessionSummary={() => setShowSessionSummary(false)}
-        onResetSessionRefs={resetSession}
+        // Session Summary props removed (Phase 2 2026-08-22): the in-table
+        // modal was dead — SessionSummaryHost at the app root owns the card.
         // Session HUD
         showSessionHUD={showSessionHUD}
         onCloseSessionHUD={() => setShowSessionHUD(false)}

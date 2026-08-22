@@ -113,13 +113,17 @@ export async function refundAndCloseCancelledTournament(
       paid = Math.round(paid * 100) / 100;
       if (paid <= 0) continue; // never paid (legacy free entry) or already refunded
 
-      const { error: refErr } = await supabase.rpc('credit_player_wallet', {
+      // LEDGER-INTEGRITY 2026-08-22: credit and ledger row under one key.
+      const { error: refErr } = await supabase.rpc('fn_credit_and_log', {
         p_user_id: row.user_id,
         p_amount: paid,
         // A3 FIX (2026-07-28): keyed on the tournament_players row id, in the
         // SAME format used by the startup pre-start sweep and the SNG lifecycle
         // sweep (both now delegate here), so every cancel-refund path dedupes.
         p_idempotency_key: `tourney:${tournamentId}:cancelrefund:${row.id}`,
+        p_category: 'refund',
+        p_description: `${refundReason}: ${fullT?.name || tournamentName || 'tournament'}`,
+        p_related_entity_id: tournamentId,
       });
       if (refErr) {
         reportError(
@@ -130,17 +134,6 @@ export async function refundAndCloseCancelledTournament(
         );
         continue;
       }
-      await supabase.rpc('log_wallet_transaction', {
-        p_user_id: row.user_id,
-        p_wallet_type: 'PLAYER',
-        p_amount: paid,
-        p_type: 'credit',
-        p_category: 'refund',
-        p_description: `${refundReason}: ${fullT?.name || tournamentName || 'tournament'}`,
-        p_table_id: null,
-        p_hand_id: null,
-        p_related_entity_id: tournamentId,
-      });
 
       // Reverse this player's un-reversed fee rows (registration + rebuy fees
       // minus prior reversals -- reversal rows carry the same metadata user_id,
@@ -241,23 +234,21 @@ export async function recoverStuckCompletingTournaments(
           // elimination-prize path uses (`tourney:{id}:prize:{user}:{position}`)
           // so this recovery path and the main path dedupe against each other and
           // repeated recovery scans of a COMPLETING tournament cannot double-pay.
-          const { error } = await supabase.rpc('credit_player_wallet', {
+          // LEDGER-INTEGRITY 2026-08-22: this is the path that produced the
+          // phantom rows. It shares its key with the normal finish path on
+          // purpose, so it credits nothing when that path got there first —
+          // and it used to write a "Tournament prize (recovery)" ledger row
+          // anyway, 0.06s-0.7s after the real one. Both halves now sit under
+          // the one key.
+          const { error } = await supabase.rpc('fn_credit_and_log', {
             p_user_id: userId,
             p_amount: amount,
             p_idempotency_key: idempotencyKey,
-          });
-          if (error) throw new Error(`credit failed for ${userId}: ${error.message}`);
-          await supabase.rpc('log_wallet_transaction', {
-            p_user_id: userId,
-            p_wallet_type: 'PLAYER',
-            p_amount: amount,
-            p_type: 'credit',
             p_category: 'prize',
             p_description: desc,
-            p_table_id: null,
-            p_hand_id: null,
             p_related_entity_id: t.id,
           });
+          if (error) throw new Error(`credit failed for ${userId}: ${error.message}`);
         };
 
         // 2. Rank the still-alive players by chips and pay their places

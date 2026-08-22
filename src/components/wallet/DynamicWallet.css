@@ -182,11 +182,7 @@
 }
 
 .dw__row--diamond .dw__row-icon {
-  color: #c084fc;
-}
-
-.dw__row--primary .dw__row-icon {
-  color: #ffb800;
+  color: #0088ff;
 }
 
 .dw__row--backup-bbj .dw__row-icon {
@@ -219,20 +215,16 @@
 
 /* ── Diamond row ──────────────────────────────────────────────────────────── */
 .dw__row--diamond {
-  border-color: rgba(168, 85, 247, 0.2);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .dw__row--diamond .dw__row-value {
-  color: #c084fc;
+  color: #0088ff;
 }
 
 /* ── Primary wallet row (Chip Balance / Club Bank / Union Bank) ──────────── */
 .dw__row--primary {
   border-color: rgba(255, 255, 255, 0.08);
-}
-
-.dw__row--primary .dw__row-value {
-  color: #ffb800;
 }
 
 /* ── Backup BBJ row ───────────────────────────────────────────────────────── */

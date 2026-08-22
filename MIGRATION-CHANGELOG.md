@@ -7,6 +7,60 @@
 
 ---
 
+## Cowork session 2026-08-22 (3) — mobile table audit: 8 items from Dan's screenshots (PR #243)
+
+Dan supplied six phone screenshots and eight numbered complaints. All eight are
+fixed in one commit (9d2138d41), verified green locally (231 files / 2915
+tests) and through the PR gate.
+
+1. **Safe-area padding.** The BBJ banner sat under the iPhone status bar
+   (`top: 6px`, no inset) and the table container reserved 124-128px of dead
+   space at the bottom. Banner and container now add
+   `env(safe-area-inset-top)`; the bottom reserve dropped ~20px.
+2. **Hero cards beside the hero.** The PLO centred-above exception put a PLO4
+   hand in the middle of the felt. Retired: every hand size now hangs off the
+   right of the seat (`left: calc(100% - 10px)`, centred on the avatar), and
+   the hero seat itself moved from y:93.5 to y:100 of the scaler so the avatar
+   barely overlaps the rail. `hero-card-row.spec.ts` re-pinned in the same
+   commit: beside-for-all, bounded by the VIEWPORT (not the felt).
+3. **Timebank + previous-hand card** lowered to just above the action bar
+   (112px + inset anchor in TableHUD, replacing 130/168px).
+4. **Stats button.** The mobile media block `.mini-stats-card { min-width:
+   100px }` out-ordered the icon variant's `min-width: 0`, stretching the
+   square icon into the wide pill in Dan's screenshot. Scoped with
+   `:not(.mini-stats-card--icon)`. The stats panel (RealTimeResultPanel) is
+   width-capped at 75vw and the left hamburger dropdown became a full-height
+   3/4-screen drawer.
+5. **Previous hand did nothing.** The hand-history hydration effect fired only
+   for `showHandHistory` (the panel); the Previous Hand card opens
+   `showHandDetail`, so the breakdown modal paged an empty array unless
+   localStorage happened to have a cache. Both openers hydrate now.
+6. **Chat button** anchored to the same just-above-action-bar line (112px +
+   inset, was fixed 100/120px).
+7. **Raise slider colors.** Gold/yellow chrome removed: white thumb rim
+   (#d4870c/#c47f08 gone), neutral `rgba(255,255,255,0.14)` frame on the
+   amount box, white digits (was #ffd700).
+8. **Session Complete card lied.** A mid-hand leave defers the cashout to
+   settlement and `leaveTable` reported `chipsReturned: 0`, so the card showed
+   the ENTIRE buy-in as a loss (screenshot: stack 1,157 at leave, card said
+   LOSS -1,000). `leaveTable` now returns `deferred: true` on both deferred
+   paths and TablePage estimates P/L from the live stack captured at leave.
+   VPIP replaced Hands Per Hour, a Total Buy In tile was added,
+   `sessionStart/End` are finally populated (the date line existed but never
+   rendered), and stakes drop trailing `.00` ("PLO4 5.00/10.00" -> "PLO4 5/10",
+   while "0.50" keeps its decimals).
+
+SHIPPING NOTE. The Cowork sandbox mount cannot unlink (verified again this
+session), so nothing git-write touched the Mac clone: work was cloned fresh
+inside the VM, rebased twice over a fast-moving main (#234-#242 landed while
+this was in flight; #242 moved `goToLobbyWithResult`, conflict resolved in its
+favour with the sessionStart/End addition re-applied at the new location),
+pushed as `fix/mobile-table-audit-2026-08-22-v2`, PR #243, merged after all
+required checks passed. The 14 pushed files were mirrored back to the Mac
+working tree from origin/main.
+
+---
+
 ## Cowork session 2026-08-22 (2) — CONNECTIVITY HARDENING: the freeze deep-dive
 
 Dan: "Fix any and all reasons games randomly break, stop running or freeze."

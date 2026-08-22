@@ -472,10 +472,18 @@ export class TournamentManager extends TournamentManagerEliminations {
       idempotencyKey: string
     ) => {
       if (amount <= 0) return;
-      const { error } = await supabase.rpc('credit_player_wallet', {
+      // LEDGER-INTEGRITY 2026-08-22: credit and ledger row under one key.
+      // These sites share `tourney:{id}:prize:{user}:{place}` with the
+      // stuck-COMPLETING watchdog deliberately, so the credit deduped — but
+      // the log used to run regardless and wrote a prize row for money that
+      // was never moved.
+      const { error } = await supabase.rpc('fn_credit_and_log', {
         p_user_id: userId,
         p_amount: amount,
         p_idempotency_key: idempotencyKey,
+        p_category: 'prize',
+        p_description: desc,
+        p_related_entity_id: this.tournamentId,
       });
       if (error) {
         reportError(
@@ -486,17 +494,6 @@ export class TournamentManager extends TournamentManagerEliminations {
         );
         return;
       }
-      await supabase.rpc('log_wallet_transaction', {
-        p_user_id: userId,
-        p_wallet_type: 'PLAYER',
-        p_amount: amount,
-        p_type: 'credit',
-        p_category: 'prize',
-        p_description: desc,
-        p_table_id: null,
-        p_hand_id: null,
-        p_related_entity_id: this.tournamentId,
-      });
     };
 
     if (awardCount === 0) {

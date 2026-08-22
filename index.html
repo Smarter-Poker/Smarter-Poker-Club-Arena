@@ -62,9 +62,25 @@
   <!-- Preload club card frame template (used by carousel) -->
   <link rel="preload" href="/images/club-card-frame-template.webp" as="image" type="image/webp">
 
-  <!-- OneSignal Push Notifications SDK -->
-  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-  <script>window.OneSignalDeferred = window.OneSignalDeferred || [];</script>
+  <!-- OneSignal Push Notifications SDK — PERF PASS 2 (2026-08-22): injected
+       AFTER window load + 3s idle instead of competing with the app bundle
+       for boot bandwidth. PushNotificationService already queues through
+       window.OneSignalDeferred, so nothing observes the later arrival. -->
+  <script>
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    (function () {
+      function inject() {
+        setTimeout(function () {
+          var s = document.createElement('script');
+          s.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';
+          s.defer = true;
+          document.head.appendChild(s);
+        }, 3000);
+      }
+      if (document.readyState === 'complete') { inject(); }
+      else { window.addEventListener('load', inject, { once: true }); }
+    })();
+  </script>
 </head>
 
 <body>

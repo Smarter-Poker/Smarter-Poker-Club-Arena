@@ -132,10 +132,25 @@ jobs:
             # Keep the PR fresh. A stale base is how a conflict gets resolved
             # by taking one whole side, which is how the leaderboard RPC call
             # vanished while its signature survived.
-            if [ "$STATE" = "BEHIND" ]; then
-              echo "#$N ($BRANCH): behind main — updating branch."
-              gh pr update-branch "$N" --repo "$REPO" \
-                || echo "::warning::#$N could not fast-forward (likely a real conflict) — leaving for an agent."
+            #
+            # Do NOT test `mergeStateStatus == "BEHIND"`. GitHub reports a
+            # single status, and a PR that is BOTH behind AND has a failing or
+            # pending check reports BLOCKED — so the branch never got refreshed,
+            # its stale checks never re-ran, and it sat open forever. #188 was
+            # 28 commits behind and reporting BLOCKED when this was found.
+            # Ask the compare API how far behind it actually is instead.
+            #
+            # DIRTY means a real conflict: updating cannot fix it and would only
+            # churn CI, so leave those for an agent to resolve hunk by hunk.
+            if [ "$STATE" = "DIRTY" ]; then
+              echo "#$N ($BRANCH): conflicts with main — an agent must resolve this."
+            else
+              BEHIND=$(gh api "repos/$REPO/compare/main...$BRANCH" --jq '.behind_by' 2>/dev/null || echo 0)
+              if [ "${BEHIND:-0}" -gt 0 ]; then
+                echo "#$N ($BRANCH): $BEHIND commit(s) behind main — updating branch."
+                gh pr update-branch "$N" --repo "$REPO" \
+                  || echo "::warning::#$N could not fast-forward — leaving for an agent."
+              fi
             fi
 
             if [ "$AUTO" = "no" ]; then

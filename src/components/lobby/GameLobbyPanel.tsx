@@ -55,8 +55,11 @@ interface CtaSpec {
   note?: string;
 }
 
-const lvlNum = (l: BlindLevel, snake: 'small_blind' | 'big_blind' | 'duration_minutes', camel: 'smallBlind' | 'bigBlind' | 'durationMinutes') =>
-  Number(l[snake] ?? l[camel] ?? 0);
+const lvlNum = (
+  l: BlindLevel,
+  snake: 'small_blind' | 'big_blind' | 'duration_minutes',
+  camel: 'smallBlind' | 'bigBlind' | 'durationMinutes'
+) => Number(l[snake] ?? l[camel] ?? 0);
 
 export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   const {
@@ -139,7 +142,11 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       const t = entry.raw as LobbyTableRow;
       const status = String(t.status || '').toLowerCase();
       if (seated)
-        return { label: 'Return To Table', kind: 'gold' as const, run: () => onJoinTable(entry.id) };
+        return {
+          label: 'Return To Table',
+          kind: 'gold' as const,
+          run: () => onJoinTable(entry.id),
+        };
       if (status === 'closed' || status === 'deleted')
         return { label: 'Table Closed', kind: 'disabled' as const };
       if (status === 'paused') return { label: 'Game Paused', kind: 'disabled' as const };
@@ -171,33 +178,75 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     if (entry.kind === 'spin') {
       if (registered)
         return { label: 'Return To Game', kind: 'gold' as const, run: () => onSpinJoin(t, 'spin') };
-      if (st === 'completed' || st === 'closed') return { label: 'Game Over', kind: 'disabled' as const };
+      if (st === 'completed' || st === 'closed')
+        return { label: 'Game Over', kind: 'disabled' as const };
       const full = entry.capacity > 0 && entry.players >= entry.capacity;
       if (full && st === 'running') return { label: 'Game Full', kind: 'disabled' as const };
-      return { label: 'Join Spin', kind: 'primary' as const, run: () => onSpinJoin(t, 'spin'), needsAuth: true };
+      return {
+        label: 'Join Spin',
+        kind: 'primary' as const,
+        run: () => onSpinJoin(t, 'spin'),
+        needsAuth: true,
+      };
     }
     if (entry.kind === 'sng') {
       if (registered)
         return { label: 'Return To Table', kind: 'gold' as const, run: () => onSpinJoin(t, 'sng') };
-      if (st === 'completed' || st === 'closed') return { label: 'Game Over', kind: 'disabled' as const };
+      if (st === 'completed' || st === 'closed')
+        return { label: 'Game Over', kind: 'disabled' as const };
       const full = entry.capacity > 0 && entry.players >= entry.capacity;
       if (full && st === 'running') return { label: 'Table Full', kind: 'disabled' as const };
-      return { label: 'Take Seat', kind: 'primary' as const, run: () => onSpinJoin(t, 'sng'), needsAuth: true };
+      return {
+        label: 'Take Seat',
+        kind: 'primary' as const,
+        run: () => onSpinJoin(t, 'sng'),
+        needsAuth: true,
+      };
     }
     // MTT
     if (registered && (st === 'running' || st === 'late_reg'))
-      return { label: 'Return To Tournament', kind: 'gold' as const, link: `/tournaments/${entry.id}` };
+      return {
+        label: 'Return To Tournament',
+        kind: 'gold' as const,
+        link: `/tournaments/${entry.id}`,
+      };
     if (registered)
-      return { label: 'Unregister', kind: 'danger' as const, run: () => onUnregister(t), needsAuth: true };
+      return {
+        label: 'Unregister',
+        kind: 'danger' as const,
+        run: () => onUnregister(t),
+        needsAuth: true,
+      };
     if (st === 'completed' || st === 'closed')
       return { label: 'Registration Closed', kind: 'disabled' as const };
     if (st === 'running') return { label: 'Registration Closed', kind: 'disabled' as const };
     const full = entry.capacity > 0 && entry.players >= entry.capacity;
     if (full) return { label: 'Tournament Full', kind: 'disabled' as const };
     if (st === 'late_reg')
-      return { label: 'Late Register', kind: 'primary' as const, run: () => onRegister(t), needsAuth: true };
-    return { label: 'Register', kind: 'primary' as const, run: () => onRegister(t), needsAuth: true };
-  }, [entry, isCash, seated, waitlisted, registered, onJoinTable, onWaitlistToggle, onRegister, onUnregister, onSpinJoin]);
+      return {
+        label: 'Late Register',
+        kind: 'primary' as const,
+        run: () => onRegister(t),
+        needsAuth: true,
+      };
+    return {
+      label: 'Register',
+      kind: 'primary' as const,
+      run: () => onRegister(t),
+      needsAuth: true,
+    };
+  }, [
+    entry,
+    isCash,
+    seated,
+    waitlisted,
+    registered,
+    onJoinTable,
+    onWaitlistToggle,
+    onRegister,
+    onUnregister,
+    onSpinJoin,
+  ]);
 
   const ctaDisabled = cta.kind === 'disabled' || busy || (cta.needsAuth === true && !currentUserId);
 
@@ -208,7 +257,9 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
 
   const joinZone = (
     <>
-      <span className="cplaque__join-label">{isCash ? 'BUY-IN' : entry.kind === 'mtt' ? 'ENTRY' : 'BUY-IN'}</span>
+      <span className="cplaque__join-label">
+        {isCash ? 'BUY-IN' : entry.kind === 'mtt' ? 'ENTRY' : 'BUY-IN'}
+      </span>
       <div className="cplaque__join-figures">
         {isCash ? (
           <>
@@ -254,7 +305,9 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           {busy ? 'One Moment' : cta.label}
         </button>
       )}
-      {cta.needsAuth && !currentUserId && <span className="cplaque__cta-note">Sign In To Play</span>}
+      {cta.needsAuth && !currentUserId && (
+        <span className="cplaque__cta-note">Sign In To Play</span>
+      )}
       {cta.note && <span className="cplaque__cta-note">{cta.note}</span>}
     </>
   );
@@ -276,7 +329,12 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           <span className="glp__head-title" title={entry.name}>
             {entry.name}
           </span>
-          <button type="button" className="glp__close" aria-label="Close game lobby" onClick={onClose}>
+          <button
+            type="button"
+            className="glp__close"
+            aria-label="Close game lobby"
+            onClick={onClose}
+          >
             &#10005;
           </button>
         </header>
@@ -313,7 +371,11 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   {settings?.ante_enabled === true && (
                     <div>
                       <dt>Ante</dt>
-                      <dd className="glp__mono">{Number(settings.ante_amount) > 0 ? Number(settings.ante_amount).toLocaleString() : 'On'}</dd>
+                      <dd className="glp__mono">
+                        {Number(settings.ante_amount) > 0
+                          ? Number(settings.ante_amount).toLocaleString()
+                          : 'On'}
+                      </dd>
                     </div>
                   )}
                   {avgPot != null && avgPot > 0 && (
@@ -339,7 +401,10 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   <ul className="glp__rules">
                     {entry.rules.map((r) => (
                       <li key={r.key}>
-                        <b>{r.label}{r.detail ? ` ${r.detail}` : ''}</b>
+                        <b>
+                          {r.label}
+                          {r.detail ? ` ${r.detail}` : ''}
+                        </b>
                         <span>{r.tip}</span>
                       </li>
                     ))}
@@ -355,7 +420,9 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                       <li key={w.id || i}>
                         <span className="glp__wl-pos">{i + 1}</span>
                         <span className="glp__wl-name">
-                          {w.userId && currentUserId && w.userId === currentUserId ? 'You' : 'Player'}
+                          {w.userId && currentUserId && w.userId === currentUserId
+                            ? 'You'
+                            : 'Player'}
                         </span>
                       </li>
                     ))}
@@ -409,7 +476,9 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                     {tournament && Number(tournament.prize_pool) > 0 && (
                       <div>
                         <dt>Prize Pool</dt>
-                        <dd className="glp__mono">{Number(tournament.prize_pool).toLocaleString()}</dd>
+                        <dd className="glp__mono">
+                          {Number(tournament.prize_pool).toLocaleString()}
+                        </dd>
                       </div>
                     )}
                     <div>
@@ -434,19 +503,23 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                     {tournament && Number(tournament.starting_chips) > 0 && (
                       <div>
                         <dt>Starting Stack</dt>
-                        <dd className="glp__mono">{Number(tournament.starting_chips).toLocaleString()}</dd>
-                      </div>
-                    )}
-                    {tournament && (Number(tournament.late_reg_mins) > 0 || Number(tournament.late_reg_levels) > 0) && (
-                      <div>
-                        <dt>Late Reg</dt>
-                        <dd>
-                          {Number(tournament.late_reg_levels) > 0
-                            ? `${tournament.late_reg_levels} Levels`
-                            : `${tournament.late_reg_mins} Min`}
+                        <dd className="glp__mono">
+                          {Number(tournament.starting_chips).toLocaleString()}
                         </dd>
                       </div>
                     )}
+                    {tournament &&
+                      (Number(tournament.late_reg_mins) > 0 ||
+                        Number(tournament.late_reg_levels) > 0) && (
+                        <div>
+                          <dt>Late Reg</dt>
+                          <dd>
+                            {Number(tournament.late_reg_levels) > 0
+                              ? `${tournament.late_reg_levels} Levels`
+                              : `${tournament.late_reg_mins} Min`}
+                          </dd>
+                        </div>
+                      )}
                     {tournament?.is_reentry === true && (
                       <div>
                         <dt>Re-Entry</dt>
@@ -459,7 +532,9 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                     </div>
                   </dl>
                   {detailError && (
-                    <p className="glp__note">Full details could not be loaded. The figures above come from the lobby.</p>
+                    <p className="glp__note">
+                      Full Details Could Not Be Loaded. The Figures Above Come From The Lobby.
+                    </p>
                   )}
                 </section>
               )}
@@ -527,7 +602,9 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                                 <td>{p.percentage}%</td>
                                 {Number(tournament.prize_pool) > 0 && (
                                   <td>
-                                    {Math.floor((Number(tournament.prize_pool) * p.percentage) / 100).toLocaleString()}
+                                    {Math.floor(
+                                      (Number(tournament.prize_pool) * p.percentage) / 100
+                                    ).toLocaleString()}
                                   </td>
                                 )}
                               </tr>
@@ -536,7 +613,8 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                         </table>
                       </div>
                       <p className="glp__note">
-                        Projected amounts are estimates from the current prize pool, not final payouts.
+                        Projected Amounts Are Estimates From The Current Prize Pool, Not Final
+                        Payouts.
                       </p>
                     </>
                   ) : (
@@ -553,7 +631,10 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   <ul className="glp__rules">
                     {entry.rules.map((r) => (
                       <li key={r.key}>
-                        <b>{r.label}{r.detail ? ` ${r.detail}` : ''}</b>
+                        <b>
+                          {r.label}
+                          {r.detail ? ` ${r.detail}` : ''}
+                        </b>
                         <span>{r.tip}</span>
                       </li>
                     ))}

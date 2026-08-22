@@ -248,8 +248,20 @@ describe('decline → the pot runs ONCE (full flow through the real wait)', () =
 
     // waitForRITResponse polls every 250ms, then the paced single-board runout
     // deals its streets (at test pacing, see mkEngine) and completes.
-    await new Promise((r) => setTimeout(r, 900));
-    const complete = events.find((e) => e.type === 'HAND_COMPLETE');
+    //
+    // DE-FLAKE 2026-08-22: this was a flat `setTimeout(900)`, which is a bet
+    // that the machine finishes in 900ms. Alone it always did; inside the full
+    // 97-file suite it lost that bet about half the time, and the whole
+    // "Server Engine" CI job went red with "expected undefined to be defined"
+    // — on branches that had touched nothing near this code. Wait for the
+    // event instead of for the clock: normally faster than 900ms, and it
+    // cannot be starved by a loaded runner.
+    const deadline = Date.now() + 10_000;
+    let complete = events.find((e) => e.type === 'HAND_COMPLETE');
+    while (!complete && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 25));
+      complete = events.find((e) => e.type === 'HAND_COMPLETE');
+    }
     expect(complete).toBeDefined();
     const st = (hc as unknown as { state: { players: SeatPlayer[]; communityCards: Card[] } })
       .state;

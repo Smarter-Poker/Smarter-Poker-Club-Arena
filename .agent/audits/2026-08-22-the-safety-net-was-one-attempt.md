@@ -125,3 +125,51 @@ and the critical alert plus its operator-facing wording still fire when chips
 really are at risk.
 
 **10 of the 11 fail against the unfixed file.**
+
+---
+
+## 6. A THIRD FAULT REPORT NOBODY COULD ACT ON
+
+This PR's first CI run went red on something unrelated:
+
+```
+FAIL src/engine/ChipConservation.property.test.ts
+  > explores 1000 previously untested hands
+AssertionError: expected [ Array(1) ] to deeply equal []
++   "[HandController] No winners found — awarding pot to last active player u1"
+```
+
+That is a **real engine fault**, not a flake. `determineWinners` returned empty
+at showdown and `HandController`'s Bible V8 §1.9 guard awarded the **entire
+pot** to `activePlayers[0]`. Chip-conserving, and quite possibly the wrong
+player paid — which is exactly why the property test lists it as a panic
+alongside "completeHand threw".
+
+The explore pass seeds itself from `Math.random()` so every CI run walks new
+ground, and its comment said:
+
+> *Deliberately NOT fixed: every CI run walks new ground. The failure message
+> prints the seed, so any find is reproducible on the spot.*
+
+**It did not print the seed.** The seed appears in the NAME of the *fixed*
+corpus test; this one generates its own and the assertion carried nothing. So
+the corpus that found a genuine pot-misallocation died with the job. Ten local
+reruns of the file — 10,000 further explore hands — could not find it again.
+
+The same lesson as the rest of this session: a fault report you cannot act on
+is barely better than no report. Both assertions now carry the exact replay:
+
+```
+cd server && CHIP_CONSERVATION_SEED=<seed> CHIP_CONSERVATION_HANDS=<n> \
+  CHIP_CONSERVATION_EXPLORE=0 npx vitest run src/engine/ChipConservation.property.test.ts
+```
+
+`CHIP_CONSERVATION_EXPLORE=0` turns the explore pass off so the replay walks the
+same ground instead of new ground. Verified by forcing a panic and reading the
+rendered message — it prints the actual generated seed, not a placeholder.
+
+**The underlying engine fault is NOT fixed and should not be guessed at.**
+`determineWinners` returning empty at a real showdown is a hand-evaluation or
+pot-eligibility question, and the next occurrence will now arrive with a
+one-command reproduction attached. That is the prerequisite for fixing it
+properly rather than by inspection.

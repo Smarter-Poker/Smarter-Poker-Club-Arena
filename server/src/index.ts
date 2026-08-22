@@ -37,6 +37,7 @@ import {
   stopHorseMindPersistence,
 } from './services/HorseMindPersistence.js';
 import { startHorseSelfTuner } from './services/HorseSelfTuner.js';
+import { startHorseLeague } from './benchmark/HorseLeague.js';
 import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -104,6 +105,10 @@ httpServer.listen(PORT, () => {
   // own week of play, diagnoses leaks vs winning benchmarks, and nudges its
   // own profile dials. See HorseSelfTuner.ts + horse_self_tune_log.
   startHorseSelfTuner();
+  // V12 (2026-08-22): nightly duplicate-deal self-play league — measures
+  // every strategy layer in bb/100 so tuning is evidence, not vibes. See
+  // benchmark/HorseLeague.ts + horse_league_results.
+  startHorseLeague();
   // V7 (2026-07-24): humanlike session rhythms — horses stand up after real
   // sessions via the SAME hand-boundary-safe leaveTable() path humans use;
   // the fleet manager reseeds fresh horses within its 30s cycle.

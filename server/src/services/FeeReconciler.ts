@@ -158,6 +158,18 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
     // Sentry alone is not enough for a money alarm: financial_alerts is the
     // durable, queryable channel an operator actually reads, and this is the
     // last line of defence before chips become unrecoverable from data.
+    // THE WHOLE PAYLOAD, NOT A SUMMARY (2026-08-22).
+    //
+    // This context used to carry kind/table/club/hand/rake/bbj and stop there.
+    // That is enough to say chips are missing and not enough to put them back:
+    // `atomic_distribute_rake` needs pot, num_players and — critically —
+    // `contributions`, the per-player split. Without it the rake can only be
+    // booked with no attribution, and `auditBBJDrift` in this same file already
+    // states the consequence: "guessing it would corrupt rakeback attribution".
+    //
+    // So the 190 alerts open on 2026-08-22 name chips nobody can safely
+    // re-drive, only because the alarm summarised a payload it was already
+    // holding in full. It costs nothing to write all of it.
     await raiseFinancialAlert('critical', 'FeeReconciler.queue_failed', detail, {
       kind,
       tableId: fee.tableId,
@@ -166,6 +178,12 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
       handNumber: fee.handNumber,
       rake: fee.rake,
       bbj: fee.bbj,
+      // everything atomic_distribute_rake / logBBJCollection need to re-drive
+      pot: fee.pot,
+      numPlayers: fee.numPlayers,
+      contributions: fee.contributions ?? {},
+      tournamentId: fee.tournamentId ?? null,
+      bigBlind: fee.bigBlind ?? null,
       dbError: lastError,
       verifiedUnbanked: true,
     });
@@ -381,6 +399,13 @@ export async function reconcilePendingFees(): Promise<{
         handNumber: row.hand_number,
         rake: row.rake,
         bbj: row.bbj,
+        // Same reason as queue_failed above: an alarm about money should carry
+        // what it takes to move that money back. This row already has it.
+        pot: row.pot,
+        numPlayers: row.num_players,
+        contributions: row.contributions ?? {},
+        tournamentId: row.tournament_id,
+        bigBlind: row.big_blind,
         attempts,
         lastError: failureMessage,
       });

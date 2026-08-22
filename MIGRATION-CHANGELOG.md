@@ -411,6 +411,71 @@ a real frozen-table path that reached production once:
 clock reset makes the channel test fail (`expected 0 to be greater than 0`). A
 test that passes against the bug it claims to pin is not a test.
 
+## Cowork session 2026-08-22 (7) — CLEARING THE HANDOFF BACKLOG
+
+### Sessions (5) and (6), confirmed in production
+
+30 minutes after both deploys: `engine_recovery_events` **completely empty** —
+zero `dealing_loop_dead`, zero `start_failed`, zero anything, from ~4.5
+kills/min. Hand throughput **29/min -> 83/min average**, peak 188 across 102
+tables, zero-hand minutes down from 10.5% to 6.5%.
+
+### Handoff item 3 — pending_deadlines: CLOSED, no change needed
+
+The handoff called this a dead write needing "wire rehydration or delete".
+Neither: B10 (2026-08-20) already made the reasoned call in
+`checkCrashRecovery()`. Every persisted deadline belongs to the hand being
+abandoned, so reinstating them would fire turn timers for a hand that no longer
+exists. It is kept for forensics and the PR-E full-resume work, and the comment
+says so. Recorded here so the next agent does not re-litigate it.
+
+### Handoff item 2 — the lone seated human
+
+`discoverCashTables()` spawned engines from
+`cash_tables_with_players(p_min => 2)`. Below two occupants no engine exists, so
+the first person to sit at an empty table got WS close 4404 and sat on
+"connecting" until somebody else arrived. There was nothing to connect TO. The
+engine is what publishes the idle snapshot (stage `waiting`, seats, stacks), so
+its mere existence is the difference between a real table and a spinner.
+
+New RPC `cash_tables_needing_engine(p_min)` = the old one **OR at least one
+seated human**. Applied to production before the branch was pushed, per CHECK 17. Verified on apply: 44 tables before, 44 after, 0 lone-seat tables added —
+a no-op today, active only for the case it fixes.
+
+**The wiring trap, avoided:** `readyIds` also feeds `shouldBeDealing`, which is
+the ZOMBIE test — should be dealing plus 180s of no progress equals kill. A
+table with one human makes no progress BY DESIGN. Widening `readyIds` would
+have re-created PR #281's fleet-wide kill loop in a new place. So the spawn list
+widened and `readyIds` did not: it is now filtered to `player_count >= 2`.
+
+**Dead column found:** `table_seats.horse_id` is never populated — 278 seated
+horses in production, zero with it set. `profiles.is_horse` is the only source
+of truth, which is what `loadSeatedPlayers()` already joins for. The new RPC
+joins profiles for the same reason. The column is left in place (dropping is
+Tier 3) but must not be trusted.
+
+### Handoff item 4 — the reaper's trust
+
+The reaper deletes a not-running engine without tearing it down, trusting that
+whatever cleared `running` already did.
+
+**The obvious fix is a no-op and would have shipped as one.** `stop()` begins
+`if (!this.running) return`, so calling it from the reaper does nothing at all —
+worse than nothing, because the next reader would believe the safety net was
+real.
+
+`reconcileTeardown()` instead: does this engine still OWN the table while
+holding scheduler entries it should have released? If so, name them and cancel
+them. Silent for every path that exists today. The ownership guard is what makes
+it safe — if a REPLACEMENT engine has claimed the tableId those entries are ITS
+entries, and cancelling them is exactly how a table permanently loses its
+watchdog, so a superseded instance touches nothing. That case is pinned by test.
+
+### Tests
+
+`TeardownReconcile.test.ts` (new, 4). Server suite **1,116 passed / 108 files**;
+`tsc --noEmit` clean on `server/tsconfig.json`.
+
 ---
 
 ## Cowork session 2026-08-22 (6) — MOBILE TABLE PHASE 3: pending settlement, dead props, probe-verified non-changes (PR #280)

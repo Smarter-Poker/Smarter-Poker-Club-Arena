@@ -879,6 +879,14 @@ export default function TablePage({
     }
     return () => {
       chestChannelRef.current = null;
+      // 2026-08-22: actually release the channel. Nulling the ref alone
+      // leaked one subscribed Supabase channel per table mount (x6 in
+      // MultiTablePage) for the life of the page.
+      try {
+        masterBus.removeRegisteredChannel(`mystery-chest-${tableId}`);
+      } catch {
+        /* best effort */
+      }
     };
   }, [tableId]);
   const [username, setUsername] = useState<string>('Player');
@@ -952,6 +960,7 @@ export default function TablePage({
     snapshot: engineSnapshot,
     status: engineWsStatus,
     lastEvent: engineLastEvent,
+    lastError: engineLastError,
   } = useEngineTableState(tableId || undefined, { enabled: USE_ENGINE_WS });
   // Phase 1.2 PR-F: disconnect FSM states per userId, surfaced by the
   // engine WS payload. Drives DisconnectToast below.
@@ -1514,10 +1523,41 @@ export default function TablePage({
   // restores server-truth on mount — so take it rather than sitting dead.
   // Guarded to once per 2 minutes via sessionStorage so a hard outage cannot
   // reload-loop the browser.
+  // 2026-08-22 review: count consecutive 4404 (table not found) closes. The
+  // engine returns 4404 for ~2 minutes after every restart while tables
+  // rehydrate — that must keep retrying quietly. But a table that answers
+  // 4404 over and over is genuinely gone, and reloading the page cannot
+  // resurrect it: the old failsafe reload-looped the browser every 2 minutes
+  // forever. After 3 consecutive 4404s we suppress the reload failsafe and
+  // tell the player once instead.
+  const notFoundCountRef = useRef(0);
+  const tableClosedToastShownRef = useRef(false);
+  useEffect(() => {
+    if (!engineLastError) return;
+    if (engineLastError.code === 4404) {
+      notFoundCountRef.current += 1;
+      if (notFoundCountRef.current >= 3 && !tableClosedToastShownRef.current) {
+        tableClosedToastShownRef.current = true;
+        heartbeatToastRef.current?.info?.('This Table Is No Longer Running');
+      }
+    } else if (engineLastError.code !== undefined) {
+      notFoundCountRef.current = 0;
+    }
+  }, [engineLastError]);
+  useEffect(() => {
+    if (engineWsStatus === 'connected') {
+      notFoundCountRef.current = 0;
+      tableClosedToastShownRef.current = false;
+    }
+  }, [engineWsStatus]);
+
   useEffect(() => {
     if (engineWsStatus !== 'failed') return;
     const t = window.setTimeout(() => {
       if (document.visibilityState !== 'visible') return;
+      // A repeatedly-404ing table is closed, not wedged — a reload cannot
+      // help and used to loop the browser every 2 minutes indefinitely.
+      if (notFoundCountRef.current >= 3) return;
       const KEY = 'ca_ws_autoreload_at';
       const last = Number(sessionStorage.getItem(KEY) || 0);
       if (Date.now() - last < 120_000) return;
@@ -3728,16 +3768,36 @@ export default function TablePage({
         }
       }
     };
-    // Initial fetch + retry at 2s, then poll every 5s
-    fetchExistingHand();
-    retryTimer = setTimeout(fetchExistingHand, 2000);
-    pollTimer = setInterval(fetchExistingHand, 5000);
+    // Initial fetch + retry at 2s, then poll every 5s.
+    // 2026-08-22: BOUNDED. For an observer or a sat-out player no hole-card
+    // row ever appears, and the old unconditional setInterval polled Supabase
+    // every 5s forever — x6 tables in MultiTablePage. The poll now stops
+    // after ~2 minutes without a recovery; every HAND_STARTED re-arms a fresh
+    // bounded cycle, so a player who gets dealt in is always covered.
+    const MAX_POLL_ATTEMPTS = 24;
+    let pollAttempts = 0;
+    const startPolling = () => {
+      if (retryTimer) clearTimeout(retryTimer);
+      if (pollTimer) clearInterval(pollTimer);
+      pollAttempts = 0;
+      fetchExistingHand();
+      retryTimer = setTimeout(fetchExistingHand, 2000);
+      pollTimer = setInterval(() => {
+        if (heroCardsRecoveredRef.current || ++pollAttempts > MAX_POLL_ATTEMPTS) {
+          if (pollTimer) clearInterval(pollTimer);
+          pollTimer = null;
+          return;
+        }
+        fetchExistingHand();
+      }, 5000);
+    };
+    startPolling();
     // Expose so HAND_STARTED can re-arm the fetch for the new hand.
     heroCardFetchRef.current = () => {
       if (!cancelled) {
-        // New hand: re-arm recovery so the poll runs again for the new cards.
+        // New hand: re-arm recovery so the bounded poll runs again.
         heroCardsRecoveredRef.current = false;
-        fetchExistingHand();
+        startPolling();
       }
     };
     return () => {
@@ -5726,24 +5786,35 @@ export default function TablePage({
   // 2026-08-22: these toasts used to watch the LEGACY Supabase channel, so
   // players saw "Connection lost" on a healthy game (Supabase blip) and saw
   // NOTHING when the actual game socket died. Watch the engine WS instead.
-  const prevEngineConnectedRef = useRef<boolean | null>(null);
+  //
+  // Review fix (same day): DEBOUNCED for real this time. The engine socket
+  // flips through 'reconnecting' on every watchdog escalation, and the first
+  // version fired a toast + sound on every flip — and fired a spurious
+  // "Reconnected" on every fresh table mount (idle → connecting → connected
+  // counts as a reconnect if you only track booleans). Rules now:
+  //   - never toast until the FIRST successful connect has been seen;
+  //   - "Connection lost" only after 3s of continuous disconnection;
+  //   - "Reconnected" only if the loss toast was actually shown.
+  const engineToastStateRef = useRef({ everConnected: false, lossToastShown: false });
   useEffect(() => {
-    const connected = engineWsStatus === 'connected';
-    // Skip initial mount (status starts 'connecting' before first connect)
-    if (prevEngineConnectedRef.current === null) {
-      prevEngineConnectedRef.current = connected;
+    const st = engineToastStateRef.current;
+    if (engineWsStatus === 'connected') {
+      st.everConnected = true;
+      if (st.lossToastShown) {
+        st.lossToastShown = false;
+        heartbeatToastRef.current?.success?.('Reconnected');
+        if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playReconnect();
+      }
       return;
     }
-    if (!connected && prevEngineConnectedRef.current) {
-      // Only announce a real outage, not a sub-second blip: reconnecting
-      // status with an instant recovery never reaches the player.
-      toast?.warning?.('Connection lost - reconnecting…');
+    if (!st.everConnected) return; // initial mount noise
+    const t = window.setTimeout(() => {
+      if (st.lossToastShown) return;
+      st.lossToastShown = true;
+      heartbeatToastRef.current?.warning?.('Connection lost - reconnecting…');
       if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playDisconnect();
-    } else if (connected && !prevEngineConnectedRef.current) {
-      toast?.success?.('Reconnected');
-      if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playReconnect();
-    }
-    prevEngineConnectedRef.current = connected;
+    }, 3000);
+    return () => window.clearTimeout(t);
   }, [engineWsStatus]);
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -7748,6 +7819,16 @@ export default function TablePage({
   }, [tableState.handNumber, tableState.heroSeat, tableState.players]);
 
   // Update players from presence state
+  // 2026-08-22: GHOST-SEAT GUARD. Once the engine snapshot has arrived, the
+  // engine is the only authority on who sits where — Supabase presence lags
+  // seat changes and lingers after leaves, and this merge used to inject a
+  // 0-stack "ghost" player into a seat the engine says is empty (visible
+  // flicker, and validateAndExecuteAction reads players[heroSeat-1], so a
+  // ghost in the hero seat could block real actions). Presence may seed seats
+  // ONLY before the first engine snapshot (bootstrap), and afterwards may
+  // only backfill a missing avatar for the SAME player id.
+  const engineSnapArrivedRef = useRef(false);
+  if (engineSnapshot !== null) engineSnapArrivedRef.current = true;
   useEffect(() => {
     if (!presence) return;
 
@@ -7755,12 +7836,20 @@ export default function TablePage({
     setTableState((prev) => {
       const updatedPlayers = [...prev.players];
       let hasChanges = false;
+      const engineAuthoritative = engineSnapArrivedRef.current;
 
       presence.players.forEach((p) => {
         if (p.seatNumber !== undefined) {
           const seatIdx = p.seatNumber - 1;
           if (seatIdx >= 0 && seatIdx < updatedPlayers.length) {
             const existing = updatedPlayers[seatIdx];
+            if (engineAuthoritative) {
+              if (existing && existing.id === p.userId && !existing.avatar && p.avatar) {
+                updatedPlayers[seatIdx] = { ...existing, avatar: p.avatar };
+                hasChanges = true;
+              }
+              return;
+            }
             // Only update if actually different to prevent loops
             if (!existing || existing.id !== p.userId) {
               updatedPlayers[seatIdx] = {

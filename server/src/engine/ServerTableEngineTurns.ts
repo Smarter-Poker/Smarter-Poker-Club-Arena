@@ -1537,6 +1537,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     const handControllerRef = this.handController;
 
+    // 2026-08-22: clear any prior think-timer before overwriting the handle —
+    // re-entry used to orphan the previous setTimeout (it still fired; only
+    // the identity guards below kept it harmless).
+    if (this.horseActionTimer) {
+      clearTimeout(this.horseActionTimer);
+      this.horseActionTimer = null;
+    }
     this.horseActionTimer = setTimeout(() => {
       this.horseActionTimer = null;
       if (!handControllerRef || !this.running) return;

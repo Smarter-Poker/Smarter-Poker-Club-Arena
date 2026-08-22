@@ -7,6 +7,91 @@
 
 ---
 
+## Cowork session 2026-08-22 (4) — CONNECTIVITY HARDENING ROUND 2: adversarial review + deferred items
+
+An adversarial line-by-line review of round 2's own diff (PR #240) found 13
+real defects it introduced or left; all are fixed here, plus every item round
+2 deferred.
+
+### Round-1 defects corrected
+
+1. stop() ownership was checked BEFORE the 15s flushSnapshot await (TOCTOU) —
+   a slow DB let a superseded engine resume "owner" and cancel the successor's
+   timers anyway. Ownership is now re-read after the await.
+2. The hand-void timer's supersession early-exit left handController set — a
+   superseded-but-running engine could deal the next hand. Local teardown now
+   always happens.
+3. clearTable skipping namespaced countdowns let disconnect/timebank
+   countdowns leak ACROSS hands (phantom timeout strikes, a bank folding a
+   live player at the same seat next hand — compounded by idempotent
+   registerPlayer persisting strikes). New hand-boundary cleanup:
+   DisconnectEngine.cancelAllCountdowns + TimeBankEngine.cancelActiveForTable,
+   called at HAND_COMPLETE through the owning engines so paired state stays
+   consistent.
+4. onResync/onConnect in the WS server ran unguarded before close handlers
+   were attached — a throw leaked a hub-subscribed socket forever. Guarded on
+   both single-table and mux paths.
+5. Client openOnce had no single-flight guard: a late onclose during the
+   getToken await could double-open and orphan a permanently-OPEN socket
+   (which also defeated the server's last-socket disconnect detection). Both
+   clients now have an `opening` single-flight + live-socket guard.
+6. Equity worker respawn could spin unbounded against a broken build artifact
+   (async error/exit re-triggered respawn). Now budgeted (10) + 2s delayed,
+   budget refilled by any successful reply.
+7. Queued equity jobs that timed out all ran synchronous fallbacks
+   back-to-back on the event loop. Now drained one per macrotask.
+8. Toast context value still changed identity on every toast (toasts was in
+   the memo deps). toasts is now exposed via a stable getter; context value
+   identity is permanent.
+9. Connection toasts now actually debounced (3s of continuous disconnection)
+   and no longer fire a spurious "Reconnected" on every table mount.
+10. The 4404 reload loop survived round 2 (failed->reconnecting->failed
+    oscillation still completed the 20s failsafe). Three consecutive 4404s now
+    suppress the reload and show "This Table Is No Longer Running" once.
+11. RoomService rebind + stacked Supabase channels = duplicate deliveries.
+    TableWebSocket now removes its previous channel before creating a new one.
+12. leaveTable's auto_fold fired an invalid queued->queued FSM transition into
+    Sentry when a pre-action was already queued; setPreAction now steps
+    through idle when re-queueing.
+13. Stale eventsPerSecond comments corrected.
+
+### Deferred items closed
+
+- IDLE BROADCAST: broadcastCurrentState now publishes a real 'waiting'-stage
+  payload (seats/stacks from seatedPlayers) when no hand is live, and the
+  waiting-for-players loop publishes it each sweep (hub drops empty patches).
+  End-of-hand "clean state" publish works for the first time; a client joining
+  an idle table gets a SNAPSHOT instead of an eternal spinner.
+- /health liveness race: process only reports 'dead' once a table has stalled
+  past the ENTIRE in-process recovery chain (300s), so Docker no longer
+  restarts the container (voiding every in-flight hand) while per-table
+  recovery is mid-flight. 120s stalls still reported for visibility.
+- postHandTasks await bounded at 45s (was unbounded; correlated DB degradation
+  could trip the 90s idle watchdog fleet-wide).
+- horseActionTimer/pineappleDiscardTimer cleared on stop()/killForRestart();
+  horse think-timer re-entry clears its predecessor.
+- HandController.emit: per-listener try/catch — a subscriber throw can no
+  longer unwind into mid-settlement state.
+- start() failure path now killForRestart() instead of a bare running=false
+  (could leak an armed heartbeat entry).
+- EngineSocketMux (flag still OFF, now actually shippable): physical-socket
+  staleness watchdog + handshake timeout + half-open replacement at acquire,
+  SUBSCRIBE->SUBSCRIBED timeout per facade, dedicated 4901 supersession close
+  code (EngineStateClient stands down instead of mutual-eviction ping-pong),
+  ERROR close-code fidelity (TABLE_NOT_FOUND->4404, BANNED->4403).
+- Ghost-seat guard: after the first engine snapshot, Supabase presence can no
+  longer inject 0-stack players into engine-empty seats (only same-id avatar
+  backfill).
+- GameServerAPI circuit breaker resets on the browser 'online' event.
+- Mystery-chest channel released on unmount (was one leaked subscribed channel
+  per table mount).
+- Hero hole-card poll bounded (~2 min) and re-armed per hand — observers and
+  sat-out players no longer poll Supabase every 5s forever.
+
+### Tests
+
+ConnectivityHardening.test.ts extended (hand-boundary countdown cleanup).
+Client 2915 passed / 5 skipped, server 1038 passed, tsc clean on both configs.
 ## Cowork session 2026-08-22 (3) — mobile table audit: 8 items from Dan's screenshots (PR #243)
 
 Dan supplied six phone screenshots and eight numbered complaints. All eight are

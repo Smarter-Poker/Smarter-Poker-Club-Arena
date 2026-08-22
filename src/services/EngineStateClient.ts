@@ -21,7 +21,7 @@
  */
 
 import jsonPatch from 'fast-json-patch';
-import { engineSocketMux, isMuxEnabled } from './EngineSocketMux';
+import { engineSocketMux, isMuxEnabled, CLOSE_MUX_SUPERSEDED } from './EngineSocketMux';
 import type { Operation } from 'fast-json-patch';
 const { applyPatch } = jsonPatch;
 
@@ -147,6 +147,14 @@ export class EngineStateClient {
   private unansweredResyncs = 0;
   /** 2026-08-22: bounds the CONNECTING state — see openOnce. */
   private handshakeTimer: number | null = null;
+  /**
+   * 2026-08-22 review: single-flight guard for openOnce. openOnce awaits
+   * getToken() BEFORE assigning this.ws, so during that window this.ws is
+   * null and a late onclose from a detached socket could schedule a second
+   * reconnect — two live sockets, one orphaned OPEN forever (which also
+   * defeated the server's last-socket disconnect detection).
+   */
+  private opening = false;
   private onVisibility: (() => void) | null = null;
   /** Dan 2026-08-21: browser 'online' hook for instant post-outage reconnect. */
   private onOnline: (() => void) | null = null;
@@ -261,6 +269,19 @@ export class EngineStateClient {
   // ─── Internal ─────────────────────────────────────────────────────────────
 
   private async openOnce(): Promise<void> {
+    // Single-flight + live-socket guard (see `opening`). scheduleReconnect's
+    // timer, the online handler and connect() can all race into here.
+    if (this.opening) return;
+    if (this.ws !== null && this.ws.readyState <= 1 /* OPEN or CONNECTING */) return;
+    this.opening = true;
+    try {
+      await this.openOnceInner();
+    } finally {
+      this.opening = false;
+    }
+  }
+
+  private async openOnceInner(): Promise<void> {
     this.setStatus(this.retryCount === 0 ? 'connecting' : 'reconnecting');
     // 2026-08-22: getToken (supabase.auth.getSession) can REJECT — network
     // error, storage error, auth-js internal throw. This await used to be
@@ -401,6 +422,14 @@ export class EngineStateClient {
         this.opts.onError({ code: e.code, reason: e.reason });
         this.retryCount = Math.max(this.retryCount, 5); // start at ~16s+ delays
         this.scheduleReconnect();
+        return;
+      }
+
+      // 2026-08-22 (mux): a newer client instance claimed this table's
+      // facade. Reconnecting would evict IT and ping-pong forever — the old
+      // owner stands down for good. The newer instance carries the game.
+      if (e.code === CLOSE_MUX_SUPERSEDED) {
+        this.setStatus('idle');
         return;
       }
 
@@ -955,7 +984,23 @@ export class EngineChannelClient {
 
   // ─── Internal ─────────────────────────────────────────────────────────────
 
+  private opening = false;
+
   private async openOnce(): Promise<void> {
+    // Single-flight + live-socket guard — same race as EngineStateClient:
+    // openOnce awaits getToken before assigning this.ws, so overlapping
+    // invocations would create a second socket and orphan one.
+    if (this.opening) return;
+    if (this.ws !== null && this.ws.readyState <= 1 /* OPEN or CONNECTING */) return;
+    this.opening = true;
+    try {
+      await this.openOnceInner();
+    } finally {
+      this.opening = false;
+    }
+  }
+
+  private async openOnceInner(): Promise<void> {
     this.setStatus(this.retryCount === 0 ? 'connecting' : 'reconnecting');
     // 2026-08-22: a getToken rejection must be a retry, not the permanent end
     // of the reconnect ladder (same fix as EngineStateClient.openOnce).

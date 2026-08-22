@@ -21,6 +21,7 @@ import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import haptic from '../services/HapticService';
 import ClubBottomNav from '../components/club/ClubBottomNav';
+import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import {
   CashGameCard,
   TournamentCard,
@@ -169,14 +170,14 @@ interface WalletBalances {
  * and ordering moved to an explicit sort control instead of being implied by
  * whichever tab happened to be selected.
  */
-type GameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
+type GameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
 type SortKey = 'recommended' | 'stakes_high' | 'stakes_low' | 'players' | 'starting_soon';
 type TournVariant = 'ALL' | 'MTT' | 'Spin-It' | 'SN';
 /* The CashSubFilter / TournamentSubFilter types went with the state they
    described (see the note further down). Status is one mechanism now:
    GameFilterValue.statuses, defined per game type in advancedFilterSpec. */
 
-const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'MIXED'];
+const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'LIMIT', 'MIXED'];
 const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
 
 /**
@@ -190,9 +191,10 @@ const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
  */
 const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
   { key: 'MTT', label: 'MTT' },
-  { key: 'HOLDEM', label: "Hold'em" },
+  { key: 'HOLDEM', label: 'NLH' },
   { key: 'OMAHA', label: 'Omaha' },
-  { key: 'SPIN', label: 'Spin' },
+  { key: 'LIMIT', label: 'Limit' },
+  { key: 'SPIN', label: 'Spins' },
   { key: 'SNG', label: 'Heads Up' },
 ];
 
@@ -212,20 +214,22 @@ const TOURN_VARIANT_FOR: Partial<Record<GameType, TournVariant>> = {
 };
 
 /** Classify a cash table into the bar's three cash types. */
-function cashKind(t: { game_variant?: string }): 'HOLDEM' | 'OMAHA' | 'MIXED' {
+function cashKind(t: { game_variant?: string }): 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' {
   const v = (t.game_variant || '').toLowerCase();
   // 'short' is Short Deck, which is a Hold'em variant — it belongs with NLH,
   // not in the Mixed bucket where an unlisted string falls.
+  if (v.includes('flh') || (v.includes('limit') && !v.includes('no') && !v.includes('pot')))
+    return 'LIMIT';
   if (v.includes('nlh') || v.includes('holdem') || v.includes("hold'em") || v.includes('short'))
     return 'HOLDEM';
   if (v.includes('plo') || v.includes('omaha')) return 'OMAHA';
   return 'MIXED';
 }
 
-// ── Lobby ordering (used by the ALL view): Hold'em → Omaha → Mixed for cash ──
+// ── Lobby ordering (used by the ALL view): Hold'em → Omaha → Limit → Mixed for cash ──
 function cashRank(t: { game_variant?: string }): number {
   const kind = cashKind(t);
-  return kind === 'HOLDEM' ? 0 : kind === 'OMAHA' ? 1 : 2;
+  return kind === 'HOLDEM' ? 0 : kind === 'OMAHA' ? 1 : kind === 'LIMIT' ? 2 : 3;
 }
 // Tournaments open for registration (or not past late-reg) come first, soonest first.
 function tournamentOpenFirst(
@@ -323,6 +327,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null);
   const [isInUnion, setIsInUnion] = useState(false);
+  const [unionIdForCreate, setUnionIdForCreate] = useState<string | undefined>(undefined);
+  const [showCreateTournament, setShowCreateTournament] = useState(false);
   const [clubLevel, setClubLevel] = useState<ClubLevelInfo | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const toast = useToast();
@@ -911,6 +917,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           if (getIsMounted && !getIsMounted()) return;
           setIsInUnion(true);
           unionId = ucRow.union_id;
+          setUnionIdForCreate(ucRow.union_id);
 
           // Get ALL club IDs in this union + member count in parallel
           const [allUcResult, memberCountResult] = await Promise.all([
@@ -2169,13 +2176,23 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       <div className="club-home__games">
         {/* CREATE NEW TABLE - Only visible to owners/admins of STANDALONE clubs (not in a union) */}
         {(isOwner || userRole === 'admin') && !isInUnion && (
-          <Link to={`/clubs/${clubId}/create-table`} className="create-table-card">
+          <div
+            className="create-table-card"
+            style={{ cursor: 'pointer' }}
+            onClick={() => {
+              if (['MTT', 'SNG', 'SPIN'].includes(gameType)) {
+                setShowCreateTournament(true);
+              } else {
+                navigate(`/clubs/${clubId}/create-table`);
+              }
+            }}
+          >
             <div className="create-table-card__table">
               <div className="new-badge">NEW</div>
               <div className="plus-icon">+</div>
             </div>
             <span className="create-table-card__label">Create New Table</span>
-          </Link>
+          </div>
         )}
 
         {/* TOURNAMENT CARDS FIRST — ALL view shows tournaments (open-for-reg,
@@ -2369,6 +2386,20 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         }}
         onCancel={() => setDeleteTableConfirm({ show: false, tableId: null, tableName: null })}
       />
+
+      {showCreateTournament && resolvedClubId && (
+        <CreateTournamentModal
+          clubId={resolvedClubId}
+          unionId={unionIdForCreate}
+          onClose={() => setShowCreateTournament(false)}
+          onSuccess={() => {
+            setShowCreateTournament(false);
+            haptic.success();
+            toast.success('Tournament created successfully');
+            // Tables auto-refresh via the visibility hook / focus return
+          }}
+        />
+      )}
     </div>
   );
 }

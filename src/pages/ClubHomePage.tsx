@@ -23,12 +23,21 @@ import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import haptic from '../services/HapticService';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
+/* LOBBY V2 (Dan 2026-08-22): the large card grid (DynamicGameCard) is replaced
+   by the dense line-based LobbyTable + the CasinoPlaque game lobby panel.
+   Selecting a row NEVER joins or spends; every commit action goes through the
+   panel, which reuses the existing flows (navigate-to-table seat+buy-in,
+   WaitlistService, TournamentService, spinQuickJoin). */
+import LobbyTable, { type LobbyCategory } from '../components/lobby/LobbyTable';
+import GameLobbyPanel from '../components/lobby/GameLobbyPanel';
 import {
-  CashGameCard,
-  TournamentCard,
-  SNGCard,
-  SpinCard,
-} from '../components/lobby/DynamicGameCard';
+  cashEntry,
+  tournamentEntry,
+  classifyTournament,
+  type LobbyEntry,
+  type LobbyTournamentRow,
+} from '../components/lobby/lobbyEntries';
+import { tournamentService } from '../services/TournamentService';
 import { getClubLevel, ClubLevelInfo } from '../utils/clubLevels';
 import { BusToastBridge } from '../components/common/BusToastBridge';
 import { DiamondService } from '../services/DiamondService';
@@ -191,6 +200,9 @@ const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
  * everything expects to find them.
  */
 const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
+  /* LOBBY V2: All Games is a real tab now — the line-based table renders a
+     combined column set for it, so it no longer needs to be hidden. */
+  { key: 'ALL', label: 'All Games' },
   { key: 'MTT', label: 'MTT' },
   { key: 'HOLDEM', label: 'NLH' },
   { key: 'OMAHA', label: 'Omaha' },
@@ -258,18 +270,6 @@ function tournamentOpenFirst(
  * in-tab lobby fell back to the pre-lobby landing page instead of the actual
  * club lobby the player came from.
  */
-/** Seconds between one card's entrance and the next. */
-const STAGGER_STEP = 0.08;
-
-/**
- * Cards past this index all animate together.
- *
- * Roughly a screenful on the 375px target. Beyond it the stagger is invisible
- * (the card is below the fold) but still delays the card's appearance, which
- * is how a 108-card lobby ended up finishing its entrance 8.6s late.
- */
-const STAGGER_MAX = 11;
-
 export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
   const { clubId: routeClubId } = useParams<{ clubId: string }>();
   const clubId = clubIdOverride || routeClubId;
@@ -310,6 +310,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // a literal no-op. It now toggles a real search box that filters both the
   // cash tables and the tournament cards by name.
   const [searchQuery, setSearchQuery] = useState('');
+  // LOBBY V2: show only starred cash tables. Declared here (not with the rest
+  // of the V2 state) because `narrowing` and `clearAllNarrowing` read it.
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [isEditingNotice, setIsEditingNotice] = useState(false);
   const [noticeDraft, setNoticeDraft] = useState('');
   const [isSavingNotice, setIsSavingNotice] = useState(false);
@@ -1302,9 +1305,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       filtered,
       searching,
       tabbed: gameType !== 'ALL',
-      any: filtered || searching || gameType !== 'ALL',
+      any: filtered || searching || gameType !== 'ALL' || favoritesOnly,
     };
-  }, [gameType, advFilters, searchQuery]);
+  }, [gameType, advFilters, searchQuery, favoritesOnly]);
 
   /**
    * Clear EVERY narrowing at once.
@@ -1317,6 +1320,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const clearAllNarrowing = useCallback(() => {
     haptic.selection();
     setSearchQuery('');
+    setFavoritesOnly(false);
     setGameType('ALL');
     if (narrowing.fSpec) {
       const next: FilterStore = {
@@ -1471,25 +1475,195 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     [currentUserId, toast]
   );
 
-  /**
-   * Entrance-animation delay for the card at `idx`, in seconds.
-   *
-   * The stagger used to be a flat `idx * 0.08` with no ceiling. Measured on
-   * production this lobby renders 108 to 137 cards, so the last one began
-   * animating 8.6 to 11 SECONDS after the data arrived, and `both` fill keeps
-   * a card at opacity 0 until its delay elapses. The effect was a lobby that
-   * appeared to still be loading for another nine seconds after it had
-   * finished loading, which is worse than no animation at all.
-   *
-   * Capping at STAGGER_MAX keeps the effect where it is actually visible (the
-   * first screenful) and lets everything below the fold arrive at once. A
-   * player who scrolls immediately finds cards already there instead of
-   * scrolling into blank space waiting for its turn.
-   */
-  const cardDelay = (idx: number) => `${Math.min(idx, STAGGER_MAX) * STAGGER_STEP}s`;
+  // ═══════════════════════════════════════════════════════════════════════
+  // LOBBY V2 — player relationship to games (seated / registered / favorite)
+  // plus row selection + the game lobby panel.
+  // ═══════════════════════════════════════════════════════════════════════
+  const [seatedTableIds, setSeatedTableIds] = useState<Set<string>>(new Set());
+  const [registeredTournamentIds, setRegisteredTournamentIds] = useState<Set<string>>(new Set());
+  const [favoriteTableIds, setFavoriteTableIds] = useState<Set<string>>(new Set());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
 
-  /** How many cards the grid is about to render. */
-  const shownCount = filteredTables.length + filteredTournaments.length;
+  const loadMyGameStates = useCallback(async () => {
+    if (!currentUserId) {
+      setSeatedTableIds(new Set());
+      setRegisteredTournamentIds(new Set());
+      setFavoriteTableIds(new Set());
+      return;
+    }
+    try {
+      const [seatsRes, regsRes, favsRes] = await Promise.all([
+        supabase
+          .from('table_seats')
+          .select('table_id')
+          .eq('user_id', currentUserId)
+          .is('left_at', null),
+        supabase
+          .from('tournament_players')
+          .select('tournament_id')
+          .eq('user_id', currentUserId)
+          .in('status', ['registered', 'playing']),
+        supabase.from('favorite_tables').select('table_id').eq('user_id', currentUserId),
+      ]);
+      setSeatedTableIds(new Set((seatsRes.data || []).map((r) => r.table_id)));
+      setRegisteredTournamentIds(new Set((regsRes.data || []).map((r) => r.tournament_id)));
+      setFavoriteTableIds(new Set((favsRes.data || []).map((r) => r.table_id)));
+    } catch (e) {
+      reportError(e, 'ClubHomePage.loadMyGameStates');
+    }
+  }, [currentUserId]);
+
+  useEffect(() => {
+    loadMyGameStates();
+  }, [loadMyGameStates]);
+
+  // Keep the seated / registered chips live: these events already fire on the
+  // bus for the balance reload; they also change my relationship to the rows.
+  useEffect(() => {
+    const unsubs = [
+      masterBus.subscribeDebounced('TABLE_SEATED', loadMyGameStates, 300),
+      masterBus.subscribeDebounced('TABLE_LEFT', loadMyGameStates, 300),
+      masterBus.subscribeDebounced('TOURNAMENT_REGISTERED', loadMyGameStates, 300),
+      masterBus.subscribeDebounced('TOURNAMENT_UPDATED', loadMyGameStates, 300),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, [loadMyGameStates]);
+
+  /** Star / unstar a cash table. Reuses the favorite_tables infrastructure. */
+  const handleToggleFavorite = useCallback(
+    async (tableId: string, next: boolean) => {
+      if (!currentUserId) {
+        toast.error('Sign In To Save Favorites');
+        return;
+      }
+      haptic.selection();
+      setFavoriteTableIds((prev) => {
+        const s = new Set(prev);
+        if (next) s.add(tableId);
+        else s.delete(tableId);
+        return s;
+      });
+      try {
+        if (next) {
+          const { error } = await supabase
+            .from('favorite_tables')
+            .insert({ user_id: currentUserId, table_id: tableId });
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from('favorite_tables')
+            .delete()
+            .eq('user_id', currentUserId)
+            .eq('table_id', tableId);
+          if (error) throw error;
+        }
+      } catch (e) {
+        // Roll back the optimistic star; the row did not change.
+        setFavoriteTableIds((prev) => {
+          const s = new Set(prev);
+          if (next) s.delete(tableId);
+          else s.add(tableId);
+          return s;
+        });
+        reportError(e, 'ClubHomePage.handleToggleFavorite', { tableId, next });
+        toast.error(next ? 'Could Not Save Favorite' : 'Could Not Remove Favorite');
+      }
+    },
+    [currentUserId, toast]
+  );
+
+  /** Row selection — opens the game lobby panel. NEVER joins or spends. */
+  const openEntry = useCallback((entry: LobbyEntry) => {
+    haptic.selection();
+    setSelectedId(entry.id);
+    setPanelOpen(true);
+  }, []);
+
+  const handleJoinTable = useCallback(
+    (tableId: string) => {
+      haptic.medium();
+      setPanelOpen(false);
+      // Existing launch flow: seat choice + buy-in validation happen AT the
+      // table (fn_take_seat_and_buy_in) — nothing is spent from the lobby.
+      navigate(`/table/${tableId}`);
+    },
+    [navigate]
+  );
+
+  const handleRegister = useCallback(
+    async (t: LobbyTournamentRow) => {
+      if (!currentUserId) {
+        toast.error('Sign In To Register');
+        return;
+      }
+      if (actionBusy) return;
+      setActionBusy(true);
+      try {
+        const username = useUserStore.getState().user?.username || 'Player';
+        // Server-authoritative: fn_register_for_tournament validates status,
+        // late reg, capacity, duplicates and BALANCE, and debits atomically.
+        await tournamentService.registerPlayer(t.id, currentUserId, username);
+        setRegisteredTournamentIds((prev) => new Set(prev).add(t.id));
+        toast.success(`You Are Registered For ${t.name}`);
+      } catch (e) {
+        reportError(e, 'ClubHomePage.handleRegister', { tournamentId: t.id });
+        toast.error(e instanceof Error ? e.message : 'Registration Failed, Please Try Again');
+      } finally {
+        setActionBusy(false);
+      }
+    },
+    [currentUserId, actionBusy, toast]
+  );
+
+  const handleUnregister = useCallback(
+    async (t: LobbyTournamentRow) => {
+      if (!currentUserId || actionBusy) return;
+      setActionBusy(true);
+      try {
+        await tournamentService.unregisterPlayer(t.id, currentUserId);
+        setRegisteredTournamentIds((prev) => {
+          const s = new Set(prev);
+          s.delete(t.id);
+          return s;
+        });
+        toast.success('You Are No Longer Registered');
+      } catch (e) {
+        reportError(e, 'ClubHomePage.handleUnregister', { tournamentId: t.id });
+        toast.error(e instanceof Error ? e.message : 'Could Not Unregister, Please Try Again');
+      } finally {
+        setActionBusy(false);
+      }
+    },
+    [currentUserId, actionBusy, toast]
+  );
+
+  // ── LOBBY V2 view models — the SAME filtered/sorted rows, normalized ──
+  const lobbyEntries = useMemo<LobbyEntry[]>(() => {
+    const tourns = filteredTournaments.map((t) =>
+      tournamentEntry(t as unknown as LobbyTournamentRow, classifyTournament(t as unknown as LobbyTournamentRow))
+    );
+    let cash = filteredTables.map(cashEntry);
+    if (favoritesOnly) cash = cash.filter((e) => favoriteTableIds.has(e.id));
+    // Tournaments first, cash after — same order the card grid used, so the
+    // page-level sort control keeps meaning what it meant.
+    return [...tourns, ...cash];
+  }, [filteredTournaments, filteredTables, favoritesOnly, favoriteTableIds]);
+
+  const selectedEntry = useMemo(
+    () => (selectedId ? lobbyEntries.find((e) => e.id === selectedId) || null : null),
+    [selectedId, lobbyEntries]
+  );
+
+  // A selected row that leaves the list (deleted, filtered out, status change)
+  // closes the panel rather than showing a stale game.
+  useEffect(() => {
+    if (panelOpen && selectedId && !selectedEntry) setPanelOpen(false);
+  }, [panelOpen, selectedId, selectedEntry]);
+
+  /** How many rows the lobby is about to render. */
+  const shownCount = lobbyEntries.length;
 
   /**
    * Everything the club is running, before ANY narrowing.
@@ -2125,123 +2299,67 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════
-                GAMES GRID - Tables & Create New Table Button
-            ═══════════════════════════════════════════════════════════════════ */}
-      <div className="club-home__games">
-        {GAME_TYPE_TABS.filter((tab) => tab.key !== 'ALL').map((tab) => {
-          if (gameType !== 'ALL' && gameType !== tab.key) return null;
-
-          const sectionTournaments = filteredTournaments.filter((t) => {
-            const tName = (t.name || '').toLowerCase();
-            const isSpin = tName.includes('spin');
-            const isSNG = !isSpin && (tName.includes('sng') || t.max_players <= 10);
-
-            if (tab.key === 'SPIN') return isSpin;
-            if (tab.key === 'SNG') return isSNG;
-            if (tab.key === 'MTT') return !isSpin && !isSNG;
-            return false;
-          });
-
-          const sectionTables = filteredTables.filter((t) => {
-            const kind = cashKind(t);
-            return kind === tab.key;
-          });
-
-          const canCreate = (isOwner || userRole === 'admin') && !isInUnion;
-
-          if (!canCreate && sectionTournaments.length === 0 && sectionTables.length === 0) {
-            if (gameType === 'ALL') return null;
-          }
-
-          return (
-            <div
-              key={tab.key}
-              className="game-section"
-              style={{ marginBottom: '24px', width: '100%' }}
+          LOBBY V2 — dense line-based game table + game lobby panel
+          ─────────────────────────────────────────────────────────────────
+          One compact row per game, columns adapted to the selected category.
+          Clicking a row SELECTS it and opens the CasinoPlaque game lobby —
+          it never joins, registers, or spends. All commit actions live in
+          the panel and reuse the existing platform flows.
+      ═══════════════════════════════════════════════════════════════════ */}
+      <div className="club-home__games club-home__games--v2">
+        <div className="lobby-actionsrow">
+          {/* CREATE NEW GAME - owners/admins of STANDALONE clubs only.
+              Same branch main shipped on the old create tile: a tournament
+              tab opens CreateTournamentModal, a cash tab goes to the
+              create-table page. */}
+          {(isOwner || userRole === 'admin') && !isInUnion && (
+            <button
+              type="button"
+              className="lobby-createbtn"
+              onClick={() => {
+                haptic.selection();
+                if (['MTT', 'SNG', 'SPIN'].includes(gameType)) {
+                  setShowCreateTournament(true);
+                } else {
+                  navigate(`/clubs/${clubId}/create-table`);
+                }
+              }}
             >
-              {gameType === 'ALL' && (
-                <h2
-                  style={{
-                    color: '#fff',
-                    fontSize: '1.2rem',
-                    marginBottom: '12px',
-                    paddingLeft: '4px',
-                  }}
-                >
-                  {tab.label}
-                </h2>
-              )}
+              + Create New {TOURNAMENT_TYPES.includes(gameType) ? 'Game' : 'Table'}
+            </button>
+          )}
+          {currentUserId && (gameType === 'ALL' || CASH_TYPES.includes(gameType)) && (
+            <button
+              type="button"
+              className={`lobby-favtoggle${favoritesOnly ? ' is-on' : ''}`}
+              aria-pressed={favoritesOnly}
+              onClick={() => {
+                haptic.selection();
+                setFavoritesOnly((v) => !v);
+              }}
+            >
+              Favorites
+            </button>
+          )}
+        </div>
 
-              {canCreate && (
-                <div
-                  className="create-table-card"
-                  style={{ cursor: 'pointer', marginBottom: '12px' }}
-                  onClick={() => {
-                    if (['MTT', 'SNG', 'SPIN'].includes(tab.key)) {
-                      setShowCreateTournament(true);
-                    } else {
-                      navigate(`/clubs/${clubId}/create-table`);
-                    }
-                  }}
-                >
-                  <div className="create-table-card__table">
-                    <div className="new-badge">NEW</div>
-                    <div className="plus-icon">+</div>
-                  </div>
-                  <span className="create-table-card__label">CREATE NEW TABLE +</span>
-                </div>
-              )}
-
-              {sectionTournaments.map((tournament, idx) => {
-                const tName = (tournament.name || '').toLowerCase();
-                const isSNG = tName.includes('sng') || tournament.max_players <= 10;
-                const isSpin = tName.includes('spin');
-
-                return (
-                  <div
-                    key={tournament.id}
-                    style={{
-                      animation: `slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) ${cardDelay(idx)} both`,
-                      marginBottom: '8px',
-                    }}
-                  >
-                    {isSpin && <SpinCard tournament={tournament} onQuickJoin={spinQuickJoin} />}
-                    {isSNG && !isSpin && (
-                      <SNGCard
-                        tournament={tournament}
-                        onQuickJoin={(t) => spinQuickJoin(t, 'sng')}
-                      />
-                    )}
-                    {!isSpin && !isSNG && <TournamentCard tournament={tournament} />}
-                  </div>
-                );
-              })}
-
-              {sectionTables.map((table, idx) => {
-                const staggerIdx = sectionTournaments.length + idx;
-                return (
-                  <div
-                    key={table.id}
-                    style={{
-                      animation: `slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) ${cardDelay(staggerIdx)} both`,
-                      marginBottom: '8px',
-                    }}
-                  >
-                    <CashGameCard
-                      table={table}
-                      isAdmin={isOwner || userRole === 'admin'}
-                      waitlisted={waitlistedTableIds.has(table.id)}
-                      onWaitlistToggle={currentUserId ? handleWaitlistToggle : undefined}
-                      onDelete={(id) => {
-                        setDeleteTableConfirm({ show: true, tableId: id, tableName: table.name });
-                      }}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })}
+        {lobbyEntries.length > 0 && (
+          <LobbyTable
+            entries={lobbyEntries}
+            category={gameType as LobbyCategory}
+            selectedId={panelOpen ? selectedId : null}
+            onSelect={openEntry}
+            onActivate={openEntry}
+            loading={loading}
+            ctx={{
+              waitlistedIds: waitlistedTableIds,
+              seatedIds: seatedTableIds,
+              registeredIds: registeredTournamentIds,
+              favoriteIds: favoriteTableIds,
+              onToggleFavorite: currentUserId ? handleToggleFavorite : undefined,
+            }}
+          />
+        )}
 
         {/* ═══════════════════════════════════════════════════════════════
             EMPTY STATE — say WHY, and offer the way out
@@ -2258,8 +2376,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             It now distinguishes the three real causes and, when the player
             caused it, clears the cause in one tap.
         ═══════════════════════════════════════════════════════════════ */}
-        {filteredTables.length === 0 &&
-          filteredTournaments.length === 0 &&
+        {lobbyEntries.length === 0 &&
           (() => {
             // Same three causes the result count reads, from the same place.
             const totalHere = totalGameCount;
@@ -2305,6 +2422,36 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             );
           })()}
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          SELECTED GAME LOBBY — CasinoPlaque panel (renders ONLY for the
+          selected game; closes on Escape, backdrop, or the X)
+      ═══════════════════════════════════════════════════════════════════ */}
+      {panelOpen && selectedEntry && clubId && (
+        <GameLobbyPanel
+          entry={selectedEntry}
+          clubId={clubId}
+          currentUserId={currentUserId}
+          waitlisted={waitlistedTableIds.has(selectedEntry.id)}
+          seated={seatedTableIds.has(selectedEntry.id)}
+          registered={registeredTournamentIds.has(selectedEntry.id)}
+          busy={actionBusy}
+          onClose={() => setPanelOpen(false)}
+          onJoinTable={handleJoinTable}
+          onWaitlistToggle={handleWaitlistToggle}
+          onRegister={handleRegister}
+          onUnregister={handleUnregister}
+          onSpinJoin={(t, variant) => {
+            setPanelOpen(false);
+            spinQuickJoin({ id: t.id, name: t.name, buy_in_amount: t.buy_in_amount }, variant);
+          }}
+          canDelete={isOwner || userRole === 'admin'}
+          onDeleteTable={(id) => {
+            setPanelOpen(false);
+            setDeleteTableConfirm({ show: true, tableId: id, tableName: selectedEntry.name });
+          }}
+        />
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════════
                 BACKGROUND IMAGE (Premium Bar Scene)

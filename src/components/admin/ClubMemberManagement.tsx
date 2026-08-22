@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { ClubRole } from '../../types/clubRoles';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
@@ -57,12 +57,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
     };
   }, []);
-
-  useEffect(() => {
-    loadMembers();
-  }, [clubId]);
-
-  const loadMembers = async () => {
+  const loadMembers = useCallback(async () => {
     setLoading(true);
     try {
       const resolvedId = await resolveClubUUID(clubId);
@@ -110,11 +105,16 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
           setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
         );
       }
-    } catch (error) {
+    } catch (err) {
+      console.error(err);
       if (isMounted.current) toast.error('Failed to load members');
     }
     if (isMounted.current) setLoading(false);
-  };
+  }, [clubId, isMounted, toast]);
+
+  useEffect(() => {
+    loadMembers();
+  }, [loadMembers]);
 
   const updateRole = async (memberId: string, newRole: string) => {
     try {
@@ -131,6 +131,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch (err) {
+      console.error(err);
       reportError(err, 'ClubMemberManagement.Error');
       if (isMounted.current) toast.error('Failed to update role');
     }
@@ -151,6 +152,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch (err) {
+      console.error(err);
       reportError(err, 'ClubMemberManagement.Error');
       if (isMounted.current) toast.error('Failed to update ban status');
     }
@@ -171,6 +173,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch (err) {
+      console.error(err);
       reportError(err, 'ClubMemberManagement.Error');
       if (isMounted.current) toast.error('Failed to remove member');
     }
@@ -264,7 +267,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
                   className={member.isBanned ? 'unban' : 'ban'}
                   onClick={() => toggleBan(member.id, member.isBanned)}
                 >
-                  {member.isBanned ? '' : ''}
+                  {member.isBanned ? 'Unban' : 'Ban'}
                 </button>
                 <button className="kick" onClick={() => kickMember(member.id)}>
                   ✕

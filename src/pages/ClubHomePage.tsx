@@ -2391,6 +2391,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         <CreateTournamentModal
           clubId={resolvedClubId}
           unionId={unionIdForCreate}
+          initialFormat={
+            gameType === 'SPIN' ? 'spin' : gameType === 'SNG' ? 'sng' : 'mtt_freezeout'
+          }
           onClose={() => setShowCreateTournament(false)}
           onSuccess={() => {
             setShowCreateTournament(false);

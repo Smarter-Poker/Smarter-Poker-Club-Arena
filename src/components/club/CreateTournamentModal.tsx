@@ -15,6 +15,7 @@ import { digitsOnly, isWholeBuyIn, money, splitBuyIn } from '../../utils/buyIn';
 interface Props {
   clubId: string;
   unionId?: string; // If provided, this is a XMTT (union-level tournament)
+  initialFormat?: TournamentFormat;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -31,7 +32,13 @@ type TournamentFormat =
   | 'satellite'
   | 'xmtt';
 
-export default function CreateTournamentModal({ clubId, unionId, onClose, onSuccess }: Props) {
+export default function CreateTournamentModal({
+  clubId,
+  unionId,
+  initialFormat,
+  onClose,
+  onSuccess,
+}: Props) {
   const toast = useToast();
   const [visibleSections, setVisibleSections] = useState<boolean[]>([]);
 
@@ -46,7 +53,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
 
   // ── Core Config ──
   const [name, setName] = useState('');
-  const [format, setFormat] = useState<TournamentFormat>('mtt_freezeout');
+  const [format, setFormat] = useState<TournamentFormat>(initialFormat || 'mtt_freezeout');
   const [gameVariant, setGameVariant] = useState<'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'SHORT_DECK'>(
     'NLH'
   );

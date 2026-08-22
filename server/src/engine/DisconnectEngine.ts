@@ -147,10 +147,19 @@ export class DisconnectEngine {
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
-   * Register a player at a table for disconnect tracking
+   * Register a player at a table for disconnect tracking.
+   *
+   * IDEMPOTENT (2026-08-22): this is called for every dealt-in player at the
+   * start of EVERY hand. It used to unconditionally re-create the state, which
+   * wiped isConnected/isSittingOut/consecutiveTimeouts/sitOut* each hand and
+   * silently disabled the entire auto-sit-out ladder (an AFK player was never
+   * sat out, and a sat-out tournament player burned the full clock every
+   * orbit). Now: create only when absent; an existing player keeps all
+   * accumulated disconnect/sit-out/strike state across hands.
    */
   registerPlayer(tableId: string, playerId: string): void {
     const key = `${tableId}:${playerId}`;
+    if (this.playerStates.has(key)) return;
     this.playerStates.set(key, {
       playerId,
       tableId,

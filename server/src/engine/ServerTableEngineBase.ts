@@ -230,6 +230,51 @@ export abstract class ServerTableEngineBase {
   protected snapshotDirty = false;
   protected snapshotTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /**
+   * CROSS-INSTANCE OWNERSHIP (2026-08-22).
+   * tableId -> the engine instance currently authoritative for that table.
+   * DeadlineScheduler and PreciseActionTimer are process-global and keyed by
+   * tableId ONLY, while GameServer routinely lets an old engine's async stop()
+   * overlap construction of its replacement (zombie reaper and lease-lost
+   * paths both do `void engine.stop()` then rebuild within one 5s sweep).
+   * Without ownership checks the OLD instance's teardown cancels the NEW
+   * instance's heartbeat and turn deadlines on the shared scheduler — the
+   * table then permanently loses its watchdog and every stall lasts forever.
+   * Every teardown path that touches a shared resource must check ownership.
+   */
+  private static liveEngines = new Map<string, ServerTableEngineBase>();
+
+  protected static isCurrentEngineFor(tableId: string, engine: ServerTableEngineBase): boolean {
+    return ServerTableEngineBase.liveEngines.get(tableId) === engine;
+  }
+
+  private static releaseCurrentEngine(tableId: string, engine: ServerTableEngineBase): void {
+    if (ServerTableEngineBase.liveEngines.get(tableId) === engine) {
+      ServerTableEngineBase.liveEngines.delete(tableId);
+    }
+  }
+
+  /** Is this instance still the authoritative engine for its table? */
+  protected isCurrentEngine(): boolean {
+    return ServerTableEngineBase.isCurrentEngineFor(this.tableId, this);
+  }
+
+  /**
+   * FIX 2026-08-22: the 10-minute hand-void timer is a raw setTimeout held per
+   * hand. It was never cleared by stop()/killForRestart(), so it could fire
+   * up to 10 minutes later — against a SUCCESSOR engine happily dealing on the
+   * same table — and wipe that live engine's turn deadlines (clearTable on the
+   * shared timer). Held here so both teardown paths can clear it.
+   */
+  protected handSafetyTimer: ReturnType<typeof setTimeout> | null = null;
+
+  protected clearHandSafetyTimer(): void {
+    if (this.handSafetyTimer) {
+      clearTimeout(this.handSafetyTimer);
+      this.handSafetyTimer = null;
+    }
+  }
+
   // FIX 2 (2026-07-24): per-hand hole cards kept in memory so we can (a) retry
   // the RLS insert and (b) re-push a player's cards on reconnect/RESYNC. The
   // public snapshot is re-sent by the hub, but hole cards ride a separate
@@ -464,6 +509,10 @@ export abstract class ServerTableEngineBase {
 
   constructor(tableId: string) {
     this.tableId = tableId;
+    // CROSS-INSTANCE OWNERSHIP: the newest instance for a tableId is the
+    // authoritative one. Any older instance still mid-stop() sees itself
+    // superseded and keeps its hands off the shared scheduler.
+    ServerTableEngineBase.liveEngines.set(tableId, this);
 
     // Initialize ported core modules
     this.preciseTimer = new PreciseActionTimer((event) => {
@@ -847,45 +896,62 @@ export abstract class ServerTableEngineBase {
     if (!this.running) return;
     this.running = false;
 
+    // FIX 147 + Phase 1.2 PR-G-real: set the flag first so any heartbeat
+    // callback already mid-flight bails before re-arming.
+    this.heartbeatActive = false;
+
     // Bible V8 §3.1: Table FSM — running/waiting → closing → closed
     this.tableFSM.transition('closing');
 
-    this.clearTurnTimer();
-    // C15: flush any coalesced snapshot BEFORE dropping the controller — after
-    // handController is null saveSnapshot() early-returns, so a pending write
-    // would be silently lost on every shutdown.
-    await this.flushSnapshot();
+    // CROSS-INSTANCE GUARD (2026-08-22): if a replacement engine for this
+    // tableId has already been constructed, every shared resource (scheduler
+    // entries, precise timers, module deadline keys, the snapshot row) now
+    // belongs to IT. A superseded instance cancelling "its" entries would
+    // actually cancel the live engine's heartbeat + turn clocks — the exact
+    // bug that made tables permanently lose their watchdog. Superseded
+    // instances drop in-memory state only.
+    const owner = ServerTableEngineBase.isCurrentEngineFor(this.tableId, this);
+
+    this.clearHandSafetyTimer();
+    if (owner) {
+      this.clearTurnTimer();
+      // C15: flush any coalesced snapshot BEFORE dropping the controller — after
+      // handController is null saveSnapshot() early-returns, so a pending write
+      // would be silently lost on every shutdown.
+      await this.flushSnapshot();
+    }
     if (this.snapshotTimer) {
       clearTimeout(this.snapshotTimer);
       this.snapshotTimer = null;
     }
     this.handController = null;
 
-    // FIX 147 + Phase 1.2 PR-G-real: tear down heartbeat scheduler entry.
-    // Set the flag first so any callback already mid-flight bails before
-    // re-arming, then cancel the pending entry.
-    this.heartbeatActive = false;
-    deadlineScheduler.cancel(this.tableId, ServerTableEngineBase.HEARTBEAT_EVENT_ID);
+    if (owner) {
+      // FIX 147 + Phase 1.2 PR-G-real: tear down heartbeat scheduler entry.
+      deadlineScheduler.cancel(this.tableId, ServerTableEngineBase.HEARTBEAT_EVENT_ID);
 
-    // Step 4: Dispose ported core modules
-    this.preciseTimer.dispose();
-    this.actionValidator.dispose();
-    this.stateVerifier.dispose();
+      // Step 4: Dispose ported core modules
+      this.preciseTimer.dispose();
+      this.actionValidator.dispose();
+      this.stateVerifier.dispose();
 
-    // Step 5: Dispose supporting modules
-    this.timeBankEngine.disposeAll();
-    this.disconnectEngine.disposeAll();
-    this.preActionEngine.disposeAll();
-    this.atomicStackService.dispose();
+      // Step 5: Dispose supporting modules
+      this.timeBankEngine.disposeAll();
+      this.disconnectEngine.disposeAll();
+      this.preActionEngine.disposeAll();
+      this.atomicStackService.dispose();
 
-    // Step 6: Dispose advanced modules
-    this.straddleEngine.disposeAll();
-    this.runItTwiceEngine.disposeAll();
-    this.insuranceEngine.disposeAll();
-    this.rakebackEngine.disposeAll();
+      // Step 6: Dispose advanced modules
+      this.straddleEngine.disposeAll();
+      this.runItTwiceEngine.disposeAll();
+      this.insuranceEngine.disposeAll();
+      this.rakebackEngine.disposeAll();
 
-    // Step 7: Dispose tournament & extras modules
-    this.engineTelemetry.dispose();
+      // Step 7: Dispose tournament & extras modules
+      this.engineTelemetry.dispose();
+
+      ServerTableEngineBase.releaseCurrentEngine(this.tableId, this);
+    }
     // Note: chipRaceEngine, tableBalancer, tableBreakEngine are stateless per-call — no dispose needed
 
     // Phase 1.1 PR-5: no Supabase channel to clean up — engine WS is now the
@@ -987,12 +1053,18 @@ export abstract class ServerTableEngineBase {
     this.recordRecoveryEvent('watchdog_kill_rebuild', reason);
     this.running = false;
     this.heartbeatActive = false;
-    deadlineScheduler.cancel(this.tableId, ServerTableEngineBase.HEARTBEAT_EVENT_ID);
-    this.preciseTimer.clearTable(this.tableId);
-    // preciseTimer.clearTable only covers `turn:*`. insurance_offer:*, rit_offer
-    // and table_break:* live on the same shared scheduler under this tableId and
-    // would otherwise fire callbacks bound to this dead engine instance forever.
-    deadlineScheduler.cancelAll(this.tableId);
+    this.clearHandSafetyTimer();
+    // CROSS-INSTANCE GUARD (2026-08-22): only the authoritative instance may
+    // touch the shared scheduler — see stop() for the full rationale.
+    if (ServerTableEngineBase.isCurrentEngineFor(this.tableId, this)) {
+      deadlineScheduler.cancel(this.tableId, ServerTableEngineBase.HEARTBEAT_EVENT_ID);
+      this.preciseTimer.clearTable(this.tableId);
+      // preciseTimer.clearTable only covers `turn:*`. insurance_offer:*, rit_offer
+      // and table_break:* live on the same shared scheduler under this tableId and
+      // would otherwise fire callbacks bound to this dead engine instance forever.
+      deadlineScheduler.cancelAll(this.tableId);
+      ServerTableEngineBase.releaseCurrentEngine(this.tableId, this);
+    }
     this.handController = null;
   }
 
@@ -1459,8 +1531,7 @@ export abstract class ServerTableEngineBase {
     const roster = this.seatedPlayers.filter(
       (p) =>
         p.stack > 0 &&
-        (this.isTournamentTable() ||
-          !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
+        (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
     );
     if (roster.length < 2) return -1;
     const sortedSeats = roster.map((p) => p.seat_number).sort((a, b) => a - b);
@@ -1478,8 +1549,7 @@ export abstract class ServerTableEngineBase {
         p.stack > 0 &&
         // Tournament sit-outs stay in the blind rotation — they are dealt in
         // and blinded off, so the button/blinds must be able to reach them.
-        (this.isTournamentTable() ||
-          !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
+        (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
     );
     if (roster.length < 2) return -1;
     const sortedSeats = roster.map((p) => p.seat_number).sort((a, b) => a - b);
@@ -1613,8 +1683,7 @@ export abstract class ServerTableEngineBase {
         this.tableInfo.rake_cap_bb = tableRow.rake_cap_bb ?? undefined;
         this.tableInfo.bomb_pot_enabled = (tableRow as any).bomb_pot_enabled ?? false;
         this.tableInfo.bomb_pot_frequency = (tableRow as any).bomb_pot_frequency ?? 0;
-        this.tableInfo.bomb_pot_ante_multiplier =
-          (tableRow as any).bomb_pot_ante_multiplier ?? 2;
+        this.tableInfo.bomb_pot_ante_multiplier = (tableRow as any).bomb_pot_ante_multiplier ?? 2;
         this.tableInfo.bomb_pot_double_board = (tableRow as any).bomb_pot_double_board ?? false;
       }
       const clubId = this.tableInfo?.club_id;

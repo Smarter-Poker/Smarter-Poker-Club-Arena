@@ -5,7 +5,15 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useMemo,
+} from 'react';
 import { formatPopupText } from '../../utils/popupStyle';
 import {
   safeErrorMessage,
@@ -258,15 +266,26 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     [showToast]
   );
 
-  const value: ToastContextValue = {
-    toasts,
-    showToast,
-    success,
-    error,
-    warning,
-    info,
-    removeToast,
-  };
+  // 2026-08-22: MEMOIZE. This value was a fresh object on every provider
+  // render, so every consumer with `toast` in a dependency array re-ran its
+  // effect on every toast add/remove. TablePage's 5s heartbeat effect was the
+  // casualty: each toast tore the interval down, fired an extra immediate
+  // heartbeat, and RESET the consecutive-miss counter — during an outage
+  // (when toasts fire most) the "connection lost" warning could never
+  // accumulate its three misses. All members are useCallback/state, so this
+  // only changes identity stability, not behaviour.
+  const value: ToastContextValue = useMemo(
+    () => ({
+      toasts,
+      showToast,
+      success,
+      error,
+      warning,
+      info,
+      removeToast,
+    }),
+    [toasts, showToast, success, error, warning, info, removeToast]
+  );
 
   return (
     <ToastContext.Provider value={value}>

@@ -67,7 +67,13 @@ class RoomService {
    * Register an existing channel (from TableWebSocket) to deduplicate subscriptions.
    */
   registerChannel(tableId: string, channel: RealtimeChannel): void {
-    if (this.channels.has(tableId)) return;
+    // 2026-08-22: rebind on reconnect. This used to early-return whenever ANY
+    // channel was registered for the table — but TableWebSocket re-creates
+    // its channel on every reconnect, so after the first drop RoomService
+    // kept broadcasting reactions/throwables/chat into the REMOVED channel
+    // (no error, nothing delivered) and inbound room messages stopped. Same
+    // channel object: nothing to do; new channel object: replace the binding.
+    if (this.channels.get(tableId) === channel) return;
 
     // Handle broadcasts
     channel.on('broadcast', { event: 'game_event' }, (payload) => {

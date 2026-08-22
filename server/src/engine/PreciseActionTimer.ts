@@ -273,6 +273,16 @@ export class PreciseActionTimer {
     for (const key of [...this.deadlines.keys()]) {
       if (key.startsWith(prefix)) {
         const playerId = key.slice(prefix.length);
+        // FIX 2026-08-22: TimeBankEngine and DisconnectEngine register their
+        // countdowns through this same API under NAMESPACED ids
+        // ("timebank:<pid>", "disconnect:<pid>"). clearTable's contract (and
+        // every doc comment at its call sites) says it clears only plain turn
+        // timers — but it was cancelling the namespaced ones too, leaving
+        // e.g. a time bank marked `isActive` with NO countdown behind it, so
+        // rearmTurnTimerIfCurrent bailed and a reconnecting player got no
+        // clock. Namespaced entries are owned by their engines (which handle
+        // expiry fail-safe and clean up in disposeAll); leave them alone.
+        if (playerId.includes(':')) continue;
         this.scheduler.cancel(tableId, this.eventId(playerId));
         this.deadlines.delete(key);
       }

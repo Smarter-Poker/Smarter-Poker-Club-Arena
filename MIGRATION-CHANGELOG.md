@@ -7,6 +7,68 @@
 
 ---
 
+## Cowork session 2026-08-22 (8) — SPIN / CASH ANIMATION PARITY: the audit Dan asked for
+
+Handoff item 9.1, which had never been done end to end. Full findings, including
+the differences deliberately left alone, in
+`.agent/audits/2026-08-22-spin-cash-animation-parity.md`.
+
+**The structure was already right.** Spin and cash render through ONE component
+tree — there is no tournament table page — so deal, chip flight, board reveals,
+pot collection, showdown, winner pops, muck and the all-in theatre are shared by
+construction. DealAnimation, CommunityCards, PotDisplay, ChipPhysics,
+ActionPanel and every `useTable*` hook contain not one mention of a tournament,
+and a test now keeps it that way. The divergences were four conditionals and two
+unhandled events.
+
+1. **Every Spin resolved the player's MTT theme.** `useUserThemeSettings` was
+   passed `undefined` for the tournament type under a comment claiming it was
+   "resolved internally from gameType". It is not — `getThemeGameType` has no
+   other source — so its `spin -> SNG` branch could never be taken. That value
+   drives the felt skin, background, deck, button art and four `data-*` theme
+   attributes on the table root, so a Spin did not miss a preference, it
+   rendered a different table. Now passes `tournamentFormat`, and the hook waits
+   rather than guessing while the format resolves — guessing would paint the MTT
+   felt for one render and swap it under the player.
+
+2. **The sub-10bb warning did not run in tournaments.** `stackCriticalPulse` was
+   gated behind `showStackInBB || !isTournament`. A hyper-turbo Spin is the one
+   format where a short stack is normal. A cash table at 8bb pulsed; a Spin at
+   8bb sat still.
+
+3. **A seat-first Spin's open seats were not seats.** `SeatSlot` returned a bare
+   unlabelled div for every empty tournament seat, before `canSit` was
+   consulted — no label, no `emptyPulse`, no click handler — while the footer
+   read "Spectating, Tap An Open Seat To Join" and `handleSeatClick` had a
+   working `fn_take_seat_and_buy_in` branch waiting for it. The instruction on
+   screen could not be followed. The gate is `canSit` now, which TablePage
+   extends to the seat-first formats; `SeatSlot` branches no visual on
+   tournament-ness at all any more.
+
+4. **The two beats after the wheel were never animated.** The engine's
+   `scheduleSpinPostReveal` broadcasts `spin_chips` and `spin_button` and holds
+   the deal 1.8s for them, saying in its own comment that it does so "so the
+   client can animate them rather than discovering them in a state diff". The
+   client had no case for either, and `CHIP_DROP_MS` / `BUTTON_DRAW_MS` had zero
+   consumers. The chips and the puck appeared whenever the next snapshot landed,
+   so Dan's sequence — "CHIP STACKS GET ADDED, BUTTON RANDOMLY ASSIGNED" —
+   existed on the engine's clock and nowhere on the player's. Both handled now;
+   each writes the value the engine already committed, on the instant the engine
+   chose, and lets the existing seat animations run.
+
+**Coverage.** Before this, no spec anywhere rendered a table in tournament mode,
+which is how all four survived. `tests/config/spinAnimationParity.test.ts` adds
+16 cases (9 fail against `origin/main`) and `live-animations.spec.ts` gains two
+beats — the chip landing and the button draw, and the short-stack pulse and the
+open-seat breath — verified against a real build of this commit served under
+`/hub/club-arena`: 10 passed. Suite: 237 files, 3012 passed, tsc clean.
+
+**Not proven:** nobody has watched a Spin from a real seat since. §4 of the
+audit lists the four things to look at, in order, for whoever is next at a live
+table.
+
+---
+
 ## Cowork session 2026-08-22 (6) — MOBILE TABLE PHASE 3: pending settlement, dead props, probe-verified non-changes (PR #280)
 
 Follow-on to the Phase 1/2 mobile table sessions (#243, #252). Three changes,

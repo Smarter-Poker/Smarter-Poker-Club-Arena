@@ -443,7 +443,12 @@ export const SeatSlot = memo(
       lastBetAmount,
       timerProgress,
       bigBlind = 2,
-      isTournament = false,
+      // isTournament is deliberately NOT destructured any more. Nothing inside
+      // this component may branch a VISUAL on tournament-ness: doing so is what
+      // gave a Spin an inert empty seat and a stack that would not warn at 8bb.
+      // The prop stays on the interface because the memo comparator below still
+      // needs to see it change (it feeds SeatSlot's parents), and because
+      // removing it from every call site is a bigger change than it is worth.
       bountyValue,
       bombPotAnte,
       isWinner = false,
@@ -928,9 +933,21 @@ export const SeatSlot = memo(
 
     // ─── EMPTY SEAT ────────────────────────────────────────────────────────
     if (!player) {
-      if (isTournament) {
-        return <div className={containerClasses} aria-label={`Seat ${seatNumber}: empty`} />;
-      }
+      // This used to short-circuit on `isTournament` and return a bare div: no
+      // label, no affordance, no click handler. That was survivable at an MTT,
+      // where seats are assigned and an empty one is genuinely not for sale.
+      //
+      // It was not survivable at a Spin. A seat-first Spin sells its three
+      // seats by the click, TablePage wires onSit -> handleSeatClick -> the
+      // fn_take_seat_and_buy_in branch, and the footer reads "Spectating, Tap
+      // An Open Seat To Join" - onto seats that could not be tapped, carried no
+      // label, and did not breathe. The instruction on screen could not be
+      // followed.
+      //
+      // The distinction that matters is not tournament-ness, it is whether the
+      // seat can actually be taken, and `canSit` already carries that: TablePage
+      // now includes seat-first in it. A seat that cannot be taken still falls
+      // to the passive EMPTY marker below, which suppresses the pulse in CSS.
       // Hero already occupies a seat at this table -> every other open seat is
       // a passive "EMPTY" marker. No onClick, no role="button", no tabIndex:
       // the seat is removed from the interaction model entirely rather than
@@ -1398,7 +1415,7 @@ export const SeatSlot = memo(
           {/* Neon border overlay (rendered via CSS ::before when --active) */}
           <span className="seat__name">{player.name}</span>
           <span
-            className={`seat__stack${stackDelta > 0 ? ' seat__stack--up' : stackDelta < 0 ? ' seat__stack--down' : ''} ${showStackInBB || !isTournament ? getStackDepthClass(player.stack, bigBlind) : ''}`}
+            className={`seat__stack${stackDelta > 0 ? ' seat__stack--up' : stackDelta < 0 ? ' seat__stack--down' : ''} ${getStackDepthClass(player.stack, bigBlind)}`}
           >
             {showStackInBB ? formatStackAsBB(player.stack, bigBlind) : formatStack(player.stack)}
           </span>

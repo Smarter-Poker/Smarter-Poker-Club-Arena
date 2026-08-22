@@ -68,6 +68,17 @@ export function useUserThemeSettings(
       return;
     }
 
+    /**
+     * A tournament whose FORMAT has not resolved yet must not resolve a theme.
+     *
+     * getThemeGameType answers 'MTT' for anything it cannot identify, so
+     * loading here would paint the player's MTT felt at a Spin and then swap it
+     * under them a moment later when the format arrives. Waiting costs a few
+     * hundred milliseconds of the default theme, which is what the first frames
+     * show anyway; guessing costs a visible change of table mid-sit.
+     */
+    if (isTournament && !tournamentType) return;
+
     let mounted = true;
     const gameType = getThemeGameType(gameVariant, isTournament, tournamentType);
 

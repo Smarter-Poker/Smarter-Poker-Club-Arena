@@ -10102,3 +10102,69 @@ chest's phases change, change this file in the same commit.
 
 Verified: client + server tsc clean, vite build clean, 24 engine tests green
 across 3 suites.
+
+## 2026-08-22 — The winner was never told the tournament had ended
+
+Dan, 2026-08-20: "at the end of the tournament when you lose, you need to be
+auto removed from the table, placed inside the lobby and your tournament result
+card shown ... winners should be auto removed at the end as well."
+
+Only the losing half of that sentence had ever worked, and the half that had
+not was invisible to every tool we own.
+
+WHAT WAS BROKEN. `eliminatePlayer` broadcasts `player_eliminated`; TablePage
+hears it, plays the beat and moves that player to the lobby with a ranking
+card. Places 2..N were fine. `finishTournament` broadcast NOTHING: it paid the
+winner, stamped `status='winner', position=1`, released the seats, closed the
+tables and stopped, in silence. The champion sat at a table that had just been
+closed underneath them, with no card and no way out but the browser.
+
+WHY NOTHING CAUGHT IT. TablePage had carried the winner branch (`position === 1`
+-> celebration overlay, then the lobby) since the day the feature shipped. It
+was unreachable BY CONSTRUCTION: the only event that reaches it is
+`player_eliminated`, and `eliminatePlayer` is never called with place 1 — the
+bust sweep floors `basePosition` at `bustedOrdered.length + 1` and the
+unresolved-players loop uses `ordered.length + 1 - i`, both >= 2 deliberately,
+so that 1st stays reserved for `finishTournament`. Code that compiled,
+typechecked, read correctly, and was dead. On a Spin it is the entire ending:
+three players, one winner, three minutes, and the winner is the one who saw
+nothing.
+
+THE FIX. `finishTournament` now broadcasts `tournament_winner`
+(userId / position / prize / playerName) AFTER the payout reconcile, so the row
+the client reads back is final, and BEFORE `cleanupBroadcastChannel()` tears the
+channel down — broadcasting after unsubscribe silently re-creates the channel
+and sends into a subscription nobody is listening on.
+
+Its OWN event, not `player_eliminated` with position 1: TournamentPage and
+TournamentLobbyPage both raise an elimination toast on that event, and
+announcing the champion to the whole field as knocked out is worse than saying
+nothing.
+
+`goToLobbyWithResult` was declared INSIDE the `player_eliminated` branch, which
+is precisely why the winner's exit had no function to call. It is hoisted to the
+subscription scope so both events take the identical path — same payload, same
+card, same navigation — rather than a second copy that drifts. An `exitStarted`
+guard now lives at the subscription's lifetime, so a retried or duplicated
+broadcast cannot schedule two navigations. A player finishes a tournament once.
+
+TESTS. `tests/config/tournamentWinnerExit.test.ts` pins the signal end to end:
+the broadcast exists, it precedes the teardown, it carries the identity and the
+prize, it is not `player_eliminated`, TablePage handles it, there is exactly ONE
+lobby-exit implementation, the duplicate guard is present, and `eliminatePlayer`
+still never uses place 1 (the reason the winner path has to exist at all).
+Six of its nine assertions fail against the previous main.
+`tests/unit/tournamentRankingHost.test.tsx` is behavioural and covers the card
+landing for 1st, 2nd and 3rd — the card and its host had ZERO tests, having once
+shipped in a state where it never rendered at all (router state to
+`/clubs/:clubId` read only by ClubLobby at `/clubs/:clubId/lobby`).
+
+DEAD CODE FOUND, LEFT ALONE. `TournamentResultCard` + ClubLobby's router-state
+reader are now orphaned — nothing navigates with `{ state: { tournamentResult } }`
+since the app-root host replaced that carrier. Likewise
+`TournamentService.broadcastWinner` / `.broadcastElimination` have no callers.
+Deleting them is its own change, not a rider on a money-adjacent path.
+
+Verified: 231 test files / 2905 tests green locally and in CI; TypeScript Check,
+Server Engine, Production Build, CSS Beat E2E all green; merged as PR #242
+(5056e6438); Auto-Deploy Hetzner Engine completed success on that SHA.

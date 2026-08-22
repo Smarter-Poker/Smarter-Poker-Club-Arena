@@ -58,6 +58,60 @@ favour with the sessionStart/End addition re-applied at the new location),
 pushed as `fix/mobile-table-audit-2026-08-22-v2`, PR #243, merged after all
 required checks passed. The 14 pushed files were mirrored back to the Mac
 working tree from origin/main.
+## Cowork session 2026-08-22 (3) — LOBBY V2: line-based lobby + Casino Plaque game lobbies
+
+Dan: "I currently hate the game cards inside the Club Arena lobby and want to
+completely change them out. Replace the card browser with a dense, professional,
+line-based poker lobby (PokerStars information architecture), and open a premium
+Casino Plaque detail lobby when a game is selected."
+
+### What shipped
+
+1. **Line-based lobby table** (`src/components/lobby/LobbyTable.tsx` + css):
+   sticky headers, per-category columns (cash: stakes/variant/players/buy-in/
+   rules/status; MTT: buy-in/guarantee/players/starts/speed/status; spins /
+   heads-up variants; combined set on All Games), numeric-value column sorting,
+   arrow-key + Enter navigation, skeleton rows, full/live/waitlist/late-reg
+   status badges, Seated / Registered / Waitlisted player-state chips, and a
+   favorites star backed by the existing `favorite_tables` table.
+2. **LobbyEntry view-model layer** (`src/components/lobby/lobbyEntries.ts`):
+   presentation-only normalization of cash tables + tournaments; rule medallions
+   derive strictly from the REAL `TableSettings` flags (RIT, insurance,
+   straddle, bomb pots + frequency, ante, double board, seven deuce, time bank,
+   VPIP, call time, no rathole) and tournament columns (guarantee, late reg,
+   re-entry/rebuy/add-on when present). Domain rows ride along on `.raw`.
+3. **CasinoPlaque** (`src/components/lobby/CasinoPlaque.tsx` + css): three-zone
+   brushed-metal plaque (identity / rule medallions / join info with seat pips
+   and the primary CTA). Renders only for the selected game.
+4. **GameLobbyPanel** (`src/components/lobby/GameLobbyPanel.tsx` + css): the
+   pre-commit game lobby. Cash: game info grid (avg pot from hand_history,
+   waitlist list via WaitlistService), full rules, CTA ladder JOIN TABLE /
+   JOIN WAITLIST / LEAVE WAITLIST / RETURN TO TABLE / TABLE CLOSED / GAME
+   PAUSED. MTT: Overview / Structure / Payouts tabs (payout projections are
+   labelled estimates), REGISTER / LATE REGISTER / UNREGISTER / RETURN TO
+   TOURNAMENT / REGISTRATION CLOSED, plus a link to the full TournamentDetails
+   lobby. Spins: JOIN SPIN; Heads-Up: TAKE SEAT — both via the untouched
+   seat-first `spinQuickJoin`.
+5. **ClubHomePage** rewired: card grid render replaced by LobbyTable + panel;
+   All Games is a real tab; row click ONLY selects (acceptance rule: nothing
+   joins, registers, or spends from a row). All data loading, realtime
+   channels, advanced filters, quick prefs, sort, search, waitlist logic,
+   admin delete (now in the panel), and `clubIdOverride` are unchanged.
+   Merged on top of main's Limit-category + CreateTournamentModal changes.
+6. **Tests**: `tests/e2e/club-lobby.spec.ts` rewritten for `.lt-*`/`.glp`
+   selectors, including a new "selecting a row opens the panel without
+   joining" spec. All lobby guardrail suites green (seatFirstGames,
+   spinReveal, advancedFilterSpec, tournamentFilters, protectedFeatures,
+   verify-bus-listeners, shipped-invariants + 15 adjacent suites, 311 tests).
+   `tsc --noEmit` clean; production Vite build clean.
+
+### Deliberately NOT done
+
+- `DynamicGameCard.tsx` and `ClubLobby.tsx` (the secondary lobby at
+  `/clubs/:clubId/lobby`) are left in place per the safe-migration rule —
+  remove only after production verification.
+- No virtualization: rows are single flat `<tr>`s; the existing QUERY_LIMITS
+  cap bounds the list. Revisit only if row counts grow past that.
 
 ---
 

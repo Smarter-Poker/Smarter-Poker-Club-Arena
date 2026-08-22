@@ -40,6 +40,31 @@ describe('the queue insert survives a blip', () => {
     expect(code).toMatch(/const QUEUE_INSERT_ATTEMPTS = \d+;/);
   });
 
+  it('treats a PostgREST schema-cache reload as transient', () => {
+    /**
+     * Found by the reporting the previous PR added, in its own output. Over
+     * 2026-08-22 20:30Z onward, with the noise gone, 16 of the ~40 remaining
+     * alerts said:
+     *
+     *   "Could not query the database for the schema cache. Retrying."
+     *
+     * The message ends in the word "Retrying" and the original
+     * TRANSIENT_DB_ERROR matched none of it, so it escalated to a critical
+     * money alarm on the FIRST attempt without retrying once. It is not only
+     * transient, it is SELF-INFLICTED: every apply_migration reloads that
+     * cache, and five migrations went out that day.
+     */
+    expect(code).toMatch(/TRANSIENT_DB_ERROR\s*=[\s\S]{0,400}schema cache/);
+    expect(code).toMatch(/TRANSIENT_DB_ERROR\s*=[\s\S]{0,400}PGRST002/);
+  });
+
+  it('backs off far enough for that reload to finish', () => {
+    // 300ms/900ms/2.7s, not a flat 1.5s of total patience. Free on a path
+    // that only runs when banking has already failed.
+    expect(code).toMatch(/QUEUE_BACKOFF_MS = \(attempt: number\): number => 100 \* 3 \*\* attempt/);
+    expect(code).toMatch(/setTimeout\(r, QUEUE_BACKOFF_MS\(attempt\)\)/);
+  });
+
   it('recognises a timeout as transient', () => {
     // The literal string 938 of the 988 alerts carried.
     expect(code).toMatch(/TRANSIENT_DB_ERROR\s*=[\s\S]{0,400}timeout/);

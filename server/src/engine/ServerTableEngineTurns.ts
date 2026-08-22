@@ -10,6 +10,7 @@
 
 import { HandController } from './HandController.js';
 import { HorseLogic, resolveHorseStyle } from './HorseLogic.js';
+import { getTournamentBrainContext } from '../services/TournamentBrainContext.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { deadlineScheduler } from './DeadlineScheduler.js';
 import { ServerActionValidator } from './ServerActionValidator.js';
@@ -1445,6 +1446,36 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * The horse's turn timer is ALREADY running (same as real players).
    * The horse submits its action within that timer window, just like a human would.
    */
+  /**
+   * V12 (2026-08-22): tournament context + format for the horse brain.
+   * Synchronous — reads the TournamentBrainContext cache (background
+   * refresh, 20s TTL). Cash tables return format 'cash' and no tournament
+   * object; tournament tables before the first fetch return an empty
+   * tournament object (V11 flat-premium behavior).
+   */
+  private horseTournamentContext(): {
+    format: 'cash' | 'mtt' | 'spin' | 'hu_sng';
+    tournament?: Record<string, unknown>;
+  } {
+    if (!this.isTournamentTable()) return { format: 'cash' as const };
+    const tid = this.tableInfo?.tournament_id;
+    const tctx = tid ? getTournamentBrainContext(tid) : null;
+    const fallbackFormat =
+      (this.tableInfo?.max_players ?? 9) <= 2 ? ('hu_sng' as const) : ('mtt' as const);
+    if (!tctx) return { format: fallbackFormat, tournament: {} };
+    return {
+      format: tctx.format,
+      tournament: {
+        nearBubble: tctx.nearBubble,
+        inMoney: tctx.inMoney,
+        playersLeft: tctx.playersLeft,
+        spotsPaid: tctx.spotsPaid,
+        avgStackChips: tctx.avgStackChips,
+        bountyFactor: tctx.bountyFactor,
+      },
+    };
+  }
+
   protected scheduleHorseAction(
     player: SeatedPlayer,
     seat: number,
@@ -1490,6 +1521,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // tiers, and rake-aware pot odds all switch on the real game mode.
       gameMode: this.isTournamentTable() ? ('tournament' as const) : ('cash' as const),
       ante: this.tableInfo?.ante || 0,
+      // V12: REAL tournament state for the ICM layer — players left, spots
+      // paid, average stack, PKO bounty share — plus the table format
+      // (mtt/spin/hu_sng). Cached with a 20s TTL; null before the first
+      // fetch lands, which degrades to the V11 flat premium.
+      ...this.horseTournamentContext(),
     };
 
     // Get decision — SYNCHRONOUS (budgeted <15ms incl. Monte Carlo equity)

@@ -453,7 +453,17 @@ export interface HorseGameStateV2 extends HorseGameState {
   /** V7 ICM: explicit tournament context. When absent, tournaments are
    *  self-detected from the big blind (the cash fleet caps at 2.00/5.00, so
    *  bb >= 10 only occurs in tournament play). */
-  tournament?: { nearBubble?: boolean; inMoney?: boolean };
+  tournament?: {
+    nearBubble?: boolean;
+    inMoney?: boolean;
+    playersLeft?: number;
+    spotsPaid?: number;
+    avgStackChips?: number;
+    bountyFactor?: number;
+  };
+  /** V12: table format. Spins are winner-take-all chip-EV (no ICM), HU SNGs
+   *  play heads-up ranges, MTTs get the full survival model. */
+  format?: 'cash' | 'mtt' | 'spin' | 'hu_sng';
   /** V11 (Dan 2026-08-22): EXPLICIT game mode from the table engine
    *  (tournament_id / game_type). Cash and tournaments are different games;
    *  when this is present it is trusted over every heuristic. */
@@ -480,13 +490,43 @@ function isTournamentMode(gs: HorseGameStateV2): boolean {
  * stack. Returns an additive threshold premium (0 for cash games).
  */
 function icmRisk(gs: HorseGameStateV2, stackBB: number): number {
+  // icmRisk v2 (V12, 2026-08-22): real bubble model from TournamentBrainContext.
   const explicit = gs.tournament;
-  const isTournament = isTournamentMode(gs);
-  if (!isTournament) return 0;
+  if (!isTournamentMode(gs)) return 0;
+  // Spins are winner-take-all — pure chip EV, zero survival premium.
+  if (gs.format === 'spin' && (explicit?.spotsPaid ?? 1) <= 1) return 0;
+
   let risk = stackBB < 40 ? 0.04 : 0.02;
-  if (explicit?.nearBubble) risk += 0.04;
-  if (explicit?.inMoney && stackBB > 60) risk = Math.max(0.01, risk - 0.02);
-  return risk;
+  if (explicit) {
+    const pl = explicit.playersLeft ?? 0;
+    const paid = explicit.spotsPaid ?? 0;
+    if (pl > 0 && paid > 0) {
+      // Pressure scales with the ACTUAL distance to the money.
+      const inMoney = explicit.inMoney ?? pl <= paid;
+      if (!inMoney) {
+        const ratio = pl / paid;
+        if (ratio <= 1.15) risk += 0.06; // stone bubble
+        else if (ratio <= 1.4) risk += 0.04;
+        else if (ratio <= 2.0) risk += 0.02;
+        // Big-stack bubble ABUSE: when hero covers the field the pressure
+        // belongs to everyone else — halve the premium and open up while
+        // the medium stacks have to fold.
+        const avgBB = gs.bigBlind > 0 ? (explicit.avgStackChips ?? 0) / gs.bigBlind : 0;
+        if (ratio <= 1.4 && avgBB > 0 && stackBB > avgBB * 1.8) risk *= 0.5;
+      } else {
+        // ITM: ladder pressure matters short-stacked; big stacks play chips.
+        risk = stackBB < 15 ? risk + 0.02 : Math.max(0.01, risk - 0.02);
+      }
+    } else {
+      // Legacy explicit flags (V7 shape) — behavior preserved exactly.
+      if (explicit.nearBubble) risk += 0.04;
+      if (explicit.inMoney && stackBB > 60) risk = Math.max(0.01, risk - 0.02);
+    }
+    // PKO: a fat bounty share makes covered all-ins better than raw ICM
+    // says — trim the premium so the horses fight for bounties.
+    if ((explicit.bountyFactor ?? 0) >= 0.2) risk = Math.max(0, risk - 0.02);
+  }
+  return Math.min(risk, 0.12);
 }
 
 /** V3/V4/V5 decision options (benchmark/test hooks — production uses defaults). */
@@ -780,6 +820,10 @@ export class HorseLogic {
       // the preflop layer keeps exact legacy behavior in ablation runs).
       mode: opts.v11 !== false ? (isTournamentMode(gs) ? 'tournament' : 'cash') : undefined,
       anteInPlay: opts.v11 !== false && (gs.ante ?? 0) > 0,
+      // V12: table format — spins widen (winner-take-all chip EV), HU SNGs
+      // ride the heads-up ranges.
+      format:
+        opts.v11 !== false ? (gs.format ?? (isTournamentMode(gs) ? 'mtt' : 'cash')) : undefined,
       rand: fastRandom,
     });
 
@@ -1939,6 +1983,8 @@ export class HorseLogic {
     snapFraction,
     // V10 strategy internals
     rakeDrag,
+    // V12 tournament internals
+    icmRisk,
   };
 
   /** Exposed for tests: variant-aware Monte Carlo equity (0..1). */

@@ -15,7 +15,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
-import type { LeaderboardSettings } from '../services/LeaderboardService';
+import type { LeaderboardSettings, LeaderboardPayout } from '../services/LeaderboardService';
 import { LeaderboardService } from '../services/LeaderboardService';
 import type {
   LeaderboardEntry,
@@ -175,6 +175,7 @@ export default function LeaderboardPage() {
 
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState<LeaderboardSettings | null>(null);
+  const [payouts, setPayouts] = useState<LeaderboardPayout[]>([]);
 
   const [userClubs, setUserClubs] = useState<UserClub[]>([]);
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
@@ -355,7 +356,7 @@ export default function LeaderboardPage() {
       isMounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, period, metric, selectedClubId, activeTab]);
+  }, [scope, period, periodOffset, metric, selectedClubId, activeTab]);
 
   // Fetch Tournament Stats Data (club-scoped only)
   useEffect(() => {
@@ -443,6 +444,18 @@ export default function LeaderboardPage() {
       setBaselineDate(data[0]?.baselineDate ?? null);
       setCachedEntries(cacheKey, data);
       setLastUpdated(new Date());
+
+      if (selectedClubId) {
+        const { start } = LeaderboardService.getPeriodBoundaries(period, periodOffset);
+        const periodPayouts = await LeaderboardService.getPayoutsForPeriod(
+          selectedClubId,
+          period,
+          metric,
+          start.toISOString().split('T')[0]
+        );
+        if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted()))
+          setPayouts(periodPayouts);
+      }
 
       // Get user's rank in the same scope
       if (user?.id) {
@@ -638,6 +651,26 @@ export default function LeaderboardPage() {
         )}
         <span className="podium-name">{entry.username}</span>
         <span className={`podium-value ${textCls}`}>{formatValue(entry.value, metric)}</span>
+        {(() => {
+          const payout = payouts.find((p) => p.user_id === entry.userId);
+          if (payout) {
+            return (
+              <span
+                className="payout-badge"
+                style={{
+                  color: '#FFD700',
+                  fontSize: '0.85rem',
+                  marginTop: '4px',
+                  display: 'block',
+                }}
+              >
+                Paid {payout.payout_currency === 'diamonds' ? '💎' : '🪙'}{' '}
+                {payout.payout_amount.toLocaleString()}
+              </span>
+            );
+          }
+          return null;
+        })()}
         {renderRowContext(entry)}
         <span className="podium-rank-emoji">{PODIUM_MEDALS[place - 1]}</span>
         <div className={`podium-bar ${barCls}`}></div>
@@ -761,7 +794,7 @@ export default function LeaderboardPage() {
           )}
         </div>
 
-        {isOwner && activeTab === 'rankings' && (
+        {isOwner && scope !== 'global' && activeTab === 'rankings' && (
           <div className="filter-group ml-auto" style={{ display: 'flex', gap: '8px' }}>
             <button
               className="lb-filter-chip"
@@ -987,6 +1020,20 @@ export default function LeaderboardPage() {
                     </span>
                   </div>
                   <div className={`entry-value ${entry.value >= 0 ? 'positive' : 'negative'}`}>
+                    {(() => {
+                      const payout = payouts.find((p) => p.user_id === entry.userId);
+                      if (payout) {
+                        return (
+                          <div
+                            style={{ color: '#FFD700', fontSize: '0.75rem', marginBottom: '4px' }}
+                          >
+                            Paid {payout.payout_currency === 'diamonds' ? '💎' : '🪙'}{' '}
+                            {payout.payout_amount.toLocaleString()}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                     {formatValue(entry.value, metric)}
                     {renderChangeBadge(entry.change)}
                   </div>
@@ -1034,6 +1081,20 @@ export default function LeaderboardPage() {
                     {renderRowContext(entry)}
                   </div>
                   <div className={`entry-value ${entry.value >= 0 ? 'positive' : 'negative'}`}>
+                    {(() => {
+                      const payout = payouts.find((p) => p.user_id === entry.userId);
+                      if (payout) {
+                        return (
+                          <div
+                            style={{ color: '#FFD700', fontSize: '0.75rem', marginBottom: '4px' }}
+                          >
+                            Paid {payout.payout_currency === 'diamonds' ? '💎' : '🪙'}{' '}
+                            {payout.payout_amount.toLocaleString()}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                     {formatValue(entry.value, metric)}
                     {renderChangeBadge(entry.change)}
                   </div>
@@ -1379,6 +1440,8 @@ export default function LeaderboardPage() {
                   if (selectedClubId) {
                     await LeaderboardService.updateLeaderboardSettings(selectedClubId, {
                       payout_currency: settings?.payout_currency || 'diamonds',
+                      weekly_prizes: settings?.weekly_prizes || [],
+                      monthly_prizes: settings?.monthly_prizes || [],
                     });
                     toast.success('Saved');
                     setShowSettings(false);

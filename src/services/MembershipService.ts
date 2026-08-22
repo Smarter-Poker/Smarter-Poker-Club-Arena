@@ -123,7 +123,7 @@ export const MembershipService = {
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
       }
-    } catch (_e) {
+    } catch (e) {
       reportError(e, 'MembershipService.map');
       /* non-critical */
     }

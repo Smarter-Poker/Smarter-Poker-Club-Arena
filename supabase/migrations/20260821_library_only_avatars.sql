@@ -28,6 +28,40 @@
 -- for the same reason — deleting the buckets would make the rollback a lie.
 -- The ROLLBACK block is at the bottom, written out, not described.
 
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STATUS 2026-08-22 — APPLIED, THEN ROLLED BACK. DO NOT RE-RUN BLINDLY.
+-- ═══════════════════════════════════════════════════════════════════════════════
+--
+-- This migration ran in production on 2026-08-21 19:49:37Z. It backed up and
+-- moved 17 human profiles onto library art, exactly as designed, and its own
+-- assertion block confirmed zero remaining before it committed.
+--
+-- It has since been UNDONE. As of 2026-08-22 the state is:
+--
+--   avatar_photo_migration_backup   17 rows, all timestamped 19:49:37Z
+--   profiles matching old_avatar_url   17   <- every one restored to its photo
+--   profiles matching new_avatar_url    0
+--   fn_is_photo_avatar                 absent
+--   fn_pick_library_avatar             absent
+--
+-- That is the ROLLBACK block at the bottom of this file, executed, with the
+-- two helper functions dropped afterwards. Deliberate, by somebody — nothing
+-- in this repo does it automatically, and no other migration references these
+-- objects.
+--
+-- So Dan's 2026-08-21 instruction ("they can now only use avatars") is true
+-- going forward via the UI and service guards, and NOT true for the 17
+-- accounts that already had a photo.
+--
+-- WHOEVER PICKS THIS UP: re-running this is a POLICY decision, not a repair.
+-- Someone reversed it on purpose. Find out why before you re-apply it — and if
+-- it is re-applied, work out what will stop it being reversed again, because
+-- nothing here did.
+--
+-- Recorded rather than acted on:
+-- .agent/audits/2026-08-22-money-path-sweep.md §4
+-- ═══════════════════════════════════════════════════════════════════════════════
+
 BEGIN;
 
 -- ─── 1. Backup table ────────────────────────────────────────────────────────

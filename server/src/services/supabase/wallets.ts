@@ -89,10 +89,27 @@ export async function ensureHorseWallet(
 
   if (wallet.balance < minBalance) {
     const topUp = minBalance - wallet.balance;
-    const { error: refillErr } = await supabase.rpc('credit_player_wallet', {
-      p_user_id: horseId,
-      p_amount: topUp,
-    });
+    // 2026-08-22: this is read-then-write — the balance is SELECTed above and
+    // the top-up computed from it — with no key, so two passes that read the
+    // same balance both credited the difference and the horse ended up with
+    // 2x the floor. The lifecycle sweep and AutoRebuyService can both be in
+    // here at once. Keyed on the balance that was actually observed, so a
+    // duplicate of THIS decision is a DB-side no-op while a genuine later
+    // refill (a different observed balance) still goes through.
+    // fn_credit_player_wallet_once rather than credit_player_wallet: it is the
+    // same body, but it RETURNS whether THIS call performed the credit. The
+    // ledger insert below is gated on that, so the deduped second pass writes
+    // no row — the credit and the row stay in step. (credit_player_wallet
+    // returns void, which is precisely how the tournament prize paths ended up
+    // writing 95 phantom rows before 2026-08-22.)
+    const { data: didCredit, error: refillErr } = await supabase.rpc(
+      'fn_credit_player_wallet_once',
+      {
+        p_user_id: horseId,
+        p_amount: topUp,
+        p_idempotency_key: `horse-refill:${horseId}:${wallet.id}:${wallet.balance}:${minBalance}`,
+      }
+    );
 
     if (refillErr) {
       reportError(
@@ -101,6 +118,10 @@ export async function ensureHorseWallet(
       );
       return;
     }
+
+    // Someone else already made this exact top-up. Their row is the only one
+    // that should exist.
+    if (didCredit === false) return;
 
     // BUG 018 FIX: compute balance_after from the known prior balance + topup
     const newBalance = Number(wallet.balance ?? 0) + topUp;

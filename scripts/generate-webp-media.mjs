@@ -24,7 +24,9 @@
  */
 
 import { execSync } from 'node:child_process';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -39,14 +41,27 @@ async function loadSharp() {
   try {
     return (await import('sharp')).default;
   } catch {
-    console.warn('[webp-media] sharp not installed — installing (--no-save)...');
+    // Not present in the project. Install it into an ISOLATED temp prefix —
+    // NEVER `npm install` inside the project dir: under NODE_ENV=production
+    // that prunes every devDependency (vite, typescript, ...) from
+    // node_modules and the very next build step dies with `vite: not found`.
+    // Exactly that broke CI run #237 before this was isolated.
+    console.warn('[webp-media] sharp not installed — installing into a temp prefix...');
     try {
-      execSync('npm install --no-save --no-audit --no-fund sharp', {
-        cwd: ROOT,
+      const tmp = path.join(os.tmpdir(), 'ca-webp-sharp');
+      mkdirSync(tmp, { recursive: true });
+      const pkgPath = path.join(tmp, 'package.json');
+      if (!existsSync(pkgPath)) {
+        writeFileSync(pkgPath, '{"name":"ca-webp-sharp","private":true}\n');
+      }
+      execSync('npm install --no-save --no-audit --no-fund --loglevel=error sharp', {
+        cwd: tmp,
         stdio: 'inherit',
         timeout: 180000,
+        env: { ...process.env, NODE_ENV: 'development' },
       });
-      return (await import('sharp')).default;
+      const requireFromTmp = createRequire(pkgPath);
+      return requireFromTmp('sharp');
     } catch (err) {
       console.warn('[webp-media] Could not install sharp:', err?.message || err);
       return null;

@@ -259,13 +259,30 @@ export const LeaderboardService = {
       let statsData: PlayerStatsRow[] | null = null;
 
       if (!isRatio) {
-        const { data, error } = await supabase.rpc('fn_club_leaderboard_period_v2', {
-          p_club_id: resolvedClubId,
-          p_metric: metric,
-          p_period: period,
-          p_limit: limit,
-          p_offset: offset,
-        });
+        let data, error;
+        if (periodOffset < 0) {
+          const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+          const result = await supabase.rpc('fn_club_leaderboard_by_dates', {
+            p_club_id: resolvedClubId,
+            p_metric: metric,
+            p_start_date: start.toISOString().split('T')[0],
+            p_end_date: end.toISOString().split('T')[0],
+            p_limit: limit,
+            p_offset: offset,
+          });
+          data = result.data;
+          error = result.error;
+        } else {
+          const result = await supabase.rpc('fn_club_leaderboard_period_v2', {
+            p_club_id: resolvedClubId,
+            p_metric: metric,
+            p_period: period,
+            p_limit: limit,
+            p_offset: offset,
+          });
+          data = result.data;
+          error = result.error;
+        }
         if (error) {
           reportError(error, 'LeaderboardService.getClubLeaderboard_v2');
         } else {
@@ -320,12 +337,28 @@ export const LeaderboardService = {
   ): Promise<LeaderboardEntry[]> {
     try {
       if (metric === 'vpip' || metric === 'pfr') return [];
-      const { data, error } = await supabase.rpc('fn_global_leaderboard_period', {
-        p_metric: metric,
-        p_period: period,
-        p_limit: limit,
-        p_offset: offset,
-      });
+      let data, error;
+      if (periodOffset < 0) {
+        const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+        const result = await supabase.rpc('fn_global_leaderboard_by_dates', {
+          p_metric: metric,
+          p_start_date: start.toISOString().split('T')[0],
+          p_end_date: end.toISOString().split('T')[0],
+          p_limit: limit,
+          p_offset: offset,
+        });
+        data = result.data;
+        error = result.error;
+      } else {
+        const result = await supabase.rpc('fn_global_leaderboard_period', {
+          p_metric: metric,
+          p_period: period,
+          p_limit: limit,
+          p_offset: offset,
+        });
+        data = result.data;
+        error = result.error;
+      }
       if (error || !data) {
         reportError(error, 'LeaderboardService.getGlobalLeaderboard');
         return [];
@@ -456,7 +489,7 @@ export const LeaderboardService = {
           clubName: result.clubName,
           profit: result.profit,
         });
-      } catch (_e: unknown) {
+      } catch {
         // Silent fail for POY tracking
       }
     }

@@ -36,6 +36,20 @@
  */
 
 const LINGER_AFTER_LAST_RELEASE_MS = 5_000;
+/** Physical socket stuck in CONNECTING longer than this is torn down. */
+const HANDSHAKE_TIMEOUT_MS = 15_000;
+/** A facade whose SUBSCRIBE gets no SUBSCRIBED within this is failed. */
+const SUBSCRIBE_TIMEOUT_MS = 15_000;
+/** Server pings every 25s; an OPEN physical socket silent this long is dead. */
+const STALE_HARD_MS = 60_000;
+const WATCHDOG_TICK_MS = 10_000;
+/**
+ * 2026-08-22: close code for "a newer client claimed this table's facade".
+ * EngineStateClient treats it as terminal for that instance — reconnecting
+ * would evict the newer owner and ping-pong forever (StrictMode double-mount,
+ * rapid table switches).
+ */
+export const CLOSE_MUX_SUPERSEDED = 4901;
 
 /** Read the opt-in flag. Safe under Safari private mode's throwing storage. */
 export function isMuxEnabled(): boolean {
@@ -72,8 +86,15 @@ export class MuxTableSocket {
     this.mux.release(this.tableId, code, reason);
   }
 
+  /** @internal 2026-08-22: SUBSCRIBE->SUBSCRIBED watchdog handle. */
+  _subTimer: ReturnType<typeof setTimeout> | null = null;
+
   /** @internal */
   _open(): void {
+    if (this._subTimer) {
+      clearTimeout(this._subTimer);
+      this._subTimer = null;
+    }
     if (this.readyState !== 0) return;
     this.readyState = 1;
     this.onopen?.();
@@ -86,6 +107,10 @@ export class MuxTableSocket {
 
   /** @internal */
   _close(code?: number, reason?: string): void {
+    if (this._subTimer) {
+      clearTimeout(this._subTimer);
+      this._subTimer = null;
+    }
     if (this.readyState === 3) return;
     this.readyState = 3;
     this.onclose?.({ code, reason });
@@ -98,6 +123,10 @@ class EngineSocketMuxImpl {
   private baseUrl = '';
   private token = '';
   private lingerTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 2026-08-22: physical-socket liveness. Stamped on every inbound frame. */
+  private lastInboundAt = 0;
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private handshakeTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * Get a facade for a table, (re)establishing the shared socket as needed.
@@ -110,18 +139,87 @@ class EngineSocketMuxImpl {
       this.lingerTimer = null;
     }
     // A stale facade for the same table (pre-reconnect) is superseded.
+    // 2026-08-22: with a DEDICATED close code — closing it with 1000 made the
+    // old owner's EngineStateClient schedule a reconnect, which re-acquired
+    // and evicted THIS facade: an unbounded mutual-eviction loop whenever the
+    // same table was mounted twice (StrictMode, rapid switches). 4901 tells
+    // the old owner "a newer client owns this table now; stand down".
     const prior = this.facades.get(tableId);
-    if (prior) prior._close(1000, 'superseded');
+    if (prior) prior._close(CLOSE_MUX_SUPERSEDED, 'superseded by newer acquire');
 
     const facade = new MuxTableSocket(this, tableId);
     this.facades.set(tableId, facade);
     this.baseUrl = baseUrl;
     this.token = token;
+
+    // 2026-08-22: a physical socket that is OPEN but has heard NOTHING for a
+    // hard-stale interval is half-open — reusing it strands every facade
+    // forever (SUBSCRIBE sent into the void, SUBSCRIBED never returns, and
+    // readyState still reads OPEN so nothing else escalates). Replace it.
+    if (
+      this.ws &&
+      this.ws.readyState === WebSocket.OPEN &&
+      this.lastInboundAt > 0 &&
+      Date.now() - this.lastInboundAt > STALE_HARD_MS
+    ) {
+      this.teardownPhysical(4001, 'stale physical socket at acquire');
+    }
+
     this.ensureSocket();
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.subscribe(tableId);
     }
+    // SUBSCRIBE->SUBSCRIBED watchdog: no ack within the timeout fails THIS
+    // facade (the owning client's backoff handles retry), and marks the
+    // physical socket suspect if it has also gone silent.
+    facade._subTimer = setTimeout(() => {
+      facade._subTimer = null;
+      if (facade.readyState !== 0) return;
+      if (this.facades.get(tableId) === facade) this.facades.delete(tableId);
+      const silent =
+        this.lastInboundAt === 0 || Date.now() - this.lastInboundAt > SUBSCRIBE_TIMEOUT_MS;
+      facade._close(4500, 'subscribe timeout');
+      if (silent) this.teardownPhysical(4001, 'no inbound traffic across subscribe window');
+    }, SUBSCRIBE_TIMEOUT_MS);
     return facade;
+  }
+
+  /** Force-close and detach the physical socket; surviving facades fail and
+   *  their clients reconnect (which re-acquires a fresh socket). */
+  private teardownPhysical(code: number, reason: string): void {
+    const dead = this.ws;
+    this.ws = null;
+    this.stopWatchdog();
+    if (dead) {
+      try {
+        dead.close(code, reason);
+      } catch {
+        /* ignore */
+      }
+    }
+    this.failAll(code, reason);
+  }
+
+  private startWatchdog(): void {
+    this.lastInboundAt = Date.now();
+    if (this.watchdogTimer !== null) return;
+    this.watchdogTimer = setInterval(() => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (Date.now() - this.lastInboundAt < STALE_HARD_MS) return;
+      this.teardownPhysical(4001, 'mux staleness watchdog');
+    }, WATCHDOG_TICK_MS);
+  }
+
+  private stopWatchdog(): void {
+    if (this.watchdogTimer !== null) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+    if (this.handshakeTimer !== null) {
+      clearTimeout(this.handshakeTimer);
+      this.handshakeTimer = null;
+    }
   }
 
   /** @internal facade → server, rewriting per-table RESYNC. */
@@ -166,6 +264,7 @@ class EngineSocketMuxImpl {
             /* ignore */
           }
           this.ws = null;
+          this.stopWatchdog();
         }
       }, LINGER_AFTER_LAST_RELEASE_MS);
     }
@@ -193,13 +292,31 @@ class EngineSocketMuxImpl {
     }
     this.ws = ws;
 
+    // 2026-08-22: bound CONNECTING — a wedged handshake fires neither onopen
+    // nor onclose, and `readyState <= OPEN` above would trust it forever.
+    if (this.handshakeTimer) clearTimeout(this.handshakeTimer);
+    this.handshakeTimer = setTimeout(() => {
+      this.handshakeTimer = null;
+      if (this.ws === ws && ws.readyState === WebSocket.CONNECTING) {
+        this.teardownPhysical(4001, 'mux handshake timeout');
+      }
+    }, HANDSHAKE_TIMEOUT_MS);
+
     ws.onopen = () => {
+      if (this.ws !== ws) return;
+      if (this.handshakeTimer) {
+        clearTimeout(this.handshakeTimer);
+        this.handshakeTimer = null;
+      }
+      this.startWatchdog();
       for (const tableId of this.facades.keys()) this.subscribe(tableId);
     };
 
     ws.onmessage = (e) => {
+      if (this.ws !== ws) return;
+      this.lastInboundAt = Date.now();
       const raw = typeof e.data === 'string' ? e.data : String(e.data);
-      let msg: { type?: string; tableId?: string } | null = null;
+      let msg: { type?: string; tableId?: string; code?: string } | null = null;
       try {
         msg = JSON.parse(raw) as { type?: string; tableId?: string };
       } catch {
@@ -219,13 +336,19 @@ class EngineSocketMuxImpl {
         return;
       }
       if (msg.type === 'ERROR' && msg.tableId) {
-        // Per-table refusal (not found / banned / cap). Deliver for logging,
-        // then close that facade so the client's backoff owns retry policy.
+        // Per-table refusal. Deliver for logging, then close that facade with
+        // a close code that PRESERVES the refusal's meaning — flattening
+        // everything to 4400 gave "table not found" the wrong retry policy in
+        // both directions (retried forever with the mux on, abandoned forever
+        // with it off). The server's codes: TABLE_NOT_FOUND, BANNED,
+        // TABLE_CAP, SUB_FAILED.
         const f = this.facades.get(msg.tableId);
         if (f) {
           f._message(raw);
           this.facades.delete(msg.tableId);
-          f._close(4400, 'subscription refused');
+          const closeCode =
+            msg.code === 'TABLE_NOT_FOUND' ? 4404 : msg.code === 'BANNED' ? 4403 : 4400;
+          f._close(closeCode, 'subscription refused: ' + (msg.code ?? 'unknown'));
         }
         return;
       }
@@ -250,6 +373,7 @@ class EngineSocketMuxImpl {
        */
       if (this.ws !== ws) return;
       this.ws = null;
+      this.stopWatchdog();
       this.failAll(e.code, e.reason);
     };
   }

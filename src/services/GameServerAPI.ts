@@ -84,6 +84,17 @@ const circuitBreaker = {
     this.trippedAt = 0;
   },
 
+  /**
+   * 2026-08-22: reset when the browser reports the network is back. Without
+   * this, the failures accumulated while offline kept the breaker open for up
+   * to COOLDOWN_MS AFTER connectivity returned — the first heartbeats and
+   * actions of a recovered session were refused by our own client.
+   */
+  reset(): void {
+    this.failures = 0;
+    this.trippedAt = 0;
+  },
+
   /** Record a failed request — increments toward tripping */
   recordFailure(err: unknown, context: string): void {
     this.failures++;
@@ -98,6 +109,12 @@ const circuitBreaker = {
     }
   },
 };
+
+// Instant post-outage recovery: clear the breaker the moment the network is
+// back so heartbeats/actions are not refused by our own client (see reset()).
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => circuitBreaker.reset());
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES

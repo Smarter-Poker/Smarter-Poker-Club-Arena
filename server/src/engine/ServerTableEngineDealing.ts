@@ -35,9 +35,35 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     while (this.running) {
       try {
         // FIX 211: Await any pending postHandTasks before reloading players
-        // This ensures DB stacks are synced before the next hand starts
+        // This ensures DB stacks are synced before the next hand starts.
+        // BOUNDED (2026-08-22): postHandTasks performs a chain of Supabase
+        // calls, each individually capped at 15s but with no cap on the SUM —
+        // and it never calls markProgress(), so a degraded DB could hold this
+        // await past the 90s idle watchdog and get the engine killed (across
+        // every table at once, since DB degradation is correlated). Cap the
+        // wait at 45s; on timeout the remaining tasks keep running in the
+        // background (their .catch already reports) and the loop proceeds —
+        // stack sync is idempotent and the next hand's settlement re-syncs.
         if (this.postHandTasksPromise) {
-          await this.postHandTasksPromise;
+          const pending = this.postHandTasksPromise;
+          let timedOut = false;
+          await Promise.race([
+            pending,
+            new Promise<void>((r) => {
+              const t = setTimeout(() => {
+                timedOut = true;
+                r();
+              }, 45_000);
+              (t as { unref?: () => void }).unref?.();
+            }),
+          ]);
+          if (timedOut) {
+            reportError(
+              new Error('postHandTasks exceeded 45s - continuing loop, tasks finish in background'),
+              'ServerTableEngine.' + this.tableId + '.postHandTasks_timeout'
+            );
+            this.markProgress();
+          }
           this.postHandTasksPromise = null;
         }
 
@@ -930,7 +956,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // LIVE table's turn clock ten minutes after the handover. Detach and
         // get out without touching anything shared.
         if (!this.running || !this.isCurrentEngine()) {
+          // (review fix) Even when superseded we must still drop OUR OWN
+          // hand state: resolving with handController set would let
+          // dealingLoop deal the next hand from a superseded instance — two
+          // engines dealing one table. Local teardown only; never the shared
+          // timers (they belong to the successor).
           unsub();
+          this.handController = null;
+          this.runoutRevealActive = false;
           resolve();
           return;
         }

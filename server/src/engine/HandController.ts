@@ -169,7 +169,15 @@ export class HandController {
 
   private emit(event: HandEvent): void {
     for (const handler of this.eventHandlers) {
-      handler(event);
+      // 2026-08-22: per-listener guard. An unguarded throw here aborted the
+      // remaining listeners AND unwound back into the middle of
+      // performAction/completeHand — mid-settlement state corruption from a
+      // subscriber bug. A listener failure is the listener's problem.
+      try {
+        handler(event);
+      } catch (err) {
+        console.error('[HandController] event listener threw on ' + event.type + ':', err);
+      }
     }
   }
 
@@ -1205,8 +1213,7 @@ export class HandController {
       // full runout. Feasibility was checked at ante time, so the deck holds.
       let cards2: Card[] | undefined;
       if (this.doubleBoardActive && this.state.communityCards2.length < 5) {
-        const count2 =
-          stage === 'flop' ? Math.max(0, 3 - this.state.communityCards2.length) : 1;
+        const count2 = stage === 'flop' ? Math.max(0, 3 - this.state.communityCards2.length) : 1;
         if (count2 > 0) {
           cards2 = deck.deal(count2);
           this.state.communityCards2.push(...cards2);

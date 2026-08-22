@@ -4,9 +4,10 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * Connects to PokerIQ-Production (kuklfnapbkmacvwxktbh)
  *
- * Phase 2 (2026-05-18): Removed subscribeToTable() and set eventsPerSecond: 0
- * to prevent any accidental Supabase Realtime connections. All real-time
- * functionality has been migrated to the Hetzner engine WebSocket.
+ * Phase 2 (2026-05-18): Removed subscribeToTable(). Game state rides the
+ * Hetzner engine WebSocket. 2026-08-22: Supabase Realtime is STILL used for
+ * table presence, chat, reactions and throwables (TableWebSocket/RoomService)
+ * — eventsPerSecond must stay a real limit (see below), not 0.
  */
 
 import { createClient } from '@supabase/supabase-js';
@@ -34,8 +35,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 // Create the Supabase client.
 // CRITICAL: storageKey MUST match Hub's 'smarter-poker-auth' for same-origin SSO.
-// eventsPerSecond: 0 — disables the Supabase Realtime heartbeat / multiplexer.
-// All real-time functionality now goes through the Hetzner engine WebSocket.
+// eventsPerSecond — the CLIENT->SERVER message rate limit the Realtime server
+// enforces from the connection URL. See the note on the value below.
 export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
   auth: {
     autoRefreshToken: true,

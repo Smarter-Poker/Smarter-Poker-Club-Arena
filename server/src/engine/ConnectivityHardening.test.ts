@@ -109,3 +109,25 @@ describe('PreciseActionTimer.clearTable leaves namespaced countdowns alone', () 
     expect(timer.hasTimer('t1', 'timebank:p2')).toBe(false);
   });
 });
+
+describe('hand-boundary countdown cleanup (2026-08-22 review)', () => {
+  it('DisconnectEngine.cancelAllCountdowns cancels timers without touching state', () => {
+    const h = mkScheduler();
+    const timer = new PreciseActionTimer(undefined, h.sched, h.nowFn);
+    const eng = new DisconnectEngine(timer);
+    eng.configure('t1', {});
+    eng.registerPlayer('t1', 'p1');
+    eng.markDisconnected('t1', 'p1');
+    // Simulate a pending countdown registered under the namespaced id.
+    timer.startTimer('t1', 'disconnect:p1', 30_000);
+    expect(timer.hasTimer('t1', 'disconnect:p1')).toBe(true);
+
+    eng.cancelAllCountdowns('t1');
+
+    // The countdown is gone (cannot fire a phantom strike into the next
+    // hand)...
+    expect(timer.hasTimer('t1', 'disconnect:p1')).toBe(false);
+    // ...but connection state is untouched.
+    expect(eng.isConnected('t1', 'p1')).toBe(false);
+  });
+});

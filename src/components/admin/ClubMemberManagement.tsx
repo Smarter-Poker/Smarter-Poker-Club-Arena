@@ -116,6 +116,10 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
     loadMembers();
   }, [loadMembers]);
 
+  useEffect(() => {
+    loadMembers();
+  }, [loadMembers]);
+
   const updateRole = async (memberId: string, newRole: string) => {
     try {
       const resolvedId = await resolveClubUUID(clubId);

@@ -412,7 +412,7 @@ export default function LeaderboardPage() {
     const myReq = ++reqSeqRef.current; // also invalidates any in-flight loadMore
 
     // SWR: show cached data instantly
-    const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}`;
+    const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}_${periodOffset}`;
     if (!silent) {
       const cached = getCachedEntries(cacheKey);
       if (cached && cached.length > 0) {
@@ -510,7 +510,8 @@ export default function LeaderboardPage() {
             metric,
             period,
             PAGE_SIZE,
-            offset
+            offset,
+            periodOffset
           );
       if (myReq !== reqSeqRef.current) return; // filters moved on; drop this page
       if (more.length > 0) {
@@ -519,7 +520,7 @@ export default function LeaderboardPage() {
           if (prev.length !== offset) return prev;
           const seen = new Set(prev.map((e) => e.userId));
           const next = [...prev, ...more.filter((m) => !seen.has(m.userId))];
-          const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}`;
+          const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}_${periodOffset}`;
           setCachedEntries(cacheKey, next);
           return next;
         });

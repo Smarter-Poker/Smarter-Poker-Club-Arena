@@ -170,6 +170,19 @@ describe('shipped functionality is still here', () => {
     });
   });
 
+  /* The guards can all be reverted, and nothing but this notices. Pinned on the
+     file, not its contents: what matters is that SOMETHING still compares the
+     seven repos to each other. */
+  it('something still watches the guards themselves', () => {
+    expect(existsSync(root('.github/workflows/estate-integrity.yml'))).toBe(true);
+    const sh = readFileSync(root('.github/scripts/estate-integrity.sh'), 'utf8');
+    // The three questions it exists to answer. Losing any one of them turns it
+    // into a script that passes for a reason nobody checked.
+    expect(sh.includes('bypass_actors'), 'no longer checks for unexpected bypass actors').toBe(true);
+    expect(sh.includes('required_status_checks'), 'no longer checks that required checks exist').toBe(true);
+    expect(sh.includes('SHARED_FILES'), 'no longer compares the shared guards').toBe(true);
+  });
+
   it('the sentinel list is not empty or trivially passing', () => {
     // A guard that checks nothing passes forever. If someone empties the list
     // to make a build go green, this fails instead.

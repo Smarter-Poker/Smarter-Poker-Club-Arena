@@ -56,6 +56,17 @@ const engineWs = new EngineWebSocketServer({
   onResync: (tableId, userId) => {
     void gameServer.getTableEngine(tableId)?.rePushHoleCards(userId);
   },
+  // CONNECTIVITY UPGRADE (2026-08-22): wire transport presence straight into
+  // the engine's DisconnectEngine. The transport knows a player dropped within
+  // milliseconds; before this the engine waited up to 30s for the HTTP
+  // heartbeat to go stale, burning a full action clock on a player who was
+  // already gone (and giving reconnects a laggy, frozen-feeling re-entry).
+  onConnect: (tableId, userId) => {
+    gameServer.getTableEngine(tableId)?.heartbeat(userId);
+  },
+  onDisconnect: (tableId, userId) => {
+    gameServer.getTableEngine(tableId)?.notifyTransportDisconnect(userId);
+  },
 });
 
 // Phase U4: Channel WebSocket server at /ws/channel (Realtime migration).

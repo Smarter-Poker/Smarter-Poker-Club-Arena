@@ -33,7 +33,26 @@ interface Job {
   id: number;
   payload: JobPayload;
   resolve: (equities: number[]) => void;
+  /** FIX 2026-08-22: single-settle guard — timeout, worker reply and
+   *  worker-death recovery can all race to resolve the same job. */
+  settled?: boolean;
+  /** Per-job watchdog handle, armed at enqueue time. */
+  timer?: ReturnType<typeof setTimeout>;
 }
+
+/**
+ * FIX 2026-08-22: hard bound on how long ANY equity job may remain
+ * unresolved. estimateEquity's promise is awaited on the all-in runout
+ * critical path (broadcastAllInEquity -> safeContinueRunout); a worker that
+ * wedged without exiting used to leave that promise pending FOREVER, parking
+ * the hand at ALL_IN_RUNOUT until the table watchdog killed the engine — and
+ * because jobs queue, one wedged pool stalled every all-in on every table.
+ * The clock starts at enqueue so queue-wait behind a wedged pool is bounded
+ * too. On expiry: a queued job is pulled and computed synchronously; an
+ * in-flight job's worker is terminated (its 'exit' recovery resolves the job
+ * via the same sync fallback and respawns a replacement).
+ */
+const JOB_TIMEOUT_MS = 15_000;
 
 export class EquityWorkerPool {
   private workers: Worker[] = [];
@@ -104,9 +123,41 @@ export class EquityWorkerPool {
         payload: { hands, board, deadCards, iters, opts, seed: useSeed },
         resolve,
       };
+      job.timer = setTimeout(() => this.onJobTimeout(job), JOB_TIMEOUT_MS);
+      job.timer.unref?.();
       this.queue.push(job);
       this.pump();
     });
+  }
+
+  /** See JOB_TIMEOUT_MS. Never lets an equity await park a hand. */
+  private onJobTimeout(job: Job): void {
+    if (job.settled) return;
+    // Still waiting in the queue? Pull it and answer synchronously.
+    const qIdx = this.queue.indexOf(job);
+    if (qIdx !== -1) {
+      this.queue.splice(qIdx, 1);
+      this.settle(job, this.syncFallback(job));
+      return;
+    }
+    // In flight on a wedged worker: terminate it. The worker's 'exit' handler
+    // (onWorkerDown) recovers the job via syncFallback and respawns.
+    for (const [w, inFlightJob] of this.inFlight) {
+      if (inFlightJob === job) {
+        void w.terminate().catch(() => {});
+        return;
+      }
+    }
+    // Neither queued nor in flight and not settled — settle defensively.
+    this.settle(job, this.syncFallback(job));
+  }
+
+  /** Resolve exactly once and clear the watchdog. */
+  private settle(job: Job, equities: number[]): void {
+    if (job.settled) return;
+    job.settled = true;
+    if (job.timer) clearTimeout(job.timer);
+    job.resolve(equities);
   }
 
   private deriveSeed(hands: Card[][], board: Card[], dead: Card[], iters: number): number {
@@ -133,23 +184,41 @@ export class EquityWorkerPool {
     if (this.workers.includes(w)) this.idle.push(w);
     if (job) {
       if (m && !m.error && Array.isArray(m.equities)) {
-        job.resolve(m.equities);
+        this.settle(job, m.equities);
       } else {
         // Worker reported an error — recover with the synchronous compute.
-        job.resolve(this.syncFallback(job));
+        this.settle(job, this.syncFallback(job));
       }
     }
     this.pump();
   }
 
   private onWorkerDown(w: Worker): void {
+    const wasKnown = this.workers.includes(w);
     this.workers = this.workers.filter((x) => x !== w);
     this.idle = this.idle.filter((x) => x !== w);
     const job = this.inFlight.get(w);
     if (job) {
       this.inFlight.delete(w);
       // Do not drop the job — recover it via the synchronous compute.
-      job.resolve(this.syncFallback(job));
+      this.settle(job, this.syncFallback(job));
+    }
+    // FIX 2026-08-22: the pool used to shrink permanently on every worker
+    // death until nothing was offloaded any more. Respawn a replacement
+    // (single attempt, guarded — a broken build artifact just degrades to
+    // sync mode exactly as before).
+    if (wasKnown && !this.disabled && this.workers.length < this.size) {
+      try {
+        const nw = new Worker(this.workerUrl);
+        nw.on('message', (m) => this.onMessage(nw, m));
+        nw.on('error', () => this.onWorkerDown(nw));
+        nw.on('exit', () => this.onWorkerDown(nw));
+        nw.unref();
+        this.workers.push(nw);
+        this.idle.push(nw);
+      } catch {
+        /* degrade to sync mode */
+      }
     }
     this.pump();
   }

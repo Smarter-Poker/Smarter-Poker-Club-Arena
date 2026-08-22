@@ -7,6 +7,110 @@
 
 ---
 
+## Cowork session 2026-08-22 (2) — CONNECTIVITY HARDENING: the freeze deep-dive
+
+Dan: "Fix any and all reasons games randomly break, stop running or freeze."
+Two full audits (client transport + server engine) found ~50 defects; the ones
+that actually strand players are fixed in this session, with regression tests.
+
+### Server (engine) — freeze root causes closed
+
+1. **Cross-instance timer cancellation (the big one).** DeadlineScheduler and
+   PreciseActionTimer are process-global, keyed by tableId only, and GameServer
+   lets an old engine's async stop() overlap its replacement. The OLD instance's
+   teardown cancelled the NEW instance's heartbeat + turn clocks; the heartbeat
+   is the only thing that re-arms itself, so the table permanently lost its
+   watchdog and every stall lasted forever. Fix: a liveEngines ownership
+   registry in ServerTableEngineBase; stop()/killForRestart()/the 10-minute
+   hand-void timer only touch shared resources when still the authoritative
+   instance. The hand-void setTimeout is now also tracked and cleared on both
+   teardown paths (it used to fire up to 10 min later against the successor).
+2. **DisconnectEngine.registerPlayer is now idempotent.** It ran for every
+   player at every hand start and unconditionally re-created state — wiping
+   isConnected/isSittingOut/consecutiveTimeouts each hand. The auto-sit-out
+   ladder could never fire: an AFK player burned a full clock + time bank every
+   orbit forever, and sat-out tournament players stalled the table every orbit
+   instead of insta-folding.
+3. **Transport now tells the engine about disconnects.** WS close → (if it was
+   the player's last live socket for the table) DisconnectEngine.markDisconnected
+   within milliseconds; WS connect → engine heartbeat, cancelling the countdown
+   instantly. Before, the engine waited up to 30s for the HTTP heartbeat sweep.
+4. **Half-open sockets are terminate()d** after heartbeat timeout (engine +
+   channel WS servers) instead of a graceful close a dead peer never completes.
+5. **Stale TURN_CHANGE handlers are discarded** (seat identity re-checked after
+   the settle beat, in both HandEvents and handleTurnChange) — they used to
+   re-stamp the live player's deadline and start spurious disconnect countdowns.
+6. **Equity jobs are bounded (15s).** A wedged equity worker used to park every
+   all-in runout process-wide, forever; now the job times out, the worker is
+   terminated and replaced, and the sync fallback answers. Pool also respawns
+   workers instead of shrinking permanently.
+7. **10-consecutive-errors path now killForRestart()s** instead of leaving a
+   half-dead engine with armed deadlines for the reaper to delete uncleaned.
+8. **HAND_COMPLETE listener body guarded** — a throw there hung the dealHand
+   promise for the 10-minute void; resolve() is now unconditional.
+9. **PreciseActionTimer.clearTable honours its contract** — no longer cancels
+   the namespaced timebank:/disconnect: countdowns (a bank left active with no
+   countdown blocked rearmTurnTimerIfCurrent for reconnecting players).
+10. **leaveTable out of turn queues auto_fold** — performAction('fold') returns
+    false when it isn't their turn (it never threw); the leaver used to stay in
+    the hand and get auto-CHECKED down every street.
+11. **Backpressure now real on single-table sockets** — the HubSubscriber
+    adapter exposes bufferedAmount (it read 0 forever before).
+
+### Client — reconnection made unkillable
+
+1. **getToken() rejection no longer ends the reconnect ladder permanently**
+   (was the single worst frozen-table path — status stuck at 'connecting',
+   never 'failed', so even the auto-reload failsafe never fired). Both clients.
+2. **15s handshake timeout** — a socket wedged in CONNECTING (captive portal /
+   TCP blackhole) fires neither onopen nor onclose; it used to also BLOCK the
+   online-event recovery path. Now torn down into the backoff ladder, and the
+   online handler tears down a CONNECTING socket instead of trusting it.
+3. **Watchdog can no longer be defeated by tab switching** — wake grants a
+   bounded grace instead of a full clock reset, and 3 unanswered RESYNCs force
+   reconnection regardless of the silence clock (also fixes "resync has no
+   retry"). HARD path now announces 'reconnecting', detaches the socket and
+   always schedules the reconnect (it used to silently stall in CLOSING with a
+   green dot).
+4. **4404 is no longer terminal** — the engine returns it for ~2 min after
+   every restart while tables rehydrate; the client now retries on the slow
+   ladder instead of dying (and reload-looping via the failsafe).
+5. **EngineChannelClient brought up to the same contract**: never-give-up
+   ladder (was: permanent death after 10 tries — killed wallet/lobby/presence
+   updates for the page's life), staleness watchdog, online-event reconnect,
+   token via supabase.auth.getSession() (refreshes; the raw localStorage read
+   4401-looped after suspend), bounded send queue.
+6. **Connection UI now reports the ENGINE socket** (indicator + toasts). They
+   watched the legacy Supabase channel: dead game socket = green dot; Supabase
+   blip = "Connection lost" on a healthy game.
+7. **Supabase realtime eventsPerSecond 0 → 10** — 0 is the server-enforced
+   client→server rate limit, so presence/chat/reactions silently did nothing.
+8. **TableWebSocket zombie-channel race fixed** (destroyed flag; connect
+   aborts after awaits), RoomService rebinds on reconnect (it used to hold the
+   first, removed channel forever — reactions/chat died after first drop),
+   reconnect jitter added, and client broadcasts no longer poison peers'
+   sequence tracking (-1 = unordered; RoomMessages no longer corrupt
+   lastSequence to undefined).
+9. **Toast context memoized + heartbeat effect decoupled from it** — every
+   toast used to tear down the 5s heartbeat interval and reset its miss
+   counters, so the "connection lost" warning could never accumulate during an
+   outage.
+
+### Tests
+
+New: server/src/engine/ConnectivityHardening.test.ts (registerPlayer
+idempotency, clearTable namespacing). Updated expectations pass everywhere:
+client 2896 passed / 5 skipped, server 1027 passed, tsc clean on both configs.
+
+### Deferred (documented, not forgotten)
+
+Idle-table broadcast (no snapshot for joining clients between hands / empty
+tables), postHandTasks unbounded await, /health restart-races-recovery window,
+mux-mode fixes (flag is OFF; do not enable ca_ws_mux until EngineSocketMux
+half-open + eviction-storm bugs are fixed), presence ghost-seat merge.
+
+---
+
 ## Cowork session 2026-08-22 — the regression Dan asked about, found and closed
 
 Dan: "I keep building things inside the club arena and they work, but then hours

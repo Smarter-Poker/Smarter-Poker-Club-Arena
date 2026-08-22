@@ -462,7 +462,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             new Error(`[ServerTableEngine:${this.tableId}] Too many errors — stopping`),
             'ServerTableEnginethistableId.Too_many_errors__stopping'
           );
-          this.running = false;
+          // FIX 2026-08-22: was `this.running = false` alone, which left a
+          // half-dead engine — deadlines armed, hand safety timer live,
+          // handController possibly non-null — that the reaper then deleted
+          // WITHOUT ever cleaning up. killForRestart does the full teardown
+          // (ownership-guarded) and lets discovery rebuild a fresh engine.
+          this.killForRestart('dealing_loop_10_consecutive_errors');
         } else {
           await this.sleep(backoffMs);
         }
@@ -918,6 +923,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // Declared with `let` so the timeout callback can call it (see AUDIT FIX).
       let unsub: () => void = () => {};
       const handTimeout = setTimeout(() => {
+        this.handSafetyTimer = null;
+        // CROSS-INSTANCE GUARD (2026-08-22): if this engine has been stopped
+        // or superseded while the void timer was armed, the shared timers now
+        // belong to the replacement engine — clearing them here would wipe the
+        // LIVE table's turn clock ten minutes after the handover. Detach and
+        // get out without touching anything shared.
+        if (!this.running || !this.isCurrentEngine()) {
+          unsub();
+          resolve();
+          return;
+        }
         console.warn(
           `[ServerTableEngine:${this.tableId}] Hand ${handNumber} timed out after 10 minutes`
         );
@@ -933,6 +949,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         this.runoutRevealActive = false;
         resolve();
       }, HAND_SAFETY_TIMEOUT_MS);
+      // Track on the instance so stop()/killForRestart() can clear it.
+      this.handSafetyTimer = handTimeout;
 
       unsub = this.handController!.onEvent((event: HandEvent) => {
         // 2026-08-15: handleHandEvent is async and its promise was discarded,
@@ -949,24 +967,35 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
         if (event.type === 'HAND_COMPLETE') {
           clearTimeout(handTimeout);
+          this.handSafetyTimer = null;
           unsub();
 
-          // FIX 149: Wire telemetry — record hand timing
-          const handElapsedMs = Date.now() - handStartMs;
-          this.engineTelemetry.recordHandTiming(this.tableId, 0, 0, handElapsedMs);
+          // GUARD (2026-08-22): everything between here and resolve() used to
+          // run unprotected inside HandController.emit's listener loop. A
+          // throw from recordHandTiming or clearTurnTimer escaped back into
+          // completeHand AFTER the void timer was cleared — the dealHand
+          // promise then hung forever and the table stopped dealing. Nothing
+          // in this block may prevent resolve() from running.
+          try {
+            // FIX 149: Wire telemetry — record hand timing
+            const handElapsedMs = Date.now() - handStartMs;
+            this.engineTelemetry.recordHandTiming(this.tableId, 0, 0, handElapsedMs);
 
-          // Fire hand-complete callback for tournament chip sync
-          this.clearTurnTimer();
-          if (this.handCompleteCallback) {
-            const finalStacks = players.map((p) => ({
-              user_id: p.user_id,
-              stack: p.stack,
-            }));
-            try {
-              this.handCompleteCallback(this.tableId, finalStacks);
-            } catch (e) {
-              reportError(e, 'ServerTableEnginethistableId.handCompleteCallback_error');
+            // Fire hand-complete callback for tournament chip sync
+            this.clearTurnTimer();
+            if (this.handCompleteCallback) {
+              const finalStacks = players.map((p) => ({
+                user_id: p.user_id,
+                stack: p.stack,
+              }));
+              try {
+                this.handCompleteCallback(this.tableId, finalStacks);
+              } catch (e) {
+                reportError(e, 'ServerTableEnginethistableId.handCompleteCallback_error');
+              }
             }
+          } catch (e) {
+            reportError(e, 'ServerTableEngine.' + this.tableId + '.hand_complete_listener_threw');
           }
 
           this.handController = null;
@@ -991,6 +1020,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       } catch (err) {
         reportError(err, 'ServerTableEnginethistableId.Failed_to_start_hand');
         clearTimeout(handTimeout);
+        this.handSafetyTimer = null;
         unsub();
         this.handController = null;
         resolve();

@@ -115,6 +115,18 @@ export interface EngineWebSocketServerOptions {
    * state is re-sent by the hub, but hole cards ride a separate transport.
    */
   onResync?: (tableId: string, userId: string) => void;
+  /**
+   * CONNECTIVITY UPGRADE (2026-08-22): transport-level presence wiring.
+   * Before this, the engine's DisconnectEngine learned about a dropped player
+   * ONLY from the HTTP heartbeat going stale (30s of dead air) even though the
+   * transport knew within milliseconds. onDisconnect fires when a player's
+   * LAST live socket for a table goes away; onConnect fires the moment a
+   * socket for that table is established, so a reconnect cancels the
+   * disconnect countdown instantly instead of waiting for the next HTTP
+   * heartbeat.
+   */
+  onConnect?: (tableId: string, userId: string) => void;
+  onDisconnect?: (tableId: string, userId: string) => void;
 }
 
 interface ConnectionState {
@@ -200,6 +212,8 @@ export class EngineWebSocketServer {
   private readonly tableExists: TableExistsCheck;
   private readonly verifyToken: (token: string) => Promise<{ userId: string } | null>;
   private readonly onResync?: (tableId: string, userId: string) => void;
+  private readonly onConnect?: (tableId: string, userId: string) => void;
+  private readonly onDisconnect?: (tableId: string, userId: string) => void;
   /** tableId -> { restricted, readAt } — see IP_RESTRICTION_TTL_MS. */
   private ipRestrictionCache: Map<string, { restricted: boolean; readAt: number }> = new Map();
   /**
@@ -215,6 +229,8 @@ export class EngineWebSocketServer {
     this.tableExists = opts.tableExists;
     this.verifyToken = opts.verifyToken ?? defaultVerifyToken;
     this.onResync = opts.onResync;
+    this.onConnect = opts.onConnect;
+    this.onDisconnect = opts.onDisconnect;
     this.wss = new WebSocketServer({ noServer: true });
   }
 
@@ -435,7 +451,10 @@ export class EngineWebSocketServer {
         .eq('id', tableRow.club_id)
         .maybeSingle();
 
-      scope = { clubId: tableRow.club_id as string, unionId: (clubRow?.union_id as string) ?? null };
+      scope = {
+        clubId: tableRow.club_id as string,
+        unionId: (clubRow?.union_id as string) ?? null,
+      };
       this.tableScopeCache.set(tableId, scope);
     }
 
@@ -500,11 +519,7 @@ export class EngineWebSocketServer {
    * True when this arriving connection would put a SECOND account at
    * `tableId` from `ip`.
    */
-  private async isIpConflict(
-    tableId: string,
-    userId: string,
-    ip: string | null
-  ): Promise<boolean> {
+  private async isIpConflict(tableId: string, userId: string, ip: string | null): Promise<boolean> {
     if (!isUsableClientIp(ip)) return false;
     if (!(await this.isIpRestricted(tableId))) return false;
 
@@ -587,6 +602,14 @@ export class EngineWebSocketServer {
       get readyState() {
         return ws.readyState;
       },
+      // FIX 2026-08-22: without this the hub's backpressure logic read
+      // `sub.bufferedAmount ?? 0` as 0 forever on every single-table socket,
+      // so the soft-drop / hard-evict thresholds never fired for the
+      // connections that carry all current traffic (only the mux path
+      // exposed it).
+      get bufferedAmount() {
+        return ws.bufferedAmount;
+      },
       send(data: string) {
         ws.send(data);
       },
@@ -597,6 +620,8 @@ export class EngineWebSocketServer {
     // ask the engine to also re-deliver this player's hole cards for the
     // current hand so a reconnecting player isn't left blind.
     this.onResync?.(tableId, userId);
+    // Presence: tell the engine this player has a live transport again.
+    this.onConnect?.(tableId, userId);
 
     ws.on('message', (raw) => this.onMessage(conn, raw));
     ws.on('close', () => this.onClose(ws));
@@ -624,7 +649,12 @@ export class EngineWebSocketServer {
     ws.on('error', () => this.onClose(ws));
   }
 
-  private sendMuxError(conn: ConnectionState, tableId: string, code: string, message: string): void {
+  private sendMuxError(
+    conn: ConnectionState,
+    tableId: string,
+    code: string,
+    message: string
+  ): void {
     try {
       conn.ws.send(JSON.stringify({ type: 'ERROR', tableId, code, message }));
     } catch {
@@ -652,7 +682,12 @@ export class EngineWebSocketServer {
     // fired 5+ SUBSCRIBEs in one burst sail past the cap while they were all
     // still 'pending'. In-flight counts against the limit.
     if (conn.subs.size >= MUX_MAX_TABLES) {
-      this.sendMuxError(conn, tableId, 'SUB_LIMIT', `At most ${MUX_MAX_TABLES} tables per connection`);
+      this.sendMuxError(
+        conn,
+        tableId,
+        'SUB_LIMIT',
+        `At most ${MUX_MAX_TABLES} tables per connection`
+      );
       return;
     }
     conn.subs.set(tableId, 'pending');
@@ -674,7 +709,12 @@ export class EngineWebSocketServer {
       try {
         if (await this.isIpConflict(tableId, conn.userId, conn.clientIp)) {
           conn.subs.delete(tableId);
-          this.sendMuxError(conn, tableId, 'IP_RESTRICTED', 'Another account is already connected from this address');
+          this.sendMuxError(
+            conn,
+            tableId,
+            'IP_RESTRICTED',
+            'Another account is already connected from this address'
+          );
           return;
         }
       } catch {
@@ -704,6 +744,8 @@ export class EngineWebSocketServer {
       }
       this.hub.subscribe(tableId, subscriber);
       this.onResync?.(tableId, conn.userId);
+      // Presence: mux SUBSCRIBE established a live transport for this table.
+      this.onConnect?.(tableId, conn.userId);
     } catch (err) {
       conn.subs.delete(tableId);
       this.sendMuxError(conn, tableId, 'SUB_FAILED', 'Subscribe failed');
@@ -818,7 +860,10 @@ export class EngineWebSocketServer {
         }
         const tableIds = [...conn.subs.keys()];
         conn.subs.clear();
-        for (const tableId of tableIds) this.forgetTableIfEmpty(tableId);
+        for (const tableId of tableIds) {
+          this.forgetTableIfEmpty(tableId);
+          this.notifyDisconnectIfLast(tableId, conn.userId);
+        }
       }
       return;
     }
@@ -827,6 +872,28 @@ export class EngineWebSocketServer {
     this.connections.delete(ws);
     // Delete AFTER removing this connection, so "is anyone left" is accurate.
     this.forgetTableIfEmpty(conn.tableId);
+    this.notifyDisconnectIfLast(conn.tableId, conn.userId);
+  }
+
+  /**
+   * CONNECTIVITY UPGRADE (2026-08-22): fire onDisconnect only when the player
+   * has NO other live socket carrying this table. During a reconnect the new
+   * socket opens before the old one closes; without this check the old
+   * socket's close would mark a freshly reconnected player as disconnected.
+   */
+  private notifyDisconnectIfLast(tableId: string, userId: string): void {
+    if (!this.onDisconnect || !tableId) return;
+    for (const [otherWs, other] of this.connections) {
+      if (other.userId !== userId) continue;
+      if (otherWs.readyState !== WebSocket.OPEN) continue;
+      if (other.tableId === tableId) return; // still connected on another socket
+      if (other.isMux && other.subs?.has(tableId)) return;
+    }
+    try {
+      this.onDisconnect(tableId, userId);
+    } catch {
+      /* presence wiring must never take down the transport */
+    }
   }
 
   private heartbeatSweep(): void {
@@ -835,6 +902,14 @@ export class EngineWebSocketServer {
       if (now - conn.lastPongAt > HEARTBEAT_TIMEOUT_MS) {
         try {
           ws.close(1001, 'heartbeat timeout');
+        } catch {
+          /* ignore */
+        }
+        // FIX 2026-08-22: close() starts a graceful handshake a half-open
+        // socket can never finish, so the fd lingered until the OS TCP
+        // timeout. A peer that missed 60s of pongs is gone — terminate.
+        try {
+          ws.terminate();
         } catch {
           /* ignore */
         }

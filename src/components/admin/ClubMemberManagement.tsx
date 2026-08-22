@@ -60,9 +60,9 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
 
   useEffect(() => {
     loadMembers();
-  }, [clubId]);
+  }, [loadMembers]);
 
-  const loadMembers = async () => {
+  const loadMembers = useCallback(async () => {
     setLoading(true);
     try {
       const resolvedId = await resolveClubUUID(clubId);
@@ -110,11 +110,12 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
           setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
         );
       }
-    } catch (error) {
+    } catch (err) {
+      console.error(err);
       if (isMounted.current) toast.error('Failed to load members');
     }
     if (isMounted.current) setLoading(false);
-  };
+  }, [clubId, isMounted, toast]);
 
   const updateRole = async (memberId: string, newRole: string) => {
     try {
@@ -131,6 +132,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch (err) {
+      console.error(err);
       reportError(err, 'ClubMemberManagement.Error');
       if (isMounted.current) toast.error('Failed to update role');
     }
@@ -151,6 +153,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch (err) {
+      console.error(err);
       reportError(err, 'ClubMemberManagement.Error');
       if (isMounted.current) toast.error('Failed to update ban status');
     }
@@ -171,6 +174,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch (err) {
+      console.error(err);
       reportError(err, 'ClubMemberManagement.Error');
       if (isMounted.current) toast.error('Failed to remove member');
     }
@@ -264,7 +268,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
                   className={member.isBanned ? 'unban' : 'ban'}
                   onClick={() => toggleBan(member.id, member.isBanned)}
                 >
-                  {member.isBanned ? '' : ''}
+                  {member.isBanned ? 'Unban' : 'Ban'}
                 </button>
                 <button className="kick" onClick={() => kickMember(member.id)}>
                   ✕

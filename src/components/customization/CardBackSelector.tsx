@@ -18,10 +18,21 @@
  *      artwork in the repo at all, so a correct path still cannot paint. Every
  *      tile now falls back to a styled, per-design placeholder instead of the
  *      browser's broken-image glyph — a missing asset degrades, never breaks.
+ *
+ * PERF PASS 2026-08-22 (handoff item 4): previews now show the TABLE art.
+ * A purchase resolves through normalizeCardBack to a design in
+ * cards/backs/table/, but the thumbnails pointed at unrelated full-size
+ * originals — so what you previewed was not what your cards looked like
+ * after buying (burgundy's preview was distinct art, the table renders
+ * classic_red). Deriving the preview path from normalizeCardBack keeps the
+ * store honest by construction and follows any future alias change
+ * automatically. Side benefit: table webps are ~38KB, and cause 2 above is
+ * moot — every normalized target has artwork in cards/backs/table/.
  */
 
 import React, { useState, useCallback } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
+import { normalizeCardBack } from '../table/CardImage';
 import { masterBus } from '../../core/MasterBus';
 import { haptic } from '../../services/SoundService';
 import './CardBackSelector.css';
@@ -52,33 +63,36 @@ interface CardBackSelectorProps {
 // CARD BACK CATALOG
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Preview = the art the table will actually render for this id.
+const tableArt = (id: string) => `${MEDIA_BASE}cards/backs/table/${normalizeCardBack(id)}.webp`;
+
 const CARD_BACKS: CardBack[] = [
   // ── Free defaults ──
   {
     id: 'black',
     name: 'Black',
-    preview: `${MEDIA_BASE}cards/backs/black.webp`,
+    preview: tableArt('black'),
     isDefault: true,
     tier: 'standard',
   },
   {
     id: 'red',
     name: 'Red',
-    preview: `${MEDIA_BASE}cards/backs/red.webp`,
+    preview: tableArt('red'),
     isDefault: true,
     tier: 'standard',
   },
   {
     id: 'blue',
     name: 'Blue',
-    preview: `${MEDIA_BASE}cards/backs/blue.webp`,
+    preview: tableArt('blue'),
     isDefault: true,
     tier: 'standard',
   },
   {
     id: 'white',
     name: 'White',
-    preview: `${MEDIA_BASE}cards/backs/white.webp`,
+    preview: tableArt('white'),
     isDefault: true,
     tier: 'standard',
   },
@@ -87,7 +101,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'classic',
     name: 'Classic',
-    preview: `${MEDIA_BASE}cards/backs/classic.webp`,
+    preview: tableArt('classic'),
     isPremium: true,
     price: 50,
     tier: 'premium',
@@ -95,7 +109,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'burgundy',
     name: 'Burgundy',
-    preview: `${MEDIA_BASE}cards/backs/burgundy.webp`,
+    preview: tableArt('burgundy'),
     isPremium: true,
     price: 75,
     tier: 'premium',
@@ -103,7 +117,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'navy',
     name: 'Navy',
-    preview: `${MEDIA_BASE}cards/backs/navy.webp`,
+    preview: tableArt('navy'),
     isPremium: true,
     price: 75,
     tier: 'premium',
@@ -111,7 +125,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'gold',
     name: 'Premium Gold',
-    preview: `${MEDIA_BASE}cards/backs/gold.webp`,
+    preview: tableArt('gold'),
     isPremium: true,
     price: 150,
     tier: 'premium',
@@ -121,7 +135,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'holographic',
     name: 'Holographic',
-    preview: `${MEDIA_BASE}cards/backs/holographic.webp`,
+    preview: tableArt('holographic'),
     isPremium: true,
     price: 200,
     tier: 'exclusive',
@@ -129,7 +143,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'carbon',
     name: 'Carbon Fiber',
-    preview: `${MEDIA_BASE}cards/backs/carbon.webp`,
+    preview: tableArt('carbon'),
     isPremium: true,
     price: 175,
     tier: 'exclusive',
@@ -137,7 +151,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'club-branded',
     name: 'Club Crest',
-    preview: `${MEDIA_BASE}cards/backs/club-branded.jpg`,
+    preview: tableArt('club-branded'),
     isPremium: true,
     price: 250,
     tier: 'exclusive',
@@ -145,7 +159,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'diamond-foil',
     name: 'Diamond Foil',
-    preview: `${MEDIA_BASE}cards/backs/diamond-foil.jpg`,
+    preview: tableArt('diamond-foil'),
     isPremium: true,
     price: 300,
     tier: 'exclusive',

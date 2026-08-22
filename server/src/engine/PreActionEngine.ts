@@ -101,7 +101,14 @@ export class PreActionEngine {
     const key = `${tableId}:${playerId}`;
     const fsm = this.getFSM(tableId, playerId);
 
-    // FSM: idle → queued
+    // FSM: idle → queued. 2026-08-22 review: re-queueing while already
+    // 'queued' (player changes their pre-action, or leaveTable queues an
+    // auto_fold over an existing selection) fired an invalid queued→queued
+    // transition straight into Sentry on a routine flow. Step through idle
+    // first when the FSM allows it.
+    if (fsm.state !== 'idle' && fsm.canTransition('idle')) {
+      fsm.transition('idle');
+    }
     fsm.transition('queued');
 
     this.queuedActions.set(key, {

@@ -159,6 +159,28 @@ describe('shipped functionality is still here', () => {
       expect(publisher().includes('npx vitest run tests/')).toBe(true);
     });
 
+    it('an older build cannot overwrite a newer one — ancestry, not wall clock', () => {
+      /* 2026-08-22, twice in one day: cancel-in-progress: false lets an
+         OLDER-sha run FINISH after a newer one, and because the older run was
+         still building, its built_at is the LATER timestamp — so a stand-down
+         guard comparing times waves the regression straight through. "Newer"
+         must mean git history. Pinned on the mechanism: the sync step reads
+         the deployed ca_sha and asks the compare API where it stands. */
+      const wf = publisher();
+      expect(
+        wf.includes('"ca_sha"'),
+        'the sync step no longer reads the deployed ca_sha'
+      ).toBe(true);
+      expect(
+        /\/compare\/\$\{THEIRS_SHA\}\.\.\.\$\{OURS_SHA\}/.test(wf),
+        'the sync step no longer asks the compare API for ancestry'
+      ).toBe(true);
+      expect(
+        /behind\)\s+VERDICT=standdown/.test(wf),
+        'a behind (older) build no longer stands down'
+      ).toBe(true);
+    });
+
     it('something asks production what it is actually serving', () => {
       // Without this, "merged" and "published" have the same green tick, and
       // three separate incidents here were merges that never published.
@@ -193,6 +215,17 @@ describe('shipped functionality is still here', () => {
 
   it('CLAUDE.md sends agents to the playbook first', () => {
     expect(readFileSync(root('CLAUDE.md'), 'utf8').includes('AGENT-PLAYBOOK.md')).toBe(true);
+  });
+
+  /* Claude reads CLAUDE.md at session start; Antigravity reads
+     .agents/rules/*.md with `trigger: always_on`. Two different front doors,
+     and until 2026-08-22 only one of them mentioned the playbook - so an
+     Antigravity agent following its always-on rule never learned it existed. */
+  it('Antigravity has an always-on rule that points at the playbook', () => {
+    const r = readFileSync(root('.agents/rules/00-agent-playbook.md'), 'utf8');
+    expect(r.includes('trigger: always_on'), 'the rule is no longer always-on').toBe(true);
+    expect(r.includes('AGENT-PLAYBOOK.md'), 'the rule no longer points at the playbook').toBe(true);
+    expect(r.includes('agent-workspace.sh'), 'the rule no longer carries the ship sequence').toBe(true);
   });
 
   /* The guards can all be reverted, and nothing but this notices. Pinned on the

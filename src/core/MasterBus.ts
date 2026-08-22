@@ -492,7 +492,7 @@ export interface BusPayloadMap {
     timestamp: number;
   };
   SHOW_TOAST: {
-    severity: 'critical' | 'warning' | 'info';
+    severity: 'critical' | 'warning' | 'info' | 'clock';
     message: string;
     source?: string;
     durationMs?: number;
@@ -1821,7 +1821,7 @@ export function isMasterBusOnline(): boolean {
  */
 export function busToast(
   message: string,
-  severity: 'critical' | 'warning' | 'info' = 'info',
+  severity: 'critical' | 'warning' | 'info' | 'clock' = 'info',
   durationMs?: number
 ): void {
   masterBus.emit('SHOW_TOAST', { message, severity, source: 'busToast', durationMs });

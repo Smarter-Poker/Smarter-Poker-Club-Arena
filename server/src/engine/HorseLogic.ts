@@ -453,7 +453,17 @@ export interface HorseGameStateV2 extends HorseGameState {
   /** V7 ICM: explicit tournament context. When absent, tournaments are
    *  self-detected from the big blind (the cash fleet caps at 2.00/5.00, so
    *  bb >= 10 only occurs in tournament play). */
-  tournament?: { nearBubble?: boolean; inMoney?: boolean };
+  tournament?: {
+    nearBubble?: boolean;
+    inMoney?: boolean;
+    playersLeft?: number;
+    spotsPaid?: number;
+    avgStackChips?: number;
+    bountyFactor?: number;
+  };
+  /** V12: table format. Spins are winner-take-all chip-EV (no ICM), HU SNGs
+   *  play heads-up ranges, MTTs get the full survival model. */
+  format?: 'cash' | 'mtt' | 'spin' | 'hu_sng';
   /** V11 (Dan 2026-08-22): EXPLICIT game mode from the table engine
    *  (tournament_id / game_type). Cash and tournaments are different games;
    *  when this is present it is trusted over every heuristic. */
@@ -480,13 +490,43 @@ function isTournamentMode(gs: HorseGameStateV2): boolean {
  * stack. Returns an additive threshold premium (0 for cash games).
  */
 function icmRisk(gs: HorseGameStateV2, stackBB: number): number {
+  // icmRisk v2 (V12, 2026-08-22): real bubble model from TournamentBrainContext.
   const explicit = gs.tournament;
-  const isTournament = isTournamentMode(gs);
-  if (!isTournament) return 0;
+  if (!isTournamentMode(gs)) return 0;
+  // Spins are winner-take-all — pure chip EV, zero survival premium.
+  if (gs.format === 'spin' && (explicit?.spotsPaid ?? 1) <= 1) return 0;
+
   let risk = stackBB < 40 ? 0.04 : 0.02;
-  if (explicit?.nearBubble) risk += 0.04;
-  if (explicit?.inMoney && stackBB > 60) risk = Math.max(0.01, risk - 0.02);
-  return risk;
+  if (explicit) {
+    const pl = explicit.playersLeft ?? 0;
+    const paid = explicit.spotsPaid ?? 0;
+    if (pl > 0 && paid > 0) {
+      // Pressure scales with the ACTUAL distance to the money.
+      const inMoney = explicit.inMoney ?? pl <= paid;
+      if (!inMoney) {
+        const ratio = pl / paid;
+        if (ratio <= 1.15) risk += 0.06; // stone bubble
+        else if (ratio <= 1.4) risk += 0.04;
+        else if (ratio <= 2.0) risk += 0.02;
+        // Big-stack bubble ABUSE: when hero covers the field the pressure
+        // belongs to everyone else — halve the premium and open up while
+        // the medium stacks have to fold.
+        const avgBB = gs.bigBlind > 0 ? (explicit.avgStackChips ?? 0) / gs.bigBlind : 0;
+        if (ratio <= 1.4 && avgBB > 0 && stackBB > avgBB * 1.8) risk *= 0.5;
+      } else {
+        // ITM: ladder pressure matters short-stacked; big stacks play chips.
+        risk = stackBB < 15 ? risk + 0.02 : Math.max(0.01, risk - 0.02);
+      }
+    } else {
+      // Legacy explicit flags (V7 shape) — behavior preserved exactly.
+      if (explicit.nearBubble) risk += 0.04;
+      if (explicit.inMoney && stackBB > 60) risk = Math.max(0.01, risk - 0.02);
+    }
+    // PKO: a fat bounty share makes covered all-ins better than raw ICM
+    // says — trim the premium so the horses fight for bounties.
+    if ((explicit.bountyFactor ?? 0) >= 0.2) risk = Math.max(0, risk - 0.02);
+  }
+  return Math.min(risk, 0.12);
 }
 
 /** V3/V4/V5 decision options (benchmark/test hooks — production uses defaults). */
@@ -538,6 +578,16 @@ export interface HorseDecideOpts {
    *  donk leads with medium hands), and board-domination call discipline
    *  (default: enabled) */
   v11?: boolean;
+  /** disable the V12 layer: board-conditioned opponent sampling — postflop
+   *  aggressors are sampled toward hands that CONNECT with the actual board,
+   *  passive checked lines get their monsters down-sampled (default: enabled) */
+  v12?: boolean;
+  /** ablation hook (benchmarks only) — defaults to the v12 master flag */
+  v12Ranges?: boolean;
+  /** disable the V12 river-sizing polish: OOP block bets, nut-advantage
+   *  overbets + blocker overbet bluffs, extended blocker-aware catches
+   *  (defaults to the v12 master flag) */
+  v12River?: boolean;
 }
 
 /**
@@ -603,10 +653,14 @@ export class HorseLogic {
     try {
       // V3: ingest the action stream into the opponent-intelligence layer.
       // Wrapped so observation can never take down a decision.
-      try {
-        HorseMind.observe(gameState.actionHistory, gameState.players);
-      } catch {
-        /* observation is best-effort */
+      // V12: benchmark/league decisions pass mind:false — they must never
+      // write synthetic hands into the live opponent memory.
+      if (opts.mind !== false) {
+        try {
+          HorseMind.observe(gameState.actionHistory, gameState.players);
+        } catch {
+          /* observation is best-effort */
+        }
       }
       return this.decideInternal(player, gameState, style, mods, opts);
     } catch {
@@ -751,6 +805,19 @@ export class HorseLogic {
     const oppsLeft = gs.players.filter((p) => !p.is_folded && p.seat !== player.seat).length;
     const stackBB = player.stack / bb;
 
+    // V12 ANTI-EXPLOIT: is the raiser hunting THIS horse? Best-effort.
+    let targeted = 0;
+    if (opts.v11 !== false && lastRaiserSeat >= 0) {
+      try {
+        const raiser = gs.players.find((p) => p.seat === lastRaiserSeat);
+        if (raiser && raiser.user_id !== player.user_id) {
+          targeted = HorseMind.targetingOf(player.user_id, raiser.user_id);
+        }
+      } catch {
+        /* targeting is best-effort */
+      }
+    }
+
     const intent = decidePreflopV7({
       strength,
       position,
@@ -780,6 +847,11 @@ export class HorseLogic {
       // the preflop layer keeps exact legacy behavior in ablation runs).
       mode: opts.v11 !== false ? (isTournamentMode(gs) ? 'tournament' : 'cash') : undefined,
       anteInPlay: opts.v11 !== false && (gs.ante ?? 0) > 0,
+      // V12: table format — spins widen (winner-take-all chip EV), HU SNGs
+      // ride the heads-up ranges.
+      format:
+        opts.v11 !== false ? (gs.format ?? (isTournamentMode(gs) ? 'mtt' : 'cash')) : undefined,
+      targeted,
       rand: fastRandom,
     });
 
@@ -1002,6 +1074,7 @@ export class HorseLogic {
     // Range reads from each live opponent's preflop line this hand, exploit
     // profile from their accumulated tendencies, board texture, blockers.
     let bands: Array<[number, number] | null> | undefined;
+    let oppReads: Array<{ aggrW: number; checked: number } | null> | undefined;
     let exploit = { bluffMod: 1, callDownMod: 1, valueThinMod: 1 };
     let wetness = 0.35;
     let blocker = false;
@@ -1013,13 +1086,18 @@ export class HorseLogic {
           ? gs.actionHistory
           : (gs.actionHistory || []).filter((a) => a.stage === 'preflop');
         // V7: size-aware narrowing + counter-adaptation recency blending.
+        // V12: parallel postflop reads feed board-contact conditioning.
+        if ((opts.v12Ranges ?? opts.v12) !== false && useHR) {
+          oppReads = [];
+        }
         bands = HorseMind.bandsForOpponents(
           player.seat,
           gs.players,
           bandHistory,
           gs.bigBlind,
           useSizeReads,
-          gs.communityCards
+          gs.communityCards,
+          oppReads
         );
         exploit = HorseMind.tableExploit(player.seat, gs.players, useCounterAdapt);
         const tex = HorseMind.texture(gs.communityCards);
@@ -1045,7 +1123,8 @@ export class HorseLogic {
       vi.iterations,
       bands,
       useAdaptiveMC,
-      hiLoSplit
+      hiLoSplit,
+      oppReads
     );
 
     // V9 TIMING: how CLOSE is this decision? Distance of the MC equity from
@@ -1213,6 +1292,20 @@ export class HorseLogic {
         ) {
           return { action: 'check', thinkTime: 0 };
         }
+        // V12 RIVER OVERBET (G): with a nut-class hand heads-up on the river,
+        // the value target is the opponent's whole continuing range — geometric
+        // sizing leaves money on the table. Overbet 1.3-1.6x pot at a mixed
+        // frequency; the blocker overbet-bluff below keeps it unexploitable.
+        if (
+          (opts.v12River ?? opts.v12) !== false &&
+          isRiver &&
+          oppCount === 1 &&
+          cat >= 6 &&
+          !vi.isPotLimit &&
+          fastRandom() < 0.35
+        ) {
+          return this.betSize(pot, 1.3 + fastRandom() * 0.3, player, gs, vi, params, useSizing);
+        }
         const monsterFrac =
           geomFrac > 0
             ? Math.max(sizeBase + 0.2, geomFrac) + fastRandom() * 0.1
@@ -1235,6 +1328,23 @@ export class HorseLogic {
           params,
           useSizing
         );
+      }
+      // V12 RIVER BLOCK BET (G): a medium showdown hand OUT OF POSITION on
+      // the river sets its own price — a quarter-pot bet folds out overcards,
+      // extracts thin value from worse, and denies the opponent the chance to
+      // bomb a check. Heads-up only, never into the prior-street aggressor
+      // (the V11 initiative gate above owns that node).
+      if (
+        (opts.v12River ?? opts.v12) !== false &&
+        isRiver &&
+        !ip &&
+        oppCount === 1 &&
+        equity >= 0.45 &&
+        equity < 0.62 + mw &&
+        initiative !== 'opp' &&
+        fastRandom() < 0.4
+      ) {
+        return this.betSize(pot, 0.27 + fastRandom() * 0.06, player, gs, vi, params, useSizing);
       }
       // Thin value / protection — thinner into stations (valueThinMod > 1).
       // V4: vulnerable made hands always bet-protect; dangered hands check.
@@ -1364,9 +1474,18 @@ export class HorseLogic {
         fastRandom() < params.bluffFreq * bluffScale * scareBluffBoost * (isRiver ? 0.55 : 0.8)
       ) {
         planBarrel(equity);
+        // V12 (G): river bluffs holding a nut blocker occasionally use the
+        // SAME overbet size as the nut-class value hands — the pairing is
+        // what makes the value overbets unexploitable.
+        const overbetBluff =
+          (opts.v12River ?? opts.v12) !== false &&
+          isRiver &&
+          blocker &&
+          !vi.isPotLimit &&
+          fastRandom() < 0.3;
         return this.betSize(
           pot,
-          sizeBase + 0.15 + fastRandom() * 0.2,
+          overbetBluff ? 1.3 + fastRandom() * 0.3 : sizeBase + 0.15 + fastRandom() * 0.2,
           player,
           gs,
           vi,
@@ -1512,9 +1631,44 @@ export class HorseLogic {
     const impliedBonus = drawsLive && equity >= 0.25 && dominationPenalty === 0 ? 0.04 : 0;
     let respect = 2 - exploit.callDownMod; // maniac 0.8, neutral 1, passive 1.15
     if (dangered) respect += 0.15;
+    // V12 ANTI-EXPLOIT: when the CURRENT street's bettor has been hunting
+    // this horse specifically, their bets carry less real strength than the
+    // line suggests — call down lighter until the hunt stops paying.
+    if (useMind && opts.v11 !== false) {
+      try {
+        const hist = gs.actionHistory || [];
+        let bettorId: string | null = null;
+        for (const a of hist) {
+          if (a.stage !== street) continue;
+          if (
+            a.userId !== player.user_id &&
+            (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
+          ) {
+            bettorId = a.userId;
+          }
+        }
+        if (bettorId) {
+          const hunted = HorseMind.targetingOf(player.user_id, bettorId);
+          if (hunted > 0) respect -= 0.25 * hunted;
+        }
+      } catch {
+        /* targeting is best-effort */
+      }
+    }
     // V7 overbet polarity: an overbet is nuts-or-bluffs. Medium hands without
     // a nut blocker fold more; holding the blocker shifts toward the catch.
     if (useSizeReads && betRatio > 1.2) respect += blocker ? -0.05 : 0.08;
+    // V12 (G): the same blocker logic extends into the big-bet band (0.8-1.2
+    // pot) on the river — large river bets are already polarized enough that
+    // the blocker meaningfully changes the catch.
+    if (
+      (opts.v12River ?? opts.v12) !== false &&
+      isRiver &&
+      betRatio >= 0.8 &&
+      betRatio <= 1.2
+    ) {
+      respect += blocker ? -0.04 : 0.04;
+    }
     // (V10 explored a river blocker-aware bluff-catch adjustment here; the
     // duplicate-deal A/B showed it LEAKED in both directions — the V4/V7 river
     // logic is already well-calibrated — so it was dropped, not shipped.)
@@ -1733,15 +1887,37 @@ export class HorseLogic {
       // Engine rule (pot-limit): max bet = pot + toCall.
       const maxBet = vi.isPotLimit ? floorCents(pot + toCall) : Infinity;
       if (minBet > maxBet || minBet >= stack) {
-        // No legal non-all-in bet exists.
-        return amt >= stack * 0.9
+        // No legal non-all-in bet exists. A jam is only a legal substitute
+        // when the jam itself is inside the pot-limit cap — see the note on
+        // the 0.92 shortcut below.
+        const jamIsLegal = !vi.isPotLimit || stack <= maxBet + 0.005;
+        return amt >= stack * 0.9 && jamIsLegal
           ? { action: 'all_in', thinkTime: 0 }
           : { action: 'check', thinkTime: 0 };
       }
       // Whole dollars in cash games (see chipStep). Clamped inside snapBetSize
       // so rounding can never drop below minBet or above the pot-limit cap.
       amt = snapBetSize(amt, minBet, Math.min(maxBet, stack), chipStep(gs.bigBlind));
-      if (amt >= stack * 0.92) return { action: 'all_in', thinkTime: 0 };
+      // 2026-08-22: this shortcut had no pot-limit guard, and the raise
+      // branch below already had one (`maxRaiseTo <= potLimitTo`). Dan
+      // 2026-08-21: "in PLO you can never go all in if the pot is less than
+      // the chips you have — the most you can ever bet is pot."
+      //
+      // capPotLimitJam exists to enforce exactly that, and it works by
+      // rewriting an over-cap jam into a pot-sized bet and routing it back
+      // through THIS function for snapping and verification. When the pot is
+      // 92% or more of the stack, this line then turned that pot-sized bet
+      // straight back into an uncapped all-in — outside the wrapper, which
+      // had already run. The engine rejected the result:
+      //
+      //   ILLEGAL plo4/river: all_in undefined — Pot-limit max is 300
+      //   (stack=322.2566, pot=300, currentBet=0)
+      //
+      // A rejected action is the worst outcome a horse can produce, so the
+      // jam is only substituted when the jam is itself legal.
+      if (amt >= stack * 0.92 && (!vi.isPotLimit || stack <= maxBet + 0.005)) {
+        return { action: 'all_in', thinkTime: 0 };
+      }
       return this.verifyAmount(
         { action: 'bet', amount: toCents(amt), thinkTime: 0 },
         player,
@@ -1917,6 +2093,8 @@ export class HorseLogic {
     snapFraction,
     // V10 strategy internals
     rakeDrag,
+    // V12 tournament internals
+    icmRisk,
   };
 
   /** Exposed for tests: variant-aware Monte Carlo equity (0..1). */

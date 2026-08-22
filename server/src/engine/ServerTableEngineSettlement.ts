@@ -176,6 +176,15 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // SETTLEMENT STEP 15 (partial): Clean up validator state between hands (unlock table)
     this.actionValidator.clearTable(this.tableId);
     this.preciseTimer.clearTable(this.tableId);
+    // 2026-08-22 review: clearTable deliberately no longer cancels the
+    // NAMESPACED countdowns (timebank:/disconnect:) — mid-hand callers must
+    // not kill them. But at the hand boundary they MUST die, through their
+    // owning engines so the paired state (bank.isActive, no strike changes)
+    // stays consistent. A leaked disconnect countdown fires into the next
+    // hand and records a phantom timeout strike; a leaked bank can fold a
+    // live player at the same seat.
+    this.disconnectEngine.cancelAllCountdowns(this.tableId);
+    this.timeBankEngine.cancelActiveForTable(this.tableId);
 
     // Step 5: Clean up supporting modules between hands
     this.preActionEngine.dispose(this.tableId);

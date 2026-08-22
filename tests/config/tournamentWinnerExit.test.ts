@@ -54,10 +54,23 @@ const tsCode = (src: string) =>
 const ELIMINATIONS = 'server/src/tournament/TournamentManagerEliminations.ts';
 const TABLE_PAGE = 'src/pages/TablePage.tsx';
 const REALTIME = 'src/services/RealtimeChannelService.ts';
+const CLUB_LOBBY = 'src/pages/club/ClubLobby.tsx';
+const TOURNAMENT_SERVICE = 'src/services/TournamentService.ts';
 
 const engine = tsCode(read(ELIMINATIONS));
 const tablePage = tsCode(read(TABLE_PAGE));
 const realtime = tsCode(read(REALTIME));
+const clubLobby = tsCode(read(CLUB_LOBBY));
+const tournamentService = tsCode(read(TOURNAMENT_SERVICE));
+
+/** The body of `goToLobbyWithResult`, from its declaration to the channel. */
+function exitFnBody(): string {
+  const start = tablePage.indexOf('const goToLobbyWithResult =');
+  expect(start, 'goToLobbyWithResult must exist in TablePage').toBeGreaterThan(-1);
+  const end = tablePage.indexOf('const breakChan =', start);
+  expect(end, 'could not find the end of goToLobbyWithResult').toBeGreaterThan(start);
+  return tablePage.slice(start, end);
+}
 
 /** The body of `finishTournament`, from its signature to the next method. */
 function finishTournamentBody(): string {
@@ -155,5 +168,102 @@ describe("The champion's exit", () => {
     // catches the double exit; this catches the cause.
     expect(engine).toMatch(/basePosition = Math\.max\(playingCount, bustedOrdered\.length \+ 1\)/);
     expect(engine).toMatch(/eliminatePlayer\(ordered\[i\]\.user_id, ordered\.length \+ 1 - i\)/);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  ...AND THE EXIT ACTUALLY LEAVES (audit, 2026-08-22)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Sending the signal fixed "the winner is never told". It did not fix "the
+ * winner never leaves". `goToLobbyWithResult` published the card and navigated,
+ * and that was the whole of it — while every manual leave in TablePage sends
+ * four more signals, none of which fired for a tournament finisher. So the
+ * table they had been kicked from stayed in their tab bar and their status kept
+ * saying they were sitting at it.
+ *
+ * Worse in multi-table, where TablePage runs as up to four embedded instances:
+ * an unconditional navigate from one of them tears down the container and takes
+ * the other three LIVE tables with it.
+ */
+describe('The exit actually leaves the table', () => {
+  it('sends the four signals every manual leave sends', () => {
+    const fn = exitFnBody();
+    // Each of these had a manual-leave counterpart and no tournament one.
+    expect(fn, 'SESSION_ENDED').toMatch(/masterBus\.emit\('SESSION_ENDED'/);
+    expect(fn, 'clearPlayingAt').toMatch(/playerStatusService\.clearPlayingAt\(userId\)/);
+    expect(fn, 'TABLE_LEFT').toMatch(/masterBus\.emit\('TABLE_LEFT'/);
+    expect(fn, 'CLOSE_TABLE_TAB').toMatch(/action: 'CLOSE_TABLE_TAB'/);
+  });
+
+  it('publishes the card BEFORE it starts tearing the table down', () => {
+    // The app-root host reads the payload on arrival. Emitting TABLE_LEFT
+    // first starts unmounting this instance while the result is still in hand.
+    const fn = exitFnBody();
+    expect(fn.indexOf('publishSessionSummary(')).toBeLessThan(fn.indexOf("emit('TABLE_LEFT'"));
+  });
+
+  it('does NOT navigate when it is embedded in MultiTablePage', () => {
+    /* THE regression this guards. Four tables, one finishes, and an
+       unconditional navigate tears down the container — the other three go
+       with it, mid-hand. MultiTablePage subscribes to TABLE_LEFT and
+       CLOSE_TABLE_TAB, removes just that tab, and calls goToLobby() itself
+       only when it was the last one. */
+    const fn = exitFnBody();
+    const guard = fn.indexOf('if (embeddedTableId) return;');
+    expect(guard, 'the embedded guard must be present').toBeGreaterThan(-1);
+    // ...and it must come BEFORE both navigate calls, or it guards nothing.
+    const firstNavigate = fn.indexOf('navigate(`/');
+    expect(firstNavigate).toBeGreaterThan(guard);
+  });
+
+  it('guards on embeddedTableId, not on isMultiTable', () => {
+    /* `isMultiTable` is a sound/UX flag: MultiTablePage passes
+       `tables.length > 1 || hidden`, so it is FALSE for a single visible table
+       while the container is still mounted and still subscribed. Branching on
+       it would leave the commonest case with two navigators racing for the
+       destination. `embeddedTableId` is set exactly when this instance lives
+       inside the container, which is the actual question being asked. */
+    expect(exitFnBody()).not.toMatch(/if \(isMultiTable\) return;/);
+  });
+
+  it('cancels a pending exit when the subscription is torn down', () => {
+    // The winner's beat is 7s. A player moved off this tab inside it used to be
+    // force-navigated out of wherever they had gone.
+    expect(exitFnBody()).toMatch(/tournamentExitTimerRef\.current = setTimeout\(/);
+    expect(tablePage).toMatch(/clearTimeout\(tournamentExitTimerRef\.current\)/);
+  });
+});
+
+describe('One card, one carrier', () => {
+  it('ClubLobby no longer reads a result out of router state', () => {
+    /* It could never work: the state was addressed to `/clubs/:clubId`
+       (ClubHomePage) and only `/clubs/:clubId/lobby` read it, so the card was
+       dropped on arrival every time. More fundamentally "the lobby" is three
+       different pages, so no route-level reader can cover it — which is why
+       the app-root host exists. */
+    expect(clubLobby).not.toMatch(/tournamentResult/);
+    expect(clubLobby).not.toMatch(/TournamentResultCard/);
+  });
+
+  it('the client cannot announce an elimination or a winner', () => {
+    /* Both are the engine's to decide. A second publisher on the same channel
+       is how a table acts on a result the database disagrees with — and
+       `broadcastWinner` sitting here unused is exactly what made "nothing
+       announces the winner" so easy to miss. */
+    expect(tournamentService).not.toMatch(/async broadcastWinner\(/);
+    expect(tournamentService).not.toMatch(/async broadcastElimination\(/);
+  });
+
+  it('the card is branded a Spin only when it IS one', () => {
+    // It said SPIN unconditionally, so a 128-runner MTT finished under a Spin
+    // badge. Resolved from the tournament row, never from the event name.
+    const card = tsCode(read('src/components/tournament/TournamentRankingCard.tsx'));
+    expect(card).toMatch(/result\.isSpin \? 'SPIN' : 'TOURNAMENT'/);
+    expect(tablePage).toMatch(/isSpin: isSpinTournament\(/);
+    // isSpinTournament reads both columns; both must be selected or it is
+    // always false.
+    expect(tablePage).toMatch(/select\('name, current_players, variant, tournament_type'\)/);
   });
 });

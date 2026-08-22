@@ -123,6 +123,14 @@ export class HorseMind {
   private static seenActions = new Set<string>();
   /** per (handKey|userId) preflop-participation flags already counted */
   private static handFlags = new Set<string>();
+  /** V12 persistence: userIds whose stats changed since the last DB flush. */
+  private static dirty = new Set<string>();
+  /** V12 ANTI-EXPLOIT: per-(attacker|victim) aggression targeting counters. */
+  private static pairs = new Map<
+    string,
+    { n3: number; opp3: number; nR: number; oppR: number }
+  >();
+  private static readonly MAX_PAIRS = 20_000;
 
   // ───────────────────────────────────────────────────────────────────────
   // OBSERVATION — ingest the action stream (idempotent, bounded)
@@ -139,11 +147,29 @@ export class HorseMind {
     // Bounded-memory guards: generation-swap when limits are hit.
     if (this.seenActions.size > MAX_SEEN_ACTIONS) this.seenActions.clear();
     if (this.handFlags.size > MAX_HAND_FLAGS) this.handFlags.clear();
-    if (this.stats.size > MAX_TRACKED_PLAYERS) this.stats.clear();
+    if (this.stats.size > MAX_TRACKED_PLAYERS) {
+      this.stats.clear();
+      this.dirty.clear(); // stale ids — the DB merge is GREATEST-monotonic anyway
+    }
 
     // The first action's timestamp identifies the hand (stable across turns).
     const handKey = `${history[0].timestamp}:${history[0].userId}`;
     let preflopRaises = 0;
+    // V12 anti-exploit: who opened this hand, and who bet each street —
+    // needed to attribute 3-bets and bet-raises to (attacker, victim) pairs.
+    if (this.pairs.size > this.MAX_PAIRS) this.pairs.clear();
+    let openerId: string | null = null;
+    let streetBettor: string | null = null;
+    let curStage: string = 'preflop';
+    const pairOf = (attacker: string, victim: string) => {
+      const k = `${attacker}|${victim}`;
+      let p = this.pairs.get(k);
+      if (!p) {
+        p = { n3: 0, opp3: 0, nR: 0, oppR: 0 };
+        this.pairs.set(k, p);
+      }
+      return p;
+    };
 
     for (const a of history) {
       const preflop = a.stage === 'preflop';
@@ -159,6 +185,7 @@ export class HorseMind {
       }
 
       if (isNew) {
+        this.dirty.add(a.userId); // V12: schedule for the next DB flush
         // Hand participation (once per hand per player)
         const seenKey = `${handKey}|${a.userId}|seen`;
         if (!this.handFlags.has(seenKey)) {
@@ -211,8 +238,78 @@ export class HorseMind {
         }
       }
 
+      // V12 ANTI-EXPLOIT ATTRIBUTION — who attacks whom. isNew-gated so a
+      // replayed history never double-counts a pair event.
+      if (a.stage !== curStage) {
+        curStage = a.stage;
+        streetBettor = null;
+      }
+      if (preflop) {
+        if (isNew && openerId && a.userId !== openerId && preflopRaises === 1) {
+          if (isAggr) {
+            const p = pairOf(a.userId, openerId);
+            p.n3++;
+            p.opp3++;
+          } else if (a.action === 'call' || a.action === 'fold') {
+            pairOf(a.userId, openerId).opp3++;
+          }
+        }
+        if (isAggr && preflopRaises === 0) openerId = a.userId;
+      } else {
+        if (isNew && streetBettor && a.userId !== streetBettor) {
+          const p = pairOf(a.userId, streetBettor);
+          if (a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise === true)) {
+            p.nR++;
+            p.oppR++;
+          } else if (a.action === 'call' || a.action === 'fold') {
+            p.oppR++;
+          }
+        }
+        if (isAggr) streetBettor = a.userId;
+      }
+
       if (preflop && isAggr) preflopRaises++;
     }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // V12 ANTI-EXPLOIT — is this opponent HUNTING this horse?
+  // ───────────────────────────────────────────────────────────────────────
+
+  /**
+   * 0..1 score of how hard `oppId` is targeting `heroId` specifically,
+   * relative to that opponent's own global aggression rates. 0 = no evidence
+   * (small sample, or their aggression toward hero matches how they play
+   * everyone). Positive scores mean hero's opens are being 3-bet, and hero's
+   * bets raised, at rates their global profile cannot explain — the
+   * signature of a player who has singled this horse out.
+   */
+  static targetingOf(heroId: string, oppId: string): number {
+    const p = this.pairs.get(`${oppId}|${heroId}`);
+    if (!p) return 0;
+    const g = this.stats.get(oppId);
+    let score = 0;
+
+    if (p.opp3 >= 6) {
+      const pairRate = p.n3 / p.opp3;
+      const globalRate = g && g.hands >= 10 ? Math.min(0.5, (g.threeBet / g.hands) * 3) : 0.12;
+      const excess = pairRate - Math.max(globalRate * 1.5, 0.18);
+      if (excess > 0) score += Math.min(0.6, excess * 1.6);
+    }
+    if (p.oppR >= 6) {
+      const pairRate = p.nR / p.oppR;
+      const excess = pairRate - 0.18; // baseline bet-raise rate
+      if (excess > 0) score += Math.min(0.5, excess * 1.4);
+    }
+    return Math.min(1, score);
+  }
+
+  /** Test hook: read a pair's raw counters. */
+  static getPair(
+    attackerId: string,
+    victimId: string
+  ): { n3: number; opp3: number; nR: number; oppR: number } | undefined {
+    return this.pairs.get(`${attackerId}|${victimId}`);
   }
 
   /** Stable per-hand key shared by observe(), plans, and callers. */
@@ -232,6 +329,68 @@ export class HorseMind {
     this.seenActions.clear();
     this.handFlags.clear();
     this.plans.clear();
+    this.dirty.clear();
+    this.pairs.clear();
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // V12 PERSISTENCE (2026-08-22) — unlimited learning horizon
+  // ───────────────────────────────────────────────────────────────────────
+
+  /** Rows changed since the last flush. Snapshots AND clears the dirty set —
+   *  the caller owns delivery; on failure it should re-mark via requeue(). */
+  static exportDirty(): Array<{ user_id: string } & OpponentStats> {
+    const out: Array<{ user_id: string } & OpponentStats> = [];
+    for (const id of this.dirty) {
+      const s = this.stats.get(id);
+      if (s) out.push({ user_id: id, ...s });
+    }
+    this.dirty.clear();
+    return out;
+  }
+
+  /** Put ids back on the dirty list after a failed flush. */
+  static requeueDirty(ids: string[]): void {
+    for (const id of ids) if (this.stats.has(id)) this.dirty.add(id);
+  }
+
+  static dirtyCount(): number {
+    return this.dirty.size;
+  }
+
+  /**
+   * Boot-time hydration from the DB. A row is applied only when it knows MORE
+   * than memory does (more observed hands) — a late hydrate must never
+   * downgrade stats the engine has already been accumulating live.
+   * Returns the number of rows applied.
+   */
+  static importStats(rows: Array<{ user_id: string } & Partial<OpponentStats>>): number {
+    let applied = 0;
+    for (const r of rows) {
+      if (!r || typeof r.user_id !== 'string' || r.user_id.length === 0) continue;
+      const existing = this.stats.get(r.user_id);
+      const incomingHands = typeof r.hands === 'number' && isFinite(r.hands) ? r.hands : 0;
+      if (existing && existing.hands >= incomingHands) continue;
+      if (this.stats.size >= MAX_TRACKED_PLAYERS && !existing) continue;
+      const num = (v: unknown): number => (typeof v === 'number' && isFinite(v) && v >= 0 ? v : 0);
+      this.stats.set(r.user_id, {
+        hands: num(r.hands),
+        vpip: num(r.vpip),
+        pfr: num(r.pfr),
+        threeBet: num(r.threeBet),
+        aggr: num(r.aggr),
+        passive: num(r.passive),
+        folds: num(r.folds),
+        facedAggr: num(r.facedAggr),
+        rHands: num(r.rHands),
+        rFolds: num(r.rFolds),
+        rFacedAggr: num(r.rFacedAggr),
+        rAggr: num(r.rAggr),
+        rPassive: num(r.rPassive),
+      });
+      applied++;
+    }
+    return applied;
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -248,9 +407,13 @@ export class HorseMind {
     history: ActionRecord[] | undefined,
     bigBlind: number,
     sizedReads: boolean = true,
-    board: Card[] | null = null
+    board: Card[] | null = null,
+    /** V12 out-param: postflop aggression weight + checked-street count for
+     *  board-contact conditioning (see HorseEval.simulateEquity). */
+    readOut?: { aggrW: number; checked: number }
   ): [number, number] | null {
     if (!history || history.length === 0) return null;
+    const postStagesActed = new Set<string>();
 
     let raisesBefore = 0;
     let line: 'none' | 'limp' | 'call' | 'open' | 'threebet' | 'check' = 'none';
@@ -279,6 +442,7 @@ export class HorseMind {
       if (a.stage !== 'preflop') {
         if (a.userId === userId) {
           if (a.action === 'fold') return null;
+          postStagesActed.add(a.stage); // V12: they acted on this street
           if (isAggr) {
             const potBefore = Math.max(bigBlind || 1, pot);
             const frac = increment / potBefore;
@@ -385,6 +549,15 @@ export class HorseMind {
       for (const w of streetWeight.values()) total += w;
       lo += Math.min(0.22, total);
       hi = Math.min(1, hi + 0.05); // aggression uncaps the top of the range
+    }
+    // V12: expose the postflop line shape for board-contact conditioning.
+    if (readOut) {
+      let total = 0;
+      for (const w of streetWeight.values()) total += w;
+      readOut.aggrW = Math.min(0.3, total);
+      let checked = 0;
+      for (const st of postStagesActed) if (!streetWeight.has(st)) checked++;
+      readOut.checked = checked;
     }
 
     lo = Math.max(0, Math.min(0.9, lo));
@@ -608,12 +781,17 @@ export class HorseMind {
     history: ActionRecord[] | undefined,
     bigBlind: number,
     sizedReads: boolean = true,
-    board: Card[] | null = null
+    board: Card[] | null = null,
+    /** V12 out-param: parallel per-opponent postflop reads (same order as
+     *  the returned bands) for board-contact conditioning. */
+    readsOut?: Array<{ aggrW: number; checked: number } | null>
   ): Array<[number, number] | null> {
     const bands: Array<[number, number] | null> = [];
     for (const p of players) {
       if (p.seat === heroSeat || p.is_folded || p.is_sitting_out) continue;
-      bands.push(this.bandFor(p.user_id, history, bigBlind, sizedReads, board));
+      const readOut = readsOut ? { aggrW: 0, checked: 0 } : undefined;
+      bands.push(this.bandFor(p.user_id, history, bigBlind, sizedReads, board, readOut));
+      if (readsOut) readsOut.push(readOut && (readOut.aggrW > 0 || readOut.checked > 0) ? readOut : null);
     }
     return bands;
   }

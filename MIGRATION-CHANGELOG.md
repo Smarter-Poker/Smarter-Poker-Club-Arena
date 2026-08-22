@@ -7,6 +7,124 @@
 
 ---
 
+## Cowork session 2026-08-22 (4) — CONNECTIVITY HARDENING ROUND 2: adversarial review + deferred items
+
+An adversarial line-by-line review of round 2's own diff (PR #240) found 13
+real defects it introduced or left; all are fixed here, plus every item round
+2 deferred.
+
+### Round-1 defects corrected
+
+1. stop() ownership was checked BEFORE the 15s flushSnapshot await (TOCTOU) —
+   a slow DB let a superseded engine resume "owner" and cancel the successor's
+   timers anyway. Ownership is now re-read after the await.
+2. The hand-void timer's supersession early-exit left handController set — a
+   superseded-but-running engine could deal the next hand. Local teardown now
+   always happens.
+3. clearTable skipping namespaced countdowns let disconnect/timebank
+   countdowns leak ACROSS hands (phantom timeout strikes, a bank folding a
+   live player at the same seat next hand — compounded by idempotent
+   registerPlayer persisting strikes). New hand-boundary cleanup:
+   DisconnectEngine.cancelAllCountdowns + TimeBankEngine.cancelActiveForTable,
+   called at HAND_COMPLETE through the owning engines so paired state stays
+   consistent.
+4. onResync/onConnect in the WS server ran unguarded before close handlers
+   were attached — a throw leaked a hub-subscribed socket forever. Guarded on
+   both single-table and mux paths.
+5. Client openOnce had no single-flight guard: a late onclose during the
+   getToken await could double-open and orphan a permanently-OPEN socket
+   (which also defeated the server's last-socket disconnect detection). Both
+   clients now have an `opening` single-flight + live-socket guard.
+6. Equity worker respawn could spin unbounded against a broken build artifact
+   (async error/exit re-triggered respawn). Now budgeted (10) + 2s delayed,
+   budget refilled by any successful reply.
+7. Queued equity jobs that timed out all ran synchronous fallbacks
+   back-to-back on the event loop. Now drained one per macrotask.
+8. Toast context value still changed identity on every toast (toasts was in
+   the memo deps). toasts is now exposed via a stable getter; context value
+   identity is permanent.
+9. Connection toasts now actually debounced (3s of continuous disconnection)
+   and no longer fire a spurious "Reconnected" on every table mount.
+10. The 4404 reload loop survived round 2 (failed->reconnecting->failed
+    oscillation still completed the 20s failsafe). Three consecutive 4404s now
+    suppress the reload and show "This Table Is No Longer Running" once.
+11. RoomService rebind + stacked Supabase channels = duplicate deliveries.
+    TableWebSocket now removes its previous channel before creating a new one.
+12. leaveTable's auto_fold fired an invalid queued->queued FSM transition into
+    Sentry when a pre-action was already queued; setPreAction now steps
+    through idle when re-queueing.
+13. Stale eventsPerSecond comments corrected.
+
+### Deferred items closed
+
+- IDLE BROADCAST: broadcastCurrentState now publishes a real 'waiting'-stage
+  payload (seats/stacks from seatedPlayers) when no hand is live, and the
+  waiting-for-players loop publishes it each sweep (hub drops empty patches).
+  End-of-hand "clean state" publish works for the first time; a client joining
+  an idle table gets a SNAPSHOT instead of an eternal spinner.
+- /health liveness race: process only reports 'dead' once a table has stalled
+  past the ENTIRE in-process recovery chain (300s), so Docker no longer
+  restarts the container (voiding every in-flight hand) while per-table
+  recovery is mid-flight. 120s stalls still reported for visibility.
+- postHandTasks await bounded at 45s (was unbounded; correlated DB degradation
+  could trip the 90s idle watchdog fleet-wide).
+- horseActionTimer/pineappleDiscardTimer cleared on stop()/killForRestart();
+  horse think-timer re-entry clears its predecessor.
+- HandController.emit: per-listener try/catch — a subscriber throw can no
+  longer unwind into mid-settlement state.
+- start() failure path now killForRestart() instead of a bare running=false
+  (could leak an armed heartbeat entry).
+- EngineSocketMux (flag still OFF, now actually shippable): physical-socket
+  staleness watchdog + handshake timeout + half-open replacement at acquire,
+  SUBSCRIBE->SUBSCRIBED timeout per facade, dedicated 4901 supersession close
+  code (EngineStateClient stands down instead of mutual-eviction ping-pong),
+  ERROR close-code fidelity (TABLE_NOT_FOUND->4404, BANNED->4403).
+- Ghost-seat guard: after the first engine snapshot, Supabase presence can no
+  longer inject 0-stack players into engine-empty seats (only same-id avatar
+  backfill).
+- GameServerAPI circuit breaker resets on the browser 'online' event.
+- Mystery-chest channel released on unmount (was one leaked subscribed channel
+  per table mount).
+- Hero hole-card poll bounded (~2 min) and re-armed per hand — observers and
+  sat-out players no longer poll Supabase every 5s forever.
+
+### Tests
+
+ConnectivityHardening.test.ts extended (hand-boundary countdown cleanup).
+Client 2915 passed / 5 skipped, server 1038 passed, tsc clean on both configs.
+## Cowork session 2026-08-22 (4) — Phase 2 table audit: stat truth + dead code (PR #252)
+
+Dan: "KEEP GOING AND FIXING, IMPROVING AND OPTIMIZING. MOVE ONTO PHASE 2."
+Merged as 4eca4e356; production served the containing World Hub sync
+(a09aac5b) same session. 233 test files / 2942 tests green.
+
+1. **VPIP double-count.** `vpipCountRef` incremented on EVERY voluntary
+   preflop action, so limp-then-call-a-raise counted one hand twice and
+   vpip/handsPlayed could exceed 100%. The per-hand `heroVpipThisHandRef`
+   flag (which existed precisely to answer "did hero VPIP this hand") now
+   guards the increment.
+2. **Dead in-table SessionSummary modal removed.** `showSessionSummary` was
+   never set true anywhere — the modal became unreachable when the app-root
+   SessionSummaryHost took over the Session Complete card on 2026-08-18, but
+   the component, its module CSS, ten props through TableModalsLayer, a
+   keyboard-shortcut modal-open guard and a force-leave early-return all
+   stayed behind. All gone; files moved to `_to_delete/` on the Mac mirror.
+3. **Detailed Analytics finally reachable.** SessionAnalytics (the four-tab
+   PokerCraft panel) was imported by TablePage and mounted NOWHERE, so the
+   "Detailed Analytics" button RealTimeResultPanel supports never rendered —
+   its own header comment promised the deeper view was "still reachable" and
+   it was not. It now mounts in TableModalsLayer behind that button.
+4. **Dead CSS.** TimebankCounter's mobile bottom/left block (dead since the
+   widget went position:static on 2026-08-21) and the four
+   `--sp-hero-box-half` token definitions (last consumer removed by #243).
+5. **Audited, deliberately unchanged:** the "POT 0" in Dan's screenshots is
+   the designed collected/live split working correctly — those hands were
+   PREFLOP, and the four cards mid-felt were the hero's PLO4 hole cards under
+   the pre-#243 centred layout, not a board. Compliance sweeps (.single(),
+   padStart, em dashes in popups, emoji in source) all clean.
+
+---
+
 ## Cowork session 2026-08-22 (3) — mobile table audit: 8 items from Dan's screenshots (PR #243)
 
 Dan supplied six phone screenshots and eight numbered complaints. All eight are
@@ -216,6 +334,7 @@ Idle-table broadcast (no snapshot for joining clients between hands / empty
 tables), postHandTasks unbounded await, /health restart-races-recovery window,
 mux-mode fixes (flag is OFF; do not enable ca_ws_mux until EngineSocketMux
 half-open + eviction-storm bugs are fixed), presence ghost-seat merge.
+
 ---
 
 ## Cowork session 2026-08-22 — V11 horse brain: game modes + four live-play leak fixes (PR #235)
@@ -10276,3 +10395,67 @@ Deleting them is its own change, not a rider on a money-adjacent path.
 Verified: 231 test files / 2905 tests green locally and in CI; TypeScript Check,
 Server Engine, Production Build, CSS Beat E2E all green; merged as PR #242
 (5056e6438); Auto-Deploy Hetzner Engine completed success on that SHA.
+
+## 2026-08-22 — The finisher's exit never left the table (audit of #242)
+
+#242 told the winner the tournament was over. This is the audit of everything
+that happens after that signal lands, and telling them turned out to be the only
+part that worked.
+
+**THE EXIT DID NOT LEAVE.** `goToLobbyWithResult` published the card and
+navigated. That was the whole of it. Every manual leave in TablePage sends four
+more signals, and a tournament finisher — winner or bust — got none of them:
+`SESSION_ENDED` (so PlayerStyleRadar, PerformanceTrends and StakeLevelComparison
+never refreshed after a tournament), `clearPlayingAt` (so "Playing At" kept
+pointing at a table the engine had already closed), `TABLE_LEFT` and
+`CLOSE_TABLE_TAB` (so the finished table stayed in the tab bar). Dan's "you kick
+the current players and move them to the lobby" half-happened: navigated away,
+still seated everywhere that mattered.
+
+**AND IN MULTI-TABLE THE NAVIGATE WAS DESTRUCTIVE.** TablePage runs as up to
+four embedded instances inside MultiTablePage. An unconditional
+`navigate('/clubs/...')` from one of them tears the container down and takes the
+other three LIVE tables with it — bust out of a three-minute Spin on tab 2 and
+your cash games leave the screen mid-hand. There the signals ARE the exit:
+MultiTablePage removes that one tab and calls `goToLobby()` itself only when it
+was the last.
+
+The guard is **`embeddedTableId`, not `isMultiTable`**. `isMultiTable` is a
+sound/UX flag — MultiTablePage passes `tables.length > 1 || hidden`, so it is
+false for a single visible table while the container is mounted and subscribed.
+Branching on it would have left the commonest case with two navigators racing
+for the destination, which is the same race the manual leave path had to be
+untangled from in the first place.
+
+**THE EXIT TIMER OUTLIVED ITS SUBSCRIPTION.** The winner's celebration beat is
+7s long. A player moved off that tab inside it was force-navigated out of
+wherever they had gone next. Held in a ref, cleared with the channel.
+
+**EVERY TOURNAMENT WAS BRANDED A SPIN.** The ranking card hard-coded the word
+SPIN into its banner, so a 128-runner MTT finished under a Spin badge. `isSpin`
+now rides the payload, resolved by `isSpinTournament` from the tournament row —
+and `variant` AND `tournament_type` are both selected, because checking only one
+is how that helper quietly returns false for half the Spins in the system.
+
+**THE CARD IGNORED THE SESSION IT WAS HANDED.** `duration` and `handsPlayed`
+have ridden in the payload since the card was written and it read neither, so a
+Spin that ran 21 hands over three minutes said nothing about itself. It never
+showed rebuys or add-ons either, which in a rebuy event are most of the story,
+and its banner date came from `new Date()` instead of the session end. The cash
+Session Complete card was given real stats in #243; this one is now level with
+it, `vpipPercent` and `totalBuyIn` included.
+
+**DEAD CODE REMOVED RATHER THAN LEFT AS A TRAP.**
+`TournamentResultCard` and ClubLobby's router-state reader could never work: the
+state was addressed to `/clubs/:clubId` (ClubHomePage) while only
+`/clubs/:clubId/lobby` read it, so the card was dropped on arrival every single
+time — and "the lobby" is three different pages, which is why the app-root host
+exists at all. `TournamentService.broadcastWinner` / `.broadcastElimination`
+were callerless and unusable: both facts belong to the engine, and a second
+publisher on that channel is how a table acts on a result the database disagrees
+with. `broadcastWinner` sitting in the service unused is exactly what made
+"nothing announces the winner" so easy to miss for as long as it was.
+
+Tests: `tournamentWinnerExit` 9 -> 16 source-level invariants,
+`tournamentRankingHost` 7 -> 12 behavioural cases; 11 of the new assertions fail
+against the previous main. Full suite 231 files / 2928 tests green.

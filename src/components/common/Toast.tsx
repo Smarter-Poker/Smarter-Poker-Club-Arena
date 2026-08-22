@@ -28,7 +28,7 @@ import './Toast.css';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export type ToastType = 'success' | 'error' | 'warning' | 'info';
+export type ToastType = 'success' | 'error' | 'warning' | 'info' | 'clock';
 
 /**
  * How long the SAME popup is barred from returning, whether or not the first
@@ -45,12 +45,20 @@ export interface Toast {
 }
 
 export interface ToastContextValue {
-  toasts: Toast[];
+  /**
+   * 2026-08-22 review: a stable GETTER, not a snapshot array. Nothing in the
+   * app reads this (ToastContainer receives the live array via props); it is
+   * kept for API compatibility. Making it a getter lets the context value be
+   * memoized with a permanently stable identity, so `toast` in a dependency
+   * array never re-fires an effect when toasts come and go.
+   */
+  getToasts: () => Toast[];
   showToast: (message: string, type?: ToastType, duration?: number) => void;
   success: (message: string, duration?: number) => void;
   error: (message: string, duration?: number) => void;
   warning: (message: string, duration?: number) => void;
   info: (message: string, duration?: number) => void;
+  clock: (message: string, duration?: number) => void;
   removeToast: (id: string) => void;
 }
 
@@ -100,6 +108,7 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
     error: '✕',
     warning: '⚠',
     info: 'ℹ',
+    clock: '⏱',
   };
 
   return (
@@ -265,6 +274,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     (message: string, duration?: number) => showToast(message, 'info', duration),
     [showToast]
   );
+  const clock = useCallback(
+    (message: string, duration?: number) => showToast(message, 'clock', duration),
+    [showToast]
+  );
 
   // 2026-08-22: MEMOIZE. This value was a fresh object on every provider
   // render, so every consumer with `toast` in a dependency array re-ran its
@@ -274,17 +287,23 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   // (when toasts fire most) the "connection lost" warning could never
   // accumulate its three misses. All members are useCallback/state, so this
   // only changes identity stability, not behaviour.
+  // Live ref so getToasts always returns current state without destabilising
+  // the memoized context value.
+  const toastsRef = useRef<Toast[]>(toasts);
+  toastsRef.current = toasts;
+  const getToasts = useCallback(() => toastsRef.current, []);
   const value: ToastContextValue = useMemo(
     () => ({
-      toasts,
+      getToasts,
       showToast,
       success,
       error,
       warning,
       info,
+      clock,
       removeToast,
     }),
-    [toasts, showToast, success, error, warning, info, removeToast]
+    [getToasts, showToast, success, error, warning, info, clock, removeToast]
   );
 
   return (

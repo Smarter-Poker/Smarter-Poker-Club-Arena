@@ -708,21 +708,51 @@ export abstract class TournamentManagerBase {
           };
         });
 
-        await supabase
-          .from('tournaments')
-          .update({
-            prize_pool: prizePool,
-            spin_multiplier: spinMultiplier,
-            is_premium_spin: spinMultiplier >= 100,
-            starting_chips: tier?.startingStack ?? tournament.starting_chips,
-            blind_structure: spinBlinds,
-            payout_structure: (tier?.payouts ?? [1]).map((pct, i) => ({
-              place: i + 1,
-              percentage: Math.round(pct * 10000) / 100,
-            })),
-            ...(redrawnLockedTiers ? { spin_locked_tiers: redrawnLockedTiers } : {}),
-          })
-          .eq('id', this.tournamentId);
+        // RETRIED AND CHECKED (2026-08-22). This single write carries the
+        // whole result of the draw — the multiplier, the pool, the stack, the
+        // blinds and the payout shape. It used to be fire-and-forget, so if it
+        // did not land the game went on to RUNNING carrying only what
+        // registration had accumulated: `prize_pool` = seats x buy-in and
+        // `spin_multiplier` NULL. That is exactly the state dea62e98, a374cdd3
+        // and 78181713 were found in on 2026-08-21 — three games that ran with
+        // no draw, which `fn_spin_sweep_unbooked` then skipped forever because
+        // it required `spin_multiplier > 0`.
+        let spinRowWritten = false;
+        for (let attempt = 1; attempt <= 3 && !spinRowWritten; attempt++) {
+          const { error: spinRowErr } = await supabase
+            .from('tournaments')
+            .update({
+              prize_pool: prizePool,
+              spin_multiplier: spinMultiplier,
+              is_premium_spin: spinMultiplier >= 100,
+              starting_chips: tier?.startingStack ?? tournament.starting_chips,
+              blind_structure: spinBlinds,
+              payout_structure: (tier?.payouts ?? [1]).map((pct, i) => ({
+                place: i + 1,
+                percentage: Math.round(pct * 10000) / 100,
+              })),
+              ...(redrawnLockedTiers ? { spin_locked_tiers: redrawnLockedTiers } : {}),
+            })
+            .eq('id', this.tournamentId);
+          if (!spinRowErr) {
+            spinRowWritten = true;
+            break;
+          }
+          if (attempt === 3) {
+            // The game still starts — Dan 2026-08-19, tournaments run, they do
+            // not cancel — but it starts on the placeholder structure, so this
+            // has to be loud. fn_spin_repair_missing_multiplier reconstructs
+            // the multiplier from the prize actually paid on the next sweep.
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw row write FAILED after 3 attempts (${spinRowErr.message}) — ${spinMultiplier}x was drawn but the row still reads NULL; this game will run on the placeholder structure`
+              ),
+              'Tournament.spin_draw_row_write_failed'
+            );
+          } else {
+            await new Promise((r) => setTimeout(r, 250 * attempt));
+          }
+        }
 
         tournament.prize_pool = prizePool;
         tournament.spin_multiplier = spinMultiplier;

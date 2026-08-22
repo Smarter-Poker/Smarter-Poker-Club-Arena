@@ -473,7 +473,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // Retry prize credit up to 3 times with exponential backoff
       let creditSuccess = false;
       for (let attempt = 1; attempt <= 3; attempt++) {
-        const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
+        // LEDGER-INTEGRITY 2026-08-22: credit AND ledger row under one
+        // idempotency key. This used to be `credit_player_wallet` followed by
+        // an unconditional `log_wallet_transaction`; the credit deduped
+        // against the recovery watchdog and the log did not, so a raced
+        // finish wrote a second prize row for chips nobody received.
+        const { error: creditErr } = await supabase.rpc('fn_credit_and_log', {
           p_user_id: userId,
           p_amount: prize,
           // P1 FIX (2026-07-24): idempotency key so a committed-but-timed-out
@@ -481,6 +486,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // and so the recovery path dedupes against this main path — SAME format
           // (`tourney:{id}:prize:{user}:{position}`).
           p_idempotency_key: `tourney:${this.tournamentId}:prize:${userId}:${position}`,
+          p_category: 'prize',
+          p_description: `Tournament prize: position ${position}`,
+          p_related_entity_id: this.tournamentId,
         });
         if (!creditErr) {
           creditSuccess = true;
@@ -494,26 +502,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         );
         if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
       }
-      if (creditSuccess) {
-        const { error: prizeLogErr } = await supabase.rpc('log_wallet_transaction', {
-          p_user_id: userId,
-          p_wallet_type: 'PLAYER',
-          p_amount: prize,
-          p_type: 'credit',
-          p_category: 'prize',
-          p_description: `Tournament prize: position ${position}`,
-          p_table_id: null,
-          p_hand_id: null,
-          p_related_entity_id: this.tournamentId,
-        });
-        if (prizeLogErr)
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Prize log FAILED for ${userId.slice(0, 8)}: ${prizeLogErr.message}`
-            ),
-            'TournamentthistournamentIdslic.Prize_log_FAILED_for_userIdsli'
-          );
-      } else {
+      if (!creditSuccess) {
         reportError(
           new Error(
             `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Prize credit FAILED after 3 retries for ${userId.slice(0, 8)} — ${prize} chips lost`
@@ -807,7 +796,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // Retry bounty credit up to 3 times with exponential backoff
     let creditSuccess = false;
     for (let attempt = 1; attempt <= 3; attempt++) {
-      const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
+      // LEDGER-INTEGRITY 2026-08-22: one key covers the credit and its row.
+      const { error: creditErr } = await supabase.rpc('fn_credit_and_log', {
         p_user_id: knockerUserId,
         p_amount: amount,
         // A3 FIX (2026-07-28): this credit sits inside a 3x retry loop and the
@@ -816,6 +806,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // (2-3x bounty mint). One bounty per (eliminated, knocker) pair per
         // tournament, so that tuple is the natural idempotency key.
         p_idempotency_key: `tourney:${this.tournamentId}:bounty:${eliminatedUserId}:${knockerUserId}`,
+        p_category: 'bounty',
+        p_description: `Bounty collected from eliminated player`,
+        p_related_entity_id: this.tournamentId,
       });
       if (!creditErr) {
         creditSuccess = true;
@@ -840,24 +833,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       return;
     }
 
-    const { error: bountyLogErr } = await supabase.rpc('log_wallet_transaction', {
-      p_user_id: knockerUserId,
-      p_wallet_type: 'PLAYER',
-      p_amount: amount,
-      p_type: 'credit',
-      p_category: 'bounty',
-      p_description: `Bounty collected from eliminated player`,
-      p_table_id: null,
-      p_hand_id: null,
-      p_related_entity_id: this.tournamentId,
-    });
-    if (bountyLogErr)
-      reportError(
-        new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Bounty log FAILED for ${knockerUserId.slice(0, 8)}: ${bountyLogErr.message}`
-        ),
-        'TournamentthistournamentIdslic.Bounty_log_FAILED_for_knockerU'
-      );
+    // The ledger row is written by fn_credit_and_log above, inside the same
+    // idempotency key as the credit, so there is no separate log call left to
+    // fail on its own — and no way for a retry to write a second one.
   }
 
   /**
@@ -901,7 +879,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         );
 
         // Credit the difference
-        const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
+        // LEDGER-INTEGRITY 2026-08-22: one key covers the credit and its row.
+        const { error: creditErr } = await supabase.rpc('fn_credit_and_log', {
           p_user_id: player.user_id,
           p_amount: difference,
           // A3 FIX (2026-07-28): the self-healing `prize` write below only runs
@@ -910,6 +889,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // difference again. Key on the exact adjustment being made (distinct
           // `prizeadj` namespace so it never collides with the position prize).
           p_idempotency_key: `tourney:${this.tournamentId}:prizeadj:${player.user_id}:${player.position}:${correctPrize}`,
+          p_category: 'prize',
+          p_description: `Tournament prize adjustment (late reg pool finalized): position ${player.position}`,
+          p_related_entity_id: this.tournamentId,
         });
 
         if (!creditErr) {
@@ -919,19 +901,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             .update({ prize: correctPrize })
             .eq('tournament_id', this.tournamentId)
             .eq('user_id', player.user_id);
-
-          // Log the adjustment
-          await supabase.rpc('log_wallet_transaction', {
-            p_user_id: player.user_id,
-            p_wallet_type: 'PLAYER',
-            p_amount: difference,
-            p_type: 'credit',
-            p_category: 'prize',
-            p_description: `Tournament prize adjustment (late reg pool finalized): position ${player.position}`,
-            p_table_id: null,
-            p_hand_id: null,
-            p_related_entity_id: this.tournamentId,
-          });
         } else {
           reportError(
             new Error(
@@ -1079,7 +1048,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // Retry winner prize credit up to 3 times
       let creditSuccess = false;
       for (let attempt = 1; attempt <= 3; attempt++) {
-        const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
+        // LEDGER-INTEGRITY 2026-08-22: one key covers the credit and its row.
+        const { error: creditErr } = await supabase.rpc('fn_credit_and_log', {
           p_user_id: winnerId,
           p_amount: winnerPrize,
           // A3 FIX (2026-07-28): closes TWO double-pay drivers at once.
@@ -1089,6 +1059,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // wrote, so the winner could be paid twice across the two paths.
           // Using the identical format makes them dedupe against each other.
           p_idempotency_key: `tourney:${this.tournamentId}:prize:${winnerId}:1`,
+          p_category: 'prize',
+          p_description: `Tournament winner prize: 1st place`,
+          p_related_entity_id: this.tournamentId,
         });
         if (!creditErr) {
           creditSuccess = true;
@@ -1103,26 +1076,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
       }
 
-      if (creditSuccess) {
-        const { error: prizeLogErr } = await supabase.rpc('log_wallet_transaction', {
-          p_user_id: winnerId,
-          p_wallet_type: 'PLAYER',
-          p_amount: winnerPrize,
-          p_type: 'credit',
-          p_category: 'prize',
-          p_description: `Tournament winner prize: 1st place`,
-          p_table_id: null,
-          p_hand_id: null,
-          p_related_entity_id: this.tournamentId,
-        });
-        if (prizeLogErr)
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Prize log FAILED for ${winnerId.slice(0, 8)}: ${prizeLogErr.message}`
-            ),
-            'TournamentthistournamentIdslic.Prize_log_FAILED_for_winnerIds'
-          );
-      } else {
+      if (!creditSuccess) {
         reportError(
           new Error(
             `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Winner prize credit FAILED after 3 retries for ${winnerId.slice(0, 8)} — ${winnerPrize} chips lost`

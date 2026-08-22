@@ -14,6 +14,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { ClubRole } from '../types/clubRoles';
+import { isClubStaff } from '../types/clubRoles';
 import { MEDIA_BASE } from '../utils/mediaBase';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
@@ -308,11 +309,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // Dan 2026-08-21: the header search icon was wired to `setSortOpen(false)` —
   // a literal no-op. It now toggles a real search box that filters both the
   // cash tables and the tournament cards by name.
-  const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   // LOBBY V2: show only starred cash tables. Declared here (not with the rest
   // of the V2 state) because `narrowing` and `clearAllNarrowing` read it.
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [isEditingNotice, setIsEditingNotice] = useState(false);
+  const [noticeDraft, setNoticeDraft] = useState('');
+  const [isSavingNotice, setIsSavingNotice] = useState(false);
   // Status defaults are 'all' on BOTH axes now. They used to be 'live' and
   // 'running', which was invisible: picking a game type silently hid every
   // empty table and every tournament still taking registrations, so a club
@@ -1317,7 +1320,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const clearAllNarrowing = useCallback(() => {
     haptic.selection();
     setSearchQuery('');
-    setSearchOpen(false);
     setFavoritesOnly(false);
     setGameType('ALL');
     if (narrowing.fSpec) {
@@ -1824,86 +1826,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           them are inline SVG on currentColor now — see LobbyIcons.tsx.
       ═══════════════════════════════════════════════════════════════════ */}
       <header className="lobby-top">
-        <div className="lobby-top__bar">
-          {!clubIdOverride && (
-            <button
-              className="lobby-top__back"
-              aria-label="Back to clubs"
-              onClick={() => {
-                haptic.light();
-                navigate('/clubs');
-              }}
-            >
-              &#8249;&#8249;
-            </button>
-          )}
-
-          <div className="lobby-top__quick">
-            <button
-              className="lobby-quick"
-              onClick={() => {
-                haptic.selection();
-                // Dan 2026-08-21: this navigated to /clubs/:id/detail — a route
-                // that does not exist, so the button did nothing. Events = the
-                // club's tournament schedule.
-                navigate(`/clubs/${clubId}/tournaments`);
-              }}
-            >
-              <IconTrophy />
-              <span>Events</span>
-            </button>
-            <button
-              className="lobby-quick"
-              onClick={() => {
-                haptic.selection();
-                navigate('/leaderboard');
-              }}
-            >
-              <IconLeaderboard />
-              <span>Ranks</span>
-            </button>
-          </div>
-
-          <button
-            className="lobby-top__search"
-            aria-label="Search games"
-            onClick={() => {
-              haptic.light();
-              setSortOpen(false);
-              setSearchOpen((prev) => {
-                if (prev) setSearchQuery('');
-                return !prev;
-              });
-            }}
-          >
-            <IconSearch />
-          </button>
-        </div>
-
-        {/* Dan 2026-08-21: real game search — filters cash tables and
-            tournament cards by name as you type. */}
-        {searchOpen && (
-          <div className="lobby-top__searchbox">
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search games and tournaments..."
-              autoFocus
-              aria-label="Search games and tournaments"
-            />
-            {searchQuery && (
-              <button
-                className="lobby-top__searchclear"
-                aria-label="Clear search"
-                onClick={() => setSearchQuery('')}
-              >
-                &#10005;
-              </button>
-            )}
-          </div>
-        )}
-
         {/* ── Club identity + wallet ── */}
         <div className="lobby-top__main">
           <div className="lobby-club">
@@ -1952,22 +1874,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                   >
                     <span className="club-level-badge__number">Lv.{clubLevel.level}</span>
                     <span className="club-level-badge__tier">{clubLevel.tierLabel}</span>
-                  </span>
-                  <span className="club-level-progress">
-                    <span className="club-level-progress__bar">
-                      <span
-                        className="club-level-progress__fill"
-                        style={{
-                          // Clamped: a club past its next threshold returns >100
-                          // and overflowed the bar's rounded corners.
-                          width: `${Math.max(0, Math.min(100, clubLevel.progressPercent))}%`,
-                          background: clubLevel.gradient,
-                        }}
-                      />
-                    </span>
-                    <span className="club-level-progress__text">
-                      {Math.round(Math.max(0, Math.min(100, clubLevel.progressPercent)))}%
-                    </span>
                   </span>
                 </div>
               )}
@@ -2053,13 +1959,61 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           )}
         </div>
 
-        {/* ── Club notice. Rendered only when the club has actually written one:
-            the old copy printed the AUTHORING PLACEHOLDER ("Enter the club
-            introduction...(5000 characters limit)") to every player of every
-            club that had not set a description. ── */}
-        {club.description && club.description.trim().length > 0 && (
-          <div className="lobby-top__notice">
-            <p>{club.description}</p>
+        {/* ── Editable Club Notice ── */}
+        {(club.description?.trim() || isOwner || isClubStaff(userRole)) && (
+          <div
+            className={`lobby-top__notice ${isOwner || isClubStaff(userRole) ? 'lobby-top__notice--editable' : ''}`}
+            onClick={() => {
+              if ((isOwner || isClubStaff(userRole)) && !isEditingNotice) {
+                setNoticeDraft(club.description || '');
+                setIsEditingNotice(true);
+              }
+            }}
+          >
+            {isEditingNotice ? (
+              <div className="lobby-top__notice-editor" onClick={(e) => e.stopPropagation()}>
+                <textarea
+                  value={noticeDraft}
+                  onChange={(e) => setNoticeDraft(e.target.value)}
+                  placeholder="Welcome to the Shark Club, all fish of all shapes and sizes are welcome!"
+                  autoFocus
+                  disabled={isSavingNotice}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') setIsEditingNotice(false);
+                  }}
+                />
+                <div className="lobby-top__notice-actions">
+                  <button onClick={() => setIsEditingNotice(false)} disabled={isSavingNotice}>
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setIsSavingNotice(true);
+                      try {
+                        const { error } = await supabase
+                          .from('clubs')
+                          .update({ description: noticeDraft.trim() })
+                          .eq('id', resolvedClubId);
+                        if (error) throw error;
+                        setClub((prev) =>
+                          prev ? { ...prev, description: noticeDraft.trim() } : prev
+                        );
+                        setIsEditingNotice(false);
+                      } catch (e) {
+                        toast.error('Failed to save welcome message');
+                      } finally {
+                        setIsSavingNotice(false);
+                      }
+                    }}
+                    disabled={isSavingNotice}
+                  >
+                    {isSavingNotice ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p>{club.description?.trim() || 'Click to add a welcome message...'}</p>
+            )}
           </div>
         )}
       </header>

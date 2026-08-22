@@ -45,6 +45,7 @@ REPOS=(
 # guard the whole estate depends on behaving the same way everywhere.
 SHARED_FILES=(
   AGENT-PLAYBOOK.md
+  .agents/rules/00-agent-playbook.md
   .github/scripts/report-stuck-prs.sh
   .github/scripts/check-token.sh
   .github/scripts/queue-pr.sh

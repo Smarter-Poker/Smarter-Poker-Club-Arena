@@ -120,3 +120,12 @@ _*_probe.png
 # are source assets and are NOT matched by these patterns.
 public/cards/2color/*.webp
 public/cards/4color/*.webp
+
+# Merge/patch artifacts. Committed to main on 2026-08-22 by #262 — six of them,
+# including two .rej files, which mean `patch` REJECTED those hunks. The hunks
+# were later applied by hand so the feature is fine, but a .rej in src/ is a
+# rejected change sitting in the tree looking like source, and the next agent
+# to grep for `clock` finds it twice. Never committable again.
+*.orig
+*.rej
+*.bak

@@ -45,6 +45,24 @@ export interface TournamentRankingCardProps {
   result: TournamentResult;
   /** Falls back to the tournament name when the event has no separate title. */
   tableName?: string;
+  /**
+   * Session length in SECONDS and hands dealt, straight off the payload.
+   *
+   * AUDIT 2026-08-22: the payload has carried both since the card was written
+   * and the card read neither, so a Spin that ran twenty hands over four
+   * minutes reported nothing about itself. The cash Session Complete card was
+   * given real stats in #243; this one was left with a place and a number.
+   */
+  durationSeconds?: number;
+  handsPlayed?: number;
+  /**
+   * When the session ended, for the banner date. Defaults to now.
+   *
+   * `new Date()` was hard-coded, which is right in the moment and wrong the
+   * instant anything renders this from a stored result — the date would follow
+   * the clock instead of the event.
+   */
+  endedAt?: number;
   onDismiss: () => void;
   /** "Play Again" — where to send them. Usually the club's tournament list. */
   onPlayAgain?: () => void;
@@ -92,9 +110,23 @@ function formatMoney(n: number): string {
   });
 }
 
+/** 185 -> "3m 05s", 3725 -> "1h 02m". Never prints a unit that is zero. */
+function formatDuration(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
+  if (m > 0) return `${m}m ${String(sec).padStart(2, '0')}s`;
+  return `${sec}s`;
+}
+
 export default function TournamentRankingCard({
   result,
   tableName,
+  durationSeconds,
+  handsPlayed,
+  endedAt,
   onDismiss,
   onPlayAgain,
 }: TournamentRankingCardProps) {
@@ -189,10 +221,16 @@ export default function TournamentRankingCard({
           <div className="trc2__banner-lights" aria-hidden="true" />
           <div className="trc2__brand">
             SMARTER<span className="trc2__brand-accent">POKER</span>
-            <span className="trc2__brand-mark">SPIN</span>
+            {/* AUDIT 2026-08-22: this said SPIN unconditionally, so a
+                128-runner MTT finished under a Spin badge. `isSpin` is
+                resolved from the tournament row by isSpinTournament, not
+                guessed from the event name. */}
+            <span className="trc2__brand-mark">{result.isSpin ? 'SPIN' : 'TOURNAMENT'}</span>
           </div>
           <div className="trc2__event">
-            <span className="trc2__event-date">{shortDate(new Date())}</span>{' '}
+            <span className="trc2__event-date">
+              {shortDate(endedAt ? new Date(endedAt) : new Date())}
+            </span>{' '}
             <span className="trc2__event-name">{eventLine}</span>
           </div>
 
@@ -233,8 +271,13 @@ export default function TournamentRankingCard({
         </div>
 
         {/* Knockouts only appear when there were any — the reference card has
-            no room for a zero, and a zero says nothing. */}
-        {(result.knockouts > 0 || result.bountyWinnings > 0) && (
+            no room for a zero, and a zero says nothing. Same rule for rebuys
+            and add-ons, which the payload has always carried and the card has
+            never shown: in a rebuy event they are most of the story. */}
+        {(result.knockouts > 0 ||
+          result.bountyWinnings > 0 ||
+          result.rebuys > 0 ||
+          result.addOns > 0) && (
           <div className="trc2__extras">
             {result.knockouts > 0 && (
               <span className="trc2__extra">
@@ -244,6 +287,40 @@ export default function TournamentRankingCard({
             {result.bountyWinnings > 0 && (
               <span className="trc2__extra">
                 <strong>{formatMoney(result.bountyWinnings)}</strong> In Bounties
+              </span>
+            )}
+            {result.rebuys > 0 && (
+              <span className="trc2__extra">
+                <strong>{result.rebuys}</strong> Rebuy{result.rebuys === 1 ? '' : 's'}
+              </span>
+            )}
+            {result.addOns > 0 && (
+              <span className="trc2__extra">
+                <strong>{result.addOns}</strong> Add-On{result.addOns === 1 ? '' : 's'}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* ── How the session actually went ──
+            Two facts the payload has always carried and this card threw away.
+            Deliberately NOT chips: Dan, "tournaments are never displayed by
+            chips, only what place you finished and how much you made." Time
+            and hands are neither — they are what you did, and on a Spin they
+            are the difference between a cooler and a grind. Rendered only when
+            known, so an older payload shows no empty row. */}
+        {(durationSeconds != null || handsPlayed != null) && (
+          <div className="trc2__session">
+            {durationSeconds != null && (
+              <span className="trc2__session-stat">
+                <span className="trc2__session-label">Duration</span>
+                <span className="trc2__session-value">{formatDuration(durationSeconds)}</span>
+              </span>
+            )}
+            {handsPlayed != null && (
+              <span className="trc2__session-stat">
+                <span className="trc2__session-label">Hands</span>
+                <span className="trc2__session-value">{handsPlayed.toLocaleString()}</span>
               </span>
             )}
           </div>

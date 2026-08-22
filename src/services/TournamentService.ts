@@ -2067,41 +2067,20 @@ class TournamentService {
     }
   }
 
-  /**
-   * Broadcast player elimination
-   */
-  async broadcastElimination(
-    tournamentId: string,
-    eliminatedPlayer: { id: string; name: string; position: number; prize: number }
-  ): Promise<void> {
-    try {
-      const { realtimeChannelService } = await import('./RealtimeChannelService');
-      await realtimeChannelService.broadcastTournamentEvent(tournamentId, {
-        type: 'player_eliminated',
-        payload: eliminatedPlayer,
-      });
-    } catch (e: unknown) {
-      reportError(e, 'TournamentService.Failed_to_broadcast_elimination');
-    }
-  }
+  /* AUDIT 2026-08-22: `broadcastElimination` and `broadcastWinner` were
+     removed from here. Neither had a caller, and neither ever could have been
+     right: elimination and completion are decided by the ENGINE, which owns
+     the tournament's state and broadcasts `player_eliminated` and
+     `tournament_winner` itself (TournamentManagerEliminations). A client
+     announcing either would be a client asserting a fact it does not own, and
+     two publishers on one channel is how a table ends up acting on a result
+     the database disagrees with.
 
-  /**
-   * Broadcast tournament winner
-   */
-  async broadcastWinner(
-    tournamentId: string,
-    winner: { id: string; name: string; prize: number }
-  ): Promise<void> {
-    try {
-      const { realtimeChannelService } = await import('./RealtimeChannelService');
-      await realtimeChannelService.broadcastTournamentEvent(tournamentId, {
-        type: 'winner',
-        payload: winner,
-      });
-    } catch (e: unknown) {
-      reportError(e, 'TournamentService.Failed_to_broadcast_winner');
-    }
-  }
+     They are worth a note rather than a silent delete because their existence
+     is what made the real gap so easy to miss: `broadcastWinner` sitting in
+     the service read, to anyone grepping, as "the winner is announced
+     somewhere". Nothing called it, and for months nothing announced the
+     winner at all. */
 
   /**
    * Finalize tournament (process payouts)

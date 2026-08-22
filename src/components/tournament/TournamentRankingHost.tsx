@@ -43,6 +43,11 @@ export function TournamentRankingHost() {
     <TournamentRankingCard
       result={payload.tournament}
       tableName={payload.tableName}
+      /* The payload has always carried these; the card simply never asked for
+         them. See the props on TournamentRankingCard. */
+      durationSeconds={payload.duration}
+      handsPlayed={payload.handsPlayed}
+      endedAt={payload.sessionEnd}
       onDismiss={close}
     />
   );

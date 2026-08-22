@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && node scripts/generate-webp-media.mjs && vite build && node scripts/stamp-build-provenance.mjs && node -e \"require('fs').copyFileSync('tests/protected-features.json','dist/protected-features.json')\"",
+    "build": "tsc -b && node scripts/generate-webp-media.mjs && vite build && node scripts/self-host-fonts.mjs && node scripts/optimize-dist-media.mjs && node scripts/stamp-build-provenance.mjs && node -e \"require('fs').copyFileSync('tests/protected-features.json','dist/protected-features.json')\"",
     "preview": "vite preview",
     "analyze": "vite build --mode production && npx vite-bundle-visualizer",
     "lint": "eslint src/",

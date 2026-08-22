@@ -183,6 +183,128 @@ describe('Tournament result card delivery', () => {
     expect(screen.queryByRole('dialog', { name: /tournament ranking/i })).toBeNull();
   });
 
+  it('brands a Spin a Spin, and an MTT a tournament', async () => {
+    /* AUDIT 2026-08-22: the banner said SPIN for EVERY finished event, so a
+       128-runner MTT wore a Spin badge. The flag is resolved from the
+       tournament row by isSpinTournament, never guessed from the name — which
+       is why the name here stays the same across both cases. */
+    renderHost();
+    await publishAndSettle({
+      duration: 180,
+      handsPlayed: 21,
+      handsWon: 9,
+      totalRebuys: 0,
+      profitLoss: 0,
+      biggestPot: 0,
+      peakStack: 0,
+      tableName: 'Fidget Spinner',
+      tournament: { ...spinResult(1, 60), isSpin: true },
+    });
+    let card = await screen.findByRole('dialog', { name: /tournament ranking/i });
+    expect(card.textContent).toContain('SPIN');
+
+    await act(async () => {
+      clearSessionSummary();
+    });
+
+    await publishAndSettle({
+      duration: 180,
+      handsPlayed: 21,
+      handsWon: 9,
+      totalRebuys: 0,
+      profitLoss: 0,
+      biggestPot: 0,
+      peakStack: 0,
+      tableName: 'Fidget Spinner',
+      tournament: { ...spinResult(1, 60), isSpin: false },
+    });
+    card = await screen.findByRole('dialog', { name: /tournament ranking/i });
+    expect(card.textContent).toContain('TOURNAMENT');
+  });
+
+  it('an absent isSpin is not a Spin', async () => {
+    // Older payloads carry no flag. A real Spin missing its badge is cosmetic;
+    // an MTT wearing one is a lie, so the default has to fall this way.
+    renderHost();
+    await publishAndSettle({
+      duration: 60,
+      handsPlayed: 4,
+      handsWon: 1,
+      totalRebuys: 0,
+      profitLoss: 0,
+      biggestPot: 0,
+      peakStack: 0,
+      tableName: 'Fidget Spinner',
+      tournament: spinResult(2, 0),
+    });
+    const card = await screen.findByRole('dialog', { name: /tournament ranking/i });
+    expect(card.textContent).toContain('TOURNAMENT');
+  });
+
+  it('reports the session it is handed — duration and hands', async () => {
+    /* Both have ridden in the payload since the card was written and the card
+       read neither, so a Spin that ran 21 hands over three minutes said
+       nothing about itself. Not chips: Dan, "tournaments are never displayed
+       by chips." Time and hands are neither. */
+    renderHost();
+    await publishAndSettle({
+      duration: 185,
+      handsPlayed: 21,
+      handsWon: 9,
+      totalRebuys: 0,
+      profitLoss: 0,
+      biggestPot: 0,
+      peakStack: 0,
+      tableName: 'Fidget Spinner',
+      tournament: spinResult(1, 60),
+    });
+    const card = await screen.findByRole('dialog', { name: /tournament ranking/i });
+    expect(card.textContent).toContain('3m 05s');
+    expect(card.textContent).toContain('21');
+    expect(card.textContent).toContain('Duration');
+    expect(card.textContent).toContain('Hands');
+  });
+
+  it('shows rebuys and add-ons, and never a zero of either', async () => {
+    renderHost();
+    await publishAndSettle({
+      duration: 600,
+      handsPlayed: 80,
+      handsWon: 20,
+      totalRebuys: 2,
+      profitLoss: 0,
+      biggestPot: 0,
+      peakStack: 0,
+      tableName: 'Early Bird Freeroll',
+      tournament: { ...spinResult(4, 0), rebuys: 2, addOns: 1, entrants: 128 },
+    });
+    const card = await screen.findByRole('dialog', { name: /tournament ranking/i });
+    expect(card.textContent).toContain('2');
+    expect(card.textContent).toContain('Rebuys');
+    expect(card.textContent).toContain('Add-On');
+    // Singular/plural, because "1 Rebuys" is the kind of thing that ships.
+    expect(card.textContent).not.toContain('Add-Ons');
+  });
+
+  it('does not print a zero-knockout badge', async () => {
+    renderHost();
+    await publishAndSettle({
+      duration: 180,
+      handsPlayed: 21,
+      handsWon: 9,
+      totalRebuys: 0,
+      profitLoss: 0,
+      biggestPot: 0,
+      peakStack: 0,
+      tableName: 'Fidget Spinner',
+      tournament: spinResult(3, 0),
+    });
+    const card = await screen.findByRole('dialog', { name: /tournament ranking/i });
+    expect(card.textContent).not.toContain('Knockout');
+    expect(card.textContent).not.toContain('Rebuy');
+    expect(card.textContent).not.toContain('Bounties');
+  });
+
   it('dismisses, and stays dismissed', async () => {
     renderHost();
     await publishAndSettle({

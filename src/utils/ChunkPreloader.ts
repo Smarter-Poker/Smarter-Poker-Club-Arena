@@ -38,6 +38,15 @@ const CRITICAL_CHUNKS: Array<() => Promise<any>> = [
   () => import('../pages/CashierPage'),
   () => import('../pages/NotificationsPage'),
   () => import('../pages/MessagesPage'),
+  // PERF PASS 3 (2026-08-22): TablePage is the single heaviest chunk
+  // (~413KB JS + ~383KB CSS) and the most common heavy destination — every
+  // player who sits down needs it. Warming it last (after the light pages)
+  // makes the first table entry instant instead of paying ~150KB gzipped at
+  // the moment the player taps a table.
+  () => import('../pages/TablePage'),
+  // MultiTablePage is the live table surface PersistentTableLayer actually
+  // mounts — small itself, but warming it completes the instant-seat path.
+  () => import('../pages/MultiTablePage'),
   // PlayerStatsPage intentionally NOT preloaded: it pulls the ~314KB recharts
   // chart bundle, which most users never open. It lazy-loads on navigation
   // instead (route intent), saving that bandwidth on mobile.

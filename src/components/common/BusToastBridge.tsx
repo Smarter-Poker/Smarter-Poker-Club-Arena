@@ -14,6 +14,7 @@ const SEVERITY_TO_TYPE: Record<string, ToastType> = {
   critical: 'error',
   warning: 'warning',
   info: 'info',
+  clock: 'clock',
 };
 
 export function BusToastBridge() {

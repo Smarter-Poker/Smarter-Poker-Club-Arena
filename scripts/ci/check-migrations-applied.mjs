@@ -134,6 +134,23 @@ function declaredObjects(sql) {
   };
 }
 
+/** What this file already declared at the base commit, as lookup sets.
+ *  null when the file is new on this branch — then everything in it is new. */
+function declaredAtBase(base, file) {
+  let prior;
+  try {
+    prior = git(['show', `${base}:${file}`]);
+  } catch {
+    return null; // added by this branch
+  }
+  const d = declaredObjects(prior);
+  return {
+    fns: new Set(d.fns),
+    tables: new Set(d.tables),
+    columns: new Set(d.columns.map(([t, c]) => `${t}.${c}`)),
+  };
+}
+
 function main() {
   if (!existsSync(MANIFEST)) {
     console.error('[check-migrations-applied] missing schema manifest — cannot judge.');
@@ -162,11 +179,40 @@ function main() {
   const problems = [];
   for (const file of files) {
     if (!existsSync(join(REPO, file))) continue;
-    const { fns, tables, columns } = declaredObjects(readFileSync(join(REPO, file), 'utf8'));
-    for (const fn of fns) if (!liveFns.has(fn)) problems.push([file, 'function', fn]);
-    for (const t of tables) if (!liveTables.has(t)) problems.push([file, 'table/view', t]);
+    const now = declaredObjects(readFileSync(join(REPO, file), 'utf8'));
+
+    /* WHAT THIS BRANCH ACTUALLY ADDS (2026-08-22).
+     *
+     * The diff filter is AM, so a MODIFIED migration is in scope — correct,
+     * because appending a CREATE FUNCTION to an old file strands it exactly
+     * like a new one. But it judged the file's WHOLE contents, so touching a
+     * historical migration at all re-asserted every object it had ever
+     * declared.
+     *
+     * That made a whole class of file permanently untouchable. A migration
+     * that was applied and then legitimately rolled back — the helpers dropped
+     * on purpose — can no longer receive so much as a comment: the gate
+     * re-asserts the objects that were deliberately removed and fails. Found
+     * by adding a STATUS header to 20260821_library_only_avatars.sql, which
+     * ran on 2026-08-21 and was rolled back afterwards.
+     *
+     * A gate that blocks a comment is a gate somebody starts bypassing, so
+     * scope it to the DIFFERENCE. Objects already declared at the base commit
+     * are that commit's business, not this branch's; only what this branch
+     * newly declares gets checked. Appending a CREATE is still caught — that
+     * is a new declaration — and a comment is correctly a no-op. */
+    const before = declaredAtBase(base, file);
+    const isNew = (kind, key) => !before || !before[kind].has(key);
+
+    for (const fn of now.fns) {
+      if (isNew('fns', fn) && !liveFns.has(fn)) problems.push([file, 'function', fn]);
+    }
+    for (const t of now.tables) {
+      if (isNew('tables', t) && !liveTables.has(t)) problems.push([file, 'table/view', t]);
+    }
     if (liveColumns) {
-      for (const [t, c] of columns) {
+      for (const [t, c] of now.columns) {
+        if (!isNew('columns', `${t}.${c}`)) continue;
         // A column on a table the manifest does not know cannot be judged; the
         // table itself is either brand new above or genuinely absent.
         if (!liveColumns[t]) continue;

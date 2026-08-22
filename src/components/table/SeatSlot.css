@@ -1178,7 +1178,6 @@
      exactly on the box's centre, and stays correct for any number of cards
      (the 50% is of the ROW's own height, so PLO4/5/6 self-adjust). */
   position: absolute;
-  --sp-hero-box-half: 21px; /* half of .seat__info height at this breakpoint */
 
   /* Dan 2026-07-28 ("make all the PLO cards lined up and neater"): the row is
      now driven by three tokens instead of six competing width/margin rules.
@@ -2314,7 +2313,6 @@
      Token-only overrides: never restate width/height/margin on .seat__card, or
      the hard-coded value would beat the tokens the :has() guards below set. */
   .seat__cards--hero {
-    --sp-hero-box-half: 19px;
     --sp-hero-card-w: 42px;
     --sp-hero-card-h: 59px;
     --sp-hero-card-step: 30px;
@@ -2404,7 +2402,6 @@
      seat is centred, so the row starts ~200px in and has ~100px of felt to the
      right of it. Every hand size below is tuned to that 100px budget. */
   .seat__cards--hero {
-    --sp-hero-box-half: 17px;
     --sp-hero-card-w: 36px;
     --sp-hero-card-h: 50px;
     --sp-hero-card-step: 26px;
@@ -2485,7 +2482,6 @@
   /* small phone — right of the name/chip box, centred on it (see base rule).
      Tightest budget of the four breakpoints: ~90px of felt to the right. */
   .seat__cards--hero {
-    --sp-hero-box-half: 15px;
     --sp-hero-card-w: 32px;
     --sp-hero-card-h: 45px;
     --sp-hero-card-step: 23px;

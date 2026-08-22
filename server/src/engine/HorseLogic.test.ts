@@ -166,6 +166,17 @@ describe('HorseLogic V2 — legality fuzz (all variants, all streets)', () => {
         const style = STYLES[trial % STYLES.length];
         const decision = HorseLogic.decide(hero, gs as any, style);
 
+        // The engine's own view of what is legal here. Computed BEFORE the
+        // amount assertions because one of them has to ask it a question.
+        const bettingState = calculateBettingState(
+          gs.pot,
+          gs.currentBet,
+          hero.bet,
+          bigBlind,
+          lastRaise,
+          isPotLimit
+        );
+
         // Amounts must be sane numbers
         if (decision.amount !== undefined) {
           expect(Number.isFinite(decision.amount)).toBe(true);
@@ -191,25 +202,53 @@ describe('HorseLogic V2 — legality fuzz (all variants, all streets)', () => {
             Number.isInteger(bigBlind) &&
             bigBlind >= 1
           ) {
-            expect(
-              Math.abs(decision.amount - Math.round(decision.amount)),
-              `${variant}/${stage}: ${decision.action} ${decision.amount} is not a whole dollar ` +
-                `(bb=${bigBlind}, currentBet=${gs.currentBet}, pot=${gs.pot})`
-            ).toBeLessThan(1e-6);
+            // DE-FLAKE 2026-08-22: this assertion used to be unconditional
+            // and failed roughly one CI run in ten, blocking whichever branch
+            // drew the state. It was not a regression — it was unsatisfiable.
+            //
+            // Seen failing: plo6/flop, bb=2, currentBet=43.206112031764334.
+            // The minimum legal raise-to is 60.4885 and the hero's stack caps
+            // the maximum below 61, so the legal window contains NO integer.
+            // HorseLogic.verifyAmount says as much out loud: the one-cent
+            // nudges are its documented last resort, because "an ugly-but-
+            // legal action still beats a rejected one". A rejected horse
+            // action is the worse outcome and Dan's whole-dollar rule was
+            // never meant to outrank legality.
+            //
+            // A real table cannot reach that state: at a whole-dollar big
+            // blind every posted bet is a whole dollar, so the window always
+            // contains one. Only the fuzz's fractional currentBet produces it.
+            //
+            // So the rule is asserted whenever a whole dollar was ACTUALLY
+            // available — which keeps every real regression in scope, because
+            // choosing cents while a legal whole dollar existed still fails.
+            // The engine is asked rather than re-deriving the window here; a
+            // second copy of that arithmetic could disagree with the first and
+            // wave through something genuinely broken.
+            const wholeDollarWasLegal = [
+              Math.floor(decision.amount),
+              Math.ceil(decision.amount),
+              Math.ceil(decision.amount) + 1,
+            ].some(
+              (amt) =>
+                amt > 0 && validateAction(decision.action, amt, hero.stack, bettingState).valid
+            );
+            if (wholeDollarWasLegal) {
+              expect(
+                Math.abs(decision.amount - Math.round(decision.amount)),
+                `${variant}/${stage}: ${decision.action} ${decision.amount} is not a whole dollar ` +
+                  `though one was legal ` +
+                  `(bb=${bigBlind}, currentBet=${gs.currentBet}, pot=${gs.pot}, ` +
+                  `minRaise=${bettingState.minRaise}, maxRaise=${bettingState.maxRaise}, ` +
+                  `stack=${hero.stack}, bet=${hero.bet})`
+              ).toBeLessThan(1e-6);
+            }
           }
         }
         expect(decision.thinkTime).toBeGreaterThanOrEqual(0);
         expect(decision.thinkTime).toBeLessThanOrEqual(10000);
 
         // Validate against the engine's own rules
-        const bettingState = calculateBettingState(
-          gs.pot,
-          gs.currentBet,
-          hero.bet,
-          bigBlind,
-          lastRaise,
-          isPotLimit
-        );
         const check = validateAction(decision.action, decision.amount, hero.stack, bettingState);
         if (!check.valid) {
           throw new Error(
@@ -223,6 +262,113 @@ describe('HorseLogic V2 — legality fuzz (all variants, all streets)', () => {
       }
     }
     expect(checked).toBe(VARIANTS.length * 250);
+  });
+
+  /**
+   * The state that made the fuzz above flaky, pinned deterministically.
+   *
+   * CI failed roughly one run in ten with
+   *   "plo6/flop: raise 60.49 is not a whole dollar (bb=2,
+   *    currentBet=43.206112031764334, pot=8.099135491038798)"
+   * and it was never a regression. At that currentBet the minimum legal
+   * raise-to is 60.4885568, and when the hero's stack caps the maximum below
+   * 61 the legal window holds no integer at all — so 60.49, the minimum
+   * rounded up to the cent, is the ONLY thing a horse can legally do.
+   *
+   * A live table cannot reach it: at a whole-dollar big blind every posted bet
+   * is a whole dollar, so the window always contains one. This test states the
+   * impossibility in the engine's own words, so that if someone later deletes
+   * the `wholeDollarWasLegal` guard from the fuzz they find out why it exists.
+   */
+  it('a legal raise window narrower than a dollar can contain no whole dollar', () => {
+    const currentBet = 43.206112031764334;
+    const pot = 8.099135491038798;
+    const lastRaise = Math.max(2, currentBet * 0.4);
+    const heroBet = 0;
+    const heroStack = 60.5; // caps the maximum raise-to below 61
+
+    const bs = calculateBettingState(pot, currentBet, heroBet, 2, lastRaise, false);
+    const minRaiseTo = currentBet + bs.minRaise;
+    expect(minRaiseTo).toBeGreaterThan(60);
+    expect(minRaiseTo).toBeLessThan(61);
+    expect(heroBet + heroStack).toBeLessThan(61);
+
+    for (const wholeDollar of [59, 60, 61, 62]) {
+      expect(
+        validateAction('raise', wholeDollar, heroStack, bs).valid,
+        `${wholeDollar} must be illegal here`
+      ).toBe(false);
+    }
+
+    // ...while the cent-rounded minimum is legal, which is exactly what
+    // HorseLogic.verifyAmount falls back to.
+    expect(validateAction('raise', Math.ceil(minRaiseTo * 100) / 100, heroStack, bs).valid).toBe(
+      true
+    );
+  });
+
+  /**
+   * Dan 2026-08-21: "in PLO you can never go all in if the pot is less than
+   * the chips you have — the most you can ever bet is pot."
+   *
+   * `capPotLimitJam` enforces that by rewriting an over-cap jam into a
+   * pot-sized bet and routing it back through `legalizeInner` for snapping
+   * and verification. `legalizeInner` then had an unguarded shortcut turning
+   * any bet worth >=92% of the stack back into an all-in — outside the
+   * wrapper, which had already run. So the cap was escaped by the very call
+   * that was meant to apply it, whenever the pot sat between 92% and 100% of
+   * the stack. The fuzz above found it as:
+   *
+   *   ILLEGAL plo4/river: all_in undefined — Pot-limit max is 300
+   *   (toCall=0, minRaise=100, maxRaise=300, stack=322.2566035217615,
+   *    bet=0, currentBet=0, pot=300)
+   *
+   * Pinned deterministically here because the fuzz only reaches it on a
+   * fraction of seeds, and a rejected horse action is the worst outcome the
+   * decision layer can produce.
+   */
+  it('never jams over the pot-limit cap when the pot is just under the stack', () => {
+    const pot = 300;
+    const stack = 322.2566035217615; // 93.1% of it is the pot — inside the old shortcut
+    const bigBlind = 100;
+
+    for (const variant of ['plo4', 'plo5', 'plo6'] as const) {
+      const hole = variant === 'plo4' ? 4 : variant === 'plo5' ? 5 : 6;
+      const deck = shuffle(makeDeck(false));
+      let cardIdx = 0;
+      const hero = mkPlayer(1, {
+        cards: deck.slice(cardIdx, (cardIdx += hole)),
+        stack,
+        bet: 0,
+      });
+      const villain = mkPlayer(2, {
+        cards: deck.slice(cardIdx, (cardIdx += hole)),
+        stack,
+        bet: 0,
+      });
+      const board = deck.slice(cardIdx, cardIdx + 5);
+
+      for (const style of STYLES) {
+        const gs = {
+          players: [hero, villain],
+          communityCards: board,
+          pot,
+          currentBet: 0,
+          minRaise: bigBlind,
+          stage: 'river' as HandStage,
+          gameVariant: variant,
+          bigBlind,
+          dealerSeat: 1,
+        };
+        const decision = HorseLogic.decide(hero, gs as any, style);
+        const bs = calculateBettingState(pot, 0, 0, bigBlind, bigBlind, true);
+        const check = validateAction(decision.action, decision.amount, hero.stack, bs);
+        expect(
+          check.valid,
+          `${variant}/${style}: ${decision.action} ${decision.amount} — ${check.error}`
+        ).toBe(true);
+      }
+    }
   });
 
   it('survives corrupted inputs without throwing', () => {

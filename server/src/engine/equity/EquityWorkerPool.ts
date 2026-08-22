@@ -54,12 +54,33 @@ interface Job {
  */
 const JOB_TIMEOUT_MS = 15_000;
 
+/**
+ * 2026-08-22 review: respawn discipline. Worker death used to shrink the pool
+ * permanently; the first respawn fix then allowed the opposite failure — a
+ * worker that crashes ON START (broken build artifact) emits 'error'/'exit'
+ * asynchronously, so each respawn scheduled the next: an unbounded spawn loop.
+ * A budget (refilled by any successful worker reply) plus a delay bounds it:
+ * budget exhausted -> the pool degrades to sync mode, exactly the pre-existing
+ * safe behaviour.
+ */
+const RESPAWN_DELAY_MS = 2_000;
+const RESPAWN_BUDGET = 10;
+
 export class EquityWorkerPool {
   private workers: Worker[] = [];
   private idle: Worker[] = [];
   private queue: Job[] = [];
   private inFlight = new Map<Worker, Job>();
   private nextId = 1;
+  private respawnBudget = RESPAWN_BUDGET;
+  /**
+   * 2026-08-22 review: queued jobs that hit their timeout are drained ONE per
+   * macrotask. Draining them synchronously in the timeout callback ran the
+   * whole backlog of Monte-Carlo jobs back-to-back on the event loop — the
+   * exact all-tables stall the worker pool exists to prevent.
+   */
+  private syncDrainQueue: Job[] = [];
+  private syncDrainScheduled = false;
   private readonly size: number;
   private initialized = false;
   private readonly disabled: boolean;
@@ -133,11 +154,12 @@ export class EquityWorkerPool {
   /** See JOB_TIMEOUT_MS. Never lets an equity await park a hand. */
   private onJobTimeout(job: Job): void {
     if (job.settled) return;
-    // Still waiting in the queue? Pull it and answer synchronously.
+    // Still waiting in the queue? Pull it and answer via the staggered drain
+    // (one sync compute per macrotask — see syncDrainQueue).
     const qIdx = this.queue.indexOf(job);
     if (qIdx !== -1) {
       this.queue.splice(qIdx, 1);
-      this.settle(job, this.syncFallback(job));
+      this.scheduleSyncDrain(job);
       return;
     }
     // In flight on a wedged worker: terminate it. The worker's 'exit' handler
@@ -150,6 +172,31 @@ export class EquityWorkerPool {
     }
     // Neither queued nor in flight and not settled — settle defensively.
     this.settle(job, this.syncFallback(job));
+  }
+
+  private scheduleSyncDrain(job: Job): void {
+    this.syncDrainQueue.push(job);
+    if (this.syncDrainScheduled) return;
+    this.syncDrainScheduled = true;
+    const drainOne = () => {
+      const next = this.syncDrainQueue.shift();
+      if (next && !next.settled) {
+        try {
+          this.settle(next, this.syncFallback(next));
+        } catch {
+          this.settle(
+            next,
+            next.payload.hands.map(() => 1 / next.payload.hands.length)
+          );
+        }
+      }
+      if (this.syncDrainQueue.length > 0) {
+        setTimeout(drainOne, 0);
+      } else {
+        this.syncDrainScheduled = false;
+      }
+    };
+    setTimeout(drainOne, 0);
   }
 
   /** Resolve exactly once and clear the watchdog. */
@@ -179,6 +226,8 @@ export class EquityWorkerPool {
   }
 
   private onMessage(w: Worker, m: any): void {
+    // A worker that answers is healthy — refill the respawn budget.
+    this.respawnBudget = RESPAWN_BUDGET;
     const job = this.inFlight.get(w);
     this.inFlight.delete(w);
     if (this.workers.includes(w)) this.idle.push(w);
@@ -203,22 +252,30 @@ export class EquityWorkerPool {
       // Do not drop the job — recover it via the synchronous compute.
       this.settle(job, this.syncFallback(job));
     }
-    // FIX 2026-08-22: the pool used to shrink permanently on every worker
-    // death until nothing was offloaded any more. Respawn a replacement
-    // (single attempt, guarded — a broken build artifact just degrades to
-    // sync mode exactly as before).
-    if (wasKnown && !this.disabled && this.workers.length < this.size) {
-      try {
-        const nw = new Worker(this.workerUrl);
-        nw.on('message', (m) => this.onMessage(nw, m));
-        nw.on('error', () => this.onWorkerDown(nw));
-        nw.on('exit', () => this.onWorkerDown(nw));
-        nw.unref();
-        this.workers.push(nw);
-        this.idle.push(nw);
-      } catch {
-        /* degrade to sync mode */
-      }
+    // FIX 2026-08-22 (+review): the pool used to shrink permanently on every
+    // worker death. Respawn — but DELAYED and BUDGETED, because a worker that
+    // crashes on start emits 'error'/'exit' asynchronously and an immediate
+    // respawn chain would spin forever against a broken build artifact.
+    // Budget spent -> degrade to sync mode (the pre-existing safe behaviour);
+    // any successful worker reply refills the budget.
+    if (wasKnown && !this.disabled && this.workers.length < this.size && this.respawnBudget > 0) {
+      this.respawnBudget--;
+      const t = setTimeout(() => {
+        if (this.workers.length >= this.size) return;
+        try {
+          const nw = new Worker(this.workerUrl);
+          nw.on('message', (m) => this.onMessage(nw, m));
+          nw.on('error', () => this.onWorkerDown(nw));
+          nw.on('exit', () => this.onWorkerDown(nw));
+          nw.unref();
+          this.workers.push(nw);
+          this.idle.push(nw);
+          this.pump();
+        } catch {
+          /* degrade to sync mode */
+        }
+      }, RESPAWN_DELAY_MS);
+      t.unref?.();
     }
     this.pump();
   }

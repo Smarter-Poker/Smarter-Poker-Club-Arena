@@ -125,6 +125,12 @@ export class HorseMind {
   private static handFlags = new Set<string>();
   /** V12 persistence: userIds whose stats changed since the last DB flush. */
   private static dirty = new Set<string>();
+  /** V12 ANTI-EXPLOIT: per-(attacker|victim) aggression targeting counters. */
+  private static pairs = new Map<
+    string,
+    { n3: number; opp3: number; nR: number; oppR: number }
+  >();
+  private static readonly MAX_PAIRS = 20_000;
 
   // ───────────────────────────────────────────────────────────────────────
   // OBSERVATION — ingest the action stream (idempotent, bounded)
@@ -149,6 +155,21 @@ export class HorseMind {
     // The first action's timestamp identifies the hand (stable across turns).
     const handKey = `${history[0].timestamp}:${history[0].userId}`;
     let preflopRaises = 0;
+    // V12 anti-exploit: who opened this hand, and who bet each street —
+    // needed to attribute 3-bets and bet-raises to (attacker, victim) pairs.
+    if (this.pairs.size > this.MAX_PAIRS) this.pairs.clear();
+    let openerId: string | null = null;
+    let streetBettor: string | null = null;
+    let curStage: string = 'preflop';
+    const pairOf = (attacker: string, victim: string) => {
+      const k = `${attacker}|${victim}`;
+      let p = this.pairs.get(k);
+      if (!p) {
+        p = { n3: 0, opp3: 0, nR: 0, oppR: 0 };
+        this.pairs.set(k, p);
+      }
+      return p;
+    };
 
     for (const a of history) {
       const preflop = a.stage === 'preflop';
@@ -217,8 +238,78 @@ export class HorseMind {
         }
       }
 
+      // V12 ANTI-EXPLOIT ATTRIBUTION — who attacks whom. isNew-gated so a
+      // replayed history never double-counts a pair event.
+      if (a.stage !== curStage) {
+        curStage = a.stage;
+        streetBettor = null;
+      }
+      if (preflop) {
+        if (isNew && openerId && a.userId !== openerId && preflopRaises === 1) {
+          if (isAggr) {
+            const p = pairOf(a.userId, openerId);
+            p.n3++;
+            p.opp3++;
+          } else if (a.action === 'call' || a.action === 'fold') {
+            pairOf(a.userId, openerId).opp3++;
+          }
+        }
+        if (isAggr && preflopRaises === 0) openerId = a.userId;
+      } else {
+        if (isNew && streetBettor && a.userId !== streetBettor) {
+          const p = pairOf(a.userId, streetBettor);
+          if (a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise === true)) {
+            p.nR++;
+            p.oppR++;
+          } else if (a.action === 'call' || a.action === 'fold') {
+            p.oppR++;
+          }
+        }
+        if (isAggr) streetBettor = a.userId;
+      }
+
       if (preflop && isAggr) preflopRaises++;
     }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // V12 ANTI-EXPLOIT — is this opponent HUNTING this horse?
+  // ───────────────────────────────────────────────────────────────────────
+
+  /**
+   * 0..1 score of how hard `oppId` is targeting `heroId` specifically,
+   * relative to that opponent's own global aggression rates. 0 = no evidence
+   * (small sample, or their aggression toward hero matches how they play
+   * everyone). Positive scores mean hero's opens are being 3-bet, and hero's
+   * bets raised, at rates their global profile cannot explain — the
+   * signature of a player who has singled this horse out.
+   */
+  static targetingOf(heroId: string, oppId: string): number {
+    const p = this.pairs.get(`${oppId}|${heroId}`);
+    if (!p) return 0;
+    const g = this.stats.get(oppId);
+    let score = 0;
+
+    if (p.opp3 >= 6) {
+      const pairRate = p.n3 / p.opp3;
+      const globalRate = g && g.hands >= 10 ? Math.min(0.5, (g.threeBet / g.hands) * 3) : 0.12;
+      const excess = pairRate - Math.max(globalRate * 1.5, 0.18);
+      if (excess > 0) score += Math.min(0.6, excess * 1.6);
+    }
+    if (p.oppR >= 6) {
+      const pairRate = p.nR / p.oppR;
+      const excess = pairRate - 0.18; // baseline bet-raise rate
+      if (excess > 0) score += Math.min(0.5, excess * 1.4);
+    }
+    return Math.min(1, score);
+  }
+
+  /** Test hook: read a pair's raw counters. */
+  static getPair(
+    attackerId: string,
+    victimId: string
+  ): { n3: number; opp3: number; nR: number; oppR: number } | undefined {
+    return this.pairs.get(`${attackerId}|${victimId}`);
   }
 
   /** Stable per-hand key shared by observe(), plans, and callers. */
@@ -239,6 +330,7 @@ export class HorseMind {
     this.handFlags.clear();
     this.plans.clear();
     this.dirty.clear();
+    this.pairs.clear();
   }
 
   // ───────────────────────────────────────────────────────────────────────

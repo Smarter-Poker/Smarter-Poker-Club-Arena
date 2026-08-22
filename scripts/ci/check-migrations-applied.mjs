@@ -87,8 +87,18 @@ function changedMigrations(base) {
     .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'));
 }
 
-/** Objects a migration CREATES. Drops and alters are out of scope: this asks
- *  "did the thing you added actually land", not "is the schema perfect". */
+/** Objects a migration CREATES or ADDS. Drops and alters of existing objects
+ *  are out of scope: this asks "did the thing you added actually land", not
+ *  "is the schema perfect".
+ *
+ *  ADD COLUMN was missing here until 2026-08-22, and the omission cost a
+ *  feature. In World Hub, 20260821210000_user_avatars_cosmetics.sql and
+ *  20260821210001_profiles_cosmetics.sql sat unapplied for a day while the
+ *  avatar frames-and-auras feature was fully built around the columns they
+ *  declare - every write failed 42703 into a catch block and nothing went red.
+ *  A CREATE-only version of this gate watches that go straight past: the table
+ *  already exists, so every other check stays green. A column is the most
+ *  common thing a migration adds and the easiest thing to strand. */
 function declaredObjects(sql) {
   const clean = sql.replace(/--[^\n]*/g, '');
   const fns = [
@@ -104,7 +114,24 @@ function declaredObjects(sql) {
       /create\s+(?:or\s+replace\s+)?(?:materialized\s+)?view\s+(?:if\s+not\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?/gi
     ),
   ].map((m) => m[1]);
-  return { fns: [...new Set(fns)], tables: [...new Set([...tables, ...views])] };
+  // ALTER TABLE [IF EXISTS] [ONLY] [public.]t ADD [COLUMN] [IF NOT EXISTS] c
+  const columns = [
+    ...clean.matchAll(
+      /alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?:public\.)?"?([a-z0-9_]+)"?\s+add\s+(?:column\s+)?(?:if\s+not\s+exists\s+)?"?([a-z0-9_]+)"?/gi
+    ),
+  ]
+    // ADD CONSTRAINT / PRIMARY / FOREIGN / UNIQUE / CHECK read identically to
+    // ADD COLUMN under that regex and are not columns. Without this filter
+    // every constraint is reported as a phantom column forever, and a gate
+    // that cries wolf is a gate somebody disables.
+    .filter((m) => !/^(constraint|primary|foreign|unique|check|exclude)$/i.test(m[2]))
+    .map((m) => [m[1], m[2]]);
+
+  return {
+    fns: [...new Set(fns)],
+    tables: [...new Set([...tables, ...views])],
+    columns: [...new Map(columns.map((c) => [c.join('.'), c])).values()],
+  };
 }
 
 function main() {
@@ -116,6 +143,15 @@ function main() {
   const liveFns = new Set(manifest.functions || []);
   const liveTables = new Set(manifest.tables || []);
 
+  /* The column manifest is a separate snapshot ({table: [columns]}) and the
+     phantom-column gate already depends on it. If it is absent this checks
+     what it can rather than exiting 2 - a missing companion file should not
+     turn off the function and table checks that do not need it. */
+  const columnsPath = join(REPO, 'scripts/ci/supabase-columns-manifest.json');
+  const liveColumns = existsSync(columnsPath)
+    ? JSON.parse(readFileSync(columnsPath, 'utf8')).columns || {}
+    : null;
+
   const base = baseRef();
   const files = changedMigrations(base);
   if (files.length === 0) {
@@ -126,9 +162,17 @@ function main() {
   const problems = [];
   for (const file of files) {
     if (!existsSync(join(REPO, file))) continue;
-    const { fns, tables } = declaredObjects(readFileSync(join(REPO, file), 'utf8'));
+    const { fns, tables, columns } = declaredObjects(readFileSync(join(REPO, file), 'utf8'));
     for (const fn of fns) if (!liveFns.has(fn)) problems.push([file, 'function', fn]);
     for (const t of tables) if (!liveTables.has(t)) problems.push([file, 'table/view', t]);
+    if (liveColumns) {
+      for (const [t, c] of columns) {
+        // A column on a table the manifest does not know cannot be judged; the
+        // table itself is either brand new above or genuinely absent.
+        if (!liveColumns[t]) continue;
+        if (!liveColumns[t].includes(c)) problems.push([file, 'column', `${t}.${c}`]);
+      }
+    }
   }
 
   console.log(

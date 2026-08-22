@@ -334,14 +334,14 @@ export default function CashierTradePage() {
         const { data: profs } = await supabase
           .from('profiles')
           .select(
-            'id, username, display_name, arena_avatar_url, avatar_url, player_number, is_horse'
+            'id, username, display_name, avatar_url:arena_avatar_url, player_number, is_horse'
           )
           .in('id', ids);
         for (const pr of profs || []) {
           profMap.set(pr.id as string, {
             username: pr.username,
             display_name: pr.display_name,
-            avatar_url: pr.arena_avatar_url || pr.avatar_url,
+            avatar_url: pr.avatar_url,
             is_horse: pr.is_horse,
             player_number: pr.player_number,
           });

@@ -2046,3 +2046,345 @@ describe('HorseLogic V10 — strategy layer', () => {
     }
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────────────
+// V11 — GAME MODES + LEAK FIXES (Dan 2026-08-22)
+// Pins the four live-play leaks Dan reported: folding to <1bb in tournaments,
+// calling off one-pair hands under board overcards (QQ on AKx), donk-leading
+// into the aggressor, and cash/tournament/heads-up playing identically.
+// ───────────────────────────────────────────────────────────────────────────────────
+
+describe('HorseLogic V11 — game modes + leak fixes', () => {
+  const v7ctx = (over: Record<string, unknown> = {}): any => ({
+    strength: 0.5,
+    position: 'bb',
+    raiserPosition: null,
+    raises: 0,
+    limpers: 0,
+    callers: 0,
+    oppsLeft: 5,
+    toCall: 0,
+    currentBet: 2,
+    pot: 3,
+    bigBlind: 2,
+    stack: 200,
+    stackBB: 100,
+    tightness: 1,
+    bluffFreq: 0.15,
+    aggression: 1,
+    slowplayFreq: 0.1,
+    sizingMultiplier: 1,
+    isOmaha: false,
+    isPotLimit: false,
+    riskAdd: 0,
+    rand: () => 0.5,
+    ...over,
+  });
+
+  it('NEVER folds priced in: <1bb to call at 3.5:1+ is a call with any two', () => {
+    // The exact live bug: tournament horse folding for under a big blind.
+    const junk = { strength: 0.05 };
+    const spot = v7ctx({
+      ...junk,
+      mode: 'tournament',
+      raises: 1,
+      raiserPosition: 'middle',
+      toCall: 1.5, // under 1bb
+      currentBet: 3.5,
+      pot: 9,
+      stack: 16,
+      stackBB: 8,
+    });
+    expect(decidePreflopV7(spot).a).toBe('call');
+    // Cash games get the same guard — pot odds are pot odds.
+    expect(decidePreflopV7({ ...spot, mode: 'cash' }).a).toBe('call');
+    // Ablation (no mode passed) keeps the legacy fold for A/B comparability.
+    expect(decidePreflopV7({ ...spot, mode: undefined }).a).toBe('fold');
+  });
+
+  it('tournament crumbs take the flip: <=2bb behind never folds a reasonable price', () => {
+    const spot = v7ctx({
+      strength: 0.1,
+      mode: 'tournament',
+      raises: 1,
+      raiserPosition: 'late',
+      toCall: 3, // covers the whole stack
+      currentBet: 3,
+      pot: 7,
+      stack: 3,
+      stackBB: 1.5,
+    });
+    expect(decidePreflopV7(spot).a).toBe('call');
+  });
+
+  it('tournament push/fold: no limp-calling off a short stack, and jams widen as it shrinks', () => {
+    // Facing action, NOT priced in: cash calls small with a playable hand,
+    // tournament plays jam-or-fold discipline.
+    const facing = v7ctx({
+      strength: 0.45,
+      raises: 1,
+      raiserPosition: 'middle',
+      toCall: 2,
+      currentBet: 4,
+      pot: 5,
+      stack: 16,
+      stackBB: 8,
+    });
+    expect(decidePreflopV7({ ...facing, mode: 'cash' }).a).toBe('call');
+    expect(decidePreflopV7({ ...facing, mode: 'tournament' }).a).toBe('fold');
+    // Unopened 6bb in late position: the tournament jam range is wider.
+    const open = v7ctx({
+      strength: 0.46,
+      position: 'late',
+      toCall: 2,
+      currentBet: 2,
+      pot: 3,
+      stack: 12,
+      stackBB: 6,
+    });
+    expect(decidePreflopV7({ ...open, mode: 'tournament' }).a).toBe('jam');
+    expect(decidePreflopV7({ ...open, mode: 'cash' }).a).not.toBe('jam');
+  });
+
+  it('antes widen tournament opens', () => {
+    const open = v7ctx({
+      strength: 0.51,
+      position: 'middle',
+      mode: 'tournament',
+      toCall: 2,
+      currentBet: 2,
+      pot: 3,
+      stack: 120,
+      stackBB: 60,
+      rand: () => 0.99, // no trap/limp mixing
+    });
+    expect(decidePreflopV7({ ...open, anteInPlay: true }).a).toBe('raiseTo');
+    expect(decidePreflopV7({ ...open, anteInPlay: false }).a).not.toBe('raiseTo');
+  });
+
+  it('heads-up is a different game: the SB opens far wider and the BB defends far wider', () => {
+    // SB/BTN with a hand well below the ring-game open floor.
+    const sbOpen = v7ctx({
+      strength: 0.3,
+      position: 'sb',
+      oppsLeft: 1,
+      toCall: 1,
+      currentBet: 2,
+      pot: 3,
+      rand: () => 0.99,
+    });
+    expect(decidePreflopV7({ ...sbOpen, mode: 'cash' }).a).toBe('raiseTo');
+    expect(decidePreflopV7({ ...sbOpen, mode: undefined }).a).not.toBe('raiseTo');
+    // BB defending vs a 3x HU open with a hand ring games fold.
+    const bbDef = v7ctx({
+      strength: 0.35,
+      position: 'bb',
+      oppsLeft: 1,
+      raises: 1,
+      raiserPosition: 'sb',
+      toCall: 6,
+      currentBet: 8,
+      pot: 9,
+      rand: () => 0.99,
+    });
+    expect(decidePreflopV7({ ...bbDef, mode: 'cash' }).a).toBe('call');
+    expect(decidePreflopV7({ ...bbDef, mode: undefined }).a).toBe('fold');
+  });
+
+  it('gameMode is trusted over the blind-size heuristic', () => {
+    // High-stakes CASH (bb 25) used to be misread as a tournament. With the
+    // explicit mode the survival premium must vanish: cash calls at least as
+    // often as the same spot labeled tournament.
+    const mk = (gameMode: 'cash' | 'tournament'): any => {
+      const hero = mkPlayer(4, { cards: [c('Kh'), c('Jd')], bet: 0, stack: 750 });
+      return {
+        hero,
+        gs: {
+          players: [1, 2, 3, 4, 5, 6].map((s) => (s === 4 ? hero : mkPlayer(s, { stack: 750 }))),
+          communityCards: [] as Card[],
+          pot: 112,
+          currentBet: 75,
+          minRaise: 50,
+          stage: 'preflop',
+          gameVariant: 'nlh',
+          bigBlind: 25,
+          dealerSeat: 6,
+          gameMode,
+          actionHistory: [
+            { seat: 3, userId: 'utg-open', action: 'raise', amount: 75, timestamp: 42, stage: 'preflop' },
+          ],
+        },
+      };
+    };
+    const n = 150;
+    let cashCalls = 0;
+    let mttCalls = 0;
+    for (let i = 0; i < n; i++) {
+      const a = mk('cash');
+      if (HorseLogic.decide(a.hero, a.gs, 'balanced').action === 'call') cashCalls++;
+      const b = mk('tournament');
+      if (HorseLogic.decide(b.hero, b.gs, 'balanced').action === 'call') mttCalls++;
+    }
+    expect(cashCalls).toBeGreaterThanOrEqual(mttCalls);
+  });
+
+  it('no more donk leads: an OOP caller checks to the aggressor instead of leading', () => {
+    HorseMind.reset();
+    const flop = (v11: boolean) => {
+      // Hero (BB, seat 2) called a button open, flopped top pair on a dry
+      // board, and acts FIRST. Solver play: check the range to the raiser.
+      const hero = mkPlayer(2, { cards: [c('Th'), c('9d')], bet: 0, stack: 194 });
+      const gs: any = {
+        players: [
+          mkPlayer(1, { is_folded: true }),
+          hero,
+          mkPlayer(3, { is_folded: true }),
+          mkPlayer(4, { is_folded: true }),
+          mkPlayer(5, { is_folded: true }),
+          mkPlayer(6, { bet: 0, stack: 194 }),
+        ],
+        communityCards: [c('Tc'), c('7s'), c('2d')],
+        pot: 13,
+        currentBet: 0,
+        minRaise: 2,
+        stage: 'flop',
+        gameVariant: 'nlh',
+        bigBlind: 2,
+        dealerSeat: 6,
+        actionHistory: [
+          { seat: 6, userId: 'horse-6', action: 'raise', amount: 6, timestamp: 42, stage: 'preflop' },
+          { seat: 2, userId: 'horse-2', action: 'call', amount: 4, timestamp: 43, stage: 'preflop' },
+        ],
+      };
+      return HorseLogic.decide(hero, gs, 'balanced', {}, v11 ? {} : { v11: false });
+    };
+    const n = 120;
+    let leadsV11 = 0;
+    let leadsLegacy = 0;
+    for (let i = 0; i < n; i++) {
+      if (flop(true).action === 'bet') leadsV11++;
+      if (flop(false).action === 'bet') leadsLegacy++;
+    }
+    expect(leadsV11).toBe(0); // dry board, no vulnerable-hand exception: pure check
+    expect(leadsLegacy).toBeGreaterThan(20); // the leak V11 removes
+  });
+
+  it('board domination discipline: QQ folds to a pot-sized barrel on an AK-high flop', () => {
+    HorseMind.reset();
+    const spot = (v11: boolean) => {
+      const hero = mkPlayer(2, { cards: [c('Qh'), c('Qd')], bet: 0, stack: 180 });
+      const gs: any = {
+        players: [
+          hero,
+          mkPlayer(6, { bet: 20, stack: 160 }),
+          ...[1, 3, 4, 5].map((s) => mkPlayer(s, { is_folded: true })),
+        ],
+        communityCards: [c('Ah'), c('Kd'), c('7c')],
+        pot: 20,
+        currentBet: 20,
+        minRaise: 20,
+        stage: 'flop',
+        gameVariant: 'nlh',
+        bigBlind: 2,
+        dealerSeat: 6,
+        // NO action history: this is the exact production hole — a fresh
+        // opponent with no reads samples as a UNIFORM range, QQ shows ~68%
+        // equity on AK7, and the legacy engine calls the barrel off. With
+        // reads the range bands already fold this; the V11 domination
+        // penalty closes the no-reads case.
+      };
+      return HorseLogic.decide(hero, gs, 'balanced', {}, v11 ? {} : { v11: false });
+    };
+    const n = 100;
+    let foldsV11 = 0;
+    let foldsLegacy = 0;
+    for (let i = 0; i < n; i++) {
+      if (spot(true).action === 'fold') foldsV11++;
+      if (spot(false).action === 'fold') foldsLegacy++;
+    }
+    // The discipline must move the needle hard: v11 folds this spot far more
+    // than the legacy engine that was calling it off.
+    expect(foldsV11).toBeGreaterThan(foldsLegacy + 25);
+    expect(foldsV11).toBeGreaterThan(60);
+  });
+
+  it('top pair pays NO domination penalty (only dominated pairs tighten)', () => {
+    // AhJd on Ah-8-3: top pair, zero board overcards — behavior must be
+    // identical with and without V11 in the call-threshold path.
+    HorseMind.reset();
+    const spot = (v11: boolean) => {
+      const hero = mkPlayer(2, { cards: [c('As'), c('Jd')], bet: 0, stack: 180 });
+      const gs: any = {
+        players: [
+          hero,
+          mkPlayer(6, { bet: 10, stack: 170 }),
+          ...[1, 3, 4, 5].map((s) => mkPlayer(s, { is_folded: true })),
+        ],
+        communityCards: [c('Ah'), c('8d'), c('3c')],
+        pot: 13,
+        currentBet: 10,
+        minRaise: 10,
+        stage: 'flop',
+        gameVariant: 'nlh',
+        bigBlind: 2,
+        dealerSeat: 6,
+        actionHistory: [
+          { seat: 6, userId: 'horse-6', action: 'raise', amount: 6, timestamp: 42, stage: 'preflop' },
+          { seat: 2, userId: 'horse-2', action: 'call', amount: 6, timestamp: 43, stage: 'preflop' },
+          { seat: 6, userId: 'horse-6', action: 'bet', amount: 10, timestamp: 44, stage: 'flop' },
+        ],
+      };
+      return HorseLogic.decide(hero, gs, 'balanced', {}, v11 ? {} : { v11: false });
+    };
+    const n = 80;
+    let foldsV11 = 0;
+    let foldsLegacy = 0;
+    for (let i = 0; i < n; i++) {
+      if (spot(true).action === 'fold') foldsV11++;
+      if (spot(false).action === 'fold') foldsLegacy++;
+    }
+    expect(foldsV11).toBeLessThanOrEqual(foldsLegacy + 5); // no new tightening
+  });
+
+  it('V11 decisions stay legal across randomized states in every mode', () => {
+    let checked = 0;
+    for (const mode of ['cash', 'tournament'] as const) {
+      for (let trial = 0; trial < 150; trial++) {
+        const deck = shuffle(makeDeck(false));
+        const heroCards = deck.slice(0, 2);
+        const boardLen = [0, 3, 4, 5][trial % 4];
+        const board = deck.slice(2, 2 + boardLen);
+        const bb = mode === 'tournament' ? 100 : 2;
+        const stack = bb * (0.5 + Math.random() * 40);
+        const currentBet = Math.random() < 0.5 ? 0 : bb * (0.5 + Math.random() * 8);
+        const playerBet = currentBet > 0 && Math.random() < 0.5 ? currentBet * Math.random() : 0;
+        const pot = bb * 1.5 + currentBet + Math.random() * bb * 20;
+        const hero = mkPlayer(2, { cards: heroCards, bet: playerBet, stack });
+        const players = [hero, mkPlayer(4, { bet: currentBet, stack: stack * 2 })];
+        const gs: any = {
+          players,
+          communityCards: board,
+          pot,
+          currentBet,
+          minRaise: Math.max(bb, currentBet > 0 ? bb : bb),
+          stage: boardLen === 0 ? 'preflop' : boardLen === 3 ? 'flop' : boardLen === 4 ? 'turn' : 'river',
+          gameVariant: 'nlh',
+          bigBlind: bb,
+          dealerSeat: 4,
+          gameMode: mode,
+          ante: mode === 'tournament' ? bb * 0.125 : 0,
+        };
+        const d = HorseLogic.decide(hero, gs, STYLES[trial % STYLES.length]);
+        const toCall = Math.max(0, currentBet - playerBet);
+        const bs = calculateBettingState(pot, currentBet, playerBet, bb, undefined, false);
+        if (d.action === 'bet' || d.action === 'raise') {
+          expect(validateAction(d.action, d.amount ?? 0, stack, bs).valid).toBe(true);
+        }
+        if (d.action === 'check') expect(toCall).toBe(0);
+        expect(['fold', 'check', 'call', 'bet', 'raise', 'all_in']).toContain(d.action);
+        checked++;
+      }
+    }
+    expect(checked).toBe(300);
+  });
+});

@@ -398,6 +398,22 @@ function madeCategory(hole: Card[], board: Card[], vi: VariantInfo): number {
   }
 }
 
+/**
+ * V11: the rank of a one-pair hand's pair — a pocket pair, or the board rank
+ * hero matched. 0 when unknown. NLH-family only (Omaha callers skip it).
+ */
+function onePairRank(hole: Card[], board: Card[]): number {
+  if (!hole || hole.length < 2) return 0;
+  for (let i = 0; i < hole.length; i++)
+    for (let j = i + 1; j < hole.length; j++)
+      if (hole[i].rank === hole[j].rank) return RANK_VALUES[hole[i].rank];
+  let best = 0;
+  for (const h of hole)
+    for (const b of board)
+      if (h.rank === b.rank && RANK_VALUES[h.rank] > best) best = RANK_VALUES[h.rank];
+  return best;
+}
+
 interface ScareShift {
   /** the just-dealt card completed a 3-flush */
   flush: boolean;
@@ -438,6 +454,23 @@ export interface HorseGameStateV2 extends HorseGameState {
    *  self-detected from the big blind (the cash fleet caps at 2.00/5.00, so
    *  bb >= 10 only occurs in tournament play). */
   tournament?: { nearBubble?: boolean; inMoney?: boolean };
+  /** V11 (Dan 2026-08-22): EXPLICIT game mode from the table engine
+   *  (tournament_id / game_type). Cash and tournaments are different games;
+   *  when this is present it is trusted over every heuristic. */
+  gameMode?: 'cash' | 'tournament';
+  /** V11: table ante (0/undefined = no ante). Antes widen preflop ranges. */
+  ante?: number;
+}
+
+/**
+ * V11: is this a tournament? The EXPLICIT gameMode from the table engine wins
+ * (it knows — tournament_id is on the table row). The legacy bb>=10 heuristic
+ * survives only for callers that pass no mode, and no longer mislabels
+ * high-stakes cash once the engine passes gameMode: 'cash'.
+ */
+function isTournamentMode(gs: HorseGameStateV2): boolean {
+  if (gs.gameMode) return gs.gameMode === 'tournament';
+  return gs.tournament != null || (gs.bigBlind ?? 0) >= 10;
 }
 
 /**
@@ -448,7 +481,7 @@ export interface HorseGameStateV2 extends HorseGameState {
  */
 function icmRisk(gs: HorseGameStateV2, stackBB: number): number {
   const explicit = gs.tournament;
-  const isTournament = explicit != null || (gs.bigBlind ?? 0) >= 10;
+  const isTournament = isTournamentMode(gs);
   if (!isTournament) return 0;
   let risk = stackBB < 40 ? 0.04 : 0.02;
   if (explicit?.nearBubble) risk += 0.04;
@@ -500,6 +533,11 @@ export interface HorseDecideOpts {
   v10Rake?: boolean;
   v10ThinValue?: boolean;
   v10Iso?: boolean;
+  /** disable the V11 layer (Dan 2026-08-22): explicit cash/tournament game
+   *  modes, the preflop price-in guard, initiative-gated leading (no more
+   *  donk leads with medium hands), and board-domination call discipline
+   *  (default: enabled) */
+  v11?: boolean;
 }
 
 /**
@@ -738,6 +776,10 @@ export class HorseLogic {
       // NLH only: widening the iso range vs limpers is an NLH edge; PLO limped
       // pots play multiway/postflop where a wide iso bloats pots out of line.
       isoWiden: (opts.v10Iso ?? opts.v10) !== false && !vi.isOmaha ? 0.06 : 0,
+      // V11: explicit game mode + ante awareness (undefined when disabled so
+      // the preflop layer keeps exact legacy behavior in ablation runs).
+      mode: opts.v11 !== false ? (isTournamentMode(gs) ? 'tournament' : 'cash') : undefined,
+      anteInPlay: opts.v11 !== false && (gs.ante ?? 0) > 0,
       rand: fastRandom,
     });
 
@@ -1139,8 +1181,25 @@ export class HorseLogic {
       }
     };
 
+    const useV11 = opts.v11 !== false;
+
     // ═══ Not facing a bet ═══
     if (!facingBet) {
+      // ═══ V11 INITIATIVE GATE (Dan 2026-08-22): no more donk leads ═══
+      // A player WITHOUT the betting lead, acting BEFORE the prior-street
+      // aggressor, checks the overwhelming majority of his range — strong
+      // hands included (they check-raise or check-call; the facing-bet logic
+      // below already plays those lines). Leading into the aggressor
+      // ("donking") is reserved for the ranges solvers actually lead:
+      // vulnerable made hands and monsters on DYNAMIC boards, low frequency.
+      // In position it never applies — checked to us, the aggressor already
+      // declined to bet, so stabbing/value-betting is not a donk.
+      if (useV11 && useIQ && initiative === 'opp' && !prevChecked && !ip) {
+        const donkLead =
+          (vulnerable && wetness >= 0.5 && fastRandom() < 0.2) ||
+          (equity >= 0.8 + mw && wetness >= 0.55 && fastRandom() < 0.3);
+        if (!donkLead) return { action: 'check', thinkTime: 0 };
+      }
       // Monster: usually bet big, sometimes trap (never trap on wet or
       // freshly-dangered boards). V4: size to get stacks in by the river.
       if (equity >= 0.8 + mw) {
@@ -1322,15 +1381,37 @@ export class HorseLogic {
     // V10 RAKE: below the cap the pot we stand to win is taxed ~10%, so price
     // marginal calls against the raked pot, not the raw one. Above the cap
     // (large pots) the drag is zero and this reduces to honest pot odds.
-    const rakeMarg = useRake10 ? rakeDrag(pot, gs.bigBlind) : 0;
+    // V11: tournaments rake the buy-in, not the pot — pot odds are honest.
+    const rakeMarg = useRake10 && !isTournamentMode(gs) ? rakeDrag(pot, gs.bigBlind) : 0;
     const potOdds = toCall / (pot * (1 - rakeMarg) + toCall);
     const betRatio = pot > 0 ? toCall / pot : 1;
+
+    // ═══ V11 BOARD DOMINATION DISCIPLINE (the "QQ on AKx" leak) ═══
+    // The MC prices opponents by their PREFLOP range only — it cannot see
+    // that a player firing big on an A/K-high board has connected with it.
+    // A one-pair hand whose pair sits UNDER board overcards (an underpair,
+    // or second/third pair) is exactly the hand class big bets dominate, so
+    // it pays an explicit equity premium that grows with each overcard and
+    // with bet size. Top pair (zero overcards above it) pays nothing.
+    let dominationPenalty = 0;
+    if (useV11 && useIQ && cat === 2 && !vi.isOmaha && betRatio >= 0.45) {
+      const pr = onePairRank(player.cards, gs.communityCards);
+      if (pr > 0) {
+        let over = 0;
+        for (const r of Object.keys(rankCounts) as Array<keyof typeof RANK_VALUES>) {
+          if ((RANK_VALUES[r] ?? 0) > pr) over++;
+        }
+        if (over > 0) {
+          dominationPenalty = 0.07 * Math.min(2, over) * (betRatio >= 0.8 ? 1.4 : 1);
+        }
+      }
+    }
 
     // Low-SPR commitment: with the money effectively in, play equity directly.
     const committed = spr < 1.2 || toCall >= stack;
     if (committed) {
-      const required = potOdds + 0.02;
-      if (equity >= Math.max(required, 0.42 + mw)) {
+      const required = potOdds + 0.02 + dominationPenalty * 0.5;
+      if (equity >= Math.max(required, 0.42 + mw + dominationPenalty * 0.5)) {
         return toCall >= stack
           ? { action: 'call', amount: toCall, thinkTime: 0 }
           : { action: 'all_in', thinkTime: 0 };
@@ -1347,7 +1428,11 @@ export class HorseLogic {
     // (<1.5) strong-not-nut hands should commit, so lower it. Nut hands clear
     // every bar regardless.
     const sprAdj = useSpr10 ? (spr >= 2 && spr <= 4 ? 0.03 : spr < 1.5 ? -0.03 : 0) : 0;
-    const valueRaiseThresh = 0.68 + mw + (isRiver ? 0.04 : 0) + sprAdj;
+    // V11: a dominated one-pair hand is a bluff-catcher AT BEST — it never
+    // raises for value, and the domination premium gates the raise band too
+    // (QQ on AKx was sailing straight into this branch off inflated
+    // no-reads equity and calling/raising the barrel off).
+    const valueRaiseThresh = 0.68 + mw + (isRiver ? 0.04 : 0) + sprAdj + dominationPenalty;
     if (equity >= valueRaiseThresh) {
       // V8 O8: never raise into a likely quarter — flat and see the split.
       if (quartered) return { action: 'call', amount: toCall, thinkTime: 0 };
@@ -1421,7 +1506,10 @@ export class HorseLogic {
     // less respect (callDownMod > 1); a passive player's bets need more.
     // V4: bets fired ON a fresh scare card into a hand that does not beat the
     // new class get extra respect; in-position calls realize equity better.
-    const impliedBonus = drawsLive && equity >= 0.25 ? 0.04 : 0;
+    // V11: a dominated pair has REVERSE implied odds (improving to a set can
+    // still lose to a higher set / straight the same range makes) — it gets
+    // no implied-odds allowance.
+    const impliedBonus = drawsLive && equity >= 0.25 && dominationPenalty === 0 ? 0.04 : 0;
     let respect = 2 - exploit.callDownMod; // maniac 0.8, neutral 1, passive 1.15
     if (dangered) respect += 0.15;
     // V7 overbet polarity: an overbet is nuts-or-bluffs. Medium hands without
@@ -1434,7 +1522,10 @@ export class HorseLogic {
     // position degrades with every extra live opponent.
     const posEdge = useIQ ? (ip ? -0.012 : 0.008 * (useNlhX ? 1 + 0.3 * (oppCount - 1) : 1)) : 0;
     const sizingPenalty = (Math.min(0.06, betRatio * 0.04) + mw * 0.5) * respect;
-    if (equity + impliedBonus >= potOdds + 0.03 * respect + sizingPenalty + posEdge) {
+    if (
+      equity + impliedBonus >=
+      potOdds + 0.03 * respect + sizingPenalty + posEdge + dominationPenalty
+    ) {
       return { action: 'call', amount: toCall, thinkTime: 0 };
     }
 

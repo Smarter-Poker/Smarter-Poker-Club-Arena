@@ -1467,6 +1467,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       dealerSeat: fullState?.dealerSeat ?? this.currentHandDealerSeat,
       lastRaise: fullState?.lastRaise,
       actionHistory: fullState?.actionHistory,
+      // V11 (Dan 2026-08-22): cash and tournaments are DIFFERENT games. Tell
+      // the brain EXPLICITLY which one this is (it was guessing from blind
+      // size) plus the ante, so preflop ranges, ICM pressure, push/fold
+      // tiers, and rake-aware pot odds all switch on the real game mode.
+      gameMode: this.isTournamentTable() ? ('tournament' as const) : ('cash' as const),
+      ante: this.tableInfo?.ante || 0,
     };
 
     // Get decision — SYNCHRONOUS (budgeted <15ms incl. Monte Carlo equity)

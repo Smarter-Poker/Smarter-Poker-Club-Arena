@@ -1,6 +1,9 @@
-> **CLOSED 2026-08-22.** Tasks 1, 3 and 4 are done and verified by outcome, not
-> by status code. Task 2's code side is shipped in all 7 repos and inert until
-> the App exists; creating that App is the only open item and it needs Dan.
+> **CLOSED 2026-08-22. All four tasks are done**, each verified by outcome
+> rather than by a status code. Task 2 included: GitHub App `4680372` is minting
+> Autopilot's token in all 7 repos, and the proof is not that the mint step went
+> green — it is that PR #215's auto-merge was enabled by
+> `app/smarter-poker-autopilot` and that the merge triggered
+> `build-for-world-hub.yml` through to production.
 > Full record, including everything found along the way that this handoff did
 > not know about, is in
 > `.agent/audits/2026-08-22-anti-regression-hardening-completed.md`.

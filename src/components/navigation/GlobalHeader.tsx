@@ -352,7 +352,7 @@ export default function GlobalHeader() {
           {/* Live Help */}
           <button
             className={styles.orbBtn}
-            onClick={() => navigateToHub('/hub/help')}
+            onClick={() => navigate('/help')}
             aria-label="Live Help"
           >
             <img

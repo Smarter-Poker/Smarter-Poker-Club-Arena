@@ -7,6 +7,57 @@
 
 ---
 
+## Cowork session 2026-08-22 (6) — MOBILE TABLE PHASE 3: pending settlement, dead props, probe-verified non-changes (PR #280)
+
+Follow-on to the Phase 1/2 mobile table sessions (#243, #252). Three changes,
+and three deliberate non-changes with the measurements that justify them.
+
+### Shipped
+
+1. SESSION COMPLETE "PENDING SETTLEMENT" — the #243 deferred-cashout fix
+   estimates P/L from the live stack when a mid-hand leave defers the cashout,
+   but the card rendered that estimate exactly like a settled number.
+   SessionSummaryPayload now carries `plPending` (set from
+   TableService.leaveTable's `deferred` flag), and the cash card's money line
+   is annotated "Pending Settlement" — muted, Title Case, no em dashes, no
+   yellow. Pinned both ways (present when deferred, absent when settled, with
+   a card-rendered guard) by tests/unit/sessionSummaryPendingSettlement.test.tsx.
+   Tournament payloads never set it. A future session can still reconcile the
+   estimate to the true settlement number via BALANCE_UPDATED; the annotation
+   makes the estimate honest in the meantime.
+2. DEAD PROPS — `heroSeat` and `navigate` into TableModalsLayer (orphaned by
+   the Phase 2 SessionSummary removal; invisible to tsc with noUnusedLocals
+   off) removed end-to-end: prop types, destructures, call-site args, and the
+   now-unused useNavigate import.
+3. LAST PANEL YELLOW — RealTimeResultPanel `.rtr__clock` #ffb800 -> #ffffff,
+   completing the anti-yellow pass (#243 slider, Phase 2 audit).
+
+### Audited, deliberately NOT changed
+
+The three screenshot-spotted layout items (position badges "tucked behind
+avatars", FOLD labels "colliding with names", felt masthead "under flop
+cards") do NOT reproduce in the current layout. Measured with a headless
+render of the real CSS (hero-card-row harness pattern; 375px viewport, 9-max
+ring, correct .seat-wrapper z-10 structure): board bottom 292.0 vs masthead
+top 304.1 (12px clear even with the 3-line tournament masthead); adjacent
+left-rail seats have 22-48px of clearance around FOLD tags and badges;
+elementFromPoint at badge centres returns the badge itself. Two probe traps
+worth recording: a harness WITHOUT .seat-wrapper reports seats occluded by
+.table-surface (z-1 beats z-auto — that reading is an artifact), and
+.seat__action can never be occlusion-probed via elementFromPoint because it
+is pointer-events:none. The complaints trace to the same pre-#243 screenshots
+whose "POT 0" the Phase 2 audit already ruled correct (old layout, hero PLO4
+cards mid-felt). If a real device still shows any of them, get a FRESH
+screenshot of the current build before touching SeatSlot.css — its comments
+document exactly this dated-reversal trap.
+
+Verification: tsc clean; vitest 235 files, 2,983 passed / 5 skipped.
+GitHub MCP note: its static token was refreshed in config (takes effect on
+next Claude restart); gh on the Mac is authenticated and is the sanctioned
+path regardless.
+
+---
+
 ## Cowork session 2026-08-22 (5) — THE WATCHDOG WAS THE OUTAGE
 
 ### What the database said

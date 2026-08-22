@@ -1354,7 +1354,7 @@ export default function UnionDashboardPage() {
                         <td style={{ color: '#fff', fontWeight: 600 }}>
                           {r.display_name || r.username || r.user_id.slice(0, 8)}
                         </td>
-                        <td>{r.club_name || '—'}</td>
+                        <td>{r.club_name || ''}</td>
                         <td>
                           <span
                             style={{
@@ -1373,7 +1373,7 @@ export default function UnionDashboardPage() {
                             {(r.member_role || 'member').replace('_', ' ').toUpperCase()}
                           </span>
                         </td>
-                        <td>{r.member_status || '—'}</td>
+                        <td>{r.member_status || ''}</td>
                         <td>{r.currently_seated ? '● at table' : ''}</td>
                       </tr>
                     ))}

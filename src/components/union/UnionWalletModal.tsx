@@ -202,7 +202,7 @@ export function UnionWalletModal({
         </div>
         <p style={{ color: '#888', fontSize: 12, margin: '0 0 14px' }}>
           Send chips, diamonds or promo funds to any member of the union.
-          {walletKey === 'bbj' && ' BBJ funds are reserved for jackpots — chips sent here draw on the main bank.'}
+          {walletKey === 'bbj' && ' BBJ funds are reserved for jackpots, so chips sent here draw on the main bank.'}
         </p>
 
         {/* Kind selector */}

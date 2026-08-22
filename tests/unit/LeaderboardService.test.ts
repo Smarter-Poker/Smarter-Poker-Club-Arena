@@ -76,3 +76,71 @@ describe('LeaderboardService', () => {
     });
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  getClubTournamentStats — the RPC path, and the fallback that hides its loss
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * This method shipped as an RPC on 2026-08-21 and was reverted by a merge the
+ * same day, while the migration that created the function sat in the repo
+ * unapplied. Nothing failed: the client fallback still returned rows, just the
+ * wrong ones — aggregated from raw rows capped at 10,000, which every club
+ * exceeds, with no ORDER BY before the cap.
+ *
+ * So these two tests are deliberately about WHICH PATH RAN, not about whether
+ * a result came back. A test that only asserted "returns an array" passed
+ * happily through the entire regression.
+ */
+describe('getClubTournamentStats', () => {
+  it('asks the database to do the aggregation, and forwards limit and offset', async () => {
+    const { supabase } = await import('../../src/lib/supabase');
+    const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+    rpc.mockResolvedValueOnce({
+      data: [
+        {
+          userId: 'u1',
+          username: 'hammertime',
+          avatar: '/avatars/table/vip_dancer@2x.webp',
+          // PostgREST returns numerics as strings; the mapping must coerce.
+          tournamentsPlayed: '219',
+          wins: '12',
+          finalTables: '71',
+          itmFinishes: '34',
+          totalPrizes: '1184.35',
+          roi: '7.668181818181818182',
+          biggestWin: '300.00',
+        },
+      ],
+      error: null,
+    });
+
+    const rows = await LeaderboardService.getClubTournamentStats('club-1', 25, 50);
+
+    expect(rpc).toHaveBeenCalledWith('fn_club_tournament_stats', {
+      p_club_id: 'club-1',
+      p_limit: 25,
+      p_offset: 50,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].totalPrizes).toBe(1184.35);
+    expect(rows[0].tournamentsPlayed).toBe(219);
+    expect(rows[0].avatar).toBe('/avatars/table/vip_dancer@2x.webp');
+    expect(typeof rows[0].roi).toBe('number');
+  });
+
+  it('falls back to client-side aggregation when the function is missing', async () => {
+    const { supabase } = await import('../../src/lib/supabase');
+    const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+    rpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'function public.fn_club_tournament_stats does not exist' },
+    });
+
+    // The mocked query chain yields no rows, so the fallback returns []. The
+    // assertion that matters is that it did not throw and did not return the
+    // RPC's null: a missing function must degrade, never blank the page.
+    const rows = await LeaderboardService.getClubTournamentStats('club-1');
+    expect(Array.isArray(rows)).toBe(true);
+  });
+});

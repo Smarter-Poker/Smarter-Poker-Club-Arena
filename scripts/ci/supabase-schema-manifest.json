@@ -1233,6 +1233,7 @@
     "fn_club_set_member_role",
     "fn_club_table_daily_catchup",
     "fn_club_table_daily_refresh_day",
+    "fn_club_tournament_stats",
     "fn_club_union_context",
     "fn_collect_bounty",
     "fn_columns_manifest",

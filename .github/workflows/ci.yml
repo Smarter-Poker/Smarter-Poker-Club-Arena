@@ -23,6 +23,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4.3.1
+        with:
+          # The new-migration gate diffs this branch against its base, so it
+          # needs more than the single commit a default checkout brings.
+          fetch-depth: 0
 
       - name: Setup Node 20
         uses: actions/setup-node@v4.1.0
@@ -288,6 +292,25 @@ jobs:
           else
             echo "A deprecated table is being READ — the query returns [] and renders as a" >> $GITHUB_STEP_SUMMARY
             echo "real zero. Repoint it at the live table named in the log." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      # BLOCKING: a migration this branch adds must already exist in the live
+      # schema. 20260821_club_tournament_stats.sql sat in the repo for a day
+      # having never been applied, while the code that called its function was
+      # reverted by a bad merge — a feature the repo claimed and the database
+      # had never heard of, found by hand a day later. Every other gate here
+      # checks the CODE against the schema; nothing checked the MIGRATIONS.
+      - name: Supabase Invariants — New Migrations Were Applied
+        run: |
+          set -o pipefail
+          echo "## New-Migration Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-migrations-applied.mjs 2>&1 | tee /tmp/migapplied.log; then
+            echo "OK — every object this branch's migrations declare exists in production." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "A migration here was never applied (or the manifest is stale). Apply it via" >> $GITHUB_STEP_SUMMARY
+            echo "the Supabase MCP apply_migration, or regenerate the manifest in this PR." >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
 

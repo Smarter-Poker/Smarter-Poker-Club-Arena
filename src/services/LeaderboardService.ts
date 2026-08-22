@@ -121,6 +121,24 @@ export interface TournamentStats {
   biggestWin: number;
 }
 
+/**
+ * The RPC's row shape. Numerics arrive from PostgREST as strings, so every
+ * numeric field is widened here and coerced at the mapping site rather than
+ * trusted — a string in `totalPrizes` sorts and formats as garbage, silently.
+ */
+interface TournamentStatsRow {
+  userId: string;
+  username: string | null;
+  avatar: string | null;
+  tournamentsPlayed: number | string | null;
+  wins: number | string | null;
+  finalTables: number | string | null;
+  itmFinishes: number | string | null;
+  totalPrizes: number | string | null;
+  roi: number | string | null;
+  biggestWin: number | string | null;
+}
+
 export interface HandResultForStats {
   handId: string;
   userId: string;
@@ -531,8 +549,48 @@ export const LeaderboardService = {
   /**
    * Get tournament stats for all players in a club
    */
-  async getClubTournamentStats(clubId: string, limit: number = 50): Promise<TournamentStats[]> {
+  async getClubTournamentStats(
+    clubId: string,
+    limit: number = 50,
+    offset: number = 0
+  ): Promise<TournamentStats[]> {
     try {
+      /* Server-side first. The fallback below aggregates in the browser from
+         raw rows capped at QUERY_LIMITS.AGGREGATE, and every club with results
+         is past that cap — 21,116 / 19,241 / 17,842 rows measured 2026-08-21 —
+         with no ORDER BY before the limit, so it ranks an arbitrary half of a
+         club's history. On SHARK CLUB that put the true #1 at #5, the true #2
+         at #28, the true #3 at #116 with $0, and dropped the true #10 entirely.
+
+         This RPC shipped once before, on 2026-08-21, and was lost: a merge
+         reverted this method's body while the migration that created the
+         function sat unapplied in the repo. Hence the fallback — if the
+         function is ever missing again, the leaderboard degrades to the old
+         approximation instead of going blank — and hence the assertion in
+         tests/shipped-invariants.test.ts that this call still exists. */
+      const { data: rpcRows, error: rpcError } = await supabase.rpc('fn_club_tournament_stats', {
+        p_club_id: clubId,
+        p_limit: limit,
+        p_offset: offset,
+      });
+
+      if (rpcError) {
+        reportError(rpcError, 'LeaderboardService.getClubTournamentStats_rpc');
+      } else if (Array.isArray(rpcRows)) {
+        return (rpcRows as TournamentStatsRow[]).map((row) => ({
+          userId: row.userId,
+          username: row.username || 'Player',
+          avatar: row.avatar ?? undefined,
+          tournamentsPlayed: Number(row.tournamentsPlayed || 0),
+          wins: Number(row.wins || 0),
+          finalTables: Number(row.finalTables || 0),
+          itmFinishes: Number(row.itmFinishes || 0),
+          totalPrizes: Number(row.totalPrizes || 0),
+          roi: Number(row.roi || 0),
+          biggestWin: Number(row.biggestWin || 0),
+        }));
+      }
+
       const { data: playerResults, error: resultsError } = await supabase
         .from('tournament_players')
         .select(
@@ -639,8 +697,8 @@ export const LeaderboardService = {
           avatar: profileMap.get(stats.userId)?.avatar_url,
           username: profileMap.get(stats.userId)?.username || stats.username,
         }))
-        .sort((a, b) => b.totalPrizes - a.totalPrizes)
-        .slice(0, limit);
+        .sort((a, b) => b.totalPrizes - a.totalPrizes || a.userId.localeCompare(b.userId))
+        .slice(offset, offset + limit);
     } catch (err: unknown) {
       reportError(err, 'LeaderboardService.getClubTournamentStats');
       return [];

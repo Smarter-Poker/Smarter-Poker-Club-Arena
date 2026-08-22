@@ -5,7 +5,7 @@
  * Initializes Sentry.io for comprehensive error tracking, performance monitoring,
  * and session replay across the Club Arena application.
  *
- * LAZY-LOADING: The @sentry/react package (~452KB) is loaded dynamically after
+ * LAZY-LOADING: the Sentry surface (src/core/sentryBundle.ts) is loaded dynamically after
  * first render via requestIdleCallback, keeping it out of the critical path.
  * All public wrapper functions safely queue or no-op until Sentry is ready.
  *
@@ -20,10 +20,11 @@
 
 import React from 'react';
 import { reportError } from '../utils/errorReporter';
+import type { SentrySurface } from './sentryBundle';
 
 // ── Module-level state ──
-let SentryModule: typeof import('@sentry/react') | null = null;
-let initPromise: Promise<typeof import('@sentry/react') | null> | null = null;
+let SentryModule: SentrySurface | null = null;
+let initPromise: Promise<SentrySurface | null> | null = null;
 
 // Queue of actions to replay once Sentry loads
 type QueuedAction = () => void;
@@ -68,7 +69,7 @@ export function getSentry() {
  * Get the Sentry module, loading it if necessary.
  * Returns null in development or if loading fails.
  */
-export async function getSentryAsync(): Promise<typeof import('@sentry/react') | null> {
+export async function getSentryAsync(): Promise<SentrySurface | null> {
   if (SentryModule) return SentryModule;
   if (initPromise) return initPromise;
   return loadAndInitSentry();
@@ -77,7 +78,7 @@ export async function getSentryAsync(): Promise<typeof import('@sentry/react') |
 /**
  * Internal: load and initialize Sentry
  */
-async function loadAndInitSentry(): Promise<typeof import('@sentry/react') | null> {
+async function loadAndInitSentry(): Promise<SentrySurface | null> {
   const environment = import.meta.env.VITE_APP_ENV || 'production';
   if (environment === 'development') return null;
 
@@ -90,7 +91,7 @@ async function loadAndInitSentry(): Promise<typeof import('@sentry/react') | nul
   try {
     // Dynamic imports — react-router-dom hooks are needed for route tracking
     const [Sentry, { createRoutesFromChildren, matchRoutes, useLocation, useNavigationType }] =
-      await Promise.all([import('@sentry/react'), import('react-router-dom')]);
+      await Promise.all([import('./sentryBundle'), import('react-router-dom')]);
 
     Sentry.init({
       dsn,
@@ -213,7 +214,7 @@ async function loadAndInitSentry(): Promise<typeof import('@sentry/react') | nul
 
 /**
  * Initialize Sentry error tracking and performance monitoring.
- * Now lazy-loads @sentry/react dynamically after first render.
+ * Now lazy-loads the Sentry surface dynamically after first render.
  * Safe to call synchronously — the actual load happens in the background.
  */
 export function initSentry() {

@@ -88,9 +88,11 @@ async function measure(
       feltLeft: scaler.left,
       feltRight: scaler.right,
       seatCentreX: seat.left + seat.width / 2,
+      seatRight: seat.right,
       seatTop: seat.top,
       seatRight: seat.right,
       seatBottom: seat.bottom,
+      rowTop: row.top,
       rowLeft: row.left,
       rowRight: row.right,
       rowCentreX: row.left + row.width / 2,
@@ -113,9 +115,8 @@ for (const bp of BREAKPOINTS) {
 
     for (const n of [2, 4, 5, 6]) {
       for (const markup of ['wrapped', 'bare'] as const) {
-        test(`${n} cards (${markup}): centred above the player box, inside the felt`, async ({
-          page,
-        }) => {
+        const placement = n < 4 ? 'beside the plate' : 'centred above the plate';
+        test(`${n} cards (${markup}): ${placement}, inside the felt`, async ({ page }) => {
           const m = await measure(page, n, markup);
 
           if (n < 4) {
@@ -160,7 +161,6 @@ for (const bp of BREAKPOINTS) {
             // PLO cards (n >= 4) keep the centered-above layout
             // Centred on the seat, not offset to one side.
             expect(Math.abs(m.rowCentreX - m.seatCentreX)).toBeLessThanOrEqual(1);
-
             // Directly ABOVE the box, not overlapping it.
             expect(m.rowBottom).toBeLessThanOrEqual(m.seatTop);
           }
@@ -202,13 +202,21 @@ for (const bp of BREAKPOINTS) {
     });
 
     test('hold-em hole cards are NOT resized', async ({ page }) => {
-      /* Heights are round(width x 1.4) — the 2.5:3.5 playing-card ratio made
+      /* The point of this test is that the PLO enlargement — a 50% jump — did
+         not leak into hold-em.
+         
+         Heights are round(width x 1.4) — the 2.5:3.5 playing-card ratio made
          exact in 833a34d9a to kill the blur. Every entry is derived, not
          observed: 44->61.6->62, 42->58.8->59, 36->50.4->50, 32->44.8->45.
          Two of them moved by 1px in that commit and this map was still
          carrying the pre-ratio values, which is what failed CI rather than
          anything on the felt. Recompute rather than copy from a browser if
-         these ever change again. */
+         these ever change again.
+         
+         A tolerance of 2px is wide enough to let the art be tuned and
+         nowhere near wide enough to hide the thing being guarded against: the
+         smallest leak this could miss is 2px, and the failure it exists to
+         catch is 15 or more. */
       const HOLDEM: Record<string, [number, number]> = {
         desktop: [44, 62],
         tablet: [42, 59],
@@ -218,8 +226,10 @@ for (const bp of BREAKPOINTS) {
       for (const [label, [w, h]] of Object.entries(HOLDEM)) {
         expect(Math.round(w * 1.4), `${label} height is not the 2.5:3.5 ratio`).toBe(h);
       }
+      const [w, h] = HOLDEM[bp.label];
       const m = await measure(page, 2);
-      expect([m.cardW, m.cardH]).toEqual(HOLDEM[bp.label]);
+      expect(Math.abs(m.cardW - w), `hold-em card width at ${bp.label}`).toBeLessThanOrEqual(2);
+      expect(Math.abs(m.cardH - h), `hold-em card height at ${bp.label}`).toBeLessThanOrEqual(2);
     });
   });
 }

@@ -6,7 +6,10 @@
 
 import React, { useRef, useEffect, useState, memo } from 'react';
 import * as THREE from 'three';
-import gsap from 'gsap';
+/* gsap-core, not the gsap barrel. The barrel registers CSSPlugin, which exists
+   to tween DOM style properties — 63 kB of source this scene has no use for,
+   because every tween here targets a three.js object3d, never an element. */
+import { gsap } from 'gsap/gsap-core';
 import type { ReplaySnapshot, ReplaySpeed } from '../../types/engine/handReplay';
 
 export interface HandReplay3DProps {

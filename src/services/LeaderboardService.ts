@@ -541,7 +541,7 @@ export const LeaderboardService = {
                     username,
                     position,
                     prize,
-                    tournaments!tournament_id (
+                    tournaments!inner (
                         id,
                         club_id,
                         buy_in_amount,

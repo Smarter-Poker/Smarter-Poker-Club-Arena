@@ -613,8 +613,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // seat, or lands twice.
     const sortedSeats = players.map((p) => p.seat_number).sort((a, b) => a - b);
     const prevButtonSeat = this.lastButtonSeat;
-    const dealerSeat =
-      prevButtonSeat > 0 ? this.getNextSeat(prevButtonSeat, players) : sortedSeats[0];
+    // A DRAWN first button (Spins) wins over the default, once, and only if
+    // that seat is still occupied. Everything after hand one rotates normally.
+    const drawnButton = this.forcedFirstButtonSeat;
+    this.forcedFirstButtonSeat = null;
+    const drawnIsSeated = drawnButton !== null && sortedSeats.includes(drawnButton);
+    const dealerSeat = drawnIsSeated
+      ? (drawnButton as number)
+      : prevButtonSeat > 0
+        ? this.getNextSeat(prevButtonSeat, players)
+        : sortedSeats[0];
     this.currentHandDealerSeat = dealerSeat;
     this.lastButtonSeat = dealerSeat;
     // Keep the legacy index roughly in sync for any remaining reads (defensive).

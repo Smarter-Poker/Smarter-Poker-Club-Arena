@@ -1331,7 +1331,7 @@ class MasterBusCore {
     // #8: Log Sentry breadcrumb for every event
     try {
       if (typeof window !== 'undefined' && (window as any).__SENTRY__) {
-        import('@sentry/react')
+        import('./sentryBundle')
           .then((Sentry) => {
             Sentry.addBreadcrumb({
               category: 'masterBus',

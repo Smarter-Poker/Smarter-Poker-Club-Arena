@@ -189,12 +189,11 @@ const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
  * everything expects to find them.
  */
 const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
-  { key: 'ALL', label: 'All' },
+  { key: 'MTT', label: 'MTT' },
   { key: 'HOLDEM', label: "Hold'em" },
   { key: 'OMAHA', label: 'Omaha' },
-  { key: 'MTT', label: 'MTT' },
-  { key: 'SNG', label: 'Heads Up' },
   { key: 'SPIN', label: 'Spin' },
+  { key: 'SNG', label: 'Heads Up' },
 ];
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
@@ -202,7 +201,7 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'stakes_high', label: 'Stakes: High To Low' },
   { key: 'stakes_low', label: 'Stakes: Low To High' },
   { key: 'players', label: 'Most Players' },
-  { key: 'starting_soon', label: 'Starting Soonest' },
+  { key: 'starting_soon', label: 'Starting Soon / Late Reg' },
 ];
 
 /** Which tournament tab a GameType maps onto, for the shared variant matcher. */
@@ -294,8 +293,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [showBBJInfo, setShowBBJInfo] = useState(false);
   // Dan 2026-08-21: Chip Mint (diamonds -> chips, 100 = 10,000).
   const [showChipMint, setShowChipMint] = useState(false);
-  const [gameType, setGameType] = useState<GameType>('ALL');
-  const [sortKey, setSortKey] = useState<SortKey>('recommended');
+  const [gameType, setGameType] = useState<GameType>('MTT');
+  const [sortKey, setSortKey] = useState<SortKey>('starting_soon');
   const [sortOpen, setSortOpen] = useState(false);
   /* Advanced Filters (Dan 2026-08-20). Loaded lazily from localStorage on
      first render so a returning player's preferences apply to the FIRST
@@ -1042,8 +1041,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             // UNION pool (that's the one that grows); a club-level pool row may exist
             // but is stale. Fetch by union_id when in a union, else club_id.
             const q = supabase.from('bbj_pools').select('id, main_balance');
-            const scoped = unionId ? q.eq('union_id', unionId) : q.eq('club_id', resolvedId);
-            return await scoped.limit(1).maybeSingle();
+            if (unionId) {
+              const allIds = [resolvedId, ...(unionClubIds || [])];
+              const filter = `union_id.eq.${unionId},club_id.in.(${allIds.join(',')})`;
+              return await q.or(filter);
+            } else {
+              return await q.eq('club_id', resolvedId).limit(1).maybeSingle();
+            }
           } catch (e) {
             reportError(e, 'ClubHomePage.async');
             return { data: null, error: null };
@@ -1098,9 +1102,22 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       // `typeof poolAmount === 'number'` ownership check and left the ticker
       // and the page disagreeing about who owns the value.
       if (bbjResult?.data && !(bbjResult as any).error) {
-        const initial = Number((bbjResult.data as any)?.main_balance);
-        setJackpotAmount(Number.isFinite(initial) ? initial : 0);
-        setBbjPoolId((bbjResult.data as any)?.id || null);
+        if (Array.isArray(bbjResult.data)) {
+          let sum = 0;
+          let unionPoolId = null;
+          for (const row of bbjResult.data) {
+            const bal = Number(row.main_balance);
+            if (Number.isFinite(bal)) sum += bal;
+            // Prefer the first pool ID we find (or we could specifically find the union's)
+            if (!unionPoolId) unionPoolId = row.id;
+          }
+          setJackpotAmount(sum);
+          setBbjPoolId(unionPoolId);
+        } else {
+          const initial = Number((bbjResult.data as any)?.main_balance);
+          setJackpotAmount(Number.isFinite(initial) ? initial : 0);
+          setBbjPoolId((bbjResult.data as any)?.id || null);
+        }
       }
 
       // Calculate Club Level from live metrics
@@ -1346,10 +1363,25 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         return rows.sort((a, b) => buyIn(a) - buyIn(b));
       case 'players':
         return rows.sort((a, b) => (b.current_players || 0) - (a.current_players || 0));
-      case 'starting_soon':
-        return rows.sort(
+      case 'starting_soon': {
+        const isLateReg = (t: TournamentData) => {
+          const status = String(t.status).toUpperCase();
+          if (status === 'REGISTERING') return true;
+          if (status === 'RUNNING') {
+            const levels = Number(t.late_reg_levels ?? 0);
+            if (levels > 0) return Number(t.current_level ?? 0) <= levels;
+            const mins = Number(t.late_reg_mins ?? 0);
+            if (mins > 0 && t.started_at) {
+              return Date.now() - new Date(t.started_at).getTime() <= mins * 60_000;
+            }
+          }
+          return false;
+        };
+        const activeOnly = rows.filter(isLateReg);
+        return activeOnly.sort(
           (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
         );
+      }
       case 'recommended':
       default:
         return rows.sort(tournamentOpenFirst);
@@ -1879,6 +1911,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 haptic.selection();
                 setGameType(tab.key);
                 setSortOpen(false);
+                if (tab.key === 'MTT') {
+                  setSortKey('starting_soon');
+                } else if (tab.key === 'HOLDEM' || tab.key === 'OMAHA') {
+                  setSortKey('recommended');
+                }
               }}
             >
               {tab.label}

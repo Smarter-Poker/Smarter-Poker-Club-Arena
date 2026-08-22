@@ -36,6 +36,7 @@ vi.mock('../../src/services/SoundService', () => ({
   soundService: {
     playSpinStart: vi.fn(),
     playSpinTicking: vi.fn(),
+    playSpinCountdownLight: vi.fn(),
     playSpinMultiplierResult: vi.fn(),
     isEnabled: () => true,
   },
@@ -280,10 +281,30 @@ describe('sequence', () => {
     expect(seen.size).toBeGreaterThanOrEqual(4);
   });
 
-  it('passes the real chase duration to the ticking so they decelerate together', () => {
+  it('hands the ticking the light\'s OWN schedule, so a click is a peg crossed', () => {
+    // Dan 2026-08-21: "CLICKING SOUNDS AS IT PASSES." A duration alone let the
+    // sound invent its own tick spacing and hope it tracked the light; the two
+    // then drifted apart on any easing change. Passing the same array the
+    // component animates from makes "as it passes" literally true.
     render(<SpinWheel data={SPIN} onDone={() => {}} />);
     runToChase();
-    expect(soundService.playSpinTicking).toHaveBeenCalledWith(CHASE_MS);
+    expect(soundService.playSpinTicking).toHaveBeenCalledTimes(1);
+    const [durationMs, schedule] = (soundService.playSpinTicking as unknown as {
+      mock: { calls: [number, number[]][] };
+    }).mock.calls[0];
+    expect(durationMs).toBe(CHASE_MS);
+    expect(Array.isArray(schedule)).toBe(true);
+    const target = buildWheelOrder(DEFAULT_SPIN_TIERS).findIndex(
+      (t) => t.multiplier === SPIN.multiplier
+    );
+    expect(schedule).toEqual(chaseSchedule(DEFAULT_SPIN_TIERS.length, target, CHASE_MS));
+    // Every click lands inside the chase, and they only ever spread apart.
+    expect(schedule[schedule.length - 1]).toBeLessThanOrEqual(CHASE_MS);
+    for (let i = 2; i < schedule.length; i++) {
+      expect(schedule[i] - schedule[i - 1]).toBeGreaterThanOrEqual(
+        schedule[i - 1] - schedule[i - 2]
+      );
+    }
   });
 
   it('reports done and clears itself', () => {
@@ -318,11 +339,82 @@ describe('sequence', () => {
     expect(screen.getByText('MEGA JACKPOT')).toBeTruthy();
   });
 
-  it('the losers drain to grey once the winner settles', () => {
+  it('the landing lights the WINNER and leaves every loser alone', () => {
+    // Dan 2026-08-21: "DON'T HIGHLIGHT THE ENTIRE WHEEL. JUST THE WINNING
+    // MULTIPLIER."
+    //
+    // This test used to assert the opposite — that all eight losers drained to
+    // grey. Between that and a halo behind the disc and a wash over the
+    // winner, the landing read as "the wheel lit up" rather than "this
+    // multiplier won". Dimming seven segments is still a statement about seven
+    // segments, so the drain is gone and the assertion is inverted: nothing
+    // may be marked spent, and the only thing that changes is the winner.
     const { container } = render(<SpinWheel data={SPIN} onDone={() => {}} />);
     runToResult();
-    const spent = container.querySelectorAll('.sw__seg--spent');
-    expect(spent.length).toBe(DEFAULT_SPIN_TIERS.length - 1);
+    expect(container.querySelectorAll('.sw__seg--spent').length).toBe(0);
+    expect(container.querySelectorAll('.sw__seg--winner').length).toBe(1);
+    // The neon outline is two stacked strokes on one path — a halo under a
+    // core. One stroke alone reads as a border, not as neon.
+    expect(container.querySelector('.sw__edge--halo')).toBeTruthy();
+    expect(container.querySelector('.sw__edge--core')).toBeTruthy();
+  });
+
+  it('the outline traces the WHOLE wedge, not just the arc along the rim', () => {
+    // "THE OUTLINE OF THE WINNING CARD NEEDS TO BE HIGHLIGHTED WITH NEON AND
+    // FLASHING, NOT JUST THE TOP." An arc-only path is one M and one A; a
+    // closed wedge also has the two radial sides and the point at the hub.
+    const { container } = render(<SpinWheel data={SPIN} onDone={() => {}} />);
+    runToResult();
+    const d = container.querySelector('.sw__edge--core')?.getAttribute('d') ?? '';
+    expect(d).toMatch(/^M/);
+    expect(d, 'no line segments: this is an arc, not a wedge').toContain('L');
+    expect(d, 'not closed: the point at the hub is missing').toContain('Z');
+    expect(d).toContain('A');
+  });
+
+  it('the disc is real geometry, so a wedge can carry a gradient', () => {
+    // Dan's verdict on the CSS-triangle version: "FLAT AND BORING, WITH NO
+    // DEPTH OR 3D LOOK AND FEEL". A clip-path triangle cannot hold a fill
+    // gradient, which is why every segment was one flat colour.
+    const { container } = render(<SpinWheel data={SPIN} onDone={() => {}} />);
+    runToChase();
+    expect(container.querySelector('svg.sw__svg')).toBeTruthy();
+    expect(container.querySelectorAll('path.sw__seg-face').length).toBe(
+      DEFAULT_SPIN_TIERS.length
+    );
+    // A peg per segment: the clicking needs a visible thing to be striking.
+    expect(container.querySelectorAll('circle.sw__peg').length).toBe(
+      DEFAULT_SPIN_TIERS.length
+    );
+    expect(container.querySelector('.sw__rim')).toBeTruthy();
+  });
+
+  it('the starting tree fills red, yellow, green above the numeral', () => {
+    // "IT SHOULD BE RED, YELLOW GREEN FOR THE COUNT DOWN" and "MOVE THE RED
+    // LIGHT, UP HIGHER SO ITS NOT BEING OVERLAPPED BY THE NUMBERS".
+    const { container } = render(<SpinWheel data={SPIN} onDone={() => {}} />);
+    expect(container.querySelectorAll('.sw__lamp').length).toBe(3);
+    expect(container.querySelectorAll('.sw__lamp--on').length).toBe(0);
+
+    act(() => {
+      vi.advanceTimersByTime(LEAD_IN_MS + 10);
+    });
+    expect(container.querySelectorAll('.sw__lamp--on').length).toBe(1);
+    expect(container.querySelector('.sw__count--3')).toBeTruthy();
+    expect(soundService.playSpinCountdownLight).toHaveBeenCalledWith(0);
+
+    act(() => {
+      vi.advanceTimersByTime(COUNTDOWN_MS / 3);
+    });
+    expect(container.querySelectorAll('.sw__lamp--on').length).toBe(2);
+    expect(container.querySelector('.sw__count--2')).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(COUNTDOWN_MS / 3);
+    });
+    expect(container.querySelectorAll('.sw__lamp--on').length).toBe(3);
+    expect(container.querySelector('.sw__count--1')).toBeTruthy();
+    expect(soundService.playSpinCountdownLight).toHaveBeenCalledWith(2);
   });
 });
 

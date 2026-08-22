@@ -7,6 +7,78 @@
 
 ---
 
+## Cowork session 2026-08-21 (bundle) — 65kB gzipped off the app, first paint untouched
+
+Dan: "PROCEED" — on the note that the gzipped bundle had 86kB of headroom left.
+
+### What was actually paying
+
+Two import statements, neither of which changes behaviour:
+
+- **`import('@sentry/react')`** hands the bundler a live namespace object, so it
+  cannot know which properties will be read and keeps the package whole. The
+  chunk carried `@sentry-internal/feedback` — 76kB of source for a widget this
+  product does not have — and the canvas replay recorder, on the chance somebody
+  might reach for them. `src/core/sentryBundle.ts` now names the twelve functions
+  the app calls. **Chunk 138.5 -> 80.7kB gzipped; 431 -> 247kB raw**, confirmed on
+  the deployed asset.
+- **`import gsap from 'gsap'`** registers CSSPlugin, whose job is tweening DOM
+  style properties. Every tween in the 3D replay targets a three.js object3d.
+  `gsap/gsap-core` carries all six eases in use. **-7kB gzipped.**
+
+### The regression inside the fix
+
+The first cut moved initial load 245 -> 326kB gzipped. The surface module is a
+handful of re-exports, so Rollup folded it into the chunk that imports it — the
+entry — and the entry then carried a STATIC import of `@sentry/*`, dragging 80kB
+into the first paint it is supposed to arrive after. Pinning it to the
+vendor-sentry chunk put it back. The gate added the same day in #175 is what
+caught it: a total-only gate would have called that change a 64kB win.
+
+Final, measured on one tree: **initial 245kB gz (4 files, byte-identical to
+main), whole app 1878 -> 1813kB gz / 6616 -> 6422kB raw.**
+
+### Tried and rejected, so nobody re-runs the experiment
+
+- **Named `three` imports instead of `import * as THREE`** — byte-identical
+  output. Rollup already shakes that namespace; the 544kB is WebGLRenderer and
+  its shaders, which the scene genuinely uses.
+- **`resolve.dedupe: ['immer']`** — the chart chunk does ship immer twice
+  (recharts -> @reduxjs/toolkit -> nested immer). Deduping saved 3kB, but RTK
+  declares `immer ^11` and the top-level copy is 10.2.0. Not worth a
+  major-version downgrade under the charts for 3kB.
+
+### Guarded
+
+`tests/unit/bundleSurface.test.ts`: only `sentryBundle.ts` may touch
+`@sentry/react`, only `HandReplay3D` may touch gsap, and only via gsap-core.
+Both are one-line silent regressions — the app behaves identically either way,
+it just ships more of itself.
+
+### Two red gates cleared on the way, neither of them a real regression
+
+- **`hero-card-row`**, eight failures a run on every branch. Item 1 (08-19) asked
+  for the hero's cards centred above the plate; item 11 (08-21) asked for the
+  opposite for hold-em, because on a 375px phone the centred row sat across the
+  hero's own avatar. The CSS honoured item 11; the spec still asserted item 1, so
+  it failed on the fix. The spec now carries both rules where each applies.
+- **`hold-em hole cards are NOT resized`**, four more. Written as exact pixel
+  equality, so a 1px token tweak (58 -> 59, 44 -> 45) reported an art change as
+  the 50% leak it was built to catch. Now compared within 2px.
+
+Production E2E on main went from 10 failures to 1 — and that one is the spin
+wheel's `swWinFlash` beat, which belongs to the spin work still in flight.
+
+### Left on the table, both need Dan
+
+- **Session Replay: another -38kB gzipped.** Sampled at 10%, text masked, media
+  blocked. An observability call, not an engineering one.
+- **The Rive runtime: 51.5kB gzipped** for `/avatars/rive/manifest.json`, which
+  does not exist yet, so no rig has ever loaded. Costs nothing at first paint
+  under the new gate — a total-ceiling question only.
+
+---
+
 ## Cowork session 2026-08-21 (later still) — the mystery bounty reveal belongs to one table, and the hand waits for it
 
 Dan: "NOW ALL PLAYERS AT THE TABLE SHOULD SEE THE MYSTERY BOUNTY VIDEO... AND

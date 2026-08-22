@@ -155,10 +155,22 @@ describe('the client buys the seat instead of opening a cash buy-in', () => {
 });
 
 describe('an early sitter is not left on the placeholder stack', () => {
-  it('start re-syncs seated stacks to the drawn tier', () => {
-    expect(BASE).toMatch(/seat_stack_sync_failed|Synced .*pre-seated stack/);
-    const sync = BASE.slice(BASE.indexOf('tournament.starting_chips > 0'));
-    expect(sync).toMatch(/from\('table_seats'\)/);
-    expect(sync).toMatch(/stack: tournament\.starting_chips/);
+  it('start credits seated stacks to the drawn tier', () => {
+    // The sync moved into creditSeatStacks() on 2026-08-21 so it could be
+    // called from a timer AFTER the wheel (Dan: "AFTER THE SPIN COMPLETES,
+    // CHIP STACKS GET ADDED"). It is the same write, made idempotent and
+    // reusable; tests/unit/spinPostReveal.test.ts pins the new ordering.
+    expect(BASE).toMatch(/seat_stack_credit_failed|Credited .* seat\(s\) to/);
+    const credit = BASE.slice(BASE.indexOf('protected async creditSeatStacks'));
+    expect(credit).toMatch(/from\('table_seats'\)/);
+    expect(credit).toMatch(/\.update\(\{ stack: target \}\)/);
+    expect(credit.slice(0, 900)).toMatch(/Number\(tournament\?\.starting_chips\)/);
+  });
+
+  it('a seat still holds ZERO chips until the tier is known', () => {
+    // The reservation model: stack depth belongs to the tier (300/400/500),
+    // so there is no honest number to seat a player with before the draw.
+    // Crediting at start put stacks on the felt mid-spin.
+    expect(BASE).toMatch(/deferStacksForSpinReveal/);
   });
 });

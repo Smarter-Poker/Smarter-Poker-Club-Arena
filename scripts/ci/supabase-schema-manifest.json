@@ -1575,9 +1575,12 @@
     "fn_social_reels_yt_queue_job",
     "fn_solver_v2_progress",
     "fn_spin_draw_multiplier",
+    "fn_spin_reserve_owner",
+    "fn_spin_reserve_pool",
     "fn_spin_reserve_seed",
     "fn_spin_reserve_seed_from_union",
     "fn_spin_reserve_state",
+    "fn_spin_reserve_wallet_fund",
     "fn_spin_settle_game",
     "fn_spin_sweep_unbooked",
     "fn_staff_pin_taken",
@@ -2830,9 +2833,6 @@
     "word_similarity_dist_commutator_op",
     "word_similarity_dist_op",
     "word_similarity_op",
-    "xp_ban_guard_fn",
-    "fn_reroll_challenge",
-    "ca_club_grantable_roles",
-    "fn_club_set_member_role"
+    "xp_ban_guard_fn"
   ]
 }

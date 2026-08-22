@@ -162,7 +162,13 @@ reads 0 and will stay 0 until someone funds it.
    until they age out, then be unbooked forever. Pre-existing and unrelated to
    this change — but it means the draw did not happen for three games that ran.
    Worth understanding *why* before it recurs.
-4. **Decide whether the seed idempotency key should be owner-scoped.**
+4. **`20260821_challenge_rerolls.sql` was never applied.** Regenerating the CI
+   schema manifest for this PR removed `fn_reroll_challenge` from it — the
+   function is declared by that migration file and does not exist in
+   production. Nothing calls it (the phantom-RPC gate reports 0 phantoms), so
+   it breaks nothing today, but it is a feature the repo believes in and the
+   database has never heard of. Apply it or delete the file.
+5. **Decide whether the seed idempotency key should be owner-scoped.**
    `fn_spin_reserve_seed_from_union` defaults its key to
    `spinseed:<union>:<club>`, so seeding "for JAQK" and "for SHARK" are distinct
    keys that both credit the same union pool. That is arguably right — two

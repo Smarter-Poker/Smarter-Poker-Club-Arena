@@ -7,6 +7,45 @@
 
 ---
 
+## Cowork session 2026-08-22 (9) — MOBILE TABLE PHASE 4: the estimate settles for real, the raise panel wins its taps (PR #294)
+
+Follow-on to Phase 3 (PR #280). Two changes, both measured before they were
+made.
+
+1. DEFERRED P/L RECONCILIATION — #280's "Pending Settlement" annotation now
+   closes its own loop. The engine's processLeavePending writes exactly one
+   wallet_transactions row at settlement (category 'cashout', that table,
+   that user, via atomic_credit_wallet_and_log) and RLS lets a user read
+   their own rows. The payload carries `pendingCashout` (tableId/userId/leave
+   time — TablePage unmounts right after publishing, so the app-root host
+   must find the row itself) and SessionSummaryHost polls while the pending
+   card is open: 3s cadence, 3-minute cap, time-bounded query so an older
+   session at the same table can never be mistaken for this settlement. On a
+   hit `settlePendingSummary` swaps in `amount - totalBuyIn`, the annotation
+   drops, and the count-up re-runs on the corrected figure. Polling over
+   realtime ON PURPOSE: the card lives seconds, and realtime's failure mode
+   (silently no events) is the one this feature exists to close. If the row
+   never lands, the annotation stays — still an honest card. Spec grew to 4
+   cases, including a guard that a payload without pendingCashout never
+   touches the ledger.
+2. RAISE PANEL vs CHAT BUTTON — the 112px widget line clears the COLLAPSED
+   3-button bar, but the OPEN raise panel measures 270px tall at 375px, and
+   TableChat rendered after the panel at the same z-100: the chat bubble
+   floated on top of the raise presets and stole their taps (elementFromPoint
+   at the bubble's centre returned the button). TableChat is now z-99, one
+   below --z-action-panel: normal play unchanged, and while raising the panel
+   wins. The HUD's bottom corners don't interact (BR is empty, BL is the
+   other side, and the HUD renders before the panel). Pinned by
+   tests/e2e/raise-panel-covers-chat.spec.ts, with a premise guard that goes
+   red if a redesign ever shrinks the open panel under 112px and would make
+   the overlap assertions vacuous.
+
+Also verified green on this branch before shipping: the 53 pure-geometry
+playwright specs (hero-card-row, pot-above-chips), tsc, and vitest 236
+files / 2,998 passed.
+
+---
+
 ## Cowork session 2026-08-22 (8) — SPIN / CASH ANIMATION PARITY: the audit Dan asked for
 
 Handoff item 9.1, which had never been done end to end. Full findings, including

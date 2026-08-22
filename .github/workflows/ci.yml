@@ -314,6 +314,16 @@ jobs:
             exit 1
           fi
 
+      - name: Nothing here may deploy to Vercel
+        run: |
+          # CLAUDE.md 1.3 has said this since March, and until 2026-08-22 two
+          # things in this repo did it anyway: deploy-production.sh at the root
+          # and manual-deploy.yml, the latter dispatched three times on
+          # 2026-08-21 and failing all three, which is why the repository page
+          # carried a red Production badge for a day. A rule in a document
+          # loses to a script with a plausible filename every time.
+          node scripts/ci/check-no-vercel-deploy.mjs
+
       - name: Supabase Invariants — Phantom Columns
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

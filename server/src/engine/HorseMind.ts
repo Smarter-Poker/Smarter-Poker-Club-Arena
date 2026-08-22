@@ -407,9 +407,13 @@ export class HorseMind {
     history: ActionRecord[] | undefined,
     bigBlind: number,
     sizedReads: boolean = true,
-    board: Card[] | null = null
+    board: Card[] | null = null,
+    /** V12 out-param: postflop aggression weight + checked-street count for
+     *  board-contact conditioning (see HorseEval.simulateEquity). */
+    readOut?: { aggrW: number; checked: number }
   ): [number, number] | null {
     if (!history || history.length === 0) return null;
+    const postStagesActed = new Set<string>();
 
     let raisesBefore = 0;
     let line: 'none' | 'limp' | 'call' | 'open' | 'threebet' | 'check' = 'none';
@@ -438,6 +442,7 @@ export class HorseMind {
       if (a.stage !== 'preflop') {
         if (a.userId === userId) {
           if (a.action === 'fold') return null;
+          postStagesActed.add(a.stage); // V12: they acted on this street
           if (isAggr) {
             const potBefore = Math.max(bigBlind || 1, pot);
             const frac = increment / potBefore;
@@ -544,6 +549,15 @@ export class HorseMind {
       for (const w of streetWeight.values()) total += w;
       lo += Math.min(0.22, total);
       hi = Math.min(1, hi + 0.05); // aggression uncaps the top of the range
+    }
+    // V12: expose the postflop line shape for board-contact conditioning.
+    if (readOut) {
+      let total = 0;
+      for (const w of streetWeight.values()) total += w;
+      readOut.aggrW = Math.min(0.3, total);
+      let checked = 0;
+      for (const st of postStagesActed) if (!streetWeight.has(st)) checked++;
+      readOut.checked = checked;
     }
 
     lo = Math.max(0, Math.min(0.9, lo));
@@ -767,12 +781,17 @@ export class HorseMind {
     history: ActionRecord[] | undefined,
     bigBlind: number,
     sizedReads: boolean = true,
-    board: Card[] | null = null
+    board: Card[] | null = null,
+    /** V12 out-param: parallel per-opponent postflop reads (same order as
+     *  the returned bands) for board-contact conditioning. */
+    readsOut?: Array<{ aggrW: number; checked: number } | null>
   ): Array<[number, number] | null> {
     const bands: Array<[number, number] | null> = [];
     for (const p of players) {
       if (p.seat === heroSeat || p.is_folded || p.is_sitting_out) continue;
-      bands.push(this.bandFor(p.user_id, history, bigBlind, sizedReads, board));
+      const readOut = readsOut ? { aggrW: 0, checked: 0 } : undefined;
+      bands.push(this.bandFor(p.user_id, history, bigBlind, sizedReads, board, readOut));
+      if (readsOut) readsOut.push(readOut && (readOut.aggrW > 0 || readOut.checked > 0) ? readOut : null);
     }
     return bands;
   }

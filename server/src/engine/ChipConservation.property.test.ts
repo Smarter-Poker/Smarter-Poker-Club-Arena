@@ -148,6 +148,18 @@ describe('chip conservation (property)', () => {
    * ends the hand with rake 0. Neither moves a chip that INV-1..INV-10 can
    * object to, so without this they pass silently.
    */
+  /**
+   * The exact command that replays a corpus, printed on every failure.
+   *
+   * The explore run seeds itself, so without this the corpus that found a
+   * fault dies with the CI job. CHIP_CONSERVATION_EXPLORE=0 turns the explore
+   * pass off so the replay walks the SAME ground rather than new ground.
+   */
+  const replayHint = (seed: number, hands: number) =>
+    `engine panicked. REPLAY THIS EXACT CORPUS:\n` +
+    `  cd server && CHIP_CONSERVATION_SEED=${seed} CHIP_CONSERVATION_HANDS=${hands} ` +
+    `CHIP_CONSERVATION_EXPLORE=0 npx vitest run src/engine/ChipConservation.property.test.ts`;
+
   const enginePanics = () =>
     [...warnings, ...errors].filter((m) =>
       /No winners found|No actionable seat|completeHand threw|Invalid transition/.test(m)
@@ -178,17 +190,28 @@ describe('chip conservation (property)', () => {
       expect(Math.max(...s.seatCounts)).toBeGreaterThanOrEqual(6);
     }
 
-    expect(enginePanics().slice(0, 5)).toEqual([]);
+    expect(enginePanics().slice(0, 5), replayHint(BASE_SEED, HANDS)).toEqual([]);
   }, 600_000);
 
   it(`explores ${EXPLORE_HANDS} previously untested hands`, () => {
     if (EXPLORE_HANDS <= 0) return;
-    // Deliberately NOT fixed: every CI run walks new ground. The failure
-    // message prints the seed, so any find is reproducible on the spot.
+    // Deliberately NOT fixed: every CI run walks new ground.
     const base = 1_000_000 + Math.floor(Math.random() * 1_000_000_000);
     const s = runCorpus(base, EXPLORE_HANDS);
-    expect(s.ran).toBe(EXPLORE_HANDS);
-    expect(enginePanics().slice(0, 5)).toEqual([]);
+    expect(s.ran, replayHint(base, EXPLORE_HANDS)).toBe(EXPLORE_HANDS);
+    // THE SEED GOES IN THE MESSAGE (2026-08-22). The comment above used to say
+    // "the failure message prints the seed, so any find is reproducible on the
+    // spot" — and it did not. The seed appears in the NAME of the fixed-corpus
+    // test only, and this one generates its own. So on 2026-08-22 CI caught a
+    // real engine fault here —
+    //
+    //   [HandController] No winners found — awarding pot to last active player u1
+    //
+    // — which awards the ENTIRE pot to one player, and the corpus that produced
+    // it was gone the moment the job ended. Ten local reruns of this file could
+    // not find it again. A fault report you cannot act on is barely better than
+    // no report, which is the whole lesson of this session.
+    expect(enginePanics().slice(0, 5), replayHint(base, EXPLORE_HANDS)).toEqual([]);
   }, 600_000);
 });
 

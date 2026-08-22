@@ -132,6 +132,44 @@ describe('shipped functionality is still here', () => {
     }
   });
 
+  /* THE PUBLISH PATH. Every gate in this repo answers "did it merge"; these
+     three are the ones that answer "did it ship", and each pins a setting whose
+     removal is invisible until production has been stale for hours. */
+  describe('the publish path cannot be quietly disarmed', () => {
+    const publisher = () => readFileSync(root('.github/workflows/build-for-world-hub.yml'), 'utf8');
+
+    it('the publisher does not cancel a run that is already publishing', () => {
+      /* cancel-in-progress: true killed every build before its sync step. With
+         agents pushing to main every minute or two the queue was never idle and
+         never finished, and production sat on one sha for hours while main ran
+         far ahead. false lets a RUNNING build finish and only cancels a pending
+         one, so each wave converges on publishing the latest main. */
+      const cfg = publisher();
+      const block = cfg.slice(cfg.indexOf('concurrency:'));
+      expect(
+        /cancel-in-progress:\s*false/.test(block.slice(0, 200)),
+        'build-for-world-hub.yml would cancel an in-flight publish again'
+      ).toBe(true);
+    });
+
+    it('a red client suite still stops the bundle from shipping', () => {
+      // ci.yml's unit job never completes on main - pushes land faster than CI
+      // and cancel it - so the suite runs HERE, inside the workflow that
+      // publishes. Losing this line means a red suite ships to users.
+      expect(publisher().includes('npx vitest run tests/')).toBe(true);
+    });
+
+    it('something asks production what it is actually serving', () => {
+      // Without this, "merged" and "published" have the same green tick, and
+      // three separate incidents here were merges that never published.
+      expect(existsSync(root('.github/workflows/publish-watchdog.yml'))).toBe(true);
+      expect(
+        readFileSync(root('.github/scripts/publish-watchdog.sh'), 'utf8').includes('build-info.json'),
+        'the watchdog no longer reads the deployed provenance file'
+      ).toBe(true);
+    });
+  });
+
   it('the sentinel list is not empty or trivially passing', () => {
     // A guard that checks nothing passes forever. If someone empties the list
     // to make a build go green, this fails instead.

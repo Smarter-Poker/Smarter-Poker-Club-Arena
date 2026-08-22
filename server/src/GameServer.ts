@@ -591,6 +591,11 @@ export class GameServer {
       humans: engine.humansSeated(),
       handCount: engine.getHandCount(),
       msSinceProgress: engine.msSinceProgress(),
+      // 2026-08-22: where the dealing loop actually is, e.g. `load_seats+96s`.
+      // /health could say a table had made no progress for 96 seconds but not
+      // what it was doing for those 96 seconds, so a fleet-wide stall showed up
+      // as ninety identical unexplained numbers. This is the missing half.
+      loopPhase: engine.describeLoopPhase(),
       paused: engine.isPausedByDesign(),
       isTournament: engine.isTournament(),
     }));

@@ -61,19 +61,31 @@ describe('the queue insert survives a blip', () => {
 
 describe('it asks whether the fee landed before calling the chips lost', () => {
   it('checks before raising the critical', () => {
-    const check = code.indexOf('feeAlreadyBanked(kind, fee)');
+    const check = code.indexOf('feeIsAccountedFor(kind, fee)');
     const alarm = code.indexOf("raiseFinancialAlert('critical'");
     expect(check, 'the verification must exist').toBeGreaterThan(-1);
     expect(alarm).toBeGreaterThan(-1);
     expect(check, 'and it must come first, or it is decoration').toBeLessThan(alarm);
   });
 
-  it('returns without alarming when the fee is already banked', () => {
-    expect(code).toMatch(/if \(await feeAlreadyBanked\(kind, fee\)\) \{[\s\S]{0,400}return;\s*\}/);
+  it('returns without alarming when the fee is already queued or banked', () => {
+    expect(code).toMatch(/if \(await feeIsAccountedFor\(kind, fee\)\) \{[\s\S]{0,400}return;\s*\}/);
+  });
+
+  it('checks the QUEUE first — a timed-out insert usually committed', () => {
+    // 830 of the 1,020 open alerts on 2026-08-22 referred to a fee that was
+    // already sitting in pending_fee_distributions. The duplicate-key path
+    // only catches that when Postgres gets to answer; a timeout is exactly
+    // when it does not.
+    const fn = code.slice(code.indexOf('async function feeIsAccountedFor'));
+    const queue = fn.indexOf("from('pending_fee_distributions')");
+    const rake = fn.indexOf("from('rake_records')");
+    expect(queue).toBeGreaterThan(-1);
+    expect(queue).toBeLessThan(rake);
   });
 
   it('looks in the right place for each kind', () => {
-    const fn = code.slice(code.indexOf('async function feeAlreadyBanked'));
+    const fn = code.slice(code.indexOf('async function feeIsAccountedFor'));
     expect(fn).toMatch(/from\('rake_records'\)[\s\S]{0,200}eq\('hand_id', fee\.handId\)/);
     // hand_id is null on the outage case — the number is the fallback, scoped
     // by table so it cannot match another table's hand.
@@ -83,7 +95,7 @@ describe('it asks whether the fee landed before calling the chips lost', () => {
   });
 
   it('fails CLOSED — anything unknown still raises the alarm', () => {
-    const fn = code.slice(code.indexOf('async function feeAlreadyBanked'));
+    const fn = code.slice(code.indexOf('async function feeIsAccountedFor'));
     // A thrown query must not be read as "it was banked".
     expect(fn).toMatch(/catch \{\s*return false;\s*\}/);
     // And a missing hand number is not evidence of anything either.
@@ -91,7 +103,7 @@ describe('it asks whether the fee landed before calling the chips lost', () => {
   });
 
   it('uses .maybeSingle(), never .single()', () => {
-    const fn = code.slice(code.indexOf('async function feeAlreadyBanked'));
+    const fn = code.slice(code.indexOf('async function feeIsAccountedFor'));
     expect(fn).not.toMatch(/\.single\(\)/);
     expect((fn.match(/\.maybeSingle\(\)/g) ?? []).length).toBeGreaterThanOrEqual(3);
   });

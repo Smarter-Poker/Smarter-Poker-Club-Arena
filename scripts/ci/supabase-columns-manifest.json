@@ -1245,6 +1245,14 @@
       "status",
       "created_at"
     ],
+    "club_leaderboard_settings": [
+      "club_id",
+      "payout_currency",
+      "weekly_prizes",
+      "monthly_prizes",
+      "created_at",
+      "updated_at"
+    ],
     "club_level_thresholds": ["level", "min_members", "tier", "tier_label"],
     "club_live_games": [
       "id",
@@ -4892,6 +4900,19 @@
       "period",
       "created_at",
       "updated_at"
+    ],
+    "leaderboard_payouts": [
+      "id",
+      "club_id",
+      "period",
+      "metric",
+      "start_date",
+      "end_date",
+      "user_id",
+      "rank",
+      "payout_amount",
+      "payout_currency",
+      "awarded_at"
     ],
     "leak_hand_examples": [
       "id",
@@ -9817,7 +9838,7 @@
       "shortfall_events",
       "unbooked_24h"
     ],
-    "v_spin_tier_availability": ["club_id", "can_draw_100x", "can_draw_500x"],
+    "v_spin_tier_availability": ["club_id", "can_draw_100x"],
     "v_system_health_cron": [
       "jobid",
       "jobname",

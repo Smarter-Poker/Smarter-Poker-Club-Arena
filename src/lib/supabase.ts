@@ -50,7 +50,7 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
     // Runtime: immediately invokes fn() without acquiring any Web Lock.
     // Cast bypasses LockFunc type incompatibility — the type varies across
     // @supabase/supabase-js minor versions (generic vs. concrete overloads).
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     lock: (async (_name: any, _acquireTimeout: any, fn: any) => fn()) as any,
   },
   realtime: {

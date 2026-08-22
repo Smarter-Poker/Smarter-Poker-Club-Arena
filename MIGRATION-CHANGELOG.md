@@ -7,6 +7,49 @@
 
 ---
 
+## Cowork session 2026-08-22 (11) — Lobby V2 follow-through: e2e pass, default-tab bug, Limit filters, card teardown
+
+Continuation of the Lobby V2 handoff, everything shipped and verified:
+
+**Manual e2e against production (signed in, Dan's account = the test account).**
+Playwright cannot run in the sandbox (no browser fits the disk, CDN blocked), so
+the club-lobby spec's assertions were executed by hand against the live club:
+shell renders; per-tab counts match row counts (NLH 18, Spins 42, HU 17, ALL
+111); row select opens the plaque panel with the URL untouched; Escape closes;
+Advanced Filters sheet opens/closes (with the new Limit tab live); bottom nav
+position:fixed. The full-table waitlist round-trip SKIPPED - no full table
+existed at run time, the same condition under which the spec skips itself.
+Standing gap: CI's e2e job reads secrets.SP_EMAIL/SP_PASS - setting those repo
+secrets (Settings -> Secrets -> Actions) makes every push run the signed-in
+suite; no agent has an API path to set secrets.
+
+**Bug found by that pass, fixed (PR: fix(lobby) default tab).** Every page load
+landed on an empty lobby: useState<GameType>('MTT') predated All Games being a
+real tab, so a club with no open MTTs opened onto 'Nothing Matches Your
+Filters' with zero saved filters. Default is now ALL, and the tab-only empty
+state says 'Nothing Here On This Tab' instead of blaming filters nobody set.
+
+**Limit filters (#303).** LIMIT joined FilterGameType and FILTER_SPECS (blind
+tiers, cash statuses, 2-9 seats, cash feature grid, no sub-variant chips);
+sheet tab strip gains Limit; every-spec test loops include it.
+
+**Old card lobby retired (#313).** DynamicGameCard.tsx/.css and NeonCard.css
+deleted (zero importers); spinReveal.test.ts updated in the same commit - the
+four V2 surfaces replace DynamicGameCard in lobbySurfaces, and the FORMAT-
+ceiling case retired with the tile it tested. Still open, deliberately: the
+fate of src/pages/club/ClubLobby.tsx (/clubs/:id/lobby) and the legacy
+.club-home__games grid CSS it still uses - port or retire is Dan's call.
+
+**Also this session (10 in this file): the DB starvation fix** - see the
+session (9) entry below for sp_prune_hand_state_snapshots.
+
+**QA notes for Dan.** Heads-Up tables show 2/2 players with an active 'Take
+Seat' CTA and a start time days in the past - review whether that CTA state is
+right for a full HU table. Pixel-level pass (plaque look, mobile widths) still
+wants human eyes; the screenshot-approval dialog went unanswered this session.
+
+---
+
 ## Cowork session 2026-08-22 (10) — the hunters' memory now survives a deploy (PR #291)
 
 The V12 anti-exploit defense (#268) taught the horses to notice a player who

@@ -95,6 +95,22 @@ describe('shipped functionality is still here', () => {
     expect(existsSync(root(file)), `${file} came back — ${why}`).toBe(false);
   });
 
+  /* A spec that no job runs is not a gate, it is a document. hero-card-row
+     lived in that state: 40 assertions covering bug list item 11, referenced by
+     no workflow, so the layout it guards could regress with every check green.
+     Anchored on the FILE NAME inside the required job's command, because that
+     is the thing whose absence makes the spec stop mattering. */
+  it.each([
+    ['tests/e2e/multi-table.spec.ts'],
+    ['tests/e2e/live-animations.spec.ts'],
+    ['tests/e2e/hero-card-row.spec.ts'],
+  ])('the required CSS Beat E2E job actually runs %s', (spec) => {
+    const ci = readFileSync(root('.github/workflows/ci.yml'), 'utf8');
+    const job = ci.slice(ci.indexOf('CSS Beat E2E (multi-table + animations)'));
+    expect(job.length, 'the CSS Beat E2E job is gone from ci.yml').toBeGreaterThan(0);
+    expect(job.includes(spec), `the CSS Beat E2E job no longer runs ${spec}`).toBe(true);
+  });
+
   it('the sentinel list is not empty or trivially passing', () => {
     // A guard that checks nothing passes forever. If someone empties the list
     // to make a build go green, this fails instead.

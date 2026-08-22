@@ -95,6 +95,7 @@ async function measure(
       rowLeft: row.left,
       rowRight: row.right,
       rowCentreX: row.left + row.width / 2,
+      rowCentreY: row.top + row.height / 2,
       rowBottom: row.bottom,
       cardW: card.width,
       cardH: card.height,
@@ -136,10 +137,29 @@ for (const bp of BREAKPOINTS) {
               'the row must start at or past the seat, never over it'
             ).toBeGreaterThanOrEqual(m.seatRight - 1);
 
-            // Beside means level with the plate, not floating above it: the row's
-            // own vertical span has to overlap the seat's.
-            expect(m.rowTop).toBeLessThan(m.seatBottom);
-            expect(m.rowBottom).toBeGreaterThan(m.seatTop);
+            /* BESIDE the plate, not adrift on the felt. The CSS is
+               `left: calc(100% + var(--sp-hero-gap, 8px))`, so the row sits one
+               small gap off the seat's right edge. Without an upper bound, a row
+               that floated away from its owner entirely would still pass the
+               assertion above. 24px leaves room for the gap token to be tuned at
+               any breakpoint and is far below the distance that would read as
+               detached. */
+            expect(
+              m.rowLeft - m.seatRight,
+              'the row drifted away from the plate'
+            ).toBeLessThanOrEqual(24);
+
+            /* Beside means LEVEL with the plate, not floating above it. Asserting
+               the row's centre lands inside the seat's vertical span is stricter
+               than asserting the two spans merely overlap — a row clipping the
+               seat by one pixel passed the overlap form — and it hard-codes no
+               box half-height, which varies by breakpoint. */
+            expect(m.rowCentreY, 'the row sits above the plate').toBeGreaterThanOrEqual(
+              m.seatTop
+            );
+            expect(m.rowCentreY, 'the row sits below the plate').toBeLessThanOrEqual(
+              m.seatBottom
+            );
           } else {
             // Item 1 still governs PLO: centred on the seat, not offset to one side.
             expect(Math.abs(m.rowCentreX - m.seatCentreX)).toBeLessThanOrEqual(1);
@@ -199,6 +219,17 @@ for (const bp of BREAKPOINTS) {
         phone: [36, 50],
         'small phone': [32, 45],
       };
+      /* Every height here is round(width x 1.4), the 2.5:3.5 playing-card ratio
+         made exact in 833a34d9a to kill the blur: 44->61.6->62, 42->58.8->59,
+         36->50.4->50, 32->44.8->45. Two of them moved by 1px in that commit
+         while this map still carried the pre-ratio values, and THAT is what
+         failed CI — not anything on the felt. Recompute rather than read off a
+         browser if these ever change again; this loop makes a copied value fail
+         here, next to the map, instead of downstream as a phantom resize. */
+      for (const [label, [mapW, mapH]] of Object.entries(HOLDEM)) {
+        expect(Math.round(mapW * 1.4), `${label} height is not the 2.5:3.5 ratio`).toBe(mapH);
+      }
+
       const [w, h] = HOLDEM[bp.label];
       const m = await measure(page, 2);
       expect(Math.abs(m.cardW - w), `hold-em card width at ${bp.label}`).toBeLessThanOrEqual(2);

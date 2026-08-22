@@ -766,7 +766,13 @@ jobs:
       - name: Run the beats against this commit's CSS
         env:
           ARENA_BASE_URL: http://127.0.0.1:4173/hub/club-arena
-        run: npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts --reporter=line --retries=1
+        # hero-card-row.spec.ts was written to gate bug list item 11 and then
+        # ran in NO job at all - 40 pure-geometry assertions that nobody ever
+        # executed, which is why PR #178 could sit for 39 commits proposing
+        # changes to a spec whose result could not affect anything. It needs no
+        # server and no login (it renders SeatSlot.css with page.setContent) and
+        # the whole file runs in ~2.5s, so it belongs in the required gate.
+        run: npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/hero-card-row.spec.ts --reporter=line --retries=1
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 5: AUTO-REVERT — DISABLED (was causing revert loops during migration)

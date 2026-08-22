@@ -111,10 +111,17 @@ describe('no surface prints the multiplier on its own again', () => {
    * surface cannot bypass it, and a rendered-component test would only cover
    * the surfaces someone remembered to write a test for.
    */
+  /* DynamicGameCard was retired with the old card lobby (Lobby V2 teardown,
+     2026-08-22). The V2 surfaces are listed in its place: none of them reads
+     spin_multiplier at all today, and this test is what keeps it that way -
+     if one ever starts, it must go through the spinReveal gate. */
   const lobbySurfaces = [
     'src/pages/TournamentPage.tsx',
     'src/pages/tournament/TournamentDetails.tsx',
-    'src/components/lobby/DynamicGameCard.tsx',
+    'src/components/lobby/lobbyEntries.ts',
+    'src/components/lobby/LobbyTable.tsx',
+    'src/components/lobby/GameLobbyPanel.tsx',
+    'src/components/lobby/CasinoPlaque.tsx',
   ];
 
   it('a lobby surface either goes through the gate or never touches the column', () => {
@@ -146,9 +153,8 @@ describe('no surface prints the multiplier on its own again', () => {
     expect(table.slice(Math.max(0, i - 900), i)).toMatch(/!spinDraw\s*&&/);
   });
 
-  it('the lobby tile advertises the FORMAT ceiling, not the drawn value', () => {
-    const card = read('src/components/lobby/DynamicGameCard.tsx');
-    expect(card).toMatch(/SPIN_TIERS\[SPIN_TIERS\.length - 1\]\.multiplier/);
-    expect(card).not.toMatch(/Win up to \{mult\}/);
-  });
+  /* The 'lobby tile advertises the FORMAT ceiling' case retired with
+     DynamicGameCard: the V2 lobby shows no multiplier on any tile, so there
+     is no drawn value to leak - and the surfaces test above fails the moment
+     one of the V2 files starts reading spin_multiplier without the gate. */
 });

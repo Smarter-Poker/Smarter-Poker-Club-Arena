@@ -9,7 +9,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 const rpc = vi.fn();
-vi.mock('../src/lib/supabase', () => ({ supabase: { rpc: (...a: unknown[]) => rpc(...a) } }));
+// The modal also loads a recent-sends feed via supabase.from(...); a thenable
+// chain stub keeps that path alive without a real client.
+const fromChain = () => {
+  const chain: Record<string, unknown> = {};
+  for (const m of ['select', 'eq', 'in', 'order', 'limit']) {
+    chain[m] = () => chain;
+  }
+  chain.then = (resolve: (v: { data: unknown[] }) => void) => resolve({ data: [] });
+  return chain;
+};
+vi.mock('../src/lib/supabase', () => ({
+  supabase: { rpc: (...a: unknown[]) => rpc(...a), from: () => fromChain() },
+}));
 vi.mock('../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 
 import UnionWalletModal from '../src/components/union/UnionWalletModal';

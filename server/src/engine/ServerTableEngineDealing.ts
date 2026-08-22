@@ -487,26 +487,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // BUG-SENTRY-7463185461 FIX: 'fetch failed' is the Node.js wording for
         // a transient Supabase network blip — same as browser's 'Failed to fetch'.
         // Both must be listed or they increment consecutiveErrors and fire Sentry.
-        const isTransient =
-          errMsg.includes('Project not specified') ||
-          errMsg.includes('ECONNRESET') ||
-          errMsg.includes('ETIMEDOUT') ||
-          errMsg.includes('Failed to fetch') ||
-          errMsg.includes('fetch failed') ||
-          errMsg.includes('ENOTFOUND') ||
-          errMsg.includes('socket hang up') ||
-          // 2026-08-15: emitted by the new DB_TIMEOUT_MS abort in
-          // services/supabase/client.ts. A hung socket is by definition
-          // transient — it must back off and retry, not count toward the
-          // 10-error engine shutdown.
-          errMsg.includes('supabase_timeout') ||
-          errMsg.includes('This operation was aborted') ||
-          errMsg.includes('The operation was aborted') ||
-          // 2026-08-22: a step that blew its budget in withStepBudget. The
-          // database is slow, which is transient by definition and which a
-          // rebuilt engine cannot fix — it can only add another reconnect to
-          // whatever is already struggling.
-          errMsg.includes('deal_step_timeout');
+        // The list this used to carry inline now lives on the base, because
+        // `start()` needs the same answer and a second copy is how the two
+        // paths came to disagree — survivable here, fatal there.
+        const isTransient = ServerTableEngineBase.isTransientDbError(err);
 
         // A blown step budget is the loop reporting that it is ALIVE and
         // waiting, so it must not read to the watchdog as a dead loop. This
@@ -571,14 +555,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
         return; // success
       } catch (err: any) {
-        const msg = err?.message || String(err);
-        const isTransient =
-          msg.includes('fetch failed') ||
-          msg.includes('Failed to fetch') ||
-          msg.includes('ECONNRESET') ||
-          msg.includes('ETIMEDOUT') ||
-          msg.includes('ENOTFOUND') ||
-          msg.includes('socket hang up');
+        // Third copy of the same list, now also on the base. This one was the
+        // narrowest of the three — it never listed `supabase_timeout`, the
+        // wording the DB_TIMEOUT_MS abort actually emits, so the retry it
+        // exists to perform did not fire for the most common timeout.
+        const isTransient = ServerTableEngineBase.isTransientDbError(err);
         if (!isTransient || attempt === MAX_ATTEMPTS) throw err;
         await new Promise((r) => setTimeout(r, 500 * attempt));
       }

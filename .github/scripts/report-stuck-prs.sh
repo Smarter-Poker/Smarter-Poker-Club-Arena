@@ -30,6 +30,20 @@
 #                  This one is the quiet killer: the PR waits forever for a
 #                  check that will never arrive, and the UI just says "pending".
 #
+# AND A FOURTH, which has no pull request to be stuck on: a branch that was
+# pushed and then never asked to merge. Autopilot cannot queue what does not
+# exist, so these are invisible to every other guard here. Club Arena was
+# carrying 28 of them behind 204 remote branches, including
+# `sweep-4-engine-fixes` (13 commits) and `fix/members-loop-and-union-wallet`
+# (9 commits: ban buttons wired, leaderboard period navigation, a DB view
+# change). Real work, pushed, and never once proposed.
+#
+# For an `agent/*` branch younger than a day this is unambiguous - that
+# namespace is created by scripts/agent-workspace.sh for the express purpose of
+# becoming a pull request - so one is opened automatically. Anything older or
+# outside that namespace is reported, never auto-opened: a months-old branch
+# auto-merged onto main is a regression, not a rescue.
+#
 # Env: GH_TOKEN, REPO. Optional STUCK_AFTER_H (default 3).
 set -uo pipefail
 
@@ -96,37 +110,110 @@ while read -r pr; do
   COUNT=$((COUNT + 1))
 done < <(jq -c '.[]' <<<"$PRS")
 
+# ── Branches that were pushed and never proposed ───────────────────────────
+# Machine-made namespaces are excluded: they are couriers and bot output, not
+# somebody's work waiting to ship. Squash-merged branches are excluded by
+# asking whether a PR EVER existed for the ref, because a squash leaves the
+# branch's own commits permanently "ahead" of main even though the content
+# landed - filtering on `git rev-list` alone reports every merged branch and
+# is how a report like this becomes noise and then gets ignored.
+ORPHANS=""
+ORPHAN_COUNT=0
+AUTO_OPENED=0
+if [ "${SKIP_ORPHAN_BRANCHES:-0}" != "1" ]; then
+  EVER=$(gh pr list --repo "$REPO" --state all --limit 500 --json headRefName \
+           --jq '.[].headRefName' 2>/dev/null | sort -u)
+  DEFAULT_BRANCH=$(gh repo view "$REPO" --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo main)
+  git fetch --no-tags --quiet origin "+refs/heads/*:refs/remotes/origin/*" 2>/dev/null || true
+
+  while read -r ref; do
+    B=${ref#refs/heads/}
+    case "$B" in
+      "$DEFAULT_BRANCH"|master|production) continue ;;
+      ci-marker/*|build/*|backup/*|dependabot/*|sentry-autofix/*|revert-*|renovate/*) continue ;;
+    esac
+    printf '%s\n' "$EVER" | grep -qx "$B" && continue
+    AHEAD=$(git rev-list --count "origin/${DEFAULT_BRANCH}..origin/${B}" 2>/dev/null || echo 0)
+    [ "${AHEAD:-0}" -gt 0 ] || continue
+
+    LAST_EPOCH=$(git log -1 --format=%ct "origin/$B" 2>/dev/null || echo "$NOW")
+    AGE_H=$(( (NOW - LAST_EPOCH) / 3600 ))
+    [ "$AGE_H" -lt "$STUCK_AFTER_H" ] && continue
+
+    # An agent/* branch under a day old is an agent that stopped one step
+    # short. Finish the step for it; that is the whole point of Autopilot.
+    case "$B" in
+      agent/*)
+        if [ "$AGE_H" -lt 24 ] && gh pr create --repo "$REPO" --head "$B" \
+             --base "$DEFAULT_BRANCH" --fill >/dev/null 2>&1; then
+          echo "opened a pull request for orphan branch $B (${AHEAD} commits, ${AGE_H}h old)."
+          AUTO_OPENED=$((AUTO_OPENED + 1))
+          continue
+        fi ;;
+    esac
+
+    ORPHANS="${ORPHANS}| \`${B}\` | ${AHEAD} | ${AGE_H}h | [open a PR](https://github.com/${REPO}/compare/${DEFAULT_BRANCH}...${B}?expand=1) |
+"
+    ORPHAN_COUNT=$((ORPHAN_COUNT + 1))
+  done < <(git for-each-ref --format='%(refname)' refs/remotes/origin/ 2>/dev/null \
+            | sed 's|refs/remotes/origin/|refs/heads/|')
+fi
+[ "$AUTO_OPENED" -gt 0 ] && echo "auto-opened $AUTO_OPENED pull request(s) for agent branches that were never proposed."
+
+ORPHAN_SECTION=""
+if [ "$ORPHAN_COUNT" -gt 0 ]; then
+  ORPHAN_SECTION="
+
+---
+
+### ${ORPHAN_COUNT} branch(es) pushed, never proposed
+
+No pull request has ever existed for these, so nothing above can see them and Autopilot cannot queue what does not exist. Squash-merged branches are already filtered out — every row here is work that has genuinely never been asked to land.
+
+| branch | commits ahead | last commit | |
+|---|---|---|---|
+$(printf '%s' "$ORPHANS" | head -60)
+Judge each one: open a pull request, or delete the branch. Leaving it is the option that looks like nothing happening and is actually work quietly going nowhere."
+fi
+
 EXISTING=$(gh issue list --repo "$REPO" --state open --search "$TITLE in:title" \
              --limit 1 --json number --jq '.[0].number' 2>/dev/null || true)
 
-if [ "$COUNT" -eq 0 ]; then
-  echo "no stuck pull requests older than ${STUCK_AFTER_H}h."
+if [ "$COUNT" -eq 0 ] && [ "$ORPHAN_COUNT" -eq 0 ]; then
+  echo "nothing stuck and no unproposed branches older than ${STUCK_AFTER_H}h."
   if [ -n "${EXISTING:-}" ]; then
     gh issue comment "$EXISTING" --repo "$REPO" \
-      --body "Every pull request that was listed here has merged or closed. Nothing is stuck." >/dev/null 2>&1 || true
+      --body "Everything listed here has merged, closed, or been proposed. Nothing is stuck and no branch is sitting unproposed." >/dev/null 2>&1 || true
     gh issue close "$EXISTING" --repo "$REPO" >/dev/null 2>&1 || true
     echo "closed issue #$EXISTING."
   fi
   exit 0
 fi
 
-BODY="${COUNT} open pull request(s) have been unable to merge for more than ${STUCK_AFTER_H}h. Autopilot cannot land these on its own — that is the whole reason this list exists rather than a log line nobody reads.
+PR_SECTION=""
+if [ "$COUNT" -gt 0 ]; then
+  PR_SECTION="${COUNT} open pull request(s) have been unable to merge for more than ${STUCK_AFTER_H}h. Autopilot cannot land these on its own — that is the whole reason this list exists rather than a log line nobody reads.
 
 | PR | branch | opened by | age | why it is stuck | what unsticks it |
 |---|---|---|---|---|---|
-${ROWS}
+${ROWS}"
+else
+  PR_SECTION="Every open pull request is merging normally."
+fi
+
+BODY="${PR_SECTION}
 A pull request that never merges is not a neutral state. The work does not ship, and from outside the repo that is indistinguishable from the feature having regressed.
 
 Whatever you do, do not reach for a flag that makes the check stop applying. \`--admin\` bypassed required checks and put red code on main four times; \`--merge\` and \`--rebase\` are disabled here and fail **silently**, leaving the PR open while the agent reports success.
 
-_Updated in place by \`.github/workflows/agent-autopilot.yml\` on every sweep. It closes itself when the list empties._"
+_Updated in place by \`.github/workflows/agent-autopilot.yml\` on every sweep. It closes itself when the list empties._${ORPHAN_SECTION}"
 
 if [ -n "${EXISTING:-}" ]; then
   gh issue edit "$EXISTING" --repo "$REPO" --body "$BODY" >/dev/null 2>&1 \
-    && echo "updated issue #$EXISTING with $COUNT stuck PR(s)."
+    && echo "updated issue #$EXISTING with $COUNT stuck PR(s) and $ORPHAN_COUNT unproposed branch(es)."
 else
   gh issue create --repo "$REPO" --title "$TITLE" --body "$BODY" >/dev/null 2>&1 \
-    && echo "opened an issue listing $COUNT stuck PR(s)."
+    && echo "opened an issue listing $COUNT stuck PR(s) and $ORPHAN_COUNT unproposed branch(es)."
 fi
 
 {

@@ -3466,6 +3466,10 @@ export default function TablePage({
           totalBuyIn: totalBuyInRef.current,
           sessionStart: sessionStartRef.current,
           sessionEnd: Date.now(),
+          // Phase 3 (2026-08-22): when the cashout is deferred the P/L above
+          // is an estimate (live stack at leave); the card annotates it
+          // "Pending Settlement" so the estimate is never read as settled.
+          plPending: !!result.deferred,
         });
 
         // Now actually leave. These three used to fire together from the
@@ -10989,7 +10993,6 @@ export default function TablePage({
         gameType={tableState.gameType}
         isTournament={tableState.isTournament}
         tournamentId={tableState.tournamentId}
-        heroSeat={tableState.heroSeat}
         maxPlayers={tableState.maxPlayers}
         players={tableState.players}
         heroStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
@@ -11393,7 +11396,6 @@ export default function TablePage({
         // Helpers
         safeBB={safeBB}
         getPlayerHUDStats={getPlayerHUDStats}
-        navigate={navigate}
       />
     </div>
   );

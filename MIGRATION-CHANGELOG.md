@@ -176,6 +176,60 @@ favour with the sessionStart/End addition re-applied at the new location),
 pushed as `fix/mobile-table-audit-2026-08-22-v2`, PR #243, merged after all
 required checks passed. The 14 pushed files were mirrored back to the Mac
 working tree from origin/main.
+## Cowork session 2026-08-22 (3) — LOBBY V2: line-based lobby + Casino Plaque game lobbies
+
+Dan: "I currently hate the game cards inside the Club Arena lobby and want to
+completely change them out. Replace the card browser with a dense, professional,
+line-based poker lobby (PokerStars information architecture), and open a premium
+Casino Plaque detail lobby when a game is selected."
+
+### What shipped
+
+1. **Line-based lobby table** (`src/components/lobby/LobbyTable.tsx` + css):
+   sticky headers, per-category columns (cash: stakes/variant/players/buy-in/
+   rules/status; MTT: buy-in/guarantee/players/starts/speed/status; spins /
+   heads-up variants; combined set on All Games), numeric-value column sorting,
+   arrow-key + Enter navigation, skeleton rows, full/live/waitlist/late-reg
+   status badges, Seated / Registered / Waitlisted player-state chips, and a
+   favorites star backed by the existing `favorite_tables` table.
+2. **LobbyEntry view-model layer** (`src/components/lobby/lobbyEntries.ts`):
+   presentation-only normalization of cash tables + tournaments; rule medallions
+   derive strictly from the REAL `TableSettings` flags (RIT, insurance,
+   straddle, bomb pots + frequency, ante, double board, seven deuce, time bank,
+   VPIP, call time, no rathole) and tournament columns (guarantee, late reg,
+   re-entry/rebuy/add-on when present). Domain rows ride along on `.raw`.
+3. **CasinoPlaque** (`src/components/lobby/CasinoPlaque.tsx` + css): three-zone
+   brushed-metal plaque (identity / rule medallions / join info with seat pips
+   and the primary CTA). Renders only for the selected game.
+4. **GameLobbyPanel** (`src/components/lobby/GameLobbyPanel.tsx` + css): the
+   pre-commit game lobby. Cash: game info grid (avg pot from hand_history,
+   waitlist list via WaitlistService), full rules, CTA ladder JOIN TABLE /
+   JOIN WAITLIST / LEAVE WAITLIST / RETURN TO TABLE / TABLE CLOSED / GAME
+   PAUSED. MTT: Overview / Structure / Payouts tabs (payout projections are
+   labelled estimates), REGISTER / LATE REGISTER / UNREGISTER / RETURN TO
+   TOURNAMENT / REGISTRATION CLOSED, plus a link to the full TournamentDetails
+   lobby. Spins: JOIN SPIN; Heads-Up: TAKE SEAT — both via the untouched
+   seat-first `spinQuickJoin`.
+5. **ClubHomePage** rewired: card grid render replaced by LobbyTable + panel;
+   All Games is a real tab; row click ONLY selects (acceptance rule: nothing
+   joins, registers, or spends from a row). All data loading, realtime
+   channels, advanced filters, quick prefs, sort, search, waitlist logic,
+   admin delete (now in the panel), and `clubIdOverride` are unchanged.
+   Merged on top of main's Limit-category + CreateTournamentModal changes.
+6. **Tests**: `tests/e2e/club-lobby.spec.ts` rewritten for `.lt-*`/`.glp`
+   selectors, including a new "selecting a row opens the panel without
+   joining" spec. All lobby guardrail suites green (seatFirstGames,
+   spinReveal, advancedFilterSpec, tournamentFilters, protectedFeatures,
+   verify-bus-listeners, shipped-invariants + 15 adjacent suites, 311 tests).
+   `tsc --noEmit` clean; production Vite build clean.
+
+### Deliberately NOT done
+
+- `DynamicGameCard.tsx` and `ClubLobby.tsx` (the secondary lobby at
+  `/clubs/:clubId/lobby`) are left in place per the safe-migration rule —
+  remove only after production verification.
+- No virtualization: rows are single flat `<tr>`s; the existing QUERY_LIMITS
+  cap bounds the list. Revisit only if row counts grow past that.
 
 ---
 
@@ -280,6 +334,62 @@ Idle-table broadcast (no snapshot for joining clients between hands / empty
 tables), postHandTasks unbounded await, /health restart-races-recovery window,
 mux-mode fixes (flag is OFF; do not enable ca_ws_mux until EngineSocketMux
 half-open + eviction-storm bugs are fixed), presence ghost-seat merge.
+
+---
+
+## Cowork session 2026-08-22 (2) — V12 horse brain: the full build-out (PRs #256, #263, #265, #268, #271, #272, #276)
+
+Dan: "BUILD THEM ALL, IN FULL." Seven upgrades shipped as seven sequential
+PRs, each with tests in the same commit, each squash-merged through the
+6-check ruleset, each auto-deployed to Hetzner. Three new tables (all
+service-role RLS, migrations applied via Supabase MCP AND committed to the
+repo, schema manifest updated each time).
+
+- **A (#256) Persistent opponent memory.** HorseMind stats flush to
+  `horse_mind_stats` every 5 min (GREATEST-merge RPC `upsert_horse_mind_stats`
+  so bounded-memory swaps can never clobber history), instant DB hydration on
+  boot + tail-only replay, final flush in the shutdown drain. VERIFIED LIVE:
+  488 opponent profiles flushed by production within minutes of deploy.
+- **B (#263) Per-horse self-improvement loop.** Nightly 08:00 UTC,
+  HorseSelfTuner studies each horse's own week of cash play (VPIP/PFR/3-bet/
+  fold-to-3-bet/WWSF/AF/net bb from hand_history with contribution replay +
+  blind reconstruction), diagnoses leaks vs winning benchmarks, writes
+  bounded nudges (±0.02/night, caps 0.85-1.18) into profiles.horse_profile —
+  which resolveHorseStyle already reads. Audit trail: `horse_self_tune_log`.
+- **C (#265) Real ICM + formats.** TournamentBrainContext (20s-TTL cache,
+  sync decision-path read) feeds icmRisk v2: pressure scales with actual
+  distance to the money, covering big stacks get bubble-abuse mode, ITM short
+  stacks ladder, PKO bounty share trims the premium, spins are winner-take-all
+  chip EV with 3-max hyper range widening.
+- **D (#268) Anti-exploit defense.** Per-(attacker,victim) pair tracking —
+  who 3-bets whose opens, who raises whose c-bets — vs the attacker's global
+  rates. A hunter gets re-raised wider, defended wider, and called down
+  lighter until the hunt stops paying.
+- **E (#271) Self-play league.** Self-contained NLH simulator (side pots
+  included) drives HorseLogic over DUPLICATE deals nightly at 04:30 UTC;
+  bb/100 + stderr per layer into `horse_league_results`. First measurements:
+  V11 leak fixes +112 bb/100 (se 43) vs the pre-fix engine; full engine
+  +151 bb/100 (se 61) vs V2 legacy. league-* ids + an observe() gate keep
+  synthetic hands out of live opponent memory.
+- **F (#272) Board-conditioned range modeling (the deep one).** The MC now
+  conditions sampled opponent hands on their postflop line ON THIS BOARD:
+  aggressors resample toward connecting hands (pair+/flush draw/OESD via
+  connectsBoard), passive checked lines get monsters down-sampled. Seeded
+  tests pin QQ-on-AK7 dropping >3pts vs a double barrel. NLH-only, inside
+  the latency budget, opts.v12.
+- **G (#276) River sizing polish.** OOP quarter-pot block bets, nut-class
+  1.3-1.6x overbets heads-up with paired nut-blocker overbet bluffs, and
+  blocker-aware catching extended to the 0.8-1.2x band.
+
+Ops notes: the GitHub MCP token is dead ("Bad credentials") and
+api.github.com is proxy-blocked from the sandbox — all PR create/merge ran
+via host-terminal curl with the repo PAT; branch pushes from a /tmp clone
+(never git-write on the mounted worktree, per section 12). One stacked
+rebase initially targeted the wrong upstream after a squash — recovered via
+reflog; later rebases pinned parents by SHA. An autopilot bot merge brought
+a pot-limit jam fix into flight A; re-applying edits ON TOP of the branch
+head (not from the mount copy) avoided reverting it — the mount is not a
+merge base, main is.
 
 ---
 

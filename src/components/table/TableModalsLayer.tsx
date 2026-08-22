@@ -9,7 +9,6 @@
  * Adding a new modal? Add it here, not to TablePage.tsx.
  */
 
-import { useNavigate } from 'react-router-dom';
 import { useEffectiveRake } from '../../hooks/useEffectiveRake';
 import PlayerNotesPanel from '../gameplay/PlayerNotesPanel';
 import HandReplay from '../replay/HandReplay';
@@ -85,7 +84,6 @@ export interface TableModalsLayerProps {
   gameType: string;
   isTournament: boolean;
   tournamentId: string | undefined;
-  heroSeat: number;
   maxPlayers: 6 | 9;
   players: (SeatPlayer | null)[];
   heroStack: number;
@@ -371,9 +369,6 @@ export interface TableModalsLayerProps {
   // Helpers
   safeBB: (blinds?: string | null, fallback?: number) => number;
   getPlayerHUDStats: (userId: string) => any;
-
-  // Navigation
-  navigate: ReturnType<typeof useNavigate>;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -390,7 +385,6 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     gameType,
     isTournament,
     tournamentId,
-    heroSeat,
     maxPlayers,
     players,
     heroStack,
@@ -553,7 +547,6 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     // Helpers
     safeBB,
     getPlayerHUDStats,
-    navigate,
   } = props;
 
   // The rake the engine will actually take at this table (table override ->

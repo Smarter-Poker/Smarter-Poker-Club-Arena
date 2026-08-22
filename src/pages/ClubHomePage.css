@@ -876,6 +876,57 @@
   padding: 1rem;
   position: relative;
   z-index: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LOBBY V2 — the games area is a single dense table now, not a card grid.
+   The --v2 modifier overrides the legacy grid so the old rules (still used
+   by ClubLobby's grid) stay untouched.
+═══════════════════════════════════════════════════════════════════════════ */
+.club-home__games--v2 {
+  display: block;
+}
+.lobby-actionsrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.lobby-createbtn {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(65, 105, 225, 0.45);
+  background: rgba(65, 105, 225, 0.1);
+  color: var(--club-blue-light, #5b83e8);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-decoration: none;
+}
+.lobby-createbtn:hover {
+  background: rgba(65, 105, 225, 0.2);
+}
+.lobby-favtoggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary, #c8ccd4);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lobby-favtoggle.is-on {
+  border-color: rgba(255, 215, 0, 0.5);
+  background: rgba(255, 215, 0, 0.1);
+  color: var(--warning-gold, #ffd700);
+}
+
+.club-home__games {
   animation: gamesGridFade 0.5s ease-out;
 }
 

@@ -201,8 +201,9 @@ export function UnionWalletModal({
           {fmt(balance)}
         </div>
         <p style={{ color: '#888', fontSize: 12, margin: '0 0 14px' }}>
-          Send chips, diamonds or promo funds to any member of the union.
-          {walletKey === 'bbj' && ' BBJ funds are reserved for jackpots, so chips sent here draw on the main bank.'}
+          Send Chips, Diamonds Or Promo Funds To Any Member Of The Union.
+          {walletKey === 'bbj' &&
+            ' BBJ funds are reserved for jackpots, so chips sent here draw on the main bank.'}
         </p>
 
         {/* Kind selector */}
@@ -237,9 +238,9 @@ export function UnionWalletModal({
           }}
         >
           {loading ? (
-            <div style={{ padding: 14, color: '#888', fontSize: 13 }}>Loading roster…</div>
+            <div style={{ padding: 14, color: '#888', fontSize: 13 }}>Loading Roster…</div>
           ) : filtered.length === 0 ? (
-            <div style={{ padding: 14, color: '#888', fontSize: 13 }}>No members match.</div>
+            <div style={{ padding: 14, color: '#888', fontSize: 13 }}>No Members Match.</div>
           ) : (
             filtered.slice(0, 200).map((r) => (
               <button
@@ -252,7 +253,8 @@ export function UnionWalletModal({
                   alignItems: 'center',
                   gap: 10,
                   padding: '8px 12px',
-                  background: target?.user_id === r.user_id ? 'rgba(69,153,255,0.18)' : 'transparent',
+                  background:
+                    target?.user_id === r.user_id ? 'rgba(69,153,255,0.18)' : 'transparent',
                   border: 'none',
                   borderBottom: '1px solid rgba(255,255,255,0.05)',
                   cursor: 'pointer',

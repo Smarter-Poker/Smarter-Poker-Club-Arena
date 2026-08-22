@@ -124,14 +124,16 @@ describe('the alarm carries what it takes to put the chips back', () => {
     const i = code.indexOf("raiseFinancialAlert('critical', 'FeeReconciler.queue_failed'");
     expect(i).toBeGreaterThan(-1);
     const ctx = code.slice(i, code.indexOf('});', i));
-    for (const k of REQUIRED) expect(ctx, `queue_failed context missing ${k}`).toMatch(new RegExp(`\\b${k}:`));
+    for (const k of REQUIRED)
+      expect(ctx, `queue_failed context missing ${k}`).toMatch(new RegExp(`\\b${k}:`));
   });
 
   it('exhausted carries it too', () => {
     const i = code.indexOf("raiseFinancialAlert('critical', 'FeeReconciler.exhausted'");
     expect(i).toBeGreaterThan(-1);
     const ctx = code.slice(i, code.indexOf('});', i));
-    for (const k of REQUIRED) expect(ctx, `exhausted context missing ${k}`).toMatch(new RegExp(`\\b${k}:`));
+    for (const k of REQUIRED)
+      expect(ctx, `exhausted context missing ${k}`).toMatch(new RegExp(`\\b${k}:`));
   });
 
   it('contributions is never left undefined', () => {

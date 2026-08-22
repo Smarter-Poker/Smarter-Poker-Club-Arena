@@ -3484,9 +3484,7 @@ export default function TablePage({
           // swaps the estimate for the settled figure. This component is
           // about to navigate away and unmount, so the host must be able to
           // find the row on its own.
-          pendingCashout: result.deferred
-            ? { tableId, userId, sinceMs: Date.now() }
-            : undefined,
+          pendingCashout: result.deferred ? { tableId, userId, sinceMs: Date.now() } : undefined,
         });
 
         // Now actually leave. These three used to fire together from the

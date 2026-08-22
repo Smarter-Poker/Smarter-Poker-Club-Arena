@@ -156,12 +156,12 @@ export default function WeeklyScheduleEditor({
               onChange({ ...value, intervalMinutes: Math.round(Number(e.target.value) || 0) })
             }
           />
-          <span className="wse-interval-label">minutes (5 - 1440)</span>
+          <span className="wse-interval-label">Minutes (5 - 1440)</span>
         </div>
       )}
 
       <p className="wse-hint">
-        Days and times are in UTC. Pick at least one day
+        Days And Times Are In UTC. Pick At Least One Day
         {value.mode === 'interval' ? ' - the interval runs on the selected days.' : '.'}
       </p>
     </div>

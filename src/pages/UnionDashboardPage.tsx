@@ -728,15 +728,17 @@ export default function UnionDashboardPage() {
   useEffect(() => {
     if (tab !== 'players' || !unionId) return;
     setRosterLoading(true);
-    void supabase.rpc('fn_union_player_directory', { p_union_id: unionId }).then(({ data, error }) => {
-      if (error) {
-        reportError(error, 'UnionDashboard.roster_load_failed');
-        setRoster([]);
-      } else {
-        setRoster((data as typeof roster) || []);
-      }
-      setRosterLoading(false);
-    });
+    void supabase
+      .rpc('fn_union_player_directory', { p_union_id: unionId })
+      .then(({ data, error }) => {
+        if (error) {
+          reportError(error, 'UnionDashboard.roster_load_failed');
+          setRoster([]);
+        } else {
+          setRoster((data as typeof roster) || []);
+        }
+        setRosterLoading(false);
+      });
   }, [tab, unionId]);
 
   const filteredRoster = useMemo(() => {
@@ -1037,15 +1039,30 @@ export default function UnionDashboardPage() {
               <div className="admin-stats-grid" style={{ marginTop: '16px' }}>
                 {(
                   [
-                    { key: 'chips', label: 'Chip Balance', color: '#4599FF', value: wallets.chip_balance },
-                    { key: 'rake', label: 'Rake Wallet', color: '#31A24C', value: wallets.rake_wallet },
+                    {
+                      key: 'chips',
+                      label: 'Chip Balance',
+                      color: '#4599FF',
+                      value: wallets.chip_balance,
+                    },
+                    {
+                      key: 'rake',
+                      label: 'Rake Wallet',
+                      color: '#31A24C',
+                      value: wallets.rake_wallet,
+                    },
                     {
                       key: 'bbj',
                       label: `BBJ Pool${bbjPool ? ` (${bbjPool.hit_count} hits)` : ''}`,
                       color: '#F7C52A',
                       value: bbjPool?.main_balance ?? 0,
                     },
-                    { key: 'promo', label: 'Promo Wallet', color: '#C084FC', value: wallets.promo_wallet },
+                    {
+                      key: 'promo',
+                      label: 'Promo Wallet',
+                      color: '#C084FC',
+                      value: wallets.promo_wallet,
+                    },
                   ] as { key: UnionWalletKey; label: string; color: string; value: number }[]
                 ).map((w) => (
                   <button
@@ -1326,11 +1343,11 @@ export default function UnionDashboardPage() {
                 onChange={(e) => setRosterSearch(e.target.value)}
               />
               <span style={{ alignSelf: 'center', color: '#888', fontSize: 12 }}>
-                {fmt(filteredRoster.length)} players
+                {fmt(filteredRoster.length)} Players
               </span>
             </div>
             {rosterLoading ? (
-              <div className="admin-empty">Loading roster…</div>
+              <div className="admin-empty">Loading Roster…</div>
             ) : filteredRoster.length === 0 ? (
               <div className="admin-empty">
                 <span className="admin-empty-icon">◉</span>
@@ -1391,10 +1408,30 @@ export default function UnionDashboardPage() {
               <div className="admin-stats-grid" style={{ marginBottom: '16px' }}>
                 {(
                   [
-                    { key: 'chips', label: 'Chip Balance', color: '#4599FF', value: wallets.chip_balance },
-                    { key: 'rake', label: 'Weekly Rake Wallet', color: '#31A24C', value: wallets.rake_wallet },
-                    { key: 'bbj', label: 'Backup BBJ Wallet', color: '#F7C52A', value: wallets.bbj_wallet },
-                    { key: 'promo', label: 'Promo Wallet', color: '#C084FC', value: wallets.promo_wallet },
+                    {
+                      key: 'chips',
+                      label: 'Chip Balance',
+                      color: '#4599FF',
+                      value: wallets.chip_balance,
+                    },
+                    {
+                      key: 'rake',
+                      label: 'Weekly Rake Wallet',
+                      color: '#31A24C',
+                      value: wallets.rake_wallet,
+                    },
+                    {
+                      key: 'bbj',
+                      label: 'Backup BBJ Wallet',
+                      color: '#F7C52A',
+                      value: wallets.bbj_wallet,
+                    },
+                    {
+                      key: 'promo',
+                      label: 'Promo Wallet',
+                      color: '#C084FC',
+                      value: wallets.promo_wallet,
+                    },
                   ] as { key: UnionWalletKey; label: string; color: string; value: number }[]
                 ).map((w) => (
                   <button

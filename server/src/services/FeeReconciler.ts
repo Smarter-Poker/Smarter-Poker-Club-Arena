@@ -82,8 +82,18 @@ const MAX_RECONCILE_ATTEMPTS = 25;
  * these get retried rather than escalated.
  */
 const TRANSIENT_DB_ERROR =
-  /timeout|timed out|fetch failed|socket hang up|ECONNRESET|ECONNREFUSED|EAI_AGAIN|network|502|503|504|57014|too many connections/i;
+  /timeout|timed out|fetch failed|socket hang up|ECONNRESET|ECONNREFUSED|EAI_AGAIN|network|502|503|504|57014|too many connections|schema cache|PGRST002|PGRST001/i;
 const QUEUE_INSERT_ATTEMPTS = 4;
+/**
+ * 300ms, 900ms, 2.7s. Was a flat 250 * attempt — 1.5s of total patience.
+ *
+ * A PostgREST schema-cache reload is not instant, and it is self-inflicted:
+ * every `apply_migration` triggers one. Five migrations were applied on
+ * 2026-08-22 and the reload window is visible in the alerts. Backing off
+ * further costs nothing on a path that only runs when banking has ALREADY
+ * failed, and buys the reload time to finish.
+ */
+const QUEUE_BACKOFF_MS = (attempt: number): number => 100 * 3 ** attempt;
 /** Bound the work a single cycle does so a large backlog cannot stall the loop. */
 const RECONCILE_BATCH = 100;
 
@@ -126,7 +136,7 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
 
       lastError = error.message || String(error);
       if (!TRANSIENT_DB_ERROR.test(lastError) || attempt === QUEUE_INSERT_ATTEMPTS) break;
-      await new Promise((r) => setTimeout(r, 250 * attempt));
+      await new Promise((r) => setTimeout(r, QUEUE_BACKOFF_MS(attempt)));
     }
 
     // ASK BEFORE ALARMING (2026-08-22).

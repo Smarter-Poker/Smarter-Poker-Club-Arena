@@ -103,6 +103,30 @@ window load + 3s instead of competing with the app bundle during boot
 trimming was evaluated and skipped: weight 900 alone has 69 usages, and the
 async loading from Phase 1 already removed the render-blocking cost.
 
+## PHASE 3 (same day) — offline-capable app shell, self-hosted fonts, table warmup
+
+- **App-shell navigation caching** (sw-bus.js): /hub/club-arena/* navigations
+  are now network-first with a 3.5s deadline; on timeout, network failure, or
+  5xx the SW serves the shell HTML that was precached at install TOGETHER
+  with that deploy's exact chunks (same versioned cache, so the fallback is
+  always internally consistent). offline.html is the last resort. Deploys
+  propagate exactly as before — the fallback only engages when the network
+  would have white-screened the player anyway. This is the app-shell pattern
+  the native-feeling poker clients use.
+- **Self-hosted fonts** (scripts/self-host-fonts.mjs, post-build): downloads
+  the Google Fonts css2 payload + all woff2 subsets into dist/fonts/ and
+  rewrites dist/index.html to same-origin URLs. Kills two cross-origin TLS
+  handshakes on cold boot; the woff2 files fall under the immutable
+  Cache-Control rule and the SW media cache (cross-origin font caches are
+  partitioned per-site, so Google's CDN gave returning visitors nothing).
+  Any failure leaves the Google links untouched. Verified end-to-end on a
+  real network: 25 woff2 files, index.html rewritten, zero gstatic refs.
+- **Table warmup** (ChunkPreloader): TablePage (~413KB JS + ~383KB CSS, the
+  heaviest and most-visited chunk) and MultiTablePage now idle-preload after
+  the light pages, so the first tap on a table seats instantly.
+- **Data layer**: audited — HomePage/ClubCarouselPage already hydrate from a
+  localStorage SWR cache (CLUBS_CACHE); no change needed.
+
 ## Follow-ups worth doing (not in this pass)
 - Convert the big lobby PNGs (`images/tiles/player-stats-v9.png` 712KB, the
   wallet panels ~500KB each, `images/icons/*` 3.2MB total) to WebP the same

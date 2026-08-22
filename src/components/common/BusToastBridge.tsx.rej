@@ -1,0 +1,8 @@
+@@ -22,6 +22,7 @@
+     let type: ToastType = 'info';
+     if (payload.severity === 'critical') type = 'error';
+     if (payload.severity === 'warning') type = 'warning';
++    if (payload.severity === 'clock') type = 'clock';
+     showToast(payload.message, type, payload.durationMs);
+   });
+ 

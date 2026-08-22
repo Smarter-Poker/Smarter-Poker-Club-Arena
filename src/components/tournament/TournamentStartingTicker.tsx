@@ -53,6 +53,7 @@ interface UpcomingTournament {
   clubId: string | null;
   buyIn: number;
   registered: number;
+  isRegistered: boolean;
 }
 
 function readDismissed(): Set<string> {
@@ -186,6 +187,24 @@ export function TournamentStartingTicker() {
           .limit(5);
 
         if (error || cancelled || !data) return;
+
+        const tournamentIds = data.map((t) => t.id);
+        let myRegs = new Set<string>();
+        if (tournamentIds.length > 0) {
+          const auth = await import('../../lib/authUtils').then((m) => m.readLocalSession());
+          if (auth?.userId) {
+            const { data: regData } = await supabase
+              .from('tournament_players')
+              .select('tournament_id')
+              .eq('user_id', auth.userId)
+              .in('tournament_id', tournamentIds)
+              .in('status', ['REGISTERED']);
+            myRegs = new Set(
+              (regData || []).map((r: { tournament_id: string }) => r.tournament_id)
+            );
+          }
+        }
+
         setUpcoming(
           data.map((t: Record<string, unknown>) => ({
             id: String(t.id),
@@ -194,6 +213,7 @@ export function TournamentStartingTicker() {
             clubId: (t.club_id as string) || null,
             buyIn: Number(t.buy_in_amount) || 0,
             registered: Number(t.current_players) || 0,
+            isRegistered: myRegs.has(String(t.id)),
           }))
         );
       } catch (e) {
@@ -243,8 +263,8 @@ export function TournamentStartingTicker() {
             state.fiveMin = true;
             changed = true;
             // If the event starts in more than 2 minutes, give them the 5 minute warning
-            if (sLeft > 120) {
-              busToast(`MTT "${t.name}" starts in 5 minutes!`, 'info', 8000);
+            if (sLeft > 120 && t.isRegistered) {
+              busToast(`MTT "${t.name}" starts in 5 minutes!`, 'clock', 8000);
             }
           }
 
@@ -253,8 +273,8 @@ export function TournamentStartingTicker() {
             state.ninetySec = true;
             changed = true;
             // If it starts in more than 10 seconds, give the 90s warning
-            if (sLeft > 10) {
-              busToast(`MTT "${t.name}" starts in 90 seconds!`, 'warning', 8000);
+            if (sLeft > 10 && t.isRegistered) {
+              busToast(`MTT "${t.name}" starts in 90 seconds!`, 'clock', 8000);
             }
           }
 

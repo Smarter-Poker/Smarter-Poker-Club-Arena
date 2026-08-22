@@ -2534,6 +2534,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       ═══════════════════════════════════════════════════════════════════ */}
       {panelOpen && selectedEntry && clubId && (
         <GameLobbyPanel
+          embedded={Boolean(clubIdOverride)}
           entry={selectedEntry}
           clubId={clubId}
           currentUserId={currentUserId}

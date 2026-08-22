@@ -43,6 +43,9 @@ export interface GameLobbyPanelProps {
   /** Club owner / admin only: opens the existing delete confirmation flow. */
   canDelete?: boolean;
   onDeleteTable?: (tableId: string) => void;
+  /** True inside the MultiTablePage embed: links must not navigate the host
+      page, so the footer back-link becomes a plain close. */
+  embedded?: boolean;
 }
 
 type TournTab = 'overview' | 'structure' | 'payouts';
@@ -79,6 +82,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     onSpinJoin,
     canDelete,
     onDeleteTable,
+    embedded,
   } = props;
 
   const isCash = entry.kind === 'cash';
@@ -711,9 +715,15 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                 Delete Table
               </button>
             )}
-            <Link className="glp__backlink" to={`/clubs/${clubId}`} onClick={onClose}>
-              Back To All Games
-            </Link>
+            {embedded ? (
+              <button type="button" className="glp__backlink" onClick={onClose}>
+                Back To All Games
+              </button>
+            ) : (
+              <Link className="glp__backlink" to={`/clubs/${clubId}`} onClick={onClose}>
+                Back To All Games
+              </Link>
+            )}
           </div>
         </div>
       </aside>

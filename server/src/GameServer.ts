@@ -1347,7 +1347,19 @@ export class GameServer {
         // cash_tables_with_players() does the GROUP BY ... HAVING server-side
         // (PostgREST cannot express it) and returns only tables that already
         // meet the threshold, which is the only thing the loop below cared about.
-        const { data: ready, error } = await supabase.rpc('cash_tables_with_players', {
+        //
+        // 2026-08-22: `cash_tables_needing_engine` is `cash_tables_with_players`
+        // plus "...OR at least one seated human". Below two occupants no engine
+        // existed, so the FIRST person to sit at an empty table got WS close
+        // 4404 from the engine transport and sat on "connecting" until somebody
+        // else arrived — there was nothing to connect TO. The engine is what
+        // publishes the idle snapshot (stage 'waiting', seats, stacks), so its
+        // mere existence is the difference between a real table and an eternal
+        // spinner. A table of horses alone still does not get one.
+        //
+        // It returns `human_count` so the two ideas below can stay separate:
+        // "needs an engine" is NOT "should be dealing". See readyIds.
+        const { data: ready, error } = await supabase.rpc('cash_tables_needing_engine', {
           p_min: 2,
         });
 
@@ -1411,7 +1423,11 @@ export class GameServer {
          */
         const ENGINE_START_STAGGER_MS = 40;
         let startedThisSweep = 0;
-        for (const row of (ready || []) as Array<{ table_id: string; player_count: number }>) {
+        for (const row of (ready || []) as Array<{
+          table_id: string;
+          player_count: number;
+          human_count?: number;
+        }>) {
           // Skip if already running
           if (this.tableEngines.has(row.table_id)) continue;
 
@@ -1424,7 +1440,11 @@ export class GameServer {
           startedThisSweep++;
 
           console.log(
-            `[GameServer] Starting engine for cash table ${row.table_id} (${row.player_count} players)`
+            `[GameServer] Starting engine for cash table ${row.table_id} ` +
+              `(${row.player_count} seated, ${row.human_count ?? 0} human)` +
+              (row.player_count < 2
+                ? ' — lone seat, engine exists so the table is not a spinner'
+                : '')
           );
           const engine = new ServerTableEngine(row.table_id);
           engine.setHub(tableStateHub); // Phase 1.1 PR-2: authoritative WS publisher
@@ -1447,12 +1467,55 @@ export class GameServer {
         // against observable progress: if the discovery RPC still lists the
         // table as ready to deal but its engine has done nothing for three
         // minutes, its loop is gone — drop it so the next cycle rebuilds it.
+        /**
+         * DELIBERATELY NARROWER THAN THE SPAWN LIST (2026-08-22).
+         *
+         * This set feeds `shouldBeDealing` below, which is the ZOMBIE test: a
+         * table that should be dealing and has made no progress for 180s gets
+         * its engine killed. A table with one seated human makes no progress
+         * BY DESIGN — you cannot deal to one player — so including it here
+         * would kill and rebuild that engine every three minutes, which is the
+         * fleet-wide kill loop of PR #281 re-created in a new place.
+         *
+         * So: two or more occupants is what "should be dealing" means, exactly
+         * as before. A lone seat gets an engine and is left alone in it.
+         */
         const readyIds = new Set(
-          ((ready || []) as Array<{ table_id: string }>).map((r) => r.table_id)
+          ((ready || []) as Array<{ table_id: string; player_count: number }>)
+            .filter((r) => r.player_count >= 2)
+            .map((r) => r.table_id)
         );
         for (const [id, engine] of this.tableEngines) {
           if (!engine.isRunning()) {
             this.tableEngines.delete(id);
+            /**
+             * 2026-08-22: this branch used to delete the engine and trust that
+             * whatever cleared `running` had already torn it down. That is true
+             * of every path today — killForRestart and stop() both do full
+             * teardown at source — but it is trust, not enforcement, and the
+             * cost of it being wrong once is a leaked heartbeat entry and armed
+             * deadlines belonging to a table nothing owns any more.
+             *
+             * `stop()` cannot be that enforcement: its first line is
+             * `if (!this.running) return`, so calling it here would be a no-op
+             * dressed up as a safety net — worse than nothing, because the next
+             * reader would believe it.
+             *
+             * reconcileTeardown() is the real check. It asks whether this
+             * engine still OWNS the table (no successor has taken it) while
+             * holding scheduler entries it should have released, cancels them
+             * if so, and names them. Silent when the invariant holds, which is
+             * every path we know of today.
+             */
+            const leaked = engine.reconcileTeardown();
+            if (leaked) {
+              reportError(
+                new Error(
+                  'Engine for ' + id + ' stopped without tearing down: ' + leaked + ' still armed'
+                ),
+                'GameServer.engine_teardown_leak'
+              );
+            }
             // Leave the hub room alone for tournament tables: their
             // TournamentManager rebuilds the engine and the same players stay
             // connected throughout. dropTable() now preserves subscribers

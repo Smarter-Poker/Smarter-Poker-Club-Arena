@@ -7,6 +7,44 @@
 
 ---
 
+## Cowork session 2026-08-22 (11) — the rake cap froze two live tournaments for 29 hours (PR #320)
+
+Follow-up to the session-10 handoff's first pending item: postgres was logging
+`tournaments_rake_within_10_pct` violations continuously — hundreds per hour,
+all day, not just at engine boot. The suspected cause (a legacy
+TournamentRecurringService config authoring an over-cap split) was WRONG:
+every current writer goes through buyInFor/splitBuyIn, which floors the fee
+and cannot violate the check.
+
+THE ACTUAL BUG: a NOT VALID constraint skips validating existing rows when it
+is ADDED, but still checks every UPDATE, because an update writes a new row
+version. Two tournaments created 2026-08-21 18:02-18:03 UTC by the
+pre-floor-fix engine (Prime Time Main Event 22+3 = 12%, Evening Mystery
+Bounty 13+2 = 13.3%) were mid-flight when the constraint landed minutes
+later. From then on NO engine write to either row could ever succeed: both
+sat RUNNING with updated_at frozen at created_at for 29 hours while the
+engine retried on every tick — that retry loop WAS the "boot noise".
+
+FIX (migration 20260822230000_repair_overcap_rake_active_tournaments.sql,
+applied to prod via Supabase MCP before merging): re-cut the fee out of the
+unchanged player-paid total (fee = floor(total x 0.1), prize = total - fee —
+the same arithmetic as splitBuyIn and the CHECK), generically for any active
+violating row, idempotent, with post-apply assertions. Completed rows keep
+their true over-cap history — rewriting settled money would falsify books.
+
+VERIFIED IN PROD: repair ran 22:55:51 UTC; both tournaments were COMPLETED by
+the engine within minutes, and the violation count since 22:56 is ZERO (was
+~20/minute). Also verified this session: production serves the parity bundle
+(build-info ca_sha matches World Hub main), the 38 Midway schedules are
+active with 9 spawns in the trailing 3h, and the stranded session-10
+changelog entry was rebased onto main and landed as PR #301. One new orphan
+timed spawn (Saturday Speedway 21:30, key claimed, insert lost to the #302
+DB-starvation window) is inert; next Saturday gets a fresh key.
+
+LESSON FOR FUTURE CONSTRAINT MIGRATIONS: adding a CHECK ... NOT VALID to a
+table the engine continuously updates MUST ship a data repair for in-flight
+rows in the same migration, or those rows become permanently unwritable.
+
 ## Cowork session 2026-08-22 (10) — TOURNAMENT TEMPLATE PARITY + THE MIDWAY WEEKLY SCHEDULE (PR #279)
 
 Two asks from Dan: (1) study how PokerStars runs its daily/weekly/monthly MTT
@@ -87,11 +125,74 @@ on schedule. World Hub main is the sync build of 810aa5a.
 DELIVERY NOTE: main now requires PRs and api.github.com is proxy-blocked from
 this sandbox, so this session bootstrapped .github/workflows/agent-open-pr.yml
 (found authored-but-unshipped on Dan's disk) by including it in its own
-agent/** branch: the push opened PR #279 itself, Autopilot landed it. Base
+agent/\*\* branch: the push opened PR #279 itself, Autopilot landed it. Base
 drift (the Mac clone's HEAD was never pushed under that SHA) was reconciled by
 three-way merging every file against origin/main before proposing; the #264
 ledger guard caught the two credit sites written pre-drift and both now go
 through fn_credit_and_log.
+
+---
+
+## Cowork session 2026-08-22 (11) — SPIN ECONOMICS: verified over 5,091 games, and the rule nothing enforced
+
+`src/config/spinSpec.ts` sets one rule — `E[multiplier] = seats × (1 − rake)` —
+and derives everything from it. Nobody had ever checked whether the live games
+obey it. Full working in
+`.agent/audits/2026-08-22-spin-economics-verification.md`.
+
+**The draw is correct.** Post-cutover (2026-08-21 onward, n = 2,381) the
+realized expectation is **2.7429** against a design of **2.763773** — well
+inside one standard error — and every tier lands within noise of its designed
+share, including the `4x` tier at 8.74% against 9.00%. The all-time table looks
+badly skewed only because it averages the three disagreeing tables spinSpec
+replaced; `4x` does not appear in a single pre-2026-08-20 game because those
+tables did not have it. No Spin has ever drawn an off-ladder multiplier, and no
+100x has landed yet against an expectation of 0.24 games in the window.
+
+**The hole.** spinSpec says in capitals that the buy-in is the whole charge and
+`buy_in_fee` MUST be 0, and states the cost of breaking it: a true edge of 14.7%
+against an advertised 7.87%. Every layer believed that. None enforced it.
+**7,120 of 9,603 spins carried a fee** — all of them before the cutover fixed
+the writer at 2026-08-20 19:23 UTC.
+
+Believing it was worse than not knowing it, because both things that watch the
+reserve skip a fee-bearing Spin:
+
+```
+fn_spin_sweep_unbooked ... AND COALESCE(t.buy_in_fee, 0) = 0
+v_spin_reserve_health  ... AND COALESCE(t.buy_in_fee, 0) = 0   (unbooked_24h)
+```
+
+Each filter is right on its own. Together the backstop skipped the game AND the
+counter that exists to notice skipped games did not count it. **2,116 spins ran
+and were never booked to `spin_reserve_ledger` for exactly this reason** —
+12,431.04 that should have entered the reserve, 11,488.00 of prizes that never
+left it — and `unbooked_24h` read 0 throughout.
+
+**What changed.** A `NOT VALID` check constraint,
+`tournaments_spin_no_extra_rake`, refuses the next one while leaving the 7,120
+historical rows as historical fact; it tests both `variant` and
+`tournament_type`, and the migration refuses to install itself if a fee-bearing
+Spin was created in the previous 24 hours. `v_spin_reserve_health` gains
+`fee_violations_24h`, and `/api/cron/spin-sweep` raises `spin_charged_a_fee`
+(World Hub PR #665). The exclusions stay; the silence does not.
+
+Proven against production in a rolled-back transaction: a spin given a fee is
+REFUSED, a fee-free spin is ACCEPTED, a non-spin with a fee is unaffected, and
+the 7,120 historical rows are untouched. The probe uses 0.90 + 0.10 rather than
+1.00 + 0.10 on purpose — `fn_enforce_whole_dollar_buyin` already refuses the
+latter and triggers fire before check constraints, so the obvious probe would
+have proven only that the older guard works.
+
+**Left for Dan, deliberately.** The 2,116 historical games are still unbooked.
+Booking them moves real money through the reserve pool, so it is a decision, not
+a migration side effect. Three options and their numbers are in §4 of the audit.
+
+12 new cases in `tests/config/spinNoExtraRake.test.ts`, each checked by
+reintroducing the regression it guards. Suite: 244 files, 3,105 passed, tsc
+clean.
+
+---
 
 ## Cowork session 2026-08-22 (10) — the hunters' memory now survives a deploy (PR #291)
 
@@ -309,6 +410,71 @@ a real frozen-table path that reached production once:
 **Mutation-checked, not just green:** reverting the wake grace to the old full
 clock reset makes the channel test fail (`expected 0 to be greater than 0`). A
 test that passes against the bug it claims to pin is not a test.
+
+## Cowork session 2026-08-22 (7) — CLEARING THE HANDOFF BACKLOG
+
+### Sessions (5) and (6), confirmed in production
+
+30 minutes after both deploys: `engine_recovery_events` **completely empty** —
+zero `dealing_loop_dead`, zero `start_failed`, zero anything, from ~4.5
+kills/min. Hand throughput **29/min -> 83/min average**, peak 188 across 102
+tables, zero-hand minutes down from 10.5% to 6.5%.
+
+### Handoff item 3 — pending_deadlines: CLOSED, no change needed
+
+The handoff called this a dead write needing "wire rehydration or delete".
+Neither: B10 (2026-08-20) already made the reasoned call in
+`checkCrashRecovery()`. Every persisted deadline belongs to the hand being
+abandoned, so reinstating them would fire turn timers for a hand that no longer
+exists. It is kept for forensics and the PR-E full-resume work, and the comment
+says so. Recorded here so the next agent does not re-litigate it.
+
+### Handoff item 2 — the lone seated human
+
+`discoverCashTables()` spawned engines from
+`cash_tables_with_players(p_min => 2)`. Below two occupants no engine exists, so
+the first person to sit at an empty table got WS close 4404 and sat on
+"connecting" until somebody else arrived. There was nothing to connect TO. The
+engine is what publishes the idle snapshot (stage `waiting`, seats, stacks), so
+its mere existence is the difference between a real table and a spinner.
+
+New RPC `cash_tables_needing_engine(p_min)` = the old one **OR at least one
+seated human**. Applied to production before the branch was pushed, per CHECK 17. Verified on apply: 44 tables before, 44 after, 0 lone-seat tables added —
+a no-op today, active only for the case it fixes.
+
+**The wiring trap, avoided:** `readyIds` also feeds `shouldBeDealing`, which is
+the ZOMBIE test — should be dealing plus 180s of no progress equals kill. A
+table with one human makes no progress BY DESIGN. Widening `readyIds` would
+have re-created PR #281's fleet-wide kill loop in a new place. So the spawn list
+widened and `readyIds` did not: it is now filtered to `player_count >= 2`.
+
+**Dead column found:** `table_seats.horse_id` is never populated — 278 seated
+horses in production, zero with it set. `profiles.is_horse` is the only source
+of truth, which is what `loadSeatedPlayers()` already joins for. The new RPC
+joins profiles for the same reason. The column is left in place (dropping is
+Tier 3) but must not be trusted.
+
+### Handoff item 4 — the reaper's trust
+
+The reaper deletes a not-running engine without tearing it down, trusting that
+whatever cleared `running` already did.
+
+**The obvious fix is a no-op and would have shipped as one.** `stop()` begins
+`if (!this.running) return`, so calling it from the reaper does nothing at all —
+worse than nothing, because the next reader would believe the safety net was
+real.
+
+`reconcileTeardown()` instead: does this engine still OWN the table while
+holding scheduler entries it should have released? If so, name them and cancel
+them. Silent for every path that exists today. The ownership guard is what makes
+it safe — if a REPLACEMENT engine has claimed the tableId those entries are ITS
+entries, and cancelling them is exactly how a table permanently loses its
+watchdog, so a superseded instance touches nothing. That case is pinned by test.
+
+### Tests
+
+`TeardownReconcile.test.ts` (new, 4). Server suite **1,116 passed / 108 files**;
+`tsc --noEmit` clean on `server/tsconfig.json`.
 
 ---
 

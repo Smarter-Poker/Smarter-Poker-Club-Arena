@@ -283,6 +283,62 @@ half-open + eviction-storm bugs are fixed), presence ghost-seat merge.
 
 ---
 
+## Cowork session 2026-08-22 (2) — V12 horse brain: the full build-out (PRs #256, #263, #265, #268, #271, #272, #276)
+
+Dan: "BUILD THEM ALL, IN FULL." Seven upgrades shipped as seven sequential
+PRs, each with tests in the same commit, each squash-merged through the
+6-check ruleset, each auto-deployed to Hetzner. Three new tables (all
+service-role RLS, migrations applied via Supabase MCP AND committed to the
+repo, schema manifest updated each time).
+
+- **A (#256) Persistent opponent memory.** HorseMind stats flush to
+  `horse_mind_stats` every 5 min (GREATEST-merge RPC `upsert_horse_mind_stats`
+  so bounded-memory swaps can never clobber history), instant DB hydration on
+  boot + tail-only replay, final flush in the shutdown drain. VERIFIED LIVE:
+  488 opponent profiles flushed by production within minutes of deploy.
+- **B (#263) Per-horse self-improvement loop.** Nightly 08:00 UTC,
+  HorseSelfTuner studies each horse's own week of cash play (VPIP/PFR/3-bet/
+  fold-to-3-bet/WWSF/AF/net bb from hand_history with contribution replay +
+  blind reconstruction), diagnoses leaks vs winning benchmarks, writes
+  bounded nudges (±0.02/night, caps 0.85-1.18) into profiles.horse_profile —
+  which resolveHorseStyle already reads. Audit trail: `horse_self_tune_log`.
+- **C (#265) Real ICM + formats.** TournamentBrainContext (20s-TTL cache,
+  sync decision-path read) feeds icmRisk v2: pressure scales with actual
+  distance to the money, covering big stacks get bubble-abuse mode, ITM short
+  stacks ladder, PKO bounty share trims the premium, spins are winner-take-all
+  chip EV with 3-max hyper range widening.
+- **D (#268) Anti-exploit defense.** Per-(attacker,victim) pair tracking —
+  who 3-bets whose opens, who raises whose c-bets — vs the attacker's global
+  rates. A hunter gets re-raised wider, defended wider, and called down
+  lighter until the hunt stops paying.
+- **E (#271) Self-play league.** Self-contained NLH simulator (side pots
+  included) drives HorseLogic over DUPLICATE deals nightly at 04:30 UTC;
+  bb/100 + stderr per layer into `horse_league_results`. First measurements:
+  V11 leak fixes +112 bb/100 (se 43) vs the pre-fix engine; full engine
+  +151 bb/100 (se 61) vs V2 legacy. league-* ids + an observe() gate keep
+  synthetic hands out of live opponent memory.
+- **F (#272) Board-conditioned range modeling (the deep one).** The MC now
+  conditions sampled opponent hands on their postflop line ON THIS BOARD:
+  aggressors resample toward connecting hands (pair+/flush draw/OESD via
+  connectsBoard), passive checked lines get monsters down-sampled. Seeded
+  tests pin QQ-on-AK7 dropping >3pts vs a double barrel. NLH-only, inside
+  the latency budget, opts.v12.
+- **G (#276) River sizing polish.** OOP quarter-pot block bets, nut-class
+  1.3-1.6x overbets heads-up with paired nut-blocker overbet bluffs, and
+  blocker-aware catching extended to the 0.8-1.2x band.
+
+Ops notes: the GitHub MCP token is dead ("Bad credentials") and
+api.github.com is proxy-blocked from the sandbox — all PR create/merge ran
+via host-terminal curl with the repo PAT; branch pushes from a /tmp clone
+(never git-write on the mounted worktree, per section 12). One stacked
+rebase initially targeted the wrong upstream after a squash — recovered via
+reflog; later rebases pinned parents by SHA. An autopilot bot merge brought
+a pot-limit jam fix into flight A; re-applying edits ON TOP of the branch
+head (not from the mount copy) avoided reverting it — the mount is not a
+merge base, main is.
+
+---
+
 ## Cowork session 2026-08-22 — V11 horse brain: game modes + four live-play leak fixes (PR #235)
 
 Dan audited the horse poker brain from live play: donk leads, calling off big

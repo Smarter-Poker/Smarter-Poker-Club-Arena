@@ -343,6 +343,7 @@
     "horse_opponent_reads",
     "horse_personality",
     "horse_relationships",
+    "horse_self_tune_log",
     "horse_session_analytics",
     "horse_session_stats",
     "horse_source_assignments",

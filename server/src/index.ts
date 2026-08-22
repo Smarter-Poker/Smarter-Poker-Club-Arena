@@ -36,6 +36,7 @@ import {
   startHorseMindPersistence,
   stopHorseMindPersistence,
 } from './services/HorseMindPersistence.js';
+import { startHorseSelfTuner } from './services/HorseSelfTuner.js';
 import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -99,6 +100,10 @@ httpServer.listen(PORT, () => {
     await hydrateHorseMind(lastFlush);
     startHorseMindPersistence();
   })();
+  // V12 (2026-08-22): nightly per-horse self-study — every horse reviews its
+  // own week of play, diagnoses leaks vs winning benchmarks, and nudges its
+  // own profile dials. See HorseSelfTuner.ts + horse_self_tune_log.
+  startHorseSelfTuner();
   // V7 (2026-07-24): humanlike session rhythms — horses stand up after real
   // sessions via the SAME hand-boundary-safe leaveTable() path humans use;
   // the fleet manager reseeds fresh horses within its 30s cycle.

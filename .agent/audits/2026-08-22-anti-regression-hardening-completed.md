@@ -121,9 +121,10 @@ the union-first order of operations.
 
 ---
 
-## Task 2 — NOT DONE, and it is the one with a date on it
+## Task 2 — DONE, and verified end to end
 
-`GH_PAT` expires **2026-11-19 20:14:28 UTC** — 89 days from this session.
+`GH_PAT` expires **2026-11-19 20:14:28 UTC**, 89 days from this session, and
+nothing was watching for it. Autopilot no longer depends on it.
 
 The workflow side is shipped in all 7 repos and is byte-identical across them:
 `agent-autopilot.yml` mints a GitHub App installation token via
@@ -133,28 +134,51 @@ Precedence is App token -> `GH_PAT` -> `GITHUB_TOKEN` with a warning.
 does not trigger downstream workflows, so the commit lands and never publishes.
 
 With no App configured the mint step is `skipped` and behaviour is exactly what
-it was — confirmed in the Club Arena run after the merge: step skipped,
-`token OK`, sweep normal. So the App can be created at any time with no second
-deploy.
+it was — confirmed in the Club Arena run right after that merge: step skipped,
+`token OK`, sweep normal. That property is why the App could be dropped in
+later the same day with no second deploy and no half-migrated window.
 
 `shipped-invariants` pins the precedence, because putting `GITHUB_TOKEN` first
 is a one-character edit whose only symptom is that things stop publishing days
 later.
 
-**What is left, and it needs Dan** (a credential — one of the few legitimate
-human exceptions in RULE 0):
+**Dan created the App the same day.** `Smarter-Poker-Autopilot`, App id
+`4680372`, installed on every repo in the account.
+`vars.AUTOPILOT_APP_ID` and `secrets.AUTOPILOT_APP_PRIVATE_KEY` are set in all
+7 repos and read back to confirm, not assumed from an exit code.
 
-1. Create a GitHub App on the `Smarter-Poker` account with **Contents: R/W,
-   Pull requests: R/W, Workflows: R/W, Metadata: Read, Checks: Read**.
-2. Install it on all 7 repos.
-3. Generate a private key.
-4. Then, per repo:
-   `gh variable set AUTOPILOT_APP_ID --repo Smarter-Poker/<r> --body <id>`
-   `gh secret set AUTOPILOT_APP_PRIVATE_KEY --repo Smarter-Poker/<r> < key.pem`
-5. Verify the mint step reports `success` rather than `skipped`, and that
-   `token OK — can read <repo>` still appears.
+**The evidence, in the order it actually proves something:**
 
-**Checks: Read is not decoration.** The current fine-grained PAT cannot read
-check runs on commander-shared — `gh pr checks` returns 403 there — so the one
-command for asking "did the gate actually run" does not work in the repo where
-it was most needed today.
+1. `Mint a GitHub App installation token` reports `success` in all 7 repos —
+   it was `skipped` an hour earlier, so the step is genuinely running.
+2. `check-token.sh` prints `token OK` and **no longer prints
+   `GH_PAT expires in 89 days`**. That absence is the proof the token in
+   `GH_TOKEN` is the App's: an installation token has no user, so `gh api user`
+   403s and the expiry probe returns nothing. A run that starts printing an
+   expiry again has silently fallen back to the PAT.
+3. PR #215's auto-merge was enabled by **`app/smarter-poker-autopilot`**, not
+   by a user. That is identity, not configuration.
+4. #215 merged as `64b9b566` and **`build-for-world-hub.yml` fired on it** —
+   the exact thing a `GITHUB_TOKEN` merge would not have done. World Hub `main`
+   took `3f346eaa chore(club-arena): sync build 64b9b566` at 08:00:25 UTC and
+   `https://smarter.poker/hub/club-arena/build-info.json` served
+   `ca_sha: 64b9b566` at 08:03 UTC.
+
+Steps 1 and 2 say the credential works. Only steps 3 and 4 say the credential
+**publishes**, and publishing is the half that has failed silently here before.
+
+`GH_PAT` is now unused by Autopilot but still present as the middle rung of the
+`||` chain. Leave it until 2026-11-19 as a fallback; after that date it is dead
+weight and can be deleted from all 7 repos.
+
+#215 also corrected `check-token.sh`, whose remediation messages still told you
+to rotate a PAT. They now name the three things that can actually break an App
+credential — uninstalled, `AUTOPILOT_APP_ID` unset, PEM regenerated — in that
+order, the last being likeliest because generating a new key invalidates the
+old one instantly and silently.
+
+**On Checks: Read**, which the App has and the old PAT did not: the PAT cannot
+read check runs on commander-shared — `gh pr checks` returns 403 there — so the
+one command for asking "did the gate actually run" did not work in the repo
+where it was most needed during this session. Verification had to go through
+`gh run list` and the jobs API instead. That should now work directly.

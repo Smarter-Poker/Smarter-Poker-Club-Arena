@@ -3479,6 +3479,14 @@ export default function TablePage({
           // is an estimate (live stack at leave); the card annotates it
           // "Pending Settlement" so the estimate is never read as settled.
           plPending: !!result.deferred,
+          // Phase 4 (2026-08-22): and the app-root host reconciles it — it
+          // polls for the settlement's wallet_transactions cashout row and
+          // swaps the estimate for the settled figure. This component is
+          // about to navigate away and unmount, so the host must be able to
+          // find the row on its own.
+          pendingCashout: result.deferred
+            ? { tableId, userId, sinceMs: Date.now() }
+            : undefined,
         });
 
         // Now actually leave. These three used to fire together from the

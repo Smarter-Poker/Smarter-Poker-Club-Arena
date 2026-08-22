@@ -14,11 +14,42 @@
  * "Pending Settlement". These pin both directions: the annotation appears
  * for a deferred payload, and never for a settled one — an annotation that
  * shows up on every card would train players to ignore it.
+ *
+ * Phase 4 adds the reconciliation: while the pending card is open the host
+ * polls for the settlement's wallet_transactions cashout row (written by the
+ * engine's processLeavePending via atomic_credit_wallet_and_log) and swaps
+ * the estimate for `amount - totalBuyIn`. The third test pins the swap; the
+ * fourth pins that a payload WITHOUT pendingCashout never queries at all.
  */
 
 import React from 'react';
 import { render, screen, act, cleanup } from '@testing-library/react';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+/* The ledger read the host performs at settlement. One row queue: a test
+   pushes the rows it wants found; an empty queue answers `null` (row not
+   landed yet), which is also what the non-polling tests should never even
+   ask for — `fromCalls` counts the asks. */
+const ledgerRows: Array<{ amount: number; created_at: string } | null> = [];
+let fromCalls = 0;
+vi.mock('../../src/lib/supabase', () => {
+  const builder: any = {
+    select: () => builder,
+    eq: () => builder,
+    gte: () => builder,
+    order: () => builder,
+    limit: () => builder,
+    maybeSingle: async () => ({ data: ledgerRows.shift() ?? null, error: null }),
+  };
+  return {
+    supabase: {
+      from: () => {
+        fromCalls += 1;
+        return builder;
+      },
+    },
+  };
+});
 
 import SessionSummaryHost from '../../src/components/session/SessionSummaryHost';
 import {
@@ -44,7 +75,11 @@ const cashPayload = (over: Partial<SessionSummaryPayload> = {}): SessionSummaryP
 });
 
 describe('SessionSummaryHost — Pending Settlement annotation', () => {
-  beforeEach(() => clearSessionSummary());
+  beforeEach(() => {
+    clearSessionSummary();
+    ledgerRows.length = 0;
+    fromCalls = 0;
+  });
   afterEach(() => {
     cleanup();
     clearSessionSummary();
@@ -63,5 +98,45 @@ describe('SessionSummaryHost — Pending Settlement annotation', () => {
     /* And the card itself did render — the absence above must never pass
        because nothing rendered at all. */
     expect(screen.getByText('Session Complete')).toBeTruthy();
+    /* A payload with no pendingCashout must never touch the ledger. */
+    expect(fromCalls).toBe(0);
+  });
+
+  it('swaps the estimate for the settled figure when the cashout row lands', async () => {
+    /* Settlement: 1,400 cashed out against 1,000 bought in = +400, where the
+       estimate said +157. The first (immediate) poll finds the row. */
+    ledgerRows.push({ amount: 1400, created_at: new Date().toISOString() });
+    render(<SessionSummaryHost />);
+    await act(async () => {
+      publishSessionSummary(
+        cashPayload({
+          plPending: true,
+          pendingCashout: { tableId: 't-1', userId: 'u-hero', sinceMs: Date.now() },
+        })
+      );
+      /* Let the immediate check's microtasks drain. */
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('Pending Settlement')).toBeNull();
+    expect(screen.getByText('Session Complete')).toBeTruthy();
+    expect(fromCalls).toBeGreaterThan(0);
+  });
+
+  it('keeps the annotation while the row has not landed', async () => {
+    /* Queue stays empty — every poll answers null. */
+    render(<SessionSummaryHost />);
+    await act(async () => {
+      publishSessionSummary(
+        cashPayload({
+          plPending: true,
+          pendingCashout: { tableId: 't-1', userId: 'u-hero', sinceMs: Date.now() },
+        })
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText('Pending Settlement')).toBeTruthy();
+    expect(fromCalls).toBeGreaterThan(0);
   });
 });

@@ -4530,6 +4530,74 @@ export default function TablePage({
           const breakChanKey = `t-break-${table.tournament_id}`;
 
           if (!isMounted) return;
+
+          /* ── Leaving a finished tournament: ONE implementation, TWO events ──
+             Dan 2026-08-20: "at the end of the tournament when you lose, you
+             need to be auto removed from the table, placed inside the lobby
+             and your tournament result card shown … winners should be auto
+             removed at the end as well."
+
+             This used to be declared INSIDE the `player_eliminated` branch,
+             which is why only the losing half of that sentence worked: the
+             winner's exit had no function to call. It is hoisted to the
+             subscription scope so `tournament_winner` can use the identical
+             path — same payload, same card, same navigation — rather than a
+             second copy that drifts from this one.
+
+             `exitStarted` lives here, at the lifetime of the subscription, so
+             a duplicate or retried broadcast cannot schedule two navigations.
+             A player finishes a tournament exactly once. */
+          let exitStarted = false;
+
+          const goToLobbyWithResult = (position: number, prize: number, delayMs: number) => {
+            if (exitStarted) return;
+            exitStarted = true;
+
+            const tid = table.tournament_id || tableStateRef.current.tournamentId;
+
+            setTimeout(() => {
+              void (async () => {
+                const full = tid ? await fetchTournamentResult(tid, userId) : undefined;
+                publishSessionSummary({
+                  duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
+                  handsPlayed: handsPlayedRef.current,
+                  handsWon: handsWonRef.current,
+                  totalRebuys: totalRebuysRef.current,
+                  profitLoss: 0,
+                  biggestPot: biggestPotRef.current,
+                  peakStack: peakStackRef.current,
+                  tableName: tableStateRef.current.tableName,
+                  tournament: {
+                    ...(full ?? {
+                      entrants: null,
+                      bountyWinnings: 0,
+                      knockouts: 0,
+                      rebuys: 0,
+                      addOns: 0,
+                      prize: 0,
+                      finishPlace: null,
+                    }),
+                    name: full?.name || tableStateRef.current.tableName || 'Tournament',
+                    /* The broadcast is authoritative for these two: it is what
+                       the engine just decided, whereas the row may not have
+                       been written yet when we read it. */
+                    finishPlace: position || full?.finishPlace || null,
+                    prize: prize || full?.prize || 0,
+                  },
+                });
+
+                const clubId = actualClubIdRef.current;
+                if (clubId) {
+                  navigate(`/clubs/${clubId}`);
+                } else {
+                  // No club to land in (should not happen) — the old results
+                  // page beats stranding them at a dead table.
+                  navigate(`/tournament-results?id=${tid ?? ''}`);
+                }
+              })();
+            }, delayMs);
+          };
+
           const breakChan = masterBus.getOrCreateChannel(breakChanKey);
           breakChan
             .on('broadcast', { event: 'tournament_event' }, (payload: any) => {
@@ -4786,56 +4854,11 @@ export default function TablePage({
                      knockouts, bounties, rebuys — rather than the two numbers
                      that fit in the old state object, because
                      fetchTournamentResult is already written and the elimination
-                     broadcast only knows position and prize. */
-                  const goToLobbyWithResult = (
-                    position: number,
-                    prize: number,
-                    delayMs: number
-                  ) => {
-                    const tid = table.tournament_id || tableStateRef.current.tournamentId;
+                     broadcast only knows position and prize.
 
-                    setTimeout(() => {
-                      void (async () => {
-                        const full = tid ? await fetchTournamentResult(tid, userId) : undefined;
-                        publishSessionSummary({
-                          duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
-                          handsPlayed: handsPlayedRef.current,
-                          handsWon: handsWonRef.current,
-                          totalRebuys: totalRebuysRef.current,
-                          profitLoss: 0,
-                          biggestPot: biggestPotRef.current,
-                          peakStack: peakStackRef.current,
-                          tableName: tableStateRef.current.tableName,
-                          tournament: {
-                            ...(full ?? {
-                              entrants: null,
-                              bountyWinnings: 0,
-                              knockouts: 0,
-                              rebuys: 0,
-                              addOns: 0,
-                              prize: 0,
-                              finishPlace: null,
-                            }),
-                            name: full?.name || tableStateRef.current.tableName || 'Tournament',
-                            /* The broadcast is authoritative for these two: it
-                               is what the engine just decided, whereas the row
-                               may not have been written yet when we read it. */
-                            finishPlace: position || full?.finishPlace || null,
-                            prize: prize || full?.prize || 0,
-                          },
-                        });
-
-                        const clubId = actualClubIdRef.current;
-                        if (clubId) {
-                          navigate(`/clubs/${clubId}`);
-                        } else {
-                          // No club to land in (should not happen) — the old
-                          // results page beats stranding them at a dead table.
-                          navigate(`/tournament-results?id=${tid ?? ''}`);
-                        }
-                      })();
-                    }, delayMs);
-                  };
+                     2026-08-22: `goToLobbyWithResult` moved up to the
+                     subscription scope so the `tournament_winner` branch below
+                     shares this exact path. See the note at its declaration. */
 
                   /* AUDIT 2026-08-20: `=== 1` on a value that arrives as
                      untyped JSON over a realtime broadcast. The same handler
@@ -4872,6 +4895,35 @@ export default function TablePage({
                       seat?.id === elimData.userId ? { ...seat, status: 'eliminated' } : seat
                     ),
                   }));
+                }
+              } else if (data?.type === 'tournament_winner') {
+                /* ── The champion's exit (2026-08-22) ─────────────────────
+                   Dan 2026-08-20: "winners should be auto removed at the end
+                   as well." Until now they never were, and it was not a bug
+                   in this file — nothing was ever SENT. finishTournament
+                   closed the tables, released the seats and stopped without
+                   broadcasting, so the winner branch above (position === 1)
+                   was unreachable: eliminatePlayer is only ever called with
+                   places >= 2, by construction, precisely so that 1st stays
+                   the winner's. The engine now emits `tournament_winner` from
+                   finishTournament, and this is where it lands.
+
+                   Its own event rather than `player_eliminated` with position
+                   1 because TournamentPage and TournamentLobbyPage both raise
+                   an elimination toast on that event — announcing the
+                   champion as knocked out is worse than saying nothing.
+
+                   Same 7s beat as the winner branch above, for the same
+                   reason: the celebration overlay has to play before the
+                   player is moved. */
+                const winData = data.payload || {};
+                if (winData.userId && winData.userId === userId) {
+                  const prize = Number(winData.prize) || 0;
+                  setTournamentWinner({
+                    prize,
+                    name: tableStateRef.current.tableName || 'Tournament',
+                  });
+                  goToLobbyWithResult(1, prize, 7000);
                 }
               } else if (data?.type === 'table_rebalance') {
                 // Players moved between tables — check if current user was moved

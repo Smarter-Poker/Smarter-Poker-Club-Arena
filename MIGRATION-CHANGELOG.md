@@ -270,6 +270,48 @@ table.
 
 ---
 
+## Cowork session 2026-08-22 (8) — THE CLIENT SOCKETS
+
+### Handoff item 5 — waking a backgrounded tab killed a healthy channel socket
+
+`EngineChannelClient`'s watchdog skips its check while `document.visibilityState`
+is `hidden`, but it never reset the clock on the way back. So the first tick
+after any background longer than `STALE_HARD_MS` read the entire background as
+silence and tore the socket down — dropping club presence, lobby, tournament
+events and `FINANCIAL_UPDATE` (the wallet) for a reconnect nobody needed. Every
+phone user who left the app for a minute paid that.
+
+The game socket already knew BOTH halves of this lesson. A full reset is the
+opposite error: that is precisely the hole that let a half-open socket survive
+forever under frequent tab switching, which round 2 fixed with a bounded grace.
+The channel socket now mirrors it — forgiven down to a bounded debt
+(`STALE_HARD_MS - WATCHDOG_TICK_MS`), so a genuinely dead link is still caught
+within one tick of the wake. The listener is removed in `stopWatchdog()`
+alongside the timer, because on MultiTablePage several of these come and go.
+
+### Handoff item 9 — the recovery logic that shipped pinned only by review
+
+The handoff was honest that rounds 1 and 2 rewrote how the game socket survives
+a bad link and added no client tests for any of it.
+`tests/engine-state-client-recovery.test.ts` (new, 5) closes that. Every case is
+a real frozen-table path that reached production once:
+
+- a handshake stuck in `CONNECTING` is torn down rather than waited on forever;
+- close 4901 stands down instead of fighting the mux — a reconnect there is the
+  mutual-eviction ping-pong where neither half ever holds a usable socket;
+- close 4404 keeps retrying, because the engine returns it for ~2 minutes after
+  every restart while it rehydrates, and treating it as terminal left the table
+  dead until a manual refresh;
+- a `getToken()` rejection retries. This was the worst path of them all: the
+  ladder ended, status stayed `connecting`, and the auto-reload failsafe never
+  fired.
+
+**Mutation-checked, not just green:** reverting the wake grace to the old full
+clock reset makes the channel test fail (`expected 0 to be greater than 0`). A
+test that passes against the bug it claims to pin is not a test.
+
+---
+
 ## Cowork session 2026-08-22 (6) — MOBILE TABLE PHASE 3: pending settlement, dead props, probe-verified non-changes (PR #280)
 
 Follow-on to the Phase 1/2 mobile table sessions (#243, #252). Three changes,

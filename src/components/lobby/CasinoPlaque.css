@@ -65,10 +65,22 @@
     inset 0 -1px 1px rgba(0, 0, 0, 0.7),
     0 0 0 1px rgba(0, 0, 0, 0.5);
 }
-.cplaque__screws i:nth-child(1) { top: 9px; left: 10px; }
-.cplaque__screws i:nth-child(2) { top: 9px; right: 10px; }
-.cplaque__screws i:nth-child(3) { bottom: 9px; left: 10px; }
-.cplaque__screws i:nth-child(4) { bottom: 9px; right: 10px; }
+.cplaque__screws i:nth-child(1) {
+  top: 9px;
+  left: 10px;
+}
+.cplaque__screws i:nth-child(2) {
+  top: 9px;
+  right: 10px;
+}
+.cplaque__screws i:nth-child(3) {
+  bottom: 9px;
+  left: 10px;
+}
+.cplaque__screws i:nth-child(4) {
+  bottom: 9px;
+  right: 10px;
+}
 
 /* ── LEFT: identity ── */
 .cplaque__identity {
@@ -172,10 +184,7 @@
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: repeating-conic-gradient(
-    rgba(255, 255, 255, 0.14) 0deg 6deg,
-    transparent 6deg 30deg
-  );
+  background: repeating-conic-gradient(rgba(255, 255, 255, 0.14) 0deg 6deg, transparent 6deg 30deg);
   -webkit-mask: radial-gradient(circle, transparent 64%, #000 66%, #000 100%);
   mask: radial-gradient(circle, transparent 64%, #000 66%, #000 100%);
   pointer-events: none;
@@ -290,7 +299,9 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.3),
     inset 0 -2px 3px rgba(0, 0, 0, 0.35),
     0 3px 8px rgba(0, 0, 0, 0.5);
-  transition: filter 0.12s ease, transform 0.08s ease;
+  transition:
+    filter 0.12s ease,
+    transform 0.08s ease;
 }
 .cplaque__cta:hover:not(:disabled) {
   filter: brightness(1.1);

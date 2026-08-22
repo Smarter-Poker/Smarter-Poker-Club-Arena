@@ -534,6 +534,9 @@ export interface BusPayloadMap {
     milestoneId: string;
     userId: string;
     milestoneName?: string;
+    /** MilestoneToast renders this as the toast body; without it every unlock
+     *  read "You reached a new milestone!" regardless of which one it was. */
+    description?: string;
     icon?: string;
     rewardDiamonds?: number;
     reward?: Record<string, unknown>;

@@ -25,12 +25,21 @@ interface CasinoPlaqueProps {
 export default function CasinoPlaque({ entry, children }: CasinoPlaqueProps) {
   const isCash = entry.kind === 'cash';
   const kindLabel =
-    entry.kind === 'cash' ? null : entry.kind === 'mtt' ? 'TOURNAMENT' : entry.kind === 'spin' ? 'SPIN' : 'HEADS UP';
+    entry.kind === 'cash'
+      ? null
+      : entry.kind === 'mtt'
+        ? 'TOURNAMENT'
+        : entry.kind === 'spin'
+          ? 'SPIN'
+          : 'HEADS UP';
 
   return (
     <section className="cplaque" aria-label={`${entry.name} game details`}>
       <div className="cplaque__screws" aria-hidden="true">
-        <i /><i /><i /><i />
+        <i />
+        <i />
+        <i />
+        <i />
       </div>
 
       {/* ── LEFT: game identity ── */}

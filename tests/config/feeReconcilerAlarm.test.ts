@@ -31,10 +31,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const src = readFileSync(
-  resolve(__dirname, '../../server/src/services/FeeReconciler.ts'),
-  'utf8'
-);
+const src = readFileSync(resolve(__dirname, '../../server/src/services/FeeReconciler.ts'), 'utf8');
 const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 describe('the queue insert survives a blip', () => {
@@ -91,7 +88,9 @@ describe('it asks whether the fee landed before calling the chips lost', () => {
     // by table so it cannot match another table's hand.
     expect(fn).toMatch(/eq\('global_hand_id', fee\.handNumber\)/);
     expect(fn).toMatch(/eq\('table_id', fee\.tableId\)/);
-    expect(fn).toMatch(/from\('bbj_contributions'\)[\s\S]{0,200}eq\('hand_number', fee\.handNumber\)/);
+    expect(fn).toMatch(
+      /from\('bbj_contributions'\)[\s\S]{0,200}eq\('hand_number', fee\.handNumber\)/
+    );
   });
 
   it('fails CLOSED — anything unknown still raises the alarm', () => {

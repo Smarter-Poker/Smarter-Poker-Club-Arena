@@ -58,7 +58,7 @@ Every guard here is written against `gh` and the REST API. Say so once and
 carry on with `gh`; do not ask for a credential.
 
 The GitHub UI also shows things that are not signals. A "had recent pushes —
-Compare & pull request" banner persists for about a day *after* the branch has
+Compare & pull request" banner persists for about a day _after_ the branch has
 merged or been deleted. Ask the API instead:
 `gh pr list --state all --head <branch>`.
 

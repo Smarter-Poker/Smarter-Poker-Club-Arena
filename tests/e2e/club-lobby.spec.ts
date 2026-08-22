@@ -67,7 +67,9 @@ test.describe('Club lobby', () => {
     }
 
     await expect(count).toBeVisible();
-    const shown = Number((await count.locator('strong').first().innerText()).replace(/[^0-9]/g, ''));
+    const shown = Number(
+      (await count.locator('strong').first().innerText()).replace(/[^0-9]/g, '')
+    );
     expect(shown, 'the result count disagrees with the list it describes').toBe(rows);
   });
 
@@ -154,23 +156,20 @@ test.describe('Club lobby', () => {
     const before = page.url();
     await cta().click();
     await expect
-      .poll(
-        async () => (await cta().innerText()).trim().toLowerCase().includes('leave'),
-        { timeout: 12000, message: 'the waitlist CTA never changed state' }
-      )
+      .poll(async () => (await cta().innerText()).trim().toLowerCase().includes('leave'), {
+        timeout: 12000,
+        message: 'the waitlist CTA never changed state',
+      })
       .toBe(!wasQueued);
     expect(page.url(), 'joining the waitlist navigated away from the lobby').toBe(before);
 
     /* PUT IT BACK — this runs against production with a real account. */
     await cta().click();
     await expect
-      .poll(
-        async () => (await cta().innerText()).trim().toLowerCase().includes('leave'),
-        {
-          timeout: 12000,
-          message: 'the waitlist state was not restored, so this run left a queue entry behind',
-        }
-      )
+      .poll(async () => (await cta().innerText()).trim().toLowerCase().includes('leave'), {
+        timeout: 12000,
+        message: 'the waitlist state was not restored, so this run left a queue entry behind',
+      })
       .toBe(wasQueued);
 
     await page.keyboard.press('Escape');

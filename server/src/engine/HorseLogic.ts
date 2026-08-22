@@ -505,7 +505,8 @@ function icmRisk(gs: HorseGameStateV2, stackBB: number): number {
       const inMoney = explicit.inMoney ?? pl <= paid;
       if (!inMoney) {
         const ratio = pl / paid;
-        if (ratio <= 1.15) risk += 0.06; // stone bubble
+        if (ratio <= 1.15)
+          risk += 0.06; // stone bubble
         else if (ratio <= 1.4) risk += 0.04;
         else if (ratio <= 2.0) risk += 0.02;
         // Big-stack bubble ABUSE: when hero covers the field the pressure
@@ -1661,12 +1662,7 @@ export class HorseLogic {
     // V12 (G): the same blocker logic extends into the big-bet band (0.8-1.2
     // pot) on the river — large river bets are already polarized enough that
     // the blocker meaningfully changes the catch.
-    if (
-      (opts.v12River ?? opts.v12) !== false &&
-      isRiver &&
-      betRatio >= 0.8 &&
-      betRatio <= 1.2
-    ) {
+    if ((opts.v12River ?? opts.v12) !== false && isRiver && betRatio >= 0.8 && betRatio <= 1.2) {
       respect += blocker ? -0.04 : 0.04;
     }
     // (V10 explored a river blocker-aware bluff-catch adjustment here; the

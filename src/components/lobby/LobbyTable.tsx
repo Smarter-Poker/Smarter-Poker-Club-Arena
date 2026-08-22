@@ -65,20 +65,15 @@ function RulesCell({ entry }: { entry: LobbyEntry }) {
   );
 }
 
-export function LobbyStatusBadge({
-  status,
-  label,
-}: {
-  status: LobbyStatusKey;
-  label: string;
-}) {
+export function LobbyStatusBadge({ status, label }: { status: LobbyStatusKey; label: string }) {
   return <span className={`lt-status lt-status--${status}`}>{label}</span>;
 }
 
 function PlayerStateChip({ entry, ctx }: { entry: LobbyEntry; ctx: LobbyRowContext }) {
   if (entry.kind === 'cash') {
     if (ctx.seatedIds.has(entry.id)) return <span className="lt-mine">Seated</span>;
-    if (ctx.waitlistedIds.has(entry.id)) return <span className="lt-mine lt-mine--wait">Waitlisted</span>;
+    if (ctx.waitlistedIds.has(entry.id))
+      return <span className="lt-mine lt-mine--wait">Waitlisted</span>;
     return null;
   }
   if (ctx.registeredIds.has(entry.id)) return <span className="lt-mine">Registered</span>;
@@ -101,7 +96,8 @@ function StartsCell({ entry }: { entry: LobbyEntry }) {
 }
 
 function SeatsMeter({ entry }: { entry: LobbyEntry }) {
-  const pct = entry.capacity > 0 ? Math.min(100, Math.round((entry.players / entry.capacity) * 100)) : 0;
+  const pct =
+    entry.capacity > 0 ? Math.min(100, Math.round((entry.players / entry.capacity) * 100)) : 0;
   const full = entry.capacity > 0 && entry.players >= entry.capacity;
   return (
     <span className={`lt-seats${full ? ' lt-seats--full' : ''}`}>
@@ -206,7 +202,11 @@ const COL_GTD: ColumnDef = {
   sortable: true,
   sortValue: (e) => e.guaranteeValue,
   render: (e) =>
-    e.guaranteeLabel ? <span className="lt-mono lt-gtd">{e.guaranteeLabel}</span> : <span className="lt-dim">-</span>,
+    e.guaranteeLabel ? (
+      <span className="lt-mono lt-gtd">{e.guaranteeLabel}</span>
+    ) : (
+      <span className="lt-dim">-</span>
+    ),
 };
 const COL_RULES: ColumnDef = {
   key: 'rules',
@@ -251,7 +251,13 @@ const COL_KIND: ColumnDef = {
   sortValue: (e) => e.kind,
   render: (e) => (
     <span className="lt-kind">
-      {e.kind === 'cash' ? 'Cash' : e.kind === 'mtt' ? 'MTT' : e.kind === 'spin' ? 'Spin' : 'Heads Up'}
+      {e.kind === 'cash'
+        ? 'Cash'
+        : e.kind === 'mtt'
+          ? 'MTT'
+          : e.kind === 'spin'
+            ? 'Spin'
+            : 'Heads Up'}
     </span>
   ),
 };
@@ -261,7 +267,9 @@ const COL_COST: ColumnDef = {
   className: 'lt-col-num',
   sortable: true,
   sortValue: (e) => (e.kind === 'cash' ? e.stakesValue : e.buyInValue),
-  render: (e) => <span className="lt-mono">{e.kind === 'cash' ? e.stakesLabel : e.buyInLabel}</span>,
+  render: (e) => (
+    <span className="lt-mono">{e.kind === 'cash' ? e.stakesLabel : e.buyInLabel}</span>
+  ),
 };
 
 export function columnsFor(category: LobbyCategory): ColumnDef[] {
@@ -270,16 +278,44 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
     case 'OMAHA':
     case 'LIMIT':
     case 'MIXED':
-      return [COL_FAV, COL_NAME, COL_STAKES, COL_VARIANT, COL_PLAYERS, COL_BUYIN, COL_RULES, COL_STATUS];
+      return [
+        COL_FAV,
+        COL_NAME,
+        COL_STAKES,
+        COL_VARIANT,
+        COL_PLAYERS,
+        COL_BUYIN,
+        COL_RULES,
+        COL_STATUS,
+      ];
     case 'MTT':
-      return [COL_TNAME, COL_VARIANT, COL_BUYIN, COL_GTD, COL_PLAYERS, COL_STARTS, COL_SPEED, COL_STATUS];
+      return [
+        COL_TNAME,
+        COL_VARIANT,
+        COL_BUYIN,
+        COL_GTD,
+        COL_PLAYERS,
+        COL_STARTS,
+        COL_SPEED,
+        COL_STATUS,
+      ];
     case 'SPIN':
       return [COL_NAME, COL_VARIANT, COL_BUYIN, COL_PLAYERS, COL_SPEED, COL_STATUS];
     case 'SNG':
       return [COL_NAME, COL_VARIANT, COL_BUYIN, COL_PLAYERS, COL_STATUS];
     case 'ALL':
     default:
-      return [COL_FAV, COL_NAME, COL_KIND, COL_VARIANT, COL_COST, COL_PLAYERS, COL_STARTS, COL_RULES, COL_STATUS];
+      return [
+        COL_FAV,
+        COL_NAME,
+        COL_KIND,
+        COL_VARIANT,
+        COL_COST,
+        COL_PLAYERS,
+        COL_STARTS,
+        COL_RULES,
+        COL_STATUS,
+      ];
   }
 }
 
@@ -354,10 +390,14 @@ export default function LobbyTable({
       }
       e.preventDefault();
       const next =
-        e.key === 'ArrowDown' ? Math.min(sorted.length - 1, idx + 1) : Math.max(0, idx < 0 ? 0 : idx - 1);
+        e.key === 'ArrowDown'
+          ? Math.min(sorted.length - 1, idx + 1)
+          : Math.max(0, idx < 0 ? 0 : idx - 1);
       onSelect(sorted[next]);
       // Keep the focused row in view inside the sticky-header scroller.
-      const rowEl = bodyRef.current?.querySelector<HTMLTableRowElement>(`tr[data-id="${sorted[next].id}"]`);
+      const rowEl = bodyRef.current?.querySelector<HTMLTableRowElement>(
+        `tr[data-id="${sorted[next].id}"]`
+      );
       rowEl?.scrollIntoView({ block: 'nearest' });
     },
     [sorted, selectedId, onSelect, onActivate]
@@ -380,7 +420,9 @@ export default function LobbyTable({
                 <th
                   key={col.key}
                   className={`${col.className || ''}${col.sortable ? ' is-sortable' : ''}${active ? ' is-sorted' : ''}`}
-                  aria-sort={active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : undefined}
+                  aria-sort={
+                    active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : undefined
+                  }
                   onClick={() => handleHeaderClick(col)}
                 >
                   <span className="lt-th">

@@ -1642,7 +1642,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // ── LOBBY V2 view models — the SAME filtered/sorted rows, normalized ──
   const lobbyEntries = useMemo<LobbyEntry[]>(() => {
     const tourns = filteredTournaments.map((t) =>
-      tournamentEntry(t as unknown as LobbyTournamentRow, classifyTournament(t as unknown as LobbyTournamentRow))
+      tournamentEntry(
+        t as unknown as LobbyTournamentRow,
+        classifyTournament(t as unknown as LobbyTournamentRow)
+      )
     );
     let cash = filteredTables.map(cashEntry);
     if (favoritesOnly) cash = cash.filter((e) => favoriteTableIds.has(e.id));

@@ -44,7 +44,7 @@ left-rail seats have 22-48px of clearance around FOLD tags and badges;
 elementFromPoint at badge centres returns the badge itself. Two probe traps
 worth recording: a harness WITHOUT .seat-wrapper reports seats occluded by
 .table-surface (z-1 beats z-auto — that reading is an artifact), and
-.seat__action can never be occlusion-probed via elementFromPoint because it
+.seat\_\_action can never be occlusion-probed via elementFromPoint because it
 is pointer-events:none. The complaints trace to the same pre-#243 screenshots
 whose "POT 0" the Phase 2 audit already ruled correct (old layout, hero PLO4
 cards mid-felt). If a real device still shows any of them, get a FRESH
@@ -162,6 +162,100 @@ and the missing EngineStateClient jsdom tests. Also newly observed and NOT
 addressed here: **56 `start_failed` kills between 19:07 and 19:42 UTC**, on
 engine versions `b66cea4a` / `af159998`. That is a separate, newer fault and
 it needs its own read of `GameServer` engine start.
+
+---
+
+## Cowork session 2026-08-22 (7) — THE SPIN RESERVE: a wallet nobody could see, and a tier nobody could win
+
+Two of the three follow-ups from
+`.agent/audits/2026-08-22-union-level-spin-reserve-wallet.md`, closed in the
+order that audit specified, because the order was the whole point.
+
+### The wallet had no way in and no way to look at it
+
+`union_wallets.spin_reserve_wallet` shipped on 2026-08-22 holding the capital
+every Spin bonus pool a union owns is seeded from, and a 100x is paid out of.
+Nothing returned it and nothing could put money in it. Which is exactly why the
+live pool had been seeded 20,000 out of `promo_wallet` — money earmarked for
+promotions, chosen because `promo_wallet` was the only balance anyone could see.
+
+- `get_balances` selects, returns and totals `spin_reserve_wallet` (World Hub
+  PR #659). The union dashboard shows it on the overview and the wallet tab.
+- A **Fund Spin Reserve** control moves chips in from promo, rake or the chip
+  balance. Union lead only, like every other transfer on that page.
+
+**The two functions that differ by a suffix.** `fn_spin_reserve_wallet_fund`
+moves the money and has no replay protection at all; a NULL source wallet makes
+it an operator deposit that MINTS the chips. `fn_spin_reserve_wallet_fund_op`
+(new, migration `20260822210000`) wraps it, claims the op id on the ledger row
+through `uq_union_wallet_tx_op`, rolls the entire move back on a replay, and
+refuses a NULL source. They return the same shape, so calling the wrong one
+would be invisible in every log — which is why a test pins the endpoint to the
+safe one.
+
+**The first version of that wrapper was wrong, and the behavioural check caught
+it.** It stamped BOTH rows the inner call writes — the credit into the reserve
+and the debit out of the source — and they collided with each other on
+`(union_id, tx_type, period_id)` inside a single statement. Every genuine fund
+tripped its own replay guard, rolled itself back and reported `duplicate: true`.
+Nothing was ever broken by it: the function had no caller in any repo and the
+ledger held zero rows of that type. Exactly one row claims the op id now. Run
+against production inside a transaction that was then rolled back: a real fund
+moves 100 and stamps 1 row, the same op id again returns a duplicate **with both
+balances unchanged**, a new op id funds again, and an overdraw is refused with
+the available and requested figures rather than silently clamped.
+
+**The envelope.** This RPC returns `{ ok }`, not the `{ success }` every
+neighbouring money RPC in `union-wallet.js` returns. Reading the wrong key is
+`undefined` on every response, which reports insufficient funds as a completed
+transfer — the shape `tests/unchecked-money-rpc.test.mjs` was written for. The
+handler reads `ok`, and a test fails if that changes.
+
+### The 500x tier stopped being published
+
+`v_spin_reserve_health` still carried `top_jackpot`, `need_for_500x` and
+`can_draw_500x` for a tier retired on 2026-08-21. They survived because
+PostgREST refuses the ENTIRE request with 42703 when a select names an unknown
+column — that is how the Spin badge went dark for every club at once on
+2026-08-21 — and the World Hub's `/api/cron/spin-sweep` still named
+`can_draw_500x` in its select. That cron is the only thing watching whether a
+pool can still pay its ladder, so dropping the column underneath it would have
+blinded the alarm rather than a badge.
+
+Two steps, reader first:
+
+1. World Hub `0162ff08da` removed the column from the select. It had never been
+   read — it rode in through the select and out again through `health: pools`.
+   Live in production `80a29487` at 2026-08-22 19:57 UTC.
+2. Migration `20260822220000` recreated the view without the three columns,
+   asserting on the way out that every column the cron _does_ select survived.
+   Verified by running the cron's exact select against the new view.
+
+`tests/spin-500x-retired.test.mjs` (World Hub) scans every select string in the
+repo and fails on any that names a retired column, so the coupling cannot come
+back now that the columns are gone.
+
+### Tests
+
+| File                                                | Repo | What it pins                                                                                                                                                                                           |
+| --------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tests/config/spinReserveFundControl.test.ts`       | CA   | 15 cases: the wrapper's guards, that the fund call sits INSIDE the block that rolls back, one row claims the op id, the index keeps all six tx_types it already guarded, the UI offers no minting path |
+| `tests/config/spinReserveHealth500xRetired.test.ts` | CA   | 8 cases: the view loses the three and keeps the nine the cron reads, no CASCADE, no anon grant, no CA source selects a retired column                                                                  |
+| `tests/spin-500x-retired.test.mjs`                  | WH   | repo-wide select scan                                                                                                                                                                                  |
+| `tests/spin-reserve-fund-contract.test.mjs`         | WH   | 7 cases: op-scoped RPC not the bare one, reads `ok`, requires an op id, contract requires a real source wallet                                                                                         |
+
+Every one was checked the only way that means anything — reverted the source and
+re-run. 5 of 15 fail with the client and UI reverted; 2 of 15 fail with the
+stamping bug reintroduced; 1 of 8 fails if the view quietly loses `is_thin`;
+1 of 8 fails if `top_jackpot` comes back; 7 of 7 fail against `origin/main`.
+
+Full CA suite at the time of this entry: 235 files, 2996 passed, 5 skipped.
+
+### Still open from that audit
+
+`fn_reroll_challenge` / `20260821_challenge_rerolls.sql` is closed (#248). The
+three permanently unbooked spins and the owner-scoped seed idempotency key
+decision are not.
 
 ---
 
@@ -335,6 +429,7 @@ favour with the sessionStart/End addition re-applied at the new location),
 pushed as `fix/mobile-table-audit-2026-08-22-v2`, PR #243, merged after all
 required checks passed. The 14 pushed files were mirrored back to the Mac
 working tree from origin/main.
+
 ## Cowork session 2026-08-22 (3) — LOBBY V2: line-based lobby + Casino Plaque game lobbies
 
 Dan: "I currently hate the game cards inside the Club Arena lobby and want to
@@ -528,7 +623,7 @@ repo, schema manifest updated each time).
   included) drives HorseLogic over DUPLICATE deals nightly at 04:30 UTC;
   bb/100 + stderr per layer into `horse_league_results`. First measurements:
   V11 leak fixes +112 bb/100 (se 43) vs the pre-fix engine; full engine
-  +151 bb/100 (se 61) vs V2 legacy. league-* ids + an observe() gate keep
+  +151 bb/100 (se 61) vs V2 legacy. league-\* ids + an observe() gate keep
   synthetic hands out of live opponent memory.
 - **F (#272) Board-conditioned range modeling (the deep one).** The MC now
   conditions sampled opponent hands on their postflop line ON THIS BOARD:

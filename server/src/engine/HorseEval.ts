@@ -50,16 +50,15 @@ const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
  *                          correlated with each other
  */
 const FAST_RNG_SEED =
-  Number(process.env.HORSE_FUZZ_SEED) ||
-  (process.env.VITEST ? 0x5eed1e : Date.now() ^ 0x9e3779b9);
+  Number(process.env.HORSE_FUZZ_SEED) || (process.env.VITEST ? 0x5eed1e : Date.now() ^ 0x9e3779b9);
 
 // xorshift32 is a fixed point at 0 — a zero state emits zeros forever — so the
 // seed is forced non-zero here and in seedFastRandom.
-let rngState = (FAST_RNG_SEED >>> 0) || 1;
+let rngState = FAST_RNG_SEED >>> 0 || 1;
 
 /** Pin the strategy/Monte-Carlo stream. Exported for tests and for replaying a decision. */
 export function seedFastRandom(seed: number): void {
-  rngState = (seed >>> 0) || 1;
+  rngState = seed >>> 0 || 1;
 }
 
 export function fastRandom(): number {
@@ -591,7 +590,11 @@ export function simulateEquity(
   // nearly all the latency win with no measurable equity-precision cost.
   const V7_THRESHOLDS = [0.18, 0.3, 0.42, 0.52, 0.62, 0.8];
   const checkpoints = adaptive
-    ? [Math.max(60, Math.floor(iterations * 0.4)), Math.floor(iterations * 0.65), Math.floor(iterations * 0.85)]
+    ? [
+        Math.max(60, Math.floor(iterations * 0.4)),
+        Math.floor(iterations * 0.65),
+        Math.floor(iterations * 0.85),
+      ]
     : null;
   let done = 0;
 
@@ -778,7 +781,10 @@ export function simulateEquity(
     }
     done = iter + 1;
 
-    if (checkpoints && (done === checkpoints[0] || done === checkpoints[1] || done === checkpoints[2])) {
+    if (
+      checkpoints &&
+      (done === checkpoints[0] || done === checkpoints[1] || done === checkpoints[2])
+    ) {
       const eq = score / done;
       const se = Math.sqrt(Math.max(1e-6, eq * (1 - eq)) / done);
       let minDist = Infinity;
@@ -997,7 +1003,8 @@ export function omahaPreflopScore(cards: Card[], isHiLo: boolean): number {
     const hasA = ranks.includes(14);
     const has2 = ranks.includes(2);
     const has3 = ranks.includes(3);
-    if (hasA && has2) pts += has3 ? 7.5 : 6; // A23 carries counterfeit backup
+    if (hasA && has2)
+      pts += has3 ? 7.5 : 6; // A23 carries counterfeit backup
     else if (hasA && has3) pts += 4;
     else if (has2 && has3) pts += 2;
     const lowCount = ranks.filter((r) => r <= 8 || r === 14).length;

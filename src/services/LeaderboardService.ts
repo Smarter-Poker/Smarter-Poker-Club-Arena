@@ -308,7 +308,7 @@ export const LeaderboardService = {
           )
           .eq('club_id', resolvedClubId)
           .order(orderCol, { ascending: false })
-          .limit(limit);
+          .range(offset, offset + limit - 1);
         if (error || !data) {
           reportError(error, 'LeaderboardService.getClubLeaderboard_direct');
           return [];

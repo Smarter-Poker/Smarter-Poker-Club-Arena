@@ -412,7 +412,7 @@ export default function LeaderboardPage() {
     const myReq = ++reqSeqRef.current; // also invalidates any in-flight loadMore
 
     // SWR: show cached data instantly
-    const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}`;
+    const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}_${periodOffset}`;
     if (!silent) {
       const cached = getCachedEntries(cacheKey);
       if (cached && cached.length > 0) {
@@ -510,7 +510,8 @@ export default function LeaderboardPage() {
             metric,
             period,
             PAGE_SIZE,
-            offset
+            offset,
+            periodOffset
           );
       if (myReq !== reqSeqRef.current) return; // filters moved on; drop this page
       if (more.length > 0) {
@@ -519,7 +520,7 @@ export default function LeaderboardPage() {
           if (prev.length !== offset) return prev;
           const seen = new Set(prev.map((e) => e.userId));
           const next = [...prev, ...more.filter((m) => !seen.has(m.userId))];
-          const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}`;
+          const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}_${periodOffset}`;
           setCachedEntries(cacheKey, next);
           return next;
         });
@@ -532,25 +533,30 @@ export default function LeaderboardPage() {
     }
   };
 
+  const tournReqSeqRef = useRef(0);
+
   const loadTournamentStats = async (getIsMounted?: () => boolean) => {
     if (!selectedClubId) {
       setTournamentsLoading(false);
       return;
     }
+    const myReq = ++tournReqSeqRef.current;
     setTournamentsLoading(true);
     try {
       const data = await retryFetch(
         () => LeaderboardService.getClubTournamentStats(selectedClubId, 50),
         { maxRetries: 2 }
       );
+      if (myReq !== tournReqSeqRef.current) return;
       if (getIsMounted && !getIsMounted()) return;
       setTournamentStats(data);
       setLastUpdated(new Date());
     } catch (error) {
       reportError(error, 'LeaderboardPage.Failed_to_load_tournament_stats');
-      toast.error('Failed to load tournament stats');
+      if (myReq === tournReqSeqRef.current) toast.error('Failed to load tournament stats');
     } finally {
-      if (!getIsMounted || getIsMounted()) setTournamentsLoading(false);
+      if (myReq === tournReqSeqRef.current && (!getIsMounted || getIsMounted()))
+        setTournamentsLoading(false);
     }
   };
 

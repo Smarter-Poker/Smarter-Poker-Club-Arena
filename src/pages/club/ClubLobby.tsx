@@ -19,7 +19,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { isClubStaff, type ClubRole } from '../../types/clubRoles';
-import { useParams, Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { ClubsService } from '../../services/ClubsService';
 import { tableService } from '../../services/TableService';
 import { tournamentService } from '../../services/TournamentService';
@@ -41,9 +41,6 @@ import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import PageSkeleton from '../../components/common/PageSkeleton';
 import { FavoriteTablesWidget } from '../../components/quickactions';
-import TournamentResultCard, {
-  type TournamentResult,
-} from '../../components/tournament/TournamentResultCard';
 import './ClubLobby.css';
 import { reportError } from '../../utils/errorReporter';
 // Whole-number tournament money (Dan 2026-08-20).
@@ -99,26 +96,25 @@ function getVariantLabel(variant: string | undefined): string {
 export default function ClubLobby() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const location = useLocation();
   const toast = useToast();
   const { clubId: routeClubId } = useParams<{ clubId?: string }>();
   const clubId = routeClubId || searchParams.get('club') || undefined;
 
-  // ── Tournament result card (Dan 2026-08-20) ───────────────────────────────
-  // A finished tournament player is auto-removed from the table and landed
-  // HERE, with their result riding in router state. Read it once into local
-  // state and immediately clear the history entry, so a refresh or a back
-  // press does not replay a result card from ten minutes ago.
-  const [tournamentResult, setTournamentResult] = useState<TournamentResult | null>(null);
-  useEffect(() => {
-    const incoming = (location.state as { tournamentResult?: TournamentResult } | null)
-      ?.tournamentResult;
-    if (incoming) {
-      setTournamentResult(incoming);
-      navigate(location.pathname, { replace: true, state: null });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.state]);
+  /* ── The tournament result card does NOT live here (AUDIT 2026-08-22) ──
+     It used to: a finished player was landed on this page with their result
+     riding in router state, and this read it. That reader was removed with the
+     component it fed, because it could not work and never had.
+
+     Router state was addressed to `/clubs/:clubId`, which is ClubHomePage;
+     this is `/clubs/:clubId/lobby`. The card was silently dropped on arrival
+     every single time. The deeper problem is that "the lobby" is not one page
+     — it is HomePage OR ClubHomePage OR this — so no route-level reader can
+     cover it.
+
+     The live card is TournamentRankingCard, rendered by TournamentRankingHost
+     at the app root from pendingSessionSummary, which survives the navigation
+     that killed this one. Do not re-add a router-state reader here; there is a
+     test that fails if one comes back. */
   const [club, setClub] = useState<Club | null>(null);
   const [tables, setTables] = useState<PokerTable[]>([]);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
@@ -479,15 +475,6 @@ export default function ClubLobby() {
 
   return (
     <div className="club-lobby">
-      {/* Tournament result card (Dan 2026-08-20): a finished tournament
-          player is auto-removed from their table and landed here — this is
-          the card that greets them with their place and their money. */}
-      {tournamentResult && (
-        <TournamentResultCard
-          result={tournamentResult}
-          onDismiss={() => setTournamentResult(null)}
-        />
-      )}
       {/* Toolbar */}
       <div className="lobby-toolbar">
         <div className="header-left">

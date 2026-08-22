@@ -312,6 +312,41 @@
   color: #eaf1ff;
 }
 
+/* ── Session facts ──
+   Duration and hands, under the extras and above the actions. Two columns,
+   split down the middle so the pair reads as one row rather than two tags —
+   these are facts about the session, not badges like the knockout pills.
+   Mobile-first: at 375px the card is ~330px wide and this must not wrap. */
+.trc2__session {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin: 10px 12px 0;
+  padding: 8px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.trc2__session-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.trc2__session-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #7f93b3;
+}
+.trc2__session-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #eaf1ff;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Actions ── */
 .trc2__actions {
   display: flex;

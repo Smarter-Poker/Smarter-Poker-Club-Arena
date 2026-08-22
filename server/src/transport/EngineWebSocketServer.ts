@@ -619,9 +619,17 @@ export class EngineWebSocketServer {
     // FIX 2 (2026-07-24): a fresh (re)connect gets the public SNAPSHOT above;
     // ask the engine to also re-deliver this player's hole cards for the
     // current hand so a reconnecting player isn't left blind.
-    this.onResync?.(tableId, userId);
-    // Presence: tell the engine this player has a live transport again.
-    this.onConnect?.(tableId, userId);
+    // 2026-08-22 review: these callbacks reach into engine code and MUST NOT
+    // be able to abort the wiring below — a throw here used to leave the
+    // socket in this.connections and subscribed to the hub with NO close
+    // handler: a permanent leak the sweeps could never collect.
+    try {
+      this.onResync?.(tableId, userId);
+      // Presence: tell the engine this player has a live transport again.
+      this.onConnect?.(tableId, userId);
+    } catch {
+      /* engine wiring must never take down the transport */
+    }
 
     ws.on('message', (raw) => this.onMessage(conn, raw));
     ws.on('close', () => this.onClose(ws));
@@ -743,9 +751,17 @@ export class EngineWebSocketServer {
         /* ignore */
       }
       this.hub.subscribe(tableId, subscriber);
-      this.onResync?.(tableId, conn.userId);
-      // Presence: mux SUBSCRIBE established a live transport for this table.
-      this.onConnect?.(tableId, conn.userId);
+      // 2026-08-22 review: guarded separately — after hub.subscribe() has
+      // succeeded, a throw from these engine callbacks must not fall into the
+      // outer catch, which would delete the sub entry and orphan the hub
+      // subscriber (unreachable by onClose).
+      try {
+        this.onResync?.(tableId, conn.userId);
+        // Presence: mux SUBSCRIBE established a live transport for this table.
+        this.onConnect?.(tableId, conn.userId);
+      } catch {
+        /* engine wiring must never take down the transport */
+      }
     } catch (err) {
       conn.subs.delete(tableId);
       this.sendMuxError(conn, tableId, 'SUB_FAILED', 'Subscribe failed');

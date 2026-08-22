@@ -309,6 +309,22 @@ export class DisconnectEngine {
   }
 
   /**
+   * HAND-BOUNDARY CLEANUP (2026-08-22 review): cancel every pending
+   * disconnect countdown for the table WITHOUT touching connection or strike
+   * state. Called at HAND_COMPLETE. A countdown that leaks across the hand
+   * boundary fires up to 30s into the NEXT hand and increments the player's
+   * consecutiveTimeouts (the strike mutation happens before the engine's
+   * seat guard) — with idempotent registerPlayer that now compounds into a
+   * premature forced sit-out.
+   */
+  cancelAllCountdowns(tableId: string): void {
+    for (const [key, state] of this.playerStates) {
+      if (!key.startsWith(`${tableId}:`)) continue;
+      this.preciseTimer.cancelTimer(tableId, `disconnect:${state.playerId}`);
+    }
+  }
+
+  /**
    * AUDIT FIX 2026-07-19: a CONNECTED player who lets the action timer expire
    * (app open but AFK) was never counted toward auto-sit-out — only the
    * disconnect path incremented consecutiveTimeouts — so an AFK player sat at

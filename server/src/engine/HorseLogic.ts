@@ -1733,15 +1733,37 @@ export class HorseLogic {
       // Engine rule (pot-limit): max bet = pot + toCall.
       const maxBet = vi.isPotLimit ? floorCents(pot + toCall) : Infinity;
       if (minBet > maxBet || minBet >= stack) {
-        // No legal non-all-in bet exists.
-        return amt >= stack * 0.9
+        // No legal non-all-in bet exists. A jam is only a legal substitute
+        // when the jam itself is inside the pot-limit cap — see the note on
+        // the 0.92 shortcut below.
+        const jamIsLegal = !vi.isPotLimit || stack <= maxBet + 0.005;
+        return amt >= stack * 0.9 && jamIsLegal
           ? { action: 'all_in', thinkTime: 0 }
           : { action: 'check', thinkTime: 0 };
       }
       // Whole dollars in cash games (see chipStep). Clamped inside snapBetSize
       // so rounding can never drop below minBet or above the pot-limit cap.
       amt = snapBetSize(amt, minBet, Math.min(maxBet, stack), chipStep(gs.bigBlind));
-      if (amt >= stack * 0.92) return { action: 'all_in', thinkTime: 0 };
+      // 2026-08-22: this shortcut had no pot-limit guard, and the raise
+      // branch below already had one (`maxRaiseTo <= potLimitTo`). Dan
+      // 2026-08-21: "in PLO you can never go all in if the pot is less than
+      // the chips you have — the most you can ever bet is pot."
+      //
+      // capPotLimitJam exists to enforce exactly that, and it works by
+      // rewriting an over-cap jam into a pot-sized bet and routing it back
+      // through THIS function for snapping and verification. When the pot is
+      // 92% or more of the stack, this line then turned that pot-sized bet
+      // straight back into an uncapped all-in — outside the wrapper, which
+      // had already run. The engine rejected the result:
+      //
+      //   ILLEGAL plo4/river: all_in undefined — Pot-limit max is 300
+      //   (stack=322.2566, pot=300, currentBet=0)
+      //
+      // A rejected action is the worst outcome a horse can produce, so the
+      // jam is only substituted when the jam is itself legal.
+      if (amt >= stack * 0.92 && (!vi.isPotLimit || stack <= maxBet + 0.005)) {
+        return { action: 'all_in', thinkTime: 0 };
+      }
       return this.verifyAmount(
         { action: 'bet', amount: toCents(amt), thinkTime: 0 },
         player,

@@ -45,7 +45,14 @@ export interface Toast {
 }
 
 export interface ToastContextValue {
-  toasts: Toast[];
+  /**
+   * 2026-08-22 review: a stable GETTER, not a snapshot array. Nothing in the
+   * app reads this (ToastContainer receives the live array via props); it is
+   * kept for API compatibility. Making it a getter lets the context value be
+   * memoized with a permanently stable identity, so `toast` in a dependency
+   * array never re-fires an effect when toasts come and go.
+   */
+  getToasts: () => Toast[];
   showToast: (message: string, type?: ToastType, duration?: number) => void;
   success: (message: string, duration?: number) => void;
   error: (message: string, duration?: number) => void;
@@ -274,9 +281,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   // (when toasts fire most) the "connection lost" warning could never
   // accumulate its three misses. All members are useCallback/state, so this
   // only changes identity stability, not behaviour.
+  // Live ref so getToasts always returns current state without destabilising
+  // the memoized context value.
+  const toastsRef = useRef<Toast[]>(toasts);
+  toastsRef.current = toasts;
+  const getToasts = useCallback(() => toastsRef.current, []);
   const value: ToastContextValue = useMemo(
     () => ({
-      toasts,
+      getToasts,
       showToast,
       success,
       error,
@@ -284,7 +296,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       info,
       removeToast,
     }),
-    [toasts, showToast, success, error, warning, info, removeToast]
+    [getToasts, showToast, success, error, warning, info, removeToast]
   );
 
   return (

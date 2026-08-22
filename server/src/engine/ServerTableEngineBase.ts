@@ -275,6 +275,25 @@ export abstract class ServerTableEngineBase {
     }
   }
 
+  /**
+   * 2026-08-22: raw setTimeout handles that live on the instance and were
+   * never cleared by stop()/killForRestart(). A leaked horse think-timer or
+   * pineapple discard timer holds a reference to a dead engine and fires its
+   * callback against it later (the callbacks carry controller-identity
+   * guards, so this is a leak/noise issue rather than a corruption one — but
+   * teardown should still be complete).
+   */
+  protected clearLooseHandTimers(): void {
+    if (this.horseActionTimer) {
+      clearTimeout(this.horseActionTimer);
+      this.horseActionTimer = null;
+    }
+    if (this.pineappleDiscardTimer) {
+      clearTimeout(this.pineappleDiscardTimer);
+      this.pineappleDiscardTimer = null;
+    }
+  }
+
   // FIX 2 (2026-07-24): per-hand hole cards kept in memory so we can (a) retry
   // the RLS insert and (b) re-push a player's cards on reconnect/RESYNC. The
   // public snapshot is re-sent by the hub, but hole cards ride a separate
@@ -842,6 +861,16 @@ export abstract class ServerTableEngineBase {
       // Wait for minimum 2 players
       while (this.running) {
         this.seatedPlayers = await loadSeatedPlayers(this.tableId);
+        // IDLE BROADCAST (2026-08-22): publish the waiting-state snapshot so
+        // a client joining an idle table gets a real SNAPSHOT (seats, stacks,
+        // 'waiting' stage) instead of an eternal spinner. The hub drops
+        // empty-patch publishes, so repeating this every sweep costs nothing
+        // when nothing changed.
+        try {
+          await this.broadcastCurrentState();
+        } catch {
+          /* idle publish must never stall the wait loop */
+        }
         if (this.seatedPlayers.length >= 2) break;
         console.log(
           `[ServerTableEngine:${this.tableId}] Waiting for players... (${this.seatedPlayers.length}/2)`
@@ -885,7 +914,11 @@ export abstract class ServerTableEngineBase {
       });
     } catch (err) {
       reportError(err, 'ServerTableEnginethistableId.Failed_to_start');
-      this.running = false;
+      // 2026-08-22: was a bare `running = false`, which could leak an armed
+      // heartbeat scheduler entry (scheduleHeartbeatCheck runs before the
+      // awaits later in start()) and left partial state for the reaper to
+      // delete uncleaned. killForRestart is the one true teardown-for-rebuild.
+      this.killForRestart('start_failed');
     }
   }
 
@@ -910,10 +943,9 @@ export abstract class ServerTableEngineBase {
     // actually cancel the live engine's heartbeat + turn clocks — the exact
     // bug that made tables permanently lose their watchdog. Superseded
     // instances drop in-memory state only.
-    const owner = ServerTableEngineBase.isCurrentEngineFor(this.tableId, this);
-
     this.clearHandSafetyTimer();
-    if (owner) {
+    this.clearLooseHandTimers();
+    if (ServerTableEngineBase.isCurrentEngineFor(this.tableId, this)) {
       this.clearTurnTimer();
       // C15: flush any coalesced snapshot BEFORE dropping the controller — after
       // handController is null saveSnapshot() early-returns, so a pending write
@@ -926,7 +958,14 @@ export abstract class ServerTableEngineBase {
     }
     this.handController = null;
 
-    if (owner) {
+    // TOCTOU FIX (2026-08-22 review): ownership MUST be re-read AFTER the
+    // flushSnapshot await. That Supabase write can take up to 15s on a
+    // degraded DB — exactly when engines get reaped — and the discovery sweep
+    // rebuilds a replacement within 5s. A pre-await ownership snapshot would
+    // resume `true` here and cancel the NEW engine's heartbeat/turn deadlines
+    // on the shared scheduler, silently recreating the permanent-freeze bug
+    // this guard exists to prevent.
+    if (ServerTableEngineBase.isCurrentEngineFor(this.tableId, this)) {
       // FIX 147 + Phase 1.2 PR-G-real: tear down heartbeat scheduler entry.
       deadlineScheduler.cancel(this.tableId, ServerTableEngineBase.HEARTBEAT_EVENT_ID);
 
@@ -1054,6 +1093,7 @@ export abstract class ServerTableEngineBase {
     this.running = false;
     this.heartbeatActive = false;
     this.clearHandSafetyTimer();
+    this.clearLooseHandTimers();
     // CROSS-INSTANCE GUARD (2026-08-22): only the authoritative instance may
     // touch the shared scheduler — see stop() for the full rationale.
     if (ServerTableEngineBase.isCurrentEngineFor(this.tableId, this)) {

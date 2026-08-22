@@ -138,6 +138,22 @@ export class TableWebSocket {
         return false;
       }
 
+      // 2026-08-22 review: remove any previous channel FIRST. Reconnects used
+      // to stack a fresh `table:<id>` channel on top of the old one every
+      // time (supabase-js does not dedupe topics), and with RoomService now
+      // rebinding on reconnect, N stacked channels meant N duplicate
+      // deliveries of every reaction/chat/presence event.
+      if (this.channel) {
+        const stale = this.channel;
+        this.channel = null;
+        try {
+          await this.supabase.removeChannel(stale);
+        } catch {
+          /* best effort — a dead channel object can throw on removal */
+        }
+        if (this.destroyed) return false;
+      }
+
       // Create channel for this table
       this.channel = this.supabase.channel(`table:${this.tableId}`, {
         config: {

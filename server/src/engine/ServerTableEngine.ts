@@ -173,7 +173,19 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
    * Bible V8 §1.2.3: "Broadcast must confirm before next turn begins"
    */
   protected broadcastCurrentState(): Promise<void> {
-    if (!this.handController || !this.tableInfo) return Promise.resolve();
+    if (!this.tableInfo) return Promise.resolve();
+    // IDLE BROADCAST (2026-08-22): this used to hard-return when
+    // handController was null — which made the "clean state" publish at the
+    // end of every hand a silent no-op, and meant an idle table (waiting for
+    // players, between hands after a restart) never published ANY snapshot:
+    // a client joining such a table connected successfully and then stared at
+    // a spinner because no SNAPSHOT ever arrived. Publish a real idle payload
+    // instead: seats from seatedPlayers, no board, no clock, stage 'waiting'
+    // (a first-class stage in the client contract - mapEngineSnapshot).
+    if (!this.handController) {
+      this.publishIdleState();
+      return Promise.resolve();
+    }
 
     // ── ADDITIVE observability (#5): observe action→broadcast latency (cheap, always) ──
     if (this.lastActionAcceptedAtMs > 0) {
@@ -365,5 +377,63 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       );
     }
     return Promise.resolve();
+  }
+
+  /**
+   * IDLE BROADCAST (2026-08-22): the between-hands / no-hand snapshot.
+   * Field-for-field the same contract as the live payload with idle values,
+   * so mapEngineSnapshot needs no special casing beyond its existing
+   * 'waiting' stage handling.
+   */
+  protected publishIdleState(): void {
+    if (!this.hub || !this.tableInfo) return;
+    const payload = {
+      table_id: this.tableId,
+      hand_number: this.handCount,
+      pot: 0,
+      community_cards: [],
+      community_cards2: [],
+      bomb_pot_in:
+        this.tableInfo?.bomb_pot_enabled && (this.tableInfo?.bomb_pot_frequency ?? 0) > 0
+          ? Math.max(1, (this.tableInfo!.bomb_pot_frequency ?? 0) - this.handsSinceBombPot)
+          : null,
+      current_bet: 0,
+      current_player: null,
+      dealer_seat: this.currentHandDealerSeat,
+      stage: 'waiting',
+      winner_ids: [],
+      winners: [],
+      min_raise: 0,
+      last_raise: 0,
+      turn_start_time_ms: 0,
+      turn_duration_ms: 0,
+      server_time_ms: Date.now(),
+      turn_deadline_ms: 0,
+      disconnect_states: this.disconnectEngine.getFsmStatesForTable(this.tableId),
+      waiting_for_bb_user_ids: Array.from(this.waitingForBB),
+      pots: [],
+      action_history: [],
+      players: (this.seatedPlayers ?? []).map((p) => ({
+        seat: p.seat_number,
+        user_id: p.user_id,
+        username: p.username,
+        stack: p.stack,
+        bet: 0,
+        totalInvested: 0,
+        cards: [],
+        is_folded: false,
+        is_all_in: false,
+        is_sitting_out: this.disconnectEngine.isSittingOut(this.tableId, p.user_id),
+        is_disconnected: !this.disconnectEngine.isConnected(this.tableId, p.user_id),
+        time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
+        time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
+        position: '',
+        avatar_url: p.avatar_url ?? '',
+        is_horse: p.is_horse ?? false,
+        is_waiting_for_bb: this.waitingForBB.has(p.user_id),
+        hand_name: '',
+      })),
+    };
+    this.hub.publish(this.tableId, payload);
   }
 }

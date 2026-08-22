@@ -23,12 +23,10 @@
  * Output cap: 360px wide (largest render is 80x120 CSS px @3x = 240x360).
  */
 
-import { execSync } from 'node:child_process';
-import { createRequire } from 'node:module';
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadSharp } from './lib/sharp-loader.mjs';
 
 const ROOT = process.argv[2] || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -36,38 +34,6 @@ const TARGETS = [
   { dir: 'public/cards/2color', width: 360, quality: 82 },
   { dir: 'public/cards/4color', width: 360, quality: 82 },
 ];
-
-async function loadSharp() {
-  try {
-    return (await import('sharp')).default;
-  } catch {
-    // Not present in the project. Install it into an ISOLATED temp prefix —
-    // NEVER `npm install` inside the project dir: under NODE_ENV=production
-    // that prunes every devDependency (vite, typescript, ...) from
-    // node_modules and the very next build step dies with `vite: not found`.
-    // Exactly that broke CI run #237 before this was isolated.
-    console.warn('[webp-media] sharp not installed — installing into a temp prefix...');
-    try {
-      const tmp = path.join(os.tmpdir(), 'ca-webp-sharp');
-      mkdirSync(tmp, { recursive: true });
-      const pkgPath = path.join(tmp, 'package.json');
-      if (!existsSync(pkgPath)) {
-        writeFileSync(pkgPath, '{"name":"ca-webp-sharp","private":true}\n');
-      }
-      execSync('npm install --no-save --no-audit --no-fund --loglevel=error sharp', {
-        cwd: tmp,
-        stdio: 'inherit',
-        timeout: 180000,
-        env: { ...process.env, NODE_ENV: 'development' },
-      });
-      const requireFromTmp = createRequire(pkgPath);
-      return requireFromTmp('sharp');
-    } catch (err) {
-      console.warn('[webp-media] Could not install sharp:', err?.message || err);
-      return null;
-    }
-  }
-}
 
 async function main() {
   const sharp = await loadSharp();

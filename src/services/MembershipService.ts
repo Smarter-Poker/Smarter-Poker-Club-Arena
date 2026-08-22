@@ -123,7 +123,7 @@ export const MembershipService = {
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
       }
-    } catch (e) {
+    } catch (_e) {
       reportError(e, 'MembershipService.map');
       /* non-critical */
     }
@@ -428,11 +428,25 @@ export const MembershipService = {
         .eq('status', 'pending');
 
       if (pendingErr) reportError(pendingErr, 'MembershipService.getMemberCounts_pending_error');
-
-      // Estimate online count — creating a channel just to check presenceState()
-      // on an unsubscribed channel always returned 0 and caused side-effect churn.
-      // Real online tracking should come from a dedicated presence subscription.
-      const online = Math.floor((active || 0) * 0.15);
+      let online = 0;
+      try {
+        const { data: tables } = await supabase.rpc('get_active_tables_for_club', {
+          p_club_id: resolvedId,
+        });
+        if (tables) {
+          const seated = new Set<string>();
+          for (const t of tables) {
+            if (t.seats) {
+              Object.values(t.seats).forEach((s: any) => {
+                if (s?.userId) seated.add(s.userId);
+              });
+            }
+          }
+          online = seated.size;
+        }
+      } catch (e) {
+        /* non-critical */
+      }
 
       return {
         total: total || 0,

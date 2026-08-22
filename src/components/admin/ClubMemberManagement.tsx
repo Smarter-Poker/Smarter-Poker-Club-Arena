@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { ClubRole } from '../../types/clubRoles';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
@@ -57,11 +57,6 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
     };
   }, []);
-
-  useEffect(() => {
-    loadMembers();
-  }, [loadMembers]);
-
   const loadMembers = useCallback(async () => {
     setLoading(true);
     try {
@@ -116,6 +111,10 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
     }
     if (isMounted.current) setLoading(false);
   }, [clubId, isMounted, toast]);
+
+  useEffect(() => {
+    loadMembers();
+  }, [loadMembers]);
 
   const updateRole = async (memberId: string, newRole: string) => {
     try {

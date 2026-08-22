@@ -28,6 +28,7 @@
 
 import type { Card, SeatPlayer, HandStage, ActionRecord } from '../types.js';
 import { HorseLogic, type HorseDecideOpts, type HorseGameStateV2 } from '../engine/HorseLogic.js';
+import { HorseMind, type HorseMindSandbox } from '../engine/HorseMind.js';
 import { seedFastRandom, fastRandom, scoreHoldem } from '../engine/HorseEval.js';
 import { SUITS, RANKS, validateAction, calculateBettingState } from '../engine/PokerEngine.js';
 import { supabase } from '../services/supabase.js';
@@ -52,6 +53,11 @@ export interface LeagueMatchup {
   name: string;
   a: HorseDecideOpts;
   b: HorseDecideOpts;
+  /** V12.2: run this matchup's hands against sandboxed HorseMind state so the
+   *  mind layer participates without touching live opponent memory. Each pass
+   *  of the duplicate pair keeps its own sandbox for the whole matchup, so
+   *  memory accumulates coherently and symmetrically and luck still cancels. */
+  mind?: 'sandbox';
 }
 
 const SEATS = 6;
@@ -82,7 +88,10 @@ export function playHand(
   handSeed: number,
   dealerSeat: number,
   configOf: (seatIdx: number) => HorseDecideOpts,
-  counters?: { illegal: number }
+  counters?: { illegal: number },
+  /** V12.2: when present, decisions run against this sandboxed HorseMind and
+   *  the per-seat `mind` flag is honored (default on) instead of forced off. */
+  sandbox?: HorseMindSandbox
 ): number[] {
   seedFastRandom(handSeed);
   // Deterministic deck for this seed (Fisher-Yates on fastRandom).
@@ -98,7 +107,10 @@ export function playHand(
   for (let s = 0; s < SEATS; s++) {
     seats.push({
       contributed: 0,
-      opts: { ...configOf(s), mind: false }, // league hands are memory-free
+      // Without a sandbox, league hands are memory-free (mind:false) — they
+      // must never write synthetic reads into the live opponent memory. With
+      // one, the mind runs for real against the sandbox's isolated state.
+      opts: sandbox ? { ...configOf(s) } : { ...configOf(s), mind: false },
       player: {
         seat: s + 1,
         user_id: `league-${s + 1}`,
@@ -181,7 +193,9 @@ export function playHand(
         format: 'cash',
       } as HorseGameStateV2;
 
-      const d = HorseLogic.decide(p, gs, 'balanced', {}, seat.opts);
+      const d = sandbox
+        ? HorseMind.runInSandbox(sandbox, () => HorseLogic.decide(p, gs, 'balanced', {}, seat.opts))
+        : HorseLogic.decide(p, gs, 'balanced', {}, seat.opts);
       const toCall = Math.max(0, currentBet - p.bet);
 
       // Validate against the engine's own rules; downgrade an illegal action
@@ -375,6 +389,13 @@ export function runMatchup(matchup: LeagueMatchup, pairs: number, runSeed: numbe
   const t0 = Date.now();
   const counters = { illegal: 0 };
   const perPairDiff: number[] = [];
+  // V12.2: one sandbox PER PASS, alive for the whole matchup. Pass 1 always
+  // plays sandbox 1 and pass 2 always plays sandbox 2, so each accumulates a
+  // coherent memory of its own seat assignment; identical configs therefore
+  // produce identical evolutions in both sandboxes and the mirror invariant
+  // survives mind-on play.
+  const sb1 = matchup.mind === 'sandbox' ? HorseMind.createSandbox() : undefined;
+  const sb2 = matchup.mind === 'sandbox' ? HorseMind.createSandbox() : undefined;
 
   for (let p = 0; p < pairs; p++) {
     const handSeed = (runSeed ^ (p * 2654435761)) >>> 0 || 1;
@@ -382,8 +403,8 @@ export function runMatchup(matchup: LeagueMatchup, pairs: number, runSeed: numbe
     const evenIsA = (s: number) => (s % 2 === 0 ? matchup.a : matchup.b);
     const evenIsB = (s: number) => (s % 2 === 0 ? matchup.b : matchup.a);
 
-    const net1 = playHand(handSeed, dealerSeat, evenIsA, counters);
-    const net2 = playHand(handSeed, dealerSeat, evenIsB, counters);
+    const net1 = playHand(handSeed, dealerSeat, evenIsA, counters, sb1);
+    const net2 = playHand(handSeed, dealerSeat, evenIsB, counters, sb2);
 
     let aNet = 0;
     for (let s = 0; s < SEATS; s++) {
@@ -414,14 +435,20 @@ export function runMatchup(matchup: LeagueMatchup, pairs: number, runSeed: numbe
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The standing card: every strategy layer vs the engine without it. */
-// NOTE: v12 board-conditioned sampling lives inside the HorseMind band layer,
-// which league hands run with `mind: false` (live opponent memory must never
-// see synthetic hands) — so v12 is validated by seeded equity-shift tests in
-// HorseEval instead of a league matchup.
+// V12.2: the two `mind: 'sandbox'` matchups run with the full HorseMind live
+// against isolated state (see runInSandbox) — the gap that used to force v12
+// to be validated only by seeded equity-shift tests in HorseEval is closed.
 export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'v11_leak_fixes', a: {}, b: { v11: false } },
   { name: 'v10_strategy', a: {}, b: { v10: false } },
   { name: 'v7_preflop', a: {}, b: { v7Preflop: false } },
+  // Full V12 (board-conditioned ranges + river polish) vs the engine without
+  // it, both sides with the mind on — the matchup the 2026-08-22 handoff
+  // deferred for lack of a pollution-free mind mode.
+  { name: 'v12_ranges_river', a: {}, b: { v12: false }, mind: 'sandbox' },
+  // The whole opponent-intelligence layer vs playing blind. B-seats skip
+  // both reads and writes; A-seats read a memory that includes B's actions.
+  { name: 'mind_layer', a: {}, b: { mind: false }, mind: 'sandbox' },
   {
     name: 'full_vs_v2_legacy',
     a: {},

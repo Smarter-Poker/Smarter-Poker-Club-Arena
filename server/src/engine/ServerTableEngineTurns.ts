@@ -200,6 +200,33 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           !this.waitingForBB.has(p.user_id)
       ).length;
       if (dealable >= 2 && idleMs > ServerTableEngineBase.WATCHDOG_IDLE_MS) {
+        /**
+         * ── Dan 2026-08-22: "games randomly break, stop running or freeze" ──
+         *
+         * This branch used to read "no hand has started for 90s" as "the
+         * dealing loop is dead". Those are not the same statement, and the
+         * live fleet proved it: 1,603 kills in six hours, EVERY running cash
+         * table killed 22-30 times, each after an average of three hands.
+         * hand_history shows the shape exactly — normal 8-45s hand spacing,
+         * then 107s, 107s, 114s, 87s: two 90s trips plus a rebuild, forever,
+         * on fully funded tables with nothing wrong with them.
+         *
+         * The between-hands path is five Supabase round trips, none of which
+         * marked progress. Database slowness is CORRELATED across tables, so
+         * one slow minute stalled the whole fleet at once, killed every engine
+         * at once, and the rebuild storm then loaded the database harder than
+         * the slowness that started it. The watchdog was the engine of the
+         * outage it was built to prevent.
+         *
+         * So ask the loop, not the calendar. `msSinceLoopPhase()` is the time
+         * since the loop last MOVED. Wedged in one step is a dead loop and is
+         * killed as before, now naming the step it died in. Still cycling is
+         * an alive loop: it gets the five-minute horizon and, if it really
+         * never deals, a kill under its own name rather than this one.
+         */
+        const loopWedged = this.msSinceLoopPhase() > ServerTableEngineBase.WATCHDOG_IDLE_MS;
+        if (!loopWedged && idleMs <= ServerTableEngineBase.WATCHDOG_LOOP_ALIVE_IDLE_MS) return;
+
         this.watchdogTrips++;
         reportError(
           new Error(
@@ -207,12 +234,27 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               Math.round(idleMs / 1000) +
               's with ' +
               dealable +
-              ' dealable seats — dealing loop is not looping'
+              ' dealable seats — dealing loop ' +
+              (loopWedged ? 'is wedged at ' : 'is cycling without dealing, at ') +
+              this.describeLoopPhase()
           ),
           'ServerTableEngine.' + this.tableId + '.watchdog_loop_dead',
-          { handCount: this.handCount, trips: this.watchdogTrips }
+          {
+            handCount: this.handCount,
+            trips: this.watchdogTrips,
+            loopPhase: this.loopPhase,
+            loopPhaseMs: this.msSinceLoopPhase(),
+          }
         );
-        if (this.watchdogTrips >= 2) this.killForRestart('dealing_loop_dead');
+        // The phase goes in the kill reason, so `engine_recovery_events.detail`
+        // names the cause instead of repeating the symptom. Phase only, never
+        // the elapsed seconds — a detail that is unique per row cannot be
+        // grouped, and grouping is the entire point of recording it.
+        if (this.watchdogTrips >= 2) {
+          this.killForRestart(
+            (loopWedged ? 'dealing_loop_dead' : 'loop_ticking_no_hands') + ':' + this.loopPhase
+          );
+        }
       }
       return;
     }

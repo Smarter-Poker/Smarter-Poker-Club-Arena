@@ -34,6 +34,14 @@ const MEDIA_CACHE = 'club-arena-media-v1';
 const MAX_CACHE_ENTRIES = 300; // Evict oldest chunk entries beyond this
 const MAX_MEDIA_ENTRIES = 600; // Cards (104/deck-style) + tiles + icons + logos fit comfortably
 
+// App-shell assets to warm at install time. EMPTY in source — the build
+// (scripts/optimize-dist-media.mjs) injects the entry chunk, modulepreloaded
+// vendors and entry CSS for the exact bundle being deployed, and stamps
+// DEPLOY_TS above with the build time. With this, a returning player gets the
+// whole shell from cache even if HTTP cache was evicted, and the new SW
+// pre-fetches the new hashed chunks the moment a deploy lands.
+const PRECACHE_URLS = [];
+
 /**
  * Trim cache to MAX_CACHE_ENTRIES — prevents unbounded growth across deploys.
  * Each deploy creates new hashed filenames; old ones stay cached forever without this.
@@ -206,8 +214,25 @@ sw.addEventListener('notificationclick', (event) => {
     );
 });
 
-// Install: skip waiting so new SW activates immediately
-sw.addEventListener('install', () => sw.skipWaiting());
+// Install: precache the app shell (build-injected list), then activate
+// immediately. addAll failures (offline install, mid-deploy 404) are
+// swallowed — the runtime cache-first path covers anything missed.
+sw.addEventListener('install', (event) => {
+    event.waitUntil(
+        (PRECACHE_URLS.length
+            ? caches.open(CACHE_NAME).then((cache) =>
+                Promise.allSettled(
+                    PRECACHE_URLS.map((url) =>
+                        fetch(url).then((res) => {
+                            if (res.ok) return cache.put(url, res);
+                        }).catch(() => {})
+                    )
+                )
+            )
+            : Promise.resolve()
+        ).then(() => sw.skipWaiting())
+    );
+});
 
 // Activate: claim clients + clean up old caches
 sw.addEventListener('activate', (event) => {

@@ -1,3 +1,11 @@
+> **CLOSED 2026-08-22.** Tasks 1, 3 and 4 are done and verified by outcome, not
+> by status code. Task 2's code side is shipped in all 7 repos and inert until
+> the App exists; creating that App is the only open item and it needs Dan.
+> Full record, including everything found along the way that this handoff did
+> not know about, is in
+> `.agent/audits/2026-08-22-anti-regression-hardening-completed.md`.
+> Read that before acting on anything below.
+
 # Handoff — finish the anti-regression hardening
 
 **Written:** 2026-08-22 by the agent that built Agent Autopilot

@@ -78,6 +78,22 @@ export function UnionWalletModal({
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  /**
+   * The header balance, kept live. The `balance` prop is a snapshot from when
+   * the tile was clicked; after a send it would go stale while the modal is
+   * still open, showing money that has already left. The RPC returns
+   * `wallet_after` for chip/promo sends, so the display can follow the truth.
+   */
+  const [liveBalance, setLiveBalance] = useState(balance);
+  const [recent, setRecent] = useState<
+    {
+      id: string;
+      amount: number;
+      notes: string | null;
+      transaction_type: string;
+      created_at: string;
+    }[]
+  >([]);
 
   // The chip SOURCE follows the wallet that was clicked. BBJ is a reserve, so
   // chips sent from its modal draw on the main bank.
@@ -85,10 +101,31 @@ export function UnionWalletModal({
 
   useEffect(() => {
     if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
     setNotice(null);
     setTarget(null);
     setAmount('');
+    setLiveBalance(balance);
     setKind(walletKey === 'promo' ? 'promo' : 'chips');
+    // Recent outbound sends from this union. RLS scopes this to what the
+    // viewer may see (their own sends at minimum), so an empty feed is normal
+    // for a brand-new admin.
+    void supabase
+      .from('chip_transactions')
+      .select('id, amount, notes, transaction_type, created_at')
+      .eq('club_id', unionId)
+      .in('transaction_type', ['union_member_send', 'union_promo_send'])
+      .order('created_at', { ascending: false })
+      .limit(8)
+      .then(({ data }) => setRecent((data as typeof recent) || []));
     setLoading(true);
     void supabase
       .rpc('fn_union_player_directory', { p_union_id: unionId })
@@ -123,6 +160,11 @@ export function UnionWalletModal({
   const send = useCallback(async () => {
     const amt = Number(amount);
     if (!target || !Number.isFinite(amt) || amt <= 0 || busy) return;
+    // Mirror of the server rule, surfaced before the round trip.
+    if (kind === 'diamonds' && amt !== Math.floor(amt)) {
+      setNotice({ ok: false, text: 'Diamonds must be a whole number.' });
+      return;
+    }
     setBusy(true);
     setNotice(null);
     const { data, error } = await supabase.rpc('fn_union_send_to_member', {
@@ -131,9 +173,9 @@ export function UnionWalletModal({
       p_kind: kind,
       p_amount: amt,
       p_source_wallet: kind === 'chips' ? chipSource : null,
-      p_note: `${walletLabel} → ${target.display_name || target.username || 'member'}`,
+      p_note: `${walletLabel} to ${target.display_name || target.username || 'member'}`,
     });
-    const res = (data ?? {}) as { success?: boolean; error?: string };
+    const res = (data ?? {}) as { success?: boolean; error?: string; wallet_after?: number };
     if (error || !res.success) {
       reportError(
         new Error(error?.message || res.error || 'union send failed'),
@@ -145,11 +187,30 @@ export function UnionWalletModal({
         ok: true,
         text: `Sent ${fmt(amt)} ${kind} to ${target.display_name || target.username}.`,
       });
+      // Keep the header honest while the modal stays open. `wallet_after` is
+      // the source wallet's post-send figure; it only maps onto the header
+      // when the wallet on screen IS the source (chips from the BBJ modal
+      // draw on the main bank, and diamonds never touch a union wallet).
+      if (typeof res.wallet_after === 'number' && kind !== 'diamonds' && walletKey !== 'bbj') {
+        setLiveBalance(res.wallet_after);
+      }
+      setRecent((prev) =>
+        [
+          {
+            id: `local-${Date.now()}`,
+            amount: amt,
+            notes: `${walletLabel} to ${target.display_name || target.username || 'member'}`,
+            transaction_type: kind === 'promo' ? 'union_promo_send' : 'union_member_send',
+            created_at: new Date().toISOString(),
+          },
+          ...prev,
+        ].slice(0, 8)
+      );
       setAmount('');
       onSent?.();
     }
     setBusy(false);
-  }, [amount, target, busy, unionId, kind, chipSource, walletLabel, onSent]);
+  }, [amount, target, busy, unionId, kind, chipSource, walletLabel, walletKey, onSent]);
 
   if (!isOpen) return null;
 
@@ -198,7 +259,7 @@ export function UnionWalletModal({
           </button>
         </div>
         <div style={{ color: '#4599FF', fontSize: 26, fontWeight: 800, marginBottom: 2 }}>
-          {fmt(balance)}
+          {fmt(liveBalance)}
         </div>
         <p style={{ color: '#888', fontSize: 12, margin: '0 0 14px' }}>
           Send Chips, Diamonds Or Promo Funds To Any Member Of The Union.
@@ -310,6 +371,50 @@ export function UnionWalletModal({
                 : 'Pick a member'}
           </button>
         </div>
+
+        {recent.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: '0.07em',
+                color: '#6b7392',
+                marginBottom: 6,
+              }}
+            >
+              RECENT SENDS
+            </div>
+            {recent.map((r) => (
+              <div
+                key={r.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  padding: '5px 0',
+                  borderBottom: '1px solid rgba(255,255,255,0.05)',
+                  fontSize: 12,
+                }}
+              >
+                <span
+                  style={{
+                    color: '#aaa',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {r.notes ||
+                    (r.transaction_type === 'union_promo_send' ? 'Promo send' : 'Chip send')}
+                </span>
+                <span style={{ color: '#e74c3c', fontWeight: 700, flexShrink: 0 }}>
+                  -{fmt(r.amount)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {notice && (
           <div

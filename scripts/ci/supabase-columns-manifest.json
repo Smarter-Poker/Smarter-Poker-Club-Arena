@@ -1658,6 +1658,12 @@
       "error_message",
       "created_at"
     ],
+    "commander_blind_structure_backup_20260822": [
+      "tournament_id",
+      "tournament_name",
+      "blind_structure",
+      "backed_up_at"
+    ],
     "commander_buyin_transactions": [
       "id",
       "session_id",
@@ -4603,6 +4609,16 @@
       "created_at",
       "last_accessed_at",
       "expires_at"
+    ],
+    "horse_mind_pairs": [
+      "attacker_id",
+      "victim_id",
+      "n3",
+      "opp3",
+      "n_r",
+      "opp_r",
+      "opps",
+      "updated_at"
     ],
     "horse_mind_stats": [
       "user_id",
@@ -9928,7 +9944,8 @@
       "is_thin",
       "shortfall_events",
       "unbooked_24h",
-      "null_multiplier_24h"
+      "null_multiplier_24h",
+      "fee_violations_24h"
     ],
     "v_spin_tier_availability": ["club_id", "can_draw_100x"],
     "v_system_health_cron": [

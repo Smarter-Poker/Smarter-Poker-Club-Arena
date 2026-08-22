@@ -87,11 +87,74 @@ on schedule. World Hub main is the sync build of 810aa5a.
 DELIVERY NOTE: main now requires PRs and api.github.com is proxy-blocked from
 this sandbox, so this session bootstrapped .github/workflows/agent-open-pr.yml
 (found authored-but-unshipped on Dan's disk) by including it in its own
-agent/** branch: the push opened PR #279 itself, Autopilot landed it. Base
+agent/\*\* branch: the push opened PR #279 itself, Autopilot landed it. Base
 drift (the Mac clone's HEAD was never pushed under that SHA) was reconciled by
 three-way merging every file against origin/main before proposing; the #264
 ledger guard caught the two credit sites written pre-drift and both now go
 through fn_credit_and_log.
+
+---
+
+## Cowork session 2026-08-22 (11) — SPIN ECONOMICS: verified over 5,091 games, and the rule nothing enforced
+
+`src/config/spinSpec.ts` sets one rule — `E[multiplier] = seats × (1 − rake)` —
+and derives everything from it. Nobody had ever checked whether the live games
+obey it. Full working in
+`.agent/audits/2026-08-22-spin-economics-verification.md`.
+
+**The draw is correct.** Post-cutover (2026-08-21 onward, n = 2,381) the
+realized expectation is **2.7429** against a design of **2.763773** — well
+inside one standard error — and every tier lands within noise of its designed
+share, including the `4x` tier at 8.74% against 9.00%. The all-time table looks
+badly skewed only because it averages the three disagreeing tables spinSpec
+replaced; `4x` does not appear in a single pre-2026-08-20 game because those
+tables did not have it. No Spin has ever drawn an off-ladder multiplier, and no
+100x has landed yet against an expectation of 0.24 games in the window.
+
+**The hole.** spinSpec says in capitals that the buy-in is the whole charge and
+`buy_in_fee` MUST be 0, and states the cost of breaking it: a true edge of 14.7%
+against an advertised 7.87%. Every layer believed that. None enforced it.
+**7,120 of 9,603 spins carried a fee** — all of them before the cutover fixed
+the writer at 2026-08-20 19:23 UTC.
+
+Believing it was worse than not knowing it, because both things that watch the
+reserve skip a fee-bearing Spin:
+
+```
+fn_spin_sweep_unbooked ... AND COALESCE(t.buy_in_fee, 0) = 0
+v_spin_reserve_health  ... AND COALESCE(t.buy_in_fee, 0) = 0   (unbooked_24h)
+```
+
+Each filter is right on its own. Together the backstop skipped the game AND the
+counter that exists to notice skipped games did not count it. **2,116 spins ran
+and were never booked to `spin_reserve_ledger` for exactly this reason** —
+12,431.04 that should have entered the reserve, 11,488.00 of prizes that never
+left it — and `unbooked_24h` read 0 throughout.
+
+**What changed.** A `NOT VALID` check constraint,
+`tournaments_spin_no_extra_rake`, refuses the next one while leaving the 7,120
+historical rows as historical fact; it tests both `variant` and
+`tournament_type`, and the migration refuses to install itself if a fee-bearing
+Spin was created in the previous 24 hours. `v_spin_reserve_health` gains
+`fee_violations_24h`, and `/api/cron/spin-sweep` raises `spin_charged_a_fee`
+(World Hub PR #665). The exclusions stay; the silence does not.
+
+Proven against production in a rolled-back transaction: a spin given a fee is
+REFUSED, a fee-free spin is ACCEPTED, a non-spin with a fee is unaffected, and
+the 7,120 historical rows are untouched. The probe uses 0.90 + 0.10 rather than
+1.00 + 0.10 on purpose — `fn_enforce_whole_dollar_buyin` already refuses the
+latter and triggers fire before check constraints, so the obvious probe would
+have proven only that the older guard works.
+
+**Left for Dan, deliberately.** The 2,116 historical games are still unbooked.
+Booking them moves real money through the reserve pool, so it is a decision, not
+a migration side effect. Three options and their numbers are in §4 of the audit.
+
+12 new cases in `tests/config/spinNoExtraRake.test.ts`, each checked by
+reintroducing the regression it guards. Suite: 244 files, 3,105 passed, tsc
+clean.
+
+---
 
 ## Cowork session 2026-08-22 (10) — the hunters' memory now survives a deploy (PR #291)
 

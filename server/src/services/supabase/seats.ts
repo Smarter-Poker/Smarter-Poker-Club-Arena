@@ -213,15 +213,38 @@ export async function atomicCashout(
       );
       safeToClearSeat = true;
     } else if (stack > 0) {
-      const { error: walletErr } = await supabase.rpc('credit_player_wallet', {
+      // LEDGER-INTEGRITY 2026-08-22: this used to be `credit_player_wallet`
+      // followed by an unconditional `wallet_transactions` insert, and it
+      // shares its idempotency key with markSeatAsLeft ON PURPOSE. Two
+      // consequences, both live:
+      //
+      //   1. DOUBLE LEDGER ROW. The shared key makes the CREDIT a no-op for
+      //      whichever path runs second — and this one then wrote a second
+      //      'cashout' row for chips it did not move. Same defect the
+      //      tournament prize paths carried until 2026-08-22.
+      //
+      //   2. THE TWO PATHS CREDITED DIFFERENT WALLETS. `credit_player_wallet`
+      //      resolves the club through fn_player_home_club only; the sibling's
+      //      `atomic_credit_wallet_and_log` resolves the SEAT's club first and
+      //      falls back to home. For a player seated at a club that is not
+      //      their home club those are different wallets, so which club's
+      //      books the stack landed in depended on which path happened to run.
+      //      It also skipped the `chip_transactions` row the sibling writes.
+      //
+      // Calling the same RPC the sibling calls fixes all of it: one credit,
+      // one ledger row, one club, written in one transaction. The RPC computes
+      // balance_after itself, so the extra wallet read is gone too.
+      const { error: walletErr } = await supabase.rpc('atomic_credit_wallet_and_log', {
         p_user_id: userId,
         p_amount: stack,
-        // A3 site 11: this credit is retried (the failure path below deliberately
-        // preserves the seat "for retry"), so a credit that COMMITTED but timed
-        // out was being paid twice. Keyed on the seat OCCUPANCY (see cashoutKey).
-        // Sibling markSeatAsLeft writes the IDENTICAL key for the same occupancy,
-        // so the two cash-out paths dedupe against each other too — whichever
-        // runs second is a DB-side no-op.
+        p_category: 'cashout',
+        p_description: 'Cash-out from table',
+        p_table_id: tableId,
+        p_hand_id: null,
+        p_related_entity_id: null,
+        // Keyed on the seat OCCUPANCY (see cashoutKey), IDENTICAL to the key
+        // markSeatAsLeft writes, so a committed-but-timed-out credit is a
+        // DB-side no-op on retry and the two paths dedupe against each other.
         p_idempotency_key: cashoutKey(seat),
       });
       if (walletErr) {
@@ -232,25 +255,6 @@ export async function atomicCashout(
         return 0; // do NOT soft-delete; stack stays on the seat, retryable
       }
       safeToClearSeat = true; // credit committed — safe to clear the seat now
-
-      // BUG 018 FIX: read new balance for balance_after audit field
-      const { data: postWallet } = await supabase
-        .from('wallets')
-        .select('balance')
-        .eq('user_id', userId)
-        .eq('wallet_type', 'PLAYER')
-        .maybeSingle();
-
-      await supabase.from('wallet_transactions').insert({
-        user_id: userId,
-        wallet_type: 'PLAYER',
-        type: 'credit',
-        amount: stack,
-        category: 'cashout',
-        description: 'Cash-out from table',
-        table_id: tableId,
-        balance_after: postWallet?.balance ?? null,
-      });
     }
 
     // 3. Soft-delete seat

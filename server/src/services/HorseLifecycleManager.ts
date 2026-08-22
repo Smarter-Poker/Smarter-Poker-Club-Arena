@@ -535,51 +535,28 @@ export class HorseLifecycleManager {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // TOURNAMENT WINNINGS / ELIMINATION PROCESSING
+  // TOURNAMENT WINNINGS / ELIMINATION PROCESSING — removed, see below
   // ─────────────────────────────────────────────────────────────────────────
 
-  async processWinnings(horseId: string, amount: number, tournamentId: string): Promise<boolean> {
-    try {
-      const { error } = await supabase.rpc('credit_player_wallet', {
-        p_user_id: horseId,
-        p_amount: amount,
-      });
+  /**
+   * REMOVED 2026-08-22 — `processWinnings` and `processElimination`.
+   *
+   * Neither had a single caller anywhere in the repo, and `processWinnings`
+   * was a loaded gun on a money path for whoever wired it up next:
+   *
+   *   - it called `credit_player_wallet` with NO idempotency key, so any
+   *     retry above it paid the prize again;
+   *   - it took `tournamentId` and never used it, so its ledger rows carried
+   *     no `related_entity_id` and could not be tied back to the event that
+   *     produced them — invisible to fn_tournament_payout_reconcile, which
+   *     matches on exactly that column;
+   *   - it wrote category `tournament_winnings`, a value that appears nowhere
+   *     else on the platform, so every prize report would have missed it.
+   *
+   * Tournament prizes are paid by TournamentManagerEliminations and
+   * tournamentRecovery through `fn_credit_and_log`, keyed
+   * `tourney:{id}:prize:{user}:{place}`. If a horse-specific prize path is
+   * ever genuinely needed, start from those.
+   */
 
-      if (error) {
-        reportError(error, 'Lifecycle.Failed_to_credit_winnings_to_h');
-        return false;
-      }
-
-      const { error: txErr } = await supabase.from('wallet_transactions').insert({
-        user_id: horseId,
-        wallet_type: 'PLAYER',
-        amount,
-        type: 'credit',
-        category: 'tournament_winnings',
-        description: `Tournament winnings: ${amount} credits`,
-      });
-      if (txErr)
-        console.warn(
-          `[Lifecycle] Winnings tx log failed for horse ${horseId.slice(0, 8)}: ${txErr.message}`
-        );
-
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  async processElimination(horseId: string, tournamentId: string): Promise<boolean> {
-    try {
-      await supabase
-        .from('tournament_players')
-        .update({ status: 'eliminated', updated_at: new Date().toISOString() })
-        .eq('user_id', horseId)
-        .eq('tournament_id', tournamentId);
-
-      return await this.evaluateHorseStatus(horseId);
-    } catch {
-      return false;
-    }
-  }
 }

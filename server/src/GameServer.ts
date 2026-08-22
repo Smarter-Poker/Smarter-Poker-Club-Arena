@@ -948,9 +948,22 @@ export class GameServer {
             await Promise.all(
               batch.map(async ([userId, totalStack]) => {
                 try {
-                  const { error: walletErr } = await supabase.rpc('credit_player_wallet', {
+                  // 2026-08-22: was `credit_player_wallet`, which moved the
+                  // chips and wrote NOTHING to any ledger — a boot-time
+                  // cash-out appeared in a player's balance out of thin air,
+                  // with no wallet_transactions row and no chip_transactions
+                  // row to account for it. Every other cash-out path on the
+                  // platform goes through this RPC; this one now does too, so
+                  // the row exists and the club resolution matches. Same
+                  // idempotency key, so nothing about the dedupe changes.
+                  const { error: walletErr } = await supabase.rpc('atomic_credit_wallet_and_log', {
                     p_user_id: userId,
                     p_amount: totalStack,
+                    p_category: 'cashout',
+                    p_description: 'Cash-out from table (server startup cleanup)',
+                    p_table_id: null,
+                    p_hand_id: null,
+                    p_related_entity_id: null,
                     // A3 FIX (2026-07-28): `cleanupStaleData` runs on EVERY boot and
                     // deliberately spares the seats of users whose credit failed
                     // (see failedUserIds below) so their stacks survive - which means

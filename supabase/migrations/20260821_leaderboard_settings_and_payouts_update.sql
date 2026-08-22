@@ -73,8 +73,18 @@ BEGIN
         -- but the instruction implies M1 is either fixed or will be fixed.
         
         IF v_settings.payout_currency = 'diamonds' THEN
-          -- TODO: Deduct from club diamond wallet, add to user diamond wallet
-          NULL;
+          -- Deduct from club diamond wallet
+          UPDATE public.club_diamond_wallets 
+          SET balance = balance - v_payout_amount,
+              updated_at = NOW()
+          WHERE club_id = p_club_id;
+          
+          -- Add to user diamond wallet
+          UPDATE public.diamond_wallets
+          SET balance = balance + v_payout_amount,
+              lifetime_earned = lifetime_earned + v_payout_amount,
+              updated_at = NOW()
+          WHERE user_id = v_winner.uid;
         ELSIF v_settings.payout_currency = 'chips' THEN
           -- Mint chips to user
           -- Use generic credit for now

@@ -230,12 +230,25 @@ const COL_SPEED: ColumnDef = {
   sortValue: (e) => e.speedLabel || '',
   render: (e) => (e.speedLabel ? <span>{e.speedLabel}</span> : <span className="lt-dim">-</span>),
 };
+/** Joinable-first lobby order - not the alphabet ('closed' before 'open'
+    told the player the dead games mattered most). */
+const STATUS_RANK: Record<LobbyStatusKey, number> = {
+  open: 0,
+  starting_soon: 1,
+  registering: 2,
+  late_reg: 3,
+  running: 4,
+  waitlist: 5,
+  full: 6,
+  closed: 7,
+  completed: 8,
+};
 const COL_STATUS: ColumnDef = {
   key: 'status',
   label: 'Status',
   className: 'lt-col-status',
   sortable: true,
-  sortValue: (e) => e.status,
+  sortValue: (e) => STATUS_RANK[e.status] ?? 9,
   render: (e, ctx) => (
     <span className="lt-statuscell">
       <LobbyStatusBadge status={e.status} label={e.statusLabel} />
@@ -359,9 +372,15 @@ export default function LobbyTable({
       const va = sv(a);
       const vb = sv(b);
       if (typeof va === 'number' && typeof vb === 'number') {
-        const na = Number.isFinite(va) ? va : Infinity;
-        const nb = Number.isFinite(vb) ? vb : Infinity;
-        return (na - nb) * dir;
+        /* Rows with no value (cash games under a Starts sort carry Infinity)
+           sort LAST in both directions - and two of them compare equal.
+           The old (na - nb) * dir produced Infinity - Infinity = NaN, which
+           is comparator poison: Array.sort's order becomes implementation-
+           defined the moment a comparator returns NaN. */
+        const aBad = !Number.isFinite(va);
+        const bBad = !Number.isFinite(vb);
+        if (aBad || bBad) return aBad && bBad ? 0 : aBad ? 1 : -1;
+        return (va - vb) * dir;
       }
       return String(va).localeCompare(String(vb)) * dir;
     });

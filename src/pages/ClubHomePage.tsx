@@ -16,7 +16,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { ClubRole } from '../types/clubRoles';
 import { isClubStaff } from '../types/clubRoles';
 import { MEDIA_BASE } from '../utils/mediaBase';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
@@ -1523,6 +1523,29 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [favoriteTableIds, setFavoriteTableIds] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+
+  /* ── Selected game in the URL (?game=<id>) ──────────────────────────────
+     A refresh or a shared link reopens the same game lobby. replace:true
+     keeps history clean, so the back button still leaves the page rather
+     than stepping through every row the player looked at. The MultiTablePage
+     embed passes clubIdOverride and must never rewrite its host URL. */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlSyncEnabled = !clubIdOverride;
+  // Captured at first render, before the sync effect below can strip it.
+  const pendingGameRef = useRef<string | null>(searchParams.get('game'));
+
+  useEffect(() => {
+    if (!urlSyncEnabled) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (panelOpen && selectedId) next.set('game', selectedId);
+        else next.delete('game');
+        return next;
+      },
+      { replace: true }
+    );
+  }, [urlSyncEnabled, panelOpen, selectedId, setSearchParams]);
   const [actionBusy, setActionBusy] = useState(false);
 
   const loadMyGameStates = useCallback(async () => {
@@ -1703,6 +1726,21 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   useEffect(() => {
     if (panelOpen && selectedId && !selectedEntry) setPanelOpen(false);
   }, [panelOpen, selectedId, selectedEntry]);
+
+  // Reopen the game a ?game=<id> URL points at, once the list contains it.
+  // A dead id (deleted game, another club's game) is dropped on the first
+  // loaded list instead of lying in wait forever.
+  useEffect(() => {
+    if (!urlSyncEnabled || !pendingGameRef.current) return;
+    if (lobbyEntries.length === 0) return;
+    const id = pendingGameRef.current;
+    pendingGameRef.current = null;
+    const entry = lobbyEntries.find((e) => e.id === id);
+    if (entry) {
+      setSelectedId(id);
+      setPanelOpen(true);
+    }
+  }, [urlSyncEnabled, lobbyEntries]);
 
   /** How many rows the lobby is about to render. */
   const shownCount = lobbyEntries.length;
@@ -2390,7 +2428,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           )}
         </div>
 
-        {lobbyEntries.length > 0 && (
+        {/* Render while loading too: LobbyTable owns the skeleton rows, and
+            gating on entries>0 made them unreachable - first load flashed the
+            empty state instead (review 2026-08-22). */}
+        {(lobbyEntries.length > 0 || loading) && (
           <LobbyTable
             entries={lobbyEntries}
             category={gameType as LobbyCategory}
@@ -2423,7 +2464,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             It now distinguishes the three real causes and, when the player
             caused it, clears the cause in one tap.
         ═══════════════════════════════════════════════════════════════ */}
-        {lobbyEntries.length === 0 &&
+        {!loading &&
+          lobbyEntries.length === 0 &&
           (() => {
             // Same three causes the result count reads, from the same place.
             const totalHere = totalGameCount;
@@ -2492,6 +2534,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       ═══════════════════════════════════════════════════════════════════ */}
       {panelOpen && selectedEntry && clubId && (
         <GameLobbyPanel
+          embedded={Boolean(clubIdOverride)}
           entry={selectedEntry}
           clubId={clubId}
           currentUserId={currentUserId}

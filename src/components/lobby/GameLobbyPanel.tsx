@@ -19,6 +19,7 @@ import { parseTableSettings } from './lobbyEntries';
 import { tournamentService } from '../../services/TournamentService';
 import { waitlistService, type WaitlistEntry } from '../../services/WaitlistService';
 import { tableService } from '../../services/TableService';
+import { supabase } from '../../lib/supabase';
 import { formatBuyIn } from '../../utils/buyIn';
 import { reportError } from '../../utils/errorReporter';
 import type { Tournament, BlindLevel, PayoutEntry } from '../../types/database.types';
@@ -42,6 +43,9 @@ export interface GameLobbyPanelProps {
   /** Club owner / admin only: opens the existing delete confirmation flow. */
   canDelete?: boolean;
   onDeleteTable?: (tableId: string) => void;
+  /** True inside the MultiTablePage embed: links must not navigate the host
+      page, so the footer back-link becomes a plain close. */
+  embedded?: boolean;
 }
 
 type TournTab = 'overview' | 'structure' | 'payouts';
@@ -78,6 +82,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     onSpinJoin,
     canDelete,
     onDeleteTable,
+    embedded,
   } = props;
 
   const isCash = entry.kind === 'cash';
@@ -96,6 +101,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
   const [avgPot, setAvgPot] = useState<number | null>(null);
+  const [seatMap, setSeatMap] = useState<{ seat_number: number; user_id: string }[] | null>(null);
   const [tab, setTab] = useState<TournTab>('overview');
   const [detailError, setDetailError] = useState(false);
 
@@ -135,6 +141,29 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       cancelled = true;
     };
   }, [entry.id, isCash]);
+
+  // ── Seat map (cash only; table_seats is public-read). Keyed on
+  //    entry.players so a realtime seat change refreshes the map without
+  //    refetching the waitlist or the average pot. Read-only enrichment:
+  //    nothing below ever depends on it. ──
+  useEffect(() => {
+    if (!isCash || entry.capacity <= 0) {
+      setSeatMap(null);
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from('table_seats')
+      .select('seat_number, user_id')
+      .eq('table_id', entry.id)
+      .is('left_at', null)
+      .then(({ data, error }) => {
+        if (!cancelled && !error && data) setSeatMap(data);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entry.id, isCash, entry.capacity, entry.players]);
 
   // ── CTA derivation from EXISTING state, never invented ──
   const cta = useMemo<CtaSpec>(() => {
@@ -181,7 +210,10 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       if (st === 'completed' || st === 'closed')
         return { label: 'Game Over', kind: 'disabled' as const };
       const full = entry.capacity > 0 && entry.players >= entry.capacity;
-      if (full && st === 'running') return { label: 'Game Full', kind: 'disabled' as const };
+      /* Full is full, whatever the status says: a 2/2 spin still waiting to
+         flip to RUNNING has no seat either (QA 2026-08-22 found live 2/2
+         games offering an active CTA because this only checked 'running'). */
+      if (full) return { label: 'Game Full', kind: 'disabled' as const };
       return {
         label: 'Join Spin',
         kind: 'primary' as const,
@@ -195,7 +227,8 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       if (st === 'completed' || st === 'closed')
         return { label: 'Game Over', kind: 'disabled' as const };
       const full = entry.capacity > 0 && entry.players >= entry.capacity;
-      if (full && st === 'running') return { label: 'Table Full', kind: 'disabled' as const };
+      // Same rule as spins: no seat exists at 2/2, whatever the status label.
+      if (full) return { label: 'Table Full', kind: 'disabled' as const };
       return {
         label: 'Take Seat',
         kind: 'primary' as const,
@@ -394,6 +427,28 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   </div>
                 </dl>
               </section>
+
+              {seatMap && entry.capacity > 0 && (
+                <section className="glp__section">
+                  <h3 className="glp__h">Seat Map</h3>
+                  <div className="glp__seatmap">
+                    {Array.from({ length: entry.capacity }).map((_, i) => {
+                      const n = i + 1;
+                      const taken = seatMap.find((x) => x.seat_number === n);
+                      const mine = Boolean(taken && currentUserId && taken.user_id === currentUserId);
+                      return (
+                        <span
+                          key={n}
+                          className={`glp__seat${taken ? ' is-taken' : ''}${mine ? ' is-you' : ''}`}
+                        >
+                          <i>{n}</i>
+                          <em>{mine ? 'You' : taken ? 'Taken' : 'Open'}</em>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
 
               {entry.rules.length > 0 && (
                 <section className="glp__section">
@@ -660,9 +715,15 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                 Delete Table
               </button>
             )}
-            <Link className="glp__backlink" to={`/clubs/${clubId}`} onClick={onClose}>
-              Back To All Games
-            </Link>
+            {embedded ? (
+              <button type="button" className="glp__backlink" onClick={onClose}>
+                Back To All Games
+              </button>
+            ) : (
+              <Link className="glp__backlink" to={`/clubs/${clubId}`} onClick={onClose}>
+                Back To All Games
+              </Link>
+            )}
           </div>
         </div>
       </aside>

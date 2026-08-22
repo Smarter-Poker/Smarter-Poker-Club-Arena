@@ -80,6 +80,11 @@ export interface PreflopCtx {
   /** V12: table format. Spins are 3-max winner-take-all hypers — every range
    *  widens hard (chip EV only, shallow, high blind pressure). */
   format?: 'cash' | 'mtt' | 'spin' | 'hu_sng';
+  /** V12 ANTI-EXPLOIT: 0..1 — how hard the current raiser is TARGETING this
+   *  horse specifically (HorseMind.targetingOf). A hunter's raises get less
+   *  credit: the horse defends wider and fights back with more re-raises,
+   *  which is exactly what makes the hunt unprofitable. */
+  targeted?: number;
   /** PRNG supplied by the caller (fast xorshift) */
   rand: () => number;
 }
@@ -285,6 +290,14 @@ export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
       threeBetThresh = Math.min(threeBetThresh, t(0.72 - anteWiden));
       callThresh += 0.05;
     }
+    // V12 ANTI-EXPLOIT: this raiser is hunting the horse — their opens carry
+    // less real strength than the position suggests, so re-raise more and
+    // defend wider until the hunt stops paying.
+    const hunted = Math.max(0, Math.min(1, ctx.targeted ?? 0));
+    if (hunted > 0) {
+      threeBetThresh -= 0.05 * hunted;
+      callThresh -= 0.04 * hunted;
+    }
     const bbDiscount = position === 'bb' ? 0.06 : 0;
     const priceOK = toCall <= Math.max(bb * 12, stack * 0.12);
 
@@ -332,8 +345,10 @@ export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
   // ── Facing a 3-bet or bigger ──
   {
     const ip = position === 'late';
-    const fourBetThresh = t(0.93 - (ctx.aggression - 1) * 0.04);
-    const callThresh = t(ip ? 0.74 : 0.78);
+    // V12 ANTI-EXPLOIT: a hunter's 3-bets get 4-bet and called wider.
+    const hunted3 = Math.max(0, Math.min(1, ctx.targeted ?? 0));
+    const fourBetThresh = t(0.93 - (ctx.aggression - 1) * 0.04) - 0.04 * hunted3;
+    const callThresh = t(ip ? 0.74 : 0.78) - 0.03 * hunted3;
 
     if (strength >= fourBetThresh) {
       if (raises >= 3 || currentBet * 2.3 >= stack * 0.4) return { a: 'jam' };

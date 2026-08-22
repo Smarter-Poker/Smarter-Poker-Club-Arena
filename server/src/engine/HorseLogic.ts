@@ -791,6 +791,19 @@ export class HorseLogic {
     const oppsLeft = gs.players.filter((p) => !p.is_folded && p.seat !== player.seat).length;
     const stackBB = player.stack / bb;
 
+    // V12 ANTI-EXPLOIT: is the raiser hunting THIS horse? Best-effort.
+    let targeted = 0;
+    if (opts.v11 !== false && lastRaiserSeat >= 0) {
+      try {
+        const raiser = gs.players.find((p) => p.seat === lastRaiserSeat);
+        if (raiser && raiser.user_id !== player.user_id) {
+          targeted = HorseMind.targetingOf(player.user_id, raiser.user_id);
+        }
+      } catch {
+        /* targeting is best-effort */
+      }
+    }
+
     const intent = decidePreflopV7({
       strength,
       position,
@@ -824,6 +837,7 @@ export class HorseLogic {
       // ride the heads-up ranges.
       format:
         opts.v11 !== false ? (gs.format ?? (isTournamentMode(gs) ? 'mtt' : 'cash')) : undefined,
+      targeted,
       rand: fastRandom,
     });
 
@@ -1556,6 +1570,30 @@ export class HorseLogic {
     const impliedBonus = drawsLive && equity >= 0.25 && dominationPenalty === 0 ? 0.04 : 0;
     let respect = 2 - exploit.callDownMod; // maniac 0.8, neutral 1, passive 1.15
     if (dangered) respect += 0.15;
+    // V12 ANTI-EXPLOIT: when the CURRENT street's bettor has been hunting
+    // this horse specifically, their bets carry less real strength than the
+    // line suggests — call down lighter until the hunt stops paying.
+    if (useMind && opts.v11 !== false) {
+      try {
+        const hist = gs.actionHistory || [];
+        let bettorId: string | null = null;
+        for (const a of hist) {
+          if (a.stage !== street) continue;
+          if (
+            a.userId !== player.user_id &&
+            (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
+          ) {
+            bettorId = a.userId;
+          }
+        }
+        if (bettorId) {
+          const hunted = HorseMind.targetingOf(player.user_id, bettorId);
+          if (hunted > 0) respect -= 0.25 * hunted;
+        }
+      } catch {
+        /* targeting is best-effort */
+      }
+    }
     // V7 overbet polarity: an overbet is nuts-or-bluffs. Medium hands without
     // a nut blocker fold more; holding the blocker shifts toward the catch.
     if (useSizeReads && betRatio > 1.2) respect += blocker ? -0.05 : 0.08;

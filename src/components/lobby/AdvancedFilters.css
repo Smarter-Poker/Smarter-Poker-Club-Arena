@@ -86,7 +86,7 @@
   height: 36px;
   border: none;
   background: transparent;
-  color: #ffb800;
+  color: #3b82f6;
   font-size: 1.3rem;
   line-height: 1;
   cursor: pointer;
@@ -138,8 +138,8 @@
 }
 
 .afx-tab.is-active {
-  background: linear-gradient(135deg, #ffb800, #ff9d00);
-  color: #17130a;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #ffffff;
   font-weight: 800;
 }
 
@@ -206,9 +206,9 @@
 }
 
 .afx-chip.is-on {
-  background: linear-gradient(135deg, #ffb800, #ff9d00);
-  border-color: #ffb800;
-  color: #17130a;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border-color: #3b82f6;
+  color: #ffffff;
   font-weight: 800;
 }
 
@@ -242,7 +242,7 @@
 }
 
 .afx-range__fill {
-  background: linear-gradient(90deg, #ffb800, #ff9d00);
+  background: linear-gradient(90deg, #3b82f6, #2563eb);
 }
 
 /* Both inputs stack on the same line. The TRACK is transparent and
@@ -268,7 +268,7 @@
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #ffd76b, #ffb800 60%, #b87f00 100%);
+  background: radial-gradient(circle at 35% 30%, #93c5fd, #3b82f6 60%, #1d4ed8 100%);
   border: 2px solid #0b0f18;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
   cursor: pointer;
@@ -279,7 +279,7 @@
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: #ffb800;
+  background: #3b82f6;
   border: 2px solid #0b0f18;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
   cursor: pointer;
@@ -397,8 +397,8 @@
 }
 
 .afx-btn--reset {
-  background: linear-gradient(135deg, #ffd76b, #ffb800);
-  color: #17130a;
+  background: linear-gradient(135deg, #9ca3af, #4b5563);
+  color: #ffffff;
 }
 
 /* Save is the brand primary, matching every other confirm in the product. */

@@ -7,7 +7,165 @@
 
 ---
 
-## Cowork session 2026-08-22 (5) — THE SPIN RESERVE: a wallet nobody could see, and a tier nobody could win
+## Cowork session 2026-08-22 (6) — MOBILE TABLE PHASE 3: pending settlement, dead props, probe-verified non-changes (PR #280)
+
+Follow-on to the Phase 1/2 mobile table sessions (#243, #252). Three changes,
+and three deliberate non-changes with the measurements that justify them.
+
+### Shipped
+
+1. SESSION COMPLETE "PENDING SETTLEMENT" — the #243 deferred-cashout fix
+   estimates P/L from the live stack when a mid-hand leave defers the cashout,
+   but the card rendered that estimate exactly like a settled number.
+   SessionSummaryPayload now carries `plPending` (set from
+   TableService.leaveTable's `deferred` flag), and the cash card's money line
+   is annotated "Pending Settlement" — muted, Title Case, no em dashes, no
+   yellow. Pinned both ways (present when deferred, absent when settled, with
+   a card-rendered guard) by tests/unit/sessionSummaryPendingSettlement.test.tsx.
+   Tournament payloads never set it. A future session can still reconcile the
+   estimate to the true settlement number via BALANCE_UPDATED; the annotation
+   makes the estimate honest in the meantime.
+2. DEAD PROPS — `heroSeat` and `navigate` into TableModalsLayer (orphaned by
+   the Phase 2 SessionSummary removal; invisible to tsc with noUnusedLocals
+   off) removed end-to-end: prop types, destructures, call-site args, and the
+   now-unused useNavigate import.
+3. LAST PANEL YELLOW — RealTimeResultPanel `.rtr__clock` #ffb800 -> #ffffff,
+   completing the anti-yellow pass (#243 slider, Phase 2 audit).
+
+### Audited, deliberately NOT changed
+
+The three screenshot-spotted layout items (position badges "tucked behind
+avatars", FOLD labels "colliding with names", felt masthead "under flop
+cards") do NOT reproduce in the current layout. Measured with a headless
+render of the real CSS (hero-card-row harness pattern; 375px viewport, 9-max
+ring, correct .seat-wrapper z-10 structure): board bottom 292.0 vs masthead
+top 304.1 (12px clear even with the 3-line tournament masthead); adjacent
+left-rail seats have 22-48px of clearance around FOLD tags and badges;
+elementFromPoint at badge centres returns the badge itself. Two probe traps
+worth recording: a harness WITHOUT .seat-wrapper reports seats occluded by
+.table-surface (z-1 beats z-auto — that reading is an artifact), and
+.seat\_\_action can never be occlusion-probed via elementFromPoint because it
+is pointer-events:none. The complaints trace to the same pre-#243 screenshots
+whose "POT 0" the Phase 2 audit already ruled correct (old layout, hero PLO4
+cards mid-felt). If a real device still shows any of them, get a FRESH
+screenshot of the current build before touching SeatSlot.css — its comments
+document exactly this dated-reversal trap.
+
+Verification: tsc clean; vitest 235 files, 2,983 passed / 5 skipped.
+GitHub MCP note: its static token was refreshed in config (takes effect on
+next Claude restart); gh on the Mac is authenticated and is the sanctioned
+path regardless.
+
+---
+
+## Cowork session 2026-08-22 (5) — THE WATCHDOG WAS THE OUTAGE
+
+### What the database said
+
+Six hours of production, read before a line was written:
+
+- **1,603 `dealing_loop_dead` kills** in `engine_recovery_events`.
+- **Every running cash table killed 22-30 times**, each after an average of
+  **three hands**. All of them `status='running'`, every seat funded, 2-6
+  seated. Nothing was wrong with any of them.
+- `hand_history` per-table spacing showed the shape exactly: normal 8-45s
+  between hands, then **107s, 107s, 114s, 87s, 83s** — two 90s watchdog trips
+  plus the rebuild — repeating forever.
+- Fleet-wide: **38 zero-hand minutes out of 361**, in ten runs of 2-3 minutes,
+  against a 29/min average and a 248/min peak.
+
+That is Dan's report — "games randomly break, stop running or freeze" — with a
+mechanism attached. It was not the transport, and it was not a bug in any
+table. **The recovery mechanism was the outage.**
+
+### Why
+
+The path BETWEEN hands is five Supabase round trips — `loadSeatedPlayers`,
+`refreshBlinds`, `refreshRakeConfig`, `processPendingAddOns`,
+`recoverBustedSeatedHorses`. Nothing bounded them and none of them called
+`markProgress()`, and they sit directly under a watchdog that kills the engine
+after 90 seconds without a hand.
+
+Database slowness is **correlated** — every table shares one database. So a
+slow minute did not stall one table, it stalled the fleet, got every engine
+killed at once, and the rebuild storm that followed put the database under
+more load than the slowness that started it. A self-feeding spiral is how you
+get 1,603 kills in six hours.
+
+Round 2 (session 4) had already bounded `postHandTasks` for exactly this
+reason. It bounded one await out of six.
+
+The second failure was diagnostic: `dealing_loop_dead` is inferred from
+OUTSIDE the loop — no handController, two dealable seats, no progress for 90s.
+That is the symptom of every possible stall in that path and it names none of
+them, so six hours of fleet-wide breakage produced 1,603 identical rows and
+not one clue about which step was slow.
+
+### What shipped
+
+1. **The loop says where it is.** `loopPhase` / `loopPhaseSinceMs` on
+   `ServerTableEngineBase`, stamped at every step: `await_post_hand_tasks`,
+   `load_seats`, `refresh_blinds`, `refresh_rake`, `pending_addons`,
+   `recover_busted_horses`, `idle_not_enough_players`, `spin_reveal_hold`,
+   `admin_pause_lock`, `maintenance_lock`, `dealing`, `post_hand_hold`.
+2. **The watchdog asks the loop, not the calendar.** Case B now distinguishes
+   a loop WEDGED in one step (`msSinceLoopPhase() > 90s` — still killed, as
+   `dealing_loop_dead:<phase>`) from one still CYCLING but not dealing (given
+   a five-minute horizon, then killed as `loop_ticking_no_hands:<phase>`). A
+   table waiting on a slow database is alive and is no longer killed for it;
+   nothing that was detectable before became undetectable.
+3. **Every between-hands step carries a budget.** `withStepBudget(phase, ms,
+work)` — 20s each, well under the 90s window because each step re-stamps
+   the phase, so five slow steps can outlast the idle window without ever
+   looking wedged. On expiry it REJECTS rather than returning a partial
+   result: a hand dealt from a half-loaded seat list is worse than a hand not
+   dealt. `deal_step_timeout` joins the loop's existing transient list, so the
+   step is retried with backoff instead of counting toward the 10-error engine
+   shutdown, and it calls `markProgress()` — the same call the 45s
+   `postHandTasks` bound already makes, for the same reason.
+4. **`/health` reports `loopPhase`** per table (`load_seats+96s`). It could
+   already say a table had made no progress for 96 seconds but not what it was
+   doing for them.
+
+### Kill-reason vocabulary (for reading `engine_recovery_events.detail`)
+
+| detail                          | means                                                                   |
+| ------------------------------- | ----------------------------------------------------------------------- |
+| `dealing_loop_dead:<phase>`     | the loop stopped moving, in `<phase>`                                   |
+| `loop_ticking_no_hands:<phase>` | the loop is cycling through `<phase>` and still not dealing after 5 min |
+
+The phase is recorded WITHOUT its elapsed seconds. A detail that is unique per
+row cannot be grouped, and grouping is the entire point of recording it.
+
+### Tests
+
+`DealStepBudget.test.ts` (new, 4) pins the budget's result/timeout contract and
+that its message is the one the loop already treats as transient.
+`TableWatchdog.test.ts` gains the slow-database storm as a named describe block
+and its existing kill assertion now states WHICH loop is dead. Server suite
+**1,094 passed / 104 files**; `npx tsc --noEmit` clean on `server/tsconfig.json`.
+Client untouched (root tsconfig includes `src` only).
+
+### Watch after deploy
+
+`SELECT detail, COUNT(*) FROM engine_recovery_events WHERE created_at >
+NOW()-INTERVAL '1 hour' GROUP BY 1 ORDER BY 2 DESC;` — the 1,603/6h rate must
+collapse, and whatever remains now names the step it died in. Zero-hand
+minutes in `hand_history` should stop clustering into 2-3 minute runs.
+
+### Still open from session 4
+
+Unchanged and untouched: mux soak (`ca_ws_mux` still off), the empty-table
+`p_min: 2` 4404 (not reproducing — 0 single-occupant tables live), the
+`pending_deadlines` dead write, the reaper's trust-based `!isRunning()` branch,
+and the missing EngineStateClient jsdom tests. Also newly observed and NOT
+addressed here: **56 `start_failed` kills between 19:07 and 19:42 UTC**, on
+engine versions `b66cea4a` / `af159998`. That is a separate, newer fault and
+it needs its own read of `GameServer` engine start.
+
+---
+
+## Cowork session 2026-08-22 (7) — THE SPIN RESERVE: a wallet nobody could see, and a tier nobody could win
 
 Two of the three follow-ups from
 `.agent/audits/2026-08-22-union-level-spin-reserve-wallet.md`, closed in the
@@ -272,6 +430,61 @@ pushed as `fix/mobile-table-audit-2026-08-22-v2`, PR #243, merged after all
 required checks passed. The 14 pushed files were mirrored back to the Mac
 working tree from origin/main.
 
+## Cowork session 2026-08-22 (3) — LOBBY V2: line-based lobby + Casino Plaque game lobbies
+
+Dan: "I currently hate the game cards inside the Club Arena lobby and want to
+completely change them out. Replace the card browser with a dense, professional,
+line-based poker lobby (PokerStars information architecture), and open a premium
+Casino Plaque detail lobby when a game is selected."
+
+### What shipped
+
+1. **Line-based lobby table** (`src/components/lobby/LobbyTable.tsx` + css):
+   sticky headers, per-category columns (cash: stakes/variant/players/buy-in/
+   rules/status; MTT: buy-in/guarantee/players/starts/speed/status; spins /
+   heads-up variants; combined set on All Games), numeric-value column sorting,
+   arrow-key + Enter navigation, skeleton rows, full/live/waitlist/late-reg
+   status badges, Seated / Registered / Waitlisted player-state chips, and a
+   favorites star backed by the existing `favorite_tables` table.
+2. **LobbyEntry view-model layer** (`src/components/lobby/lobbyEntries.ts`):
+   presentation-only normalization of cash tables + tournaments; rule medallions
+   derive strictly from the REAL `TableSettings` flags (RIT, insurance,
+   straddle, bomb pots + frequency, ante, double board, seven deuce, time bank,
+   VPIP, call time, no rathole) and tournament columns (guarantee, late reg,
+   re-entry/rebuy/add-on when present). Domain rows ride along on `.raw`.
+3. **CasinoPlaque** (`src/components/lobby/CasinoPlaque.tsx` + css): three-zone
+   brushed-metal plaque (identity / rule medallions / join info with seat pips
+   and the primary CTA). Renders only for the selected game.
+4. **GameLobbyPanel** (`src/components/lobby/GameLobbyPanel.tsx` + css): the
+   pre-commit game lobby. Cash: game info grid (avg pot from hand_history,
+   waitlist list via WaitlistService), full rules, CTA ladder JOIN TABLE /
+   JOIN WAITLIST / LEAVE WAITLIST / RETURN TO TABLE / TABLE CLOSED / GAME
+   PAUSED. MTT: Overview / Structure / Payouts tabs (payout projections are
+   labelled estimates), REGISTER / LATE REGISTER / UNREGISTER / RETURN TO
+   TOURNAMENT / REGISTRATION CLOSED, plus a link to the full TournamentDetails
+   lobby. Spins: JOIN SPIN; Heads-Up: TAKE SEAT — both via the untouched
+   seat-first `spinQuickJoin`.
+5. **ClubHomePage** rewired: card grid render replaced by LobbyTable + panel;
+   All Games is a real tab; row click ONLY selects (acceptance rule: nothing
+   joins, registers, or spends from a row). All data loading, realtime
+   channels, advanced filters, quick prefs, sort, search, waitlist logic,
+   admin delete (now in the panel), and `clubIdOverride` are unchanged.
+   Merged on top of main's Limit-category + CreateTournamentModal changes.
+6. **Tests**: `tests/e2e/club-lobby.spec.ts` rewritten for `.lt-*`/`.glp`
+   selectors, including a new "selecting a row opens the panel without
+   joining" spec. All lobby guardrail suites green (seatFirstGames,
+   spinReveal, advancedFilterSpec, tournamentFilters, protectedFeatures,
+   verify-bus-listeners, shipped-invariants + 15 adjacent suites, 311 tests).
+   `tsc --noEmit` clean; production Vite build clean.
+
+### Deliberately NOT done
+
+- `DynamicGameCard.tsx` and `ClubLobby.tsx` (the secondary lobby at
+  `/clubs/:clubId/lobby`) are left in place per the safe-migration rule —
+  remove only after production verification.
+- No virtualization: rows are single flat `<tr>`s; the existing QUERY_LIMITS
+  cap bounds the list. Revisit only if row counts grow past that.
+
 ---
 
 ## Cowork session 2026-08-22 (2) — CONNECTIVITY HARDENING: the freeze deep-dive
@@ -375,6 +588,62 @@ Idle-table broadcast (no snapshot for joining clients between hands / empty
 tables), postHandTasks unbounded await, /health restart-races-recovery window,
 mux-mode fixes (flag is OFF; do not enable ca_ws_mux until EngineSocketMux
 half-open + eviction-storm bugs are fixed), presence ghost-seat merge.
+
+---
+
+## Cowork session 2026-08-22 (2) — V12 horse brain: the full build-out (PRs #256, #263, #265, #268, #271, #272, #276)
+
+Dan: "BUILD THEM ALL, IN FULL." Seven upgrades shipped as seven sequential
+PRs, each with tests in the same commit, each squash-merged through the
+6-check ruleset, each auto-deployed to Hetzner. Three new tables (all
+service-role RLS, migrations applied via Supabase MCP AND committed to the
+repo, schema manifest updated each time).
+
+- **A (#256) Persistent opponent memory.** HorseMind stats flush to
+  `horse_mind_stats` every 5 min (GREATEST-merge RPC `upsert_horse_mind_stats`
+  so bounded-memory swaps can never clobber history), instant DB hydration on
+  boot + tail-only replay, final flush in the shutdown drain. VERIFIED LIVE:
+  488 opponent profiles flushed by production within minutes of deploy.
+- **B (#263) Per-horse self-improvement loop.** Nightly 08:00 UTC,
+  HorseSelfTuner studies each horse's own week of cash play (VPIP/PFR/3-bet/
+  fold-to-3-bet/WWSF/AF/net bb from hand_history with contribution replay +
+  blind reconstruction), diagnoses leaks vs winning benchmarks, writes
+  bounded nudges (±0.02/night, caps 0.85-1.18) into profiles.horse_profile —
+  which resolveHorseStyle already reads. Audit trail: `horse_self_tune_log`.
+- **C (#265) Real ICM + formats.** TournamentBrainContext (20s-TTL cache,
+  sync decision-path read) feeds icmRisk v2: pressure scales with actual
+  distance to the money, covering big stacks get bubble-abuse mode, ITM short
+  stacks ladder, PKO bounty share trims the premium, spins are winner-take-all
+  chip EV with 3-max hyper range widening.
+- **D (#268) Anti-exploit defense.** Per-(attacker,victim) pair tracking —
+  who 3-bets whose opens, who raises whose c-bets — vs the attacker's global
+  rates. A hunter gets re-raised wider, defended wider, and called down
+  lighter until the hunt stops paying.
+- **E (#271) Self-play league.** Self-contained NLH simulator (side pots
+  included) drives HorseLogic over DUPLICATE deals nightly at 04:30 UTC;
+  bb/100 + stderr per layer into `horse_league_results`. First measurements:
+  V11 leak fixes +112 bb/100 (se 43) vs the pre-fix engine; full engine
+  +151 bb/100 (se 61) vs V2 legacy. league-\* ids + an observe() gate keep
+  synthetic hands out of live opponent memory.
+- **F (#272) Board-conditioned range modeling (the deep one).** The MC now
+  conditions sampled opponent hands on their postflop line ON THIS BOARD:
+  aggressors resample toward connecting hands (pair+/flush draw/OESD via
+  connectsBoard), passive checked lines get monsters down-sampled. Seeded
+  tests pin QQ-on-AK7 dropping >3pts vs a double barrel. NLH-only, inside
+  the latency budget, opts.v12.
+- **G (#276) River sizing polish.** OOP quarter-pot block bets, nut-class
+  1.3-1.6x overbets heads-up with paired nut-blocker overbet bluffs, and
+  blocker-aware catching extended to the 0.8-1.2x band.
+
+Ops notes: the GitHub MCP token is dead ("Bad credentials") and
+api.github.com is proxy-blocked from the sandbox — all PR create/merge ran
+via host-terminal curl with the repo PAT; branch pushes from a /tmp clone
+(never git-write on the mounted worktree, per section 12). One stacked
+rebase initially targeted the wrong upstream after a squash — recovered via
+reflog; later rebases pinned parents by SHA. An autopilot bot merge brought
+a pot-limit jam fix into flight A; re-applying edits ON TOP of the branch
+head (not from the mount copy) avoided reverting it — the mount is not a
+merge base, main is.
 
 ---
 
@@ -6635,27 +6904,29 @@ Removed `mississippiEnabled` from StraddleConfig, simplified processStraddles() 
 **What changed:** Removed all dead variants from all files. Dan's 9 approved variants: nlh, plo4, plo5, plo6, plo8, pineapple, short_deck, ofc, ofc_pineapple.
 
 **Server files fixed:**
-| File | Change |
-|------|--------|
-| `server/src/types.ts` | GameVariant cleaned to 9 variants + pineapple added |
-| `server/src/engine/PokerEngine.ts` | Simplified isHiLo to `gameVariant === 'plo8'` only |
-| `server/src/config/RakeConfig.ts` | Removed `plo_hilo` BBJ entry, removed `flh` check |
-| `server/src/engine/ServerTableEngine.ts` | Removed MixedGameEngine config block |
+
+| File                                     | Change                                              |
+| ---------------------------------------- | --------------------------------------------------- |
+| `server/src/types.ts`                    | GameVariant cleaned to 9 variants + pineapple added |
+| `server/src/engine/PokerEngine.ts`       | Simplified isHiLo to `gameVariant === 'plo8'` only  |
+| `server/src/config/RakeConfig.ts`        | Removed `plo_hilo` BBJ entry, removed `flh` check   |
+| `server/src/engine/ServerTableEngine.ts` | Removed MixedGameEngine config block                |
 
 **Client files fixed:**
-| File | Change |
-|------|--------|
-| `src/types/database.types.ts` | GameVariant cleaned to 9 variants |
-| `src/types/club.types.ts` | GameVariant cleaned to 9 variants |
-| `src/pages/WaitlistPage.tsx` | getGameTypeLabel updated for all 9 variants |
-| `src/pages/TablePage.tsx` | Removed `flo` from isPotLimit check |
-| `src/pages/TableCreationPage.tsx` | Updated GameType union + gameTypes array |
-| `src/pages/CreateTablePage.tsx` | GAME_TYPES array rebuilt with all 9 variants |
-| `src/pages/ClubHomePage.tsx` | Removed `mixed` and `double` from game filter |
-| `src/pages/club/ClubLobby.tsx` | variantMatchesFilter cleaned |
+
+| File                                       | Change                                        |
+| ------------------------------------------ | --------------------------------------------- |
+| `src/types/database.types.ts`              | GameVariant cleaned to 9 variants             |
+| `src/types/club.types.ts`                  | GameVariant cleaned to 9 variants             |
+| `src/pages/WaitlistPage.tsx`               | getGameTypeLabel updated for all 9 variants   |
+| `src/pages/TablePage.tsx`                  | Removed `flo` from isPotLimit check           |
+| `src/pages/TableCreationPage.tsx`          | Updated GameType union + gameTypes array      |
+| `src/pages/CreateTablePage.tsx`            | GAME_TYPES array rebuilt with all 9 variants  |
+| `src/pages/ClubHomePage.tsx`               | Removed `mixed` and `double` from game filter |
+| `src/pages/club/ClubLobby.tsx`             | variantMatchesFilter cleaned                  |
 | `src/components/lobby/DynamicGameCard.tsx` | VARIANT_DISPLAY + TOURNEY_VARIANT_MAP cleaned |
-| `src/components/club/CreateTableModal.tsx` | Removed Double Board toggle |
-| `src/services/HorseOrchestrator.ts` | Removed dead variant table definitions |
+| `src/components/club/CreateTableModal.tsx` | Removed Double Board toggle                   |
+| `src/services/HorseOrchestrator.ts`        | Removed dead variant table definitions        |
 
 ### FIX 117 — Restore finalizeRunout(skipDistribution) — DOUBLE MONEY BUG
 

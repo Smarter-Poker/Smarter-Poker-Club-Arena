@@ -126,10 +126,7 @@ export class HorseMind {
   /** V12 persistence: userIds whose stats changed since the last DB flush. */
   private static dirty = new Set<string>();
   /** V12 ANTI-EXPLOIT: per-(attacker|victim) aggression targeting counters. */
-  private static pairs = new Map<
-    string,
-    { n3: number; opp3: number; nR: number; oppR: number }
-  >();
+  private static pairs = new Map<string, { n3: number; opp3: number; nR: number; oppR: number }>();
   private static readonly MAX_PAIRS = 20_000;
 
   // ───────────────────────────────────────────────────────────────────────
@@ -173,7 +170,10 @@ export class HorseMind {
 
     for (const a of history) {
       const preflop = a.stage === 'preflop';
-      const isAggr = a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise === true);
+      const isAggr =
+        a.action === 'bet' ||
+        a.action === 'raise' ||
+        (a.action === 'all_in' && a.isFullRaise === true);
       const actKey = `${a.timestamp}:${a.userId}:${a.action}:${a.amount}`;
       const isNew = !this.seenActions.has(actKey);
       if (isNew) this.seenActions.add(actKey);
@@ -207,7 +207,11 @@ export class HorseMind {
 
         // Preflop VPIP / PFR / 3-bet (first voluntary action only)
         if (preflop) {
-          const voluntary = a.action === 'call' || a.action === 'bet' || a.action === 'raise' || a.action === 'all_in';
+          const voluntary =
+            a.action === 'call' ||
+            a.action === 'bet' ||
+            a.action === 'raise' ||
+            a.action === 'all_in';
           if (voluntary) {
             const vKey = `${handKey}|${a.userId}|vpip`;
             if (!this.handFlags.has(vKey)) {
@@ -407,9 +411,13 @@ export class HorseMind {
     history: ActionRecord[] | undefined,
     bigBlind: number,
     sizedReads: boolean = true,
-    board: Card[] | null = null
+    board: Card[] | null = null,
+    /** V12 out-param: postflop aggression weight + checked-street count for
+     *  board-contact conditioning (see HorseEval.simulateEquity). */
+    readOut?: { aggrW: number; checked: number }
   ): [number, number] | null {
     if (!history || history.length === 0) return null;
+    const postStagesActed = new Set<string>();
 
     let raisesBefore = 0;
     let line: 'none' | 'limp' | 'call' | 'open' | 'threebet' | 'check' = 'none';
@@ -424,7 +432,10 @@ export class HorseMind {
     let curStreet: string = 'preflop';
     let streetBets = new Map<string, number>();
     for (const a of history) {
-      const isAggr = a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise === true);
+      const isAggr =
+        a.action === 'bet' ||
+        a.action === 'raise' ||
+        (a.action === 'all_in' && a.isFullRaise === true);
       const anyChips = isAggr || a.action === 'call' || a.action === 'all_in';
       if (a.stage !== curStreet) {
         curStreet = a.stage;
@@ -438,6 +449,7 @@ export class HorseMind {
       if (a.stage !== 'preflop') {
         if (a.userId === userId) {
           if (a.action === 'fold') return null;
+          postStagesActed.add(a.stage); // V12: they acted on this street
           if (isAggr) {
             const potBefore = Math.max(bigBlind || 1, pot);
             const frac = increment / potBefore;
@@ -502,20 +514,25 @@ export class HorseMind {
     let hi: number;
     switch (line) {
       case 'limp':
-        lo = 0.15; hi = 0.72; // speculative + traps; excludes pure junk & most premiums
+        lo = 0.15;
+        hi = 0.72; // speculative + traps; excludes pure junk & most premiums
         break;
       case 'call':
-        lo = 0.3; hi = 0.86; // calling a raise: playables, minus junk, minus most 4-bet hands
+        lo = 0.3;
+        hi = 0.86; // calling a raise: playables, minus junk, minus most 4-bet hands
         break;
       case 'open':
-        lo = 0.4; hi = 1.0;
+        lo = 0.4;
+        hi = 1.0;
         break;
       case 'threebet':
-        lo = 0.62; hi = 1.0;
+        lo = 0.62;
+        hi = 1.0;
         break;
       case 'check':
       default:
-        lo = 0.0; hi = 0.8; // BB free check: capped range
+        lo = 0.0;
+        hi = 0.8; // BB free check: capped range
         break;
     }
 
@@ -525,12 +542,14 @@ export class HorseMind {
       const conf = Math.min(1, s.hands / 25);
       const pfrRate = s.pfr / s.hands;
       if (line === 'open' || line === 'threebet') {
-        if (pfrRate < 0.1) lo += 0.12 * conf; // a nit raised: tighten the read
+        if (pfrRate < 0.1)
+          lo += 0.12 * conf; // a nit raised: tighten the read
         else if (pfrRate > 0.3) lo -= 0.1 * conf; // a maniac raised: widen it
       }
       const vpipRate = s.vpip / s.hands;
       if (line === 'limp' || line === 'call') {
-        if (vpipRate > 0.5) lo -= 0.08 * conf; // loose caller: more junk in range
+        if (vpipRate > 0.5)
+          lo -= 0.08 * conf; // loose caller: more junk in range
         else if (vpipRate < 0.18) lo += 0.08 * conf; // tight caller: real hand
       }
     }
@@ -544,6 +563,15 @@ export class HorseMind {
       for (const w of streetWeight.values()) total += w;
       lo += Math.min(0.22, total);
       hi = Math.min(1, hi + 0.05); // aggression uncaps the top of the range
+    }
+    // V12: expose the postflop line shape for board-contact conditioning.
+    if (readOut) {
+      let total = 0;
+      for (const w of streetWeight.values()) total += w;
+      readOut.aggrW = Math.min(0.3, total);
+      let checked = 0;
+      for (const st of postStagesActed) if (!streetWeight.has(st)) checked++;
+      readOut.checked = checked;
     }
 
     lo = Math.max(0, Math.min(0.9, lo));
@@ -767,12 +795,18 @@ export class HorseMind {
     history: ActionRecord[] | undefined,
     bigBlind: number,
     sizedReads: boolean = true,
-    board: Card[] | null = null
+    board: Card[] | null = null,
+    /** V12 out-param: parallel per-opponent postflop reads (same order as
+     *  the returned bands) for board-contact conditioning. */
+    readsOut?: Array<{ aggrW: number; checked: number } | null>
   ): Array<[number, number] | null> {
     const bands: Array<[number, number] | null> = [];
     for (const p of players) {
       if (p.seat === heroSeat || p.is_folded || p.is_sitting_out) continue;
-      bands.push(this.bandFor(p.user_id, history, bigBlind, sizedReads, board));
+      const readOut = readsOut ? { aggrW: 0, checked: 0 } : undefined;
+      bands.push(this.bandFor(p.user_id, history, bigBlind, sizedReads, board, readOut));
+      if (readsOut)
+        readsOut.push(readOut && (readOut.aggrW > 0 || readOut.checked > 0) ? readOut : null);
     }
     return bands;
   }

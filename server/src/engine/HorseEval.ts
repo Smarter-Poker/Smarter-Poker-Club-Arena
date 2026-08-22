@@ -50,16 +50,15 @@ const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
  *                          correlated with each other
  */
 const FAST_RNG_SEED =
-  Number(process.env.HORSE_FUZZ_SEED) ||
-  (process.env.VITEST ? 0x5eed1e : Date.now() ^ 0x9e3779b9);
+  Number(process.env.HORSE_FUZZ_SEED) || (process.env.VITEST ? 0x5eed1e : Date.now() ^ 0x9e3779b9);
 
 // xorshift32 is a fixed point at 0 — a zero state emits zeros forever — so the
 // seed is forced non-zero here and in seedFastRandom.
-let rngState = (FAST_RNG_SEED >>> 0) || 1;
+let rngState = FAST_RNG_SEED >>> 0 || 1;
 
 /** Pin the strategy/Monte-Carlo stream. Exported for tests and for replaying a decision. */
 export function seedFastRandom(seed: number): void {
-  rngState = (seed >>> 0) || 1;
+  rngState = seed >>> 0 || 1;
 }
 
 export function fastRandom(): number {
@@ -482,6 +481,56 @@ export interface HiLoSplit {
 }
 
 /**
+ * V12 BOARD-CONDITIONED SAMPLING (2026-08-22): per-opponent postflop read.
+ * `aggrW` is the summed street-narrowing weight of their postflop aggression
+ * (0 = never bet); `checked` counts postflop streets where they showed no
+ * aggression despite acting. Aggressors get sampled toward hands that
+ * CONNECT with the current board; passive lines get their monsters
+ * down-sampled (a capped range stays capped).
+ */
+export interface OppPostflopRead {
+  aggrW: number;
+  checked: number;
+}
+
+/** Does this NLH-family hand connect with the CURRENT board — a pair or
+ *  better using it, a flush draw, or an open straight draw? */
+export function connectsBoard(hole: Card[], board: Card[], shortDeck: boolean): number {
+  // Returns the made CATEGORY (1..10) using hole+board; draws return 2
+  // ("pair-equivalent connection") so the acceptance logic treats a real
+  // draw like real contact.
+  const all = hole.concat(board);
+  const cat = Math.floor(scoreHoldem(all, all.length, shortDeck) / 0x100000);
+  if (cat >= 2) {
+    // A pocket pair UNDER every board card is a hidden non-connector — but it
+    // still bets sometimes; treat pocket pairs as contact.
+    return cat;
+  }
+  if (board.length >= 5) return cat; // river: no draws left
+  // Flush draw: 4 to a flush with at least one hole card of the suit.
+  const suitCount = new Map<string, number>();
+  for (const c of all) suitCount.set(c.suit, (suitCount.get(c.suit) || 0) + 1);
+  for (const [suit, n] of suitCount) {
+    if (n >= 4 && hole.some((h) => h.suit === suit)) return 2;
+  }
+  // Open-ended-ish: 4 distinct ranks inside a 5-window using a hole card.
+  let mask = 0;
+  for (const c of all) mask |= 1 << RANK_VALUES[c.rank];
+  for (let top = 14; top >= 5; top--) {
+    let inWin = 0;
+    for (let r = top; r > top - 5 && r >= 2; r--) if (mask & (1 << r)) inWin++;
+    if (inWin >= 4) {
+      // must use a hole card inside the window
+      for (const h of hole) {
+        const hr = RANK_VALUES[h.rank];
+        if (hr <= top && hr > top - 5) return 2;
+      }
+    }
+  }
+  return cat;
+}
+
+/**
  * Estimate hero's equity (0..1) vs `numOpponents` random hands. Handles all
  * supported variants. Draws are priced naturally because the runout completes
  * the board every iteration.
@@ -503,7 +552,9 @@ export function simulateEquity(
   adaptive?: boolean,
   // V8: hi-lo decomposition accumulator (plo8 only) — filled in the SAME
   // loop, so the scoop/quarter read costs nothing extra.
-  splitOut?: HiLoSplit
+  splitOut?: HiLoSplit,
+  // V12: board-contact conditioning per opponent (NLH family only).
+  oppReads?: Array<OppPostflopRead | null>
 ): number {
   // V3 perf: banded Omaha sampling adds rejection-scoring cost; trim the
   // iteration count to stay inside the per-decision millisecond budget.
@@ -539,7 +590,11 @@ export function simulateEquity(
   // nearly all the latency win with no measurable equity-precision cost.
   const V7_THRESHOLDS = [0.18, 0.3, 0.42, 0.52, 0.62, 0.8];
   const checkpoints = adaptive
-    ? [Math.max(60, Math.floor(iterations * 0.4)), Math.floor(iterations * 0.65), Math.floor(iterations * 0.85)]
+    ? [
+        Math.max(60, Math.floor(iterations * 0.4)),
+        Math.floor(iterations * 0.65),
+        Math.floor(iterations * 0.85),
+      ]
     : null;
   let done = 0;
 
@@ -645,6 +700,39 @@ export function simulateEquity(
         }
       }
 
+      // ═══ V12 BOARD-CONTACT CONDITIONING (NLH family, flop+) ═══
+      // The preflop band says which hands an opponent STARTED with; it says
+      // nothing about which of those hands bet this board. An aggressor's
+      // sampled hands are pushed toward board CONTACT (pairs, draws) with a
+      // probability scaled by how hard they have been betting; a passive
+      // checked line gets its monsters down-sampled (capped stays capped).
+      const read = oppReads ? oppReads[o] : null;
+      if (read && !vi.isOmaha && boardCards.length >= 3) {
+        const redraw = () => {
+          for (let i = 0; i < oppHole; i++) {
+            const slot = windowStart + i;
+            const j = slot + Math.floor(fastRandom() * (n - slot));
+            const tmp = deck[slot];
+            deck[slot] = deck[j];
+            deck[j] = tmp;
+            oppCards[i] = deck[slot];
+          }
+        };
+        if (read.aggrW > 0) {
+          const pConnect = Math.min(0.9, 0.4 + read.aggrW * 2.2);
+          for (let t = 0; t < 3; t++) {
+            if (connectsBoard(oppCards, boardCards, vi.isShortDeck) >= 2) break;
+            if (fastRandom() >= pConnect) break; // some of the range IS air
+            redraw();
+          }
+        } else if (read.checked >= 1) {
+          const cat = connectsBoard(oppCards, boardCards, vi.isShortDeck);
+          if (cat >= 4 && fastRandom() < 0.55 + Math.min(0.25, read.checked * 0.12)) {
+            redraw();
+          }
+        }
+      }
+
       let oppHi: number;
       if (vi.isOmaha) {
         oppHi = scoreOmahaHi(oppCards, board);
@@ -693,7 +781,10 @@ export function simulateEquity(
     }
     done = iter + 1;
 
-    if (checkpoints && (done === checkpoints[0] || done === checkpoints[1] || done === checkpoints[2])) {
+    if (
+      checkpoints &&
+      (done === checkpoints[0] || done === checkpoints[1] || done === checkpoints[2])
+    ) {
       const eq = score / done;
       const se = Math.sqrt(Math.max(1e-6, eq * (1 - eq)) / done);
       let minDist = Infinity;
@@ -912,7 +1003,8 @@ export function omahaPreflopScore(cards: Card[], isHiLo: boolean): number {
     const hasA = ranks.includes(14);
     const has2 = ranks.includes(2);
     const has3 = ranks.includes(3);
-    if (hasA && has2) pts += has3 ? 7.5 : 6; // A23 carries counterfeit backup
+    if (hasA && has2)
+      pts += has3 ? 7.5 : 6; // A23 carries counterfeit backup
     else if (hasA && has3) pts += 4;
     else if (has2 && has3) pts += 2;
     const lowCount = ranks.filter((r) => r <= 8 || r === 14).length;

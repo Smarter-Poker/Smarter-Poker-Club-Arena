@@ -452,6 +452,25 @@ export abstract class ServerTableEngineBase {
 
   /** No hand started while the table is dealable. */
   protected static readonly WATCHDOG_IDLE_MS = 90_000;
+
+  /**
+   * The longer horizon for a dealing loop that is CYCLING but never dealing.
+   *
+   * WATCHDOG_IDLE_MS answers "has a hand started lately", which a table
+   * waiting on a slow database answers wrongly — and on 2026-08-22 that wrong
+   * answer killed every cash table in the fleet 22-30 times in six hours. A
+   * loop that is still moving between steps is alive; if it is alive and STILL
+   * has not dealt after five minutes with two funded seats, that is a real
+   * fault, but it is a different one and it gets its own name.
+   */
+  protected static readonly WATCHDOG_LOOP_ALIVE_IDLE_MS = 5 * 60_000;
+
+  /**
+   * Per-step budget for the between-hands Supabase round trips. Deliberately
+   * well under WATCHDOG_IDLE_MS: each step re-stamps the loop phase, so five
+   * budgeted steps can outlast the idle window without ever looking wedged.
+   */
+  protected static readonly DEAL_STEP_BUDGET_MS = 20_000;
   /**
    * A by-design pause older than this is reported (never killed): 15 min
    * exceeds any plausible hand-for-hand or break coordination window.
@@ -1068,6 +1087,95 @@ export abstract class ServerTableEngineBase {
   /** Ms since this table last did anything observable. */
   msSinceProgress(): number {
     return Date.now() - this.lastProgressAtMs;
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // DEALING-LOOP PHASE — Dan 2026-08-22: "find every reason games freeze"
+  //
+  // On 2026-08-22 the live fleet logged 1,603 `dealing_loop_dead` kills in six
+  // hours. EVERY running cash table was killed 22-30 times, each one after an
+  // average of THREE hands, and hand_history showed the shape exactly: normal
+  // 8-45s hand spacing, then a gap of 107s, 107s, 114s, 87s — the two 90s
+  // watchdog trips plus the rebuild, over and over, on fully funded tables
+  // that nothing was actually wrong with.
+  //
+  // The kills carried no cause. `dealing_loop_dead` is inferred from the
+  // OUTSIDE: no handController, two dealable seats, no progress for 90s. That
+  // is the symptom of every possible stall in the between-hands path and it
+  // names none of them, so six hours of fleet-wide breakage produced 1,603
+  // identical rows and not one clue.
+  //
+  // The loop now says where it is. Every step stamps a phase, so a stall is
+  // reported as the thing it is (`load_seats+96s`) rather than as an
+  // anonymous death, and `msSinceLoopPhase()` gives the watchdog a way to ask
+  // "is this loop WEDGED" instead of only "has a hand started lately" — a
+  // question a table waiting on a slow database answers wrongly.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /** Where dealingLoop is right now. See the block above. */
+  protected loopPhase: string = 'not_started';
+  /** When the loop entered `loopPhase`. */
+  protected loopPhaseSinceMs: number = Date.now();
+
+  /**
+   * Stamp the loop's current step. Re-stamping the SAME phase still refreshes
+   * the clock: a loop cycling load_seats -> deal -> load_seats is alive, and
+   * the second visit is new evidence of that, not a continuation of the first.
+   */
+  protected setLoopPhase(phase: string): void {
+    this.loopPhase = phase;
+    this.loopPhaseSinceMs = Date.now();
+  }
+
+  /** Ms the dealing loop has been sitting in its current step. */
+  msSinceLoopPhase(): number {
+    return Date.now() - this.loopPhaseSinceMs;
+  }
+
+  /** `load_seats+96s` — for recovery-event details and /health. */
+  describeLoopPhase(): string {
+    return this.loopPhase + '+' + Math.round(this.msSinceLoopPhase() / 1000) + 's';
+  }
+
+  /**
+   * Await `work`, but never for longer than `budgetMs`.
+   *
+   * Every await in the between-hands path is a Supabase round trip, and the
+   * sum of them was unbounded while the watchdog that judges them was not.
+   * Database slowness is CORRELATED across tables, so one slow minute did not
+   * stall one table — it stalled the whole fleet at once, got every engine
+   * killed at once, and the rebuild storm that followed put the database
+   * under more load than the slowness that started it. A self-feeding spiral
+   * is how 1,603 kills happen in six hours.
+   *
+   * On timeout this REJECTS rather than returning a partial result: a hand
+   * dealt from a half-loaded seat list is worse than a hand not dealt. The
+   * message is in the dealing loop's existing transient list, so the loop
+   * backs off and retries the step instead of counting it toward the 10-error
+   * shutdown.
+   */
+  protected async withStepBudget<T>(phase: string, budgetMs: number, work: Promise<T>): Promise<T> {
+    this.setLoopPhase(phase);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        work,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  'deal_step_timeout: ' + phase + ' exceeded ' + Math.round(budgetMs / 1000) + 's'
+                )
+              ),
+            budgetMs
+          );
+          (timer as { unref?: () => void }).unref?.();
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   /**

@@ -57,7 +57,9 @@
 .rtr__clock {
   font-size: 0.9rem;
   font-weight: 700;
-  color: #ffb800;
+  /* Phase 3 (2026-08-22): last yellow in the panel chrome — the anti-yellow
+     pass (#243 slider, Phase 2 audit) reaches the clock too. */
+  color: #ffffff;
   font-variant-numeric: tabular-nums;
 }
 .rtr__title {

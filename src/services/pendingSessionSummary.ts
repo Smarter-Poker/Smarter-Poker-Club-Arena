@@ -103,6 +103,15 @@ export interface SessionSummaryPayload {
   totalBuyIn?: number;
   sessionStart?: number;
   sessionEnd?: number;
+  /**
+   * True when the cashout was DEFERRED (mid-hand leave): `profitLoss` is an
+   * estimate built from the live stack at the moment of leaving, not the
+   * settled number — the true cashout lands at settlement, after this popup
+   * is already on screen. The card annotates the money line so the estimate
+   * is never mistaken for the settled figure. Cash sessions only; a
+   * tournament payload never sets it.
+   */
+  plPending?: boolean;
 }
 
 type Listener = (payload: SessionSummaryPayload | null) => void;

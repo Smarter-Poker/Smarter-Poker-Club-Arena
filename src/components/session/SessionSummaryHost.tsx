@@ -296,6 +296,14 @@ export function SessionSummaryHost() {
               {isProfit ? '+' : '-'}
               {formatChips(Math.abs(displayPL))}
             </span>
+            {/* Phase 3 (2026-08-22): a mid-hand leave defers the cashout to
+                settlement, so this figure is the live stack at the moment of
+                leaving, not the settled number. Say so, rather than presenting
+                an estimate as fact. Title Case, no em dashes (house popup
+                rules). */}
+            {payload.plPending && (
+              <span className="ssh-hero__sub ssh-hero__sub--pending">Pending Settlement</span>
+            )}
             <span className="ssh-hero__sweep" aria-hidden="true" />
           </div>
         )}

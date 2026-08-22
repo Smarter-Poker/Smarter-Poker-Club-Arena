@@ -885,7 +885,6 @@ export class GameServer {
               .select('id, user_id, table_id, seat_number, stack, tables!inner(tournament_id)')
               .is('left_at', null)
               .is('tables.tournament_id', null)
-              .in('user_id', horseIdList)
               .order('id', { ascending: true })
               .limit(want);
             if (protectedTableId) q = q.neq('table_id', protectedTableId);
@@ -895,7 +894,8 @@ export class GameServer {
           { label: 'GameServer.staleSweep.seats', maxRows: 50_000 }
         );
         // Same fail-closed rule as the horse list: this path DELETES seat rows.
-        const activeSeats = seatPage.complete ? seatPage.rows : [];
+        const horseIdSet = new Set(horseIdList);
+        const activeSeats = seatPage.complete ? seatPage.rows.filter(s => horseIdSet.has(s.user_id)) : [];
         if (!seatPage.complete) {
           console.warn(
             '[GameServer] Stale-seat sweep SKIPPED — the seat read was incomplete. ' +
@@ -1114,36 +1114,46 @@ export class GameServer {
         }
       }
 
-      // 6. Cancel stale RUNNING MTT tournaments (BUG 019 FIX 2026-04-15):
-      //    Prior threshold was 2 hours which killed every legitimate MTT — deep-stack
-      //    tournaments routinely run 6+ hours. 133 MTTs were nuked before this fix.
-      //    New policy:
-      //      - bump threshold to 12 hours (truly crashed servers would mean tournaments
-      //        stalled much longer than that)
-      //      - set ended_at = NOW() so audit trail is preserved (was NULL before)
-      //      - only target tournaments where last_activity is also stale
-      //      - DO NOT touch MTTs that have recent hand_history activity (they're live)
-      //    A separate scheduled cleanup should refund affected players; that's handled
-      //    by TournamentManager.cancelTournament via normal refund path. This startup
-      //    sweep is strictly a safety-net for server crashes and should rarely fire.
-      const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
-      const recentActivityCutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-      // Find stale RUNNING tournaments with no recent hand activity
-      const { data: staleTourneys } = await supabase
-        .from('tournaments')
-        .select('id, name')
-        .eq('status', 'RUNNING')
-        .lt('created_at', twelveHoursAgo);
-      for (const t of staleTourneys || []) {
-        const { count: recentHands } = await supabase
-          .from('hand_history')
-          .select('id', { count: 'exact', head: true })
-          .eq('tournament_id', t.id)
-          .gte('created_at', recentActivityCutoff);
-        if ((recentHands || 0) > 0) {
-          console.log(
-            `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} — ${recentHands} hands in last hour (still active)`
-          );
+      // Run slow background sweeps asynchronously so they don't block the server boot sequence!
+      Promise.resolve().then(async () => {
+        try {
+          // 6. Cancel stale RUNNING MTT tournaments (BUG 019 FIX 2026-04-15):
+          //    Prior threshold was 2 hours which killed every legitimate MTT — deep-stack
+          //    tournaments routinely run 6+ hours. 133 MTTs were nuked before this fix.
+          //    New policy:
+          //      - bump threshold to 12 hours (truly crashed servers would mean tournaments
+          //        stalled much longer than that)
+          //      - set ended_at = NOW() so audit trail is preserved (was NULL before)
+          //      - only target tournaments where last_activity is also stale
+          //      - DO NOT touch MTTs that have recent hand_history activity (they're live)
+          //    A separate scheduled cleanup should refund affected players; that's handled
+          //    by TournamentManager.cancelTournament via normal refund path. This startup
+          //    sweep is strictly a safety-net for server crashes and should rarely fire.
+          const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+          const recentActivityCutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+          // Find stale RUNNING tournaments with no recent hand activity
+          const { data: staleTourneys } = await supabase
+            .from('tournaments')
+            .select('id, name')
+            .eq('status', 'RUNNING')
+            .lt('created_at', twelveHoursAgo);
+          for (const t of staleTourneys || []) {
+            const { data: recentHands, error } = await supabase
+              .from('hand_history')
+              .select('id')
+              .eq('tournament_id', t.id)
+              .gte('created_at', recentActivityCutoff)
+              .limit(1);
+
+            if (error) {
+              console.log(`[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} — error checking activity, assuming active.`);
+              continue;
+            }
+
+            if (recentHands && recentHands.length > 0) {
+              console.log(
+                `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} — found recent hands in last hour (still active)`
+              );
           continue;
         }
         /**
@@ -1264,6 +1274,10 @@ export class GameServer {
       }
 
       console.log('[GameServer] Stale data cleanup complete');
+        } catch (bgErr) {
+          reportError(bgErr, 'GameServer.background_stale_cleanup_error');
+        }
+      });
     } catch (err) {
       reportError(err, 'GameServer.Stale_data_cleanup_error');
     }

@@ -168,11 +168,40 @@ jobs:
           ref: ${{ needs.build-and-store.outputs.sync_branch }}
           path: club-arena-build
 
+      # WHY THE APP AND NOT THE PAT.
+      #
+      # WORLD_HUB_SYNC_TOKEN is a personal access token, and a PAT has an
+      # expiry date. When it lapses, this step starts failing and the ONLY
+      # symptom is that production stops updating while main keeps moving —
+      # merged, never published, which is indistinguishable from a regression.
+      # GH_PAT was three months from doing exactly that when this was written.
+      # An App installation token is minted per run and cannot expire.
+      #
+      # It also gives the push a distinct identity, which is what lets World
+      # Hub's `main` be protected at all: the sync bypasses the ruleset as
+      # THIS APP and nobody else, instead of the branch being left ungated
+      # because one PAT-shaped robot needs to write to it.
+      #
+      # The token is scoped to World Hub alone — `repositories:` is not
+      # decoration, it is the difference between a courier and a master key.
+      - name: Mint a World Hub token from the GitHub App
+        id: wh-token
+        if: vars.AUTOPILOT_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.AUTOPILOT_APP_ID }}
+          private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
+          owner: Smarter-Poker
+          repositories: Smarter-Poker-World-Hub
+
       - name: Checkout World Hub
         uses: actions/checkout@v4
         with:
           repository: Smarter-Poker/Smarter-Poker-World-Hub
-          token: ${{ secrets.WORLD_HUB_SYNC_TOKEN }}
+          # The PAT stays as the fallback until World Hub's ruleset names the
+          # App as its bypass actor. After that this fallback can only be
+          # rejected, and the publish watchdog is what will say so out loud.
+          token: ${{ steps.wh-token.outputs.token || secrets.WORLD_HUB_SYNC_TOKEN }}
           path: world-hub
 
       - name: Sync dist/ to World Hub public/hub/club-arena/

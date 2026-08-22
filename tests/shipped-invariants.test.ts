@@ -170,6 +170,31 @@ describe('shipped functionality is still here', () => {
     });
   });
 
+  /* The playbook is the first thing every agent reads. Pinned on the answers it
+     has to contain, not its prose, so it can be rewritten freely and cannot be
+     quietly hollowed out. Each string below is a question an agent arrives
+     with: how do I start, where are the credentials, why can I not merge. */
+  it('AGENT-PLAYBOOK.md still answers the questions agents arrive with', () => {
+    const p = readFileSync(root('AGENT-PLAYBOOK.md'), 'utf8');
+    for (const needle of [
+      'agent-workspace.sh',        // how to start without destroying anyone's work
+      'AUTOPILOT_APP_ID',          // where the credential lives
+      'reference-transaction',     // what saves your commits from a reset
+      'build-info.json',           // how to check it actually shipped
+      'estate-integrity',          // what watches the guards
+    ]) {
+      expect(p.includes(needle), `AGENT-PLAYBOOK.md no longer mentions ${needle}`).toBe(true);
+    }
+    // A secret VALUE must never appear here. These repos are read by agents and
+    // some of them are public.
+    expect(/\b(sb_secret|service_role_key\s*=|ghp_|github_pat_)/i.test(p),
+      'AGENT-PLAYBOOK.md looks like it contains a credential value').toBe(false);
+  });
+
+  it('CLAUDE.md sends agents to the playbook first', () => {
+    expect(readFileSync(root('CLAUDE.md'), 'utf8').includes('AGENT-PLAYBOOK.md')).toBe(true);
+  });
+
   /* The guards can all be reverted, and nothing but this notices. Pinned on the
      file, not its contents: what matters is that SOMETHING still compares the
      seven repos to each other. */

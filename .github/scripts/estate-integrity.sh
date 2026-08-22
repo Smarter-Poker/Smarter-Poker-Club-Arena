@@ -44,6 +44,7 @@ REPOS=(
 # Files that must be byte-identical in every repo that has them. Each is a
 # guard the whole estate depends on behaving the same way everywhere.
 SHARED_FILES=(
+  AGENT-PLAYBOOK.md
   .github/scripts/report-stuck-prs.sh
   .github/scripts/check-token.sh
   .github/scripts/queue-pr.sh

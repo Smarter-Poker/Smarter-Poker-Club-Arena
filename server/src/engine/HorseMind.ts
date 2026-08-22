@@ -126,10 +126,7 @@ export class HorseMind {
   /** V12 persistence: userIds whose stats changed since the last DB flush. */
   private static dirty = new Set<string>();
   /** V12 ANTI-EXPLOIT: per-(attacker|victim) aggression targeting counters. */
-  private static pairs = new Map<
-    string,
-    { n3: number; opp3: number; nR: number; oppR: number }
-  >();
+  private static pairs = new Map<string, { n3: number; opp3: number; nR: number; oppR: number }>();
   private static readonly MAX_PAIRS = 20_000;
 
   // ───────────────────────────────────────────────────────────────────────
@@ -173,7 +170,10 @@ export class HorseMind {
 
     for (const a of history) {
       const preflop = a.stage === 'preflop';
-      const isAggr = a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise === true);
+      const isAggr =
+        a.action === 'bet' ||
+        a.action === 'raise' ||
+        (a.action === 'all_in' && a.isFullRaise === true);
       const actKey = `${a.timestamp}:${a.userId}:${a.action}:${a.amount}`;
       const isNew = !this.seenActions.has(actKey);
       if (isNew) this.seenActions.add(actKey);
@@ -207,7 +207,11 @@ export class HorseMind {
 
         // Preflop VPIP / PFR / 3-bet (first voluntary action only)
         if (preflop) {
-          const voluntary = a.action === 'call' || a.action === 'bet' || a.action === 'raise' || a.action === 'all_in';
+          const voluntary =
+            a.action === 'call' ||
+            a.action === 'bet' ||
+            a.action === 'raise' ||
+            a.action === 'all_in';
           if (voluntary) {
             const vKey = `${handKey}|${a.userId}|vpip`;
             if (!this.handFlags.has(vKey)) {
@@ -428,7 +432,10 @@ export class HorseMind {
     let curStreet: string = 'preflop';
     let streetBets = new Map<string, number>();
     for (const a of history) {
-      const isAggr = a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise === true);
+      const isAggr =
+        a.action === 'bet' ||
+        a.action === 'raise' ||
+        (a.action === 'all_in' && a.isFullRaise === true);
       const anyChips = isAggr || a.action === 'call' || a.action === 'all_in';
       if (a.stage !== curStreet) {
         curStreet = a.stage;
@@ -507,20 +514,25 @@ export class HorseMind {
     let hi: number;
     switch (line) {
       case 'limp':
-        lo = 0.15; hi = 0.72; // speculative + traps; excludes pure junk & most premiums
+        lo = 0.15;
+        hi = 0.72; // speculative + traps; excludes pure junk & most premiums
         break;
       case 'call':
-        lo = 0.3; hi = 0.86; // calling a raise: playables, minus junk, minus most 4-bet hands
+        lo = 0.3;
+        hi = 0.86; // calling a raise: playables, minus junk, minus most 4-bet hands
         break;
       case 'open':
-        lo = 0.4; hi = 1.0;
+        lo = 0.4;
+        hi = 1.0;
         break;
       case 'threebet':
-        lo = 0.62; hi = 1.0;
+        lo = 0.62;
+        hi = 1.0;
         break;
       case 'check':
       default:
-        lo = 0.0; hi = 0.8; // BB free check: capped range
+        lo = 0.0;
+        hi = 0.8; // BB free check: capped range
         break;
     }
 
@@ -530,12 +542,14 @@ export class HorseMind {
       const conf = Math.min(1, s.hands / 25);
       const pfrRate = s.pfr / s.hands;
       if (line === 'open' || line === 'threebet') {
-        if (pfrRate < 0.1) lo += 0.12 * conf; // a nit raised: tighten the read
+        if (pfrRate < 0.1)
+          lo += 0.12 * conf; // a nit raised: tighten the read
         else if (pfrRate > 0.3) lo -= 0.1 * conf; // a maniac raised: widen it
       }
       const vpipRate = s.vpip / s.hands;
       if (line === 'limp' || line === 'call') {
-        if (vpipRate > 0.5) lo -= 0.08 * conf; // loose caller: more junk in range
+        if (vpipRate > 0.5)
+          lo -= 0.08 * conf; // loose caller: more junk in range
         else if (vpipRate < 0.18) lo += 0.08 * conf; // tight caller: real hand
       }
     }
@@ -791,7 +805,8 @@ export class HorseMind {
       if (p.seat === heroSeat || p.is_folded || p.is_sitting_out) continue;
       const readOut = readsOut ? { aggrW: 0, checked: 0 } : undefined;
       bands.push(this.bandFor(p.user_id, history, bigBlind, sizedReads, board, readOut));
-      if (readsOut) readsOut.push(readOut && (readOut.aggrW > 0 || readOut.checked > 0) ? readOut : null);
+      if (readsOut)
+        readsOut.push(readOut && (readOut.aggrW > 0 || readOut.checked > 0) ? readOut : null);
     }
     return bands;
   }

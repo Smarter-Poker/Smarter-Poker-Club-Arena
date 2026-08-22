@@ -36,34 +36,52 @@ const has = (p: string, needle: string) => existsSync(root(p)) && read(p).includ
 /** Behaviour that is live and must stay live. */
 const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
   // Roles — the grant matrix lives in Postgres; the client must ASK it.
-  ['src/types/clubRoles.ts', 'co_owner',
-    'the seven club roles, including co_owner'],
-  ['src/pages/ClubMembersPage.tsx', 'ca_club_grantable_roles',
-    'the members page asks the server what it may offer'],
-  ['src/pages/ClubMembersPage.tsx', 'fn_club_set_member_role',
-    'one write path for a role change'],
+  ['src/types/clubRoles.ts', 'co_owner', 'the seven club roles, including co_owner'],
+  [
+    'src/pages/ClubMembersPage.tsx',
+    'ca_club_grantable_roles',
+    'the members page asks the server what it may offer',
+  ],
+  ['src/pages/ClubMembersPage.tsx', 'fn_club_set_member_role', 'one write path for a role change'],
 
   // Cashier — two screens that both got the downline wrong, opposite ways.
-  ['src/pages/CashierPage.tsx', 'ca_club_my_downline',
-    'a super agent sees their downline, not the whole club'],
-  ['src/pages/CashierTradePage.tsx', 'ca_club_my_downline',
-    'a super agent sees their whole downline, not only direct assignees'],
+  [
+    'src/pages/CashierPage.tsx',
+    'ca_club_my_downline',
+    'a super agent sees their downline, not the whole club',
+  ],
+  [
+    'src/pages/CashierTradePage.tsx',
+    'ca_club_my_downline',
+    'a super agent sees their whole downline, not only direct assignees',
+  ],
 
   // Union statements — the settlement lifecycle.
-  ['src/pages/UnionStatementsPage.tsx', 'ca_union_set_statement_paid',
-    'a statement can be marked settled'],
-  ['src/pages/UnionStatementsPage.tsx', 'ca_union_record_presettlement',
-    'a payment received mid-period can be recorded'],
+  [
+    'src/pages/UnionStatementsPage.tsx',
+    'ca_union_set_statement_paid',
+    'a statement can be marked settled',
+  ],
+  [
+    'src/pages/UnionStatementsPage.tsx',
+    'ca_union_record_presettlement',
+    'a payment received mid-period can be recorded',
+  ],
 
   // Club Data — the per-player view and the prior-period comparison.
-  ['src/pages/club/ClubDataPage.tsx', 'ca_club_player_breakdown',
-    'the Players tab'],
+  ['src/pages/club/ClubDataPage.tsx', 'ca_club_player_breakdown', 'the Players tab'],
 
   // Table — the action bar was black because four stylesheets own .action-btn.
-  ['src/components/table/ActionPanel.css', '.action-panel .action-btn',
-    'table action buttons are scoped so an unrelated stylesheet cannot repaint them'],
-  ['src/components/table/tableGeometry.ts', 'betChipOffsetPx',
-    'every seat’s chips sit the same distance from the player'],
+  [
+    'src/components/table/ActionPanel.css',
+    '.action-panel .action-btn',
+    'table action buttons are scoped so an unrelated stylesheet cannot repaint them',
+  ],
+  [
+    'src/components/table/tableGeometry.ts',
+    'betChipOffsetPx',
+    'every seat’s chips sit the same distance from the player',
+  ],
 
   // Leaderboard — lost once already, on 2026-08-21: this method's body was
   // reverted by a merge while the migration creating the function sat in the
@@ -74,8 +92,11 @@ const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
   // CLUB while it was lost: true #1 shown at #5, true #2 at #28, true #3 at
   // #116 with $0, true #10 absent. Anchored on the CALL, so a rename trips it
   // deliberately and a passing mention in a comment cannot satisfy it.
-  ['src/services/LeaderboardService.ts', "rpc('fn_club_tournament_stats',",
-    'the club tournament leaderboard is aggregated in the database, not from a capped page of rows'],
+  [
+    'src/services/LeaderboardService.ts',
+    "rpc('fn_club_tournament_stats',",
+    'the club tournament leaderboard is aggregated in the database, not from a capped page of rows',
+  ],
 ];
 
 /** Things that were removed on purpose and must not come back. */
@@ -126,7 +147,10 @@ describe('shipped functionality is still here', () => {
       if (gt === -1) continue; // no fallback at all is fine
       const pat = expr.indexOf('secrets.GH_PAT');
       const app = expr.indexOf('steps.app-token.outputs.token');
-      expect(pat >= 0 || app >= 0, `GH_TOKEN: ${expr.trim()} — GITHUB_TOKEN with no publishing token ahead of it`).toBe(true);
+      expect(
+        pat >= 0 || app >= 0,
+        `GH_TOKEN: ${expr.trim()} — GITHUB_TOKEN with no publishing token ahead of it`
+      ).toBe(true);
       if (pat >= 0) expect(pat, expr.trim()).toBeLessThan(gt);
       if (app >= 0) expect(app, expr.trim()).toBeLessThan(gt);
     }
@@ -167,10 +191,9 @@ describe('shipped functionality is still here', () => {
          must mean git history. Pinned on the mechanism: the sync step reads
          the deployed ca_sha and asks the compare API where it stands. */
       const wf = publisher();
-      expect(
-        wf.includes('"ca_sha"'),
-        'the sync step no longer reads the deployed ca_sha'
-      ).toBe(true);
+      expect(wf.includes('"ca_sha"'), 'the sync step no longer reads the deployed ca_sha').toBe(
+        true
+      );
       expect(
         /\/compare\/\$\{THEIRS_SHA\}\.\.\.\$\{OURS_SHA\}/.test(wf),
         'the sync step no longer asks the compare API for ancestry'
@@ -186,7 +209,9 @@ describe('shipped functionality is still here', () => {
       // three separate incidents here were merges that never published.
       expect(existsSync(root('.github/workflows/publish-watchdog.yml'))).toBe(true);
       expect(
-        readFileSync(root('.github/scripts/publish-watchdog.sh'), 'utf8').includes('build-info.json'),
+        readFileSync(root('.github/scripts/publish-watchdog.sh'), 'utf8').includes(
+          'build-info.json'
+        ),
         'the watchdog no longer reads the deployed provenance file'
       ).toBe(true);
     });
@@ -199,18 +224,20 @@ describe('shipped functionality is still here', () => {
   it('AGENT-PLAYBOOK.md still answers the questions agents arrive with', () => {
     const p = readFileSync(root('AGENT-PLAYBOOK.md'), 'utf8');
     for (const needle of [
-      'agent-workspace.sh',        // how to start without destroying anyone's work
-      'AUTOPILOT_APP_ID',          // where the credential lives
-      'reference-transaction',     // what saves your commits from a reset
-      'build-info.json',           // how to check it actually shipped
-      'estate-integrity',          // what watches the guards
+      'agent-workspace.sh', // how to start without destroying anyone's work
+      'AUTOPILOT_APP_ID', // where the credential lives
+      'reference-transaction', // what saves your commits from a reset
+      'build-info.json', // how to check it actually shipped
+      'estate-integrity', // what watches the guards
     ]) {
       expect(p.includes(needle), `AGENT-PLAYBOOK.md no longer mentions ${needle}`).toBe(true);
     }
     // A secret VALUE must never appear here. These repos are read by agents and
     // some of them are public.
-    expect(/\b(sb_secret|service_role_key\s*=|ghp_|github_pat_)/i.test(p),
-      'AGENT-PLAYBOOK.md looks like it contains a credential value').toBe(false);
+    expect(
+      /\b(sb_secret|service_role_key\s*=|ghp_|github_pat_)/i.test(p),
+      'AGENT-PLAYBOOK.md looks like it contains a credential value'
+    ).toBe(false);
   });
 
   it('CLAUDE.md sends agents to the playbook first', () => {
@@ -225,7 +252,9 @@ describe('shipped functionality is still here', () => {
     const r = readFileSync(root('.agents/rules/00-agent-playbook.md'), 'utf8');
     expect(r.includes('trigger: always_on'), 'the rule is no longer always-on').toBe(true);
     expect(r.includes('AGENT-PLAYBOOK.md'), 'the rule no longer points at the playbook').toBe(true);
-    expect(r.includes('agent-workspace.sh'), 'the rule no longer carries the ship sequence').toBe(true);
+    expect(r.includes('agent-workspace.sh'), 'the rule no longer carries the ship sequence').toBe(
+      true
+    );
   });
 
   /* The guards can all be reverted, and nothing but this notices. Pinned on the
@@ -236,8 +265,13 @@ describe('shipped functionality is still here', () => {
     const sh = readFileSync(root('.github/scripts/estate-integrity.sh'), 'utf8');
     // The three questions it exists to answer. Losing any one of them turns it
     // into a script that passes for a reason nobody checked.
-    expect(sh.includes('bypass_actors'), 'no longer checks for unexpected bypass actors').toBe(true);
-    expect(sh.includes('required_status_checks'), 'no longer checks that required checks exist').toBe(true);
+    expect(sh.includes('bypass_actors'), 'no longer checks for unexpected bypass actors').toBe(
+      true
+    );
+    expect(
+      sh.includes('required_status_checks'),
+      'no longer checks that required checks exist'
+    ).toBe(true);
     expect(sh.includes('SHARED_FILES'), 'no longer compares the shared guards').toBe(true);
   });
 

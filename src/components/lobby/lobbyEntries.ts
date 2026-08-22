@@ -134,10 +134,13 @@ const TOURNEY_VARIANT_KEYS: Record<string, string> = {
 
 export function variantDisplay(variant?: string): { short: string; long: string } {
   const key = (variant || '').toLowerCase();
-  return VARIANT_LABELS[key] || VARIANT_LABELS[TOURNEY_VARIANT_KEYS[(variant || '').toUpperCase()] || ''] || {
-    short: (variant || 'NLH').toUpperCase(),
-    long: variant || "No Limit Hold'em",
-  };
+  return (
+    VARIANT_LABELS[key] ||
+    VARIANT_LABELS[TOURNEY_VARIANT_KEYS[(variant || '').toUpperCase()] || ''] || {
+      short: (variant || 'NLH').toUpperCase(),
+      long: variant || "No Limit Hold'em",
+    }
+  );
 }
 
 // ─── Settings parsing (string-or-object, same tolerance as the cards) ──────
@@ -154,8 +157,7 @@ export function parseTableSettings(settings: unknown): Record<string, unknown> {
   return {};
 }
 
-const on = (s: Record<string, unknown>, ...keys: string[]) =>
-  keys.some((k) => s[k] === true);
+const on = (s: Record<string, unknown>, ...keys: string[]) => keys.some((k) => s[k] === true);
 const num = (s: Record<string, unknown>, ...keys: string[]): number | null => {
   for (const k of keys) {
     const v = Number(s[k]);
@@ -182,7 +184,11 @@ export function cashRuleMedallions(rawSettings: unknown, name: string): RuleMeda
     });
   }
   if (on(s, 'insurance_enabled', 'allInInsurance') || n.includes('insurance')) {
-    rules.push({ key: 'insurance', label: 'INSURANCE', tip: 'All-in insurance is available at this table' });
+    rules.push({
+      key: 'insurance',
+      label: 'INSURANCE',
+      tip: 'All-in insurance is available at this table',
+    });
   }
   if (on(s, 'straddle_enabled', 'straddle') || n.includes('straddle')) {
     const type = String(s.straddle_type || s.straddleType || '').toUpperCase();
@@ -213,7 +219,11 @@ export function cashRuleMedallions(rawSettings: unknown, name: string): RuleMeda
     });
   }
   if (on(s, 'double_board', 'doubleBoard')) {
-    rules.push({ key: 'double_board', label: 'DOUBLE BOARD', tip: 'Every hand is dealt with two boards' });
+    rules.push({
+      key: 'double_board',
+      label: 'DOUBLE BOARD',
+      tip: 'Every hand is dealt with two boards',
+    });
   }
   if (on(s, 'seven_deuce_enabled')) {
     const amt = num(s, 'seven_deuce_amount');
@@ -225,16 +235,28 @@ export function cashRuleMedallions(rawSettings: unknown, name: string): RuleMeda
     });
   }
   if (on(s, 'time_bank_enabled')) {
-    rules.push({ key: 'time_bank', label: 'TIME BANK', tip: 'Players have a time bank for big decisions' });
+    rules.push({
+      key: 'time_bank',
+      label: 'TIME BANK',
+      tip: 'Players have a time bank for big decisions',
+    });
   }
   if (on(s, 'vpip_display', 'vpipDisplay') || n.includes('vpip')) {
-    rules.push({ key: 'vpip', label: 'VPIP', tip: 'Player VPIP statistics are displayed at the table' });
+    rules.push({
+      key: 'vpip',
+      label: 'VPIP',
+      tip: 'Player VPIP statistics are displayed at the table',
+    });
   }
   if (on(s, 'call_time_enabled', 'callTime') || n.includes('call time')) {
     rules.push({ key: 'call_time', label: 'CALL TIME', tip: 'Call time rules are in effect' });
   }
   if (on(s, 'no_rathole', 'noRathole')) {
-    rules.push({ key: 'no_rathole', label: 'NO RATHOLE', tip: 'Players must return with their full previous stack' });
+    rules.push({
+      key: 'no_rathole',
+      label: 'NO RATHOLE',
+      tip: 'Players must return with their full previous stack',
+    });
   }
   return rules;
 }
@@ -265,10 +287,19 @@ export function tournamentMedallions(t: LobbyTournamentRow): RuleMedallion[] {
 
   if (type === 'freeroll') rules.push({ key: 'freeroll', label: 'FREEROLL', tip: 'Free entry' });
   if (type === 'pko')
-    rules.push({ key: 'pko', label: 'PKO', tip: 'Progressive knockout: half of each bounty grows your own' });
+    rules.push({
+      key: 'pko',
+      label: 'PKO',
+      tip: 'Progressive knockout: half of each bounty grows your own',
+    });
   if (type === 'mystery')
-    rules.push({ key: 'mystery', label: 'MYSTERY BOUNTY', tip: 'Knockouts award a mystery bounty draw' });
-  if (type === 'ko') rules.push({ key: 'bounty', label: 'BOUNTY', tip: 'A bounty is paid for every knockout' });
+    rules.push({
+      key: 'mystery',
+      label: 'MYSTERY BOUNTY',
+      tip: 'Knockouts award a mystery bounty draw',
+    });
+  if (type === 'ko')
+    rules.push({ key: 'bounty', label: 'BOUNTY', tip: 'A bounty is paid for every knockout' });
   if (type === 'satellite')
     rules.push({ key: 'satellite', label: 'SATELLITE', tip: 'Wins seats into a larger event' });
 
@@ -278,7 +309,8 @@ export function tournamentMedallions(t: LobbyTournamentRow): RuleMedallion[] {
   const reentry = extra.is_reentry === true || l.includes('re-entry') || l.includes('reentry');
   const rebuy = Number(extra.rebuy_cost) > 0 || l.includes('rebuy');
   const addon = Number(extra.addon_cost) > 0;
-  if (reentry) rules.push({ key: 'reentry', label: 'RE-ENTRY', tip: 'Eliminated players may re-enter' });
+  if (reentry)
+    rules.push({ key: 'reentry', label: 'RE-ENTRY', tip: 'Eliminated players may re-enter' });
   if (rebuy) rules.push({ key: 'rebuy', label: 'REBUY', tip: 'Rebuys are available' });
   if (addon) rules.push({ key: 'addon', label: 'ADD-ON', tip: 'An add-on is available' });
   if (!reentry && !rebuy && type === 'freezeout' && !l.includes('spin'))
@@ -286,7 +318,8 @@ export function tournamentMedallions(t: LobbyTournamentRow): RuleMedallion[] {
 
   const speed = tournamentSpeed(t.name);
   if (speed === 'Turbo') rules.push({ key: 'turbo', label: 'TURBO', tip: 'Fast blind levels' });
-  if (speed === 'Hyper') rules.push({ key: 'hyper', label: 'HYPER', tip: 'Very fast blind levels' });
+  if (speed === 'Hyper')
+    rules.push({ key: 'hyper', label: 'HYPER', tip: 'Very fast blind levels' });
   if (speed === 'Deepstack')
     rules.push({ key: 'deepstack', label: 'DEEPSTACK', tip: 'Deep starting stacks' });
 
@@ -414,13 +447,16 @@ export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 's
     buyInLabel: total <= 0 ? 'FREE' : Math.round(total).toLocaleString(),
     buyInValue: total,
     guaranteeLabel:
-      (Number(t.guaranteed_prize) || 0) > 0 ? `${Number(t.guaranteed_prize).toLocaleString()} GTD` : null,
+      (Number(t.guaranteed_prize) || 0) > 0
+        ? `${Number(t.guaranteed_prize).toLocaleString()} GTD`
+        : null,
     guaranteeValue: Number(t.guaranteed_prize) || 0,
     players: t.current_players || 0,
     capacity: t.max_players || 0,
     startTime: t.start_time || null,
     startValue: Number.isFinite(startMs) ? startMs : Infinity,
-    speedLabel: tournamentSpeed(t.name) || (kind === 'spin' || kind === 'sng' ? 'When Full' : 'Standard'),
+    speedLabel:
+      tournamentSpeed(t.name) || (kind === 'spin' || kind === 'sng' ? 'When Full' : 'Standard'),
     status: st.key,
     statusLabel: st.label,
     live: String(t.status).toUpperCase() === 'RUNNING',

@@ -20,8 +20,8 @@ fn_tournament_payout_reconcile  critical     112          0   <- the phantom row
 Every one of them says a version of:
 
 > `[A5] Could not queue unbanked rake for hand 1678468 (rake 3.5, bbj 0.25):
-> Error: supabase_timeout. These chips left the pot and are now recoverable
-> only by hand.`
+Error: supabase_timeout. These chips left the pot and are now recoverable
+only by hand.`
 
 **938 of the 988 are `supabase_timeout`.** First 2026-08-20 16:11Z, still
 firing at 2026-08-22 19:16Z.
@@ -35,8 +35,8 @@ already left the pot; the banking call failed; this insert into
 `pending_fee_distributions` is what stops the chips ceasing to exist. Its own
 comment says so:
 
-> *Deliberately loud on failure: if even this insert fails, the chips really
-> are unrecoverable from data.*
+> _Deliberately loud on failure: if even this insert fails, the chips really
+> are unrecoverable from data._
 
 It was one attempt, no retry. So the net was being dropped by exactly the
 transient condition it exists to survive — and the insert is **idempotent by
@@ -82,7 +82,7 @@ that matters most.
 `feeIsAccountedFor()` now checks, in order:
 
 1. **the queue** — `pending_fee_distributions` by `(table_id, hand_number,
-   kind)`. Cheapest, and true most often.
+kind)`. Cheapest, and true most often.
 2. **the destination** — `rake_records` by `hand_id`, falling back to
    `(table_id, global_hand_id)` because `hand_id` is null in exactly the outage
    this fires in; `bbj_contributions` by `(table_id, hand_number)`.
@@ -187,10 +187,10 @@ alongside "completeHand threw".
 The explore pass seeds itself from `Math.random()` so every CI run walks new
 ground, and its comment said:
 
-> *Deliberately NOT fixed: every CI run walks new ground. The failure message
-> prints the seed, so any find is reproducible on the spot.*
+> _Deliberately NOT fixed: every CI run walks new ground. The failure message
+> prints the seed, so any find is reproducible on the spot._
 
-**It did not print the seed.** The seed appears in the NAME of the *fixed*
+**It did not print the seed.** The seed appears in the NAME of the _fixed_
 corpus test; this one generates its own and the assertion carried nothing. So
 the corpus that found a genuine pot-misallocation died with the job. Ten local
 reruns of the file — 10,000 further explore hands — could not find it again.

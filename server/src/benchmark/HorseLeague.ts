@@ -203,13 +203,34 @@ export function playHand(
       ts++;
       if (action === 'fold') {
         p.is_folded = true;
-        history.push({ seat: p.seat, userId: p.user_id, action: 'fold', amount: 0, timestamp: ts, stage } as ActionRecord);
+        history.push({
+          seat: p.seat,
+          userId: p.user_id,
+          action: 'fold',
+          amount: 0,
+          timestamp: ts,
+          stage,
+        } as ActionRecord);
       } else if (action === 'check') {
-        history.push({ seat: p.seat, userId: p.user_id, action: 'check', amount: 0, timestamp: ts, stage } as ActionRecord);
+        history.push({
+          seat: p.seat,
+          userId: p.user_id,
+          action: 'check',
+          amount: 0,
+          timestamp: ts,
+          stage,
+        } as ActionRecord);
       } else if (action === 'call') {
         const inc = post(i, toCall);
         pot += inc;
-        history.push({ seat: p.seat, userId: p.user_id, action: 'call', amount: inc, timestamp: ts, stage } as ActionRecord);
+        history.push({
+          seat: p.seat,
+          userId: p.user_id,
+          action: 'call',
+          amount: inc,
+          timestamp: ts,
+          stage,
+        } as ActionRecord);
       } else if (action === 'all_in') {
         const target = p.bet + p.stack;
         const inc = post(i, p.stack);
@@ -230,7 +251,15 @@ export function playHand(
             if (!q.is_folded && !q.is_all_in) toActQueue.push(j);
           }
         }
-        history.push({ seat: p.seat, userId: p.user_id, action: 'all_in', amount: target, timestamp: ts, stage, isFullRaise } as ActionRecord);
+        history.push({
+          seat: p.seat,
+          userId: p.user_id,
+          action: 'all_in',
+          amount: target,
+          timestamp: ts,
+          stage,
+          isFullRaise,
+        } as ActionRecord);
       } else {
         // bet / raise to `amount`
         const target = Math.min(amount, p.bet + p.stack);
@@ -248,7 +277,15 @@ export function playHand(
           const q = seats[j].player;
           if (!q.is_folded && !q.is_all_in) toActQueue.push(j);
         }
-        history.push({ seat: p.seat, userId: p.user_id, action: p.is_all_in ? 'all_in' : action, amount: target, timestamp: ts, stage, ...(p.is_all_in ? { isFullRaise: true } : {}) } as ActionRecord);
+        history.push({
+          seat: p.seat,
+          userId: p.user_id,
+          action: p.is_all_in ? 'all_in' : action,
+          amount: target,
+          timestamp: ts,
+          stage,
+          ...(p.is_all_in ? { isFullRaise: true } : {}),
+        } as ActionRecord);
       }
       actions++;
       void lastAggressor;
@@ -334,17 +371,13 @@ export function playHand(
  * same seed twice with the seat->config assignment inverted, so identical
  * cards flow to both configs and luck cancels in the difference.
  */
-export function runMatchup(
-  matchup: LeagueMatchup,
-  pairs: number,
-  runSeed: number
-): LeagueResult {
+export function runMatchup(matchup: LeagueMatchup, pairs: number, runSeed: number): LeagueResult {
   const t0 = Date.now();
   const counters = { illegal: 0 };
   const perPairDiff: number[] = [];
 
   for (let p = 0; p < pairs; p++) {
-    const handSeed = ((runSeed ^ (p * 2654435761)) >>> 0) || 1;
+    const handSeed = (runSeed ^ (p * 2654435761)) >>> 0 || 1;
     const dealerSeat = (p % SEATS) + 1;
     const evenIsA = (s: number) => (s % 2 === 0 ? matchup.a : matchup.b);
     const evenIsB = (s: number) => (s % 2 === 0 ? matchup.b : matchup.a);
@@ -389,7 +422,19 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'v11_leak_fixes', a: {}, b: { v11: false } },
   { name: 'v10_strategy', a: {}, b: { v10: false } },
   { name: 'v7_preflop', a: {}, b: { v7Preflop: false } },
-  { name: 'full_vs_v2_legacy', a: {}, b: { v7: false, v8: false, v9: false, v10: false, v11: false, streetIQ: false, handReading: false } },
+  {
+    name: 'full_vs_v2_legacy',
+    a: {},
+    b: {
+      v7: false,
+      v8: false,
+      v9: false,
+      v10: false,
+      v11: false,
+      streetIQ: false,
+      handReading: false,
+    },
+  },
 ];
 
 const LEAGUE_HOUR_UTC = 4; // quietest hour on the engine host

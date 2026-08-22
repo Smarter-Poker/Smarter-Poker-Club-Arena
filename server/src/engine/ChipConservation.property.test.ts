@@ -20,12 +20,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import {
-  fuzzOneHand,
-  ChipConservationError,
-  VARIANTS,
-  type FuzzHandResult,
-} from './HandFuzzer.js';
+import { fuzzOneHand, ChipConservationError, VARIANTS, type FuzzHandResult } from './HandFuzzer.js';
 import { calculatePots } from './PokerEngine.js';
 import { HandController } from './HandController.js';
 import type { HandConfig, SeatPlayer } from '../types.js';

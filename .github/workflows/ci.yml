@@ -62,6 +62,16 @@ jobs:
       - name: UI copy — no em dashes in player-facing text
         run: node scripts/ci/check-ui-text.mjs
 
+      # Copy invariant. Dan 2026-08-21: the first letter of every word is
+      # capitalized on every forward-facing page. Until 2026-08-22 this ran
+      # only in the local pre-push hook, so any agent shipping through the
+      # API landed violations straight onto main — it went red THREE times
+      # that day (#280, #279, #284), and each time the red was discovered by
+      # whichever agent next tried to push, not by the agent who caused it.
+      # Autofix locally with: node scripts/ci/check-title-case.mjs --fix
+      - name: UI copy — page copy is Title Cased
+        run: node scripts/ci/check-title-case.mjs
+
       # A CSS module key with no matching class resolves to undefined, React
       # drops className={undefined} without a word, and the element ships with
       # no styling at all. Build green, tests green, page visibly broken. It

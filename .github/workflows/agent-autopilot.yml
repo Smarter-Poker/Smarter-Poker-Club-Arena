@@ -32,7 +32,7 @@ on:
   pull_request:
     types: [opened, reopened, ready_for_review, synchronize]
   push:
-    branches: [main]
+    branches: [main, master, production]
   schedule:
     # Catches PRs opened by a workflow using GITHUB_TOKEN (those never emit a
     # `pull_request` event), plus anything a transient API error skipped.
@@ -114,7 +114,7 @@ jobs:
           fi
 
           PRS=$(gh pr list --repo "$REPO" --state open --limit 100 \
-                  --json number,isDraft,labels,mergeStateStatus,autoMergeRequest,headRefName)
+                  --json number,isDraft,labels,mergeStateStatus,autoMergeRequest,headRefName,baseRefName)
 
           echo "$PRS" | jq -c '.[]' | while read -r pr; do
             N=$(echo "$pr"      | jq -r '.number')
@@ -122,6 +122,7 @@ jobs:
             AUTO=$(echo "$pr"   | jq -r 'if .autoMergeRequest then "yes" else "no" end')
             STATE=$(echo "$pr"  | jq -r '.mergeStateStatus')
             BRANCH=$(echo "$pr" | jq -r '.headRefName')
+            BASE=$(echo "$pr"   | jq -r '.baseRefName')
             HOLD=$(echo "$pr"   | jq -r '[.labels[].name] | map(select(.=="do-not-merge" or .=="hold" or .=="wip")) | length')
 
             if [ "$DRAFT" = "true" ] || [ "$HOLD" != "0" ]; then
@@ -163,9 +164,13 @@ jobs:
             #     outweighs the cost of one more run.
             # Otherwise leave it alone and let auto-merge do its job.
             if [ "$STATE" = "DIRTY" ]; then
-              echo "#$N ($BRANCH): conflicts with main — an agent must resolve this."
+              echo "#$N ($BRANCH): conflicts with $BASE — an agent must resolve this."
             else
-              BEHIND=$(gh api "repos/$REPO/compare/main...$BRANCH" --jq '.behind_by' 2>/dev/null || echo 0)
+              # Compare against the PR's OWN base. Hardcoding "main" is wrong the
+              # moment this workflow is copied to a repo whose default branch is
+              # named something else (PepNationLab ships from `production`), and
+              # wrong for any PR that targets a release branch.
+              BEHIND=$(gh api "repos/$REPO/compare/${BASE}...$BRANCH" --jq '.behind_by' 2>/dev/null || echo 0)
               LAST=$(gh run list --repo "$REPO" --branch "$BRANCH" --workflow ci.yml --limit 1 \
                        --json conclusion --jq '.[0].conclusion // "none"' 2>/dev/null || echo none)
               REFRESH=no
@@ -179,7 +184,7 @@ jobs:
                 gh pr update-branch "$N" --repo "$REPO" \
                   || echo "::warning::#$N could not fast-forward — leaving for an agent."
               else
-                echo "#$N ($BRANCH): $BEHIND behind, last CI=$LAST — leaving it to merge."
+                echo "#$N ($BRANCH): $BEHIND behind $BASE, last CI=$LAST — leaving it to merge."
               fi
             fi
 

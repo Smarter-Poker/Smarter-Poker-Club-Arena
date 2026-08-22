@@ -496,6 +496,13 @@ export class ChannelWebSocketServer {
         } catch {
           /* ignore */
         }
+        // FIX 2026-08-22: terminate — a half-open socket never completes the
+        // graceful close handshake and the fd lingers until OS TCP timeout.
+        try {
+          ws.terminate();
+        } catch {
+          /* ignore */
+        }
         this.onClose(ws);
         continue;
       }

@@ -1451,6 +1451,14 @@ export default function TablePage({
 
   // Bible V8 §6.3: Heartbeat every 5 seconds while at the table
   // Server uses this to detect disconnected players and trigger auto-fold/sit-out
+  // 2026-08-22: `toast` lives in a ref so the heartbeat effect depends only on
+  // (tableId, userId). With `toast` in the dependency array, every toast
+  // add/remove re-created the interval, fired an extra immediate heartbeat,
+  // and RESET consecutiveMisses/warned — during an outage (when toasts fire
+  // most) the 3-miss warning could never accumulate and the "Reconnected"
+  // recovery toast was lost.
+  const heartbeatToastRef = useRef(toast);
+  heartbeatToastRef.current = toast;
   useEffect(() => {
     if (!tableId || !userId) return;
     // 2026-08-20: both `.catch`es here were dead — `sendHeartbeat` resolves
@@ -1467,7 +1475,7 @@ export default function TablePage({
       const res = await sendHeartbeat(tableId);
       if (res?.success) {
         if (warned) {
-          toast?.success?.('Reconnected to the table.');
+          heartbeatToastRef.current?.success?.('Reconnected to the table.');
           warned = false;
         }
         consecutiveMisses = 0;
@@ -1482,13 +1490,15 @@ export default function TablePage({
           new Error(`heartbeat missed ${consecutiveMisses}x`),
           'TablePage.Heartbeat_lost'
         );
-        toast?.error?.('Connection lost - the server may fold for you. Check your connection.');
+        heartbeatToastRef.current?.error?.(
+          'Connection lost - the server may fold for you. Check your connection.'
+        );
       }
     };
     void beat();
     const heartbeatInterval = setInterval(() => void beat(), 5000);
     return () => clearInterval(heartbeatInterval);
-  }, [tableId, userId, toast]);
+  }, [tableId, userId]);
 
   // ── Dan 2026-08-21: "the games can never freeze or die" — last-resort
   // auto-recovery. EngineStateClient now retries forever, but if the socket
@@ -5541,22 +5551,28 @@ export default function TablePage({
   // ═══════════════════════════════════════════════════════════════════════════
   // CONNECTION STATUS TOAST — visible feedback when WebSocket drops/reconnects
   // ═══════════════════════════════════════════════════════════════════════════
-  const prevConnectedRef = useRef<boolean | null>(null);
+  // 2026-08-22: these toasts used to watch the LEGACY Supabase channel, so
+  // players saw "Connection lost" on a healthy game (Supabase blip) and saw
+  // NOTHING when the actual game socket died. Watch the engine WS instead.
+  const prevEngineConnectedRef = useRef<boolean | null>(null);
   useEffect(() => {
-    // Skip initial mount (isConnected starts false before first connect)
-    if (prevConnectedRef.current === null) {
-      prevConnectedRef.current = isConnected;
+    const connected = engineWsStatus === 'connected';
+    // Skip initial mount (status starts 'connecting' before first connect)
+    if (prevEngineConnectedRef.current === null) {
+      prevEngineConnectedRef.current = connected;
       return;
     }
-    if (!isConnected && prevConnectedRef.current) {
+    if (!connected && prevEngineConnectedRef.current) {
+      // Only announce a real outage, not a sub-second blip: reconnecting
+      // status with an instant recovery never reaches the player.
       toast?.warning?.('Connection lost - reconnecting…');
       if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playDisconnect();
-    } else if (isConnected && !prevConnectedRef.current) {
+    } else if (connected && !prevEngineConnectedRef.current) {
       toast?.success?.('Reconnected');
       if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playReconnect();
     }
-    prevConnectedRef.current = isConnected;
-  }, [isConnected]);
+    prevEngineConnectedRef.current = connected;
+  }, [engineWsStatus]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // HORSE LOADING — Load seated horses from DB into React table state
@@ -9150,7 +9166,18 @@ export default function TablePage({
                 },
               ]}
               tableName={tableState.tableName}
-              connectionStatus={isConnected ? 'connected' : 'disconnected'}
+              // 2026-08-22: the indicator used to mirror the LEGACY Supabase
+              // channel (presence/chat) while the game rides the engine WS —
+              // a dead engine socket showed a green dot and a Supabase blip
+              // showed red on a healthy game. Report the transport that
+              // actually carries the game.
+              connectionStatus={
+                engineWsStatus === 'connected'
+                  ? 'connected'
+                  : engineWsStatus === 'connecting' || engineWsStatus === 'reconnecting'
+                    ? 'reconnecting'
+                    : 'disconnected'
+              }
             />
             {/* Dan 2026-08-15 — this "+" is ADD TABLE, not Add Chips.
                 It used to open CashierModal, which duplicated the wallet entry

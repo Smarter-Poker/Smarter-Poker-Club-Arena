@@ -872,6 +872,18 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   }
 
   /**
+   * CONNECTIVITY UPGRADE (2026-08-22): transport-level disconnect signal.
+   * Called by EngineWebSocketServer when a player's LAST live socket for this
+   * table closes. Millisecond-latency counterpart to the 30s stale-heartbeat
+   * sweep: the disconnect countdown / auto-action ladder starts immediately
+   * instead of the table burning a full action clock on a player who is gone.
+   * A reconnect (WS onConnect -> heartbeat) cancels it just as fast.
+   */
+  public notifyTransportDisconnect(userId: string): void {
+    this.disconnectEngine.markDisconnected(this.tableId, userId);
+  }
+
+  /**
    * POST /preaction — Bible V8 §4.15: Set or clear a pre-action
    */
   public setPreAction(
@@ -1318,6 +1330,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const state = this.handController.getState();
     const enginePlayer = state.players.find((p) => p.seat === seat);
     if (!enginePlayer) return;
+
+    // STALE-HANDLER GUARD (2026-08-22), defense in depth with the caller's
+    // check in ServerTableEngineHandEvents: never arm a clock or run
+    // disconnect/pre-action logic for a seat that is no longer on the clock.
+    if (state.currentPlayerSeat !== seat) return;
 
     // ═══════════════════════════════════════════════════════════════════════
     // UNIFIED TURN HANDLING — Horses and real players follow the EXACT same flow.

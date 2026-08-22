@@ -112,6 +112,24 @@ export interface SessionSummaryPayload {
    * tournament payload never sets it.
    */
   plPending?: boolean;
+  /**
+   * Set alongside `plPending`: everything the app-root host needs to find the
+   * settlement on its own. The engine's processLeavePending credits the true
+   * post-hand stack via atomic_credit_wallet_and_log, which writes ONE
+   * wallet_transactions row (category 'cashout', this table, this user) —
+   * that row IS the settled number, and RLS already lets a user read their
+   * own rows. TablePage cannot watch for it (it navigates away and unmounts
+   * immediately after publishing), so the host polls while the card is open
+   * and swaps the estimate for the settled figure when the row lands.
+   */
+  pendingCashout?: {
+    tableId: string;
+    userId: string;
+    /** Epoch ms of the leave — bounds the ledger query so a cashout row from
+     *  an earlier session at the same table can never be mistaken for this
+     *  settlement. */
+    sinceMs: number;
+  };
 }
 
 type Listener = (payload: SessionSummaryPayload | null) => void;
@@ -138,6 +156,23 @@ export function publishSessionSummary(payload: SessionSummaryPayload): void {
 /** Read without consuming (used for the host's initial state). */
 export function peekSessionSummary(): SessionSummaryPayload | null {
   return pending;
+}
+
+/**
+ * The settlement landed: replace the estimated P/L with the settled figure
+ * and drop the "Pending Settlement" annotation. No-op if the popup was
+ * already dismissed (the one-shot value is gone — there is nothing to
+ * correct) or if the payload is not the pending one it was found for.
+ */
+export function settlePendingSummary(settledProfitLoss: number): void {
+  if (pending === null || !pending.plPending) return;
+  pending = {
+    ...pending,
+    profitLoss: settledProfitLoss,
+    plPending: false,
+    pendingCashout: undefined,
+  };
+  emit();
 }
 
 /** Clear it. Called when the player dismisses the popup. */

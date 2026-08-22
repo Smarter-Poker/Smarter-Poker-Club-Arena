@@ -471,6 +471,13 @@ export abstract class ServerTableEngineBase {
    * budgeted steps can outlast the idle window without ever looking wedged.
    */
   protected static readonly DEAL_STEP_BUDGET_MS = 20_000;
+
+  /**
+   * Attempts at the opening `loadTable` before start() gives up and lets the
+   * engine be rebuilt. Five attempts with exponential backoff span roughly
+   * eight seconds — longer than any blip, far shorter than the 180s reaper.
+   */
+  protected static readonly START_LOAD_ATTEMPTS = 5;
   /**
    * A by-design pause older than this is reported (never killed): 15 min
    * exceeds any plausible hand-for-hand or break coordination window.
@@ -732,7 +739,48 @@ export abstract class ServerTableEngineBase {
     console.log(`[ServerTableEngine:${this.tableId}] Starting...`);
 
     try {
-      const tableData = await loadTable(this.tableId);
+      this.setLoopPhase('start_load_table');
+      /**
+       * ── The 5-second respawn loop (2026-08-22) ──
+       *
+       * This is the FIRST statement of start(), it is a database read, and a
+       * throw from it used to land in the catch below as `start_failed` ->
+       * killForRestart -> GameServer rebuilds the engine within 5s -> the same
+       * read -> the same throw. A transient blip became a permanent respawn
+       * loop, and each turn of it costs MORE database work than a retry would:
+       * a rebuilt engine re-runs seedHandCountFromHistory, checkCrashRecovery
+       * and resolveOrphanedAddOns as well.
+       *
+       * dealingLoop has always treated exactly these errors as transient and
+       * backed off. start() treated them as fatal. Same database, same error,
+       * opposite response — and the fatal one was the expensive one.
+       *
+       * Retried HERE rather than in the catch on purpose: nothing has been
+       * configured and no timer has been armed yet, so a retry is a clean
+       * re-attempt. `refreshBlinds` already retries this very call three
+       * times for this very reason; this is the same treatment at the one
+       * place every table passes through on every start.
+       */
+      let tableData: unknown;
+      for (let attempt = 1; ; attempt++) {
+        try {
+          tableData = await loadTable(this.tableId);
+          break;
+        } catch (err) {
+          if (
+            !ServerTableEngineBase.isTransientDbError(err) ||
+            attempt >= ServerTableEngineBase.START_LOAD_ATTEMPTS
+          ) {
+            throw err;
+          }
+          if (!this.running) return;
+          const backoff = Math.min(500 * 2 ** (attempt - 1), 8_000);
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] loadTable blipped on start (attempt ${attempt}/${ServerTableEngineBase.START_LOAD_ATTEMPTS}) — retrying in ${backoff}ms`
+          );
+          await this.sleep(backoff);
+        }
+      }
       this.tableInfo = tableData as TableInfo;
 
       // FIX 123: Bible V8 §6.2 + Dan's directive — Time bank auto-extend ONLY if:
@@ -878,8 +926,20 @@ export abstract class ServerTableEngineBase {
       this.tableFSM.transition('waiting');
 
       // Wait for minimum 2 players
+      this.setLoopPhase('start_wait_for_players');
       while (this.running) {
-        this.seatedPlayers = await loadSeatedPlayers(this.tableId);
+        try {
+          this.seatedPlayers = await loadSeatedPlayers(this.tableId);
+        } catch (err) {
+          // This is a POLL. It already runs every 5s, so a failed sweep costs
+          // one sweep — while letting it escape aborted start() entirely and
+          // killed the engine, which is how a table with players waiting on it
+          // ended up in a respawn loop. broadcastCurrentState below has been
+          // guarded like this since it was added; the read above never was.
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.start_seat_sweep_failed');
+          await this.sleep(5000);
+          continue;
+        }
         // IDLE BROADCAST (2026-08-22): publish the waiting-state snapshot so
         // a client joining an idle table gets a real SNAPSHOT (seats, stacks,
         // 'waiting' stage) instead of an eternal spinner. The hub drops
@@ -937,7 +997,10 @@ export abstract class ServerTableEngineBase {
       // heartbeat scheduler entry (scheduleHeartbeatCheck runs before the
       // awaits later in start()) and left partial state for the reaper to
       // delete uncleaned. killForRestart is the one true teardown-for-rebuild.
-      this.killForRestart('start_failed');
+      // Name the stage, exactly as the dealing-loop kills now do. A kill
+      // reason that is the same string for every possible cause is how 1,603
+      // dealing_loop_dead rows produced no diagnosis at all.
+      this.killForRestart('start_failed:' + this.loopPhase);
     }
   }
 
@@ -1130,6 +1193,37 @@ export abstract class ServerTableEngineBase {
   /** Ms the dealing loop has been sitting in its current step. */
   msSinceLoopPhase(): number {
     return Date.now() - this.loopPhaseSinceMs;
+  }
+
+  /**
+   * Did the database blink, as opposed to the code being wrong?
+   *
+   * This list already existed, inline, inside dealingLoop's catch — and
+   * `start()` had no equivalent, so THE SAME transient error was survivable in
+   * one and fatal in the other. On 2026-08-22, after the dealing-loop kills
+   * were fixed, `start_failed` became the fleet's dominant fault: 117 in
+   * fifteen minutes, in bursts (86 across 43 tables in a single minute). Two
+   * places that must agree cannot agree while only one of them has the list.
+   */
+  protected static isTransientDbError(err: unknown): boolean {
+    const msg =
+      err instanceof Error
+        ? err.message
+        : (err as { message?: string })?.message ||
+          (typeof err === 'object' && err !== null ? JSON.stringify(err) : String(err));
+    return (
+      msg.includes('Project not specified') ||
+      msg.includes('ECONNRESET') ||
+      msg.includes('ETIMEDOUT') ||
+      msg.includes('Failed to fetch') ||
+      msg.includes('fetch failed') ||
+      msg.includes('ENOTFOUND') ||
+      msg.includes('socket hang up') ||
+      msg.includes('supabase_timeout') ||
+      msg.includes('This operation was aborted') ||
+      msg.includes('The operation was aborted') ||
+      msg.includes('deal_step_timeout')
+    );
   }
 
   /** `load_seats+96s` — for recovery-event details and /health. */

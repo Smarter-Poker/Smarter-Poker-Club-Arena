@@ -108,6 +108,44 @@ Idle-table broadcast (no snapshot for joining clients between hands / empty
 tables), postHandTasks unbounded await, /health restart-races-recovery window,
 mux-mode fixes (flag is OFF; do not enable ca_ws_mux until EngineSocketMux
 half-open + eviction-storm bugs are fixed), presence ghost-seat merge.
+---
+
+## Cowork session 2026-08-22 — V11 horse brain: game modes + four live-play leak fixes (PR #235)
+
+Dan audited the horse poker brain from live play: donk leads, calling off big
+bets with QQ under an A+K flop, folding to under 1bb in tournaments, and cash
+vs tournament vs heads-up all playing the same. Line-by-line audit of
+HorseLogic/HorsePreflop/HorseMind/HorseEval traced each to a cause; all fixed
+in one commit (`f820f88`, squash of `3f53734`), tests pinned, Hetzner deploy
+verified through hand_history (restart dip 17:58–18:00 UTC, ramp 18:01+).
+
+1. **Price-in guard** (HorsePreflop): preflop NEVER folds when pot odds beat
+   any-two-cards equity — potOdds <= 0.15, or <= 1bb at 3.5:1+, or a <= 2bb
+   tournament stack at reasonable prices. The exact "<1bb fold" bug: the
+   short-stack block folded sub-30th-percentile hands with no pot-odds check.
+2. **Board-domination discipline** (HorseLogic postflop): the MC samples
+   opponents by PREFLOP band only, so a no-reads opponent samples uniform and
+   inflates one-pair equity (QQ ~0.71 on AK7). Dominated pairs (board
+   overcards above the pair, bet >= 45% pot) now pay an equity premium, are
+   barred from the value-raise band, and get no implied-odds allowance.
+3. **Initiative gate**: without the betting lead, OOP vs the aggressor checks
+   its range (check-raise/check-call intact); leads survive only for
+   vulnerable hands/monsters on wet boards at low frequency. In position vs a
+   checked-back aggressor is NOT gated (that's a stab, not a donk).
+4. **Explicit game modes**: ServerTableEngineTurns now passes
+   `gameMode: 'cash' | 'tournament'` (from tournament_id/game_type) + `ante`.
+   Tournaments: no per-pot rake drag on pot odds, push/fold <=12bb (no
+   limp-calls), stack-aware jam widening, ante-widened opens/reshoves,
+   16-25bb 3-bet-or-fold shift. TRUE heads-up: SB opens ~75%+, BB defends
+   wide. High-stakes cash no longer mislabeled tournament by the bb>=10 guess.
+
+Also: HorseMind boot hydration deepened 24h/4000 → 72h/12000 hands (3x the
+retained opponent-learning sample across restarts). Everything is behind
+`opts.v11` (default ON) with ablation parity. Server suite 96 files /
+1032 tests green on the exact merge base; tsc clean. Deploy path: sandbox
+clone → branch push → PR #235 → 6 required checks → squash merge (GitHub MCP
+token is dead — "Bad credentials" — and api.github.com is proxy-blocked from
+the sandbox; PR created/merged via host terminal curl with the repo PAT).
 
 ---
 

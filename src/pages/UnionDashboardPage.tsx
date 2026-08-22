@@ -19,6 +19,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { fmt, timeAgo } from '../utils/format';
 import { SettlementService } from '../services/SettlementService';
+import UnionWalletModal, { type UnionWalletKey } from '../components/union/UnionWalletModal';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import { getUnionLevel } from '../utils/clubLevels';
 import { reportError } from '../utils/errorReporter';
@@ -32,6 +33,7 @@ const pct = (n: number | null | undefined) => `${((Number(n) || 0) * 100).toFixe
 type UnionTab =
   | 'overview'
   | 'clubs'
+  | 'players'
   | 'agents'
   | 'wallet'
   | 'treasury'
@@ -139,6 +141,28 @@ export default function UnionDashboardPage() {
   const [unionId, setUnionId] = useState<string | null>(null);
   const [union, setUnion] = useState<UnionRow | null>(null);
   const [adminRole, setAdminRole] = useState<string | null>(null);
+  /**
+   * Dan 2026-08-22: clicking any union wallet opens it with a send-to-member
+   * flow. Before this, the four wallet tiles were static divs.
+   */
+  const [walletModal, setWalletModal] = useState<{
+    key: UnionWalletKey;
+    label: string;
+    balance: number;
+  } | null>(null);
+  const [roster, setRoster] = useState<
+    {
+      user_id: string;
+      username: string | null;
+      display_name: string | null;
+      club_name: string | null;
+      member_role: string | null;
+      member_status: string | null;
+      currently_seated: boolean;
+    }[]
+  >([]);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [rosterSearch, setRosterSearch] = useState('');
   const [clubs, setClubs] = useState<EnrichedClub[]>([]);
   const [agents, setAgents] = useState<UnionAgent[]>([]);
   const [admins, setAdmins] = useState<UnionAdmin[]>([]);
@@ -699,6 +723,34 @@ export default function UnionDashboardPage() {
   // ── Computed ───────────────────────────────────────────────
   const isLead = adminRole === 'union_lead';
 
+  // ── Union-wide player roster (Dan 2026-08-22: every player of every club,
+  //    with their role — the union is for tracking, so it must SEE everyone). ──
+  useEffect(() => {
+    if (tab !== 'players' || !unionId) return;
+    setRosterLoading(true);
+    void supabase.rpc('fn_union_player_directory', { p_union_id: unionId }).then(({ data, error }) => {
+      if (error) {
+        reportError(error, 'UnionDashboard.roster_load_failed');
+        setRoster([]);
+      } else {
+        setRoster((data as typeof roster) || []);
+      }
+      setRosterLoading(false);
+    });
+  }, [tab, unionId]);
+
+  const filteredRoster = useMemo(() => {
+    const q = rosterSearch.trim().toLowerCase();
+    if (!q) return roster;
+    return roster.filter(
+      (r) =>
+        (r.display_name || '').toLowerCase().includes(q) ||
+        (r.username || '').toLowerCase().includes(q) ||
+        (r.club_name || '').toLowerCase().includes(q) ||
+        (r.member_role || '').toLowerCase().includes(q)
+    );
+  }, [roster, rosterSearch]);
+
   const filteredClubs = useMemo(() => {
     if (!clubSearch.trim()) return clubs;
     const q = clubSearch.toLowerCase();
@@ -918,6 +970,7 @@ export default function UnionDashboardPage() {
             [
               { id: 'overview' as UnionTab, label: 'Overview' },
               { id: 'clubs' as UnionTab, label: `Clubs (${clubs.length})` },
+              { id: 'players' as UnionTab, label: 'Players' },
               { id: 'agents' as UnionTab, label: `Agents (${agents.length})` },
               { id: 'wallet' as UnionTab, label: 'Wallet' },
               { id: 'treasury' as UnionTab, label: 'Treasury' },
@@ -982,34 +1035,37 @@ export default function UnionDashboardPage() {
             {/* Wallet Summary */}
             {wallets && (
               <div className="admin-stats-grid" style={{ marginTop: '16px' }}>
-                <div className="admin-stat-card">
-                  <div className="admin-stat-value" style={{ color: '#4599FF' }}>
-                    {fmt(wallets.chip_balance)}
-                  </div>
-                  <div className="admin-stat-label">Chip Balance</div>
-                </div>
-                <div className="admin-stat-card">
-                  <div className="admin-stat-value" style={{ color: '#31A24C' }}>
-                    {fmt(wallets.rake_wallet)}
-                  </div>
-                  <div className="admin-stat-label">Rake Wallet</div>
-                </div>
-                <div className="admin-stat-card">
-                  <div className="admin-stat-value" style={{ color: '#F7C52A' }}>
-                    {fmt(bbjPool?.main_balance ?? 0)}
-                  </div>
-                  <div className="admin-stat-label">
-                    BBJ Pool{bbjPool ? ` (${bbjPool.hit_count} hits)` : ''}
-                  </div>
-                </div>
-                <div className="admin-stat-card">
-                  <div className="admin-stat-value" style={{ color: '#C084FC' }}>
-                    {fmt(wallets.promo_wallet)}
-                  </div>
-                  <div className="admin-stat-label">Promo Wallet</div>
-                </div>
-                {/* Spin reserve. #39d17a is the Spin lobby card's neon, so the
-                    tile reads as the same thing the player sees. */}
+                {(
+                  [
+                    { key: 'chips', label: 'Chip Balance', color: '#4599FF', value: wallets.chip_balance },
+                    { key: 'rake', label: 'Rake Wallet', color: '#31A24C', value: wallets.rake_wallet },
+                    {
+                      key: 'bbj',
+                      label: `BBJ Pool${bbjPool ? ` (${bbjPool.hit_count} hits)` : ''}`,
+                      color: '#F7C52A',
+                      value: bbjPool?.main_balance ?? 0,
+                    },
+                    { key: 'promo', label: 'Promo Wallet', color: '#C084FC', value: wallets.promo_wallet },
+                  ] as { key: UnionWalletKey; label: string; color: string; value: number }[]
+                ).map((w) => (
+                  <button
+                    key={w.key}
+                    className="admin-stat-card"
+                    style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                    aria-label={`Open ${w.label}`}
+                    onClick={() =>
+                      setWalletModal({ key: w.key, label: w.label, balance: w.value || 0 })
+                    }
+                  >
+                    <div className="admin-stat-value" style={{ color: w.color }}>
+                      {fmt(w.value)}
+                    </div>
+                    <div className="admin-stat-label">{w.label} ›</div>
+                  </button>
+                ))}
+                {/* Spin reserve — funded by fn_spin_reserve_seed_from_union; not a
+                    send source, so it stays a plain tile alongside the four
+                    clickable wallets. */}
                 <div className="admin-stat-card">
                   <div className="admin-stat-value" style={{ color: '#39d17a' }}>
                     {fmt(wallets.spin_reserve_wallet)}
@@ -1258,35 +1314,107 @@ export default function UnionDashboardPage() {
           </div>
         )}
 
+        {/* ══════ TAB: PLAYERS — the union-wide roster ══════ */}
+        {tab === 'players' && (
+          <div className="admin-tab-content">
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <input
+                className="admin-input"
+                style={{ flex: 1 }}
+                placeholder="Search players by name, club or role…"
+                value={rosterSearch}
+                onChange={(e) => setRosterSearch(e.target.value)}
+              />
+              <span style={{ alignSelf: 'center', color: '#888', fontSize: 12 }}>
+                {fmt(filteredRoster.length)} players
+              </span>
+            </div>
+            {rosterLoading ? (
+              <div className="admin-empty">Loading roster…</div>
+            ) : filteredRoster.length === 0 ? (
+              <div className="admin-empty">
+                <span className="admin-empty-icon">◉</span>
+                <span>{rosterSearch ? 'No players match' : 'No players found'}</span>
+              </div>
+            ) : (
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Player</th>
+                      <th>Club</th>
+                      <th>Role</th>
+                      <th>Status</th>
+                      <th>Seated</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRoster.slice(0, 500).map((r) => (
+                      <tr key={`${r.user_id}-${r.club_name}`}>
+                        <td style={{ color: '#fff', fontWeight: 600 }}>
+                          {r.display_name || r.username || r.user_id.slice(0, 8)}
+                        </td>
+                        <td>{r.club_name || ''}</td>
+                        <td>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              color:
+                                r.member_role === 'owner'
+                                  ? '#F7C52A'
+                                  : r.member_role === 'co_owner' || r.member_role === 'admin'
+                                    ? '#4599FF'
+                                    : r.member_role === 'agent' || r.member_role === 'super_agent'
+                                      ? '#31A24C'
+                                      : '#aaa',
+                            }}
+                          >
+                            {(r.member_role || 'member').replace('_', ' ').toUpperCase()}
+                          </span>
+                        </td>
+                        <td>{r.member_status || ''}</td>
+                        <td>{r.currently_seated ? '● at table' : ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ══════ TAB: WALLET ══════ */}
         {tab === 'wallet' && (
           <div className="admin-tab-content">
             {wallets && (
               <div className="admin-stats-grid" style={{ marginBottom: '16px' }}>
-                <div className="admin-stat-card">
-                  <div className="admin-stat-value" style={{ color: '#4599FF' }}>
-                    {fmt(wallets.chip_balance)}
-                  </div>
-                  <div className="admin-stat-label">Chip Balance</div>
-                </div>
-                <div className="admin-stat-card">
-                  <div className="admin-stat-value" style={{ color: '#31A24C' }}>
-                    {fmt(wallets.rake_wallet)}
-                  </div>
-                  <div className="admin-stat-label">Rake</div>
-                </div>
-                <div className="admin-stat-card">
-                  <div className="admin-stat-value" style={{ color: '#F7C52A' }}>
-                    {fmt(wallets.bbj_wallet)}
-                  </div>
-                  <div className="admin-stat-label">BBJ</div>
-                </div>
-                <div className="admin-stat-card">
-                  <div className="admin-stat-value" style={{ color: '#C084FC' }}>
-                    {fmt(wallets.promo_wallet)}
-                  </div>
-                  <div className="admin-stat-label">Promo</div>
-                </div>
+                {(
+                  [
+                    { key: 'chips', label: 'Chip Balance', color: '#4599FF', value: wallets.chip_balance },
+                    { key: 'rake', label: 'Weekly Rake Wallet', color: '#31A24C', value: wallets.rake_wallet },
+                    { key: 'bbj', label: 'Backup BBJ Wallet', color: '#F7C52A', value: wallets.bbj_wallet },
+                    { key: 'promo', label: 'Promo Wallet', color: '#C084FC', value: wallets.promo_wallet },
+                  ] as { key: UnionWalletKey; label: string; color: string; value: number }[]
+                ).map((w) => (
+                  <button
+                    key={w.key}
+                    className="admin-stat-card"
+                    style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                    aria-label={`Open ${w.label}`}
+                    onClick={() =>
+                      setWalletModal({ key: w.key, label: w.label, balance: w.value || 0 })
+                    }
+                  >
+                    <div className="admin-stat-value" style={{ color: w.color }}>
+                      {fmt(w.value)}
+                    </div>
+                    <div className="admin-stat-label">{w.label} ›</div>
+                  </button>
+                ))}
+                {/* Spin reserve — funded by fn_spin_reserve_seed_from_union; not a
+                    send source, so it stays a plain tile alongside the four
+                    clickable wallets. */}
                 <div className="admin-stat-card">
                   <div className="admin-stat-value" style={{ color: '#39d17a' }}>
                     {fmt(wallets.spin_reserve_wallet)}
@@ -2568,6 +2696,18 @@ export default function UnionDashboardPage() {
           </div>
         )}
       </div>
+
+      {walletModal && unionId && (
+        <UnionWalletModal
+          isOpen
+          onClose={() => setWalletModal(null)}
+          unionId={unionId}
+          walletKey={walletModal.key}
+          walletLabel={walletModal.label}
+          balance={walletModal.balance}
+          onSent={() => void loadDashboard(unionId)}
+        />
+      )}
     </div>
   );
 }

@@ -796,6 +796,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // FIX-219: Bible V8 §4.3 — Respect ante_enabled toggle; if disabled, zero out ante
       ante: (this.tableInfo.ante_enabled ?? true) ? this.tableInfo.ante : undefined,
       bigBlindAnte: this.tableInfo.big_blind_ante_enabled ?? false,
+      // 2026-08-22 parity: AoF tables restrict preflop to fold / all-in.
+      allInOrFold: this.tableInfo.all_in_or_fold ?? false,
       bombPot: bombPotConfig,
       straddles: straddleResults.length > 0 ? straddleResults : undefined,
       // Bible V8 §4.2: Dead blinds for players returning from sit-out

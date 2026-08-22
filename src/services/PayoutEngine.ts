@@ -184,6 +184,47 @@ class PayoutEngineClass {
   }
 
   /**
+   * PokerBros-parity payout choice -> concrete structure (2026-08-22).
+   *
+   * The create-table form's Payout Structure select (Payout 1/2/3 and Winner
+   * Take All) used to fall through to autoSelectPayouts, so the four choices
+   * produced identical payouts. They now mean what they say:
+   *
+   *   payout1         top-heavy, ~10% of the field paid
+   *   payout2         ~15% of the field paid
+   *   payout3         ~20% of the field paid (flattest)
+   *   winner_take_all 100% to first
+   *
+   * Paid places are clamped to (field - 1) so a bubble always exists — the
+   * service refuses a structure that pays as many places as there are seats.
+   */
+  payoutsForChoice(choice: string, playerCount: number): PayoutEntry[] {
+    if (choice === 'winner_take_all') return [{ place: 1, percentage: 100 }];
+    const n = Math.max(2, Math.floor(playerCount) || 2);
+    const spec: Record<string, { pct: number; minPlaces: number; alpha: number }> = {
+      payout1: { pct: 0.1, minPlaces: 1, alpha: 1.5 },
+      payout2: { pct: 0.15, minPlaces: 2, alpha: 1.25 },
+      payout3: { pct: 0.2, minPlaces: 3, alpha: 1.0 },
+    };
+    const s = spec[choice] ?? spec.payout1;
+    const paidPlaces = Math.max(1, Math.min(n - 1, Math.max(s.minPlaces, Math.floor(n * s.pct))));
+    // 1-3 places: the standard canned shapes (100 / 65-35 / 50-30-20).
+    if (paidPlaces <= 3) return this.normalizePayouts(this.generateSmoothPayouts(paidPlaces));
+    // 4+ places: power-law weights 1/place^alpha. A higher alpha concentrates
+    // money at the top, so payout1 is genuinely top-heavier than payout3.
+    // (generateSmoothPayouts is NOT used here: its decay formula grows the
+    // first-place share as paid places increase, which is the opposite of
+    // what "flatter" means.)
+    const weights = Array.from({ length: paidPlaces }, (_, i) => 1 / Math.pow(i + 1, s.alpha));
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+    const payouts = weights.map((w, i) => ({
+      place: i + 1,
+      percentage: Math.round((w / totalWeight) * 100 * 100) / 100,
+    }));
+    return this.normalizePayouts(payouts);
+  }
+
+  /**
    * Auto-select best payout structure based on player count
    */
   autoSelectPayouts(playerCount: number): PayoutEntry[] {

@@ -92,6 +92,8 @@ export interface TableInfo {
   action_time_seconds?: number;
   /** Bible V8 §4.3: Big Blind Ante — BB posts ante for entire table */
   big_blind_ante_enabled?: boolean;
+  /** 2026-08-22 parity: All-in-or-Fold table — preflop actions are fold or shove only */
+  all_in_or_fold?: boolean;
   /** Bible V8 §4.4: Straddle settings */
   straddle_enabled?: boolean;
   straddle_type?: 'utg'; // FIX 114: Only UTG straddle allowed (2x BB)
@@ -199,6 +201,12 @@ export interface HandConfig {
   ante?: number;
   /** Bible V8 §4.3: Big Blind Ante — BB posts ante for entire table */
   bigBlindAnte?: boolean;
+  /**
+   * 2026-08-22 parity: All-in-or-Fold. Preflop the only actions are fold or
+   * all-in (the BB may check when unraised); with everyone all-in or folded
+   * preflop there is no postflop action to restrict.
+   */
+  allInOrFold?: boolean;
   /** Bible V8 §4.4 / FIX 114: UTG straddle only (2× BB) */
   straddles?: { seat: number; amount: number }[];
   rakeConfig: RakeConfig;

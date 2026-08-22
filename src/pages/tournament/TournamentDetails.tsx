@@ -98,6 +98,13 @@ export default function TournamentDetails({
   const [isProcessing, setIsProcessing] = useState(false);
   const [unionName, setUnionName] = useState<string>('');
 
+  // ── Final Table Deal voting (2026-08-22). A seated player at an
+  // FT-deal-enabled final table may insert their own vote row into
+  // tournament_deal_votes, once — RLS enforces both halves of that. ──
+  const [dealVoteCount, setDealVoteCount] = useState(0);
+  const [hasVotedDeal, setHasVotedDeal] = useState(false);
+  const [votingDeal, setVotingDeal] = useState(false);
+
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lateRegTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [visibleEntries, setVisibleEntries] = useState<Set<string>>(new Set());
@@ -165,6 +172,64 @@ export default function TournamentDetails({
     const id = setInterval(() => setClockTick((n) => (n + 1) % 3600), 1000);
     return () => clearInterval(id);
   }, [tournament?.status]);
+
+  // ── Final Table Deal votes: cheap count poll, only while the tournament is
+  // RUNNING with the feature on. ──
+  useEffect(() => {
+    const t = tournament as unknown as {
+      final_table_deal_enabled?: boolean;
+      status?: string;
+    } | null;
+    if (!tournamentId || !t?.final_table_deal_enabled || t.status !== 'RUNNING') return;
+    let alive = true;
+    const load = async () => {
+      const { data, error } = await supabase
+        .from('tournament_deal_votes')
+        .select('user_id')
+        .eq('tournament_id', tournamentId);
+      if (!alive || error || !data) return;
+      setDealVoteCount(data.length);
+      setHasVotedDeal(Boolean(user?.id && data.some((v) => v.user_id === user.id)));
+    };
+    void load();
+    const iv = setInterval(load, 15_000);
+    return () => {
+      alive = false;
+      clearInterval(iv);
+    };
+  }, [
+    tournamentId,
+    (tournament as any)?.final_table_deal_enabled,
+    tournament?.status,
+    user?.id,
+  ]);
+
+  const handleVoteForDeal = async () => {
+    if (!user?.id || !tournamentId || votingDeal) return;
+    setVotingDeal(true);
+    try {
+      const { error } = await supabase
+        .from('tournament_deal_votes')
+        .insert({ tournament_id: tournamentId, user_id: user.id });
+      if (error) {
+        // 23505 = unique violation: the vote is already in, which is fine.
+        if ((error as { code?: string }).code === '23505') {
+          setHasVotedDeal(true);
+        } else {
+          throw error;
+        }
+      } else {
+        setHasVotedDeal(true);
+        setDealVoteCount((n) => n + 1);
+        toast.success('Your deal vote is in.');
+      }
+    } catch (e) {
+      reportError(e, 'TournamentDetails.voteForDeal');
+      toast.error('Could not record your vote.');
+    } finally {
+      setVotingDeal(false);
+    }
+  };
 
   /**
    * Dan 2026-08-19: registering for a tournament must TAKE YOU TO IT the moment
@@ -797,6 +862,12 @@ export default function TournamentDetails({
         {/* Tournament Description */}
         <div className="tournament-desc">
           <p>{tournament.name}</p>
+          {/* Owner-written short description (2026-08-22) */}
+          {(tournament as any).short_description && (
+            <p style={{ color: 'rgba(255,255,255,0.75)', fontStyle: 'italic' }}>
+              {(tournament as any).short_description}
+            </p>
+          )}
           <p>
             {/* Whole chips only (Dan 2026-08-20) - formatBuyIn leads with the
                 total the player actually pays and never prints a decimal. */}
@@ -844,6 +915,52 @@ export default function TournamentDetails({
                 : '- Multiplier revealed at start'}
             </p>
           )}
+
+          {/* ── PokerBros parity tags (2026-08-22): the rule variants a player
+              needs to know BEFORE registering. ── */}
+          {(() => {
+            const t = tournament as any;
+            const tags: Array<{ label: string; color: string }> = [];
+            if (t.is_vip_only) tags.push({ label: 'VIP ONLY', color: '#a78bfa' });
+            if (t.all_in_or_fold) tags.push({ label: 'ALL-IN OR FOLD', color: '#ef4444' });
+            if (t.big_blind_ante) tags.push({ label: 'BB ANTE', color: '#38bdf8' });
+            if (t.accelerated_mtt) tags.push({ label: 'ACCELERATED', color: '#f97316' });
+            if (t.bubble_protection) tags.push({ label: 'BUBBLE PROTECTION', color: '#34d399' });
+            if (t.final_table_deal_enabled)
+              tags.push({ label: 'FINAL TABLE DEAL', color: '#fbbf24' });
+            if (t.ban_chat) tags.push({ label: 'NO CHAT', color: '#9ca3af' });
+            if (tags.length === 0) return null;
+            return (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                {tags.map((tag) => (
+                  <span
+                    key={tag.label}
+                    style={{
+                      color: tag.color,
+                      border: `1px solid ${tag.color}55`,
+                      background: `${tag.color}1a`,
+                      borderRadius: 4,
+                      padding: '2px 8px',
+                      fontSize: 10,
+                      fontWeight: 800,
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    {tag.label}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
+          {/* Early bird: bonus chips for registering before the start. */}
+          {(tournament as any).early_bird_enabled &&
+            Number((tournament as any).early_bird_chips) > 0 && (
+              <p style={{ color: '#34d399', fontWeight: 600 }}>
+                EARLY BIRD: +
+                {Number((tournament as any).early_bird_chips).toLocaleString()} CHIPS FOR
+                REGISTERING BEFORE THE START
+              </p>
+            )}
         </div>
 
         {activeTab === 'detail' && (
@@ -1044,6 +1161,50 @@ export default function TournamentDetails({
                 </span>
               </div>
             </div>
+
+            {/* ── Final Table Deal (2026-08-22): once the field is down to one
+                table on an FT-deal-enabled tournament, seated players can vote
+                to split the remaining prizes. The vote row is the player's own
+                insert into tournament_deal_votes; RLS refuses anyone else's. ── */}
+            {(() => {
+              const t = tournament as any;
+              if (!t.final_table_deal_enabled || tournament.status !== 'RUNNING') return null;
+              const remaining = entries.filter(
+                (e) => e.status === 'playing' || e.status === 'registered'
+              ).length;
+              const ftSize = Number(t.table_size) || 9;
+              if (remaining < 2 || remaining > ftSize) return null;
+              const mySeat = user?.id ? entries.find((e) => e.user_id === user.id) : undefined;
+              const amSeated = mySeat?.status === 'playing';
+              return (
+                <div
+                  className="game-info-section"
+                  style={{ border: '1px solid rgba(251,191,36,0.4)', borderRadius: 8 }}
+                >
+                  <div className="info-row">
+                    <span className="info-label">Final Table Deal:</span>
+                    <span className="info-value" style={{ color: '#fbbf24', fontWeight: 700 }}>
+                      {dealVoteCount.toLocaleString()}/{remaining.toLocaleString()} Votes
+                    </span>
+                  </div>
+                  {amSeated &&
+                    (hasVotedDeal ? (
+                      <p style={{ color: '#34d399', fontSize: 13, margin: '6px 0 0' }}>
+                        Your Vote Is In. A Deal Happens When Every Remaining Player Votes.
+                      </p>
+                    ) : (
+                      <button
+                        className="btn btn-warning btn-block"
+                        style={{ marginTop: 8 }}
+                        onClick={handleVoteForDeal}
+                        disabled={votingDeal}
+                      >
+                        {votingDeal ? 'Voting...' : 'Vote For Deal'}
+                      </button>
+                    ))}
+                </div>
+              );
+            })()}
 
             {/* Game Info */}
             <div className="game-info-section">

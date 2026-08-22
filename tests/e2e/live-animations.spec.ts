@@ -375,17 +375,29 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
   });
 
   test('the LOBBY RESULT CARD: the landing after a finished tournament', async ({ page }) => {
-    // "placed inside the lobby and your tournament result card shown" — the
-    // card must ARRIVE (backdrop fade + card pop), not blink into place.
+    /* "placed inside the lobby and your tournament result card shown" — the
+       card must ARRIVE (backdrop fade + card rise), not blink into place.
+
+       AUDIT 2026-08-22: this beat used to mount `.trc` / `.trc__backdrop` /
+       `.trc__card`, which is TournamentResultCard — a component that could
+       never render. Its result travelled as router state addressed to
+       `/clubs/:clubId` while the only reader lived at `/clubs/:clubId/lobby`,
+       so the card was dropped on arrival every single time. This spec was
+       therefore proving that a dead card had a beautiful entrance, and it was
+       the only thing in CI still holding that CSS alive.
+
+       Repointed at `.trc2` — TournamentRankingCard, rendered by
+       TournamentRankingHost at the app root, which is what a finisher
+       actually lands on. Same question, asked of the card that exists. */
     const b = await beat(
       page,
-      `const r=document.createElement('div');r.className='trc';
-       r.innerHTML='<div class="trc__backdrop"></div>'+
-         '<div class="trc__card trc__card--won"><div class="trc__place trc__place--won">1st Place</div></div>';
+      `const r=document.createElement('div');r.className='trc2';
+       r.innerHTML='<div class="trc2__backdrop"></div>'+
+         '<div class="trc2__card"><div class="trc2__placeband trc2-medal--gold">1st</div></div>';
        document.querySelector('.table-page').appendChild(r);`
     );
-    expect(b.trcFadeIn, 'the backdrop must fade in').toBe(300);
-    expect(b.trcCardIn, 'the result card must pop in').toBe(450);
+    expect(b.trc2Fade, 'the backdrop must fade in').toBe(200);
+    expect(b.trc2Rise, 'the result card must rise in').toBe(400);
   });
 
   test('reduced motion is honoured — every animation collapses', async ({ browser }) => {

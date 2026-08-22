@@ -5,6 +5,11 @@ trigger: always_on
 
 # 100% AUTOMATIC PUBLISHING — ZERO HUMAN INTERVENTION
 
+> **↗ `AGENT-PLAYBOOK.md` at the repository root is the front door.** Same file
+> in all seven repos, checked hourly by `estate-integrity`. It carries the ship
+> sequence, every guard and what it is telling you, and **where each credential
+> lives**. This file is the Club Arena detail underneath it.
+
 Multiple agents commit here at once (128 commits in 26 hours is a normal day).
 Every regression we have traced ended at the same root cause: **an agent trying
 to drive the merge itself.** So agents no longer merge. At all.

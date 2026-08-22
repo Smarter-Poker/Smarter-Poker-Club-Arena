@@ -167,90 +167,6 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.025) 0%, transparent 100%);
 }
 
-.lobby-top__bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.lobby-top__back {
-  background: transparent;
-  border: none;
-  color: #9aa5b6;
-  font-size: 1.35rem;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 6px;
-  min-width: 32px;
-  min-height: 36px;
-  transition: color 0.2s ease;
-}
-
-.lobby-top__back:hover {
-  color: #fff;
-}
-
-.lobby-top__quick {
-  display: flex;
-  gap: 6px;
-}
-
-/* Icon + label. The old 44px icon-only tiles were unlabelled emoji, so a
-   trophy had to be guessed at; the label costs a few pixels and removes the
-   guess entirely. */
-.lobby-quick {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 10px;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #2c2c42 0%, #1c1c30 100%);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  color: #c3cbd8;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  transition:
-    border-color 0.2s ease,
-    color 0.2s ease,
-    transform 0.2s ease;
-}
-
-.lobby-quick:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-  color: #fff;
-  transform: translateY(-1px);
-}
-
-.lobby-quick:focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.2);
-  outline-offset: 2px;
-}
-
-.lobby-top__search {
-  margin-left: auto;
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  color: #9aa5b6;
-  cursor: pointer;
-  transition:
-    color 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.lobby-top__search:hover {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
 /* .lobby-top__bbj (the full-width BBJTicker strip) was REMOVED on 2026-08-20.
    Dan: "the BBJ amount should be on top of the rest of the wallet data" - it
    is the first row of the wallet stack now (DynamicWallet showBBJ), so a
@@ -287,12 +203,8 @@
 }
 
 .lobby-club__avatar {
-  /* 52px -> 64px. The club emblem is the first thing a player identifies the
-     room by and it was the smallest element in its own card. The 2px gold
-     border also sat INSIDE the box (border-box), taking 4px off the art on
-     each axis; a 1px border on a bigger box gives the emblem back ~14px. */
-  width: 64px;
-  height: 64px;
+  width: 220px;
+  height: 220px;
   flex-shrink: 0;
   border-radius: 12px;
   overflow: hidden;
@@ -1425,63 +1337,6 @@
   white-space: nowrap;
 }
 
-.club-level-progress {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
-}
-
-.club-level-progress__bar {
-  flex: 1;
-  height: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 4px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-
-.club-level-progress__fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 1s cubic-bezier(0.34, 1.56, 0.64, 1);
-  position: relative;
-  box-shadow: 0 0 8px rgba(0, 212, 255, 0.4);
-}
-
-/* Shimmer sweep on the fill bar */
-.club-level-progress__fill::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
-  animation: levelBarShimmer 3s ease-in-out infinite;
-}
-
-@keyframes levelBarShimmer {
-  0%,
-  60% {
-    left: -100%;
-  }
-  100% {
-    left: 200%;
-  }
-}
-
-.club-level-progress__text {
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.6);
-  flex-shrink: 0;
-  min-width: 28px;
-  text-align: right;
-  font-weight: 600;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    PHASE 4 — VISUAL IMPROVEMENTS (Depth, Atmosphere, Motion)
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -1883,4 +1738,44 @@
   to {
     opacity: 1;
   }
+}
+
+.lobby-top__notice--editable {
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.lobby-top__notice--editable:hover {
+  background: rgba(0, 0, 0, 0.5);
+}
+.lobby-top__notice-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lobby-top__notice-editor textarea {
+  width: 100%;
+  min-height: 80px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: #fff;
+  padding: 8px;
+  font-family: inherit;
+  resize: vertical;
+}
+.lobby-top__notice-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.lobby-top__notice-actions button {
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+}
+.lobby-top__notice-actions button:last-child {
+  background: #0088ff;
 }

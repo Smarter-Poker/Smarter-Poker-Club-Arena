@@ -21,9 +21,18 @@ const sw = self;
 // DEPLOY VERSION — updated by CI/build to bust the service worker cache.
 // When this changes, the browser detects a new SW → install → activate → clears old caches.
 // Format: ISO timestamp of last deploy. Update via: sed -i "s/DEPLOY_TS.*/DEPLOY_TS = '$(date -u +%Y%m%d%H%M%S)';/" public/sw-bus.js
-const DEPLOY_TS = '20260417223500';
+const DEPLOY_TS = '20260822000000';
+// PERF PASS 2026-08-22: two caches instead of one.
+// - CHUNK_CACHE is versioned by deploy: hashed JS/CSS filenames change every
+//   build, so old entries are dead weight the moment a new SW activates.
+// - MEDIA_CACHE is deliberately NOT versioned: cards, tiles, icons, logos and
+//   videos keep the same URLs across deploys. Nuking them on every deploy
+//   (the old behavior) forced players to re-download ~60 MB of media that had
+//   not changed. Media staleness is handled by stale-while-revalidate below.
 const CACHE_NAME = `club-arena-${DEPLOY_TS}`;
-const MAX_CACHE_ENTRIES = 200; // Evict oldest entries when cache grows beyond this
+const MEDIA_CACHE = 'club-arena-media-v1';
+const MAX_CACHE_ENTRIES = 300; // Evict oldest chunk entries beyond this
+const MAX_MEDIA_ENTRIES = 600; // Cards (104/deck-style) + tiles + icons + logos fit comfortably
 
 /**
  * Trim cache to MAX_CACHE_ENTRIES — prevents unbounded growth across deploys.
@@ -60,20 +69,28 @@ sw.addEventListener('fetch', (event) => {
       url.pathname.includes('supabase') ||
       url.pathname.includes('realtime')) return;
 
+  // Media files are cacheable regardless of which directory serves them.
+  // PERF PASS 2026-08-22: the old navigation guard below excluded EVERYTHING
+  // under /hub/club-arena/ except /assets/ — which meant cards/, images/,
+  // game-card-icons/, club-logos/ and videos/ (the ~60 MB that actually makes
+  // the table and lobby feel slow) were never cached by this SW at all.
+  const isMedia = /\.(png|jpg|jpeg|webp|avif|svg|gif|ico|mp4|webm|woff2?)$/i.test(url.pathname);
+
   // CRITICAL: Never intercept HTML navigation requests — always serve fresh from network.
   // This prevents the SW from serving a stale index.html that references old chunk hashes.
-  if (event.request.mode === 'navigate' ||
+  if (!isMedia &&
+      (event.request.mode === 'navigate' ||
       event.request.destination === 'document' ||
       url.pathname.endsWith('.html') ||
       url.pathname.endsWith('/') ||
       url.pathname === '/hub/club-arena' ||
-      url.pathname.startsWith('/hub/club-arena/') && !url.pathname.includes('/assets/')) {
+      (url.pathname.startsWith('/hub/club-arena/') && !url.pathname.includes('/assets/')))) {
     // Let the browser handle navigation requests normally (network-first)
     return;
   }
 
-  const isHashedAsset = /[-\.][a-zA-Z0-9_]{4,}\.(js|css|woff2?)$/.test(url.pathname);
-  const isImage = /\.(png|jpg|jpeg|webp|svg|gif|ico)$/.test(url.pathname);
+  const isHashedAsset = /[-\.][a-zA-Z0-9_]{4,}\.(js|css)$/.test(url.pathname);
+  const isImage = isMedia;
 
   if (isHashedAsset) {
     // Cache-first: hashed assets are immutable — serve from cache if available
@@ -101,13 +118,16 @@ sw.addEventListener('fetch', (event) => {
       )
     );
   } else if (isImage) {
-    // Stale-while-revalidate: show cached image instantly, update in background
+    // Stale-while-revalidate: show cached media instantly, update in background.
+    // With the long-lived Cache-Control headers on these paths, the background
+    // revalidation is answered by the browser's HTTP cache — no network cost.
     event.respondWith(
-      caches.open(CACHE_NAME).then((cache) =>
+      caches.open(MEDIA_CACHE).then((cache) =>
         cache.match(event.request).then((cached) => {
           const fetchPromise = fetch(event.request).then((response) => {
             if (response.ok) {
               cache.put(event.request, response.clone());
+              trimCache(MEDIA_CACHE, MAX_MEDIA_ENTRIES);
             }
             return response;
           }).catch(() => {
@@ -198,7 +218,7 @@ sw.addEventListener('activate', (event) => {
             caches.keys().then((keys) =>
                 Promise.all(
                     keys
-                        .filter((key) => key !== CACHE_NAME)
+                        .filter((key) => key !== CACHE_NAME && key !== MEDIA_CACHE)
                         .map((key) => caches.delete(key))
                 )
             ),

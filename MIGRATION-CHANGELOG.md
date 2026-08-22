@@ -92,6 +92,39 @@ real defects it introduced or left; all are fixed here, plus every item round
 
 ConnectivityHardening.test.ts extended (hand-boundary countdown cleanup).
 Client 2915 passed / 5 skipped, server 1038 passed, tsc clean on both configs.
+## Cowork session 2026-08-22 (4) — Phase 2 table audit: stat truth + dead code (PR #252)
+
+Dan: "KEEP GOING AND FIXING, IMPROVING AND OPTIMIZING. MOVE ONTO PHASE 2."
+Merged as 4eca4e356; production served the containing World Hub sync
+(a09aac5b) same session. 233 test files / 2942 tests green.
+
+1. **VPIP double-count.** `vpipCountRef` incremented on EVERY voluntary
+   preflop action, so limp-then-call-a-raise counted one hand twice and
+   vpip/handsPlayed could exceed 100%. The per-hand `heroVpipThisHandRef`
+   flag (which existed precisely to answer "did hero VPIP this hand") now
+   guards the increment.
+2. **Dead in-table SessionSummary modal removed.** `showSessionSummary` was
+   never set true anywhere — the modal became unreachable when the app-root
+   SessionSummaryHost took over the Session Complete card on 2026-08-18, but
+   the component, its module CSS, ten props through TableModalsLayer, a
+   keyboard-shortcut modal-open guard and a force-leave early-return all
+   stayed behind. All gone; files moved to `_to_delete/` on the Mac mirror.
+3. **Detailed Analytics finally reachable.** SessionAnalytics (the four-tab
+   PokerCraft panel) was imported by TablePage and mounted NOWHERE, so the
+   "Detailed Analytics" button RealTimeResultPanel supports never rendered —
+   its own header comment promised the deeper view was "still reachable" and
+   it was not. It now mounts in TableModalsLayer behind that button.
+4. **Dead CSS.** TimebankCounter's mobile bottom/left block (dead since the
+   widget went position:static on 2026-08-21) and the four
+   `--sp-hero-box-half` token definitions (last consumer removed by #243).
+5. **Audited, deliberately unchanged:** the "POT 0" in Dan's screenshots is
+   the designed collected/live split working correctly — those hands were
+   PREFLOP, and the four cards mid-felt were the hero's PLO4 hole cards under
+   the pre-#243 centred layout, not a board. Compliance sweeps (.single(),
+   padStart, em dashes in popups, emoji in source) all clean.
+
+---
+
 ## Cowork session 2026-08-22 (3) — mobile table audit: 8 items from Dan's screenshots (PR #243)
 
 Dan supplied six phone screenshots and eight numbered complaints. All eight are

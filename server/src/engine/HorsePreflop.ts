@@ -77,6 +77,9 @@ export interface PreflopCtx {
   mode?: 'cash' | 'tournament';
   /** V11: an ante is in play — opens/steals widen (dead money in every pot). */
   anteInPlay?: boolean;
+  /** V12: table format. Spins are 3-max winner-take-all hypers — every range
+   *  widens hard (chip EV only, shallow, high blind pressure). */
+  format?: 'cash' | 'mtt' | 'spin' | 'hu_sng';
   /** PRNG supplied by the caller (fast xorshift) */
   rand: () => number;
 }
@@ -140,7 +143,9 @@ export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
   // Antes (tournaments, and any ante cash game) put dead money in every pot:
   // every open, steal, and jam range widens. Solver ante adjustments run
   // ~4-6 percentile points of extra width.
-  const anteWiden = ctx.anteInPlay ? 0.05 : 0;
+  // V12: spins stack a second widen on top — 3-max winner-take-all hypers
+  // play far wider than full-ring MTT ranges at every stack depth.
+  const anteWiden = (ctx.anteInPlay ? 0.05 : 0) + (ctx.format === 'spin' ? 0.05 : 0);
   // True heads-up: exactly one live opponent and hero is in a blind. HU is a
   // different game — the SB/BTN opens ~75-85% and the BB defends the wide
   // majority of hands against it.

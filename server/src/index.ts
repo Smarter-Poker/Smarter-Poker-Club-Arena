@@ -31,6 +31,12 @@ import { channelHub } from './hub/ChannelHub.js';
 import { GameServer } from './GameServer.js';
 import { createRouter } from './router.js';
 import { hydrateHorseMind } from './services/HorseMindHydrator.js';
+import {
+  hydrateHorseMindFromDb,
+  startHorseMindPersistence,
+  stopHorseMindPersistence,
+} from './services/HorseMindPersistence.js';
+import { startHorseSelfTuner } from './services/HorseSelfTuner.js';
 import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -84,10 +90,20 @@ httpServer.listen(PORT, () => {
     reportError(err, 'GameServer.Fatal_error');
     process.exit(1);
   });
-  // AUDIT V6 (2026-07-24): restore the horses' learned opponent memory from
-  // the last 24h of real hand history. Fire-and-forget — never blocks boot,
-  // never throws (fail-safe inside).
-  void hydrateHorseMind();
+  // AUDIT V6 (2026-07-24) + V12 (2026-08-22): restore the horses' learned
+  // opponent memory. V12 hydrates the persisted stats table first (unlimited
+  // horizon), then replays only the un-flushed hand_history tail; if the
+  // table is empty or unreadable it falls back to the full-window replay.
+  // Fire-and-forget — never blocks boot, never throws (fail-safe inside).
+  void (async () => {
+    const lastFlush = await hydrateHorseMindFromDb();
+    await hydrateHorseMind(lastFlush);
+    startHorseMindPersistence();
+  })();
+  // V12 (2026-08-22): nightly per-horse self-study — every horse reviews its
+  // own week of play, diagnoses leaks vs winning benchmarks, and nudges its
+  // own profile dials. See HorseSelfTuner.ts + horse_self_tune_log.
+  startHorseSelfTuner();
   // V7 (2026-07-24): humanlike session rhythms — horses stand up after real
   // sessions via the SAME hand-boundary-safe leaveTable() path humans use;
   // the fleet manager reseeds fresh horses within its 30s cycle.
@@ -109,7 +125,9 @@ const shutdown = async () => {
   // cleanly on our own terms instead of being SIGKILLed mid-flush.
   httpServer.close();
   await Promise.race([
-    Promise.allSettled([gameServer.stop(), channelWs.close()]),
+    // V12: final horse-memory flush rides the same drain window — learned
+    // reads from the last few minutes survive the restart.
+    Promise.allSettled([gameServer.stop(), channelWs.close(), stopHorseMindPersistence()]),
     new Promise((r) => setTimeout(r, 20_000)),
   ]);
   process.exit(0);

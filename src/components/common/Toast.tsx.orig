@@ -28,7 +28,7 @@ import './Toast.css';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export type ToastType = 'success' | 'error' | 'warning' | 'info' | 'clock';
+export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
 /**
  * How long the SAME popup is barred from returning, whether or not the first
@@ -58,7 +58,6 @@ export interface ToastContextValue {
   error: (message: string, duration?: number) => void;
   warning: (message: string, duration?: number) => void;
   info: (message: string, duration?: number) => void;
-  clock: (message: string, duration?: number) => void;
   removeToast: (id: string) => void;
 }
 
@@ -108,7 +107,6 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
     error: '✕',
     warning: '⚠',
     info: 'ℹ',
-    clock: '⏱',
   };
 
   return (
@@ -274,10 +272,6 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     (message: string, duration?: number) => showToast(message, 'info', duration),
     [showToast]
   );
-  const clock = useCallback(
-    (message: string, duration?: number) => showToast(message, 'clock', duration),
-    [showToast]
-  );
 
   // 2026-08-22: MEMOIZE. This value was a fresh object on every provider
   // render, so every consumer with `toast` in a dependency array re-ran its
@@ -300,10 +294,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       error,
       warning,
       info,
-      clock,
       removeToast,
     }),
-    [getToasts, showToast, success, error, warning, info, clock, removeToast]
+    [getToasts, showToast, success, error, warning, info, removeToast]
   );
 
   return (

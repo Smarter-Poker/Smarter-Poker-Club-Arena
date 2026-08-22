@@ -123,6 +123,8 @@ export class HorseMind {
   private static seenActions = new Set<string>();
   /** per (handKey|userId) preflop-participation flags already counted */
   private static handFlags = new Set<string>();
+  /** V12 persistence: userIds whose stats changed since the last DB flush. */
+  private static dirty = new Set<string>();
 
   // ───────────────────────────────────────────────────────────────────────
   // OBSERVATION — ingest the action stream (idempotent, bounded)
@@ -139,7 +141,10 @@ export class HorseMind {
     // Bounded-memory guards: generation-swap when limits are hit.
     if (this.seenActions.size > MAX_SEEN_ACTIONS) this.seenActions.clear();
     if (this.handFlags.size > MAX_HAND_FLAGS) this.handFlags.clear();
-    if (this.stats.size > MAX_TRACKED_PLAYERS) this.stats.clear();
+    if (this.stats.size > MAX_TRACKED_PLAYERS) {
+      this.stats.clear();
+      this.dirty.clear(); // stale ids — the DB merge is GREATEST-monotonic anyway
+    }
 
     // The first action's timestamp identifies the hand (stable across turns).
     const handKey = `${history[0].timestamp}:${history[0].userId}`;
@@ -159,6 +164,7 @@ export class HorseMind {
       }
 
       if (isNew) {
+        this.dirty.add(a.userId); // V12: schedule for the next DB flush
         // Hand participation (once per hand per player)
         const seenKey = `${handKey}|${a.userId}|seen`;
         if (!this.handFlags.has(seenKey)) {
@@ -232,6 +238,67 @@ export class HorseMind {
     this.seenActions.clear();
     this.handFlags.clear();
     this.plans.clear();
+    this.dirty.clear();
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // V12 PERSISTENCE (2026-08-22) — unlimited learning horizon
+  // ───────────────────────────────────────────────────────────────────────
+
+  /** Rows changed since the last flush. Snapshots AND clears the dirty set —
+   *  the caller owns delivery; on failure it should re-mark via requeue(). */
+  static exportDirty(): Array<{ user_id: string } & OpponentStats> {
+    const out: Array<{ user_id: string } & OpponentStats> = [];
+    for (const id of this.dirty) {
+      const s = this.stats.get(id);
+      if (s) out.push({ user_id: id, ...s });
+    }
+    this.dirty.clear();
+    return out;
+  }
+
+  /** Put ids back on the dirty list after a failed flush. */
+  static requeueDirty(ids: string[]): void {
+    for (const id of ids) if (this.stats.has(id)) this.dirty.add(id);
+  }
+
+  static dirtyCount(): number {
+    return this.dirty.size;
+  }
+
+  /**
+   * Boot-time hydration from the DB. A row is applied only when it knows MORE
+   * than memory does (more observed hands) — a late hydrate must never
+   * downgrade stats the engine has already been accumulating live.
+   * Returns the number of rows applied.
+   */
+  static importStats(rows: Array<{ user_id: string } & Partial<OpponentStats>>): number {
+    let applied = 0;
+    for (const r of rows) {
+      if (!r || typeof r.user_id !== 'string' || r.user_id.length === 0) continue;
+      const existing = this.stats.get(r.user_id);
+      const incomingHands = typeof r.hands === 'number' && isFinite(r.hands) ? r.hands : 0;
+      if (existing && existing.hands >= incomingHands) continue;
+      if (this.stats.size >= MAX_TRACKED_PLAYERS && !existing) continue;
+      const num = (v: unknown): number => (typeof v === 'number' && isFinite(v) && v >= 0 ? v : 0);
+      this.stats.set(r.user_id, {
+        hands: num(r.hands),
+        vpip: num(r.vpip),
+        pfr: num(r.pfr),
+        threeBet: num(r.threeBet),
+        aggr: num(r.aggr),
+        passive: num(r.passive),
+        folds: num(r.folds),
+        facedAggr: num(r.facedAggr),
+        rHands: num(r.rHands),
+        rFolds: num(r.rFolds),
+        rFacedAggr: num(r.rFacedAggr),
+        rAggr: num(r.rAggr),
+        rPassive: num(r.rPassive),
+      });
+      applied++;
+    }
+    return applied;
   }
 
   // ───────────────────────────────────────────────────────────────────────

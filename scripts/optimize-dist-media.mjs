@@ -145,7 +145,7 @@ function injectServiceWorker() {
   const html = readFileSync(htmlPath, 'utf8');
   // Entry module, modulepreloaded vendors, and stylesheets emitted by Vite.
   const urls = new Set();
-  for (const m of html.matchAll(/(?:src|href)="(\/hub\/club-arena\/assets\/[^"]+\.(?:js|css))"/g)) {
+  for (const m of html.matchAll(/(?:src|href)="(\/hub\/club-arena\/(?:assets|fonts)\/[^"]+\.(?:js|css))"/g)) {
     urls.add(m[1]);
   }
 

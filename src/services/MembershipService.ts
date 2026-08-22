@@ -428,7 +428,6 @@ export const MembershipService = {
         .eq('status', 'pending');
 
       if (pendingErr) reportError(pendingErr, 'MembershipService.getMemberCounts_pending_error');
-
       // Estimate online count — creating a channel just to check presenceState()
       // on an unsubscribed channel always returned 0 and caused side-effect churn.
       // Real online tracking should come from a dedicated presence subscription.

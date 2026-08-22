@@ -225,6 +225,12 @@ function MemberListInner({
                         aria-label="Kick"
                         onClick={() => onKick(member.id)}
                       ></button>
+                      <button
+                        className="member-action-btn member-action-btn--danger"
+                        title="Ban"
+                        aria-label="Ban"
+                        onClick={() => onBan(member.id)}
+                      ></button>
                     </>
                   )}
                 </div>

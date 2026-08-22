@@ -64,6 +64,18 @@ const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
     'table action buttons are scoped so an unrelated stylesheet cannot repaint them'],
   ['src/components/table/tableGeometry.ts', 'betChipOffsetPx',
     'every seat’s chips sit the same distance from the player'],
+
+  // Leaderboard — lost once already, on 2026-08-21: this method's body was
+  // reverted by a merge while the migration creating the function sat in the
+  // repo unapplied. Losing it does not break the page, which is why nothing
+  // caught it — the client fallback aggregates from raw rows capped at 10,000,
+  // and every club is past that cap with no ORDER BY before it, so the page
+  // silently ranks an arbitrary half of a club's history. Measured on SHARK
+  // CLUB while it was lost: true #1 shown at #5, true #2 at #28, true #3 at
+  // #116 with $0, true #10 absent. Anchored on the CALL, so a rename trips it
+  // deliberately and a passing mention in a comment cannot satisfy it.
+  ['src/services/LeaderboardService.ts', "rpc('fn_club_tournament_stats',",
+    'the club tournament leaderboard is aggregated in the database, not from a capped page of rows'],
 ];
 
 /** Things that were removed on purpose and must not come back. */

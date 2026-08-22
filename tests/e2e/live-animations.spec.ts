@@ -260,6 +260,7 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
       page,
       `const w=document.querySelector('.sw__disc');
        w.querySelector('.sw__seg--lit').className='sw__seg sw__seg--c0 sw__seg--winner';
+       w.querySelector('.sw__seg--winner').innerHTML += '<svg><path class="sw__edge sw__edge--halo"></path></svg>';
        w.querySelector('.sw__hub').innerHTML='<span class="sw__hub-mult">25×</span>';
        const st=document.querySelector('.sw__stage');
        const r=document.createElement('div');r.className='sw__result';
@@ -267,7 +268,7 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
        const cf=document.createElement('div');cf.className='sw__confetti';
        cf.innerHTML='<span class="sw__conf" style="--sw-c:0"></span>';st.appendChild(cf);`
     );
-    expect(result.swWinFlash, 'the winning segment must flash').toBe(500);
+    expect(result.swNeonHalo, 'the winning segment must pulse a halo').toBe(600);
     expect(result.swHubPop, 'the hub must pop to the multiplier').toBe(450);
     expect(result.swResultIn, 'the prize must land, not appear').toBe(550);
     expect(result.swConfFall, 'a big multiplier must rain confetti').toBe(1800);

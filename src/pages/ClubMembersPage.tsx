@@ -500,7 +500,7 @@ export default function ClubMembersPage() {
             role: normaliseRole(m.role),
             chip_balance: m.chip_balance || 0,
             joined_at: m.joined_at,
-            is_online: onlineUserIds.has(m.user_id),
+            is_online: false, // mapped via membersWithStatus useMemo
             last_active: undefined,
             parent_agent_id: m.parent_agent_id,
           }));
@@ -541,7 +541,7 @@ export default function ClubMembersPage() {
         if (!getIsMounted || getIsMounted()) setLoading(false);
       }
     },
-    [clubId, user?.id, onlineUserIds]
+    [clubId, user?.id, isMountedRef, toast]
   );
 
   useEffect(() => {

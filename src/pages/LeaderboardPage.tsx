@@ -15,6 +15,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
+import type { LeaderboardSettings, LeaderboardPayout } from '../services/LeaderboardService';
 import { LeaderboardService } from '../services/LeaderboardService';
 import type {
   LeaderboardEntry,
@@ -72,6 +73,7 @@ type LeaderboardTab = 'rankings' | 'tournaments';
 interface UserClub {
   id: string;
   name: string;
+  role: any;
 }
 
 // Metric definitions. Unicode symbols only (no emoji: build rule).
@@ -155,6 +157,7 @@ export default function LeaderboardPage() {
   const toast = useToast();
   const [scope, setScope] = useState<LeaderboardScope>('my-clubs');
   const [period, setPeriod] = useState<LeaderboardPeriod>('weekly');
+  const [periodOffset, setPeriodOffset] = useState<number>(0);
   const [metric, setMetric] = useState<LeaderboardMetric>('profit');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [totalRanked, setTotalRanked] = useState<number | null>(null);
@@ -169,6 +172,11 @@ export default function LeaderboardPage() {
   const isMountedRef = useRef(true);
 
   // Club selection
+
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettings] = useState<LeaderboardSettings | null>(null);
+  const [payouts, setPayouts] = useState<LeaderboardPayout[]>([]);
+
   const [userClubs, setUserClubs] = useState<UserClub[]>([]);
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [clubsLoading, setClubsLoading] = useState(true);
@@ -287,6 +295,20 @@ export default function LeaderboardPage() {
   // A channel on player_stats itself is deliberately NOT used: it changes on
   // every seat of every hand (~1.1M writes/day) and would flood the client.
 
+  useEffect(() => {
+    let isMounted = true;
+    if (selectedClubId && userClubs.find((c) => c.id === selectedClubId)?.role === 'owner') {
+      LeaderboardService.getLeaderboardSettings(selectedClubId).then((data) => {
+        if (isMounted && data) {
+          setSettings(data);
+        }
+      });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedClubId, userClubs]);
+
   // Callback for tournament updates
   const handleTournamentLeaderboardUpdate = useCallback(() => {
     if (activeTabRef.current === 'tournaments')
@@ -334,7 +356,7 @@ export default function LeaderboardPage() {
       isMounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, period, metric, selectedClubId, activeTab]);
+  }, [scope, period, periodOffset, metric, selectedClubId, activeTab]);
 
   // Fetch Tournament Stats Data (club-scoped only)
   useEffect(() => {
@@ -360,6 +382,7 @@ export default function LeaderboardPage() {
         .map((m) => ({
           id: (m.club?.id || m.club_id) as string,
           name: m.club?.name || 'Unknown Club',
+          role: m.role,
         }))
         .filter((c): c is UserClub => Boolean(c.id));
 
@@ -389,7 +412,7 @@ export default function LeaderboardPage() {
     const myReq = ++reqSeqRef.current; // also invalidates any in-flight loadMore
 
     // SWR: show cached data instantly
-    const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}`;
+    const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}_${periodOffset}`;
     if (!silent) {
       const cached = getCachedEntries(cacheKey);
       if (cached && cached.length > 0) {
@@ -403,12 +426,14 @@ export default function LeaderboardPage() {
       const data = await retryFetch(
         () =>
           isGlobal
-            ? LeaderboardService.getGlobalLeaderboard(metric, period, PAGE_SIZE)
+            ? LeaderboardService.getGlobalLeaderboard(metric, period, PAGE_SIZE, 0, periodOffset)
             : LeaderboardService.getClubLeaderboard(
                 selectedClubId as string,
                 metric,
                 period,
-                PAGE_SIZE
+                PAGE_SIZE,
+                0,
+                periodOffset
               ),
         { maxRetries: 2 }
       );
@@ -420,11 +445,29 @@ export default function LeaderboardPage() {
       setCachedEntries(cacheKey, data);
       setLastUpdated(new Date());
 
+      if (selectedClubId) {
+        const { start } = LeaderboardService.getPeriodBoundaries(period, periodOffset);
+        const periodPayouts = await LeaderboardService.getPayoutsForPeriod(
+          selectedClubId,
+          period,
+          metric,
+          start.toISOString().split('T')[0]
+        );
+        if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted()))
+          setPayouts(periodPayouts);
+      }
+
       // Get user's rank in the same scope
       if (user?.id) {
         const rank = isGlobal
-          ? await LeaderboardService.getGlobalUserRank(user.id, metric, period)
-          : await LeaderboardService.getUserRank(user.id, selectedClubId as string, metric, period);
+          ? await LeaderboardService.getGlobalUserRank(user.id, metric, period, periodOffset)
+          : await LeaderboardService.getUserRank(
+              user.id,
+              selectedClubId as string,
+              metric,
+              period,
+              periodOffset
+            );
         if (myReq !== reqSeqRef.current) return;
         if (getIsMounted && !getIsMounted()) return;
         setUserRank(rank);
@@ -455,13 +498,20 @@ export default function LeaderboardPage() {
     setLoadingMore(true);
     try {
       const more = isGlobal
-        ? await LeaderboardService.getGlobalLeaderboard(metric, period, PAGE_SIZE, offset)
+        ? await LeaderboardService.getGlobalLeaderboard(
+            metric,
+            period,
+            PAGE_SIZE,
+            offset,
+            periodOffset
+          )
         : await LeaderboardService.getClubLeaderboard(
             selectedClubId as string,
             metric,
             period,
             PAGE_SIZE,
-            offset
+            offset,
+            periodOffset
           );
       if (myReq !== reqSeqRef.current) return; // filters moved on; drop this page
       if (more.length > 0) {
@@ -470,7 +520,7 @@ export default function LeaderboardPage() {
           if (prev.length !== offset) return prev;
           const seen = new Set(prev.map((e) => e.userId));
           const next = [...prev, ...more.filter((m) => !seen.has(m.userId))];
-          const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}`;
+          const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}_${periodOffset}`;
           setCachedEntries(cacheKey, next);
           return next;
         });
@@ -483,25 +533,30 @@ export default function LeaderboardPage() {
     }
   };
 
+  const tournReqSeqRef = useRef(0);
+
   const loadTournamentStats = async (getIsMounted?: () => boolean) => {
     if (!selectedClubId) {
       setTournamentsLoading(false);
       return;
     }
+    const myReq = ++tournReqSeqRef.current;
     setTournamentsLoading(true);
     try {
       const data = await retryFetch(
         () => LeaderboardService.getClubTournamentStats(selectedClubId, 50),
         { maxRetries: 2 }
       );
+      if (myReq !== tournReqSeqRef.current) return;
       if (getIsMounted && !getIsMounted()) return;
       setTournamentStats(data);
       setLastUpdated(new Date());
     } catch (error) {
       reportError(error, 'LeaderboardPage.Failed_to_load_tournament_stats');
-      toast.error('Failed to load tournament stats');
+      if (myReq === tournReqSeqRef.current) toast.error('Failed to load tournament stats');
     } finally {
-      if (!getIsMounted || getIsMounted()) setTournamentsLoading(false);
+      if (myReq === tournReqSeqRef.current && (!getIsMounted || getIsMounted()))
+        setTournamentsLoading(false);
     }
   };
 
@@ -522,6 +577,10 @@ export default function LeaderboardPage() {
     if (rank === 3) return '3rd';
     return `#${rank}`;
   };
+
+  const isOwner = selectedClubId
+    ? userClubs.find((c) => c.id === selectedClubId)?.role === 'owner'
+    : false;
 
   const visibleMetricOptions = METRIC_OPTIONS.filter(
     (m) => scope === 'my-clubs' || m.globalSupported
@@ -598,6 +657,26 @@ export default function LeaderboardPage() {
         )}
         <span className="podium-name">{entry.username}</span>
         <span className={`podium-value ${textCls}`}>{formatValue(entry.value, metric)}</span>
+        {(() => {
+          const payout = payouts.find((p) => p.user_id === entry.userId);
+          if (payout) {
+            return (
+              <span
+                className="payout-badge"
+                style={{
+                  color: '#FFD700',
+                  fontSize: '0.85rem',
+                  marginTop: '4px',
+                  display: 'block',
+                }}
+              >
+                Paid {payout.payout_currency === 'diamonds' ? '💎' : '🪙'}{' '}
+                {payout.payout_amount.toLocaleString()}
+              </span>
+            );
+          }
+          return null;
+        })()}
         {renderRowContext(entry)}
         <span className="podium-rank-emoji">{PODIUM_MEDALS[place - 1]}</span>
         <div className={`podium-bar ${barCls}`}></div>
@@ -685,12 +764,86 @@ export default function LeaderboardPage() {
             <button
               key={opt.value}
               className={`lb-filter-chip ${period === opt.value ? 'active' : ''}`}
-              onClick={() => setPeriod(opt.value)}
+              onClick={() => {
+                setPeriod(opt.value);
+                setPeriodOffset(0);
+              }}
             >
               {opt.label}
             </button>
           ))}
+          {period !== 'all_time' && (
+            <div style={{ display: 'flex', alignItems: 'center', marginLeft: '12px', gap: '4px' }}>
+              <button
+                className="lb-filter-chip"
+                style={{ padding: '0 8px' }}
+                onClick={() => setPeriodOffset((o) => o - 1)}
+                title="Previous"
+              >
+                {'<'}
+              </button>
+              <span
+                style={{ color: '#aaa', fontSize: '12px', minWidth: '40px', textAlign: 'center' }}
+              >
+                {periodOffset === 0 ? 'Current' : periodOffset === -1 ? 'Last' : `${periodOffset}`}
+              </span>
+              <button
+                className="lb-filter-chip"
+                style={{ padding: '0 8px' }}
+                onClick={() => setPeriodOffset((o) => Math.min(0, o + 1))}
+                disabled={periodOffset >= 0}
+                title="Next"
+              >
+                {'>'}
+              </button>
+            </div>
+          )}
         </div>
+
+        {isOwner && scope !== 'global' && activeTab === 'rankings' && (
+          <div className="filter-group ml-auto" style={{ display: 'flex', gap: '8px' }}>
+            <button
+              className="lb-filter-chip"
+              onClick={async () => {
+                if (window.confirm(`Pay out ${period} ${metric} leaderboard now?`)) {
+                  try {
+                    const { start, end } = LeaderboardService.getPeriodBoundaries(
+                      period,
+                      periodOffset
+                    );
+                    await LeaderboardService.payoutLeaderboardPeriod(
+                      selectedClubId as string,
+                      period,
+                      metric,
+                      start.toISOString().split('T')[0],
+                      end.toISOString().split('T')[0]
+                    );
+                    toast.success('Payouts issued successfully!');
+                  } catch (err: any) {
+                    toast.error(err.message || 'Payout failed');
+                  }
+                }
+              }}
+              title="Pay Out Current Leaderboard"
+              style={{
+                padding: '0 12px',
+                background: 'rgba(255, 215, 0, 0.2)',
+                color: '#FFD700',
+                border: '1px solid rgba(255, 215, 0, 0.5)',
+              }}
+            >
+              {'💰'} Pay Out
+            </button>
+            <button
+              className="lb-filter-chip"
+              onClick={() => setShowSettings(true)}
+              title="Leaderboard Settings"
+              style={{ padding: '0 12px' }}
+            >
+              {'⚙️'} Settings
+            </button>
+          </div>
+        )}
 
         {/* Metric Selector */}
         <div className="filter-group lb-chip-bar lb-chip-scroll">
@@ -873,6 +1026,20 @@ export default function LeaderboardPage() {
                     </span>
                   </div>
                   <div className={`entry-value ${entry.value >= 0 ? 'positive' : 'negative'}`}>
+                    {(() => {
+                      const payout = payouts.find((p) => p.user_id === entry.userId);
+                      if (payout) {
+                        return (
+                          <div
+                            style={{ color: '#FFD700', fontSize: '0.75rem', marginBottom: '4px' }}
+                          >
+                            Paid {payout.payout_currency === 'diamonds' ? '💎' : '🪙'}{' '}
+                            {payout.payout_amount.toLocaleString()}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                     {formatValue(entry.value, metric)}
                     {renderChangeBadge(entry.change)}
                   </div>
@@ -920,6 +1087,20 @@ export default function LeaderboardPage() {
                     {renderRowContext(entry)}
                   </div>
                   <div className={`entry-value ${entry.value >= 0 ? 'positive' : 'negative'}`}>
+                    {(() => {
+                      const payout = payouts.find((p) => p.user_id === entry.userId);
+                      if (payout) {
+                        return (
+                          <div
+                            style={{ color: '#FFD700', fontSize: '0.75rem', marginBottom: '4px' }}
+                          >
+                            Paid {payout.payout_currency === 'diamonds' ? '💎' : '🪙'}{' '}
+                            {payout.payout_amount.toLocaleString()}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                     {formatValue(entry.value, metric)}
                     {renderChangeBadge(entry.change)}
                   </div>
@@ -1044,6 +1225,238 @@ export default function LeaderboardPage() {
             {!entries.some((e) => e.userId === user?.id) && entries.length > 0 && (
               <span className="rank-offlist">Not In The Top {entries.length}</span>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && isOwner && (
+        <div
+          className="modal-overlay"
+          style={{
+            zIndex: 50,
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.75)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            className="modal-content glass-panel p-6 max-w-md w-full"
+            style={{
+              background: '#1a1a1a',
+              border: '1px solid #333',
+              borderRadius: '12px',
+              padding: '24px',
+            }}
+          >
+            <div
+              className="flex justify-between items-center mb-6"
+              style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}
+            >
+              <h2
+                className="text-xl font-bold font-display text-white"
+                style={{ fontSize: '1.25rem', color: '#fff', margin: 0 }}
+              >
+                Prize Settings
+              </h2>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="text-white/60 hover:text-white"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#aaa',
+                  cursor: 'pointer',
+                  fontSize: '1.2rem',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div
+              className="space-y-4 text-white/90"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px',
+                maxHeight: '70vh',
+                overflowY: 'auto',
+                paddingRight: '8px',
+              }}
+            >
+              <div className="form-group">
+                <label
+                  className="text-sm font-semibold mb-2 block"
+                  style={{ display: 'block', marginBottom: '8px', color: '#fff' }}
+                >
+                  Payout Currency
+                </label>
+                <select
+                  className="w-full bg-black/40 border border-white/10 rounded px-3 py-2 text-white"
+                  style={{
+                    width: '100%',
+                    background: 'rgba(0,0,0,0.4)',
+                    color: '#fff',
+                    border: '1px solid #444',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                  }}
+                  value={settings?.payout_currency || 'diamonds'}
+                  onChange={(e) =>
+                    setSettings({
+                      ...(settings as LeaderboardSettings),
+                      payout_currency: e.target.value as 'diamonds' | 'chips',
+                    })
+                  }
+                >
+                  <option value="diamonds">Diamonds</option>
+                  <option value="chips">Chips</option>
+                </select>
+                <p
+                  className="text-xs text-white/50 mt-1"
+                  style={{ fontSize: '12px', color: '#888', marginTop: '8px' }}
+                >
+                  Diamonds Are Deducted From The Club Diamond Wallet. Chips Are Minted.
+                </p>
+              </div>
+
+              <div className="form-group" style={{ marginTop: '16px' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    marginBottom: '8px',
+                    color: '#fff',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  Weekly Prizes
+                </label>
+                {[1, 2, 3].map((rank) => {
+                  const currentPrize =
+                    settings?.weekly_prizes?.find((p) => p.rank === rank)?.amount || 0;
+                  return (
+                    <div
+                      key={`weekly-${rank}`}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        marginBottom: '8px',
+                        gap: '8px',
+                      }}
+                    >
+                      <span style={{ width: '60px', color: '#aaa' }}>Rank {rank}</span>
+                      <input
+                        type="number"
+                        style={{
+                          flex: 1,
+                          background: 'rgba(0,0,0,0.4)',
+                          color: '#fff',
+                          border: '1px solid #444',
+                          padding: '6px',
+                          borderRadius: '4px',
+                        }}
+                        value={currentPrize || ''}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          const newPrizes = (settings?.weekly_prizes || []).filter(
+                            (p) => p.rank !== rank
+                          );
+                          if (val > 0) newPrizes.push({ rank, amount: val });
+                          setSettings({ ...settings!, weekly_prizes: newPrizes });
+                        }}
+                        placeholder="Amount"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="form-group" style={{ marginTop: '16px' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    marginBottom: '8px',
+                    color: '#fff',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  Monthly Prizes
+                </label>
+                {[1, 2, 3].map((rank) => {
+                  const currentPrize =
+                    settings?.monthly_prizes?.find((p) => p.rank === rank)?.amount || 0;
+                  return (
+                    <div
+                      key={`monthly-${rank}`}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        marginBottom: '8px',
+                        gap: '8px',
+                      }}
+                    >
+                      <span style={{ width: '60px', color: '#aaa' }}>Rank {rank}</span>
+                      <input
+                        type="number"
+                        style={{
+                          flex: 1,
+                          background: 'rgba(0,0,0,0.4)',
+                          color: '#fff',
+                          border: '1px solid #444',
+                          padding: '6px',
+                          borderRadius: '4px',
+                        }}
+                        value={currentPrize || ''}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          const newPrizes = (settings?.monthly_prizes || []).filter(
+                            (p) => p.rank !== rank
+                          );
+                          if (val > 0) newPrizes.push({ rank, amount: val });
+                          setSettings({ ...settings!, monthly_prizes: newPrizes });
+                        }}
+                        placeholder="Amount"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button
+                className="btn-primary w-full mt-4"
+                style={{
+                  width: '100%',
+                  background: '#4169E1',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '10px',
+                  borderRadius: '6px',
+                  fontWeight: 'bold',
+                  marginTop: '16px',
+                  cursor: 'pointer',
+                }}
+                onClick={async () => {
+                  if (selectedClubId) {
+                    await LeaderboardService.updateLeaderboardSettings(selectedClubId, {
+                      payout_currency: settings?.payout_currency || 'diamonds',
+                      weekly_prizes: settings?.weekly_prizes || [],
+                      monthly_prizes: settings?.monthly_prizes || [],
+                    });
+                    toast.success('Saved');
+                    setShowSettings(false);
+                  }
+                }}
+              >
+                Save Settings
+              </button>
+            </div>
           </div>
         </div>
       )}

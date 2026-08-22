@@ -2830,6 +2830,7 @@
     "word_similarity_dist_commutator_op",
     "word_similarity_dist_op",
     "word_similarity_op",
-    "xp_ban_guard_fn"
+    "xp_ban_guard_fn",
+    "fn_reroll_challenge"
   ]
 }

@@ -1443,6 +1443,58 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
     /**
      * ═══════════════════════════════════════════════════════════════════════
+     * TELL THE WINNER (Dan 2026-08-20 — the half that never shipped)
+     * ───────────────────────────────────────────────────────────────────────
+     * "at the end of the tournament when you lose, you need to be auto removed
+     *  from the table, placed inside the lobby and your tournament result card
+     *  shown … WINNERS SHOULD BE AUTO REMOVED AT THE END AS WELL."
+     *
+     * The losing half shipped: eliminatePlayer broadcasts `player_eliminated`,
+     * and TablePage navigates that player to the lobby with a ranking card.
+     * The winning half never did, because finishTournament broadcasts NOTHING
+     * — it closed the tables, released the seats and stopped, in silence.
+     *
+     * TablePage has carried the winner branch since 2026-08-20 (celebration
+     * overlay, then the lobby). It was unreachable BY CONSTRUCTION: the only
+     * event that reaches it is `player_eliminated`, and eliminatePlayer is
+     * never called with position 1. The bust sweep floors basePosition at
+     * `bustedOrdered.length + 1`, and the unresolved-players loop above uses
+     * `ordered.length + 1 - i` — both >= 2, deliberately, so that 1st stays
+     * reserved for this function. So every champion of every event sat at a
+     * table that had just been closed underneath them, with no card and no
+     * way out but the browser. On a Spin it is the whole ending: three
+     * players, one winner, and the winner is the one who saw nothing.
+     *
+     * A SEPARATE EVENT TYPE, not `player_eliminated` with position 1:
+     * TournamentPage and TournamentLobbyPage both raise an elimination toast
+     * on that event, and announcing the champion as knocked out is worse than
+     * saying nothing at all.
+     *
+     * Sent AFTER the payout reconcile so the row the client reads back is
+     * final, and BEFORE cleanupBroadcastChannel() tears the channel down.
+     */
+    let winnerName = 'Player';
+    try {
+      const { data: winnerRow } = await supabase
+        .from('tournament_players')
+        .select('username')
+        .eq('tournament_id', this.tournamentId)
+        .eq('user_id', winnerId)
+        .maybeSingle();
+      winnerName = winnerRow?.username || 'Player';
+    } catch {
+      /* name lookup is cosmetic — never block the finish on it */
+    }
+
+    await this.broadcast('tournament_winner', {
+      userId: winnerId,
+      position: 1,
+      prize: winnerPrize,
+      playerName: winnerName,
+    });
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
      * RELEASE THE PLAYERS (Dan 2026-08-21)
      * ───────────────────────────────────────────────────────────────────────
      * "ONCE A SPIN OR SIT N GO FINISHES, YOU KICK THE CURRENT PLAYERS, PAY OUT

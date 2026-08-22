@@ -30,8 +30,12 @@ import { supabase } from './supabase.js';
 import { HorseMind } from '../engine/HorseMind.js';
 import { reportError } from './errorReporter.js';
 
-const HYDRATION_WINDOW_HOURS = 24;
-const HYDRATION_MAX_HANDS = 4000;
+// V11 (Dan 2026-08-22): deeper memory — the horses keep improving the more
+// they play, and a restart should cost as little of that learning as
+// possible. 72h/12000 hands keeps replay under a few seconds while tripling
+// the retained sample per opponent (HorseMind's own caps still bound memory).
+const HYDRATION_WINDOW_HOURS = 72;
+const HYDRATION_MAX_HANDS = 12000;
 
 export async function hydrateHorseMind(): Promise<void> {
   try {

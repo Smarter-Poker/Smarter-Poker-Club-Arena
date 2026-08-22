@@ -71,6 +71,12 @@ export interface PreflopCtx {
   /** V10: widen the isolation-raise range vs limpers in position (percentile
    *  points to loosen the open floor). 0 = off / legacy behavior. */
   isoWiden?: number;
+  /** V11 GAME MODE (Dan 2026-08-22): cash and tournaments are DIFFERENT games.
+   *  Explicit mode from the table engine (tournament_id / game_type), never
+   *  guessed from blind size. Absent = legacy behavior. */
+  mode?: 'cash' | 'tournament';
+  /** V11: an ante is in play — opens/steals widen (dead money in every pot). */
+  anteInPlay?: boolean;
   /** PRNG supplied by the caller (fast xorshift) */
   rand: () => number;
 }
@@ -129,6 +135,36 @@ export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
   const strength = raw;
   const bluffBudget = ctx.bluffFreq * ctx.aggression * Math.max(0.4, 1 - 4 * ctx.riskAdd);
 
+  // ── V11 GAME MODE (Dan 2026-08-22) ──────────────────────────────────────
+  const isTourney = ctx.mode === 'tournament';
+  // Antes (tournaments, and any ante cash game) put dead money in every pot:
+  // every open, steal, and jam range widens. Solver ante adjustments run
+  // ~4-6 percentile points of extra width.
+  const anteWiden = ctx.anteInPlay ? 0.05 : 0;
+  // True heads-up: exactly one live opponent and hero is in a blind. HU is a
+  // different game — the SB/BTN opens ~75-85% and the BB defends the wide
+  // majority of hands against it.
+  const headsUp =
+    ctx.mode !== undefined && ctx.oppsLeft === 1 && (position === 'sb' || position === 'bb');
+
+  // ── V11 PRICE-IN GUARD (Dan 2026-08-22, binding) ────────────────────────
+  // "Folding in tournaments to less than 1 BB" — a horse must NEVER fold when
+  // the pot is laying a price that any two cards beat. Any two live cards
+  // clear ~25-30% equity, so when the pot odds require materially less than
+  // that, folding burns chips no strategy can win back. Applies to every
+  // branch below: checked FIRST, before any strength threshold can fold.
+  const effCall = Math.min(toCall, stack);
+  const guardOdds = effCall > 0 ? effCall / (pot + effCall) : 1;
+  const pricedIn =
+    ctx.mode !== undefined && // V11 on — ablation (mode absent) keeps legacy
+    toCall > 0 &&
+    (guardOdds <= 0.15 || // ~5.7:1 or better — never fold any two cards
+      (effCall <= bb && guardOdds <= 0.22) || // under 1bb more at 3.5:1+
+      // Tournament crumbs: with <=2bb behind, the blinds will eat the stack
+      // anyway — take the flip instead of blinding out.
+      (isTourney && stackBB <= 2 && guardOdds <= 0.34));
+  if (pricedIn) return { a: 'call' };
+
   // Stack-depth texture: deep stacks reward speculative suited/connected
   // hands (implied odds); shallow stacks punish them.
   const depthLoosen = stackBB > 150 ? 0.02 : 0;
@@ -139,14 +175,29 @@ export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
   // ── Short stacks: push/fold (<=12bb) and reshove stacks (13-20bb) ──
   if (stackBB <= 12 && !ctx.isOmaha) {
     if (unopened) {
-      const jamThresh = position === 'late' || position === 'sb' ? 0.5 : 0.6;
+      // V11: tournament jam ranges follow push/fold math — wider from late
+      // seats, wider still with antes, and wider as the stack shrinks (a 5bb
+      // stack jams far more than a 12bb stack).
+      let jamThresh = position === 'late' || position === 'sb' ? 0.5 : 0.6;
+      if (isTourney) {
+        jamThresh -= anteWiden + (stackBB <= 7 ? 0.08 : 0.03);
+      }
       if (strength >= t(jamThresh)) return { a: 'jam' };
       if (toCall === 0) return { a: 'check' };
+      // V11: never open-limp/call off a push/fold stack — jam or fold. The
+      // price-in guard above already caught every call that math forces.
+      if (!isTourney && toCall <= bb && strength >= 0.3) return { a: 'call' };
       return { a: 'fold' };
     }
-    if (strength >= t(raises >= 2 ? 0.85 : 0.72)) return { a: 'jam' };
+    // Facing action short-stacked: jam on real strength; the threshold eases
+    // as the price improves (calling a shove getting 2:1 is not calling a
+    // shove getting even money).
+    let jamCallThresh = raises >= 2 ? 0.85 : 0.72;
+    if (ctx.mode !== undefined && guardOdds <= 0.35) jamCallThresh -= 0.12;
+    if (isTourney) jamCallThresh -= anteWiden * 0.5;
+    if (strength >= t(jamCallThresh)) return { a: 'jam' };
     if (toCall === 0) return { a: 'check' };
-    if (toCall <= bb && strength >= 0.3) return { a: 'call' };
+    if (!isTourney && toCall <= bb && strength >= 0.3) return { a: 'call' };
     return { a: 'fold' };
   }
   if (
@@ -155,16 +206,17 @@ export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
     raises === 1 &&
     callers === 0 &&
     raiserPosition === 'late' &&
-    strength >= t(0.62)
+    strength >= t(0.62 - anteWiden)
   ) {
     // V7 RESHOVE: 13-20bb over a late-position open — jam, don't flat.
+    // V11: antes widen the reshove (dead money + first-in fold equity).
     return { a: 'jam' };
   }
 
   // ── Unopened pot (or limpers only) ──
   if (unopened) {
     let openThresh = t(OPEN_THRESH[position]) + Math.min(limpers, 3) * 0.03;
-    openThresh += depthTighten - depthLoosen;
+    openThresh += depthTighten - depthLoosen - anteWiden;
     // V10 LIMP ISOLATION: weak limpers are the softest spot in cash poker.
     // Rather than only tightening (and sizing up) against them, ATTACK in
     // position — widen the raise floor so more hands isolate the limp(s). The
@@ -176,8 +228,10 @@ export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
     }
 
     // Blind-vs-blind: heads-up SB vs BB plays much wider.
+    // V11: TRUE heads-up (a 2-handed game, not just blinds left in a ring
+    // hand) plays wider still — the SB/BTN opens the large majority of hands.
     const bvb = position === 'sb' && ctx.oppsLeft === 1;
-    if (bvb) openThresh = t(0.36) + depthTighten;
+    if (bvb) openThresh = t(headsUp ? 0.24 : 0.36) + depthTighten - anteWiden;
 
     if (strength >= openThresh) {
       // Trap mix with true premiums (cheap to see a flop disguised).
@@ -213,6 +267,18 @@ export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
     if (blindVsSteal) {
       threeBetThresh = t(0.7 - (ctx.aggression - 1) * 0.08);
       callThresh += position === 'sb' ? 0.05 : 0;
+    }
+    // V11 HEADS-UP DEFENSE: the SB/BTN opens most hands HU, so the BB defends
+    // the wide majority — folding 50%+ of hands to a HU open is pure surrender.
+    if (headsUp && position === 'bb') {
+      threeBetThresh = t(0.64 - (ctx.aggression - 1) * 0.08);
+      callThresh = t(0.3);
+    }
+    // V11 TOURNAMENT MID-STACK (16-25bb): flatting raises OOP torches stack
+    // utility — shift the marginal-call band into 3-bet-or-fold.
+    if (isTourney && stackBB > 12 && stackBB <= 25 && !ctx.isOmaha && !headsUp) {
+      threeBetThresh = Math.min(threeBetThresh, t(0.72 - anteWiden));
+      callThresh += 0.05;
     }
     const bbDiscount = position === 'bb' ? 0.06 : 0;
     const priceOK = toCall <= Math.max(bb * 12, stack * 0.12);

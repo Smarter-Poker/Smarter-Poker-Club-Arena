@@ -99,6 +99,29 @@ files / 2,998 passed.
 
 ---
 
+## Cowork session 2026-08-22 (9) — DB starvation fix: sp_prune_hand_state_snapshots full scan
+
+Investigating the Lobby V2 handoff's "Still Loading" QA item led to the root
+cause of the intermittent 60s+ club-load stalls Dan first hit on 2026-08-20.
+sp_prune_hand_state_snapshots (called periodically with batch 5000) had a bare
+OR of two age branches, which gave the planner no created_at range bound: every
+call was an unbounded Index Scan Backward over the whole 6.3GB / 1.38M-row
+table. With only ~3k prunable rows the LIMIT was never satisfied, so each call
+ran 51s mean / 106s max pinned in DataFileRead, starving the instance —
+measured from the browser as clubs select 26.7s and /auth/v1/user 14.5s, which
+trips ClubHomePage's 15s watchdog ("Still Loading"). It also explains the
+2026-08-22 handoff's "wedged pg_net" observation: the MCP connections were
+timing out during these IO storms, not because pg_net was broken (its queue is
+empty and its worker responds).
+
+Fix: hoist the common `created_at < now()-'7 days'` bound to the top level so
+the scan gets an Index Cond and stops at the cutoff. Retention semantics
+unchanged (complete 7d, incomplete 30d). Applied to production via Supabase MCP
+`apply_migration` (`prune_snapshots_bounded_scan`) and verified there:
+EXPLAIN ANALYZE shows 4,296 buffers all shared hits, and pg_stat_statements
+shows the first post-fix call at 137ms (was 51,000ms mean). Migration file:
+`supabase/migrations/20260822233000_prune_snapshots_bounded_scan.sql`.
+
 ## Cowork session 2026-08-22 (8) — SPIN / CASH ANIMATION PARITY: the audit Dan asked for
 
 Handoff item 9.1, which had never been done end to end. Full findings, including

@@ -532,25 +532,30 @@ export default function LeaderboardPage() {
     }
   };
 
+  const tournReqSeqRef = useRef(0);
+
   const loadTournamentStats = async (getIsMounted?: () => boolean) => {
     if (!selectedClubId) {
       setTournamentsLoading(false);
       return;
     }
+    const myReq = ++tournReqSeqRef.current;
     setTournamentsLoading(true);
     try {
       const data = await retryFetch(
         () => LeaderboardService.getClubTournamentStats(selectedClubId, 50),
         { maxRetries: 2 }
       );
+      if (myReq !== tournReqSeqRef.current) return;
       if (getIsMounted && !getIsMounted()) return;
       setTournamentStats(data);
       setLastUpdated(new Date());
     } catch (error) {
       reportError(error, 'LeaderboardPage.Failed_to_load_tournament_stats');
-      toast.error('Failed to load tournament stats');
+      if (myReq === tournReqSeqRef.current) toast.error('Failed to load tournament stats');
     } finally {
-      if (!getIsMounted || getIsMounted()) setTournamentsLoading(false);
+      if (myReq === tournReqSeqRef.current && (!getIsMounted || getIsMounted()))
+        setTournamentsLoading(false);
     }
   };
 

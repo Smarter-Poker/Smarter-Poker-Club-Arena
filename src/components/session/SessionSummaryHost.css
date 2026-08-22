@@ -207,6 +207,18 @@
   font-weight: 800;
   color: #e6ecf5;
 }
+/* ── Pending Settlement (Phase 3, 2026-08-22) ──
+   A mid-hand leave defers the cashout, so the big number is an estimate. The
+   annotation stays muted and small: it qualifies the figure, it does not
+   compete with it. No yellow — the anti-yellow pass applies here too. */
+.ssh-hero__sub--pending {
+  margin-top: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #9aa6bb;
+}
 .ssh-hero--tourney .ssh-hero__value {
   font-size: clamp(2rem, 10vw, 2.7rem);
 }

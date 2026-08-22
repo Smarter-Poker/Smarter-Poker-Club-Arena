@@ -35,6 +35,8 @@ interface Harness {
     continueRunout: number;
   };
   setStale(ms: number): void;
+  /** Park the dealing loop in `phase`, entered `ms` ago. */
+  setLoopPhase(phase: string, ms: number): void;
   state: any;
 }
 
@@ -126,6 +128,10 @@ function harness(opts: {
     setStale: (ms: number) => {
       e.lastProgressAtMs = Date.now() - ms;
     },
+    setLoopPhase: (phase: string, ms: number) => {
+      e.loopPhase = phase;
+      e.loopPhaseSinceMs = Date.now() - ms;
+    },
   };
 }
 
@@ -183,13 +189,65 @@ describe('table watchdog — when it must stay out of the way', () => {
     expect(h.calls.killed).toHaveLength(0);
   });
 
-  it('rebuilds a table that SHOULD be dealing but has produced no hand', () => {
+  it('rebuilds a table whose dealing loop is WEDGED, naming the step it died in', () => {
     const h = harness({ noHand: true });
     h.setStale(IDLE_MS + 10_000);
+    // The loop has not moved off this step for longer than the idle window.
+    // That, not the absence of a hand, is what "the loop is dead" means.
+    h.setLoopPhase('load_seats', IDLE_MS + 10_000);
     run(h); // trip 1 — report only
     expect(h.calls.killed).toHaveLength(0);
     run(h); // trip 2 — the dealing loop is gone, rebuild
-    expect(h.calls.killed).toEqual(['dealing_loop_dead']);
+    expect(h.calls.killed).toEqual(['dealing_loop_dead:load_seats']);
+  });
+});
+
+/**
+ * ── The 2026-08-22 fleet-wide kill storm ──
+ *
+ * 1,603 `dealing_loop_dead` kills in six hours; every running cash table
+ * killed 22-30 times, each after an average of three hands. Nothing was wrong
+ * with the tables. The between-hands path is five Supabase round trips and
+ * none of them marked progress, so a slow minute on a database that every
+ * table shares read as "the dealing loop is dead" on every table at once —
+ * and the rebuild storm loaded the database harder than the slowness that
+ * started it.
+ *
+ * These pin the distinction that ends it: a loop still moving between steps
+ * is ALIVE, however slow the step is.
+ */
+describe('table watchdog — a slow database is not a dead engine', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it('does not kill a table whose loop is still moving, only waiting on the database', () => {
+    const h = harness({ noHand: true });
+    h.setStale(IDLE_MS + 30_000); // no hand for two minutes
+    h.setLoopPhase('load_seats', 4_000); // ...but the loop moved 4s ago
+    run(h);
+    run(h);
+    run(h);
+    expect(h.calls.killed).toHaveLength(0);
+    expect(trips(h)).toBe(0);
+  });
+
+  it('still kills a loop that cycles forever without ever dealing, under its own name', () => {
+    const h = harness({ noHand: true });
+    // Past the five-minute alive-loop horizon: cycling this long with two
+    // funded seats is a real fault, just not the wedged one.
+    h.setStale(6 * 60_000);
+    h.setLoopPhase('spin_reveal_hold', 500);
+    run(h);
+    expect(h.calls.killed).toHaveLength(0);
+    run(h);
+    expect(h.calls.killed).toEqual(['loop_ticking_no_hands:spin_reveal_hold']);
+  });
+
+  it('reports the phase and its age so a storm names its own cause', () => {
+    const h = harness({ noHand: true });
+    h.setStale(IDLE_MS + 10_000);
+    h.setLoopPhase('recover_busted_horses', 96_000);
+    run(h);
+    expect((h.engine as any).describeLoopPhase()).toBe('recover_busted_horses+96s');
   });
 });
 

@@ -24,6 +24,7 @@ import {
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
+import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { handCompletionHoldMs, boardClearMs } from '../config/handCompletionSpec.js';
 
 export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
@@ -45,6 +46,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // background (their .catch already reports) and the loop proceeds —
         // stack sync is idempotent and the next hand's settlement re-syncs.
         if (this.postHandTasksPromise) {
+          this.setLoopPhase('await_post_hand_tasks');
           const pending = this.postHandTasksPromise;
           let timedOut = false;
           await Promise.race([
@@ -67,15 +69,35 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           this.postHandTasksPromise = null;
         }
 
-        // Reload players + refresh blinds before each hand
+        // Reload players + refresh blinds before each hand.
+        //
+        // BUDGETED (2026-08-22): these are three Supabase round trips with
+        // nothing bounding them and nothing marking progress while they run,
+        // sitting directly under a 90s watchdog that kills the engine. On
+        // 2026-08-22 that combination killed every cash table in the fleet
+        // 22-30 times in six hours. Each step now stamps its own phase and
+        // carries its own budget, so a slow database produces a NAMED, retried
+        // step instead of an anonymous kill and a fleet-wide rebuild storm.
         const previousSeatedIds = new Set(this.seatedPlayers.map((p) => p.user_id));
-        this.seatedPlayers = await loadSeatedPlayers(this.tableId);
-        await this.refreshBlinds();
+        this.seatedPlayers = await this.withStepBudget(
+          'load_seats',
+          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+          loadSeatedPlayers(this.tableId)
+        );
+        await this.withStepBudget(
+          'refresh_blinds',
+          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+          this.refreshBlinds()
+        );
         // 2026-08-18: cash tables re-read their rake settings here (throttled
         // to once a minute inside the method). tableInfo is otherwise loaded
         // once per engine lifetime, so before this an owner changing the rake
         // saw nothing until the table restarted.
-        await this.refreshRakeConfig();
+        await this.withStepBudget(
+          'refresh_rake',
+          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+          this.refreshRakeConfig()
+        );
 
         // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_taken event for any
         // player who appeared in seatedPlayers since the previous hand.
@@ -189,6 +211,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           if (this.tableFSM.state === 'running') {
             this.tableFSM.transition('paused');
           }
+          this.setLoopPhase(this.adminPauseLock ? 'admin_pause_lock' : 'maintenance_lock');
           await this.sleep(3000);
           continue;
         }
@@ -264,7 +287,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // land this tick is dealt into THIS hand rather than the next one.
         // This is the human counterpart of recoverBustedSeatedHorses().
         if (!this.isTournamentTable()) {
-          await this.processPendingAddOns(this.seatedPlayers);
+          await this.withStepBudget(
+            'pending_addons',
+            ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+            this.processPendingAddOns(this.seatedPlayers)
+          );
         }
 
         // FIX 143: Bible V8 §7.12 — Exclude sitting-out players from the deal.
@@ -310,7 +337,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // rebuy-or-remove routine every idle tick — it is a no-op when no
         // seated horse is busted, and per-horse attempts are throttled.
         if (!this.isTournamentTable()) {
-          await this.recoverBustedSeatedHorses();
+          await this.withStepBudget(
+            'recover_busted_horses',
+            ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+            this.recoverBustedSeatedHorses()
+          );
         }
 
         if (activePlayers.length < 2) {
@@ -318,6 +349,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           if (this.tableFSM.state === 'running') {
             this.tableFSM.transition('waiting');
           }
+          this.setLoopPhase('idle_not_enough_players');
           await this.sleep(3000);
           continue;
         }
@@ -326,6 +358,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // shared wheel is still running. Re-checked in short slices so a
         // resume is responsive and the loop stays interruptible.
         if (this.dealHoldUntilMs > Date.now()) {
+          this.setLoopPhase('spin_reveal_hold');
           await this.sleep(Math.min(this.dealHoldUntilMs - Date.now(), 1000));
           continue;
         }
@@ -337,6 +370,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
 
         // Deal hand (self-transition: running → running for next hand)
+        this.setLoopPhase('dealing');
         await this.dealHand(activePlayers);
         this.consecutiveErrors = 0;
 
@@ -438,6 +472,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           });
 
           // Phase 1: the completion sequence actually plays out.
+          this.setLoopPhase('post_hand_hold');
           await this.sleep(resultDisplayMs);
           // Phase 2: board clear (clients animate the card/chip sweep).
           this.broadcastCurrentState(); // Sends clean state (no hand in progress)
@@ -466,7 +501,24 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // 10-error engine shutdown.
           errMsg.includes('supabase_timeout') ||
           errMsg.includes('This operation was aborted') ||
-          errMsg.includes('The operation was aborted');
+          errMsg.includes('The operation was aborted') ||
+          // 2026-08-22: a step that blew its budget in withStepBudget. The
+          // database is slow, which is transient by definition and which a
+          // rebuilt engine cannot fix — it can only add another reconnect to
+          // whatever is already struggling.
+          errMsg.includes('deal_step_timeout');
+
+        // A blown step budget is the loop reporting that it is ALIVE and
+        // waiting, so it must not read to the watchdog as a dead loop. This
+        // is the same call the 45s postHandTasks bound above already makes,
+        // for the same reason.
+        if (errMsg.includes('deal_step_timeout')) {
+          this.markProgress();
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.deal_step_timeout', {
+            phase: this.loopPhase,
+            handCount: this.handCount,
+          });
+        }
 
         if (!isTransient) {
           this.consecutiveErrors++;

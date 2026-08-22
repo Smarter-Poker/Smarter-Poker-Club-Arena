@@ -7,6 +7,59 @@
 
 ---
 
+## Cowork session 2026-08-22 (9) — the hunters' memory now survives a deploy (PR #291)
+
+The V12 anti-exploit defense (#268) taught the horses to notice a player who
+3-bets their opens and raises their bets at rates his own global profile cannot
+explain — and to fight back. But the per-(attacker, victim) counters behind
+`targetingOf()` lived only in process memory, rebuilt by the 72h hand_history
+replay. A hunter who worked a horse over for a week and came back after a
+deploy met a horse with no memory of him, while the opponent STATS had already
+been given an unlimited horizon in #256. This session closed that asymmetry —
+it was the first deferred item in the 2026-08-22 handoff.
+
+**DB.** `horse_mind_pairs` (PK attacker_id+victim_id; n3/opp3 preflop, n_r/opp_r
+postflop; generated `opps = opp3 + opp_r` column for hydrate ordering; RLS with
+no policies — service-role only) + `upsert_horse_mind_pairs(jsonb)` with the
+same GREATEST-merge contract as `upsert_horse_mind_stats`: counters only grow
+in engine memory between bounded-memory generation swaps, so a post-swap flush
+that restarts from zero can never clobber accumulated history. Applied to
+production via the Supabase MCP before the PR (CHECK 17), merge semantics
+smoke-tested live (two overlapping upserts, per-column GREATEST verified), and
+the schema manifest regenerated from the live schema rather than hand-edited.
+
+**Engine.** `HorseMind` grew a `dirtyPairs` set marked inside `pairOf()` —
+every call site of that helper mutates a counter, so the key is dirty by
+construction, and all call sites are already isNew-gated so a replayed history
+never re-dirties. `exportDirtyPairs` / `requeueDirtyPairs` / `importPairs`
+mirror the stats trio; `importPairs` never downgrades (a row applies only when
+its opp3+oppR exceeds memory's) and respects the 20k pair cap. The generation
+swap and `reset()` clear the dirty set alongside the pairs map.
+
+**Persistence.** The pairs ride the existing machinery end to end: the same
+5-minute flush timer (chunks of 400, failed chunks requeued), the same SIGTERM
+drain flush, and a boot hydrate of the top 3000 most-contested pairs that runs
+inside `hydrateHorseMindFromDb()` with its own fail-safe — a pairs failure
+costs nothing to the stats hydration, and vice versa. The replay tail then
+stacks live counts on top, exactly as it does for stats.
+
+**Tests.** 8 new specs in `HorseMindPairs.persistence.test.ts` pin the
+contract: dirty tracking, idempotent re-observe, requeue-on-failure,
+never-downgrade import, and the one that matters — a hunter profile imported
+straight from the DB drives `targetingOf()` past the counter threshold with
+zero live observation this process. Full server suite 1105/1105 green.
+
+**Also in the PR:** main was red on `check-title-case` (two GameLobbyPanel
+notes from the phase 3 lobby work) and blocked every push; fixed with the
+sanctioned `--fix` script per fix-first, in its own commit.
+
+**Verified in production:** Hetzner auto-deploy green, hand_history restart dip
+at 20:29 UTC. Watch item: `horse_mind_pairs` row count after the first 5-minute
+flush window survives without a redeploy (the repo was landing PRs every few
+minutes that evening, each restarting the engine and its flush timer).
+
+---
+
 ## Cowork session 2026-08-22 (8) — SPIN / CASH ANIMATION PARITY: the audit Dan asked for
 
 Handoff item 9.1, which had never been done end to end. Full findings, including

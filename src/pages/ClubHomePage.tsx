@@ -333,7 +333,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [showBBJInfo, setShowBBJInfo] = useState(false);
   // Dan 2026-08-21: Chip Mint (diamonds -> chips, 100 = 10,000).
   const [showChipMint, setShowChipMint] = useState(false);
-  const [gameType, setGameType] = useState<GameType>('MTT');
+  /* LOBBY V2 follow-up (Dan's QA, 2026-08-22): the lobby landed on the MTT
+     tab, a leftover from before All Games was a real tab. A club with no open
+     MTTs therefore opened onto an empty screen blaming "filters" - every
+     single visit. All Games is the landing view of a dense lobby. */
+  const [gameType, setGameType] = useState<GameType>('ALL');
   const [sortKey, setSortKey] = useState<SortKey>('starting_soon');
   const [sortOpen, setSortOpen] = useState(false);
   /* Advanced Filters (Dan 2026-08-20). Loaded lazily from localStorage on
@@ -2434,6 +2438,22 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                     <p className="empty-hint">
                       Nothing Is Running Here Right Now. New Games Open All The Time.
                     </p>
+                  </>
+                ) : !filtered && !searching ? (
+                  <>
+                    {/* Tab (or Favorites) is the ONLY narrowing: blaming
+                        "filters" here sent players hunting for filters they
+                        never set (QA 2026-08-22). Name the real cause. */}
+                    <p>Nothing Here On This Tab</p>
+                    <p className="empty-hint">
+                      {totalHere.toLocaleString()} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
+                      This Club, Just None Of This Type Right Now.
+                    </p>
+                    <div className="empty-actions">
+                      <button className="empty-action" onClick={clearAllNarrowing}>
+                        Show All Games
+                      </button>
+                    </div>
                   </>
                 ) : (
                   <>

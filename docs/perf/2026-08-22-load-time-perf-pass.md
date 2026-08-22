@@ -139,3 +139,37 @@ async loading from Phase 1 already removed the render-blocking cost.
   would cut first table load further.
 - Consider precaching the entry + vendor chunks in sw-bus.js at install time
   (needs a build-time manifest injection).
+
+## Phase 4 (second session, 2026-08-22 evening) — shipped
+
+Continuation by a second Cowork agent from the Phase 1-3 handoff. Three PRs,
+each merged by Autopilot and verified against production build-info.json.
+
+- **Publish race fixed for real** (PR #273). The sync job's stand-down guard
+  compared `built_at` TIMES, and `cancel-in-progress: false` lets an
+  older-sha run finish after a newer one with the LATER timestamp — it
+  regressed production twice on 2026-08-22. The guard now reads the deployed
+  `ca_sha` and asks the compare API for ancestry: behind stands down,
+  ahead/identical publishes, unanswerable (rewind/unknown sha/API failure)
+  falls back to the time comparison. Pinned in
+  `tests/shipped-invariants.test.ts` ("ancestry, not wall clock"). The
+  dispatch-and-reverify dance after every merge is no longer needed.
+- **~30MB of dead public/ weight deleted** (PR #287, 52 files). Every file
+  re-grepped against src/, index.html, server/, tests/, public html/js/css
+  and World Hub pages/src first. The four unreferenced `cards/backs/*.jpeg`
+  (14MB), `shark-card.svg`, both `club-stats-panel.svg` copies,
+  `assets/metal-ui/`, the wallet-panel images (matches were aria ids), the
+  pre-v4 header icons, pre-v8 cashier tiles and the orphaned hand-histories
+  tile. Verified live: deleted paths 404, kept neighbours 200. Shrinks the
+  repo, dist/ and the rsync of every deploy.
+- **Lobby tiles warm their destination on intent** (PR #298). The plain
+  tiles (Player Stats, Daily Challenges, Leaderboards) now fire
+  `preloadRoute(tile.route)` on hover/touchstart/focus, matching the
+  quick-link tiles — chiefly for PlayerStatsPage's ~314KB recharts chunk,
+  which stays out of the boot preload list on purpose.
+
+Still open, in the order the handoff ranked them: TablePage internal split
+(HIGH CHURN — coordinate first), CardBackSelector previews to
+`cards/backs/table/*.webp`, fonts.css content-hashing, HTML edge caching
+(risky), ClubHomePage stale-first hydration (heaviest screen, biggest
+remaining win), font subsetting, images/icons WebP+ref pass.

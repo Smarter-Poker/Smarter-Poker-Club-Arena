@@ -115,10 +115,35 @@ jobs:
           echo "SYNC_BRANCH=${BRANCH}" >> $GITHUB_ENV
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git checkout -b "${BRANCH}"
+
+          # ORPHAN, not a branch off main. This branch exists so the next job
+          # can read dist/ out of it — nothing else in it is ever used. When it
+          # was cut from main it also carried .github/workflows/, and GITHUB_TOKEN
+          # is a GitHub App token, which may not create or update a workflow file:
+          #
+          #   ! [remote rejected] build/world-hub-sync-b0ba7cbc
+          #     refusing to allow a GitHub App to create or update workflow
+          #     `.github/workflows/agent-autopilot.yml` without `workflows` permission
+          #
+          # So EVERY pull request that touched .github/workflows/ merged to main
+          # and then silently failed to publish. The bundle was built, the run
+          # went red at the push, and production kept serving the previous build
+          # while main moved on — which is indistinguishable from a regression.
+          #
+          # An orphan carrying only dist/ cannot contain a workflow file, so the
+          # restriction can never apply again. It is also a far smaller push.
+          git checkout --orphan "${BRANCH}"
+          git rm -rf --cached . >/dev/null
           git add --force dist/
           git commit -m "build: compiled dist for world hub sync (${SHORT_SHA})"
           git push --no-verify --force origin "${BRANCH}"
+
+          # Prove the artifact the next job depends on actually made it, rather
+          # than discovering it is missing during the rsync.
+          if ! git ls-tree -r --name-only "${BRANCH}" | grep -q '^dist/index.html$'; then
+            echo "::error::sync branch ${BRANCH} has no dist/index.html — refusing to continue."
+            exit 1
+          fi
 
       - name: Build summary
         run: |

@@ -11,6 +11,38 @@ set -uo pipefail
 
 if OUT=$(gh api user --jq .login 2>&1); then
   echo "token OK — authenticated as: $OUT"
+
+  # A PAT with an expiry date is a scheduled outage. When it lapses, every
+  # merge and every publish stops at once, and the only symptom is that PRs
+  # quietly stop landing. Warn while there is still time to rotate it.
+  EXP=$(gh api -i user 2>/dev/null | tr -d '\r' \
+        | awk 'tolower($1)=="github-authentication-token-expiration:"{ $1=""; sub(/^ /,""); print }')
+  if [ -n "${EXP:-}" ]; then
+    EXP_EPOCH=$(date -u -d "$EXP" +%s 2>/dev/null || echo "")
+    if [ -n "$EXP_EPOCH" ]; then
+      DAYS=$(( (EXP_EPOCH - $(date -u +%s)) / 86400 ))
+      echo "GH_PAT expires in ${DAYS} day(s) (${EXP})."
+      {
+        echo "### Agent Autopilot token"
+        echo ""
+        echo "\`GH_PAT\` expires in **${DAYS} day(s)** — \`${EXP}\`"
+      } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+      if [ "$DAYS" -le 21 ]; then
+        echo "::warning::GH_PAT expires in ${DAYS} day(s). When it lapses, NOTHING will auto-merge or publish. Rotate it: gh secret set GH_PAT --repo ${GITHUB_REPOSITORY:-<repo>} --body <fresh PAT>"
+        if [ -n "${GITHUB_TOKEN_FALLBACK:-}" ]; then
+          GH_TOKEN="$GITHUB_TOKEN_FALLBACK" gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "Agent Autopilot token expires in:title" --limit 1 --json number --jq '.[0].number' 2>/dev/null | grep -q . \
+          || GH_TOKEN="$GITHUB_TOKEN_FALLBACK" gh issue create --repo "$GITHUB_REPOSITORY" \
+               --title "Agent Autopilot token expires ${EXP}" \
+               --body "\`GH_PAT\` expires in ${DAYS} day(s) (\`${EXP}\`).
+
+When it lapses every PR stops auto-merging and nothing publishes to the World Hub. Agents will keep reporting success.
+
+Rotate: \`gh secret set GH_PAT --repo $GITHUB_REPOSITORY --body <fresh PAT>\` (needs contents + pull-requests write)." >/dev/null 2>&1 || true
+        fi
+      fi
+    fi
+  fi
   exit 0
 fi
 

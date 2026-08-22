@@ -295,3 +295,50 @@
     animation: none;
   }
 }
+
+/* ── Seat map (cash): numbered pips, occupancy at a glance ── */
+.glp__seatmap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.glp__seat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 44px;
+  padding: 7px 6px 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(120, 140, 180, 0.25);
+  background: rgba(20, 26, 40, 0.55);
+}
+.glp__seat i {
+  font-style: normal;
+  font-weight: 700;
+  font-size: 0.85rem;
+  line-height: 1;
+  color: #d7deee;
+}
+.glp__seat em {
+  font-style: normal;
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(160, 175, 205, 0.75);
+}
+.glp__seat.is-taken {
+  border-color: rgba(90, 100, 120, 0.5);
+  background: rgba(44, 50, 62, 0.8);
+}
+.glp__seat.is-taken i {
+  color: rgba(170, 178, 192, 0.85);
+}
+.glp__seat.is-you {
+  border-color: rgba(212, 175, 55, 0.7);
+  background: rgba(212, 175, 55, 0.12);
+}
+.glp__seat.is-you i,
+.glp__seat.is-you em {
+  color: #d4af37;
+}

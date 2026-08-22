@@ -34,6 +34,30 @@ ISSUE_TITLE="Publish watchdog: production is not serving main"
 say() { echo "$@"; }
 summary() { echo "$@" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
 
+# A watchdog whose alarm fails silently is not a watchdog. Every write here
+# goes through this: `gh ... >/dev/null 2>&1 && say "opened an issue"` prints
+# nothing at all when the write fails, which is how report-stuck-prs.sh found
+# six stranded pull requests in PepNationLab, could not raise the issue, and
+# logged 53 seconds of silence on a step that reported success.
+# ISSUE WRITES USE A DIFFERENT TOKEN ON PURPOSE. The App installation token is
+# required for MERGES, because a merge made with GITHUB_TOKEN does not trigger
+# downstream workflows and the commit would land without publishing. Raising an
+# issue has no downstream effect at all, so it does not need the App - and
+# GITHUB_TOKEN, with `issues: write` declared in the workflow, is guaranteed to
+# have the permission, where an App's installation scopes can be narrowed
+# without anyone here noticing. Use the narrow token for the narrow job.
+gh_write() {
+  local what="$1"; shift
+  local out
+  if out=$(GH_TOKEN="${GH_TOKEN_ISSUES:-${GH_TOKEN:-}}" gh "$@" 2>&1); then
+    say "  $what"
+    return 0
+  fi
+  say "::error::publish-watchdog could not $what -- production is behind and nobody was told."
+  printf '%s\n' "$out" | sed 's/^/    /'
+  return 1
+}
+
 HEAD_SHA=$(git rev-parse HEAD)
 HEAD_SHORT=${HEAD_SHA:0:8}
 HEAD_TIME=$(git show -s --format=%cI "$HEAD_SHA")
@@ -61,10 +85,9 @@ close_issue() {
   N=$(gh issue list --repo "$REPO" --state open --search "$ISSUE_TITLE in:title" \
         --limit 1 --json number --jq '.[0].number' 2>/dev/null || true)
   [ -n "${N:-}" ] || return 0
-  gh issue comment "$N" --repo "$REPO" \
-    --body "Recovered. Production is serving \`$HEAD_SHORT\`, which is main's HEAD. Closing." >/dev/null 2>&1 || true
-  gh issue close "$N" --repo "$REPO" >/dev/null 2>&1 || true
-  say "closed issue #$N — production caught up."
+  gh_write "comment on #$N" issue comment "$N" --repo "$REPO" \
+    --body "Recovered. Production is serving \`$HEAD_SHORT\`, which is main's HEAD. Closing." || true
+  gh_write "close issue #$N (production caught up)" issue close "$N" --repo "$REPO" || true
 }
 
 # ── Healthy ────────────────────────────────────────────────────────────────
@@ -170,11 +193,9 @@ _Raised automatically by \`.github/workflows/publish-watchdog.yml\`. It closes i
 EXISTING=$(gh issue list --repo "$REPO" --state open --search "$ISSUE_TITLE in:title" \
              --limit 1 --json number --jq '.[0].number' 2>/dev/null || true)
 if [ -n "${EXISTING:-}" ]; then
-  gh issue comment "$EXISTING" --repo "$REPO" --body "$BODY" >/dev/null 2>&1 \
-    && say "updated issue #$EXISTING"
+  gh_write "update issue #$EXISTING" issue comment "$EXISTING" --repo "$REPO" --body "$BODY" || true
 else
-  gh issue create --repo "$REPO" --title "$ISSUE_TITLE" --body "$BODY" >/dev/null 2>&1 \
-    && say "opened an issue"
+  gh_write "open an issue" issue create --repo "$REPO" --title "$ISSUE_TITLE" --body "$BODY" || true
 fi
 
 summary "### Publish watchdog: PRODUCTION IS BEHIND"

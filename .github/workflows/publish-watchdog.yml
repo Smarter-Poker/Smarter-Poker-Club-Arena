@@ -64,5 +64,10 @@ jobs:
       - name: Compare production against main
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          # The alarm writes with GITHUB_TOKEN, whose `issues: write` is
+          # declared above. An App's installation scopes can be narrowed
+          # without anyone here noticing, and a watchdog that cannot raise its
+          # alarm is not a watchdog.
+          GH_TOKEN_ISSUES: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: bash .github/scripts/publish-watchdog.sh

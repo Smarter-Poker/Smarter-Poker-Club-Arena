@@ -578,6 +578,12 @@ export interface HorseDecideOpts {
    *  donk leads with medium hands), and board-domination call discipline
    *  (default: enabled) */
   v11?: boolean;
+  /** disable the V12 layer: board-conditioned opponent sampling — postflop
+   *  aggressors are sampled toward hands that CONNECT with the actual board,
+   *  passive checked lines get their monsters down-sampled (default: enabled) */
+  v12?: boolean;
+  /** ablation hook (benchmarks only) — defaults to the v12 master flag */
+  v12Ranges?: boolean;
 }
 
 /**
@@ -643,10 +649,14 @@ export class HorseLogic {
     try {
       // V3: ingest the action stream into the opponent-intelligence layer.
       // Wrapped so observation can never take down a decision.
-      try {
-        HorseMind.observe(gameState.actionHistory, gameState.players);
-      } catch {
-        /* observation is best-effort */
+      // V12: benchmark/league decisions pass mind:false — they must never
+      // write synthetic hands into the live opponent memory.
+      if (opts.mind !== false) {
+        try {
+          HorseMind.observe(gameState.actionHistory, gameState.players);
+        } catch {
+          /* observation is best-effort */
+        }
       }
       return this.decideInternal(player, gameState, style, mods, opts);
     } catch {
@@ -1060,6 +1070,7 @@ export class HorseLogic {
     // Range reads from each live opponent's preflop line this hand, exploit
     // profile from their accumulated tendencies, board texture, blockers.
     let bands: Array<[number, number] | null> | undefined;
+    let oppReads: Array<{ aggrW: number; checked: number } | null> | undefined;
     let exploit = { bluffMod: 1, callDownMod: 1, valueThinMod: 1 };
     let wetness = 0.35;
     let blocker = false;
@@ -1071,13 +1082,18 @@ export class HorseLogic {
           ? gs.actionHistory
           : (gs.actionHistory || []).filter((a) => a.stage === 'preflop');
         // V7: size-aware narrowing + counter-adaptation recency blending.
+        // V12: parallel postflop reads feed board-contact conditioning.
+        if ((opts.v12Ranges ?? opts.v12) !== false && useHR) {
+          oppReads = [];
+        }
         bands = HorseMind.bandsForOpponents(
           player.seat,
           gs.players,
           bandHistory,
           gs.bigBlind,
           useSizeReads,
-          gs.communityCards
+          gs.communityCards,
+          oppReads
         );
         exploit = HorseMind.tableExploit(player.seat, gs.players, useCounterAdapt);
         const tex = HorseMind.texture(gs.communityCards);
@@ -1103,7 +1119,8 @@ export class HorseLogic {
       vi.iterations,
       bands,
       useAdaptiveMC,
-      hiLoSplit
+      hiLoSplit,
+      oppReads
     );
 
     // V9 TIMING: how CLOSE is this decision? Distance of the MC equity from

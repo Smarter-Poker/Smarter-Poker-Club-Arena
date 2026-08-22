@@ -482,6 +482,56 @@ export interface HiLoSplit {
 }
 
 /**
+ * V12 BOARD-CONDITIONED SAMPLING (2026-08-22): per-opponent postflop read.
+ * `aggrW` is the summed street-narrowing weight of their postflop aggression
+ * (0 = never bet); `checked` counts postflop streets where they showed no
+ * aggression despite acting. Aggressors get sampled toward hands that
+ * CONNECT with the current board; passive lines get their monsters
+ * down-sampled (a capped range stays capped).
+ */
+export interface OppPostflopRead {
+  aggrW: number;
+  checked: number;
+}
+
+/** Does this NLH-family hand connect with the CURRENT board — a pair or
+ *  better using it, a flush draw, or an open straight draw? */
+export function connectsBoard(hole: Card[], board: Card[], shortDeck: boolean): number {
+  // Returns the made CATEGORY (1..10) using hole+board; draws return 2
+  // ("pair-equivalent connection") so the acceptance logic treats a real
+  // draw like real contact.
+  const all = hole.concat(board);
+  const cat = Math.floor(scoreHoldem(all, all.length, shortDeck) / 0x100000);
+  if (cat >= 2) {
+    // A pocket pair UNDER every board card is a hidden non-connector — but it
+    // still bets sometimes; treat pocket pairs as contact.
+    return cat;
+  }
+  if (board.length >= 5) return cat; // river: no draws left
+  // Flush draw: 4 to a flush with at least one hole card of the suit.
+  const suitCount = new Map<string, number>();
+  for (const c of all) suitCount.set(c.suit, (suitCount.get(c.suit) || 0) + 1);
+  for (const [suit, n] of suitCount) {
+    if (n >= 4 && hole.some((h) => h.suit === suit)) return 2;
+  }
+  // Open-ended-ish: 4 distinct ranks inside a 5-window using a hole card.
+  let mask = 0;
+  for (const c of all) mask |= 1 << RANK_VALUES[c.rank];
+  for (let top = 14; top >= 5; top--) {
+    let inWin = 0;
+    for (let r = top; r > top - 5 && r >= 2; r--) if (mask & (1 << r)) inWin++;
+    if (inWin >= 4) {
+      // must use a hole card inside the window
+      for (const h of hole) {
+        const hr = RANK_VALUES[h.rank];
+        if (hr <= top && hr > top - 5) return 2;
+      }
+    }
+  }
+  return cat;
+}
+
+/**
  * Estimate hero's equity (0..1) vs `numOpponents` random hands. Handles all
  * supported variants. Draws are priced naturally because the runout completes
  * the board every iteration.
@@ -503,7 +553,9 @@ export function simulateEquity(
   adaptive?: boolean,
   // V8: hi-lo decomposition accumulator (plo8 only) — filled in the SAME
   // loop, so the scoop/quarter read costs nothing extra.
-  splitOut?: HiLoSplit
+  splitOut?: HiLoSplit,
+  // V12: board-contact conditioning per opponent (NLH family only).
+  oppReads?: Array<OppPostflopRead | null>
 ): number {
   // V3 perf: banded Omaha sampling adds rejection-scoring cost; trim the
   // iteration count to stay inside the per-decision millisecond budget.
@@ -641,6 +693,39 @@ export function simulateEquity(
               }
               oppCards[i] = deck[slot];
             }
+          }
+        }
+      }
+
+      // ═══ V12 BOARD-CONTACT CONDITIONING (NLH family, flop+) ═══
+      // The preflop band says which hands an opponent STARTED with; it says
+      // nothing about which of those hands bet this board. An aggressor's
+      // sampled hands are pushed toward board CONTACT (pairs, draws) with a
+      // probability scaled by how hard they have been betting; a passive
+      // checked line gets its monsters down-sampled (capped stays capped).
+      const read = oppReads ? oppReads[o] : null;
+      if (read && !vi.isOmaha && boardCards.length >= 3) {
+        const redraw = () => {
+          for (let i = 0; i < oppHole; i++) {
+            const slot = windowStart + i;
+            const j = slot + Math.floor(fastRandom() * (n - slot));
+            const tmp = deck[slot];
+            deck[slot] = deck[j];
+            deck[j] = tmp;
+            oppCards[i] = deck[slot];
+          }
+        };
+        if (read.aggrW > 0) {
+          const pConnect = Math.min(0.9, 0.4 + read.aggrW * 2.2);
+          for (let t = 0; t < 3; t++) {
+            if (connectsBoard(oppCards, boardCards, vi.isShortDeck) >= 2) break;
+            if (fastRandom() >= pConnect) break; // some of the range IS air
+            redraw();
+          }
+        } else if (read.checked >= 1) {
+          const cat = connectsBoard(oppCards, boardCards, vi.isShortDeck);
+          if (cat >= 4 && fastRandom() < 0.55 + Math.min(0.25, read.checked * 0.12)) {
+            redraw();
           }
         }
       }

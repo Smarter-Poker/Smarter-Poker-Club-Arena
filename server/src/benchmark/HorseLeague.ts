@@ -381,6 +381,10 @@ export function runMatchup(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The standing card: every strategy layer vs the engine without it. */
+// NOTE: v12 board-conditioned sampling lives inside the HorseMind band layer,
+// which league hands run with `mind: false` (live opponent memory must never
+// see synthetic hands) — so v12 is validated by seeded equity-shift tests in
+// HorseEval instead of a league matchup.
 export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'v11_leak_fixes', a: {}, b: { v11: false } },
   { name: 'v10_strategy', a: {}, b: { v10: false } },

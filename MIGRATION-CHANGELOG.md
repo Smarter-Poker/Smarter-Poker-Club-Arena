@@ -7,6 +7,113 @@
 
 ---
 
+## Cowork session 2026-08-22 (5) — THE WATCHDOG WAS THE OUTAGE
+
+### What the database said
+
+Six hours of production, read before a line was written:
+
+- **1,603 `dealing_loop_dead` kills** in `engine_recovery_events`.
+- **Every running cash table killed 22-30 times**, each after an average of
+  **three hands**. All of them `status='running'`, every seat funded, 2-6
+  seated. Nothing was wrong with any of them.
+- `hand_history` per-table spacing showed the shape exactly: normal 8-45s
+  between hands, then **107s, 107s, 114s, 87s, 83s** — two 90s watchdog trips
+  plus the rebuild — repeating forever.
+- Fleet-wide: **38 zero-hand minutes out of 361**, in ten runs of 2-3 minutes,
+  against a 29/min average and a 248/min peak.
+
+That is Dan's report — "games randomly break, stop running or freeze" — with a
+mechanism attached. It was not the transport, and it was not a bug in any
+table. **The recovery mechanism was the outage.**
+
+### Why
+
+The path BETWEEN hands is five Supabase round trips — `loadSeatedPlayers`,
+`refreshBlinds`, `refreshRakeConfig`, `processPendingAddOns`,
+`recoverBustedSeatedHorses`. Nothing bounded them and none of them called
+`markProgress()`, and they sit directly under a watchdog that kills the engine
+after 90 seconds without a hand.
+
+Database slowness is **correlated** — every table shares one database. So a
+slow minute did not stall one table, it stalled the fleet, got every engine
+killed at once, and the rebuild storm that followed put the database under
+more load than the slowness that started it. A self-feeding spiral is how you
+get 1,603 kills in six hours.
+
+Round 2 (session 4) had already bounded `postHandTasks` for exactly this
+reason. It bounded one await out of six.
+
+The second failure was diagnostic: `dealing_loop_dead` is inferred from
+OUTSIDE the loop — no handController, two dealable seats, no progress for 90s.
+That is the symptom of every possible stall in that path and it names none of
+them, so six hours of fleet-wide breakage produced 1,603 identical rows and
+not one clue about which step was slow.
+
+### What shipped
+
+1. **The loop says where it is.** `loopPhase` / `loopPhaseSinceMs` on
+   `ServerTableEngineBase`, stamped at every step: `await_post_hand_tasks`,
+   `load_seats`, `refresh_blinds`, `refresh_rake`, `pending_addons`,
+   `recover_busted_horses`, `idle_not_enough_players`, `spin_reveal_hold`,
+   `admin_pause_lock`, `maintenance_lock`, `dealing`, `post_hand_hold`.
+2. **The watchdog asks the loop, not the calendar.** Case B now distinguishes
+   a loop WEDGED in one step (`msSinceLoopPhase() > 90s` — still killed, as
+   `dealing_loop_dead:<phase>`) from one still CYCLING but not dealing (given
+   a five-minute horizon, then killed as `loop_ticking_no_hands:<phase>`). A
+   table waiting on a slow database is alive and is no longer killed for it;
+   nothing that was detectable before became undetectable.
+3. **Every between-hands step carries a budget.** `withStepBudget(phase, ms,
+work)` — 20s each, well under the 90s window because each step re-stamps
+   the phase, so five slow steps can outlast the idle window without ever
+   looking wedged. On expiry it REJECTS rather than returning a partial
+   result: a hand dealt from a half-loaded seat list is worse than a hand not
+   dealt. `deal_step_timeout` joins the loop's existing transient list, so the
+   step is retried with backoff instead of counting toward the 10-error engine
+   shutdown, and it calls `markProgress()` — the same call the 45s
+   `postHandTasks` bound already makes, for the same reason.
+4. **`/health` reports `loopPhase`** per table (`load_seats+96s`). It could
+   already say a table had made no progress for 96 seconds but not what it was
+   doing for them.
+
+### Kill-reason vocabulary (for reading `engine_recovery_events.detail`)
+
+| detail                          | means                                                                   |
+| ------------------------------- | ----------------------------------------------------------------------- |
+| `dealing_loop_dead:<phase>`     | the loop stopped moving, in `<phase>`                                   |
+| `loop_ticking_no_hands:<phase>` | the loop is cycling through `<phase>` and still not dealing after 5 min |
+
+The phase is recorded WITHOUT its elapsed seconds. A detail that is unique per
+row cannot be grouped, and grouping is the entire point of recording it.
+
+### Tests
+
+`DealStepBudget.test.ts` (new, 4) pins the budget's result/timeout contract and
+that its message is the one the loop already treats as transient.
+`TableWatchdog.test.ts` gains the slow-database storm as a named describe block
+and its existing kill assertion now states WHICH loop is dead. Server suite
+**1,094 passed / 104 files**; `npx tsc --noEmit` clean on `server/tsconfig.json`.
+Client untouched (root tsconfig includes `src` only).
+
+### Watch after deploy
+
+`SELECT detail, COUNT(*) FROM engine_recovery_events WHERE created_at >
+NOW()-INTERVAL '1 hour' GROUP BY 1 ORDER BY 2 DESC;` — the 1,603/6h rate must
+collapse, and whatever remains now names the step it died in. Zero-hand
+minutes in `hand_history` should stop clustering into 2-3 minute runs.
+
+### Still open from session 4
+
+Unchanged and untouched: mux soak (`ca_ws_mux` still off), the empty-table
+`p_min: 2` 4404 (not reproducing — 0 single-occupant tables live), the
+`pending_deadlines` dead write, the reaper's trust-based `!isRunning()` branch,
+and the missing EngineStateClient jsdom tests. Also newly observed and NOT
+addressed here: **56 `start_failed` kills between 19:07 and 19:42 UTC**, on
+engine versions `b66cea4a` / `af159998`. That is a separate, newer fault and
+it needs its own read of `GameServer` engine start.
+
+---
+
 ## Cowork session 2026-08-22 (4) — CONNECTIVITY HARDENING ROUND 2: adversarial review + deferred items
 
 An adversarial line-by-line review of round 2's own diff (PR #240) found 13
@@ -92,6 +199,7 @@ real defects it introduced or left; all are fixed here, plus every item round
 
 ConnectivityHardening.test.ts extended (hand-boundary countdown cleanup).
 Client 2915 passed / 5 skipped, server 1038 passed, tsc clean on both configs.
+
 ## Cowork session 2026-08-22 (4) — Phase 2 table audit: stat truth + dead code (PR #252)
 
 Dan: "KEEP GOING AND FIXING, IMPROVING AND OPTIMIZING. MOVE ONTO PHASE 2."
@@ -144,7 +252,7 @@ tests) and through the PR gate.
 3. **Timebank + previous-hand card** lowered to just above the action bar
    (112px + inset anchor in TableHUD, replacing 130/168px).
 4. **Stats button.** The mobile media block `.mini-stats-card { min-width:
-   100px }` out-ordered the icon variant's `min-width: 0`, stretching the
+100px }` out-ordered the icon variant's `min-width: 0`, stretching the
    square icon into the wide pill in Dan's screenshot. Scoped with
    `:not(.mini-stats-card--icon)`. The stats panel (RealTimeResultPanel) is
    width-capped at 75vw and the left hamburger dropdown became a full-height
@@ -6650,27 +6758,29 @@ Removed `mississippiEnabled` from StraddleConfig, simplified processStraddles() 
 **What changed:** Removed all dead variants from all files. Dan's 9 approved variants: nlh, plo4, plo5, plo6, plo8, pineapple, short_deck, ofc, ofc_pineapple.
 
 **Server files fixed:**
-| File | Change |
-|------|--------|
-| `server/src/types.ts` | GameVariant cleaned to 9 variants + pineapple added |
-| `server/src/engine/PokerEngine.ts` | Simplified isHiLo to `gameVariant === 'plo8'` only |
-| `server/src/config/RakeConfig.ts` | Removed `plo_hilo` BBJ entry, removed `flh` check |
-| `server/src/engine/ServerTableEngine.ts` | Removed MixedGameEngine config block |
+
+| File                                     | Change                                              |
+| ---------------------------------------- | --------------------------------------------------- |
+| `server/src/types.ts`                    | GameVariant cleaned to 9 variants + pineapple added |
+| `server/src/engine/PokerEngine.ts`       | Simplified isHiLo to `gameVariant === 'plo8'` only  |
+| `server/src/config/RakeConfig.ts`        | Removed `plo_hilo` BBJ entry, removed `flh` check   |
+| `server/src/engine/ServerTableEngine.ts` | Removed MixedGameEngine config block                |
 
 **Client files fixed:**
-| File | Change |
-|------|--------|
-| `src/types/database.types.ts` | GameVariant cleaned to 9 variants |
-| `src/types/club.types.ts` | GameVariant cleaned to 9 variants |
-| `src/pages/WaitlistPage.tsx` | getGameTypeLabel updated for all 9 variants |
-| `src/pages/TablePage.tsx` | Removed `flo` from isPotLimit check |
-| `src/pages/TableCreationPage.tsx` | Updated GameType union + gameTypes array |
-| `src/pages/CreateTablePage.tsx` | GAME_TYPES array rebuilt with all 9 variants |
-| `src/pages/ClubHomePage.tsx` | Removed `mixed` and `double` from game filter |
-| `src/pages/club/ClubLobby.tsx` | variantMatchesFilter cleaned |
+
+| File                                       | Change                                        |
+| ------------------------------------------ | --------------------------------------------- |
+| `src/types/database.types.ts`              | GameVariant cleaned to 9 variants             |
+| `src/types/club.types.ts`                  | GameVariant cleaned to 9 variants             |
+| `src/pages/WaitlistPage.tsx`               | getGameTypeLabel updated for all 9 variants   |
+| `src/pages/TablePage.tsx`                  | Removed `flo` from isPotLimit check           |
+| `src/pages/TableCreationPage.tsx`          | Updated GameType union + gameTypes array      |
+| `src/pages/CreateTablePage.tsx`            | GAME_TYPES array rebuilt with all 9 variants  |
+| `src/pages/ClubHomePage.tsx`               | Removed `mixed` and `double` from game filter |
+| `src/pages/club/ClubLobby.tsx`             | variantMatchesFilter cleaned                  |
 | `src/components/lobby/DynamicGameCard.tsx` | VARIANT_DISPLAY + TOURNEY_VARIANT_MAP cleaned |
-| `src/components/club/CreateTableModal.tsx` | Removed Double Board toggle |
-| `src/services/HorseOrchestrator.ts` | Removed dead variant table definitions |
+| `src/components/club/CreateTableModal.tsx` | Removed Double Board toggle                   |
+| `src/services/HorseOrchestrator.ts`        | Removed dead variant table definitions        |
 
 ### FIX 117 — Restore finalizeRunout(skipDistribution) — DOUBLE MONEY BUG
 

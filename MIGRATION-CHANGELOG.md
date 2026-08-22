@@ -7,6 +7,88 @@
 
 ---
 
+## Cowork session 2026-08-22 — the regression Dan asked about, found and closed
+
+Dan: "I keep building things inside the club arena and they work, but then hours
+or a day later they regress. Why is this happening?"
+
+### The answer, measured rather than guessed
+
+Of the last 140 builds deployed to production, **96 were built from commits that
+are not in main's history today**. They still exist on GitHub — a rebase,
+cherry-pick or squash re-created them under a new id. Usually the content
+survives that. Sometimes it does not, and from the outside the two are
+indistinguishable. 128 commits landed on main in 26 hours across ~8 active
+hours, and `TablePage.tsx` alone was touched 15 times by different hands.
+
+Sampling four of those deployed-then-orphaned commits found three intact and one
+half-lost, which is how this was found.
+
+### The one that was half-lost
+
+`5fa81600` (2026-08-21) replaced the client-side club tournament aggregation with
+an RPC, and deployed. Hours later a merge reverted **only that method's body** —
+`LeaderboardPage.tsx` kept its virtualization, the migration file stayed in the
+repo, the RPC call vanished. And the migration had never been applied: the
+function did not exist in production at all.
+
+So the repo claimed a feature, the database had never heard of it, and the page
+kept working — on the OLD path, which reads raw `tournament_players` rows capped
+at `QUERY_LIMITS.AGGREGATE` (10,000) **with no ORDER BY**. Every club is past
+that cap: 21,116 / 19,241 / 17,842 rows. Every club's standings were therefore
+ranked from an arbitrary half of its history, and could change between refreshes.
+
+Measured on SHARK CLUB before the fix landed:
+
+|     | true                   | shown        |
+| --- | ---------------------- | ------------ |
+| #1  | $1,384 over 133 events | rank 5, $304 |
+| #2  | $1,372 over 337 events | rank 28, $69 |
+| #3  | $1,184 over 219 events | rank 116, $0 |
+| #10 | $868                   | absent       |
+
+Nothing was red. No test failed. It was a day old when it was found by hand.
+
+### Closed
+
+`fn_club_tournament_stats` applied for real (20260822023309), **SECURITY
+INVOKER** — `tournaments` has an RLS policy hiding private tournaments from
+non-members, and a definer version would have published private clubs' results
+to anyone who called it; the migration refuses to apply if that flips. Its
+arithmetic mirrors the client implementation field for field, so what changed is
+which rows are counted, not how. Deterministic tie-break on `user_id`: page 2 of
+a paged read continues page 1 instead of repeating it. The service calls the RPC
+and keeps the old aggregation as a fallback, the pattern `getClubLeaderboard`
+already used.
+
+### The gate that was missing
+
+Every invariant in this repo checked the CODE against the live schema. Nothing
+checked the MIGRATIONS. `scripts/ci/check-migrations-applied.mjs` now requires
+that a migration a branch ADDS declares only objects that exist in production —
+scoped to new files, because the 432 older ones are intentionally stale and 148
+of their objects are already gone. It exits 2 rather than skipping when the
+checkout is too shallow to diff: a gate that silently passes is worse than no
+gate, which is the same lesson as the phantom manifests.
+
+Plus a shipped-invariant anchored on the `rpc()` CALL (a rename trips it
+deliberately; a mention in a comment cannot satisfy it) and a unit test that
+asserts WHICH PATH RAN — the previous test asserted an array came back and
+passed happily through the entire regression.
+
+All three verified by mutation, not by watching them pass.
+
+### The prevention list handed to Dan
+
+One push path only; never resolve a conflict by taking a whole file; pin
+behaviour rather than mechanism; make "production is running code main does not
+have" a hard stop rather than a warning; give agents file ownership, not just
+task ownership; and fix a stale test in the same PR as the change it contradicts
+— three suites went red on correct code today, and a suite that cries wolf is
+how a real regression walks in unnoticed.
+
+---
+
 ## Cowork session 2026-08-21 (bundle) — 65kB gzipped off the app, first paint untouched
 
 Dan: "PROCEED" — on the note that the gzipped bundle had 86kB of headroom left.

@@ -1,0 +1,2 @@
+const n=new Set(["REGISTERING","SCHEDULED","PENDING","ANNOUNCED","UPCOMING","REGISTRATION_OPEN"]);function i(r){return r?String(r.variant??"").toLowerCase()==="spin"||String(r.tournament_type??"").toUpperCase()==="SPIN":!1}function u(r){if(!i(r)||r!=null&&r.started_at)return!0;const e=String((r==null?void 0:r.status)??"").toUpperCase();return e?!n.has(e):!1}function s(r){return!(r!=null&&r.spin_multiplier)||!u(r)?null:`${r.spin_multiplier}x`}export{i,s};
+//# sourceMappingURL=spinReveal-DUjbFn7E-v6.js.map

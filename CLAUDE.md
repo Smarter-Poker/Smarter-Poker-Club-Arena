@@ -1,5 +1,22 @@
 # Club Arena -- Agent Instructions
 
+## ↗ START HERE: `AGENT-PLAYBOOK.md`
+
+**Before this file, before anything: read [`AGENT-PLAYBOOK.md`](./AGENT-PLAYBOOK.md).**
+
+It is byte-identical in all seven repos and it answers, in one page, how to ship
+without losing work: claim your own worktree, commit, push, open a pull request,
+stop. It also lists every guard that is protecting you, what each one is telling
+you when it speaks, and **where every credential lives** (never the value — the
+place). `.github/scripts/estate-integrity.sh` checks hourly that all seven
+copies still agree.
+
+If you are lost, cannot find a credential, or something is red and you do not
+know why, that file is the answer. This one is the Club Arena detail underneath
+it.
+
+---
+
 ALL agents (Claude, AntiGravity, Cowork, any AI) MUST read this file at session start.
 This is the single source of truth for **this repo**. Updated 2026-04-28.
 

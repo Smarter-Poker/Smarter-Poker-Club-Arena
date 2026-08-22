@@ -26,6 +26,7 @@
  */
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -73,18 +74,28 @@ async function main() {
     bytes += buf.length;
     css = css.split(url).join(`/hub/club-arena/fonts/${name}`);
   }
+  // PERF PASS 2026-08-22 (handoff item 5): the stylesheet is content-hashed
+  // (fonts-<hash>.css) so World Hub can serve it immutable like every other
+  // hashed asset — the un-hashed fonts.css revalidated on every cold nav.
+  // The legacy fonts.css is STILL written: shells cached by the service
+  // worker before this change reference it by that name, and an rsync
+  // --delete deploy would otherwise 404 their fonts until the shell
+  // refreshes. Drop the legacy copy only after a few deploy cycles.
+  const cssHash = createHash('sha256').update(css).digest('hex').slice(0, 10);
+  const cssName = `fonts-${cssHash}.css`;
+  writeFileSync(path.join(fontsDir, cssName), css);
   writeFileSync(path.join(fontsDir, 'fonts.css'), css);
 
   // Rewrite index.html: swap both stylesheet links (async + noscript) to the
   // local file and drop the Google preconnects.
   let newHtml = html
-    .replace(/https:\/\/fonts\.googleapis\.com\/css2\?[^"']+/g, '/hub/club-arena/fonts/fonts.css')
+    .replace(/https:\/\/fonts\.googleapis\.com\/css2\?[^"']+/g, `/hub/club-arena/fonts/${cssName}`)
     .replace(/\s*<link rel="preconnect" href="https:\/\/fonts\.googleapis\.com"[^>]*>/, '')
     .replace(/\s*<link rel="preconnect" href="https:\/\/fonts\.gstatic\.com"[^>]*>/, '');
   writeFileSync(htmlPath, newHtml);
 
   console.log(
-    `[self-host-fonts] self-hosted ${fontUrls.length} woff2 files (${(bytes / 1024).toFixed(0)}KB) + fonts.css; index.html rewritten`
+    `[self-host-fonts] self-hosted ${fontUrls.length} woff2 files (${(bytes / 1024).toFixed(0)}KB) + ${cssName} (+legacy fonts.css); index.html rewritten`
   );
 }
 

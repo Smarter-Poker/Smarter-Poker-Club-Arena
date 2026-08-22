@@ -785,6 +785,18 @@ export default function UnionDashboardPage() {
     URL.revokeObjectURL(url);
   };
 
+  const exportRoster = () => {
+    const headers = ['Player', 'Club', 'Role', 'Status', 'Seated'];
+    const rows = filteredRoster.map((r) => [
+      r.display_name || r.username || r.user_id,
+      r.club_name || '',
+      r.member_role || 'member',
+      r.member_status || '',
+      r.currently_seated ? 'yes' : '',
+    ]);
+    downloadCSV(`union_players_${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+  };
+
   const exportAgents = () => {
     const headers = ['Agent', 'Club', 'Role', 'Commission', 'Status'];
     const rows = agents.map((a: UnionAgent) => {
@@ -1345,6 +1357,9 @@ export default function UnionDashboardPage() {
               <span style={{ alignSelf: 'center', color: '#888', fontSize: 12 }}>
                 {fmt(filteredRoster.length)} Players
               </span>
+              <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={exportRoster}>
+                Export CSV
+              </button>
             </div>
             {rosterLoading ? (
               <div className="admin-empty">Loading Roster…</div>

@@ -18,7 +18,7 @@
 import type { SeatPlayer } from '../components/table/SeatSlot';
 
 export const SEAT_POSITIONS_6MAX = [
-  { x: 50, y: 93.5 }, // Seat 1 (Hero, bottom-center, hangs below the rail)
+  { x: 50, y: 100 }, // Seat 1 (Hero, bottom-center; Dan 2026-08-22: avatar centre ON the scaler's bottom edge so it barely overlaps the table)
   { x: 10.5, y: 66 }, // Seat 2 (lower-left, on rail side)
   { x: 10.5, y: 33 }, // Seat 3 (upper-left, on rail side)
   { x: 50, y: 6 }, // Seat 4 (top-center; box rests ON the rail band - compact seat)
@@ -27,7 +27,7 @@ export const SEAT_POSITIONS_6MAX = [
 ];
 
 export const SEAT_POSITIONS_9MAX = [
-  { x: 50, y: 93.5 }, // Seat 1 (Hero, bottom-center, hangs below the rail)
+  { x: 50, y: 100 }, // Seat 1 (Hero, bottom-center; Dan 2026-08-22: avatar centre ON the scaler's bottom edge so it barely overlaps the table)
   { x: 19, y: 82.5 }, // Seat 2 (lower-left, bottom cap)
   { x: 10.5, y: 58 }, // Seat 3 (left-low, on rail side)
   { x: 10.5, y: 36 }, // Seat 4 (left-high, on rail side)
@@ -57,22 +57,22 @@ export const SEAT_POSITIONS_9MAX = [
    and because 10,130 pre-existing rows still carry the old seat counts. */
 export const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
   2: [
-    { x: 50, y: 93.5 }, // Hero
+    { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
     { x: 50, y: 6 }, // Villain, top-center (heads-up), box on the rail
   ],
   3: [
-    { x: 50, y: 93.5 }, // Hero
+    { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
     { x: 20.5, y: 14 }, // upper-left diagonal, on rail cap circle
     { x: 79.5, y: 14 }, // upper-right diagonal
   ],
   4: [
-    { x: 50, y: 93.5 }, // Hero
+    { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
     { x: 10.5, y: 45 }, // left-middle
     { x: 50, y: 6 }, // top-center, box on the rail
     { x: 89.5, y: 45 }, // right-middle
   ],
   5: [
-    { x: 50, y: 93.5 }, // Hero
+    { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
     { x: 10.5, y: 55 }, // left-low
     { x: 20.5, y: 14 }, // upper-left diagonal
     { x: 79.5, y: 14 }, // upper-right diagonal
@@ -80,7 +80,7 @@ export const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
   ],
   6: SEAT_POSITIONS_6MAX,
   7: [
-    { x: 50, y: 93.5 }, // Hero
+    { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
     { x: 10.5, y: 62 }, // left-low
     { x: 10.5, y: 33 }, // left-high
     { x: 27, y: 13 }, // top-left diagonal
@@ -89,7 +89,7 @@ export const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
     { x: 89.5, y: 62 }, // right-low
   ],
   8: [
-    { x: 50, y: 93.5 }, // Hero
+    { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
     { x: 19, y: 82.5 }, // lower-left bottom cap
     { x: 10.5, y: 52 }, // left-low
     { x: 10.5, y: 28 }, // left-high

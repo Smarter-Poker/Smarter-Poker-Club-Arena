@@ -1206,18 +1206,18 @@
      Anchoring to half the avatar token centres the row on the avatar itself and
      stays correct at every breakpoint and hand size, because the 50% translate
      is of the ROW's own height. */
-  /* Dan 2026-08-19, bug list item 1: "hero must be centered directly above
-     their player box, not offset." The row used to hang off the RIGHT of the
-     seat (left: 100% + gap), which is what made the hero read as off-centre -
-     and it is also what forced PLO hands to be tiny, because everything to the
-     right of the seat had to fit in the ~100px of felt left over. Centring the
-     row over the seat replaces that ~100px budget with the full width of the
-     scaler, which is what makes item 3 (PLO cards 50% larger) fit at all. */
-  left: 50%;
+  /* Dan 2026-08-22 mobile audit item 2: "THE HERO CARDS NEED TO BE NEXT TO
+     THE HERO, NOT ON TOP OF THE TABLE." The centred-above anchor (2026-08-19)
+     floated the row onto the felt. Now that the hero avatar itself sits at
+     y:100 of the scaler (barely overlapping the rail), the row hangs off the
+     RIGHT of the seat, vertically centred on the avatar — the PokerBros look.
+     The -10px tuck slides the first card slightly behind the avatar so a wide
+     PLO6 row still fits inside a 375px viewport. */
+  left: calc(100% - 10px);
   right: auto;
-  bottom: calc(100% + var(--sp-hero-gap));
-  top: auto;
-  transform: translateX(-50%);
+  top: calc(var(--seat-avatar-size, 84px) / 2);
+  bottom: auto;
+  transform: translateY(-50%);
   display: flex;
   align-items: flex-end;
   justify-content: flex-start;
@@ -2319,11 +2319,8 @@
     --sp-hero-card-h: 59px;
     --sp-hero-card-step: 30px;
     --sp-hero-gap: 8px;
-    top: auto;
-    right: auto;
-    left: 50%;
-    bottom: calc(100% + var(--sp-hero-gap));
-    transform: translateX(-50%);
+    /* Anchor lives in the single end-of-file rule (Dan 2026-08-22): beside
+       the avatar at every breakpoint. Token-only overrides here. */
   }
 
   /* PLO4/5/6 at the tablet breakpoint — all land on a ~104px row. */
@@ -2412,11 +2409,7 @@
     --sp-hero-card-h: 50px;
     --sp-hero-card-step: 26px;
     --sp-hero-gap: 7px;
-    top: auto;
-    right: auto;
-    left: 50%;
-    bottom: calc(100% + var(--sp-hero-gap));
-    transform: translateX(-50%);
+    /* Anchor lives in the single end-of-file rule (Dan 2026-08-22). */
   }
 
   /* PLO4/5/6 at the phone breakpoint — all land on a 100px row. */
@@ -2497,11 +2490,7 @@
     --sp-hero-card-h: 45px;
     --sp-hero-card-step: 23px;
     --sp-hero-gap: 6px;
-    top: auto;
-    right: auto;
-    left: 50%;
-    bottom: calc(100% + var(--sp-hero-gap));
-    transform: translateX(-50%);
+    /* Anchor lives in the single end-of-file rule (Dan 2026-08-22). */
   }
 
   /* PLO4/5/6 at the small phone breakpoint — all land on a ~90px row. */
@@ -2812,10 +2801,12 @@
    single hand, so they get their own space to the right of the plate, vertically
    centred on the name/chip box.
 
-   The exception is PLO. A six-card row is ~200px wide; hung off the right of a
-   bottom-centre seat it runs clean off the felt. Four cards or more therefore
-   keep the centred-above layout, which is the only place they fit. That is why
-   this is written as :not(:has(4th child)) rather than an unconditional rule.
+   Dan 2026-08-22 (mobile audit item 2): the PLO exception is GONE. "THE HERO
+   CARDS NEED TO BE NEXT TO THE HERO, NOT ON TOP OF THE TABLE" — all hand
+   sizes now hang beside the seat. This fits because the hero avatar moved to
+   y:100 of the scaler (barely overlapping the rail), and the row tucks 10px
+   behind the avatar's right edge; at the phone token sizes a PLO6 row
+   (~140px) stays inside a 375px viewport.
 
    VILLAIN AT SHOWDOWN — over, never beside. Revealed cards used to appear to the
    RIGHT of the villain's plate, out on the felt, where at a full table they
@@ -2827,12 +2818,14 @@
    blocks above cannot reach, so one rule governs every screen size instead of
    four copies that drift apart. */
 
-.seat__cards--hero:not(:has(> *:nth-child(4))) {
-  left: calc(100% + var(--sp-hero-gap, 8px));
+.seat__cards--hero {
+  /* Beside the avatar, vertically centred on it, slightly tucked behind its
+     right edge — every hand size, every breakpoint. */
+  left: calc(100% - 10px);
   right: auto;
-  top: auto;
-  bottom: var(--sp-hero-box-half, 21px);
-  transform: translateY(50%);
+  top: calc(var(--seat-avatar-size, 84px) / 2);
+  bottom: auto;
+  transform: translateY(-50%);
   justify-content: flex-start;
 }
 

@@ -389,7 +389,7 @@ class TableService {
     tableId: string,
     seatNumber: number,
     userId: string
-  ): Promise<{ success: boolean; chipsReturned: number; error?: string }> {
+  ): Promise<{ success: boolean; chipsReturned: number; deferred?: boolean; error?: string }> {
     try {
       // Step 1: Notify the game server engine — it will auto-fold if mid-hand
       // This is critical: without this, the engine keeps the player in-memory
@@ -483,7 +483,12 @@ class TableService {
           .eq('table_id', tableId)
           .eq('seat_number', seatNo)
           .is('left_at', null);
-        return { success: true, chipsReturned: 0 };
+        /* Dan 2026-08-22 (Session Complete card showed a full-buy-in "loss"):
+           chipsReturned 0 here does NOT mean the player left with nothing —
+           the true stack is cashed out at settlement. `deferred` lets the
+           caller estimate P/L from the live stack instead of reporting the
+           whole buy-in as lost. */
+        return { success: true, chipsReturned: 0, deferred: true };
       }
 
       // Check if player is in active hand (server already folded them, but seat may still be 'playing')
@@ -496,7 +501,8 @@ class TableService {
           .eq('seat_number', seatNo)
           .is('left_at', null);
 
-        return { success: true, chipsReturned: 0 };
+        // Same as above: cashout happens at settlement, not here.
+        return { success: true, chipsReturned: 0, deferred: true };
       }
 
       const chipsToReturn = seat.stack || 0;

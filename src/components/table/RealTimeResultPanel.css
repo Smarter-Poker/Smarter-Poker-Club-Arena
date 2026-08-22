@@ -28,7 +28,9 @@
 
 .rtr__panel {
   position: relative;
-  width: min(100%, 400px);
+  /* Dan 2026-08-22 mobile audit item 4: opens like a hamburger drawer over
+     3/4 of the RIGHT side of the page — never the full width. */
+  width: min(75vw, 400px);
   height: 100%;
   overflow-y: auto;
   background: linear-gradient(180deg, #121727 0%, #0d1120 100%);

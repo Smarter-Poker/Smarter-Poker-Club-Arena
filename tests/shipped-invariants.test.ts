@@ -111,6 +111,27 @@ describe('shipped functionality is still here', () => {
     expect(job.includes(spec), `the CSS Beat E2E job no longer runs ${spec}`).toBe(true);
   });
 
+  /* GITHUB_TOKEN must never be the credential a merge is made with. A merge it
+     produces does not trigger downstream workflows, so the commit lands on main
+     and build-for-world-hub.yml never fires: merged, never published, which
+     reads exactly like a regression. The `||` chain is the thing that keeps it
+     last, and 'simplifying' it is a one-character change with no visible
+     symptom, so pin the chain itself. */
+  it('Autopilot never reaches for GITHUB_TOKEN before a publishing token', () => {
+    const wf = readFileSync(root('.github/workflows/agent-autopilot.yml'), 'utf8');
+    const uses = [...wf.matchAll(/GH_TOKEN:\s*\$\{\{([^}]*)\}\}/g)].map((m) => m[1]);
+    expect(uses.length, 'no GH_TOKEN assignment found in agent-autopilot.yml').toBeGreaterThan(0);
+    for (const expr of uses) {
+      const gt = expr.indexOf('secrets.GITHUB_TOKEN');
+      if (gt === -1) continue; // no fallback at all is fine
+      const pat = expr.indexOf('secrets.GH_PAT');
+      const app = expr.indexOf('steps.app-token.outputs.token');
+      expect(pat >= 0 || app >= 0, `GH_TOKEN: ${expr.trim()} — GITHUB_TOKEN with no publishing token ahead of it`).toBe(true);
+      if (pat >= 0) expect(pat, expr.trim()).toBeLessThan(gt);
+      if (app >= 0) expect(app, expr.trim()).toBeLessThan(gt);
+    }
+  });
+
   it('the sentinel list is not empty or trivially passing', () => {
     // A guard that checks nothing passes forever. If someone empties the list
     // to make a build go green, this fails instead.

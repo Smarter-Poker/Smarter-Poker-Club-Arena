@@ -4,6 +4,11 @@
 # conflict, so it can never leave a stranded rebase. Tell .husky/pre-rebase to
 # stand aside for it (that guard blocks ad-hoc `git pull --rebase` on main).
 export CA_GIT_GUARD_ALLOW=1
+# 2026-08-22: .husky/pre-commit refuses a commit made in the shared clone
+# (scripts/guard-shared-clone.sh - one working tree per agent, rule 1a). THIS
+# script is one of the handful of callers that legitimately commits there, so
+# it says so explicitly rather than being pattern-matched by the guard.
+export AGENT_SHARED_CLONE_OK=1
 # ═══════════════════════════════════════════════════════════════════════════════
 # git-safe-push.sh v1.0 — Fully Autonomous Git Push for Club Arena
 # ═══════════════════════════════════════════════════════════════════════════════

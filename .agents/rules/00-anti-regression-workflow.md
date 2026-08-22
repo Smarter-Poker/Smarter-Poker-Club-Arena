@@ -52,6 +52,29 @@ move you off it and says so.
 Never `git checkout` in `~/Documents/club-arena` itself — that clone is the
 shared object store and a mirror of origin, not a place to work.
 
+**This is enforced now, not advised.** `.husky/pre-commit` runs
+`scripts/guard-shared-clone.sh`, which refuses a commit whose `--git-dir` and
+`--git-common-dir` are the same path — the signature of the shared clone. It
+never stashes and never checks anything out: moving an agent off its own
+uncommitted work is the exact destruction being prevented, so it refuses,
+prints the `agent-workspace.sh` line to run, and stops.
+
+Callers that legitimately commit in the one-and-only tree — `git-safe-push.sh`,
+the World Hub sync, any CI checkout — set `AGENT_SHARED_CLONE_OK=1`. Say it
+explicitly at the call site; do not weaken the guard to accommodate a script.
+
+And a per-agent tree is not the same as safe: it stops agents overwriting each
+other, not an agent leaving hours of work where the Antigravity
+`git reset --hard origin/main` loop will delete it.
+
+```bash
+bash scripts/agent-trees-audit.sh    # every tree, what is uncommitted, how old
+```
+
+Read-only. Exits 1 when any tree holds work that exists in exactly one place,
+so it can drive a scheduled task. The first run found a tree carrying 28
+uncommitted files whose newest edit was 3h 43m old.
+
 ## 2. FORBIDDEN — every one of these caused a real incident
 
 | Never do this                                                                      | What actually happened                                                                                                             |

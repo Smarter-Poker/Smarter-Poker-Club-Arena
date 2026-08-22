@@ -239,16 +239,12 @@
   transform: scale(0.92);
 }
 
-.profilePlaceholder {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: 700;
-  font-size: 16px;
-}
+/*
+ * .profilePlaceholder is gone with the `◉` it styled. The orb now always
+ * renders an <img>: a real avatar, or the deterministic monogram that
+ * getAvatarWithFallback returns for a player who has not chosen one. There is
+ * no empty state left to style.
+ */
 
 .profileImg {
   width: 100%;

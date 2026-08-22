@@ -110,6 +110,48 @@ describe('Club Arena never touches the social media photo column', () => {
     expect(engine).toMatch(/avatar_url\s*:\s*arena_avatar_url/);
   });
 
+  /**
+   * Dan 2026-08-22. The two tests above police the COLUMN NAME. They do not
+   * police the WRITE PATH, and that gap had a live occupant:
+   * `src/components/avatars/AvatarGenerator.tsx` ran
+   * `.from('profiles').update({ arena_avatar_url: selectedImage })` on an
+   * AI-image URL straight from a generation endpoint. It named the right
+   * column, so it passed — while skipping `normalizeAvatarUrl` and, more to the
+   * point, `isLibraryAvatarUrl`, the guard AvatarService exists to be. Its own
+   * comment calls a rule that lives only in a component "a locked door in a
+   * building with no walls"; this was a second door in the same wall. Nothing
+   * mounted the component, so it never fired — which is why it survived.
+   *
+   * One writer. Anything else that needs to set an Arena avatar calls
+   * avatarService.setUserAvatar and gets the normalisation and the guard with it.
+   */
+  it('has exactly one write path to profiles.arena_avatar_url', () => {
+    const offenders: string[] = [];
+    const ALLOWED = 'src/services/AvatarService.ts';
+
+    for (const file of FILES) {
+      const rel = file.replace(ROOT + '/', '');
+      if (rel === ALLOWED) continue;
+
+      const src = readFileSync(file, 'utf8');
+      const re = /\.from\(\s*['"]profiles['"]\s*\)[\s\S]{0,400}?\.(update|upsert|insert)\(/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(src))) {
+        if (/\barena_avatar_url\b\s*:/.test(src.slice(m.index, m.index + 600))) {
+          offenders.push(`${rel} -> .${m[1]}({ arena_avatar_url: ... })`);
+        }
+      }
+    }
+
+    expect(
+      offenders,
+      `Only ${ALLOWED} may write profiles.arena_avatar_url. It normalises the ` +
+        'URL and refuses anything that is not library art; a direct .update() ' +
+        'skips both. Call avatarService.setUserAvatar(userId, url) instead:\n' +
+        offenders.join('\n')
+    ).toEqual([]);
+  });
+
   it('leaves clubs and unions avatar_url alone', () => {
     // Guard against an over-eager future sweep. These are club logos and union
     // badges — different tables, different meaning, must keep the plain column.

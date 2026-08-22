@@ -174,6 +174,28 @@ that has never been seen to fail is not a regression test.
 
 ---
 
+## 6b. A GATE THAT BLOCKED A COMMENT
+
+Adding the STATUS header in §5 turned the **TypeScript Check** job red, and the
+gate was right by its own rules. `check-migrations-applied.mjs` diffs with
+`--diff-filter=AM`, so a MODIFIED migration is in scope — correct, because
+appending a `CREATE FUNCTION` to an old file strands it exactly like a new one.
+But it judged the file's **whole contents**, so touching a historical migration
+at all re-asserted every object it had ever declared.
+
+That made a class of file permanently untouchable: a migration that was applied
+and then legitimately rolled back, its helpers dropped on purpose, could no
+longer receive so much as a comment. And a gate that blocks a comment is a gate
+somebody starts bypassing.
+
+It now checks the **difference**. Objects already declared at the base commit
+are that commit's business; only what this branch newly declares is judged.
+Verified both ways: the comment passes, and appending a
+`CREATE OR REPLACE FUNCTION` for a non-existent object to that same historical
+file still exits 1 with the object named.
+
+---
+
 ## 7. WHAT WAS CHECKED AND WAS FINE
 
 - **Phantom references:** 0 tables, 0 rpcs, 0 columns. Nothing in the codebase

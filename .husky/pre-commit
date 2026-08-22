@@ -1,1 +1,5 @@
+# One working tree per agent. Runs FIRST: if this commit should not be
+# happening here at all, there is no point formatting it.
+bash "$(git rev-parse --show-toplevel)/scripts/guard-shared-clone.sh"
+
 npx lint-staged

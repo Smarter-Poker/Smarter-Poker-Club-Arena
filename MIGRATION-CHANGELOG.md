@@ -45,6 +45,56 @@ LESSON FOR FUTURE CONSTRAINT MIGRATIONS: adding a CHECK ... NOT VALID to a
 table the engine continuously updates MUST ship a data repair for in-flight
 rows in the same migration, or those rows become permanently unwritable.
 
+## Cowork session 2026-08-22 (11) — A WEBSOCKET BLIP IS NOT A PLAYER LEAVING
+
+### Handoff item 6 — and it was never cosmetic
+
+The handoff logged this as event noise to "monitor... if noisy, debounce".
+Following the events to where they land says otherwise. `PLAYER_DISCONNECTED`
+reaches `ConnectionHUD`, which shows the disconnect warning banner, plays
+`soundService.playDisconnect()` and fires a double haptic buzz; the matching
+`PLAYER_RECONNECTED` plays a reconnect sound, buzzes again, raises a
+"Connection restored" toast and shows a stale-data banner.
+
+So a websocket blip on a player whose heartbeat was landing normally produced a
+banner, two sounds and two vibrations, mid-hand, for somebody who never lost
+their connection.
+
+A player has TWO independent transports: the websocket, and the HTTP heartbeat
+their client posts every 5s. Round 2 wired the socket close straight into
+`markDisconnected` so a closed tab starts the ladder in milliseconds instead of
+waiting out the 30s sweep — right instinct, but it concluded from the SOCKET
+dying rather than the PLAYER being gone.
+
+`markTransportGone()` opens an 8s window instead of concluding. Anything from
+either transport inside it cancels the whole thing and nothing is ever emitted.
+Nothing from either, and the player really is gone — still four times faster
+than the sweep it replaced. The timers live on DisconnectEngine, not
+PreciseActionTimer, because transport presence is a property of the PLAYER, not
+of a hand, and the namespaced countdowns are cancelled at every hand boundary.
+
+### Handoff item 10 — the close reason no client ever saw
+
+`close(1001, 'heartbeat timeout')` followed by `terminate()` in the SAME TICK
+discarded the frame that had just been written, so every client saw 1006 and
+none ever learned why. A 250ms grace lets a merely-slow socket receive it; a
+half-open one loses nothing, since it is already off the connection map.
+
+### Tests, and a test that had to be fixed first
+
+`TransportDisconnectGrace.test.ts` (new, 7).
+
+The first version of the false-alarm test **passed with the fix reverted** — the
+timer callback's own `lastHeartbeat` re-check stood down, so the test could not
+tell the two mechanisms apart. Both are wanted, but only one is primary: if the
+grace were ever tuned below the heartbeat period the callback's check would
+start concluding wrongly, and the cancel is what would still be right. The suite
+now pins the cancel directly and fails without it.
+
+Server suite **1,128 passed / 109 files**; `tsc --noEmit` clean.
+
+---
+
 ## Cowork session 2026-08-22 (10) — TOURNAMENT TEMPLATE PARITY + THE MIDWAY WEEKLY SCHEDULE (PR #279)
 
 Two asks from Dan: (1) study how PokerStars runs its daily/weekly/monthly MTT

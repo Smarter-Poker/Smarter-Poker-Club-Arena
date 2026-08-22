@@ -279,6 +279,47 @@ describe('PayoutEngine', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  // PAYOUTS FOR CHOICE (PokerBros parity, 2026-08-22)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('payoutsForChoice', () => {
+    it('pays ~10/15/20% of the field for payout1/2/3', () => {
+      expect(payoutEngine.payoutsForChoice('payout1', 100).length).toBe(10);
+      expect(payoutEngine.payoutsForChoice('payout2', 100).length).toBe(15);
+      expect(payoutEngine.payoutsForChoice('payout3', 100).length).toBe(20);
+    });
+
+    it('winner_take_all is exactly one place at 100%', () => {
+      expect(payoutEngine.payoutsForChoice('winner_take_all', 100)).toEqual([
+        { place: 1, percentage: 100 },
+      ]);
+    });
+
+    it('always totals 100 and never pays as many places as the field', () => {
+      for (const choice of ['payout1', 'payout2', 'payout3']) {
+        for (const n of [2, 3, 4, 9, 27, 500]) {
+          const payouts = payoutEngine.payoutsForChoice(choice, n);
+          const total = payouts.reduce((s, p) => s + p.percentage, 0);
+          expect(Math.abs(total - 100)).toBeLessThanOrEqual(0.01);
+          expect(payouts.length).toBeGreaterThanOrEqual(1);
+          expect(payouts.length).toBeLessThan(n);
+        }
+      }
+    });
+
+    it('payout1 is more top-heavy than payout3 on the same field', () => {
+      const first = (choice: string) => payoutEngine.payoutsForChoice(choice, 100)[0].percentage;
+      expect(first('payout1')).toBeGreaterThan(first('payout3'));
+    });
+
+    it('unknown choices fall back to payout1', () => {
+      expect(payoutEngine.payoutsForChoice('nonsense', 100).length).toBe(
+        payoutEngine.payoutsForChoice('payout1', 100).length
+      );
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   // GET TEMPLATE OPTIONS
   // ─────────────────────────────────────────────────────────────────────────
 

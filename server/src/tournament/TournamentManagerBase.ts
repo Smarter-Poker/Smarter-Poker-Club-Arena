@@ -26,6 +26,7 @@ import {
 import { reportError } from '../services/errorReporter.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
+import { acceleratedLevelMs } from './acceleratedLevels.js';
 import type { GameServer } from '../GameServer.js';
 
 export abstract class TournamentManagerBase {
@@ -319,6 +320,31 @@ export abstract class TournamentManagerBase {
       this.pendingAddOnPeriod = false;
       await this.triggerAddOnPeriod();
     }
+  }
+
+  /**
+   * synchronized_breaks=false (2026-08-22 parity): this tournament opts OUT of
+   * the platform-wide :55 synchronized break and keeps dealing through it.
+   *
+   * Per-structure breaks are NOT implemented server-side — advanceBlindLevel
+   * deliberately SKIPS `isBreak` rows in blind_structure (see the "Skip any
+   * break entries" branch) — so for an opted-out tournament, skipping the
+   * global break is the whole behavior; there is no per-structure break to
+   * honor instead.
+   */
+  synchronizedBreaksEnabled(): boolean {
+    return this.tournamentCache?.synchronized_breaks !== false;
+  }
+
+  /**
+   * Late registration is closed once the level cap has been reached (or the
+   * prize pool finalized, which start() does immediately for tournaments with
+   * no late-reg window at all). Shared by the accelerated-MTT level halving.
+   */
+  protected isLateRegClosed(): boolean {
+    if (this.prizePoolFinalized) return true;
+    const cap = this.tournamentCache?.late_reg_levels ?? this.tournamentCache?.rebuy_levels ?? 0;
+    return cap > 0 && this.currentLevel >= cap;
   }
 
   /** Check if this is an MTT or XMTT (eligible for synchronized breaks) */
@@ -767,12 +793,32 @@ export abstract class TournamentManagerBase {
         }
       }
 
-      // Migrate registrations (registered -> playing)
-      await supabase
-        .from('tournament_players')
-        .update({ status: 'playing', chips: tournament.starting_chips })
-        .eq('tournament_id', this.tournamentId)
-        .eq('status', 'registered');
+      // Migrate registrations (registered -> playing).
+      //
+      // EARLY BIRD (2026-08-22 parity): fn_register_for_tournament credits the
+      // early-bird bonus into tournament_players.chips AT REGISTRATION, so a
+      // 'registered' row's chips column is the pre-credited bonus (0 for
+      // everyone else). Seating must therefore ADD the starting stack to that
+      // bonus — the old single-statement UPDATE overwrote it with
+      // starting_chips and silently destroyed every bonus ever granted.
+      {
+        const { data: regRows } = await supabase
+          .from('tournament_players')
+          .select('user_id, chips')
+          .eq('tournament_id', this.tournamentId)
+          .eq('status', 'registered');
+        await Promise.allSettled(
+          (regRows ?? []).map((row: { user_id: string; chips: number | null }) => {
+            const bonus = Math.max(0, Math.floor(Number(row.chips) || 0));
+            return supabase
+              .from('tournament_players')
+              .update({ status: 'playing', chips: tournament.starting_chips + bonus })
+              .eq('tournament_id', this.tournamentId)
+              .eq('user_id', row.user_id)
+              .eq('status', 'registered');
+          })
+        );
+      }
 
       /**
        * SEAT-FIRST STACK SYNC — but NOT yet, if a wheel is about to turn.
@@ -1213,7 +1259,11 @@ export abstract class TournamentManagerBase {
       .select('id, stack, tables!inner(tournament_id)')
       .is('left_at', null)
       .eq('tables.tournament_id', this.tournamentId);
-    const stale = (seatRows ?? []).filter((r: any) => Number(r.stack) !== target);
+    // Strictly RAISE, never lower: the legitimate case is a reservation seat
+    // holding 0 (or a smaller placeholder tier) waiting on the drawn stack.
+    // An early-bird seat (starting chips + bonus, 2026-08-22) sits ABOVE the
+    // plain starting stack, and flattening it here would destroy the bonus.
+    const stale = (seatRows ?? []).filter((r: any) => Number(r.stack) < target);
     if (stale.length === 0) return 0;
     const { error } = await supabase
       .from('table_seats')
@@ -1393,7 +1443,9 @@ export abstract class TournamentManagerBase {
     } else if (variant === 'sng' || tType === 'SNG') {
       maxPerTable = Math.min(tournament.max_players || 6, 9);
     } else {
-      maxPerTable = 9; // Standard MTT tables
+      // table_size (2026-08-22 parity): seats per table INSIDE the MTT.
+      // Clamped to the same 2-10 range fn_create_tournament enforces.
+      maxPerTable = Math.min(10, Math.max(2, Number(tournament.table_size) || 9));
     }
     const numTables = Math.ceil(players.length / maxPerTable);
     const alreadyHave = (existingTables ?? []).length;
@@ -1414,11 +1466,18 @@ export abstract class TournamentManagerBase {
           stakes: `${firstLevel.smallBlind}/${firstLevel.bigBlind}`,
           small_blind: firstLevel.smallBlind,
           big_blind: firstLevel.bigBlind,
+          ante: firstLevel.ante || 0,
           min_buy_in: 0,
           max_buy_in: 0,
           max_players: maxPerTable,
           current_players: 0,
           status: 'running',
+          // 2026-08-22 parity: tournament tables inherit the tournament's
+          // action clock, big-blind-ante mode and all-in-or-fold rule.
+          // HandController already honors all three from the tables row.
+          action_time_seconds: tournament.action_time_seconds || 15,
+          big_blind_ante_enabled: tournament.big_blind_ante === true,
+          all_in_or_fold: tournament.all_in_or_fold === true,
         })
         .select()
         .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
@@ -1599,10 +1658,19 @@ export abstract class TournamentManagerBase {
    */
   protected levelDurationMs(levelData: any): number {
     const mins = Number(levelData?.durationMinutes ?? levelData?.duration_minutes);
-    if (Number.isFinite(mins) && mins > 0) return mins * 60 * 1000;
-    const secs = Number(levelData?.duration);
-    if (Number.isFinite(secs) && secs > 0) return secs * 1000;
-    return 10 * 60 * 1000;
+    let baseMs = 10 * 60 * 1000;
+    if (Number.isFinite(mins) && mins > 0) {
+      baseMs = mins * 60 * 1000;
+    } else {
+      const secs = Number(levelData?.duration);
+      if (Number.isFinite(secs) && secs > 0) baseMs = secs * 1000;
+    }
+    // ACCELERATED MTT (2026-08-22 parity): once late registration has closed,
+    // an accelerated tournament halves every remaining level — ceil(min/2).
+    if (this.tournamentCache?.accelerated_mtt === true && this.isLateRegClosed()) {
+      return acceleratedLevelMs(baseMs);
+    }
+    return baseMs;
   }
 
   protected startBlindTimer(blindStructure: any[], remainingOverrideMs?: number): void {
@@ -2027,6 +2095,43 @@ export abstract class TournamentManagerBase {
       startLevel: rebuyLevelCap,
       endLevel: rebuyLevelCap + addonLevels,
     });
+
+    // ADD-ON BREAK (2026-08-22 parity): the add-on window opens with a short
+    // pause so the field can take its add-on between hands. Length comes from
+    // tournaments.addon_break_minutes (clamped 1-10 at creation), never a
+    // hardcoded value. A synchronized break or hand-for-hand already owns the
+    // pause state when active, so this stands down rather than fighting them.
+    const addonBreakMinutes = Math.min(
+      10,
+      Math.max(1, Number(this.tournamentCache?.addon_break_minutes) || 1)
+    );
+    if (!this.onBreak && !this.handForHandActive) {
+      const breakMs = addonBreakMinutes * 60 * 1000;
+      for (const engine of this.tableEngines.values()) {
+        try {
+          engine.pauseAfterHand(breakMs + TournamentManagerBase.LAST_HAND_GRACE_MS);
+        } catch (err) {
+          reportError(err, 'TournamentManagerBase.addon_break_pause');
+        }
+      }
+      await this.broadcast('addon_break', {
+        breakDurationMinutes: addonBreakMinutes,
+        breakEndsAt: new Date(Date.now() + breakMs).toISOString(),
+      });
+      const resumeTimer = setTimeout(() => {
+        // A synchronized break or the bubble sync may have taken over the
+        // pause state during the add-on break — leave the pause to them.
+        if (!this.running || this.onBreak || this.handForHandActive) return;
+        for (const engine of this.tableEngines.values()) {
+          try {
+            engine.resumeDealing();
+          } catch (err) {
+            reportError(err, 'TournamentManagerBase.addon_break_resume');
+          }
+        }
+      }, breakMs);
+      if (typeof (resumeTimer as any)?.unref === 'function') (resumeTimer as any).unref();
+    }
 
     // Offer the add-on to the field now that the window is open.
     await this.tryTournamentAddOns();

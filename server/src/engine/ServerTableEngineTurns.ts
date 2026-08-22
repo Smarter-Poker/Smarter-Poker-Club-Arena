@@ -1596,6 +1596,18 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       let action = decision.action as string;
       let amount = decision.amount;
 
+      // ── ALL-IN-OR-FOLD (2026-08-22 parity) ────────────────────────────────
+      // At an AoF table the preflop menu is fold or shove, and HandController
+      // rejects everything else. The horse brain does not know about AoF, so
+      // its decision is coerced here: any non-fold intent becomes the all-in.
+      // (A fold with nothing owed still normalizes to the legal check below.)
+      if (this.tableInfo?.all_in_or_fold && currentState.stage === 'preflop') {
+        if (action !== 'fold') {
+          action = 'all_in';
+          amount = undefined;
+        }
+      }
+
       // Normalize actions
       if (action === 'allin') action = 'all_in';
       if (action === 'check' && toCall > 0) action = 'call';

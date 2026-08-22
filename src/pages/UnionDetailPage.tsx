@@ -32,6 +32,11 @@ import { reportError } from '../utils/errorReporter';
 // Whole-number tournament money (Dan 2026-08-20).
 import { formatBuyInShort } from '../utils/buyIn';
 import UnionClubGovernance from '../components/union/UnionClubGovernance';
+import {
+  tournamentScheduleService,
+  type TournamentScheduleRow,
+} from '../services/TournamentScheduleService';
+import { describeSchedule } from '../components/tournament/WeeklyScheduleEditor';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -121,6 +126,39 @@ export default function UnionDetailPage() {
     crossClubTournaments: false,
   });
   const [onlineCount, setOnlineCount] = useState(0);
+
+  // ── Recurring tournament schedules (2026-08-22): the union owner's compact
+  // manager over tournament_schedules. Loaded when the Tournaments tab opens. ──
+  const [schedules, setSchedules] = useState<TournamentScheduleRow[]>([]);
+  const [scheduleBusyId, setScheduleBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeTab !== 'tournaments' || !unionId) return;
+    let alive = true;
+    tournamentScheduleService.listForUnion(unionId).then((rows) => {
+      if (alive) setSchedules(rows);
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, unionId]);
+
+  const handleScheduleActiveToggle = async (row: TournamentScheduleRow, nextActive: boolean) => {
+    if (scheduleBusyId) return;
+    setScheduleBusyId(row.id);
+    try {
+      await tournamentScheduleService.setActive(row.id, nextActive);
+      setSchedules((prev) =>
+        prev.map((s) => (s.id === row.id ? { ...s, active: nextActive } : s))
+      );
+      toast.success(nextActive ? 'Schedule activated.' : 'Schedule deactivated.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not update the schedule.');
+    } finally {
+      setScheduleBusyId(null);
+    }
+  };
 
   // Level-change detection — toast when union level goes up or down
   const prevLevelRef = useRef<number | null>(null);
@@ -1263,7 +1301,9 @@ export default function UnionDetailPage() {
                       </span>
                     </div>
                     <div className={styles.tableCardDetails}>
-                      <span> {union?.name || t.clubs?.name || 'Union'}</span>
+                      {/* hide_club_name (2026-08-22): never leak the hosting
+                          club's name when the owner chose to hide it. */}
+                      <span> {union?.name || (t.hide_club_name ? 'Union' : t.clubs?.name) || 'Union'}</span>
                       {/* The advertised buy-in is the TOTAL (prize + fee), in
                           whole chips - never the prize half on its own. */}
                       <span> {formatBuyInShort(t.buy_in_amount || 0, t.buy_in_fee)}</span>
@@ -1280,6 +1320,46 @@ export default function UnionDetailPage() {
                   </div>
                 ))}
               </div>
+            )}
+
+            {/* ── Recurring Schedules (2026-08-22, owner only): the union's
+                tournament_schedules rows. Active toggle goes through
+                fn_upsert_tournament_schedule; Remove is the soft delete
+                (fn_delete_tournament_schedule, active=false). ── */}
+            {union?.ownerId === user?.id && schedules.length > 0 && (
+              <>
+                <h3 style={{ margin: '2rem 0 1rem' }}>Recurring Schedules</h3>
+                <div className={styles.tablesGrid}>
+                  {schedules.map((s) => (
+                    <div key={s.id} className={styles.tableCard} style={!s.active ? { opacity: 0.55 } : undefined}>
+                      <div className={styles.tableCardHeader}>
+                        <h4>{s.name}</h4>
+                        <span className={`${styles.statusBadge} ${s.active ? styles.paid : styles.overdue}`}>
+                          {s.active ? 'ACTIVE' : 'OFF'}
+                        </span>
+                      </div>
+                      <div className={styles.tableCardDetails}>
+                        <span>
+                          {describeSchedule(s.days_of_week, s.start_times_utc, s.interval_minutes)}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          className={styles.joinButton}
+                          disabled={scheduleBusyId === s.id}
+                          onClick={() => handleScheduleActiveToggle(s, !s.active)}
+                        >
+                          {scheduleBusyId === s.id
+                            ? 'Working...'
+                            : s.active
+                              ? 'Deactivate'
+                              : 'Reactivate'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         )}

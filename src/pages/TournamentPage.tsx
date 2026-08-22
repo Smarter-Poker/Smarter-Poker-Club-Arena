@@ -901,12 +901,15 @@ export default function TournamentPage() {
   };
 
   const filteredTournaments = useMemo(() => {
-    return tournaments.filter((t) => {
-      if (filter === 'freeroll') return t.buy_in_amount === 0;
-      if (filter === 'micro') return t.buy_in_amount > 0 && t.buy_in_amount <= 1000;
-      if (filter === 'highroller') return t.buy_in_amount >= 10000;
-      return true;
-    });
+    return tournaments
+      .filter((t) => {
+        if (filter === 'freeroll') return t.buy_in_amount === 0;
+        if (filter === 'micro') return t.buy_in_amount > 0 && t.buy_in_amount <= 1000;
+        if (filter === 'highroller') return t.buy_in_amount >= 10000;
+        return true;
+      })
+      // Featured (is_pinned) first — same rule as the main tournament lobby.
+      .sort((a, b) => Number(Boolean((b as any).is_pinned)) - Number(Boolean((a as any).is_pinned)));
   }, [tournaments, filter]);
 
   // ─── Countdown Timer Hook (Initiative 2) ───────────────────────────

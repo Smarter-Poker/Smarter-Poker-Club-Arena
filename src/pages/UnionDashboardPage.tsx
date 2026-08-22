@@ -1343,11 +1343,11 @@ export default function UnionDashboardPage() {
                 onChange={(e) => setRosterSearch(e.target.value)}
               />
               <span style={{ alignSelf: 'center', color: '#888', fontSize: 12 }}>
-                {fmt(filteredRoster.length)} players
+                {fmt(filteredRoster.length)} Players
               </span>
             </div>
             {rosterLoading ? (
-              <div className="admin-empty">Loading roster…</div>
+              <div className="admin-empty">Loading Roster…</div>
             ) : filteredRoster.length === 0 ? (
               <div className="admin-empty">
                 <span className="admin-empty-icon">◉</span>

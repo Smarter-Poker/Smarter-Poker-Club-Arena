@@ -172,6 +172,7 @@ import SpinWheel, {
 } from '../components/tournament/SpinWheel';
 import RebuyModal from '../components/table/RebuyModal';
 import TournamentWinnerOverlay from '../components/table/TournamentWinnerOverlay';
+import { isSpinTournament, type SpinRevealSubject } from '../utils/spinReveal';
 // RealtimeChannelService imported if needed for future use
 import ChipStack from '../components/table/ChipStack';
 import { tournamentService } from '../services/TournamentService';
@@ -326,6 +327,7 @@ async function fetchTournamentResult(
     knockouts: 0,
     rebuys: 0,
     addOns: 0,
+    isSpin: false,
   };
 
   try {
@@ -347,7 +349,11 @@ async function fetchTournamentResult(
         .maybeSingle(),
       supabase
         .from('tournaments')
-        .select('name, current_players')
+        /* variant + tournament_type: the two columns isSpinTournament reads.
+           Either one may carry it, which is why the helper checks both and
+           nothing here re-derives it. Without them the ranking card branded
+           EVERY finished event a Spin. */
+        .select('name, current_players, variant, tournament_type')
         .eq('id', tournamentId)
         .maybeSingle(),
       supabase
@@ -368,6 +374,7 @@ async function fetchTournamentResult(
       // "how many add-ons", so coerce rather than trusting the column type.
       addOns:
         typeof entry?.add_on === 'boolean' ? (entry.add_on ? 1 : 0) : Number(entry?.add_on) || 0,
+      isSpin: isSpinTournament(tourney as SpinRevealSubject | null),
     };
   } catch (err) {
     reportError(err, 'TablePage.fetchTournamentResult');
@@ -1659,6 +1666,9 @@ export default function TablePage({
   } | null>(null);
 
   // VPIP count tracking for mini stats card
+  /* The pending tournament-exit navigation, so the subscription's cleanup can
+     cancel it. See goToLobbyWithResult. */
+  const tournamentExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vpipCountRef = useRef(0);
   // Dan 2026-08-15 (Session Stats fix): per-HAND voluntary-action flags.
   // vpipCountRef above is cumulative and cannot answer "did hero VPIP THIS
@@ -4568,7 +4578,36 @@ export default function TablePage({
 
              `exitStarted` lives here, at the lifetime of the subscription, so
              a duplicate or retried broadcast cannot schedule two navigations.
-             A player finishes a tournament exactly once. */
+             A player finishes a tournament exactly once.
+
+             ── AUDIT 2026-08-22: this did not actually LEAVE the table ──
+             It published the card and navigated, and that was all. Every
+             manual leave in this file sends four more signals, and none of
+             them fired for a tournament finisher:
+
+               SESSION_ENDED            nothing closed the session
+               clearPlayingAt(userId)   "Playing At" still pointed at a table
+                                        the engine had already closed
+               TABLE_LEFT               the tab stayed open
+               CLOSE_TABLE_TAB          ditto — MultiTablePage subscribes to
+                                        both and each removes the tab
+
+             So Dan's "you kick the current players ... and move them to the
+             lobby" half-happened: the player was navigated away while the
+             finished table sat in their tab bar and their status said they
+             were still sitting at it.
+
+             ── AND THE NAVIGATE WAS ACTIVELY DESTRUCTIVE IN MULTI-TABLE ──
+             TablePage runs as up to FOUR embedded instances inside
+             MultiTablePage. An unconditional `navigate('/clubs/...')` from one
+             of them tears down the whole container, taking the other three
+             LIVE tables with it — bust out of a three-minute Spin on tab 2 and
+             your cash games are yanked off the screen mid-hand.
+
+             In multi-table mode the signals ARE the exit: MultiTablePage
+             removes just that tab and calls goToLobby() itself only when it
+             was the last one. Single-table mode has no such subscriber, so it
+             still navigates here. */
           let exitStarted = false;
 
           const goToLobbyWithResult = (position: number, prize: number, delayMs: number) => {
@@ -4577,7 +4616,11 @@ export default function TablePage({
 
             const tid = table.tournament_id || tableStateRef.current.tournamentId;
 
-            setTimeout(() => {
+            /* Held so the effect's cleanup can cancel it. Without that, a
+               player who closes this tab (or is moved off it) inside the 7s
+               winner beat is force-navigated out of wherever they went next —
+               which, in multi-table, is somebody else's live table. */
+            tournamentExitTimerRef.current = setTimeout(() => {
               void (async () => {
                 const full = tid ? await fetchTournamentResult(tid, userId) : undefined;
                 publishSessionSummary({
@@ -4591,6 +4634,15 @@ export default function TablePage({
                   tableName: tableStateRef.current.tableName,
                   sessionStart: sessionStartRef.current,
                   sessionEnd: Date.now(),
+                  /* Parity with the cash summary (#243). A tournament finisher
+                     bought in too, and played a measurable session; there is no
+                     reason their card should know less about it than a cash
+                     player's does. */
+                  vpipPercent:
+                    handsPlayedRef.current > 0
+                      ? Math.round((vpipCountRef.current / handsPlayedRef.current) * 100)
+                      : 0,
+                  totalBuyIn: totalBuyInRef.current,
                   tournament: {
                     ...(full ?? {
                       entrants: null,
@@ -4609,6 +4661,42 @@ export default function TablePage({
                     prize: prize || full?.prize || 0,
                   },
                 });
+
+                /* ── Now actually leave. ──
+                   The same four signals, in the same order, as every manual
+                   leave above. Emitted AFTER the publish so the card is
+                   already handed to the app-root host before this instance
+                   starts being torn down, and before the navigate so the
+                   destination is deterministic — the ordering the manual path
+                   settled on after three racing exits fought over it. */
+                const seatAtExit = tableStateRef.current.heroSeat;
+                heroSeatRef.current = 0;
+                setTableState((prev) => ({ ...prev, heroSeat: 0 }));
+
+                masterBus.emit('SESSION_ENDED', { tableId: tableId ?? '', userId });
+                playerStatusService.clearPlayingAt(userId);
+                masterBus.emit('TABLE_LEFT', { tableId: tableId ?? '', seat: seatAtExit });
+                masterBus.emit('TABLE_MENU_ACTION', {
+                  tableId: tableId ?? '',
+                  action: 'CLOSE_TABLE_TAB',
+                });
+
+                /* MultiTablePage owns the destination whenever it is mounted:
+                   it removes this tab and calls its own goToLobby() only if
+                   this was the last one. Navigating here as well would close
+                   the other three tables.
+
+                   The test is `embeddedTableId`, NOT `isMultiTable`. That prop
+                   is a sound/UX flag — MultiTablePage passes
+                   `tables.length > 1 || hidden`, so it is FALSE for a single
+                   visible table even though the container is mounted and
+                   subscribed to both signals above. Branching on it would
+                   leave the commonest case with two navigators racing for the
+                   destination (this one to the club, goToLobby() to the club
+                   or '/'), which is the same race the manual leave path had to
+                   be untangled from. `embeddedTableId` is set exactly when
+                   this instance lives inside the container. */
+                if (embeddedTableId) return;
 
                 const clubId = actualClubIdRef.current;
                 if (clubId) {
@@ -5293,6 +5381,14 @@ export default function TablePage({
       if (addOnChannelRef.current) {
         // Add-on events handled via break channel — no separate channel needed
         addOnChannelRef.current = null;
+      }
+      /* AUDIT 2026-08-22: a scheduled tournament exit must not outlive the
+         subscription that scheduled it. The winner's beat is 7s long; a player
+         whose tab is closed inside it used to be force-navigated out of
+         whatever they were looking at when it fired. */
+      if (tournamentExitTimerRef.current) {
+        clearTimeout(tournamentExitTimerRef.current);
+        tournamentExitTimerRef.current = null;
       }
       if (bountyChannelRef.current) {
         // BUG-C FIX: Read tournamentId from tableStateRef (fresh) instead of stale closure

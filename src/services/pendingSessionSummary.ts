@@ -63,6 +63,22 @@ export interface TournamentResult {
   knockouts: number;
   rebuys: number;
   addOns: number;
+  /**
+   * Is this a Spin?
+   *
+   * Only the card's BRANDING turns on this — a Spin is still a tournament and
+   * every number above means exactly the same thing. It exists because the
+   * ranking card hard-coded the word SPIN into its banner for every event, so
+   * a 128-runner MTT finished under a Spin badge.
+   *
+   * Resolved by `isSpinTournament` from the tournament row (it checks both
+   * `variant` and `tournament_type`), never guessed from the event name.
+   *
+   * Optional, defaulting to false: an older payload simply is not a Spin, and
+   * that is the safe direction — a real Spin missing its badge is a cosmetic
+   * loss, an MTT wearing one is a lie.
+   */
+  isSpin?: boolean;
 }
 
 export interface SessionSummaryPayload {

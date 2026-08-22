@@ -162,6 +162,7 @@ Idle-table broadcast (no snapshot for joining clients between hands / empty
 tables), postHandTasks unbounded await, /health restart-races-recovery window,
 mux-mode fixes (flag is OFF; do not enable ca_ws_mux until EngineSocketMux
 half-open + eviction-storm bugs are fixed), presence ghost-seat merge.
+
 ---
 
 ## Cowork session 2026-08-22 — V11 horse brain: game modes + four live-play leak fixes (PR #235)
@@ -10222,3 +10223,67 @@ Deleting them is its own change, not a rider on a money-adjacent path.
 Verified: 231 test files / 2905 tests green locally and in CI; TypeScript Check,
 Server Engine, Production Build, CSS Beat E2E all green; merged as PR #242
 (5056e6438); Auto-Deploy Hetzner Engine completed success on that SHA.
+
+## 2026-08-22 — The finisher's exit never left the table (audit of #242)
+
+#242 told the winner the tournament was over. This is the audit of everything
+that happens after that signal lands, and telling them turned out to be the only
+part that worked.
+
+**THE EXIT DID NOT LEAVE.** `goToLobbyWithResult` published the card and
+navigated. That was the whole of it. Every manual leave in TablePage sends four
+more signals, and a tournament finisher — winner or bust — got none of them:
+`SESSION_ENDED` (so PlayerStyleRadar, PerformanceTrends and StakeLevelComparison
+never refreshed after a tournament), `clearPlayingAt` (so "Playing At" kept
+pointing at a table the engine had already closed), `TABLE_LEFT` and
+`CLOSE_TABLE_TAB` (so the finished table stayed in the tab bar). Dan's "you kick
+the current players and move them to the lobby" half-happened: navigated away,
+still seated everywhere that mattered.
+
+**AND IN MULTI-TABLE THE NAVIGATE WAS DESTRUCTIVE.** TablePage runs as up to
+four embedded instances inside MultiTablePage. An unconditional
+`navigate('/clubs/...')` from one of them tears the container down and takes the
+other three LIVE tables with it — bust out of a three-minute Spin on tab 2 and
+your cash games leave the screen mid-hand. There the signals ARE the exit:
+MultiTablePage removes that one tab and calls `goToLobby()` itself only when it
+was the last.
+
+The guard is **`embeddedTableId`, not `isMultiTable`**. `isMultiTable` is a
+sound/UX flag — MultiTablePage passes `tables.length > 1 || hidden`, so it is
+false for a single visible table while the container is mounted and subscribed.
+Branching on it would have left the commonest case with two navigators racing
+for the destination, which is the same race the manual leave path had to be
+untangled from in the first place.
+
+**THE EXIT TIMER OUTLIVED ITS SUBSCRIPTION.** The winner's celebration beat is
+7s long. A player moved off that tab inside it was force-navigated out of
+wherever they had gone next. Held in a ref, cleared with the channel.
+
+**EVERY TOURNAMENT WAS BRANDED A SPIN.** The ranking card hard-coded the word
+SPIN into its banner, so a 128-runner MTT finished under a Spin badge. `isSpin`
+now rides the payload, resolved by `isSpinTournament` from the tournament row —
+and `variant` AND `tournament_type` are both selected, because checking only one
+is how that helper quietly returns false for half the Spins in the system.
+
+**THE CARD IGNORED THE SESSION IT WAS HANDED.** `duration` and `handsPlayed`
+have ridden in the payload since the card was written and it read neither, so a
+Spin that ran 21 hands over three minutes said nothing about itself. It never
+showed rebuys or add-ons either, which in a rebuy event are most of the story,
+and its banner date came from `new Date()` instead of the session end. The cash
+Session Complete card was given real stats in #243; this one is now level with
+it, `vpipPercent` and `totalBuyIn` included.
+
+**DEAD CODE REMOVED RATHER THAN LEFT AS A TRAP.**
+`TournamentResultCard` and ClubLobby's router-state reader could never work: the
+state was addressed to `/clubs/:clubId` (ClubHomePage) while only
+`/clubs/:clubId/lobby` read it, so the card was dropped on arrival every single
+time — and "the lobby" is three different pages, which is why the app-root host
+exists at all. `TournamentService.broadcastWinner` / `.broadcastElimination`
+were callerless and unusable: both facts belong to the engine, and a second
+publisher on that channel is how a table acts on a result the database disagrees
+with. `broadcastWinner` sitting in the service unused is exactly what made
+"nothing announces the winner" so easy to miss for as long as it was.
+
+Tests: `tournamentWinnerExit` 9 -> 16 source-level invariants,
+`tournamentRankingHost` 7 -> 12 behavioural cases; 11 of the new assertions fail
+against the previous main. Full suite 231 files / 2928 tests green.

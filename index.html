@@ -40,9 +40,22 @@
   <title>♠ Club Arena | Smarter.Poker</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- PERF 2026-08-22: preconnect to Supabase — every boot's first real work is
+       auth (getSession → token refresh) + data fetches against this origin.
+       Warming DNS+TLS in parallel with JS download saves 100-300ms on mobile. -->
+  <link rel="preconnect" href="https://kuklfnapbkmacvwxktbh.supabase.co" crossorigin>
+  <link rel="dns-prefetch" href="https://cdn.onesignal.com">
+  <!-- PERF 2026-08-22: Google Fonts stylesheet loads ASYNC (media=print swap
+       trick) instead of render-blocking. display=swap already renders text in
+       fallback fonts, so nothing waits on this fetch anymore. -->
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Rajdhani:wght@400;500;600;700&display=swap"
-    rel="stylesheet">
+    rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Rajdhani:wght@400;500;600;700&display=swap"
+      rel="stylesheet">
+  </noscript>
   <!-- Preload critical stylesheets -->
   <link rel="preload" href="/src/styles/globals.css" as="style">
   <link rel="preload" href="/src/styles/design-tokens.css" as="style">

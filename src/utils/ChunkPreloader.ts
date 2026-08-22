@@ -67,6 +67,18 @@ export function preloadCriticalChunks(): void {
         });
       }, index * 150); // 150ms stagger between each chunk
     });
+
+    // PERF PASS 2026-08-22: after the chunk preloads have been scheduled,
+    // warm the player's card deck (~500KB of WebP) so the first hands dealt
+    // never wait on image fetches. The service worker media cache makes this
+    // a one-time cost per device; deckWarmer skips Data Saver / 2g users.
+    setTimeout(() => {
+      import('./deckWarmer')
+        .then(({ warmDeckImages }) => warmDeckImages())
+        .catch(() => {
+          // Preloading is best-effort — the per-card PNG fallback still applies
+        });
+    }, CRITICAL_CHUNKS.length * 150 + 3000);
   });
 }
 

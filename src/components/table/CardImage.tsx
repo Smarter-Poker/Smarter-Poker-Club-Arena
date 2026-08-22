@@ -85,12 +85,29 @@ export function getCardImagePath(card: Card, deckStyle: DeckStyle = '2color'): s
     const safeSuit = suitName || 'spades';
     const safeRank = rankName || 'a';
     const base = MEDIA_BASE;
-    return `${base}cards/${deckStyle}/${safeSuit}_${safeRank}.png`;
+    return `${base}cards/${deckStyle}/${safeSuit}_${safeRank}.webp`;
   }
 
-  // Serve card images from the same origin via proxy rewrites
+  // PERF PASS 2026-08-22: serve WebP instead of PNG. The source PNGs are
+  // 750x1050 at ~66KB each (a full deck = 3.4MB); the build-time WebP
+  // variants (scripts/generate-webp-media.mjs) are ~8KB each — an entire
+  // deck now weighs less than six of the old PNGs. Every consumer of this
+  // path must attach `withPngFallback` (or equivalent) as the img onError
+  // handler so environments without generated WebP degrade to the PNGs.
   const base = MEDIA_BASE;
-  return `${base}cards/${deckStyle}/${suitName}_${rankName}.png`;
+  return `${base}cards/${deckStyle}/${suitName}_${rankName}.webp`;
+}
+
+/**
+ * onError handler for card <img> tags: if the WebP variant is missing
+ * (e.g., a build ran without the WebP generation step), retry the same
+ * card as PNG before giving up. Safe to attach to any card image.
+ */
+export function withPngFallback(e: React.SyntheticEvent<HTMLImageElement>): void {
+  const img = e.currentTarget;
+  if (img.src.endsWith('.webp')) {
+    img.src = img.src.replace(/\.webp$/, '.png');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -161,10 +178,14 @@ export function CardImage({
   // mutation) and reset it whenever the image path changes, so a slot that once
   // 404'd correctly shows the new valid card instead of staying hidden with a
   // stale fallback captured in the old error-time closure.
-  const [imgError, setImgError] = useState(false);
+  // PERF PASS 2026-08-22: two-step fallback — WebP → PNG → text glyph. The
+  // PNG step covers builds where WebP generation was skipped.
+  const [fallbackStep, setFallbackStep] = useState<0 | 1 | 2>(0);
   useEffect(() => {
-    setImgError(false);
+    setFallbackStep(0);
   }, [imagePath]);
+  const imgError = fallbackStep >= 2;
+  const effectivePath = fallbackStep === 1 ? imagePath.replace(/\.webp$/, '.png') : imagePath;
 
   const classes = [
     'card-image',
@@ -181,12 +202,12 @@ export function CardImage({
       <img
         loading="lazy"
         decoding="async"
-        src={imagePath}
+        src={effectivePath}
         alt={`${card.rank} of ${SUIT_MAP[card.suit] || card.suit}`}
         className="card-image__img"
         draggable={false}
         style={imgError ? { display: 'none' } : undefined}
-        onError={() => setImgError(true)}
+        onError={() => setFallbackStep((s) => (s === 0 && imagePath.endsWith('.webp') ? 1 : 2))}
       />
       {/* Fallback: hide broken image, show colored text indicator */}
       {imgError && (

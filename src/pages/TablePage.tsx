@@ -2993,7 +2993,16 @@ export default function TablePage({
     userId !== 'guest' ? userId : null,
     tableState.gameType,
     tableState.isTournament,
-    undefined // tournamentType resolved internally from gameType
+    /**
+     * This argument used to be `undefined`, with a comment claiming the type was
+     * "resolved internally from gameType". It is not - getThemeGameType has no
+     * other source for it, so every tournament fell to its 'MTT' default and a
+     * Spin resolved the player's MTT felt, background, deck and button art
+     * rather than the SNG row it shares with heads-up. Four data-* theme
+     * attributes on the table root come off that same value, so a Spin did not
+     * merely miss a preference, it rendered a different table.
+     */
+    tournamentFormat ?? undefined
   );
 
   /**
@@ -6266,6 +6275,53 @@ export default function TablePage({
           // through rather than replaying from the top.
           revealAtMs: Number(d?.reveal_at) || Date.now(),
         });
+        break;
+      }
+
+      /**
+       * THE TWO BEATS AFTER THE WHEEL (Dan 2026-08-21).
+       *
+       *   "AFTER THE SPIN COMPLETES, CHIP STACKS GET ADDED, BUTTON RANDOMLY
+       *    ASSIGNED AND THE SPIN STARTS!"
+       *
+       * TournamentManagerBase.scheduleSpinPostReveal broadcasts these two
+       * events and holds the deal 1.8s to make room for them, saying in as many
+       * words that it does so "so the client can animate them rather than
+       * discovering them in a state diff". The client had no handler for
+       * either. The chips and the puck did still appear - whenever the next
+       * snapshot happened to land - so the beats existed on the engine's clock
+       * and nowhere on the player's.
+       *
+       * Neither handler invents anything. Both write the value the engine has
+       * already committed, on the instant the engine chose, and let the
+       * animations that already exist run: the stack diff drives
+       * seat__stack--up / stackDeltaFloat / seatStackGlow, and the button seat
+       * mounts .seat__position-chip, whose dealerButtonAppear is a mount
+       * animation. The snapshot that follows confirms the same values, so a
+       * dropped event costs the choreography and nothing else.
+       */
+      case 'SPIN_CHIPS': {
+        const d = evt.data as { starting_stack?: number };
+        const stack = Number(d?.starting_stack) || 0;
+        if (stack <= 0) break;
+        setTableState((prev) => {
+          // Only seats that are occupied and still empty-handed. A seat that
+          // already has chips has had its beat, and rewriting it would fire a
+          // second delta animation off a number that did not change.
+          if (!prev.players.some((pl) => pl && (pl.stack ?? 0) <= 0)) return prev;
+          return {
+            ...prev,
+            players: prev.players.map((pl) => (pl && (pl.stack ?? 0) <= 0 ? { ...pl, stack } : pl)),
+          };
+        });
+        break;
+      }
+
+      case 'SPIN_BUTTON': {
+        const d = evt.data as { dealer_seat?: number };
+        const seat = Number(d?.dealer_seat) || 0;
+        if (seat <= 0) break;
+        setTableState((prev) => (prev.dealerSeat === seat ? prev : { ...prev, dealerSeat: seat }));
         break;
       }
 
@@ -10201,7 +10257,13 @@ export default function TablePage({
                   canSit={
                     tableState.heroSeat <= 0 &&
                     pendingSeat === null &&
-                    !tableState.players.some((pl) => pl && pl.id === userId)
+                    !tableState.players.some((pl) => pl && pl.id === userId) &&
+                    /* A tournament seat is not for sale - EXCEPT in the
+                       seat-first formats, where buying the seat IS how you
+                       enter. handleSeatClick already has the branch; without
+                       this the seat renders as a passive EMPTY marker and the
+                       footer's "Tap An Open Seat To Join" is a dead letter. */
+                    (!tableState.isTournament || !!seatFirstBuyIn)
                   }
                   /* Dan 2026-08-18: the hero's own reserved seat reads
                      "YOUR SEAT" instead of the generic EMPTY. */

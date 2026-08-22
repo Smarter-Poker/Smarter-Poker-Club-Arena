@@ -400,6 +400,72 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
     expect(b.trc2Rise, 'the result card must rise in').toBe(400);
   });
 
+  /**
+   * THE TWO BEATS AFTER THE WHEEL.
+   *
+   * The SPIN-IT test above covers the wheel itself. These are what Dan named
+   * next: "AFTER THE SPIN COMPLETES, CHIP STACKS GET ADDED, BUTTON RANDOMLY
+   * ASSIGNED AND THE SPIN STARTS!" The engine broadcasts spin_chips and
+   * spin_button and holds the deal 1.8s to make room for them; TablePage now
+   * handles both and writes the values straight into table state.
+   *
+   * Neither handler owns an animation of its own - each drives one that already
+   * exists on the seat. This spec is what stops those from being deleted or
+   * retimed underneath the handlers, which would leave the beats silently dead
+   * again with every unit test still green.
+   */
+  test('the SPIN post-reveal beats: chips land, then the button is drawn', async ({ page }) => {
+    // Beat 1 — the chips arrive at a seat that had none.
+    const chips = await beat(
+      page,
+      `$('info').innerHTML =
+         '<span class="seat__stack seat__stack--up">500</span>' +
+         '<span class="seat__stack-delta seat__stack-delta--win">+500</span>';
+       $('seat').classList.add('seat--stack-glow');`
+    );
+    expect(chips.stackBounceUp, 'the stack must bounce as the chips land').toBe(400);
+    expect(chips.stackDeltaFloat, 'the +N must float off the seat').toBe(2000);
+    expect(chips.seatStackGlow, 'the seat must glow as it is credited').toBe(600);
+
+    // Beat 2 — the button is drawn. dealerButtonAppear is a MOUNT animation on
+    // .seat__position-chip, so writing the chip in is exactly what the real
+    // render does when dealerSeat first names this seat.
+    const button = await beat(
+      page,
+      `const c = document.createElement('div');
+       c.className = 'seat__position-chip';
+       c.textContent = 'D';
+       $('seat').appendChild(c);`
+    );
+    expect(button.dealerButtonAppear, 'the dealer button must be dealt in, not appear').toBe(400);
+  });
+
+  /**
+   * PARITY: the two seat states a Spin used to render differently from cash.
+   *
+   * Both are CSS that the TSX fixes now reach. If either keyframe is removed or
+   * retimed the fix becomes a no-op with nothing else failing, which is exactly
+   * how the original divergence survived: nothing anywhere rendered a table in
+   * tournament mode and compared it to one in cash mode.
+   */
+  test('a short stack warns, and an open seat breathes', async ({ page }) => {
+    const short = await beat(
+      page,
+      `$('info').innerHTML = '<span class="seat__stack seat__stack--critical">8</span>';`
+    );
+    expect(short.stackCriticalPulse, 'a sub-10bb stack must pulse, in every format').toBe(1500);
+
+    const open = await beat(
+      page,
+      `const s = document.createElement('div');
+       s.className = 'seat seat--empty';
+       s.innerHTML = '<span class="seat__empty-label"><span class="seat__empty-plus">+</span>' +
+                     '<span class="seat__empty-word">SIT</span></span>';
+       $('sw').appendChild(s);`
+    );
+    expect(open.emptyPulse, 'an open seat must breathe so it reads as tappable').toBe(3000);
+  });
+
   test('reduced motion is honoured — every animation collapses', async ({ browser }) => {
     const ctx = await browser.newContext({ reducedMotion: 'reduce' });
     const page = await ctx.newPage();

@@ -40,7 +40,7 @@ const row = (over: Partial<FilterableRow> = {}): FilterableRow => ({
 
 describe('rowPassesFilter: an untouched filter hides nothing', () => {
   it('passes every row when nothing is selected', () => {
-    for (const key of ['HOLDEM', 'OMAHA', 'MTT', 'SPIN', 'SNG'] as const) {
+    for (const key of ['HOLDEM', 'OMAHA', 'LIMIT', 'MTT', 'SPIN', 'SNG'] as const) {
       const spec = FILTER_SPECS[key];
       expect(rowPassesFilter(spec, emptyFilterValue(spec), row()), key).toBe(true);
     }
@@ -57,6 +57,19 @@ describe('games chips', () => {
   it('passes a variant it does not recognise rather than hiding a real table', () => {
     const v = { ...emptyFilterValue(holdem), games: ['nlh'] };
     expect(rowPassesFilter(holdem, v, row({ variant: '' }))).toBe(true);
+  });
+});
+
+describe('LIMIT spec', () => {
+  it('filters like the other cash tabs: untouched hides nothing, narrowed narrows', () => {
+    const limit = FILTER_SPECS.LIMIT;
+    const flh = row({ variant: 'flh', price: 2 });
+    expect(rowPassesFilter(limit, emptyFilterValue(limit), flh)).toBe(true);
+    const band = { ...emptyFilterValue(limit), rangeMin: 3, rangeMax: 8 };
+    expect(rowPassesFilter(limit, band, flh)).toBe(false);
+    const full = { ...emptyFilterValue(limit), statuses: ['full'] };
+    expect(rowPassesFilter(limit, full, row({ variant: 'flh', seatsTaken: 6 }))).toBe(true);
+    expect(rowPassesFilter(limit, full, row({ variant: 'flh', seatsTaken: 3 }))).toBe(false);
   });
 });
 
@@ -137,7 +150,7 @@ describe('isFilterActive', () => {
 
 describe('every board entry is coherent', () => {
   it('gives each spec at least one status and a usable range', () => {
-    for (const key of ['HOLDEM', 'OMAHA', 'MTT', 'SPIN', 'SNG'] as const) {
+    for (const key of ['HOLDEM', 'OMAHA', 'LIMIT', 'MTT', 'SPIN', 'SNG'] as const) {
       const s = FILTER_SPECS[key];
       expect(s.statuses.length, `${key} statuses`).toBeGreaterThan(0);
       expect(s.range.max, `${key} range`).toBeGreaterThan(s.range.min);
@@ -150,7 +163,7 @@ describe('every board entry is coherent', () => {
   });
 
   it('has no duplicate feature keys within a spec', () => {
-    for (const key of ['HOLDEM', 'OMAHA', 'MTT', 'SPIN', 'SNG'] as const) {
+    for (const key of ['HOLDEM', 'OMAHA', 'LIMIT', 'MTT', 'SPIN', 'SNG'] as const) {
       const keys = FILTER_SPECS[key].features.map((f) => f.key);
       expect(new Set(keys).size, `${key} duplicate feature keys`).toBe(keys.length);
     }

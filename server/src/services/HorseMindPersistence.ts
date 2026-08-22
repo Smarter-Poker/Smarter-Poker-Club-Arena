@@ -88,6 +88,89 @@ const fromDb = (r: DbRow): { user_id: string } & OpponentStats => ({
   rPassive: r.r_passive,
 });
 
+type DbPairRow = {
+  attacker_id: string;
+  victim_id: string;
+  n3: number;
+  opp3: number;
+  n_r: number;
+  opp_r: number;
+};
+
+/**
+ * V12.1: the anti-exploit pair-targeting counters (who 3-bets whose opens,
+ * who raises whose bets) used to be in-memory only, rebuilt after a restart
+ * by the 72h replay — a hunter with a longer memory than that got a clean
+ * slate every deploy. Same flush/hydrate contract as the stats table.
+ */
+export async function flushHorseMindPairs(): Promise<{ flushed: number; failed: number }> {
+  const rows = HorseMind.exportDirtyPairs();
+  if (rows.length === 0) return { flushed: 0, failed: 0 };
+  let flushed = 0;
+  let failed = 0;
+  for (let i = 0; i < rows.length; i += FLUSH_CHUNK) {
+    const chunk = rows.slice(i, i + FLUSH_CHUNK);
+    try {
+      const { error } = await supabase.rpc('upsert_horse_mind_pairs', {
+        rows: chunk.map(
+          (r): DbPairRow => ({
+            attacker_id: r.attacker_id,
+            victim_id: r.victim_id,
+            n3: r.n3,
+            opp3: r.opp3,
+            n_r: r.nR,
+            opp_r: r.oppR,
+          })
+        ),
+      });
+      if (error) throw new Error(error.message || 'upsert_horse_mind_pairs failed');
+      flushed += chunk.length;
+    } catch (err) {
+      failed += chunk.length;
+      HorseMind.requeueDirtyPairs(chunk);
+      reportError(err, 'HorseMindPersistence.flushPairs');
+    }
+  }
+  return { flushed, failed };
+}
+
+/**
+ * Boot-time pair hydration: the most-contested pairs first (ordered by total
+ * observed opportunities via the generated `opps` column). Fail-safe: any
+ * error is reported and swallowed — the pre-V12.1 behavior (replay only) is
+ * the fallback. Returns the number of rows applied.
+ */
+export async function hydrateHorsePairsFromDb(): Promise<number> {
+  try {
+    const t0 = Date.now();
+    const { data, error } = await supabase
+      .from('horse_mind_pairs')
+      .select('attacker_id,victim_id,n3,opp3,n_r,opp_r')
+      .order('opps', { ascending: false })
+      .limit(HYDRATE_LIMIT);
+    if (error) throw new Error(error.message || 'horse_mind_pairs read failed');
+    if (!data || data.length === 0) return 0;
+    const applied = HorseMind.importPairs(
+      (data as DbPairRow[]).map((r) => ({
+        attacker_id: r.attacker_id,
+        victim_id: r.victim_id,
+        n3: r.n3,
+        opp3: r.opp3,
+        nR: r.n_r,
+        oppR: r.opp_r,
+      }))
+    );
+    console.log(
+      `[HorseMind] DB pair hydration: ${applied}/${data.length} targeting pairs restored in ` +
+        `${Date.now() - t0}ms`
+    );
+    return applied;
+  } catch (err) {
+    reportError(err, 'HorseMindPersistence.hydratePairs');
+    return 0;
+  }
+}
+
 /** Push every dirty row to the DB. Failed chunks are requeued. */
 export async function flushHorseMind(): Promise<{ flushed: number; failed: number }> {
   const rows = HorseMind.exportDirty();
@@ -118,6 +201,9 @@ export async function flushHorseMind(): Promise<{ flushed: number; failed: numbe
  * replay — the exact pre-V12 behavior).
  */
 export async function hydrateHorseMindFromDb(): Promise<string | null> {
+  // V12.1: pair hydration rides the same boot call, with its own fail-safe —
+  // a pairs failure must never cost the stats hydration (or vice versa).
+  await hydrateHorsePairsFromDb();
   try {
     const t0 = Date.now();
     const { data, error } = await supabase
@@ -150,7 +236,10 @@ export async function hydrateHorseMindFromDb(): Promise<string | null> {
 export function startHorseMindPersistence(): void {
   if (flushTimer) return;
   flushTimer = setInterval(() => {
-    void flushHorseMind();
+    void (async () => {
+      await flushHorseMind();
+      await flushHorseMindPairs();
+    })();
   }, FLUSH_INTERVAL_MS);
   // Never keep the process alive just to flush horse memory.
   flushTimer.unref?.();
@@ -163,4 +252,5 @@ export async function stopHorseMindPersistence(): Promise<void> {
     flushTimer = null;
   }
   await flushHorseMind();
+  await flushHorseMindPairs();
 }

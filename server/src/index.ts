@@ -23,7 +23,7 @@
 
 import { createServer } from 'http';
 import { reportError } from './services/errorReporter.js';
-import { handHistoryQueueDepth } from './services/supabase.js';
+import { handHistoryQueueDepth, supabase } from './services/supabase.js';
 import { tableStateHub } from './transport/TableStateHub.js';
 import { EngineWebSocketServer } from './transport/EngineWebSocketServer.js';
 import { ChannelWebSocketServer } from './transport/ChannelWebSocketServer.js';
@@ -45,6 +45,105 @@ import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MEMBER FEE ROLLUP — background refresh loop (2026-08-23)
+// ═══════════════════════════════════════════════════════════════════════════════
+/**
+ * WHY THIS EXISTS
+ *
+ * The club roster's "Fees" column, the Member Management stats panel and the
+ * Player Statistics page all read `public.member_fee_rollup`. Aggregating those
+ * numbers live out of `hand_history` scans millions of rows and blows past the
+ * Postgres statement timeout, so the pre-aggregated table is the only way those
+ * surfaces can load at all.
+ *
+ * `fn_refresh_member_fee_rollup(p_batch_hands)` folds one batch of hands into
+ * the rollup and advances a forward-only watermark in `member_fee_rollup_state`.
+ * It is additive and idempotent — repeated calls cannot double count — and it
+ * takes a transaction-scoped advisory lock, so a concurrent caller is a no-op
+ * rather than a conflict. Nothing else keeps the rollup current, and this engine
+ * is the one process that already runs 24/7, so the loop lives here.
+ *
+ * TWO SPEEDS. At the time of writing ~1.5M hands are not yet rolled up, so while
+ * the function reports `caught_up: false` we run batches every 2s (backfill).
+ * Once it reports caught up we drop to a 30s tick (steady state).
+ *
+ * BATCH SIZE IS BOUNDED BY THE CLIENT, NOT BY THE DATABASE. services/supabase
+ * imposes a 15s hard fetch timeout via AbortController, and a 4000-hand batch
+ * measured close to that ceiling against production. 2000 is the size that
+ * completes comfortably inside it; a timed-out call is safe to retry because the
+ * watermark only advances inside the function's own transaction.
+ *
+ * It is a self-scheduling setTimeout, NOT a setInterval: a slow batch must never
+ * be able to overlap the next run. Errors are reported and retried after 60s,
+ * never rethrown — a reporting rollup must not be able to take the game engine
+ * down. Kill switch that needs no deploy: MEMBER_FEE_ROLLUP_ENABLED=false.
+ * Anything else (including unset) leaves it ON, so shipping this turns it on.
+ */
+const MEMBER_FEE_ROLLUP_ENABLED = process.env.MEMBER_FEE_ROLLUP_ENABLED !== 'false';
+const ROLLUP_BATCH_HANDS = 2000;
+const ROLLUP_BACKFILL_MS = 2_000;
+const ROLLUP_STEADY_MS = 30_000;
+const ROLLUP_RETRY_MS = 60_000;
+
+let rollupTimer: NodeJS.Timeout | null = null;
+let rollupStopped = false;
+
+/** Run one batch. Returns the delay before the next run. Throws on RPC failure. */
+async function refreshMemberFeeRollupOnce(): Promise<number> {
+  const { data, error } = await supabase.rpc('fn_refresh_member_fee_rollup', {
+    p_batch_hands: ROLLUP_BATCH_HANDS,
+  });
+  if (error) throw new Error(error.message);
+  const r = (data ?? {}) as { processed?: number; rollup_rows?: number; caught_up?: boolean };
+  if ((r.processed ?? 0) > 0) {
+    console.log(
+      `[FeeRollup] processed ${r.processed} hand(s) into ${r.rollup_rows ?? 0} rollup row(s)` +
+        (r.caught_up ? ' - caught up' : '')
+    );
+  }
+  return r.caught_up === false ? ROLLUP_BACKFILL_MS : ROLLUP_STEADY_MS;
+}
+
+function scheduleMemberFeeRollup(delayMs: number): void {
+  if (rollupStopped) return;
+  rollupTimer = setTimeout(() => {
+    void (async () => {
+      let next = ROLLUP_STEADY_MS;
+      try {
+        next = await refreshMemberFeeRollupOnce();
+      } catch (err) {
+        reportError(err, 'MemberFeeRollup.refresh');
+        next = ROLLUP_RETRY_MS;
+      }
+      scheduleMemberFeeRollup(next);
+    })();
+  }, delayMs);
+  // Never hold the process open just to refresh a reporting rollup.
+  rollupTimer.unref?.();
+}
+
+/** Start the loop. Idempotent; call only once the server is listening. */
+function startMemberFeeRollup(): void {
+  if (!MEMBER_FEE_ROLLUP_ENABLED) {
+    console.log('[FeeRollup] disabled (MEMBER_FEE_ROLLUP_ENABLED=false)');
+    return;
+  }
+  if (rollupTimer) return;
+  console.log('[FeeRollup] refresh loop started');
+  scheduleMemberFeeRollup(0);
+}
+
+/** Stop the loop for good (shutdown). Any in-flight batch is safe to abandon:
+ *  the watermark only advances inside the function's own transaction. */
+function stopMemberFeeRollup(): void {
+  rollupStopped = true;
+  if (rollupTimer) {
+    clearTimeout(rollupTimer);
+    rollupTimer = null;
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BOOTSTRAP
@@ -119,6 +218,9 @@ httpServer.listen(PORT, () => {
   // sessions via the SAME hand-boundary-safe leaveTable() path humans use;
   // the fleet manager reseeds fresh horses within its 30s cycle.
   new HorseSessionRotator((tableId) => gameServer.getTableEngine(tableId)).start();
+  // 2026-08-23: keep public.member_fee_rollup current (club roster "Fees",
+  // Member Management stats, Player Statistics). See the block above for why.
+  startMemberFeeRollup();
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -135,6 +237,9 @@ const shutdown = async () => {
   // cannot finish inside Docker's default 10s grace — bound it so we exit
   // cleanly on our own terms instead of being SIGKILLed mid-flush.
   httpServer.close();
+  // Cheap and synchronous - stop the rollup loop before the drain race so it
+  // cannot schedule another batch while we are shutting down.
+  stopMemberFeeRollup();
   await Promise.race([
     // V12: final horse-memory flush rides the same drain window — learned
     // reads from the last few minutes survive the restart.

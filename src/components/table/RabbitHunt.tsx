@@ -96,30 +96,27 @@ export function RabbitHunt({ isAvailable, onReveal, currentBoard, maxCards = 5 }
 
     setIsRevealing(true);
     try {
-      // VISIBLE FIX 2026-08-15: this used to charge BEFORE revealing. If the
-      // server cards had already been consumed the reveal returned [], and the
-      // player lost 5 diamonds for an empty board with no refund. Fetch the
-      // cards first; only charge once we know there is something to show.
+      // Dan 2026-08-23: payment and reveal are now ONE server call.
+      // onReveal() invokes fn_reveal_rabbit_hunt, which proves the caller played
+      // the hand, spends one of a VIP's 100 free monthly hunts or charges
+      // 1 diamond, and only then returns the cards. It also raises the toast
+      // saying which of those happened.
+      //
+      // This component used to call vipService.useFeature() as a SECOND charge
+      // after onReveal(). Leaving that in place would now bill the player twice
+      // for one hunt, so it is gone. It is also no longer needed as a gate: the
+      // cards do not exist on the client until the server has been paid, which
+      // is the point of the change.
+      //
+      // The 2026-08-15 ordering fix still holds by construction - no cards
+      // means the server did not charge, because it is the same call.
       const cards = await onReveal();
 
       if (!cards || cards.length === 0) {
-        toast.error('No rabbit hunt cards available for this hand');
+        // onReveal has already surfaced the specific reason (not enough
+        // diamonds, did not play the hand, offer expired).
         setIsRevealing(false);
         return;
-      }
-
-      // Check access and charge — only now that the reveal is guaranteed.
-      const result = await vipService.useFeature(user.id, 'rabbit_hunt');
-
-      if (!result.success) {
-        toast.error('Insufficient diamonds for Rabbit Hunt');
-        setIsRevealing(false);
-        return;
-      }
-
-      // Show charge notification if diamonds were spent
-      if (result.charged > 0) {
-        toast.info(` ${result.charged} diamonds charged`);
       }
 
       // Reveal cards one by one with delay

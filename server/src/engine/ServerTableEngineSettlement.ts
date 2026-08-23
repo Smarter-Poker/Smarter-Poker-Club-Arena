@@ -607,15 +607,52 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     const rabbitAllowed =
       (this.tableInfo as { allow_rabbit_hunt?: boolean })?.allow_rabbit_hunt !== false;
     if (this.currentHandRabbitCards.length > 0 && !handReachedRiver && rabbitAllowed) {
+      // Dan 2026-08-23: rabbit hunt costs 1 diamond past a VIP's 100 free
+      // monthly hunts, so the CARDS MUST NOT BE BROADCAST. This event used to
+      // carry `rabbit_cards`, which meant every client at the table already had
+      // them before anyone paid - readable from devtools, and handed to the
+      // opponents too. The paywall was decoration.
+      //
+      // The cards now go to rabbit_hunt_offers, which has RLS on and no
+      // policies, so the only way out is fn_reveal_rabbit_hunt - it proves the
+      // caller played the hand, spends a free hunt or charges a diamond, and
+      // only then returns them.
+      //
+      // The event still fires so the button can appear; it just no longer
+      // carries the answer. Written fire-and-forget: a rabbit-hunt offer must
+      // never delay or fail hand settlement.
+      const rabbitTableId = this.tableId;
+      const rabbitHandNumber = this.handCount;
+      const rabbitCards = this.currentHandRabbitCards;
+      const rabbitBoardLen = board.length;
+      void supabase
+        .from('rabbit_hunt_offers')
+        .upsert(
+          {
+            table_id: rabbitTableId,
+            hand_number: rabbitHandNumber,
+            cards: rabbitCards,
+            board_len: rabbitBoardLen,
+          },
+          { onConflict: 'table_id,hand_number' }
+        )
+        .then(({ error }) => {
+          if (error) {
+            console.warn('[RabbitHunt] could not store offer:', error.message);
+          }
+        });
+
       this.hub?.emitEvent(this.tableId, {
         type: 'rabbit_hunt_available',
         table_id: this.tableId,
         hand_number: this.handCount,
-        rabbit_cards: this.currentHandRabbitCards,
         // Round 65: include current board length so client can slice the
         // right number of additional cards (e.g. flop-fold → show turn+river,
         // turn-fold → show river only, preflop-fold → show full 5).
         current_board_length: board.length,
+        // How many cards are waiting, so the UI can size the reveal without
+        // knowing what they are.
+        rabbit_card_count: this.currentHandRabbitCards.length,
       });
     }
 

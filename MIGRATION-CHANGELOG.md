@@ -7,6 +7,71 @@
 
 ---
 
+## Cowork session 2026-08-23 (2) — the club money panel was 1.5s, and the fix for it was wrong twice
+
+Follow-on measurement after the outage work. With `hand_history` no longer
+dominating, a fresh 30-minute `pg_stat_statements` delta put
+**`fn_club_money_panel` second on the whole instance: 168 calls at a mean of
+1,483.8 ms**. It is client facing, so that is a page taking a second and a half
+to answer.
+
+### Cause
+
+It sums a week of `union_wallet_transactions`, which the engine appends to on
+every raked hand. The existing partial index matched the predicate but did not
+carry `amount`, so all ~330,000 rows in the current week needed a heap visit:
+
+    Parallel Index Scan idx_uwt_rake_credit_basis
+    rows=330,476   Buffers: shared hit=287,862   Execution: 331 ms
+
+### Two wrong turns, both caught by measuring instead of assuming
+
+1. **The covering index alone did nothing.** Adding `INCLUDE (amount, club_id)`
+   produced an Index Only Scan that still did **226,432 heap fetches**, because
+   the table had never been vacuumed and its visibility map was unset — the
+   identical failure that caused the outage, on a different table.
+2. **The autovacuum settings I then added could never fire.**
+   `autovacuum_vacuum_threshold` counts DEAD tuples, and this is an append-only
+   ledger: `n_dead_tup = 0` permanently. The correct knob for an append-only
+   table is `autovacuum_vacuum_insert_threshold` (PG13+; this instance is 17.6).
+
+The first-ever VACUUM of the 698,820-row table then took **1.4 seconds** — every
+earlier attempt had timed out purely from contention, not from the work.
+
+### Result
+
+|              | before  | after                 |
+| ------------ | ------- | --------------------- |
+| heap fetches | 226,432 | **2,117**             |
+| buffers      | 189,415 | **3,274** (58x fewer) |
+| execution    | 331 ms  | **103 ms**            |
+
+### Migrations
+
+- `20260823065000_covering_index_for_weekly_rake_sums` — built `CONCURRENTLY` on
+  production so it never took a ShareLock against the engine's rake writes.
+- `20260823070000_autovacuum_union_wallet_transactions` — the incomplete attempt,
+  kept in history because the next one only makes sense against it.
+- `20260823080000_insert_only_tables_need_the_insert_threshold` — the correction.
+
+### Standing lesson
+
+An append-only table is invisible to dead-tuple autovacuum thresholds, so it
+never gets vacuumed, so its visibility map is never set, so every index-only
+scan against it silently becomes a heap scan. Ledgers, event logs and history
+tables all have this shape. Check `autovacuum_vacuum_insert_threshold`, not just
+the dead-tuple one.
+
+### Still open
+
+The weekly sum walks the whole week and the week only grows — ~330k rows by
+Saturday. A covering index makes each row cheap; it does not make there be fewer
+of them. The durable fix is an incrementally maintained weekly rollup, which
+changes financial aggregation and wants its own review rather than being bolted
+on during an incident.
+
+---
+
 ## Cowork session 2026-08-22 (14) — OUTAGE: "no tables load, nothing is playing" was a saturated database, not the client
 
 Dan: "NONE OF THE TABLES ARE ACTIVE OR LOADING IN ANY CLUB. It says there are
@@ -32,13 +97,9 @@ NULL, with 234,091 dead tuples on an 8,955 MB heap and 1.1 GB across 8 indexes
    `Heap Fetches: 1,921`, **36,964 ms**. ~20 ms per 8 KB page — a saturated disk.
 2. **That exact scan is on the hand-insert path.** `hand_history` carries three
    per-row AFTER INSERT triggers, and `trg_hand_history_club_member_stats` runs
-   <<<<<<< HEAD
    a correlated `NOT EXISTS` over `hand_history` _for each seated player_. One
-   =======
-   a correlated `NOT EXISTS` over `hand_history` _for each seated player_. One
-   > > > > > > > origin/main
-   > > > > > > > hand insert cost a mean of **913 ms** over 32,274 calls — 8.2 CPU-hours, the
-   > > > > > > > top entry in `pg_stat_statements`.
+   hand insert cost a mean of **913 ms** over 32,274 calls — 8.2 CPU-hours, the
+   top entry in `pg_stat_statements`.
 3. **Everything else starved.** The club lobby's table list took **3,737 ms
    while reading only cached pages** (`Buffers: shared hit=57, read=0`). A query
    that touches no disk and still takes 3.7 s is not a bad plan — it is a
@@ -64,15 +125,10 @@ default-throttled autovacuum could never finish a 10 GB table. **The prune was
 added without the matching autovacuum tuning.** That omission is the regression.
 
 This was also a **recurrence**. Three hours earlier the same evening,
-<<<<<<< HEAD
 `20260822233000_prune_snapshots_bounded_scan.sql` fixed _one_ prune predicate
-=======
-`20260822233000_prune_snapshots_bounded_scan.sql` fixed _one_ prune predicate
-
-> > > > > > > origin/main
-> > > > > > > after the same saturation produced the "Still Loading" screen Dan first hit on
-> > > > > > > 2026-08-20. That fix was correct and incomplete, and nothing was watching for
-> > > > > > > the next occurrence.
+after the same saturation produced the "Still Loading" screen Dan first hit on
+2026-08-20. That fix was correct and incomplete, and nothing was watching for
+the next occurrence.
 
 ### Fixes (all applied to production and recorded as migrations)
 
@@ -94,30 +150,16 @@ This was also a **recurrence**. Three hours earlier the same evening,
 
 ### Measured, same instance, same queries
 
-<<<<<<< HEAD
-| | before | after |
-|---|---|---|
-| club lobby table list | 3,737 ms | **0.415 ms** |
-| trigger subquery on insert path | 36,964 ms | **934 ms** (heap fetches 1,921 → 76) |
-| `hand_history` INSERT | 913 ms | **32.7 ms** |
-| `sp_prune_hand_history` | 38–155 s, rolled back | **3 s, 1,000 rows committed** |
-| `hand_history` dead tuples | 234,091 | **0** (3 autovacuums, was 0 ever) |
-| hand throughput | 25–71 /min | **90–100 /min** |
-| cron runs failing | 59% of prune runs | **0 failures in 20 min** |
-| self-test breaches | 12 | **0** |
-=======
-| | before | after |
+|                                 | before                | after                                |
 | ------------------------------- | --------------------- | ------------------------------------ |
-| club lobby table list | 3,737 ms | **0.415 ms** |
-| trigger subquery on insert path | 36,964 ms | **934 ms** (heap fetches 1,921 → 76) |
-| `hand_history` INSERT | 913 ms | **32.7 ms** |
-| `sp_prune_hand_history` | 38–155 s, rolled back | **3 s, 1,000 rows committed** |
-| `hand_history` dead tuples | 234,091 | **0** (3 autovacuums, was 0 ever) |
-| hand throughput | 25–71 /min | **90–100 /min** |
-| cron runs failing | 59% of prune runs | **0 failures in 20 min** |
-| self-test breaches | 12 | **0** |
-
-> > > > > > > origin/main
+| club lobby table list           | 3,737 ms              | **0.415 ms**                         |
+| trigger subquery on insert path | 36,964 ms             | **934 ms** (heap fetches 1,921 → 76) |
+| `hand_history` INSERT           | 913 ms                | **32.7 ms**                          |
+| `sp_prune_hand_history`         | 38–155 s, rolled back | **3 s, 1,000 rows committed**        |
+| `hand_history` dead tuples      | 234,091               | **0** (3 autovacuums, was 0 ever)    |
+| hand throughput                 | 25–71 /min            | **90–100 /min**                      |
+| cron runs failing               | 59% of prune runs     | **0 failures in 20 min**             |
+| self-test breaches              | 12                    | **0**                                |
 
 Also ANALYZEd seven other large tables the guard caught with no planner
 statistics at all: `solved_spots_gold` (72 GB), `ca_hand_player_idx`,
@@ -129,8 +171,6 @@ statistics at all: `solved_spots_gold` (72 GB), `ca_hand_player_idx`,
 When the symptom is "the page does nothing", measure the database before
 reading React. A plan that reads **zero disk pages and still takes seconds** is
 the signature of a starved instance, and it is invisible from the client.
-<<<<<<< HEAD
-=======
 
 ---
 
@@ -177,8 +217,6 @@ against `origin/main`. Suite: 249 files, 3,144 passed, tsc clean, all three
 Supabase CI gates green.
 
 ---
-
-> > > > > > > origin/main
 
 ## Cowork session 2026-08-22 (13) — the league can finally see the mind (PR #309)
 

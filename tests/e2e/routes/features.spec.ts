@@ -68,6 +68,10 @@ test.describe('Search', () => {
 
 test.describe('Help', () => {
     test('should show help page', async ({ page }) => {
-        await expectRoute(page, 'help', { expectText: 'Still need help?' });
+        /* 2026-08-23: was 'Still need help?', a string that has never existed
+           in HelpPage.tsx — written while the suite ran signed out, where this
+           spec skipped and the assertion was never evaluated. Verified against
+           production: the page renders "Help Center". */
+        await expectRoute(page, 'help', { expectText: 'Help Center' });
     });
 });

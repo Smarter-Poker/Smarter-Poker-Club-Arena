@@ -134,7 +134,6 @@ export interface TableTabBarProps {
   activeTabId: string;
   onTabSelect: (tabId: string) => void;
   onAddTable: () => void;
-  jackpotAmount?: number;
   maxTables?: number;
   /** Batch 3: reorder a tab to a new index (drag on desktop, long-press
    *  menu Move Left/Right everywhere). */
@@ -163,7 +162,6 @@ export function TableTabBar({
   activeTabId,
   onTabSelect,
   onAddTable,
-  jackpotAmount,
   maxTables = 4,
   realtimeDown = false,
   onReorder,
@@ -695,18 +693,11 @@ export function TableTabBar({
         ))}
       </div>
 
-      {/* Jackpot Badge */}
-      {jackpotAmount !== undefined && jackpotAmount > 0 && (
-        <div className="table-tab-bar__jackpot">
-          <span className="table-tab-bar__jackpot-label">JACKPOT</span>
-          <span className="table-tab-bar__jackpot-amount">
-            {jackpotAmount.toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </span>
-        </div>
-      )}
+      {/* Jackpot badge REMOVED — Dan 2026-08-23: "you still have the
+          duplicated BBJ in the header that needs to be removed."
+          BadBeatJackpot's .bbj-widget banner sits directly below this bar and
+          shows the same pool for the same table. Two live copies of one number
+          is one too many, and the header is the copy with less room. */}
 
       {/* Batch 3: long-press / right-click quick menu */}
       {quickMenu &&

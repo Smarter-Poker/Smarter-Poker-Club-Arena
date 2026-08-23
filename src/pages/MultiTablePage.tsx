@@ -1895,12 +1895,9 @@ export default function MultiTablePage() {
               onAddTable={handleAddTable}
               maxTables={MAX_TABLES}
               realtimeDown={realtimeDown}
-              /* Audit 2026-08-20: TableTabBar's JACKPOT badge existed since
-                 the component was written but nothing ever passed the prop.
-                 The ACTIVE table's live BBJ pool — matching the reference
-                 footage, where the ticker above the felt follows the table
-                 you are looking at. */
-              jackpotAmount={tables[activeIndex]?.jackpot}
+              /* jackpotAmount removed 2026-08-23 with TableTabBar's JACKPOT
+                 badge: the BBJ banner below the bar already shows the active
+                 table's pool, and the header copy was a duplicate of it. */
               onReorder={handleReorder}
               mutedIds={mutedIds}
               onQuickAction={handleQuickAction}

@@ -94,6 +94,9 @@ const CashierTradePage = lazyWithRetry(() => import('./pages/CashierTradePage'))
 const SuperAgentDashboard = lazyWithRetry(() => import('./pages/SuperAgentDashboard'));
 const AchievementsPage = lazyWithRetry(() => import('./pages/AchievementsPage'));
 const ClubMembersPage = lazyWithRetry(() => import('./pages/ClubMembersPage'));
+const MemberManagementPage = lazyWithRetry(() => import('./pages/MemberManagementPage'));
+const PlayerStatisticsPage = lazyWithRetry(() => import('./pages/PlayerStatisticsPage'));
+const PromoVaultPage = lazyWithRetry(() => import('./pages/PromoVaultPage'));
 const FriendsPage = lazyWithRetry(() => import('./pages/FriendsPage'));
 const RakebackPage = lazyWithRetry(() => import('./pages/RakebackPage'));
 const BadBeatJackpotPage = lazyWithRetry(() => import('./pages/BadBeatJackpotPage'));
@@ -982,6 +985,36 @@ export default function App() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="Club Members">
                         <ClubMembersPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/promo-vault"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Promo Vault">
+                        <PromoVaultPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/members/:userId"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Member Management">
+                        <MemberManagementPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/members/:userId/statistics"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Player Statistics">
+                        <PlayerStatisticsPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

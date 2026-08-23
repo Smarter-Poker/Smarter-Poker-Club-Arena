@@ -37,12 +37,20 @@ const has = (p: string, needle: string) => existsSync(root(p)) && read(p).includ
 const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
   // Roles — the grant matrix lives in Postgres; the client must ASK it.
   ['src/types/clubRoles.ts', 'co_owner', 'the seven club roles, including co_owner'],
+  // 2026-08-23: re-anchored from ClubMembersPage to MemberManagementPage. The
+  // Players tab was split - the roster lists, the member page acts - so role
+  // granting moved wholesale. The CAPABILITY is what this pins, so it follows
+  // the code to its new file rather than being deleted along with the old one.
   [
-    'src/pages/ClubMembersPage.tsx',
+    'src/pages/MemberManagementPage.tsx',
     'ca_club_grantable_roles',
-    'the members page asks the server what it may offer',
+    'the member page asks the server what it may offer',
   ],
-  ['src/pages/ClubMembersPage.tsx', 'fn_club_set_member_role', 'one write path for a role change'],
+  [
+    'src/pages/MemberManagementPage.tsx',
+    'fn_club_set_member_role',
+    'one write path for a role change',
+  ],
 
   // Cashier — two screens that both got the downline wrong, opposite ways.
   [

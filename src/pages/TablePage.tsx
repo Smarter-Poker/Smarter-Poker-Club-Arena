@@ -10155,7 +10155,28 @@ export default function TablePage({
                    no layout has both, so nothing looks mismatched. */
                 className={`seat-wrapper${seatDimmed ? ' seat-wrapper--dim' : ''}${
                   isActingSeat ? ' seat-wrapper--spot' : ''
-                }${pos.y < 20 && pos.x === 50 ? ' seat-wrapper--top' : ''}`}
+                }${pos.y < 20 && pos.x === 50 ? ' seat-wrapper--top' : ''}${
+                  /* Dan 2026-08-23: "when cards are displayed for showdown,
+                     they need to be layer one on top of the avatars...
+                     currently the avatars appear over the cards at showdown."
+
+                     The z-index inside the seat was never the problem: revealed
+                     cards already sit at 14, well above the avatar's 2. But a
+                     revealed row is deliberately drawn ABOVE its own plate
+                     (`bottom: calc(100% - 10px)`), which puts it in the
+                     NEIGHBOURING seat's airspace - and every .seat-wrapper is
+                     z-index 10, while .seat-wrapper's transform and .seat's
+                     will-change each open a stacking context that seals those
+                     14s inside. Between two sealed boxes of equal z-index, DOM
+                     order decides, so the seat rendered later simply painted
+                     its avatar over the cards.
+
+                     A card face-up at showdown is the most important thing on
+                     the table, so the seat showing one is lifted out of the tie
+                     entirely. Scoped to the moment of showdown: nothing moves
+                     while cards are face down. */
+                  player?.showCards && player?.holeCards?.length ? ' seat-wrapper--showing' : ''
+                }`}
                 style={
                   {
                     left: `${pos.x}%`,

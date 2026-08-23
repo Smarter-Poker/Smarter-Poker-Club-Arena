@@ -93,6 +93,12 @@
   flex-wrap: nowrap;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  /* 2026-08-23: `overflow-x: auto` makes the OTHER axis clip too (per spec,
+     `visible` computes to `auto` when its partner is not visible). That was
+     silently cropping the 44px touch area the chips grow in club-engine.css,
+     leaving them 24px reachable — the gate caught it. 8px a side gives the
+     scroll box room to contain the expanded area. */
+  padding-block: 8px;
 }
 .friends-tabs::-webkit-scrollbar {
   display: none;

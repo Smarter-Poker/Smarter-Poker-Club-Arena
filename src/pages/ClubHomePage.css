@@ -12,7 +12,7 @@
   flex-direction: column;
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
-  background: linear-gradient(180deg, #0a0a0f 0%, #1a1a2e 100%);
+  background: #000000;
   position: relative;
   overflow-x: hidden;
   /* Dan 2026-08-20: was a hardcoded 80px against a bar that measures 74px and
@@ -105,7 +105,7 @@
 }
 
 .club-home__vip-badge {
-  background: linear-gradient(135deg, #2a2a3e, #1a1a2e);
+  background: linear-gradient(135deg, #1a1b23, #0f1015);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -209,7 +209,7 @@
   flex-shrink: 0;
   border-radius: 12px;
   overflow: hidden;
-  background: linear-gradient(135deg, #2a2a3e, #1a1a2e);
+  background: linear-gradient(135deg, #1a1b23, #0f1015);
   border: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
@@ -364,7 +364,7 @@
 }
 
 .bbj-amount {
-  background: linear-gradient(180deg, #3a3a4e 0%, #2a2a3e 100%);
+  background: linear-gradient(180deg, #3a3a4e 0%, #1a1b23 100%);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   padding: 0.3rem 0.65rem;
@@ -419,7 +419,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  background: linear-gradient(180deg, #2a2a3e 0%, #1a1a2e 100%);
+  background: linear-gradient(180deg, #1a1b23 0%, #0f1015 100%);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -960,7 +960,7 @@
 .table-card {
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, #2a2a3e 0%, #1a1a2e 100%);
+  background: linear-gradient(180deg, #1a1b23 0%, #0f1015 100%);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1336,6 +1336,7 @@
 
 /* P4-1: Ambient Background Particles */
 .club-home::before {
+  display: none;
   content: '';
   position: fixed;
   inset: 0;

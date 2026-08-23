@@ -29,41 +29,70 @@ const DAN = {
   use_real_name: false,
 };
 
-describe('the Marcus Chen bug', () => {
-  it('never calls Dan "Marcus Chen"', () => {
-    expect(playerDisplayName(DAN)).not.toBe('Marcus Chen');
+describe("the Marcus Chen bug — a horse's name on a person", () => {
+  it('never calls Dan "Marcus Chen", on either surface', () => {
+    expect(playerDisplayName(DAN, 'arena')).not.toBe('Marcus Chen');
+    expect(playerDisplayName(DAN, 'social')).not.toBe('Marcus Chen');
   });
 
-  it('honours his stated preference, which is his full name', () => {
-    expect(playerDisplayName(DAN)).toBe('Dan Bekavac');
+  it('is KingFish in the Club Arena', () => {
+    // Dan 2026-08-23: "IM DAN BEKAVAC ON SOCIAL AND KINGFISH IN THE CLUB ARENA."
+    expect(playerDisplayName(DAN, 'arena')).toBe('KingFish');
   });
 
-  it('falls to his handle, not to display_name, when no preference is set', () => {
-    // The ordering that matters: a name the player TYPED beats a column nobody
-    // owns. Without this, clearing the preference reintroduces the bug.
-    const noPref = { ...DAN, display_name_preference: null };
-    expect(playerDisplayName(noPref)).toBe('KingFish');
+  it('is Dan Bekavac on social', () => {
+    expect(playerDisplayName(DAN, 'social')).toBe('Dan Bekavac');
   });
 
-  it('still avoids display_name even with no preference and no alias', () => {
-    const bare = { ...DAN, display_name_preference: null, alias: null };
-    expect(playerDisplayName(bare)).toBe('kingfish');
+  it('defaults to the arena answer when no context is given', () => {
+    /* This repo IS the Club Arena, so a forgetful caller gets the pseudonymous
+       name. Being wrong in that direction leaks nothing. */
+    expect(playerDisplayName(DAN)).toBe('KingFish');
   });
 });
 
-describe('preference resolution', () => {
-  it('reads each preference value', () => {
-    expect(playerDisplayName({ ...DAN, display_name_preference: 'alias' })).toBe('KingFish');
-    expect(playerDisplayName({ ...DAN, display_name_preference: 'username' })).toBe('kingfish');
-    expect(playerDisplayName({ ...DAN, display_name_preference: 'real_name' })).toBe('Dan Bekavac');
-    expect(playerDisplayName({ ...DAN, display_name_preference: 'display_name' })).toBe(
-      'Marcus Chen'
+describe('the arena never shows a real name', () => {
+  it('ignores a full_name preference at the table', () => {
+    /* Dan's row literally has display_name_preference = full_name. Honouring it
+       in the arena is how "Dan Bekavac" would end up printed beside a stack. */
+    expect(playerDisplayName({ ...DAN, display_name_preference: 'full_name' }, 'arena')).toBe(
+      'KingFish'
     );
   });
 
-  it('ignores a preference pointing at an empty column rather than rendering blank', () => {
-    /* A player who chose `full_name` and then never set one must still get a
-       name. Returning '' here would put an empty label on the card. */
+  it('ignores the legacy use_real_name boolean at the table', () => {
+    expect(playerDisplayName({ ...DAN, use_real_name: true }, 'arena')).toBe('KingFish');
+  });
+
+  it('never returns the real name in the arena, for any profile shape', () => {
+    const shapes = [
+      DAN,
+      { ...DAN, alias: null },
+      { ...DAN, display_name_preference: 'real_name', use_real_name: true },
+      { ...DAN, display_name: null },
+    ];
+    for (const s of shapes) {
+      expect(playerDisplayName(s, 'arena')).not.toBe('Dan Bekavac');
+    }
+  });
+
+  it('falls to the username when there is no alias', () => {
+    expect(playerDisplayName({ ...DAN, alias: null }, 'arena')).toBe('kingfish');
+  });
+});
+
+describe('social honours what the player asked for', () => {
+  it('shows the handle when they have not opted into their real name', () => {
+    const private_ = { ...DAN, display_name_preference: null, use_real_name: false };
+    expect(playerDisplayName(private_, 'social')).toBe('KingFish');
+  });
+
+  it('honours the legacy boolean when no preference is set', () => {
+    const legacy = { ...DAN, display_name_preference: null, use_real_name: true };
+    expect(playerDisplayName(legacy, 'social')).toBe('Dan Bekavac');
+  });
+
+  it('does not render blank when they chose a real name they never set', () => {
     const noReal = {
       username: 'shortstack',
       display_name_preference: 'full_name',
@@ -71,25 +100,31 @@ describe('preference resolution', () => {
       first_name: null,
       last_name: null,
     };
-    expect(playerDisplayName(noReal)).toBe('shortstack');
+    expect(playerDisplayName(noReal, 'social')).toBe('shortstack');
   });
+});
 
-  it('honours the older use_real_name boolean when no preference is set', () => {
-    const legacy = { ...DAN, display_name_preference: null, use_real_name: true };
-    expect(playerDisplayName(legacy)).toBe('Dan Bekavac');
-  });
+describe('display_name is last, everywhere', () => {
+  it('is only reached when nothing a player chose exists', () => {
+    /* It is the column that was found holding a horse's name on a human
+       account. It may still be the only thing present on a legacy row, so it
+       stays as a last resort - and nothing more. */
+    const onlyDisplay = { display_name: 'Legacy Person' };
+    expect(playerDisplayName(onlyDisplay, 'arena')).toBe('Legacy Person');
+    expect(playerDisplayName(onlyDisplay, 'social')).toBe('Legacy Person');
 
-  it('does not let use_real_name win over an explicit preference', () => {
-    const conflict = { ...DAN, display_name_preference: 'alias', use_real_name: true };
-    expect(playerDisplayName(conflict)).toBe('KingFish');
+    const hasHandle = { display_name: 'Legacy Person', username: 'realhandle' };
+    expect(playerDisplayName(hasHandle, 'arena')).toBe('realhandle');
   });
 });
 
 describe('never renders nothing', () => {
   it('handles null, undefined and an empty profile', () => {
-    expect(playerDisplayName(null)).toBe('Player');
-    expect(playerDisplayName(undefined)).toBe('Player');
-    expect(playerDisplayName({})).toBe('Player');
+    for (const ctx of ['arena', 'social'] as const) {
+      expect(playerDisplayName(null, ctx)).toBe('Player');
+      expect(playerDisplayName(undefined, ctx)).toBe('Player');
+      expect(playerDisplayName({}, ctx)).toBe('Player');
+    }
   });
 
   it('treats whitespace-only columns as absent', () => {
@@ -111,10 +146,6 @@ describe('never renders nothing', () => {
 
 describe('the query contract', () => {
   it('names every column the resolver reads', () => {
-    /* A resolver is only as good as the SELECT that feeds it. Selecting
-       `username, display_name` and then asking for the preference silently
-       returns undefined and falls through - which looks exactly like the bug
-       this file exists to prevent. */
     for (const col of [
       'username',
       'display_name',

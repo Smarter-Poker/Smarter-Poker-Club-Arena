@@ -28,16 +28,27 @@
  * player who has chosen how to be addressed should not be overruled by
  * whichever column a given screen happened to grab.
  *
- * PRECEDENCE
- *   1. display_name_preference, when the field it names actually holds a value
- *   2. use_real_name -> the real name, else the handle
- *   3. alias -> username -> display_name -> full_name, first non-blank
- *   4. 'Player'
+ * CONTEXT DECIDES, 2026-08-23
  *
- * `display_name` sits deliberately LOW. It is the one column in this table with
- * no clear owner: some rows have a real chosen name in it, others (like Dan's)
- * carry seed data nobody set. Anything the player explicitly typed or picked
- * outranks it.
+ * Dan: "IM DAN BEKAVAC ON SOCIAL AND KINGFISH IN THE CLUB ARENA. NOTHING ELSE."
+ *
+ * So a player has TWO names and the surface picks, rather than one name fought
+ * over by five columns:
+ *
+ *   arena  - the handle. alias -> username. A real name is NEVER shown here,
+ *            whatever the profile says. That is not only Dan's preference: a
+ *            poker table is a pseudonymous space, and printing somebody's legal
+ *            name next to their stack is a privacy leak nobody asked for.
+ *   social - the person. The real name IF they allow it, else the handle.
+ *
+ * `display_name` is last in both. It is the one column here with no clear
+ * owner - and on 2026-08-23 it was found holding "Marcus Chen", the name of a
+ * row in ai_horses, on a real human account. A column that can carry an AI
+ * player's identity onto a person is not a column to trust first.
+ *
+ * The database now refuses that write as well: see the trigger
+ * trg_reject_horse_name_on_human, added in
+ * supabase/migrations/*_strip_horse_names_from_human_profiles.sql.
  */
 
 export interface NameableProfile {
@@ -52,6 +63,15 @@ export interface NameableProfile {
 }
 
 const FALLBACK = 'Player';
+
+/**
+ * Which surface is asking.
+ *
+ * Defaults to 'arena' everywhere in THIS repo, because this repo IS the Club
+ * Arena - a caller that forgets to pass a context gets the pseudonymous answer,
+ * which is the safe direction to be wrong in.
+ */
+export type NameContext = 'arena' | 'social';
 
 /** Trim, and treat blank / whitespace-only as absent. */
 function clean(v: unknown): string | null {
@@ -75,38 +95,36 @@ export function handleName(p: NameableProfile | null | undefined): string | null
   return clean(p.alias) || clean(p.username) || null;
 }
 
+/** True when the player has asked to be shown by their real name on social. */
+function wantsRealName(p: NameableProfile): boolean {
+  const pref = clean(p.display_name_preference);
+  if (pref) return pref === 'full_name' || pref === 'real_name';
+  return p.use_real_name === true;
+}
+
 /**
- * What to call this player, everywhere.
+ * What to call this player on a given surface.
  *
- * Never returns an empty string, so a caller can render it directly without
- * its own `|| 'Player'` - which is exactly how the divergence started.
+ * Never returns an empty string, so a caller can render it directly without its
+ * own `|| 'Player'` - which is exactly how the divergence started.
  */
-export function playerDisplayName(p: NameableProfile | null | undefined): string {
+export function playerDisplayName(
+  p: NameableProfile | null | undefined,
+  context: NameContext = 'arena'
+): string {
   if (!p) return FALLBACK;
 
-  /* 1. An explicit preference wins, but only if the column it points at
-        actually holds something. A preference of `full_name` on a profile with
-        no name set must not render blank. */
-  const pref = clean(p.display_name_preference);
-  if (pref) {
-    const byPref: Record<string, string | null> = {
-      full_name: realName(p),
-      real_name: realName(p),
-      alias: clean(p.alias),
-      username: clean(p.username),
-      display_name: clean(p.display_name),
-    };
-    const chosen = byPref[pref];
-    if (chosen) return chosen;
+  if (context === 'arena') {
+    /* Handle only. Deliberately ignores display_name_preference: a player who
+       set "full name" for their social profile has not thereby asked for their
+       legal name to appear at a poker table. */
+    return handleName(p) || clean(p.display_name) || FALLBACK;
   }
 
-  // 2. The older boolean, still set on plenty of rows.
-  if (p.use_real_name === true) {
+  if (wantsRealName(p)) {
     const real = realName(p);
-    if (real) return real;
+    if (real) return real; // ...but never render blank if they never set one
   }
-
-  // 3. What the player typed, then what they were assigned.
   return handleName(p) || clean(p.display_name) || realName(p) || FALLBACK;
 }
 

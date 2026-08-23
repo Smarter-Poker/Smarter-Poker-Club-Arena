@@ -67,9 +67,14 @@ describe('the reserve opens, like every other wallet', () => {
     expect(modal).toMatch(/inbound \? '\+' : '-'/);
   });
 
-  it('says something useful when the ledger is empty', () => {
+  it('says something useful when the ledger is empty, in Title Case', () => {
     expect(modal).toMatch(/reserveLedger\.length === 0/);
-    expect(modal).toMatch(/Nothing has moved through this wallet yet/);
+    // Dan 2026-08-21, binding: the first letter of every word is capitalised on
+    // every forward-facing page. scripts/ci/check-title-case.mjs enforces it in
+    // the pre-push hook - it caught this very string written in sentence case -
+    // so the assertion pins the cased form rather than the words alone.
+    expect(modal).toMatch(/Nothing Has Moved Through This Wallet Yet/);
+    expect(modal).not.toMatch(/Nothing has moved through this wallet yet/);
   });
 });
 

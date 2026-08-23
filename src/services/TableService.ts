@@ -931,7 +931,16 @@ class TableService {
   }
 
   /**
-   * Get seated players for a table (admin view)
+   * Get seated players for a table (admin view).
+   *
+   * This returned 400 on every call. Two independent faults, the second hidden
+   * behind the first:
+   *   1. PGRST200 — `table_seats.user_id` had no FK to profiles, so the embed
+   *      could not resolve. Added 2026-08-22 as fk_table_seats_user_id_profiles.
+   *   2. 42703 — there is no `created_at` on table_seats. The column is
+   *      `joined_at`. Only visible once the embed started resolving.
+   * `if (error) { reportError; return [] }` meant the admin seat list was
+   * simply always empty.
    */
   async getSeatedPlayers(tableId: string) {
     const { data, error } = await supabase
@@ -941,7 +950,7 @@ class TableService {
                 user_id,
                 seat_number,
                 stack,
-                created_at,
+                joined_at,
                 profiles(
                     display_name,
                     username,

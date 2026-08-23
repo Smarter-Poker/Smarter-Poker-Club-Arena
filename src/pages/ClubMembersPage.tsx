@@ -275,8 +275,17 @@ export default function ClubMembersPage() {
       /* INSERT/DELETE only. An UPDATE on club_members is nearly always a
          chip_balance tick, and refetching on those is the auto-refresh PR #508
          removed. A row appearing or leaving genuinely changes the roster. */
-      const kind = (payload as { eventType?: string } | null)?.eventType;
-      if (kind === 'INSERT' || kind === 'DELETE') refresh();
+      const p = payload as { eventType?: string; new?: { status?: string } } | null;
+      const kind = p?.eventType;
+      if (kind === 'INSERT' || kind === 'DELETE') {
+        refresh();
+        return;
+      }
+      /* Carried over from main: banning or suspending someone is an UPDATE, and
+         they must leave the roster at once rather than linger until the next
+         structural event. This is the ONLY UPDATE worth a refetch. */
+      const status = p?.new?.status;
+      if (kind === 'UPDATE' && (status === 'banned' || status === 'suspended')) refresh();
     },
     enabled: !!resolvedClubId,
   });

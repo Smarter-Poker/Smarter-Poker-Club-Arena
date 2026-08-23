@@ -678,6 +678,7 @@ export default function SettlementDashboardPage() {
               right: '-10%',
               width: 200,
               height: 200,
+              maxWidth: '100%',
               background: 'radial-gradient(circle, rgba(0,212,255,0.1) 0%, transparent 70%)',
               borderRadius: '50%',
               pointerEvents: 'none',

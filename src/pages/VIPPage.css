@@ -410,3 +410,15 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* E2E 2026-08-23: icon + count + label + button overflowed a 360px viewport
+   (button measured right:440). Let the row wrap; the button takes a full row. */
+@media (max-width: 480px) {
+  .diamond-balance {
+    flex-wrap: wrap;
+  }
+  .diamond-buy-btn {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+}

@@ -124,9 +124,20 @@
   }
 
   .analytics-summary {
-    grid-template-columns: repeat(2, 1fr);
+    /* E2E 2026-08-23: bare 1fr kept the cards at the big values' min-content
+       width and the grid clipped at 360px. minmax(0,1fr) lets cards shrink. */
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
     margin-bottom: 20px;
+  }
+
+  .summary-card {
+    min-width: 0;
+  }
+
+  .summary-card .value {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .summary-card {

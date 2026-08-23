@@ -175,10 +175,14 @@
   display: flex;
   gap: 6px;
   margin: 10px 14px 0;
+  /* E2E 2026-08-23: three cells' min-content overflowed a 390px viewport
+     (cell measured right:403). Wrap instead of clipping. */
+  flex-wrap: wrap;
 }
 
 .stripCell {
-  flex: 1;
+  flex: 1 1 100px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 3px;

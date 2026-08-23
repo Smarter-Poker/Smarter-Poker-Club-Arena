@@ -37,7 +37,48 @@ afterEach(() => exitSpy.mockRestore());
 
 const load = async () => await import('./leadership.js');
 
-describe('fail open — never leave the fleet unowned', () => {
+describe('a standby must NOT promote itself when it cannot reach the database', () => {
+  /**
+   * "Always fail to leader" is wrong, and dangerously so, because claimTable()
+   * fails open too:
+   *
+   *   outage -> standby cannot reach the RPC -> promotes itself
+   *          -> claimTable() also answers true -> TWO engines on one table.
+   *
+   * That is the corruption the leases exist to prevent, manufactured on every
+   * outage. Live evidence it is not hypothetical: with the engine up 48
+   * minutes, engine_table_leases had ZERO rows heartbeated in the last 45
+   * seconds -- the lease RPCs were timing out while the engine ran perfectly.
+   */
+  it('holds standby through an RPC error', async () => {
+    rpc.mockResolvedValue(refused);
+    const { renewLeadership, isLeader } = await load();
+    expect(await renewLeadership()).toBe('standby');
+
+    rpc.mockResolvedValue({ data: null, error: { message: 'fetch failed' } });
+    expect(await renewLeadership()).toBe('standby');
+    expect(isLeader()).toBe(false);
+  });
+
+  it('holds standby through a thrown RPC', async () => {
+    rpc.mockResolvedValue(refused);
+    const { renewLeadership } = await load();
+    await renewLeadership();
+    rpc.mockRejectedValue(new Error('ETIMEDOUT'));
+    expect(await renewLeadership()).toBe('standby');
+  });
+
+  it('does not exit when it merely cannot ask — it was never the leader', async () => {
+    rpc.mockResolvedValue(refused);
+    const { renewLeadership } = await load();
+    await renewLeadership();
+    rpc.mockRejectedValue(new Error('down'));
+    await renewLeadership();
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('a leader keeps leading when it cannot reach the database', () => {
   it('leads when the RPC errors', async () => {
     rpc.mockResolvedValue({ data: null, error: { message: 'fetch failed' } });
     const { renewLeadership, isLeader } = await load();
@@ -55,6 +96,15 @@ describe('fail open — never leave the fleet unowned', () => {
     rpc.mockResolvedValue({ data: [], error: null });
     const { renewLeadership } = await load();
     await expect(renewLeadership()).resolves.toBe('leader');
+  });
+
+  it('a lone instance in an outage behaves exactly as it does today', async () => {
+    // Boot default is 'leader', so a single container through a database
+    // outage keeps dealing -- which is the behaviour in production right now.
+    rpc.mockRejectedValue(new Error('down'));
+    const { renewLeadership, isLeader } = await load();
+    expect(await renewLeadership()).toBe('leader');
+    expect(isLeader()).toBe(true);
   });
 });
 

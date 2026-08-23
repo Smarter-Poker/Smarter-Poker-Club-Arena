@@ -38,10 +38,26 @@
  * ── FAIL-OPEN, LIKE EVERY OTHER LEASE HERE ──────────────────────────────────
  *
  * A leadership check gates whether ANY table deals, so a bug here could stop
- * the platform outright. Therefore, on any RPC error the answer is "carry on
- * as leader". A database blip must never leave the fleet with nobody running
- * it -- and the worst case of being wrong is the state we are in today anyway,
- * one instance doing everything.
+ * the platform outright. But "always fail to leader" is WRONG, and dangerously
+ * so, because the table lease fails open too:
+ *
+ *   database outage -> standby cannot reach the RPC -> it promotes itself
+ *                   -> claimTable() also fails open and answers true
+ *                   -> TWO engines dealing the same table.
+ *
+ * That is the exact corruption the leases exist to prevent, and a fail-open
+ * standby would manufacture it during every outage. Live evidence this is not
+ * hypothetical: with the engine up 48 minutes, `engine_table_leases` had ZERO
+ * rows heartbeated in the last 45 seconds -- the lease RPCs were failing on
+ * database timeouts while the engine ran perfectly.
+ *
+ * So the rule is RETAIN THE CURRENT ROLE on any error:
+ *
+ *   leader,  cannot ask -> stay leader   (never stop the platform)
+ *   standby, cannot ask -> stay standby  (never create a second leader)
+ *
+ * The boot default is 'leader', so a single instance during an outage behaves
+ * exactly as it does today.
  */
 
 import { supabase } from './supabase/client.js';
@@ -95,10 +111,10 @@ export async function renewLeadership(): Promise<EngineRole> {
     if (error) {
       errors++;
       if (errors <= 3) {
-        console.warn(`[leadership] claim failed (${error.message}) — carrying on as leader`);
+        console.warn(`[leadership] claim failed (${error.message}) — holding role '${role}'`);
       }
-      // Fail open: nobody running the fleet is the worst outcome available.
-      role = 'leader';
+      // Retain, never assume. A standby that promotes itself because it cannot
+      // reach the database is how two engines end up on one table.
       return role;
     }
     const row = (
@@ -141,9 +157,10 @@ export async function renewLeadership(): Promise<EngineRole> {
   } catch (err) {
     errors++;
     if (errors <= 3) {
-      console.warn(`[leadership] claim threw (${(err as Error)?.message}) — carrying on as leader`);
+      console.warn(
+        `[leadership] claim threw (${(err as Error)?.message}) — holding role '${role}'`
+      );
     }
-    role = 'leader';
     return role;
   }
 }

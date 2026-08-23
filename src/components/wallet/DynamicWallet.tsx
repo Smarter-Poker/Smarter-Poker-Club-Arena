@@ -768,7 +768,7 @@ export default function DynamicWallet({
       label: 'Club Bank',
       icon: 'bank',
       value: animClubBank,
-      hint: onOpenClubBank ? 'Tap For The Club Bank Cashier' : undefined,
+      hint: undefined,
       onOpen: onOpenClubBank,
     },
     spins_wallet: {

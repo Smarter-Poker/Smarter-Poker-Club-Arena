@@ -13,7 +13,7 @@ import './HandHistoryPanel.css';
 export interface HandHistoryAction {
   playerName: string;
   playerId: string;
-  action: 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'allin';
+  action: 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'allin' | 'discard';
   amount?: number;
 }
 
@@ -80,6 +80,8 @@ function getActionColor(action: string): string {
       return '#f59e0b';
     case 'raise':
       return '#f59e0b';
+    case 'discard':
+      return '#94a3b8';
     case 'allin':
       return '#7c3aed';
     default:

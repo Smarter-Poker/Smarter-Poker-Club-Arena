@@ -68,7 +68,10 @@ function baseHand(over: Record<string, unknown> = {}) {
       { street: 'preflop', player_id: VILLAIN, action: 'call', amount: 6 },
       { street: 'flop', player_id: VILLAIN, action: 'check', amount: 0 },
       { street: 'flop', player_id: HERO, action: 'bet', amount: 10 },
-      { street: 'river', player_id: HERO, action: 'all-in', amount: 60 },
+      // `all_in` is what the engine stores. This fixture said 'all-in', a
+      // spelling nothing produces, so the test agreed with the buggy adapter
+      // about data that does not exist and the real defect survived both.
+      { street: 'river', player_id: HERO, action: 'all_in', amount: 60 },
     ],
     ...over,
   } as never;
@@ -116,7 +119,8 @@ describe('winners', () => {
     const hand = baseHand();
     (hand as never as { players: { is_winner: boolean; result: number }[] }).players[1].is_winner =
       true;
-    (hand as never as { players: { is_winner: boolean; result: number }[] }).players[1].result = 125;
+    (hand as never as { players: { is_winner: boolean; result: number }[] }).players[1].result =
+      125;
     const w = adaptServiceHandToPanel(hand, HERO).winners;
     expect(w).toHaveLength(2);
   });
@@ -169,10 +173,8 @@ describe('the board is sliced back into the streets that revealed it', () => {
 });
 
 describe('actions', () => {
-  it("renames the service's 'all-in' to the panel's 'allin'", () => {
-    const river = adaptServiceHandToPanel(baseHand(), HERO).streets.find(
-      (s) => s.name === 'river'
-    );
+  it("renames the engine's 'all_in' to the panel's 'allin'", () => {
+    const river = adaptServiceHandToPanel(baseHand(), HERO).streets.find((s) => s.name === 'river');
     expect(river?.actions[0].action).toBe('allin');
   });
 

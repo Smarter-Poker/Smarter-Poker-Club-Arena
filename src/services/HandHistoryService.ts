@@ -36,10 +36,27 @@ export interface HandPlayer {
 
 export interface HandAction {
   player_id: string;
-  action: 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all-in';
+  /* These are the values the ENGINE STORES, verified in production over 11.8M
+     action rows on 2026-08-23. This union previously read `'all-in'` while
+     every row says `all_in`, and the mapper below cast straight through it, so
+     the type was a lie the compiler happily enforced against nobody: anyone
+     writing `a.action === 'all-in'` got silence and a branch that never ran.
+     `discard` (74,631 rows, draw and pineapple games) was missing outright. */
+  action: 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | 'discard';
   amount?: number;
-  street: 'preflop' | 'flop' | 'turn' | 'river';
+  /** Stored as `stage`. `pineapple_discard` is a real street here. */
+  street: 'preflop' | 'flop' | 'turn' | 'river' | 'pineapple_discard';
   timestamp: number;
+}
+
+/** One winner of one pot, as stored. */
+export interface HandWinner {
+  user_id: string;
+  /** Chips taken from the pot. NOT the player's net result. */
+  amount: number;
+  /** Potindex 0 is the main pot; higher indices are side pots. */
+  pot_index: number;
+  hand_name?: string;
 }
 
 export interface HandRecord {
@@ -57,6 +74,11 @@ export interface HandRecord {
   community_cards2?: Card[];
   players: HandPlayer[];
   actions: HandAction[];
+  /* Real per-winner amounts. Consumers used to reconstruct these by dividing
+     main_pot by the number of winners, which is wrong on every split pot and
+     on every hand with a side pot — and it was presented to the recipient of a
+     shared hand as fact. The row has always carried the true figure. */
+  winners: HandWinner[];
   game_type: string;
   stakes: string;
 }
@@ -83,7 +105,7 @@ class HandHistoryServiceClass {
     const { data, error } = await supabase
       .from('hand_history')
       .select(
-        'id, created_at, table_id, hand_number, pot_size, community_cards, community_cards2, players, actions, winners, game_variant, small_blind, big_blind, rake_amount'
+        'id, created_at, table_id, hand_number, pot_size, community_cards, community_cards2, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, hole_cards'
       )
       .eq('id', handId)
       .maybeSingle();
@@ -121,7 +143,7 @@ class HandHistoryServiceClass {
     const { data, error } = await supabase
       .from('hand_history')
       .select(
-        'id, created_at, table_id, hand_number, pot_size, community_cards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount'
+        'id, created_at, table_id, hand_number, pot_size, community_cards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, hole_cards'
       )
       .contains('players', containmentJson)
       .order('created_at', { ascending: false })
@@ -187,6 +209,14 @@ class HandHistoryServiceClass {
     const buttonSeat = (jsonbPlayers.find((p) => p?.isButton)?.seat as number | undefined) ?? 1;
     const playerCount = jsonbPlayers.length || 1;
 
+    /* The hand's hole cards live in their own JSONB column, keyed by user id:
+       { "<uuid>": [{ rank: 'A', suit: 'spades' }, ...] }. See the server's
+       handHistory.ts `hole_cards: holeCardsPayload`. */
+    const holeCardsByUser: Record<string, unknown[]> =
+      row && typeof (row as any).hole_cards === 'object' && (row as any).hole_cards
+        ? ((row as any).hole_cards as Record<string, unknown[]>)
+        : {};
+
     const players: HandPlayer[] = jsonbPlayers.map((p: any): HandPlayer => {
       const uid: string = p?.userId || '';
       const profile = profileMap.get(uid);
@@ -199,7 +229,21 @@ class HandHistoryServiceClass {
         avatar_url: profile?.avatar_url || null,
         position: this.getPositionName(Number(p?.seat) || 0, buttonSeat, playerCount),
         // Only reveal hole cards if it's the requesting user OR cards are already exposed in the JSONB
-        hole_cards: Array.isArray(p?.cards) && (isMe || isWinner) ? p.cards : [],
+        /* 2026-08-23: this read `players[].cards`, which is `[]` on every row
+           in production — the engine writes hole cards to a SEPARATE
+           `hole_cards` column, an object keyed by user id, and that column was
+           not even in the select above. So no hand in history has ever shown a
+           hole card to anybody; the showdown row rendered two grey backs.
+           Prefer the real column, keep the old field as the fallback, and hold
+           the same reveal rule (your own hand, or a hand that got shown). */
+        hole_cards:
+          isMe || isWinner
+            ? Array.isArray(holeCardsByUser[uid]) && holeCardsByUser[uid].length
+              ? holeCardsByUser[uid]
+              : Array.isArray(p?.cards)
+                ? p.cards
+                : []
+            : [],
         final_hand: jsonbWinners.find((w) => w?.userId === uid)?.hand?.name || undefined,
         result: buildResult(uid),
         is_winner: isWinner,
@@ -216,6 +260,13 @@ class HandHistoryServiceClass {
           typeof a?.timestamp === 'number' ? a.timestamp : new Date(row.created_at).getTime(),
       })
     );
+
+    const winners: HandWinner[] = jsonbWinners.map((w: any) => ({
+      user_id: w?.userId || '',
+      amount: typeof w?.amount === 'number' ? w.amount : Number(w?.amount) || 0,
+      pot_index: typeof w?.potIndex === 'number' ? w.potIndex : 0,
+      hand_name: typeof w?.hand?.name === 'string' ? w.hand.name : undefined,
+    }));
 
     const sb = Number(row.small_blind) || 0;
     const bb = Number(row.big_blind) || 0;
@@ -237,6 +288,7 @@ class HandHistoryServiceClass {
         : [],
       players,
       actions,
+      winners,
       game_type: (row.game_variant || 'nlh').toUpperCase(),
       stakes,
     };

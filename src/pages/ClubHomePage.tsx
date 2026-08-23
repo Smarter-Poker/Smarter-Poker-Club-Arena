@@ -253,7 +253,7 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'stakes_high', label: 'Stakes: High To Low' },
   { key: 'stakes_low', label: 'Stakes: Low To High' },
   { key: 'players', label: 'Most Players' },
-  { key: 'starting_soon', label: 'Starting Soon / Late Reg' },
+  { key: 'starting_soon', label: 'Starting Time' },
 ];
 
 /** Which tournament tab a GameType maps onto, for the shared variant matcher. */

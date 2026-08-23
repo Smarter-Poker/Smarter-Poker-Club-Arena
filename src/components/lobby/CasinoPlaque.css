@@ -124,7 +124,8 @@
   letter-spacing: 0.03em;
 }
 .cplaque__stakes {
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
   font-size: 0.8125rem;
   font-weight: 600;
   color: #d6b25e; /* restrained gold */
@@ -200,7 +201,8 @@
 }
 .cplaque__medallion-detail {
   margin-top: 2px;
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
   font-size: 0.625rem;
   font-weight: 700;
   color: #d6b25e;
@@ -241,7 +243,8 @@
   gap: 1px;
 }
 .cplaque__join-figure b {
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
   font-size: 1rem;
   font-weight: 700;
   color: #f0f2f5;

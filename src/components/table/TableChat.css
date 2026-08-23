@@ -146,6 +146,43 @@
   background: rgba(255, 255, 255, 0.2);
 }
 
+/* Dan 2026-08-23: the header's only control was the 24px "▾" above, which
+   reads as minimize. This is the X that closes chat. 32px, not 24px: the
+   header sits over a live table on a phone, and 24px is under the 44px Apple /
+   48dp Material minimum — part of why the old control was reported as missing
+   is that it was too small to hit while a hand was running. 32px plus the 10px
+   header padding gives a ~44px effective target without making the box taller. */
+.table-chat__close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 6px;
+  color: #c9d1d9;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.table-chat__close:hover {
+  background: rgba(237, 66, 69, 0.28);
+  color: #ffffff;
+}
+
+.table-chat__close:active {
+  transform: scale(0.92);
+}
+
+.table-chat__close:focus-visible {
+  outline: 2px solid rgba(24, 119, 242, 0.9);
+  outline-offset: 2px;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    MESSAGES
    ═══════════════════════════════════════════════════════════════════════════════ */

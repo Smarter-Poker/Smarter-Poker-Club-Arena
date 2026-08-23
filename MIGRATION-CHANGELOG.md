@@ -7,6 +7,61 @@
 
 ---
 
+## Cowork session 2026-08-23 (11e) — THE SCHEDULE WAS REAL, THE LOBBY WAS EMPTY
+
+Dan: "there are currently no mtt's built, scheduled or running in the union
+or inside any of the clubs... fix whatever is blocking this."
+
+Checked the board before touching code, and the schedules were not the
+problem. All 38 were active and every one had fired exactly on time: the
+Silent Assassin spawned 02:30 for its 03:00, Midnight Freeroll 01:30 for
+02:00, Night Owl 00:30 for 01:00. The DB held 6 running MTTs and 36
+completed in six hours.
+
+WHAT WAS ACTUALLY WRONG: an event only EXISTED for the thirty minutes before
+it started. Add a field that fills and a game that plays out fast, and a
+player looking at the lobby at any given moment saw TWO joinable MTTs out of
+thirty-eight schedules — one of them 33 hours stale, the other a day away.
+The schedule was real and the lobby was empty, which to a player is the same
+thing. Club JAQK and SHARK CLUB were the same story from further away: the
+union scope resolves correctly for them (verified — 66 rows, 8 MTTs, zero
+private leakage), so they were seeing exactly the same two joinable games.
+
+THE FIX, in two halves that only work together:
+
+1. The look-ahead goes from 30 minutes to a FULL DAY, so tomorrow's card is
+   on the board tonight with its buy-ins, guarantees and start times and a
+   player can register whenever they like. That fits inside the lobby's
+   existing 72-hour display window, and spawnAheadMinutes still overrides per
+   schedule (the Sunday Major keeps its week so satellites resolve it).
+
+2. Horses are seeded only when the start is within FIFTEEN MINUTES. Seeding
+   at spawn was harmless at half an hour and harmful at a day: a horse
+   registered into tomorrow's event cannot deal a cash table or fill a spin
+   today, and it hands a full board to the humans the event is for. Events
+   now open EMPTY and stay open; GameServer's past-start top-up fills
+   whatever is short on the clock, the same mechanism that already rescues
+   every short field.
+
+One consequence had to be closed with it: a schedule with two start times
+(Hot Turbo runs 15:00 and 21:00) now has both instances due in the same
+poll, and the later collides with the earlier under
+uq_scheduled_tournament_one_live_per_name. Holding the spawn key there was
+right when a collision meant "this same instance already exists"; at a
+day's look-ahead it would burn the 21:00 game for the day. The claim is
+released so the poll retries and it spawns when the earlier one starts.
+
+Pinned by tests/unit/ScheduledTournamentService.test.ts (updated in the same
+change, per the never-push-a-red-test rule) and a new
+server/src/services/scheduledLookAhead.test.ts — 9 tests covering the day of
+look-ahead, the seed window, per-schedule override, and that spawn keys
+still dedupe identically from any clock.
+
+EXPECT AFTER DEPLOY: the next poll publishes roughly the next 24 hours of the
+Midway card at once — dozens of REGISTERING MTTs, visible in Midway and in
+both member clubs through the union scope, open and empty until their start
+time. Verify by counting joinable MTTs, not by reading logs.
+
 ## Cowork session 2026-08-23 (11d) — THE SEAT THAT DESTROYED THE CHIPS THAT BOUGHT IT, and the full stuck-row chain
 
 Same PR as 11b/11c. Two closing pieces: the root cause of 11c proved out

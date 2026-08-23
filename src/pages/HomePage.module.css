@@ -24,6 +24,7 @@
   justify-content: flex-start;
   position: relative;
   overflow: hidden;
+  padding-top: 48px;
   background:
     linear-gradient(
       180deg,

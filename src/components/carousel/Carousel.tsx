@@ -283,11 +283,9 @@ export function Carousel<T>({
    * centre card with peeking neighbours. Mobile-first means the small screen
    * gets the layout that works on it, not a scaled-down copy of the desktop.
    */
-  const NARROW_TRACK_PX = 620;
-  const effectiveVisible =
-    visibleCards && trackWidth > 0 && trackWidth < NARROW_TRACK_PX
-      ? Math.min(visibleCards, 1.6)
-      : visibleCards;
+  /* Dan 2026-08-23: The user explicitly requested all 3 cards to be shown on mobile,
+     so the narrow track override that reduced it to 1.6 cards has been removed. */
+  const effectiveVisible = visibleCards;
 
   /* Guarded at 1: a divisor below one would make a card WIDER than its own
      track, which is how a "make them bigger" tweak becomes overflow. */
@@ -299,7 +297,7 @@ export function Carousel<T>({
     itemWidth ??
     (trackWidth > 0
       ? effectiveVisible
-        ? Math.min(420, Math.max(190, trackWidth / spanDivisor))
+        ? Math.min(420, Math.max(120, trackWidth / spanDivisor))
         : Math.min(300, Math.max(200, trackWidth * 0.55))
       : 300);
   /* Adjacent centres sit `spacingRatio` of a card apart. Anything below

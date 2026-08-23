@@ -696,13 +696,9 @@
    ═══════════════════════════════════════════════════════════════════════ */
 
 .page {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 16px 12px 48px;
   color: #e2e8f0;
   text-transform: capitalize;
   font-family: 'Rajdhani', 'Exo 2', sans-serif;
-  min-height: 100dvh;
   position: relative;
   z-index: 1;
 }
@@ -989,7 +985,6 @@
   border-radius: 3px;
   box-shadow: 0 0 10px rgba(255, 123, 0, 0.5);
 }
-
 
 @media (max-width: 768px) {
   .container {

@@ -1334,7 +1334,7 @@
 @media (max-width: 480px) {
   .page {
     padding: 0.75rem;
-    padding-bottom: 80px;
+    padding-bottom: var(--bottom-nav-clearance, 74px);
   }
   .header {
     padding: 1rem;

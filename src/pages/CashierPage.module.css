@@ -4,13 +4,8 @@
    ═══════════════════════════════════════════════════════════════ */
 
 .page {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 20px 16px 120px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: #e4e6eb;
-  min-height: 100vh;
-  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
 }
 
 /* ═══ Wallet Header ═══ */
@@ -794,7 +789,6 @@
 /* ═══ Tablet ═══ */
 @media (max-width: 768px) {
   .page {
-    padding: 14px 12px 100px;
   }
 
   .card {
@@ -819,7 +813,6 @@
 /* ═══ Phone ═══ */
 @media (max-width: 480px) {
   .page {
-    padding: 10px 10px 90px;
   }
 
   .walletHeader {
@@ -890,7 +883,6 @@
 /* ═══ Small Phone ═══ */
 @media (max-width: 380px) {
   .page {
-    padding: 8px 8px 90px;
   }
 
   .tab {

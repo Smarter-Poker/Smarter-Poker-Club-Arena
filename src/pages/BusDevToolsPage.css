@@ -8,7 +8,7 @@
   background: #0a0e14;
   color: #e2e8f0;
   padding: 16px;
-  padding-bottom: 100px;
+  padding-bottom: var(--bottom-nav-clearance, 74px);
   font-family:
     'Inter',
     'SF Pro',

@@ -63,7 +63,29 @@ self.addEventListener('fetch', (event: FetchEvent) => {
     return;
   }
 
-  // Static assets: Cache first, fallback to network
+  // Navigation requests (HTML): Network only, fallback to offline page
+  // Ensures users always get the latest index.html on reload, avoiding white screens
+  // and stuck deployments.
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          // Cache successful responses in background
+          if (response.status === 200) {
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(request, responseClone);
+            });
+          }
+          return response;
+        })
+        .catch(() => caches.match('/offline.html') as Promise<Response>)
+    );
+    return;
+  }
+
+  // Static assets (JS/CSS/images): Cache first, fallback to network
+  // Safe because Vite hashes asset filenames, so old cached assets don't conflict.
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
       if (cachedResponse) {
@@ -88,10 +110,6 @@ self.addEventListener('fetch', (event: FetchEvent) => {
           return response;
         })
         .catch(() => {
-          // Ultimate fallback: serve offline page for navigation requests
-          if (request.mode === 'navigate') {
-            return caches.match('/offline.html') as Promise<Response>;
-          }
           return new Response('', { status: 408, statusText: 'Offline' });
         });
     })

@@ -4,11 +4,8 @@
  */
 
 .page {
-  min-height: 100vh;
-  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   color: #ecf0f1;
-  padding: var(--space-6) var(--space-4);
 }
 
 .header {
@@ -127,7 +124,6 @@
 /* Mobile Responsive */
 @media (max-width: 768px) {
   .page {
-    padding: var(--space-4) var(--space-3);
   }
 
   .header {

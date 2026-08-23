@@ -347,7 +347,18 @@ export function TournamentStartingTicker() {
     .join('        •        ');
 
   return (
-    <div className="mtt-ticker" role="status" aria-live="polite" style={{ top: headerBottom }}>
+    <div
+      className="mtt-ticker"
+      role="status"
+      aria-live="polite"
+      /* Dan 2026-08-23: "the ticker is way too thick on mobile." The strip
+         pays `padding-top: env(safe-area-inset-top)` so it clears the notch
+         when it is the topmost element — but when it sits BELOW the header
+         (headerBottom > 0) the header has already paid that inset, and paying
+         it twice turned a 34px strip into a ~90px band on notched iPhones.
+         Only the strip that actually touches top: 0 owes the inset. */
+      style={{ top: headerBottom, paddingTop: headerBottom > 0 ? 0 : undefined }}
+    >
       <span className="mtt-ticker__flag">STARTING SOON</span>
 
       <button

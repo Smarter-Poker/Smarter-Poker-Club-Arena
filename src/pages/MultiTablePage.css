@@ -315,12 +315,31 @@
   }
 
   .tile-toggle-btn {
-    min-height: 36px;
-    min-width: 36px;
+    /* 2026-08-23: 36px was still under the 44px tap minimum */
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
   }
 
   .table-grid {
     grid-template-columns: 1fr;
+  }
+
+  /* 2026-08-23 mobile pass — tap targets only, layout untouched */
+  .multi-table-page__take-seat-btn,
+  .multi-table-page__quickjoin-row,
+  .multi-table-page__quickjoin-lobby,
+  .multi-table-page__lobby-back,
+  .multi-table-grid__action {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  /* raise presets sit 60px above the strip edge; 40px keeps them tappable
+     without colliding with the fold/call strip below them */
+  .multi-table-grid__raise {
+    min-height: 40px;
+    touch-action: manipulation;
   }
 }
 

@@ -180,7 +180,17 @@ export default function RakebackDashboard() {
   });
 
   return (
-    <div style={{ padding: '16px', maxWidth: '600px', margin: '0 auto', paddingBottom: '100px' }}>
+    <div
+      style={{
+        padding: '16px',
+        width: '100%',
+        maxWidth: '600px',
+        margin: '0 auto',
+        paddingBottom: '100px',
+        boxSizing: 'border-box',
+        overflowX: 'hidden',
+      }}
+    >
       {/* Header */}
       {loading ? (
         <PageSkeleton variant="stats" />
@@ -195,7 +205,9 @@ export default function RakebackDashboard() {
                 color: '#3b82f6',
                 cursor: 'pointer',
                 fontSize: '0.85rem',
-                padding: 0,
+                padding: '10px 10px 10px 0',
+                minHeight: '44px',
+                touchAction: 'manipulation',
                 marginBottom: '6px',
               }}
             >

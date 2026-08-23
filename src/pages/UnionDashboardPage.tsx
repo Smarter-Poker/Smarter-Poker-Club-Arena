@@ -874,7 +874,12 @@ export default function UnionDashboardPage() {
           >
             <div
               className="admin-card"
-              style={{ maxWidth: '380px', margin: '60px auto', padding: '20px' }}
+              style={{
+                maxWidth: '380px',
+                width: 'calc(100vw - 24px)',
+                margin: '60px auto',
+                padding: '20px',
+              }}
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="admin-card-title">Edit Commission - {editCommClub.name}</h3>
@@ -1413,8 +1418,8 @@ export default function UnionDashboardPage() {
                 <span>{rosterSearch ? 'No players match' : 'No players found'}</span>
               </div>
             ) : (
-              <div className="admin-table-wrap">
-                <table className="admin-table">
+              <div className="admin-table-scroll">
+                <table className="admin-data-table">
                   <thead>
                     <tr>
                       <th>Player</th>

@@ -652,6 +652,8 @@ export default function FinancialAdminHub() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '6px',
           fontSize: '0.7rem',
           color: 'rgba(255,255,255,0.35)',
         }}

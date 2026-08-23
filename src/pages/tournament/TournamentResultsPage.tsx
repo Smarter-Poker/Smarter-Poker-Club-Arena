@@ -336,7 +336,16 @@ export default function TournamentResultsPage() {
   };
 
   return (
-    <div className="tournament-details" style={{ padding: '16px', maxWidth: '100%' }}>
+    <div
+      className="tournament-details"
+      style={{
+        padding: '16px',
+        // inline padding shorthand was wiping the stylesheet's bottom-nav clearance
+        paddingBottom: 'var(--bottom-nav-clearance, 74px)',
+        maxWidth: '100%',
+        overflowX: 'hidden',
+      }}
+    >
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
         <button
@@ -347,6 +356,9 @@ export default function TournamentResultsPage() {
             color: '#10b981',
             fontSize: '20px',
             cursor: 'pointer',
+            minWidth: 44,
+            minHeight: 44,
+            touchAction: 'manipulation',
           }}
         >
           ←
@@ -364,6 +376,8 @@ export default function TournamentResultsPage() {
             border: 'none',
             fontSize: '12px',
             cursor: 'pointer',
+            minHeight: 44,
+            touchAction: 'manipulation',
             background: filter === 'all' ? '#10b981' : '#1e293b',
             color: filter === 'all' ? '#000' : '#94a3b8',
           }}
@@ -378,6 +392,8 @@ export default function TournamentResultsPage() {
             border: 'none',
             fontSize: '12px',
             cursor: 'pointer',
+            minHeight: 44,
+            touchAction: 'manipulation',
             background: filter === 'mine' ? '#10b981' : '#1e293b',
             color: filter === 'mine' ? '#000' : '#94a3b8',
           }}
@@ -406,6 +422,8 @@ export default function TournamentResultsPage() {
               border: 'none',
               fontSize: '11px',
               cursor: 'pointer',
+              minHeight: 44,
+              touchAction: 'manipulation',
               background: typeFilter === t ? '#3b82f6' : '#1e293b',
               color: typeFilter === t ? '#fff' : '#64748b',
             }}

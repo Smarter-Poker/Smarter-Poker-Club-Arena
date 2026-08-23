@@ -8,9 +8,12 @@
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   padding: 2rem;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
   background: linear-gradient(180deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
+  width: 100%;
   max-width: 1200px;
   margin: 0 auto;
+  overflow-x: hidden;
 }
 
 /* Loading & Error States */
@@ -758,6 +761,42 @@
 
   .scheduleGrid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: 1rem;
+    padding-bottom: max(70px, env(safe-area-inset-bottom));
+  }
+
+  .header h1 {
+    font-size: 1.25rem;
+  }
+
+  .actionBtn,
+  .addButton {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .tabNav {
+    scrollbar-width: none;
+  }
+
+  /* Tables become their own horizontal scrollers so the page never scrolls sideways */
+  .creditTable,
+  .payoutTable {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .creditTable th,
+  .creditTable td,
+  .payoutTable th,
+  .payoutTable td {
+    white-space: nowrap;
   }
 }
 

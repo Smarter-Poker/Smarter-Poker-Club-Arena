@@ -6,6 +6,10 @@
   max-width: 900px;
   margin: 0 auto;
   padding: 24px 16px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   color: #e0e0e0;
@@ -17,6 +21,7 @@
   align-items: center;
   gap: 16px;
   margin-bottom: 20px;
+  flex-wrap: wrap;
 }
 
 .alerts-header h2 {
@@ -30,6 +35,8 @@
   display: flex;
   gap: 10px;
   flex: 1;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .alert-stats .stat {
@@ -75,6 +82,13 @@
   display: flex;
   gap: 8px;
   margin-bottom: 20px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.filter-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .filter-tab {
@@ -87,6 +101,9 @@
   font-size: 0.85rem;
   font-weight: 500;
   transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+  touch-action: manipulation;
 }
 
 .filter-tab:hover {
@@ -199,6 +216,7 @@
   font-size: 0.78rem;
   color: #a0a0a0;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   margin: 6px 0 0 0;
   max-height: 200px;
 }
@@ -309,5 +327,24 @@
 
   .alert-meta {
     font-size: 0.68rem;
+  }
+
+  .filter-tab {
+    min-height: 44px;
+  }
+
+  .resolve-btn {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .alerts-header .refresh-btn {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+  }
+
+  .alerts-header h2 {
+    font-size: 1.1rem;
   }
 }

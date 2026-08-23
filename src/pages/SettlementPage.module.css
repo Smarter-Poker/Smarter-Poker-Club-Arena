@@ -9,8 +9,11 @@
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   padding: 2rem;
   background: linear-gradient(180deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
+  width: 100%;
   max-width: 1200px;
   margin: 0 auto;
+  overflow-x: hidden;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
 }
 
 /* Header */
@@ -27,6 +30,8 @@
   color: var(--text-muted);
   font-size: 0.9rem;
   cursor: pointer;
+  touch-action: manipulation;
+  min-height: 44px;
   transition: color 0.2s;
 }
 
@@ -176,6 +181,10 @@
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
+  touch-action: manipulation;
+  min-height: 44px;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all 0.2s;
 }
 
@@ -340,6 +349,11 @@
 /* Wire Table */
 .wiresSection {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.wireTable {
+  min-width: 560px; /* keep columns readable; the section scrolls, not the page */
 }
 
 .wireTable {
@@ -424,6 +438,12 @@
 /* Agent Payouts */
 .payoutsSection {
   padding: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.payoutTable {
+  min-width: 560px; /* keep columns readable; the section scrolls, not the page */
 }
 
 .payoutSummary {
@@ -558,6 +578,29 @@
   }
 }
 
+@media (max-width: 768px) {
+  .page {
+    padding: 12px;
+    padding-bottom: max(70px, env(safe-area-inset-bottom));
+  }
+
+  .header h1 {
+    font-size: 1.15rem;
+  }
+
+  .settlementSummary {
+    padding: 1rem;
+    gap: 1rem;
+  }
+
+  .wireTable th,
+  .wireTable td,
+  .payoutTable th,
+  .payoutTable td {
+    padding: 0.6rem;
+  }
+}
+
 @media (max-width: 600px) {
   .header {
     flex-wrap: wrap;
@@ -570,6 +613,11 @@
   .tabNav {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .tabNav::-webkit-scrollbar {
+    display: none;
   }
 }
 /* ═══════ PREMIUM ANIMATIONS ═══════ */

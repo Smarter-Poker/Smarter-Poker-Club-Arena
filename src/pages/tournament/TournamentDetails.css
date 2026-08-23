@@ -60,6 +60,7 @@
   padding: var(--space-2) var(--space-4);
   gap: var(--space-1);
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   background: rgba(0, 0, 0, 0.15);
 }
@@ -1016,6 +1017,38 @@
     padding-bottom: var(--bottom-nav-clearance, 74px);
   }
 
+  /* 2026-08-23 mobile pass: 44px tap targets */
+  .details-tabs .tab {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .details-header .back-btn,
+  .qr-btn {
+    min-width: 44px;
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .modal-close {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* keep the visual 20px dot but give it a 44px invisible tap zone */
+  .help-btn {
+    position: relative;
+  }
+  .help-btn::after {
+    content: '';
+    position: absolute;
+    inset: -12px;
+  }
+
+  .tournament-title h2 {
+    overflow-wrap: anywhere;
+  }
+
   .details-grid {
     grid-template-columns: 1fr;
   }
@@ -1039,6 +1072,12 @@
   .tournament-details {
     padding: 0.5rem;
     padding-bottom: var(--bottom-nav-clearance, 74px);
+  }
+
+  /* 3.5rem + 4px tracking could brush the card edges on 360px screens */
+  .countdown-display {
+    font-size: 2.5rem;
+    letter-spacing: 2px;
   }
 
   .quick-stats {

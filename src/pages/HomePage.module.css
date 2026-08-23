@@ -1633,6 +1633,9 @@
   justify-content: center;
   z-index: 1000;
   animation: fadeIn 0.2s ease-out;
+  /* Mobile-fit sweep 2026-08-23: side padding so the 320px-min modal never
+     touches the screen edge on narrow phones. */
+  padding: 16px;
 }
 
 @keyframes fadeIn {

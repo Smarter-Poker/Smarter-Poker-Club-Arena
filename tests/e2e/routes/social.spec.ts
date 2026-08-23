@@ -59,7 +59,9 @@ test.describe('Search & Discovery', () => {
 
 test.describe('Help & Support', () => {
     test('should show help page', async ({ page }) => {
-        await expectRoute(page, 'help', { expectText: 'Still need help?' });
+        /* 2026-08-23: 'Still need help?' never existed in HelpPage.tsx (see the
+           identical fix in routes/features.spec.ts). Verified in production. */
+        await expectRoute(page, 'help', { expectText: 'Help Center' });
     });
 });
 

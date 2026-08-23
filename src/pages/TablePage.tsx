@@ -4401,7 +4401,7 @@ export default function TablePage({
       const { data: table, error } = await supabase
         .from('tables')
         .select(
-          'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, action_time_seconds, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board'
+          'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings'
         )
         .eq('id', tableId)
         .maybeSingle();
@@ -4429,18 +4429,15 @@ export default function TablePage({
           lastBetAmounts: Array(table.max_players || 6).fill(0),
         }));
 
-        // The engine refuses toggleStraddle outright when the table has
-        // straddles turned off ('Straddles are not enabled at this table'), so
-        // the control must know the table setting or it offers players a switch
-        // that can only ever fail.
-        setTableStraddleEnabled(table.straddle_enabled === true);
+        const settings = (table.settings as any) || {};
+        setTableStraddleEnabled(settings.straddle_enabled === true);
         setBombPotRules(
-          (table as any).bomb_pot_enabled === true
+          settings.bomb_pot_enabled === true
             ? {
                 enabled: true,
-                frequency: Number((table as any).bomb_pot_frequency) || 0,
-                anteBB: Number((table as any).bomb_pot_ante_multiplier) || 0,
-                doubleBoard: (table as any).bomb_pot_double_board === true,
+                frequency: Number(settings.bomb_pot_frequency) || 0,
+                anteBB: Number(settings.bomb_pot_ante_bb || settings.bomb_pot_ante_multiplier) || 0,
+                doubleBoard: settings.bomb_pot_double_board === true,
               }
             : null
         );
@@ -4448,7 +4445,7 @@ export default function TablePage({
         // Store actual club_id for persistence and rake
         actualClubIdRef.current = table.club_id || '';
         setActualClubIdLoaded(true); // Signal observer chat permission check
-        setActionTimeSeconds(table.action_time_seconds || 15);
+        setActionTimeSeconds(settings.time_bank_seconds || settings.action_time_seconds || 15);
 
         // Fetch club name (and the union it belongs to) for the felt masthead.
         // Dan 2026-08-18: the union name must sit next to the club name when
@@ -9648,125 +9645,126 @@ export default function TablePage({
           ═══════════════════════════════════════════════════════════════════════ */}
       <TableHUD
         upperLeft={
-          <div className="hud-ul-column">
-            <TableMenu
-              isOpen={showTableMenu}
-              onClose={() => setShowTableMenu(false)}
-              onToggle={() => setShowTableMenu((prev) => !prev)}
-              position="top-left"
-              sections={[
-                {
-                  title: 'Quick Actions',
-                  actions: [
-                    {
-                      id: 'sitout',
-                      label: 'Sit Out',
-                      icon: <SitOutIcon />,
-                      onClick: () => void handleSitOut(),
-                    },
-                    ...(tableState.isTournament
-                      ? [
-                          {
-                            id: 'rebuy',
-                            label: 'Rebuy',
-                            icon: <RebuyIcon />,
-                            onClick: handleTournamentRebuy,
-                          },
-                          {
-                            id: 'addon',
-                            label: 'Add-On',
-                            icon: <AddOnIcon />,
-                            onClick: handleTournamentAddOn,
-                          },
-                        ]
-                      : [
-                          {
-                            id: 'rebuy',
-                            label: 'Add Chips',
-                            icon: <RebuyIcon />,
-                            onClick: () => setShowCashier(true),
-                          },
-                        ]),
-                    // AUTO-REBUY TOGGLE REMOVED 2026-08-20. It set React state and
-                    // a localStorage key and nothing else: `isAutoRebuyEnabled`
-                    // had no consumers anywhere in the repo, and no server code
-                    // reads `table_seats.auto_rebuy` either (see the note in
-                    // BuyInModal). The menu displayed a persistent "Auto-Rebuy:
-                    // ON" badge that changed nothing about how the table behaved.
-                  ],
-                },
-                {
-                  title: 'Table Info',
-                  actions: [
-                    {
-                      id: 'history',
-                      label: 'Hand History',
-                      icon: <HandHistoryIcon />,
-                      onClick: () => setShowHandReplay(true),
-                    },
-                    {
-                      id: 'leaderboard',
-                      label: 'Leaderboard',
-                      icon: <LeaderboardIcon />,
-                      onClick: () => setShowLeaderboard(true),
-                    },
-                    ...(!tableState.isTournament
-                      ? [
-                          {
-                            id: 'session-stats',
-                            label: 'Session Stats',
-                            icon: <SessionStatsIcon />,
-                            onClick: () => setShowSessionStats(true),
-                          },
-                        ]
-                      : []),
-                    // Bible V8 §11.1 — Settings accessible from BOTH table HUD menu AND hamburger menu
-                    {
-                      id: 'settings',
-                      label: 'Table Settings',
-                      icon: <HelpIcon />,
-                      onClick: () => setShowSettings(true),
-                    },
-                  ],
-                },
-                {
-                  title: 'Support',
-                  actions: [
-                    {
-                      id: 'help',
-                      label: 'Help & Rules',
-                      icon: <HelpIcon />,
-                      onClick: () => setShowGameRules(true),
-                    },
-                  ],
-                },
-                {
-                  actions: [
-                    {
-                      id: 'leave',
-                      label: 'Leave Table',
-                      icon: <LeaveTableIcon />,
-                      onClick: () => setShowLeaveConfirm(true),
-                      danger: true,
-                    },
-                  ],
-                },
-              ]}
-              tableName={tableState.tableName}
-              // 2026-08-22: the indicator used to mirror the LEGACY Supabase
-              // channel (presence/chat) while the game rides the engine WS —
-              // a dead engine socket showed a green dot and a Supabase blip
-              // showed red on a healthy game. Report the transport that
-              // actually carries the game.
-              connectionStatus={
-                engineWsStatus === 'connected'
-                  ? 'connected'
-                  : engineWsStatus === 'connecting' || engineWsStatus === 'reconnecting'
-                    ? 'reconnecting'
-                    : 'disconnected'
-              }
-            />
-            {/* Dan 2026-08-15 — this "+" is ADD TABLE, not Add Chips.
+          embeddedTableId ? null : (
+            <div className="hud-ul-column">
+              <TableMenu
+                isOpen={showTableMenu}
+                onClose={() => setShowTableMenu(false)}
+                onToggle={() => setShowTableMenu((prev) => !prev)}
+                position="top-left"
+                sections={[
+                  {
+                    title: 'Quick Actions',
+                    actions: [
+                      {
+                        id: 'sitout',
+                        label: 'Sit Out',
+                        icon: <SitOutIcon />,
+                        onClick: () => void handleSitOut(),
+                      },
+                      ...(tableState.isTournament
+                        ? [
+                            {
+                              id: 'rebuy',
+                              label: 'Rebuy',
+                              icon: <RebuyIcon />,
+                              onClick: handleTournamentRebuy,
+                            },
+                            {
+                              id: 'addon',
+                              label: 'Add-On',
+                              icon: <AddOnIcon />,
+                              onClick: handleTournamentAddOn,
+                            },
+                          ]
+                        : [
+                            {
+                              id: 'rebuy',
+                              label: 'Add Chips',
+                              icon: <RebuyIcon />,
+                              onClick: () => setShowCashier(true),
+                            },
+                          ]),
+                      // AUTO-REBUY TOGGLE REMOVED 2026-08-20. It set React state and
+                      // a localStorage key and nothing else: `isAutoRebuyEnabled`
+                      // had no consumers anywhere in the repo, and no server code
+                      // reads `table_seats.auto_rebuy` either (see the note in
+                      // BuyInModal). The menu displayed a persistent "Auto-Rebuy:
+                      // ON" badge that changed nothing about how the table behaved.
+                    ],
+                  },
+                  {
+                    title: 'Table Info',
+                    actions: [
+                      {
+                        id: 'history',
+                        label: 'Hand History',
+                        icon: <HandHistoryIcon />,
+                        onClick: () => setShowHandReplay(true),
+                      },
+                      {
+                        id: 'leaderboard',
+                        label: 'Leaderboard',
+                        icon: <LeaderboardIcon />,
+                        onClick: () => setShowLeaderboard(true),
+                      },
+                      ...(!tableState.isTournament
+                        ? [
+                            {
+                              id: 'session-stats',
+                              label: 'Session Stats',
+                              icon: <SessionStatsIcon />,
+                              onClick: () => setShowSessionStats(true),
+                            },
+                          ]
+                        : []),
+                      // Bible V8 §11.1 — Settings accessible from BOTH table HUD menu AND hamburger menu
+                      {
+                        id: 'settings',
+                        label: 'Table Settings',
+                        icon: <HelpIcon />,
+                        onClick: () => setShowSettings(true),
+                      },
+                    ],
+                  },
+                  {
+                    title: 'Support',
+                    actions: [
+                      {
+                        id: 'help',
+                        label: 'Help & Rules',
+                        icon: <HelpIcon />,
+                        onClick: () => setShowGameRules(true),
+                      },
+                    ],
+                  },
+                  {
+                    actions: [
+                      {
+                        id: 'leave',
+                        label: 'Leave Table',
+                        icon: <LeaveTableIcon />,
+                        onClick: () => setShowLeaveConfirm(true),
+                        danger: true,
+                      },
+                    ],
+                  },
+                ]}
+                tableName={tableState.tableName}
+                // 2026-08-22: the indicator used to mirror the LEGACY Supabase
+                // channel (presence/chat) while the game rides the engine WS —
+                // a dead engine socket showed a green dot and a Supabase blip
+                // showed red on a healthy game. Report the transport that
+                // actually carries the game.
+                connectionStatus={
+                  engineWsStatus === 'connected'
+                    ? 'connected'
+                    : engineWsStatus === 'connecting' || engineWsStatus === 'reconnecting'
+                      ? 'reconnecting'
+                      : 'disconnected'
+                }
+              />
+              {/* Dan 2026-08-15 — this "+" is ADD TABLE, not Add Chips.
                 It used to open CashierModal, which duplicated the wallet entry
                 already on the table menu and left no way to start a second
                 game without abandoning the current one.
@@ -9783,26 +9781,27 @@ export default function TablePage({
                 identically and a getByLabel query matched both, so Playwright
                 resolved two elements and silently drove whichever came first
                 in the DOM. Named for what it does. */}
-            <button
-              className="add-chips-icon-btn"
-              onClick={() => {
-                soundService.playButtonClick();
-                masterBus.emit('OPEN_LOBBY_TAB', { requestedBy: userId });
-              }}
-              title="Open the lobby in a new tab"
-              aria-label="Open the lobby in a new tab"
-            >
-              <svg width="20" height="20" viewBox="0 0 18 18" fill="none">
-                <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.5" />
-                <path
-                  d="M9 6v6M6 9h6"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-          </div>
+              <button
+                className="add-chips-icon-btn"
+                onClick={() => {
+                  soundService.playButtonClick();
+                  masterBus.emit('OPEN_LOBBY_TAB', { requestedBy: userId });
+                }}
+                title="Open the lobby in a new tab"
+                aria-label="Open the lobby in a new tab"
+              >
+                <svg width="20" height="20" viewBox="0 0 18 18" fill="none">
+                  <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.5" />
+                  <path
+                    d="M9 6v6M6 9h6"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            </div>
+          )
         }
         upperRight={
           <MiniStatsCard

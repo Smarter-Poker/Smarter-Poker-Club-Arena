@@ -303,6 +303,21 @@ function HomePageInner() {
           data: { user: authUser },
         } = await getAuthUser();
         if (authUser) {
+          // PERF 2026-08-23: the card-colour preference needs only
+          // authUser.id, and was sitting behind the membership fetch for no
+          // reason but code order. Started here, awaited unchanged below, so
+          // the two round trips overlap. The rejection handler keeps a
+          // pre-await failure from surfacing as an unhandled rejection.
+          const colorPrefPromise = supabase
+            .from('profiles')
+            .select('preferences')
+            .eq('id', authUser.id)
+            .maybeSingle()
+            .then(
+              (r) => r,
+              (error) => ({ data: null, error })
+            );
+
           const memberships = await ClubsService.getUserMemberships(authUser);
           const clubs =
             memberships?.map(
@@ -342,9 +357,7 @@ function HomePageInner() {
           }
 
           // ── Batch: card color sync ──
-          const [colorResult] = await Promise.allSettled([
-            supabase.from('profiles').select('preferences').eq('id', authUser.id).maybeSingle(),
-          ]);
+          const [colorResult] = await Promise.allSettled([colorPrefPromise]);
 
           if (getIsMounted && !getIsMounted()) return;
 
@@ -870,6 +883,19 @@ function HomePageInner() {
       const clubIds = displayClubs.map((c) => c.id);
       try {
         // Batch fetch club rows for level info
+        // PERF 2026-08-23: the counts RPC was called with clubRows.map(c => c.id),
+        // which is just clubIds filtered to rows that exist - so it waited a
+        // whole round trip to learn something it already knew. Asking for a
+        // count of a club id that does not exist simply returns nothing for it,
+        // and the lookup below is by id, so a superset is harmless. Both now
+        // fly at once.
+        const activeCountsPromise = supabase
+          .rpc('fn_batch_active_player_counts', { p_club_ids: clubIds })
+          .then(
+            (r) => r,
+            (error) => ({ data: null, error })
+          );
+
         const { data: clubRows } = await supabase
           .from('clubs')
           .select(
@@ -885,9 +911,7 @@ function HomePageInner() {
         // club (was a fan-out on the hottest page).
         const activeCountMap = new Map<string, number>();
         try {
-          const { data: batchCounts } = await supabase.rpc('fn_batch_active_player_counts', {
-            p_club_ids: clubRows.map((c: any) => c.id),
-          });
+          const { data: batchCounts } = await activeCountsPromise;
           for (const r of batchCounts || [])
             activeCountMap.set(r.club_id, Number(r.active_count) || 0);
         } catch (e) {

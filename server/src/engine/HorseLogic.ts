@@ -408,6 +408,23 @@ function actsLastPostflop(
  * Separates a vulnerable made hand (bet for protection, never slowplay wet)
  * from a pure draw (equity comes from the runout) at the same MC equity.
  */
+/**
+ * V13: best made category over every 2-card subset of the hole cards. For
+ * every variant except the pineapple discard street this is just
+ * madeCategory, because the hole is already the playable size.
+ */
+function bestTwoCardCategory(hole: Card[], board: Card[], vi: VariantInfo): number {
+  if (!hole || hole.length <= 2 || vi.isOmaha) return madeCategory(hole, board, vi);
+  let best = 0;
+  for (let i = 0; i < hole.length; i++) {
+    for (let j = i + 1; j < hole.length; j++) {
+      const c = madeCategory([hole[i], hole[j]], board, vi);
+      if (c > best) best = c;
+    }
+  }
+  return best;
+}
+
 function madeCategory(hole: Card[], board: Card[], vi: VariantInfo): number {
   if (!hole || hole.length < 2 || !board || board.length < 3) return 0;
   try {
@@ -705,6 +722,12 @@ export class HorseLogic {
       // dashboard stayed green. Every other automated-action path in the
       // engine reports; this one now does too.
       reportError(err, 'HorseLogic.decide_threw');
+      // V13: the think-time hint is a module global, normally consumed and
+      // cleared by computeThinkTime. The safety net returns WITHOUT calling
+      // it, so a throw stranded the value and the NEXT horse to act — a
+      // different player, possibly a different table — inherited the tank
+      // multiplier. Clear it on the way out.
+      difficultyHint = 0;
       const toCall = Math.max(0, (gameState.currentBet || 0) - (player.bet || 0));
       return toCall === 0
         ? { action: 'check', thinkTime: 1500 }
@@ -1233,7 +1256,14 @@ export class HorseLogic {
       try {
         initiative = readInitiative(gs.actionHistory, player.user_id, street);
         ip = actsLastPostflop(player.seat, gs.dealerSeat, gs.players, opts.v13 !== false);
-        cat = madeCategory(player.cards, gs.communityCards, vi);
+        // V13: on the pineapple discard street a player still holds THREE
+        // cards, but only two ever play. madeCategory concatenates hole+board
+        // and takes the best five, so it was scoring a 6-card hand and
+        // inflating the category — which mis-fires the vulnerable check, the
+        // semi-bluff gates (cat <= 2), the monster gates (cat >= 6) and the
+        // one-pair domination penalty all at once. Score the best TWO of the
+        // three, which is what the player will actually be left holding.
+        cat = bestTwoCardCategory(player.cards, gs.communityCards, vi);
         scare = scareShift(gs.communityCards);
         const streetsLeft = isRiver ? 1 : street === 'turn' ? 2 : 3;
         // Effective stack behind vs the deepest live opponent, capped by hero.
@@ -1645,6 +1675,12 @@ export class HorseLogic {
       betRatio <= 0.85 &&
       fastRandom() < params.bluffFreq * params.aggression * bluffScale * 0.5 * omahaDrawMod()
     ) {
+      // V13: register the barrel plan. planBarrel was called on all three BET
+      // paths and none of the RAISE paths, so a flop semi-bluff raise arrived
+      // at the turn with no plan, skipped the barrel block entirely and
+      // re-rolled the dice — the exact incoherence the V7 plan layer exists
+      // to remove, on the lines where a coherent story matters most.
+      planBarrel(equity);
       const raiseToAmt = currentBet + (pot + toCall) * (0.8 + fastRandom() * 0.3);
       return this.raiseTo(raiseToAmt * params.sizingMultiplier, player, gs, vi);
     }
@@ -1662,6 +1698,8 @@ export class HorseLogic {
       betRatio <= 0.6 &&
       fastRandom() < params.bluffFreq * params.aggression * 0.25 * Math.min(1.2, bluffScale)
     ) {
+      // V13: same as above — a check-raise bluff is the start of a story.
+      planBarrel(equity);
       const raiseToAmt = currentBet + (pot + toCall) * (0.85 + fastRandom() * 0.25);
       return this.raiseTo(raiseToAmt * params.sizingMultiplier, player, gs, vi);
     }

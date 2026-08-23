@@ -1632,7 +1632,7 @@
   border: none;
   outline: none;
   color: #fff;
-  font-size: 0.9rem;
+  font-size: 16px; /* was 0.9rem; under 16px makes iOS zoom the page on focus */
 }
 
 .lobby-top__searchbox input::placeholder {

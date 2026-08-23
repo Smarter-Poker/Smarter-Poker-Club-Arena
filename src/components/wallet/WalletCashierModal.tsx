@@ -127,6 +127,8 @@ interface Member {
   avatar_url?: string;
   short_id?: string;
   chip_balance: number;
+  avatar_url?: string;
+  player_number?: string;
 }
 
 interface LedgerRow {
@@ -318,9 +320,6 @@ export default function WalletCashierModal({
   const loadMembers = useCallback(
     async (uuid: string) => {
       setMembersLoading(true);
-      // PostgREST caps a page at 1,000 rows. Paging in a deterministic order
-      // is the same shape CashierPage uses, and for the same reason: a 588
-      // member club silently lost 88 people to an unordered .limit().
       const PAGE = 500;
       const collected: Array<Record<string, unknown>> = [];
       for (let from = 0; from < 10000; from += PAGE) {
@@ -354,6 +353,7 @@ export default function WalletCashierModal({
             avatar_url: (profile?.avatar_url as string) || '',
             username: (profile?.username as string) || '',
             short_id: String((profile?.player_number as number) || '----'),
+            player_number: String((profile?.player_number as number) || '----'),
           };
         })
       );
@@ -557,7 +557,7 @@ export default function WalletCashierModal({
     }
 
     return destinationMembers
-      .filter((m) => fuzzyMatch(q, m.name) || (m.username && fuzzyMatch(q, m.username)))
+      .filter((m) => fuzzyMatch(q, m.name) || (m.username && fuzzyMatch(q, m.username)) || (m.player_number && m.player_number.toLowerCase().includes(q)))
       .sort((a, b) => roleRank(b.role) - roleRank(a.role) || a.name.localeCompare(b.name))
       .slice(0, 60);
   }, [members, destination, search, user?.id, recentIds]);
@@ -903,7 +903,7 @@ export default function WalletCashierModal({
                     placeholder={
                       AGENT_ONLY.includes(destination) ? 'Search Agents' : 'Search Members'
                     }
-                    aria-label="Search recipients"
+                    aria-label="Search Recipients"
                   />
                   <div className="cbc-list">
                     {membersLoading && <div className="cbc-empty">Loading Members...</div>}
@@ -954,7 +954,7 @@ export default function WalletCashierModal({
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                     placeholder=""
-                    aria-label=""
+                    aria-label="Amount"
                   />
 
                   {tab === 'claim' && recipient && (

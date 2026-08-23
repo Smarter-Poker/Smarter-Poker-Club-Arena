@@ -29,14 +29,16 @@
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(165deg, rgba(42, 42, 54, 0.95) 0%, rgba(24, 24, 32, 0.95) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 16px;
+  border-radius: 20px;
+  background: linear-gradient(165deg, #26354e 0%, #1e283c 42%, #0f1425 100%);
+  border: 1px solid rgba(0, 180, 230, 0.4);
+  border-top: 1px solid rgba(111, 220, 255, 0.5);
   box-shadow:
-    0 24px 48px -12px rgba(0, 0, 0, 0.7),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
-    inset 0 0 20px rgba(0, 0, 0, 0.2);
+    0 30px 60px rgba(0, 0, 0, 0.7),
+    0 0 50px rgba(0, 180, 230, 0.15),
+    inset 0 1px 2px rgba(255, 255, 255, 0.15),
+    inset 0 -2px 10px rgba(0, 0, 0, 0.4);
+  color: #e8eaf0;
   overflow: hidden;
   backdrop-filter: blur(12px);
   transform: translateZ(0);
@@ -220,14 +222,23 @@
   padding: 11px 12px;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(0, 0, 0, 0.32);
+  border-top: 1px solid rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow:
+    inset 0 3px 6px rgba(0, 0, 0, 0.6),
+    0 1px 0 rgba(255, 255, 255, 0.05);
   color: #fff;
   font-size: 0.95rem;
   outline: none;
   width: 100%;
+  transition: all 0.2s ease-out;
 }
 
 .cbc-input:focus {
+  background: rgba(0, 0, 0, 0.6);
+  box-shadow:
+    inset 0 3px 6px rgba(0, 0, 0, 0.8),
+    0 1px 0 rgba(255, 255, 255, 0.05);
   border-color: rgba(0, 180, 230, 0.6);
 }
 
@@ -242,17 +253,32 @@
   padding: 9px 4px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.3);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
   color: #8892a4;
   font-size: 0.72rem;
   font-weight: 700;
   cursor: pointer;
+  transition: all 0.2s ease-out;
+}
+.cbc-seg button:hover:not(.cbc-seg-on) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.04) 100%);
+}
+.cbc-seg button:active:not(.cbc-seg-on) {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
 }
 
 .cbc-seg .cbc-seg-on {
   color: #6fdcff;
-  background: rgba(0, 180, 230, 0.14);
-  border-color: rgba(0, 180, 230, 0.45);
+  background: linear-gradient(180deg, rgba(0, 180, 230, 0.2) 0%, rgba(0, 180, 230, 0.1) 100%);
+  border-color: rgba(0, 180, 230, 0.6);
+  border-top-color: rgba(111, 220, 255, 0.8);
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, 0.3),
+    0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .cbc-blurb {
@@ -279,15 +305,19 @@
   padding: 9px 10px;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.3);
   background: linear-gradient(180deg, rgba(60, 60, 80, 0.4) 0%, rgba(40, 40, 60, 0.4) 100%);
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
   color: #e8eaf0;
   font-size: 0.78rem;
   cursor: pointer;
   text-align: left;
-  box-shadow:
-    0 4px 6px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  transition: all 0.2s ease;
+  transition: all 0.2s ease-out;
+}
+.cbc-member:active {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 .cbc-member:hover {
@@ -363,20 +393,36 @@
   padding: 10px 18px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  background: none;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.4);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  box-shadow:
+    0 4px 10px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
   color: #e8eaf0;
   font-weight: 800;
   font-size: 0.8rem;
   cursor: pointer;
+  transition: all 0.2s ease-out;
+}
+.cbc-actions button:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
+}
+.cbc-actions button:active:not(:disabled) {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
 }
 
 .cbc-confirm {
-  background: linear-gradient(180deg, #2f8bff 0%, #1877f2 100%) !important;
+  background: linear-gradient(180deg, #3b93ff 0%, #1877f2 100%) !important;
   color: #ffffff !important;
-  border: none !important;
+  border: 1px solid #0056b3 !important;
+  border-top: 1px solid #7cb7ff !important;
   box-shadow:
     0 8px 18px rgba(24, 119, 242, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    inset 0 1px 2px rgba(255, 255, 255, 0.4),
+    inset 0 -2px 5px rgba(0, 0, 0, 0.2) !important;
+}
+.cbc-confirm:active:not(:disabled) {
+  box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.4) !important;
 }
 
 .cbc-confirm:disabled {
@@ -656,18 +702,20 @@
   }
 }
 
+/* ── Avatar / Member list 3D enhancements ───────────────────────────────── */
 .cbc-member-avatar {
-  width: 28px;
-  height: 28px;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background-size: cover;
   background-position: center;
   background-color: #2a2a36;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  flex-shrink: 0;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.5),
+    0 1px 0 rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
-
 .cbc-member-info {
   flex: 1;
   min-width: 0;

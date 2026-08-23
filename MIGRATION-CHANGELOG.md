@@ -72,6 +72,123 @@ on during an incident.
 
 ---
 
+## Cowork session 2026-08-23 — the V12 horse brain audit: two jobs that would have broken production on their first night (PRs #358, #363)
+
+The V12 build-out shipped two nightly jobs that had never actually run. This
+session audited the whole stack line by line, in the hours before their first
+fire. Twenty defects; the two worst would each have caused visible damage on
+2026-08-23, and neither would have looked like a failure afterwards.
+
+### The league would have frozen every live table (04:30 UTC)
+
+`runMatchup` ran 3000 hands in a plain synchronous loop, inside the process
+serving live poker. Measured: **10.3 seconds of solid event-loop blocking per
+matchup**, six matchups. `DeadlineScheduler` ticks every 100ms and its
+deadlines are absolute wall-clock, so every action clock, timebank grant and
+disconnect grace in the fleet would have been past due the moment the loop
+resumed — a fleet-wide auto-fold storm at the exact hour the code called
+"quietest". Measured against 24h of `hand_history`, hour 4 is the SECOND
+BUSIEST (5354 hands; hour 3 is 6239). It yields every 16 hands now: worst
+measured lateness **133ms** across a full matchup.
+
+Nine more in the same file, every one of them silent:
+
+- **The RNG was not sandboxed.** `playHand` seeds `HorseEval`'s module-global
+  `rngState` once per synthetic hand, and live decisions share that stream. The
+  "sandbox" from session (13) isolated HorseMind and nothing else, so after any
+  league run the live bluff/sizing stream sat at a state determined entirely by
+  the run date. Bracketed with `saveFastRandom`/`restoreFastRandom`, pinned.
+- **Sandboxing is no longer opt-in.** `mind:false` suppresses stats and pair
+  writes but NOT barrel plans, so the four unsandboxed matchups wrote thousands
+  of synthetic plan keys into the live map and tripped its 8000-key wipe,
+  clearing the barrel plan of every hand in progress on every live table.
+  `useBarrels` obeys `mind:false` now, and every matchup gets a sandbox.
+- **Duplicate-pair independence was broken.** Both passes derived their action
+  timestamps from the same deal seed, so they produced identical HorseMind
+  keys: pass 2's actions were deduped away as already-seen and config B read
+  config A's barrel plan. Timestamps are monotonic now.
+- **bb/100 was 6x inflated** — the per-pair difference spans six A-seat hands
+  and was never divided by them. Every number ever written to
+  `horse_league_results` carried that factor. Signs and ratios are unaffected.
+- **A short all-in illegally reopened the betting** for players who had already
+  acted (TDA 44, which `HandController` enforces correctly), and a non-raising
+  raise rebuilt the queue unconditionally — a directional bias toward whichever
+  config raises more, in an instrument whose whole purpose is to compare them.
+- **Hitting the action cap silently forgave unpaid bets**, letting players reach
+  a showdown they never called. Chip conservation still held, so no test could
+  see it. Debtors are folded and counted now; cap raised 24 -> 48.
+- **Sizing validation was gated on `counters` being passed**, so both
+  conservation tests exercised a different code path from production.
+- `isFullRaise` was hard-coded `true` on any all-in; `full_vs_v2_legacy` never
+  disabled v12 or the mind, so "vs v2 legacy" measured the wrong thing. A test
+  now fails if any future layer drifts out of that ablation.
+
+Sample size 1500 -> 10000 pairs: the old standard error was ~7 bb/100 against
+single-digit real edges, so the instrument could not resolve what it was built
+to measure. Unresolved results now log as `not resolved` instead of reading as
+findings.
+
+### The self-tuner would have flattened every horse's dials (08:00 UTC)
+
+Four statistics were wrong in the same direction, and the audit trail would
+have looked plausible either way.
+
+**The uncalled bet was never returned.** The engine refunds it before pots and
+rake, so `winners[].amount` is post-refund while the actions array still
+carries the full posted bet. Charging the full bet and crediting the reduced
+award scored EVERY uncontested pot as a loss — the most common way a hand is
+won. Nearly every horse would have fallen under the `bb100 < -15` trigger,
+which halves tightness, aggression and bluffFreq toward neutral. Every night.
+Erasing the fleet's per-horse differentiation while logging that it had fixed
+leaks. The existing unit test asserted -0.5bb on a hand the horse won 7 chips
+of: it encoded the bug as the expected answer. Now +3.5bb, with a
+chip-conservation check across all three seats.
+
+- Blinds were added to the contribution total but never seeded as the posting
+  player's opening street bet, and bet amounts are street totals — a BB who
+  posts 2 and 3-bets to 20 was billed 22.
+- A short all-in counted as a raise, so the next genuine opener looked like a
+  3-bettor: PFR, 3-bet, fold-to-3-bet and opener attribution all corrupted.
+- **`isFullRaise` was never persisted.** `HandController` records it; the write
+  to `hand_history` dropped it. So in HorseMind's 72h boot replay every all-in
+  counted as neither aggression nor passivity — hydrated reads biased passive
+  for anyone who shoves, and all-in 3-bets invisible to the anti-exploit
+  counters. That one was degrading live play already, not just the first run.
+- `threeBetOpps` excluded everyone in `didPfr`, which includes the 3-bettor, so
+  the numerator's own hands were missing from the denominator.
+- AF used `Math.max(1, passive)`: 59 bets and one call scored AF 59.
+- The "7-day window" was capped at 16000 rows against ~5000 hands/hour, so it
+  studied the newest ~3 hours while every log line claimed seven days. Raised
+  to 120k, and the ACTUAL coverage is now logged and can no longer lie.
+- Paging used `.lt(created_at)` on a non-unique column, silently dropping every
+  row tied on a page boundary.
+
+### Persistence, same audit
+
+A poison row wedged the flush forever — the whole 400-row chunk was requeued
+and resent identically every five minutes, one error report per chunk per
+cycle, no backoff. Chunks now retry row-by-row and drop the single offender.
+The pair hydrate read 3000 rows against a 20000 cap, so ~85% of the targeting
+memory session (10) added was still discarded on every boot. A failed stats
+hydrate triggered a full 72h replay ON TOP of already-hydrated pairs,
+double-counting them permanently through the GREATEST merge. The flush loop
+only started after two unbounded awaits that swallow their own errors. And a
+shutdown landing mid-flush found an empty dirty set and saved nothing.
+
+In HorseMind itself: `pairOf()` ran before classification, minting empty pair
+rows that reached the DB and consumed the `MAX_PAIRS` budget whose overflow
+wipes every learned hunter; and the bounded-memory guards did a wholesale
+`clear()` that could land mid-hand — double-counting aggression, letting VPIP
+exceed hands, and permanently inflating counters through the monotonic merge.
+A hand-boundary check cannot fix that (with N tables interleaved the "current"
+hand changes on nearly every call), so they evict oldest-first instead, which
+is correct however the tables interleave.
+
+**Server suite 1137/1137.** Both nightly jobs verified in production before
+their first run.
+
+---
+
 ## Cowork session 2026-08-22 (14) — OUTAGE: "no tables load, nothing is playing" was a saturated database, not the client
 
 Dan: "NONE OF THE TABLES ARE ACTIVE OR LOADING IN ANY CLUB. It says there are

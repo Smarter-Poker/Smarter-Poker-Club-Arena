@@ -96,10 +96,16 @@ httpServer.listen(PORT, () => {
   // horizon), then replays only the un-flushed hand_history tail; if the
   // table is empty or unreadable it falls back to the full-window replay.
   // Fire-and-forget — never blocks boot, never throws (fail-safe inside).
+  // V12.3: start the flush loop FIRST. It used to sit behind both hydration
+  // awaits, so if either Supabase call hung (both are unbounded reads, and both
+  // swallow their errors) the loop never started and the process accumulated
+  // learning it never persisted — silently, because nothing reports it. The
+  // loop is idempotent and its first tick is five minutes out, so starting it
+  // early costs nothing and removes the dependency entirely.
+  startHorseMindPersistence();
   void (async () => {
     const lastFlush = await hydrateHorseMindFromDb();
     await hydrateHorseMind(lastFlush);
-    startHorseMindPersistence();
   })();
   // V12 (2026-08-22): nightly per-horse self-study — every horse reviews its
   // own week of play, diagnoses leaks vs winning benchmarks, and nudges its

@@ -51,6 +51,8 @@ SHARED_FILES=(
   .github/scripts/queue-pr.sh
   .github/workflows/agent-autopilot.yml
   scripts/guard-shared-clone.sh
+  scripts/guard-commit-identity.sh
+  scripts/ensure-hooks.sh
   scripts/agent-trees-snapshot.sh
   scripts/agent-trees-audit.sh
   scripts/agent-workspace.sh
@@ -148,6 +150,38 @@ for r in "${REPOS[@]}"; do
                    add "**$r** — Agent Autopilot's last run is \`$C\`. While it is red, pull requests stop being queued and the failure is silent from the outside." ;;
     *)             note "$r: autopilot $C" ;;
   esac
+done
+
+# ── 4. Every hook is executable, so git will actually run it ──────────────
+#
+# 2026-08-23. This check exists because the entire hook layer was inert and
+# nothing anywhere said so. Two silent faults:
+#
+#   core.hooksPath pointed at `.husky/_` in Club Arena - GITIGNORED, generated
+#   by husky during npm install. A git worktree has no node_modules, so it was
+#   never generated there: 38 of 47 agent trees ran NO hooks at all.
+#
+#   `.husky/pre-commit` was tracked mode 644 in Club Arena AND World Hub. git
+#   SKIPS a non-executable hook and says so only as a hint buried in commit
+#   output. So even in the main clones, pre-commit never ran - which meant the
+#   one-worktree-per-agent guard and World Hub's merge-conflict-marker check,
+#   both written after real incidents, were decorative for months.
+#
+# The mode is a property of the TREE, so it is checkable from here, remotely,
+# for every repo at once. A hook committed 644 is a hook that will be skipped
+# in every clone and every worktree made from that commit, forever.
+for r in "${REPOS[@]}"; do
+  TREE=$(gh_ro "repos/Smarter-Poker/$r/git/trees/main?recursive=1" \
+           --jq '.tree[]? | select(.type=="blob") | select(.path|startswith(".husky/") or startswith(".githooks/")) | "\(.mode) \(.path)"')
+  [ -z "$TREE" ] && { note "$r: no hook directory"; continue; }
+  BAD=$(printf '%s\n' "$TREE" | awk '$1!="100755" && $2 !~ /\.(md|txt)$/ {print "    " $2 "  mode " substr($1,4)}')
+  if [ -n "$BAD" ]; then
+    add "**$r** — hook file(s) committed non-executable. git skips these WITHOUT failing, so they are guards in name only in every clone and worktree made from this commit:
+$BAD
+  Fix in that repo with \`bash scripts/ensure-hooks.sh\`, which also repoints core.hooksPath at the tracked hook directory."
+  else
+    note "$r: all $(printf '%s\n' "$TREE" | grep -c .) hook file(s) executable"
+  fi
 done
 
 # ── Report ────────────────────────────────────────────────────────────────

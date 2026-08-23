@@ -312,6 +312,16 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             amount: event.amount,
             timestamp: Date.now(), // Bible V8 §2.5
             stage,
+            // V12.3: carry isFullRaise into hand_history. HandController
+            // records it on its own actionHistory (a short all-in is NOT a
+            // raise, TDA 44) but it was dropped here, so every consumer of the
+            // persisted array saw an all-in with no flag. HorseMind.observe
+            // requires `isFullRaise === true` to count aggression, and its
+            // call/fold branches do not match 'all_in' either — so in the 72h
+            // boot replay every all-in counted as NEITHER aggression NOR
+            // passivity, biasing hydrated reads passive for anyone who shoves
+            // and hiding all-in 3-bets from the anti-exploit pair counters.
+            isFullRaise: hcState?.actionHistory[hcState.actionHistory.length - 1]?.isFullRaise,
           });
 
           // ── ADDITIVE event-sourcing shadow (#1): record PlayerActed ──

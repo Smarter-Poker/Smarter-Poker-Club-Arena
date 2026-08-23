@@ -19,6 +19,8 @@ import {
   betChipOffsetPx,
   chipCollectOffsetPx,
   chipRailInset,
+  isBottomSeat,
+  CHIP_RAIL_BOTTOM_EXTRA_PX,
   CHIP_COLLECT_FRACTION,
   type Pos,
   type Size,
@@ -42,11 +44,35 @@ const dist = (p: Pos) => Math.hypot(p.x, p.y);
 
 describe('the chip rail', () => {
   it('puts every seat the same distance from its chips', () => {
-    const distances = SEATS.map((s) => dist(betChipOffsetPx(s, TABLE, false)));
+    /* AMENDED 2026-08-23. This used to demand ONE distance for every seat
+         without exception. That is the right rule for the seats it was written
+         about and the wrong rule for the bottom rail, so it now excludes it.
+
+         Dan: "chips for the hero need to be pushed out farther in front of
+         them, they are literally on top of the avatar."
+
+         The rail is measured from a seat's CENTRE, and what the chips actually
+         have to clear is that seat's AVATAR. Those are the same number for
+         eight seats and not for the ninth: the hero's box is 1.3333x everyone
+         else's (--seat-avatar-hero-ratio) and its bust art rises well past the
+         box on top of that. A side seat also gets to travel diagonally, while
+         the hero sits at x=50 and can only go straight up into its own face.
+
+         So "equal distance" was never the property worth having - it was a
+         proxy for "equally clear of the player", which is what a person
+         actually sees. Where the two disagree, the proxy loses. The suite
+         already accepts exactly this shape of exception for the button holder
+         (CHIP_RAIL_DEALER_EXTRA_PX), and like that one this is a CONSTANT, not
+         a per-seat fraction - asserted directly below. */
+    const distances = SEATS.filter((s) => !isBottomSeat(s)).map((s) =>
+      dist(betChipOffsetPx(s, TABLE, false))
+    );
     const min = Math.min(...distances);
     const max = Math.max(...distances);
     // Within a pixel: the only slack is Math.round on each axis.
-    expect(max - min, `spread across seats was ${(max - min).toFixed(2)}px`).toBeLessThanOrEqual(1.5);
+    expect(max - min, `spread across seats was ${(max - min).toFixed(2)}px`).toBeLessThanOrEqual(
+      1.5
+    );
   });
 
   it('holds at every table size, including a wide one', () => {
@@ -56,9 +82,26 @@ describe('the chip rail', () => {
       { w: 380, h: 380 },
       { w: 240, h: 520 },
     ] as Size[]) {
-      const d = SEATS.map((s) => dist(betChipOffsetPx(s, size, false)));
+      const d = SEATS.filter((s) => !isBottomSeat(s)).map((s) =>
+        dist(betChipOffsetPx(s, size, false))
+      );
       expect(Math.max(...d) - Math.min(...d), `${size.w}x${size.h}`).toBeLessThanOrEqual(1.5);
     }
+  });
+
+  it('gives the bottom rail a constant extra step, for its taller avatar', () => {
+    const bottom = { x: 50, y: 100 };
+    const side = { x: 94, y: 55 };
+    const extraBottom =
+      dist(betChipOffsetPx(bottom, TABLE, false)) - dist(betChipOffsetPx(side, TABLE, false));
+    expect(extraBottom).toBeGreaterThan(0);
+    expect(Math.abs(extraBottom - CHIP_RAIL_BOTTOM_EXTRA_PX)).toBeLessThanOrEqual(1.5);
+
+    // Constant, not a fraction: the same extra on a much bigger table.
+    const big: Size = { w: 1200, h: 700 };
+    const extraBig =
+      dist(betChipOffsetPx(bottom, big, false)) - dist(betChipOffsetPx(side, big, false));
+    expect(Math.abs(extraBig - CHIP_RAIL_BOTTOM_EXTRA_PX)).toBeLessThanOrEqual(1.5);
   });
 
   it('steps the dealer further out, by the same amount whoever they are', () => {
@@ -112,9 +155,10 @@ describe('the chip rail', () => {
     // each lands the same fraction short of centre, so the spread of their
     // distance-from-centre is what matters
     const d = endpoints.map((p) => dist(p));
-    const expected = SEATS.map((s) =>
-      Math.hypot(((50 - s.x) * TABLE.w) / 100, ((50 - s.y) * TABLE.h) / 100) *
-      (1 - CHIP_COLLECT_FRACTION)
+    const expected = SEATS.map(
+      (s) =>
+        Math.hypot(((50 - s.x) * TABLE.w) / 100, ((50 - s.y) * TABLE.h) / 100) *
+        (1 - CHIP_COLLECT_FRACTION)
     );
     // Same per-axis rounding slack as above.
     d.forEach((actual, i) => expect(Math.abs(actual - expected[i])).toBeLessThanOrEqual(1.5));

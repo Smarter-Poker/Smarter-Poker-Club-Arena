@@ -865,6 +865,24 @@ export default function ClubSettingsPage() {
           </div>
         )}
         {/* Basic Info */}
+        {/* Role Management (Moved to Profile Tab conceptually as requested) */}
+        {canSeeAuditLog && (
+          <section className="settings-section">
+            <h3>Role Management</h3>
+            <p className="setting-description" style={{ marginBottom: 16 }}>
+              Assign And Manage Roles For Your Club Members. Promote Players To Admin, Manager,
+              Agent, Or Sub-Agent To Help Run The Club.
+            </p>
+            <button
+              className="btn btn--primary"
+              onClick={() => navigate(`/clubs/${clubId}/members`)}
+              style={{ padding: '0 24px', height: '40px' }}
+            >
+              Assign Roles & Manage Players
+            </button>
+          </section>
+        )}
+
         <section className="settings-section">
           <h3>Basic Information</h3>
           <div className="form-group">

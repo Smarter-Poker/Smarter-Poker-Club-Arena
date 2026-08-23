@@ -107,11 +107,18 @@ const CLUB_SUBROUTES = [
   'tournaments',
 ];
 
-const clubId = process.env.AUDIT_CLUB_ID;
-if (clubId) {
-  for (const sub of CLUB_SUBROUTES) {
-    ROUTES.push(`clubs/${clubId}${sub ? '/' + sub : ''}`);
-  }
+/* DEFAULTED 2026-08-23. AUDIT_CLUB_ID appears in no workflow, so in CI this
+   list was always empty and the club surface - 23 subpages including the
+   lobby, the densest horizontal screen in the app - was never measured at
+   375px by the gate written to measure exactly that. The Lobby V2 table was
+   scrolling ~225px sideways on a phone and this spec could not see it.
+
+   The fallback is the same club the club-lobby spec uses, so both specs point
+   at one known-good club; override with AUDIT_CLUB_ID for a club the signed-in
+   account OWNS if you want the staff dashboards to render too. */
+const clubId = process.env.AUDIT_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+for (const sub of CLUB_SUBROUTES) {
+  ROUTES.push(`clubs/${clubId}${sub ? '/' + sub : ''}`);
 }
 
 interface Violation {

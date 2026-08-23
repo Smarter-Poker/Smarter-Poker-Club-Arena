@@ -11,7 +11,7 @@
  * Desktop: right-side drawer. Small screens: full-width sheet. Esc closes.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import CasinoPlaque, { PlaqueSeats } from './CasinoPlaque';
 import type { LobbyEntry, LobbyTableRow, LobbyTournamentRow } from './lobbyEntries';
@@ -20,6 +20,7 @@ import { tournamentService } from '../../services/TournamentService';
 import { waitlistService, type WaitlistEntry } from '../../services/WaitlistService';
 import { tableService } from '../../services/TableService';
 import { supabase } from '../../lib/supabase';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { formatBuyIn } from '../../utils/buyIn';
 import { reportError } from '../../utils/errorReporter';
 import type { Tournament, BlindLevel, PayoutEntry } from '../../types/database.types';
@@ -86,7 +87,23 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   } = props;
 
   const isCash = entry.kind === 'cash';
-  const panelRef = useRef<HTMLDivElement>(null);
+  /* The drawer declared role=dialog aria-modal=true and trapped nothing:
+     focus stayed on the lobby row behind it, Tab walked the page underneath,
+     and a screen-reader user was never taken into the dialog they had just
+     opened. useFocusTrap moves focus in, cycles Tab inside, and restores it
+     to the row on close. */
+  const panelRef = useFocusTrap(true);
+
+  /* Lock the page behind the drawer. On a phone the sheet is full-screen and
+     the lobby scrolled underneath it, so closing put the player somewhere
+     they had never scrolled to. */
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
 
   // ── Esc closes the panel ──
   useEffect(() => {

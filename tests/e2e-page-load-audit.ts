@@ -30,7 +30,8 @@ const ALL_PAGES: PageTest[] = [
   { route: '/clubs/:clubId/create-table', importPath: '../src/pages/CreateTablePage' },
   { route: '/clubs/:clubId/create-table/:gameType', importPath: '../src/pages/TableConfigPage' },
   { route: '/clubs/:clubId/dashboard', importPath: '../src/pages/club/ClubDashboard' },
-  { route: '/clubs/:clubId/lobby', importPath: '../src/pages/club/ClubLobby' },
+  // ONE LOBBY (2026-08-23): this route renders ClubHomePage now.
+  { route: '/clubs/:clubId/lobby', importPath: '../src/pages/ClubHomePage' },
   { route: '/clubs/:clubId/tournaments', importPath: '../src/pages/TournamentPage' },
   { route: '/clubs/:clubId/messages', importPath: '../src/pages/ClubMessagesPage' },
 

@@ -28,7 +28,6 @@ let preloaded = false;
 const CRITICAL_CHUNKS: Array<() => Promise<any>> = [
   () => import('../pages/HomePage'),
   () => import('../pages/ClubHomePage'),
-  () => import('../pages/club/ClubLobby'),
   () => import('../pages/ClubCarouselPage'),
   () => import('../pages/ProfilePage'),
   () => import('../pages/club/ClubDashboard'),

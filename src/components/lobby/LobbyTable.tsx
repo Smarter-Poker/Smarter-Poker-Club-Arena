@@ -15,7 +15,39 @@ import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import type { LobbyEntry, LobbyStatusKey } from './lobbyEntries';
 import './LobbyTable.css';
 
+type SortDir = 'asc' | 'desc';
+
 export type LobbyCategory = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
+
+/* Remembered column sort, per club and per category. A player who sorts by
+   Stakes lost it the moment they looked at another tab and came back, which
+   on a lobby this dense is the sort of small forgetting that makes a screen
+   feel like it is not listening. Storage failures are silent: the sort still
+   works for the session, only the memory of it is lost. */
+const SORT_KEY = (clubId: string | undefined, category: string) =>
+  `ca_lobby_sort_${clubId || 'any'}_${category}`;
+
+function readSort(clubId: string | undefined, category: string): { key: string; dir: SortDir } | null {
+  try {
+    const raw = localStorage.getItem(SORT_KEY(clubId, category));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { key?: unknown; dir?: unknown };
+    if (typeof parsed?.key !== 'string') return null;
+    if (parsed.dir !== 'asc' && parsed.dir !== 'desc') return null;
+    return { key: parsed.key, dir: parsed.dir };
+  } catch {
+    return null;
+  }
+}
+
+function writeSort(clubId: string | undefined, category: string, sort: { key: string; dir: SortDir } | null) {
+  try {
+    if (sort) localStorage.setItem(SORT_KEY(clubId, category), JSON.stringify(sort));
+    else localStorage.removeItem(SORT_KEY(clubId, category));
+  } catch {
+    /* quota or private mode - the sort still applies for this session */
+  }
+}
 
 export interface LobbyRowContext {
   waitlistedIds: Set<string>;
@@ -51,7 +83,8 @@ const RULE_ABBR: Record<string, string> = {
 
 function RulesCell({ entry }: { entry: LobbyEntry }) {
   const shown = entry.rules.slice(0, 4);
-  const extra = entry.rules.length - shown.length;
+  const hidden = entry.rules.slice(4);
+  const extra = hidden.length;
   if (shown.length === 0) return <span className="lt-dim">-</span>;
   return (
     <span className="lt-rules">
@@ -60,7 +93,18 @@ function RulesCell({ entry }: { entry: LobbyEntry }) {
           {RULE_ABBR[r.key] || r.label.slice(0, 4)}
         </abbr>
       ))}
-      {extra > 0 && <span className="lt-rule lt-rule--more">+{extra}</span>}
+      {/* "+2" used to be the end of the sentence: the player could see that
+          something was hidden and had no way to learn what without opening the
+          game. It names them now, and the panel still lists all of them with
+          full explanations. */}
+      {extra > 0 && (
+        <abbr
+          className="lt-rule lt-rule--more"
+          title={`Also: ${hidden.map((r) => r.label).join(', ')}`}
+        >
+          +{extra}
+        </abbr>
+      )}
     </span>
   );
 }
@@ -342,9 +386,11 @@ interface LobbyTableProps {
   onActivate: (entry: LobbyEntry) => void;
   ctx: LobbyRowContext;
   loading?: boolean;
+  /** Scopes the remembered sort; omit and it is remembered globally. */
+  clubId?: string;
 }
 
-type SortDir = 'asc' | 'desc';
+
 
 export default function LobbyTable({
   entries,
@@ -354,13 +400,19 @@ export default function LobbyTable({
   onActivate,
   ctx,
   loading,
+  clubId,
 }: LobbyTableProps) {
   const columns = useMemo(() => columnsFor(category), [category]);
-  const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(null);
+  const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(() =>
+    readSort(clubId, category)
+  );
   const bodyRef = useRef<HTMLTableSectionElement>(null);
 
-  // Column sort resets when the category (and therefore the columns) change.
-  useEffect(() => setSort(null), [category]);
+  /* The columns change with the category, so the sort cannot carry across -
+     it is restored from what this player last chose on THIS tab instead. A
+     remembered key that the new column set does not define is dropped by the
+     sort itself (columns.find returns undefined -> original order). */
+  useEffect(() => setSort(readSort(clubId, category)), [category, clubId]);
 
   const sorted = useMemo(() => {
     if (!sort) return entries;
@@ -389,15 +441,23 @@ export default function LobbyTable({
   const handleHeaderClick = (col: ColumnDef) => {
     if (!col.sortable) return;
     setSort((prev) => {
-      if (!prev || prev.key !== col.key) return { key: col.key, dir: 'asc' };
-      if (prev.dir === 'asc') return { key: col.key, dir: 'desc' };
-      return null; // third click clears back to the page-level order
+      const next: { key: string; dir: SortDir } | null =
+        !prev || prev.key !== col.key
+          ? { key: col.key, dir: 'asc' }
+          : prev.dir === 'asc'
+            ? { key: col.key, dir: 'desc' }
+            : null; // third click clears back to the page-level order
+      writeSort(clubId, category, next);
+      return next;
     });
   };
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Enter') return;
+      /* Home/End/PageUp/PageDown are what a keyboard user reaches for in a
+         list this dense - 111 rows is a lot of ArrowDown. */
+      const NAV = ['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageDown', 'PageUp'];
+      if (!NAV.includes(e.key) && e.key !== 'Enter') return;
       if (sorted.length === 0) return;
       const idx = sorted.findIndex((r) => r.id === selectedId);
       if (e.key === 'Enter') {
@@ -408,10 +468,21 @@ export default function LobbyTable({
         return;
       }
       e.preventDefault();
+      const last = sorted.length - 1;
+      const from = idx < 0 ? 0 : idx;
+      const PAGE = 10;
       const next =
         e.key === 'ArrowDown'
-          ? Math.min(sorted.length - 1, idx + 1)
-          : Math.max(0, idx < 0 ? 0 : idx - 1);
+          ? Math.min(last, idx + 1)
+          : e.key === 'ArrowUp'
+            ? Math.max(0, from - 1)
+            : e.key === 'Home'
+              ? 0
+              : e.key === 'End'
+                ? last
+                : e.key === 'PageDown'
+                  ? Math.min(last, from + PAGE)
+                  : Math.max(0, from - PAGE);
       onSelect(sorted[next]);
       // Keep the focused row in view inside the sticky-header scroller.
       const rowEl = bodyRef.current?.querySelector<HTMLTableRowElement>(
@@ -426,11 +497,24 @@ export default function LobbyTable({
     <div
       className="lobby-table-wrap"
       role="region"
-      aria-label="Game list"
+      aria-label={`Game list, ${sorted.length} game${sorted.length === 1 ? '' : 's'}`}
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
-      <table className="lobby-table">
+      {/* role=grid: aria-selected on a <tr> is only valid inside a grid, and
+          without it a screen reader announces none of the selection state the
+          keyboard navigation produces. */}
+      {/* Sorting rearranges the whole list with no visible message and, until
+          now, no audible one either: a screen-reader user pressed Enter on a
+          header and nothing was announced. */}
+      <span className="sr-only" role="status" aria-live="polite">
+        {sort
+          ? `Sorted by ${columns.find((c) => c.key === sort.key)?.label || sort.key}, ${
+              sort.dir === 'asc' ? 'ascending' : 'descending'
+            }`
+          : 'Default order'}
+      </span>
+      <table className="lobby-table" role="grid">
         <thead>
           <tr>
             {columns.map((col) => {
@@ -442,7 +526,19 @@ export default function LobbyTable({
                   aria-sort={
                     active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : undefined
                   }
+                  /* Sorting was mouse-only: a click handler on a <th> with
+                     no role, no tab stop and no key handler, so keyboard and
+                     screen-reader users could not sort the lobby at all. */
+                  role={col.sortable ? 'columnheader' : undefined}
+                  tabIndex={col.sortable ? 0 : undefined}
                   onClick={() => handleHeaderClick(col)}
+                  onKeyDown={(e) => {
+                    if (!col.sortable) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleHeaderClick(col);
+                    }
+                  }}
                 >
                   <span className="lt-th">
                     {col.label}

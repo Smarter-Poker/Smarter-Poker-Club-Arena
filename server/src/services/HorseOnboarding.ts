@@ -480,7 +480,7 @@ export async function createHorse(opts: { clubId?: string; realName?: string } =
       username: ident.username,
       alias: ident.alias,
       player_number: playerNumber,
-      arena_avatar_url: null,
+      avatar_url: null,
       is_vip: true,
       vip_tier: 'lifetime',
       horse_profile: brainFor(id, null),

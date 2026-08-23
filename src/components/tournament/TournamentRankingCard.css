@@ -5,9 +5,18 @@
    a coloured band carrying the place. Everything is drawn — no artwork to ship
    and nothing to 404 — so an arbitrary finishing place renders at any size.
 
-   Colours are the house palette: #1877f2 primary blue, #00d4ff cyan for live
-   accents, #ffb800 gold for money. The medal is the only place other metals
-   appear, and only to say which step of the podium this was.
+   Colours are the house palette and NOTHING ELSE: #1877f2 primary blue,
+   #00d4ff cyan for live accents, cool steel for rank.
+
+   Dan 2026-08-23: "CHANGE THIS CARD TO SMARTER.POKER COLOR SCHEMA'S NO BROWNS
+   OR YELLOWS."
+
+   Gone: the gold close button, the gold "Reward" label, the gold brand accent,
+   the amber secondary button, and the gold/bronze medal-and-band ramp. Rank is
+   still legible without them - it now runs down a COOL metal ramp (bright
+   platinum-cyan, silver, steel blue, slate) instead of gold/silver/bronze, so
+   first place still reads as first without borrowing a colour the rest of the
+   product never uses.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .trc2 {
@@ -67,8 +76,9 @@
   justify-content: center;
   border: none;
   border-radius: 50%;
-  background: linear-gradient(135deg, #ffb800, #e08a00);
-  color: #2a1a00;
+  background: linear-gradient(135deg, #2c3c5c, #1b2740);
+  color: #cfe0ff;
+  box-shadow: inset 0 0 0 1px rgba(120, 160, 235, 0.45);
   font-size: 19px;
   line-height: 1;
   font-weight: 700;
@@ -119,7 +129,7 @@
   color: #ffffff;
 }
 .trc2__brand-accent {
-  color: #ffb800;
+  color: #00d4ff;
 }
 .trc2__brand-mark {
   margin-left: 6px;
@@ -184,11 +194,13 @@
   pointer-events: none;
 }
 
+/* First place: the brightest, coolest metal on the card - platinum lit by the
+   house cyan. It has to out-shine silver without going anywhere near gold. */
 .trc2__medal--gold {
-  --trc2-medal-face: linear-gradient(160deg, #ffe89a 0%, #f5c344 45%, #c98f14 100%);
-  --trc2-medal-edge: #ffd76b;
-  --trc2-medal-ink: #4a3200;
-  --trc2-medal-glow: rgba(255, 200, 60, 0.42);
+  --trc2-medal-face: linear-gradient(160deg, #ffffff 0%, #b9e8ff 45%, #4aa8d8 100%);
+  --trc2-medal-edge: #9fe4ff;
+  --trc2-medal-ink: #0b2233;
+  --trc2-medal-glow: rgba(0, 212, 255, 0.45);
 }
 .trc2__medal--silver {
   --trc2-medal-face: linear-gradient(160deg, #f4f7fb 0%, #c6cfda 45%, #8e9aa9 100%);
@@ -196,11 +208,13 @@
   --trc2-medal-ink: #2c3542;
   --trc2-medal-glow: rgba(214, 226, 240, 0.36);
 }
+/* Third place: was bronze, i.e. brown. Now the darkest blue-steel, which still
+   sits a clear step below silver. */
 .trc2__medal--bronze {
-  --trc2-medal-face: linear-gradient(160deg, #f0b98b 0%, #cf8244 45%, #96551f 100%);
-  --trc2-medal-edge: #eeb07a;
-  --trc2-medal-ink: #3d2109;
-  --trc2-medal-glow: rgba(226, 150, 80, 0.38);
+  --trc2-medal-face: linear-gradient(160deg, #cfe0f2 0%, #7d95b4 45%, #4a5f7d 100%);
+  --trc2-medal-edge: #b6cbe4;
+  --trc2-medal-ink: #16202e;
+  --trc2-medal-glow: rgba(150, 180, 220, 0.32);
 }
 .trc2__medal--steel {
   --trc2-medal-face: linear-gradient(160deg, #9fb2ca 0%, #6d829e 45%, #47576e 100%);
@@ -221,16 +235,18 @@
   letter-spacing: 0.02em;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(0, 0, 0, 0.18)),
-    var(--trc2-band, #7a3a1f);
+    /* The default was #7a3a1f - the brown band Dan photographed on a 4th
+       place. Out-of-the-money now reads as deep house blue. */
+    var(--trc2-band, #233355);
 }
 .trc2__placeband.trc2__medal--gold {
-  --trc2-band: #b8860b;
+  --trc2-band: #1877f2;
 }
 .trc2__placeband.trc2__medal--silver {
   --trc2-band: #5b6878;
 }
 .trc2__placeband.trc2__medal--bronze {
-  --trc2-band: #8a3f1c;
+  --trc2-band: #3c5170;
 }
 .trc2__placeband.trc2__medal--steel {
   --trc2-band: #33435a;
@@ -284,7 +300,9 @@
 .trc2__reward-label {
   font-size: 0.78rem;
   font-weight: 700;
-  color: #ffb800;
+  /* Was #ffb800 - "gold for money" was the last yellow on the card. Cyan is
+     the house accent and already marks live values everywhere else. */
+  color: #00d4ff;
 }
 .trc2__reward-value {
   font-size: 1rem;
@@ -362,8 +380,9 @@
   font-size: 0.92rem;
   font-weight: 800;
   cursor: pointer;
-  color: #2a1a00;
-  background: linear-gradient(180deg, #ffd76b 0%, #f0a800 100%);
+  color: #dbe7ff;
+  background: linear-gradient(180deg, #2b3a58 0%, #1d2942 100%);
+  box-shadow: inset 0 0 0 1px rgba(120, 160, 235, 0.4);
   transition:
     filter 0.18s ease,
     transform 0.12s ease;

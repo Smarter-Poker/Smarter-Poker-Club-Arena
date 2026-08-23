@@ -70,9 +70,9 @@ git push -u origin HEAD && gh pr create --fill
 1. Call `schedule` with `DurationSeconds=300` (5 minutes) and `Prompt="Check if the PR went green and merged. If it failed, read the logs, fix it, and push again."`
 2. End your turn. The system will wake you up when the timer fires.
 3. Check `gh pr status` and `gh run list --branch <branch>`.
-   - If **Merged**: You are done!
-   - If **Pending**: Set another timer and go back to sleep.
-   - If **Failed/Blocked**: Fix the issue, force-push, and set a new timer.
+   - If **Merged**: You are done! Report task complete.
+   - If **Pending**: Set another 5-minute timer and go back to sleep.
+   - If **Failed/Blocked**: Fix the issue (e.g., `git pull --rebase origin main`, fix a red test), force-push, and set a new timer.
 4. **Never report task complete** to the user until the PR is verified green and merged.
 5. You must run the clock checks to ensure it actually pushes, publishes, and leaves github with zero errors ALWAYS, without the user having to specifically ask you to check.
 

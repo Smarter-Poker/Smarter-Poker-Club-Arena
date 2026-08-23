@@ -88,8 +88,11 @@ However, **do not exit immediately** after opening the PR. You must verify the P
 
 1. Call `schedule` with `DurationSeconds=300` (5 minutes) and `Prompt="Check if the PR went green and merged. If it failed, read the logs, fix it, and push again."`
 2. End your turn. The system will wake you up when the timer fires.
-3. Check `gh pr status`. If it failed (e.g. `Behind main` or a red test), fix it, rebase, force-push, and set another timer.
-4. **Only report task complete** to the user when the PR is verified green and merged.
+3. Check `gh pr status`.
+   - If **Merged**: You are done! Report task complete.
+   - If **Pending**: Set another 5-minute timer and go back to sleep.
+   - If **Failed/Blocked**: Fix the issue (e.g., `git pull --rebase origin main`, fix a red test), force-push, and set a new timer.
+4. **Never report task complete** to the user until the PR is verified green and merged.
 
 If you do only one thing from this document, do step 1. Sharing a checkout is
 the single largest cause of destroyed work here.

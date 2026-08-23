@@ -129,3 +129,8 @@ public/cards/4color/*.webp
 *.orig
 *.rej
 *.bak
+
+# Agent scratch. Never shipped; kept out of the tree so a `git add -A`
+# cannot sweep a probe file or a staging directory into main (it did, twice:
+# 19 files were tracked on main by 2026-08-23).
+_agent_tmp/

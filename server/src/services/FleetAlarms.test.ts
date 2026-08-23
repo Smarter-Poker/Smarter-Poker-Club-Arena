@@ -58,9 +58,30 @@ beforeEach(() => {
   kills(0);
 });
 
+/** Push the verifier past its startup grace so the floor can be judged. */
+function pastBoot(v: unknown) {
+  (v as { startedAt: number }).startedAt = Date.now() - 10 * 60_000;
+}
+
 describe('the canary hole: a fleet that empties must not silence the alarm', () => {
+  it('stays quiet while the process is still booting', async () => {
+    // Measured on a real production boot: 0 dealable tables at 62s, 59 at 139s.
+    // The boots that would NOT clear a 3-minute window are the slow ones, which
+    // happen when the database is already degraded -- the worst possible moment
+    // to email a critical about a fleet that is simply still starting.
+    const v = new DealRateVerifier(() => tables(0));
+    hands(0);
+    await v.check();
+    await v.check();
+    await v.check();
+    await v.check();
+    expect(raised).toHaveLength(0);
+    expect(v.snapshot().belowFloorChecks).toBe(0);
+  });
+
   it('raises a CRITICAL when the fleet falls below the floor', async () => {
     const v = new DealRateVerifier(() => tables(1));
+    pastBoot(v);
     hands(0);
     await v.check();
     await v.check();
@@ -74,6 +95,7 @@ describe('the canary hole: a fleet that empties must not silence the alarm', () 
   it('resolves the floor alarm when the fleet comes back', async () => {
     let size = 1;
     const v = new DealRateVerifier(() => tables(size));
+    pastBoot(v);
     hands(0);
     await v.check();
     await v.check();

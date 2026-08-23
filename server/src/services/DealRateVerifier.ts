@@ -89,6 +89,26 @@ const FLEET_FLOOR_TABLES = 3;
 /** Consecutive checks below the floor before it is called in. */
 const CONSECUTIVE_BELOW_FLOOR = 3;
 
+/**
+ * ── DO NOT ALARM WHILE STILL BOOTING ───────────────────────────────────────
+ *
+ * A cold start has no dealable tables for a while: cleanupStaleData runs first
+ * and is heavy, then the horse fleet seats, then discovery spawns ~50 engines,
+ * and only then does a table become dealable. Measured on a real production
+ * boot: 0 tables at 62s, 59 tables at 139s.
+ *
+ * Three checks is three minutes, so that boot cleared it — but only just, and
+ * the boots that would NOT clear it are precisely the slow ones, which happen
+ * when the database is already degraded. That is the worst possible moment to
+ * email a critical alarm about a fleet that is simply still starting.
+ *
+ * An alarm that cries wolf during a bad moment is worse than no alarm, because
+ * the next real one gets ignored. So the floor is not judged until the process
+ * has had a fair chance to fill it. Deal-rate silence is unaffected: that check
+ * needs tables to exist before it can conclude anything anyway.
+ */
+const STARTUP_GRACE_MS = 5 * 60_000;
+
 /** Kill-rate: recovery events in this window that count as a storm. */
 const KILL_WINDOW_MS = 15 * 60_000;
 /**
@@ -119,6 +139,8 @@ export interface DealRateSnapshot {
 
 export class DealRateVerifier {
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** When this process started watching — see STARTUP_GRACE_MS. */
+  private readonly startedAt = Date.now();
   private silentChecks = 0;
   private tablesExpectedDealing = 0;
   private handsInWindow: number | null = null;
@@ -215,6 +237,13 @@ export class DealRateVerifier {
     // empties the fleet would switch this detector off exactly when it matters.
     // So the floor is watched separately, and losing it is its own alarm.
     if (tableIds.length < FLEET_FLOOR_TABLES) {
+      // Still booting: an empty fleet is expected, not an incident.
+      if (Date.now() - this.startedAt < STARTUP_GRACE_MS) {
+        this.silentChecks = 0;
+        this.handsInWindow = null;
+        this.lastCheckedAt = Date.now();
+        return;
+      }
       this.belowFloorChecks++;
       this.silentChecks = 0;
       this.handsInWindow = null;

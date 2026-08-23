@@ -78,6 +78,7 @@ import {
   IconSearch,
   IconSort,
 } from '../components/icons/LobbyIcons';
+import { CLUB_HOME_CACHE_PREFIX } from '../utils/clearUserCaches';
 
 // Shark Club fallback logo — used when DB logo_url is null
 /* Dan 2026-08-20: "replace the old logo image with the new one". v25 was a
@@ -105,10 +106,10 @@ const CLUB_HOME_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 function getClubHomeCache(clubId: string) {
   try {
     const raw =
-      localStorage.getItem(`club_home_cache_${CLUB_HOME_CACHE_VER}_${clubId}`) ??
+      localStorage.getItem(`${CLUB_HOME_CACHE_PREFIX}${CLUB_HOME_CACHE_VER}_${clubId}`) ??
       // Pre-v2 entries (unwrapped, sessionStorage) still hydrate one last
       // time during the transition; the next write lands in localStorage.
-      sessionStorage.getItem(`club_home_cache_${clubId}`);
+      sessionStorage.getItem(`${CLUB_HOME_CACHE_PREFIX}${clubId}`);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === 'object' && 'at' in parsed && 'data' in parsed) {
@@ -121,7 +122,7 @@ function getClubHomeCache(clubId: string) {
   }
 }
 function setClubHomeCache(clubId: string, data: { club: any; tables: any[] }) {
-  const key = `club_home_cache_${CLUB_HOME_CACHE_VER}_${clubId}`;
+  const key = `${CLUB_HOME_CACHE_PREFIX}${CLUB_HOME_CACHE_VER}_${clubId}`;
   const value = JSON.stringify({ at: Date.now(), data });
   try {
     localStorage.setItem(key, value);
@@ -129,7 +130,7 @@ function setClubHomeCache(clubId: string, data: { club: any; tables: any[] }) {
     try {
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const k = localStorage.key(i);
-        if (k && k.startsWith('club_home_cache_')) localStorage.removeItem(k);
+        if (k && k.startsWith(CLUB_HOME_CACHE_PREFIX)) localStorage.removeItem(k);
       }
       localStorage.setItem(key, value);
     } catch {

@@ -12311,3 +12311,46 @@ STILL OPEN: `ELOService.js` writes `profiles.memory_elo` from the browser. The
 grant is deliberately withheld, so that feature stays broken until the write
 moves behind a SECURITY DEFINER RPC like `update_page_preferences` already does
 for the five preference columns.
+
+## Cowork session 2026-08-23 (5) — A HEADS-UP GAME IS NOT SHORT OF PLAYERS, IT IS FULL
+
+Chasing the last unverified item from the seat-first work (did new Spins really
+open at 2/3 with a 60-180s window?) turned up two live outages that had nothing
+to do with the window and everything to do with counting the wrong thing.
+
+**The window itself is confirmed working.** Spins created after the 04:52
+cutover carry start windows of 70, 79, 93, 98, 110, 141, 144, 154, 157 and 172
+seconds — random, and inside 60-180 every time. Before the cutover it was a
+flat 599.
+
+**Outage 1 — seventeen heads-up games, fifty hours, zero tables.**
+`TournamentManagerBase.start()` stood down whenever fewer than THREE players
+were registered. That literal was written for Spins, which have three seats. A
+heads-up game has two, so it could never satisfy the gate: it was being
+rejected for being FULL. Every heads-up game on the platform was dead, each
+re-examined and stood down every five seconds for two days while the top-up
+loop was asked to find a third player for a two-seat table.
+
+The floor is now `max(2, min(3, max_players))`. A Spin is still 3 (Dan's rule
+is untouched), an MTT is still 3, a heads-up game is 2, and a malformed row
+falls back to 3 rather than lower.
+
+**Outage 2 — the counter nobody owned.**
+`tournaments.current_players` was maintained by hand at every call site, so it
+drifted. Two things read it: the lobby, which then advertised free seats in a
+full game (this is how Dan was admitted as a FOURTH entrant to a three-handed
+Spin), and the engine's is-it-full test, so a game with every seat sold never
+started. Two Spins were live in that state, stuck ten and fourteen hours with
+three bodies in three seats behind a counter reading 2.
+
+It is now COUNTED by the database (`trg_sync_tournament_current_players`), not
+narrated by callers — and only while ANNOUNCED/REGISTERING, because once a
+game is RUNNING that column means TOTAL ENTRANTS and the fee and prize math
+reads it long after players have busted.
+
+Applied to production; the repair inside the migration unstuck both Spins
+immediately. `5 Chip Spin PLO6` started at 05:08:14 and completed at 3x. The
+seventeen heads-up games need this engine deploy.
+
+Verified: client tsc clean, server tsc unchanged at 8 pre-existing, 275 files /
+3,365 tests green. 13 of the 18 new tests fail against origin/main.

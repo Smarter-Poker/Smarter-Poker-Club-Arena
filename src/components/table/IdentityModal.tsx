@@ -55,7 +55,7 @@ export function IdentityModal({
               type="text"
               value={aliasInput}
               onChange={(e) => setAliasInput(e.target.value)}
-              placeholder="Enter your alias"
+              placeholder="Enter Your Alias"
               maxLength={20}
               className="identity-alias-input"
             />

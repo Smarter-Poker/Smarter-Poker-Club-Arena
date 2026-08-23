@@ -120,7 +120,7 @@ export const InviteToTable: React.FC<InviteToTableProps> = ({
       {/* Search */}
       <input
         type="text"
-        placeholder="Search players..."
+        placeholder="Search Players..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         className="search-input"

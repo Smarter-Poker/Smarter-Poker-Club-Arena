@@ -953,8 +953,8 @@ export default function WalletCashierModal({
                     min={1}
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    placeholder=""
-                    aria-label=""
+                    placeholder="Chips To Send"
+                    aria-label="Chips to send"
                   />
 
                   {tab === 'claim' && recipient && (

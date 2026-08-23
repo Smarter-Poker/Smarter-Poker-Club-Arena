@@ -234,7 +234,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
               step={100}
               value={diamonds}
               onChange={(e) => setDiamonds(e.target.value)}
-              placeholder="Diamonds to convert"
+              placeholder="Diamonds To Convert"
               aria-label="Diamonds to convert"
               autoFocus
             />

@@ -127,7 +127,7 @@ export default function DisputeSubmitModal({
           </label>
           <input
             type="text"
-            placeholder="Transaction or settlement ID"
+            placeholder="Transaction Or Settlement ID"
             value={targetId}
             onChange={(e) => setTargetId(e.target.value)}
             style={{
@@ -176,7 +176,7 @@ export default function DisputeSubmitModal({
             Reason
           </label>
           <textarea
-            placeholder="Describe the issue..."
+            placeholder="Describe The Issue..."
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={3}

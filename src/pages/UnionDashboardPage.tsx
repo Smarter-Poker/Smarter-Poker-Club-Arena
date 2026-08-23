@@ -1232,7 +1232,7 @@ export default function UnionDashboardPage() {
                   value={annMsg}
                   onChange={(e) => setAnnMsg(e.target.value)}
                   maxLength={500}
-                  placeholder="Announcement to all clubs..."
+                  placeholder="Announcement To All Clubs..."
                   rows={3}
                   style={{ resize: 'vertical' }}
                 />
@@ -1294,7 +1294,7 @@ export default function UnionDashboardPage() {
               className="admin-input"
               value={clubSearch}
               onChange={(e) => setClubSearch(e.target.value)}
-              placeholder="Search clubs..."
+              placeholder="Search Clubs..."
               style={{ marginBottom: '16px', maxWidth: '300px' }}
             />
             <div
@@ -1403,7 +1403,7 @@ export default function UnionDashboardPage() {
                 className="admin-input"
                 value={agentSearch}
                 onChange={(e) => setAgentSearch(e.target.value)}
-                placeholder="Search agents..."
+                placeholder="Search Agents..."
                 style={{ maxWidth: '300px' }}
               />
               <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={exportAgents}>
@@ -1469,7 +1469,7 @@ export default function UnionDashboardPage() {
               <input
                 className="admin-input"
                 style={{ flex: 1 }}
-                placeholder="Search players by name, club or role…"
+                placeholder="Search Players By Name, Club Or Role…"
                 value={rosterSearch}
                 onChange={(e) => setRosterSearch(e.target.value)}
               />
@@ -1659,7 +1659,7 @@ export default function UnionDashboardPage() {
                   <input
                     className="admin-input"
                     style={{ flex: '1 1 150px' }}
-                    placeholder="Notes (optional)"
+                    placeholder="Notes (Optional)"
                     value={depositForm.notes}
                     onChange={(e) => setDepositForm((f) => ({ ...f, notes: e.target.value }))}
                   />
@@ -2843,7 +2843,7 @@ export default function UnionDashboardPage() {
                       className="admin-input"
                       value={adminSearch}
                       onChange={(e) => setAdminSearch(e.target.value)}
-                      placeholder="Search by username..."
+                      placeholder="Search By Username..."
                     />
                     <button
                       className="admin-btn admin-btn-ghost"

@@ -104,7 +104,7 @@ export function FriendsList({
           <input
             type="text"
             className="add-input"
-            placeholder="Add by username..."
+            placeholder="Add By Username..."
             value={addInput}
             onChange={(e) => setAddInput(e.target.value)}
           />

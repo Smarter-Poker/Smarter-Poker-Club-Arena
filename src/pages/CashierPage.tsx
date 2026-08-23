@@ -2036,7 +2036,7 @@ export default function CashierPage() {
                 id="cashier-distribute-amount"
                 className={styles.input}
                 type="number"
-                placeholder="Enter chip amount"
+                placeholder="Enter Chip Amount"
                 value={amount}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
                 min={1}

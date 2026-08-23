@@ -340,7 +340,7 @@ export default function AuthPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
+                placeholder="Your@email.com"
                 required
                 autoComplete="email"
               />
@@ -422,7 +422,7 @@ export default function AuthPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
+                placeholder="Your@email.com"
                 required
                 autoComplete="email"
               />
@@ -467,7 +467,7 @@ export default function AuthPage() {
                 type="text"
                 value={referralCode}
                 onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                placeholder="e.g. ABCD1234"
+                placeholder="E.g. ABCD1234"
                 autoComplete="off"
                 style={{ textTransform: 'uppercase', letterSpacing: '1px' }}
               />
@@ -516,7 +516,7 @@ export default function AuthPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
+                placeholder="Your@email.com"
                 required
                 autoComplete="email"
               />

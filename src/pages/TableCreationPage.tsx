@@ -175,7 +175,7 @@ export default function TableCreationPage() {
           <h3>Table Name</h3>
           <input
             type="text"
-            placeholder="Enter table name..."
+            placeholder="Enter Table Name..."
             value={settings.name}
             onChange={(e) => updateSetting('name', e.target.value)}
             className="name-input"

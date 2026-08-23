@@ -379,7 +379,7 @@ export default function TransactionHistoryPage() {
       >
         <input
           type="text"
-          placeholder="Search transactions..."
+          placeholder="Search Transactions..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           style={{

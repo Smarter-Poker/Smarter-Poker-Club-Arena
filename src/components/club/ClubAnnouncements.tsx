@@ -97,7 +97,7 @@ export function ClubAnnouncements({
               />
               <textarea
                 className="news-textarea"
-                placeholder="Write your announcement..."
+                placeholder="Write Your Announcement..."
                 value={newContent}
                 onChange={(e) => setNewContent(e.target.value)}
                 rows={4}

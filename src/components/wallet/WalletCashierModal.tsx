@@ -42,17 +42,22 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import callClubArenaApi from '../../services/clubArenaApi';
+import { ChipFlowService } from '../../services/ChipFlowService';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
+import { useRecentRecipients } from '../../hooks/useRecentRecipients';
+import { fuzzyMatch } from '../../utils/fuzzyMatch';
+
 import { reportError } from '../../utils/errorReporter';
 import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
 import { roleLabel, normaliseRole, roleRank } from '../../types/clubRoles';
 import { canSeeClubBank, canMintInClubBank, canHoldAgentWallet } from './walletRows';
 import ChipMintModal from './ChipMintModal';
-import './ClubBankCashierModal.css';
+import './WalletCashierModal.css';
 
 type DestinationWallet = 'agent_wallet' | 'promo_wallet' | 'player_wallet';
 type Tab = 'send' | 'ledger';
@@ -128,13 +133,14 @@ interface LedgerTotals {
   net: number;
 }
 
-interface ClubBankCashierModalProps {
+interface WalletCashierModalProps {
   isOpen: boolean;
   onClose: () => void;
   /** Club code or UUID. Resolved internally, same as ChipMintModal. */
   clubId: string;
   /** The viewer's role in this club. Presentation only; the server re-checks. */
   role: string;
+  walletType?: 'club_bank' | 'promo_wallet' | 'agent_wallet';
 }
 
 const fmt = (n: number) =>
@@ -174,12 +180,13 @@ function csvCell(v: unknown): string {
   return `"${String(v ?? '').replace(/"/g, '""')}"`;
 }
 
-export default function ClubBankCashierModal({
+export default function WalletCashierModal({
   isOpen,
   onClose,
   clubId,
   role,
-}: ClubBankCashierModalProps) {
+  walletType = 'club_bank',
+}: WalletCashierModalProps) {
   const { user } = useAuthUser();
   const toast = useToast();
   const isMounted = useIsMounted();
@@ -247,7 +254,26 @@ export default function ClubBankCashierModal({
     setClubUuid(uuid);
     setClubName((club?.name as string) || 'Club');
     setInUnion(club ? Boolean(club.union_id) : null);
-    setBank(Number(club?.chip_treasury) || 0);
+
+    if (walletType === 'promo_wallet') {
+      const { data: agent } = await supabase
+        .from('agents')
+        .select('promo_wallet_balance')
+        .eq('club_id', uuid)
+        .eq('user_id', user?.id)
+        .maybeSingle();
+      setBank(Number(agent?.promo_wallet_balance) || 0);
+    } else if (walletType === 'agent_wallet') {
+      const { data: agent } = await supabase
+        .from('agents')
+        .select('agent_wallet_balance')
+        .eq('club_id', uuid)
+        .eq('user_id', user?.id)
+        .maybeSingle();
+      setBank(Number(agent?.agent_wallet_balance) || 0);
+    } else {
+      setBank(Number(club?.chip_treasury) || 0);
+    }
   }, [clubId, isMounted]);
 
   // ── Members who can receive ───────────────────────────────────────────────
@@ -327,7 +353,7 @@ export default function ClubBankCashierModal({
         if (Array.isArray(res.types)) setLedgerTypes(res.types);
         setLedger((prev) => (offset === 0 ? res.rows || [] : [...prev, ...(res.rows || [])]));
       } catch (e) {
-        reportError(e, 'ClubBankCashierModal.loadLedger');
+        reportError(e, 'WalletCashierModal.loadLedger');
         if (isMounted.current) setLedgerError('Could Not Load The Ledger');
       } finally {
         if (isMounted.current) setLedgerLoading(false);
@@ -398,6 +424,17 @@ export default function ClubBankCashierModal({
           if (p.new?.chip_treasury !== undefined) setBank(Number(p.new.chip_treasury) || 0);
         }
       )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'agents', filter: `user_id=eq.${user?.id}` },
+        (p) => {
+          if (!isMounted.current || p.new?.club_id !== clubUuid) return;
+          if (walletType === 'promo_wallet' && p.new?.promo_wallet_balance !== undefined)
+            setBank(Number(p.new.promo_wallet_balance) || 0);
+          if (walletType === 'agent_wallet' && p.new?.agent_wallet_balance !== undefined)
+            setBank(Number(p.new.agent_wallet_balance) || 0);
+        }
+      )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -416,20 +453,27 @@ export default function ClubBankCashierModal({
     else setLedger([]);
   }, [loadClub, loadMembers, loadLedger, clubUuid, tab, typeFilter]);
 
+  const { recentIds, addRecipient } = useRecentRecipients(user?.id, clubUuid, walletType);
+
   const eligible = useMemo(() => {
     const needsAgent = AGENT_ONLY.includes(destination);
     const q = search.trim().toLowerCase();
-    return (
-      members
-        .filter((m) => m.user_id !== user?.id)
-        .filter((m) => (needsAgent ? canHoldAgentWallet(m.role) : true))
-        .filter((m) => (q ? m.name.toLowerCase().includes(q) : true))
-        // Seniority first, then name. An unordered list of 500 people is a list
-        // you scroll past, and the person being funded is almost always an agent.
-        .sort((a, b) => roleRank(b.role) - roleRank(a.role) || a.name.localeCompare(b.name))
-        .slice(0, 60)
-    );
-  }, [members, destination, search, user?.id]);
+
+    const destinationMembers = members
+      .filter((m) => m.user_id !== user?.id)
+      .filter((m) => (needsAgent ? canHoldAgentWallet(m.role) : true));
+
+    if (q.length < 2) {
+      return destinationMembers
+        .filter((m) => recentIds.includes(m.user_id))
+        .sort((a, b) => recentIds.indexOf(a.user_id) - recentIds.indexOf(b.user_id));
+    }
+
+    return destinationMembers
+      .filter((m) => fuzzyMatch(q, m.name))
+      .sort((a, b) => roleRank(b.role) - roleRank(a.role) || a.name.localeCompare(b.name))
+      .slice(0, 60);
+  }, [members, destination, search, user?.id, recentIds]);
 
   // Changing destination can strand a recipient who cannot hold the new wallet.
   useEffect(() => {
@@ -457,23 +501,37 @@ export default function ClubBankCashierModal({
     busyRef.current = true;
     setSending(true);
     try {
-      const { data, error } = await supabase.rpc('fn_club_bank_send', {
-        p_club_id: clubUuid,
-        p_to_user_id: recipient.user_id,
-        p_amount: amt,
-        p_destination: destination,
-        p_reason: reason.trim() || null,
-        p_op_id: opIdRef.current,
-      });
-      if (error) throw error;
-      const res = (Array.isArray(data) ? data[0] : data) as {
-        success?: boolean;
-        error?: string;
-        replayed?: boolean;
-        bank_after?: number;
-      } | null;
-      if (!res?.success) throw new Error(res?.error || 'The Club Bank Refused That Send');
-
+      let res: any = null;
+      if (walletType === 'promo_wallet') {
+        const apiRes = await callClubArenaApi('distribute-promo', {
+          action: 'send',
+          clubId: clubUuid,
+          targetUserId: recipient.user_id,
+          amount: amt,
+        });
+        res = { success: true, replayed: false };
+      } else if (walletType === 'agent_wallet') {
+        await ChipFlowService.agentToPlayer(
+          user?.id || '',
+          recipient.user_id,
+          amt,
+          'Agent',
+          recipient.name,
+          clubName
+        );
+        res = { success: true, replayed: false };
+      } else {
+        const { data, error } = await supabase.rpc('fn_club_bank_send', {
+          p_club_id: clubUuid,
+          p_to_user_id: recipient.user_id,
+          p_amount: amt,
+          p_destination: destination,
+          p_reason: reason.trim() || null,
+          p_op_id: opIdRef.current,
+        });
+        if (error) throw error;
+        res = Array.isArray(data) ? data[0] : data;
+      }
       const destLabel = DESTINATIONS.find((d) => d.key === destination)?.label || 'Wallet';
       toast?.success?.(
         res.replayed
@@ -486,13 +544,14 @@ export default function ClubBankCashierModal({
         userId: recipient.user_id,
       });
       masterBus.emit('BALANCE_UPDATED', { source: 'club_bank_cashier', userId: user?.id || '' });
+      addRecipient(recipient.user_id);
       setAmount('');
       setReason('');
       setConfirming(false);
       opIdRef.current = newOpId();
       refresh();
     } catch (e) {
-      reportError(e, 'ClubBankCashierModal.send');
+      reportError(e, 'WalletCashierModal.send');
       toast?.error?.((e as Error).message || 'Send Failed');
       // The key is NOT rotated here. If this failed because the response was
       // lost rather than because the send was refused, the retry must be able
@@ -532,7 +591,7 @@ export default function ClubBankCashierModal({
       masterBus.emit('BALANCE_UPDATED', { source: 'club_bank_reverse', userId: user?.id || '' });
       refresh();
     } catch (e) {
-      reportError(e, 'ClubBankCashierModal.reverse');
+      reportError(e, 'WalletCashierModal.reverse');
       toast?.error?.((e as Error).message || 'Reversal Failed');
     } finally {
       busyRef.current = false;
@@ -634,7 +693,13 @@ export default function ClubBankCashierModal({
           </div>
 
           <div className="cbc-bank">
-            <span>Club Bank Balance</span>
+            <span>
+              {walletType === 'promo_wallet'
+                ? 'Promo Wallet Balance'
+                : walletType === 'agent_wallet'
+                  ? 'Agent Wallet Balance'
+                  : 'Club Bank Balance'}
+            </span>
             <strong aria-live="polite">{bank === null ? '...' : fmt(bank)}</strong>
           </div>
 
@@ -662,14 +727,16 @@ export default function ClubBankCashierModal({
             >
               Send Chips
             </button>
-            <button
-              role="tab"
-              aria-selected={tab === 'ledger'}
-              className={tab === 'ledger' ? 'cbc-tab cbc-tab--on' : 'cbc-tab'}
-              onClick={() => setTab('ledger')}
-            >
-              Transaction Ledger
-            </button>
+            {walletType === 'club_bank' && (
+              <button
+                role="tab"
+                aria-selected={tab === 'ledger'}
+                className={tab === 'ledger' ? 'cbc-tab cbc-tab--on' : 'cbc-tab'}
+                onClick={() => setTab('ledger')}
+              >
+                Transaction Ledger
+              </button>
+            )}
           </div>
 
           <div className="cbc-body">
@@ -763,12 +830,11 @@ export default function ClubBankCashierModal({
 
                   {amt > 0 && !overBank && (
                     <div className="cbc-blurb">
-                      Sending {fmt(amt)}. The Club Bank Would Hold {fmt((bank ?? 0) - amt)}{' '}
-                      Afterwards.
+                      Sending {fmt(amt)}. The Wallet Would Hold {fmt((bank ?? 0) - amt)} Afterwards.
                     </div>
                   )}
                   {overBank && (
-                    <div className="cbc-warn">The Club Bank Only Holds {fmt(bank ?? 0)} Chips.</div>
+                    <div className="cbc-warn">The Wallet Only Holds {fmt(bank ?? 0)} Chips.</div>
                   )}
                 </div>
 

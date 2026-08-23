@@ -54,7 +54,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import { PromoWalletCashierModal } from '../components/wallet';
-import ClubBankCashierModal from '../components/wallet/ClubBankCashierModal';
+import WalletCashierModal from '../components/wallet/WalletCashierModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
@@ -2473,7 +2473,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         clubId={resolvedClubId || clubId || ''}
       />
 
-      <ClubBankCashierModal
+      <WalletCashierModal
         isOpen={showClubBank}
         onClose={() => setShowClubBank(false)}
         clubId={resolvedClubId || clubId || ''}

@@ -15,9 +15,9 @@
 
 import { supabase } from './supabase.js';
 import { fetchAllRows } from './supabase/pagination.js';
-import { buyInBBFor, isActiveNow } from './HorseBehavior.js';
 import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
+import { buyInBBFor, isActiveNow, occupancyTargetFor } from './HorseBehavior.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -212,6 +212,67 @@ export class HorseFleetManager {
   // ─────────────────────────────────────────────────────────────────────
   // ENSURE ALL TABLES EXIST IN DATABASE
   // ─────────────────────────────────────────────────────────────────────
+
+  /**
+   * V14: keep a short WAITING LIST behind a table whose vibe says it is the
+   * game everyone wants. `table_waitlist` already exists and the engine
+   * already notifies it when a seat opens (see supabase/seats.ts), so a horse
+   * on the list is a real queue entry, not decoration — when somebody stands
+   * up, the notifier fires exactly as it would for a human.
+   *
+   * Best-effort throughout: a waiting list is atmosphere, and it must never be
+   * the reason a seating cycle fails.
+   */
+  private async ensureWaitlist(
+    tableId: string,
+    waitTarget: number,
+    validHorses: Array<{ id: string }>,
+    horseTables: Map<string, Set<string>>,
+    hourUTC: number
+  ): Promise<void> {
+    try {
+      const { data: existing, error } = await supabase
+        .from('table_waitlist')
+        .select('user_id, position')
+        .eq('table_id', tableId)
+        .eq('status', 'waiting');
+      if (error) throw new Error(error.message);
+      const have = existing?.length ?? 0;
+      if (have >= waitTarget) return;
+
+      const already = new Set((existing ?? []).map((r) => r.user_id as string));
+      const pool = validHorses.filter((h) => {
+        if (already.has(h.id)) return false;
+        if (!isActiveNow(h.id, hourUTC)) return false;
+        const at = horseTables.get(h.id);
+        // Somebody queueing for a game they are already sitting in makes no
+        // sense, and a horse already spread across several tables would not
+        // be waiting for another.
+        if (at && (at.has(tableId) || at.size >= 3)) return false;
+        return true;
+      });
+      if (pool.length === 0) return;
+
+      const maxPos = Math.max(0, ...(existing ?? []).map((r) => Number(r.position) || 0));
+      const rows: Array<{ table_id: string; user_id: string; position: number; status: string }> =
+        [];
+      for (let i = 0; i < waitTarget - have && i < pool.length; i++) {
+        const pick = pool[Math.floor(Math.random() * pool.length)];
+        if (rows.some((r) => r.user_id === pick.id)) continue;
+        rows.push({
+          table_id: tableId,
+          user_id: pick.id,
+          position: maxPos + rows.length + 1,
+          status: 'waiting',
+        });
+      }
+      if (rows.length === 0) return;
+      const { error: insErr } = await supabase.from('table_waitlist').insert(rows);
+      if (insErr) throw new Error(insErr.message);
+    } catch (err) {
+      reportError(err, 'HorseFleet.ensureWaitlist');
+    }
+  }
 
   private async ensureAllTablesExist(): Promise<void> {
     console.log(`[HorseFleet] Ensuring ${DEFAULT_TABLES.length} cash tables exist...`);
@@ -509,23 +570,43 @@ export class HorseFleetManager {
           // never empty, and so can never be retired.
           if (surplusTableIds.has(table.id)) continue;
 
-          // Get target horse count for this table
-          const config = DEFAULT_TABLES.find((t) => t.name === table.name);
-          const targetHorses = config?.horsesPerTable || Math.max(3, table.max_players - 1);
-
           // Determine currently occupied seats for THIS table from our in-memory map
           const tableOccupiedSeats = allActiveSeats.filter((s) => s.table_id === table.id);
           const occupiedNumbers = new Set(tableOccupiedSeats.map((s) => s.seat_number));
-
           const currentCount = occupiedNumbers.size;
-          let seatsNeeded = targetHorses - currentCount;
-          if (seatsNeeded <= 0) continue;
+
+          // ── V14 OCCUPANCY (Dan 2026-08-23) ────────────────────────────────
+          // Every table used to carry ONE fixed target from DEFAULT_TABLES, so
+          // the lobby looked the same hour after hour: the same games at the
+          // same counts, every one a seat or two short of full, none of them
+          // ever with a queue. A real floor is lopsided. The target now drifts
+          // per table on a ~22 minute bucket - hot (full, with a list), busy,
+          // steady (2-3 open), quiet (short-handed and visibly looking) - and
+          // is deterministic in (table, bucket) so it holds still long enough
+          // to be read instead of thrashing seats every 30s cycle.
+          const humanAtTable = tableOccupiedSeats.some((x) => !horseIdSet.has(x.user_id));
+          const { seatTarget, waitTarget, vibe } = occupancyTargetFor(
+            table.id,
+            table.max_players,
+            humanAtTable
+          );
+          void vibe;
+
+          // A full table with a vibe that says "hot" grows a WAITING LIST
+          // rather than simply being full - that queue is the thing that makes
+          // a game look like the game everyone wants.
+          if (currentCount >= seatTarget) {
+            if (waitTarget > 0) {
+              await this.ensureWaitlist(table.id, waitTarget, validHorses, horseTables, hourUTC);
+            }
+            continue;
+          }
+          let seatsNeeded = seatTarget - currentCount;
 
           // V8 STAGGERED ARRIVALS: humans trickle in — so do horses. At most
           // 1-2 join a table per 30s cycle, UNLESS a human is sitting at a
           // short-handed table (rescue outranks pacing).
-          const humanNeedsRescue =
-            tableOccupiedSeats.some((x) => !horseIdSet.has(x.user_id)) && currentCount < 4;
+          const humanNeedsRescue = humanAtTable && currentCount < 4;
           if (!humanNeedsRescue) {
             seatsNeeded = Math.min(seatsNeeded, 1 + Math.floor(Math.random() * 2));
           }

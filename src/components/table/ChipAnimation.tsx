@@ -197,7 +197,7 @@ export default function ChipAnimation({
       if (animRef.current) cancelAnimationFrame(animRef.current);
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     };
-     
+
     // intentionally read through onCompleteRef; see CHIP-GLITCH FIX above.
   }, [from, to, duration, delay, useArc, arcHeight]);
 
@@ -353,12 +353,40 @@ export function createPotToWinnerEvent(
   winnerPos: Position,
   amount: number
 ): ChipAnimationEvent[] {
-  const fan = fanDenominations(amount, 8);
-  // A pot going home should look like a pot: pad a one-chip breakdown out to
-  // three sprites so a clean 1,000,000 win is still a shipment, not a speck.
-  while (fan.length < 3 && fan.length > 0) fan.push(fan[fan.length - 1]);
+  const denoms = fanDenominations(amount, 8);
 
-  return fan.map((denom, i) => ({
+  /**
+   * A pot going home should look like a pot: a one-chip breakdown is padded
+   * out to three sprites so a clean 1,000,000 win is still a shipment, not a
+   * speck.
+   *
+   * BUT PADDING MUST NOT INVENT MONEY (2026-08-23). The pad used to duplicate
+   * the last denomination - `fan.push(fan[fan.length - 1])` - and each sprite
+   * carries `amount: denom.value`, so a 1,000 pot that breaks down to a single
+   * 1,000 chip shipped as THREE chips of 1,000. The fan claimed 3,000. Two
+   * tests have been failing on main over exactly this ("the chips still add up
+   * to the pot", and the label test, which asserts a single chip is worth less
+   * than the whole pot).
+   *
+   * Padding now SPLITS the amount across the sprites it adds instead of
+   * repeating it. The sprite art still comes from the real top denomination, so
+   * it looks identical; only the arithmetic is honest.
+   */
+  let chips: Array<{ value: number; amount: number }>;
+  if (denoms.length > 0 && denoms.length < 3) {
+    const art = denoms[0].value;
+    const share = Math.floor(amount / 3);
+    // The remainder rides on the first chip, which is also the labelled one.
+    chips = [
+      { value: art, amount: amount - share * 2 },
+      { value: art, amount: share },
+      { value: art, amount: share },
+    ];
+  } else {
+    chips = denoms.map((d) => ({ value: d.value, amount: d.value }));
+  }
+
+  return chips.map((denom, i) => ({
     id: `pot-to-winner-${Date.now()}-${i}`,
     from: {
       x: potPos.x + (Math.random() - 0.5) * 20,
@@ -368,7 +396,7 @@ export function createPotToWinnerEvent(
       x: winnerPos.x + (Math.random() - 0.5) * 15,
       y: winnerPos.y,
     },
-    amount: denom.value,
+    amount: denom.amount,
     delay: i * 40,
     type: 'to-winner' as const,
     denomValue: denom.value,

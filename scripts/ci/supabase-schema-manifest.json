@@ -3,6 +3,7 @@
   "tables": [
     "_audit_horse_avatar_restore_20260815",
     "_audit_phase40_results",
+    "_pgss_b",
     "_pps_backfill_state",
     "abuse_logs",
     "action_audit_logs",
@@ -1637,6 +1638,7 @@
     "fn_sync_review_helpful_count",
     "fn_sync_share_streak_multiplier",
     "fn_sync_tournament_chips",
+    "fn_sync_tournament_current_players",
     "fn_sync_union_membership_table_counts",
     "fn_tables_sync_rit",
     "fn_take_seat_and_buy_in",
@@ -1933,6 +1935,7 @@
     "get_club_agents",
     "get_club_financial_summary",
     "get_club_flags",
+    "get_club_home",
     "get_club_traffic",
     "get_commander_access_details",
     "get_current_settlement_period",

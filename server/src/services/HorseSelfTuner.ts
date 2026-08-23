@@ -497,6 +497,8 @@ const RUN_HOUR_UTC = 8;
 // window depending on boot offset — and a throw inside that single tick lost
 // the whole night with no retry. Ten minutes guarantees several attempts.
 const CHECK_INTERVAL_MS = 10 * 60 * 1000;
+/** Hours after RUN_HOUR_UTC during which a missed run is still picked up. */
+const TUNER_CATCHUP_HOURS = 3;
 // V12.3: the window is now HONEST. It was declared as 7 days while
 // MAX_HANDS_TO_STUDY capped the read at 16000 rows — and production writes
 // ~5000 hands an HOUR, so the "7-day study" was really the newest ~3 hours,
@@ -517,7 +519,11 @@ export function startHorseSelfTuner(): void {
   checkTimer = setInterval(() => {
     const now = new Date();
     const today = now.toISOString().slice(0, 10);
-    if (now.getUTCHours() === RUN_HOUR_UTC && lastRunDate !== today && !running) {
+    // V13: same catch-up as the league — a restart late in the window used to
+    // skip the night entirely, silently.
+    const hour = now.getUTCHours();
+    const inWindow = hour >= RUN_HOUR_UTC && hour < RUN_HOUR_UTC + TUNER_CATCHUP_HOURS;
+    if (inWindow && lastRunDate !== today && !running) {
       lastRunDate = today;
       void runSelfTune(today);
     }

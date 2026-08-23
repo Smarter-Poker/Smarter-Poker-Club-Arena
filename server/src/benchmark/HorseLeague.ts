@@ -571,7 +571,15 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
 // is no quiet hour. The league is safe here only because runMatchup now
 // yields the event loop every 16 hands; do not remove that yield.
 const LEAGUE_HOUR_UTC = 4;
-const LEAGUE_CHECK_MS = 30 * 60 * 1000;
+// V13: was 30 minutes against a ONE-HOUR window, so any engine restart in the
+// back half of the window pushed the next tick past it and the league silently
+// did not run that day at all. This repo deploys many times a day; on
+// 2026-08-23 a 04:32 restart moved the next tick to ~05:02 and the first
+// nightly run was skipped with nothing reporting it. Ten minutes, plus the
+// catch-up window below, closes that hole.
+const LEAGUE_CHECK_MS = 10 * 60 * 1000;
+/** Hours after LEAGUE_HOUR_UTC during which a missed run is still picked up. */
+const LEAGUE_CATCHUP_HOURS = 3;
 // V12.3: raised 1500 -> 10000. At 1500 pairs the standard error was ~7 bb/100
 // while real strategy-layer edges are single-digit bb/100 — the instrument
 // could only ever detect catastrophic regressions, and its own header claimed
@@ -590,7 +598,9 @@ export function startHorseLeague(): void {
   leagueTimer = setInterval(() => {
     const now = new Date();
     const today = now.toISOString().slice(0, 10);
-    if (now.getUTCHours() === LEAGUE_HOUR_UTC && lastLeagueDate !== today && !leagueRunning) {
+    const hour = now.getUTCHours();
+    const inWindow = hour >= LEAGUE_HOUR_UTC && hour < LEAGUE_HOUR_UTC + LEAGUE_CATCHUP_HOURS;
+    if (inWindow && lastLeagueDate !== today && !leagueRunning) {
       lastLeagueDate = today;
       void runLeague(today);
     }

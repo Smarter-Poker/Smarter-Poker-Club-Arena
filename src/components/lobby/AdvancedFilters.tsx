@@ -25,6 +25,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { createPortal } from 'react-dom';
 import {
   FILTER_SPECS,
@@ -124,6 +125,22 @@ export default function AdvancedFilters({
   );
   const [store, setStore] = useState<FilterStore>(() => loadFilters(clubId));
 
+  /* Same hole the game drawer had (fixed 2026-08-23): the sheet declares
+     role=dialog aria-modal=true and trapped nothing, so focus stayed on the
+     Filters button behind it and Tab walked the lobby underneath. The trap
+     also returns focus to that button on close. */
+  const sheetRef = useFocusTrap(true);
+
+  /* And the page scrolled behind the overlay on a phone, so cancelling put
+     the player somewhere they had never scrolled to. */
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
+
   const spec: GameFilterSpec | undefined =
     activeType === 'ALL' ? undefined : FILTER_SPECS[activeType];
 
@@ -191,6 +208,7 @@ export default function AdvancedFilters({
   return createPortal(
     <div className="afx-overlay" role="presentation" onClick={onClose}>
       <div
+        ref={sheetRef}
         className="afx-sheet"
         role="dialog"
         aria-modal="true"

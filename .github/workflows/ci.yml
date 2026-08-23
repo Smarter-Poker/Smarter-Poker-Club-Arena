@@ -5,6 +5,14 @@ on:
     branches: [main]
   push:
     branches: [main]
+  schedule:
+    # The production E2E used to run on every push to main. Club Arena merges
+    # about nineteen times an hour, so it installed Playwright browsers and
+    # drove a real browser against smarter.poker nineteen times an hour - to
+    # test a site that only republishes every seven minutes. Twice an hour
+    # tests the same thing.
+    - cron: '17 */2 * * *'
+
 
 # Cancel previous runs on the same branch/PR
 concurrency:
@@ -16,6 +24,12 @@ jobs:
   # STEP 1: TypeScript compilation check (fast — ~40s)
   # ─────────────────────────────────────────────────────────────────────────────
   typecheck:
+    # COST 2026-08-23: this already ran, and passed, on the pull request -
+    # the ruleset will not merge without it. Re-running it on the merge
+    # commit tests an identical tree. 34 of every 100 CI runs were that
+    # duplicate, and CI is six jobs, each billed as a whole minute even
+    # when it takes twenty seconds.
+    if: github.event_name == 'pull_request'
     name: TypeScript Check
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -413,6 +427,12 @@ jobs:
   # stay blocking.
   # ===========================================================================
   unit:
+    # COST 2026-08-23: this already ran, and passed, on the pull request -
+    # the ruleset will not merge without it. Re-running it on the merge
+    # commit tests an identical tree. 34 of every 100 CI runs were that
+    # duplicate, and CI is six jobs, each billed as a whole minute even
+    # when it takes twenty seconds.
+    if: github.event_name == 'pull_request'
     name: Client Unit Tests (vitest)
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -442,6 +462,12 @@ jobs:
           echo "in ci.yml for why it exists." >> $GITHUB_STEP_SUMMARY
 
   server:
+    # COST 2026-08-23: this already ran, and passed, on the pull request -
+    # the ruleset will not merge without it. Re-running it on the merge
+    # commit tests an identical tree. 34 of every 100 CI runs were that
+    # duplicate, and CI is six jobs, each billed as a whole minute even
+    # when it takes twenty seconds.
+    if: github.event_name == 'pull_request'
     name: Server Engine (typecheck + tests)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -487,6 +513,12 @@ jobs:
         run: node scripts/ci/check-allin-pointer-events.mjs
 
   build:
+    # COST 2026-08-23: this already ran, and passed, on the pull request -
+    # the ruleset will not merge without it. Re-running it on the merge
+    # commit tests an identical tree. 34 of every 100 CI runs were that
+    # duplicate, and CI is six jobs, each billed as a whole minute even
+    # when it takes twenty seconds.
+    if: github.event_name == 'pull_request'
     name: Production Build
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -589,8 +621,9 @@ jobs:
   # serves THIS COMMIT'S OWN BUILD locally — that one is required.
   # ───────────────────────────────────────────────────────────────────────────
   live-e2e:
+    # Moved off push:main to the two-hourly schedule above.
+    if: github.event_name == 'schedule'
     name: Live Production E2E
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -712,9 +745,12 @@ jobs:
           fi
 
   post-deploy-check:
+    # It waits for Vercel and curls smarter.poker. It never used the build it
+    # declared `needs: build` for - that was ordering, and it cost a full Vite
+    # production build on every merge, on top of the one build-for-world-hub.yml
+    # already does to publish.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     name: Post-Deploy Verification
-    needs: build
-    if: success()
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -779,6 +815,12 @@ jobs:
   # one red before it ships.
   # ───────────────────────────────────────────────────────────────────────────
   css-beats-e2e:
+    # COST 2026-08-23: this already ran, and passed, on the pull request -
+    # the ruleset will not merge without it. Re-running it on the merge
+    # commit tests an identical tree. 34 of every 100 CI runs were that
+    # duplicate, and CI is six jobs, each billed as a whole minute even
+    # when it takes twenty seconds.
+    if: github.event_name == 'pull_request'
     name: CSS Beat E2E (multi-table + animations)
     runs-on: ubuntu-latest
     timeout-minutes: 20

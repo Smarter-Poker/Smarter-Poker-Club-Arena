@@ -258,10 +258,31 @@ jobs:
           echo "this bundle: sha ${OURS_SHA}, built at ${OURS_AT:-unknown}"
 
           for attempt in 1 2 3 4 5; do
-            THEIRS_SHA=$(sed -n 's/.*"ca_sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-                         public/hub/club-arena/build-info.json 2>/dev/null || true)
-            THEIRS_AT=$(sed -n 's/.*"built_at"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-                        public/hub/club-arena/build-info.json 2>/dev/null || true)
+            # READ THE DEPLOYED PROVENANCE FROM GIT, NOT FROM THE WORKING TREE.
+            #
+            # 2026-08-23: the "Sync dist/" step above rsyncs OUR bundle into
+            # public/hub/club-arena/ before this step runs, so reading that
+            # path here read our own build-info.json back and compared the
+            # bundle to itself. THEIRS_SHA equalled OURS_SHA on attempt 1,
+            # every time, and the stand-down guard could not fire on the one
+            # attempt that usually decides the outcome. It only worked from
+            # attempt 2, after `git reset --hard origin/main` restored the
+            # file - which is to say only when the push had already been
+            # rejected.
+            #
+            # That leaves the original regression open: a losing older-sha run
+            # that checks World Hub out AFTER the winner has pushed sees the
+            # newer bundle, overwrites it with rsync, compares ours-to-ours,
+            # and pushes cleanly as a fast-forward. Production goes backwards
+            # with every check green.
+            #
+            # origin/main (freshly fetched) is the only honest answer to "what
+            # is deployed", and it is correct on every attempt, not just
+            # retries.
+            git fetch --no-tags -q origin main 2>/dev/null || true
+            THEIRS_JSON=$(git show origin/main:public/hub/club-arena/build-info.json 2>/dev/null || true)
+            THEIRS_SHA=$(printf '%s' "$THEIRS_JSON" | sed -n 's/.*"ca_sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+            THEIRS_AT=$(printf '%s' "$THEIRS_JSON" | sed -n 's/.*"built_at"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 
             VERDICT=""
             if [ -n "$THEIRS_SHA" ] && [ "$THEIRS_SHA" != "$OURS_SHA" ]; then

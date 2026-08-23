@@ -13,8 +13,12 @@ name: Silent Revert Guard
 # No `schedule:` trigger, per the cron-governance rule: this runs on push only.
 
 on:
-  push:
-    branches: [main]
+  # NO push TRIGGER. Removed 2026-08-23 for cost.
+  #
+  # The note below is the reason: running on the pull request turned this from
+  # detection into prevention. Once that was true the push run became a second
+  # opinion on a tree the first one had already cleared - 20 billed minutes an
+  # hour in this repo, at about twenty seconds of actual work each.
   # 2026-08-22: this used to run on push ONLY, which meant a silent revert
   # LANDED on main and was reported afterwards. Detection after the fact is how
   # the leaderboard RPC call stayed dead for a day. Running it on the pull

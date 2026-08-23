@@ -28,10 +28,13 @@
  */
 
 /**
- * Words start after whitespace, an opening bracket/quote, or a hyphen —
- * "auto-fold" is two words to a reader, so both halves get their capital.
+ * Rule 1 now lives in utils/titleCase.ts, unchanged, because the Players tab
+ * needs the same capitalisation for placeholders, column headings and tab
+ * labels — none of which pass through the Toast layer. Importing it keeps one
+ * definition; the pattern there is byte-identical to the one that used to sit
+ * on this line, so no popup message changes.
  */
-const WORD_START = /(^|[\s([{"'‘“-])([a-z])/g;
+import { toTitleCase } from './titleCase';
 
 /** An em/en dash used as a clause break: surrounded by spaces. */
 // FORMATTER-PROOF 2026-08-21: a format pass once mangled literal em/en
@@ -45,13 +48,11 @@ const DASH_ANY = /[\u2014\u2013]/g;
 
 export function formatPopupText(message: string): string {
   if (!message) return message;
-  return (
+  return toTitleCase(
     message
       // Clause-break dashes become sentence breaks…
       .replace(DASH_CLAUSE, '. ')
       // …anything else dash-like becomes a plain hyphen.
       .replace(DASH_ANY, '-')
-      // First letter of every word up. Interior capitals untouched.
-      .replace(WORD_START, (_, boundary: string, letter: string) => boundary + letter.toUpperCase())
   );
 }

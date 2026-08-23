@@ -51,7 +51,7 @@ import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
-import ChipMintModal from '../components/wallet/ChipMintModal';
+import ClubBankCashierModal from '../components/wallet/ClubBankCashierModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
@@ -333,8 +333,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // last 5 hits, qualifying hands per game, payout % per stakes (Dan 2026-08-18).
   const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
   const [showBBJInfo, setShowBBJInfo] = useState(false);
-  // Dan 2026-08-21: Chip Mint (diamonds -> chips, 100 = 10,000).
-  const [showChipMint, setShowChipMint] = useState(false);
+  // Dan 2026-08-23: the Club Bank row opens the Club Bank Cashier - send outs
+  // to agent wallets, the full chip ledger, and (standalone clubs only) the
+  // Chip Mint, which used to be a "+" on the wallet panel itself.
+  const [showClubBank, setShowClubBank] = useState(false);
   /* LOBBY V2 follow-up (Dan's QA, 2026-08-22): the lobby landed on the MTT
      tab, a leftover from before All Games was a real tab. A club with no open
      MTTs therefore opened onto an empty screen blaming "filters" - every
@@ -816,6 +818,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     const unsubs = [
       masterBus.subscribeDebounced('CLUB_JOINED', reload, 300),
       masterBus.subscribeDebounced('CLUB_LEFT', reload, 300),
+      masterBus.subscribeDebounced('TABLE_SEATED', reload, 300),
+      masterBus.subscribeDebounced('TABLE_LEFT', reload, 300),
       masterBus.subscribeDebounced('BALANCE_UPDATED', reload, 300),
       masterBus.subscribeDebounced('DIAMOND_BALANCE_CHANGED', reload, 300),
       masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', reload, 300),
@@ -830,7 +834,41 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         300
       ),
       masterBus.subscribeDebounced(
+        'TABLE_UPDATED',
+        () => {
+          // Reload when any table linked to this club changes
+          reload();
+        },
+        300
+      ),
+      masterBus.subscribeDebounced(
+        'TOURNAMENT_UPDATED',
+        () => {
+          // Reload when any tournament changes — payload has tournamentId, not clubId
+          reload();
+        },
+        300
+      ),
+      masterBus.subscribeDebounced(
         'CLUB_SETTINGS_UPDATED',
+        (event) => {
+          if (!clubIdRef.current || event.payload?.clubId === clubIdRef.current) {
+            reload();
+          }
+        },
+        300
+      ),
+      masterBus.subscribeDebounced(
+        'TABLE_CREATED',
+        (event) => {
+          if (!clubIdRef.current || event.payload?.clubId === clubIdRef.current) {
+            reload();
+          }
+        },
+        300
+      ),
+      masterBus.subscribeDebounced(
+        'TABLE_DELETED',
         (event) => {
           if (!clubIdRef.current || event.payload?.clubId === clubIdRef.current) {
             reload();
@@ -840,16 +878,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       ),
       masterBus.subscribeDebounced('WAITLIST_PROMOTED', reload, 300),
     ];
-
-    // 1-minute fallback interval to ensure the page data doesn't get completely stale
-    // when real-time events are missed.
-    const fallbackInterval = setInterval(() => {
-      reload();
-    }, 60_000);
-
     return () => {
       isMounted = false;
-      clearInterval(fallbackInterval);
       unsubs.forEach((u) => u());
     };
   }, []);
@@ -1854,21 +1884,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   );
 
   /** Row selection — opens the game lobby panel. NEVER joins or spends. */
-  const openEntry = useCallback(
-    (entry: LobbyEntry) => {
-      haptic.selection();
-      if (
-        entry.kind === 'mtt' &&
-        (entry.status === 'running' || entry.status === 'late_reg' || entry.status === 'completed')
-      ) {
-        navigate(`/tournaments/${entry.id}`);
-        return;
-      }
-      setSelectedId(entry.id);
-      setPanelOpen(true);
-    },
-    [navigate]
-  );
+  const openEntry = useCallback((entry: LobbyEntry) => {
+    haptic.selection();
+    setSelectedId(entry.id);
+    setPanelOpen(true);
+  }, []);
 
   const handleJoinTable = useCallback(
     (tableId: string) => {
@@ -1938,25 +1958,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     );
     let cash = filteredTables.map(cashEntry);
     if (favoritesOnly) cash = cash.filter((e) => favoriteTableIds.has(e.id));
-
-    if (gameType === 'ALL') {
-      const isMtt = (e: LobbyEntry) => e.kind === 'mtt';
-      const isLateRegOrStarting = (e: LobbyEntry) =>
-        e.status === 'registering' || e.status === 'late_reg' || e.status === 'starting_soon';
-
-      const selectedTourns = tourns.filter((t) => isMtt(t) && isLateRegOrStarting(t)).slice(0, 10);
-
-      const holdemCash = cash.filter((c) => cashKind(c.raw as any) === 'HOLDEM').slice(0, 10);
-      const omahaCash = cash.filter((c) => cashKind(c.raw as any) === 'OMAHA').slice(0, 10);
-      const limitCash = cash.filter((c) => cashKind(c.raw as any) === 'LIMIT').slice(0, 10);
-
-      return [...selectedTourns, ...holdemCash, ...omahaCash, ...limitCash];
-    }
-
     // Tournaments first, cash after — same order the card grid used, so the
     // page-level sort control keeps meaning what it meant.
     return [...tourns, ...cash];
-  }, [filteredTournaments, filteredTables, favoritesOnly, favoriteTableIds, gameType]);
+  }, [filteredTournaments, filteredTables, favoritesOnly, favoriteTableIds]);
 
   const selectedEntry = useMemo(
     () => (selectedId ? lobbyEntries.find((e) => e.id === selectedId) || null : null),
@@ -2280,22 +2285,27 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               <DynamicWallet
                 userId={currentUserId}
                 clubId={resolvedClubId}
-                variant={
-                  club?.is_union ? 'union' : isOwner || userRole === 'owner' ? 'owner' : 'player'
-                }
+                // WHOSE books. A union's own lobby shows union books; every
+                // club lobby shows club books, whoever is standing in it.
+                variant={club?.is_union ? 'union' : 'club'}
+                // WHO is looking. Decides which rows exist - see walletRows.ts.
+                // The club's owner_id outranks a stale club_members row, which
+                // is how a brand new owner sees their own Club Bank.
+                role={isOwner ? 'owner' : userRole}
                 showBBJ
                 onBuyDiamonds={() => {
                   haptic.medium();
                   navigate(`/clubs/${clubId}/detail`);
                 }}
-                onMintChips={() => {
+                // Dan 2026-08-23: "if they click on Club Bank, that should
+                // open the Club Bank Cashier." The row only renders for owner,
+                // co-owner, admin and super agent, and fn_can_use_club_bank
+                // refuses everyone else server-side. The Chip Mint moved
+                // INSIDE that cashier - there is no mint button out here any
+                // more, and no mint at all once the club is in a union.
+                onOpenClubBank={() => {
                   haptic.medium();
-                  // Dan 2026-08-21: the Mint button IS the Chip Mint now
-                  // (diamonds -> chips, 100 = 10,000). The RPC enforces the
-                  // law: standalone clubs mint into their pool; union clubs
-                  // are revoked unless you own the union, in which case the
-                  // chips land in the union bank.
-                  setShowChipMint(true);
+                  setShowClubBank(true);
                 }}
                 onOpenBBJ={() => {
                   haptic.medium();
@@ -2362,10 +2372,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         )}
       </header>
 
-      <ChipMintModal
-        isOpen={showChipMint}
-        onClose={() => setShowChipMint(false)}
+      <ClubBankCashierModal
+        isOpen={showClubBank}
+        onClose={() => setShowClubBank(false)}
         clubId={resolvedClubId || clubId || ''}
+        role={isOwner ? 'owner' : userRole}
       />
       <BBJInfoModal
         isOpen={showBBJInfo}

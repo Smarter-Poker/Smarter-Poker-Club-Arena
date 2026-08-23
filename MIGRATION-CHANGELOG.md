@@ -77,6 +77,150 @@ from outside. That is the same shape as nearly everything this audit has found.
 
 ---
 
+## Cowork session 2026-08-23 (12) — Club Bank Cashier + wallet visibility law
+
+Dan, binding: only owners, co-owners, admins and super agents may see or use
+the Club Bank; agents, sub agents and players must never see that row at all.
+Clicking it opens a CLUB BANK CASHIER that funds agent wallets and carries a
+full ledger of every chip movement. Chip minting leaves the wallet panel
+entirely and lives inside the Club Bank, for standalone clubs only.
+
+**Server** (`supabase/migrations/20260823140000_club_bank_cashier.sql`, APPLIED
+to production via Supabase MCP in two named migrations):
+
+- `fn_can_use_club_bank` / `fn_club_bank_role` — the four-role gate, enforced
+  server-side so hiding a row is a courtesy, not the boundary.
+- `fn_club_bank_send(club, to_user, amount, destination, reason)` — debits
+  `clubs.chip_treasury`, credits `agents.agent_wallet_balance` /
+  `promo_wallet_balance` / `club_members.chip_balance`, and writes ONE
+  `chip_transactions` row in the same transaction. Creates the `agents` row on
+  demand so the first ever funding of a new agent is not a refusal.
+- `fn_club_bank_ledger` — every `chip_transactions` row for the club with both
+  parties resolved to names. Refuses non-bank roles outright rather than
+  filtering, so there is nothing to leak.
+- `fn_mint_chips_from_diamonds` — the STANDALONE branch now credits
+  `clubs.chip_treasury`, not `clubs.chip_pool`. Those were two different
+  accounts and the panel only ever showed the first, so "mint inside your Club
+  Bank" would have moved a figure nobody could see. Existing `chip_pool`
+  balances are untouched. Union branch unchanged.
+- `fn_club_money_panel` — returns `club_rake_treasury` for standalone clubs
+  (from `club_wallets.period_rake_collected`), emitted only when the row
+  exists so a missing account renders "-" not 0.00.
+
+**Client**
+
+- `components/wallet/walletRows.ts` (new) — the visibility law as a pure
+  function, pinned role by role in `tests/unit/walletRows.test.ts`.
+- `DynamicWallet` — variants collapsed from `player | owner | union` to
+  `club | union`, and WHICH rows a club panel shows now comes from the
+  viewer's role. The mint `+` is gone. The "The Wallet You Play From" hint is
+  gone. Club Bank is a button.
+- `components/wallet/ClubBankCashierModal.tsx` (new) — send-out, ledger, and
+  the standalone-only mint entry point.
+- `ChipMintModal.css` — repainted to the smarter.poker palette (navy / brand
+  cyan / brand blue). It was carrying gold AND violet, neither of which
+  appears anywhere else; same correction the BBJ banner had on 2026-08-20.
+- `CashierPage` — `canMint` now admits co_owner and admin as the RPC always
+  has; `canDistribute` widened to the four bank roles so the Club Bank row
+  cannot open a tab that does not exist.
+- `CashierTradePage` — the "+" on Available Chips opens the Club Bank Cashier
+  and only for the four bank roles.
+
+**NOT VERIFIED IN THIS SESSION:** the Cowork Linux sandbox ran out of disk, so
+`npx tsc --noEmit` and `npx vitest run tests/` could not be executed, and
+nothing was pushed. Both must pass on the Mac before this ships.
+
+**ALSO:** every edit in this session was wiped once mid-flight by the
+Antigravity `git reset --hard origin/main` loop (club-arena CLAUDE.md §12) and
+had to be re-applied. Commit promptly.
+
+## Cowork session 2026-08-23 (12) — Club Bank Cashier + wallet visibility law
+
+Dan, binding: only owners, co-owners, admins and super agents may see or use
+the Club Bank; agents, sub agents and players must never see that row at all.
+Clicking it opens a CLUB BANK CASHIER that funds agent wallets and carries a
+full ledger of every chip movement. Chip minting leaves the wallet panel
+entirely and lives inside the Club Bank, for standalone clubs only.
+
+### Server — three migrations, all APPLIED and verified against production
+
+`20260823140000_club_bank_cashier.sql`
+
+- `fn_can_use_club_bank` / `fn_club_bank_role` — the four-role gate, enforced
+  server-side so hiding a row is a courtesy, not the boundary.
+- `fn_club_bank_send` — debits `clubs.chip_treasury`, credits
+  `agents.agent_wallet_balance` / `promo_wallet_balance` /
+  `club_members.chip_balance`, and writes ONE `chip_transactions` row in the
+  same transaction. Creates the `agents` row on demand so the first ever
+  funding of a new agent is not a refusal.
+- `fn_club_bank_ledger` — every `chip_transactions` row for the club with both
+  parties resolved to names. Refuses non-bank roles outright rather than
+  filtering, so there is nothing to leak.
+- `fn_mint_chips_from_diamonds` — the STANDALONE branch now credits
+  `clubs.chip_treasury`, not `clubs.chip_pool`. Those were two different
+  accounts and the panel only ever showed the first, so "mint inside your Club
+  Bank" would have moved a figure nobody could see. Existing `chip_pool`
+  balances are untouched; the union branch is unchanged.
+- `fn_club_money_panel` — returns `club_rake_treasury` for standalone clubs
+  (from `club_wallets.period_rake_collected`), emitted only when the row
+  exists so a missing account renders "-" not 0.00.
+
+`20260823170000_club_bank_idempotency_and_reversal.sql`
+
+- **Idempotency.** `fn_club_bank_send` gains `p_op_id`, backed by a UNIQUE
+  index on `(club_id, metadata->>'op_id')` and a `unique_violation` handler
+  that turns the loser of a race into a replay. The unkeyed 5-arg overload is
+  DROPPED so a stale caller fails loudly instead of sending without a key.
+  This repo has paid for that lesson three times at three other sites.
+- **Reversal.** `fn_club_bank_reverse` puts the chips back and writes a
+  MATCHING ROW; nothing is ever edited or deleted. It refuses once the
+  recipient has spent the chips, because taking them back then would leave the
+  agent negative and their downline funded out of nothing.
+- The ledger gained per-row reversibility, the club's own transaction-type
+  list (so the filter cannot go stale) and the bank's in/out/net totals.
+
+`20260823180000_club_bank_membership_status.sql` — **a real bug, caught by
+verifying against a real club rather than a fixture.** The functions asked for
+`status = 'active'`, but a membership row says either `'active'` or
+`'approved'` and 1,480 of the 1,499 rows in production are the older word. As
+shipped, `fn_club_bank_role` would have returned null for every owner,
+co-owner, admin and super agent whose row says `'approved'` — locking them out
+of the ledger and every send, leaving only a club's literal `owner_id` with
+access — and `fn_club_bank_send` would have refused essentially every
+recipient in the database. A fixture created today would have said `'active'`
+and passed.
+
+**Verified live** on SHARK CLUB with a real owner and a real agent: 1 chip sent
+(bank 1,477,596.87 → 1,477,595.87), the same `op_id` replayed with no second
+movement, reversed with the bank restored exactly, the second reversal
+refused, and an agent identity refused by both the ledger and the send. The
+two self-test rows are left in the ledger, relabelled, because deleting a
+ledger row is the one thing this feature exists to prevent. Net effect zero.
+
+### Client
+
+- `components/wallet/walletRows.ts` (new) — the visibility law as pure
+  functions, pinned role by role in `tests/unit/walletRows.test.ts`.
+- `DynamicWallet` — variants collapsed from `player | owner | union` to
+  `club | union`; WHICH rows a club panel shows now comes from the viewer's
+  role. The mint `+` is gone, the "The Wallet You Play From" hint is gone, and
+  Club Bank is a button. A new `roleReady` prop holds the skeleton while the
+  caller is still fetching the role, so an owner no longer sees one row and
+  then watches three more appear underneath it.
+- `components/wallet/ClubBankCashierModal.tsx` (new) — send-out with an
+  idempotency key per attempt, a confirm step at 25% of the bank, a live
+  balance over Realtime, the full ledger with type filters, running totals,
+  CSV export and one-tap reversal, plus the standalone-only mint entry point.
+- `ChipMintModal.css` — repainted to the smarter.poker palette (navy / brand
+  cyan / brand blue). It was carrying gold AND violet, neither of which
+  appears anywhere else; the same correction the BBJ banner had on 2026-08-20.
+- `CashierPage` — `canMint` now admits co_owner and admin as the RPC always
+  has; the Club Bank row opens the SAME modal here as in the lobby, because an
+  earlier version routed it to this page's distribute tab while the row's own
+  hint promised the cashier.
+- `CashierTradePage` — the "+" on Available Chips opens the Club Bank Cashier,
+  and only for the four bank roles.
+
 ## Cowork session 2026-08-23 (11) — tournament audit
 
 Full write-up: `.agent/audits/2026-08-23-tournament-audit-session11.md`
@@ -12792,68 +12936,3 @@ because a disagreement means an owner is quoted one number and charged another.
 **Still open:** every Spin is created under one house id, so activation governs
 the wallet correctly but there is no per-club board for it to switch on yet.
 That is Phase 3.
-
-## Cowork session 2026-08-23 (11) — READING MY OWN FEATURE BACK AS AN ATTACKER
-
-Six findings from the adversarial pass over Phases 1-3. Two were already doing
-damage in production.
-
-**1. A minting function became a mint-to-wallet channel (critical).**
-`fn_spin_reserve_seed` credits `balance` AND `seeded_amount` and debits nobody.
-Phase 1 waved that away — "it had no caller in application code, which is the
-only reason that never mattered." That reasoning died the moment Phase 1
-shipped, because Phase 1 made `seeded_amount` a **repayable loan that pays out
-to a real wallet**. It was still EXECUTABLE by `service_role`, the role every
-API route and the engine run as. Its only honest caller debits the union wallet
-first, so that credit is inlined there and the bare minter is dropped.
-
-**2. The idempotency guard read before it locked (high — already happened).**
-`fn_spin_settle_game` asked "already settled?" _before_ taking its row lock. Two
-concurrent settles both passed, serialised on the lock, and both booked. The
-engine retries settlement three times, so a call that timed out client-side
-after committing reproduced it exactly.
-
-**Six tournaments were double-booked**, gaps of 19ms to 1.9s between the pairs —
-the signature of that retry loop. Repaired: 211.20 of contributions no player
-paid and 200.00 of draws nobody was paid, unwound per owner; 5 duplicate
-`rake_records` rows (revenue never earned) deleted; `spin_count` corrected.
-Money conservation now checks exactly: 20,000 seed + 285,627.78 collected −
-280,677.00 paid = 24,950.78 balance. Fixed three ways — lock first, a partial
-unique index so a second booking is structurally impossible, and the repair.
-
-**3. The repayment bar was owner-adjustable (high).** It was read live from
-`offered_max_stake`, which `fn_spin_activate` rewrites. Activate at stake 100
-(bar 20,000), deactivate, reactivate at stake 1 and the bar drops to 200 — the
-whole 20,000 repayable after trivial play. Raising it instead strands a seed
-forever. Now frozen in `required_seed_at_activation` when the seed is taken.
-
-**4. Reactivation double-seeded and redirected the repayment (high)** to
-whichever wallet was named last. Now refused unless it is the same wallet.
-
-**5. A zero-row UPDATE after the wallet moved reported success (medium).** Both
-money paths did `UPDATE ... RETURNING ... INTO` after moving the wallet without
-checking `FOUND` — a silent burn returned as `ok:true`. Now raises.
-
-**6. Dead code (low).** `fn_spin_owner_can_open` had no callers anywhere; the
-engine reads the table directly with the same three predicates. Two independent
-copies of a money gate drift, so it is dropped and the comment that claimed it
-was the reader of `is_active` is corrected.
-
-**And the panel was guessing who may act.** It inferred permission from
-`owner_kind`, which was wrong in both directions: `canManage && !isUnionOwned`
-hid the off switch from the union lead — the one person allowed to press it —
-while the activate button had no such guard and was offered to a club owner
-inside a union whose request the API answers 403. Permission is now decided by
-the route, where `union_admins` and `clubs.owner_id` actually are, returned as
-`canManage`, and the panel fails closed until it arrives. A viewer who may not
-manage can still READ the wallet. (World Hub PR #685.)
-
-Also hardened there: passing a **union's own id** as `clubId` landed on the
-clubs row every union carries with the same uuid, and would have fallen through
-to the club-ownership test if that row's `union_id` were ever null. Not
-reachable today; now it cannot become reachable by a data change nobody
-connects to that file.
-
-Three earlier tests were updated in these commits because this deliberately
-replaces behaviour they pinned. 23 new tests here, 4 on the route. 284 files /
-3,485 green.

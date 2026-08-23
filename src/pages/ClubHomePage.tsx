@@ -1176,7 +1176,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         // joinable 6/6 card after TournamentService was fixed, because it
         // runs its own query rather than the service. Same rule as the
         // service now: a lobby lists what can be ENTERED.
-        .in('status', ['REGISTERING', 'RUNNING'])
+        .in('status', ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTING_SOON'])
         .order('start_time', { ascending: true })
         /* The tables query has been capped since P1-1; these two were not
            capped at all. An unbounded list query is the shape that pulled
@@ -1221,7 +1221,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 // (XMTT and union-stamped recurring games), not just XMTT.
                 .eq('union_id', unionId)
                 // Joinable-only -- same rule as the club query above.
-                .in('status', ['REGISTERING', 'RUNNING'])
+                .in('status', ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTING_SOON'])
                 .order('start_time', { ascending: true })
                 .limit(QUERY_LIMITS.LIST),
             ]
@@ -1436,9 +1436,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         return rows.sort((a, b) => cmpPlayers(a, b) || cmpStakes(a, b) || cmpName(a, b));
       case 'recommended':
       default:
-        return rows.sort(
-          (a, b) => cashRank(a) - cashRank(b) || cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b)
-        );
+        return rows.sort((a, b) => cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b));
     }
   }, [tables, gameType, showsCash, sortKey, searchQuery, advFilters]);
 

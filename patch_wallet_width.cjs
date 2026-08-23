@@ -1,10 +1,10 @@
 const fs = require('fs');
 let css = fs.readFileSync('src/pages/ClubHomePage.css', 'utf-8');
 
-// Replace .club-home background gradient
+// Change 220px to 255px
 css = css.replace(
-  '  background: linear-gradient(180deg, #0a0a0f 0%, #1a1a2e 100%);',
-  '  background: #000000;'
+  'flex: 0 1 220px;',
+  'flex: 0 1 255px;'
 );
 
 fs.writeFileSync('src/pages/ClubHomePage.css', css);

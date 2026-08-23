@@ -144,6 +144,57 @@ interface DynamicWalletProps {
   onOpenPromoWallet?: () => void;
   onOpenAgentWallet?: () => void;
   onOpenPlayerWallet?: () => void;
+  onOpenBBJ?: () => void;
+}
+
+interface WalletData {
+  diamonds: number;
+  bbjPool: number;
+  chipBalance: number;
+  clubBank: number;
+  agentBalance: number;
+  promoBalance: number;
+  unionBank: number;
+  backupBBJ: number;
+  /**
+   * WALLET AUDIT 2026-08-19 — RESTORED + made regression-proof.
+   *
+   * Commit 714738896 removed the union ledger rows and the union-first BBJ
+   * resolver from this widget. The effect, had it shipped: every union club
+   * resolves its jackpot by club_id, finds its own RETIRED pool row (both
+   * club pools were merged into the union pool and zeroed on 2026-08-19) and
+   * shows a 0.00 Bad Beat Jackpot while 14k sits in the union pool — plus the
+   * Rake Treasury row disappears and Promo falls back to the club-agent
+   * wallet. Production was still serving the older, correct bundle, so this
+   * was latent rather than live.
+   *
+   * All of that rule now lives in ONE server function, fn_club_money_panel,
+   * so a client-side edit cannot silently un-fix it again.
+   */
+  clubTreasury: number;
+  unionRake: number;
+  unionPromo: number;
+  /**
+   * A STANDALONE club's own rake treasury (fn_club_money_panel ->
+   * club_rake_treasury). A club inside a union has none — its rake goes to the
+   * union's treasury, which is union money. `null` means "not applicable or
+   * not readable", and renders as "-" rather than as 0.00.
+   */
+  clubRakeTreasury: number | null;
+  /**
+   * UNION SPIN TREASURY (Dan 2026-08-24: "the wallet is still missing the
+   * spins treasury"). The capital every Spin multiplier is paid out of.
+   *
+   * TWO HALVES, because either alone lies: `unionSpinIdle` is what sits in
+   * union_wallets.spin_reserve_wallet waiting to be seeded, and
+   * `unionSpinDeployed` is what is live inside spin_bonus_pools. Reporting
+   * only the column showed 0.00 while ~25,800 was in the pool — the seed was
+   * debited straight from promo_wallet into the pool row and never touched the
+   * column. The row shows the SUM; the breakdown is the hint.
+   */
+  unionSpinTreasury: number;
+  unionSpinIdle: number;
+  unionSpinDeployed: number;
   /** Sum of member clubs' operational banks — the real union-level figure. */
   clubsWallet: number;
   /** What Monday's close hands back to THIS club / to all clubs. */
@@ -503,6 +554,480 @@ export default function DynamicWallet({
    */
   const spins = useSpinsWallet(clubId, variant !== 'union' && !isClubInUnion);
   const animSpins = useAnimatedCounter(spins.balance);
+  const animUnionRake = useAnimatedCounter(data.unionRake);
+
+  // ── Fetch data — uses resolvedId (UUID) for all Supabase queries ───────────
+  const fetchData = useCallback(async () => {
+    if (!userId || !resolvedId) return;
+
+    // Increment version — any in-flight fetch with a lower version is stale
+    const thisVersion = ++fetchVersionRef.current;
+
+    try {
+      // fn_club_money_panel replaces three separate reads (bbj_pools, clubs,
+      // union_wallets) with one permission-aware server call. It resolves the
+      // BBJ pool union-first exactly as the engine banks it, and returns a
+      // `scope` saying which figures the caller may actually see — so the
+      // panel can render "—" for what it is not allowed to read instead of a
+      // fabricated 0.00. It also removes the second, serial round trip.
+      //
+      // dedupedFetch: two wallet surfaces mounting in the same window (e.g.
+      // the Cashier's panel plus a modal's) share ONE set of queries instead
+      // of racing duplicates.
+      const [profileRes, memberRes, agentRes, panelRes] = await dedupedFetch(
+        `dw_fetch_${userId}_${resolvedId}`,
+        () =>
+          Promise.all([
+            supabase.from('profiles').select('diamonds').eq('id', userId).maybeSingle(),
+            supabase
+              .from('club_members')
+              .select('chip_balance')
+              .eq('club_id', resolvedId)
+              .eq('user_id', userId)
+              .maybeSingle(),
+            supabase
+              .from('agents')
+              .select('agent_wallet_balance, promo_wallet_balance')
+              .eq('club_id', resolvedId)
+              .eq('user_id', userId)
+              .maybeSingle(),
+            supabase.rpc('fn_club_money_panel', { p_club_id: resolvedId }),
+          ])
+      );
+
+      // Discard stale response if a newer fetch has started
+      if (thisVersion !== fetchVersionRef.current || !isMounted.current) return;
+
+      // Defensive unwrap: a jsonb-returning RPC hands back the object, but a
+      // TABLE-returning one hands back an array. Reading `.x` off the array
+      // was exactly how Backup BBJ came to render 0.00 once before.
+      const panel = ((Array.isArray(panelRes.data) ? panelRes.data[0] : panelRes.data) ??
+        {}) as Record<string, unknown>;
+      const bbj = (panel.bbj ?? {}) as Record<string, unknown>;
+      const num = (v: unknown) => Number(v) || 0;
+      const unionId = (panel.union_id as string | null) ?? null;
+
+      // Track union_id for the union_wallets RT channel
+      currentUnionIdRef.current = unionId;
+      if (isMounted.current) setCurrentUnionId(unionId ?? null);
+
+      // WALLET SEPARATION LAW: a club-scoped panel never even HOLDS union
+      // figures. Gating only at render time leaves the numbers sitting in
+      // component state where the next edit can surface them by accident —
+      // which is exactly how Union Bank reached the Shark Club lobby. On a
+      // club surface these stay 0 and are never rendered, so there is nothing
+      // to leak.
+      const unionScoped = variant === 'union';
+
+      const nextData: WalletData = {
+        diamonds: Number(profileRes.data?.diamonds) || 0,
+        chipBalance: Number(memberRes.data?.chip_balance) || 0,
+        promoBalance: Number(agentRes.data?.promo_wallet_balance) || 0,
+        bbjPool: num(bbj.main),
+        backupBBJ: num(bbj.backup),
+        agentBalance: Number(agentRes.data?.agent_wallet_balance) || 0,
+        clubBank: num(panel.club_treasury),
+        clubTreasury: num(panel.club_treasury),
+        // Present ONLY for a standalone club, and only for club staff. Absent
+        // means "you have no such account" or "you may not read it" — both of
+        // which render "-", never 0.00.
+        clubRakeTreasury:
+          panel.club_rake_treasury === undefined || panel.club_rake_treasury === null
+            ? null
+            : num(panel.club_rake_treasury),
+        unionBank: unionScoped ? num(panel.union_bank) : 0,
+        unionRake: unionScoped ? num(panel.rake_treasury) : 0,
+        unionPromo: unionScoped ? num(panel.union_promo) : 0,
+        unionSpinTreasury: unionScoped ? num(panel.union_spin_treasury) : 0,
+        unionSpinIdle: unionScoped ? num(panel.union_spin_idle) : 0,
+        unionSpinDeployed: unionScoped ? num(panel.union_spin_deployed) : 0,
+        clubsWallet: unionScoped ? num(panel.clubs_wallet) : 0,
+        clubProjectedRakeback: num(panel.club_projected_rakeback),
+        projectedClubsShare: unionScoped ? num(panel.projected_clubs_share) : 0,
+        nextCloseAt: (panel.next_close_at as string | null) ?? null,
+        scope: (panel.scope as WalletData['scope']) ?? null,
+      };
+      setData(nextData);
+      setIsClubInUnion(Boolean(panel.in_union));
+      setFetchError(false);
+      setLoading(false);
+
+      // 3. Mark `data` as belonging to this cache key. The write-through
+      //    effect below owns ALL persistence (fetches and realtime deltas
+      //    alike) — one write path, debounced, flushed on pagehide.
+      if (cacheKey) paintedKeyRef.current = cacheKey;
+    } catch (err) {
+      reportError(err, 'DynamicWallet.Fetch_error');
+      if (thisVersion === fetchVersionRef.current && isMounted.current) {
+        setFetchError(true);
+        setLoading(false);
+      }
+    }
+  }, [userId, resolvedId, variant, cacheKey]);
+
+  useEffect(() => {
+    if (!resolvedId) return;
+    // FRESH WINDOW: the panel just painted from data written seconds ago
+    // (typically by this same widget on the page the user just left). An
+    // immediate refetch would be a full resync for numbers that cannot
+    // meaningfully have moved — and every later trigger (bus event, realtime
+    // delta, visibility return, club switch) still fetches as before.
+    if (skipNextFetchRef.current) {
+      skipNextFetchRef.current = false;
+      return;
+    }
+    fetchData();
+  }, [fetchData, resolvedId]);
+
+  // ── Realtime write-through ────────────────────────────────────────────────
+  // The realtime channels below patch `data` directly (diamonds, chip
+  // balance, club bank, union ledgers). Mirror every such change into the
+  // device cache so the next instant paint shows the LAST number this panel
+  // displayed, not the one from the last full fetch. paintedKeyRef gates the
+  // one-render window after a club switch where `data` still belongs to the
+  // previous key.
+  useEffect(() => {
+    if (loading || fetchError) return;
+    if (!cacheKey || paintedKeyRef.current !== cacheKey) return;
+    const payload: CachedPanel = {
+      data,
+      isClubInUnion,
+      unionId: currentUnionId,
+    };
+    // Persist the viewer's role only when the caller has actually resolved it
+    // (roleReady) — caching the hydration default would freeze 'player' in
+    // and defeat the very gap this bridges. Union panels have a fixed row
+    // set, so role is meaningless there.
+    if (variant === 'club' && roleReady) payload.role = viewerRole;
+    // Debounced: realtime patches arrive several times a second during play;
+    // memory updates instantly, storage settles when the burst does (and is
+    // force-flushed on pagehide/hidden so the final number is never lost).
+    writeWalletCacheDebounced(cacheKey, payload);
+  }, [
+    data,
+    isClubInUnion,
+    currentUnionId,
+    loading,
+    fetchError,
+    cacheKey,
+    variant,
+    roleReady,
+    viewerRole,
+  ]);
+
+  // ── MasterBus: Refresh on ALL balance-related events (debounced 500ms) ─────
+  useMasterBusSubscriptions(
+    [...WALLET_BUS_EVENTS],
+    () => {
+      fetchData();
+    },
+    { debounce: 500 }
+  );
+
+  // ── Tab-visible refresh ────────────────────────────────────────────────────
+  // A phone unlocked after minutes away paints the cached panel instantly and
+  // the realtime channels take a moment to re-establish; this closes the gap
+  // by refetching whenever the tab becomes visible after 30s+ hidden. Same
+  // hook the union dashboard already uses.
+  useVisibilityRefresh(fetchData);
+
+  // ── Channel reconnect helper ──────────────────────────────────────────────
+  const scheduleReconnect = useCallback(() => {
+    if (!isMounted.current) return;
+    const delay = BACKOFF_DELAYS[Math.min(retryCountRef.current, BACKOFF_DELAYS.length - 1)];
+    console.warn(
+      `[DynamicWallet] Scheduling reconnect in ${delay}ms (attempt ${retryCountRef.current + 1})`
+    );
+    // A repeated CHANNEL_ERROR used to stack one timer per event, each firing
+    // its own full refetch — a thundering herd exactly when the connection is
+    // already unhealthy. Only ever one pending reconnect.
+    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+    reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = null;
+      if (!isMounted.current) return;
+      retryCountRef.current++;
+      fetchData(); // catch up on anything missed while disconnected
+      // ...and rebuild the subscriptions. retryCountRef is reset on SUBSCRIBED,
+      // so a channel that keeps failing walks up BACKOFF_DELAYS instead of
+      // hammering. A channel that recovers starts from the short delay again.
+      setChannelEpoch((e) => e + 1);
+    }, delay);
+  }, [fetchData]);
+
+  // Clean up reconnect timer on unmount
+  useEffect(() => {
+    return () => {
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+    };
+  }, []);
+
+  // ── Realtime subscriptions — profiles, club_members, bbj_pools, agents, clubs ─
+  useEffect(() => {
+    if (!userId || !resolvedId) return;
+
+    // Reset the BACKOFF only when the subscription TARGET actually changes.
+    //
+    // This effect now re-runs on channelEpoch (a reconnect), and an
+    // unconditional reset here wiped retryCountRef on every retry — so the
+    // delay was pinned at BACKOFF_DELAYS[0] (2s) forever and never escalated
+    // to 4/8/16/30s. A club with a flaky realtime connection would retry every
+    // two seconds indefinitely: precisely the thundering herd the comment on
+    // scheduleReconnect warns about, reintroduced by making the effect
+    // re-runnable. Introduced in 294b85db4 and caught auditing my own change.
+    //
+    // Recovery still resets the backoff — the SUBSCRIBED handler below does
+    // that, which is the correct trigger: we connected, so start over.
+    const subscriptionTarget = `${userId}:${resolvedId}:${currentUnionId ?? ''}`;
+    if (lastSubscriptionTargetRef.current !== subscriptionTarget) {
+      lastSubscriptionTargetRef.current = subscriptionTarget;
+      retryCountRef.current = 0;
+    }
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+
+    const channel = supabase
+      .channel(`dynamic-wallet-${resolvedId}-${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${userId}`,
+        },
+        (p) => {
+          if (isMounted.current && p.new?.diamonds !== undefined) {
+            setData((prev) => ({ ...prev, diamonds: Number(p.new.diamonds) || 0 }));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'club_members',
+          filter: `user_id=eq.${userId}`,
+        },
+        (p) => {
+          if (isMounted.current && p.new?.club_id === resolvedId) {
+            setData((prev) => ({
+              ...prev,
+              chipBalance: Number(p.new.chip_balance) || 0,
+            }));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'bbj_pools',
+          // Must watch the pool the widget actually READS. Filtering by
+          // club_id for a union club subscribes to that club's own retired
+          // pool row — a row that will never change again — so the jackpot
+          // would freeze on screen. currentUnionIdRef is set by fetchData and
+          // this effect re-runs when isClubInUnion flips.
+          filter: currentUnionId ? `union_id=eq.${currentUnionId}` : `club_id=eq.${resolvedId}`,
+        },
+        (p) => {
+          if (isMounted.current) {
+            setData((prev) => ({
+              ...prev,
+              bbjPool: Number(p.new?.main_balance) || 0,
+              backupBBJ: Number(p.new?.backup_balance) || 0,
+            }));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'agents',
+          filter: `user_id=eq.${userId}`,
+        },
+        (p) => {
+          if (isMounted.current && p.new?.club_id === resolvedId) {
+            setData((prev) => ({
+              ...prev,
+              agentBalance: Number(p.new.agent_wallet_balance) || 0,
+              promoBalance: Number(p.new.promo_wallet_balance) || 0,
+            }));
+          }
+        }
+      )
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'SUBSCRIBED') {
+          // Reset retry count on successful subscription
+          retryCountRef.current = 0;
+        }
+        if (status === 'CHANNEL_ERROR') {
+          if (err) reportError(err?.message || err, 'DynamicWallet._Realtime_channel_error');
+          scheduleReconnect();
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[DynamicWallet] Realtime channel timed out');
+          scheduleReconnect();
+        }
+      });
+
+    // ── Clubs RT channel: chip_treasury + union_id changes ──
+    const clubChannel = supabase
+      .channel(`dynamic-wallet-club-${resolvedId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'clubs',
+          filter: `id=eq.${resolvedId}`,
+        },
+        (p) => {
+          if (!isMounted.current) return;
+          // Update club bank immediately from RT payload
+          if (p.new?.chip_treasury !== undefined) {
+            setData((prev) => ({
+              ...prev,
+              clubBank: Number(p.new.chip_treasury) || 0,
+            }));
+          }
+          // If union_id changed (club joined or left a union), do a full refetch
+          // to update unionBank and isClubInUnion
+          if (p.old?.union_id !== p.new?.union_id) {
+            fetchData();
+          }
+        }
+      )
+      .subscribe((status: string) => {
+        // Was a bare .subscribe(): a failure here was silent, so Club Bank
+        // froze on its last value with nothing reconnecting and nothing shown.
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          console.warn(`[DynamicWallet] club channel ${status}`);
+          scheduleReconnect();
+        }
+      });
+
+    // ── Union wallets RT channel: instant union bank balance updates ──
+    // Dynamic — only created if the club is in a union.
+    // Uses the unionId from the most recent fetchData to listen for changes.
+    let unionWalletChannel: ReturnType<typeof supabase.channel> | null = null;
+    const unionId = currentUnionId;
+    // WALLET SEPARATION LAW: this channel writes unionBank / unionRake /
+    // unionPromo straight into state, bypassing the scoping applied in
+    // fetchData. A club surface must not subscribe to it at all — otherwise a
+    // single union_wallets UPDATE would refill the very fields fetchData
+    // deliberately zeroed.
+    if (unionId && variant === 'union') {
+      unionWalletChannel = supabase
+        .channel(`dynamic-wallet-union-${unionId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'union_wallets',
+            filter: `union_id=eq.${unionId}`,
+          },
+          (p) => {
+            if (isMounted.current && p.new) {
+              // Mirror every union ledger the panel shows, not just the bank.
+              // Previously rake_wallet and promo_wallet sat on their first
+              // fetched value while rake poured in all week.
+              setData((prev) => ({
+                ...prev,
+                unionBank:
+                  p.new.chip_balance !== undefined
+                    ? Number(p.new.chip_balance) || 0
+                    : prev.unionBank,
+                unionRake:
+                  p.new.rake_wallet !== undefined ? Number(p.new.rake_wallet) || 0 : prev.unionRake,
+                unionPromo:
+                  p.new.promo_wallet !== undefined
+                    ? Number(p.new.promo_wallet) || 0
+                    : prev.unionPromo,
+              }));
+            }
+          }
+        )
+        .subscribe((status: string) => {
+          // Same as the club channel: silent failure froze Union Bank, Rake
+          // Treasury and Union Promo with no recovery path.
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            console.warn(`[DynamicWallet] union channel ${status}`);
+            scheduleReconnect();
+          }
+        });
+    }
+
+    return () => {
+      supabase.removeChannel(channel);
+      supabase.removeChannel(clubChannel);
+      if (unionWalletChannel) supabase.removeChannel(unionWalletChannel);
+    };
+    // currentUnionId (state, not the ref) so a union->union club switch rebinds.
+  }, [userId, resolvedId, currentUnionId, channelEpoch, variant]);
+
+  // ── Role-specific row config ───────────────────────────────────────────────
+  // Union figures come from union_wallets, which RLS restricts to union
+  // owners/admins. If we are not allowed to read them we must say so rather
+  // than print 0.00 — a wrong number on a money surface is worse than none.
+  const unionFiguresKnown = data.scope === 'union';
+  const closeDay = data.nextCloseAt
+    ? new Date(data.nextCloseAt).toLocaleDateString('en-US', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+      })
+    : 'Monday';
+
+  type WalletRow = {
+    key: string;
+    label: string;
+    icon: WalletIconName;
+    value: number;
+    hint?: string;
+    known?: boolean;
+    /** Makes the row a button. Only the Club Bank has one. */
+    onOpen?: () => void;
+  };
+
+  // ── Club rows: the viewer's ROLE decides which of these exist ─────────────
+  // Dan 2026-08-23. A player gets one row. An agent gets three. Only the four
+  // bank roles get the Club Bank, and only a standalone club has a rake
+  // treasury of its own to show beneath it. The rule is in walletRows.ts.
+  const CLUB_ROW_BY_KEY: Record<WalletRowKey, WalletRow> = {
+    player_wallet: {
+      key: 'player_wallet',
+      // Dan 2026-08-21: named for what it IS across every role — the wallet
+      // you play out of. (Was "Chip Balance".) Dan 2026-08-23: the "The Wallet
+      // You Play From" hint is gone — self-explanatory, and it was the only
+      // row carrying one on a club panel.
+      label: 'Player Wallet',
+      icon: 'chip',
+      value: animPlayerWallet,
+      // Dan 2026-08-24: "PLAYER WALLET NEEDS TO BE FULLY CLICKABLE AND OPEN TO
+      // SEE ALL TRANSACTIONS AND OTHER AVAILABLE DATA WHEN CLICKED."
+      onOpen: onOpenPlayerWallet,
+    },
+    agent_wallet: {
+      key: 'agent_wallet',
+      label: 'Agent Wallet',
+      icon: 'agent',
+      value: animAgent,
+      onOpen: onOpenAgentWallet,
+    },
+    promo_wallet: {
+      key: 'promo_wallet',
+      label: 'Promo Wallet',
+      icon: 'promo',
+      value: animPromo,
+      onOpen: onOpenPromoWallet,
+    },
     club_bank: {
       key: 'club_bank',
       label: 'Club Bank',

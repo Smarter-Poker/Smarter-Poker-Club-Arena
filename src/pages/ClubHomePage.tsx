@@ -2623,11 +2623,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       ═══════════════════════════════════════════════════════════════════ */}
       <div className="club-home__games club-home__games--v2">
         <div className="lobby-actionsrow">
-          {/* CREATE NEW GAME - owners/admins of STANDALONE clubs only.
+          {/* CREATE NEW GAME - owners/admins of STANDALONE clubs and UNIONS.
               Same branch main shipped on the old create tile: a tournament
               tab opens CreateTournamentModal, a cash tab goes to the
               create-table page. */}
-          {(isOwner || userRole === 'admin') && !isInUnion && (
+          {(isOwner || userRole === 'admin') && (!isInUnion || club?.is_union) && (
             <button
               type="button"
               className="lobby-createbtn"

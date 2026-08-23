@@ -69,11 +69,26 @@ const PORT = parseInt(process.env.PORT || '8080', 10);
  * the function reports `caught_up: false` we run batches every 2s (backfill).
  * Once it reports caught up we drop to a 30s tick (steady state).
  *
- * BATCH SIZE IS BOUNDED BY THE CLIENT, NOT BY THE DATABASE. services/supabase
- * imposes a 15s hard fetch timeout via AbortController, and a 4000-hand batch
- * measured close to that ceiling against production. 2000 is the size that
- * completes comfortably inside it; a timed-out call is safe to retry because the
- * watermark only advances inside the function's own transaction.
+ * BATCH SIZE IS BOUNDED BY THE CLIENT. services/supabase imposes a 15s hard
+ * fetch timeout via AbortController, so that - not the database - is the real
+ * ceiling. Measured against production on 2026-08-23, a batch costs about 23ms
+ * per hand: 250 hands takes 5.7s, and the 2000 originally shipped here needs
+ * about 46 SECONDS. 2000 could therefore never complete, and did not once: the
+ * loop ran from the moment it deployed and rolled up nothing at all, because
+ * every call was aborted and rolled back. 250 is the size that fits with room
+ * to spare when the database is busy.
+ *
+ * There was a second ceiling underneath that one, now removed. PostgREST
+ * connects as `authenticator` (statement_timeout=8s) and `service_role`
+ * inherits it, so even a batch inside the client's 15s was killed server-side
+ * with 57014. Migration 20260823_06 attaches statement_timeout=30s to the
+ * function itself. Testing the RPC over a direct SQL connection hid both
+ * faults - that path runs as `postgres` with a 2min timeout and succeeds every
+ * time. Verify this loop through PostgREST or not at all.
+ *
+ * A timed-out call is safe to retry: the watermark only advances inside the
+ * function's own transaction, so a cancelled batch costs time and nothing
+ * else. That is exactly why the failure was silent.
  *
  * It is a self-scheduling setTimeout, NOT a setInterval: a slow batch must never
  * be able to overlap the next run. Errors are reported and retried after 60s,
@@ -82,7 +97,7 @@ const PORT = parseInt(process.env.PORT || '8080', 10);
  * Anything else (including unset) leaves it ON, so shipping this turns it on.
  */
 const MEMBER_FEE_ROLLUP_ENABLED = process.env.MEMBER_FEE_ROLLUP_ENABLED !== 'false';
-const ROLLUP_BATCH_HANDS = 2000;
+const ROLLUP_BATCH_HANDS = 250;
 const ROLLUP_BACKFILL_MS = 2_000;
 const ROLLUP_STEADY_MS = 30_000;
 const ROLLUP_RETRY_MS = 60_000;

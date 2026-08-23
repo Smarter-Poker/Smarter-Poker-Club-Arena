@@ -241,6 +241,18 @@ export class TableBalancer {
         moveCount: moves.length,
         tableCount: tables.length,
         totalPlayers,
+        /* 2026-08-23: the counts alone were unusable. TablePage's handler is
+           `if (payload.moves?.some((m) => m.playerId === userId))` — it needs
+           to know WHICH players moved to tell one of them "You were moved to
+           balance the tables." Without this the toast could never fire even
+           once the event reached the client. Ids and seats only; nothing here
+           is private to another player. */
+        moves: moves.map((m) => ({
+          playerId: m.playerId,
+          fromTableId: m.fromTableId,
+          toTableId: m.toTableId,
+          toSeat: m.toSeat,
+        })),
       });
     }
 

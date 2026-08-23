@@ -23,6 +23,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { reportError } from '../../utils/errorReporter';
 // Whole-number tournament money (Dan 2026-08-20).
 import { totalBuyIn } from '../../utils/buyIn';
+import { relayTournamentEvent } from '../../services/tournamentEventBridge';
 
 type TournamentStatus = 'all' | 'upcoming' | 'REGISTERING' | 'RUNNING' | 'COMPLETED';
 type TournamentTypeFilter = 'all' | 'mtt' | 'sng' | 'spin' | 'bounty' | 'pko' | 'mystery';
@@ -231,6 +232,9 @@ export default function TournamentLobbyPage() {
         .on('broadcast', { event: 'tournament_event' }, (payload) => {
           const eventType = payload.payload?.type;
           const data = payload.payload?.payload;
+
+          /* Break events onto MasterBus — see tournamentEventBridge. */
+          relayTournamentEvent(tournamentId, payload.payload);
 
           // Update the tournament in the list
           setTournaments((prev) =>

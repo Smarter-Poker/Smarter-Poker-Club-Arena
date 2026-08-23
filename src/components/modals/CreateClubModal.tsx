@@ -31,7 +31,12 @@ interface CreateClubModalProps {
 }
 
 // High-fidelity modal frame
-const MODAL_FRAME_URL = `${MEDIA_BASE}images/modals/create-club-modal-frame.png`;
+// PERF 2026-08-23: both of this modal's frames ship as PNG *and* WebP, and
+// the code asked for the PNG - so every open pulled the larger twin while
+// the smaller one sat unused beside it in the bundle. 260KB -> 158KB and
+// 272KB -> 155KB at source. WebP is referenced directly elsewhere in this
+// app (images/mystery-chest.webp), so no fallback shim is warranted.
+const MODAL_FRAME_URL = `${MEDIA_BASE}images/modals/create-club-modal-frame.webp`;
 
 // All new clubs start at Level 1 — server-side trigger will recompute
 // after the owner membership row is inserted into club_members.
@@ -586,7 +591,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
         <img
           loading="lazy"
           decoding="async"
-          src="/hub/club-arena/images/logo-generator-frame.png"
+          src={`${MEDIA_BASE}images/logo-generator-frame.webp`}
           alt="Frame"
           className={styles.frameImage}
           style={{ display: isGenerating || previewUrl ? 'none' : 'block' }}

@@ -24,11 +24,11 @@ jobs:
   build-and-store:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      # read is enough now: this job uploads an artifact instead of pushing a
+      # branch, so it no longer writes to the repository at all.
+      contents: read
     env:
       HUSKY: '0'
-    outputs:
-      sync_branch: ${{ steps.set-branch.outputs.sync_branch }}
 
     steps:
       - name: Checkout Club Arena
@@ -106,49 +106,55 @@ jobs:
           JSON
           cat dist/build-info.json
 
-      - name: Commit dist to sync branch
-        id: set-branch
+      # THE COURIER IS AN ARTIFACT, NOT A BRANCH (2026-08-23).
+      #
+      # This step used to force-push dist/ to an orphan branch
+      # `build/world-hub-sync-<sha>` so the sync job could check it out. From
+      # 05:17 UTC every publish failed there, four runs in a row and then the
+      # manual dispatch too, always the same way:
+      #
+      #   remote: fatal error in commit_refs
+      #   ! [remote rejected] build/world-hub-sync-<sha> (failure)
+      #
+      # Isolated by experiment rather than guessed at: a small push to this
+      # repo succeeds, and pushing the SAME 84MB dist as an orphan branch from
+      # a workstation over SSH also succeeds - so it is neither the ref
+      # backend, nor the size, nor the content. Only the runner's HTTPS push
+      # of an 84MB pack fails, and it fails every time. Production sat 40
+      # minutes behind main with a dozen merged pull requests stuck behind it.
+      #
+      # Passing build output between jobs is what upload-artifact is FOR. It
+      # removes the failing push entirely, and with it three long-standing
+      # costs of the branch approach: an 84MB pack pushed to the repository on
+      # every single commit to main, a ref per publish that only gets cleaned
+      # up when the run succeeds (nine were still lying around), and the
+      # GITHUB_TOKEN write permission this job needed purely to create them.
+      - name: Upload dist for the sync job
+        uses: actions/upload-artifact@v4
+        with:
+          name: club-arena-dist-${{ github.sha }}
+          path: dist
+          # A courier, not a record: the World Hub sync commit is the
+          # permanent copy. One day is plenty for a retry.
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 6
+
+      # Prove the thing the next job depends on actually exists, rather than
+      # discovering it is missing halfway through the rsync. Kept from the
+      # branch version, which checked the same file for the same reason.
+      - name: Verify dist is complete
         run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
-          BRANCH="build/world-hub-sync-${SHORT_SHA}"
-          echo "sync_branch=${BRANCH}" >> $GITHUB_OUTPUT
-          echo "SYNC_BRANCH=${BRANCH}" >> $GITHUB_ENV
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-
-          # ORPHAN, not a branch off main. This branch exists so the next job
-          # can read dist/ out of it — nothing else in it is ever used. When it
-          # was cut from main it also carried .github/workflows/, and GITHUB_TOKEN
-          # is a GitHub App token, which may not create or update a workflow file:
-          #
-          #   ! [remote rejected] build/world-hub-sync-b0ba7cbc
-          #     refusing to allow a GitHub App to create or update workflow
-          #     `.github/workflows/agent-autopilot.yml` without `workflows` permission
-          #
-          # So EVERY pull request that touched .github/workflows/ merged to main
-          # and then silently failed to publish. The bundle was built, the run
-          # went red at the push, and production kept serving the previous build
-          # while main moved on — which is indistinguishable from a regression.
-          #
-          # An orphan carrying only dist/ cannot contain a workflow file, so the
-          # restriction can never apply again. It is also a far smaller push.
-          git checkout --orphan "${BRANCH}"
-          git rm -rf --cached . >/dev/null
-          git add --force dist/
-          git commit -m "build: compiled dist for world hub sync (${SHORT_SHA})"
-          git push --no-verify --force origin "${BRANCH}"
-
-          # Prove the artifact the next job depends on actually made it, rather
-          # than discovering it is missing during the rsync.
-          if ! git ls-tree -r --name-only "${BRANCH}" | grep -q '^dist/index.html$'; then
-            echo "::error::sync branch ${BRANCH} has no dist/index.html — refusing to continue."
+          if [ ! -f dist/index.html ]; then
+            echo "::error::dist/index.html is missing — refusing to continue."
             exit 1
           fi
+          echo "dist/index.html present ($(du -sh dist | cut -f1) total)"
 
       - name: Build summary
         run: |
           echo "### Build Complete" >> $GITHUB_STEP_SUMMARY
-          echo "Sync branch: \`${{ env.SYNC_BRANCH }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "dist uploaded as artifact \`club-arena-dist-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "Proceeding to sync directly to World Hub..." >> $GITHUB_STEP_SUMMARY
 
   sync-to-world-hub:
@@ -162,11 +168,11 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout Club Arena sync branch
-        uses: actions/checkout@v4
+      - name: Download the dist built by the previous job
+        uses: actions/download-artifact@v4
         with:
-          ref: ${{ needs.build-and-store.outputs.sync_branch }}
-          path: club-arena-build
+          name: club-arena-dist-${{ github.sha }}
+          path: club-arena-build/dist
 
       # WHY THE APP AND NOT THE PAT.
       #
@@ -340,22 +346,6 @@ jobs:
 
           echo "::error::World Hub push failed after 5 attempts — the bundle was built but is NOT published."
           exit 1
-
-      # The sync branch is a courier, not a record. It exists only so this job
-      # can check out the dist/ that the previous job built; once World Hub has
-      # the files, nothing ever reads it again — and the bundle it carried is
-      # recorded permanently in the World Hub sync commit either way.
-      #
-      # Left behind, they accumulated 180 build/world-hub-sync-* refs. Deleting
-      # on success (and only on success — a failed sync's branch is the one
-      # thing worth keeping, so you can retry from it by hand) keeps the ref
-      # namespace flat. `|| true`: a cleanup failure must never turn a
-      # successful publish into a red run.
-      - name: Delete the sync branch now that World Hub has the files
-        if: success()
-        run: |
-          cd club-arena-build
-          git push --no-verify origin --delete "${{ needs.build-and-store.outputs.sync_branch }}" || true
 
       - name: Sync summary
         run: |

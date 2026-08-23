@@ -464,6 +464,7 @@ export function isFilterActive(spec: GameFilterSpec, v: GameFilterValue): boolea
     v.statuses.length > 0 ||
     v.mustHave.length > 0 ||
     v.hide.length > 0 ||
+    (v.selectedRanges && v.selectedRanges.length > 0) ||
     v.rangeMin !== spec.range.min ||
     v.rangeMax !== spec.range.max ||
     (spec.seats ? v.seatMin !== spec.seats.min || v.seatMax !== spec.seats.max : false)

@@ -34,7 +34,7 @@ import { reportError } from '../utils/errorReporter';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import { PromoWalletCashierModal } from '../components/wallet';
-import ClubBankCashierModal from '../components/wallet/ClubBankCashierModal';
+import WalletCashierModal from '../components/wallet/WalletCashierModal';
 import { canSeeClubBank } from '../components/wallet/walletRows';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import styles from './CashierTradePage.module.css';
@@ -1208,7 +1208,7 @@ export default function CashierTradePage() {
 
       {/* Club Bank Cashier — fund agent wallets, the full chip ledger, and
           (standalone clubs only) the Chip Mint. */}
-      <ClubBankCashierModal
+      <WalletCashierModal
         isOpen={showClubBank}
         onClose={() => {
           setShowClubBank(false);

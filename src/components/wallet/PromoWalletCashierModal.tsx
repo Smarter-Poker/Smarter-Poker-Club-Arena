@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
-import './ClubBankCashierModal.css'; // Reuse existing styles
+import './WalletCashierModal.css'; // Reuse existing styles
 import { useAuthUser } from '../../hooks/useAuthUser';
 
 interface PromoWalletCashierModalProps {

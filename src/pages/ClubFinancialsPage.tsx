@@ -19,7 +19,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { FinancialExportService } from '../services/FinancialExportService';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import { PromoWalletCashierModal } from '../components/wallet';
-import ClubBankCashierModal from '../components/wallet/ClubBankCashierModal';
+import WalletCashierModal from '../components/wallet/WalletCashierModal';
 import './ClubFinancialsPage.css';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -408,7 +408,7 @@ export default function ClubFinancialsPage() {
             onClose={() => setShowPromoWallet(false)}
             clubId={clubId}
           />
-          <ClubBankCashierModal
+          <WalletCashierModal
             isOpen={showClubBank}
             onClose={() => setShowClubBank(false)}
             clubId={clubId}

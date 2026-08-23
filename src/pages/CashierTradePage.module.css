@@ -593,4 +593,10 @@
     min-height: 44px;
     touch-action: manipulation;
   }
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
 }

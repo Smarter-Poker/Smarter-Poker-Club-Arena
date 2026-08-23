@@ -9,7 +9,7 @@
   min-height: 100dvh;
   background: linear-gradient(180deg, #14101f 0%, #0d0a16 100%);
   color: #e8eaf0;
-  padding-bottom: calc(76px + env(safe-area-inset-bottom, 0));
+  padding-bottom: calc(110px + env(safe-area-inset-bottom, 0));
 }
 
 /* ── Header ── */
@@ -25,7 +25,7 @@
 .back {
   background: none;
   border: none;
-  color: #ffb800;
+  color: #00d4ff;
   font-size: 1.5rem;
   line-height: 1;
   cursor: pointer;
@@ -163,7 +163,7 @@
 }
 
 .tabActive {
-  background: linear-gradient(180deg, #f8d264 0%, #eab308 100%);
+  background: linear-gradient(180deg, #00d4ff 0%, #0099ff 100%);
   color: #1a1a1a;
 }
 
@@ -188,7 +188,7 @@
 .stripLabel {
   font-size: 0.62rem;
   font-weight: 700;
-  color: #ffb800;
+  color: #00d4ff;
   line-height: 1.2;
 }
 
@@ -206,7 +206,7 @@
   height: 18px;
   border-radius: 50%;
   border: none;
-  background: #ffb800;
+  background: #00d4ff;
   color: #1a1a1a;
   font-weight: 900;
   font-size: 0.8rem;
@@ -239,7 +239,7 @@
   justify-content: space-between;
   margin: 8px 14px 0;
   font-size: 0.78rem;
-  color: #ffb800;
+  color: #00d4ff;
 }
 
 .groupToggle {
@@ -252,7 +252,7 @@
 .sortBtn {
   background: none;
   border: none;
-  color: #ffb800;
+  color: #00d4ff;
   font-size: 0.78rem;
   cursor: pointer;
 }
@@ -347,8 +347,8 @@
 }
 
 .checkboxOn {
-  background: #ffb800;
-  border-color: #ffb800;
+  background: #00d4ff;
+  border-color: #00d4ff;
   position: relative;
 }
 
@@ -389,7 +389,7 @@
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 0;
+  bottom: 34px;
   display: flex;
   gap: 10px;
   padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0));
@@ -405,7 +405,7 @@
   padding: 12px 0;
   border: none;
   border-radius: 999px;
-  background: linear-gradient(180deg, #f8d264 0%, #eab308 100%);
+  background: linear-gradient(180deg, #00d4ff 0%, #0099ff 100%);
   color: #1a1a1a;
   font-weight: 800;
   font-size: 0.9rem;
@@ -477,7 +477,7 @@
 }
 
 .modalConfirm {
-  background: linear-gradient(180deg, #f8d264 0%, #eab308 100%) !important;
+  background: linear-gradient(180deg, #00d4ff 0%, #0099ff 100%) !important;
   color: #1a1a1a !important;
   border: none !important;
 }
@@ -500,7 +500,7 @@
 }
 
 .reqBtnGo {
-  background: linear-gradient(180deg, #f8d264 0%, #eab308 100%);
+  background: linear-gradient(180deg, #00d4ff 0%, #0099ff 100%);
   border: none;
   color: #1a1a1a;
 }
@@ -545,4 +545,20 @@
 .retryBtn:focus-visible {
   outline: 2px solid #4599ff;
   outline-offset: 2px;
+}
+
+.rowInfoWrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.rowActionWrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
 }

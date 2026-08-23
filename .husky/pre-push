@@ -322,7 +322,23 @@ fi
 #
 # Emergency bypass:  CA_SKIP_TESTS=1 git push
 # ═════════════════════════════════════════════════════════════════════════════
-if [ -z "${CA_SKIP_TESTS:-}" ] && [ -f package.json ]; then
+# 2026-08-23: gated on a LOCAL vitest. This hook ran in NONE of the 38 agent
+# worktrees whose core.hooksPath pointed at the gitignored .husky/_ (see
+# scripts/ensure-hooks.sh). Restoring it there would have run the suite through
+# the npx package fetcher in a tree with no node_modules - a network round trip
+# on every push. scripts/agent-workspace.sh links node_modules in, so this
+# normally runs; when it truly cannot, it says so rather than letting a suite
+# that never ran look like a suite that passed.
+VITEST="$(git rev-parse --show-toplevel)/node_modules/.bin/vitest"
+if [ -z "${CA_SKIP_TESTS:-}" ] && [ -f package.json ] && [ ! -x "$VITEST" ]; then
+  echo ""
+  echo "[club-arena pre-push] WARNING: no local vitest in this tree, so the test"
+  echo "                      gate did NOT run. CI still catches a red test - but"
+  echo "                      only after it has blocked the World Hub bundle for"
+  echo "                      everyone. Fix:  bash scripts/agent-workspace.sh <you> <slug>"
+  echo ""
+fi
+if [ -z "${CA_SKIP_TESTS:-}" ] && [ -f package.json ] && [ -x "$VITEST" ]; then
   CHANGED_TESTS=""
   CHANGED_SRC=""
   for f in $FILES; do
@@ -340,7 +356,7 @@ if [ -z "${CA_SKIP_TESTS:-}" ] && [ -f package.json ]; then
 
   if [ -n "$CHANGED_TESTS" ]; then
     echo "[club-arena pre-push] running the test files you changed..."
-    if ! npx vitest run $CHANGED_TESTS; then
+    if ! "$VITEST" run $CHANGED_TESTS; then
       echo ""
       echo "[club-arena pre-push] BLOCKED: a test you changed is failing."
       echo "                      A red test on main stops the World Hub bundle"
@@ -356,7 +372,7 @@ if [ -z "${CA_SKIP_TESTS:-}" ] && [ -f package.json ]; then
 
   if [ -n "$CHANGED_SRC" ]; then
     echo "[club-arena pre-push] running the tests that cover your changes..."
-    if ! npx vitest related --run $CHANGED_SRC; then
+    if ! "$VITEST" related --run $CHANGED_SRC; then
       echo ""
       echo "[club-arena pre-push] BLOCKED: your change breaks a test that covers it."
       echo "                      If the test pins behaviour you deliberately"

@@ -8,6 +8,16 @@ import confirmDialog from '../components/common/confirmDialog';
 import { useToast } from '../components/common/Toast';
 import { reportError } from '../utils/errorReporter';
 
+/**
+ * How hard we look for the seat the server was meant to give us.
+ *
+ * Sized against the engine's 5-second elimination/seating sweep: 3 retries at
+ * 1.2s covers a seat that had to wait for a new table to spawn, without
+ * holding the button spinner long enough to feel broken.
+ */
+const SEAT_LOOKUP_RETRIES = 3;
+const SEAT_LOOKUP_RETRY_MS = 1200;
+
 export interface RegisterTournamentParams {
   id: string;
   name: string;
@@ -47,27 +57,54 @@ export function useTournamentRegistration() {
           onSuccess();
         }
 
-        // Check if the server assigned a table (late reg)
-        const { data: tp } = await supabase
-          .from('tournament_players')
-          .select('table_id')
-          .eq('tournament_id', t.id)
-          .eq('user_id', currentUserId)
-          .maybeSingle();
-
-        if (tp?.table_id) {
-          navigate(`/table/${tp.table_id}`);
-        } else {
-          // Find active tournament table to spectate
-          const { data: tbls } = await supabase
-            .from('tables')
-            .select('id, status')
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  A PAID ENTRANT GOES TO HIS OWN SEAT OR NOWHERE (2026-08-23)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * Dan, after late-registering: "IT TOOK ME TO THE PAGE, BUT DIDN'T SIT
+         * ME, GIVE ME CHIPS OR ANYTHING."
+         *
+         * This block is why. The seat lookup was right; the FALLBACK was the
+         * bug. `table_id` was always null for a late registration, because
+         * fn_register_for_tournament only ever wrote a 'registered' row and
+         * left seating to a start() that had already happened. So every late
+         * entrant fell into the else-branch, which picked an arbitrary table
+         * of the tournament and navigated there — as a SPECTATOR, under a
+         * footer reading "Spectating, Tap An Open Seat To Join", at a table
+         * where every seat is deliberately non-interactive.
+         *
+         * The server now seats a late entrant inside the registration
+         * transaction (fn_seat_late_registrant), so the first read normally
+         * finds the seat. The retry covers the one honest miss: every table
+         * was full at that instant, so the engine must spawn one and seat them
+         * on its next sweep.
+         *
+         * If there is still no seat we send them to THEIR TOURNAMENT, never to
+         * a stranger's felt. "You are in, your seat is coming" on the right
+         * page beats being stranded on the wrong one.
+         */
+        const findMySeat = async (): Promise<string | null> => {
+          const { data: tp } = await supabase
+            .from('tournament_players')
+            .select('table_id')
             .eq('tournament_id', t.id)
-            .neq('status', 'closed')
-            .limit(1);
-          if (tbls && tbls.length > 0 && tbls[0].id) {
-            navigate(`/table/${tbls[0].id}`);
-          }
+            .eq('user_id', currentUserId)
+            .maybeSingle();
+          return (tp?.table_id as string | undefined) || null;
+        };
+
+        let seatTableId = await findMySeat();
+        for (let attempt = 0; !seatTableId && attempt < SEAT_LOOKUP_RETRIES; attempt++) {
+          await new Promise((r) => setTimeout(r, SEAT_LOOKUP_RETRY_MS));
+          seatTableId = await findMySeat();
+        }
+
+        if (seatTableId) {
+          navigate(`/table/${seatTableId}`);
+        } else {
+          toast.success('You Are Registered - Your Seat Is Being Assigned');
+          navigate(`/tournaments/${t.id}`);
         }
       } catch (e) {
         reportError(e, 'useTournamentRegistration.register', { tournamentId: t.id });

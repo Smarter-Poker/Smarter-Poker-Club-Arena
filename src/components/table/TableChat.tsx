@@ -182,6 +182,7 @@ export function TableChat({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const previousMessagesLengthRef = useRef(0);
   const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSentRef = useRef<number>(0);
@@ -255,6 +256,52 @@ export function TableChat({
     }
   };
 
+  /**
+   * Dan 2026-08-23: "THERE IS NO 'X' OFF ONCE ITS OPEN, YOU SHOULD BE ABLE TO
+   * CLICK THE X OR CLICK ANYWHERE ELSE ON THE SCREEN TO CLOSE IT."
+   *
+   * The panel had exactly one control, a "▾" titled "Minimize chat", and no
+   * dismissal of any other kind: no X, no outside click, no Escape. On a phone
+   * that chevron is a 22px target sitting over a live table, so a player who
+   * opened chat mid-hand had to hit it precisely or play the rest of the hand
+   * around a 280px box.
+   *
+   * Both listeners follow TableMenu.tsx (lines 332-353) deliberately — mousedown
+   * for outside, keydown for Escape, both attached only while open — so the
+   * table has ONE dismissal convention rather than two that drift apart.
+   *
+   * mousedown, not click: a click fires only after mouseup on the same element,
+   * so a press that starts outside and drifts onto the panel would not dismiss.
+   * mousedown also beats the action panel's own handlers to the event, which is
+   * what makes "tap a bet button while chat is open" close chat and still land
+   * the bet on the next tap rather than being swallowed.
+   */
+  const handleClose = useCallback(() => {
+    onToggleCollapse?.();
+  }, [onToggleCollapse]);
+
+  const isOpen = !isCollapsed && !isMuted;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        handleClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen, handleClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, handleClose]);
+
   // When muted, don't render the chat at all — just a silent icon
   if (isMuted) {
     return (
@@ -282,12 +329,23 @@ export function TableChat({
   }
 
   return (
-    <div className="table-chat">
+    <div className="table-chat" ref={panelRef} role="dialog" aria-label="Table chat">
       {/* Header */}
       <div className="table-chat__header">
         <span className="table-chat__title">Table Chat</span>
-        <button className="table-chat__minimize" onClick={onToggleCollapse} title="Minimize chat">
-          ▾
+        {/* The "▾" that used to live here read as MINIMIZE, and Dan's report is
+            that there was no way to turn chat off. Same callback, but now it
+            says what it does and is a 32px target instead of a 22px chevron.
+            &#10005; is the multiplication X GameLobbyPanel's close already uses
+            — one X glyph across the app, and no emoji (house rule: emoji break
+            the SWC compiler). */}
+        <button
+          className="table-chat__close"
+          onClick={handleClose}
+          title="Close chat"
+          aria-label="Close chat"
+        >
+          &#10005;
         </button>
       </div>
 

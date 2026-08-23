@@ -7,6 +7,70 @@
 
 ---
 
+## Cowork session 2026-08-23 (11d) — THE SEAT THAT DESTROYED THE CHIPS THAT BOUGHT IT, and the full stuck-row chain
+
+Same PR as 11b/11c. Two closing pieces: the root cause of 11c proved out
+end to end, and one more money path caught before its first run.
+
+THE STUCK-ROW CHAIN, CONFIRMED LINK BY LINK. 11c fixed the un-flipped
+RUNNING status from both ends; reading the finish path afterwards showed
+exactly why those eleven tournaments could never recover on their own:
+
+  1. start() flips REGISTERING -> RUNNING fire-and-forget. It fails (the
+     statement-timeout window).
+  2. The game deals on from memory. Players bust; elimination stamps and
+     positions are written normally.
+  3. finishTournament reaches its atomic claim — an UPDATE guarded
+     `.eq('status', 'RUNNING')`. The row says REGISTERING, so the claim
+     returns nothing, the method logs "Could not claim finish — already
+     finishing/completed" and RETURNS.
+  4. That log line is indistinguishable from the benign case it was written
+     for (a concurrent finisher won the race), so nothing escalates.
+  5. No watchdog reads pre-start rows, so nothing ever revisits it.
+
+Every link is individually reasonable; together they park a finished
+tournament forever with the pool unpaid. 11c's retry-and-confirm stops it
+at link 1 and the new watchdog breaks it at link 5 by relabelling the row
+so the ordinary machinery can finish the job. The strict CAS at link 3 is
+deliberately left strict — a claim that accepts any status is how two
+finishers pay the same pool twice.
+
+SATELLITE SEATS DESTROYED THE MONEY THAT BOUGHT THEM. Awarding a seat was a
+raw INSERT of a tournament_players row at chips 0. The winner got their
+seat and nothing else moved: the target's prize_pool never grew, no rake
+row was written, and the satellite's own collected pool was never disbursed
+to anybody. Chips that players really paid simply left circulation, and the
+target then paid out a pool one buy-in short for every seat it admitted.
+
+fn_award_satellite_seat (migration 20260823010000, applied to prod with
+assertions) now does the seat and the money in one transaction under a row
+lock: prize_pool += the target's buy-in, a rake_records row for the target's
+fee, current_players incremented — exactly where a direct buy-in lands,
+funded by the ticket the satellite pool just bought, balancing to the chip.
+It is idempotent by construction: the movement happens only when the seat
+row is genuinely inserted, so a recovery re-drive seats nobody twice and
+credits nothing twice. The engine calls it instead of the raw insert and
+still falls back to a cash payout when a seat genuinely cannot be given.
+
+Exposure at ship time: zero — no satellite has ever completed. The Sunday
+Major Satellite runs daily at 19:00 UTC and would have hit this on its
+first finish.
+
+WHAT IS STILL HONESTLY NOT BUILT (do not read the flags as features):
+- MULTI-DAY MTT is flag-only. is_multi_day/total_days are stored, sent and
+  displayed, and the flights tables exist, but there is no Day 2 resume and
+  no flight merge in the engine. An owner ticking Multi-Day today gets a
+  normal one-day tournament. This needs a design pass with Dan, not a
+  quiet half-implementation.
+- BAN CHAT is client-enforced only; there is no inbound server chat handler
+  to enforce it in. If one is ever added, enforce there too.
+- SYNCHRONIZED BREAKS opting out only skips the global break; per-structure
+  isBreak rows are still not honoured server-side.
+- VIP ONLY reads profiles.is_vip (+ vip_expires_at), not a club VIP level.
+- The seeded schedule GUARANTEES are large against horse-filled fields, so
+  overlay is real house spend. Now that guarantees are actually paid (11b),
+  these numbers are worth a deliberate review.
+
 ## Cowork session 2026-08-23 (11c) — THE ROW THAT NEVER SAID RUNNING, and the Heads-Up board that never dealt
 
 Continuation of 11b, same PR. Asked to keep auditing to the end, the sweep

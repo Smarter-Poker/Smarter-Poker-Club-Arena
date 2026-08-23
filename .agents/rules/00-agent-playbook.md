@@ -65,10 +65,9 @@ is on GitHub, the CI checks are green, and the PR is MERGED.
 git push -u origin HEAD && gh pr create --fill
 ```
 
-**YOU MUST NOT ORPHAN OR ABANDON YOUR WORK.** Do not exit immediately after pushing! You must verify the PR actually goes green and merges. You must automatically do all push and publish procedures. If you don't do this, you are explicitly violating the playbook.
-Use the **`schedule`** tool:
+**YOU MUST NOT ORPHAN OR ABANDON YOUR WORK.** Do not exit immediately after pushing! You must verify the PR actually goes green and merges. Do not use bash polling (`while true; do ...`) as it wastes resources. Instead, use the **`schedule`** tool:
 
-1. Call `schedule` with `DurationSeconds=300` (5 minutes) and `Prompt="Check if the PR went green and merged. If it failed, fix it, and push again."`
+1. Call `schedule` with `DurationSeconds=300` (5 minutes) and `Prompt="Check if the PR went green and merged. If it failed, read the logs, fix it, and push again."`
 2. End your turn. The system will wake you up when the timer fires.
 3. Check `gh pr status` and `gh run list --branch <branch>`.
    - If **Merged**: You are done!

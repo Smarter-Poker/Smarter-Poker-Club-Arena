@@ -7,9 +7,9 @@
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
-  background: linear-gradient(180deg, #14101f 0%, #0d0a16 100%);
-  color: #e8eaf0;
-  padding-bottom: calc(76px + env(safe-area-inset-bottom, 0));
+  background: var(--bg-primary, #0a0e17);
+  color: var(--text-primary, #e8eaf0);
+  padding-bottom: calc(130px + env(safe-area-inset-bottom, 0px));
 }
 
 /* ── Header ── */
@@ -43,13 +43,13 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 10px;
+  padding: 5px 12px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(90, 130, 255, 0.45);
-  color: #e8eaf0;
+  background: var(--bg-surface, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--border-color, rgba(90, 130, 255, 0.45));
+  color: var(--text-primary, #e8eaf0);
   cursor: pointer;
-  max-width: 55%;
+  max-width: 80%;
 }
 
 .entityLogo {
@@ -389,11 +389,11 @@
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 0;
+  bottom: calc(var(--bottom-nav-height, 74px) + env(safe-area-inset-bottom, 0px));
   display: flex;
   gap: 10px;
-  padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0));
-  background: rgba(13, 10, 22, 0.96);
+  padding: 12px 14px 12px;
+  background: var(--bg-header, rgba(13, 10, 22, 0.96));
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border-top: 1px solid rgba(255, 255, 255, 0.08);

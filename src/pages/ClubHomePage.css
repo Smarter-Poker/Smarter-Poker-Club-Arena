@@ -12,7 +12,7 @@
   flex-direction: column;
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
-  background: linear-gradient(180deg, #0a0a0f 0%, #1a1a2e 100%);
+  background: #000000;
   position: relative;
   overflow-x: hidden;
   /* Dan 2026-08-20: was a hardcoded 80px against a bar that measures 74px and
@@ -105,7 +105,7 @@
 }
 
 .club-home__vip-badge {
-  background: linear-gradient(135deg, #2a2a3e, #1a1a2e);
+  background: linear-gradient(135deg, #1a1b23, #0f1015);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -186,7 +186,7 @@
 }
 
 .lobby-top__wallet {
-  flex: 0 1 220px;
+  flex: 0 1 260px;
   min-width: 0;
 }
 
@@ -209,7 +209,7 @@
   flex-shrink: 0;
   border-radius: 12px;
   overflow: hidden;
-  background: linear-gradient(135deg, #2a2a3e, #1a1a2e);
+  background: linear-gradient(135deg, #1a1b23, #0f1015);
   border: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
@@ -336,7 +336,7 @@
   overflow: hidden;
 }
 
-@media (max-width: 420px) {
+@media (max-width: 480px) {
   .lobby-top__main {
     flex-direction: column;
   }
@@ -364,7 +364,7 @@
 }
 
 .bbj-amount {
-  background: linear-gradient(180deg, #3a3a4e 0%, #2a2a3e 100%);
+  background: linear-gradient(180deg, #3a3a4e 0%, #1a1b23 100%);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   padding: 0.3rem 0.65rem;
@@ -419,7 +419,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  background: linear-gradient(180deg, #2a2a3e 0%, #1a1a2e 100%);
+  background: linear-gradient(180deg, #1a1b23 0%, #0f1015 100%);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -606,25 +606,18 @@
 }
 
 .quickprefs__chip {
-  flex: 1 1 0;
-  /* min-width:0 so four chips divide 375px instead of overflowing - the same
-     auto-minimum trap that blew out the filter sheet's feature grid. */
-  min-width: 0;
-  min-height: 32px;
-  padding: 0 10px;
-  border-radius: 6px;
+  flex-shrink: 0;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: #0f1420;
-  color: #cfd8e5;
+  background: rgba(255, 255, 255, 0.06);
+  color: #9aa5b6;
   transition: all 0.2s ease;
   font-size: 0.72rem;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
-  transition:
-    background 0.18s ease,
-    color 0.18s ease,
-    border-color 0.18s ease;
 }
 
 .quickprefs__chip:hover {
@@ -633,10 +626,11 @@
 }
 
 .quickprefs__chip.is-on {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  border-color: #3b82f6;
+  background: linear-gradient(135deg, #0088ff, #0055ff);
+  border-color: rgba(0, 136, 255, 0.75);
   color: #ffffff;
   font-weight: 800;
+  box-shadow: 0 0 14px rgba(0, 136, 255, 0.35);
 }
 
 .quickprefs__chip:focus-visible {
@@ -648,19 +642,17 @@
    always reachable no matter how many tier chips the active spec declares. */
 .quickprefs__more {
   flex: 0 0 auto;
-  width: 34px;
+  width: 32px;
   height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.06);
   color: #3b82f6;
+  transition: all 0.2s ease;
   cursor: pointer;
-  transition:
-    border-color 0.18s ease,
-    background 0.18s ease;
 }
 
 .quickprefs__more:hover {
@@ -974,7 +966,7 @@
 .table-card {
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, #2a2a3e 0%, #1a1a2e 100%);
+  background: linear-gradient(180deg, #1a1b23 0%, #0f1015 100%);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1349,6 +1341,7 @@
 
 /* P4-1: Ambient Background Particles */
 .club-home::before {
+  display: none;
   content: '';
   position: fixed;
   inset: 0;

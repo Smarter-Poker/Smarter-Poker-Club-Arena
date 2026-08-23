@@ -28,7 +28,7 @@
      component from contributing another one. */
   transform: none;
   contain: none;
-  background: linear-gradient(180deg, rgba(15, 25, 40, 0.98) 0%, rgba(8, 15, 25, 0.99) 100%);
+  background: linear-gradient(180deg, #0f4c9c 0%, #06285a 100%);
   border-top: 1px solid rgba(0, 180, 255, 0.15);
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(10px) saturate(1.1);

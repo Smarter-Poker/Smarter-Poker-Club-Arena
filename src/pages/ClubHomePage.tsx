@@ -1420,23 +1420,23 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     });
 
     const bb = (t: TableData) => Number(t.big_blind) || 0;
+    const cmpStakes = (a: TableData, b: TableData) => bb(b) - bb(a);
+    const cmpStakesLow = (a: TableData, b: TableData) => bb(a) - bb(b);
+    const cmpPlayers = (a: TableData, b: TableData) => (b.current_players || 0) - (a.current_players || 0);
+    const cmpName = (a: TableData, b: TableData) => (a.name || '').localeCompare(b.name || '');
+
     switch (sortKey) {
       case 'stakes_high':
-        return rows.sort((a, b) => bb(b) - bb(a));
+        return rows.sort((a, b) => cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b));
       case 'stakes_low':
-        return rows.sort((a, b) => bb(a) - bb(b));
+        return rows.sort((a, b) => cmpStakesLow(a, b) || cmpPlayers(a, b) || cmpName(a, b));
       case 'players':
-        return rows.sort((a, b) => (b.current_players || 0) - (a.current_players || 0));
       case 'starting_soon':
-        // Cash tables have no start time. Rather than sorting them by an
-        // absent field (which is a no-op that LOOKS like a sort), fall back to
-        // the busiest first — the nearest cash equivalent of "starting soon".
-        return rows.sort((a, b) => (b.current_players || 0) - (a.current_players || 0));
+        return rows.sort((a, b) => cmpPlayers(a, b) || cmpStakes(a, b) || cmpName(a, b));
       case 'recommended':
       default:
-        // Hold'em → Omaha → Mixed, busiest first inside each family.
         return rows.sort(
-          (a, b) => cashRank(a) - cashRank(b) || (b.current_players || 0) - (a.current_players || 0)
+          (a, b) => cashRank(a) - cashRank(b) || cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b)
         );
     }
   }, [tables, gameType, showsCash, sortKey, searchQuery, advFilters]);
@@ -1523,13 +1523,18 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
     const buyIn = (t: TournamentData) =>
       (Number(t.buy_in_amount) || 0) + (Number(t.buy_in_fee) || 0);
+    const cmpBuyIn = (a: TournamentData, b: TournamentData) => buyIn(b) - buyIn(a);
+    const cmpBuyInLow = (a: TournamentData, b: TournamentData) => buyIn(a) - buyIn(b);
+    const cmpPlayersTourn = (a: TournamentData, b: TournamentData) => (b.current_players || 0) - (a.current_players || 0);
+    const cmpNameTourn = (a: TournamentData, b: TournamentData) => (a.name || '').localeCompare(b.name || '');
+
     switch (sortKey) {
       case 'stakes_high':
-        return rows.sort((a, b) => buyIn(b) - buyIn(a));
+        return rows.sort((a, b) => cmpBuyIn(a, b) || cmpPlayersTourn(a, b) || cmpNameTourn(a, b));
       case 'stakes_low':
-        return rows.sort((a, b) => buyIn(a) - buyIn(b));
+        return rows.sort((a, b) => cmpBuyInLow(a, b) || cmpPlayersTourn(a, b) || cmpNameTourn(a, b));
       case 'players':
-        return rows.sort((a, b) => (b.current_players || 0) - (a.current_players || 0));
+        return rows.sort((a, b) => cmpPlayersTourn(a, b) || cmpBuyIn(a, b) || cmpNameTourn(a, b));
       case 'starting_soon': {
         /* A SORT MUST NOT DELETE ROWS (2026-08-23). This case used to
            `rows.filter(isLateReg)` and return only what was still enterable -
@@ -1565,12 +1570,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           const ea = stillEnterable(a) ? 0 : 1;
           const eb = stillEnterable(b) ? 0 : 1;
           if (ea !== eb) return ea - eb;
-          return at(a) - at(b);
+          return at(a) - at(b) || cmpBuyIn(a, b) || cmpPlayersTourn(a, b) || cmpNameTourn(a, b);
         });
       }
       case 'recommended':
       default:
-        return rows.sort(tournamentOpenFirst);
+        return rows.sort((a, b) => tournamentOpenFirst(a, b) || cmpBuyIn(a, b) || cmpPlayersTourn(a, b) || cmpNameTourn(a, b));
     }
   }, [tournaments, gameType, showsTournaments, sortKey, searchQuery, advFilters]);
 

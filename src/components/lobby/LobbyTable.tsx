@@ -89,15 +89,15 @@ const RULE_ABBR: Record<string, string> = {
 };
 
 function RulesCell({ entry }: { entry: LobbyEntry }) {
-  const shown = entry.rules.slice(0, 4);
-  const hidden = entry.rules.slice(4);
+  const shown = entry.rules;
+  const hidden: typeof entry.rules = [];
   const extra = hidden.length;
   if (shown.length === 0) return <span className="lt-dim">-</span>;
   return (
     <span className="lt-rules">
       {shown.map((r) => (
         <abbr key={r.key} title={r.tip} className="lt-rule">
-          {RULE_ABBR[r.key] || r.label.slice(0, 4)}
+          {r.label}
         </abbr>
       ))}
       {/* "+2" used to be the end of the sentence: the player could see that
@@ -114,6 +114,25 @@ function RulesCell({ entry }: { entry: LobbyEntry }) {
       )}
     </span>
   );
+}
+
+
+function LiveCountdown({ time }: { time: string | number | Date }) {
+  const [mins, setMins] = useState(() => Math.max(0, Math.floor((new Date(time).getTime() - Date.now()) / 60000)));
+
+  useEffect(() => {
+    const t = new Date(time).getTime();
+    if (isNaN(t)) return;
+    const update = () => {
+      setMins(Math.max(0, Math.floor((t - Date.now()) / 60000)));
+    };
+    update();
+    const interval = setInterval(update, 10000); // Check every 10s to ensure it updates close to the minute mark
+    return () => clearInterval(interval);
+  }, [time]);
+
+  if (mins <= 0 || mins > 60) return null;
+  return <span className="lt-countdown" style={{ fontSize: '0.65rem', color: '#f59e0b', fontWeight: 700, marginRight: '8px', letterSpacing: '0.02em' }}>Starts In {mins} Min...</span>;
 }
 
 export function LobbyStatusBadge({ status, label }: { status: LobbyStatusKey; label: string }) {
@@ -302,6 +321,7 @@ const COL_STATUS: ColumnDef = {
   sortValue: (e) => STATUS_RANK[e.status] ?? 9,
   render: (e, ctx) => (
     <span className="lt-statuscell">
+      {e.kind !== 'cash' && e.status === 'registering' && e.startTime && <LiveCountdown time={e.startTime} />}
       <LobbyStatusBadge status={e.status} label={e.statusLabel} />
       <PlayerStateChip entry={e} ctx={ctx} />
     </span>
@@ -356,10 +376,10 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
       return [
         COL_TNAME,
         COL_VARIANT,
+        COL_STARTS,
         COL_BUYIN,
         COL_GTD,
         COL_PLAYERS,
-        COL_STARTS,
         COL_SPEED,
         COL_STATUS,
       ];

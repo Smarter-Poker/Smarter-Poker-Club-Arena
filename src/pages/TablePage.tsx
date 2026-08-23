@@ -950,6 +950,18 @@ export default function TablePage({
   const safeBB = (blindsStr?: string | null, fallback = 2): number =>
     parseFloat((blindsStr || '?/?').split('/')[1] || String(fallback)) || fallback;
 
+  /**
+   * Small blind from a blinds string ("0.25/0.50" -> 0.25). Never throws.
+   *
+   * The bet slider steps by the table's chip unit, and the small blind IS that
+   * unit - the smallest amount the table ever forces onto the felt, so every
+   * multiple of it is an amount a player can actually make. ActionPanel falls
+   * back to bigBlind / 2 without this, which is right for every standard
+   * structure and wrong for the ones whose small blind is not half (2/5, 3/6).
+   */
+  const safeSB = (blindsStr?: string | null, fallback = 1): number =>
+    parseFloat((blindsStr || '?/?').split('/')[0] || String(fallback)) || fallback;
+
   // WebSocket connection for real-time game state (legacy Supabase Realtime
   // path — still used for presence, chat, and game-state when the feature
   // flag below is off).
@@ -11191,6 +11203,7 @@ export default function TablePage({
                         allInTo={allInTo}
                         pot={tableState.pot}
                         bigBlind={bb}
+                        smallBlind={safeSB(tableState.blinds, bb / 2)}
                         /* Multiplier presets are multiples of the bet being
                            faced, not of the blind — without this they all
                            clamped to minRaise and 2X/3X/4X/5X produced the

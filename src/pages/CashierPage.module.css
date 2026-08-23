@@ -192,7 +192,7 @@
   border: 1px solid rgba(58, 59, 60, 0.6);
   border-radius: 10px;
   color: #e4e6eb;
-  font-size: 14px;
+  font-size: 16px; /* was 14px; under 16px makes iOS zoom the page on focus */
   font-weight: 500;
   outline: none;
   cursor: pointer;

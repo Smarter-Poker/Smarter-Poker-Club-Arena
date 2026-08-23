@@ -218,7 +218,11 @@ export default function FinancialAlertsPage() {
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
           {loading && alerts.length > 0 && (
             <span
-              style={{ fontSize: '0.7rem', color: '#10b981', animation: 'pulse 1.5s infinite' }}
+              style={{
+                fontSize: '0.7rem',
+                color: '#10b981',
+                animation: 'animationsPulse 1.5s infinite',
+              }}
             >
               Syncing...
             </span>

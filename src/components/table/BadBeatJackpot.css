@@ -8,7 +8,47 @@
    WIDGET
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* Dan 2026-08-23: "the bad beat jackpot above the table needs to be improved
+   visually as well, it should have some depth and 3D look and feel to it, and
+   it should be blue and brushed nickel, not purple."
+
+   The purple (#2d1b4e -> #1a102e) came from the competitor reference and was
+   the last of it on the felt, after FoldProtectionDialog and TournamentAutoSeat
+   were converted. Same house tokens as those two, so all three read as one
+   product: navy body, brushed-nickel bezel, brushed-silver numerals.
+
+   DEPTH is built, not faked with a drop shadow:
+     - a 5px nickel bezel painted in the BORDER box via a padding-box/border-box
+       background pair, so the frame is milled metal rather than a hairline
+     - a 1.5px lighter inner bezel inset from it (::before), which is what makes
+       the plate read as a machined recess instead of a rectangle
+     - a specular sheen across the top 45% (::after) — the single strongest 3D
+       cue on a small element, because it implies a light source above
+     - a stacked shadow: contact shadow, cast shadow, ambient blue bloom, plus
+       an inset top highlight and an inset bottom shade so the plate has a lit
+       edge and a dark underside. */
 .bbj-widget {
+  /* Shared smarter.poker dialog tokens (see FoldProtectionDialog.css). */
+  --sp-nickel: linear-gradient(
+    145deg,
+    #6f767e 0%,
+    #cdd3d9 14%,
+    #8d949c 30%,
+    #eef1f4 46%,
+    #9aa1a9 62%,
+    #d6dbe0 80%,
+    #70777f 100%
+  );
+  --sp-nickel-inner: linear-gradient(
+    145deg,
+    #8f969e 0%,
+    #e6eaee 25%,
+    #99a0a8 52%,
+    #dfe4e9 76%,
+    #838a92 100%
+  );
+  --sp-dialog-blue: linear-gradient(165deg, #1b3a68 0%, #12253f 52%, #0a1626 100%);
+
   /* Dan 2026-04-17: shrunk — fits between the hamburger/+ on the left
      and the stats icon on the right at 375px. Padding + font smaller. */
   position: absolute;
@@ -17,69 +57,137 @@
   top: calc(6px + env(safe-area-inset-top, 0px));
   left: 50%;
   transform: translateX(-50%);
-  background: linear-gradient(135deg, #2d1b4e 0%, #1a102e 100%);
-  border: 1px solid rgba(213, 218, 226, 0.4);
-  border-radius: 8px;
-  padding: 3px 10px;
+
+  background:
+    var(--sp-dialog-blue) padding-box,
+    var(--sp-nickel) border-box;
+  border: 5px solid transparent;
+  border-radius: 11px;
+  padding: 4px 14px;
   cursor: pointer;
   z-index: 50;
   max-width: calc(100% - 200px);
   box-shadow:
-    0 0 12px rgba(0, 0, 0, 0.4),
-    0 0 14px rgba(213, 218, 226, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    0 1px 0 rgba(255, 255, 255, 0.22),
+    0 3px 5px rgba(0, 0, 0, 0.55),
+    0 9px 20px rgba(0, 0, 0, 0.5),
+    0 0 26px rgba(36, 92, 168, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -3px 7px rgba(0, 0, 0, 0.45);
   transition:
     transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275),
     box-shadow 0.2s ease;
   backdrop-filter: blur(10px) saturate(1.2);
   -webkit-backdrop-filter: blur(10px) saturate(1.2);
   animation: bbjPulseGlow 3s ease-in-out infinite;
+  isolation: isolate;
 }
 
+/* Inner nickel bezel — the machined-recess cue. */
+.bbj-widget::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 7px;
+  padding: 1.5px;
+  background: var(--sp-nickel-inner);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Specular sheen across the upper half — implies a light source above, which
+   is what actually sells the curvature at this size. */
+.bbj-widget::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 55% 0;
+  border-radius: 7px 7px 40% 40% / 7px 7px 100% 100%;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.17) 0%,
+    rgba(255, 255, 255, 0.06) 55%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* The label and amount must sit above both bezel pseudo-elements. */
+.bbj-widget__label,
+.bbj-widget__amount {
+  position: relative;
+  z-index: 2;
+}
+
+/* The breathing bloom is now BLUE and, crucially, keeps the contact and cast
+   shadows in every keyframe. The old version dropped them at 50%, so the plate
+   flattened onto the felt twice a cycle — the exact opposite of depth. */
 @keyframes bbjPulseGlow {
   0%,
   100% {
     box-shadow:
-      0 0 16px rgba(0, 0, 0, 0.4),
-      0 0 20px rgba(213, 218, 226, 0.1),
-      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      0 1px 0 rgba(255, 255, 255, 0.22),
+      0 3px 5px rgba(0, 0, 0, 0.55),
+      0 9px 20px rgba(0, 0, 0, 0.5),
+      0 0 22px rgba(36, 92, 168, 0.26),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2),
+      inset 0 -3px 7px rgba(0, 0, 0, 0.45);
   }
   50% {
     box-shadow:
-      0 0 16px rgba(0, 0, 0, 0.4),
-      0 0 40px rgba(213, 218, 226, 0.2),
-      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      0 1px 0 rgba(255, 255, 255, 0.22),
+      0 3px 5px rgba(0, 0, 0, 0.55),
+      0 9px 20px rgba(0, 0, 0, 0.5),
+      0 0 40px rgba(54, 124, 214, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2),
+      inset 0 -3px 7px rgba(0, 0, 0, 0.45);
   }
 }
 
+/* Lifting the plate lengthens its cast shadow — the hover reads as the plate
+   rising off the felt rather than merely glowing harder. */
 .bbj-widget:hover {
   transform: translateX(-50%) translateY(-2px);
   box-shadow:
-    0 0 20px rgba(163, 113, 247, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  border-color: rgba(213, 218, 226, 0.6);
+    0 1px 0 rgba(255, 255, 255, 0.28),
+    0 5px 8px rgba(0, 0, 0, 0.5),
+    0 14px 28px rgba(0, 0, 0, 0.52),
+    0 0 34px rgba(54, 124, 214, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.26),
+    inset 0 -3px 7px rgba(0, 0, 0, 0.45);
 }
 
 .bbj-widget__label {
   font-size: 0.5rem;
   font-weight: 700;
-  color: #d5dae2;
-  letter-spacing: 0.04em;
+  color: #9fb4d0;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  margin-bottom: 1px;
+  margin-bottom: 2px;
   text-align: center;
   line-height: 1;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
 }
 
 .bbj-widget__amount {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 800;
   color: #fff;
   font-family: 'JetBrains Mono', monospace;
-  text-shadow: 0 2px 6px rgba(213, 218, 226, 0.28);
+  /* A dark line UNDER the glyphs plus a light line above them is the standard
+     engraving cue; with the plate's own top highlight it reads as struck metal
+     rather than flat text. background-clip:text kills text-shadow, so the
+     engraving is a drop-shadow filter instead. */
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.75)) drop-shadow(0 0 8px rgba(54, 124, 214, 0.4));
   text-align: center;
   line-height: 1.05;
-  background: linear-gradient(135deg, #fff 20%, #d5dae2 80%);
+  letter-spacing: 0.02em;
+  background: linear-gradient(180deg, #ffffff 0%, #dfe5ec 42%, #a8b2bf 72%, #eef2f7 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

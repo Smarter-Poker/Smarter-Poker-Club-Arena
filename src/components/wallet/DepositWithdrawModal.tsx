@@ -658,7 +658,7 @@ export default function DepositWithdrawModal({
                 alignItems: 'center',
                 justifyContent: 'center',
                 boxShadow: '0 8px 32px rgba(0, 200, 83, 0.3)',
-                animation: 'successIconPulse 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                animation: 'animationsSuccessIconPulse 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
               }}
             >
               <svg

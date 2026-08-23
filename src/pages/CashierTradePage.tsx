@@ -33,6 +33,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
+import { PromoWalletCashierModal } from '../components/wallet';
 import ClubBankCashierModal from '../components/wallet/ClubBankCashierModal';
 import { canSeeClubBank } from '../components/wallet/walletRows';
 import ClubBottomNav from '../components/club/ClubBottomNav';
@@ -166,6 +167,7 @@ export default function CashierTradePage() {
   // Dan 2026-08-23: it opens the CLUB BANK CASHIER now. The mint lives inside
   // that, for standalone clubs only - a club in a union has no mint at all.
   const [showClubBank, setShowClubBank] = useState(false);
+  const [showPromoWallet, setShowPromoWallet] = useState(false);
   // Guards a double-submit that beats the re-render `busy` depends on.
   const busyRef = useRef(false);
   const isMounted = useRef(true);

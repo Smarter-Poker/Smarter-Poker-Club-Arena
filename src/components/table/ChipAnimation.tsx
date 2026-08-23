@@ -12,6 +12,12 @@
  */
 
 import { useEffect, useState, useRef, useCallback } from 'react';
+import {
+  breakChips,
+  chipDenominationFor,
+  totalChipCount,
+  type ChipDenomination,
+} from '../../lib/chipDenominations';
 import styles from './ChipAnimation.module.css';
 // Dan 2026-08-14 live E2E visual hotfix pack — bundled here because this
 // component is always in the table bundle (avatars, chips, felt, pot column).
@@ -48,6 +54,20 @@ interface ChipAnimationProps {
   showLabel?: boolean;
   /** What the label reads, when it differs from this chip's own value. */
   labelAmount?: number;
+  /**
+   * Dan 2026-08-23: the denomination this chip actually IS, so a chip in
+   * flight is the same colour as the chip that was sitting in front of the
+   * player a moment earlier and the chip that lands in the pot a moment later.
+   *
+   * Before this, flight colour came from five hand-rolled amount thresholds
+   * (>=1000 gold, >=500 black, >=100 blue, >=25 green, else red) that matched
+   * neither Dan's ladder nor the chips on the felt: a 500 bet left the seat as
+   * a purple chip and arrived at the pot black.
+   *
+   * When omitted the denomination is derived from `amount`; an explicit
+   * `chipColor` still wins, for callers that want a specific look.
+   */
+  denomValue?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -76,11 +96,12 @@ export default function ChipAnimation({
   duration = 450,
   delay = 0,
   onComplete,
-  chipColor = 'gold',
+  chipColor,
   useArc = true,
   arcHeight = -0.4,
   showLabel = true,
   labelAmount,
+  denomValue,
 }: ChipAnimationProps) {
   const [position, setPosition] = useState(from);
   const [opacity, setOpacity] = useState(1);
@@ -176,13 +197,17 @@ export default function ChipAnimation({
       if (animRef.current) cancelAnimationFrame(animRef.current);
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     };
-     
+
     // intentionally read through onCompleteRef; see CHIP-GLITCH FIX above.
   }, [from, to, duration, delay, useArc, arcHeight]);
 
   if (!isVisible) return null;
 
   const chipCount = getChipCount(amount);
+
+  // The chip in flight is the chip that left the felt. An explicit chipColor
+  // still wins (legacy callers), otherwise paint the real denomination.
+  const denom: ChipDenomination = chipDenominationFor(denomValue ?? amount);
 
   return (
     <div
@@ -196,8 +221,14 @@ export default function ChipAnimation({
       {Array.from({ length: Math.min(chipCount, 5) }).map((_, i) => (
         <div
           key={i}
-          className={`${styles.chip} ${styles[chipColor]}`}
-          style={{ '--chip-offset': i } as React.CSSProperties}
+          className={`${styles.chip} ${chipColor ? styles[chipColor] : styles.denomChip}`}
+          style={
+            {
+              '--chip-offset': i,
+              '--chip-face': denom.color,
+              '--chip-edge': denom.accent,
+            } as React.CSSProperties
+          }
         />
       ))}
 
@@ -224,6 +255,8 @@ export interface ChipAnimationEvent {
   showLabel?: boolean;
   /** What that label reads. */
   labelAmount?: number;
+  /** The denomination this chip is, so it flies the colour it sat as. */
+  denomValue?: number;
 }
 
 interface ChipAnimationManagerProps {
@@ -243,7 +276,8 @@ export function ChipAnimationManager({
           from={anim.from}
           to={anim.to}
           amount={anim.amount}
-          chipColor={anim.chipColor || getChipColor(anim.amount)}
+          chipColor={anim.chipColor}
+          denomValue={anim.denomValue}
           delay={anim.delay || 0}
           duration={anim.type === 'to-winner' ? 600 : 400}
           useArc={anim.type !== 'straight'}
@@ -261,6 +295,42 @@ export function ChipAnimationManager({
 // HELPERS — Create chip-to-pot and pot-to-winner events
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * The denomination each chip of a fan is PAINTED as, in flight order.
+ *
+ * Dan 2026-08-23: a fan used to be coloured by five hand-rolled thresholds
+ * applied to `amount / chipCount` — a number that is not a chip at all. A 500
+ * bet left the seat purple and arrived at the pot black, because the value it
+ * was coloured by (500/4 = 125) is not on any ladder. The fan now takes its
+ * colours from the REAL chips the amount breaks into, so what flies is what
+ * was sitting on the felt.
+ *
+ * COLOUR ONLY. Each event's `amount` stays a SHARE of the total, because that
+ * is the contract tests/pot-push-to-winner.test.tsx pins: a fan of N chips
+ * still sums to the pot within N of rounding. Setting `amount` to a
+ * denomination value instead looks tidier and silently breaks "the chips still
+ * add up to the pot" — it was tried, and that spec caught it.
+ *
+ * `count` sprites are returned, cycling the breakdown when the fan is longer
+ * than it (a 1,000 pot is one yellow chip, and a three-chip fan of it is three
+ * yellow chips, which is what a dealer would actually push).
+ */
+function fanDenominations(amount: number, count: number): ChipDenomination[] {
+  const { chips } = breakChips(amount);
+  if (chips.length === 0) {
+    return Array.from({ length: count }, () => chipDenominationFor(amount));
+  }
+
+  // Expand the breakdown into individual chips, highest denomination first.
+  const expanded: ChipDenomination[] = [];
+  for (const { denom, count: n } of chips) {
+    for (let i = 0; i < n && expanded.length < count; i++) expanded.push(denom);
+    if (expanded.length >= count) break;
+  }
+
+  return Array.from({ length: count }, (_, i) => expanded[i % expanded.length]);
+}
+
 /** Create a chip-to-pot animation event (2-4 staggered chips from seat to pot center) */
 export function createChipToPotEvent(
   seatPos: Position,
@@ -268,7 +338,9 @@ export function createChipToPotEvent(
   amount: number
 ): ChipAnimationEvent[] {
   const chipCount = Math.min(getChipCount(amount), 4);
-  return Array.from({ length: chipCount }).map((_, i) => ({
+  const fan = fanDenominations(amount, chipCount);
+
+  return fan.map((denom, i) => ({
     id: `chip-to-pot-${Date.now()}-${i}`,
     from: {
       x: seatPos.x + (Math.random() - 0.5) * 10,
@@ -278,7 +350,7 @@ export function createChipToPotEvent(
     amount: Math.round(amount / chipCount),
     delay: i * 50,
     type: 'to-pot' as const,
-    chipColor: getChipColor(amount / chipCount),
+    denomValue: denom.value,
     // AUDIT 2026-08-19: same rule as the pot-to-winner fan. A 100 bet drawn as
     // four chips used to print "25" four times; the label now names the bet.
     showLabel: i === 0,
@@ -286,14 +358,18 @@ export function createChipToPotEvent(
   }));
 }
 
-/** Create pot-to-winner animation event (6-8 chips from pot to winner seat) */
+/** Create pot-to-winner animation event (3-8 chips from pot to winner seat) */
 export function createPotToWinnerEvent(
   potPos: Position,
   winnerPos: Position,
   amount: number
 ): ChipAnimationEvent[] {
+  // At least three sprites so a clean one-chip pot is still a shipment, at
+  // most eight so a 60,000 pot is not twelve discs to count mid-flight.
   const chipCount = Math.min(Math.max(getChipCount(amount), 3), 8);
-  return Array.from({ length: chipCount }).map((_, i) => ({
+  const fan = fanDenominations(amount, chipCount);
+
+  return fan.map((denom, i) => ({
     id: `pot-to-winner-${Date.now()}-${i}`,
     from: {
       x: potPos.x + (Math.random() - 0.5) * 20,
@@ -306,7 +382,7 @@ export function createPotToWinnerEvent(
     amount: Math.round(amount / chipCount),
     delay: i * 40,
     type: 'to-winner' as const,
-    chipColor: getChipColor(amount / chipCount),
+    denomValue: denom.value,
     // One label for the fan, reading the WHOLE amount being shipped to this
     // winner — not N chips each reading a share of it.
     showLabel: i === 0,
@@ -318,20 +394,16 @@ export function createPotToWinnerEvent(
 // UTILITY FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * How many sprites to draw for one flying chip event, 1 to 5.
+ *
+ * Was five hand-rolled amount thresholds. It is now the real fewest-chips
+ * count, clamped: a 7 bet flies as three chips because 7 IS three chips, and a
+ * 60,000 bet flies as five rather than twelve because twelve sprites crossing
+ * the felt in 400ms is noise, not information (the label carries the amount).
+ */
 function getChipCount(amount: number): number {
-  if (amount >= 10000) return 5;
-  if (amount >= 1000) return 4;
-  if (amount >= 100) return 3;
-  if (amount >= 10) return 2;
-  return 1;
-}
-
-function getChipColor(amount: number): 'red' | 'green' | 'blue' | 'black' | 'gold' {
-  if (amount >= 1000) return 'gold';
-  if (amount >= 500) return 'black';
-  if (amount >= 100) return 'blue';
-  if (amount >= 25) return 'green';
-  return 'red';
+  return Math.max(1, Math.min(totalChipCount(amount) || 1, 5));
 }
 
 function formatAmount(amount: number): string {

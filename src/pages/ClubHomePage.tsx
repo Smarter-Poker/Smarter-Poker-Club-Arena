@@ -53,6 +53,7 @@ import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
+import { PromoWalletCashierModal } from '../components/wallet';
 import ClubBankCashierModal from '../components/wallet/ClubBankCashierModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
@@ -343,6 +344,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // to agent wallets, the full chip ledger, and (standalone clubs only) the
   // Chip Mint, which used to be a "+" on the wallet panel itself.
   const [showClubBank, setShowClubBank] = useState(false);
+  const [showPromoWallet, setShowPromoWallet] = useState(false);
   /* LOBBY V2 follow-up (Dan's QA, 2026-08-22): the lobby landed on the MTT
      tab, a leftover from before All Games was a real tab. A club with no open
      MTTs therefore opened onto an empty screen blaming "filters" - every
@@ -2066,7 +2068,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               height: 56,
               borderRadius: '50%',
               background: 'rgba(255,255,255,0.08)',
-              animation: 'pulse 1.5s ease-in-out infinite',
+              animation: 'animationsPulse 1.5s ease-in-out infinite',
             }}
           />
           <div style={{ flex: 1 }}>
@@ -2077,7 +2079,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 borderRadius: 6,
                 background: 'rgba(255,255,255,0.08)',
                 marginBottom: 8,
-                animation: 'pulse 1.5s ease-in-out infinite',
+                animation: 'animationsPulse 1.5s ease-in-out infinite',
               }}
             />
             <div
@@ -2086,7 +2088,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 height: 14,
                 borderRadius: 4,
                 background: 'rgba(255,255,255,0.06)',
-                animation: 'pulse 1.5s ease-in-out infinite',
+                animation: 'animationsPulse 1.5s ease-in-out infinite',
               }}
             />
           </div>
@@ -2101,7 +2103,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 height: 60,
                 borderRadius: 10,
                 background: 'rgba(255,255,255,0.05)',
-                animation: 'pulse 1.5s ease-in-out infinite',
+                animation: 'animationsPulse 1.5s ease-in-out infinite',
               }}
             />
           ))}
@@ -2115,7 +2117,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               borderRadius: 12,
               background: 'rgba(255,255,255,0.04)',
               marginBottom: 12,
-              animation: 'pulse 1.5s ease-in-out infinite',
+              animation: 'animationsPulse 1.5s ease-in-out infinite',
             }}
           />
         ))}
@@ -2347,6 +2349,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 // refuses everyone else server-side. The Chip Mint moved
                 // INSIDE that cashier - there is no mint button out here any
                 // more, and no mint at all once the club is in a union.
+                onOpenPromoWallet={() => setShowPromoWallet(true)}
                 onOpenClubBank={() => {
                   haptic.medium();
                   setShowClubBank(true);
@@ -2415,6 +2418,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           </div>
         )}
       </header>
+
+      <PromoWalletCashierModal
+        isOpen={showPromoWallet}
+        onClose={() => setShowPromoWallet(false)}
+        clubId={resolvedClubId || clubId || ''}
+      />
 
       <ClubBankCashierModal
         isOpen={showClubBank}

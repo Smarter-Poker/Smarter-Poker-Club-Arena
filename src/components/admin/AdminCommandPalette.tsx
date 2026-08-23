@@ -240,7 +240,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
           borderRadius: '16px',
           zIndex: 2001,
           overflow: 'hidden',
-          animation: 'slideDown 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+          animation: 'animationsSlideDown 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
           boxShadow: '0 20px 60px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 212, 255, 0.1)',
         }}
       >

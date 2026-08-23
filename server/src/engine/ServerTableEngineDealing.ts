@@ -170,15 +170,33 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // never reaches across a player's other seats — "A PLAYER CAN SIT OUT
         // ON ONE TABLE BUT STILL PLAY TABLES ON SCREEN 2, 3 AND 4".
         if (!this.isTournamentTable()) {
-          const evictable = this.disconnectEngine.tickSitOutsAndCollectEvictions(
+          const seatedIds = this.seatedPlayers.map((p) => p.user_id);
+          const sitOutEvictable = this.disconnectEngine.tickSitOutsAndCollectEvictions(
             this.tableId,
-            this.seatedPlayers.map((p) => p.user_id)
+            seatedIds
           );
+          // ── Dan 2026-08-23, BINDING: away-blind cap ──
+          // "IF A PLAYER IS AWAY FROM THE CASH GAME TABLE, ONCE THEY LOSE ONE
+          //  BB AND ONE SB THEY MUST BE AUTO REMOVED. YOU CAN'T KEEP BLINDING
+          //  OUT A PLAYER WHO HAS DISCONNECTED."
+          // The blinds were recorded against them in dealHand; this is where
+          // the bill comes due — between hands, before the next deal can take
+          // a third blind. Cash only: a tournament sit-out is blinded off by
+          // design and must never be stood up.
+          const blindEvictable = this.disconnectEngine.collectAwayBlindEvictions(
+            this.tableId,
+            seatedIds
+          );
+          const blindEvictSet = new Set(blindEvictable);
+          const evictable = Array.from(new Set([...sitOutEvictable, ...blindEvictable]));
           for (const userId of evictable) {
             const seated = this.seatedPlayers.find((p) => p.user_id === userId);
             if (!seated) continue;
+            const awayBlindEvict = blindEvictSet.has(userId);
             console.log(
-              `[ServerTableEngine:${this.tableId}] evicting ${userId} — sat out past the 2-orbit / 5-minute limit`
+              awayBlindEvict
+                ? `[ServerTableEngine:${this.tableId}] evicting ${userId} — away, already charged one SB and one BB`
+                : `[ServerTableEngine:${this.tableId}] evicting ${userId} — sat out past the 2-orbit / 5-minute limit`
             );
             this.hub?.emitEvent(this.tableId, {
               type: 'seat_left',
@@ -186,7 +204,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               seat: seated.seat_number,
               user_id: userId,
               mid_hand: false,
-              reason: 'sit_out_timeout',
+              reason: awayBlindEvict ? 'away_blind_cap' : 'sit_out_timeout',
               timestamp: Date.now(),
             });
             atomicCashout(userId, this.tableId, seated.seat_number)
@@ -699,12 +717,24 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       this.timeBankEngine.onOrbitComplete(this.tableId);
     }
 
+    // Who posts the blinds this hand. ONE computation, used by the straddle
+    // block below and by the away-blind cap further down — they were two
+    // copies of the same arithmetic, which is a correctness trap: the day
+    // somebody fixes the heads-up rule in one of them, the other silently
+    // starts billing the wrong seat.
+    //
+    // This mirrors HandController.postBlinds exactly (heads-up: the button IS
+    // the small blind; otherwise the small blind is the next seat clockwise),
+    // over the same `players` roster HandController is about to receive. Its
+    // getNextActiveSeat filters `is_sitting_out`, and every player in this
+    // roster is built with `is_sitting_out: false`, so the two walks agree.
+    const sbSeat = players.length === 2 ? dealerSeat : this.getNextSeat(dealerSeat, players);
+    const bbSeat = this.getNextSeat(sbSeat, players);
+
     // Bible V8 §4.4: Process straddles before hand starts
     let straddleResults: { seat: number; amount: number }[] = [];
     if (this.tableInfo.straddle_enabled) {
       // Build seat order starting from UTG (left of BB)
-      const sbSeat = players.length === 2 ? dealerSeat : this.getNextSeat(dealerSeat, players);
-      const bbSeat = this.getNextSeat(sbSeat, players);
       const utgSeat = this.getNextSeat(bbSeat, players);
 
       const seatOrder: Array<{ seat: number; playerId: string }> = [];
@@ -766,6 +796,58 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // variant. HandController still downgrades if the deck can't cover it.
         doubleBoard: this.tableInfo.bomb_pot_double_board ?? false,
       };
+    }
+
+    // ── Dan 2026-08-23: bill this hand's blinds against the away-blind cap ──
+    //
+    // Recorded here rather than inside HandController.postBlinds because the
+    // cap is a property of the PLAYER's presence, and HandController knows
+    // nothing about presence — it is a pure hand engine and should stay one.
+    // `sbSeat` / `bbSeat` are the shared computation above, so this can never
+    // disagree with the seats that actually get charged.
+    //
+    // Skipped for bomb pots (everyone antes, nobody posts a blind) and for
+    // tournaments (a tournament player is blinded off by design — removing
+    // them would break elimination and the tournament could never end).
+    //
+    // noteBlindChargedWhileAway is a no-op for a player who is present, so
+    // every branch below is safe to call unconditionally.
+    if (!this.isTournamentTable() && !bombPotConfig && players.length >= 2) {
+      const chargeBlind = (seatNumber: number, which: 'sb' | 'bb') => {
+        const occupant = players.find((p) => p.seat_number === seatNumber);
+        if (!occupant) return;
+        this.disconnectEngine.noteBlindChargedWhileAway(this.tableId, occupant.user_id, which);
+      };
+
+      chargeBlind(sbSeat, 'sb');
+      chargeBlind(bbSeat, 'bb');
+
+      // The posted blinds are not the only blinds. Two other paths take money
+      // from a seat before a card is dealt, and an away player can be in
+      // either — missing them would let somebody be ground down by exactly
+      // the charges this cap exists to stop.
+      //
+      // Dead blinds (returning from sit-out) take a dead SB AND a live BB in
+      // the SAME hand, so that player has spent the entire budget in one go
+      // and is stood up before the next deal. That is the correct outcome:
+      // they came back, immediately went away again, and paid a full blind
+      // cycle for it.
+      if (this.returningFromSitout.size > 0) {
+        for (const p of players) {
+          if (!this.returningFromSitout.has(p.user_id)) continue;
+          if (p.seat_number === sbSeat || p.seat_number === bbSeat) continue;
+          this.disconnectEngine.noteBlindChargedWhileAway(this.tableId, p.user_id, 'sb');
+          this.disconnectEngine.noteBlindChargedWhileAway(this.tableId, p.user_id, 'bb');
+        }
+      }
+      // "Post BB to enter" takes a live big blind only.
+      if (this.postingBBToEnter.size > 0) {
+        for (const p of players) {
+          if (!this.postingBBToEnter.has(p.user_id)) continue;
+          if (p.seat_number === sbSeat || p.seat_number === bbSeat) continue;
+          this.disconnectEngine.noteBlindChargedWhileAway(this.tableId, p.user_id, 'bb');
+        }
+      }
     }
 
     const config: HandConfig = {

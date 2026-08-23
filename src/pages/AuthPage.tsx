@@ -279,7 +279,7 @@ export default function AuthPage() {
             `}</style>
       <div
         className={styles.authCard}
-        style={{ animation: `slideUpIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)` }}
+        style={{ animation: `animationsSlideUpIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)` }}
       >
         {/* Logo */}
         <div className={styles.logo}>

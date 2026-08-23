@@ -315,7 +315,7 @@ export default function AgentPromoPanel({
                 alignItems: 'center',
                 gap: 10,
                 padding: '10px 0',
-                animation: `shimmerFade 1.4s ease-in-out ${i * 0.1}s infinite`,
+                animation: `animationsShimmerFade 1.4s ease-in-out ${i * 0.1}s infinite`,
               }}
             >
               <div
@@ -326,7 +326,7 @@ export default function AgentPromoPanel({
                   background:
                     'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
                   backgroundSize: '200px 100%',
-                  animation: 'shimmerSlide 1.4s ease-in-out infinite',
+                  animation: 'animationsShimmerSlide 1.4s ease-in-out infinite',
                   flexShrink: 0,
                 }}
               />
@@ -339,7 +339,7 @@ export default function AgentPromoPanel({
                     background:
                       'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
                     backgroundSize: '200px 100%',
-                    animation: 'shimmerSlide 1.4s ease-in-out infinite',
+                    animation: 'animationsShimmerSlide 1.4s ease-in-out infinite',
                     marginBottom: 5,
                   }}
                 />
@@ -351,7 +351,7 @@ export default function AgentPromoPanel({
                     background:
                       'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
                     backgroundSize: '200px 100%',
-                    animation: 'shimmerSlide 1.4s ease-in-out infinite',
+                    animation: 'animationsShimmerSlide 1.4s ease-in-out infinite',
                   }}
                 />
               </div>

@@ -636,6 +636,145 @@ export function isSeatFirstFormat(variant: string, maxPlayers: number): boolean 
   return String(variant).toLowerCase() === 'spin' || maxPlayers <= 2;
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * MTT PRE-START HORSE RAMP — Dan 2026-08-23, BINDING, STANDARD PRACTICE
+ * ───────────────────────────────────────────────────────────────────────────
+ * "HORSES NEED TO BE REGISTERING FOR MTT TOURNAMENTS UP TO AN HOUR BEFORE THE
+ *  TOURNAMENT STARTS. PLAYERS DON'T JUMP IN AND PLAY TOURNAMENTS THAT HAVE NO
+ *  PLAYERS IN THEM."
+ *
+ * WHAT WAS ACTUALLY HAPPENING
+ * Horse seeding ran at exactly two moments: once when the tournament row was
+ * created, and again only AFTER the start time had passed. Neither covers the
+ * hour a human spends looking at the lobby deciding what to play. Measured on
+ * production while writing this: "All-In or Fold Frenzy", a 200-seat event,
+ * had been sitting in the lobby for SEVENTEEN AND A HALF HOURS reading 0/200,
+ * two minutes from its start. Nobody registers for that, so it stayed empty,
+ * and the only thing that ever filled it was the past-start rescue - by which
+ * point every human who looked at it had already gone elsewhere.
+ *
+ * The spawn-time check made this inevitable rather than unlucky: it asked "does
+ * this start within 15 minutes?" ONCE, at creation. An event published a day
+ * ahead answered no, and was never asked again.
+ *
+ * THE CURVE, AND WHY IT IS NOT A STEP
+ * A field that appears all at once reads as fake, and a field that appears at
+ * T-60 and then never moves reads as dead. Real MTT registration is slow early
+ * and piles in near the close, so the target is quadratic in elapsed ramp time:
+ * gentle for the first half hour, steep in the last ten minutes. A player
+ * refreshing the lobby sees a number that keeps going up, which is the actual
+ * product goal here - not the final count.
+ *
+ * THREE SAFETY PROPERTIES, ALL DELIBERATE
+ *  1. It never targets more than `maxPlayers - 1`, so the ramp can NEVER trip
+ *     the `maxReached` start gate in discoverTournaments and begin an event
+ *     ahead of its own clock. There is always a seat for a human.
+ *  2. It is capped at MTT_PRESTART_MAX_HORSES regardless of field size. The
+ *     pool is finite (584 horses, most of them already dealing cash or in
+ *     another event) and every registration is a REAL buy-in through
+ *     fn_register_horse_for_tournament - real wallet debit, real rake, real
+ *     prize-pool contribution. A 200-seat event must not swallow the pool or
+ *     inflate a prize pool with a hundred horse buy-ins an hour early. Filling
+ *     the rest is the existing past-start top-up's job, on the clock, when it
+ *     is actually needed.
+ *  3. Seat-first games (Spin, heads-up) return 0 and are left completely
+ *     alone. Their binding rule is that they start when seats are BOUGHT, and
+ *     registrations are not seats.
+ *
+ * Returns the number of registered entrants the field SHOULD have right now.
+ * The caller tops up toward it and never removes anybody.
+ */
+export const MTT_PRESTART_RAMP_MS = 60 * 60 * 1000;
+export const MTT_PRESTART_MAX_HORSES = 24;
+/**
+ * Most entrants the ramp will add in a single tick.
+ *
+ * registerHorses buys in ONE HORSE PER RPC, sequentially, and the ramp runs
+ * inside discoverTournaments - the same 5-second loop that decides when
+ * tournaments START. A cold engine coming up two minutes before a big event
+ * would compute a target of 23 and fire 23 round trips in one pass, holding
+ * up every other tournament's start check behind it.
+ *
+ * It is also the more honest shape. Twenty-three entrants appearing between
+ * one lobby refresh and the next reads as a script; a few at a time reads as
+ * people arriving. If a burst is ever genuinely needed - an engine restart
+ * right before the gun - the past-start top-up is the backstop and it aims at
+ * a full field anyway.
+ */
+export const MTT_PRESTART_MAX_STEP = 6;
+
+/**
+ * Does this format start on SEATS BOUGHT rather than on registrations?
+ *
+ * Deliberately BROADER than isSeatFirstFormat, and deliberately not merged
+ * with it. isSeatFirstFormat answers "does topUpWithHorses need to seat this
+ * player rather than register them", which is spin-or-heads-up. The START GATE
+ * in discoverTournaments asks a different question and gets a different
+ * answer: it treats `variant === 'sng'` as seat-first at ANY size.
+ *
+ * Those two disagreed for a 6-max SNG, and the ramp used the narrower one. It
+ * would have registered horses into a game whose start gate counts seats, so
+ * the registrations would never become seats and never start anything - while
+ * current_players climbed to 6/6 with zero seats sold. That is precisely the
+ * drift this codebase already fought once, with live spins reading 3/3 on two
+ * bought seats (which then refuses every further sit-down as 'tournament_full')
+ * and 0/3 on three.
+ *
+ * No such tournament exists today - every live sng is heads-up - but the 6-max
+ * shape is generated by the SNG board and is one config flag away. The ramp
+ * therefore uses the STRICTER test on purpose: being stricter can only ever
+ * mean "we declined to ramp something we could have", never "we ramped
+ * something that breaks".
+ */
+export function startsOnBoughtSeats(variant: string, maxPlayers: number): boolean {
+  const v = String(variant ?? '').toLowerCase();
+  return v === 'sng' || v === 'spin' || (Number(maxPlayers) || 0) <= 2;
+}
+
+/**
+ * How many entrants to ask topUpWithHorses for RIGHT NOW, or 0 for nothing to
+ * do. The whole decision lives here so it is testable without a database.
+ */
+export function mttPrestartHorseTarget(opts: {
+  /** Milliseconds until the scheduled start. Negative means already past. */
+  msUntilStart: number;
+  maxPlayers: number;
+  variant: string;
+  /** Entrants already registered. Bounds how far one tick may jump. */
+  currentPlayers?: number;
+}): number {
+  const { msUntilStart, maxPlayers, variant } = opts;
+  const current = Math.max(0, Number(opts.currentPlayers) || 0);
+
+  // Past start, or not started ramping yet. Past start belongs to the existing
+  // top-up, which aims at a full field; this function must not fight it.
+  if (!Number.isFinite(msUntilStart)) return 0;
+  if (msUntilStart <= 0 || msUntilStart > MTT_PRESTART_RAMP_MS) return 0;
+
+  // Spins, heads-up and any-size SNGs start on bought seats. Not our business.
+  if (startsOnBoughtSeats(variant, maxPlayers)) return 0;
+
+  const seats = Number(maxPlayers) || 0;
+  // Always leave a seat: see safety property 1.
+  const fieldGoal = Math.min(seats - 1, MTT_PRESTART_MAX_HORSES);
+  if (fieldGoal < 1) return 0;
+
+  const elapsed = 1 - msUntilStart / MTT_PRESTART_RAMP_MS; // 0 at T-60, 1 at T-0
+  const curve = elapsed * elapsed; // slow early, steep near the close
+
+  // At least one entrant the moment the window opens: a lobby row reading 1
+  // is a game somebody is in, and 0 is a game nobody will join.
+  const onCurve = Math.max(1, Math.min(fieldGoal, Math.ceil(fieldGoal * curve)));
+
+  // Already there (or ahead, if humans turned up). Nothing to do.
+  if (onCurve <= current) return 0;
+
+  // Walk toward the curve rather than jumping to it. Still never past the
+  // curve, so the leave-a-seat and pool-cap guarantees above still hold.
+  return Math.min(onCurve, current + MTT_PRESTART_MAX_STEP);
+}
+
 function horsesForSeatHeldGame(maxPlayers: number): { horses: number; isSim: boolean } {
   if (!HOLD_SEAT_FOR_HUMAN) return { horses: maxPlayers, isSim: true };
   return { horses: Math.max(1, maxPlayers - 1), isSim: false };
@@ -720,6 +859,16 @@ const SNG_CONFIGS: SNGConfig[] = SNG_BOARD_SHAPES.flatMap((shape) =>
  * must keep reading it from their config.
  */
 export const SPIN_SEATS = 3;
+
+/**
+ * Seats the cash room keeps, per live cash table, before the Spin and
+ * Heads-Up boards may claim another idle horse. See cashRoomReserve.
+ *
+ * Two, not more: the point is that a cash table is never a ghost, not that it
+ * is full. A table showing 2 players is one a human can sit down at; a table
+ * showing 0 is one they scroll past.
+ */
+export const CASH_FLOOR_PER_TABLE = 2;
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -2065,6 +2214,47 @@ export class TournamentRecurringService {
         );
       }
 
+      /**
+       * Dan 2026-08-23: TELL THE LOBBY THE SEATS ARE SOLD.
+       *
+       * The horses above take REAL seats, and that fixed the game logic. It
+       * did not fix the shop window: `current_players` is a stored column, a
+       * seat row does not touch it, and this was the one seat-first path that
+       * never synced it. Measured live before this fix: 16 open Spins
+       * advertising "0/3" while holding 32 paid seats between them - two of
+       * three sold, ONE SEAT FROM DEALING, and the lobby said empty. Nine SNGs
+       * the same. The fourteen Spins that read correctly all got there through
+       * topUpWithHorses, which does sync.
+       *
+       * That is the same complaint as the MTT ramp, arriving from the opposite
+       * direction: "PLAYERS DON'T JUMP IN AND PLAY TOURNAMENTS THAT HAVE NO
+       * PLAYERS IN THEM." Here the players were already in them. Only the
+       * number was wrong, and the number is the entire thing a player decides
+       * on.
+       *
+       * Derived from the seat rows, never incremented: registrations and seats
+       * disagree constantly for these formats, which is why a counter that
+       * counts registrations had spins reading 3/3 on two bought seats
+       * (refusing every further sit-down as 'tournament_full') and 0/3 on
+       * three (never starting).
+       *
+       * Best-effort by design. A failed sync must not fail table creation -
+       * the seats are real either way, and the next top-up pass syncs again.
+       */
+      if (seated > 0) {
+        const { error: syncErr } = await supabase.rpc('fn_sync_seat_first_player_count', {
+          p_tournament_id: tournament.id,
+        });
+        if (syncErr) {
+          reportError(
+            new Error(
+              `[TournamentRecurring] seat-count sync failed for ${tournament.name}: ${syncErr.message}`
+            ),
+            'TournamentRecurring.seat_first_count_sync_failed'
+          );
+        }
+      }
+
       return table.id as string;
     } catch (err: any) {
       reportError(err, 'TournamentRecurring.createOpenSeatTable_threw');
@@ -2092,6 +2282,46 @@ export class TournamentRecurringService {
    * pattern registerHorses right below already used - the per-horse version was
    * a regression against a convention this very file had settled on.
    */
+  /**
+   * How many idle horses the cash room still needs before the tournament
+   * boards may claim any more.
+   *
+   * CASH_FLOOR_PER_TABLE is per LIVE cash table, counted from the seats rather
+   * than from tables.current_players -- that column is maintained by a
+   * different path and was measured disagreeing with the seats (69 vs 72) on
+   * the same afternoon a denormalised count was found stale in three other
+   * places. Count the thing itself.
+   *
+   * Fails OPEN, returning 0: if this read errors the boards behave exactly as
+   * they did before the reserve existed. A reserve that turns a database blip
+   * into a frozen lobby would be worse than no reserve.
+   */
+  private async cashRoomReserve(): Promise<number> {
+    try {
+      const { data: cashTables, error: tErr } = await supabase
+        .from('tables')
+        .select('id')
+        .is('tournament_id', null)
+        .eq('is_deleted', false)
+        .in('status', ['waiting', 'running'])
+        .limit(2000);
+      if (tErr || !cashTables || cashTables.length === 0) return 0;
+
+      const ids = cashTables.map((t) => (t as { id: string }).id);
+      const { count: seated, error: sErr } = await supabase
+        .from('table_seats')
+        .select('user_id', { count: 'exact', head: true })
+        .is('left_at', null)
+        .in('table_id', ids);
+      if (sErr || typeof seated !== 'number') return 0;
+
+      const wanted = ids.length * CASH_FLOOR_PER_TABLE;
+      return Math.max(0, wanted - seated);
+    } catch {
+      return 0;
+    }
+  }
+
   private async pickFreeHorses(count: number): Promise<string[]> {
     if (count <= 0) return [];
     try {
@@ -2146,6 +2376,43 @@ export class TournamentRecurringService {
       const candidates = (horses ?? [])
         .map((h) => (h as { id: string }).id)
         .filter((id) => id && !busy.has(id));
+
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  THE CASH ROOM GETS A FLOOR BEFORE THE BOARD GETS ITS NEXT SPIN
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * Measured 2026-08-23, an hour after the seat-first board was unwedged
+       * and started opening every price point again:
+       *
+       *     MTT   190 horses      CASH  43 horses across 44 tables
+       *     SPIN  128 horses      -> 72 seats occupied in the whole cash room
+       *     SNG   107 horses
+       *
+       * The board did exactly what it was told and drank the fleet. Nothing
+       * here TAKES a horse off a cash table -- the busy set above forbids that
+       * -- but by claiming every idle horse the instant one stands up, it
+       * starves whatever puts horses back into cash seats, and the room
+       * hollows out one rotation at a time. 44 tables showing 1 or 2 players
+       * is a worse lobby than 30 spins showing 2/3.
+       *
+       * So the tournament side may not draw the pool below what the cash room
+       * still needs. This does not move anybody; it declines to claim the last
+       * horses, which leaves them for the cash seater to find. When the fleet
+       * is comfortable the reserve is zero and this costs one indexed count.
+       *
+       * The floor is deliberately LOW. It is not "fill the cash room", it is
+       * "never let it go empty while a board of spins fills": two horses is a
+       * table that is visibly alive and can take a human as a third.
+       */
+      const reserved = await this.cashRoomReserve();
+      const claimable = Math.max(0, candidates.length - reserved);
+      if (claimable < count) {
+        console.log(
+          `[TournamentRecurring] holding ${reserved} horse(s) back for the cash room; ${claimable} of ${count} claimable`
+        );
+      }
+      candidates.length = Math.min(candidates.length, claimable);
       // nodeCrypto, not Math.random: CryptoRandom.test.ts forbids Math.random
       // anywhere in the engine services, and it is right to - a weak source
       // that starts life shuffling a horse list is one refactor away from
@@ -2401,19 +2668,42 @@ export class TournamentRecurringService {
         added = await this.registerHorses(tournamentId, shortfall);
       }
 
-      // Re-read rather than trusting `liveCount + added`: a human may have
-      // registered while we were seating horses.
-      const { count: finalCount } = await supabase
-        .from('tournament_players')
-        .select('id', { count: 'exact', head: true })
-        .eq('tournament_id', tournamentId)
-        .in('status', ['registered', 'playing']);
+      /**
+       * RESTORED 2026-08-23. This branch was written, reviewed and lost.
+       *
+       * The comment above still describes it exactly - "Derive it from the
+       * seat rows for seat-first, and keep the registration count for MTTs" -
+       * but the code under it had been flattened to the MTT half alone, so
+       * every seat-first game had its REGISTRATION count written into
+       * current_players. Horses seated by fn_seat_horse_in_seat_first_game
+       * hold seats, not registrations, so that number is zero: 16 open Spins
+       * were advertising "0/3" while holding 32 paid seats between them, two
+       * of three sold and one seat from dealing.
+       *
+       * The original lives on five branches under five different SHAs and on
+       * none of them is it an ancestor of main - it merged as prose and not as
+       * code, which is the "merge resolved by taking a stale side" failure
+       * .agent/protected-commits.json exists to catch. It is pinned there now.
+       */
+      if (seatFirst) {
+        await supabase.rpc('fn_sync_seat_first_player_count', {
+          p_tournament_id: tournamentId,
+        });
+      } else {
+        // Re-read rather than trusting `liveCount + added`: a human may have
+        // registered while we were seating horses.
+        const { count: finalCount } = await supabase
+          .from('tournament_players')
+          .select('id', { count: 'exact', head: true })
+          .eq('tournament_id', tournamentId)
+          .in('status', ['registered', 'playing']);
 
-      if (typeof finalCount === 'number') {
-        await supabase
-          .from('tournaments')
-          .update({ current_players: finalCount })
-          .eq('id', tournamentId);
+        if (typeof finalCount === 'number') {
+          await supabase
+            .from('tournaments')
+            .update({ current_players: finalCount })
+            .eq('id', tournamentId);
+        }
       }
 
       return added;

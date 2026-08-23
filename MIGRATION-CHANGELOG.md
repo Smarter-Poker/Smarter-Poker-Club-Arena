@@ -13811,3 +13811,85 @@ and once this workflow deploys both.
 ```
 
 The Spin board is reopening price points that had been wedged for fifteen hours.
+
+## Cowork session 2026-08-23 (21) — THE FIVE THAT WERE LEFT
+
+### 1. Every hand on the platform queued behind one database row
+
+Measured live at 21:50 UTC: hands per minute had fallen from ~250 to **29**,
+with 103 `hand_history insert failed: statement timeout` in 25 minutes.
+`pg_blocking_pids` gave the shape immediately — eight `INSERT INTO hand_history`
+all blocked by one other.
+
+`trg_hand_history_club_member_stats` upserted `club_hand_daily` as its FIRST
+statement. A row lock is held until the transaction COMMITS, not until the
+statement ends, so that row stayed locked through the rest of the trigger: a
+jsonb expansion per player, a correlated `NOT EXISTS` over `hand_history`, and
+two more upserts. And **every table on the platform shares that row** —
+1 distinct club dealing, 178 live tables, 97,772 hands on the busiest row.
+
+Moved to the end. Same statements, same values, same conflict targets; only the
+order. Measured with the identical probe before and after:
+
+|                            | before   | after   |
+| -------------------------- | -------- | ------- |
+| whole INSERT incl. waiting | 993.7 ms | 87.7 ms |
+| the insert node itself     | 858 ms   | 7.6 ms  |
+| this trigger               | 98.8 ms  | 29.7 ms |
+| queries blocked on the row | 8        | 0       |
+
+### 2. The board drank the fleet
+
+An hour after the Spin board was unwedged: MTT 190 horses, SPIN 128, SNG 107,
+and **CASH 43 across 44 tables** — 72 seats occupied in the whole cash room.
+Nothing takes a horse off a table, but claiming every idle horse the instant one
+stands up starves whatever puts them back, and the room hollows out a rotation
+at a time.
+
+`pickFreeHorses` now leaves `CASH_FLOOR_PER_TABLE` (2) per live cash table
+unclaimed. It moves nobody; it declines the last horses so the cash seater can
+find them. Fails open to 0, so a database blip cannot freeze the boards.
+
+### 3. Two engines both believed they were the leader
+
+The standby contract was already right — `handleHealth` returns **503** when
+`liveness === 'standby'`, exactly what Caddy's `health_status 2xx` needs. Two
+lines defeated it:
+
+- `let role: EngineRole = 'leader'` — a process assumed leadership from its
+  first instruction, so between boot and its first successful claim it answered
+  200 and Caddy routed to it. With the database saturated that window was the
+  length of the outage.
+- `if (!row || row.granted)` — an empty answer granted leadership. No row is
+  not a grant; it is an unanswered question.
+
+A fresh process now starts as **standby** and may only lead by being granted.
+The fail-open the file was written around is kept and is now real: an incumbent
+retains, a newcomer does not assume. `PROMOTE_AFTER_UNKNOWN` keeps a lone engine
+from stranding a single-container deployment at 503 — three consecutive claims
+that name nobody, and only nobody, promote it.
+
+Four existing tests asserted the old default. They were rewritten, not deleted,
+with the incident written above them — the same discipline PR #542 skipped.
+
+### 4. The class of bug, guarded
+
+`classNamesResolve.test.ts` resolves every plain BEM `className` against the
+stylesheets actually loaded on that route: the globals `main.tsx` imports, the
+file's sibling `.css`, and any `.css` the file imports itself. A definition in
+another component's stylesheet does not count; that is chunk luck, not a
+contract. **43 references across 35 names are unresolved, 27 defined in no
+stylesheet anywhere.** Not fixed here on purpose — writing CSS for
+`insurance-modal__ev-hero` without the design in front of you is inventing an
+appearance. Pinned so the number can only fall.
+
+### 5. One ledger, so a rebase cannot quietly undo the day
+
+Fifteen open pull requests, eight touching files repaired today, four already
+conflicting. The morning's outage was a stale branch landing on a fix **and
+editing the test that caught it**. `todaysIncidentsStayFixed.test.ts` states
+every one of today's fixes in one place with the incident attached, so a
+conflict resolution that drops one fails with the reason rather than a regex
+mismatch in an unrelated file. It strips comments before asserting absence —
+this repo quotes the code it replaced, and a comment must not be able to report
+its own bug as present.

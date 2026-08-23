@@ -1190,12 +1190,44 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 /* Opponent cards — small, tucked behind/beside the avatar */
+/* Dan 2026-08-23: "right now you can barely see if the user has cards or not."
+   Two separate reasons the backs were invisible, and both are here.
+
+   1. z-index: 1. The avatar wrap is 2, the avatar itself 3, the badges 5 - so
+      the cards were painting UNDERNEATH the character standing in front of
+      them. 6 puts them above the avatar and still below the action badge and
+      the last-action pill (10+), which must stay readable over everything.
+   2. left: calc(100% - 14px) hung all but 14px of the row off the outside of
+      the seat, where the felt is darkest and there is no plate behind them.
+      Tucking to 100% - 22px keeps the row anchored to the seat's edge with
+      enough of it over the plate to read as belonging to that player.
+
+   The row also has to hold up to SIX cards now (see holeCardCount in
+   SeatSlot.tsx). Six 30px cards laid flat is 180px, wider than the whole seat,
+   so the children overlap - the same device the hero row already uses. A back
+   carries no information beyond "this player has a hand", so overlapping them
+   costs nothing and the count stays countable. */
 .seat__cards--opponent {
   position: absolute;
   top: 2px;
-  left: calc(100% - 14px);
+  left: calc(100% - 22px);
   display: flex;
-  z-index: 1;
+  z-index: 6;
+  /* Drop shadow on the ROW, so the fan reads as one object against the felt
+     rather than six separately-shadowed rectangles. */
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.7));
+}
+
+/* Overlap every card after the first. -13px on a 30px card leaves a 17px
+   sliver of each - wide enough to count, narrow enough that six fit in the
+   space two used to take. */
+.seat__cards--opponent > * + * {
+  margin-left: -13px;
+}
+
+/* The backs need an edge, or a dark card back on a dark felt is a smudge. */
+.seat__cards--opponent .seat__card {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
 
 /* When opponent cards are revealed at showdown, they pop out larger */

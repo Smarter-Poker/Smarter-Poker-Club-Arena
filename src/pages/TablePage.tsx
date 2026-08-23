@@ -71,6 +71,8 @@ import { waitlistService } from '../services/WaitlistService';
 import { roomService, type RoomMessage } from '../services/RoomService';
 import { HydraService } from '../services/HydraService';
 import TableChat, { type ChatMessage } from '../components/table/TableChat';
+import { ChatBubble, bubbleForSeat, useSeatChatBubbles } from '../components/table/ChatBubble';
+import { holeCardCountFor } from '../lib/holeCardCount';
 import { type InsuranceOffer } from '../components/table/InsuranceModal';
 import BadBeatJackpot from '../components/table/BadBeatJackpot';
 import { BBJCelebration } from '../components/table/BBJCelebration';
@@ -80,7 +82,10 @@ import { throwableService, type Throwable, type ThrowEvent } from '../services/T
 import { useTabKeepAlive, workerTimeout, cancelWorkerTimeout } from '../hooks/useTabKeepAlive';
 import { STORAGE_KEYS } from '../lib/storage';
 import StraddleToggle from '../components/table/StraddleToggle';
-import TimeBank from '../components/table/TimeBank';
+/* TimeBank (the floating countdown panel) is no longer mounted - see the note
+   at the Player Seats block. The hero's own seat ring carries the countdown;
+   the panel sat on top of the hole cards. TimeBankStoreModal is a different
+   component and is still imported below. */
 // Phase 1.2 PR-F: top-level disconnect FSM toast
 import DisconnectToast from '../components/table/DisconnectToast';
 // Phase 1.3 PR-C+D: server-rejection toast + auto-snap hint imported below
@@ -193,6 +198,7 @@ import GameServerAPI, {
   respondToRIT,
   respondToInsurance,
   sendHeartbeat,
+  sendAwayBeacon,
   setPreAction as serverSetPreAction,
   setSitOut,
   showHand as serverShowHand,
@@ -516,6 +522,7 @@ import {
 } from '../lib/tableTheme';
 import { adaptServiceHandToPanel } from '../lib/handHistoryAdapter';
 import { useUserStore } from '../stores/useUserStore';
+import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -553,6 +560,17 @@ if (!_win.__pokerLocks) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Dan 2026-08-23: how long the engine socket must be continuously down before
+ * the player is told anything at all.
+ *
+ * Sized against the reconnect ladder in EngineStateClient, not picked by feel.
+ * Its backoff is 1s, 2s, 4s, 8s (+30% jitter), so 15s means the client has
+ * already failed roughly four attempts. Anything shorter announces a retry
+ * that is about to succeed — which is what the old 3s threshold did.
+ */
+const ENGINE_LOSS_TOAST_DELAY_MS = 15_000;
 
 // Props for embedded multi-table mode
 interface TablePageProps {
@@ -1535,30 +1553,77 @@ export default function TablePage({
     const beat = async () => {
       const res = await sendHeartbeat(tableId);
       if (res?.success) {
-        if (warned) {
-          heartbeatToastRef.current?.success?.('Reconnected to the table.');
-          warned = false;
-        }
+        // Silent recovery (Dan 2026-08-23). A "Reconnected" toast is only
+        // reassuring if the player was told something broke - and they no
+        // longer are. On its own it just announces a problem after the fact.
+        warned = false;
         consecutiveMisses = 0;
         return;
       }
       consecutiveMisses += 1;
-      // Three misses is 15s of silence — well before the server's own
-      // disconnect thresholds, so the warning arrives while it still helps.
+      // Dan 2026-08-23: this used to raise its OWN "Connection lost" toast at
+      // 3 misses, which is why one outage produced two separate alarms - this
+      // one and the engine-WS watcher below - on every mounted table at once,
+      // including the ones you were not looking at.
+      //
+      // The heartbeat is the SECOND transport, not the game connection. When
+      // the link is genuinely down the engine socket is down too, and that
+      // watcher is the single voice that speaks. Losing only the heartbeat
+      // while the socket is fine is a partial failure the backoff ladder
+      // handles by itself and the player does not need to hear about it.
+      //
+      // The telemetry stays - that is what it was actually good for.
       if (consecutiveMisses >= 3 && !warned) {
         warned = true;
         reportError(
           new Error(`heartbeat missed ${consecutiveMisses}x`),
           'TablePage.Heartbeat_lost'
         );
-        heartbeatToastRef.current?.error?.(
-          'Connection lost - the server may fold for you. Check your connection.'
-        );
       }
     };
     void beat();
     const heartbeatInterval = setInterval(() => void beat(), 5000);
     return () => clearInterval(heartbeatInterval);
+  }, [tableId, userId]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PAGE-LEAVE BEACON (Dan 2026-08-23)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // "IF THEY JUST LEAVE THE WEBPAGE OR APP" they are away, and the away-blind
+  // cap should start counting immediately rather than after the server infers
+  // it from silence.
+  //
+  // `pagehide` rather than `beforeunload`/`unload`: those never fire on iOS
+  // Safari, and both block the bfcache. pagehide fires in every case that
+  // matters — tab close, navigation away, and the OS freezing a backgrounded
+  // PWA — and does not disqualify the page from being restored.
+  //
+  // The token is read synchronously from localStorage. An `await
+  // supabase.auth.getSession()` here would resolve after the document is
+  // already gone and the request would never leave. A slightly stale token is
+  // fine: the worst case is a 401 on a fire-and-forget beacon, after which
+  // the websocket close marks them away 8s later anyway.
+  //
+  // NOT sent on unmount — leaving the /table route does not close the table
+  // (PersistentTableLayer keeps it mounted and playing on purpose). Only a
+  // real page/app exit counts.
+  useEffect(() => {
+    if (!tableId || !userId) return;
+    const onPageHide = () => {
+      let accessToken: string | null = null;
+      try {
+        const raw = localStorage.getItem('smarter-poker-auth');
+        accessToken = raw
+          ? ((JSON.parse(raw) as { access_token?: string })?.access_token ?? null)
+          : null;
+      } catch {
+        accessToken = null;
+      }
+      sendAwayBeacon(tableId, accessToken);
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
   }, [tableId, userId]);
 
   // ── Dan 2026-08-21: "the games can never freeze or die" — last-resort
@@ -1942,6 +2007,23 @@ export default function TablePage({
 
   // Actual club_id from the table record (NOT the tableId)
   const actualClubIdRef = useRef<string>('');
+  /**
+   * UNION LAW (Dan 2026-08-23) — where LEAVING this table puts the player.
+   *
+   * NOT the same thing as `actualClubIdRef`. That one is the table's owner club
+   * and stays exactly as it is, because rake, persistence, observer-chat
+   * permissions and the club leaderboard are all booked against it. But a
+   * union's games hang off the union's own HUB CLUB, so on a union table
+   * `actualClubIdRef` is the UNION — and every exit path here navigated
+   * straight to `/clubs/<union>`, dropping SHARK CLUB and Club JAQK players
+   * into the Midway Union lobby wearing union skins.
+   *
+   * Resolved when the table loads (see resolveLobbyClubId): the club the player
+   * entered through wins, the table's club is a fallback, and a union is never
+   * the answer. null until it resolves, and null means '/' — a home carousel is
+   * a fine place to land; the union's treasury is not.
+   */
+  const lobbyClubIdRef = useRef<string | null>(null);
   const [actualClubIdLoaded, setActualClubIdLoaded] = useState(false); // Tracks when club_id is available
   const [actionTimeSeconds, setActionTimeSeconds] = useState(15);
   useEffect(() => {
@@ -3034,6 +3116,22 @@ export default function TablePage({
 
   // FIX-232: Ref for cards_pre_sort to avoid stale closure in hole card callbacks
   const cardsPreSortRef = useRef(v8Settings.cards_pre_sort);
+  /* Dan 2026-08-23: "when you type a message inside the chat, it needs to appear
+     above the avatar as a bubble message for all players to see."
+
+     DERIVED from the chat feed, not a second transport. The realtime listener in
+     useTableChat already delivers every row to every client - the only thing a
+     message was missing was a SEAT, and tableState.players is already
+     seat-ordered (index 0 is seat 1). Broadcasting the same text again so the
+     bubble could have its own channel would have created two sources of truth
+     for one message, and a bubble that could disagree with the panel above it. */
+  const seatOwnerIds = useMemo(
+    () => tableState.players.map((p) => p?.id ?? null),
+    [tableState.players]
+  );
+  const seatChatBubbles = useSeatChatBubbles(chatMessages, seatOwnerIds, {
+    enabled: v8Settings.text_message && !isChatMuted,
+  });
   cardsPreSortRef.current = v8Settings.cards_pre_sort;
 
   // Bible V8 §11.2: Per-game-type theme from Supabase
@@ -3447,13 +3545,17 @@ export default function TablePage({
    * landed on a screen for choosing a club, with no trace of the one you were
    * just sitting in.
    *
-   * `actualClubIdRef` is stamped from `table.club_id` when the table loads, so
+   * `lobbyClubIdRef` is resolved from `table.club_id` when the table loads, so
    * it is the club this seat actually belonged to rather than whatever the URL
    * happened to carry. '/' remains the fallback for the case that ref is empty
    * — a table with no club is the only way back to nowhere in particular.
+   *
+   * Dan 2026-08-23: this read `actualClubIdRef` (the table's OWNER club) and so
+   * exited a union game into the MIDWAY UNION lobby. It now reads the
+   * union-filtered `lobbyClubIdRef`.
    */
   const exitDestination = () => {
-    const clubId = actualClubIdRef.current;
+    const clubId = lobbyClubIdRef.current;
     return clubId ? `/clubs/${clubId}` : '/';
   };
 
@@ -4446,6 +4548,28 @@ export default function TablePage({
         // Store actual club_id for persistence and rake
         actualClubIdRef.current = table.club_id || '';
         setActualClubIdLoaded(true); // Signal observer chat permission check
+        // UNION LAW: separately work out where LEAVING lands. On a union game
+        // table.club_id is the union's hub club, which no player, agent or
+        // super agent may ever be shown. See lobbyClubIdRef.
+        //
+        // Two passes on purpose. exitDestination() is SYNCHRONOUS — it runs on
+        // a Leave click — so a player who stands up in the first moments after
+        // the table loads would have found the ref still null and been sent to
+        // '/'. The sync pass answers from the cache the lobby already filled
+        // (and returns null rather than guessing when it cannot); the async
+        // pass then settles it for the deep-link case with a cold cache.
+        //
+        // Neither pass may DOWNGRADE a known club back to null: from both of
+        // them null means "could not tell", never "there is no club".
+        const lobbyClubArgs = {
+          viewerClubId: useUserStore.getState().currentClubId,
+          tableClubId: table.club_id || null,
+        };
+        const syncClub = resolveLobbyClubIdSync(lobbyClubArgs);
+        if (syncClub) lobbyClubIdRef.current = syncClub;
+        void resolveLobbyClubId(lobbyClubArgs).then((id) => {
+          if (id) lobbyClubIdRef.current = id;
+        });
         setActionTimeSeconds(settings.time_bank_seconds || settings.action_time_seconds || 15);
 
         // Fetch club name (and the union it belongs to) for the felt masthead.
@@ -4895,7 +5019,11 @@ export default function TablePage({
                    this instance lives inside the container. */
                 if (embeddedTableId) return;
 
-                const clubId = actualClubIdRef.current;
+                // UNION LAW (Dan 2026-08-23): was actualClubIdRef, the table's
+                // OWNER club — the union's hub club on any union game, which
+                // busted a SHARK CLUB player straight into the Midway Union
+                // lobby. lobbyClubIdRef can never be a union.
+                const clubId = lobbyClubIdRef.current;
                 if (clubId) {
                   navigate(`/clubs/${clubId}`);
                 } else {
@@ -5095,6 +5223,42 @@ export default function TablePage({
               } else if (data?.type === 'player_eliminated') {
                 // A player was eliminated from the tournament
                 const elimData = data.payload || {};
+
+                /* Dan 2026-08-23: "when a player busts a tournament, they must
+                   be removed from the table, they are not allowed to still
+                   occupy that seat anymore... it currently doesn't remove
+                   them."
+
+                   This handler forwarded the event to the bus, derived
+                   heads-up and raised a toast — and never touched the seat.
+                   The server DOES stamp table_seats.left_at, but only at the
+                   very END of eliminatePlayer, after the bounty block's
+                   several round-trips (including a 10-row hand_history scan),
+                   and the 5s sweep can lag the bust by hands. Until the next
+                   snapshot happened to carry the vacancy, a busted player sat
+                   there with a stack of zero, occupying a seat nobody could
+                   take.
+
+                   The broadcast IS the elimination and it names the player, so
+                   empty the seat here rather than waiting for a snapshot to
+                   agree. An empty seat is `null` (see createEmptySeats), which
+                   is what the seat ring already renders as EMPTY. If the
+                   server's own release lands later it is a no-op — both write
+                   the same absence. */
+                {
+                  const bustedId = String(elimData.userId || '');
+                  if (bustedId) {
+                    setTableState((prev) => {
+                      const idx = prev.players.findIndex(
+                        (pl: any) => pl && (pl.id === bustedId || pl.user_id === bustedId)
+                      );
+                      if (idx < 0) return prev; // not seated here — another table's bust
+                      const players = [...prev.players];
+                      players[idx] = null;
+                      return { ...prev, players };
+                    });
+                  }
+                }
 
                 /* AUDIT 2026-08-20: PLAYER_ELIMINATED had a listener and no
                    emitter. TournamentTimerService subscribes to it to re-check
@@ -5820,11 +5984,17 @@ export default function TablePage({
      * the engine granted the seconds, and the only clock the player could see
      * sat at zero.
      *
-     * Extend for everyone. Double-counting is not a risk: `extendTimer` adds to
-     * the live remainder, and the next engine snapshot reseeds the countdown
-     * from the authoritative `turn_deadline_ms` regardless.
+     * Dan 2026-08-23: "if the time bank is used, it must reset the clock for 20
+     * more seconds." RESET, not extend. `extendTimer` ADDS to the live
+     * remainder, which is the old stacking rule wearing a client-side costume -
+     * a bank pressed with twelve seconds left produced a 32-second clock, and
+     * the ring then disagreed with the engine, which now starts a fresh 20.
+     *
+     * Applies to everyone, not just hero: before 2026-08-21 hero was excluded
+     * outright and the only clock the player could see sat at zero while the
+     * engine had already granted the seconds.
      */
-    extendTimer(seconds);
+    resetTimer(seconds);
 
     // Update the Hero's specific localized UI if they are the one activating it
     if (evtPlayerId === userId) {
@@ -5972,27 +6142,62 @@ export default function TablePage({
   //   - never toast until the FIRST successful connect has been seen;
   //   - "Connection lost" only after 3s of continuous disconnection;
   //   - "Reconnected" only if the loss toast was actually shown.
+  //
+  // ── Dan 2026-08-23: SILENT UNTIL RECOVERY ACTUALLY FAILS ──
+  //
+  // The 3s debounce above was still far too eager, and the reason is
+  // PersistentTableLayer: every table you have open stays MOUNTED for the
+  // whole session, so this effect was running on all of them at once. Browse
+  // the tournament lobby, let one backgrounded table's socket hiccup, and you
+  // get "Connection Lost - Reconnecting..." over a page that has nothing to
+  // do with that table — which is exactly the screenshot.
+  //
+  // And 3s is shorter than the reconnect ladder's FIRST rung (1s + jitter,
+  // then 2s, 4s...). A blip that the client fixes by itself on attempt two
+  // still fired the alarm. The toast was reporting that a retry was in
+  // progress, not that anything had gone wrong.
+  //
+  // Three gates now, all of which must hold before we say a word:
+  //   1. FOREGROUND    — `isActive` is true only for the table currently on
+  //                      screen (MultiTablePage passes `idx === activeIndex
+  //                      && !hidden`), so background tables never speak.
+  //   2. MONEY AT RISK — hero is actually seated. A railbird watching a table
+  //                      loses nothing to a dropped socket.
+  //   3. PERSISTENT    — 15s of continuous failure, which is past several
+  //                      rungs of the backoff ladder AND past the watchdog's
+  //                      35s soft / 3-unanswered-RESYNC escalation having had
+  //                      a chance to start. If it is still down at 15s, the
+  //                      retries are not quietly working; the player needs to
+  //                      know before the server starts auto-folding for them.
+  //
+  // Recovery is silent in every case. A "Reconnected" toast is only
+  // reassuring to somebody who was told it broke; on its own it manufactures
+  // anxiety about a problem that already fixed itself.
   const engineToastStateRef = useRef({ everConnected: false, lossToastShown: false });
+  const heroIsSeated = tableState.heroSeat > 0;
   useEffect(() => {
     const st = engineToastStateRef.current;
     if (engineWsStatus === 'connected') {
       st.everConnected = true;
-      if (st.lossToastShown) {
-        st.lossToastShown = false;
-        heartbeatToastRef.current?.success?.('Reconnected');
-        if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playReconnect();
-      }
+      st.lossToastShown = false;
       return;
     }
     if (!st.everConnected) return; // initial mount noise
+    if (!isActive || !heroIsSeated) return; // gates 1 and 2
     const t = window.setTimeout(() => {
       if (st.lossToastShown) return;
+      // Re-check at fire time, not just at schedule time: 15s is long enough
+      // for the player to have switched tables or stood up, and a toast for a
+      // table they walked away from is the same noise in a new costume.
+      if (!isActive || !heroIsSeated) return;
       st.lossToastShown = true;
-      heartbeatToastRef.current?.warning?.('Connection lost - reconnecting…');
+      heartbeatToastRef.current?.warning?.(
+        'Still reconnecting. Your seat and chips are safe on the server.'
+      );
       if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playDisconnect();
-    }, 3000);
+    }, ENGINE_LOSS_TOAST_DELAY_MS);
     return () => window.clearTimeout(t);
-  }, [engineWsStatus]);
+  }, [engineWsStatus, isActive, heroIsSeated, ambientSoundsAllowed]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // HORSE LOADING — Load seated horses from DB into React table state
@@ -7963,6 +8168,33 @@ export default function TablePage({
       }
       case 'SEAT_LEFT': {
         masterBus.emit('SEAT_LEFT', evt.data as any);
+        // Dan 2026-08-23: until now this event was emitted onto masterBus and
+        // NOTHING subscribed to it. A player removed by the server — sat out
+        // too long, kicked, or (new) away past the one-SB-one-BB cap — found
+        // their seat empty and their chips back in their wallet with no
+        // explanation offered anywhere in the product. Being moved without
+        // being told is the part that reads as a bug even when the removal
+        // was correct.
+        //
+        // A voluntary leave carries no `reason` (the player knows why they
+        // left), so this only ever speaks for removals the player did not ask
+        // for, and only to the player it happened to.
+        {
+          const d = evt.data as { user_id?: string; reason?: string };
+          const reason = d?.reason;
+          if (reason && userId && String(d?.user_id) === String(userId)) {
+            const EXPLANATIONS: Record<string, string> = {
+              away_blind_cap:
+                'You were away, so we cashed you out after one small blind and one big blind. Your chips are back in your wallet.',
+              sit_out_timeout:
+                'You sat out too long and were cashed out. Your chips are back in your wallet.',
+            };
+            heartbeatToastRef.current?.info?.(
+              EXPLANATIONS[reason] ??
+                `You were removed from the table (${reason.replace(/_/g, ' ')}). Your chips are back in your wallet.`
+            );
+          }
+        }
         break;
       }
       case 'TABLE_PAUSED': {
@@ -8605,10 +8837,16 @@ export default function TablePage({
     timeRemaining: actionTimeRemaining,
     timerProgress: actionTimerProgress,
     resetTimer,
-    extendTimer,
   } = useTableTimer({
     isActiveTurn: tableState.currentPlayerSeat > 0 && tableState.isHandInProgress,
-    isHeroTurn: isHeroTurnContext && !timeBankActive,
+    /* Dan 2026-08-23: `&& !timeBankActive` used to be here, and it did more harm
+       than the redundant countdown it was suppressing. It made isHeroTurnRef
+       false for the whole of a running bank, so useTableTimer's RAF could never
+       fire onTimeout again - no second bank, no client-side auto-fold fallback,
+       and the urgency state dead - during the exact window a player is closest
+       to timing out. The engine is authoritative on the deadline either way; the
+       client should keep watching it, not look away. */
+    isHeroTurn: isHeroTurnContext,
     isSoundEnabled,
     // Bible V8 §6.1: deadline-driven, server-authoritative. Reset whenever
     // the active seat changes OR the server pushes a new deadline. Without
@@ -8673,16 +8911,30 @@ export default function TablePage({
    */
   const handleActivateTimeBank = useCallback(async () => {
     if (!tableId || !userId || timeBanksRemaining <= 0) return;
+    const result = await GameServerAPI.activateTimeBank(tableId, userId);
+    if (!result?.success) {
+      toast?.error?.(result?.error || 'Could Not Start Your Time Bank');
+      return;
+    }
+    /* Dan 2026-08-23: "it should not take a time bank or add more time until you
+       have truly used your entire 15 seconds." The engine now ARMS a bank
+       pressed while ordinary clock remains and redeems it at expiry, so a press
+       has two successful outcomes and they must not look the same. Nothing has
+       been spent here, and painting a running bank would show the player seconds
+       they do not have.
+
+       The optimistic setTimeBankActive(true) that used to run BEFORE the await
+       is what made that unavoidable - it committed to "a bank is running" before
+       the server had said which of the two happened. */
+    if ((result as { armed?: boolean }).armed) {
+      toast?.info?.('Time Bank Armed. It Starts When Your Clock Runs Out');
+      return;
+    }
     setTimeBankActive(true);
     // ANIMATION/SOUND AUDIT 2026-08-19: was playChips (a wager sound) — the
     // dedicated time-bank cue existed and was only wired to the REMOTE event.
     soundService.playTimeBankActivated();
-    const result = await GameServerAPI.activateTimeBank(tableId, userId);
-    if (!result?.success) {
-      setTimeBankActive(false);
-      toast?.error?.(result?.error || 'Could not start your time bank');
-    }
-  }, [tableId, userId, timeBanksRemaining]);
+  }, [tableId, userId, timeBanksRemaining, toast]);
 
   /**
    * Buy one time-bank extension with diamonds.
@@ -10294,39 +10546,33 @@ export default function TablePage({
             )}
           </div>
 
-          {/* AUDIT FIX 2026-07-19: the TimeBank "engaging" panel (extra-time
-              countdown + activate/buy) was imported but never mounted, so when
-              the primary timer expired the time bank had no distinct visual and
-              its seconds-remaining were invisible. Render it as a fixed overlay
-              above the action area while active/engaging. The banks-remaining
-              counter (TimebankCounter) is separate and already shows. */}
-          {timeBankActive && (
-            <div
-              style={{
-                /* Dan 2026-08-18 (screenshot review): bottom 22% landed the
-                   countdown panel squarely ON the hero's avatar and hole
-                   cards. Anchored just above the action bar instead, where
-                   nothing else lives. */
-                position: 'fixed',
-                bottom: 'calc(150px + env(safe-area-inset-bottom, 0px))',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                zIndex: 60,
-                pointerEvents: 'none',
-              }}
-            >
-              <TimeBank
-                isVisible={true}
-                isActive={timeBankActive}
-                banksRemaining={timeBanksRemaining}
-                totalTime={timeBankGrantedSeconds}
-                timeRemaining={timeBankTimeRemaining}
-                onActivate={handleActivateTimeBank}
-                onBuyMore={handleBuyTimeBank}
-                diamondCost={timeBankDiamondCost}
-              />
-            </div>
-          )}
+          {/* THE FLOATING TIME BANK PANEL IS GONE. Do not re-add it.
+              ─────────────────────────────────────────────────────────────────
+              Dan 2026-08-23, two complaints that turned out to be one object:
+              "when you use a time bank, it gives you this generic pop up,
+              instead of resetting the countdown clock on the hero's box", and
+              "when you use a time bank, it makes your cards disappear or not
+              appear for a couple hands."
+
+              This panel was both. It was a fixed overlay at
+              `bottom: calc(150px + safe-area)`, which on a 375x812 phone is the
+              hero seat band - its own comment conceded the previous position
+              landed "squarely ON the hero's avatar and hole cards" and moved it
+              105px, which was not far enough. `pointerEvents: none` meant it
+              never blocked a tap, so the cards were not gone, they were
+              underneath it. And because `timeBankActive` has only one working
+              clear path, it could stay latched across hands - which is exactly
+              "for a couple hands".
+
+              The hero's own seat ring is the right surface and was already
+              wired for this: SeatSlot takes turnDeadlineMs / turnStartTimeMs
+              from the engine and already handles a bank-extended turn (yellow
+              owns the first 15 seconds, the borrowed seconds run red). A second
+              countdown floating over the felt was never additional information,
+              only a duplicate placed on top of the cards.
+
+              The banks-remaining counter (TimebankCounter) is a separate
+              component and still shows. */}
 
           {/* Player Seats */}
           {seatPositions.map((pos, idx) => {
@@ -10560,6 +10806,12 @@ export default function TablePage({
                   showHUD={userSettings.showHUD && !!player && !player.isHero}
                   deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                   cardBack={activeCardBack}
+                  /* Dan 2026-08-23: an opponent's hidden hand drew exactly two
+                     backs on every variant, so a PLO6 seat looked like Hold'em.
+                     The seat cannot work this out for itself - a hidden hand's
+                     holeCards array is empty, so there is nothing there to
+                     count. Only the table knows the variant. */
+                  holeCardCount={holeCardCountFor(tableState.gameType)}
                   showStackInBB={v8Settings.show_stack_in_bb}
                   showAvatar={v8Settings.show_avatars}
                   showBadges={v8Settings.show_badges}
@@ -10627,6 +10879,26 @@ export default function TablePage({
                   handNumber={tableState.handNumber ?? 0}
                   playSounds={ambientSoundsAllowed}
                 />
+
+                {/* Chat bubble over this seat. Mounted as a SIBLING of the seat
+                    rather than inside it: `.seat-wrapper` is already absolutely
+                    positioned, so the bubble follows the seat with no coordinate
+                    maths and SeatSlot needs no knowledge of chat at all. */}
+                {(() => {
+                  const bubble = bubbleForSeat(seatChatBubbles, seatNumber);
+                  if (!bubble) return null;
+                  return (
+                    <ChatBubble
+                      text={bubble.content}
+                      playerName={bubble.playerName}
+                      isOwn={bubble.playerId === userId}
+                      /* Top-arc seats have the BBJ banner directly overhead, so
+                         their bubble drops below the plate instead of colliding
+                         with it. Same threshold `.seat-wrapper--top` uses. */
+                      placement={pos.y < 22 ? 'below' : 'above'}
+                    />
+                  );
+                })()}
 
                 {/* FIX 89: All-In Equity Overlay — shown per seat during all-in */}
                 {allInEquities.length > 0 &&
@@ -10736,7 +11008,10 @@ export default function TablePage({
                     toast?.success?.(
                       `Seat Released, ${Number(res.refunded ?? 0).toLocaleString()} Chips Refunded`
                     );
-                    const backTo = actualClubIdRef.current;
+                    // UNION LAW (Dan 2026-08-23): the union-filtered lobby club,
+                    // not actualClubIdRef — that is the union's hub club on a
+                    // union game and must never be a player destination.
+                    const backTo = lobbyClubIdRef.current;
                     if (backTo) navigate(`/clubs/${backTo}`);
                   } catch (err) {
                     reportError(err as Error, 'TablePage.leave_seat_refund');

@@ -9,32 +9,34 @@
   z-index: 100;
 }
 
-/* Position variants */
-
-.table-menu--top-left .table-menu__dropdown {
-  left: 0;
-  right: auto;
-}
-
-.table-menu--top-right .table-menu__dropdown {
-  right: 0;
-  left: auto;
-}
-
-.table-menu--bottom-left .table-menu__dropdown {
-  top: auto;
-  bottom: 100%;
-  left: 0;
-  right: auto;
-  margin-bottom: 8px;
-}
-
-.table-menu--bottom-right .table-menu__dropdown {
-  top: auto;
-  bottom: 100%;
-  right: 0;
-  left: auto;
-  margin-bottom: 8px;
+/* Position variants — RETIRED 2026-08-23.
+ *
+ * Dan: "the hamburger menu... clicks to open up all the options inside of it!
+ * It currently opens to an X only."
+ *
+ * These four rules are why. They date from when .table-menu__dropdown was a
+ * small dropdown anchored to the trigger. On 2026-08-22 it became a FIXED
+ * full-height drawer (`position: fixed; top:0; left:0; bottom:0; height:100dvh`)
+ * — but these variants were left behind, and `.table-menu--bottom-left
+ * .table-menu__dropdown` is specificity (0,2,0) against the drawer's (0,1,0),
+ * so the variant wins no matter which is declared later.
+ *
+ * TableTabBar mounts the menu with position="bottom-left", so the live drawer
+ * was resolving to `top: auto; bottom: 100%` — and on a FIXED element `bottom:
+ * 100%` is measured from the viewport, which parks a 100dvh panel entirely
+ * above the top of the screen. The menu opened correctly every time. It was
+ * just rendered off-screen, so all a player ever saw was the trigger flipping
+ * to an X.
+ *
+ * The variants now carry only horizontal intent for any future anchored menu
+ * and never touch the drawer's own geometry. The drawer is a left-edge panel
+ * by definition; there is nothing left for a position variant to decide. */
+.table-menu--top-left,
+.table-menu--top-right,
+.table-menu--bottom-left,
+.table-menu--bottom-right {
+  /* Positioning of the panel is owned by .table-menu__dropdown alone. */
+  position: relative;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

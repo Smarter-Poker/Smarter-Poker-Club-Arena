@@ -134,7 +134,6 @@ export interface TableTabBarProps {
   activeTabId: string;
   onTabSelect: (tabId: string) => void;
   onAddTable: () => void;
-  jackpotAmount?: number;
   maxTables?: number;
   /** Batch 3: reorder a tab to a new index (drag on desktop, long-press
    *  menu Move Left/Right everywhere). */
@@ -163,7 +162,6 @@ export function TableTabBar({
   activeTabId,
   onTabSelect,
   onAddTable,
-  jackpotAmount,
   maxTables = 4,
   realtimeDown = false,
   onReorder,
@@ -695,18 +693,11 @@ export function TableTabBar({
         ))}
       </div>
 
-      {/* Jackpot Badge */}
-      {jackpotAmount !== undefined && jackpotAmount > 0 && (
-        <div className="table-tab-bar__jackpot">
-          <span className="table-tab-bar__jackpot-label">JACKPOT</span>
-          <span className="table-tab-bar__jackpot-amount">
-            {jackpotAmount.toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </span>
-        </div>
-      )}
+      {/* Jackpot badge REMOVED — Dan 2026-08-23: "you still have the
+          duplicated BBJ in the header that needs to be removed."
+          BadBeatJackpot's .bbj-widget banner sits directly below this bar and
+          shows the same pool for the same table. Two live copies of one number
+          is one too many, and the header is the copy with less room. */}
 
       {/* Batch 3: long-press / right-click quick menu */}
       {quickMenu &&
@@ -766,8 +757,25 @@ export function TableTabBar({
                     false,
                     idx === tabs.length - 1
                   )}
+                {/* Dan 2026-08-23: "when you right click on an action tab, or
+                    hold it down on mobile, you should get an option to Leave
+                    Table (an alternate way to leave a table)."
+
+                    It was already here — behind `tabs.length > 1`. So the menu
+                    offered Leave Table at two tables and hid it at one, which
+                    is the case a player is in most of the time: the reported
+                    screenshot is a single MTT tab showing Sit Out, Mute Table
+                    and a greyed-out Move Left / Move Right, with no way out.
+
+                    Leaving one table has never needed a second table to exist.
+                    `'leave'` emits FORCE_LEAVE_TABLE to the owning TablePage —
+                    the secure cashout path — and when the last tab closes,
+                    MultiTablePage's TABLE_LEFT handler calls goToLobby(). The
+                    count gate stays only for a LOBBY tab, where "Close Lobby"
+                    on your only tab would close the thing you are looking at
+                    and leave an empty bar behind. */}
                 {onQuickAction &&
-                  tabs.length > 1 &&
+                  (!isLobby || tabs.length > 1) &&
                   item(
                     isLobby ? 'Close Lobby' : 'Leave Table',
                     () => onQuickAction(tab.id, 'leave'),

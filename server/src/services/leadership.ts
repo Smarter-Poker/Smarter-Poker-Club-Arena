@@ -71,7 +71,47 @@ export const LEADERSHIP_RENEW_MS = 10_000;
 
 export type EngineRole = 'leader' | 'standby';
 
-let role: EngineRole = 'leader';
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A FRESH PROCESS HAS NOT BEEN GRANTED ANYTHING, SO IT STARTS AS A STANDBY
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * This was 'leader'. On 2026-08-23 two containers served engine.smarter.poker
+ * at once, BOTH reporting leadership.role='leader', with the fleet split 14
+ * tables to 10 — which is the 404 / close-4404 state the Caddyfile exists to
+ * prevent, and it ran for hours.
+ *
+ * The mechanism is this line plus the fail-open below. Every path here is
+ * written to "retain, never assume", and the comment on the error branch even
+ * says a standby must not promote itself because it cannot reach the database.
+ * But a BOOTING process had already assumed it: role was 'leader' from the
+ * first instruction, so between process start and the first successful claim
+ * it answered /health with 200 and Caddy routed to it. With the database
+ * saturated — it was, statement timeouts on every hand insert — that window
+ * was not milliseconds, it was as long as the outage.
+ *
+ * The asymmetry the rest of this file describes only works if the starting
+ * point is the humble one: an INCUMBENT holds leadership through a blip
+ * because it was granted it and its heartbeat is still fresh; a NEWCOMER holds
+ * STANDBY through the same blip because nobody has granted it anything.
+ *
+ * See PROMOTE_AFTER_UNKNOWN for the one case where a newcomer may still
+ * promote itself.
+ */
+let role: EngineRole = 'standby';
+
+/**
+ * A brand-new engine on a database it cannot reach would otherwise stay a
+ * standby for ever and serve 503, turning "degraded" into "down" for a
+ * single-engine deployment. After this many consecutive claims that resolve
+ * to neither a grant nor a known holder, a standby promotes itself.
+ *
+ * Deliberately consecutive-and-unknown: if any answer named a holder, that
+ * holder exists and this instance stays down. Only genuine silence promotes,
+ * and only after ~30 seconds of it.
+ */
+const PROMOTE_AFTER_UNKNOWN = 3;
+let unknownStreak = 0;
 let holder: string | null = null;
 let holderAgeSeconds: number | null = null;
 let becameLeaderAt: number | null = null;
@@ -115,12 +155,56 @@ export async function renewLeadership(): Promise<EngineRole> {
       }
       // Retain, never assume. A standby that promotes itself because it cannot
       // reach the database is how two engines end up on one table.
+      //
+      // But a FRESH engine now starts as a standby, so "retain" would strand a
+      // single-engine deployment at 503 for as long as the database is
+      // unreachable. An unanswerable claim counts toward the unknown streak
+      // for exactly that case: nobody has been named as holder, so after
+      // PROMOTE_AFTER_UNKNOWN attempts this instance takes the fleet rather
+      // than leave it unowned. An incumbent leader is unaffected — it is
+      // already 'leader' and simply keeps the role.
+      unknownStreak++;
+      if (role === 'standby' && unknownStreak >= PROMOTE_AFTER_UNKNOWN && holder === null) {
+        console.warn(
+          `[leadership] ${unknownStreak} claims unanswerable and no holder known — promoting ${INSTANCE_ID}`
+        );
+        becameLeaderAt = Date.now();
+        role = 'leader';
+        holder = INSTANCE_ID;
+        holderAgeSeconds = 0;
+      }
       return role;
     }
     const row = (
       data as Array<{ granted: boolean; holder: string | null; holder_age_seconds: number | null }>
     )?.[0];
-    if (!row || row.granted) {
+
+    /**
+     * NO ROW IS NOT A GRANT. This used to read `if (!row || row.granted)`, so
+     * an empty result promoted the caller — the same "assume leadership on bad
+     * news" that the error branch above is careful not to do. An empty answer
+     * means the question did not get answered; it says nothing about whether
+     * somebody else is leading.
+     *
+     * It is counted as unknown rather than simply ignored, so a genuinely
+     * unclaimed fleet still gets a leader. See PROMOTE_AFTER_UNKNOWN.
+     */
+    if (!row) {
+      unknownStreak++;
+      if (role === 'standby' && unknownStreak >= PROMOTE_AFTER_UNKNOWN) {
+        console.warn(
+          `[leadership] ${unknownStreak} claims resolved to nobody — promoting ${INSTANCE_ID}`
+        );
+        becameLeaderAt = Date.now();
+        role = 'leader';
+        holder = INSTANCE_ID;
+        holderAgeSeconds = 0;
+      }
+      return role;
+    }
+    unknownStreak = 0;
+
+    if (row.granted) {
       if (role !== 'leader') {
         console.log(`[leadership] ${INSTANCE_ID} is now the LEADER — taking the fleet`);
         becameLeaderAt = Date.now();
@@ -161,6 +245,16 @@ export async function renewLeadership(): Promise<EngineRole> {
         `[leadership] claim threw (${(err as Error)?.message}) — holding role '${role}'`
       );
     }
+    unknownStreak++;
+    if (role === 'standby' && unknownStreak >= PROMOTE_AFTER_UNKNOWN && holder === null) {
+      console.warn(
+        `[leadership] ${unknownStreak} claims threw and no holder known — promoting ${INSTANCE_ID}`
+      );
+      becameLeaderAt = Date.now();
+      role = 'leader';
+      holder = INSTANCE_ID;
+      holderAgeSeconds = 0;
+    }
     return role;
   }
 }
@@ -188,7 +282,8 @@ export async function releaseLeadership(): Promise<void> {
 
 /** Test seam. */
 export function __resetLeadership(): void {
-  role = 'leader';
+  role = 'standby';
+  unknownStreak = 0;
   holder = null;
   holderAgeSeconds = null;
   becameLeaderAt = null;

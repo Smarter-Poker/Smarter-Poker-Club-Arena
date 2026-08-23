@@ -57,8 +57,8 @@ move you off it and says so.
 Never `git checkout` in `~/Documents/club-arena` itself — that clone is the
 shared object store and a mirror of origin, not a place to work.
 
-**This is enforced now, not advised.** `.husky/pre-commit` runs
-`scripts/guard-shared-clone.sh`, which refuses a commit whose `--git-dir` and
+**This is enforced now, not advised.** `.husky/pre-commit` and `.husky/pre-push` run
+`scripts/guard-shared-clone.sh`, which refuse a commit or push whose `--git-dir` and
 `--git-common-dir` are the same path — the signature of the shared clone. It
 never stashes and never checks anything out: moving an agent off its own
 uncommitted work is the exact destruction being prevented, so it refuses,

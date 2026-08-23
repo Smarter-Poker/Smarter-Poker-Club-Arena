@@ -23,6 +23,14 @@ import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
 import { AutoRebuyService } from './services/AutoRebuyService.js';
 import { DealRateVerifier } from './services/DealRateVerifier.js';
 import {
+  renewLeadership,
+  startLeadershipRenewal,
+  stopLeadershipRenewal,
+  releaseLeadership,
+  isLeader,
+  leadershipDiagnostics,
+} from './services/leadership.js';
+import {
   claimTournament,
   heartbeatTournaments,
   releaseTournaments,
@@ -173,6 +181,30 @@ export class GameServer {
     // Test mode passes the protected id so cleanup spares it.
     await this.cleanupStaleData(testTableId);
 
+    /**
+     * LEADER OR STANDBY (2026-08-23). Exactly one instance owns the fleet.
+     *
+     * Resolved BEFORE anything is started, because a standby must never claim
+     * a table, run a tournament or seat a horse -- it holds nothing and serves
+     * nothing until the leader's lease goes stale, then takes everything.
+     *
+     * Fail-open: any RPC problem answers 'leader'. Nobody running the fleet is
+     * the worst outcome available, and being wrong lands us on today's
+     * behaviour -- one instance doing everything.
+     */
+    const role = await renewLeadership();
+    startLeadershipRenewal();
+    if (role === 'standby') {
+      const d = leadershipDiagnostics();
+      console.log(
+        `[GameServer] STANDBY — ${d.holder} holds leadership. Claiming nothing; ` +
+          `will take the fleet if its lease goes stale (${'' + 30}s).`
+      );
+      // Nothing below this point runs. The renewal interval is the only thing
+      // alive, and /health reports 503 so Caddy keeps traffic off us.
+      return;
+    }
+
     if (!maintenanceMode && !testTableId) {
       // Step 2: Start horse fleet manager (creates tables, seats horses)
       await this.horseFleet.start();
@@ -307,6 +339,10 @@ export class GameServer {
     // otherwise makes the incoming container wait out the full 30s stale window
     // on every table, which is 30s of a live platform not dealing. Best-effort:
     // releaseTables never throws and never blocks shutdown.
+    stopLeadershipRenewal();
+    // Hand leadership back first: the standby can then promote at once instead
+    // of waiting out the staleness window on a planned restart.
+    await releaseLeadership();
     await releaseTables();
     await releaseTournaments();
 
@@ -516,8 +552,18 @@ export class GameServer {
       // progress for 2 minutes, or when the discovery loop itself has stalled.
       // The Docker HEALTHCHECK reads this field, so a wedged process restarts
       // itself with no human involved.
-      liveness:
-        deadStalledCount > 0 || discoveryLoopStalledMs > 60_000 || dealRate.dbConfirmedDead
+      /**
+       * 'standby' is deliberately its own value, read by two different
+       * consumers that need different answers:
+       *
+       *   Caddy  active health check expects 2xx; the handler returns 503 for a
+       *          standby, so it is marked down and traffic goes to the leader.
+       *   Docker healthcheck exits non-zero only on 'dead', so a standby is
+       *          NOT restarted -- it must stay alive to be able to take over.
+       */
+      liveness: !isLeader()
+        ? 'standby'
+        : deadStalledCount > 0 || discoveryLoopStalledMs > 60_000 || dealRate.dbConfirmedDead
           ? 'dead'
           : 'ok',
       /**
@@ -541,6 +587,7 @@ export class GameServer {
        */
       discoveryLoopStalledMs,
       tournamentLease: tournamentLeaseDiagnostics(),
+      leadership: leadershipDiagnostics(),
       stalledTableCount: stalledTables.length,
       // Deploy drain gate reads this. A restart voids in-flight hands, so a
       // routine server/ push waits (or is explicitly forced) while real people

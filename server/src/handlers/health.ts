@@ -39,7 +39,23 @@ export interface WsMetricsDeps {
 
 /** `GET /health` and `GET /` — Hetzner VPS health probe + SHA/status report. */
 export function handleHealth(res: ServerResponse, deps: HealthDeps): void {
-  sendJSON(res, 200, deps.gameServer.getStatus());
+  const status = deps.gameServer.getStatus() as { liveness?: string };
+  /**
+   * A STANDBY ANSWERS 503, ON PURPOSE (2026-08-23).
+   *
+   * Two different consumers read this endpoint and need different answers:
+   *
+   *   Caddy   an active health check expects 2xx. 503 marks this upstream
+   *           down, so every request goes to the leader. That is the whole
+   *           failover mechanism -- no routing table, no proxy.
+   *   Docker  the container HEALTHCHECK exits non-zero only when liveness is
+   *           'dead'. 'standby' is not 'dead', so the container stays healthy
+   *           and alive, which it must be in order to take over.
+   *
+   * The body is unchanged either way, so anything reading the payload (the
+   * deploy verifier, /metrics scrapers, an operator) sees the same fields.
+   */
+  sendJSON(res, status?.liveness === 'standby' ? 503 : 200, status);
 }
 
 /**

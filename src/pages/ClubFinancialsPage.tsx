@@ -18,6 +18,7 @@ import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { FinancialExportService } from '../services/FinancialExportService';
 import DynamicWallet from '../components/wallet/DynamicWallet';
+import { PromoWalletCashierModal } from '../components/wallet';
 import ClubBankCashierModal from '../components/wallet/ClubBankCashierModal';
 import './ClubFinancialsPage.css';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -60,6 +61,7 @@ export default function ClubFinancialsPage() {
   const [userRole, setUserRole] = useState<ClubRole>('player');
   // Dan 2026-08-23: tapping Club Bank opens the Club Bank Cashier.
   const [showClubBank, setShowClubBank] = useState(false);
+  const [showPromoWallet, setShowPromoWallet] = useState(false);
   const toast = useToast();
   useVisibilityRefresh(() => loadFinancials());
   const [visibleTransactions, setVisibleTransactions] = useState<Set<string>>(new Set());
@@ -394,17 +396,25 @@ export default function ClubFinancialsPage() {
           // behind it, are owner / co-owner / admin / super agent only.
           role={userRole}
           onBuyDiamonds={() => navigate('/vip')}
+          onOpenPromoWallet={() => setShowPromoWallet(true)}
           onOpenClubBank={() => setShowClubBank(true)}
           onOpenBBJ={() => navigate(`/clubs/${clubId}/jackpot`)}
         />
       )}
       {clubId && (
-        <ClubBankCashierModal
-          isOpen={showClubBank}
-          onClose={() => setShowClubBank(false)}
-          clubId={clubId}
-          role={userRole}
-        />
+        <>
+          <PromoWalletCashierModal
+            isOpen={showPromoWallet}
+            onClose={() => setShowPromoWallet(false)}
+            clubId={clubId}
+          />
+          <ClubBankCashierModal
+            isOpen={showClubBank}
+            onClose={() => setShowClubBank(false)}
+            clubId={clubId}
+            role={userRole}
+          />
+        </>
       )}
       {/* Period Selector */}
       <div className="period-selector">

@@ -51,6 +51,7 @@ import { checkSettlementLock } from '../utils/settlementLock';
 import AgentPromoPanel from '../components/agent/AgentPromoPanel';
 import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
 import DynamicWallet from '../components/wallet/DynamicWallet';
+import { PromoWalletCashierModal } from '../components/wallet';
 import ClubBankCashierModal from '../components/wallet/ClubBankCashierModal';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './CashierPage.module.css';
@@ -269,6 +270,7 @@ export default function CashierPage() {
   // Dan 2026-08-23: the Club Bank row opens the Club Bank Cashier here too, so
   // the control means the same thing on every surface it appears on.
   const [showClubBank, setShowClubBank] = useState(false);
+  const [showPromoWallet, setShowPromoWallet] = useState(false);
   const [isInUnion, setIsInUnion] = useState(false);
   const [isUnionOwner, setIsUnionOwner] = useState(false);
   const [clubName, setClubName] = useState('');
@@ -1651,7 +1653,10 @@ export default function CashierPage() {
               </div>
             )}
           </div>
-        </section></StandardContentLayout>);}
+        </section>
+      </StandardContentLayout>
+    );
+  }
 
   return (
     <StandardContentLayout className={styles.page}>
@@ -1691,6 +1696,7 @@ export default function CashierPage() {
             // version routed to this page's own distribute tab, which meant the
             // row's own hint ("Tap For The Club Bank Cashier") described
             // something that did not happen.
+            onOpenPromoWallet={() => setShowPromoWallet(true)}
             onOpenClubBank={() => setShowClubBank(true)}
             onOpenBBJ={() => clubId && navigate(`/clubs/${clubId}/jackpot`)}
           />
@@ -1707,12 +1713,19 @@ export default function CashierPage() {
       {/* Club Bank Cashier — the same modal the lobby opens. Role-gated inside,
           and gated again by fn_can_use_club_bank on every read and write. */}
       {clubId && (
-        <ClubBankCashierModal
-          isOpen={showClubBank}
-          onClose={() => setShowClubBank(false)}
-          clubId={clubId}
-          role={userRole}
-        />
+        <>
+          <PromoWalletCashierModal
+            isOpen={showPromoWallet}
+            onClose={() => setShowPromoWallet(false)}
+            clubId={clubId}
+          />
+          <ClubBankCashierModal
+            isOpen={showClubBank}
+            onClose={() => setShowClubBank(false)}
+            clubId={clubId}
+            role={userRole}
+          />
+        </>
       )}
 
       {/* Action Tabs */}

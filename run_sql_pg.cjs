@@ -9,9 +9,9 @@ async function run() {
     await client.connect();
     console.log("Connected directly via IPv4 pooler!");
     
-    // Deploy all unapplied migrations or just get_club_home_fixed.sql?
-    // Since we just need get_club_home_fixed.sql to fix the RPC!
-    const sql = fs.readFileSync('get_club_home_fixed.sql', 'utf8');
+    // Deploy all unapplied migrations or just supabase/migrations/20260823240000_promo_wallet_cashier.sql?
+    // Since we just need supabase/migrations/20260823240000_promo_wallet_cashier.sql to fix the RPC!
+    const sql = fs.readFileSync('supabase/migrations/20260823240000_promo_wallet_cashier.sql', 'utf8');
     await client.query(sql);
     console.log("SQL deployed successfully!");
   } catch (err) {

@@ -17,7 +17,11 @@ import {
   handHistoryQueueDepth,
 } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
-import { TournamentRecurringService } from './services/TournamentRecurringService.js';
+import {
+  TournamentRecurringService,
+  mttPrestartHorseTarget,
+  MTT_PRESTART_RAMP_MS,
+} from './services/TournamentRecurringService.js';
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
 import { AutoRebuyService } from './services/AutoRebuyService.js';
@@ -115,6 +119,16 @@ export class GameServer {
    */
   private readonly processStartedAt: number = Date.now();
   private tournamentEngines: Map<string, TournamentManager> = new Map();
+  /**
+   * Dan 2026-08-23: last time the MTT pre-start horse ramp ran per tournament.
+   *
+   * discoverTournaments runs every 5 seconds. The ramp costs several queries
+   * per tournament, and with ~30 events on the board that is a needless six
+   * queries a second forever to conclude that a quadratic curve has barely
+   * moved. Once every 45s is far finer-grained than the curve, and the lobby
+   * is polling on its own clock anyway.
+   */
+  private lastMttRampAt: Map<string, number> = new Map();
   private running: boolean = false;
   private startTime: number = Date.now();
 
@@ -1891,6 +1905,53 @@ export class GameServer {
            * for. If the horse pool cannot deliver right now we simply try
            * again next pass; waiting is always better than destroying a game.
            */
+          /**
+           * ── MTT PRE-START HORSE RAMP (Dan 2026-08-23, standard practice) ──
+           *
+           * "HORSES NEED TO BE REGISTERING FOR MTT TOURNAMENTS UP TO AN HOUR
+           *  BEFORE THE TOURNAMENT STARTS. PLAYERS DON'T JUMP IN AND PLAY
+           *  TOURNAMENTS THAT HAVE NO PLAYERS IN THEM."
+           *
+           * This is the ONLY place the rule lives, deliberately. Seeding used
+           * to be spread across creation time (recurring service), spawn time
+           * (scheduled service) and past-start rescue (below), and an event
+           * that missed all three - which a day-ahead scheduled MTT always did
+           * - simply sat at 0 until its clock ran out. Putting the ramp in the
+           * discovery loop means every REGISTERING tournament gets it, however
+           * it was created, without each creator having to remember.
+           *
+           * The target curve and its safety properties are documented on
+           * mttPrestartHorseTarget. The two that matter here: it never exceeds
+           * max_players - 1, so it cannot trip the `maxReached` gate below and
+           * start an event early; and it returns 0 for seat-first games, whose
+           * rule is bought seats, not registrations.
+           */
+          const msUntilStart = startTime - now;
+          if (msUntilStart > 0 && msUntilStart <= MTT_PRESTART_RAMP_MS) {
+            const lastRamp = this.lastMttRampAt.get(tournament.id) ?? 0;
+            if (now - lastRamp >= 45_000) {
+              const rampTarget = mttPrestartHorseTarget({
+                msUntilStart,
+                maxPlayers: tournament.max_players ?? 0,
+                variant: String(tournament.variant ?? ''),
+              });
+              if (rampTarget > (tournament.current_players ?? 0)) {
+                this.lastMttRampAt.set(tournament.id, now);
+                const rampAdded = await this.tournamentRecurring.topUpWithHorses(
+                  tournament.id,
+                  rampTarget
+                );
+                if (rampAdded > 0) {
+                  console.log(
+                    `[GameServer] Pre-start ramp: +${rampAdded} into "${tournament.name}" ` +
+                      `(${tournament.current_players} -> target ${rampTarget}, ` +
+                      `${Math.round(msUntilStart / 60000)}m to start)`
+                  );
+                }
+              }
+            }
+          }
+
           const isPastStart = startTime <= now;
           if (isPastStart && tournament.current_players < minPlayers) {
             /**
@@ -1975,6 +2036,16 @@ export class GameServer {
             reportError(err, 'GameServer.Tournament_resume_failed_for_t');
             this.tournamentEngines.delete(tournament.id);
           });
+        }
+
+        // The ramp map only ever holds tournaments still in REGISTERING.
+        // Without this it grows by every event the engine has ever seen and
+        // is never freed for the life of the process.
+        if (this.lastMttRampAt.size > 0) {
+          const stillRegistering = new Set((registering || []).map((r) => String(r.id)));
+          for (const id of this.lastMttRampAt.keys()) {
+            if (!stillRegistering.has(id)) this.lastMttRampAt.delete(id);
+          }
         }
 
         // Clean up completed tournaments

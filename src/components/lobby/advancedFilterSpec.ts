@@ -329,7 +329,16 @@ export interface FilterableRow {
   variant?: string | null;
   /** Cash: big_blind. Tournament: total buy-in (prize + fee). */
   price?: number | null;
+  /** Cash: max_players. Tournament: max_players, i.e. the FIELD cap. */
   seats?: number | null;
+  /**
+   * Seats at ONE table, when the row knows it -- tournaments.table_size.
+   * The "Table Size" slider reads this, never `seats`: a 500-runner MTT seats
+   * nine at a table and comparing 500 to a 2-9 range deletes it. Pass the key
+   * with a null value rather than omitting it when the size is unknown; that
+   * skips the range instead of falling back to the field cap.
+   */
+  tableSeats?: number | null;
   seatsTaken?: number | null;
   /** Tournament status, for the MTT running / open-registration chips. */
   status?: string | null;
@@ -404,10 +413,34 @@ export function rowPassesFilter(
   // ── Seat range ───────────────────────────────────────────────────────────
   // Applies to EVERY format whose spec declares a slider, not just cash. The
   // MTT and SNG sliders were previously inert.
+  //
+  // TWO RULES LEARNED THE HARD WAY ON 2026-08-23, both from the same report:
+  // "THE MTT, SPINS AND HEADS UP TABLES AND EVENTS ARE NOT BEING DISPLAYED."
+  // Shark Club and Midway showed Spins and Heads Up but an EMPTY MTT tab,
+  // while Club JAQK -- identical union, identical games -- showed all 24.
+  //
+  //   1. A RANGE SITTING AT ITS DEFAULT IS NOT A FILTER. The only difference
+  //      between those clubs was that Shark and Midway had a saved filter
+  //      value at all, untouched at its default 2-9. isFilterActive() calls
+  //      that inactive, so the empty state read "Nothing Here On This Tab" and
+  //      offered no filter to clear -- while this function quietly deleted
+  //      every row. Two functions disagreeing about whether a filter is set is
+  //      the whole bug; they now share one answer.
+  //
+  //   2. "TABLE SIZE" MEANS SEATS AT A TABLE. For a tournament r.seats is
+  //      max_players, the FIELD cap -- 150, 300, 1000 -- so comparing it to a
+  //      2-9 slider rejects every MTT that has ever existed. The seats at one
+  //      table is table_size, which callers pass as tableSeats. When the row
+  //      carries the key but has no value, the range is skipped: not knowing a
+  //      table's size is never a reason to hide the game.
   if (spec.seats) {
-    const seats = Number(r.seats);
-    if (Number.isFinite(seats) && seats > 0) {
-      if (seats < v.seatMin || seats > v.seatMax) return false;
+    const atDefault = v.seatMin === spec.seats.min && v.seatMax === spec.seats.max;
+    if (!atDefault) {
+      const raw = 'tableSeats' in r ? r.tableSeats : r.seats;
+      const seats = Number(raw);
+      if (Number.isFinite(seats) && seats > 0) {
+        if (seats < v.seatMin || seats > v.seatMax) return false;
+      }
     }
   }
 

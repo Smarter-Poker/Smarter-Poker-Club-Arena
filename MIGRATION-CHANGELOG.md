@@ -13523,3 +13523,123 @@ zero blind clubs. Because the fix is in the shared RPC it covers every union
 club by construction, not one club at a time.
 
 9 new tests. 294 files / 3,623 green.
+
+## Cowork session 2026-08-23 (18) — THE UNION'S GAMES WERE NOT MISSING, THREE SEPARATE THINGS WERE DELETING THEM
+
+Dan: "THE MTT, SPINS AND HEADS UP TABLES AND EVENTS THAT WERE CREATED IN THE
+MIDWAY UNION ARE NOT BEING DISPLAYED IN THE ATTACHED CLUBS (CLUB JAQK AND
+MIDWAY CLUB)... THEY ARE NOT SHOWING UP INSIDE MIDWAY UNION ANY MORE EITHER."
+
+The data was never the problem. Midway Union was running **44 cash tables and
+86 joinable tournaments** — 33 Spins, 17 Heads Up, 24 MTTs — every one public,
+every one readable by an ordinary member (verified under `role authenticated`
+with Dan's own uid). Three unrelated defects were removing them between the
+database and the screen, which is why the symptom kept changing shape.
+
+### 1. The cash list 400'd on every club lobby load, everywhere
+
+`ClubHomePage` asked for the club's tables with
+
+```
+.not('status', 'in', ['closed', 'deleted'])
+```
+
+`.not(column, operator, value)` does not inspect the value; it interpolates it
+into `not.<operator>.<value>`. An array stringifies to `closed,deleted`, so the
+wire carried `status=not.in.closed,deleted` and PostgREST answered
+
+```
+400 PGRST100  "failed to parse filter (not.in.closed,deleted)"
+```
+
+The whole list came back null. **Zero cash tables in every club, union or
+standalone, on every single load**, while 44 were running. Confirmed live from
+Dan's browser: rewriting only that one filter in flight turned the same request
+into `200` with 44 rows.
+
+It arrived in #542 — _"fix(club): unify table and tournament home scopes to
+resolve missing union MTTs/Spins"_, a commit whose subject is this exact bug
+report. The same commit edited the test that had been pinning the correct form:
+"test: fix regex to match actual source code". **A test may only be relaxed to
+match the source when the source is the thing that is correct.** The assertion
+is now stated twice — the group form must be present, and no `.not(col,'in',[…])`
+may appear anywhere in `src/` (968 files scanned).
+
+### 2. `get_club_home()` had never once executed
+
+The fast path that exists to paint the lobby in ONE round trip instead of six
+raised on every call, from the first, since the day it was written:
+
+```
+SELECT union_id ... FROM union_clubs WHERE ... AND status = 'active'
+ERROR 42703: column "status" does not exist
+```
+
+`union_clubs` has five columns and none is `status`. Behind that sat four more
+of the same kind, none ever reached: `clubs.short_id`, `club_members.profile_id`,
+`tables.time_bank_seconds`/`time_bank_rounds`, and a filter on
+`tables.status IN ('RUNNING','WAITING')` when the column is lowercase. It also
+returned no `found` key, which the caller requires. **Five independent reasons
+for one outcome.**
+
+So every lobby fell back to the slow chain — club row, membership, union row,
+union club ids, member count, and only _then_ tables and tournaments — and for
+those seconds every tab reads "No Tournaments Yet". That is exactly "sometimes
+it displays, then it disappears."
+
+The migration that installed it was written, applied and committed **without
+ever calling the function**. One `SELECT get_club_home(<any club>)` would have
+failed in under a millisecond. Its sibling `20260823250000` does carry
+assertions — one of which calls a function that calls this — so those were
+recorded, not run.
+
+Rewritten and applied (`20260823280000`, `290000`, `300000`). The guarantee is
+no longer a string match on the source text: the migration **executes** the
+function on every club and refuses to apply if any call raises, if any union
+club comes back blind, if the payload loses `variant`/`table_size`, or if it
+takes longer than 250 ms.
+
+Two more things fixed while in there:
+
+- **Union membership is read from both sources**, as the client already does.
+  The union's own club carries `clubs.union_id` with no `union_clubs` row,
+  which is why _Midway itself_ went blind to its own games.
+- **`lower(status)` cost a sequential scan of 64,670 rows to return 44 —
+  593 ms, every call.** Three partial indexes exist for exactly this list and
+  their predicates say `status <> ALL (…)`, which Postgres cannot prove a
+  `lower()` call implies. Written the way the client writes it: **4.8 ms.**
+
+Measured after: Club JAQK, SHARK CLUB and Midway Union each return 44 tables
+and 86 tournaments in **17–43 ms**, from one call.
+
+### 3. An untouched slider deleted every MTT in two of the three clubs
+
+With the database fixed, Club JAQK showed 33 Spins, 17 Heads Up and 24 MTTs.
+Shark Club and Midway — same union, same 86 games — showed the Spins and the
+Heads Up and an **empty MTT tab**. The only difference was a saved
+advanced-filter value in localStorage, sitting untouched at its default
+`seatMin: 2, seatMax: 9`.
+
+`FILTER_SPECS.MTT.seats` is `{2, 9}` and its label is **"Table Size"**, but
+`rowPassesFilter` was handed `seats: max_players` — the size of the FIELD, 150
+to 1,000. Every MTT that has ever existed fails a 2-9 test. The slider had been
+made live in an earlier pass ("the MTT and SNG sliders were previously inert")
+without noticing it was now measuring the wrong quantity.
+
+And `isFilterActive()` called that default range **inactive** while
+`rowPassesFilter` **enforced** it — so the empty state read "Nothing Here On
+This Tab — 129 Games Are Open In This Club, Just None Of This Type", offered no
+filter to clear, and was wrong on both counts. Two functions disagreeing about
+whether a filter is set is the whole bug.
+
+Both halves fixed: a range at its default filters nothing, and "Table Size"
+reads `tournaments.table_size` (2, 3, 6 or 9 on every live row) rather than the
+field cap. A tournament whose table size is unknown is never hidden.
+
+### Verified on production
+
+From Dan's own browser, cold hard load of Club JAQK, at t=0s:
+**Spins 33 · Heads Up 17 · MTT 24 · NLH 18 · PLO 21 · 128 games.**
+Before: every tab empty for several seconds, then cash permanently absent.
+
+18 new/updated assertions across three test files; `tsc --noEmit` clean.

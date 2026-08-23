@@ -1235,7 +1235,16 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
            by realtime - the two lists disagreeing, which is precisely what
            that rule exists to prevent. No such row exists today; this keeps
            it that way. */
-        .not('status', 'in', ['closed', 'deleted'])
+        /* THE VALUE IS A POSTGREST GROUP, NOT A JS ARRAY (Dan 2026-08-23).
+           `.not(col, 'in', value)` interpolates the value straight into
+           `not.in.<value>`, so an array stringifies to `not.in.closed,deleted`
+           and PostgREST answers PGRST100 -- "failed to parse filter". A 400
+           here is total: the whole cash list comes back null, so EVERY club
+           lobby, union or standalone, shows zero tables while dozens are
+           running. Measured on production 2026-08-23 from Club JAQK: 400 with
+           the array, 200 with 44 tables the moment the filter was rewritten.
+           The group form below is what `.in()` builds for itself. */
+        .not('status', 'in', '("closed","deleted")')
         .is('tournament_id', null)
         .order('created_at', { ascending: false })
         .limit(QUERY_LIMITS.LIST);
@@ -1247,7 +1256,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       const clubTournamentQuery = supabase
         .from('tournaments')
         .select(
-          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, late_reg_mins, late_reg_levels, started_at, current_level'
+          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, started_at, current_level'
         )
         // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
         // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
@@ -1295,7 +1304,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               supabase
                 .from('tournaments')
                 .select(
-                  'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, union_id, variant, is_xmtt, late_reg_mins, late_reg_levels, started_at, current_level'
+                  'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, union_id, variant, table_size, is_xmtt, late_reg_mins, late_reg_levels, started_at, current_level'
                 )
                 // Union governance (2026-08-19): ALL union-owned tournaments
                 // (XMTT and union-stamped recurring games), not just XMTT.
@@ -1316,7 +1325,15 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       lobbyPainted = true;
 
       const tableData = tableResult.data;
-      if (!tableResult.error && tableData) setTables(tableData);
+      /* Keep the last good list when the query fails rather than blanking the
+         lobby -- but SAY SO. The malformed filter above 400'd on every load
+         for hours and nothing anywhere reported it, because a swallowed error
+         and an empty club look identical on screen. */
+      if (tableResult.error) {
+        reportError(tableResult.error, 'ClubHomePage.tablesQueryFailed');
+      } else if (tableData) {
+        setTables(tableData);
+      }
       const tableCapped = (tableData?.length ?? 0) >= QUERY_LIMITS.LIST;
 
       // SWR: cache club + tables for instant display on revisit
@@ -1607,6 +1624,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             variant: t.game_type,
             price: total,
             seats: Number(t.max_players) || 0,
+            // The "Table Size" slider filters on seats at a TABLE, not on the
+            // size of the field. Null when the row does not carry it, which
+            // skips the range rather than measuring an MTT against 2-9.
+            tableSeats: (t as unknown as { table_size?: number | null }).table_size ?? null,
             seatsTaken: Number(t.current_players) || 0,
             status: t.status,
             name: t.name,

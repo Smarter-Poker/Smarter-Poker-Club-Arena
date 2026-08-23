@@ -67,6 +67,25 @@ describe('list caps are visible, never silently wrong', () => {
 describe('the fetch and the realtime admission rule agree', () => {
   it('excludes the same dead statuses on both paths', () => {
     // belongsInTableList drops 'closed' AND 'deleted'; so must the query.
-    expect(src).toMatch(/\.not\('status',\s*'in',\s*\[\s*'closed',\s*'deleted'\s*\]\)/);
+    expect(src).toMatch(/\.not\('status',\s*'in',\s*'\("closed","deleted"\)'\)/);
+  });
+
+  /**
+   * WHY THIS SECOND ASSERTION EXISTS.
+   *
+   * On 2026-08-23 this file asserted the ARRAY form, because the commit that
+   * introduced the array also edited the test to match it ("test: fix regex to
+   * match actual source code"). The array is not a filter PostgREST can read:
+   * `.not(col, 'in', value)` interpolates the value into `not.in.<value>`, so
+   * `['closed','deleted']` becomes `not.in.closed,deleted` and the request
+   * comes back 400 PGRST100. The cash list was null on EVERY club lobby load
+   * for hours, and the green test said the query was right.
+   *
+   * So the rule is now stated twice: the group form must be present, and the
+   * array form must be absent anywhere in the file. A test may only be
+   * relaxed to match the source when the source is the thing that is correct.
+   */
+  it('never passes a JS array where PostgREST wants a group', () => {
+    expect(src).not.toMatch(/\.not\(\s*'[a-z_]+'\s*,\s*'in'\s*,\s*\[/);
   });
 });

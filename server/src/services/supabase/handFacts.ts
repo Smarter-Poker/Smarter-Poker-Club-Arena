@@ -186,6 +186,12 @@ const RIT_EVENT_TYPES = new Set([
   // Both names are accepted so neither rename can blind this again.
   'rit_resolved',
   'rit_result',
+  // The outcome that produces ONE board: the chooser picking 1, an all-in
+  // opponent declining, or nobody answering in time. Added 2026-08-23 with the
+  // event itself. Recording it is the whole point of having it — a single-run
+  // outcome used to be indistinguishable, in the data as well as on screen,
+  // from a Run It Twice offer that never resolved at all.
+  'rit_single_run',
   'insurance_offers',
 ]);
 

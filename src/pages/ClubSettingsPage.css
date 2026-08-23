@@ -8,7 +8,10 @@
 .club-settings-page {
   min-height: 100vh;
   background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
-  padding-bottom: 2rem;
+  /* Reserve the fixed bottom nav this page renders (2026-08-23). The bar is
+     out of flow, so whatever it covers is simply unreachable — the token
+     is the bar's height PLUS the home-indicator inset it adds on iOS. */
+  padding-bottom: var(--bottom-nav-clearance, 74px);
 }
 
 .settings-content {

@@ -114,12 +114,25 @@ test('no chrome covers reachable content at 375px', async ({ page }) => {
             if (el.children.length > 0) continue;
             const s = getComputedStyle(el);
             if (s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0) continue;
-            const b = el.getBoundingClientRect();
+            let b = el.getBoundingClientRect();
             if (b.width === 0 || b.height === 0) continue;
             if (b.right <= 0 || b.left >= vw) continue;
             const txt = (el.textContent || '').trim();
             const pressable = ['IMG', 'INPUT', 'BUTTON', 'SVG', 'PATH'].includes(el.tagName);
             if (!txt && !pressable) continue;
+
+            /* MEASURE THE GLYPHS, NOT THE BOX. A text leaf inside a flex row
+               stretches to the row's height by default, so its BOX can run
+               hundreds of pixels past text that actually sits at the top —
+               the jackpot page's empty-state <p> reported 704px "covered"
+               while every word of it was plainly visible. A Range over the
+               text node gives the rectangle the reader can actually see. */
+            if (txt && el.firstChild && el.firstChild.nodeType === 3) {
+              const range = document.createRange();
+              range.selectNodeContents(el);
+              const rb = range.getBoundingClientRect();
+              if (rb.width > 0 && rb.height > 0) b = rb;
+            }
             let p: Element | null = el;
             let inFixed = false;
             while (p && p !== root) {

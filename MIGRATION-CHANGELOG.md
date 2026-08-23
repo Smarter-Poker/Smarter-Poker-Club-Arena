@@ -13001,3 +13001,57 @@ connects to that file.
 Three earlier tests were updated in these commits because this deliberately
 replaces behaviour they pinned. 23 new tests here, 4 on the route. 284 files /
 3,485 green.
+
+## Cowork session 2026-08-23 (12) — AUDITING THE FIX, NOT THE BUG
+
+Dan asked for the three owner-menu claims to be audited. Two were not true as
+stated, one had created a new fault of its own, and a whole half of the feature
+turned out never to have been built.
+
+**"The repayment bar is frozen when the seed is taken."** Half true. It was
+written with `GREATEST(...)`, which correctly stops an owner LOWERING the bar by
+reactivating at a smaller stake — but nothing ever cleared it. Once a pool
+carried a 20,000 bar it carried it forever: repay that seed, come back and seed
+200 at a stake of 1, and the new seed needs 20,000 of play to return. The fix
+cured one direction and opened the other. The bar now rises only while a seed is
+outstanding and is **released with the seed it belonged to**.
+
+**"Reactivating on an unpaid seed is refused."** Only when the wallet DIFFERS.
+With the same wallet it added a second full seed, so an owner who switched Spins
+off and on paid twice for the same protection. What is outstanding is already in
+the pool doing the job the seed exists to do, so it now counts toward the bar and
+only the shortfall is charged — a zero top-up skips the wallet move entirely
+rather than booking a no-op transfer. The panel compounded it: the outstanding
+amount rendered only inside the `is_active` branch, so while Spins were off the
+money already sitting there was invisible and the button quoted a full fresh bill.
+
+**"The route decides who may act now."** The route did. The panel then ANDed
+that answer with the PAGE's guess — `canManage={isOwner}` — which is false for a
+union lead who does not own the club, so the off switch stayed hidden from
+exactly the person the API authorises. **The AND was the same bug wearing the
+fix's clothes.** The prop is gone entirely; a page can no longer override the
+route.
+
+**And the half that was never built:** the panel existed only on
+`ClubSettingsPage`. A union owns the Spin wallet for every club inside it, and
+its lead had nowhere to switch Spins on at all. It is now on the union dashboard
+too, keyed by the union's own id — which resolves through the same
+`fn_spin_reserve_owner` lookup and lands on the union's pool. Rendered for every
+union admin, read-only for those who may not spend.
+
+Also: a seed with no recorded source can never be repaid, because the repayment
+deliberately refuses to guess a wallet. That looked identical to one merely
+waiting. `seed_is_repayable` now says so, and the house pool's legacy 20,000 is
+labelled rather than silent.
+
+Verified by a rolled-back probe across all five transitions: no double charge;
+the bar holds at 20,000 while owed; released on repayment; a later 200 seed sets
+a 200 bar instead of inheriting the retired one; a source-less seed reports
+unrepayable. The live pool still reconciles exactly.
+
+**A pattern worth naming:** three separate assertions this session have failed
+on their own explanatory comment — `Math.random`, `ceiling_amount`, and now
+`canManage && routeCanManage`. Any check that greps raw text reads the prose
+too. Negative assertions in this file now read a comment-stripped copy.
+
+33 tests across the two files. 286 files / 3,513 green.

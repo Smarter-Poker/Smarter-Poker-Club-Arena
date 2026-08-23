@@ -2326,7 +2326,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                       onClick={() => {
                         haptic.selection();
                         const arr = qVal.selectedRanges || [];
-                        const nextArr = on ? arr.filter(k => k !== p.key) : [...arr, p.key];
+                        const nextArr = on ? arr.filter((k) => k !== p.key) : [...arr, p.key];
                         const next: FilterStore = {
                           ...advFilters,
                           [gameType]: { ...qVal, selectedRanges: nextArr },
@@ -2642,7 +2642,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       {/* ═══════════════════════════════════════════════════════════════════
                 BACKGROUND IMAGE (Premium Bar Scene)
             ═══════════════════════════════════════════════════════════════════ */}
-      
 
       {/* ═══════════════════════════════════════════════════════════════════
                 BOTTOM NAVIGATION BAR

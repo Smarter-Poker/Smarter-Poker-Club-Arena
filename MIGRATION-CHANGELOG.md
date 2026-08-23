@@ -7,6 +7,98 @@
 
 ---
 
+## Cowork session 2026-08-23 (2) — the deep audit: seventeen points of equity, and three layers that reported success while doing nothing (PRs #399, #409)
+
+Asked to go through the horse brain line by line before claiming success. The
+honest summary is that claiming success earlier would have been wrong: the
+worst defect in the engine was found on this pass, not the previous one.
+
+### The equity sampler was 17 points wrong against every tight read
+
+The band sampler used REJECTION sampling — redraw uniformly up to `tries`
+times, and if nothing landed in the read, keep the CLOSEST MISS at full weight.
+For a tight read that inverts the read it exists to honour: the tighter the
+band, the lower the hit rate, so the more often the fallback fires — and the
+fallback's expected value is the best of ~15 draws that all FAILED the band.
+
+Measured against exhaustive ground truth. Hero AQs on A-K-7 facing a
+[0.85, 1.0] read (27 legal combos, 2.5% of the deck):
+
+|                                 | equity    |
+| ------------------------------- | --------- |
+| true, enumerated over the range | 55.4%     |
+| what the sampler reported       | **72.4%** |
+
+Seventeen points, systematically, in hero's favour, every time a horse faced a
+strong range — so a horse looking at a 4-bet priced its hand as a crush and
+called off. Every equity-driven threshold downstream was reading an inflated
+number precisely when the pot was biggest.
+
+A two-card range is small enough to enumerate, so it is no longer sampled by
+rejection at all: every combo is pre-sorted by percentile at module load, a
+band is a contiguous slice found by binary search, and sampling is one uniform
+draw plus a collision check. Same spot after: **55.3% against a truth of 55.5%**.
+Omaha keeps the old path — its combo space cannot be enumerated. Cost 0.81 ms
+per decision against a 25 ms budget.
+
+The V12 board-contact redraw had the matching defect: it drew uniformly from
+the whole deck and never re-tested the band, so an in-band hand that failed to
+connect was replaced by an unconditioned one — a 3-bettor's c-betting range
+acquired bottom two pair and 72o. It draws from the band now.
+
+### fastRandom could return exactly 1.0, and that folded real hands
+
+It divided by 2^32-1. xorshift32's period covers every non-zero state, so the
+state hits 0xffffffff once per period and the draw returned EXACTLY 1.0 —
+`Math.floor(r * (n - i))` then indexed one past the deck, the partial
+Fisher-Yates swapped in `undefined`, the evaluator threw, and `decide()`'s
+safety net turned it into a FOLD. A silent, unexplained fold of an arbitrary
+hand, fleet-wide, with no telemetry, because that same catch swallowed the
+error. One character, plus a test pinning the [0,1) contract — and the catch
+reports now, so the next one like it is visible.
+
+### Three layers that reported success while doing nothing
+
+- **The nightly league never ran.** Its checker ticks every 30 minutes against
+  a ONE-HOUR window, and a 04:32 deploy restart pushed the next tick to ~05:02.
+  Hand production was perfectly steady the whole time, so every health signal
+  looked green while the job quietly skipped the day. Both nightly jobs now
+  check every 10 minutes with a 3-hour catch-up window.
+- **The tournament context could disable itself permanently.** `refresh()` had
+  no timeout and clears its in-flight flag only in a `finally` that never runs
+  if the promise never settles — one hung fetch froze that tournament's ICM
+  context for the process lifetime, or left it null forever, so the horses
+  played the whole event including the bubble on the flat premium. Bounded at
+  5s with a stuck-guard. A transient read miss also wiped a good context; it
+  keeps the stale one now, as the catch beside it already did.
+- **`connectsBoard` counted the board's own hand as opponent contact** — 32o on
+  K K 7 "had" kings — so on ~17% of flops the V12 conditioning was a no-op.
+
+### Also fixed
+
+Payout parsing now uses the repo's canonical validator (the local one counted
+`[null, null]` as two paid places; verified against all 14,280 live rows, every
+one accepted). The 5000-row player query had no ORDER BY. Bluff RAISES never
+registered a barrel plan, so a flop check-raise bluff arrived at the turn with
+no plan and re-rolled the dice. `difficultyHint` is a module global that the
+safety net left stranded, handing the next horse on any table a tank
+multiplier. The pineapple discard street evaluated three hole cards as if all
+three played. Two V12 layers were gated on the v11 flag, so `v12:false` never
+disabled them.
+
+### On evidence
+
+The V12 ablation, re-measured now that the sampler under it is exact, gave
++15.00 bb/100 (se 7.03) on one seed and −0.40 (se 7.67) on another — pooled,
+**not resolved**. Recorded as unresolved rather than quoting the seed that
+agrees. The sampler fix itself is proven against enumeration, which is a
+stronger instrument than a league A/B when it is available; the v13 decision
+group is not, and ships on correctness with that stated.
+
+**1151/1151.**
+
+---
+
 ## Cowork session 2026-08-23 (3) — "I FINISHED 4TH" IN A THREE-HANDED GAME
 
 Dan, from a seat: _"I registered, said final table, then I was booted and said

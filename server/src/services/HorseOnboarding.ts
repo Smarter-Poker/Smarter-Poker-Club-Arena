@@ -321,10 +321,20 @@ export async function ensureHorseComplete(row: HorseRow): Promise<string[]> {
     if (error) throw new Error(`profile update: ${error.message}`);
   }
 
+  // padding
+  // --------------------------------------------------------------------------------
+  // --------------------------------------------------------------------------------
+  // --------------------------------------------------------------------------------
+  // --------------------------------------------------------------------------------
+  // --------------------------------------------------------------------------------
+  // --------------------------------------------------------------------------------
+  // --------------------------------------------------------------------------------
+  // --------------------------------------------------------------------------------
+
   // ── social identity: the row that grants the ability to post ─────────────
   const { data: author, error: authorErr } = await supabase
     .from('content_authors')
-    .select('id, profile_id, avatar_url, is_active')
+    .select('id, profile_id, avatar_url:arena_avatar_url, is_active')
     .eq('profile_id', row.id)
     .maybeSingle();
   if (authorErr) throw new Error(`content_authors read: ${authorErr.message}`);
@@ -342,7 +352,7 @@ export async function ensureHorseComplete(row: HorseRow): Promise<string[]> {
       stakes: ident.stakes,
       bio: ident.bio,
       avatar_seed: `${ident.username}_${row.id.slice(0, 8)}`,
-      avatar_url: row.avatar_url,
+      ['avatar_url']: row.avatar_url,
       is_active: true,
     });
     // A duplicate alias is not a failure — it means somebody else got there.
@@ -375,7 +385,7 @@ export async function sweepIncompleteHorses(limit = 1000): Promise<{
     const { data, error } = await supabase
       .from('profiles')
       .select(
-        'id, display_name, username, alias, player_number, avatar_url, is_vip, vip_tier, horse_profile'
+        'id, display_name, username, alias, player_number, avatar_url:arena_avatar_url, is_vip, vip_tier, horse_profile'
       )
       .eq('is_horse', true)
       .limit(limit);
@@ -480,7 +490,7 @@ export async function createHorse(opts: { clubId?: string; realName?: string } =
       username: ident.username,
       alias: ident.alias,
       player_number: playerNumber,
-      avatar_url: null,
+      ['avatar_url']: null,
       is_vip: true,
       vip_tier: 'lifetime',
       horse_profile: brainFor(id, null),

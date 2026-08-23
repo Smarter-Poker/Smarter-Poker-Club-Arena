@@ -164,7 +164,12 @@ export default function TournamentRankingCard({
              display_name while his actual preference (full_name -> "Dan
              Bekavac") went unread. playerDisplayName reads the preference
              first. See src/utils/playerDisplayName.ts. */
-          username: playerDisplayName(data),
+          /* 'arena' explicitly, though it is also the default: this card is a
+             Club Arena tournament result, and Dan 2026-08-23 - "IM DAN BEKAVAC
+             ON SOCIAL AND KINGFISH IN THE CLUB ARENA" - makes the table a
+             handle-only surface. Passing it rather than relying on the default
+             keeps the intent readable at the call site. */
+          username: playerDisplayName(data, 'arena'),
           avatarUrl: data.avatar_url || generateDefaultAvatar(),
           playerNumber: data.player_number ?? null,
         });

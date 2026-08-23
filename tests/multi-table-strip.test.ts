@@ -10,6 +10,8 @@
  * meant neither could be checked except by hand on a phone.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { gameCode, gameCodeFromName } from '../src/utils/gameCode';
 import { swipeTargetIndex } from '../src/utils/swipeTarget';
 
@@ -23,7 +25,22 @@ describe('gameCode', () => {
     expect(gameCode({ variant: 'plo8' })).toBe('PLO8');
     expect(gameCode({ variant: 'short_deck' })).toBe('SHORT');
     expect(gameCode({ variant: 'pineapple' })).toBe('PINE');
-    expect(gameCode({ variant: 'ofc_pineapple' })).toBe('OFC');
+  });
+
+  it('has retired OFC, which this platform never dealt', () => {
+    /* Open Face Chinese is a card-PLACEMENT game: no betting rounds, no board.
+       Every row that carried `ofc_pineapple` was a Crazy Pineapple table
+       wearing the wrong label - all named "Pineapple", all with flop/turn/river
+       streets - and the bare `ofc` variant was never used by a single row.
+       Retired 2026-08-23 by migration
+       20260823_retire_ofc_pineapple_variant.sql. A legacy row falls back to the
+       generic path rather than naming a game nobody played. */
+    // No CURATED code any more. A legacy row falls through the generic
+    // unknown-variant path (strip, uppercase, truncate to 6) instead of being
+    // given a real game's acronym.
+    expect(gameCode({ variant: 'ofc_pineapple' })).toBe('OFCPIN');
+    const src = readFileSync(resolve(__dirname, '../src/utils/gameCode.ts'), 'utf8');
+    expect(src).not.toMatch(/^\s*ofc(_pineapple)?:/m);
   });
 
   it('accepts the uppercase form tableState.gameType reports', () => {
@@ -46,8 +63,9 @@ describe('gameCode', () => {
 
   it('a 2-seat CASH table is HU, but a 2-seat SNG stays SNG', () => {
     expect(gameCode({ variant: 'nlh', maxPlayers: 2 })).toBe('HU');
-    expect(gameCode({ variant: 'nlh', isTournament: true, tournamentFormat: 'sng', maxPlayers: 2 }))
-      .toBe('SNG');
+    expect(
+      gameCode({ variant: 'nlh', isTournament: true, tournamentFormat: 'sng', maxPlayers: 2 })
+    ).toBe('SNG');
   });
 
   it('normal ring sizes are never mistaken for heads-up', () => {

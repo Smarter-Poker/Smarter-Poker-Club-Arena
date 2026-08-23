@@ -7,6 +7,163 @@
 
 ---
 
+## Cowork session 2026-08-23 (2) — the deep audit: seventeen points of equity, and three layers that reported success while doing nothing (PRs #399, #409)
+
+Asked to go through the horse brain line by line before claiming success. The
+honest summary is that claiming success earlier would have been wrong: the
+worst defect in the engine was found on this pass, not the previous one.
+
+### The equity sampler was 17 points wrong against every tight read
+
+The band sampler used REJECTION sampling — redraw uniformly up to `tries`
+times, and if nothing landed in the read, keep the CLOSEST MISS at full weight.
+For a tight read that inverts the read it exists to honour: the tighter the
+band, the lower the hit rate, so the more often the fallback fires — and the
+fallback's expected value is the best of ~15 draws that all FAILED the band.
+
+Measured against exhaustive ground truth. Hero AQs on A-K-7 facing a
+[0.85, 1.0] read (27 legal combos, 2.5% of the deck):
+
+|                                 | equity    |
+| ------------------------------- | --------- |
+| true, enumerated over the range | 55.4%     |
+| what the sampler reported       | **72.4%** |
+
+Seventeen points, systematically, in hero's favour, every time a horse faced a
+strong range — so a horse looking at a 4-bet priced its hand as a crush and
+called off. Every equity-driven threshold downstream was reading an inflated
+number precisely when the pot was biggest.
+
+A two-card range is small enough to enumerate, so it is no longer sampled by
+rejection at all: every combo is pre-sorted by percentile at module load, a
+band is a contiguous slice found by binary search, and sampling is one uniform
+draw plus a collision check. Same spot after: **55.3% against a truth of 55.5%**.
+Omaha keeps the old path — its combo space cannot be enumerated. Cost 0.81 ms
+per decision against a 25 ms budget.
+
+The V12 board-contact redraw had the matching defect: it drew uniformly from
+the whole deck and never re-tested the band, so an in-band hand that failed to
+connect was replaced by an unconditioned one — a 3-bettor's c-betting range
+acquired bottom two pair and 72o. It draws from the band now.
+
+### fastRandom could return exactly 1.0, and that folded real hands
+
+It divided by 2^32-1. xorshift32's period covers every non-zero state, so the
+state hits 0xffffffff once per period and the draw returned EXACTLY 1.0 —
+`Math.floor(r * (n - i))` then indexed one past the deck, the partial
+Fisher-Yates swapped in `undefined`, the evaluator threw, and `decide()`'s
+safety net turned it into a FOLD. A silent, unexplained fold of an arbitrary
+hand, fleet-wide, with no telemetry, because that same catch swallowed the
+error. One character, plus a test pinning the [0,1) contract — and the catch
+reports now, so the next one like it is visible.
+
+### Three layers that reported success while doing nothing
+
+- **The nightly league never ran.** Its checker ticks every 30 minutes against
+  a ONE-HOUR window, and a 04:32 deploy restart pushed the next tick to ~05:02.
+  Hand production was perfectly steady the whole time, so every health signal
+  looked green while the job quietly skipped the day. Both nightly jobs now
+  check every 10 minutes with a 3-hour catch-up window.
+- **The tournament context could disable itself permanently.** `refresh()` had
+  no timeout and clears its in-flight flag only in a `finally` that never runs
+  if the promise never settles — one hung fetch froze that tournament's ICM
+  context for the process lifetime, or left it null forever, so the horses
+  played the whole event including the bubble on the flat premium. Bounded at
+  5s with a stuck-guard. A transient read miss also wiped a good context; it
+  keeps the stale one now, as the catch beside it already did.
+- **`connectsBoard` counted the board's own hand as opponent contact** — 32o on
+  K K 7 "had" kings — so on ~17% of flops the V12 conditioning was a no-op.
+
+### Also fixed
+
+Payout parsing now uses the repo's canonical validator (the local one counted
+`[null, null]` as two paid places; verified against all 14,280 live rows, every
+one accepted). The 5000-row player query had no ORDER BY. Bluff RAISES never
+registered a barrel plan, so a flop check-raise bluff arrived at the turn with
+no plan and re-rolled the dice. `difficultyHint` is a module global that the
+safety net left stranded, handing the next horse on any table a tank
+multiplier. The pineapple discard street evaluated three hole cards as if all
+three played. Two V12 layers were gated on the v11 flag, so `v12:false` never
+disabled them.
+
+### On evidence
+
+The V12 ablation, re-measured now that the sampler under it is exact, gave
++15.00 bb/100 (se 7.03) on one seed and −0.40 (se 7.67) on another — pooled,
+**not resolved**. Recorded as unresolved rather than quoting the seed that
+agrees. The sampler fix itself is proven against enumeration, which is a
+stronger instrument than a league A/B when it is available; the v13 decision
+group is not, and ships on correctness with that stated.
+
+**1151/1151.**
+
+---
+
+## Cowork session 2026-08-23 (3) — "I FINISHED 4TH" IN A THREE-HANDED GAME
+
+Dan, from a seat: _"I registered, said final table, then I was booted and said
+i finished 4th somehow"_. Every part of that was real, and it was one fault
+with four faces.
+
+**The fault.** A seat-first game starts when every SEAT is sold. The past-start
+top-up filled short games with `fn_register_horse_for_tournament`, which writes
+`tournament_players` and nothing else - correct for an MTT, useless here. A
+topped-up Spin therefore reached _3 registered / 0 seated_, and from there it
+could never start, it kept advertising three empty seats, the capacity check
+(which reads the denormalised `tournaments.current_players`, left stale by
+those inserts) admitted a **fourth** entrant to a 3-max event, and the
+elimination path computed his place over a field of four.
+
+**Measured: 12 of 24 open Spins were in that state**, stuck 9 to 25 hours.
+
+**The four fixes.**
+
+1. `trg_enforce_tournament_capacity` COUNTS ROWS instead of trusting the
+   counter. Both registration RPCs already checked capacity and both consulted
+   `current_players`; the rows that filled these games went through neither, so
+   the counter never saw them. Counting is the only check that binds every
+   path, including the next one somebody writes.
+
+2. `fn_seat_horse_in_seat_first_game` puts a horse in an actual seat.
+   Registration and seating are now separate questions asked in that order -
+   `fn_register_horse_for_tournament` runs its capacity check BEFORE its
+   duplicate check, so asking it about someone already registered in a full
+   game answers `tournament_full`. The first version did ask, and its own
+   assertion caught the failure and rolled the repair back.
+
+3. **The lobby repair, two shapes not one.** Ten of the twelve had already
+   PLAYED - 15 hands, two eliminated at places 2 and 3, one holding every chip,
+   the reserve settled - and were still `REGISTERING` with `started_at` NULL.
+   A finished game advertising itself as joinable is how a human walks into
+   one. Those were closed with the chip leader awarded 1st; all ten winners are
+   horses, so nobody was owed a prize. The other two never started and their
+   horses were seated. Seating horses into the first ten would have re-opened
+   ten settled games.
+
+4. **Dan was refunded.** Charged 10 chips, eliminated 15 seconds later, never
+   refunded. Balance 250,390.69 → 250,400.69, entry removed, tournament back to
+   3 entrants. Zero players anywhere now hold a finishing place beyond the field
+   size.
+
+**No more Final Table on a Spin.** The engine broadcasts `final_table` once 9 or
+fewer players remain, which for a 3-handed Spin is true before a card is dealt.
+The overlay AND the toast - which sat outside the guard and fired regardless -
+are now gated on `mtt`. An SNG is single-table too and had the same problem.
+
+**The human window (Dan, same message).** "2 horses register (for spins and one
+for heads up), and leave registration open for anywhere from 60-180 seconds
+before another horse can fill the seat." A Spin now opens at 2/3 and a heads-up
+at 1/2, with the last seat held for a randomised 60-180s. Randomised per game
+on purpose: a constant delay makes the whole board fill in lockstep and the
+room reads as a machine.
+
+Open Spins 24 → 15: 0 deadlocked, 13 genuinely open. 9 new cases in
+`tests/config/spinSeatFirstIntegrity.test.ts`, all 9 failing against
+`origin/main`. Suite: 264 files, 3,258 passed, client tsc clean, server tsc
+error count unchanged at 8 pre-existing.
+
+---
+
 ## Cowork session 2026-08-23 — MOBILE ONE-SCREEN PASS: a regression fixed, three systemic bugs found by measuring (PR #380)
 
 Dan, from a phone, mid-session: "club arena is not running correctly or
@@ -71,6 +228,25 @@ ERR_ABORTED requests are a sweep navigating away mid-flight.
   assertion is how this suite fooled itself twice before).
 
 Both strict in CI, where the e2e job runs against production after a deploy.
+
+### Addendum — the global rule was not enough (PR #391)
+
+The 16px rule added above used ELEMENT selectors (`input`, `textarea`,
+`select`, specificity 0-0-1). Almost every field in this app is styled by a
+CSS Module class (0-1-0), which wins — so the rule fixed only the handful of
+fields nobody had styled, and the settings selects were still 12.8px in
+production after it shipped. Caught by re-running the gate against the
+deployed build rather than trusting the merge.
+
+Raising the global rule's specificity was the wrong repair: nine rules
+deliberately set fields ABOVE 16px (the amount, credit and club-code inputs,
+where large type is the point), and a blunt override would have SHRUNK those.
+CSS cannot express "at least 16px" against an unknown author value.
+
+So the 47 offending rules were fixed at source instead — only rules whose
+selector ends in a real field element, only where the declared size was under
+16px, each annotated with what it was. Verified in production's served CSS:
+`friends-search input` now computes 16px where it computed 13.6px.
 
 ### Two false alarms, both caught before they were reported
 

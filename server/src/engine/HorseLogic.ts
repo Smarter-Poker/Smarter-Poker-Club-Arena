@@ -64,6 +64,7 @@ import { HorseMind } from './HorseMind.js';
 // V7 (2026-07-24): position-pair preflop mastery — 3-bet/4-bet bluffs, blind
 // vs blind, squeezes, stack depth, reshoves, ICM. See HorsePreflop.ts.
 import { decidePreflopV7, type PreflopPosition } from './HorsePreflop.js';
+import { reportError } from '../services/errorReporter.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
 // HorseEval.ts (extracted verbatim; zero behavior change).
 import {
@@ -280,10 +281,27 @@ type PositionClass = 'early' | 'middle' | 'late' | 'sb' | 'bb';
 function classifyPosition(
   heroSeat: number,
   dealerSeat: number | undefined,
-  players: SeatPlayer[]
+  players: SeatPlayer[],
+  v13: boolean = true
 ): PositionClass {
+  // ── V13 (2026-08-23): position comes from who was DEALT IN ───────────────
+  // Filtering on `!is_folded` derived position from who is still LIVE, so
+  // every fold between the button and the actor compressed the ring and
+  // promoted everyone left to a later seat. 6-max, UTG opens, MP and CO fold:
+  // inHand becomes [SB,BB,UTG,BTN], n=4, and UTG lands at pos 0 of 2 non-blind
+  // seats -> classified 'late'. The horse then 3-bets a UTG open with the top
+  // 26% instead of the top 14% (THREEBET_VS late 0.74 vs early 0.86) and
+  // cold-calls to the 50th percentile instead of the 58th — against the
+  // tightest range at the table. It also made blindVsSteal fire against UTG,
+  // and let the 13-20bb reshove jam over an under-the-gun open. A player who
+  // has folded still occupied their seat when the button was set.
+  const dealtIn = (p: SeatPlayer): boolean =>
+    p.seat === heroSeat ||
+    (p.totalInvested ?? 0) > 0 ||
+    (Array.isArray(p.cards) && p.cards.length > 0) ||
+    (!p.is_sitting_out && !p.is_folded);
   const inHand = players
-    .filter((p) => !p.is_folded || p.seat === heroSeat)
+    .filter((p) => (v13 ? dealtIn(p) : !p.is_folded || p.seat === heroSeat))
     .map((p) => p.seat)
     .sort((a, b) => a - b);
   if (dealerSeat === undefined || inHand.length < 2) return 'middle';
@@ -362,10 +380,18 @@ function readInitiative(
 function actsLastPostflop(
   heroSeat: number,
   dealerSeat: number | undefined,
-  players: SeatPlayer[]
+  players: SeatPlayer[],
+  v13: boolean = true
 ): boolean {
   if (dealerSeat === undefined) return false;
-  const live = players.filter((p) => !p.is_folded && !p.is_sitting_out).map((p) => p.seat);
+  // V13: an all-in player cannot act, so they cannot act after hero. Counting
+  // them made a button with one all-in opponent behind believe it was OUT of
+  // position: it lost the positional bluff scaling and, worse, became
+  // eligible for the V11 initiative gate, which checks 100% of the time
+  // without initiative.
+  const live = players
+    .filter((p) => !p.is_folded && !p.is_sitting_out && (v13 === false || !p.is_all_in))
+    .map((p) => p.seat);
   if (live.length < 2 || !live.includes(heroSeat)) return false;
   const WRAP = 1024; // any bound above the max seat number
   const pos = (seat: number) => {
@@ -382,6 +408,23 @@ function actsLastPostflop(
  * Separates a vulnerable made hand (bet for protection, never slowplay wet)
  * from a pure draw (equity comes from the runout) at the same MC equity.
  */
+/**
+ * V13: best made category over every 2-card subset of the hole cards. For
+ * every variant except the pineapple discard street this is just
+ * madeCategory, because the hole is already the playable size.
+ */
+function bestTwoCardCategory(hole: Card[], board: Card[], vi: VariantInfo): number {
+  if (!hole || hole.length <= 2 || vi.isOmaha) return madeCategory(hole, board, vi);
+  let best = 0;
+  for (let i = 0; i < hole.length; i++) {
+    for (let j = i + 1; j < hole.length; j++) {
+      const c = madeCategory([hole[i], hole[j]], board, vi);
+      if (c > best) best = c;
+    }
+  }
+  return best;
+}
+
 function madeCategory(hole: Card[], board: Card[], vi: VariantInfo): number {
   if (!hole || hole.length < 2 || !board || board.length < 3) return 0;
   try {
@@ -579,6 +622,12 @@ export interface HorseDecideOpts {
    *  donk leads with medium hands), and board-domination call discipline
    *  (default: enabled) */
   v11?: boolean;
+  /** V13 (2026-08-23): decision-core repairs found by the full-brain audit —
+   *  the price-in guard no longer eats raises, position is derived from the
+   *  players dealt in rather than those still live, sitting-out players stop
+   *  masking heads-up play, and all-in players stop taking position. Ablation
+   *  only; production leaves it on. */
+  v13?: boolean;
   /** disable the V12 layer: board-conditioned opponent sampling — postflop
    *  aggressors are sampled toward hands that CONNECT with the actual board,
    *  passive checked lines get their monsters down-sampled (default: enabled) */
@@ -664,8 +713,21 @@ export class HorseLogic {
         }
       }
       return this.decideInternal(player, gameState, style, mods, opts);
-    } catch {
+    } catch (err) {
       // Absolute safety net: never let a horse hang the table.
+      // V13: it used to swallow the error entirely. This is the innermost and
+      // most consequential catch in the brain — if a systematic defect were
+      // introduced (a null board, a bad variant, a shape change in players)
+      // the whole fleet would silently degrade to check/fold while every
+      // dashboard stayed green. Every other automated-action path in the
+      // engine reports; this one now does too.
+      reportError(err, 'HorseLogic.decide_threw');
+      // V13: the think-time hint is a module global, normally consumed and
+      // cleared by computeThinkTime. The safety net returns WITHOUT calling
+      // it, so a throw stranded the value and the NEXT horse to act — a
+      // different player, possibly a different table — inherited the tank
+      // multiplier. Clear it on the way out.
+      difficultyHint = 0;
       const toCall = Math.max(0, (gameState.currentBet || 0) - (player.bet || 0));
       return toCall === 0
         ? { action: 'check', thinkTime: 1500 }
@@ -800,15 +862,27 @@ export class HorseLogic {
       raises = gs.currentBet > bb * 4.5 ? 2 : 1;
     }
 
-    const position = classifyPosition(player.seat, gs.dealerSeat, gs.players);
+    const position = classifyPosition(player.seat, gs.dealerSeat, gs.players, opts.v13 !== false);
     const raiserPosition: PreflopPosition | null =
-      lastRaiserSeat >= 0 ? classifyPosition(lastRaiserSeat, gs.dealerSeat, gs.players) : null;
-    const oppsLeft = gs.players.filter((p) => !p.is_folded && p.seat !== player.seat).length;
+      lastRaiserSeat >= 0
+        ? classifyPosition(lastRaiserSeat, gs.dealerSeat, gs.players, opts.v13 !== false)
+        : null;
+    // V13: a sitting-out player counted as an opponent, so a two-handed table
+    // with one sitter reported oppsLeft = 2 and switched OFF the heads-up and
+    // blind-vs-blind ranges entirely — the SB opened on 0.44 instead of 0.24
+    // and the BB defended on 0.54 instead of 0.30. Postflop already did this.
+    const oppsLeft = gs.players.filter(
+      (p) => !p.is_folded && p.seat !== player.seat && (opts.v13 === false || !p.is_sitting_out)
+    ).length;
     const stackBB = player.stack / bb;
 
     // V12 ANTI-EXPLOIT: is the raiser hunting THIS horse? Best-effort.
     let targeted = 0;
-    if (opts.mind !== false && opts.v11 !== false && lastRaiserSeat >= 0) {
+    // V13: this is the V12 anti-exploit layer (PR #268) but it was gated on
+    // v11, so `v12:false` did not disable it and `v11:false` silently killed
+    // it — every V12 ablation, including the v12_ranges_river league matchup,
+    // was therefore measuring the wrong thing.
+    if (opts.mind !== false && opts.v12 !== false && lastRaiserSeat >= 0) {
       try {
         const raiser = gs.players.find((p) => p.seat === lastRaiserSeat);
         if (raiser && raiser.user_id !== player.user_id) {
@@ -850,9 +924,11 @@ export class HorseLogic {
       anteInPlay: opts.v11 !== false && (gs.ante ?? 0) > 0,
       // V12: table format — spins widen (winner-take-all chip EV), HU SNGs
       // ride the heads-up ranges.
+      // V13: `format` is a V12 field and now answers to the v12 flag.
       format:
-        opts.v11 !== false ? (gs.format ?? (isTournamentMode(gs) ? 'mtt' : 'cash')) : undefined,
+        opts.v12 !== false ? (gs.format ?? (isTournamentMode(gs) ? 'mtt' : 'cash')) : undefined,
       targeted,
+      v13: opts.v13 !== false,
       rand: fastRandom,
     });
 
@@ -1179,8 +1255,15 @@ export class HorseLogic {
     if (useIQ) {
       try {
         initiative = readInitiative(gs.actionHistory, player.user_id, street);
-        ip = actsLastPostflop(player.seat, gs.dealerSeat, gs.players);
-        cat = madeCategory(player.cards, gs.communityCards, vi);
+        ip = actsLastPostflop(player.seat, gs.dealerSeat, gs.players, opts.v13 !== false);
+        // V13: on the pineapple discard street a player still holds THREE
+        // cards, but only two ever play. madeCategory concatenates hole+board
+        // and takes the best five, so it was scoring a 6-card hand and
+        // inflating the category — which mis-fires the vulnerable check, the
+        // semi-bluff gates (cat <= 2), the monster gates (cat >= 6) and the
+        // one-pair domination penalty all at once. Score the best TWO of the
+        // three, which is what the player will actually be left holding.
+        cat = bestTwoCardCategory(player.cards, gs.communityCards, vi);
         scare = scareShift(gs.communityCards);
         const streetsLeft = isRiver ? 1 : street === 'turn' ? 2 : 3;
         // Effective stack behind vs the deepest live opponent, capped by hero.
@@ -1592,6 +1675,12 @@ export class HorseLogic {
       betRatio <= 0.85 &&
       fastRandom() < params.bluffFreq * params.aggression * bluffScale * 0.5 * omahaDrawMod()
     ) {
+      // V13: register the barrel plan. planBarrel was called on all three BET
+      // paths and none of the RAISE paths, so a flop semi-bluff raise arrived
+      // at the turn with no plan, skipped the barrel block entirely and
+      // re-rolled the dice — the exact incoherence the V7 plan layer exists
+      // to remove, on the lines where a coherent story matters most.
+      planBarrel(equity);
       const raiseToAmt = currentBet + (pot + toCall) * (0.8 + fastRandom() * 0.3);
       return this.raiseTo(raiseToAmt * params.sizingMultiplier, player, gs, vi);
     }
@@ -1609,6 +1698,8 @@ export class HorseLogic {
       betRatio <= 0.6 &&
       fastRandom() < params.bluffFreq * params.aggression * 0.25 * Math.min(1.2, bluffScale)
     ) {
+      // V13: same as above — a check-raise bluff is the start of a story.
+      planBarrel(equity);
       const raiseToAmt = currentBet + (pot + toCall) * (0.85 + fastRandom() * 0.25);
       return this.raiseTo(raiseToAmt * params.sizingMultiplier, player, gs, vi);
     }
@@ -1641,7 +1732,7 @@ export class HorseLogic {
     // V12 ANTI-EXPLOIT: when the CURRENT street's bettor has been hunting
     // this horse specifically, their bets carry less real strength than the
     // line suggests — call down lighter until the hunt stops paying.
-    if (useMind && opts.v11 !== false) {
+    if (useMind && opts.v12 !== false) {
       try {
         const hist = gs.actionHistory || [];
         let bettorId: string | null = null;

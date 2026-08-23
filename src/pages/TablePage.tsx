@@ -5010,7 +5010,25 @@ export default function TablePage({
                 // must not swallow the announcement, so fall through to the
                 // toast either way.
                 {
-                  const tid = tableStateRef.current.tournamentId;
+                  /**
+                   * A FINAL TABLE IS ONLY AN EVENT IF THERE WAS EVER A SECOND
+                   * TABLE. Dan, 2026-08-23, from a seat at a Spin: "there is no
+                   * need for a final table pop up".
+                   *
+                   * The engine broadcasts `final_table` once, when 9 or fewer
+                   * players are still 'playing'. A Spin is 3-handed and a
+                   * heads-up is 2, so that condition is true from the very
+                   * first hand and the announcement fired on EVERY one of them,
+                   * before a single card was dealt. An SNG has the same
+                   * problem: one table start to finish.
+                   *
+                   * Only an MTT can genuinely reach a final table, so only an
+                   * MTT announces one. Suppressing it here rather than at the
+                   * overlay also saves two Supabase reads per Spin, since the
+                   * fetch below exists purely to populate the announcement.
+                   */
+                  const fmt = tournamentFormatRef.current;
+                  const tid = fmt === 'mtt' ? tableStateRef.current.tournamentId : null;
                   const ftName = tableStateRef.current.tableName || 'Tournament';
                   if (tid) {
                     (async () => {
@@ -5055,9 +5073,14 @@ export default function TablePage({
                       }
                     })();
                   }
-                  toast?.success?.(
-                    `Final table! ${data.payload?.playerCount ?? 9} players remain.`
-                  );
+                  // The toast sat OUTSIDE the fetch block, so it fired even
+                  // when there was nothing to announce. This is the line Dan
+                  // actually saw on a 3-handed Spin.
+                  if (fmt === 'mtt') {
+                    toast?.success?.(
+                      `Final Table! ${data.payload?.playerCount ?? 9} Players Remain.`
+                    );
+                  }
                 }
               } else if (data?.type === 'bubble_burst') {
                 // Bubble burst — players are now in the money
@@ -6285,6 +6308,18 @@ export default function TablePage({
   useEffect(() => {
     tableStateRef.current = tableState;
   }, [tableState]);
+
+  /**
+   * The resolved format, readable from inside the engine-event callback.
+   *
+   * That callback closes over its own render, so it cannot read
+   * `tournamentFormat` state directly without going stale - the same reason
+   * tableStateRef exists two lines up.
+   */
+  const tournamentFormatRef = useRef(tournamentFormat);
+  useEffect(() => {
+    tournamentFormatRef.current = tournamentFormat;
+  }, [tournamentFormat]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // HERO SEAT INVARIANT — heroSeat must agree with the players array.

@@ -43,12 +43,26 @@ function setCachedHands(userId: string, data: HandRecord[]) {
 
 type HistoryFilter = 'all' | 'won' | 'lost' | 'big-pots';
 
-/* `game_type.includes('PLO') ? 'PLO4' : 'NLH'` labelled PLO5, PLO6 and every
-   non-PLO variant in the estate as something they are not, on a hand the
-   recipient reads as a record. Anything this cannot identify is left to the
-   shared-hand default rather than asserted. */
+/* The original `game_type.includes('PLO') ? 'PLO4' : 'NLH'` labelled every
+   variant in the estate as one of two things, on a hand the recipient reads as
+   a record.
+
+   The first correction (2026-08-23) added PLO5 and PLO6 and was STILL wrong for
+   three of the variants actually running: `plo8` contains "PLO" so it was
+   shared as PLO4, and `short_deck` and `pineapple` fell through to NLH.
+   Checking the live catalogue before writing the mapping, rather than after,
+   would have caught it: nlh, plo4, plo5, plo6, plo8, short_deck, pineapple.
+
+   `ofc_pineapple` was retired the same day (migration
+   20260823_retire_ofc_pineapple_variant.sql): it was never a game this
+   platform dealt, only a mislabel on Crazy Pineapple tables.
+
+   Order still matters: PLO8 must be tested before the PLO catch-all. */
 function toShareVariant(gameType: string | undefined): ShareableHand['variant'] {
   const g = (gameType || '').toUpperCase();
+  if (g.includes('PINEAPPLE')) return 'Pineapple';
+  if (g.includes('SHORT')) return 'Short Deck';
+  if (g.includes('PLO8')) return 'PLO8';
   if (g.includes('PLO6')) return 'PLO6';
   if (g.includes('PLO5')) return 'PLO5';
   if (g.includes('PLO')) return 'PLO4';
@@ -266,7 +280,8 @@ export default function HandHistoryPage() {
       };
     });
     exportToCSV(exportData, 'hand-history.csv');
-    toast.success('Hand history exported!');
+    // It exports the LOADED hands, not the whole history. Say so.
+    toast.success(`Exported ${exportData.length} Loaded Hands`);
   };
 
   const formatDate = (dateStr: string): string => {
@@ -366,11 +381,20 @@ export default function HandHistoryPage() {
           <button
             className="export-btn"
             onClick={handleExport}
-            aria-label="Export hand history data"
+            aria-label="Export the loaded hands to CSV"
           >
             {' '}
             Export
           </button>
+        </div>
+      )}
+
+      {/* These figures cover the hands LOADED, not the account lifetime.
+          "Biggest Pot" read as an all-time record while meaning "the biggest of
+          the 25 on screen", which is the kind of number a player repeats. */}
+      {!loading && hands.length > 0 && (
+        <div className="hh-summary-scope">
+          Across The {hands.length} Hands Loaded{hasMore ? ', Load More For A Fuller Picture' : ''}
         </div>
       )}
 

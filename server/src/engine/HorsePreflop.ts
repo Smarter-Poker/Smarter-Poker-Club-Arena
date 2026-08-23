@@ -39,6 +39,9 @@ export interface PreflopIntent {
 }
 
 export interface PreflopCtx {
+  /** V13: when false, keep the V11 price-in guard's original early-return
+   *  shape (ablation only — see decidePreflopV7). Default true. */
+  v13?: boolean;
   /** percentile hand strength 0..1 (variant-aware, jittered by caller) */
   strength: number;
   position: PreflopPosition;
@@ -121,7 +124,53 @@ const CALL_VS: Record<PreflopPosition, number> = {
   bb: 0.54,
 };
 
+/**
+ * ── V13 (2026-08-23): THE PRICE-IN GUARD WAS EATING EVERY RAISE ────────────
+ *
+ * V11 added a guard so a horse can NEVER fold when the pot lays a price any
+ * two cards beat. Its comment says exactly that — "before any strength
+ * threshold can FOLD" — but it was written as `if (pricedIn) return call`,
+ * placed above every branch in the function. A guard against folding became a
+ * guard against acting.
+ *
+ * What that cost, at 1/2 with the pot including the live bet (it does):
+ *   - BTN behind 3 limpers (pot 9, toCall 2, odds 0.182) -> forced CALL.
+ *     The button limps behind with aces.
+ *   - BB facing an open to 4 with three callers (pot 19, toCall 2, odds
+ *     0.095) -> forced CALL. The single most profitable squeeze node in the
+ *     game, hard-coded to a flat.
+ *   - SB with one limper (odds 0.167) -> forced CALL.
+ * It also pre-empted the push/fold block, so a <=12bb stack that should jam
+ * called instead and surrendered all its fold equity, and it pre-empted the
+ * whole unopened branch, which is where the V10 limp-isolation layer lives —
+ * making that layer unreachable in exactly the multiway limped pots it was
+ * built to attack.
+ *
+ * The fix restores the stated intent: compute the decision normally, then
+ * substitute a call for a FOLD when the price forbids folding. Nothing else
+ * about the guard changes.
+ */
 export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
+  const out = decidePreflopV7Core(ctx);
+  if (ctx.v13 === false) return out;
+  if (out.a !== 'fold') return out;
+  const stack = ctx.stack;
+  const bb = ctx.bigBlind > 0 ? ctx.bigBlind : 1;
+  const toCall = ctx.toCall;
+  const effCall = Math.min(toCall, stack);
+  if (effCall <= 0) return out;
+  const guardOdds = effCall / (ctx.pot + effCall);
+  const isTourney = ctx.mode === 'tournament';
+  const stackBB = stack / bb;
+  const pricedIn =
+    ctx.mode !== undefined &&
+    (guardOdds <= 0.15 ||
+      (effCall <= bb && guardOdds <= 0.22) ||
+      (isTourney && stackBB <= 2 && guardOdds <= 0.34));
+  return pricedIn ? { a: 'call' } : out;
+}
+
+function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   const {
     strength: raw,
     position,
@@ -173,7 +222,9 @@ export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
       // Tournament crumbs: with <=2bb behind, the blinds will eat the stack
       // anyway — take the flip instead of blinding out.
       (isTourney && stackBB <= 2 && guardOdds <= 0.34));
-  if (pricedIn) return { a: 'call' };
+  // V13: the wrapper above applies this AFTER the decision, as a
+  // fold-replacement. Keeping the old early return only for the ablation.
+  if (pricedIn && ctx.v13 === false) return { a: 'call' };
 
   // Stack-depth texture: deep stacks reward speculative suited/connected
   // hands (implied odds); shallow stacks punish them.

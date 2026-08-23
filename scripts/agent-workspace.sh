@@ -105,6 +105,13 @@ git -C "$DIR" config user.email "254329056+Smarter-Poker@users.noreply.github.co
 # all; and with no node_modules the hooks that did run went to the network.
 bash "$ROOT/scripts/ensure-hooks.sh" 2>&1 | sed "s/^/# /" >&2 || true
 
+# The link above is shared, and npm run inside ANY worktree writes through it.
+# Twice on 2026-08-23 that left ~285 package directories empty and broke the
+# hooks in every tree at once, with only an ERR_MODULE_NOT_FOUND to go on.
+# Probe it here - the one moment an agent is guaranteed to be looking - and
+# repair rather than report.
+bash "$ROOT/scripts/check-node-modules.sh" 2>&1 | sed "s/^/# /" >&2 || true
+
 # Share the main clone's dependencies. The alternative is an npm install per
 # tree - minutes each, gigabytes across 47 trees - or a test gate that silently
 # skips, which is how a red test reaches main and blocks the bundle for all.

@@ -201,7 +201,6 @@ const GAME_TYPE_LABELS: Record<string, { name: string; color: string }> = {
   plo: { name: 'OMAHA', color: '#7c3aed' },
   flo: { name: 'FLO', color: '#eab308' },
   mixed: { name: 'MIXED', color: '#db2777' },
-  ofc: { name: 'OFC', color: '#16a34a' },
 };
 
 const BLINDS_PRESETS = [

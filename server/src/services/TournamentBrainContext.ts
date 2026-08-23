@@ -19,6 +19,7 @@
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
+import { resolvePayoutStructure, type PayoutSubject } from '../tournament/payoutStructure.js';
 
 export type TournamentFormat = 'mtt' | 'spin' | 'hu_sng';
 
@@ -64,16 +65,18 @@ export function deriveContext(
         ? 'hu_sng'
         : 'mtt';
 
-  let payouts = row.payout_structure;
-  if (typeof payouts === 'string') {
-    try {
-      payouts = JSON.parse(payouts);
-    } catch {
-      payouts = [];
-    }
-  }
-  // Spins are winner-take-all unless the structure says otherwise.
-  const spotsPaid = Array.isArray(payouts) && payouts.length > 0 ? payouts.length : format === 'spin' ? 1 : 0;
+  // V13: use the CANONICAL parser instead of a local JSON.parse. The old code
+  // only understood the array shape [{place, percentage}] and silently scored
+  // 0 paid spots for the object shape {"1": 100} that other services in this
+  // repo write and read — which made inMoney and nearBubble permanently false
+  // and left the whole bubble model inert for that tournament, degrading
+  // quietly so nobody would ever notice. It also counted [null, null] as two
+  // paid places. parsePayoutStructure rejects a structure with no place 1, a
+  // negative percentage, or percentages summing to zero, and for a Spin with a
+  // missing structure resolvePayoutStructure rebuilds it from the multiplier
+  // rather than assuming winner-take-all.
+  const places = resolvePayoutStructure(row as PayoutSubject);
+  const spotsPaid = places && places.length > 0 ? places.length : format === 'spin' ? 1 : 0;
 
   const inMoney = spotsPaid > 0 && playersLeft > 0 && playersLeft <= spotsPaid;
   const nearBubble =
@@ -104,6 +107,8 @@ export function deriveContext(
 // Cache
 // ─────────────────────────────────────────────────────────────────────────────
 
+const REFRESH_TIMEOUT_MS = 5000;
+const STUCK_MS = 60_000;
 const TTL_MS = 20_000;
 const MAX_CACHED = 500;
 
@@ -128,7 +133,14 @@ export function getTournamentBrainContext(tournamentId: string): TournamentBrain
     e = { ctx: null, fetchedAt: 0, inFlight: false };
     cache.set(tournamentId, e);
   }
-  if (!e.inFlight && now - e.fetchedAt > TTL_MS) {
+  // V13: `inFlight` is only cleared in refresh()'s finally, which never runs
+  // if the promise never settles. One hung Supabase fetch used to pin the flag
+  // for the process lifetime and freeze that tournament's ICM context — or
+  // leave it null forever if the hang was on the first attempt, so the horses
+  // played the whole event, bubble included, on the flat premium with no
+  // signal. The stuck-guard lets a later call retry regardless.
+  const stuck = e.inFlight && now - e.fetchedAt > STUCK_MS;
+  if ((!e.inFlight || stuck) && now - e.fetchedAt > TTL_MS) {
     e.inFlight = true;
     void refresh(tournamentId, e);
   }
@@ -142,24 +154,47 @@ export function __clearTournamentBrainCache(): void {
 
 async function refresh(tournamentId: string, e: CacheEntry): Promise<void> {
   try {
-    const [tRes, pRes] = await Promise.all([
-      supabase
-        .from('tournaments')
-        .select(
-          'tournament_type, variant, max_players, table_size, payout_structure, prize_pool, bounty_pool, is_pko, is_bounty'
-        )
-        .eq('id', tournamentId)
-        .maybeSingle(),
-      supabase
-        .from('tournament_players')
-        .select('chips, status')
-        .eq('tournament_id', tournamentId)
-        .limit(5000),
+    // V13: bound the whole refresh. Neither query carries an AbortSignal, and
+    // a decision never waits on this — a timeout simply keeps the last known
+    // context, which is exactly the documented fail-safe.
+    const deadline = new Promise<never>((_, rej) =>
+      setTimeout(
+        () => rej(new Error('tournament context refresh timed out')),
+        REFRESH_TIMEOUT_MS
+      ).unref?.()
+    );
+    const [tRes, pRes] = await Promise.race([
+      deadline,
+      Promise.all([
+        supabase
+          .from('tournaments')
+          .select(
+            'tournament_type, variant, max_players, table_size, payout_structure, spin_multiplier, prize_pool, bounty_pool, is_pko, is_bounty'
+          )
+          .eq('id', tournamentId)
+          .maybeSingle(),
+        supabase
+          .from('tournament_players')
+          .select('chips, status')
+          .eq('tournament_id', tournamentId)
+          .order('id', { ascending: true })
+          .limit(5000),
+      ]),
     ]);
     if (tRes.error) throw new Error(tRes.error.message);
     if (pRes.error) throw new Error(pRes.error.message);
     if (!tRes.data) {
-      e.ctx = null;
+      // V13: maybeSingle() returns null for zero rows, which includes a
+      // read-replica blip or an RLS hiccup — not only a genuinely absent
+      // tournament. This used to discard a good context mid-event, dropping
+      // the horses back to the flat premium at the worst possible moment (the
+      // bubble is exactly when query volume peaks). The catch below already
+      // treats stale as better than nothing; this now agrees with it.
+      if (e.ctx)
+        reportError(
+          new Error(`tournament ${tournamentId} read returned no row`),
+          'TournamentBrainContext.missing'
+        );
       return;
     }
     const rows = (pRes.data ?? []) as Array<{ chips: number | null; status: string | null }>;

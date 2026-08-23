@@ -86,7 +86,16 @@ export function fastRandom(): number {
   rngState ^= rngState >>> 17;
   rngState ^= rngState << 5;
   rngState >>>= 0;
-  return rngState / 0xffffffff;
+  // V13 (2026-08-23): divide by 2^32, NOT 2^32-1. xorshift32's period covers
+  // every non-zero state, so rngState hits 0xffffffff exactly once per period
+  // and this returned EXACTLY 1.0. Every consumer here is
+  // `Math.floor(fastRandom() * (n - i))`, which then yields `n - i`, so the
+  // partial Fisher-Yates swapped in `deck[n]` — undefined — and extended the
+  // array, corrupting the rest of that simulation. The undefined card reaches
+  // scoreHoldem, throws on `.rank`, and HorseLogic.decide's safety net turns
+  // it into a FOLD. Roughly one silent, unexplained fold of an arbitrary hand
+  // per 2^32 draws, fleet-wide, with no telemetry. [0, 1) is the contract.
+  return rngState / 0x100000000;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -520,7 +529,15 @@ export function connectsBoard(hole: Card[], board: Card[], shortDeck: boolean): 
   // draw like real contact.
   const all = hole.concat(board);
   const cat = Math.floor(scoreHoldem(all, all.length, shortDeck) / 0x100000);
-  if (cat >= 2) {
+  // V13: the hole cards must IMPROVE on what the board already makes. This
+  // scored the board's own hand as opponent contact, so on any paired board
+  // (~17% of flops) every holding "connected" — 32o on K K 7 returned a pair
+  // of kings — and the whole V12 board-contact conditioning became a no-op
+  // exactly where reads matter most. A pocket pair stays contact by intent.
+  const boardCat =
+    board.length > 0 ? Math.floor(scoreHoldem(board, board.length, shortDeck) / 0x100000) : 0;
+  const isPocketPair = hole.length === 2 && hole[0].rank === hole[1].rank;
+  if (cat >= 2 && (cat > boardCat || isPocketPair)) {
     // A pocket pair UNDER every board card is a hidden non-connector — but it
     // still bets sometimes; treat pocket pairs as contact.
     return cat;
@@ -554,6 +571,120 @@ export function connectsBoard(hole: Card[], board: Card[], shortDeck: boolean): 
  * supported variants. Draws are priced naturally because the runout completes
  * the board every iteration.
  */
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// V13 EXACT BAND SAMPLING (2026-08-23)
+// ═══════════════════════════════════════════════════════════════════════════════
+// The band sampler used REJECTION sampling: redraw uniformly up to `tries`
+// times and, if nothing landed in the band, keep the CLOSEST MISS at full
+// weight. For a tight read that is a disaster, because the tighter the band the
+// lower the per-draw hit rate and so the more often the fallback fires — and
+// the fallback's expected value is the best of ~15 draws that all FAILED the
+// band, i.e. a hand just under it.
+//
+// Measured, hero AQs on A-K-7 against a [0.85, 1.0] read (27 legal combos, 2.5%
+// of the deck): true equity 55.4%, sampler 72.4% — SEVENTEEN POINTS too high,
+// systematically, in hero's favour. A horse facing a 4-bet priced its hand as a
+// crush and called off.
+//
+// A two-card range is small enough to enumerate exactly, so there is no reason
+// to sample it by rejection at all. The tables below hold every combo sorted by
+// preflop percentile; a band is then a CONTIGUOUS SLICE found by binary search,
+// and sampling is one uniform draw from that slice plus a collision check
+// against the cards already dealt. Exact, and cheaper than the loop it replaces.
+// Omaha keeps the old path — its combo space is far too large to enumerate.
+
+type ComboTable = { scores: Float64Array; c1: Card[]; c2: Card[] };
+
+function buildComboTable(shortDeck: boolean): ComboTable {
+  const src = shortDeck ? SHORT_DECK_CARDS : FULL_DECK;
+  const rows: Array<{ s: number; a: Card; b: Card }> = [];
+  for (let i = 0; i < src.length; i++) {
+    for (let j = i + 1; j < src.length; j++) {
+      rows.push({ s: holdemPreflopScore(src[i], src[j], shortDeck), a: src[i], b: src[j] });
+    }
+  }
+  rows.sort((x, y) => x.s - y.s);
+  const scores = new Float64Array(rows.length);
+  const c1: Card[] = new Array(rows.length);
+  const c2: Card[] = new Array(rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    scores[i] = rows[i].s;
+    c1[i] = rows[i].a;
+    c2[i] = rows[i].b;
+  }
+  return { scores, c1, c2 };
+}
+
+let comboFull: ComboTable | null = null;
+let comboShort: ComboTable | null = null;
+const comboTable = (shortDeck: boolean): ComboTable => {
+  if (shortDeck) return (comboShort ??= buildComboTable(true));
+  return (comboFull ??= buildComboTable(false));
+};
+
+/** First index whose score is >= v. */
+function lowerBound(a: Float64Array, v: number): number {
+  let lo = 0;
+  let hi = a.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (a[mid] < v) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** Availability scratch, indexed by card id — reused, never allocated. */
+const cardAvail = new Uint8Array(64);
+const cardId = (c: Card): number => ((RANK_VALUES[c.rank] - 2) << 2) | (SUIT_INDEX[c.suit] ?? 0);
+
+/**
+ * Place an in-band two-card hand into deck[windowStart..windowStart+1] by
+ * swapping it in from the undealt remainder. Returns false when the band has no
+ * combo left that avoids the cards already dealt, in which case the caller
+ * keeps its uniform draw.
+ */
+function placeBandCombo(
+  deck: Card[],
+  windowStart: number,
+  n: number,
+  band: [number, number],
+  shortDeck: boolean
+): boolean {
+  const tbl = comboTable(shortDeck);
+  const lo = lowerBound(tbl.scores, band[0]);
+  const hi = lowerBound(tbl.scores, band[1] + 1e-12);
+  const span = hi - lo;
+  if (span <= 0) return false;
+
+  cardAvail.fill(0);
+  for (let i = windowStart; i < n; i++) cardAvail[cardId(deck[i])] = 1;
+
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const idx = lo + Math.floor(fastRandom() * span);
+    const a = tbl.c1[idx];
+    const b = tbl.c2[idx];
+    if (!cardAvail[cardId(a)] || !cardAvail[cardId(b)]) continue;
+    // Swap both into the window.
+    for (let k = 0; k < 2; k++) {
+      const want = k === 0 ? a : b;
+      const slot = windowStart + k;
+      if (deck[slot] === want) continue;
+      for (let j = slot; j < n; j++) {
+        if (deck[j] === want) {
+          const tmp = deck[slot];
+          deck[slot] = deck[j];
+          deck[j] = tmp;
+          break;
+        }
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
 export function simulateEquity(
   holeCards: Card[],
   boardCards: Card[],
@@ -667,56 +798,72 @@ export function simulateEquity(
         const distOf = (s: number): number =>
           s < band[0] ? band[0] - s : s > band[1] ? s - band[1] : 0;
 
-        const narrow = band[1] - band[0] < 0.45;
-        const tries = vi.isOmaha ? (narrow ? 6 : 4) : narrow ? 14 : 6;
-
-        let bestDist = distOf(scoreOf(oppCards));
-        let bestKeys: string[] | null = null; // null = current window is best
-        if (bestDist > 0) {
-          bestKeys = [];
-          for (let i = 0; i < oppHole; i++) bestKeys.push(cardKey(oppCards[i]));
-          for (let t = 0; t < tries && bestDist > 0; t++) {
-            // Redraw the window uniformly from the remainder of the deck.
-            for (let i = 0; i < oppHole; i++) {
-              const slot = windowStart + i;
-              const j = slot + Math.floor(fastRandom() * (n - slot));
-              const tmp = deck[slot];
-              deck[slot] = deck[j];
-              deck[j] = tmp;
-              oppCards[i] = deck[slot];
-            }
-            const d = distOf(scoreOf(oppCards));
-            if (d < bestDist) {
-              bestDist = d;
-              if (d === 0) {
-                bestKeys = null; // current window is in-band — done
-              } else {
-                bestKeys = [];
-                for (let i = 0; i < oppHole; i++) bestKeys.push(cardKey(oppCards[i]));
-              }
-            }
+        // V13: NLH-family two-card ranges are sampled EXACTLY from the
+        // enumerated combo table — no rejection, no closest-miss fallback.
+        // Measured bias of the old path on a [0.85,1.0] read: +17 equity
+        // points in hero's favour. Omaha keeps rejection sampling because its
+        // combo space cannot be enumerated.
+        if (!vi.isOmaha && oppHole === 2) {
+          if (placeBandCombo(deck, windowStart, n, band, vi.isShortDeck)) {
+            oppCards[0] = deck[windowStart];
+            oppCards[1] = deck[windowStart + 1];
           }
-          // Restore the best-seen draw into the window if the final redraw
-          // was not it (cards were displaced into [windowStart, n) by swaps).
-          if (bestKeys) {
-            for (let i = 0; i < oppHole; i++) {
-              const slot = windowStart + i;
-              if (cardKey(deck[slot]) === bestKeys[i]) {
+          // If the band has nothing left that avoids the dealt cards, the
+          // uniform draw already in the window stands — the same fail-safe
+          // the old code had, but now it is the rare case rather than the
+          // majority one.
+        } else {
+          const narrow = band[1] - band[0] < 0.45;
+          const tries = vi.isOmaha ? (narrow ? 6 : 4) : narrow ? 14 : 6;
+
+          let bestDist = distOf(scoreOf(oppCards));
+          let bestKeys: string[] | null = null; // null = current window is best
+          if (bestDist > 0) {
+            bestKeys = [];
+            for (let i = 0; i < oppHole; i++) bestKeys.push(cardKey(oppCards[i]));
+            for (let t = 0; t < tries && bestDist > 0; t++) {
+              // Redraw the window uniformly from the remainder of the deck.
+              for (let i = 0; i < oppHole; i++) {
+                const slot = windowStart + i;
+                const j = slot + Math.floor(fastRandom() * (n - slot));
+                const tmp = deck[slot];
+                deck[slot] = deck[j];
+                deck[j] = tmp;
                 oppCards[i] = deck[slot];
-                continue;
               }
-              for (let j = slot + 1; j < n; j++) {
-                if (cardKey(deck[j]) === bestKeys[i]) {
-                  const tmp = deck[slot];
-                  deck[slot] = deck[j];
-                  deck[j] = tmp;
-                  break;
+              const d = distOf(scoreOf(oppCards));
+              if (d < bestDist) {
+                bestDist = d;
+                if (d === 0) {
+                  bestKeys = null; // current window is in-band — done
+                } else {
+                  bestKeys = [];
+                  for (let i = 0; i < oppHole; i++) bestKeys.push(cardKey(oppCards[i]));
                 }
               }
-              oppCards[i] = deck[slot];
+            }
+            // Restore the best-seen draw into the window if the final redraw
+            // was not it (cards were displaced into [windowStart, n) by swaps).
+            if (bestKeys) {
+              for (let i = 0; i < oppHole; i++) {
+                const slot = windowStart + i;
+                if (cardKey(deck[slot]) === bestKeys[i]) {
+                  oppCards[i] = deck[slot];
+                  continue;
+                }
+                for (let j = slot + 1; j < n; j++) {
+                  if (cardKey(deck[j]) === bestKeys[i]) {
+                    const tmp = deck[slot];
+                    deck[slot] = deck[j];
+                    deck[j] = tmp;
+                    break;
+                  }
+                }
+                oppCards[i] = deck[slot];
+              }
             }
           }
-        }
+        } // end Omaha rejection-sampling branch (V13)
       }
 
       // ═══ V12 BOARD-CONTACT CONDITIONING (NLH family, flop+) ═══
@@ -727,7 +874,26 @@ export function simulateEquity(
       // checked line gets its monsters down-sampled (capped stays capped).
       const read = oppReads ? oppReads[o] : null;
       if (read && !vi.isOmaha && boardCards.length >= 3) {
+        // V13: the redraw must STAY IN THE READ. It used to draw uniformly
+        // from the whole remaining deck and never re-test the band, so any
+        // in-band hand that failed to connect was replaced by an
+        // unconditioned random one — the intersection "in band AND
+        // connecting" was never sampled and the model collapsed to "anything
+        // that connects". A 3-bettor's c-betting range acquired bottom two
+        // pair and 72o, inflating villain equity and folding the horse's top
+        // pair on a dry board. When a band is present the redraw now draws
+        // from the band; without one it stays uniform, as before.
+        const band13 = oppBands ? oppBands[o] : null;
         const redraw = () => {
+          if (
+            band13 &&
+            oppHole === 2 &&
+            placeBandCombo(deck, windowStart, n, band13, vi.isShortDeck)
+          ) {
+            oppCards[0] = deck[windowStart];
+            oppCards[1] = deck[windowStart + 1];
+            return;
+          }
           for (let i = 0; i < oppHole; i++) {
             const slot = windowStart + i;
             const j = slot + Math.floor(fastRandom() * (n - slot));

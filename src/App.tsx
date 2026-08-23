@@ -188,6 +188,7 @@ function TableRouteSurface() {
 // Imported from centralized storage keys
 import { STORAGE_KEYS } from './lib/storage';
 import { reportError } from './utils/errorReporter';
+import SlugEnforcer from './components/common/SlugEnforcer';
 
 export default function App() {
   // Check if intro video has been shown this session
@@ -384,6 +385,7 @@ export default function App() {
               </>
             }
           >
+            <SlugEnforcer />
             <Routes>
               {/* ═══════════════════════════════════════════════════════════════
                         PUBLIC ROUTES (No Auth Required)

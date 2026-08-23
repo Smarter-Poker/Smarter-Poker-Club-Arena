@@ -85,33 +85,28 @@ function scan() {
  *   STATE_INTEGRITY_VIOLATION / PRE_ACTION_EXECUTED / HAND_WON /
  *   SHOWDOWN_START / WS_RECONNECTING / TRANSACTION_LOGGED
  *     Superseded by the server-authoritative snapshot during the migration.
- *   BREAK_START / BREAK_END / TOURNAMENT_BREAK / TOURNAMENT_BREAK_END /
- *   TABLE_BALANCE_EXECUTED / RAKEBACK_DISTRIBUTED
- *     Tournament and rakeback engine events whose onEvent callback in
- *     ServerTableEngineBase is a console.log, so they never leave the server.
- *     Wiring them is real work with real UI consequences; it is tracked here
- *     rather than pretended away.
+ *
+ * REVIVED 2026-08-23, and removed from this list: BREAK_START, BREAK_END,
+ * TOURNAMENT_BREAK, TOURNAMENT_BREAK_END, TABLE_BALANCE_EXECUTED and
+ * RAKEBACK_DISTRIBUTED. The first four now come off the server's existing
+ * `t-break-<id>` broadcast through tournamentEventBridge; the last two are
+ * emitted on the hub by ServerTableEngineBase, whose callbacks used to be a
+ * bare console.log. The list shrank, which is what it is for.
  */
 const KNOWN_DEAD = new Set([
   'ACTION_REJECTED',
   'ACTION_TIMER_EXPIRED',
   'ACTION_TIMER_STARTED',
-  'BREAK_END',
-  'BREAK_START',
   'HAND_WON',
   'PRE_ACTION_EXECUTED',
-  'RAKEBACK_DISTRIBUTED',
   'SHOWDOWN_START',
   'STATE_INTEGRITY_VIOLATION',
   'STRADDLE_TOGGLED',
-  'TABLE_BALANCE_EXECUTED',
   'TIME_BANK_DEPLETED',
   'TIME_BANK_EXPIRED',
   'TIME_BANK_EXTENDED',
   'TIME_BANK_EXTENSION_DENIED',
   'TIME_BANK_STOPPED',
-  'TOURNAMENT_BREAK',
-  'TOURNAMENT_BREAK_END',
   'TRANSACTION_LOGGED',
   'WS_RECONNECTING',
 ]);

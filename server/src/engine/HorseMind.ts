@@ -117,6 +117,26 @@ const MAX_TRACKED_PLAYERS = 4000;
 const MAX_SEEN_ACTIONS = 60_000;
 const MAX_HAND_FLAGS = 20_000;
 
+/**
+ * V12.3: drop the oldest entries until `size` is back under `cap` (a quarter
+ * of the cap is reclaimed, so this amortizes to O(1) per observe call).
+ * Returns the evicted keys so a parallel dirty-set can be pruned with them.
+ * Map and Set iterate in insertion order, which is what makes "oldest" here
+ * mean "least recently first seen" — and what keeps hands in flight, always
+ * among the newest entries, safe from eviction.
+ */
+function evictOldest<K>(store: Map<K, unknown> | Set<K>, cap: number): K[] {
+  if (store.size <= cap) return [];
+  const target = Math.max(0, Math.floor(cap * 0.75));
+  const evicted: K[] = [];
+  for (const key of store.keys() as IterableIterator<K>) {
+    if (store.size - evicted.length <= target) break;
+    evicted.push(key);
+  }
+  for (const key of evicted) (store as Map<K, unknown>).delete(key);
+  return evicted;
+}
+
 /** A spare, isolated set of HorseMind's state containers (V12.2). Opaque to
  *  callers — create with HorseMind.createSandbox(), use via runInSandbox(). */
 export interface HorseMindSandbox {
@@ -155,23 +175,41 @@ export class HorseMind {
   static observe(history: ActionRecord[] | undefined, _players: SeatPlayer[]): void {
     if (!history || history.length === 0) return;
 
-    // Bounded-memory guards: generation-swap when limits are hit.
-    if (this.seenActions.size > MAX_SEEN_ACTIONS) this.seenActions.clear();
-    if (this.handFlags.size > MAX_HAND_FLAGS) this.handFlags.clear();
-    if (this.stats.size > MAX_TRACKED_PLAYERS) {
-      this.stats.clear();
-      this.dirty.clear(); // stale ids — the DB merge is GREATEST-monotonic anyway
-    }
-
     // The first action's timestamp identifies the hand (stable across turns).
     const handKey = `${history[0].timestamp}:${history[0].userId}`;
+
+    // ── BOUNDED-MEMORY GUARDS (V12.3: evict oldest, never clear) ───────────
+    // observe() runs at the TOP OF EVERY DECISION and many tables interleave,
+    // so a wholesale .clear() could land in the middle of any hand in flight.
+    // Every one of them corrupts data when it does, permanently, because the
+    // DB merge is GREATEST-monotonic — an inflated counter never comes back:
+    //   - clearing seenActions mid-hand makes this hand's already-counted
+    //     actions look new again, double-counting aggr/passive/folds/facedAggr,
+    //     the recency window, AND the pair counters;
+    //   - clearing handFlags mid-hand lets `hands` and `vpip` fire twice for
+    //     one hand, so VPIP can exceed hands;
+    //   - clearing stats mid-hand leaves the hand flag set, so the wiped
+    //     player accumulates actions against hands = 0.
+    // A hand-boundary check cannot fix this (with N tables interleaved the
+    // "current" hand changes on nearly every call). Evicting the OLDEST
+    // entries does: Map and Set both iterate in insertion order, and a hand in
+    // flight is by definition among the most recently inserted. Dropping the
+    // oldest quarter keeps the caps honest and cannot touch live hands.
+    evictOldest(this.seenActions, MAX_SEEN_ACTIONS);
+    evictOldest(this.handFlags, MAX_HAND_FLAGS);
+    if (this.stats.size > MAX_TRACKED_PLAYERS) {
+      // Stats are keyed by player, not by hand, so eviction drops the
+      // least-recently-first-seen opponents. Their dirty entries go too — the
+      // DB already holds what was flushed, and the merge is monotonic.
+      for (const id of evictOldest(this.stats, MAX_TRACKED_PLAYERS)) this.dirty.delete(id);
+    }
+    if (this.pairs.size > this.MAX_PAIRS) {
+      for (const k of evictOldest(this.pairs, this.MAX_PAIRS)) this.dirtyPairs.delete(k);
+    }
+
     let preflopRaises = 0;
     // V12 anti-exploit: who opened this hand, and who bet each street —
     // needed to attribute 3-bets and bet-raises to (attacker, victim) pairs.
-    if (this.pairs.size > this.MAX_PAIRS) {
-      this.pairs.clear();
-      this.dirtyPairs.clear(); // stale keys — the DB merge is GREATEST-monotonic anyway
-    }
     let openerId: string | null = null;
     let streetBettor: string | null = null;
     let curStage: string = 'preflop';
@@ -281,12 +319,21 @@ export class HorseMind {
         if (isAggr && preflopRaises === 0) openerId = a.userId;
       } else {
         if (isNew && streetBettor && a.userId !== streetBettor) {
-          const p = pairOf(a.userId, streetBettor);
-          if (a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise === true)) {
+          // V12.3: classify FIRST. pairOf() creates the entry and marks it
+          // dirty, so calling it before the branch minted {0,0,0,0} rows for
+          // every non-matching action (a short all-in, a check after a stale
+          // bettor). Those rows were flushed to horse_mind_pairs and consumed
+          // the MAX_PAIRS budget, whose overflow does a FULL clear() —
+          // evicting genuine hunter profiles to make room for empty ones.
+          const isRaiseOver =
+            a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise === true);
+          const isPassiveResponse = a.action === 'call' || a.action === 'fold';
+          if (isRaiseOver) {
+            const p = pairOf(a.userId, streetBettor);
             p.nR++;
             p.oppR++;
-          } else if (a.action === 'call' || a.action === 'fold') {
-            p.oppR++;
+          } else if (isPassiveResponse) {
+            pairOf(a.userId, streetBettor).oppR++;
           }
         }
         if (isAggr) streetBettor = a.userId;

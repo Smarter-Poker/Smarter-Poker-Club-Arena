@@ -808,7 +808,7 @@ export class HorseLogic {
 
     // V12 ANTI-EXPLOIT: is the raiser hunting THIS horse? Best-effort.
     let targeted = 0;
-    if (opts.v11 !== false && lastRaiserSeat >= 0) {
+    if (opts.mind !== false && opts.v11 !== false && lastRaiserSeat >= 0) {
       try {
         const raiser = gs.players.find((p) => p.seat === lastRaiserSeat);
         if (raiser && raiser.user_id !== player.user_id) {
@@ -1044,7 +1044,13 @@ export class HorseLogic {
     opts: HorseDecideOpts = {}
   ): HorseDecision {
     const useSizeReads = opts.v7SizeReads ?? useV7;
-    const useBarrels = opts.v7Barrels ?? useV7;
+    // V12.3: barrel plans live in HorseMind.plans, so they must obey
+    // `mind:false` like every other mind read/write. They did not, which meant
+    // an ablation claiming to disable the mind still ran coherent multi-street
+    // plans — and any caller running synthetic hands wrote plan keys into the
+    // live map, whose 8000-key overflow wipes the barrel plan of every hand in
+    // progress on every live table.
+    const useBarrels = (opts.v7Barrels ?? useV7) && opts.mind !== false;
     const useCounterAdapt = opts.v7CounterAdapt ?? useV7;
     const useAdaptiveMC = opts.v7AdaptiveMC ?? useV7;
     const useV8 = opts.v8 !== false;

@@ -468,8 +468,18 @@ export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 's
   };
 }
 
-/** The same spin / heads-up classification the card grid used. */
+/**
+ * The same spin / heads-up classification the card grid used — now asking the
+ * ROW what it is, and only guessing from the name when the column is absent.
+ * See tournamentVariant in src/utils/tournamentFilters.ts for why.
+ */
 export function classifyTournament(t: LobbyTournamentRow): 'mtt' | 'spin' | 'sng' {
+  const v = String((t as { variant?: unknown }).variant ?? '').toLowerCase();
+  if (v === 'spin') return 'spin';
+  if (v === 'sng') return 'sng';
+  // Present and not a spin means NOT A SPIN, whatever the name says.
+  if (v) return (t.max_players || 0) <= 10 ? 'sng' : 'mtt';
+
   const n = (t.name || '').toLowerCase();
   if (n.includes('spin')) return 'spin';
   if (n.includes('sng') || (t.max_players || 0) <= 10) return 'sng';

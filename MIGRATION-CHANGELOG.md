@@ -13455,3 +13455,71 @@ historical event rather than an active leak; the three payouts since the
 baseline are fully explained by their recipients, and there is no single
 transaction of that size. It wants a targeted audit of the 2026-08-21 pool
 consolidation, with the watchdog now able to run while that happens.
+
+## Cowork session 2026-08-23 (17) — A UNION CLUB SAW THE UNION'S TABLES AND NONE OF ITS TOURNAMENTS
+
+Dan, from Shark Club's lobby: "YOU SAY SPINS ARE OPEN AND RUNNING, BUT THE
+CLUBS CAN'T SEE ANY SPINS, HEADS UP OR MTT'S ANYWHERE... THIS HAS GOT TO STOP
+HAPPENING!" — and then the same from Club JAQK.
+
+**`get_club_home` carried the union scope TWICE, and only one copy was ever
+fixed.**
+
+```
+tables       THEN (union_id = v_union_id OR (club_id = v_club.id AND is_private))
+tournaments  THEN (club_id = v_club.id AND is_private = true)          <- no union
+```
+
+Two clauses fifteen lines apart, meant to say the same thing. Somebody fixed
+the first and did not notice the second. For a union club that means every
+union cash table and only its OWN PRIVATE tournaments — of which Shark Club
+has none.
+
+Measured before: `get_club_home('25450')` returned **43 tables and ZERO
+tournaments**, while the union held 36 joinable Spins, 33 MTTs and 21 heads-up
+games, every one public and readable. Exactly the screenshot: "42 Games Are
+Open In This Club, Just None Of This Type."
+
+**It also explains the intermittency** Dan reported earlier — "sometimes it
+displays, then it disappears." This RPC is the FAST PATH that paints first;
+the client's own union query is authoritative and _does_ carry the union
+branch. On a healthy database the real query overwrote the empty fast paint
+and the games appeared. When it timed out — repeatedly, all day — the empty
+paint was all that survived.
+
+**A grep said the union branch was present.** It was matching the tables line
+two lines above. Running the RPC is what caught it; reading it did not.
+
+### The hardening, which is the part that matters
+
+The missing branch is the symptom. The disease is that the rule was **writable
+twice**, and this is at least the second time the copies drifted. So:
+
+- **One predicate.** `fn_club_home_in_scope(...)` is now the only statement of
+  the rule and both lists call it. A future edit cannot fix one and miss the
+  other, because there is no longer an "other". Written as plain SQL IMMUTABLE
+  so Postgres inlines it rather than calling it per row.
+- **A live parity check.** `fn_club_home_scope_parity()` lists any union club
+  whose club-home returns zero tournaments while its union is running some.
+  Empty is healthy.
+- **Assertions that fail on regression**: the shared scope must appear exactly
+  twice in `get_club_home` (once per list), no union club may be blind, and
+  the RPC must still return `variant`.
+
+### And the lobby stopped guessing
+
+Neither client query selected `variant`, so a Spin was identified by whether
+its **name contained "spin"**. Both selects now carry the column and both
+classifiers prefer it — including when it says _not_ a spin. My own first cut
+of that fix was wrong and a test I wrote caught it: with `variant='freezeout'`
+a "Spinnaker Special" still fell through to the name and filed under Spins.
+The column is authoritative when present; the heuristic survives only for
+callers still passing older projections, because removing it would turn a
+wrong tab into an empty one.
+
+Verified after: Shark Club and Club JAQK both return **identical** lists — 88
+tournaments (33 Spins, 22 heads-up), 43 tables — and the parity check reports
+zero blind clubs. Because the fix is in the shared RPC it covers every union
+club by construction, not one club at a time.
+
+9 new tests. 294 files / 3,623 green.

@@ -78,33 +78,109 @@ describe('a standby must NOT promote itself when it cannot reach the database', 
   });
 });
 
-describe('a leader keeps leading when it cannot reach the database', () => {
+describe('an incumbent leader keeps leading when it cannot reach the database', () => {
+  /**
+   * These four cases used to assert that a process which has NEVER been
+   * granted anything leads anyway, because the boot default was 'leader'.
+   *
+   * That is not a fail-open, it is an assumption, and on 2026-08-23 it cost
+   * hours of production: two containers served engine.smarter.poker at once,
+   * BOTH reporting leadership.role='leader', with the fleet split 14 tables to
+   * 10 — the exact 404 / close-4404 state the Caddyfile exists to prevent. The
+   * second container booted while the database was saturated, so its first
+   * claim did not resolve for a long time, and for all of that time it
+   * answered /health with 200 and Caddy routed players to it.
+   *
+   * The fail-open these tests are really about is worth keeping and is kept:
+   * an instance that HAS been granted leadership holds it through a blip. What
+   * changes is where the process starts. The asymmetry is the point — an
+   * incumbent retains, a newcomer does not assume.
+   */
+  const becomeLeader = async () => {
+    rpc.mockResolvedValue(granted);
+    const mod = await load();
+    expect(await mod.renewLeadership()).toBe('leader');
+    return mod;
+  };
+
   it('leads when the RPC errors', async () => {
+    const { renewLeadership, isLeader } = await becomeLeader();
     rpc.mockResolvedValue({ data: null, error: { message: 'fetch failed' } });
-    const { renewLeadership, isLeader } = await load();
     await expect(renewLeadership()).resolves.toBe('leader');
     expect(isLeader()).toBe(true);
   });
 
   it('leads when the RPC throws', async () => {
+    const { renewLeadership } = await becomeLeader();
     rpc.mockRejectedValue(new Error('ETIMEDOUT'));
-    const { renewLeadership } = await load();
     await expect(renewLeadership()).resolves.toBe('leader');
   });
 
   it('leads when the RPC returns nothing usable', async () => {
+    const { renewLeadership } = await becomeLeader();
     rpc.mockResolvedValue({ data: [], error: null });
-    const { renewLeadership } = await load();
     await expect(renewLeadership()).resolves.toBe('leader');
   });
+});
 
-  it('a lone instance in an outage behaves exactly as it does today', async () => {
-    // Boot default is 'leader', so a single container through a database
-    // outage keeps dealing -- which is the behaviour in production right now.
+describe('a newcomer does not assume what it has not been granted', () => {
+  it('starts as a standby, so it answers 503 until it wins the election', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'fetch failed' } });
+    const { isLeader } = await load();
+    // Before any claim resolves. This is the window the second container sat
+    // in while Caddy sent it traffic.
+    expect(isLeader()).toBe(false);
+  });
+
+  it('will not promote while another instance is known to hold it', async () => {
+    rpc.mockResolvedValue(refused);
+    const { renewLeadership, isLeader } = await load();
+    expect(await renewLeadership()).toBe('standby');
+    // Now the database goes away entirely. 'other' was named as holder, so
+    // silence is not evidence that it went away.
+    rpc.mockRejectedValue(new Error('down'));
+    for (let i = 0; i < 10; i++) await renewLeadership();
+    expect(isLeader()).toBe(false);
+  });
+});
+
+describe('but a fleet with nobody running it is worse than either', () => {
+  /**
+   * The cost of starting humble is that a single-engine deployment on an
+   * unreachable database would stay a standby for ever and serve 503 —
+   * "degraded" turned into "down". So genuine silence, and only genuine
+   * silence, still promotes: no answer has ever named a holder.
+   */
+  it('promotes a lone instance after three unanswerable claims', async () => {
     rpc.mockRejectedValue(new Error('down'));
     const { renewLeadership, isLeader } = await load();
+    expect(await renewLeadership()).toBe('standby');
+    expect(await renewLeadership()).toBe('standby');
     expect(await renewLeadership()).toBe('leader');
     expect(isLeader()).toBe(true);
+  });
+
+  it('promotes when the claim keeps resolving to nobody at all', async () => {
+    // An empty row set used to promote on the FIRST call: `if (!row || ...)`.
+    // No row is not a grant — but sustained silence is still an empty fleet.
+    rpc.mockResolvedValue({ data: [], error: null });
+    const { renewLeadership } = await load();
+    expect(await renewLeadership()).toBe('standby');
+    expect(await renewLeadership()).toBe('standby');
+    expect(await renewLeadership()).toBe('leader');
+  });
+
+  it('a grant resets the streak, so an intermittent database cannot stack it', async () => {
+    rpc.mockRejectedValue(new Error('down'));
+    const { renewLeadership } = await load();
+    await renewLeadership();
+    await renewLeadership();
+    rpc.mockResolvedValue(refused); // somebody answered: 'other' holds it
+    expect(await renewLeadership()).toBe('standby');
+    rpc.mockRejectedValue(new Error('down'));
+    // Streak restarts AND a holder is now known, so no promotion.
+    expect(await renewLeadership()).toBe('standby');
+    expect(await renewLeadership()).toBe('standby');
   });
 });
 

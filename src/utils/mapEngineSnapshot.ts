@@ -341,7 +341,16 @@ export function mapEngineSnapshot(
     disconnectStates: s.disconnect_states ?? {},
     // Phase 2 T1-01: winners with net amount. Server emits winners[] with
     // total pot received per winner. We look up the player's totalInvested
-    // to compute net profit (what the client wants to show as "+N").
+    // to compute net profit (what the client shows as "+N" / "-N").
+    //
+    // Dan 2026-08-23: this is SIGNED, and used to be wrapped in Math.max(0,...).
+    // Winning a pot is not the same as making money on it. Chop a pot after the
+    // rake comes off the top and a "winner" can take back less than they put
+    // in - exactly the case Dan named ("+XXX or -XXX if the pot was chopped and
+    // rake was removed"). The clamp turned that real loss into a flat 0, and
+    // because the float only renders for a POSITIVE amount it then showed
+    // nothing at all: the one hand where a player most wants to know what
+    // happened to their chips was the one hand that told them nothing.
     winners: (s.winners ?? []).map((w) => {
       const p = s.players.find((pp) => pp.user_id === w.user_id);
       const invested = p?.totalInvested ?? 0;
@@ -349,7 +358,7 @@ export function mapEngineSnapshot(
         userId: w.user_id,
         seat: p?.seat ?? 0,
         amount: w.amount,
-        netAmount: Math.max(0, w.amount - invested),
+        netAmount: w.amount - invested,
       };
     }),
     // Bible V8 §4.2 — Waiting-for-BB user IDs (Walkthrough Step 4 fix 2026-04-29)

@@ -302,6 +302,31 @@
   border: none;
   background: transparent;
   box-shadow: none;
+
+  /* THE ONE COMPOSED SCALE. Every rule that draws bust art reads this and
+     nothing else, so the four of them cannot drift apart:
+
+         .seat__avatar-img                     (the art)
+         .seat__avatar-img:hover               (zoom)
+         .seat__avatar-rive                    (the rig that stands in for it)
+         .seat__avatar--holo::after            (the scan-line mask)
+
+     They used to each write `scale(var(--sp-bust-scale) ...)` by hand, on the
+     stated grounds that "because both read the SAME variables, they cannot
+     drift". That was true when written and became false the moment
+     --sp-bust-gain was introduced on 2026-08-23 and added to exactly one of
+     them: hover changed a corrected character's SIZE instead of zooming it,
+     and the holo mask no longer lined up with the character it was masking.
+     A shared variable is the only version of "cannot drift" that survives
+     someone adding a term.
+
+     --sp-bust-gain-max is the containment escape hatch. The top rail has the
+     BBJ banner directly above it and needs an upper bound, but it must still
+     be free to shrink an oversized character, so it caps rather than cancels.
+     99 is "no cap" for every other seat. */
+  --sp-bust-effective-scale: calc(
+    var(--sp-bust-scale, 1.45) * min(var(--sp-bust-gain, 1), var(--sp-bust-gain-max, 99))
+  );
 }
 
 .seat__avatar--bust .seat__avatar-img {
@@ -327,8 +352,7 @@
      SeatSlot.tsx); --sp-bust-scale stays the one global number every
      breakpoint and the top rail already tune. Multiplying keeps a single
      owner for each concern instead of two rules fighting over one value. */
-  transform: translateY(var(--sp-bust-clip))
-    scale(calc(var(--sp-bust-scale, 1.45) * var(--sp-bust-gain, 1)));
+  transform: translateY(var(--sp-bust-clip)) scale(var(--sp-bust-effective-scale, 1.45));
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.55));
 }
 
@@ -349,9 +373,18 @@
 /* Hover zoom must compose with the base bust scale (was scale(1.08) alone,
    which would SHRINK a bust from 1.45 back to 1.08) AND keep the
    clip-compensating translate, or the art would jump up off the name box
-   on hover. */
+   on hover.
+
+   Dan 2026-08-23: it is a MULTIPLIER now, not `+ 0.1`. An additive nudge on a
+   value that varies per character is not a constant zoom - and worse, this
+   rule restated the base scale by hand and so missed --sp-bust-gain entirely,
+   which meant every corrected character CHANGED SIZE on hover rather than
+   zooming: one scaled down jumped bigger, one scaled up shrank. Reading the
+   shared --sp-bust-effective-scale makes hover exactly 8% larger than rest for
+   everyone, and there is no second copy of the formula to forget. */
 .seat:not(.seat--empty):not(.seat--folded) .seat__avatar--bust:hover .seat__avatar-img {
-  transform: translateY(var(--sp-bust-clip)) scale(calc(var(--sp-bust-scale, 1.45) + 0.1));
+  transform: translateY(var(--sp-bust-clip))
+    scale(calc(var(--sp-bust-effective-scale, 1.45) * 1.08));
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.6)) brightness(1.1);
 }
 
@@ -1077,6 +1110,16 @@
   z-index: 40;
   pointer-events: none;
   animation: seat-net-win-float 2500ms cubic-bezier(0.2, 0.7, 0.4, 1) forwards;
+}
+
+/* Dan 2026-08-23: a "winner" can still be down on the hand - chop a pot after
+   the rake comes off and the net is negative. Same float, same timing, but it
+   must not be celebration gold, or the player reads a loss as a win at a
+   glance. Muted red, and the glow comes off: this is information, not a
+   trophy. */
+.seat__net-win--loss {
+  color: #ff8a7a;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.75);
 }
 
 @keyframes seat-net-win-float {
@@ -2725,12 +2768,14 @@
    responsive `.seat` rules (0,1,0) at every width. */
 .seat-wrapper--top .seat {
   --seat-avatar-base: 56px;
-  /* The per-character gain is DELIBERATELY cancelled here. The whole reason
-     this seat is capped is that it has nothing above it but the BBJ banner,
-     and a doubled bust would climb straight into it - the exact regression the
-     comment above was written to prevent. Containment wins over consistency at
-     this one seat, and only at this one seat. */
-  --sp-bust-gain: 1;
+  /* The per-character gain is CAPPED here, not cancelled. This seat has nothing
+     above it but the BBJ banner, so it must never let a character grow into it.
+     But cancelling to exactly 1 also threw away every correction that SHRINKS
+     an oversized character - the one direction that can only ever help a seat
+     whose whole problem is vertical room. It was written when a gain could be
+     2, and a cap is what that actually needed.
+     Now: shrink freely, never grow. */
+  --sp-bust-gain-max: 1;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

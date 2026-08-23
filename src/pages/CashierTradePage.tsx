@@ -35,6 +35,7 @@ import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import ClubBankCashierModal from '../components/wallet/ClubBankCashierModal';
 import { canSeeClubBank } from '../components/wallet/walletRows';
+import ClubBottomNav from '../components/club/ClubBottomNav';
 import styles from './CashierTradePage.module.css';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -278,13 +279,6 @@ export default function CashierTradePage() {
       const isStaff = isClubStaff(role);
       const isAgent = role === 'agent' || role === 'super_agent' || role === 'sub_agent';
 
-      // NOTE: no PostgREST embed here - club_members.user_id has no FK to
-      // profiles (it references public.users), so `profiles:user_id(...)`
-      // 400s and the whole load died (verified live: 0 members, 0.00
-      // balances on first deploy). Two-step fetch instead.
-      // An agent may only ever SEE their own players, so that stays a server
-      // filter. Staff see the whole club and narrow it with the "Assigned to
-      // me" toggle below - a filter they can turn off, not a wall.
       let downlineIds: string[] | null = null;
       if (isAgent && !isStaff) {
         const { data: scopeRow } = await supabase.rpc('ca_club_my_downline', {
@@ -296,30 +290,37 @@ export default function CashierTradePage() {
       }
 
       const dl: Array<Record<string, unknown>> = [];
-      for (let from = 0; from < MAX_MEMBERS; from += PAGE) {
-        let q = supabase
-          .from('club_members')
-          .select('user_id, role, chip_balance, display_name, nickname, agent_id')
-          .eq('club_id', clubUuid)
-          .in('status', MEMBER_IN_CLUB)
-          .neq('user_id', user.id)
-          // deterministic order: without one, paging can repeat or skip rows
-          .order('joined_at', { ascending: true })
-          .order('user_id', { ascending: true })
-          .range(from, from + PAGE - 1);
-        if (isAgent && !isStaff && downlineIds !== null) {
-          // Was .eq('agent_id', user.id) - the caller's DIRECT assignees only.
-          // A super agent carries agents, and those agents carry players, so
-          // direct assignment hides most of the people they are responsible
-          // for. The server walks the whole chain.
-          if (downlineIds.length === 0) break;
-          q = q.in('user_id', downlineIds);
+      if (role !== 'player') {
+        for (let from = 0; from < MAX_MEMBERS; from += PAGE) {
+          let q = supabase
+            .from('club_members')
+            .select('user_id, role, chip_balance, display_name, nickname, agent_id')
+            .eq('club_id', clubUuid)
+            .in('status', MEMBER_IN_CLUB)
+            .neq('user_id', user.id)
+            .order('joined_at', { ascending: true })
+            .order('user_id', { ascending: true })
+            .range(from, from + PAGE - 1);
+
+          if (!isStaff) {
+            if (role === 'super_agent' && downlineIds !== null) {
+              if (downlineIds.length > 0) {
+                q = q.or(`agent_id.is.null,user_id.in.(${downlineIds.join(',')})`);
+              } else {
+                q = q.is('agent_id', null);
+              }
+            } else if (isAgent && downlineIds !== null) {
+              if (downlineIds.length === 0) break;
+              q = q.in('user_id', downlineIds);
+            }
+          }
+
+          const { data: page, error: dlErr } = await q;
+          if (dlErr) throw dlErr;
+          if (stale()) return;
+          dl.push(...((page || []) as Array<Record<string, unknown>>));
+          if (!page || page.length < PAGE) break;
         }
-        const { data: page, error: dlErr } = await q;
-        if (dlErr) throw dlErr;
-        if (stale()) return;
-        dl.push(...((page || []) as Array<Record<string, unknown>>));
-        if (!page || page.length < PAGE) break;
       }
 
       const ids = (dl || []).map((r) => r.user_id as string);
@@ -375,6 +376,9 @@ export default function CashierTradePage() {
 
       if (!isMounted.current || stale()) return;
       setMyRole(role);
+      if (role === 'player' && tab === 'trade') {
+        setTab('record');
+      }
       setMyBalance(bal);
       // "Available Chips": for owners the club bank (mintable/distributable
       // pool); for agents their own sendable balance is the constraint, so
@@ -795,9 +799,6 @@ export default function CashierTradePage() {
     <div className={styles.page}>
       {/* Header */}
       <div className={styles.header}>
-        <button className={styles.back} aria-label="Back" onClick={() => navigate(-1)}>
-          &#171;
-        </button>
         <span className={styles.title}>CASHIER</span>
         <button
           className={styles.entityBtn}
@@ -850,15 +851,23 @@ export default function CashierTradePage() {
             ['leaderboard', 'Leaderboard Record'],
             ['request', 'Chip Request'],
           ] as [TabKey, string][]
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            className={`${styles.tab} ${tab === key ? styles.tabActive : ''}`}
-            onClick={() => setTab(key)}
-          >
-            {label}
-          </button>
-        ))}
+        )
+          .filter(([key]) => {
+            if (myRole === 'player') {
+              // Players only see their transaction history and chip requests
+              return key === 'record' || key === 'request';
+            }
+            return true;
+          })
+          .map(([key, label]) => (
+            <button
+              key={key}
+              className={`${styles.tab} ${tab === key ? styles.tabActive : ''}`}
+              onClick={() => setTab(key)}
+            >
+              {label}
+            </button>
+          ))}
       </div>
 
       {tab === 'trade' && (
@@ -1262,6 +1271,10 @@ export default function CashierTradePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {clubUuid && (
+        <ClubBottomNav clubId={clubUuid} userRole={myRole as any} clubName={currentClub?.name} />
       )}
     </div>
   );

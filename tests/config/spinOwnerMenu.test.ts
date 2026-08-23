@@ -76,8 +76,28 @@ describe('the panel tells the owner the truth about whose money it is', () => {
     expect(panel).toMatch(/Only The Union Lead/);
   });
 
-  it('hides the off switch from a club owner whose union owns the pool', () => {
-    expect(panel).toMatch(/canManage && !isUnionOwned/);
+  it('obeys the ROUTE on who may act, and fails closed until it answers', () => {
+    // Changed 2026-08-23. The panel inferred permission from owner_kind, which
+    // was wrong in BOTH directions: `canManage && !isUnionOwned` hid the off
+    // switch from the union lead -- the one person allowed to press it -- while
+    // the activate button had no such guard and was offered to a club owner
+    // inside a union whose request the API answers 403.
+    expect(panel).toMatch(/const canAct = canManage && routeCanManage === true;/);
+    expect(panel).not.toMatch(/canManage && !isUnionOwned/);
+  });
+
+  it('gates BOTH buttons on the same answer', () => {
+    const matches = panel.match(/\{canAct && \(/g) ?? [];
+    expect(matches.length).toBe(2);
+  });
+
+  it('only claims you cannot change it when you actually cannot', () => {
+    expect(panel).toMatch(/\{isUnionOwned && !canAct && \(/);
+  });
+
+  it('takes canManage from the route response, never from owner_kind', () => {
+    expect(panel).toMatch(/setRouteCanManage\(Boolean\(res\.canManage\)\)/);
+    expect(service).toMatch(/canManage: boolean/);
   });
 
   it('lists only the wallets that owner kind actually holds', () => {

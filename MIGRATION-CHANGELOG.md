@@ -12793,6 +12793,71 @@ because a disagreement means an owner is quoted one number and charged another.
 the wallet correctly but there is no per-club board for it to switch on yet.
 That is Phase 3.
 
+## Cowork session 2026-08-23 (11) — READING MY OWN FEATURE BACK AS AN ATTACKER
+
+Six findings from the adversarial pass over Phases 1-3. Two were already doing
+damage in production.
+
+**1. A minting function became a mint-to-wallet channel (critical).**
+`fn_spin_reserve_seed` credits `balance` AND `seeded_amount` and debits nobody.
+Phase 1 waved that away — "it had no caller in application code, which is the
+only reason that never mattered." That reasoning died the moment Phase 1
+shipped, because Phase 1 made `seeded_amount` a **repayable loan that pays out
+to a real wallet**. It was still EXECUTABLE by `service_role`, the role every
+API route and the engine run as. Its only honest caller debits the union wallet
+first, so that credit is inlined there and the bare minter is dropped.
+
+**2. The idempotency guard read before it locked (high — already happened).**
+`fn_spin_settle_game` asked "already settled?" _before_ taking its row lock. Two
+concurrent settles both passed, serialised on the lock, and both booked. The
+engine retries settlement three times, so a call that timed out client-side
+after committing reproduced it exactly.
+
+**Six tournaments were double-booked**, gaps of 19ms to 1.9s between the pairs —
+the signature of that retry loop. Repaired: 211.20 of contributions no player
+paid and 200.00 of draws nobody was paid, unwound per owner; 5 duplicate
+`rake_records` rows (revenue never earned) deleted; `spin_count` corrected.
+Money conservation now checks exactly: 20,000 seed + 285,627.78 collected −
+280,677.00 paid = 24,950.78 balance. Fixed three ways — lock first, a partial
+unique index so a second booking is structurally impossible, and the repair.
+
+**3. The repayment bar was owner-adjustable (high).** It was read live from
+`offered_max_stake`, which `fn_spin_activate` rewrites. Activate at stake 100
+(bar 20,000), deactivate, reactivate at stake 1 and the bar drops to 200 — the
+whole 20,000 repayable after trivial play. Raising it instead strands a seed
+forever. Now frozen in `required_seed_at_activation` when the seed is taken.
+
+**4. Reactivation double-seeded and redirected the repayment (high)** to
+whichever wallet was named last. Now refused unless it is the same wallet.
+
+**5. A zero-row UPDATE after the wallet moved reported success (medium).** Both
+money paths did `UPDATE ... RETURNING ... INTO` after moving the wallet without
+checking `FOUND` — a silent burn returned as `ok:true`. Now raises.
+
+**6. Dead code (low).** `fn_spin_owner_can_open` had no callers anywhere; the
+engine reads the table directly with the same three predicates. Two independent
+copies of a money gate drift, so it is dropped and the comment that claimed it
+was the reader of `is_active` is corrected.
+
+**And the panel was guessing who may act.** It inferred permission from
+`owner_kind`, which was wrong in both directions: `canManage && !isUnionOwned`
+hid the off switch from the union lead — the one person allowed to press it —
+while the activate button had no such guard and was offered to a club owner
+inside a union whose request the API answers 403. Permission is now decided by
+the route, where `union_admins` and `clubs.owner_id` actually are, returned as
+`canManage`, and the panel fails closed until it arrives. A viewer who may not
+manage can still READ the wallet. (World Hub PR #685.)
+
+Also hardened there: passing a **union's own id** as `clubId` landed on the
+clubs row every union carries with the same uuid, and would have fallen through
+to the club-ownership test if that row's `union_id` were ever null. Not
+reachable today; now it cannot become reachable by a data change nobody
+connects to that file.
+
+Three earlier tests were updated in these commits because this deliberately
+replaces behaviour they pinned. 23 new tests here, 4 on the route. 284 files /
+3,485 green.
+
 ## Cowork session 2026-08-23 (10) — PER-OWNER SPIN BOARDS
 
 Phase 3, and the piece that makes the switch mean anything. Phases 1 and 2 gave

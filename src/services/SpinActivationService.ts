@@ -102,8 +102,15 @@ export function requiredSeedForStake(maxStake: number): number {
 }
 
 export const spinActivationApi = {
+  /**
+   * canManage is decided by the ROUTE, where union_admins and clubs.owner_id
+   * actually are, and never inferred here. The panel used to work it out from
+   * owner_kind and got it wrong in both directions -- hiding the off switch
+   * from the union lead who may press it, and offering activation to a club
+   * owner inside a union whose request the API answers 403.
+   */
   getState(clubId: string) {
-    return call<{ state: SpinOwnerState; ownerKind: SpinOwnerKind }>({
+    return call<{ state: SpinOwnerState; ownerKind: SpinOwnerKind; canManage: boolean }>({
       action: 'get_state',
       clubId,
     });

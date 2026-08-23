@@ -146,6 +146,7 @@
 @media (max-width: 480px) {
   .terms-modal {
     max-height: 100vh;
+    max-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
     border-radius: 0;
   }
 

@@ -565,11 +565,40 @@
 .multi-table-page__quickjoin-name {
   flex: 1;
   min-width: 0;
+  /* Dan 2026-08-23: now holds the table name AND the ranking badge. flex, so
+     the badge keeps its full width and the NAME is what truncates — a badge
+     reading "Favou..." would be worse than a shortened table name. */
+  display: flex;
+  align-items: center;
+  gap: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.85rem;
   font-weight: 700;
+}
+
+/* Why this row is where it is: "Favourite", "Similar Game", "Same Game". */
+.multi-table-page__quickjoin-tag {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* A favourite is the strongest signal on the sheet, so it is the only badge
+   that gets colour. Gold rather than the blue CTA next to it: two blues on one
+   row would read as two buttons. */
+.multi-table-page__quickjoin-tag--fav {
+  background: rgba(240, 185, 11, 0.16);
+  border-color: rgba(240, 185, 11, 0.4);
+  color: #f0b90b;
 }
 
 .multi-table-page__quickjoin-meta {

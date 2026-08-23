@@ -55,12 +55,25 @@ function MiniCard({ card }: { card: string }) {
   );
 }
 
+/**
+ * Card backs plus an explicit reason.
+ *
+ * Dan 2026-08-23: before the mapper fix every villain drew two grey rectangles
+ * here, and the complaint was not "the cards are hidden", it was "this looks
+ * broken". Backs on their own are ambiguous — they read equally as "not
+ * revealed" and as "still loading" or "failed to load". The store now only
+ * withholds cards it genuinely never had (a mucked hand is never persisted, by
+ * design), so say that in words rather than leaving the player to guess.
+ */
 function HiddenCards({ count = 2 }: { count?: number }) {
   return (
-    <span className="hdm-cards">
-      {Array.from({ length: count }).map((_, i) => (
-        <span key={i} className="hdm-card hdm-card--back" />
-      ))}
+    <span className="hdm-hidden">
+      <span className="hdm-cards">
+        {Array.from({ length: count }).map((_, i) => (
+          <span key={i} className="hdm-card hdm-card--back" />
+        ))}
+      </span>
+      <span className="hdm-notshown">Not Shown</span>
     </span>
   );
 }
@@ -404,6 +417,10 @@ function SummaryRow({
         ) : (
           <HiddenCards />
         )}
+        {/* Only the winner of a pot carries an evaluated hand name in the row
+            (`winners[].hand.name`). A losing showdown player has none stored,
+            so this stays empty rather than being re-evaluated client side from
+            cards the client cannot verify. */}
         {r.handName && <span className="hdm-handname">{r.handName}</span>}
       </div>
       <span className={`hdm-net${r.net > 0 ? ' hdm-net--win' : r.net < 0 ? ' hdm-net--loss' : ''}`}>

@@ -174,15 +174,18 @@ describe('structure scales with the multiplier', () => {
     // Dan 2026-08-20, from a seat at a live table: "change spins to 3 min
     // levels" — FLAT across the ladder. Tier identity lives in stack depth
     // and payout shape; the level clock is one number everywhere.
+    // Dan 2026-08-23, verbatim: "STANDARD / TURBO SHOULD BE 300. DEEP STACK
+    // SHOULD BE 1000 CHIPS, ANY MULTIPLIERS OVER 25X SHOULD BE 5000 CHIPS."
+    // Three bands. 25x is deep stack; only 50x and 100x are "over 25x".
     const expected: Array<[number, number, number]> = [
       [2, 300, 3],
       [3, 300, 3],
-      [4, 400, 3],
-      [5, 400, 3],
-      [10, 500, 3],
-      [25, 500, 3],
-      [50, 500, 3],
-      [100, 500, 3],
+      [4, 1000, 3],
+      [5, 1000, 3],
+      [10, 1000, 3],
+      [25, 1000, 3],
+      [50, 5000, 3],
+      [100, 5000, 3],
     ];
     for (const [mult, stack, mins] of expected) {
       const t = spinTier(mult)!;

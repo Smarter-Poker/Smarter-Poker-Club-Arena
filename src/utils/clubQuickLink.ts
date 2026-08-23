@@ -218,12 +218,127 @@ export function clubParamToUuid(param: string | undefined): string | null {
 
 /** Read the lobby's cached club list, union-filtered. Empty when cold/corrupt. */
 export function readCachedQuickLinkClubs(): QuickLinkClub[] {
+  return eligibleQuickLinkClubs(readCachedClubsRaw());
+}
+
+/** Read the lobby's cached club list WITHOUT filtering unions out. */
+function readCachedClubsRaw(): QuickLinkClub[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? eligibleQuickLinkClubs(parsed) : [];
+    return Array.isArray(parsed) ? (parsed as QuickLinkClub[]) : [];
   } catch {
     return [];
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LOBBY DESTINATION — "which club's lobby does this player belong in?"
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * UNION LAW (Dan 2026-08-23). A union's tables hang off the union's own HUB
+ * CLUB — a `clubs` row with `is_union = true`, sharing the union's name. In
+ * production 8,083 tables hang off Midway Union's hub. So `tables.club_id` on
+ * any union game is the UNION, not the club the player is sitting in.
+ *
+ * Every "take me back to the lobby" path used to read `tables.club_id` and
+ * navigate straight to it:
+ *   - the in-table "+" (opens a lobby tab beside the running game)
+ *   - MultiTablePage.goToLobby() when the last tab closes
+ *   - TablePage.exitDestination() on leave / tournament bust
+ *
+ * A SHARK CLUB or Club JAQK player pressing "+" therefore landed in the MIDWAY
+ * UNION lobby, wearing the union's skins: Union Bank, rake treasury, clubs
+ * wallet. Players, agents and super agents must never see any of it — those are
+ * a different wallet that no club member has access to, managed on the union's
+ * own surfaces only.
+ *
+ * `resolveLobbyClubId` is the one rule for all of those paths: a union hub club
+ * can never be the answer.
+ */
+const unionFlagCache = new Map<string, boolean>();
+
+/** Seed the union flags from a club list already in hand (no network). */
+export function primeUnionFlags(clubs: QuickLinkClub[]): void {
+  for (const c of clubs) {
+    if (c?.id && isUUID(c.id)) unionFlagCache.set(c.id, isUnionEntity(c));
+  }
+}
+
+/** Drop the memoized union flags. Used by tests. */
+export function clearUnionFlagCache(): void {
+  unionFlagCache.clear();
+}
+
+/**
+ * True when this club UUID is a union hub club. Answers from memory or the
+ * lobby's cached club list when it can, otherwise reads `clubs.is_union`.
+ *
+ * On a failed lookup this returns TRUE (treat it as a union). An unverifiable
+ * id must not become a lobby destination: sending the player one navigation out
+ * of their way is recoverable, showing an agent the union's treasury is not.
+ */
+export async function isUnionClubId(clubId: string): Promise<boolean> {
+  const cached = unionFlagCache.get(clubId);
+  if (cached !== undefined) return cached;
+
+  const fromCache = readCachedClubsRaw().find((c) => c.id === clubId);
+  if (fromCache) {
+    const flag = isUnionEntity(fromCache);
+    unionFlagCache.set(clubId, flag);
+    return flag;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('clubs')
+      .select('is_union')
+      .eq('id', clubId)
+      .maybeSingle();
+    if (error || !data) {
+      if (error) reportError(error, 'clubQuickLink.isUnionClubId');
+      return true; // unverifiable — fail closed
+    }
+    const flag = data.is_union === true;
+    unionFlagCache.set(clubId, flag);
+    return flag;
+  } catch (err) {
+    reportError(err, 'clubQuickLink.isUnionClubId');
+    return true; // unverifiable — fail closed
+  }
+}
+
+/**
+ * Resolve the club lobby a seated player should land in. Never a union.
+ *
+ * Candidates, in order:
+ *   1. `viewerClubId`  — `useUserStore.currentClubId`, the club the player
+ *      ENTERED THROUGH. Buy-ins draw chips from this club and rake is earned
+ *      for it, so it is the club they are playing in even on a union table.
+ *   2. `tableClubId`   — `tables.club_id`. Correct for an ordinary club game;
+ *      it is the union hub on a union game, and is skipped there.
+ *   3. the last visited club, then the first eligible cached club — for a deep
+ *      link straight onto a table with no lobby visit behind it.
+ *
+ * Returns null when nothing survives; the caller then falls back to HomePage.
+ */
+export async function resolveLobbyClubId(opts: {
+  viewerClubId?: string | null;
+  tableClubId?: string | null;
+}): Promise<string | null> {
+  const candidates: (string | null | undefined)[] = [
+    opts.viewerClubId,
+    opts.tableClubId,
+    readLastClubId(),
+    ...readCachedQuickLinkClubs().map((c) => c.id),
+  ];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    if (!candidate || !isUUID(candidate) || seen.has(candidate)) continue;
+    seen.add(candidate);
+    if (await isUnionClubId(candidate)) continue;
+    return candidate;
+  }
+  return null;
 }

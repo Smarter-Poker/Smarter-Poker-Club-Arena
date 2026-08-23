@@ -90,9 +90,36 @@
   display: flex;
   flex-direction: column-reverse;
   align-items: center;
+  /* Dan 2026-08-23: relative so the "x12" multiplier badge can hang above a
+     clamped stack without joining the column-reverse flow, where the first DOM
+     child renders at the BOTTOM and the badge would sit under the chips. */
+  position: relative;
   animation: cpStackEnter 0.45s var(--cp-ease-spring)
     calc(var(--group-idx, 0) * var(--cp-stack-stagger)) both;
   transform-origin: bottom center;
+}
+
+/* ---- Multiplier badge for a stack too tall to draw chip-for-chip ----
+   Only appears when visualChipStacks reports `truncated`. It exists because
+   Dan's ladder has nothing between 5,000 and 100,000, so a 60,000 bet really
+   is twelve orange chips and a twelve-high tower does not fit in front of a
+   seat. The PILE is clamped; the VALUE never is. */
+.cp-stack__multi {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 1px;
+  font-size: 0.5rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #ffd700;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.85),
+    0 0 4px rgba(0, 0, 0, 0.5);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 @keyframes cpStackEnter {
@@ -131,7 +158,19 @@
   margin-top: var(--cp-chip-overlap);
   position: relative;
   border-radius: 50%;
-  background: var(--chip-color, #e0e0e0);
+  /* Dan 2026-08-23: the rim reads as a DIFFERENT shade of the same colour on a
+     real clay chip, which is most of what makes a 13px disc legible as a chip
+     at all. --chip-accent was already being set by the component and was never
+     used here; it is the denomination's dark edge from chipDenominations.ts. */
+  background:
+    radial-gradient(
+      circle at 50% 50%,
+      var(--chip-color, #e0e0e0) 0%,
+      var(--chip-color, #e0e0e0) 62%,
+      var(--chip-accent, #ababab) 66%,
+      var(--chip-accent, #ababab) 100%
+    ),
+    var(--chip-color, #e0e0e0);
   border: 1.5px solid rgba(255, 255, 255, 0.35);
 
   /* Multi-layer shadow for 3D depth */
@@ -148,8 +187,23 @@
   transition: transform 0.15s var(--cp-ease-spring);
 }
 
-.cp-chip:first-child {
+/* :first-of-type / :last-of-type, NOT :first-child / :last-child.
+   The stack can now carry a non-chip <span class="cp-stack__multi"> sibling,
+   and with :first-child the bottom chip lost its margin reset the moment that
+   badge appeared, so a truncated stack sat 2px lower than its neighbours. */
+.cp-chip:first-of-type {
   margin-top: 0;
+}
+
+/* ---- Partial sliver: a sub-1 amount no chip on the ladder can represent ----
+   Stakes here run 0.25/0.5, and Dan's smallest chip is the white 1. Drawing a
+   full white chip for a 0.5 small blind would claim twice its value, and
+   drawing nothing leaves a player with money out looking like they have none.
+   A half-height translucent sliver is neither. See chipDenominations.ts. */
+.cp-chip--partial {
+  height: calc(var(--cp-chip-size) * 0.55);
+  opacity: 0.75;
+  border-style: dashed;
 }
 
 /* ---- Specular Highlight (top-left hot spot from overhead light) ---- */
@@ -200,14 +254,16 @@
   z-index: 3;
 }
 
-.cp-chip:last-child .cp-chip__face {
+.cp-chip:last-of-type .cp-chip__face {
   display: flex;
 }
 
 .cp-chip__label {
   font-size: 0.35rem;
   font-weight: 800;
-  color: rgba(255, 255, 255, 0.92);
+  /* The denomination's own ink colour. A flat white "1K" on the yellow 1,000
+     chip and "1" on the white 1 chip were both unreadable. */
+  color: var(--chip-ink, rgba(255, 255, 255, 0.92));
   text-shadow:
     0 0.5px 0 rgba(0, 0, 0, 0.5),
     0 1px 2px rgba(0, 0, 0, 0.4);
@@ -453,7 +509,7 @@
    ANIMATION: GROW -- Single Chip Added to Stack
    ================================================================================= */
 
-.cp--grow .cp-chip:last-child {
+.cp--grow .cp-chip:last-of-type {
   animation: cpGrowChip 0.35s var(--cp-ease-spring);
 }
 
@@ -533,7 +589,7 @@
    ANIMATION: STACK COUNT DOWN -- Chips removed from stack
    ================================================================================= */
 
-.cp--shrink .cp-chip:last-child {
+.cp--shrink .cp-chip:last-of-type {
   animation: cpShrinkChip 0.3s var(--cp-ease-gravity) forwards;
 }
 
@@ -568,6 +624,18 @@
 .cp--compact .cp-chip::after {
   width: 7px;
   height: 7px;
+}
+
+/* No denomination text on a 13px seat chip. Dan's ladder is a COLOUR system —
+   the player reads red-white-white as "7" the way they do at a live table, and
+   a "100" rendered at 5.6px is illegible smudge, not information. The exact
+   number is already printed beside the stack by .cp-amount. */
+.cp--compact .cp-chip__label {
+  display: none;
+}
+
+.cp--compact .cp-stack__multi {
+  font-size: 0.45rem;
 }
 
 .cp--compact .cp-amount {
@@ -652,9 +720,9 @@
   .cp--slide-in .cp-stacks,
   .cp--collect .cp-stacks,
   .cp--win .cp-stacks,
-  .cp--grow .cp-chip:last-child,
+  .cp--grow .cp-chip:last-of-type,
   .cp--shake .cp-stacks,
-  .cp--shrink .cp-chip:last-child,
+  .cp--shrink .cp-chip:last-of-type,
   .cp-amount--changed {
     animation: none !important;
   }

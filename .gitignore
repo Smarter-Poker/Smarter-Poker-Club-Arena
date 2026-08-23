@@ -140,3 +140,20 @@ public/cards/4color/*.webp
 # cannot sweep a probe file or a staging directory into main (it did, twice:
 # 19 files were tracked on main by 2026-08-23).
 _agent_tmp/
+
+# More of the same, found untracked in the working tree on 2026-08-23 while
+# preparing a push. scripts/git-safe-push.sh runs `git add -A`, so anything
+# sitting here unignored is one push away from being source. These are all
+# one-off probes and staging dirs, not code:
+#   _to_delete/      quarantine for files the sandbox mount cannot unlink
+#   .cowork-trees/   per-agent worktrees
+#   test_db*.mjs     ad-hoc Supabase connectivity checks
+#   patch_*.cjs/.js  single-use codemods that have already been applied
+_to_delete/
+.cowork-trees/
+/check-locks.cjs
+/workspace-cmd.sh
+/test-query.cjs
+/test_db*.mjs
+/patch_*.cjs
+/patch_*.js

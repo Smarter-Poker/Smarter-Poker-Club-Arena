@@ -71,25 +71,69 @@ function formatAmount(amount: number): string {
   return amount.toLocaleString();
 }
 
+/**
+ * Dan 2026-08-23, verbatim: "REMOVE THE YELLOW AND PURPLE."
+ *
+ * bet/raise were amber #f59e0b and all-in was violet #7c3aed — two colours that
+ * appear nowhere else on smarter.poker, so the one panel a player opens to
+ * check what just happened looked like a different product from the table
+ * behind it. The replacements are the same chip palette HandDetailModal.css
+ * already uses for the identical actions (house blue for aggression, red for
+ * all-in, grey for the passive ones), so the two hand-history surfaces finally
+ * agree with each other and with the rest of the app.
+ *
+ * Kept as inline colours rather than CSS vars because these are handed to a
+ * `style` prop; `--club-*` tokens are used in the stylesheet beside this.
+ */
+const HOUSE_BLUE = '#1877f2';
+
 function getActionColor(action: string): string {
   switch (action) {
     case 'fold':
-      return '#ef4444';
+      return '#9ca3af';
     case 'check':
       return '#22c55e';
     case 'call':
       return '#22c55e';
     case 'bet':
-      return '#f59e0b';
+      return HOUSE_BLUE;
     case 'raise':
-      return '#f59e0b';
+      return HOUSE_BLUE;
     case 'discard':
       return '#94a3b8';
     case 'allin':
-      return '#7c3aed';
+      return '#ef4444';
     default:
       return '#9ca3af';
   }
+}
+
+const SUIT_GLYPH: Record<string, string> = { s: '♠', h: '♥', d: '♦', c: '♣' };
+
+/**
+ * Render a canonical 2-char card code ("Jd") as rank + suit glyph.
+ *
+ * The Showdown block used to name the winner and the amount and stop there, so
+ * the panel that exists to answer "what did he have?" was the one place that
+ * would not say — even though handToText below has always written the holdings
+ * into the clipboard export. Same data, now on screen.
+ */
+function HoleCards({ cards }: { cards: string[] }) {
+  return (
+    <span className="hh-entry__holecards">
+      {cards.map((c, i) => {
+        const suit = c.slice(-1).toLowerCase();
+        const rank = c.slice(0, -1).toUpperCase().replace('T', '10');
+        const red = suit === 'h' || suit === 'd';
+        return (
+          <span key={i} className={`hh-card${red ? ' hh-card--red' : ''}`}>
+            {rank}
+            {SUIT_GLYPH[suit] || '?'}
+          </span>
+        );
+      })}
+    </span>
+  );
 }
 
 function getStreetLabel(name: string): string {
@@ -156,8 +200,24 @@ function HandEntry({
   isExpanded: boolean;
   onToggle: () => void;
 }) {
-  const isWin = hand.heroResult > 0;
   const resultColor = hand.heroResult > 0 ? '#22c55e' : hand.heroResult < 0 ? '#ef4444' : '#9ca3af';
+
+  /* Everyone whose cards the table saw, plus anyone who took a pot. A player
+     is in `holeCards` only because the server persisted a SHOWDOWN-revealed
+     holding (mucked hands are never written), so this list is exactly the set
+     of hands that were public — no client-side guessing about who showed. */
+  const showdownRows = useMemo(() => {
+    const winnerById = new Map(hand.winners.map((w) => [w.playerId, w]));
+    return hand.players
+      .filter((p) => (p.holeCards && p.holeCards.length > 0) || winnerById.has(p.id))
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        cards: p.holeCards || [],
+        won: winnerById.get(p.id)?.amount,
+        handName: winnerById.get(p.id)?.hand,
+      }));
+  }, [hand]);
 
   return (
     <div className={`hh-entry ${isExpanded ? 'hh-entry--expanded' : ''}`}>
@@ -214,17 +274,31 @@ function HandEntry({
           ))}
 
           {/* X6.2g: Showdown section header per spec §10.4 */}
-          {hand.winners.length > 0 && (
+          {showdownRows.length > 0 && (
             <div className="hh-entry__street">
               <div className="hh-entry__street-header">
                 <span className="hh-entry__street-name">Showdown</span>
               </div>
-              <div className="hh-entry__winners">
-                {hand.winners.map((w, i) => (
-                  <span key={i} className="hh-entry__winner">
-                    {w.playerName} Won {formatAmount(w.amount)}
-                    {w.hand && <span className="hh-entry__hand"> - {w.hand}</span>}
-                  </span>
+              <div className="hh-entry__showdown">
+                {showdownRows.map((r) => (
+                  <div
+                    key={r.id}
+                    className={`hh-entry__shown${r.won != null ? ' hh-entry__shown--won' : ''}`}
+                  >
+                    <span className="hh-entry__player-name">{r.name}</span>
+                    {r.cards.length > 0 ? (
+                      <HoleCards cards={r.cards} />
+                    ) : (
+                      /* The row holds nothing for this seat and never will:
+                         only showdown-revealed holdings are persisted. Say so,
+                         because an empty gap here reads as a load failure. */
+                      <span className="hh-entry__notshown">Not Shown</span>
+                    )}
+                    {r.handName && <span className="hh-entry__hand">{r.handName}</span>}
+                    {r.won != null && (
+                      <span className="hh-entry__won">Won {formatAmount(r.won)}</span>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>

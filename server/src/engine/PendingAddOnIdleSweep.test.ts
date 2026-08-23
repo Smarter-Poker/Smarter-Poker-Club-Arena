@@ -76,6 +76,12 @@ function idleEngine() {
     // without it throws and the loop never reaches the behaviour under test -
     // which is what this file exists to protect. Returns no evictions.
     tickSitOutsAndCollectEvictions: () => [] as string[],
+    // Added 2026-08-23 with the away-blind eviction rule, for exactly the same
+    // reason as the line above: dealingLoop calls this on every tick before
+    // the add-on sweep, so a stub without it throws
+    // "collectAwayBlindEvictions is not a function" and the loop never reaches
+    // the behaviour under test. Returns no evictions.
+    collectAwayBlindEvictions: () => [] as string[],
     unregisterPlayer: vi.fn(),
   };
   engine.timeBankEngine = { removePlayer: vi.fn() };

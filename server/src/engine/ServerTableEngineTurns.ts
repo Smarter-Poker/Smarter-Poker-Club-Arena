@@ -622,7 +622,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // seconds and then auto-folded at 15. The manual activateTimeBank
           // path already reads currentUseSeconds correctly; this was the outlier.
           const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
-          const grantedSeconds = bank?.currentUseSeconds ?? 15;
+          // Bible V8 §6.2: a bank grants 20s. The 15 that used to be the
+          // fallback here is the DECISION clock, a different number.
+          const grantedSeconds = bank?.currentUseSeconds ?? 20;
           const usesAfterActivation = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
           console.log(
             `[ServerTableEngine:${this.tableId}] Auto-activated time bank for ${userId} (${grantedSeconds}s granted, ${usesAfterActivation} uses left)`
@@ -735,54 +737,77 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * Activate Time Bank triggered by the client HTTP POST to `/timebank`
    * Bible V8 §6.2: Manual activate — delegates to TimeBankEngine (single source of truth)
    */
-  public async activateTimeBank(userId: string): Promise<{ success: boolean; error?: string }> {
+  public async activateTimeBank(
+    userId: string
+  ): Promise<{ success: boolean; error?: string; armed?: boolean; message?: string }> {
+    // CLAUDE.md §5.7: every one of these strings reaches the player as a toast,
+    // so they are Title Case with no em dashes.
     if (!this.handController || !this.tableInfo) {
-      return { success: false, error: 'No active hand or table info missing' };
+      return { success: false, error: 'No Active Hand At This Table' };
     }
 
     const state = this.handController.getState();
     const player = state.players.find((p) => p.user_id === userId);
 
     if (!player || state.currentPlayerSeat !== player.seat) {
-      return { success: false, error: 'Not your turn' };
+      return { success: false, error: 'Not Your Turn' };
     }
 
     if (this.timeBankActivatedThisTurn) {
-      return { success: false, error: 'Time bank already activated this turn' };
+      return { success: false, error: 'Your Time Bank Is Already Running' };
     }
 
-    // Bible V8 §6.2: Check via TimeBankEngine (single source of truth for pool + per-hand limits)
+    // Bible V8 §6.2: Check via TimeBankEngine (single source of truth for pool + per-street limits)
     if (!this.timeBankEngine.hasTimeBank(this.tableId, userId)) {
       // VIP time banks 2026-08-17: a diamond top-up purchased mid-session
       // lives only in the DB. Refresh once before rejecting, then re-validate
       // the turn - the await may have raced the action.
       const refreshed = await this.refreshTimeBankFromDb(userId);
       if (!refreshed || !this.timeBankEngine.hasTimeBank(this.tableId, userId)) {
-        return { success: false, error: 'No time bank uses remaining' };
+        return { success: false, error: 'No Time Bank Uses Remaining' };
       }
       const stateAfter = this.handController?.getState();
       if (!stateAfter || stateAfter.currentPlayerSeat !== player.seat) {
-        return { success: false, error: 'Not your turn' };
+        return { success: false, error: 'Not Your Turn' };
       }
       if (this.timeBankActivatedThisTurn) {
-        return { success: false, error: 'Time bank already activated this turn' };
+        return { success: false, error: 'Your Time Bank Is Already Running' };
       }
     }
 
-    // How much ordinary turn clock is still on the board. The bank is granted
-    // ON TOP of this, so the TimeBankEngine countdown has to cover both — else
-    // it fires first and folds a player whose clock is visibly still running.
+    // How much ordinary turn clock is still on the board.
     //
-    // Captured BEFORE activate() so the engine countdown and the turn timer
-    // armed further down are derived from the same instant. Recomputing it
-    // later left the two milliseconds apart; they have to agree exactly.
+    // Dan 2026-08-23, binding: "It should not take a time bank or add more time
+    // until you have truly used your entire 15 seconds." So this is no longer
+    // an amount to stack the bank on top of — it is the EXHAUSTION TEST. While
+    // it is above the epsilon the press costs nothing and grants nothing; it
+    // only records the intent, which onPrimaryTimerExpired redeems the instant
+    // the clock actually runs out.
+    //
+    // Captured BEFORE the engine call so the check and the timer armed further
+    // down are derived from the same instant.
     const remainingBeforeBank = Math.max(
       0,
       this.playerTurnDuration - (Date.now() - this.playerTurnStartTime) / 1000
     );
 
-    // Activate via TimeBankEngine — it handles pool depletion, per-hand limit, and event emission
-    const activated = this.timeBankEngine.activate(
+    if (remainingBeforeBank > TimeBankEngine.CLOCK_EXHAUSTED_EPSILON_SECONDS) {
+      if (!this.timeBankEngine.arm(this.tableId, userId)) {
+        return { success: false, error: 'No Time Bank Uses Remaining' };
+      }
+      console.log(
+        `[ServerTableEngine:${this.tableId}] Player ${userId} armed a time bank with ${Math.round(remainingBeforeBank)}s still on the clock. Nothing spent yet.`
+      );
+      return {
+        success: true,
+        armed: true,
+        message: 'Time Bank Armed. It Starts When Your Clock Runs Out',
+      };
+    }
+
+    // Activate via TimeBankEngine — it handles pool depletion, the per-street
+    // limit, the exhaustion check and event emission.
+    const activation = this.timeBankEngine.tryActivate(
       this.tableId,
       userId,
       () => {
@@ -834,21 +859,35 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       remainingBeforeBank
     );
 
-    if (!activated) {
-      return { success: false, error: 'Time bank activation failed (per-hand limit or depleted)' };
+    if (activation !== 'activated') {
+      // Title Case, no em dashes (CLAUDE.md §5.7). Each reason is distinct so
+      // the player is not told "depleted" when they simply used both banks on
+      // this street and still own plenty.
+      const reason =
+        activation === 'street_limit'
+          ? 'You Have Already Used Two Time Banks On This Street'
+          : activation === 'already_active'
+            ? 'Your Time Bank Is Already Running'
+            : activation === 'clock_not_exhausted'
+              ? 'Your Clock Is Still Running'
+              : 'No Time Bank Uses Remaining';
+      return { success: false, error: reason };
     }
 
     this.timeBankActivatedThisTurn = true;
 
     // Get bank info for the broadcast
     const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
-    const bankSeconds = bank ? bank.currentUseSeconds : 15;
+    const bankSeconds = bank ? bank.currentUseSeconds : 20;
 
-    // Same remainingBeforeBank the TimeBankEngine countdown was armed with.
-    const newDuration = remainingBeforeBank + bankSeconds;
+    // A bank RESETS the clock; it does not extend it. remainingBeforeBank is
+    // within the exhaustion epsilon by the time we get here, so there is
+    // nothing left to add and the enforcement countdown armed inside
+    // TimeBankEngine is this same number.
+    const newDuration = bankSeconds;
 
     console.log(
-      `[ServerTableEngine:${this.tableId}] Player ${userId} manually activated time bank. Adding ${bankSeconds}s. Total: ${Math.round(newDuration)}s`
+      `[ServerTableEngine:${this.tableId}] Player ${userId} spent a time bank. Clock reset to ${bankSeconds}s.`
     );
 
     this.startTurnTimer(userId, player.seat, newDuration);
@@ -938,6 +977,21 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * instead of the table burning a full action clock on a player who is gone.
    * A reconnect (WS onConnect -> heartbeat) cancels it just as fast.
    */
+  /**
+   * POST /away — Dan 2026-08-23: the CLIENT is telling us it is going away
+   * (pagehide, tab close, app frozen by the OS), rather than us inferring it
+   * from silence.
+   *
+   * That distinction is why this skips the transport grace window that
+   * `notifyTransportDisconnect` opens: a socket dying is ambiguous, but "I am
+   * leaving" is not. The player keeps their seat — they are simply AWAY, so
+   * the one-SB-one-BB cap applies and they are stood up and cashed out once
+   * it is spent. Coming back (any heartbeat) clears it at no cost.
+   */
+  public notifyPageLeft(userId: string): void {
+    this.disconnectEngine.markPageLeft(this.tableId, userId);
+  }
+
   public notifyTransportDisconnect(userId: string): void {
     // 2026-08-22: markTransportGone, not markDisconnected. The socket dying is
     // not the player leaving — their HTTP heartbeat is a second transport, and

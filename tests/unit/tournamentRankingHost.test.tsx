@@ -183,11 +183,17 @@ describe('Tournament result card delivery', () => {
     expect(screen.queryByRole('dialog', { name: /tournament ranking/i })).toBeNull();
   });
 
-  it('brands a Spin a Spin, and an MTT a tournament', async () => {
+  it('badges an MTT a tournament, and leaves a Spin unbadged', async () => {
     /* AUDIT 2026-08-22: the banner said SPIN for EVERY finished event, so a
        128-runner MTT wore a Spin badge. The flag is resolved from the
        tournament row by isSpinTournament, never guessed from the name — which
-       is why the name here stays the same across both cases. */
+       is why the name here stays the same across both cases.
+
+       Dan 2026-08-23: "remove the 'spin' after SmarterPoker". The event line
+       directly beneath the brand already names the game, so on a Spin the
+       badge was the same word twice. A Spin now carries NO badge — a stricter
+       form of the same guarantee this test was written for: the card must
+       never label a game as something it is not. */
     renderHost();
     await publishAndSettle({
       duration: 180,
@@ -201,7 +207,9 @@ describe('Tournament result card delivery', () => {
       tournament: { ...spinResult(1, 60), isSpin: true },
     });
     let card = await screen.findByRole('dialog', { name: /tournament ranking/i });
-    expect(card.textContent).toContain('SPIN');
+    // A Spin is unbadged: neither word appears in the banner.
+    expect(card.textContent).not.toContain('SPIN');
+    expect(card.textContent).not.toContain('TOURNAMENT');
 
     await act(async () => {
       clearSessionSummary();

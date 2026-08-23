@@ -22,6 +22,12 @@ import { ScheduledTournamentService } from './services/ScheduledTournamentServic
 import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
 import { AutoRebuyService } from './services/AutoRebuyService.js';
 import { DealRateVerifier } from './services/DealRateVerifier.js';
+import {
+  claimTournament,
+  heartbeatTournaments,
+  releaseTournaments,
+  tournamentLeaseDiagnostics,
+} from './services/tournamentLease.js';
 // BUG 008 FIX: Periodic rakeback settler - flushes per-hand rake_records into rakeback_periods.
 import { RakebackSettlerService } from './services/RakebackSettlerService.js';
 import {
@@ -293,6 +299,7 @@ export class GameServer {
     // on every table, which is 30s of a live platform not dealing. Best-effort:
     // releaseTables never throws and never blocks shutdown.
     await releaseTables();
+    await releaseTournaments();
 
     /**
      * C19 FIX (2026-08-20): drain in-flight hands, then stop everything at once.
@@ -491,6 +498,7 @@ export class GameServer {
        * explicitly NOT counted as silence.
        */
       dealRate,
+      tournamentLease: tournamentLeaseDiagnostics(),
       stalledTableCount: stalledTables.length,
       // Deploy drain gate reads this. A restart voids in-flight hands, so a
       // routine server/ push waits (or is explicitly forced) while real people
@@ -1428,6 +1436,7 @@ export class GameServer {
         // ENGINE_LEASE_ENFORCE is off, so this loop is inert until the
         // conflict logs say the claim path behaves.
         const lostTables = await heartbeatTables([...this.tableEngines.keys()]);
+
         for (const id of lostTables) {
           const engine = this.tableEngines.get(id);
           if (!engine) continue;
@@ -1438,6 +1447,33 @@ export class GameServer {
           void engine.stop().catch(() => {});
           this.tableEngines.delete(id);
           if (!this.tournamentOwnedTables.has(id)) tableStateHub.dropTable(id);
+        }
+
+        /**
+         * Tournaments renew on the same cadence, but AFTER the table loop
+         * above: leaseEnforcementGuard pins the adjacency of
+         * heartbeatTables -> engine.stop() -> tableEngines.delete(), and
+         * splitting it would make that invariant unreadable. Handling tables
+         * completely and then tournaments is also simply the clearer order.
+         *
+         * Anything reported lost has been taken over by another instance and
+         * must stop here, or two managers run one tournament — the exact thing
+         * the lease exists to prevent.
+         */
+        const lostTournaments = await heartbeatTournaments([...this.tournamentEngines.keys()]);
+        for (const id of lostTournaments) {
+          const tm = this.tournamentEngines.get(id);
+          if (!tm) continue;
+          reportError(
+            new Error(`Lost the tournament lease on ${id} to another engine instance`),
+            'GameServer.tournament_lease_lost'
+          );
+          try {
+            tm.stop();
+          } catch {
+            /* already stopping */
+          }
+          this.tournamentEngines.delete(id);
         }
 
         /**
@@ -1730,6 +1766,22 @@ export class GameServer {
 
         for (const tournament of running || []) {
           if (this.tournamentEngines.has(tournament.id)) continue;
+
+          /**
+           * ONE TOURNAMENT, ONE MANAGER (2026-08-23).
+           *
+           * The `has()` check above is per-process, so it means nothing across
+           * containers. Without this claim a second engine instance would
+           * resume the SAME tournament: two managers advancing blind levels,
+           * calling breaks, running hand-for-hand and processing eliminations
+           * for one event. Cash tables have been leased for exactly this reason
+           * and tournaments were the gap that kept the engine a single point of
+           * failure.
+           *
+           * Fail-open like claimTable: true on any error, and true whenever
+           * enforcement is off. A lease problem must never stop a tournament.
+           */
+          if (!(await claimTournament(tournament.id))) continue;
 
           console.log(`[GameServer] Resuming tournament: ${tournament.name}`);
           const tm = new TournamentManager(tournament.id, this);

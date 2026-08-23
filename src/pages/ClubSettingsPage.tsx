@@ -11,6 +11,7 @@ import { masterBus } from '../core/MasterBus';
 import { ClubsService } from '../services/ClubsService';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
+import SpinActivationPanel from '../components/club/SpinActivationPanel';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import PageSkeleton from '../components/common/PageSkeleton';
 import ClubBottomNav from '../components/club/ClubBottomNav';
@@ -1249,6 +1250,11 @@ export default function ClubSettingsPage() {
             </small>
           )}
         </section>
+
+        {/* Spins — the owner's switch and the wallet behind it.
+            Placed here, after Buy-In Limits, because it is the only other
+            setting on this page that commits the club's own money. */}
+        {clubId && <SpinActivationPanel clubId={clubId} canManage={isOwner} />}
 
         {/* Audit Log — visible to anyone the audit_trail RLS lets read it:
             the owner, plus club admins/agents via is_club_admin(). It was

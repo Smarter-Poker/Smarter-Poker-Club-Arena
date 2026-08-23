@@ -258,7 +258,9 @@ export function SessionSummaryHost() {
       { label: 'Duration', value: formatDuration(payload.duration) },
       { label: 'Hands Played', value: String(payload.handsPlayed) },
       { label: 'VPIP', value: `${payload.vpipPercent ?? 0}%` },
-      { label: 'Biggest Pot', value: formatChips(payload.biggestPot) },
+      /* Dan 2026-08-23: "remove biggest pot as a field". It was the one tile
+         that measured the TABLE rather than the session — the biggest pot you
+         saw, win or lose, which says nothing about how you did. */
       { label: 'Peak Stack', value: formatChips(payload.peakStack) },
       { label: 'Win Rate', value: `${winRate}%` },
     ];
@@ -278,6 +280,29 @@ export function SessionSummaryHost() {
      The split is on the data, not a flag: a tournament cannot fall through to
      the cash summary and report a chip profit on a seat where chips are not
      money. */
+  const [shareLabel, setShareLabel] = useState('Share');
+
+  const share = useCallback(async () => {
+    if (!payload) return;
+    const money = `${payload.profitLoss >= 0 ? '+' : '-'}${formatChips(Math.abs(payload.profitLoss))}`;
+    const text =
+      `${payload.tableName || 'Table Session'} - ${money} over ` +
+      `${payload.handsPlayed} hands on Smarter.Poker`;
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        await navigator.share({ title: 'Session Complete', text });
+        return;
+      }
+      await navigator.clipboard.writeText(text);
+      setShareLabel('Copied');
+      window.setTimeout(() => setShareLabel('Share'), 1800);
+    } catch {
+      /* A cancelled share sheet rejects. That is the player changing their
+         mind, not a failure, and it must not raise anything at them. */
+    }
+  }, [payload]);
+
   if (!payload || payload.tournament) return null;
   if (typeof document === 'undefined') return null;
 
@@ -383,9 +408,18 @@ export function SessionSummaryHost() {
           ))}
         </div>
 
-        <button className="ssh-done" onClick={close}>
-          Done
-        </button>
+        {/* Dan 2026-08-23: "add a share button to this." Uses the platform
+            share sheet where there is one (every phone, and desktop Safari),
+            and falls back to the clipboard everywhere else — a share control
+            that silently does nothing on desktop is worse than none. */}
+        <div className="ssh-actions">
+          <button className="ssh-share" onClick={share} aria-label="Share this session">
+            {shareLabel}
+          </button>
+          <button className="ssh-done" onClick={close}>
+            Done
+          </button>
+        </div>
       </div>
     </div>,
     document.body

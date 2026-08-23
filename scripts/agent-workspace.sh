@@ -110,7 +110,10 @@ bash "$ROOT/scripts/ensure-hooks.sh" 2>&1 | sed "s/^/# /" >&2 || true
 # skips, which is how a red test reaches main and blocks the bundle for all.
 if [ ! -e "$DIR/node_modules" ] && [ -d "$ROOT/node_modules" ]; then
   ln -s "$ROOT/node_modules" "$DIR/node_modules" 2>/dev/null \
-    && echo "# node_modules: linked from the main clone" >&2
+    && echo "# node_modules: linked from the main clone" >&2 \
+    && echo "# NEVER run npm install/ci in this tree - the link WRITES THROUGH" >&2 \
+    && echo "#   to the shared install and breaks it for all $(git -C "$ROOT" worktree list | wc -l | tr -d ' ') worktrees." >&2 \
+    && echo "#   Need a package? Add it in $ROOT and re-run npm ci THERE." >&2
 fi
 
 echo "# worktree: $DIR" >&2

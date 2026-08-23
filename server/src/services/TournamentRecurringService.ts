@@ -559,6 +559,47 @@ const HOLD_SEAT_FOR_HUMAN = true;
  * sitting dead all night.
  */
 const OPEN_TABLE_WAIT_MS = 10 * 60 * 1000;
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE HUMAN WINDOW ON A SEAT-FIRST GAME (Dan, 2026-08-23)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * "for all spins, and heads up: 2 horses register (for spins and one for heads
+ *  up), and leave registration open for anywhere from 60-180 seconds before
+ *  another horse can fill the seat for human players."
+ *
+ * So a Spin opens at 2/3 and a heads-up at 1/2, and the LAST seat belongs to a
+ * human for a minute to three minutes before a horse is allowed to take it.
+ *
+ * Randomised per game, not fixed, for a reason worth stating: a constant delay
+ * makes the whole board tick over in lockstep, so every table on the lobby
+ * fills at the same instant and the room reads as a machine. Spreading the
+ * window means tables mature independently, which is what a real room looks
+ * like - some just opened, some about to go.
+ *
+ * The previous value was a flat ten minutes, and before that sixty seconds.
+ * Ten minutes was chosen when nothing filled the seat properly; now that the
+ * top-up genuinely seats horses, a shorter window keeps the board moving
+ * without ever taking the seat out from under someone who is mid buy-in.
+ */
+const SEAT_FIRST_HUMAN_WINDOW_MIN_MS = 60 * 1000;
+const SEAT_FIRST_HUMAN_WINDOW_MAX_MS = 180 * 1000;
+
+function seatFirstHumanWindowMs(): number {
+  const span = SEAT_FIRST_HUMAN_WINDOW_MAX_MS - SEAT_FIRST_HUMAN_WINDOW_MIN_MS;
+  return SEAT_FIRST_HUMAN_WINDOW_MIN_MS + Math.floor(Math.random() * (span + 1));
+}
+
+/**
+ * How many horses open a seat-first game: every seat but one.
+ *
+ * Spin (3 seats) -> 2 horses. Heads-up (2 seats) -> 1 horse. The remaining
+ * seat is the human's for the window above.
+ */
+function openingHorsesForSeatFirst(seats: number): number {
+  return Math.max(0, seats - 1);
+}
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  SEAT-FIRST GAMES (Dan, 2026-08-21)
@@ -1500,7 +1541,15 @@ export class TournamentRecurringService {
     config: SNGConfig
   ): Promise<{ tournamentId: string | null; registered: number }> {
     try {
-      const startTime = new Date(Date.now() + OPEN_TABLE_WAIT_MS);
+      // A heads-up game is seat-first: one horse opens it and the second seat
+      // is a human's for 60-180s. A 6-max or 9-max SNG is a field, not a table
+      // you walk up to, and keeps the longer scheduled lead-in.
+      const startTime = new Date(
+        Date.now() +
+          (isSeatFirstFormat('sng', config.maxPlayers)
+            ? seatFirstHumanWindowMs()
+            : OPEN_TABLE_WAIT_MS)
+      );
       const gameTypeMap: Record<string, string> = {
         nlh: 'NLH',
         plo4: 'PLO4',
@@ -1636,9 +1685,77 @@ export class TournamentRecurringService {
         );
         return null;
       }
+      /**
+       * Open the table at seats-1: two horses on a Spin, one heads-up.
+       *
+       * They take REAL SEATS via fn_seat_horse_in_seat_first_game, not
+       * registration rows. Registration alone is what broke this format: a
+       * seat-first game starts when every SEAT is sold, so horses that were
+       * only ever on the list left the game showing empty seats it could never
+       * start with - 12 of 24 open Spins were stuck that way, some for a day,
+       * and the next human to sit at one became its FOURTH entrant.
+       */
+      const opening = openingHorsesForSeatFirst(seats);
+      let seated = 0;
+      for (let i = 0; i < opening; i++) {
+        const horse = await this.pickFreeHorse();
+        if (!horse) break;
+        const { data: res } = await supabase.rpc('fn_seat_horse_in_seat_first_game', {
+          p_tournament_id: tournament.id,
+          p_user_id: horse,
+        });
+        if ((res as { ok?: boolean } | null)?.ok === true) seated++;
+      }
+      if (seated < opening) {
+        console.warn(
+          `[TournamentRecurring] ${tournament.name}: seated ${seated}/${opening} opening horse(s) - the pool is thin`
+        );
+      }
+
       return table.id as string;
     } catch (err: any) {
       reportError(err, 'TournamentRecurring.createOpenSeatTable_threw');
+      return null;
+    }
+  }
+
+  /**
+   * One horse that is genuinely free: not in a live tournament, not sitting at
+   * any table. Same exclusions registerHorses uses, for the same reason -
+   * taking a horse out of a hand it is already playing is worse than opening a
+   * table one seat short.
+   */
+  private async pickFreeHorse(): Promise<string | null> {
+    try {
+      const { data: busyRows } = await supabase
+        .from('tournament_players')
+        .select('user_id, tournaments!inner(status)')
+        .in('status', ['registered', 'playing'])
+        .in('tournaments.status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
+        .limit(2000);
+      const busy = new Set((busyRows ?? []).map((r: any) => r.user_id));
+
+      const { data: seatRows } = await supabase
+        .from('table_seats')
+        .select('user_id')
+        .is('left_at', null)
+        .limit(2000);
+      for (const r of seatRows ?? []) {
+        if ((r as { user_id?: string }).user_id) busy.add((r as { user_id: string }).user_id);
+      }
+
+      const { data: horses } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('is_horse', true)
+        .limit(400);
+
+      for (const h of horses ?? []) {
+        const id = (h as { id: string }).id;
+        if (!busy.has(id)) return id;
+      }
+      return null;
+    } catch {
       return null;
     }
   }
@@ -1660,7 +1777,9 @@ export class TournamentRecurringService {
           'TournamentRecurring.spin_seat_count_override'
         );
       }
-      const startTime = new Date(Date.now() + OPEN_TABLE_WAIT_MS);
+      // The last seat is a human's for 60-180s; after that the past-start
+      // top-up is allowed to fill it. See seatFirstHumanWindowMs.
+      const startTime = new Date(Date.now() + seatFirstHumanWindowMs());
 
       // THE DRAW DOES NOT HAPPEN HERE ANY MORE (2026-08-20, second pass).
       //
@@ -1845,7 +1964,40 @@ export class TournamentRecurringService {
       const shortfall = targetPlayers - (liveCount || 0);
       if (shortfall <= 0) return 0;
 
-      const added = await this.registerHorses(tournamentId, shortfall);
+      /**
+       * A seat-first game needs BODIES IN SEATS, not names on a list.
+       *
+       * registerHorses writes tournament_players and nothing else, which is
+       * correct for an MTT and useless for a Spin: the start rule counts sold
+       * seats, so a topped-up Spin sat at "3 registered / 0 seated" and could
+       * never begin. It also kept advertising three open seats, so the next
+       * human to sit became a fourth entrant in a three-handed game.
+       */
+      const { data: tRow } = await supabase
+        .from('tournaments')
+        .select('variant, max_players')
+        .eq('id', tournamentId)
+        .maybeSingle();
+      const seatFirst = isSeatFirstFormat(
+        String((tRow as { variant?: string } | null)?.variant ?? ''),
+        Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
+      );
+
+      let added = 0;
+      if (seatFirst) {
+        for (let i = 0; i < shortfall; i++) {
+          const horse = await this.pickFreeHorse();
+          if (!horse) break;
+          const { data: res } = await supabase.rpc('fn_seat_horse_in_seat_first_game', {
+            p_tournament_id: tournamentId,
+            p_user_id: horse,
+          });
+          if ((res as { ok?: boolean } | null)?.ok === true) added++;
+          else break;
+        }
+      } else {
+        added = await this.registerHorses(tournamentId, shortfall);
+      }
 
       // Re-read rather than trusting `liveCount + added`: a human may have
       // registered while we were seating horses.

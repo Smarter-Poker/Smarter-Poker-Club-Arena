@@ -114,6 +114,8 @@ export default function HandReplay({
   const [activeTab, setActiveTab] = useState<'summary' | 'detail' | '3d'>('summary');
   const [is3DActive, setIs3DActive] = useState(false);
   const [isLoading, setIsLoading] = useState(!initialData);
+  /* "We could not ask" is not the same as "there is no such hand". */
+  const [loadFailed, setLoadFailed] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
   const [totalSteps, setTotalSteps] = useState(1);
   const [controlsVisible, setControlsVisible] = useState(false);
@@ -158,6 +160,7 @@ export default function HandReplay({
 
   const loadHandData = async () => {
     setIsLoading(true);
+    setLoadFailed(false);
     try {
       if (handId) {
         // Fetch real hand data from API
@@ -193,16 +196,26 @@ export default function HandReplay({
             })),
           });
         } else {
-          console.warn('Hand not found, using fallback');
-          setHandData(getFallbackHandData());
+          /* NOT FOUND. It used to render `getFallbackHandData()` here — a
+             hand-shaped fiction with invented players, invented hole cards and
+             an invented pot — and the same fiction again from the catch below.
+
+             This component is reachable from two live surfaces: "replay last
+             hand" at a real table (TableModalsLayer) and the routed hand
+             history page. So any load failure showed a player a hand that
+             never happened, indistinguishable from their own history. A hand
+             history is the evidentiary record of a poker game; inventing one
+             is worse than showing nothing by every measure that matters. */
+          setHandData(null);
         }
       } else {
-        // No handId provided, use fallback for preview
-        setHandData(getFallbackHandData());
+        // No handId: nothing to replay. Never invent one.
+        setHandData(null);
       }
     } catch (error) {
       reportError(error, 'HandReplay.Failed_to_load_hand');
-      setHandData(getFallbackHandData());
+      setHandData(null);
+      setLoadFailed(true);
     }
     setIsLoading(false);
   };
@@ -314,6 +327,16 @@ export default function HandReplay({
       <div className="hand-replay loading">
         <div className="loader-spinner" />
         <p>Loading Hand...</p>
+      </div>
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <div className="hand-replay error">
+        <p>Could Not Load This Hand</p>
+        <button onClick={() => void loadHandData()}>Retry</button>
+        {onClose && <button onClick={onClose}>Close</button>}
       </div>
     );
   }
@@ -527,99 +550,6 @@ export default function HandReplay({
       )}
     </div>
   );
-}
-
-// Fallback data when hand not found or for preview
-function getFallbackHandData(): HandData {
-  return {
-    id: '2049883074',
-    serial_number: '2049883074',
-    played_at: '2026-01-12T14:51:23',
-    hand_number: 5,
-    total_hands: 10,
-    main_pot: 2265,
-    community_cards: [
-      { rank: 'A', suit: 'spades' },
-      { rank: '5', suit: 'diamonds' },
-      { rank: '9', suit: 'hearts' },
-      { rank: '5', suit: 'spades' },
-      { rank: '2', suit: 'hearts' },
-    ],
-    players: [
-      {
-        seat: 1,
-        user_id: 'p1',
-        username: '-KingFish-',
-        avatar_url: null,
-        position: 'UTG',
-        hole_cards: [
-          { rank: 'T', suit: 'clubs' },
-          { rank: '4', suit: 'spades' },
-        ],
-        result: -10,
-        is_winner: false,
-      },
-      {
-        seat: 2,
-        user_id: 'p2',
-        username: 'soul king',
-        avatar_url: null,
-        position: 'BTN',
-        hole_cards: [],
-        result: 0,
-        is_winner: false,
-      },
-      {
-        seat: 3,
-        user_id: 'p3',
-        username: 'cubby2426',
-        avatar_url: null,
-        position: 'SB',
-        hole_cards: [],
-        result: -5,
-        is_winner: false,
-      },
-      {
-        seat: 4,
-        user_id: 'p4',
-        username: 'Im gna CUM',
-        avatar_url: null,
-        position: 'BB',
-        hole_cards: [
-          { rank: 'K', suit: 'spades' },
-          { rank: 'K', suit: 'hearts' },
-        ],
-        final_hand: 'One Pair',
-        result: -1125,
-        is_winner: false,
-      },
-      {
-        seat: 5,
-        user_id: 'p5',
-        username: 'Wizurd',
-        avatar_url: null,
-        position: 'MP',
-        hole_cards: [],
-        result: 0,
-        is_winner: false,
-      },
-      {
-        seat: 6,
-        user_id: 'p6',
-        username: 'monkey88',
-        avatar_url: null,
-        position: 'CO',
-        hole_cards: [
-          { rank: 'T', suit: 'diamonds' },
-          { rank: 'T', suit: 'hearts' },
-        ],
-        final_hand: 'Two Pair',
-        result: 1137.73,
-        is_winner: true,
-      },
-    ],
-    actions: [],
-  };
 }
 
 export { HandReplay };

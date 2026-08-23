@@ -217,6 +217,21 @@ export interface SeatSlotProps {
   secondsLeft?: number; // Actual seconds remaining (for countdown overlay)
   deckStyle?: '4color' | '2color';
   cardBack?: string; // Card back design ID (e.g. 'classic_red', 'black', 'clubs_gold')
+  /**
+   * How many hole cards this VARIANT deals, used only to draw the right number
+   * of face-down backs for an opponent whose hand we cannot see.
+   *
+   * Dan 2026-08-23: "it only shows 2 cards even if its a 4 card, 5 card or 6
+   * card game, that needs to also change." The fallback branch below hard-coded
+   * two <HoleCard hidden> elements, so every PLO4/PLO5/PLO6 seat showed a
+   * Hold'em hand. The seat cannot infer this - an opponent's `holeCards` is
+   * empty precisely because it is hidden, so there is nothing local to count.
+   * Only the table knows the variant, so the table passes it.
+   *
+   * Defaults to 2 so any caller that does not pass it keeps today's behaviour
+   * rather than rendering nothing.
+   */
+  holeCardCount?: number;
   showStackInBB?: boolean;
   onSit?: () => void;
   /**
@@ -487,6 +502,7 @@ export const SeatSlot = memo(
       secondsLeft,
       deckStyle,
       cardBack = 'classic_blue',
+      holeCardCount = 2,
       showStackInBB = false,
       onSit,
       canSit = true,
@@ -1285,39 +1301,37 @@ export const SeatSlot = memo(
             <div
               className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
             >
-              {player.holeCards && player.holeCards.length > 0 ? (
-                player.holeCards.map((card, i) => (
-                  <HoleCard
-                    key={i}
-                    card={card}
-                    /* Dan 2026-08-18: null = this specific card was not among
+              {player.holeCards && player.holeCards.length > 0
+                ? player.holeCards.map((card, i) => (
+                    <HoleCard
+                      key={i}
+                      card={card}
+                      /* Dan 2026-08-18: null = this specific card was not among
                        the ones the player chose to show, so it stays down even
                        though the seat itself is revealed. */
-                    hidden={!player.showCards || card == null}
-                    index={i}
-                    isWinner={isWinner}
-                    deckStyle={deckStyle}
-                    cardBack={cardBack}
-                  />
-                ))
-              ) : (
-                <>
-                  <HoleCard
-                    key={0}
-                    hidden={true}
-                    index={0}
-                    deckStyle={deckStyle}
-                    cardBack={cardBack}
-                  />
-                  <HoleCard
-                    key={1}
-                    hidden={true}
-                    index={1}
-                    deckStyle={deckStyle}
-                    cardBack={cardBack}
-                  />
-                </>
-              )}
+                      hidden={!player.showCards || card == null}
+                      index={i}
+                      isWinner={isWinner}
+                      deckStyle={deckStyle}
+                      cardBack={cardBack}
+                    />
+                  ))
+                : /* Dan 2026-08-23: this used to be exactly two hard-coded backs,
+                   so a PLO4 seat showed a Hold'em hand and a 6-card seat showed
+                   a third of one. The count comes from the table because the
+                   seat has nothing to count - an opponent's holeCards array is
+                   empty BECAUSE the hand is hidden. Guarded to a sane band so a
+                   malformed variant string cannot render 0 cards (a live player
+                   who looks like they folded) or a hundred. */
+                  Array.from({ length: Math.max(1, Math.min(6, holeCardCount)) }, (_, i) => (
+                    <HoleCard
+                      key={i}
+                      hidden={true}
+                      index={i}
+                      deckStyle={deckStyle}
+                      cardBack={cardBack}
+                    />
+                  ))}
             </div>
           )}
 

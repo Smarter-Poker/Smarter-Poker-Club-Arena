@@ -10,7 +10,9 @@ import { resolve } from 'node:path';
  * The server was already correct on both paths — the manual one arms
  * `remainingBeforeBank + bankSeconds` and the auto one arms the full 20 with no
  * remainder to add, because the primary clock has by definition just expired.
- * The clock hook was correct too: extendTimer adds to the live remainder.
+ * The clock hook was correct too - though it used extendTimer then; it is
+ * resetTimer now, because a bank RESETS the clock rather than stacking on
+ * the remainder (2026-08-23).
  *
  * THE EVENT WAS DROPPED ON ARRIVAL. The engine hub speaks snake_case
  * (`table_id`, `player_id`) and TablePage forwarded `evt.data` verbatim to the
@@ -57,7 +59,7 @@ describe('time bank events survive the hub', () => {
     expect(sub).toMatch(/if \(evtTableId !== tableId\) return;/);
   });
 
-  it('still extends by the seconds the engine granted, not a hardcoded guess', () => {
+  it('still uses the seconds the engine granted, not a hardcoded guess', () => {
     // Wider window: the handler carries a long note between the guard and the
     // extension, and the first draft of this test sliced it off mid-comment.
     const sub = SRC.slice(
@@ -66,6 +68,14 @@ describe('time bank events survive the hub', () => {
     );
     expect(sub).toContain('payload.secondsGranted');
     expect(sub).toContain('payload.additional_seconds');
-    expect(sub).toMatch(/extendTimer\(seconds\)/);
+    // resetTimer, not extendTimer, since 2026-08-23. The invariant this test
+    // exists to protect is that the number comes FROM THE EVENT rather than
+    // being a literal in the client - that is unchanged and still asserted by
+    // the two lines above. What changed is what we do with it: Dan, "if the
+    // time bank is used, it must reset the clock for 20 more seconds."
+    // extendTimer ADDS to whatever is left, so a bank pressed with twelve
+    // seconds on the clock produced a 32-second turn and the ring then
+    // disagreed with an engine that had started a fresh 20.
+    expect(sub).toMatch(/resetTimer\(seconds\)/);
   });
 });

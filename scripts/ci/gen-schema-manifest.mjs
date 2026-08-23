@@ -79,5 +79,13 @@ const colsManifest = {
     'Live public schema COLUMN snapshot {table: [columns]}. Source of truth for the phantom-column CI gate. Do NOT hand-edit.',
   columns: sortedCols,
 };
-writeFileSync(COLS_OUT, JSON.stringify(colsManifest, null, 0) + '\n');
+// 2-space, matching the schema manifest above and Prettier's JSON output.
+// It was `null, 0` (compact). lint-staged runs `prettier --write` on *.json, so
+// every commit that staged this file rewrote it to multi-line, and the next
+// regeneration wrote it back to one line. The file therefore oscillated between
+// two byte-identical-to-an-earlier-state forms, and scripts/ci/detect-silent-revert.mjs
+// correctly flagged that as a silent revert (PR #360, 2026-08-23) even though the
+// 9,791 column keys were identical every time. Keep this at 2 so the generator is
+// idempotent under Prettier.
+writeFileSync(COLS_OUT, JSON.stringify(colsManifest, null, 2) + '\n');
 console.log(`Wrote ${COLS_OUT}: ${Object.keys(sortedCols).length} tables' columns`);

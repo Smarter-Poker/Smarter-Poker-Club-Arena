@@ -20,9 +20,6 @@ export type { CashierModalProps, Transaction } from './CashierModal';
 export { AdminReports } from './AdminReports';
 export type { AdminReportsProps, ReportSummary, AgentPerformance } from './AdminReports';
 
-export { HandHistoryModal } from './HandHistoryModal';
-export type { HandHistoryModalProps, HistoricalHand } from './HandHistoryModal';
-
 export { SecurityAuditLog } from './SecurityAuditLog';
 export type { SecurityAuditLogProps, AuditLogEntry, LogSeverity } from './SecurityAuditLog';
 

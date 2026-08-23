@@ -173,3 +173,109 @@ Still open, in the order the handoff ranked them: TablePage internal split
 `cards/backs/table/*.webp`, fonts.css content-hashing, HTML edge caching
 (risky), ClubHomePage stale-first hydration (heaviest screen, biggest
 remaining win), font subsetting, images/icons WebP+ref pass.
+
+## Phase 5-6 (2026-08-23) — measuring the bundle, then auditing my own work
+
+Two rounds after Phase 4. Everything below was found by measuring or by
+re-reading a change already merged, not by planning ahead — which is the point
+worth keeping.
+
+### Found by measuring the served bundle
+
+- **Root-level images escaped the optimizer entirely** (PR #343). `ruleFor()`
+  returned `null` for anything outside its prefix list, so every image at the
+  root of `public/` shipped at full size. The PWA/apple-touch icon went out at
+  **637KB** while `manifest.json` declared it `512x512` and the file was
+  1024x1024 — and `public/sw.ts` precaches it on install. A catch-all rule now
+  closes the gap permanently (an opt-in list silently misses whatever nobody
+  remembered to add; a catch-all only ever misses on the safe side) plus an
+  explicit 512 cap for the icon: **637KB -> 148KB**, verified 512x512 valid PNG
+  out. Also deleted three dead root images with zero references anywhere
+  (`poker-table-bg.png` 810KB, `club-arena-design.png` 783KB, root
+  `vip-card.png` 616KB — VIPPage uses `images/vip-card.png` and says so).
+  *Noted, not changed: `poker-chip-logo.png` and `poker-table-bg.png` are JPEG
+  data inside a `.png` filename. Harmless (browsers sniff) but a maskable PWA
+  icon wants real PNG alpha — worth a design pass.*
+
+### Found by auditing changes that had already merged
+
+- **The service worker precached the bundle and never served it** (PR #376).
+  Two silent faults made the versioned cache write-only. `isHashedAsset` was
+  `/[-.][a-zA-Z0-9_]{4,}\.(js|css)$/` and matched **none** of the emitted
+  files — `vite.config.ts` writes `assets/[name]-[hash]-v6.js`, so every chunk
+  ends `-v6.js` and the regex wanted four or more characters where `v6` has
+  two. Separately, the never-intercept-documents guard excluded `/assets/` but
+  not `/fonts/`. So `PRECACHE_URLS` was written on every install and read for
+  nothing but the shell document: chunks hit the network on every load, and the
+  offline app shell booted into a page whose scripts could not load — the exact
+  failure the shell exists to prevent. Routing now matches on the **directory**
+  (`/assets/`, `/fonts/` — precisely what the precache scanner collects), which
+  a filename-template change cannot unhook again. `sw-bus.js` and
+  `build-info.json` sit at the club-arena root and keep revalidating; a cached
+  `build-info.json` would make every deploy verification lie.
+- **The publish stand-down guard was comparing the bundle to itself** (PR
+  #372). The `Sync dist/` step rsyncs our bundle into
+  `world-hub/public/hub/club-arena/` *before* the commit step, and the guard
+  read its "deployed" provenance from exactly that path — so `THEIRS_SHA`
+  equalled `OURS_SHA` on attempt 1, every run. The ancestry check added in #273
+  was correct and **inert**, live only from attempt 2 after a push had already
+  been rejected. That left the original regression open: a losing older-sha run
+  that checks World Hub out *after* the winner pushed overwrites it, compares
+  ours-to-ours, and fast-forwards cleanly with every check green. Reproduced
+  against real git repos both ways before fixing. Now reads
+  `git show origin/main:public/hub/club-arena/build-info.json`.
+- **Signing out left the whole account cached on the device** (PR #368).
+  `SIGNED_OUT` cleared the store, Sentry and realtime, and no storage at all:
+  the next person to use the device got the previous account's club list
+  (`club_arena_clubs_cache`), club lobby (`club_home_cache_*`, painted
+  *instantly*, before any fetch could correct it), `hand_history_*`, and every
+  sessionStorage SWR cache — profile, transaction history, session stats, which
+  die with the TAB, not the session, so a sign-out and sign-in in the same tab
+  carried them across accounts. Moving ClubHomePage's cache to localStorage for
+  the instant paint widened a hole that was already there for eight other
+  caches. `clearUserCaches()` now runs in the one place every sign-out passes
+  through; device preferences are deliberately kept, and the Supabase auth key
+  is never touched.
+- **A missing `node` reported itself as a title-case violation** (PR #357, and
+  World Hub #664 for the same bug in the bundle gate). A push from a shell
+  without `/opt/homebrew/bin` on PATH got `127 command-not-found` and the hook
+  announced *"page copy is not Title Cased."* Worse than the wasted time: the
+  false failure stood in front of a **true** one — re-run with node found, the
+  same push was correctly stopped on a real `supabase.auth.getUser()`
+  violation.
+
+### The pattern worth remembering
+
+Four of the five above are guards that reported success, or reported the wrong
+failure, while doing nothing. A precache nothing reads. A stand-down that
+compares a file to itself. A purge that never ran. A checker whose absence
+looks like a content error. None of them show up as a red tick, and none would
+have been found by planning the next optimisation — only by asking what the
+shipped thing actually does.
+
+### Anti-drift notes for whoever is next
+
+- `clearUserCaches.ts` types its key list against `STORAGE_KEYS`, so a rename
+  fails the build rather than silently skipping a purge; the sessionStorage
+  prefixes are the canonical list exported from `staleCacheReaper`, not a copy;
+  ClubHomePage imports the one `CLUB_HOME_CACHE_PREFIX` it writes with.
+- `tests/unit/swAssetRouting.test.ts` re-implements the SW routing against real
+  emitted filenames and asserts against the shipped `sw-bus.js` — it fails on
+  2 of 13 against the old file.
+- `shipped-invariants.test.ts` pins both publish-guard properties: ancestry not
+  wall clock, and reading the deployed file from git rather than the working
+  tree.
+
+### Still open, in the order worth doing
+
+1. TablePage internal split (~413KB JS + ~383KB CSS in one chunk). HIGH CHURN —
+   7 commits in two days — coordinate before touching.
+2. `images/icons/` (~3.2MB) WebP pass with per-component fallbacks.
+3. The legacy un-hashed `dist/fonts/fonts.css` can be dropped after a few
+   deploy cycles, once no SW-cached shell still references it.
+4. HTML edge caching (`s-maxage`) — risky at this deploy cadence; the SW shell
+   fallback already covers slow networks.
+5. Font subsetting/weight trim — needs a design pass (weight 900 has 69 uses).
+6. `tests/components/ClubQuickLinkTile.test.tsx` mocks `images/tiles/cashier.webp`,
+   a filename that no longer exists. Harmless (jsdom never fetches it) but
+   misleading to read.

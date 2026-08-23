@@ -4,5 +4,4 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-export { HandHistoryViewer } from './HandHistoryViewer';
 export { SessionGraph } from './SessionGraph';

@@ -13,7 +13,7 @@ import React from 'react';
 const shimmerStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,0.06)',
   borderRadius: 8,
-  animation: 'pulse 1.5s ease-in-out infinite',
+  animation: 'animationsPulse 1.5s ease-in-out infinite',
 };
 
 const containerStyle: React.CSSProperties = {

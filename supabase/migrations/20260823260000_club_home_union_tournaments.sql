@@ -1,3 +1,34 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SUPERSEDED 2026-08-23 — DO NOT COPY ANYTHING BELOW THIS LINE
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+--  The get_club_home body in this file COULD NOT RUN. It was applied to
+--  production and committed without the function ever being called once, and
+--  every call raised from the first:
+--
+--      union_clubs.status          does not exist (42703) — hit first
+--      clubs.short_id              does not exist (the integer key is club_id)
+--      club_members.profile_id     does not exist (it is user_id)
+--      tables.time_bank_seconds / time_bank_rounds / min_buyin as projected
+--      WHERE tables.status IN ('RUNNING','WAITING')   the column is lowercase
+--
+--  and it returned no `found` key, which the caller in ClubHomePage.tsx
+--  requires. The lobby's one-round-trip fast path therefore never painted a
+--  single time, every club fell back to six sequential queries, and for those
+--  seconds every tab read "No Tournaments Yet" — which is what Dan reported as
+--  "sometimes it displays, then it disappears".
+--
+--  THE LIVE DEFINITION IS IN 20260823280000_get_club_home_was_never_run.sql,
+--  whose assertions EXECUTE the function against every club and refuse to
+--  apply if any call raises. Replaying this file alone re-installs a broken
+--  function; the later migration repairs it, so the ORDER matters and this
+--  file must never be applied on its own.
+--
+--  Kept rather than deleted because it is the record of what happened, and
+--  because CLAUDE.md is explicit that the files in this directory are history,
+--  not truth. Read it as evidence, not as an example.
+-- ═══════════════════════════════════════════════════════════════════════════
+
 CREATE OR REPLACE FUNCTION public.fn_club_home_in_scope(p_club_id uuid, p_is_private boolean, p_union_id uuid, p_viewer_union_id uuid, p_viewer_club_id uuid, p_viewer_union_club_ids uuid[])
 RETURNS boolean
 LANGUAGE sql IMMUTABLE PARALLEL SAFE

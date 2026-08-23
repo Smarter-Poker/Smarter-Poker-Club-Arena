@@ -486,7 +486,7 @@ export default function FinancialAdminHub() {
                       style={{
                         fontSize: '0.7rem',
                         color: '#10b981',
-                        animation: 'pulse 1.5s infinite',
+                        animation: 'animationsPulse 1.5s infinite',
                       }}
                     >
                       Syncing...

@@ -1142,7 +1142,7 @@ export default function ClubDetailPage() {
       {/* Quick Stats */}
       <section
         className={styles.statsRow}
-        style={{ animation: `slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)` }}
+        style={{ animation: `animationsSlideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)` }}
       >
         <StatCard
           value={animatedOnlineCount}
@@ -1449,7 +1449,7 @@ export default function ClubDetailPage() {
                   <div
                     key={table.id}
                     className={styles.tableCard}
-                    style={{ animation: `slideInUp 0.5s ease-out ${idx * 0.06}s both` }}
+                    style={{ animation: `animationsSlideInUp 0.5s ease-out ${idx * 0.06}s both` }}
                   >
                     <div className={styles.tableCardHeader}>
                       <h4>{table.name}</h4>
@@ -1605,7 +1605,9 @@ export default function ClubDetailPage() {
                       {filteredMembers.slice(0, memberLimit).map((member, idx) => (
                         <tr
                           key={member.id}
-                          style={{ animation: `slideInUp 0.5s ease-out ${idx * 0.05}s both` }}
+                          style={{
+                            animation: `animationsSlideInUp 0.5s ease-out ${idx * 0.05}s both`,
+                          }}
                         >
                           <td>
                             <div className={styles.memberCell}>
@@ -1726,7 +1728,7 @@ export default function ClubDetailPage() {
                   <div
                     key={agent.id}
                     className={styles.agentCard}
-                    style={{ animation: `slideInUp 0.5s ease-out ${idx * 0.06}s both` }}
+                    style={{ animation: `animationsSlideInUp 0.5s ease-out ${idx * 0.06}s both` }}
                   >
                     <div className={styles.agentAvatar}>{agent.displayName?.charAt(0) || '?'}</div>
                     <div className={styles.agentInfo}>

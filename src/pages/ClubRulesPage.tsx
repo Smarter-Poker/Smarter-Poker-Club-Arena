@@ -18,6 +18,7 @@ import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import './ClubRulesPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
+import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { reportError } from '../utils/errorReporter';
 
 const rulesLineAnimationStyle = (index: number) => ({
@@ -235,17 +236,17 @@ export default function ClubRulesPage() {
 
   if (loading) {
     return (
-      <div className="club-rules-page">
+    <StandardContentLayout className="club-rules-page" title="Club Rules">
         <div className="loading-state">
           <PageSkeleton variant="settings" />
         </div>
-      </div>
+      </StandardContentLayout>
     );
   }
 
   if (loadError) {
     return (
-      <div className="club-rules-page">
+    <StandardContentLayout className="club-rules-page" title="Club Rules">
         <div style={{ textAlign: 'center', padding: '60px 20px', color: '#aaa' }}>
           <p style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠</p>
           <p style={{ marginBottom: '16px' }}>Failed To Load Club Rules</p>
@@ -265,12 +266,12 @@ export default function ClubRulesPage() {
           </button>
         </div>
         <ClubBottomNav clubId={clubId || ''} userRole={userRole} />
-      </div>
+      </StandardContentLayout>
     );
   }
 
   return (
-    <div className="club-rules-page">
+    <StandardContentLayout className="club-rules-page" title="Club Rules">
       <div className="rules-header">
         <h1>{clubName}</h1>
         <h2>Club Rules & Guidelines</h2>
@@ -337,6 +338,6 @@ export default function ClubRulesPage() {
       </div>
 
       <ClubBottomNav clubId={clubId || ''} userRole={userRole} />
-    </div>
-  );
-}
+    </StandardContentLayout>
+    );
+  }

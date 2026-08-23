@@ -28,6 +28,7 @@ import {
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { ConfettiEffect } from '../components/effects/ConfettiEffect';
+import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './DailyChallengesPage.module.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -658,19 +659,19 @@ export default function DailyChallengesPage() {
 
   if (!userId) {
     return (
-      <div className={styles.container}>
+      <StandardContentLayout className={styles.container} title="Daily Missions">
         <div className={styles.emptyState}>
           <h2>Sign In To See Your Daily Challenges</h2>
           <button className={styles.playButton} onClick={() => navigate('/auth')}>
             Sign In
           </button>
         </div>
-      </div>
+      </StandardContentLayout>
     );
   }
 
   return (
-    <div className={styles.container}>
+    <StandardContentLayout className={styles.container} title="Daily Missions">
       <header className={styles.header}>
         <div className={styles.headerTitles}>
           <h1 className={styles.title}>Daily Challenges</h1>
@@ -907,6 +908,6 @@ export default function DailyChallengesPage() {
           Go Play
         </button>
       </footer>
-    </div>
+    </StandardContentLayout>
   );
 }

@@ -6,6 +6,7 @@
 
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
+import StandardContentLayout from '../../components/layouts/StandardContentLayout';
 import styles from './LegalPage.module.css';
 
 const sectionAnimationStyle = (index: number) => ({
@@ -18,7 +19,7 @@ export default function FairGamingPage() {
   const navigate = useNavigate();
 
   return (
-    <div className={styles.page}>
+    <StandardContentLayout className={styles.page}>
       <div className={styles.header}>
         <button className={styles.backBtn} onClick={() => navigate(-1)}>
           ← Back
@@ -183,6 +184,6 @@ export default function FairGamingPage() {
 
         <div className={styles.lastUpdated}>Last Updated: January 29, 2026</div>
       </div>
-    </div>
+    </StandardContentLayout>
   );
 }

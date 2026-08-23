@@ -27,6 +27,7 @@ import {
 } from '../lib/settingsBridge';
 import FAQPanel from '../components/support/FAQPanel';
 import TermsGate from '../components/auth/TermsGate';
+import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './SettingsPage.module.css';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { useToast } from '../components/common/Toast';
@@ -589,7 +590,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className={styles.page}>
+    <StandardContentLayout className={styles.page} title="Settings">
       <div className={styles.headerActions}>
         {hasChanges && (
           <button className={styles.saveButton} onClick={saveSettings} disabled={saving}>
@@ -1065,6 +1066,6 @@ export default function SettingsPage() {
         onCancel={() => setConfirmAction(null)}
         loading={actionLoading}
       />
-    </div>
+    </StandardContentLayout>
   );
 }

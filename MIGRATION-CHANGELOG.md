@@ -77,6 +77,31 @@ predicate in the index. Applied to production and re-measured: **11.588ms ->
 0.376ms**, 1,480 buffers -> 35, and the "Rows Removed by Filter" line is gone —
 nothing left for the policy to be evaluated against.
 
+### 5. …and it could still spin forever (PR #526)
+
+With the ticker gone the "+" is reachable, and the sheet still sat on "Finding
+Games…" indefinitely on some runs. Instrumenting `window.fetch` across repeated
+production runs: when it stalls, **no `/rest/v1/tables` request is issued at
+all**. The await neither resolves nor rejects and never reaches the network, so
+the stall is upstream of the query — and `try/catch` cannot see it, because
+nothing is thrown.
+
+Every other failure path in `handleAddTable` already falls back to the lobby
+tab; a stall now does too, via a 6s race on both lookups. An empty result is
+deliberately still an answer ("No Open Seats Right Now"), and a real rejection
+still propagates. `withTimeout` takes `PromiseLike`, not `Promise` — a
+`PostgrestFilterBuilder` is a thenable that only issues its request when
+awaited and has no `.catch`/`.finally`.
+
+### Verified on production, not on exit codes
+
+|                                  | before               | after                 |
+| -------------------------------- | -------------------- | --------------------- |
+| hit test at the "+" centre       | `.mtt-ticker__track` | `.table-tab-bar__add` |
+| Playwright click                 | intercepted          | OK                    |
+| elements sharing that aria-label | 2                    | 1                     |
+| Quick Join populated             | 6,707ms              | 139-232ms             |
+
 ### Note for whoever chases "Club Not Found" next
 
 Not reproduced again this session. Ruled out from a clean session: the club row,
@@ -13195,3 +13220,116 @@ same commit that replaced the behaviour.
 
 18 new tests pinning the SQL rule and the TypeScript mirror to the same numbers.
 287 files / 3,531 green.
+
+## Cowork session 2026-08-23 (14) — THE SPINS WALLET, AND WHAT HAPPENS WHEN A CLUB JOINS A UNION
+
+Dan: "ADD THE SPINS WALLET TO THE UNION, AND CLUBS WHEN THEY ENABLE SPINS. IF A
+CLUB JOINS A UNION, THAT WALLET MUST DISAPPEAR."
+
+**Two pots that looked like one.** The union dashboard already carried a tile
+called "Spin Reserve" — and it does not show this wallet. That one reads
+`union_wallets.spin_reserve_wallet`: operator capital earmarked for Spins but
+**not yet deployed**. The migration that created it says so outright: "The
+DEPLOYED reserve is `spin_bonus_pools.balance` — this wallet holds only what is
+NOT currently in the pool, so the two never double-count." So the live float
+every multiplier is actually paid from appeared on **no wallet surface in the
+entire product**. Both tiles now sit side by side, in both union tabs, and the
+comment between them says which is which.
+
+Clubs get a "Spins Wallet" row in `DynamicWallet`, for club-bank staff only,
+and only when they have actually switched Spins on — no permanent 0.00 parked
+next to real balances.
+
+**The disappearing act is a data problem before it is a UI one.**
+`fn_spin_reserve_owner` resolves `COALESCE(clubs.union_id, club_id)`. The
+instant `clubs.union_id` is written, the club's own `spin_bonus_pools` row
+becomes unreachable through every code path in the platform — not deleted, not
+flagged, just orphaned, with its balance stranded, its seed no longer
+repayable, and `is_active` still true. Hiding the row in the UI would have left
+the money there. Neither join path knew the pool existed.
+
+So the wind-down is a **trigger on `clubs.union_id`**, not a patch to the two
+join routes: a third join path added later would reintroduce the leak, and the
+money must move in the _same transaction_ as the join — a club half-joined with
+its float in limbo is the worst of both states.
+
+Where the money goes: **the seed returns to the club** (its own capital, lent
+to its own pool — joining a union is not a reason to forfeit it), and **the
+remaining float goes to the union's pool** (player money, and the union now
+runs Spins for those players). It arrives as a `merge` — a ledger kind that had
+existed unused since the pool was first built.
+
+One guess made deliberately: if the seed has no recorded source wallet the
+repayment plan normally refuses to move it, because guessing which _entity_
+owns money is not a machine's job. Here the entity is not in doubt — it is this
+club — only which of its own wallets, so it goes to `chip_treasury` and the
+ledger says why.
+
+Verified by a rolled-back probe: a standalone club activated with a 2,000 seed
+and built a 600 float, then joined. Seed home to the treasury, 600 absorbed by
+the union, club row emptied and switched off, owner lookup moved to the union,
+and the platform total conserved to the chip. A backfill wound down any club
+that had already joined while holding a pool.
+
+The client half follows the same law `rake_treasury` already used — Dan's own
+earlier rule that union money must never appear on a club surface — so this is
+one flag, not a new concept.
+
+14 new tests. 289 files / 3,561 green.
+
+## Cowork session 2026-08-23 (15) — EVERY CLUB WALLET CLOSES INTO THE MAIN BANK
+
+Dan: "IF A CLUB HAS SPINS, BBJ, BACK UP BBJ OR PROMO FUNDS, ALL CHIPS IN THE
+WALLETS GO TO THE 'MAIN BANK' AND CLOSED WHEN A CLUB JOINS A UNION. ALL THOSE
+FUNDS ARE GIVEN TO THE CLUB TO KEEP OR DISBURSE AT THEIR OWN DISCRETION."
+
+**This overrules a decision I made an hour earlier.** The first union-join
+wind-down sent the Spins _seed_ back to the club but the remaining _float_ to
+the union, reasoning that the float was player money and the union now runs
+Spins for those players. Wrong: the club funded the wallet, the club carried the
+variance, the club keeps the balance. All of it.
+
+**Promo lives in two places** and both are swept — `bbj_pools.promo_balance` is
+the jackpot's own promo slice, `clubs.promo_balance` is the club's separate
+promo float. Sweeping one and not the other would have looked like it worked.
+
+**The trap this nearly walked into.** `fn_bbj_conservation_check` computes
+`gap = inflow − outflow − balances`, healthy only while that gap stays within
+1.00 of a recorded baseline. Taking money OUT of `bbj_pools` shrinks `balances`
+and pushes the gap up by exactly the amount swept — turning a correct transfer
+into a red money alarm. The check already counts `bbj_promo_sweep` rows in
+`chip_transactions` as OUTFLOW, which is precisely what this is, so the sweep is
+booked that way and the gap does not move.
+
+**And it surfaced something that is not mine.** The first attempt asserted the
+check was `healthy` and the whole migration rolled back — because it _already
+is not_. With nothing of this work applied, drift from the 2026-08-19 baseline
+was **−226.65 against a tolerance of 1.00**. That baseline's own note says the
+selftest "alerts on MOVEMENT from this baseline, which is what indicates new
+loss", so something has been quietly alerting. It predates all of this and needs
+its own investigation. The assertion was rewritten to measure the gap _before
+and after this transaction only_ — blocking a correct transfer on an unrelated
+fault would be the wrong call, adding to it would be worse, and that test is
+what tells the two apart.
+
+**Play moves, money does not follow it.** The club's BBJ pool is retired and
+pointed at the union's via `merged_into_pool_id`, because that is where its
+players now play. The balance still goes to the club. The ledger note says so
+explicitly, so nobody later reads the merge pointer as a money movement.
+
+Backfill closed **Club JAQK's 28,742.48 promo float** into its main bank
+(1,023,075.23 → 1,051,817.71). Its BBJ had already been retired into the union
+pool by an older manual step; that is history and was left alone rather than
+unwound out of a live jackpot players are now playing for.
+
+Verified by a rolled-back probe: a club holding all four wallets — 2,600 Spins
+including a 2,000 seed, 1,200 BBJ, 300 backup, 90 jackpot promo, 750 club promo
+— joined a union, its main bank went 8,000 → 12,940, the union received
+nothing, and the BBJ gap did not move across the join.
+
+One probe failure worth recording: the first version measured the gap before
+inserting its own synthetic BBJ pool, so it charged the test for conjuring 1,590
+of jackpot money with no matching contributions. The fixture was wrong, not the
+code — but it is exactly the shape of mistake that would hide a real leak.
+
+10 new tests. 290 files / 3,571 green.

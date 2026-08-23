@@ -21,6 +21,7 @@ import { fmt, timeAgo } from '../utils/format';
 import { SettlementService } from '../services/SettlementService';
 import UnionWalletModal, { type UnionWalletKey } from '../components/union/UnionWalletModal';
 import SpinActivationPanel from '../components/club/SpinActivationPanel';
+import { useSpinsWallet } from '../hooks/useSpinsWallet';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import { getUnionLevel } from '../utils/clubLevels';
 import { reportError } from '../utils/errorReporter';
@@ -724,6 +725,15 @@ export default function UnionDashboardPage() {
   // ── Computed ───────────────────────────────────────────────
   const isLead = adminRole === 'union_lead';
 
+  /**
+   * The union's LIVE Spins wallet -- the float multipliers are actually paid
+   * from. Deliberately distinct from the "Spin Reserve" tile beside it, which
+   * shows union_wallets.spin_reserve_wallet: capital earmarked for Spins but
+   * NOT yet deployed. The two never double-count, and until now only the
+   * undeployed half had a tile anywhere in the product.
+   */
+  const unionSpins = useSpinsWallet(unionId, Boolean(unionId));
+
   // ── Union-wide player roster (Dan 2026-08-22: every player of every club,
   //    with their role — the union is for tracking, so it must SEE everyone). ──
   useEffect(() => {
@@ -1099,6 +1109,25 @@ export default function UnionDashboardPage() {
                     you could not open, which meant the wallet that funds the
                     entire Spin economy had no ledger anywhere in the product.
                     It opens read-only: balance and full history, no send flow. */}
+                {/* THE DEPLOYED pool. The tile below shows
+                    union_wallets.spin_reserve_wallet, which is capital
+                    earmarked for Spins but NOT yet in play; this is the float
+                    every multiplier is actually paid from. They never
+                    double-count, and until now only the undeployed half had a
+                    tile anywhere in the product. Opens the Spins tab, where
+                    the activation panel explains the seed and the repayment
+                    plan behind this number. */}
+                <button
+                  className="admin-stat-card"
+                  style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                  aria-label="Open Spins Wallet"
+                  onClick={() => setTab('settings')}
+                >
+                  <div className="admin-stat-value" style={{ color: '#39d17a' }}>
+                    {unionSpins.state === null ? '-' : fmt(unionSpins.balance)}
+                  </div>
+                  <div className="admin-stat-label">Spins Wallet ›</div>
+                </button>
                 <button
                   className="admin-stat-card"
                   style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
@@ -1485,6 +1514,25 @@ export default function UnionDashboardPage() {
                     you could not open, which meant the wallet that funds the
                     entire Spin economy had no ledger anywhere in the product.
                     It opens read-only: balance and full history, no send flow. */}
+                {/* THE DEPLOYED pool. The tile below shows
+                    union_wallets.spin_reserve_wallet, which is capital
+                    earmarked for Spins but NOT yet in play; this is the float
+                    every multiplier is actually paid from. They never
+                    double-count, and until now only the undeployed half had a
+                    tile anywhere in the product. Opens the Spins tab, where
+                    the activation panel explains the seed and the repayment
+                    plan behind this number. */}
+                <button
+                  className="admin-stat-card"
+                  style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                  aria-label="Open Spins Wallet"
+                  onClick={() => setTab('settings')}
+                >
+                  <div className="admin-stat-value" style={{ color: '#39d17a' }}>
+                    {unionSpins.state === null ? '-' : fmt(unionSpins.balance)}
+                  </div>
+                  <div className="admin-stat-label">Spins Wallet ›</div>
+                </button>
                 <button
                   className="admin-stat-card"
                   style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}

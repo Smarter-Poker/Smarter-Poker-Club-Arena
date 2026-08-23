@@ -59,6 +59,7 @@ import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { normaliseRole, type ClubRole } from '../../types/clubRoles';
 import { clubWalletRows, type WalletRowKey } from './walletRows';
+import { useSpinsWallet } from '../../hooks/useSpinsWallet';
 import './DynamicWallet.css';
 import { reportError } from '../../utils/errorReporter';
 
@@ -364,6 +365,15 @@ export default function DynamicWallet({
   const animPlayerWallet = useAnimatedCounter(data.chipBalance);
   const animClubBank = useAnimatedCounter(data.clubBank);
   const animClubRake = useAnimatedCounter(data.clubRakeTreasury ?? 0);
+
+  /**
+   * The Spins wallet. Only fetched where it could ever be shown: a club that
+   * is NOT in a union (a club inside one has no Spins wallet of its own -- the
+   * pool belongs to the union) and a viewer who may see the Club Bank. The
+   * union panel reads its own below.
+   */
+  const spins = useSpinsWallet(clubId, variant !== 'union' && !isClubInUnion);
+  const animSpins = useAnimatedCounter(spins.balance);
   const animUnionRake = useAnimatedCounter(data.unionRake);
 
   // ── Fetch data — uses resolvedId (UUID) for all Supabase queries ───────────
@@ -761,6 +771,17 @@ export default function DynamicWallet({
       hint: onOpenClubBank ? 'Tap For The Club Bank Cashier' : undefined,
       onOpen: onOpenClubBank,
     },
+    spins_wallet: {
+      key: 'spins_wallet',
+      // Named for what it IS to an owner: the wallet the Spin multipliers are
+      // paid out of. NOT the union dashboard's "Spin Reserve" tile, which is
+      // undeployed capital waiting to be seeded -- see useSpinsWallet.
+      label: 'Spins Wallet',
+      icon: 'treasury',
+      value: animSpins,
+      known: spins.state !== null,
+      hint: 'Funds This Club’s Spin Multipliers',
+    },
     rake_treasury: {
       key: 'rake_treasury',
       label: 'Rake Treasury',
@@ -808,7 +829,10 @@ export default function DynamicWallet({
   const rows: WalletRow[] =
     effectiveVariant === 'union'
       ? UNION_ROWS
-      : clubWalletRows(viewerRole, { standalone: !isClubInUnion }).map((k) => CLUB_ROW_BY_KEY[k]);
+      : clubWalletRows(viewerRole, {
+          standalone: !isClubInUnion,
+          spinsActive: spins.active,
+        }).map((k) => CLUB_ROW_BY_KEY[k]);
 
   // ── Keyboard handler for BBJ banner (accessibility) ─────────────────────────
   const handleBbjKeyDown = (e: React.KeyboardEvent) => {

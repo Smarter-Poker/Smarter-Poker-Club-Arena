@@ -11,10 +11,12 @@
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  min-height: 100dvh;
   background: #000000;
   position: relative;
   overflow-x: hidden;
+  width: 100%;
+  max-width: 100vw;
   /* Dan 2026-08-20: was a hardcoded 80px against a bar that measures 74px and
      then ADDS env(safe-area-inset-bottom) on a notched phone — so on an
      iPhone the bar grew past the reservation and covered the last row of game
@@ -204,8 +206,8 @@
 }
 
 .lobby-club__avatar {
-  width: 64px;
-  height: 64px;
+  width: 192px;
+  height: 192px;
   flex-shrink: 0;
   border-radius: 12px;
   overflow: hidden;
@@ -230,7 +232,7 @@
 
 .lobby-club__avatar-fallback {
   color: #3b82f6;
-  font-size: 1.5rem;
+  font-size: 4.5rem;
   line-height: 1;
 }
 
@@ -1738,4 +1740,11 @@
 }
 .lobby-top__notice-actions button:last-child {
   background: #0088ff;
+}
+
+@media (max-width: 768px) {
+  .club-home {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
 }

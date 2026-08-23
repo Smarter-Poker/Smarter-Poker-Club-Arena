@@ -22,6 +22,7 @@ import { formatDateShort as formatDate } from '../utils/format';
 import { retryFetch } from '../utils/retryFetch';
 import { useIsMounted } from '../hooks/useIsMounted';
 import PageSkeleton from '../components/common/PageSkeleton';
+import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { reportError } from '../utils/errorReporter';
 
 interface Promotion {
@@ -247,7 +248,7 @@ export default function PromotionsPage() {
   };
 
   return (
-    <div className="promotions-page">
+    <StandardContentLayout className="promotions-page" title="Promotions">
       {/* Daily Bonus Button */}
       <div className="daily-bonus-banner" onClick={() => setShowBonusWheel(true)}>
         <span className="bonus-icon">▦</span>
@@ -451,6 +452,6 @@ export default function PromotionsPage() {
 
       {/* Bottom Navigation */}
       {clubId && <ClubBottomNav clubId={clubId} />}
-    </div>
+    </StandardContentLayout>
   );
 }

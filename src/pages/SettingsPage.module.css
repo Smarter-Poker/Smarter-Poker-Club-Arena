@@ -697,3 +697,18 @@
     background: transparent;
   }
 }
+
+@media (max-width: 768px) {
+  .page {
+    padding: 0 !important;
+  }
+  .content {
+    gap: 0 !important;
+  }
+  .section {
+    border-radius: 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+    margin-bottom: 0 !important;
+  }
+}

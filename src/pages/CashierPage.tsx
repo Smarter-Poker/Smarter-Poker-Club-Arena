@@ -52,6 +52,7 @@ import AgentPromoPanel from '../components/agent/AgentPromoPanel';
 import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import ClubBankCashierModal from '../components/wallet/ClubBankCashierModal';
+import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './CashierPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
@@ -1628,7 +1629,7 @@ export default function CashierPage() {
   // cleared — an permanent loading page reachable from the table menu.
   if (!clubId) {
     return (
-      <div className={styles.page}>
+      <StandardContentLayout className={styles.page} title="Cashier">
         <section className={styles.card}>
           <h2 className={styles.cardTitle}>
             <span className={styles.cardTitleIcon}>◆</span>Cashier
@@ -1651,13 +1652,10 @@ export default function CashierPage() {
               </div>
             )}
           </div>
-        </section>
-      </div>
-    );
-  }
+        </section></StandardContentLayout>);}
 
   return (
-    <div className={styles.page}>
+    <StandardContentLayout className={styles.page}>
       {/* Loading context skeleton — shown INSIDE content area, NOT blocking tabs/nav */}
 
       {/* ── Club context bar — which club's cashier, with multi-club switcher ── */}
@@ -2584,6 +2582,6 @@ export default function CashierPage() {
           </div>
         </div>
       )}
-    </div>
+    </StandardContentLayout>
   );
 }

@@ -159,3 +159,15 @@
     font-size: 0.75rem;
   }
 }
+
+
+@media (max-width: 768px) {
+  .club-rules-page {
+    padding: 0 !important;
+  }
+  .rules-content {
+    border-radius: 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+  }
+}

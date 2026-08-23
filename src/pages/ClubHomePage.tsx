@@ -39,11 +39,13 @@ import {
 } from '../components/lobby/lobbyEntries';
 import { tournamentService } from '../services/TournamentService';
 import { getClubLevel, ClubLevelInfo } from '../utils/clubLevels';
+import { fmtChips } from '../utils/format';
 import { BusToastBridge } from '../components/common/BusToastBridge';
 import { DiamondService } from '../services/DiamondService';
 import { useToast } from '../components/common/Toast';
 import { waitlistService } from '../services/WaitlistService';
 import ConfirmModal from '../components/common/ConfirmModal';
+import confirmDialog from '../components/common/confirmDialog';
 import { retryFetch } from '../utils/retryFetch';
 import './ClubHomePage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -243,9 +245,9 @@ const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
   { key: 'MTT', label: 'MTT' },
   { key: 'HOLDEM', label: 'NLH' },
   { key: 'OMAHA', label: 'PLO' },
-  { key: 'LIMIT', label: 'LMT' },
-  { key: 'SPIN', label: 'SPIN' },
-  { key: 'SNG', label: 'SNG' },
+  { key: 'LIMIT', label: 'LIMIT' },
+  { key: 'SPIN', label: 'SPINS' },
+  { key: 'SNG', label: 'HEADS UP' },
 ];
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
@@ -1876,9 +1878,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     (tableId: string) => {
       haptic.medium();
       setPanelOpen(false);
-      // Existing launch flow: seat choice + buy-in validation happen AT the
-      // table (fn_take_seat_and_buy_in) — nothing is spent from the lobby.
-      navigate(`/table/${tableId}`);
+      // Execute navigate in the next tick to ensure the panel unmounts safely 
+      // without interrupting React Router transition internals
+      setTimeout(() => navigate(`/table/${tableId}`), 0);
     },
     [navigate]
   );
@@ -1890,14 +1892,45 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         return;
       }
       if (actionBusy) return;
+
+      const totalCost = t.buy_in_amount + (t.buy_in_fee || 0);
+      const confirmed = await confirmDialog({
+        title: 'Confirm Buy In',
+        message: `Register for ${t.name}? This will debit ${fmtChips(totalCost)} from your wallet.`,
+        confirmText: 'Confirm Buy In',
+      });
+      if (!confirmed) return;
+
       setActionBusy(true);
       try {
         const username = useUserStore.getState().user?.username || 'Player';
-        // Server-authoritative: fn_register_for_tournament validates status,
-        // late reg, capacity, duplicates and BALANCE, and debits atomically.
         await tournamentService.registerPlayer(t.id, currentUserId, username);
         setRegisteredTournamentIds((prev) => new Set(prev).add(t.id));
         toast.success(`You Are Registered For ${t.name}`);
+        setPanelOpen(false);
+
+        // Check if the server assigned a table (late reg)
+        const { data: tp } = await supabase
+          .from('tournament_players')
+          .select('table_id')
+          .eq('tournament_id', t.id)
+          .eq('user_id', currentUserId)
+          .maybeSingle();
+
+        if (tp?.table_id) {
+          navigate(`/table/${tp.table_id}`);
+        } else {
+          // Find active tournament table to spectate
+          const { data: tbls } = await supabase
+            .from('tables')
+            .select('id, status')
+            .eq('tournament_id', t.id)
+            .neq('status', 'closed')
+            .limit(1);
+          if (tbls && tbls.length > 0 && tbls[0].id) {
+            navigate(`/table/${tbls[0].id}`);
+          }
+        }
       } catch (e) {
         reportError(e, 'ClubHomePage.handleRegister', { tournamentId: t.id });
         toast.error(e instanceof Error ? e.message : 'Registration Failed, Please Try Again');
@@ -1905,7 +1938,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         setActionBusy(false);
       }
     },
-    [currentUserId, actionBusy, toast]
+    [currentUserId, actionBusy, toast, navigate]
   );
 
   const handleUnregister = useCallback(
@@ -2480,6 +2513,19 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                     </button>
                   );
                 })}
+                {currentUserId && (
+                  <button
+                    type="button"
+                    className={`quickprefs__chip ${favoritesOnly ? 'is-on' : ''}`}
+                    aria-pressed={favoritesOnly}
+                    onClick={() => {
+                      haptic.selection();
+                      setFavoritesOnly((v) => !v);
+                    }}
+                  >
+                    Favorites
+                  </button>
+                )}
                 <button
                   className="quickprefs__more"
                   aria-label="Advanced filters"
@@ -2596,11 +2642,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               </>
             )}
           </span>
-          {narrowing.any && totalGameCount > shownCount && (
-            <button type="button" className="lobby-count__clear" onClick={clearAllNarrowing}>
-              Show All
-            </button>
-          )}
         </div>
       )}
 
@@ -2632,19 +2673,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               }}
             >
               + Create New {TOURNAMENT_TYPES.includes(gameType) ? 'Game' : 'Table'}
-            </button>
-          )}
-          {currentUserId && (gameType === 'ALL' || CASH_TYPES.includes(gameType)) && (
-            <button
-              type="button"
-              className={`lobby-favtoggle${favoritesOnly ? ' is-on' : ''}`}
-              aria-pressed={favoritesOnly}
-              onClick={() => {
-                haptic.selection();
-                setFavoritesOnly((v) => !v);
-              }}
-            >
-              Favorites
             </button>
           )}
         </div>

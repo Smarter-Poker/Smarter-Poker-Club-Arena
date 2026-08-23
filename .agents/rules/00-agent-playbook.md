@@ -117,3 +117,20 @@ You have every single credential (CLI, backend, DB access, GitHub, Supabase) to 
 
 No claim without a command behind it. "Tests pass" means you ran them and can
 paste the count. "It is deployed" means you checked what production serves.
+
+## APPENDIX A — CI PIPELINE & REVERT GUARDS
+
+Required (a PR cannot merge until these are green):
+
+- **TypeScript Check**
+- **Client Unit Tests (vitest)**
+- **Server Engine (typecheck + tests)**
+- **Production Build** — vite build + bundle budget. Deterministic.
+- **CSS Beat E2E (multi-table + animations)** — Playwright against this commit's own build.
+
+A green tick answers "did it merge". It does not answer "did it reach production". `.github/workflows/publish-watchdog.yml` asks production directly — it compares `build-info.json` against `main` after every publish attempt.
+
+## APPENDIX B — A RESET CAN NO LONGER DESTROY A COMMIT OR AN EDIT
+
+`.husky/reference-transaction` fires before any ref update lands and refuses one that would orphan local commits — and it writes them to `refs/wip/orphan-guard/<stamp>` first. `scripts/agent-trees-snapshot.sh` does the same for uncommitted edits every ten minutes.
+If you deliberately need to move a ref backwards, say so: `AGENT_REF_GUARD_OK=1`.

@@ -8860,7 +8860,20 @@ export default function TablePage({
 
   /** Commit a fold that has already cleared any dialog / confirmation gates. */
   const commitFold = useCallback(async () => {
-    if (actionLockRef.current) return;
+    /* Dan 2026-08-23: "folding when you can check doesn't work, it just acts
+       like a check."
+
+       This is the last hop of the confirm flow, so it must not bail on the
+       debounce lock. handleActionPanelAction takes that lock on the way IN -
+       before it decides to open the dialog - and any later tap (the dialog's
+       own Fold button included) re-takes it. Returning here on a held lock
+       silently dropped the confirmed fold, the hand sat idle, and the clock
+       ran out into the server's auto-check-when-free. That is exactly the
+       reported symptom: a fold that behaves like a check.
+
+       The confirmation IS the deliberate second action, so clear the lock and
+       proceed rather than treating this as a double-tap. */
+    actionLockRef.current = false;
     if (!validateAndExecuteAction('fold')) return;
     actionLockRef.current = true;
     setTimeout(() => {
@@ -10432,6 +10445,21 @@ export default function TablePage({
                 className={`seat-wrapper${seatDimmed ? ' seat-wrapper--dim' : ''}${
                   isActingSeat ? ' seat-wrapper--spot' : ''
                 }${pos.y < 20 && pos.x === 50 ? ' seat-wrapper--top' : ''}${
+                  /* Dan 2026-08-23: "you can never see the hero's stack, it's
+                     always cut off by the footer." Hero sits at y:100 in every
+                     ring in tableSeatGeometry.ts - avatar CENTRE on the
+                     scaler's bottom edge - and .seat-wrapper is
+                     translate(-50%,-50%), so the whole lower half of the
+                     hero stack (the info box carrying the stack size) hangs
+                     below the felt, straight behind the fixed 96px action bar.
+
+                     Tagging the seat rather than editing the ring on purpose:
+                     those percentages are measured against the table artwork
+                     and moving hero off 100 would drag the rail alignment with
+                     it. The lift is a CSS transform keyed to the action bar's
+                     own height, so the two can never drift apart. */
+                  pos.y >= 100 && pos.x === 50 ? ' seat-wrapper--hero' : ''
+                }${
                   /* Dan 2026-08-23: "when cards are displayed for showdown,
                      they need to be layer one on top of the avatars...
                      currently the avatars appear over the cards at showdown."

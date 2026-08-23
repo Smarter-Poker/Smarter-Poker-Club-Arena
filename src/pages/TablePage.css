@@ -1238,6 +1238,56 @@
   z-index: 10;
 }
 
+/* HERO LIFT — Dan 2026-08-23: "you can never see the hero's stack, it's always
+   cut off by the footer. Raise the hero avatar and box up so it's higher up and
+   not cut off."
+
+   Hero is the only seat at y:100 (see SEAT_LAYOUTS in lib/tableSeatGeometry.ts),
+   which puts the AVATAR'S CENTRE on the scaler's bottom edge. Combined with
+   .seat-wrapper's translate(-50%,-50%), the entire bottom half of the hero
+   stack - and the info box carrying the stack size is the bottom half - rendered
+   underneath .action-panel-wrapper, which is position:fixed at bottom:0 with a
+   96px min-height.
+
+   The lift is expressed against that same 96px so the two cannot drift: if the
+   action bar grows, raise --hero-lift with it. 78px clears the bar and leaves
+   the avatar overlapping the rail the way the ring geometry intends, instead of
+   floating the hero out onto the felt (which is what moving y off 100 would do,
+   and would also break the rail alignment those percentages were measured for).
+
+   The lift is transform-only. z-index is handled separately below and
+   deliberately NOT set on this rule: SeatSlot.css ships
+   `.seat-wrapper--showing { z-index: 30 }` at the same specificity, and a hero
+   showing cards at showdown carries both classes. Whichever stylesheet loaded
+   last would win, which is a coin-flip that could silently undo the 2026-08-23
+   showdown-layering fix. */
+.seat-wrapper--hero {
+  --hero-lift: 78px;
+  transform: translate(-50%, calc(-50% - var(--hero-lift)));
+}
+
+/* One above the other wrappers so a lifted hero is never painted into by a
+   neighbour's revealed card row (drawn above its own plate, into adjacent
+   airspace). `:not(.seat-wrapper--showing)` makes the yield to showdown
+   explicit and wins on specificity rather than on file order. */
+.seat-wrapper--hero:not(.seat-wrapper--showing) {
+  z-index: 11;
+}
+
+/* Short viewports have less felt to give back, and the action bar is the same
+   height regardless, so lift less rather than pushing hero into the board. */
+@media (max-height: 700px) {
+  .seat-wrapper--hero {
+    --hero-lift: 62px;
+  }
+}
+
+@media (max-height: 600px) {
+  .seat-wrapper--hero {
+    --hero-lift: 50px;
+  }
+}
+
 /* Dealer Button — Premium 3D puck */
 /* FIX-D4 2026-07-19 (Bible V8 §11.2 Tab 3): consume the per-theme button tokens
    set by [data-button-theme] so the host's dealer-button selection actually

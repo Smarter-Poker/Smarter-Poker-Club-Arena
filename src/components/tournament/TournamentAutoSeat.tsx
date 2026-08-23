@@ -26,6 +26,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -75,6 +76,33 @@ function writeWarned(s: Set<string>) {
   } catch {
     /* see writeSeen */
   }
+}
+
+/**
+ * Dan 2026-08-23: "make the top line two lines. 'Prime Time Main Event (NLH)'
+ * line one. 'Table 4' line two."
+ *
+ * The server hands this popup ONE string - "Prime Time Main Event (NLH) - Table
+ * 4" - and at 1.35rem in a 460px panel it wrapped wherever it ran out of room,
+ * which put the break after "Table" and left a lone "4" on the second line.
+ *
+ * Split on the LAST " - " so an event name carrying its own dash ("Sunday Deep
+ * - Turbo") keeps it and only the table suffix moves down. No suffix - a cash
+ * table, or a rename - falls through to a single line rather than inventing one.
+ */
+function renderTwoLineTitle(raw: string): ReactNode {
+  const name = (raw || '').trim();
+  const cut = name.lastIndexOf(' - ');
+  if (cut <= 0) return name;
+  const event = name.slice(0, cut).trim();
+  const table = name.slice(cut + 3).trim();
+  if (!event || !table) return name;
+  return (
+    <>
+      <span className="tas-title__event">{event}</span>
+      <span className="tas-title__table">{table}</span>
+    </>
+  );
 }
 
 export default function TournamentAutoSeat() {
@@ -215,7 +243,7 @@ export default function TournamentAutoSeat() {
       <div className="tas-overlay" role="dialog" aria-label="You are being blinded off">
         <div className="tas-panel tas-panel--urgent">
           <div className="tas-flag tas-flag--urgent">You Are Being Blinded Off</div>
-          <div className="tas-title">{blindingOff.name}</div>
+          <div className="tas-title">{renderTwoLineTitle(blindingOff.name)}</div>
           <p className="tas-body">
             Your Seat Is Posting Blinds Without You
             {blindingOff.chips > 0
@@ -253,7 +281,7 @@ export default function TournamentAutoSeat() {
     <div className="tas-overlay" role="dialog" aria-label="Tournament started">
       <div className="tas-panel">
         <div className="tas-flag">TOURNAMENT STARTED</div>
-        <div className="tas-title">{blocked.name}</div>
+        <div className="tas-title">{renderTwoLineTitle(blocked.name)}</div>
         <p className="tas-body">
           Has Just Started And Your Seat Is Waiting. Your Cash Tables Are Full - Please Leave A Cash
           Game Or Close A Table To Sit Down.

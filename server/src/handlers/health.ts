@@ -24,7 +24,17 @@ export interface HealthDeps {
 
 export interface WsMetricsDeps {
   tableStateHub: { totalSubscribers(): number };
-  engineWs: { connectionCount(): number };
+  engineWs: {
+    connectionCount(): number;
+    /** Optional so the structural typing above stays minimal, per this file's
+     *  design note — a transport without it simply reports zeroes. */
+    muxStats?(): {
+      muxSockets: number;
+      singleSockets: number;
+      muxSubscriptions: number;
+      maxSubsOnOneSocket: number;
+    };
+  };
 }
 
 /** `GET /health` and `GET /` — Hetzner VPS health probe + SHA/status report. */
@@ -39,9 +49,20 @@ export function handleHealth(res: ServerResponse, deps: HealthDeps): void {
  * Prometheus + Grafana to track the authoritative WebSocket transport.
  */
 export function handleWsMetrics(res: ServerResponse, deps: WsMetricsDeps): void {
+  // 2026-08-23: the mux breakdown. Without it these two numbers cannot tell a
+  // client holding four per-table sockets from one holding a single mux socket
+  // with four subscriptions, which is the only thing the ca_ws_mux beta
+  // changes — so the beta could never be soaked on evidence.
+  const mux = deps.engineWs.muxStats?.() ?? {
+    muxSockets: 0,
+    singleSockets: 0,
+    muxSubscriptions: 0,
+    maxSubsOnOneSocket: 0,
+  };
   sendJSON(res, 200, {
     totalSubscribers: deps.tableStateHub.totalSubscribers(),
     activeConnections: deps.engineWs.connectionCount(),
+    ...mux,
   });
 }
 

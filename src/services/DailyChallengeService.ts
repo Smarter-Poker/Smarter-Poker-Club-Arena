@@ -952,26 +952,38 @@ class DailyChallengeServiceClass {
    */
 
   /**
-   * Buy a streak freeze for 5000 diamonds.
-   * If the backend RPC isn't deployed yet, mocks a successful purchase for UX.
+   * Buy a streak freeze for 5,000 diamonds.
+   *
+   * ── 2026-08-23: THIS USED TO FAKE THE RECEIPT ──
+   *
+   * The RPC did not exist in the database, and the catch block RECOGNISED that
+   * by name and returned success anyway "for UX testing". So a player pressed
+   * Buy, was told it worked, was charged nothing and received nothing — and
+   * their streak then broke on the next missed day exactly as if they had never
+   * bought protection. No error surfaced and no row was written, so nothing
+   * anywhere went red.
+   *
+   * A purchase may fail. A purchase may never SAY it succeeded when it did not.
+   * The RPC now exists (migration 20260823_buy_streak_freeze) and every failure
+   * is reported as one.
    */
   async buyStreakFreeze(userId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const { error } = await supabase.rpc('buy_streak_freeze', {
+      const { data, error } = await supabase.rpc('buy_streak_freeze', {
         p_user_id: userId,
         p_cost: 5000,
       });
       if (error) throw error;
+      // The RPC reports refusals in its payload (at the 3-freeze cap, not
+      // enough diamonds) rather than as a Postgres error, so an absent or
+      // false `success` is still a failed purchase.
+      const result = data as { success?: boolean; error?: string } | null;
+      if (!result?.success) {
+        return { success: false, error: result?.error || 'Purchase failed' };
+      }
       return { success: true };
     } catch (err: any) {
-      if (
-        err.message?.includes('function buy_streak_freeze does not exist') ||
-        err.message?.includes('buy_streak_freeze')
-      ) {
-        console.warn('buy_streak_freeze RPC not found. Mocking success for UX testing.');
-        return { success: true };
-      }
-      return { success: false, error: err.message };
+      return { success: false, error: err?.message || 'Purchase failed' };
     }
   }
 

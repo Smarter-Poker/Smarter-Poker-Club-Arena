@@ -121,12 +121,30 @@ bash "$ROOT/scripts/check-unpushed-work.sh" --quiet 2>&1 | sed "s/^/# /" >&2 || 
 # Share the main clone's dependencies. The alternative is an npm install per
 # tree - minutes each, gigabytes across 47 trees - or a test gate that silently
 # skips, which is how a red test reaches main and blocks the bundle for all.
+# node_modules: a COPY-ON-WRITE CLONE, never a symlink.
+#
+# 2026-08-23. This used to be `ln -s`, and a symlink is not a safe thing to hand
+# an agent, because npm WRITES THROUGH IT. `npm ci` deletes node_modules before
+# reinstalling, so one `npm ci` in one worktree deleted the MAIN CLONE's install
+# that all 79 trees share. tsc and vitest vanished everywhere at once, agents
+# reasonably concluded their own tree was broken, and ran npm ci again - which
+# is a loop that sustains itself. It gutted the shared tree three times in one
+# afternoon, and two separate agents reported it independently.
+#
+# `cp -Rc` is an APFS clone: about five seconds, and copy-on-write, so it costs
+# no real disk until something modifies it. Each tree now owns its node_modules
+# outright, which means `npm ci` in a worktree is simply SAFE - the thing agents
+# were doing all along.
 if [ ! -e "$DIR/node_modules" ] && [ -d "$ROOT/node_modules" ]; then
-  ln -s "$ROOT/node_modules" "$DIR/node_modules" 2>/dev/null \
-    && echo "# node_modules: linked from the main clone" >&2 \
-    && echo "# NEVER run npm install/ci in this tree - the link WRITES THROUGH" >&2 \
-    && echo "#   to the shared install and breaks it for all $(git -C "$ROOT" worktree list | wc -l | tr -d ' ') worktrees." >&2 \
-    && echo "#   Need a package? Add it in $ROOT and re-run npm ci THERE." >&2
+  if cp -Rc "$ROOT/node_modules" "$DIR/node_modules" 2>/dev/null; then
+    echo "# node_modules: cloned from the main clone (copy-on-write, ~5s, no extra disk)" >&2
+  elif cp -R "$ROOT/node_modules" "$DIR/node_modules" 2>/dev/null; then
+    # Not APFS. Slower and it really does use the disk, but still ISOLATED,
+    # which is the property that matters.
+    echo "# node_modules: copied from the main clone (no copy-on-write here)" >&2
+  else
+    echo "# node_modules: could not be provisioned - run npm ci in this tree" >&2
+  fi
 fi
 
 echo "# worktree: $DIR" >&2

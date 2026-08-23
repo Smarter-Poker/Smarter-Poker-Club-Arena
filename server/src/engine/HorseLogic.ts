@@ -1984,9 +1984,12 @@ export class HorseLogic {
         // when the jam itself is inside the pot-limit cap — see the note on
         // the 0.92 shortcut below.
         const jamIsLegal = !vi.isPotLimit || stack <= maxBet + 0.005;
-        return amt >= stack * 0.9 && jamIsLegal
-          ? { action: 'all_in', thinkTime: 0 }
-          : { action: 'check', thinkTime: 0 };
+        // V13: dropped the `amt >= stack * 0.9` test. Once minBet >= stack there
+        // is no legal sized bet at all, so the jam IS the bet — requiring the
+        // intended size to be near the whole stack just threw the aggression
+        // away. A horse that chose a small block bet with the nuts on a short
+        // stack checked instead of jamming.
+        return jamIsLegal ? { action: 'all_in', thinkTime: 0 } : { action: 'check', thinkTime: 0 };
       }
       // Whole dollars in cash games (see chipStep). Clamped inside snapBetSize
       // so rounding can never drop below minBet or above the pot-limit cap.

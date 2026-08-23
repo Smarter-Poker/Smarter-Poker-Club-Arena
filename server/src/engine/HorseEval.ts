@@ -709,9 +709,16 @@ export function simulateEquity(
   // V3 perf: banded Omaha sampling adds rejection-scoring cost; trim the
   // iteration count to stay inside the per-decision millisecond budget.
   if (oppBands && vi.isOmaha) {
-    // Multiway banded pots multiply the rejection-sampling cost per iteration;
-    // scale the iteration count down harder to hold the latency budget.
-    iterations = Math.max(60, Math.floor(iterations * (numOpponents >= 3 ? 0.5 : 0.65)));
+    // V13: the trim was HALVING the sample in exactly the spots that matter
+    // most — multiway banded pots — and the measured cost was severe. Run to
+    // run, a banded 4-opponent PLO estimate moved by 2sd = 6.5 to 10.4
+    // percentage points, against strategy tiers only 10 to 12 points apart:
+    // a PLO decision could land in a different tier from the RNG alone, and
+    // the difficultyHint "tank on close spots" read was measuring noise.
+    // Measured latency at the untrimmed count is 11-13 ms against a 25 ms
+    // budget, so the trim was buying headroom the engine did not need.
+    // Softened to a light trim for the widest multiway case only.
+    iterations = Math.max(120, Math.floor(iterations * (numOpponents >= 3 ? 0.85 : 1)));
   }
   const known = new Set<string>();
   for (const c of holeCards) known.add(cardKey(c));
@@ -739,12 +746,19 @@ export function simulateEquity(
   // ablation): later checkpoints + stricter margin than the first cut — keeps
   // nearly all the latency win with no measurable equity-precision cost.
   const V7_THRESHOLDS = [0.18, 0.3, 0.42, 0.52, 0.62, 0.8];
+  // V13: the floor used to be Math.max(60, ...), which for a trimmed Omaha
+  // budget of 60 made checkpoint[0] EQUAL the whole budget — a no-op — and left
+  // the other two out of order. The adaptive early exit was therefore dead for
+  // every Omaha variant, while the iteration counts had been cut on the
+  // assumption that it was live. Sorted, with a floor that can actually be
+  // reached, the exit works again and pays for the larger samples above on the
+  // decisions that are not close.
   const checkpoints = adaptive
     ? [
-        Math.max(60, Math.floor(iterations * 0.4)),
+        Math.max(30, Math.floor(iterations * 0.4)),
         Math.floor(iterations * 0.65),
         Math.floor(iterations * 0.85),
-      ]
+      ].sort((a, b) => a - b)
     : null;
   let done = 0;
 

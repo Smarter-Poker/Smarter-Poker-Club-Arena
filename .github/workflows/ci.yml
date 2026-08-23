@@ -48,18 +48,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     if: github.event_name == 'pull_request'
-<<<<<<< HEAD
-    # The step asks the API which files this PR touches. Without an explicit
-    # grant it inherits the repository default token scope, which does not
-    # include pull-requests, so `gh api .../pulls/N/files` answers 403
-    # "Resource not accessible by integration". The job then FAILS rather than
-    # skipping - and because every heavy job below gates on its outputs, they
-    # all skip, no required check ever reports, and the pull request sits at
-    # BLOCKED forever. That took out every PR in the repo, not just one.
-=======
     # The gh call below is a 403 without this. GITHUB_TOKEN defaults to read on
     # contents only, and there is no top-level permissions block in this file.
->>>>>>> origin/main
     permissions:
       contents: read
       pull-requests: read

@@ -120,10 +120,7 @@ class HandHistoryServiceClass {
     for (const w of (data as any).winners || []) if (w?.userId) userIds.push(w.userId);
     const profileMap = await this.fetchProfileMap(userIds);
 
-    // Pass empty string for requestingUserId — getHand by ID is a public
-    // replay use case so no per-viewer hole-card hiding (cards remain hidden
-    // for non-winners by the mapper anyway).
-    return this.mapHandHistoryRow(data, '', profileMap);
+    return this.mapHandHistoryRow(data, profileMap);
   }
 
   /**
@@ -163,7 +160,7 @@ class HandHistoryServiceClass {
     const profileMap = await this.fetchProfileMap(allUserIds);
 
     return data
-      .map((d: any) => this.mapHandHistoryRow(d, userId, profileMap))
+      .map((d: any) => this.mapHandHistoryRow(d, profileMap))
       .filter((h: HandRecord | null): h is HandRecord => h !== null);
   }
 
@@ -185,9 +182,13 @@ class HandHistoryServiceClass {
    * (userId, not user_id). We compute result per hand by looking up the player in winners[]
    * and subtracting their total invested from actions[].
    */
+  /* No `requestingUserId` parameter any more, on purpose. It existed only to
+     feed an `isMe || isWinner` hole-card gate that hid holdings the table had
+     already been shown (see the hole_cards comment below). Reintroducing a
+     per-viewer argument here is how that bug comes back: the row already
+     encodes what is public, so the mapper must not second-guess it. */
   private mapHandHistoryRow(
     row: any,
-    requestingUserId: string,
     profileMap: Map<string, { username: string; avatar_url: string | null }>
   ): HandRecord | null {
     if (!row?.id) return null;
@@ -220,30 +221,37 @@ class HandHistoryServiceClass {
     const players: HandPlayer[] = jsonbPlayers.map((p: any): HandPlayer => {
       const uid: string = p?.userId || '';
       const profile = profileMap.get(uid);
-      const isMe = uid === requestingUserId;
       const isWinner = jsonbWinners.some((w) => w?.userId === uid);
+      /* PRESENCE IS THE REVEAL FLAG. The server writes `hole_cards` ONLY for
+         showdown-revealed holdings — see server/src/services/supabase/
+         handHistory.ts, which builds holeCardsByUser from `showdownResults`
+         alone and deliberately never persists a mucked hand. So a user id
+         appearing as a key in that object is itself proof the table saw the
+         cards face up, and no further gate is needed or correct.
+         `players[].cards` is the legacy fallback; it is `[]` on every
+         production row, so it can only ever contribute nothing. */
+      const revealed: unknown[] =
+        Array.isArray(holeCardsByUser[uid]) && holeCardsByUser[uid].length
+          ? holeCardsByUser[uid]
+          : Array.isArray(p?.cards)
+            ? p.cards
+            : [];
       return {
         seat: Number(p?.seat) || 0,
         user_id: uid,
         username: profile?.username || p?.username || (uid ? uid.slice(0, 8) : 'Unknown'),
         avatar_url: profile?.avatar_url || null,
         position: this.getPositionName(Number(p?.seat) || 0, buttonSeat, playerCount),
-        // Only reveal hole cards if it's the requesting user OR cards are already exposed in the JSONB
-        /* 2026-08-23: this read `players[].cards`, which is `[]` on every row
-           in production — the engine writes hole cards to a SEPARATE
-           `hole_cards` column, an object keyed by user id, and that column was
-           not even in the select above. So no hand in history has ever shown a
-           hole card to anybody; the showdown row rendered two grey backs.
-           Prefer the real column, keep the old field as the fallback, and hold
-           the same reveal rule (your own hand, or a hand that got shown). */
-        hole_cards:
-          isMe || isWinner
-            ? Array.isArray(holeCardsByUser[uid]) && holeCardsByUser[uid].length
-              ? holeCardsByUser[uid]
-              : Array.isArray(p?.cards)
-                ? p.cards
-                : []
-            : [],
+        /* 2026-08-23 (Dan, with a screenshot): the Showdown block drew two grey
+           card backs for every villain who reached showdown and LOST. This line
+           gated the stored holdings behind `isMe || isWinner`, so a losing
+           showdown hand — cards the whole table had just watched turn over —
+           was mapped to `[]` and rendered as face-down placeholders. Measured
+           on production over six hours: 9,407 of 17,025 stored holdings (55%)
+           belonged to a non-winner and were discarded between the row and the
+           screen. The gate is now gone: see `revealed` above for why presence
+           in the column is the only reveal check that is actually true. */
+        hole_cards: revealed as Card[],
         final_hand: jsonbWinners.find((w) => w?.userId === uid)?.hand?.name || undefined,
         result: buildResult(uid),
         is_winner: isWinner,

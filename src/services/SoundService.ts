@@ -422,6 +422,69 @@ class SoundService {
     noise.start(time);
   }
 
+  /**
+   * A noise burst whose BANDPASS sweeps downward -- the sound of something
+   * small passing through air.
+   *
+   * Dan 2026-08-23: "the sound effect should sound more like a card flying
+   * through the air, rather than what is currently in place." The old deal
+   * sound was a fixed 3kHz LOWPASS over noise plus a 4kHz-to-1kHz oscillator
+   * chirp, which is a click: a static filter cannot read as movement, and the
+   * chirp put a plasticky snap on the tail.
+   *
+   * What makes air read as air is a moving formant. A bandpass sliding down the
+   * spectrum is heard as an object going past; a fixed filter is heard as a
+   * texture sitting still. Q is kept below ~1.5 so it stays breath rather than
+   * becoming a whistle, and everything under 320Hz is cut because eighteen of
+   * these fire inside a second on a nine-handed deal and any low content stacks
+   * into mud.
+   */
+  private createSweptNoiseBurst(
+    time: number,
+    duration: number,
+    volume: number,
+    fromHz: number,
+    toHz: number,
+    q = 0.9
+  ) {
+    if (!this.ctx) return;
+    const bufferSize = Math.max(1, Math.floor(this.ctx.sampleRate * duration));
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const band = this.ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.Q.value = q;
+    band.frequency.setValueAtTime(fromHz, time);
+    band.frequency.exponentialRampToValueAtTime(Math.max(40, toHz), time + duration);
+
+    const highpass = this.ctx.createBiquadFilter();
+    highpass.type = 'highpass';
+    highpass.frequency.value = 320;
+
+    // Fast attack, exponential tail: the card is loudest as it leaves the deck
+    // and thins out as it travels, which is the opposite shape to the
+    // percussive click it replaces.
+    const gain = this.ctx.createGain();
+    const attack = Math.min(0.008, duration * 0.2);
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, volume), time + attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+
+    noise.connect(band);
+    band.connect(highpass);
+    highpass.connect(gain);
+    gain.connect(this.out);
+    noise.start(time);
+    noise.stop(time + duration);
+  }
+
   private playTone(
     freq: number,
     duration: number,
@@ -484,26 +547,28 @@ class SoundService {
   // ═══════════════════════════════════════════════════════════════════════
 
   /**
-   * Card deal/slide — soft paper shuffle sound
+   * One card flying through the air, dealer to seat.
+   *
+   * 100ms end to end. That is deliberate and it is a hard constraint, not a
+   * taste call: DealAnimation fires this once per card, eighteen times on a
+   * nine-handed deal, roughly 63ms apart. Anything longer overlaps its own
+   * neighbours and a deal turns into one continuous hiss.
+   *
+   * Two swept layers, both descending:
+   *   - the air the card cuts (5.6kHz -> 900Hz, wide Q, the audible part)
+   *   - a quieter, narrower body a beat later (2.4kHz -> 500Hz) so it has some
+   *     weight and does not read as pure hiss
+   *
+   * There is no click at the end any more. The arrival snap belongs to the card
+   * LANDING, which SeatSlot's own deal-in already covers; putting one here made
+   * every card sound like it hit a table it had not reached yet.
    */
   playDeal() {
     if (!this.shouldPlay('deal', 'action') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
-    // Filtered noise burst simulating paper slide
-    this.createNoiseBurst(t, 0.12, 0.15, 3000);
-
-    // Subtle high-frequency click at end
-    const osc = this.ctx!.createOscillator();
-    const gain = this.ctx!.createGain();
-    osc.frequency.setValueAtTime(4000, t + 0.08);
-    osc.frequency.exponentialRampToValueAtTime(1000, t + 0.12);
-    gain.gain.setValueAtTime(0.08, t + 0.08);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-    osc.connect(gain);
-    gain.connect(this.out);
-    osc.start(t + 0.08);
-    osc.stop(t + 0.12);
+    this.createSweptNoiseBurst(t, 0.1, 0.13, 5600, 900, 0.85);
+    this.createSweptNoiseBurst(t + 0.012, 0.075, 0.05, 2400, 500, 1.4);
 
     haptic.light();
   }

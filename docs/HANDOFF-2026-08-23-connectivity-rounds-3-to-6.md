@@ -187,6 +187,49 @@ per row cannot be grouped, and grouping is the entire point.
 
 ---
 
+## 5b. THE NEXT THREAD: RESTART GAPS, NOT STALL GAPS
+
+The kill-loop gaps are gone. What is left in `hand_history` is a **different
+shape**, and it was masked by the bigger problem until now.
+
+Last two hours: 5 runs of 2+ zero-hand minutes, longest **8 minutes** — but
+only **5 engine kills** in that whole window. So it is not the watchdog. Every
+one of those gaps lines up with an engine **container restart**:
+
+| gap                     | what `engine_table_leases` says                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 23:13-23:14             | deploy (#315 merged 23:13:10, Hetzner deploy 23:13:13)                                                                   |
+| 23:25-23:26             | deploy                                                                                                                   |
+| **23:31-23:38 (8 min)** | instance `1-9373f1dd` last heartbeat 23:16; next instance did not claim until 23:52                                      |
+| 23:55-23:56             | instance cutover                                                                                                         |
+| **00:39-00:43 (5 min)** | `1-6911a2f8` last heartbeat 00:37:17; `1-22d45d8e` first claim 00:43:53 — **6.5 minutes with no engine instance at all** |
+
+Several agents ship `server/**` changes continuously, and `auto-deploy-hetzner`
+fires on every one. Each restart costs roughly two minutes of dealing, and the
+cutover sometimes takes six.
+
+**This is the next thing worth fixing, and it is a deploy-pipeline problem, not
+a connectivity one.** Worth looking at: whether the new container claims leases
+before the old one releases them (`LEASE_STALE_SECONDS` is 30s, so a hard-killed
+container costs at least that), whether deploys can be batched or debounced, and
+why one cutover took 36 minutes (23:16 -> 23:52).
+
+Diagnose it with:
+
+```sql
+SELECT instance_id, engine_version, COUNT(*) tables,
+       MIN(acquired_at) first_claim, MAX(heartbeat_at) last_hb
+FROM engine_table_leases
+WHERE acquired_at > NOW() - INTERVAL '3 hours'
+GROUP BY 1,2 ORDER BY 4;
+```
+
+Holes between one instance's `last_hb` and the next one's `first_claim` are the
+gaps. Do not mistake them for the stall this session fixed — the tell is that
+`engine_recovery_events` stays quiet through them.
+
+---
+
 ## 6. HOW TO VERIFY ANYTHING HERE
 
 ```sql

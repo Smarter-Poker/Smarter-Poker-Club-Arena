@@ -17,6 +17,7 @@
   .page {
     width: 100%;
     max-width: 100%;
+    overflow-x: hidden;
   }
 }
 
@@ -118,10 +119,15 @@
   gap: 2px;
   margin-bottom: 20px;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
   background: rgba(24, 25, 26, 0.6);
   border-radius: 12px;
   padding: 4px;
   border: 1px solid rgba(58, 59, 60, 0.5);
+}
+.tabNav::-webkit-scrollbar {
+  display: none;
 }
 .tab {
   padding: 10px 18px;
@@ -164,7 +170,12 @@
   gap: 6px;
   margin-bottom: 16px;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
   padding-bottom: 4px;
+}
+.categoryFilters::-webkit-scrollbar {
+  display: none;
 }
 .categoryBtn {
   padding: 6px 14px;
@@ -176,6 +187,7 @@
   border-radius: 20px;
   cursor: pointer;
   white-space: nowrap;
+  touch-action: manipulation;
   transition: all 0.2s ease;
 }
 .categoryBtn:hover {
@@ -217,7 +229,7 @@
   border: 1px solid rgba(58, 59, 60, 0.6);
   border-radius: 10px;
   color: #e4e6eb;
-  font-size: 13px;
+  font-size: 16px; /* was 13px; under 16px makes iOS zoom the page on focus */
   outline: none;
   cursor: pointer;
   appearance: none;
@@ -322,6 +334,7 @@
   font-size: 15px;
   margin-bottom: 4px;
   color: #e4e6eb;
+  overflow-wrap: anywhere;
 }
 .itemDesc {
   font-size: 12px;
@@ -484,6 +497,7 @@
 /* ═══ Tables ═══ */
 .tableScroll {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   border-radius: 12px;
   border: 1px solid rgba(58, 59, 60, 0.4);
 }
@@ -641,6 +655,7 @@
   font-size: 13px;
   cursor: pointer;
   text-decoration: none;
+  touch-action: manipulation;
   transition: all 0.2s ease;
   box-shadow: 0 2px 8px rgba(69, 153, 255, 0.25);
 }
@@ -1115,6 +1130,7 @@
   color: #fff;
   background: linear-gradient(135deg, #1877f2, #0d5dc7);
   cursor: pointer;
+  touch-action: manipulation;
   transition: filter 0.15s ease;
 }
 
@@ -1452,7 +1468,7 @@
 @media (max-width: 640px) {
   /* Tap targets: these were 25-28px, below the 44px minimum */
   .categoryBtn {
-    min-height: 40px;
+    min-height: 44px;
     padding: 8px 16px;
   }
 
@@ -1460,10 +1476,20 @@
   .btnActiveToggle,
   .btnInactiveToggle,
   .btnDeleteSmall {
-    min-height: 40px;
+    min-height: 44px;
   }
 
   .tab {
+    min-height: 44px;
+  }
+
+  /* Tap targets for the package/plan/analytics controls (were ~36px) */
+  .pkgBuy,
+  .btnGhostWide,
+  .rangeBtn,
+  .emptyButton,
+  .sortSelect,
+  .historyToggle {
     min-height: 44px;
   }
 

@@ -791,6 +791,19 @@
   .page {
   }
 
+  /* 44px touch targets apply on all mobile widths, not just ≤480px */
+  .presetBtn,
+  .tab,
+  .txFilterBtn,
+  .txExportBtn,
+  .quickLink {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation;
+  }
+
   .card {
     padding: 18px;
     border-radius: 12px;

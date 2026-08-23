@@ -1155,7 +1155,7 @@ export default function LeaderboardPage() {
             )}
           </>
         ) : activeTab === 'tournaments' && tournamentStats.length > 0 ? (
-          <>
+          <div className="tournament-stats-scroll">
             {/* Tournament Stats Header */}
             <div className="tournament-stats-header">
               <div className="stats-column-header">Player</div>
@@ -1206,7 +1206,7 @@ export default function LeaderboardPage() {
                 </div>
               )}
             />
-          </>
+          </div>
         ) : null}
       </div>
 

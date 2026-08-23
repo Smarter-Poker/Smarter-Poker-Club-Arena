@@ -1589,97 +1589,99 @@ export default function ClubDetailPage() {
               </div>
             ) : (
               <>
-                <table className={styles.membersTable}>
-                  <thead>
-                    <tr>
-                      <th>Player</th>
-                      <th>Role</th>
-                      <th>Balance</th>
-                      <th>Status</th>
-                      <th>Joined</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredMembers.slice(0, memberLimit).map((member, idx) => (
-                      <tr
-                        key={member.id}
-                        style={{ animation: `slideInUp 0.5s ease-out ${idx * 0.05}s both` }}
-                      >
-                        <td>
-                          <div className={styles.memberCell}>
-                            <div className={styles.memberAvatarSmall}>
-                              {member.username.charAt(0)}
-                            </div>
-                            {member.username}
-                          </div>
-                        </td>
-                        <td>
-                          <RoleBadge role={member.role} />
-                        </td>
-                        <td className={styles.balanceCell}>
-                          {member.chipBalance.toLocaleString()}
-                        </td>
-                        <td>
-                          <StatusBadge status={member.status} />
-                        </td>
-                        <td className={styles.dateCell}>
-                          {new Date(member.joinedAt).toLocaleDateString()}
-                        </td>
-                        <td style={{ position: 'relative' }}>
-                          <button
-                            className={styles.actionBtn}
-                            onClick={() =>
-                              setShowMemberMenu(showMemberMenu === member.id ? null : member.id)
-                            }
-                            aria-label={`Actions for ${member.username}`}
-                            disabled={memberActionLoading === member.id}
-                          >
-                            {memberActionLoading === member.id ? '◷' : '⋮'}
-                          </button>
-                          {showMemberMenu === member.id && (
-                            <div className={styles.memberMenu}>
-                              {member.role !== 'admin' && member.role !== 'owner' && (
-                                <button
-                                  onClick={() => handleMemberAction(member.id, 'promote')}
-                                  aria-label="Promote member to admin"
-                                >
-                                  {' '}
-                                  Promote
-                                </button>
-                              )}
-                              {member.role === 'admin' && (
-                                <button
-                                  onClick={() => handleMemberAction(member.id, 'demote')}
-                                  aria-label="Demote admin to member"
-                                >
-                                  {' '}
-                                  Demote
-                                </button>
-                              )}
-                              {member.status === 'active' && member.role !== 'owner' && (
-                                <button
-                                  onClick={() => handleMemberAction(member.id, 'suspend')}
-                                  aria-label="Suspend member"
-                                >
-                                  Suspend
-                                </button>
-                              )}
-                              {member.role !== 'owner' && (
-                                <button
-                                  onClick={() => handleMemberAction(member.id, 'remove')}
-                                  aria-label="Remove member from club"
-                                >
-                                  Remove
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </td>
+                <div className={styles.membersTableScroll}>
+                  <table className={styles.membersTable}>
+                    <thead>
+                      <tr>
+                        <th>Player</th>
+                        <th>Role</th>
+                        <th>Balance</th>
+                        <th>Status</th>
+                        <th>Joined</th>
+                        <th>Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {filteredMembers.slice(0, memberLimit).map((member, idx) => (
+                        <tr
+                          key={member.id}
+                          style={{ animation: `slideInUp 0.5s ease-out ${idx * 0.05}s both` }}
+                        >
+                          <td>
+                            <div className={styles.memberCell}>
+                              <div className={styles.memberAvatarSmall}>
+                                {member.username.charAt(0)}
+                              </div>
+                              {member.username}
+                            </div>
+                          </td>
+                          <td>
+                            <RoleBadge role={member.role} />
+                          </td>
+                          <td className={styles.balanceCell}>
+                            {member.chipBalance.toLocaleString()}
+                          </td>
+                          <td>
+                            <StatusBadge status={member.status} />
+                          </td>
+                          <td className={styles.dateCell}>
+                            {new Date(member.joinedAt).toLocaleDateString()}
+                          </td>
+                          <td style={{ position: 'relative' }}>
+                            <button
+                              className={styles.actionBtn}
+                              onClick={() =>
+                                setShowMemberMenu(showMemberMenu === member.id ? null : member.id)
+                              }
+                              aria-label={`Actions for ${member.username}`}
+                              disabled={memberActionLoading === member.id}
+                            >
+                              {memberActionLoading === member.id ? '◷' : '⋮'}
+                            </button>
+                            {showMemberMenu === member.id && (
+                              <div className={styles.memberMenu}>
+                                {member.role !== 'admin' && member.role !== 'owner' && (
+                                  <button
+                                    onClick={() => handleMemberAction(member.id, 'promote')}
+                                    aria-label="Promote member to admin"
+                                  >
+                                    {' '}
+                                    Promote
+                                  </button>
+                                )}
+                                {member.role === 'admin' && (
+                                  <button
+                                    onClick={() => handleMemberAction(member.id, 'demote')}
+                                    aria-label="Demote admin to member"
+                                  >
+                                    {' '}
+                                    Demote
+                                  </button>
+                                )}
+                                {member.status === 'active' && member.role !== 'owner' && (
+                                  <button
+                                    onClick={() => handleMemberAction(member.id, 'suspend')}
+                                    aria-label="Suspend member"
+                                  >
+                                    Suspend
+                                  </button>
+                                )}
+                                {member.role !== 'owner' && (
+                                  <button
+                                    onClick={() => handleMemberAction(member.id, 'remove')}
+                                    aria-label="Remove member from club"
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
                 {/* #3: Load More button when members exceed limit */}
                 {filteredMembers.length > memberLimit && (
                   <button

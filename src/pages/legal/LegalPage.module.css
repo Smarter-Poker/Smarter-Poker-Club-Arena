@@ -126,6 +126,19 @@
   .page {
   }
 
+  /* Tap target: back button was ~37px tall at 0.95rem */
+  .backBtn {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+  }
+
+  /* Long tokens (emails, hand ids) must wrap instead of forcing sideways scroll */
+  .content p,
+  .content ul li {
+    overflow-wrap: anywhere;
+  }
+
   .header {
     margin-bottom: var(--space-6);
   }

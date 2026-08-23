@@ -218,11 +218,12 @@ sw.addEventListener('fetch', (event) => {
           }).catch(() => {
             // Offline: return cached version, or a transparent 1x1 PNG if nothing cached
             if (cached) return cached;
-            // No cache + no network = return empty transparent image to prevent crash
-            return new Response(new Uint8Array(0), {
-              status: 200,
-              headers: { 'Content-Type': 'image/png' },
-            });
+            // No cache + no network: answer with an error status, not an empty
+            // 200. A zero-byte "200 image/png" looked like success to every
+            // layer above — the <img> just rendered nothing (avatars vanished
+            // silently on flaky mobile connections). A 503 makes the element
+            // fire onerror, so the app's monogram/fallback path actually runs.
+            return new Response('', { status: 503, statusText: 'Offline' });
           });
 
           return cached || fetchPromise;
@@ -335,6 +336,22 @@ sw.addEventListener('activate', (event) => {
                         .map((key) => caches.delete(key))
                 )
             ),
+            // AVATAR HEAL (2026-08-23): before the only-cache-ok guard existed,
+            // an error response could be stored over a good avatar in the
+            // permanent media cache, and stale-while-revalidate then served
+            // that broken entry forever — avatars invisible on installed
+            // (mobile) PWAs while desktop stayed fine. Avatars are a few KB;
+            // dropping them on activate costs one refetch per deploy and
+            // guarantees a poisoned entry cannot outlive the fix.
+            caches.open(MEDIA_CACHE).then((cache) =>
+                cache.keys().then((keys) =>
+                    Promise.all(
+                        keys
+                            .filter((req) => new URL(req.url).pathname.startsWith('/avatars/'))
+                            .map((req) => cache.delete(req))
+                    )
+                )
+            ).catch(() => {}),
         ])
     );
 });

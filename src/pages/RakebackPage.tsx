@@ -279,6 +279,8 @@ export default function RakebackPage() {
                 style={{
                   marginTop: '8px',
                   padding: '6px 16px',
+                  minHeight: '44px',
+                  touchAction: 'manipulation',
                   background:
                     claimStatus === 'success' ? '#34c759' : 'var(--accent-success, #34c759)',
                   color: '#fff',

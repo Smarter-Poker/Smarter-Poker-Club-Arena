@@ -15,6 +15,10 @@
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   padding: 1rem;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
 }
 
 .tournament-header {
@@ -418,6 +422,11 @@
   text-transform: uppercase;
   letter-spacing: 1px;
   font-family: 'Rajdhani', 'Rajdhani', sans-serif;
+}
+
+.blind-structure {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .blind-structure table {
@@ -856,6 +865,20 @@
     width: 95%;
     padding: 1rem;
   }
+
+  .tourn-filter-chip {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .detail-actions .btn-block,
+  .modal-actions .btn-primary,
+  .modal-actions .btn-ghost,
+  .tournament-header .btn-primary {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
 }
 
 @media (max-width: 380px) {
@@ -956,6 +979,7 @@
 }
 
 .tourn-filter-chip {
+  touch-action: manipulation;
   padding: 6px 14px;
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.12);

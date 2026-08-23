@@ -481,7 +481,22 @@ function MemberRow({ member, onOpen }: { member: RosterMember; onOpen: (userId: 
     >
       <div className="member-avatar">
         {member.avatar_url ? (
-          <img src={member.avatar_url} alt="" loading="lazy" />
+          <img
+            src={member.avatar_url}
+            alt=""
+            loading="lazy"
+            /* A dead avatar URL (revoked storage object, offline fetch) left a
+               blank circle on mobile. Fall back to the initial instead. */
+            onError={(e) => {
+              const img = e.currentTarget;
+              img.style.display = 'none';
+              if (img.parentElement && !img.parentElement.querySelector('span')) {
+                const span = document.createElement('span');
+                span.textContent = initial;
+                img.parentElement.appendChild(span);
+              }
+            }}
+          />
         ) : (
           <span>{initial}</span>
         )}

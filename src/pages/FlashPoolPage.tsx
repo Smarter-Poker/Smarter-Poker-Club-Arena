@@ -260,6 +260,11 @@ export default function FlashPoolPage() {
         background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #0a0a0a 100%)',
         color: '#e4e6eb',
         padding: '20px',
+        paddingBottom: 'max(70px, env(safe-area-inset-bottom))',
+        width: '100%',
+        maxWidth: '100vw',
+        boxSizing: 'border-box',
+        overflowX: 'hidden',
       }}
     >
       {/* Header */}
@@ -407,13 +412,16 @@ export default function FlashPoolPage() {
                 }
                 style={{
                   flex: 1,
+                  minWidth: 0,
                   background: 'rgba(255,255,255,0.06)',
                   border: '1px solid rgba(255,255,255,0.12)',
                   borderRadius: '10px',
                   padding: '10px 14px',
                   color: '#e4e6eb',
-                  fontSize: '14px',
+                  fontSize: '16px' /* under 16px makes iOS zoom the page on focus */,
                   outline: 'none',
+                  minHeight: '44px',
+                  boxSizing: 'border-box',
                 }}
               />
               <button
@@ -427,6 +435,8 @@ export default function FlashPoolPage() {
                   border: 'none',
                   borderRadius: '10px',
                   padding: '10px 24px',
+                  minHeight: '44px',
+                  touchAction: 'manipulation',
                   color: '#000',
                   fontWeight: 700,
                   fontSize: '14px',

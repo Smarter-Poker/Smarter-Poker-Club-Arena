@@ -5,7 +5,12 @@
  * Provides offline support and caching for PWA
  */
 
-const CACHE_NAME = 'club-arena-v1';
+/* v2 (2026-08-23): purge caches poisoned by the old background-refresh path,
+   which stored ANY response — including 4xx/5xx and opaque errors — over a
+   previously good asset. Cache-first then served that broken entry forever,
+   which is why avatars vanished on installed (mobile) PWAs while desktop
+   browsers with no SW kept working. The refresh now only stores 200s. */
+const CACHE_NAME = 'club-arena-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -89,12 +94,21 @@ self.addEventListener('fetch', (event: FetchEvent) => {
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
       if (cachedResponse) {
-        // Return cache, but also update in background
-        fetch(request).then((response) => {
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, response);
+        // Return cache, but also update in background.
+        // Only overwrite the cached copy with a GOOD response: putting an
+        // error or opaque response here permanently replaced working images
+        // (avatars) with a broken entry that cache-first served forever.
+        fetch(request)
+          .then((response) => {
+            if (response.status === 200) {
+              caches.open(CACHE_NAME).then((cache) => {
+                cache.put(request, response);
+              });
+            }
+          })
+          .catch(() => {
+            /* offline — keep the cached copy */
           });
-        });
         return cachedResponse;
       }
 

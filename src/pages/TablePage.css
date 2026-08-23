@@ -1780,7 +1780,14 @@
   .control-strip__btn {
     padding: 4px 8px;
     font-size: 0.6875rem;
-    min-height: 36px;
+    /* 2026-08-23 mobile pass: 36px was under the 44px tap minimum */
+    min-height: 44px;
+  }
+
+  /* Floating HUD button (absolute-positioned — enlarging cannot reflow the felt) */
+  .add-chips-icon-btn {
+    width: 44px;
+    height: 44px;
   }
 }
 
@@ -1828,8 +1835,9 @@
   }
 
   .control-strip__btn {
-    min-height: 36px;
-    min-width: 36px;
+    /* 2026-08-23 mobile pass: 36px was under the 44px tap minimum */
+    min-height: 44px;
+    min-width: 44px;
   }
 }
 
@@ -2530,7 +2538,9 @@
   left: auto !important;
   top: 0 !important;
   bottom: 0 !important;
-  width: 350px !important;
+  /* 2026-08-23 mobile pass: hard 350px overflowed 320px phones; clamp to
+     the viewport. Horizontal-overflow fix only — layout untouched. */
+  width: min(350px, 100vw) !important;
   height: 100% !important;
   background: rgba(15, 23, 42, 0.85) !important;
   backdrop-filter: blur(8px) !important;

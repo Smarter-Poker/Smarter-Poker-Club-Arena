@@ -12,7 +12,9 @@
   align-items: center;
   justify-content: center;
   position: relative;
-  overflow: hidden;
+  /* 2026-08-23: was `overflow: hidden` — the page body may clip sideways
+     overflow only; vertical scroll must stay available on phones */
+  overflow-x: hidden;
   padding: var(--space-4);
 }
 
@@ -678,4 +680,32 @@
 
 .timeline-step.active {
   background: var(--fb-blue);
+}
+
+/* ─── 2026-08-23 mobile-optimization pass ─── */
+@media (max-width: 768px) {
+  .hand-replayer {
+    /* clear the fixed app bottom nav + notch */
+    padding-bottom: max(70px, env(safe-area-inset-bottom));
+    /* the absolute sound/view controls sit top-right; keep the tab row clear */
+    padding-top: 64px;
+  }
+
+  .tab-btn,
+  .view-btn,
+  .share-btn {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .sound-toggle,
+  .ctrl-btn,
+  .timeline-step {
+    touch-action: manipulation;
+  }
+
+  /* wide analysis panels must never force the page sideways */
+  .analysis-container {
+    max-width: 100%;
+  }
 }

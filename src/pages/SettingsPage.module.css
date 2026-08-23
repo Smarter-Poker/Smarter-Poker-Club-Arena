@@ -53,6 +53,7 @@
   color: #fff;
   font-weight: 600;
   cursor: pointer;
+  touch-action: manipulation;
   transition: all 0.2s ease;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -673,14 +674,16 @@
   .resetButton,
   .actionButton,
   .actionButtonSecondary,
-  .dangerButton {
+  .dangerButton,
+  .colorOption {
     position: relative;
   }
 
   .resetButton::after,
   .actionButton::after,
   .actionButtonSecondary::after,
-  .dangerButton::after {
+  .dangerButton::after,
+  .colorOption::after {
     content: '';
     position: absolute;
     left: 0;

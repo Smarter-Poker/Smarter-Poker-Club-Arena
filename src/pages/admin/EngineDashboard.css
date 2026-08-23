@@ -1,9 +1,12 @@
 .engine-dashboard {
   padding: 40px;
+  width: 100%;
   max-width: 1200px;
   margin: 0 auto;
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  overflow-x: hidden;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
 }
 
 .engine-header {
@@ -162,10 +165,46 @@
 
 @media (max-width: 768px) {
   .engine-dashboard {
-    padding: 20px;
+    padding: 12px;
+    padding-bottom: max(70px, env(safe-area-inset-bottom));
   }
 
   .engine-grid {
     grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .engine-header {
+    margin-bottom: 20px;
+  }
+
+  .engine-header h1 {
+    font-size: 20px;
+  }
+
+  .engine-header p {
+    font-size: 13px;
+  }
+
+  .engine-card {
+    padding: 16px;
+  }
+
+  .card-header h3 {
+    font-size: 16px;
+  }
+
+  .card-metrics {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .metric .value {
+    font-size: 20px;
+  }
+
+  .engine-btn {
+    min-height: 44px;
+    touch-action: manipulation;
   }
 }

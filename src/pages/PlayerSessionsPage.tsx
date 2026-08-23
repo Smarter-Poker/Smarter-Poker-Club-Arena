@@ -699,7 +699,7 @@ export default function PlayerSessionsPage() {
           <div className="admin-modal-overlay" onClick={() => setWbTarget(null)}>
             <div
               className="admin-card"
-              style={{ maxWidth: '420px', margin: '60px auto' }}
+              style={{ width: 'calc(100% - 32px)', maxWidth: '420px', margin: '60px auto' }}
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="admin-card-title">Send Welcome-Back Chips</h3>
@@ -740,7 +740,7 @@ export default function PlayerSessionsPage() {
           <div className="admin-modal-overlay" onClick={() => !savingNote && setNoteTarget(null)}>
             <div
               className="admin-card"
-              style={{ maxWidth: '420px', margin: '60px auto' }}
+              style={{ width: 'calc(100% - 32px)', maxWidth: '420px', margin: '60px auto' }}
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="admin-card-title">

@@ -161,7 +161,16 @@ export default function SettlementHistoryPage() {
   const maxRake = Math.max(...cycles.map((c) => c.totalRake), 1);
 
   return (
-    <div style={{ padding: '16px', maxWidth: '800px', margin: '0 auto', paddingBottom: '100px' }}>
+    <div
+      style={{
+        padding: '16px',
+        width: '100%',
+        maxWidth: '800px',
+        margin: '0 auto',
+        paddingBottom: '100px',
+        overflowX: 'hidden',
+      }}
+    >
       {/* Header */}
       <div style={{ marginBottom: '24px' }}>
         <button
@@ -172,7 +181,9 @@ export default function SettlementHistoryPage() {
             color: '#3b82f6',
             cursor: 'pointer',
             fontSize: '0.85rem',
-            padding: 0,
+            padding: '10px 0',
+            minHeight: 44,
+            touchAction: 'manipulation',
             marginBottom: '6px',
           }}
         >
@@ -188,7 +199,7 @@ export default function SettlementHistoryPage() {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
           gap: '10px',
           marginBottom: '20px',
         }}

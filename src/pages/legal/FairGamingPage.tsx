@@ -12,7 +12,7 @@ import styles from './LegalPage.module.css';
 const sectionAnimationStyle = (index: number) => ({
   opacity: 0,
   transform: 'translateY(8px)',
-  animation: `fadeInUp 0.5s ease-out ${index * 70}ms forwards`,
+  animation: `animationsFadeInUp 0.5s ease-out ${index * 70}ms forwards`,
 });
 
 export default function FairGamingPage() {

@@ -483,26 +483,6 @@
       "unit_profit",
       "created_at"
     ],
-    "backtest_props": [
-      "game_pk",
-      "as_of_ts",
-      "player_id",
-      "prop",
-      "line",
-      "over_prob",
-      "under_prob",
-      "market_over_prob",
-      "edge_pts",
-      "rec",
-      "model_version",
-      "snapshot_id",
-      "actual_value",
-      "actual_result",
-      "brier_score",
-      "unit_profit",
-      "created_at",
-      "selection"
-    ],
     "bad_beat_jackpots": [
       "id",
       "club_id",
@@ -767,7 +747,8 @@
       "total_paid_out",
       "hit_count",
       "last_loser_id",
-      "merged_into_pool_id"
+      "merged_into_pool_id",
+      "alloc_cum_amount"
     ],
     "bbj_qualifying_hands": [
       "variant",
@@ -810,16 +791,6 @@
       "awarded_at",
       "winner_display_name",
       "loser_display_name"
-    ],
-    "bet_type_reliability": [
-      "bet_type",
-      "category",
-      "sample_n",
-      "win_pct",
-      "roi",
-      "avg_clv",
-      "status",
-      "score_mult"
     ],
     "blacklists": [
       "id",
@@ -5920,41 +5891,6 @@
       "created_at",
       "updated_at"
     ],
-    "mlb_hr_bets": [
-      "id",
-      "user_id",
-      "player_id",
-      "player_name",
-      "team_id",
-      "bet_date",
-      "stake",
-      "american_odds",
-      "result",
-      "note",
-      "created_at",
-      "updated_at"
-    ],
-    "mlb_hr_cache": [
-      "player_id",
-      "full_name",
-      "team_id",
-      "team_name",
-      "hr",
-      "games_played",
-      "games_per_hr",
-      "last_hr_date",
-      "days_since_hr",
-      "games_since_hr",
-      "due_score",
-      "status",
-      "season",
-      "refreshed_at",
-      "opp_pitcher_id",
-      "opp_pitcher_name",
-      "opp_pitcher_hr9",
-      "park_factor",
-      "matchup_due_score"
-    ],
     "money_flow_checkpoint": [
       "metric_key",
       "as_of",
@@ -6912,28 +6848,6 @@
       "brier_score",
       "unit_profit",
       "actual_result"
-    ],
-    "pred_props": [
-      "id",
-      "player_id",
-      "player_name",
-      "team_abbr",
-      "prop_type",
-      "line",
-      "over_odds",
-      "under_odds",
-      "model_proj",
-      "edge_pts",
-      "implied_prob",
-      "game_pk",
-      "created_at",
-      "updated_at",
-      "prop",
-      "proj_mean",
-      "prob_over",
-      "market_novig_over",
-      "best_price",
-      "as_of_ts"
     ],
     "premium_feature_access": [
       "id",
@@ -8007,18 +7921,6 @@
       "staked",
       "pnl",
       "roi"
-    ],
-    "sim_bets": [
-      "id",
-      "as_of_ts",
-      "pnl",
-      "result",
-      "stake",
-      "bankroll_after",
-      "market",
-      "selection",
-      "edge_pts",
-      "created_at"
     ],
     "sim_equity_daily": [
       "day",
@@ -10910,34 +10812,6 @@
       "home_win_prob",
       "home_edge"
     ],
-    "v_hitter_profile": [
-      "player_id",
-      "full_name",
-      "team_id",
-      "wrc_plus",
-      "woba",
-      "pa",
-      "updated_at"
-    ],
-    "v_mlb_standings": [
-      "team_id",
-      "name",
-      "abbr",
-      "league",
-      "division",
-      "w",
-      "l",
-      "pct",
-      "gb",
-      "win_streak",
-      "runs_scored",
-      "runs_allowed",
-      "games_played",
-      "runs_per_game",
-      "runs_allowed_per_game",
-      "era",
-      "team_avg"
-    ],
     "v_model_health": [
       "latest_as_of",
       "hours_stale",
@@ -10947,15 +10821,6 @@
       "incoherent_runlines",
       "incoherent_runlines_with_bet",
       "total_live_recs"
-    ],
-    "v_pitcher_profile": [
-      "player_id",
-      "full_name",
-      "team_id",
-      "fip",
-      "siera",
-      "bf",
-      "updated_at"
     ],
     "v_spin_reserve_health": [
       "club_id",

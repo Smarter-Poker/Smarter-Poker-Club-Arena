@@ -19,7 +19,7 @@ import { reportError } from '../utils/errorReporter';
 const unionCardAnimationStyle = (index: number) => ({
   opacity: 0,
   transform: 'translateY(12px)',
-  animation: `fadeInUp 0.6s ease-out ${index * 80}ms forwards`,
+  animation: `animationsFadeInUp 0.6s ease-out ${index * 80}ms forwards`,
 });
 
 function UnionCard({ union, idx }: { union: Union; idx: number }) {

@@ -1137,6 +1137,8 @@ export class TournamentRecurringService {
 
   private async checkAndLaunchSNGs(): Promise<void> {
     await this.withBoardTick('sng', async () => {
+      await this.repairSeatFirstGames();
+
       const budget = { left: BURST };
       await this.ensureBoardOpen(
         'sng',
@@ -1197,12 +1199,65 @@ export class TournamentRecurringService {
     }
   }
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A SEAT-FIRST GAME WITH NO TABLE IS A LISTING NOBODY CAN EVER JOIN
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Measured on production 2026-08-23: of 33 REGISTERING Spins, THIRTY had no
+   * table row, and of 17 heads-ups, FOURTEEN. Oldest 15 hours old. A player
+   * clicking one found no seats, because there were none.
+   *
+   * AND IT IS SELF-SUSTAINING, which is what makes it worth a repair pass
+   * rather than a bug fix alone. ensureBoardOpen decides what to open by NAME:
+   * a husk is REGISTERING, so its name is "covered", so its price point is
+   * never reopened - and the husk can never leave REGISTERING, because a
+   * seat-first game starts when every SEAT is sold and it has no seats. One
+   * dead row wedges one price point forever. Exactly two of thirty-two Spin
+   * configs were still cycling.
+   *
+   * fn_repair_seat_first_games gives the husk the table it never got, seats
+   * its opening horses (seats-1) and restarts its human window at a fresh
+   * 60-180 seconds, rather than cancelling it - section 8 of this file is
+   * explicit that tournaments run, they do not cancel.
+   *
+   * Idempotent by construction: it only ever touches a REGISTERING seat-first
+   * game that has no table, so on a healthy board it does nothing and costs
+   * one indexed query.
+   */
+  private async repairSeatFirstGames(): Promise<void> {
+    try {
+      const { data, error } = await supabase.rpc('fn_repair_seat_first_games', {
+        p_limit: 25,
+      });
+      if (error) {
+        reportError(
+          new Error(`[TournamentRecurring] seat-first repair failed: ${error.message}`),
+          'TournamentRecurring.seat_first_repair_failed'
+        );
+        return;
+      }
+      const res = data as { repaired?: number; horses_seated?: number } | null;
+      if (res?.repaired) {
+        console.log(
+          `[TournamentRecurring] repaired ${res.repaired} seat-first game(s) that had no table; seated ${res.horses_seated ?? 0} opening horse(s)`
+        );
+      }
+    } catch (err: any) {
+      reportError(err, 'TournamentRecurring.seat_first_repair_threw');
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // SPIN CHECK
   // ─────────────────────────────────────────────────────────────────────────
 
   private async checkAndLaunchSpins(): Promise<void> {
     await this.withBoardTick('spin', async () => {
+      // Heal before opening. A husk still counts as "this price point is
+      // covered" below, so skipping this would leave the board wedged.
+      await this.repairSeatFirstGames();
+
       // ONE budget for the whole pass. See BURST.
       const budget = { left: BURST };
 
@@ -1283,7 +1338,10 @@ export class TournamentRecurringService {
        */
       const openQuery = supabase
         .from('tournaments')
-        .select('name')
+        // id and max_players as well as the name: a seat-first game only
+        // COVERS its price point if it can actually be joined, and that means
+        // owning a table. See the joinability filter below.
+        .select('id, name, max_players')
         .eq('variant', variant)
         // REGISTERING only. ANNOUNCED is not joinable and RUNNING is too late;
         // counting either is what let a board of live games starve the lobby.
@@ -1305,7 +1363,52 @@ export class TournamentRecurringService {
         return;
       }
 
-      const open = new Set((openRows ?? []).map((r) => String(r.name)));
+      /**
+       * A LISTING ONLY COUNTS IF A PLAYER COULD SIT AT IT.
+       *
+       * This set used to be every REGISTERING name, which is why thirty of
+       * thirty-two Spin price points were dead for fifteen hours: a
+       * seat-first game with no table is REGISTERING forever, so its name
+       * permanently satisfied the board and the config was never reopened.
+       * repairSeatFirstGames above should mean this never has anything to
+       * exclude - but a board that wedges itself when one repair fails is
+       * exactly the shape that produced the outage, so the rule is stated
+       * here too.
+       */
+      const rows = (openRows ?? []) as { id: string; name: string; max_players: number }[];
+      const seatFirstIds = rows
+        .filter((r) => isSeatFirstFormat(variant, Number(r.max_players) || 0))
+        .map((r) => r.id);
+
+      let withTable = new Set<string>();
+      if (seatFirstIds.length > 0) {
+        const { data: tableRows, error: tableErr } = await supabase
+          .from('tables')
+          .select('tournament_id')
+          .in('tournament_id', seatFirstIds);
+        if (tableErr) {
+          // Fail CLOSED, as the read above does: assume the board is fine
+          // rather than opening a duplicate of every seat-first config.
+          reportError(
+            new Error(
+              `[TournamentRecurring] ${variant} joinability read failed: ${tableErr.message}`
+            ),
+            'TournamentRecurring.board_joinability_read_failed'
+          );
+          return;
+        }
+        withTable = new Set(
+          (tableRows ?? []).map((r) => String((r as { tournament_id: string }).tournament_id))
+        );
+      }
+
+      const open = new Set(
+        rows
+          .filter(
+            (r) => !isSeatFirstFormat(variant, Number(r.max_players) || 0) || withTable.has(r.id)
+          )
+          .map((r) => String(r.name))
+      );
       const missing = configs.filter((c) => !open.has(c.name));
       if (missing.length === 0) return;
 

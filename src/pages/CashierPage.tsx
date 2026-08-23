@@ -590,7 +590,7 @@ export default function CashierPage() {
           .order('user_id', { ascending: true })
           .range(from, from + PAGE - 1);
         if (agentScoped && downlineIds !== null) {
-          if (downlineIds.length === 0) break;   // nobody beneath them
+          if (downlineIds.length === 0) break; // nobody beneath them
           query = query.in('user_id', downlineIds);
         }
 
@@ -614,28 +614,17 @@ export default function CashierPage() {
       }>;
 
       // Batch-fetch display names from profiles for members without display_name
+      // PERF 2026-08-23: both lookups below derive from `members` and neither
+      // depends on the other, yet they ran in series - and the display-name
+      // fetch ran one chunk at a time, so a 588-member club paid three round
+      // trips before the agents query had even started. They are all issued
+      // together now; the consuming loops are unchanged.
       const needNames = members.filter((m) => !m.display_name && !m.nickname).map((m) => m.user_id);
       const profileMap: Record<string, string> = {};
-      if (needNames.length > 0) {
-        const chunkSize = 200;
-        for (let i = 0; i < needNames.length; i += chunkSize) {
-          if (!isMounted.current || stale()) return;
-          const chunk = needNames.slice(i, i + chunkSize);
-          const { data: profiles } = await retryFetch(
-            () =>
-              supabase
-                .from('profiles')
-                .select('id, display_name, username')
-                .in('id', chunk)
-                .then((r) => r),
-            { maxRetries: 2, isMountedRef: isMounted }
-          );
-          if (profiles) {
-            for (const p of profiles) {
-              profileMap[p.id] = p.display_name || p.username || 'Player';
-            }
-          }
-        }
+      const CHUNK_SIZE = 200;
+      const nameChunks: string[][] = [];
+      for (let i = 0; i < needNames.length; i += CHUNK_SIZE) {
+        nameChunks.push(needNames.slice(i, i + CHUNK_SIZE));
       }
 
       // Fetch commission rates for agent-type recipients
@@ -643,18 +632,66 @@ export default function CashierPage() {
         .filter((m) => ['agent', 'super_agent', 'sub_agent'].includes(m.role))
         .map((m) => m.user_id);
       const agentMap: Record<string, { commission_rate: number; is_prepaid: boolean }> = {};
-      if (agentUserIds.length > 0) {
-        if (!isMounted.current || stale()) return;
-        const { data: agentRecords } = await retryFetch(
-          () =>
-            supabase
-              .from('agents')
-              .select('user_id, commission_rate, is_prepaid')
-              .in('user_id', agentUserIds)
-              .eq('club_id', resolvedId)
-              .then((r) => r),
-          { maxRetries: 2, isMountedRef: isMounted }
-        );
+
+      const namesPromise = Promise.all(
+        nameChunks.map((chunk) =>
+          retryFetch(
+            () =>
+              supabase
+                .from('profiles')
+                .select('id, display_name, username')
+                .in('id', chunk)
+                .then((r) => r),
+            { maxRetries: 2, isMountedRef: isMounted }
+          )
+        )
+      ).then(
+        (r) => r,
+        (error) => {
+          reportError(error, 'CashierPage.loadRecipients.names');
+          return [] as Array<{
+            data: Array<{
+              id: string;
+              display_name: string | null;
+              username: string | null;
+            }> | null;
+          }>;
+        }
+      );
+
+      const agentsPromise =
+        agentUserIds.length > 0
+          ? retryFetch(
+              () =>
+                supabase
+                  .from('agents')
+                  .select('user_id, commission_rate, is_prepaid')
+                  .in('user_id', agentUserIds)
+                  .eq('club_id', resolvedId)
+                  .then((r) => r),
+              { maxRetries: 2, isMountedRef: isMounted }
+            ).then(
+              (r) => r,
+              (error) => {
+                reportError(error, 'CashierPage.loadRecipients.agents');
+                return { data: null };
+              }
+            )
+          : Promise.resolve({ data: null });
+
+      const [nameResults, agentResult] = await Promise.all([namesPromise, agentsPromise]);
+      if (!isMounted.current || stale()) return;
+
+      for (const { data: profiles } of nameResults) {
+        if (profiles) {
+          for (const p of profiles) {
+            profileMap[p.id] = p.display_name || p.username || 'Player';
+          }
+        }
+      }
+
+      {
+        const { data: agentRecords } = agentResult;
         if (agentRecords) {
           for (const a of agentRecords) {
             agentMap[a.user_id] = {

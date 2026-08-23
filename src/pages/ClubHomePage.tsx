@@ -900,7 +900,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, description, avatar_url, logo_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at, is_union'
+              'id, club_id, name, description, avatar_url, logo_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at, is_union, union_id'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -1068,16 +1068,100 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         }
       }
 
+      /**
+       * THE UNION -> CLUB CASCADE (rebuilt 2026-08-23)
+       *
+       * Dan: "the mtt, spins and heads up tournaments keep breaking and not
+       * displaying correctly. Sometimes it displays, then it disappears."
+       *
+       * Everything below forks on `unionId`. With it, a union club lists its
+       * own private games PLUS every union game (138 games, 35 of them MTTs).
+       * Without it, the same club lists only what it owns - and a union club
+       * owns almost nothing, so the MTT tab reads "Nothing Here On This Tab"
+       * while 138 games are running one join away.
+       *
+       * That fork hung on ONE `union_clubs` read whose catch treated FAILURE
+       * exactly like ABSENCE. A timeout, a 500, an RLS hiccup - any of them
+       * silently demoted the club to standalone and emptied the lobby. The
+       * database has been timing statements out under load all day, so this
+       * fired often enough for Dan to watch the board appear and vanish.
+       *
+       * A club's union membership changes approximately never, so the answer
+       * is resolved from three independent sources and only ever downgraded
+       * on POSITIVE evidence of absence:
+       *
+       *   1. the union_clubs row          (authoritative)
+       *   2. clubs.union_id               (already on the row we just fetched
+       *                                    - no extra round trip)
+       *   3. the last answer we cached    (survives a blip entirely)
+       *
+       * Standalone is concluded only when a query SUCCEEDS and returns
+       * nothing, and nothing is cached. Anything else keeps the last known
+       * good scope, because showing a union club its union is right far more
+       * often than showing it an empty room.
+       */
+      const unionCacheKey = `ca_union_of_${resolvedId}`;
+      const readCachedUnion = (): string | null => {
+        try {
+          return sessionStorage.getItem(unionCacheKey) || null;
+        } catch {
+          return null;
+        }
+      };
+      const cacheUnion = (id: string | null) => {
+        try {
+          if (id) sessionStorage.setItem(unionCacheKey, id);
+          else sessionStorage.removeItem(unionCacheKey);
+        } catch {
+          /* storage unavailable */
+        }
+      };
+
       // Check if this club is inside a union
       let unionId: string | null = null;
       let unionClubIds: string[] = [resolvedId];
       try {
         const { data: ucRow, error: ucErr } = await unionRowPromise;
+        if (ucErr) {
+          // FAILURE IS NOT ABSENCE. Fall back, in order, to the club row we
+          // already hold and then to the last good answer.
+          const fallback =
+            (clubData as { union_id?: string | null } | null)?.union_id || readCachedUnion();
+          if (fallback) {
+            unionId = fallback;
+            if (getIsMounted && !getIsMounted()) return;
+            setIsInUnion(true);
+            setUnionIdForCreate(fallback);
+            // Deliberately NOT re-querying union_clubs for the sibling ids:
+            // clubHomeWaterfall.test.ts forbids an inline read here and is
+            // right to - that is how this page got its waterfall back last
+            // time. unionClubIds only widens the CASH-table filter; the
+            // tournament fork that empties the MTT tab keys on unionId alone.
+            // A rare fallback showing club-scoped cash tables is a far smaller
+            // wrong than an empty lobby.
+          }
+        }
+        if (!ucErr && !ucRow) {
+          // A clean answer of "no row" is still only half the story: the club
+          // row itself may name a union (they are written by different paths).
+          const fromClubRow = (clubData as { union_id?: string | null } | null)?.union_id || null;
+          if (fromClubRow) {
+            unionId = fromClubRow;
+            if (getIsMounted && !getIsMounted()) return;
+            setIsInUnion(true);
+            setUnionIdForCreate(fromClubRow);
+            // Same reasoning as the error branch above: no inline read here.
+          } else {
+            cacheUnion(null); // genuinely standalone, on positive evidence
+          }
+        }
         if (!ucErr && ucRow) {
           if (getIsMounted && !getIsMounted()) return;
           setIsInUnion(true);
           unionId = ucRow.union_id;
           setUnionIdForCreate(ucRow.union_id);
+          // Remember it: the next load survives a timeout without emptying.
+          cacheUnion(ucRow.union_id);
 
           // Get ALL club IDs in this union + member count in parallel
           const [allUcResult, memberCountResult] = await Promise.all([

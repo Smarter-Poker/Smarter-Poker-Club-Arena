@@ -365,6 +365,18 @@ fi
 # on every push. scripts/agent-workspace.sh links node_modules in, so this
 # normally runs; when it truly cannot, it says so rather than letting a suite
 # that never ran look like a suite that passed.
+# A GUTTED node_modules LOOKS LIKE A BROKEN REPO. It is not.
+#
+# Every worktree shares the main clone's node_modules through a symlink, and an
+# `npm install` run inside ANY tree writes through it. Twice on 2026-08-23 that
+# left ~285 package directories empty, and every hook on the machine then died
+# on check-title-case.mjs with ERR_MODULE_NOT_FOUND - a message that names a
+# path and explains nothing. An agent seeing it reasonably concludes their own
+# tree is broken and starts reinstalling, which is how it becomes a loop.
+#
+# Probe first, so the diagnosis arrives before the confusion does.
+bash "$(git rev-parse --show-toplevel)/scripts/check-node-modules.sh" --check || true
+
 VITEST="$(git rev-parse --show-toplevel)/node_modules/.bin/vitest"
 if [ -z "${CA_SKIP_TESTS:-}" ] && [ -f package.json ] && [ ! -x "$VITEST" ]; then
   echo ""

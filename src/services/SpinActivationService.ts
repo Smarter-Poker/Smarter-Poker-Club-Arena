@@ -65,6 +65,15 @@ export interface SpinOwnerState {
    * like one that is merely waiting its turn.
    */
   seed_is_repayable: boolean;
+  /**
+   * The balance the pool must always hold to cover its biggest advertised
+   * prize. Repayment never takes it below this, so the 100x is always real.
+   */
+  repay_floor: number;
+  /** The balance at which the next instalment falls due (floor x 1.25). */
+  repay_trigger_at: number;
+  /** What would be returned right now. 0 when nothing is due. */
+  next_instalment: number;
   collected_from_play: number;
   total_drawn: number;
   spin_count: number;

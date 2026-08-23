@@ -77,6 +77,31 @@ predicate in the index. Applied to production and re-measured: **11.588ms ->
 0.376ms**, 1,480 buffers -> 35, and the "Rows Removed by Filter" line is gone —
 nothing left for the policy to be evaluated against.
 
+### 5. …and it could still spin forever (PR #526)
+
+With the ticker gone the "+" is reachable, and the sheet still sat on "Finding
+Games…" indefinitely on some runs. Instrumenting `window.fetch` across repeated
+production runs: when it stalls, **no `/rest/v1/tables` request is issued at
+all**. The await neither resolves nor rejects and never reaches the network, so
+the stall is upstream of the query — and `try/catch` cannot see it, because
+nothing is thrown.
+
+Every other failure path in `handleAddTable` already falls back to the lobby
+tab; a stall now does too, via a 6s race on both lookups. An empty result is
+deliberately still an answer ("No Open Seats Right Now"), and a real rejection
+still propagates. `withTimeout` takes `PromiseLike`, not `Promise` — a
+`PostgrestFilterBuilder` is a thenable that only issues its request when
+awaited and has no `.catch`/`.finally`.
+
+### Verified on production, not on exit codes
+
+|                                  | before               | after                 |
+| -------------------------------- | -------------------- | --------------------- |
+| hit test at the "+" centre       | `.mtt-ticker__track` | `.table-tab-bar__add` |
+| Playwright click                 | intercepted          | OK                    |
+| elements sharing that aria-label | 2                    | 1                     |
+| Quick Join populated             | 6,707ms              | 139-232ms             |
+
 ### Note for whoever chases "Club Not Found" next
 
 Not reproduced again this session. Ruled out from a clean session: the club row,

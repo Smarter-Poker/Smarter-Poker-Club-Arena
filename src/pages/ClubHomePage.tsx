@@ -2310,20 +2310,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           if (!qSpec) return null;
           const qVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
 
-          const applyRange = (min: number, max: number) => {
-            const next: FilterStore = {
-              ...advFilters,
-              [gameType]: { ...qVal, rangeMin: min, rangeMax: max },
-            };
-            setAdvFilters(next);
-            if (resolvedClubId) saveFilters(resolvedClubId, next);
-          };
-
           return (
             <div className="quickprefs">
               <div className="quickprefs__row">
                 {qSpec.range.presets.map((p) => {
-                  const on = qVal.rangeMin === p.min && qVal.rangeMax === p.max;
+                  const on = (qVal.selectedRanges || []).includes(p.key);
                   return (
                     <button
                       key={p.key}
@@ -2331,12 +2322,14 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                       aria-pressed={on}
                       onClick={() => {
                         haptic.selection();
-                        /* Tapping the active tier CLEARS it back to the full
-                           range. Without that the only way to undo a tier is to
-                           open the sheet and hit Reset, which is three taps to
-                           undo one. */
-                        if (on) applyRange(qSpec.range.min, qSpec.range.max);
-                        else applyRange(p.min, p.max);
+                        const arr = qVal.selectedRanges || [];
+                        const nextArr = on ? arr.filter(k => k !== p.key) : [...arr, p.key];
+                        const next: FilterStore = {
+                          ...advFilters,
+                          [gameType]: { ...qVal, selectedRanges: nextArr },
+                        };
+                        setAdvFilters(next);
+                        if (resolvedClubId) saveFilters(resolvedClubId, next);
                       }}
                     >
                       {p.label}
@@ -2646,7 +2639,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       {/* ═══════════════════════════════════════════════════════════════════
                 BACKGROUND IMAGE (Premium Bar Scene)
             ═══════════════════════════════════════════════════════════════════ */}
-      <div className="club-home__background"></div>
+      
 
       {/* ═══════════════════════════════════════════════════════════════════
                 BOTTOM NAVIGATION BAR

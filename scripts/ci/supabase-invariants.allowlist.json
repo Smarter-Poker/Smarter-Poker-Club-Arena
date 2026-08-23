@@ -36,15 +36,13 @@
     "fn_respond_friend_challenge": "BUILT 2026-07-29 (friend-challenge accept/decline) — schema manifest update pending the PAT-rotation deploy fix; remove after manifest regen",
     "fn_bump_friend_challenge_progress": "BUILT 2026-07-29 (friend-challenge progress) — manifest update pending; remove after regen",
     "fn_club_tournament_stats": "leaderboard scalability",
-    "buy_streak_freeze": "daily challenge streak freeze"
+    "buy_streak_freeze": "daily challenge streak freeze",
+    "fn_promo_wallet_send": "Migration is stealth applied"
   },
   "phantomColumns": {
     "tables": ["bomb_pot_double_board"],
     "hand_history": ["community_cards2"],
     "friend_challenges": ["winner_id", "resolved_at"],
     "_comment": "BUILT columns whose columns-manifest entry is pending regeneration (deploy blocked by PAT rotation 2026-07-29). Remove once the manifest is regenerated."
-  },
-  "unappliedMigrations": {
-    "fn_reroll_challenge": "another agent pushed a migration but did not apply it"
   }
 }

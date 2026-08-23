@@ -53,6 +53,7 @@ import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
+import { PromoWalletCashierModal } from '../components/wallet';
 import ClubBankCashierModal from '../components/wallet/ClubBankCashierModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
@@ -343,6 +344,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // to agent wallets, the full chip ledger, and (standalone clubs only) the
   // Chip Mint, which used to be a "+" on the wallet panel itself.
   const [showClubBank, setShowClubBank] = useState(false);
+  const [showPromoWallet, setShowPromoWallet] = useState(false);
   /* LOBBY V2 follow-up (Dan's QA, 2026-08-22): the lobby landed on the MTT
      tab, a leftover from before All Games was a real tab. A club with no open
      MTTs therefore opened onto an empty screen blaming "filters" - every
@@ -2347,6 +2349,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 // refuses everyone else server-side. The Chip Mint moved
                 // INSIDE that cashier - there is no mint button out here any
                 // more, and no mint at all once the club is in a union.
+                onOpenPromoWallet={() => setShowPromoWallet(true)}
                 onOpenClubBank={() => {
                   haptic.medium();
                   setShowClubBank(true);

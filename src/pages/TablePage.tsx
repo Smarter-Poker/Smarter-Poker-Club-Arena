@@ -9411,7 +9411,23 @@ export default function TablePage({
 
   return (
     <div
-      className={`table-page${isAllInMode ? ' table-page--allin-mode' : ''}${tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress ? ' table-page--hero-turn' : ''}${winnerInfo.playerIds.length > 0 ? ' table-page--winner-flash' : ''}`}
+      /* `--embedded` (Dan 2026-08-23: "+ does not create the action box for
+         that game"). `.table-page` is `position: fixed; inset: 0; z-index:
+         1100` because as a ROUTE it is the whole screen. Inside
+         MultiTablePage it is not: it is one slot under a tab bar. Fixed
+         positioning took it out of that flex column and stretched it back
+         over the entire viewport — including the tab strip and the "+"
+         button, which stayed VISIBLE (the table's own background is painted
+         further in) while every tap landed on the table instead.
+
+         Measured on a live table before this change: elementFromPoint at the
+         centre of the "+" returned .table-page, Playwright refused the click
+         as not-actionable, and zero queries left the browser — the handler
+         never ran. Nobody could open a second table.
+
+         Embedded instances now fill their slot instead of the viewport; the
+         route case is untouched. */
+      className={`table-page${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress ? ' table-page--hero-turn' : ''}${winnerInfo.playerIds.length > 0 ? ' table-page--winner-flash' : ''}`}
       /* Dan 2026-08-18 — the page never shows the skin composite's scene:
          the table is .table-art inside the aspect-locked scaler, and the
          page behind it is a standalone designed background (style below). */

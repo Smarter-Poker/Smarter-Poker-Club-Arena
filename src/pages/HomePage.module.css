@@ -2079,6 +2079,7 @@
 /* Enhancement #10: Error Boundary */
 .errorBoundary {
   min-height: 100vh;
+  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   width: 100%;
   display: flex;
   flex-direction: column;

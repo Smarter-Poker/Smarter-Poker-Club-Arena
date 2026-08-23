@@ -1,5 +1,6 @@
 .waitlist-page {
   min-height: 100vh;
+  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   background: var(--bg-primary);
   padding-bottom: 2rem;
 }

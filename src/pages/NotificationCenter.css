@@ -1,5 +1,6 @@
 .notification-center {
   min-height: 100vh;
+  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   background: linear-gradient(180deg, #0a0f18 0%, #0d1520 100%);
   color: #fff;
   padding-bottom: 80px;

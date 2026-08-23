@@ -9,7 +9,6 @@
       "captured_at"
     ],
     "_audit_phase40_results": ["id", "vector", "outcome", "sqlstate", "message", "created_at"],
-    "_pgss_snap": ["queryid", "calls", "total_exec_time", "query"],
     "_pps_backfill_state": [
       "id",
       "last_created",

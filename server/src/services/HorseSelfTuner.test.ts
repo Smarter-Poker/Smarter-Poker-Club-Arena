@@ -243,15 +243,21 @@ describe('HorseSelfTuner V12 — diagnosis and bounded nudges', () => {
     expect(m.aggression).toBeLessThanOrEqual(1.18);
   });
 
-  it('a big losing sample regresses dials toward neutral', () => {
-    const r = diagnoseAndNudge(base({ netBB: -200 }), {
-      tightness: 1.1,
-      aggression: 0.9,
-      bluffFreq: 1.12,
-    });
-    expect(r.mods.tightness).toBeLessThan(1.1);
-    expect(r.mods.aggression).toBeGreaterThan(0.9);
-    expect(r.reasons.join(' ')).toContain('regress');
+  it('a catastrophic measured net NEVER moves a dial on its own', () => {
+    // V12.3: bb100 is reconstructed from hand_history.actions, and measured
+    // against 1000 real production hands that reconstruction reproduces the
+    // recorded pot in only 24% of hands (chip conservation fails in 38%, and
+    // in 87% of hands containing an all-in). It used to halve all three dials
+    // toward neutral below -15bb/100 — so on a systematically negative
+    // estimate every horse in the fleet lost its personality, nightly, with a
+    // confident-sounding reason written to the audit log. Frequency stats
+    // still drive nudges; chips do not.
+    const clean = base({ netBB: -200 }); // ruinous "net", but no other leak
+    const r = diagnoseAndNudge(clean, { tightness: 1.1, aggression: 1.1, bluffFreq: 1.1 });
+    expect(r.mods.tightness).toBe(1.1);
+    expect(r.mods.aggression).toBe(1.1);
+    expect(r.mods.bluffFreq).toBe(1.1);
+    expect(r.reasons.join(' ')).not.toContain('regress');
   });
 
   it('small samples never move dials', () => {

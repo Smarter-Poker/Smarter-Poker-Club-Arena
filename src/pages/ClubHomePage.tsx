@@ -51,7 +51,7 @@ import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
-import ChipMintModal from '../components/wallet/ChipMintModal';
+import ClubBankCashierModal from '../components/wallet/ClubBankCashierModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
@@ -333,8 +333,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // last 5 hits, qualifying hands per game, payout % per stakes (Dan 2026-08-18).
   const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
   const [showBBJInfo, setShowBBJInfo] = useState(false);
-  // Dan 2026-08-21: Chip Mint (diamonds -> chips, 100 = 10,000).
-  const [showChipMint, setShowChipMint] = useState(false);
+  // Dan 2026-08-23: the Club Bank row opens the Club Bank Cashier - send outs
+  // to agent wallets, the full chip ledger, and (standalone clubs only) the
+  // Chip Mint, which used to be a "+" on the wallet panel itself.
+  const [showClubBank, setShowClubBank] = useState(false);
   /* LOBBY V2 follow-up (Dan's QA, 2026-08-22): the lobby landed on the MTT
      tab, a leftover from before All Games was a real tab. A club with no open
      MTTs therefore opened onto an empty screen blaming "filters" - every
@@ -2283,22 +2285,27 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               <DynamicWallet
                 userId={currentUserId}
                 clubId={resolvedClubId}
-                variant={
-                  club?.is_union ? 'union' : isOwner || userRole === 'owner' ? 'owner' : 'player'
-                }
+                // WHOSE books. A union's own lobby shows union books; every
+                // club lobby shows club books, whoever is standing in it.
+                variant={club?.is_union ? 'union' : 'club'}
+                // WHO is looking. Decides which rows exist - see walletRows.ts.
+                // The club's owner_id outranks a stale club_members row, which
+                // is how a brand new owner sees their own Club Bank.
+                role={isOwner ? 'owner' : userRole}
                 showBBJ
                 onBuyDiamonds={() => {
                   haptic.medium();
                   navigate(`/clubs/${clubId}/detail`);
                 }}
-                onMintChips={() => {
+                // Dan 2026-08-23: "if they click on Club Bank, that should
+                // open the Club Bank Cashier." The row only renders for owner,
+                // co-owner, admin and super agent, and fn_can_use_club_bank
+                // refuses everyone else server-side. The Chip Mint moved
+                // INSIDE that cashier - there is no mint button out here any
+                // more, and no mint at all once the club is in a union.
+                onOpenClubBank={() => {
                   haptic.medium();
-                  // Dan 2026-08-21: the Mint button IS the Chip Mint now
-                  // (diamonds -> chips, 100 = 10,000). The RPC enforces the
-                  // law: standalone clubs mint into their pool; union clubs
-                  // are revoked unless you own the union, in which case the
-                  // chips land in the union bank.
-                  setShowChipMint(true);
+                  setShowClubBank(true);
                 }}
                 onOpenBBJ={() => {
                   haptic.medium();
@@ -2365,10 +2372,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         )}
       </header>
 
-      <ChipMintModal
-        isOpen={showChipMint}
-        onClose={() => setShowChipMint(false)}
+      <ClubBankCashierModal
+        isOpen={showClubBank}
+        onClose={() => setShowClubBank(false)}
         clubId={resolvedClubId || clubId || ''}
+        role={isOwner ? 'owner' : userRole}
       />
       <BBJInfoModal
         isOpen={showBBJInfo}

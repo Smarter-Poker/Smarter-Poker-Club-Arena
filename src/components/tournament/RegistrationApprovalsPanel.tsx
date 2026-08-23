@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useClubRole } from '../../hooks';
 import { MembershipService } from '../../services/MembershipService';
+import { readLocalSession } from '../../lib/authUtils';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import './RegistrationApprovalsPanel.css';
@@ -117,10 +118,15 @@ export default function RegistrationApprovalsPanel({
   const approve = async (userId: string) => {
     setBusyUserId(userId);
     try {
+      // readLocalSession is the canonical client-side identity read: the
+      // shared 'smarter-poker-auth' session already holds this id, so asking
+      // the auth server for it again is both a needless round trip and the
+      // thing the pre-push hook refuses.
+      const approver = readLocalSession()?.userId ?? null;
       const { error } = await supabase.from('tournament_registration_approvals').insert({
         tournament_id: tournamentId,
         user_id: userId,
-        approved_by: (await supabase.auth.getUser()).data.user?.id ?? null,
+        approved_by: approver,
       });
       if (error && !/duplicate|unique/i.test(error.message || '')) {
         reportError(error, 'RegistrationApprovalsPanel.approve');
@@ -160,16 +166,14 @@ export default function RegistrationApprovalsPanel({
     <section className="regApprovals" aria-label="Registration approvals">
       <div className="regApprovalsHeader">
         <h3 className="regApprovalsTitle">Authorized To Register</h3>
-        <span className="regApprovalsCount">
-          {approvals.length} approved
-        </span>
+        <span className="regApprovalsCount">{approvals.length} Approved</span>
       </div>
       <p className="regApprovalsHint">
-        This event only admits players you approve. Club staff can always register.
+        This Event Only Admits Players You Approve. Club Staff Can Always Register.
       </p>
 
       {loading ? (
-        <div className="regApprovalsLoading">Loading members...</div>
+        <div className="regApprovalsLoading">Loading Members...</div>
       ) : (
         <>
           {approvals.length > 0 && (

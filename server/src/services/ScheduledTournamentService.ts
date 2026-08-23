@@ -508,12 +508,26 @@ export class ScheduledTournamentService {
     if (insertErr || !created) {
       const msg = insertErr?.message ?? 'unknown';
       if (insertErr?.code === '23505' || /duplicate key|unique constraint/i.test(msg)) {
-        // uq_scheduled_tournament_one_live_per_name: a same-named pre-start MTT
-        // already exists. Benign — the event the schedule wanted is on the
-        // board. The claimed spawn key stands, which is the dedupe working.
+        // uq_scheduled_tournament_one_live_per_name: a same-named pre-start
+        // event already exists. Benign — the event the schedule wanted is on
+        // the board.
+        //
+        // RELEASE THE CLAIM ANYWAY (2026-08-23). Holding it was right at a
+        // 30-minute look-ahead, where a collision meant "this same instance
+        // is already there". At a 24-hour look-ahead it means something
+        // different: a schedule with two start times (Hot Turbo runs 15:00
+        // AND 21:00) has both instances due in the same poll, and the later
+        // one collides with the earlier one that is still pre-start. Holding
+        // the key would burn the 21:00 game for the day. Releasing lets it be
+        // retried each poll and spawn the moment the earlier instance starts.
         console.log(
-          `[ScheduledTournaments] "${row.name}" already live pre-start — spawn ${spawnKey} skipped`
+          `[ScheduledTournaments] "${row.name}" already live pre-start — spawn ${spawnKey} deferred`
         );
+        await supabase
+          .from('tournament_schedule_spawns')
+          .delete()
+          .eq('spawn_key', spawnKey)
+          .is('tournament_id', null);
         return;
       }
       // RELEASE THE CLAIM (2026-08-23). The key is claimed before the

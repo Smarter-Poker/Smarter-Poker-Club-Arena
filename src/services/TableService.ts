@@ -965,7 +965,11 @@ class TableService {
 
     if (error) {
       reportError(error, 'TableService.getSeatedPlayers');
-      return [];
+      /* Returning [] here made a 400 indistinguishable from an empty table:
+         the admin seat list rendered "No Players Seated" over both of the
+         faults above, for as long as they existed, and nothing went red. The
+         caller decides what an unanswerable question should look like. */
+      throw error;
     }
     return data || [];
   }

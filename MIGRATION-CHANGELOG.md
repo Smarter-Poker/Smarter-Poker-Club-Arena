@@ -7,6 +7,50 @@
 
 ---
 
+## Cowork session 2026-08-23 (11f) — THE CLUB PAGE WAS NOT EMPTY, IT WAS CRASHING
+
+Dan: "they are displaying in midway union, but are not displaying inside the
+clubs attached to midway union. neither club is showing any mtt's."
+
+Chased this as a data-scoping bug and it was not one. Everything checked out:
+union_clubs maps both clubs to Midway, crossClubTournaments is true, and
+running the exact lobby queries UNDER RLS as Dan's own user returned the
+union row, the union_id, and 56 live tournaments including 8 MTTs. The data
+was reachable the whole time.
+
+So I opened the page. /clubs/<jaqk>/tournaments rendered:
+
+    SOMETHING WENT WRONG
+    Failed to fetch dynamically imported module
+    .../assets/CreateClubModal-C9SO3288-v6.js
+
+That chunk is a 404. The browser was running an OLDER index.html whose chunk
+hashes the latest deploy had pruned (the deployed tree carries
+CreateClubModal-FODaI1aJ, and an orphaned .map from a third build). One
+failed dynamic import, the error boundary swallows the entire page, and every
+tournament on it is invisible. The union lobby survived because it is a
+different route that did not need that chunk.
+
+THE PART THAT STINGS: src/utils/lazyWithRetry.ts was written for exactly this
+on 2026-08-19. Its docblock quotes the same error against
+HamburgerMenu-<hash>.js. It retries the import, unregisters the service
+worker, purges Cache Storage and re-navigates with a cache buster so the
+stale HTML itself is invalidated. It has unit tests. And it was called ZERO
+times: all 101 lazy routes and modals, across 9 files, used plain
+React.lazy(), so a stale tab hit a permanent dead end instead of a reload. A
+safety net that is written, tested, and wired to nothing is worse than no
+safety net, because everyone assumes it is holding.
+
+All 101 sites now go through lazyWithRetry (App.tsx alone had 89). Verified:
+tsc clean, eslint 0 errors, 252 test files / 3183 passing, and a production
+vite build succeeds with code splitting intact — 190 chunks, the lazy routes
+still emitted separately, so this costs nothing in bundle terms.
+
+FOR THE NEXT AGENT: a 404 on an asset hash is not always a build failure. It
+is usually a client holding an old document, and the fix belongs in the
+client's recovery path, not in the deploy. If you add a lazy route, use
+lazyWithRetry — a plain React.lazy() is a future white screen.
+
 ## Cowork session 2026-08-23 (11e) — THE SCHEDULE WAS REAL, THE LOBBY WAS EMPTY
 
 Dan: "there are currently no mtt's built, scheduled or running in the union

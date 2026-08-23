@@ -223,6 +223,7 @@ const PAYOUT_STRUCTURES = {
 };
 
 import { SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
+import { secureRandomInt } from '../engine/CryptoRandom.js';
 
 // The local SPIN_MULTIPLIERS table that lived here — one of THREE that
 // disagreed (EV 3.00 designed, 2.75 here, 2.24 in the engine fallback), and
@@ -588,7 +589,16 @@ const SEAT_FIRST_HUMAN_WINDOW_MAX_MS = 180 * 1000;
 
 function seatFirstHumanWindowMs(): number {
   const span = SEAT_FIRST_HUMAN_WINDOW_MAX_MS - SEAT_FIRST_HUMAN_WINDOW_MIN_MS;
-  return SEAT_FIRST_HUMAN_WINDOW_MIN_MS + Math.floor(Math.random() * (span + 1));
+  // secureRandomInt, deliberately. CryptoRandom.test.ts bans the unseeded
+  // language-level RNG anywhere in this file, and it is right to: item A8 of
+  // its header records rollSpinMultiplier having picked a REAL MONEY
+  // multiplier with it. A guard narrow enough to allow "but mine is only a
+  // timer" is a guard that gets talked around. This IS only a timer, and it
+  // costs nothing to be correct.
+  //
+  // The comment is worded around the banned token on purpose - the check reads
+  // raw file text, so even naming it here would trip it.
+  return SEAT_FIRST_HUMAN_WINDOW_MIN_MS + secureRandomInt(span + 1);
 }
 
 /**

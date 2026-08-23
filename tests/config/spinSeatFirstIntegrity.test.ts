@@ -81,14 +81,20 @@ describe('the last seat belongs to a human for a minute to three', () => {
     expect(recurring).toMatch(/SEAT_FIRST_HUMAN_WINDOW_MAX_MS = 180 \* 1000/);
   });
 
-  it('is randomised per game, not a fixed tick', () => {
+  it('is randomised per game, not a fixed tick, and not with the banned RNG', () => {
     // A constant delay makes every table on the board fill in lockstep.
-    expect(recurring).toMatch(/Math\.random\(\)/);
+    // CryptoRandom.test.ts forbids the unseeded language-level RNG anywhere in
+    // TournamentRecurringService - item A8 of its header records
+    // rollSpinMultiplier having picked a REAL MONEY multiplier with it. This
+    // window is only a timer, but a guard narrow enough to allow "but mine is
+    // only a timer" is a guard that gets talked around.
     const fn = recurring.slice(
       recurring.indexOf('function seatFirstHumanWindowMs'),
       recurring.indexOf('function openingHorsesForSeatFirst')
     );
-    expect(fn).toMatch(/SEAT_FIRST_HUMAN_WINDOW_MIN_MS \+ Math\.floor\(Math\.random\(\)/);
+    expect(fn).toMatch(/SEAT_FIRST_HUMAN_WINDOW_MIN_MS \+ secureRandomInt\(span \+ 1\)/);
+    expect(recurring).toMatch(/import \{ secureRandomInt \} from '\.\.\/engine\/CryptoRandom\.js'/);
+    expect(recurring).not.toMatch(/Math\.random/);
   });
 
   it('applies to Spins and to heads-up, and not to a 6-max field', () => {

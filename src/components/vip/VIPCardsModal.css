@@ -116,7 +116,7 @@
   color: #ffd700;
   padding: 8px 16px;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 16px; /* was 14px; under 16px makes iOS zoom the page on focus */
   cursor: pointer;
 }
 

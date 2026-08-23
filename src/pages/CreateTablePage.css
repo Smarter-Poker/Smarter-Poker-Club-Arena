@@ -10,6 +10,7 @@
 ═══════════════════════════════════════════════════════════════════════════════ */
 .create-table-page {
   min-height: 100vh;
+  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   background: linear-gradient(180deg, #0a0a0f 0%, #1a1a2e 100%);
   padding: 1rem;
   position: relative;

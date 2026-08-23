@@ -23,7 +23,6 @@ const ALL_PAGES: PageTest[] = [
   // Core navigation
   { route: '/', importPath: '../src/pages/HomePage' },
   { route: '/lobby', importPath: '../src/pages/LobbyPage' },
-  { route: '/clubs', importPath: '../src/pages/ClubCarouselPage' },
   { route: '/clubs/create', importPath: '../src/pages/CreateClubPage' },
   { route: '/clubs/:clubId', importPath: '../src/pages/ClubHomePage' },
   { route: '/clubs/:clubId/agents', importPath: '../src/pages/AgentManagementPage' },

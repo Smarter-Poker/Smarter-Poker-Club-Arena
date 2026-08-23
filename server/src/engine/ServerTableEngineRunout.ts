@@ -145,6 +145,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     if (userId === state.chooserPlayerId && runs !== undefined) {
       this.runItTwiceEngine.chooserDecides(this.tableId, userId, runs);
       if (runs === 1) {
+        /* Dan 2026-08-23: "I just tried to run it twice, and it did not run a
+           second board... only ran it the one time and awarded me the pot."
+           The engine was right - hand #1729271 that evening really did deal two
+           boards. What was missing is THIS: when the offer resolves to a single
+           run, nothing was broadcast at all. The hand simply ran once and
+           shipped the pot, so a player who had just asked to run it twice was
+           left to conclude the feature is broken. Every path that ends in one
+           board now says so, and says who decided it. */
+        this.emitRitSingleRun('chooser_chose_one', userId);
         return { success: true, status: 'declined_by_chooser' };
       }
       // Broadcast chooser's decision to all clients so others can accept/decline
@@ -167,6 +176,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       return { success: true, status: 'waiting_for_others' };
     } else if (response === 'decline') {
       this.runItTwiceEngine.decline(this.tableId, userId);
+      this.emitRitSingleRun('player_declined', userId);
       return { success: true, status: 'declined' };
     }
 
@@ -539,7 +549,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
             // ═══════════════════════════════════════════════════════════════
             this.dealAndResolveRIT(allInPlayers);
           } else if (this.handController) {
-            // Declined — normal single runout, paced (Dan item 16).
+            // Declined or unanswered — normal single runout, paced (Dan item 16).
+            this.emitRitSingleRun('no_agreement');
             void this.pacedAllInRunout(allInPlayers, pot);
           }
         });
@@ -747,6 +758,38 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     const safetyTimeout = setTimeout(() => {
       finish();
     }, 18_000);
+  }
+
+  /** The hand this seat has already been told ran once, so a decline
+   *  followed by the timeout branch cannot toast the same player twice. */
+  private ritSingleRunNotifiedHand = -1;
+
+  /**
+   * Announce that a Run It Twice offer ended in ONE board, and why.
+   *
+   * There was no event for this. `rit_result` is only emitted when two or more
+   * boards are actually dealt, so the single-run outcome - a chooser picking 1,
+   * an all-in opponent declining, or nobody answering inside the window - was
+   * completely silent on the wire. All three are legitimate poker; none of them
+   * should look like a broken feature.
+   */
+  protected emitRitSingleRun(
+    reason: 'chooser_chose_one' | 'player_declined' | 'no_agreement',
+    playerId?: string
+  ): void {
+    if (this.ritSingleRunNotifiedHand === this.handCount) return;
+    this.ritSingleRunNotifiedHand = this.handCount;
+    try {
+      this.hub?.emitEvent(this.tableId, {
+        type: 'rit_single_run',
+        table_id: this.tableId,
+        hand_number: this.handCount,
+        reason,
+        player_id: playerId ?? null,
+      });
+    } catch {
+      /* broadcast failure is non-fatal */
+    }
   }
 
   /**

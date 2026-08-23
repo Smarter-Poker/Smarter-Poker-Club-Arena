@@ -158,7 +158,10 @@ function accumulateOne(row: HandRow, tracked: Set<string>, into: Map<string, Pla
         const higher = seats.filter((s) => (s.seat as number) > seat);
         return (higher.length > 0 ? higher : seats)[0];
       };
-      const sbP = seats.length === 2 ? seats.find((s) => s.seat === row.button_seat) ?? after(row.button_seat) : after(row.button_seat);
+      const sbP =
+        seats.length === 2
+          ? (seats.find((s) => s.seat === row.button_seat) ?? after(row.button_seat))
+          : after(row.button_seat);
       const bbP = after(sbP.seat as number);
       if (sbP.userId) {
         contributed.set(sbP.userId, (contributed.get(sbP.userId) || 0) + bb / 2);
@@ -296,7 +299,10 @@ function accumulateOne(row: HandRow, tracked: Set<string>, into: Map<string, Pla
       contributed.set(id, Math.max(0, (contributed.get(id) || 0) - refund));
     } else if (sorted.length === 1 && sorted[0][1] > 0) {
       // Everyone else folded without matching a single chip of it.
-      contributed.set(sorted[0][0], Math.max(0, (contributed.get(sorted[0][0]) || 0) - sorted[0][1]));
+      contributed.set(
+        sorted[0][0],
+        Math.max(0, (contributed.get(sorted[0][0]) || 0) - sorted[0][1])
+      );
     }
   }
 
@@ -372,7 +378,10 @@ export function diagnoseAndNudge(s: PlayStats, current: HorseProfileMods): TuneR
   const reasons: string[] = [];
 
   if (s.hands < MIN_HANDS_TO_TUNE) {
-    return { mods: { ...current, tightness, aggression, bluffFreq }, reasons: ['sample too small - no change'] };
+    return {
+      mods: { ...current, tightness, aggression, bluffFreq },
+      reasons: ['sample too small - no change'],
+    };
   }
 
   const vpip = s.vpip / s.hands;
@@ -428,12 +437,29 @@ export function diagnoseAndNudge(s: PlayStats, current: HorseProfileMods): TuneR
 
   // A big losing sample means the current dial settings are not working:
   // regress halfway to neutral rather than pile more adjustments on top.
-  if (s.hands >= 1000 && bb100 < -15) {
-    tightness = 1 + (tightness - 1) * 0.5;
-    aggression = 1 + (aggression - 1) * 0.5;
-    bluffFreq = 1 + (bluffFreq - 1) * 0.5;
-    reasons.push(`net ${bb100.toFixed(1)}bb/100 over ${s.hands} hands - regress dials toward neutral`);
-  }
+  // ── V12.3: bb100 NO LONGER DRIVES A DIAL CHANGE ─────────────────────────
+  // This branch used to halve all three dials toward neutral whenever the
+  // measured net was below -15bb/100. Measured against 1000 real production
+  // hands, that net cannot be trusted:
+  //   - reconstructing contributions from `actions` reproduces the recorded
+  //     pot_size in only 24% of hands;
+  //   - chip conservation (sum of every player's net == -rake) fails in 38%,
+  //     rising to 87% on hands containing an all-in, 75% on split/side pots
+  //     and 100% on run-it-twice hands;
+  //   - 23% of rows do not even balance internally (winners + rake != pot_size).
+  // The uncalled-bet refund added above cut the failure rate from 86.6% to
+  // 37.8% and removed a systematic -8.9bb/hand bias — which is exactly why
+  // this branch was so dangerous: on the old numbers essentially EVERY horse
+  // read as a big loser and had its personality halved toward neutral, every
+  // night, while the audit log recorded a confident-sounding reason.
+  // The remaining error is not fixable from this source: `ca_hand_facts` holds
+  // the engine's exact per-player net (invested/returned/net_bb) but is
+  // written for humans only, by design, because per-hand rows for 584 horses
+  // would be millions of rows a day.
+  // Every other signal here counts ACTIONS, not chips, so none of them depend
+  // on this. bb100 is still recorded on the audit row as an estimate for a
+  // human to read; it simply no longer moves a dial on its own.
+  void bb100;
 
   return {
     mods: {

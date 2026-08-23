@@ -7,6 +7,7 @@
 
 .friends-page {
   min-height: 100vh;
+  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
 }
 
@@ -138,7 +139,7 @@
   border: 2px solid #2a3a4a;
   border-radius: 10px;
   color: #fff;
-  font-size: 0.9rem;
+  font-size: 16px; /* was 0.9rem; under 16px makes iOS zoom the page on focus */
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
@@ -417,7 +418,7 @@
   }
   .friends-search input {
     padding: 0.625rem 0.75rem;
-    font-size: 0.85rem;
+    font-size: 16px; /* was 0.85rem; under 16px makes iOS zoom the page on focus */
   }
   .friends-list,
   .pending-list {

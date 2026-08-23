@@ -117,9 +117,10 @@ function RulesCell({ entry }: { entry: LobbyEntry }) {
   );
 }
 
-
 function LiveCountdown({ time }: { time: string | number | Date }) {
-  const [mins, setMins] = useState(() => Math.max(0, Math.floor((new Date(time).getTime() - Date.now()) / 60000)));
+  const [mins, setMins] = useState(() =>
+    Math.max(0, Math.floor((new Date(time).getTime() - Date.now()) / 60000))
+  );
 
   useEffect(() => {
     const t = new Date(time).getTime();
@@ -133,7 +134,20 @@ function LiveCountdown({ time }: { time: string | number | Date }) {
   }, [time]);
 
   if (isNaN(mins) || mins <= 0 || mins > 60) return null;
-  return <span className="lt-countdown" style={{ fontSize: '0.65rem', color: 'var(--text-secondary, #c8ccd4)', fontWeight: 700, marginRight: '8px', letterSpacing: '0.02em' }}>Starts In {mins} Min...</span>;
+  return (
+    <span
+      className="lt-countdown"
+      style={{
+        fontSize: '0.65rem',
+        color: 'var(--text-secondary, #c8ccd4)',
+        fontWeight: 700,
+        marginRight: '8px',
+        letterSpacing: '0.02em',
+      }}
+    >
+      Starts In {mins} Min...
+    </span>
+  );
 }
 
 export function LobbyStatusBadge({ status, label }: { status: LobbyStatusKey; label: string }) {
@@ -322,7 +336,9 @@ const COL_STATUS: ColumnDef = {
   sortValue: (e) => STATUS_RANK[e.status] ?? 9,
   render: (e, ctx) => (
     <span className="lt-statuscell">
-      {e.kind !== 'cash' && ['registering', 'starting_soon'].includes(e.status) && e.startTime && <LiveCountdown time={e.startTime} />}
+      {e.kind !== 'cash' && ['registering', 'starting_soon'].includes(e.status) && e.startTime && (
+        <LiveCountdown time={e.startTime} />
+      )}
       <LobbyStatusBadge status={e.status} label={e.statusLabel} />
       <PlayerStateChip entry={e} ctx={ctx} />
     </span>
@@ -585,7 +601,10 @@ export default function LobbyTable({
             Array.from({ length: 8 }).map((_, i) => (
               <tr key={`skel-${i}`} className="lt-row lt-row--skeleton" aria-hidden="true">
                 {columns.map((c) => (
-                  <td key={c.key} className={`${c.className || ''} ${c.hideOnMobile ? 'hide-on-mobile' : ''}`}>
+                  <td
+                    key={c.key}
+                    className={`${c.className || ''} ${c.hideOnMobile ? 'hide-on-mobile' : ''}`}
+                  >
                     <span className="lt-skel" />
                   </td>
                 ))}
@@ -603,7 +622,10 @@ export default function LobbyTable({
                 onDoubleClick={() => onActivate(entry)}
               >
                 {columns.map((col) => (
-                  <td key={col.key} className={`${col.className || ''} ${col.hideOnMobile ? 'hide-on-mobile' : ''}`}>
+                  <td
+                    key={col.key}
+                    className={`${col.className || ''} ${col.hideOnMobile ? 'hide-on-mobile' : ''}`}
+                  >
                     {col.render(entry, ctx)}
                   </td>
                 ))}

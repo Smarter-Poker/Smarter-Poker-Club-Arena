@@ -411,14 +411,16 @@ export default function ClubBankCashierModal({
   const eligible = useMemo(() => {
     const needsAgent = AGENT_ONLY.includes(destination);
     const q = search.trim().toLowerCase();
-    return members
-      .filter((m) => m.user_id !== user?.id)
-      .filter((m) => (needsAgent ? canHoldAgentWallet(m.role) : true))
-      .filter((m) => (q ? m.name.toLowerCase().includes(q) : true))
-      // Seniority first, then name. An unordered list of 500 people is a list
-      // you scroll past, and the person being funded is almost always an agent.
-      .sort((a, b) => roleRank(b.role) - roleRank(a.role) || a.name.localeCompare(b.name))
-      .slice(0, 60);
+    return (
+      members
+        .filter((m) => m.user_id !== user?.id)
+        .filter((m) => (needsAgent ? canHoldAgentWallet(m.role) : true))
+        .filter((m) => (q ? m.name.toLowerCase().includes(q) : true))
+        // Seniority first, then name. An unordered list of 500 people is a list
+        // you scroll past, and the person being funded is almost always an agent.
+        .sort((a, b) => roleRank(b.role) - roleRank(a.role) || a.name.localeCompare(b.name))
+        .slice(0, 60)
+    );
   }, [members, destination, search, user?.id]);
 
   // Changing destination can strand a recipient who cannot hold the new wallet.
@@ -566,9 +568,9 @@ export default function ClubBankCashierModal({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `club-bank-ledger-${clubName.replace(/\W+/g, '-').toLowerCase()}-${
-      new Date().toISOString().slice(0, 10)
-    }.csv`;
+    a.download = `club-bank-ledger-${clubName.replace(/\W+/g, '-').toLowerCase()}-${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();

@@ -243,46 +243,53 @@ export default function AdvancedFilters({
         </div>
 
         <div className="afx-body">
-
-              {sortOptions && onSortChange && (
-                <details className="afx-section">
-                  <summary><h3>Sort By</h3></summary>
-                  <div className="afx-chips">
-                    {sortOptions.map((opt) => (
-                      <button
-                        key={opt.key}
-                        type="button"
-                        className={`afx-chip ${sortKey === opt.key ? 'is-on' : ''}`}
-                        aria-pressed={sortKey === opt.key}
-                        onClick={() => onSortChange(opt.key)}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                </details>
-              )}
+          {sortOptions && onSortChange && (
+            <details className="afx-section">
+              <summary>
+                <h3>Sort By</h3>
+              </summary>
+              <div className="afx-chips">
+                {sortOptions.map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    className={`afx-chip ${sortKey === opt.key ? 'is-on' : ''}`}
+                    aria-pressed={sortKey === opt.key}
+                    onClick={() => onSortChange(opt.key)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </details>
+          )}
 
           {spec && (
             <>
               {spec.format && (
                 <details className="afx-section">
-                  <summary><h3>Format:</h3></summary>
+                  <summary>
+                    <h3>Format:</h3>
+                  </summary>
                   {chipRow(spec.format, 'format', value.format)}
                 </details>
               )}
 
               {spec.games && (
                 <details className="afx-section">
-                  <summary><h3>Games:</h3></summary>
+                  <summary>
+                    <h3>Games:</h3>
+                  </summary>
                   {chipRow(spec.games, 'games', value.games)}
                 </details>
               )}
 
               <details className="afx-section">
-                <summary><h3>
-                  {spec.range.label}: {fmt(value.rangeMin)} - {fmt(value.rangeMax)}
-                </h3></summary>
+                <summary>
+                  <h3>
+                    {spec.range.label}: {fmt(value.rangeMin)} - {fmt(value.rangeMax)}
+                  </h3>
+                </summary>
                 {/* Two overlaid range inputs rather than a custom drag handler.
                     A hand-rolled two-thumb slider has to reimplement pointer
                     capture, keyboard stepping and the accessibility tree; two
@@ -350,11 +357,13 @@ export default function AdvancedFilters({
               </details>
 
               <details className="afx-section">
-                <summary><h3>
-                  {spec.seats
-                    ? `${spec.seatsLabel}: ${value.seatMin} min ${value.seatMax} max`
-                    : spec.seatsLabel}
-                </h3></summary>
+                <summary>
+                  <h3>
+                    {spec.seats
+                      ? `${spec.seatsLabel}: ${value.seatMin} min ${value.seatMax} max`
+                      : spec.seatsLabel}
+                  </h3>
+                </summary>
                 {chipRow(spec.statuses, 'statuses', value.statuses)}
                 {spec.seats && (
                   <div className="afx-range">
@@ -394,7 +403,9 @@ export default function AdvancedFilters({
               {spec.features.length > 0 && (
                 <>
                   <details className="afx-section">
-                    <summary><h3>Must-Have Features:</h3></summary>
+                    <summary>
+                      <h3>Must-Have Features:</h3>
+                    </summary>
                     <p className="afx-hint">Show Tables Only With ALL Selected Features.</p>
                     <div className="afx-grid">
                       {spec.features.map((f) => (
@@ -412,7 +423,9 @@ export default function AdvancedFilters({
                   </details>
 
                   <details className="afx-section">
-                    <summary><h3>Hide:</h3></summary>
+                    <summary>
+                      <h3>Hide:</h3>
+                    </summary>
                     <p className="afx-hint">Tables With Selected Features Will Be Hidden.</p>
                     <div className="afx-grid">
                       {spec.features.map((f) => (

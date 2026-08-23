@@ -1878,7 +1878,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     (tableId: string) => {
       haptic.medium();
       setPanelOpen(false);
-      // Execute navigate in the next tick to ensure the panel unmounts safely 
+      // Execute navigate in the next tick to ensure the panel unmounts safely
       // without interrupting React Router transition internals
       setTimeout(() => navigate(`/table/${tableId}`), 0);
     },
@@ -2447,26 +2447,24 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             means "show everything" - offering a filter sheet there would imply
             the tab can be narrowed when it deliberately cannot. */}
         <button
-            className={`game-bar__filter-btn ${(() => {
-              if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
-              const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
-              const fVal = advFilters[gameType as FilterGameType];
-              const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
-              return isFilt || (sortKey !== 'recommended') ? 'is-set' : '';
-            })()}`}
-            aria-label="Filters and Sort"
-            title="Filters and Sort"
-            onClick={() => {
-              haptic.light();
-              setSortOpen(false);
-              setFiltersOpen(true);
-            }}
-          >
-            <IconSort />
-            <span>Filters</span>
-          </button>
-
-        
+          className={`game-bar__filter-btn ${(() => {
+            if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
+            const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+            const fVal = advFilters[gameType as FilterGameType];
+            const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
+            return isFilt || sortKey !== 'recommended' ? 'is-set' : '';
+          })()}`}
+          aria-label="Filters and Sort"
+          title="Filters and Sort"
+          onClick={() => {
+            haptic.light();
+            setSortOpen(false);
+            setFiltersOpen(true);
+          }}
+        >
+          <IconSort />
+          <span>Filters</span>
+        </button>
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════

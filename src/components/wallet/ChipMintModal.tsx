@@ -129,8 +129,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
         .maybeSingle();
       if (!live) return;
       const role = (mem?.role as string) || '';
-      const mayMint =
-        club.owner_id === user.id || ['owner', 'co_owner', 'admin'].includes(role);
+      const mayMint = club.owner_id === user.id || ['owner', 'co_owner', 'admin'].includes(role);
       setTarget(
         mayMint
           ? { state: 'club', clubUuid: uuid, label: `${club.name || 'Club'} Bank` }
@@ -189,7 +188,12 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
   };
 
   return (
-    <div className="cmm-overlay" role="dialog" aria-label="Chip Mint" onClick={() => !busy && onClose()}>
+    <div
+      className="cmm-overlay"
+      role="dialog"
+      aria-label="Chip Mint"
+      onClick={() => !busy && onClose()}
+    >
       <div className="cmm-panel" onClick={(e) => e.stopPropagation()}>
         <div className="cmm-title">CHIP MINT</div>
         <div className="cmm-rate">100 Diamonds = 10,000 Chips</div>
@@ -237,7 +241,11 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
 
             <div className="cmm-quick">
               {[100, 500, 1000, 10000].map((q) => (
-                <button key={q} disabled={balance !== null && q > balance} onClick={() => setDiamonds(String(q))}>
+                <button
+                  key={q}
+                  disabled={balance !== null && q > balance}
+                  onClick={() => setDiamonds(String(q))}
+                >
                   {fmt(q)}
                 </button>
               ))}
@@ -256,9 +264,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
             </div>
 
             {overBalance && (
-              <div className="cmm-warn">
-                You Only Hold {fmt(balance ?? 0)} Diamonds.
-              </div>
+              <div className="cmm-warn">You Only Hold {fmt(balance ?? 0)} Diamonds.</div>
             )}
           </>
         )}

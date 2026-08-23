@@ -333,6 +333,10 @@ export abstract class ServerTableEngineBase {
     amount?: number;
     timestamp: number;
     stage: string;
+    /** V12.3: a short all-in is not a raise (TDA 44). Persisting this makes
+     *  hand_history replayable by HorseMind, which requires it to count an
+     *  all-in as aggression at all. */
+    isFullRaise?: boolean;
   }[] = [];
   protected currentHandWinners: {
     userId: string;

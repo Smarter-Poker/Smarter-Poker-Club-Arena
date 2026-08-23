@@ -118,19 +118,65 @@ add a team member to unblock a deploy.
 
 Each one caused a real, dated incident.
 
-| Never                                                                | What happened                                                                                                                                                         |
-| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Work in the shared clone                                             | One HEAD, one index. Agent B's `checkout -b` takes agent A's edits with it. Eight abandoned stashes and six `backup/*` branches were the evidence                     |
-| `gh pr merge --admin`                                                | Bypasses required checks. Red code reached `main` four times                                                                                                          |
-| `gh pr merge --merge` / `--rebase`                                   | Disabled here. The API call fails **silently** while the agent reports success                                                                                        |
-| A polling script (`wait_and_merge.sh`, `while true; do gh run list`) | Fragile and unobservable. Autopilot already does this, server-side                                                                                                    |
-| `git push` / `--force` to `main`                                     | Blocked by the ruleset. A force-push once rewound `main` and dropped four commits already live in production                                                          |
-| `git pull --rebase origin main` on the Mac clone                     | Strands the clone mid-rebase. Use `bash scripts/git-unstick.sh`                                                                                                       |
-| `--no-verify`                                                        | Skips every hook, and each one is there because something was lost                                                                                                    |
-| Resolve a conflict with `--ours` / `--theirs` on a whole file        | This is how a leaderboard RPC call vanished while its function signature survived. **Resolve hunk by hunk**                                                           |
-| Commit a red test                                                    | `npx vitest run tests/` is what PUBLISHES the bundle. A red test stops the deploy for everyone. Write the spec first as `it.skip()` with a note                       |
-| Write a migration and not apply it                                   | The code believes in a feature the database has never heard of. It fails 42703 into a catch block and nothing goes red. Apply with the Supabase MCP `apply_migration` |
-| Ask a human to push, merge, deploy, or approve                       | The entire point of this document                                                                                                                                     |
+| Never                                                                | What happened                                                                                                                                                                                                                                                             |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Work in the shared clone                                             | One HEAD, one index. Agent B's `checkout -b` takes agent A's edits with it. Eight abandoned stashes and six `backup/*` branches were the evidence                                                                                                                         |
+| `gh pr merge --admin`                                                | Bypasses required checks. Red code reached `main` four times                                                                                                                                                                                                              |
+| `gh pr merge --merge` / `--rebase`                                   | Disabled here. The API call fails **silently** while the agent reports success                                                                                                                                                                                            |
+| A polling script (`wait_and_merge.sh`, `while true; do gh run list`) | Fragile and unobservable. Autopilot already does this, server-side                                                                                                                                                                                                        |
+| `git push` / `--force` to `main`                                     | Blocked by the ruleset. A force-push once rewound `main` and dropped four commits already live in production                                                                                                                                                              |
+| `git pull --rebase origin main` on the Mac clone                     | Strands the clone mid-rebase. Use `bash scripts/git-unstick.sh`                                                                                                                                                                                                           |
+| `--no-verify`                                                        | Skips every hook, and each one is there because something was lost                                                                                                                                                                                                        |
+| Resolve a conflict with `--ours` / `--theirs` on a whole file        | This is how a leaderboard RPC call vanished while its function signature survived. **Resolve hunk by hunk**                                                                                                                                                               |
+| Commit a red test                                                    | `npx vitest run tests/` is what PUBLISHES the bundle. A red test stops the deploy for everyone. Write the spec first as `it.skip()` with a note                                                                                                                           |
+| Write a migration and not apply it                                   | The code believes in a feature the database has never heard of. It fails 42703 into a catch block and nothing goes red. Apply with the Supabase MCP `apply_migration`                                                                                                     |
+| Commit under any identity but `Smarter-Poker`                        | Vercel refuses to build a commit whose author it cannot resolve to a GitHub user. The deployment goes to **BLOCKED** - no build, no logs, nothing in CI can see it, only a red dashboard row. Five sat that way on 2026-08-23, all authored `Agent <agent@smarter.poker>` |
+| Commit a hook file non-executable                                    | git **skips** a hook that is not mode 755 and mentions it only as a hint buried in commit output. `.husky/pre-commit` was 644 in two repos, so both guards it holds were decorative for months                                                                            |
+| Ask a human to push, merge, deploy, or approve                       | The entire point of this document                                                                                                                                                                                                                                         |
+
+---
+
+## 5b. YOUR COMMIT IDENTITY, AND WHY A HOOK MIGHT NOT BE RUNNING
+
+Set in every worktree `scripts/agent-workspace.sh` creates, so normally you
+never touch it. If you are somewhere else, set it before your first commit:
+
+```bash
+git config user.name  "Smarter-Poker"
+git config user.email "254329056+Smarter-Poker@users.noreply.github.com"
+```
+
+That is the only identity this estate can deploy under. Vercel refuses to build
+a commit whose GitHub author it cannot resolve, and refuses it **silently**: the
+deployment goes to BLOCKED with no build and no logs, so no check anywhere goes
+red. `scripts/guard-commit-identity.sh` now refuses such a commit at commit
+time, which is the last moment the answer is still "that commit was never made".
+
+**If a guard prints a refusal and your commit lands anyway, or no guard speaks
+at all, the hook layer is broken rather than satisfied.** Run:
+
+```bash
+bash scripts/ensure-hooks.sh          # repair
+bash scripts/ensure-hooks.sh --check  # report only
+```
+
+Two faults it fixes, both of which git reports by saying nothing:
+
+- **`core.hooksPath` pointing at `.husky/_`.** That directory is gitignored and
+  generated by husky during `npm install`. A worktree has no `node_modules`, so
+  it never exists there and git runs **no hooks at all**. On 2026-08-23 that was
+  38 of 47 Club Arena trees. hooksPath must point at the **tracked** `.husky`.
+- **A hook committed mode 644.** git skips it and mentions it only as a hint in
+  the commit output. `.husky/pre-commit` was 644 in Club Arena and World Hub.
+
+There is a third, subtler one, worth knowing because the symptom looks like
+success: a hook with no `set -e` and no `|| exit 1` runs every line and exits
+with the status of the **last** one. A guard in the middle can print a full
+refusal and refuse nothing. Both were true here.
+
+`.github/scripts/estate-integrity.sh` now checks hook modes across all seven
+repos hourly, because a guard that has quietly stopped running looks exactly
+like a guard that has nothing to complain about.
 
 ---
 
@@ -217,7 +263,7 @@ push, and ten of them had already merged.
 
 So: branch under `agent/<your-name>/…` (which `agent-workspace.sh` does for
 you), push, and the system finishes the job. An older branch, or one outside
-that namespace, gets *reported* rather than opened — deliberately, because
+that namespace, gets _reported_ rather than opened — deliberately, because
 auto-merging a months-old branch is a regression wearing a rescue costume.
 
 **Never write a `.command` file, a handoff, or a "run this on your Mac" note.**

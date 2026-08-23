@@ -23,6 +23,7 @@ import {
   betChipOffsetPx,
   chipCollectOffsetPx,
   chipRailInset,
+  isBottomSeat,
   dealerButtonPosition,
   CHIP_COLLECT_FRACTION,
   type Pos,
@@ -102,12 +103,33 @@ const RINGS: Record<number, Pos[]> = {
   ],
 };
 
-
 describe('every ring: chips sit in front of the player, at one distance', () => {
   for (const [size, ring] of Object.entries(RINGS)) {
     describe(`${size}-max`, () => {
       it('every seat is the same distance from its chips', () => {
-        const d = ring.map((seat) => mag(betChipOffsetPx(seat, TABLE, false)));
+        /* AMENDED 2026-08-23. This used to demand ONE distance for every seat
+             without exception. That is the right rule for the seats it was written
+             about and the wrong rule for the bottom rail, so it now excludes it.
+
+             Dan: "chips for the hero need to be pushed out farther in front of
+             them, they are literally on top of the avatar."
+
+             The rail is measured from a seat's CENTRE, and what the chips actually
+             have to clear is that seat's AVATAR. Those are the same number for
+             eight seats and not for the ninth: the hero's box is 1.3333x everyone
+             else's (--seat-avatar-hero-ratio) and its bust art rises well past the
+             box on top of that. A side seat also gets to travel diagonally, while
+             the hero sits at x=50 and can only go straight up into its own face.
+
+             So "equal distance" was never the property worth having - it was a
+             proxy for "equally clear of the player", which is what a person
+             actually sees. Where the two disagree, the proxy loses. The suite
+             already accepts exactly this shape of exception for the button holder
+             (CHIP_RAIL_DEALER_EXTRA_PX), and like that one this is a CONSTANT, not
+             a per-seat fraction - asserted directly below. */
+        const d = ring
+          .filter((seat) => !isBottomSeat(seat))
+          .map((seat) => mag(betChipOffsetPx(seat, TABLE, false)));
         expect(Math.max(...d) - Math.min(...d)).toBeLessThanOrEqual(1.5);
       });
 
@@ -188,8 +210,9 @@ describe('chip collect — must never overshoot the pot', () => {
 
   it('shortens the remaining travel for the seat that starts further out', () => {
     for (const seat of ring) {
-      expect(mag(chipCollectOffsetPx(seat, TABLE, true)))
-        .toBeLessThan(mag(chipCollectOffsetPx(seat, TABLE, false)));
+      expect(mag(chipCollectOffsetPx(seat, TABLE, true))).toBeLessThan(
+        mag(chipCollectOffsetPx(seat, TABLE, false))
+      );
     }
   });
 });
@@ -198,8 +221,9 @@ describe('the rail inset itself', () => {
   it('grows with the table but stays inside sane bounds', () => {
     expect(chipRailInset({ w: 200, h: 200 }, false)).toBeGreaterThanOrEqual(30);
     expect(chipRailInset({ w: 2000, h: 2000 }, false)).toBeLessThanOrEqual(64);
-    expect(chipRailInset({ w: 900, h: 900 }, false))
-      .toBeGreaterThan(chipRailInset({ w: 300, h: 300 }, false));
+    expect(chipRailInset({ w: 900, h: 900 }, false)).toBeGreaterThan(
+      chipRailInset({ w: 300, h: 300 }, false)
+    );
   });
 
   it('adds a constant clearance for the dealer, not a fraction', () => {

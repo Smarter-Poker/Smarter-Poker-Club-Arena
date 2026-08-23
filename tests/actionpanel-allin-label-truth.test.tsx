@@ -20,6 +20,13 @@ const potLimit = {
   canCall: true,
   canRaise: false, // forces the main-panel ALL IN button to render
   canAllIn: true,
+  // 2026-08-23: `currentBet` added. Every fixture here sets callAmount > 0 —
+  // there IS a bet to face — but left currentBet at its 0 default, which made
+  // the panel call hero's wager an opening BET. Dan reported the inverse of
+  // that bug on a real table ("when you aren't facing a bet, and enter an
+  // amount, it's a bet, not a raise"), and the fixture was simply incomplete:
+  // a hand with something to call always has a live currentBet.
+  currentBet: 10,
   callAmount: 10,
   minRaise: 20,
   maxRaise: 47, // the POT CAP

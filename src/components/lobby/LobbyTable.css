@@ -377,16 +377,80 @@ abbr.lt-variant[title] {
     width: 92px;
   }
 }
+/* ── PHONE (Dan's binding rule 6: 375px first) ────────────────────────────
+   The lobby must FIT, not scroll sideways. min-width: 520px used to force a
+   horizontal scroll on every phone: the ALL column set alone measures
+   34+140+78+92+108+148 = 600px, so a 375px screen scrolled ~225px sideways
+   on the app's densest page. (The mobile-fit audit never caught it because
+   the club routes only run when AUDIT_CLUB_ID is set - fixed alongside this.)
+
+   The table now sizes to the viewport and sheds the columns a phone cannot
+   afford, in the same priority order the wider breakpoints use: Type and the
+   favourite star go, the seat meter keeps its numbers and drops its bar, and
+   the status cell keeps its text badge. Never a card, never a sideways
+   scroll. */
 @media (max-width: 640px) {
   .lobby-table {
-    min-width: 520px;
+    min-width: 0;
+    width: 100%;
+    table-layout: fixed;
     font-size: 0.75rem;
   }
-  .lt-col-starts {
+  .lobby-table thead th {
+    padding: 7px 6px;
+    font-size: 0.625rem;
+    letter-spacing: 0.03em;
+  }
+  .lt-row td {
+    padding: 6px;
+  }
+  .lt-col-starts,
+  .lt-col-kind,
+  .lt-col-fav {
     display: none;
+  }
+  .lt-col-name {
+    min-width: 0;
+  }
+  .lt-col-num {
+    width: 74px;
+  }
+  .lt-col-players {
+    width: 58px;
+  }
+  .lt-col-status {
+    width: 92px;
+  }
+  /* The bar is decoration; the numbers are the information. */
+  .lt-seats__bar {
+    display: none;
+  }
+  .lt-seats__num {
+    min-width: 0;
+  }
+  .lt-status {
+    padding: 2px 6px;
+    font-size: 0.625rem;
+  }
+  /* Seated / Registered / Waitlisted drops below the badge rather than
+     widening the column. */
+  .lt-statuscell {
+    flex-wrap: wrap;
+    gap: 3px;
   }
   .lobby-table-wrap {
     max-height: none;
+  }
+}
+
+/* Very narrow phones (320-360px): the buy-in column is the next to go, since
+   the panel shows the full range the moment a row is opened. */
+@media (max-width: 380px) {
+  .lt-col-num {
+    width: 64px;
+  }
+  .lt-col-status {
+    width: 84px;
   }
 }
 

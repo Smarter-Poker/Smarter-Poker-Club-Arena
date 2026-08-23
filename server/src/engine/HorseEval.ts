@@ -61,6 +61,25 @@ export function seedFastRandom(seed: number): void {
   rngState = seed >>> 0 || 1;
 }
 
+/**
+ * V12.3: snapshot / restore the stream position.
+ *
+ * `rngState` is a MODULE GLOBAL shared by every live decision — bluff dice,
+ * sizing jitter, Monte Carlo sampling. The self-play league seeds it once per
+ * synthetic hand, which silently rewinds the live stream to a value derived
+ * entirely from the run date (see HorseLeague.runMatchup, which now brackets
+ * every matchup with these two calls). Without the bracket, live decisions
+ * made after a league run draw from a publicly predictable stream — the exact
+ * property the boot-time seed at the top of this file exists to prevent.
+ */
+export function saveFastRandom(): number {
+  return rngState;
+}
+
+export function restoreFastRandom(state: number): void {
+  rngState = state >>> 0 || 1;
+}
+
 export function fastRandom(): number {
   // xorshift32 — ~4x faster than Math.random in tight MC loops and good enough
   rngState ^= rngState << 13;

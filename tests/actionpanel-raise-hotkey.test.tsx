@@ -23,6 +23,13 @@ const base = {
   canCall: true,
   canRaise: true,
   canAllIn: true,
+  // 2026-08-23: `currentBet` added. Every fixture here sets callAmount > 0 —
+  // there IS a bet to face — but left currentBet at its 0 default, which made
+  // the panel call hero's wager an opening BET. Dan reported the inverse of
+  // that bug on a real table ("when you aren't facing a bet, and enter an
+  // amount, it's a bet, not a raise"), and the fixture was simply incomplete:
+  // a hand with something to call always has a live currentBet.
+  currentBet: 10,
   callAmount: 10,
   minRaise: 20,
   maxRaise: 200,
@@ -58,7 +65,11 @@ describe('raise hotkey opens the raise panel', () => {
     // Half pot of 30 is 15, which is BELOW minRaise 20 — it must clamp up, not
     // offer an amount the server will refuse.
     rerender(
-      <ActionPanel {...base} onAction={vi.fn()} raiseIntent={{ nonce: 1, open: true, amount: 15 }} />
+      <ActionPanel
+        {...base}
+        onAction={vi.fn()}
+        raiseIntent={{ nonce: 1, open: true, amount: 15 }}
+      />
     );
     expect(screen.getByLabelText(/^Edit bet amount 20\b/)).toBeTruthy();
   });
@@ -113,7 +124,9 @@ describe('raise hotkey opens the raise panel', () => {
     const { rerender } = render(
       <ActionPanel {...noRaise} onAction={vi.fn()} raiseIntent={{ nonce: 0, open: false }} />
     );
-    rerender(<ActionPanel {...noRaise} onAction={vi.fn()} raiseIntent={{ nonce: 1, open: true }} />);
+    rerender(
+      <ActionPanel {...noRaise} onAction={vi.fn()} raiseIntent={{ nonce: 1, open: true }} />
+    );
     expect(document.body.classList.contains('ca-raising')).toBe(false);
   });
 });

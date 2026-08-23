@@ -323,7 +323,12 @@
   --sp-bust-clip: 0%;
   object-position: 50% 100%;
   transform-origin: 50% calc(100% - var(--sp-bust-clip));
-  transform: translateY(var(--sp-bust-clip)) scale(var(--sp-bust-scale, 1.45));
+  /* --sp-bust-gain is the PER-CHARACTER correction (see bustArtGain in
+     SeatSlot.tsx); --sp-bust-scale stays the one global number every
+     breakpoint and the top rail already tune. Multiplying keeps a single
+     owner for each concern instead of two rules fighting over one value. */
+  transform: translateY(var(--sp-bust-clip))
+    scale(calc(var(--sp-bust-scale, 1.45) * var(--sp-bust-gain, 1)));
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.55));
 }
 
@@ -2720,6 +2725,12 @@
    responsive `.seat` rules (0,1,0) at every width. */
 .seat-wrapper--top .seat {
   --seat-avatar-base: 56px;
+  /* The per-character gain is DELIBERATELY cancelled here. The whole reason
+     this seat is capped is that it has nothing above it but the BBJ banner,
+     and a doubled bust would climb straight into it - the exact regression the
+     comment above was written to prevent. Containment wins over consistency at
+     this one seat, and only at this one seat. */
+  --sp-bust-gain: 1;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2855,4 +2866,19 @@
   white-space: nowrap;
   z-index: 24;
   pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SHOWDOWN OUTRANKS EVERYTHING ON THE RAIL
+   ═══════════════════════════════════════════════════════════════════════════
+   See the comment at .seat-wrapper--showing's call site in TablePage.tsx for
+   why a z-index inside the seat could never have fixed this: the seat is a
+   sealed stacking context, so the fight is between WRAPPERS, and every wrapper
+   was 10.
+
+   30 clears the wrappers (10) with room to spare and still sits under the
+   table's own overlays - the action bar, modals and the BBJ banner all live
+   far above this on .table-page, not inside the seat ring. */
+.seat-wrapper--showing {
+  z-index: 30;
 }

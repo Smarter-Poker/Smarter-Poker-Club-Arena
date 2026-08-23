@@ -4493,6 +4493,21 @@ export default function TablePage({
                 }
               }
             }
+          } else {
+            /**
+             * The tournament row could not be read - deleted, denied by RLS, or
+             * a transient failure. `tournamentFormat` would otherwise stay null
+             * for the life of the table, and useUserThemeSettings deliberately
+             * WAITS on a null format rather than guessing MTT, so the player
+             * would sit on the default felt permanently instead of their own.
+             *
+             * 'mtt' is the honest fallback: it is what getThemeGameType already
+             * answers for any tournament it cannot identify, so this restores
+             * the pre-2026-08-22 behaviour for the one case where the format is
+             * genuinely unknowable, without reintroducing the guess for the
+             * 99.9% of tables where it is known.
+             */
+            setTournamentFormat((prev) => prev ?? 'mtt');
           }
 
           if (
@@ -10155,7 +10170,28 @@ export default function TablePage({
                    no layout has both, so nothing looks mismatched. */
                 className={`seat-wrapper${seatDimmed ? ' seat-wrapper--dim' : ''}${
                   isActingSeat ? ' seat-wrapper--spot' : ''
-                }${pos.y < 20 && pos.x === 50 ? ' seat-wrapper--top' : ''}`}
+                }${pos.y < 20 && pos.x === 50 ? ' seat-wrapper--top' : ''}${
+                  /* Dan 2026-08-23: "when cards are displayed for showdown,
+                     they need to be layer one on top of the avatars...
+                     currently the avatars appear over the cards at showdown."
+
+                     The z-index inside the seat was never the problem: revealed
+                     cards already sit at 14, well above the avatar's 2. But a
+                     revealed row is deliberately drawn ABOVE its own plate
+                     (`bottom: calc(100% - 10px)`), which puts it in the
+                     NEIGHBOURING seat's airspace - and every .seat-wrapper is
+                     z-index 10, while .seat-wrapper's transform and .seat's
+                     will-change each open a stacking context that seals those
+                     14s inside. Between two sealed boxes of equal z-index, DOM
+                     order decides, so the seat rendered later simply painted
+                     its avatar over the cards.
+
+                     A card face-up at showdown is the most important thing on
+                     the table, so the seat showing one is lifted out of the tie
+                     entirely. Scoped to the moment of showdown: nothing moves
+                     while cards are face down. */
+                  player?.showCards && player?.holeCards?.length ? ' seat-wrapper--showing' : ''
+                }`}
                 style={
                   {
                     left: `${pos.x}%`,

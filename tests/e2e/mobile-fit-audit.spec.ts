@@ -107,11 +107,18 @@ const CLUB_SUBROUTES = [
   'tournaments',
 ];
 
-const clubId = process.env.AUDIT_CLUB_ID;
-if (clubId) {
-  for (const sub of CLUB_SUBROUTES) {
-    ROUTES.push(`clubs/${clubId}${sub ? '/' + sub : ''}`);
-  }
+/* DEFAULTED 2026-08-23. AUDIT_CLUB_ID appears in no workflow, so in CI this
+   list was always empty and the club surface - 23 subpages including the
+   lobby, the densest horizontal screen in the app - was never measured at
+   375px by the gate written to measure exactly that. The Lobby V2 table was
+   scrolling ~225px sideways on a phone and this spec could not see it.
+
+   The fallback is the same club the club-lobby spec uses, so both specs point
+   at one known-good club; override with AUDIT_CLUB_ID for a club the signed-in
+   account OWNS if you want the staff dashboards to render too. */
+const clubId = process.env.AUDIT_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+for (const sub of CLUB_SUBROUTES) {
+  ROUTES.push(`clubs/${clubId}${sub ? '/' + sub : ''}`);
 }
 
 interface Violation {
@@ -122,7 +129,12 @@ interface Violation {
 }
 
 test('no Club Arena route scrolls horizontally at 375px', async ({ page }) => {
-  test.setTimeout(15 * 60 * 1000);
+  /* Budget per route, not a flat cap. The 58 static routes finish in about
+     six minutes, but AUDIT_CLUB_ID adds 23 club dashboards — the heaviest
+     pages in the app — and a flat 15 minutes silently ran out mid-sweep,
+     which reads as a hang rather than as "the cap was too small". 12s each
+     plus two minutes of slack scales with whatever the route list holds. */
+  test.setTimeout(ROUTES.length * 12_000 + 120_000);
   await page.setViewportSize({ width: 375, height: 812 });
 
   const violations: Violation[] = [];
@@ -223,11 +235,7 @@ test('no Club Arena route scrolls horizontally at 375px', async ({ page }) => {
 
   console.log(
     'MOBILE_FIT_AUDIT ' +
-      JSON.stringify(
-        { violations, skipped, unreachable, routesChecked: ROUTES.length },
-        null,
-        1
-      )
+      JSON.stringify({ violations, skipped, unreachable, routesChecked: ROUTES.length }, null, 1)
   );
 
   if (process.env.MOBILE_FIT_STRICT || process.env.CI) {

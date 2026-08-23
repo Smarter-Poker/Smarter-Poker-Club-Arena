@@ -33,20 +33,24 @@ import {
 import { useToast } from '../common/Toast';
 
 interface Props {
-  clubId: string;
   /**
-   * Whether this viewer looks like an owner from the PAGE's point of view.
-   * Necessary but not sufficient: the pool may belong to a union this club is
-   * in, and only the union lead may spend that. The route answers that
-   * question properly and its answer wins -- see canAct below.
+   * Whose Spin wallet to show. A club id, or a UNION id -- both resolve
+   * through fn_spin_reserve_owner to the same pool, so the union dashboard
+   * passes its own id and gets the union's wallet.
    */
-  canManage: boolean;
+  clubId: string;
+}
+
+/** The funding wallet's display name, for copy that says where money goes. */
+function walletLabel(kind: string | undefined, wallet: string | null | undefined): string {
+  const list = SPIN_SEED_SOURCES[(kind as 'club' | 'union') ?? 'club'] ?? [];
+  return list.find((w) => w.value === wallet)?.label ?? 'The Funding Wallet';
 }
 
 const chips = (n: number | null | undefined) =>
   Number(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
-export default function SpinActivationPanel({ clubId, canManage }: Props) {
+export default function SpinActivationPanel({ clubId }: Props) {
   const toast = useToast();
   const [state, setState] = useState<SpinOwnerState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -79,21 +83,36 @@ export default function SpinActivationPanel({ clubId, canManage }: Props) {
   }, [load]);
 
   const required = requiredSeedForStake(maxStake);
+  /**
+   * What the owner is actually charged. An outstanding seed is already sitting
+   * in the pool doing the job the seed exists to do, so it counts toward the
+   * bar -- the database applies the same credit, and quoting the gross here
+   * would promise a bill that will not arrive.
+   */
+  const stillNeeded = Math.max(required - Number(state?.seeded_amount ?? 0), 0);
   const sources = SPIN_SEED_SOURCES[state?.owner_kind ?? 'club'];
   const isUnionOwned = state?.owner_kind === 'union';
 
   /**
-   * The single answer both buttons obey. Fails CLOSED while the route's answer
-   * is still unknown, so a slow read can never briefly offer a control the
-   * server will refuse.
+   * The single answer both buttons obey, and it comes from ONE place.
+   *
+   * This used to be `canManage && routeCanManage`, where canManage was the
+   * PAGE's guess -- ClubSettingsPage passes its own `isOwner`. That AND was
+   * itself the bug it was meant to fix: a union lead who is not the club owner
+   * has isOwner === false, so the off switch stayed hidden from the one person
+   * the API actually authorises. The route knows about union_admins and
+   * clubs.owner_id; the page knows about neither. Its answer is the answer.
+   *
+   * Fails CLOSED while that answer is still in flight, so a slow read can
+   * never briefly offer a control the server will refuse.
    */
-  const canAct = canManage && routeCanManage === true;
+  const canAct = routeCanManage === true;
 
   const activate = async () => {
     setBusy(true);
     try {
-      await spinActivationApi.activate(clubId, required, maxStake, wallet);
-      toast.success(`Spins Activated With A Seed Of ${chips(required)} Chips`);
+      await spinActivationApi.activate(clubId, stillNeeded, maxStake, wallet);
+      toast.success(`Spins Activated With A Seed Of ${chips(stillNeeded)} Chips`);
       await load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could Not Activate Spins');
@@ -159,6 +178,15 @@ export default function SpinActivationPanel({ clubId, canManage }: Props) {
         </span>
       </div>
 
+      {!state.is_active && state.seeded_amount > 0 && (
+        <small className="form-hint" style={{ display: 'block', marginBottom: 10 }}>
+          Seed Of {chips(state.seeded_amount)} Is Still In This Wallet From Before.{' '}
+          {state.seed_is_repayable
+            ? 'It Counts Toward What You Need, So Turning Spins Back On Will Not Charge You For It Again.'
+            : 'It Has No Recorded Source Wallet, So It Cannot Be Returned Automatically.'}
+        </small>
+      )}
+
       {state.is_active ? (
         <>
           <div className="form-row">
@@ -183,13 +211,35 @@ export default function SpinActivationPanel({ clubId, canManage }: Props) {
             </div>
           </div>
 
-          {state.seeded_amount > 0 ? (
+          {state.seeded_amount > 0 && !state.seed_is_repayable ? (
             <small className="form-hint" style={{ display: 'block' }}>
-              Seed Outstanding {chips(state.seeded_amount)}.{' '}
-              {state.seed_repayable_in > 0
-                ? `Returns After Another ${chips(state.seed_repayable_in)} Is Collected From Play.`
-                : 'Returns As Soon As The Wallet Can Give It Back And Still Cover Its Jackpots.'}
+              Seed Outstanding {chips(state.seeded_amount)}. It Has No Recorded Source Wallet, So It
+              Cannot Be Returned Automatically.
             </small>
+          ) : state.seeded_amount > 0 ? (
+            <>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Seed Still Owed</label>
+                  <strong>{chips(state.seeded_amount)}</strong>
+                </div>
+                <div className="form-group">
+                  <label>Returned So Far</label>
+                  <strong>{chips(state.seed_returned_amount)}</strong>
+                </div>
+              </div>
+              <small className="form-hint" style={{ display: 'block' }}>
+                Repayment Plan. Half Of Everything Above {chips(state.repay_floor)} Returns To{' '}
+                {walletLabel(state.owner_kind, state.seed_source_wallet)} Each Time The Wallet
+                Reaches {chips(state.repay_trigger_at)}, Until The Seed Is Square. The Floor Stays
+                Behind So The Top Multiplier Is Always Payable.
+              </small>
+              <small className="form-hint" style={{ display: 'block' }}>
+                {state.next_instalment > 0
+                  ? `Next Instalment ${chips(state.next_instalment)}, Due On The Next Spin.`
+                  : `Next Instalment Once The Wallet Climbs Another ${chips(state.seed_repayable_in)}.`}
+              </small>
+            </>
           ) : (
             <small className="form-hint" style={{ display: 'block' }}>
               Seed Of {chips(state.seed_returned_amount)} Has Been Returned. Every Chip Collected
@@ -250,9 +300,17 @@ export default function SpinActivationPanel({ clubId, canManage }: Props) {
             </div>
           </div>
 
+          <small className="form-hint" style={{ display: 'block', marginBottom: 6 }}>
+            How It Comes Back. Once The Wallet Reaches{' '}
+            {chips(requiredSeedForStake(maxStake) * 1.25)}, Half Of Everything Above{' '}
+            {chips(required)} Returns To Your Wallet On Each Spin, Until The Seed Is Repaid. Then
+            Every Chip Stays In The Pool To Fund Multipliers.
+          </small>
           <small className="form-hint" style={{ display: 'block' }}>
             Required Seed {chips(required)} Chips. That Is Two Top Multiplier Jackpots At A Stake Of{' '}
             {maxStake}, So The Wallet Can Always Pay The Biggest Prize It Offers.
+            {stillNeeded < required &&
+              ` You Only Pay ${chips(stillNeeded)} Because ${chips(required - stillNeeded)} Is Already Here.`}
           </small>
 
           {canAct && (
@@ -263,7 +321,11 @@ export default function SpinActivationPanel({ clubId, canManage }: Props) {
               onClick={activate}
               disabled={busy}
             >
-              {busy ? 'Working' : `Activate Spins And Seed ${chips(required)}`}
+              {busy
+                ? 'Working'
+                : stillNeeded > 0
+                  ? `Activate Spins And Seed ${chips(stillNeeded)}`
+                  : 'Activate Spins'}
             </button>
           )}
         </>

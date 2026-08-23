@@ -204,8 +204,8 @@
 }
 
 .lobby-club__avatar {
-  width: 64px;
-  height: 64px;
+  width: 192px;
+  height: 192px;
   flex-shrink: 0;
   border-radius: 12px;
   overflow: hidden;
@@ -230,7 +230,7 @@
 
 .lobby-club__avatar-fallback {
   color: #3b82f6;
-  font-size: 1.5rem;
+  font-size: 4.5rem;
   line-height: 1;
 }
 
@@ -508,34 +508,27 @@
   flex: 1;
   min-width: 0;
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 6px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-  /* Same clip as .friends-tabs: a horizontal scroll row crops the vertical
-     touch area its chips rely on. See club-engine.css. */
+  gap: 3px;
+  overflow: visible;
   padding-block: 6px;
-  /* Fade the right edge so it reads as "more to scroll" rather than as a row
-     that happens to end at the viewport. */
-  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent 100%);
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent 100%);
-}
-
-.game-bar__types::-webkit-scrollbar {
-  display: none;
 }
 
 .game-bar__type {
-  flex-shrink: 0;
-  height: 34px;
-  padding: 0 14px;
-  border-radius: 17px;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 2px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.06);
   color: #9aa5b6;
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 0.65rem;
+  font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
   transition:

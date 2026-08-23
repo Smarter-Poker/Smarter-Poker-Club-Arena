@@ -7,6 +7,112 @@
 
 ---
 
+## Cowork session 2026-08-23 (4) — multi-table was blocked by a 34px strip (PRs #493, #517)
+
+Dan: "multi table functionality isn't working, when you click the + button to
+add a second, 3rd or 4th game, it doesn't create the action box for that game."
+
+Two separate occluders, both measured on production rather than reasoned about.
+
+### 1. `.table-page` covered the whole app when embedded (PR #493)
+
+`.table-page` is `position: fixed; inset: 0; z-index: 1100`. That is right when
+the table owns the viewport and wrong when `<MultiTablePage>` embeds it inside a
+tab: the felt then covered its own tab bar. Added a `--embedded` modifier
+(`position: absolute; z-index: auto`), placed AFTER the base rule — at equal
+specificity source order decides, and putting it before changed nothing.
+
+### 2. The MTT ticker was sitting on the "+" (PR #517)
+
+With #493 shipped the button was reachable, and still nothing happened on a
+tournament table. Instrumented on production:
+
+- `elementFromPoint` at the button's centre returned `.mtt-ticker__track`
+- Playwright: `<button class=mtt-ticker__track> ... intercepts pointer events`
+- dispatching the click straight at `.table-tab-bar__add` opened Quick Join and
+  listed games correctly — so `handleAddTable` was never the problem
+
+`.mtt-ticker` is fixed, 34px, `z-index: 9400`, positioned at `top: headerBottom`.
+That measurement only looked for `#global-header` / `header`. Inside `/table/*`
+neither exists — TablePage is fixed to the viewport and its top chrome is
+`.table-tab-bar` — so the offset fell to **0** and the strip landed on a tab bar
+that stacks at 200, burying the "+" at y=24-30. The tap opened the tournament
+lobby instead, which reads exactly like a dead button.
+
+The rule was never "sit under the header", it is "sit under whatever top chrome
+this route actually has". Moved the geometry into `src/components/tournament/
+topChrome.ts` (pure: selector lookup in, one number out) so it is assertable
+without mounting a table, and made the ResizeObserver watch every candidate —
+the tab bar mounts late, grows a row per table, and collapses off `/table/*`.
+
+`tests/unit/mttTickerAnchor.test.ts` pins it. Anti-vacuity checked: dropping
+`.table-tab-bar` back out of the selector list turns 3 of the 6 red.
+
+### 3. Two buttons, one accessible name
+
+`aria-label="Open another table"` was on both the tab bar's "+" (Quick Join) and
+TablePage's in-felt "+" (opens a lobby tab). A screen reader announced them
+identically and `getByLabel` resolved two elements, so the mobile suite silently
+drove whichever came first in the DOM. The second is now named for what it does.
+
+### 4. Quick Join spent 6.7 seconds on "Finding Games…"
+
+Long enough to be indistinguishable from a broken button, and on a slow
+connection it ran past 18s. Not the query — 11.5ms as service_role — but the
+plan under RLS:
+
+```
+Index Scan using idx_tables_club_id
+  Filter: (tournament_id IS NULL AND is_deleted IS NOT TRUE AND status <> 'closed')
+  ROWS REMOVED BY FILTER: 7261
+```
+
+To return 30 open tables it walked 7,291 rows, and `tables_select_scoped` runs
+`is_club_member()` / `fn_union_oversees_club()` against each one — ~14.5k
+function calls for a 30-row answer, growing with every hand ever dealt (the club
+holds 64,374 closed tables).
+
+`20260823170000_tables_open_by_club_partial_index.sql` puts the open-ness
+predicate in the index. Applied to production and re-measured: **11.588ms ->
+0.376ms**, 1,480 buffers -> 35, and the "Rows Removed by Filter" line is gone —
+nothing left for the policy to be evaluated against.
+
+### 5. …and it could still spin forever (PR #526)
+
+With the ticker gone the "+" is reachable, and the sheet still sat on "Finding
+Games…" indefinitely on some runs. Instrumenting `window.fetch` across repeated
+production runs: when it stalls, **no `/rest/v1/tables` request is issued at
+all**. The await neither resolves nor rejects and never reaches the network, so
+the stall is upstream of the query — and `try/catch` cannot see it, because
+nothing is thrown.
+
+Every other failure path in `handleAddTable` already falls back to the lobby
+tab; a stall now does too, via a 6s race on both lookups. An empty result is
+deliberately still an answer ("No Open Seats Right Now"), and a real rejection
+still propagates. `withTimeout` takes `PromiseLike`, not `Promise` — a
+`PostgrestFilterBuilder` is a thenable that only issues its request when
+awaited and has no `.catch`/`.finally`.
+
+### Verified on production, not on exit codes
+
+|                                  | before               | after                 |
+| -------------------------------- | -------------------- | --------------------- |
+| hit test at the "+" centre       | `.mtt-ticker__track` | `.table-tab-bar__add` |
+| Playwright click                 | intercepted          | OK                    |
+| elements sharing that aria-label | 2                    | 1                     |
+| Quick Join populated             | 6,707ms              | 139-232ms             |
+
+### Note for whoever chases "Club Not Found" next
+
+Not reproduced again this session. Ruled out from a clean session: the club row,
+RLS, every selected column, both entry paths, tap vs click, mobile emulation,
+all three clubs, the service worker, an expired/corrupted token, and the
+`?game=<id>` lobby-panel route. The diagnostic cause line shipped earlier still
+stands, so the next occurrence should name its own cause rather than needing
+this guesswork repeated.
+
+---
+
 ## Cowork session 2026-08-23 (3) — round two: PLO was deciding inside its own noise (PRs #436)
 
 Continuing the line-by-line pass. Every item below is measured.
@@ -13001,6 +13107,232 @@ connects to that file.
 Three earlier tests were updated in these commits because this deliberately
 replaces behaviour they pinned. 23 new tests here, 4 on the route. 284 files /
 3,485 green.
+
+## Cowork session 2026-08-23 (12) — AUDITING THE FIX, NOT THE BUG
+
+Dan asked for the three owner-menu claims to be audited. Two were not true as
+stated, one had created a new fault of its own, and a whole half of the feature
+turned out never to have been built.
+
+**"The repayment bar is frozen when the seed is taken."** Half true. It was
+written with `GREATEST(...)`, which correctly stops an owner LOWERING the bar by
+reactivating at a smaller stake — but nothing ever cleared it. Once a pool
+carried a 20,000 bar it carried it forever: repay that seed, come back and seed
+200 at a stake of 1, and the new seed needs 20,000 of play to return. The fix
+cured one direction and opened the other. The bar now rises only while a seed is
+outstanding and is **released with the seed it belonged to**.
+
+**"Reactivating on an unpaid seed is refused."** Only when the wallet DIFFERS.
+With the same wallet it added a second full seed, so an owner who switched Spins
+off and on paid twice for the same protection. What is outstanding is already in
+the pool doing the job the seed exists to do, so it now counts toward the bar and
+only the shortfall is charged — a zero top-up skips the wallet move entirely
+rather than booking a no-op transfer. The panel compounded it: the outstanding
+amount rendered only inside the `is_active` branch, so while Spins were off the
+money already sitting there was invisible and the button quoted a full fresh bill.
+
+**"The route decides who may act now."** The route did. The panel then ANDed
+that answer with the PAGE's guess — `canManage={isOwner}` — which is false for a
+union lead who does not own the club, so the off switch stayed hidden from
+exactly the person the API authorises. **The AND was the same bug wearing the
+fix's clothes.** The prop is gone entirely; a page can no longer override the
+route.
+
+**And the half that was never built:** the panel existed only on
+`ClubSettingsPage`. A union owns the Spin wallet for every club inside it, and
+its lead had nowhere to switch Spins on at all. It is now on the union dashboard
+too, keyed by the union's own id — which resolves through the same
+`fn_spin_reserve_owner` lookup and lands on the union's pool. Rendered for every
+union admin, read-only for those who may not spend.
+
+Also: a seed with no recorded source can never be repaid, because the repayment
+deliberately refuses to guess a wallet. That looked identical to one merely
+waiting. `seed_is_repayable` now says so, and the house pool's legacy 20,000 is
+labelled rather than silent.
+
+Verified by a rolled-back probe across all five transitions: no double charge;
+the bar holds at 20,000 while owed; released on repayment; a later 200 seed sets
+a 200 bar instead of inheriting the retired one; a source-less seed reports
+unrepayable. The live pool still reconciles exactly.
+
+**A pattern worth naming:** three separate assertions this session have failed
+on their own explanatory comment — `Math.random`, `ceiling_amount`, and now
+`canManage && routeCanManage`. Any check that greps raw text reads the prose
+too. Negative assertions in this file now read a comment-stripped copy.
+
+33 tests across the two files. 286 files / 3,513 green.
+
+## Cowork session 2026-08-23 (13) — THE SEED REPAYMENT PLAN
+
+Dan: "IMPLEMENT A REPAYMENT PLAN THAT'S STRUCTURED INTO THE ARCHITECTURE OF THE
+POOL, THAT PAYS BACK A CERTAIN PERCENTAGE TO THE FUNDING WALLET EVERY TIME THE
+WALLET REACHES A CERTAIN THRESHOLD OF FUNDS."
+
+**This is not a nicety — it is the only mechanism that can work here, and the
+rule it replaces may never have paid anyone back.**
+
+The pool has ZERO DRIFT by construction. spinSpec's own identity,
+`E[multiplier] = seats × (1 − rake)`, makes `E[reserve_out]` equal `reserve_in`
+exactly. The rake is taken _before_ the pool and is the revenue; what remains is
+a float that random-walks and never grows in expectation. The previous rule
+waited for the balance to exceed the bar by a **whole further seed** before
+returning anything — on a zero-drift walk that is a wait for a large excursion
+that may never arrive. An owner's capital could have sat in the pool forever
+with nothing wrong and nothing happening. Harvesting the upswings is the only
+thing a zero-drift process reliably offers.
+
+**The plan.** FLOOR = the required seed (two 100x jackpots at the largest stake
+offered) — repayment never takes the balance below it, so the top prize on the
+wheel is always real money. TRIGGER = floor × 1.25; nothing moves until the
+balance sits 25% clear, because skimming the moment it peeks over would nibble
+the working capital on every ripple and re-lock the top tiers. RATE = 50% of the
+surplus above the floor — half, not all, because a wheel whose top prize
+flickers in and out of reach as the balance is shaved back is a worse product
+than one that repays a little slower.
+
+Repayment **stops the moment the seed is square**. It is a loan being retired,
+not a rake — which is why the old ceiling sweep is gone and is not returning in
+a new coat.
+
+At a 100 stake: floor 20,000, nothing until 25,000, where 2,500 of the 5,000
+surplus goes home leaving 22,500. Eight visits retire a 20,000 seed.
+
+**Measured, by rolled-back probe at a stake of 10:** exactly EIGHT instalments
+retired a 2,000 seed, the treasury returned to 100,000 to the chip, the pool
+never dipped below 2,255 against its 2,000 floor, and once square the plan took
+nothing further even with the balance forced to 500,000.
+
+Safety is by construction: the instalment is at most `RATE × (balance − floor)`,
+strictly less than the surplus, so `balance_after ≥ floor` always; and it is
+capped at what is owed, so the plan cannot overpay. Both the migration and the
+test sweep every balance from 20,000 to 60,000 to prove the floor holds.
+
+The owner menu now shows the plan rather than a number: the floor, the trigger,
+what the next instalment will be, how much is still owed, how much has come
+back, and the wallet it returns to — and it explains all of that **before** the
+owner commits any money.
+
+Two guards earned their keep. `spinSpec` has a **server copy** that must stay
+byte-identical, and editing only the client tripped it immediately — the comment
+on that guard says the drift is "exactly how three conflicting multiplier tables
+happened". And a test pinned the old all-or-nothing copy, updated here in the
+same commit that replaced the behaviour.
+
+18 new tests pinning the SQL rule and the TypeScript mirror to the same numbers.
+287 files / 3,531 green.
+
+## Cowork session 2026-08-23 (14) — THE SPINS WALLET, AND WHAT HAPPENS WHEN A CLUB JOINS A UNION
+
+Dan: "ADD THE SPINS WALLET TO THE UNION, AND CLUBS WHEN THEY ENABLE SPINS. IF A
+CLUB JOINS A UNION, THAT WALLET MUST DISAPPEAR."
+
+**Two pots that looked like one.** The union dashboard already carried a tile
+called "Spin Reserve" — and it does not show this wallet. That one reads
+`union_wallets.spin_reserve_wallet`: operator capital earmarked for Spins but
+**not yet deployed**. The migration that created it says so outright: "The
+DEPLOYED reserve is `spin_bonus_pools.balance` — this wallet holds only what is
+NOT currently in the pool, so the two never double-count." So the live float
+every multiplier is actually paid from appeared on **no wallet surface in the
+entire product**. Both tiles now sit side by side, in both union tabs, and the
+comment between them says which is which.
+
+Clubs get a "Spins Wallet" row in `DynamicWallet`, for club-bank staff only,
+and only when they have actually switched Spins on — no permanent 0.00 parked
+next to real balances.
+
+**The disappearing act is a data problem before it is a UI one.**
+`fn_spin_reserve_owner` resolves `COALESCE(clubs.union_id, club_id)`. The
+instant `clubs.union_id` is written, the club's own `spin_bonus_pools` row
+becomes unreachable through every code path in the platform — not deleted, not
+flagged, just orphaned, with its balance stranded, its seed no longer
+repayable, and `is_active` still true. Hiding the row in the UI would have left
+the money there. Neither join path knew the pool existed.
+
+So the wind-down is a **trigger on `clubs.union_id`**, not a patch to the two
+join routes: a third join path added later would reintroduce the leak, and the
+money must move in the _same transaction_ as the join — a club half-joined with
+its float in limbo is the worst of both states.
+
+Where the money goes: **the seed returns to the club** (its own capital, lent
+to its own pool — joining a union is not a reason to forfeit it), and **the
+remaining float goes to the union's pool** (player money, and the union now
+runs Spins for those players). It arrives as a `merge` — a ledger kind that had
+existed unused since the pool was first built.
+
+One guess made deliberately: if the seed has no recorded source wallet the
+repayment plan normally refuses to move it, because guessing which _entity_
+owns money is not a machine's job. Here the entity is not in doubt — it is this
+club — only which of its own wallets, so it goes to `chip_treasury` and the
+ledger says why.
+
+Verified by a rolled-back probe: a standalone club activated with a 2,000 seed
+and built a 600 float, then joined. Seed home to the treasury, 600 absorbed by
+the union, club row emptied and switched off, owner lookup moved to the union,
+and the platform total conserved to the chip. A backfill wound down any club
+that had already joined while holding a pool.
+
+The client half follows the same law `rake_treasury` already used — Dan's own
+earlier rule that union money must never appear on a club surface — so this is
+one flag, not a new concept.
+
+14 new tests. 289 files / 3,561 green.
+
+## Cowork session 2026-08-23 (15) — EVERY CLUB WALLET CLOSES INTO THE MAIN BANK
+
+Dan: "IF A CLUB HAS SPINS, BBJ, BACK UP BBJ OR PROMO FUNDS, ALL CHIPS IN THE
+WALLETS GO TO THE 'MAIN BANK' AND CLOSED WHEN A CLUB JOINS A UNION. ALL THOSE
+FUNDS ARE GIVEN TO THE CLUB TO KEEP OR DISBURSE AT THEIR OWN DISCRETION."
+
+**This overrules a decision I made an hour earlier.** The first union-join
+wind-down sent the Spins _seed_ back to the club but the remaining _float_ to
+the union, reasoning that the float was player money and the union now runs
+Spins for those players. Wrong: the club funded the wallet, the club carried the
+variance, the club keeps the balance. All of it.
+
+**Promo lives in two places** and both are swept — `bbj_pools.promo_balance` is
+the jackpot's own promo slice, `clubs.promo_balance` is the club's separate
+promo float. Sweeping one and not the other would have looked like it worked.
+
+**The trap this nearly walked into.** `fn_bbj_conservation_check` computes
+`gap = inflow − outflow − balances`, healthy only while that gap stays within
+1.00 of a recorded baseline. Taking money OUT of `bbj_pools` shrinks `balances`
+and pushes the gap up by exactly the amount swept — turning a correct transfer
+into a red money alarm. The check already counts `bbj_promo_sweep` rows in
+`chip_transactions` as OUTFLOW, which is precisely what this is, so the sweep is
+booked that way and the gap does not move.
+
+**And it surfaced something that is not mine.** The first attempt asserted the
+check was `healthy` and the whole migration rolled back — because it _already
+is not_. With nothing of this work applied, drift from the 2026-08-19 baseline
+was **−226.65 against a tolerance of 1.00**. That baseline's own note says the
+selftest "alerts on MOVEMENT from this baseline, which is what indicates new
+loss", so something has been quietly alerting. It predates all of this and needs
+its own investigation. The assertion was rewritten to measure the gap _before
+and after this transaction only_ — blocking a correct transfer on an unrelated
+fault would be the wrong call, adding to it would be worse, and that test is
+what tells the two apart.
+
+**Play moves, money does not follow it.** The club's BBJ pool is retired and
+pointed at the union's via `merged_into_pool_id`, because that is where its
+players now play. The balance still goes to the club. The ledger note says so
+explicitly, so nobody later reads the merge pointer as a money movement.
+
+Backfill closed **Club JAQK's 28,742.48 promo float** into its main bank
+(1,023,075.23 → 1,051,817.71). Its BBJ had already been retired into the union
+pool by an older manual step; that is history and was left alone rather than
+unwound out of a live jackpot players are now playing for.
+
+Verified by a rolled-back probe: a club holding all four wallets — 2,600 Spins
+including a 2,000 seed, 1,200 BBJ, 300 backup, 90 jackpot promo, 750 club promo
+— joined a union, its main bank went 8,000 → 12,940, the union received
+nothing, and the BBJ gap did not move across the join.
+
+One probe failure worth recording: the first version measured the gap before
+inserting its own synthetic BBJ pool, so it charged the test for conjuring 1,590
+of jackpot money with no matching contributions. The fixture was wrong, not the
+code — but it is exactly the shape of mistake that would hide a real leak.
+
+10 new tests. 290 files / 3,571 green.
 
 ## Cowork session 2026-08-23 (10) — PER-OWNER SPIN BOARDS
 

@@ -1164,6 +1164,46 @@ export default function MultiTablePage() {
     []
   );
 
+  /**
+   * How long "Finding Games…" is allowed to sit there before we give up and
+   * send the player to the lobby tab instead.
+   *
+   * 2026-08-23, measured on production: the two lookups below occasionally
+   * never settle AND never reach the network — no `/rest/v1/tables` request is
+   * issued at all, so this is not a slow query, it is the client's token path
+   * stalling before a request is built. Whatever the cause, an await that
+   * neither resolves nor rejects leaves the sheet spinning forever, and a
+   * permanent "Finding Games…" is indistinguishable from the "+" being broken.
+   * That is precisely how this was reported.
+   *
+   * Every other failure mode here already falls back to the lobby tab. A stall
+   * now does the same, so the button always takes you somewhere. 6s is well
+   * clear of the honest worst case: after the partial index landed the real
+   * query returns in 139-232ms.
+   */
+  const QUICK_JOIN_TIMEOUT_MS = 6000;
+
+  /**
+   * Resolve to `null` rather than hanging. Deliberately does not reject: the
+   * callers treat null as "no data", which is the same path a failed query
+   * already takes.
+   */
+  /* PromiseLike, not Promise: a PostgrestFilterBuilder is a thenable that only
+     issues the request when it is awaited, and it has no .catch/.finally. */
+  const withTimeout = useCallback(async <T,>(work: PromiseLike<T>): Promise<T | null> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        work,
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), QUICK_JOIN_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }, []);
+
   const handleAddTable = useCallback(async () => {
     if (tables.length >= MAX_TABLES) {
       notifyCapReached('add');
@@ -1191,13 +1231,16 @@ export default function MultiTablePage() {
       } else if (active.length > 0) {
         setQuickJoin({ open: true, loading: true, rows: [] });
         try {
-          const { data } = await supabase
-            .from('tables')
-            .select('id, club_id')
-            .in(
-              'id',
-              active.map((t) => t.id)
-            );
+          const res = await withTimeout(
+            supabase
+              .from('tables')
+              .select('id, club_id')
+              .in(
+                'id',
+                active.map((t) => t.id)
+              )
+          );
+          const data = res?.data;
           for (const row of (data ?? []) as { id: string; club_id: string | null }[]) {
             if (row.club_id) clubLookupCacheRef.current.set(row.id, row.club_id);
           }
@@ -1223,19 +1266,28 @@ export default function MultiTablePage() {
     try {
       const openIds = new Set(tablesRef.current.map((t) => t.id));
       const activeStakes = tablesRef.current[activeIndexRef.current]?.stakes || '';
-      const { data } = await supabase
-        .from('tables')
-        .select(
-          'id, name, game_variant, game_type, small_blind, big_blind, max_players, current_players, status'
-        )
-        .eq('club_id', club)
-        .is('tournament_id', null)
-        .neq('status', 'closed')
-        // Audit round 3: soft-deleted tables kept their status and listed as
-        // joinable. NULL must count as not-deleted, hence NOT IS TRUE.
-        .not('is_deleted', 'is', true)
-        .limit(30);
-      const rows: QuickJoinRow[] = (data ?? [])
+      const res = await withTimeout(
+        supabase
+          .from('tables')
+          .select(
+            'id, name, game_variant, game_type, small_blind, big_blind, max_players, current_players, status'
+          )
+          .eq('club_id', club)
+          .is('tournament_id', null)
+          .neq('status', 'closed')
+          // Audit round 3: soft-deleted tables kept their status and listed as
+          // joinable. NULL must count as not-deleted, hence NOT IS TRUE.
+          .not('is_deleted', 'is', true)
+          .limit(30)
+      );
+      if (res === null) {
+        // Stalled, not empty. "No Open Seats Right Now" would be a lie and a
+        // spinner would be worse: take the same exit as a failed query.
+        setQuickJoin({ open: false, loading: false, rows: [] });
+        masterBus.emit('OPEN_LOBBY_TAB', {});
+        return;
+      }
+      const rows: QuickJoinRow[] = (res.data ?? [])
         .filter(
           (r) =>
             !openIds.has(r.id as string) &&
@@ -1267,7 +1319,7 @@ export default function MultiTablePage() {
       setQuickJoin({ open: false, loading: false, rows: [] });
       masterBus.emit('OPEN_LOBBY_TAB', {});
     }
-  }, [tables.length, notifyCapReached]);
+  }, [tables.length, notifyCapReached, withTimeout]);
 
   const handleQuickJoinPick = useCallback(
     (row: QuickJoinRow) => {

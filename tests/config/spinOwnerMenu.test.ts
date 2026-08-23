@@ -28,6 +28,13 @@ const panel = read('src/components/club/SpinActivationPanel.tsx');
 const service = read('src/services/SpinActivationService.ts');
 const settings = read('src/pages/ClubSettingsPage.tsx');
 
+/**
+ * Comments stripped. Every `not.toMatch` below reads THIS, not the raw file:
+ * three separate assertions this session have failed on their own explanation,
+ * because the comment describing what was removed necessarily names it.
+ */
+const panelCode = panel.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
 describe('the quoted seed is the seed that gets charged', () => {
   it('agrees with spinSpec on every board price point', () => {
     for (const stake of SPIN_BOARD_STAKES) {
@@ -76,14 +83,30 @@ describe('the panel tells the owner the truth about whose money it is', () => {
     expect(panel).toMatch(/Only The Union Lead/);
   });
 
-  it('obeys the ROUTE on who may act, and fails closed until it answers', () => {
-    // Changed 2026-08-23. The panel inferred permission from owner_kind, which
-    // was wrong in BOTH directions: `canManage && !isUnionOwned` hid the off
-    // switch from the union lead -- the one person allowed to press it -- while
-    // the activate button had no such guard and was offered to a club owner
-    // inside a union whose request the API answers 403.
-    expect(panel).toMatch(/const canAct = canManage && routeCanManage === true;/);
-    expect(panel).not.toMatch(/canManage && !isUnionOwned/);
+  it('obeys the ROUTE on who may act, and nothing else', () => {
+    // Two corrections, in order.
+    //
+    // First it inferred permission from owner_kind, which was wrong in BOTH
+    // directions: it hid the off switch from the union lead and offered
+    // activation to a club owner inside a union.
+    //
+    // Then it ANDed the route's answer with the PAGE's guess
+    // (ClubSettingsPage passes its own isOwner) -- and that AND was the same
+    // bug again, because a union lead who is not the club owner has
+    // isOwner === false. The route knows about union_admins and
+    // clubs.owner_id; the page knows about neither.
+    expect(panelCode).toMatch(/const canAct = routeCanManage === true;/);
+    expect(panelCode).not.toMatch(/canManage && routeCanManage/);
+    expect(panelCode).not.toMatch(/canManage && !isUnionOwned/);
+  });
+
+  it('does not take a permission prop at all, so a page cannot override truth', () => {
+    expect(panelCode).not.toMatch(/canManage: boolean;/);
+    expect(settings).toMatch(/<SpinActivationPanel clubId=\{clubId\} \/>/);
+  });
+
+  it('fails closed while the route has not answered yet', () => {
+    expect(panel).toMatch(/useState<boolean \| null>\(null\)/);
   });
 
   it('gates BOTH buttons on the same answer', () => {
@@ -122,17 +145,24 @@ describe('the seed is presented as a loan, because that is what it is', () => {
     expect(panel).toMatch(/The Seed Is A Loan, Not A Fee/);
   });
 
-  it('shows how much further play has to go before it returns', () => {
+  it('shows the repayment PLAN, not a single distant date', () => {
+    // Was `Returns After Another N Is Collected From Play` - an all-or-nothing
+    // rule that, on a zero-drift pool, described an event that might never
+    // arrive. It is instalments now: a share of the surplus each time the
+    // wallet clears its trigger.
     expect(panel).toMatch(/seed_repayable_in/);
-    expect(panel).toMatch(/Returns After Another/);
+    expect(panel).toMatch(/Repayment Plan/);
+    expect(panel).toMatch(/Next Instalment/);
   });
 
   it('says what happens to proceeds once the seed is repaid', () => {
     expect(panel).toMatch(/Stays Here To Fund Multipliers/);
   });
 
-  it('quotes the required seed on the button itself, before the click', () => {
-    expect(panel).toMatch(/Activate Spins And Seed \$\{chips\(required\)\}/);
+  it('quotes what will actually be charged on the button, before the click', () => {
+    // Was `chips(required)`. An outstanding seed now counts toward the bar, so
+    // quoting the gross would promise a bill that never arrives.
+    expect(panel).toMatch(/Activate Spins And Seed \$\{chips\(stillNeeded\)\}/);
   });
 
   it('recomputes the quote when the stake changes', () => {
@@ -145,10 +175,40 @@ describe('it is wired into the owner menu', () => {
     expect(settings).toMatch(
       /import SpinActivationPanel from '\.\.\/components\/club\/SpinActivationPanel'/
     );
-    expect(settings).toMatch(/<SpinActivationPanel clubId=\{clubId\} canManage=\{isOwner\} \/>/);
+    expect(settings).toMatch(/<SpinActivationPanel clubId=\{clubId\} \/>/);
   });
 
-  it('only lets the owner manage it', () => {
-    expect(settings).toMatch(/canManage=\{isOwner\}/);
+  it('is also on the UNION dashboard -- the half that was missing', () => {
+    // A union OWNS the Spin wallet for every club inside it, so its lead had
+    // nowhere to switch Spins on unless they happened to also own a club.
+    const union = read('src/pages/UnionDashboardPage.tsx');
+    expect(union).toMatch(/import SpinActivationPanel from/);
+    expect(union).toMatch(/<SpinActivationPanel clubId=\{unionId\} \/>/);
+  });
+});
+
+describe('the seed is quoted net of what is already in the wallet', () => {
+  it('charges only the shortfall', () => {
+    expect(panel).toMatch(
+      /const stillNeeded = Math\.max\(required - Number\(state\?\.seeded_amount \?\? 0\), 0\)/
+    );
+    expect(panel).toMatch(/spinActivationApi\.activate\(clubId, stillNeeded, maxStake, wallet\)/);
+  });
+
+  it('quotes that number on the button, not the gross', () => {
+    expect(panel).toMatch(/Activate Spins And Seed \$\{chips\(stillNeeded\)\}/);
+    expect(panelCode).not.toMatch(/Activate Spins And Seed \$\{chips\(required\)\}/);
+  });
+
+  it('shows an outstanding seed while Spins are OFF -- when the owner is deciding', () => {
+    // It used to render only inside the is_active branch, so a deactivated
+    // owner saw a full fresh bill and no sign of the money already sitting
+    // there.
+    expect(panel).toMatch(/\{!state\.is_active && state\.seeded_amount > 0 && \(/);
+  });
+
+  it('admits when a seed can never be returned', () => {
+    expect(panel).toMatch(/seed_is_repayable/);
+    expect(panel).toMatch(/No Recorded Source Wallet/);
   });
 });

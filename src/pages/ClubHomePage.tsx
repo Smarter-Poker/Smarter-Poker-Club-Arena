@@ -39,11 +39,13 @@ import {
 } from '../components/lobby/lobbyEntries';
 import { tournamentService } from '../services/TournamentService';
 import { getClubLevel, ClubLevelInfo } from '../utils/clubLevels';
+import { fmtChips } from '../utils/format';
 import { BusToastBridge } from '../components/common/BusToastBridge';
 import { DiamondService } from '../services/DiamondService';
 import { useToast } from '../components/common/Toast';
 import { waitlistService } from '../services/WaitlistService';
 import ConfirmModal from '../components/common/ConfirmModal';
+import confirmDialog from '../components/common/confirmDialog';
 import { retryFetch } from '../utils/retryFetch';
 import './ClubHomePage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -239,13 +241,13 @@ const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
 const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
   /* LOBBY V2: All Games is a real tab now — the line-based table renders a
      combined column set for it, so it no longer needs to be hidden. */
-  { key: 'ALL', label: 'All Games' },
+  { key: 'ALL', label: 'ALL' },
   { key: 'MTT', label: 'MTT' },
   { key: 'HOLDEM', label: 'NLH' },
-  { key: 'OMAHA', label: 'Omaha' },
-  { key: 'LIMIT', label: 'Limit' },
-  { key: 'SPIN', label: 'Spins' },
-  { key: 'SNG', label: 'Heads Up' },
+  { key: 'OMAHA', label: 'PLO' },
+  { key: 'LIMIT', label: 'LIMIT' },
+  { key: 'SPIN', label: 'SPINS' },
+  { key: 'SNG', label: 'HEADS UP' },
 ];
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
@@ -1876,9 +1878,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     (tableId: string) => {
       haptic.medium();
       setPanelOpen(false);
-      // Existing launch flow: seat choice + buy-in validation happen AT the
-      // table (fn_take_seat_and_buy_in) — nothing is spent from the lobby.
-      navigate(`/table/${tableId}`);
+      // Execute navigate in the next tick to ensure the panel unmounts safely
+      // without interrupting React Router transition internals
+      setTimeout(() => navigate(`/table/${tableId}`), 0);
     },
     [navigate]
   );
@@ -1890,14 +1892,45 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         return;
       }
       if (actionBusy) return;
+
+      const totalCost = t.buy_in_amount + (t.buy_in_fee || 0);
+      const confirmed = await confirmDialog({
+        title: 'Confirm Buy In',
+        message: `Register for ${t.name}? This will debit ${fmtChips(totalCost)} from your wallet.`,
+        confirmText: 'Confirm Buy In',
+      });
+      if (!confirmed) return;
+
       setActionBusy(true);
       try {
         const username = useUserStore.getState().user?.username || 'Player';
-        // Server-authoritative: fn_register_for_tournament validates status,
-        // late reg, capacity, duplicates and BALANCE, and debits atomically.
         await tournamentService.registerPlayer(t.id, currentUserId, username);
         setRegisteredTournamentIds((prev) => new Set(prev).add(t.id));
         toast.success(`You Are Registered For ${t.name}`);
+        setPanelOpen(false);
+
+        // Check if the server assigned a table (late reg)
+        const { data: tp } = await supabase
+          .from('tournament_players')
+          .select('table_id')
+          .eq('tournament_id', t.id)
+          .eq('user_id', currentUserId)
+          .maybeSingle();
+
+        if (tp?.table_id) {
+          navigate(`/table/${tp.table_id}`);
+        } else {
+          // Find active tournament table to spectate
+          const { data: tbls } = await supabase
+            .from('tables')
+            .select('id, status')
+            .eq('tournament_id', t.id)
+            .neq('status', 'closed')
+            .limit(1);
+          if (tbls && tbls.length > 0 && tbls[0].id) {
+            navigate(`/table/${tbls[0].id}`);
+          }
+        }
       } catch (e) {
         reportError(e, 'ClubHomePage.handleRegister', { tournamentId: t.id });
         toast.error(e instanceof Error ? e.message : 'Registration Failed, Please Try Again');
@@ -1905,7 +1938,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         setActionBusy(false);
       }
     },
-    [currentUserId, actionBusy, toast]
+    [currentUserId, actionBusy, toast, navigate]
   );
 
   const handleUnregister = useCallback(
@@ -2413,73 +2446,25 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         {/* Advanced Filters. Hidden on ALL, which has no spec of its own and
             means "show everything" - offering a filter sheet there would imply
             the tab can be narrowed when it deliberately cannot. */}
-        {gameType !== 'ALL' && (
-          <button
-            /* AUDIT 2026-08-21: this lit up whenever a saved object EXISTED
-               for the tab, which is true the moment a player opens the sheet
-               and presses Save without changing anything - a permanent gold
-               badge announcing a filter that filters nothing. isFilterActive
-               compares against the spec's defaults, so the badge means what it
-               looks like it means. */
-            className={`game-bar__filter-btn ${(() => {
-              const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
-              const fVal = advFilters[gameType as FilterGameType];
-              return fSpec && fVal && isFilterActive(fSpec, fVal) ? 'is-set' : '';
-            })()}`}
-            aria-label="Advanced filters"
-            title="Advanced Filters"
-            onClick={() => {
-              haptic.light();
-              setSortOpen(false);
-              setFiltersOpen(true);
-            }}
-          >
-            <IconSort />
-            <span>Filters</span>
-          </button>
-        )}
-
-        <div className="game-bar__sort">
-          <button
-            className={`game-bar__sort-btn ${sortKey !== 'recommended' ? 'is-set' : ''}`}
-            aria-haspopup="listbox"
-            aria-expanded={sortOpen}
-            onClick={() => {
-              haptic.light();
-              setSortOpen((o) => !o);
-            }}
-          >
-            <IconSort />
-            <span>{SORT_OPTIONS.find((o) => o.key === sortKey)?.label ?? 'Sort'}</span>
-          </button>
-
-          {sortOpen && (
-            <>
-              {/* Click-away shield. Without it the menu could only be closed by
-                  re-tapping the button, which on a phone is the one place a
-                  thumb is unlikely to go next. */}
-              <div className="game-bar__sort-shield" onClick={() => setSortOpen(false)} />
-              <ul className="game-bar__sort-menu" role="listbox" aria-label="Sort games by">
-                {SORT_OPTIONS.map((opt) => (
-                  <li key={opt.key}>
-                    <button
-                      role="option"
-                      aria-selected={sortKey === opt.key}
-                      className={sortKey === opt.key ? 'is-active' : ''}
-                      onClick={() => {
-                        haptic.selection();
-                        setSortKey(opt.key);
-                        setSortOpen(false);
-                      }}
-                    >
-                      {opt.label}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </div>
+        <button
+          className={`game-bar__filter-btn ${(() => {
+            if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
+            const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+            const fVal = advFilters[gameType as FilterGameType];
+            const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
+            return isFilt || sortKey !== 'recommended' ? 'is-set' : '';
+          })()}`}
+          aria-label="Filters and Sort"
+          title="Filters and Sort"
+          onClick={() => {
+            haptic.light();
+            setSortOpen(false);
+            setFiltersOpen(true);
+          }}
+        >
+          <IconSort />
+          <span>Filters</span>
+        </button>
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════
@@ -2526,6 +2511,19 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                     </button>
                   );
                 })}
+                {currentUserId && (
+                  <button
+                    type="button"
+                    className={`quickprefs__chip ${favoritesOnly ? 'is-on' : ''}`}
+                    aria-pressed={favoritesOnly}
+                    onClick={() => {
+                      haptic.selection();
+                      setFavoritesOnly((v) => !v);
+                    }}
+                  >
+                    Favorites
+                  </button>
+                )}
                 <button
                   className="quickprefs__more"
                   aria-label="Advanced filters"
@@ -2592,6 +2590,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           initialType={gameType as FilterGameType}
           onClose={() => setFiltersOpen(false)}
           onApply={setAdvFilters}
+          sortKey={sortKey}
+          onSortChange={setSortKey}
+          sortOptions={SORT_OPTIONS}
         />
       )}
 
@@ -2639,11 +2640,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               </>
             )}
           </span>
-          {narrowing.any && totalGameCount > shownCount && (
-            <button type="button" className="lobby-count__clear" onClick={clearAllNarrowing}>
-              Show All
-            </button>
-          )}
         </div>
       )}
 
@@ -2675,19 +2671,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               }}
             >
               + Create New {TOURNAMENT_TYPES.includes(gameType) ? 'Game' : 'Table'}
-            </button>
-          )}
-          {currentUserId && (gameType === 'ALL' || CASH_TYPES.includes(gameType)) && (
-            <button
-              type="button"
-              className={`lobby-favtoggle${favoritesOnly ? ' is-on' : ''}`}
-              aria-pressed={favoritesOnly}
-              onClick={() => {
-                haptic.selection();
-                setFavoritesOnly((v) => !v);
-              }}
-            >
-              Favorites
             </button>
           )}
         </div>

@@ -32,7 +32,8 @@ export type WalletRowKey =
   | 'agent_wallet'
   | 'promo_wallet'
   | 'club_bank'
-  | 'rake_treasury';
+  | 'rake_treasury'
+  | 'spins_wallet';
 
 /** The four roles that may see, open and spend from the Club Bank. */
 export const CLUB_BANK_ROLES: ClubRole[] = ['owner', 'co_owner', 'admin', 'super_agent'];
@@ -67,7 +68,10 @@ export function canHoldAgentWallet(role: unknown): boolean {
  * a Rake Treasury row. A club inside a union sends its rake to the union's
  * treasury, which is union money and must never appear on a club surface.
  */
-export function clubWalletRows(role: unknown, opts: { standalone?: boolean } = {}): WalletRowKey[] {
+export function clubWalletRows(
+  role: unknown,
+  opts: { standalone?: boolean; spinsActive?: boolean } = {}
+): WalletRowKey[] {
   const r = normaliseRole(role);
   const rows: WalletRowKey[] = ['player_wallet'];
 
@@ -80,6 +84,23 @@ export function clubWalletRows(role: unknown, opts: { standalone?: boolean } = {
   if (canSeeClubBank(r)) {
     rows.push('club_bank');
     if (opts.standalone) rows.push('rake_treasury');
+    /**
+     * The Spins wallet, under exactly the law above.
+     *
+     * Dan 2026-08-23: "ADD THE SPINS WALLET TO THE UNION, AND CLUBS WHEN THEY
+     * ENABLE SPINS. IF A CLUB JOINS A UNION, THAT WALLET MUST DISAPPEAR."
+     *
+     * `standalone` is doing the disappearing. A club inside a union does not
+     * have a Spins wallet -- fn_spin_reserve_owner resolves the pool to the
+     * UNION -- so showing one on a club surface would be showing union money
+     * in the club's own wallet, the same mistake rake_treasury guards against.
+     * The database enforces the other half: joining a union empties and
+     * switches off the club's pool row in the same transaction as the join.
+     *
+     * `spinsActive` keeps it off the panel of a club that never turned Spins
+     * on, rather than parking a permanent 0.00 next to real balances.
+     */
+    if (opts.standalone && opts.spinsActive) rows.push('spins_wallet');
   }
 
   return rows;

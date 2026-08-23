@@ -38,6 +38,7 @@ import { formatGameTitle } from '../../utils/formatGameTitle';
 import { formatPopupText } from '../../utils/popupStyle';
 import { reportError } from '../../utils/errorReporter';
 import { busToast } from '../../core/MasterBus';
+import { measureTopChromeBottom, TOP_CHROME_SELECTORS } from './topChrome';
 import './TournamentStartingTicker.css';
 
 /** How far ahead an event counts as "about to start". */
@@ -99,13 +100,28 @@ export function TournamentStartingTicker() {
      Measuring beats hard-coding 56px: three stylesheets declare a
      --header-height (44px in one, 56px in two), the real header grows when its
      content wraps, and a wrong constant shows either a gap or the overlap we
-     are here to remove. Read the rendered header's bottom edge, start there. */
+     are here to remove. Read the rendered header's bottom edge, start there.
+
+     2026-08-23 — MEASURING ONLY THE HEADER BROKE THE "+" ON EVERY TOURNAMENT
+     TABLE. Inside /table/* there is no #global-header: <TablePage> is fixed to
+     the whole viewport and its top chrome is the multi-table tab bar. So the
+     lookup found nothing, headerBottom fell to 0, and this strip — fixed, 34px
+     tall, z-index 9400 — landed exactly on top of a tab bar whose own stacking
+     tops out at z-index 200. The "+" that opens a second table sits 24-30px
+     down, squarely inside that band, so every tap on it hit the ticker's
+     marquee button instead and opened the tournament lobby. Measured on
+     production: elementFromPoint at the button's centre returned
+     .mtt-ticker__track, and Playwright refused the click with
+     "<button class=mtt-ticker__track> ... intercepts pointer events".
+
+     The rule was never "sit under the header", it is "sit under whatever top
+     chrome this route actually has". So measure every candidate and start
+     below the lowest one. A hidden or absent element contributes nothing, so
+     the home page still gets top: 0. */
   const [headerBottom, setHeaderBottom] = useState(0);
   useEffect(() => {
     const measure = () => {
-      const el = document.getElementById('global-header') || document.querySelector('header');
-      setHeaderBottom(el ? Math.max(0, Math.round(el.getBoundingClientRect().bottom)) : 0);
-      return el;
+      setHeaderBottom(measureTopChromeBottom((sel) => document.querySelector(sel)));
     };
     measure();
     window.addEventListener('resize', measure);
@@ -115,16 +131,29 @@ export function TournamentStartingTicker() {
       ro = new ResizeObserver(measure);
     }
 
-    // The header might render slightly after the ticker during initial mount.
-    // Poll briefly to ensure we measure it and attach the observer.
+    /* Observe every candidate, not just the first one found. The tab bar is
+       not a fixture: it appears when the multi-table layer mounts, grows a row
+       when you add a table, and collapses off /table/*. Observing only the
+       element that happened to exist first is how the ticker ends up measured
+       against chrome that is no longer the lowest thing on screen.
+
+       observe() is idempotent per element, so re-attaching on each tick is
+       free and picks up nodes that mount late (the ticker itself only appears
+       when an MTT comes inside the five-minute window, which is usually long
+       after the route did). */
     let attempts = 0;
-    const poll = setInterval(() => {
-      const el = measure();
-      if (el && ro) {
-        ro.observe(el);
-        clearInterval(poll);
+    const attach = () => {
+      measure();
+      if (!ro) return;
+      for (const sel of TOP_CHROME_SELECTORS) {
+        const el = document.querySelector(sel);
+        if (el) ro.observe(el);
       }
-      if (++attempts > 10) clearInterval(poll); // Give up after 1s
+    };
+    attach();
+    const poll = setInterval(() => {
+      attach();
+      if (++attempts > 20) clearInterval(poll); // 2s of settling, then observers carry it
     }, 100);
 
     return () => {

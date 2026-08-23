@@ -68,6 +68,7 @@ interface ColumnDef {
   key: string;
   label: string;
   className?: string;
+  hideOnMobile?: boolean;
   sortable?: boolean;
   sortValue?: (e: LobbyEntry) => number | string;
   render: (e: LobbyEntry, ctx: LobbyRowContext) => React.ReactNode;
@@ -396,7 +397,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_TNAME,
         COL_GTD,
         COL_SPEED,
-        { ...COL_PLAYERS, label: 'Enrolled' },
+        { ...COL_PLAYERS, label: 'Enrolled', hideOnMobile: true },
         COL_STATUS,
       ];
     case 'SPIN':
@@ -563,7 +564,7 @@ export default function LobbyTable({
               return (
                 <th
                   key={col.key}
-                  className={`${col.className || ''}${col.sortable ? ' is-sortable' : ''}${active ? ' is-sorted' : ''}`}
+                  className={`${col.className || ''}${col.sortable ? ' is-sortable' : ''}${active ? ' is-sorted' : ''}${col.hideOnMobile ? ' hide-on-mobile' : ''}`}
                   aria-sort={
                     active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : undefined
                   }
@@ -600,7 +601,10 @@ export default function LobbyTable({
             Array.from({ length: 8 }).map((_, i) => (
               <tr key={`skel-${i}`} className="lt-row lt-row--skeleton" aria-hidden="true">
                 {columns.map((c) => (
-                  <td key={c.key} className={c.className}>
+                  <td
+                    key={c.key}
+                    className={`${c.className || ''} ${c.hideOnMobile ? 'hide-on-mobile' : ''}`}
+                  >
                     <span className="lt-skel" />
                   </td>
                 ))}
@@ -618,7 +622,10 @@ export default function LobbyTable({
                 onDoubleClick={() => onActivate(entry)}
               >
                 {columns.map((col) => (
-                  <td key={col.key} className={col.className}>
+                  <td
+                    key={col.key}
+                    className={`${col.className || ''} ${col.hideOnMobile ? 'hide-on-mobile' : ''}`}
+                  >
                     {col.render(entry, ctx)}
                   </td>
                 ))}

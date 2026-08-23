@@ -11,6 +11,17 @@
 
 set -e
 
+# ── One working tree per agent (rule 1a) ────────────────────────────────────
+# Runs FIRST, for the same reason it runs first on pre-commit: if this push
+# should not be coming from this tree at all, none of the content checks below
+# matter. git-safe-push.sh and the World Hub sync export AGENT_SHARED_CLONE_OK=1
+# because they legitimately push from the one-and-only tree; CI is exempt too.
+#
+# Added 2026-08-23. Commit-only enforcement missed the shape that actually
+# loses work: an agent edits in the shared clone, never commits there, and the
+# next checkout or `git reset --hard` takes the lot with nobody warned.
+bash "$(git rev-parse --show-toplevel)/scripts/guard-shared-clone.sh" push
+
 REMOTE="$1"
 URL="$2"
 FAIL=0

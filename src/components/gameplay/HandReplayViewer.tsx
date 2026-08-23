@@ -100,16 +100,42 @@ export default function HandReplayViewer({
     updateBoard();
   }, [currentStep, hand]);
 
+  /** hand_history.table_id has no FK to `tables` (see loadHand), so the name
+      is fetched separately. A hand whose table has since been removed keeps
+      its replay and simply shows the fallback. */
+  const resolveTableName = async (tableId: string | null | undefined): Promise<string> => {
+    if (!tableId) return 'Table';
+    const { data, error } = await supabase
+      .from('tables')
+      .select('name')
+      .eq('id', tableId)
+      .maybeSingle();
+    if (error) {
+      reportError(error, 'HandReplayViewer.resolveTableName');
+      return 'Table';
+    }
+    return (data as { name?: string } | null)?.name ?? 'Table';
+  };
+
   const loadHand = async () => {
     setLoading(true);
     try {
-      // 2026-08-19: this read `hands`, a table with ZERO rows ever, so hand
-      // replay could never load a hand — it silently rendered nothing. The
-      // server-authoritative engine writes hand_history. Field names differ,
-      // and `table_name` / `blinds` do not exist there, so the table name is
-      // resolved through the FK and blinds are composed from the stored
-      // small/big blind rather than aliased to something that merely looks
-      // right.
+      /* 2026-08-19: this read `hands`, a table with ZERO rows ever, so hand
+         replay could never load a hand — it silently rendered nothing. The
+         server-authoritative engine writes hand_history.
+
+         2026-08-22: that fix said "the table name is resolved through the FK",
+         but hand_history.table_id HAS NO FK, so `tables:table_id ( name )`
+         returned 400 PGRST200 on every call and `if (!error && data)` quietly
+         rendered nothing all over again — the same silent-empty failure, one
+         step further along.
+
+         An FK is the WRONG fix here and was not added. hand_history is 10 GB /
+         1.5M rows and its rows deliberately OUTLIVE the ephemeral `tables` row
+         they reference: a foreign key would assert an invariant this schema
+         does not hold, and ON DELETE CASCADE would erase hand history every
+         time a table closed. The name is resolved with a second, tiny lookup
+         instead. */
       const { data, error } = await supabase
         .from('hand_history')
         .select(
@@ -124,11 +150,13 @@ export default function HandReplayViewer({
                     actions,
                     winners,
                     created_at,
-                    tables:table_id ( name )
+                    table_id
                 `
         )
         .eq('id', handId)
         .maybeSingle();
+
+      if (error) reportError(error, 'HandReplayViewer.loadHand');
 
       if (!error && data) {
         const d = data as any;
@@ -136,7 +164,7 @@ export default function HandReplayViewer({
         const bb = d.big_blind ?? null;
         setHand({
           id: d.id,
-          tableName: d.tables?.name ?? 'Table',
+          tableName: await resolveTableName(d.table_id),
           gameType: d.game_variant,
           blinds: sb != null && bb != null ? `${sb}/${bb}` : '',
           pot: d.pot_size,

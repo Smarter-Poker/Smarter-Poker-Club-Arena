@@ -179,11 +179,13 @@ body {
   color: var(--text-primary);
   background: var(--club-black);
   min-height: 100vh;
+  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   overflow-x: hidden;
 }
 
 #root {
   min-height: 100vh;
+  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   display: flex;
   flex-direction: column;
 }

@@ -7,6 +7,7 @@
 
 .announcements-page {
   min-height: 100vh;
+  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
   /* Reserve the fixed bottom nav this page renders (2026-08-23). The bar is
      out of flow, so whatever it covers is simply unreachable — the token

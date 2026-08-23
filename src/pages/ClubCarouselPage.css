@@ -7,6 +7,7 @@
 
 .club-carousel {
   min-height: 100vh;
+  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   background: url('/images/backgrounds/club-arena-bg.webp') center center / cover no-repeat fixed;
   position: relative;
   overflow: hidden;

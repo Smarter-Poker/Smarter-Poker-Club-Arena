@@ -83,7 +83,7 @@ class HandHistoryServiceClass {
     const { data, error } = await supabase
       .from('hand_history')
       .select(
-        'id, created_at, table_id, hand_number, pot_size, community_cards, community_cards2, players, actions, winners, game_variant, small_blind, big_blind, rake_amount'
+        'id, created_at, table_id, hand_number, pot_size, community_cards, community_cards2, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, hole_cards'
       )
       .eq('id', handId)
       .maybeSingle();
@@ -121,7 +121,7 @@ class HandHistoryServiceClass {
     const { data, error } = await supabase
       .from('hand_history')
       .select(
-        'id, created_at, table_id, hand_number, pot_size, community_cards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount'
+        'id, created_at, table_id, hand_number, pot_size, community_cards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, hole_cards'
       )
       .contains('players', containmentJson)
       .order('created_at', { ascending: false })
@@ -187,6 +187,14 @@ class HandHistoryServiceClass {
     const buttonSeat = (jsonbPlayers.find((p) => p?.isButton)?.seat as number | undefined) ?? 1;
     const playerCount = jsonbPlayers.length || 1;
 
+    /* The hand's hole cards live in their own JSONB column, keyed by user id:
+       { "<uuid>": [{ rank: 'A', suit: 'spades' }, ...] }. See the server's
+       handHistory.ts `hole_cards: holeCardsPayload`. */
+    const holeCardsByUser: Record<string, unknown[]> =
+      row && typeof (row as any).hole_cards === 'object' && (row as any).hole_cards
+        ? ((row as any).hole_cards as Record<string, unknown[]>)
+        : {};
+
     const players: HandPlayer[] = jsonbPlayers.map((p: any): HandPlayer => {
       const uid: string = p?.userId || '';
       const profile = profileMap.get(uid);
@@ -199,7 +207,21 @@ class HandHistoryServiceClass {
         avatar_url: profile?.avatar_url || null,
         position: this.getPositionName(Number(p?.seat) || 0, buttonSeat, playerCount),
         // Only reveal hole cards if it's the requesting user OR cards are already exposed in the JSONB
-        hole_cards: Array.isArray(p?.cards) && (isMe || isWinner) ? p.cards : [],
+        /* 2026-08-23: this read `players[].cards`, which is `[]` on every row
+           in production — the engine writes hole cards to a SEPARATE
+           `hole_cards` column, an object keyed by user id, and that column was
+           not even in the select above. So no hand in history has ever shown a
+           hole card to anybody; the showdown row rendered two grey backs.
+           Prefer the real column, keep the old field as the fallback, and hold
+           the same reveal rule (your own hand, or a hand that got shown). */
+        hole_cards:
+          isMe || isWinner
+            ? Array.isArray(holeCardsByUser[uid]) && holeCardsByUser[uid].length
+              ? holeCardsByUser[uid]
+              : Array.isArray(p?.cards)
+                ? p.cards
+                : []
+            : [],
         final_hand: jsonbWinners.find((w) => w?.userId === uid)?.hand?.name || undefined,
         result: buildResult(uid),
         is_winner: isWinner,

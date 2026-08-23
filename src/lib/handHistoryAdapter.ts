@@ -12,6 +12,7 @@
  */
 import type { HandRecord as ServiceHandRecord } from '../services/HandHistoryService';
 import type { HandRecord as PanelHandRecord } from '../components/table/HandHistoryPanel';
+import { toCardCodes } from '../utils/cardCode';
 
 /**
  * Dan 2026-08-15 — HandRecord adapter (build fix).
@@ -28,10 +29,16 @@ import type { HandRecord as PanelHandRecord } from '../components/table/HandHist
  * positions, hole cards, actions by street, winners, hero result — is real.
  */
 export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): PanelHandRecord {
-  const cardStr = (c: { rank: string; suit: string }) =>
-    `${c.rank}${(c.suit || '').charAt(0).toLowerCase()}`;
-
-  const board = (h.community_cards || []).map(cardStr);
+  /* 2026-08-23: this used to be a local
+   *   `(c: { rank, suit }) => `${c.rank}${c.suit.charAt(0)}``
+   * applied to community_cards, which production stores as STRINGS with the
+   * suit spelled out — ["Jdiamonds","6diamonds","4clubs",...]. `c.rank` was
+   * undefined on every card of every hand, so the panel printed "UNDEFINE"
+   * beside a diamond (the "d" of "undefined"). toCardCode knows every shape
+   * the store holds, including the objects the hole_cards column really does
+   * use, and refuses the literal "undefined" rather than parsing it as a rank.
+   */
+  const board = toCardCodes(h.community_cards);
   // Board is dealt 3/1/1; slice it back into the streets that revealed it.
   const streetCards: Record<string, string[] | undefined> = {
     preflop: undefined,
@@ -80,7 +87,7 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
       seat: p.seat,
       stack: 0, // not stored per hand in hand_history
       position: p.position,
-      holeCards: p.hole_cards?.length ? p.hole_cards.map(cardStr) : undefined,
+      holeCards: toCardCodes(p.hole_cards).length ? toCardCodes(p.hole_cards) : undefined,
     })),
     streets,
     winners: (h.players || [])

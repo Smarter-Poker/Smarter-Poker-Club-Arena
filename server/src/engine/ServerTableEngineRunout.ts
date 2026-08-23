@@ -8,7 +8,7 @@
  * declarations for the hooks each layer calls on the layer below.
  */
 
-import { HandController } from './HandController.js';
+import { HandController, scaleWinnerCentsForRake } from './HandController.js';
 import { HorseLogic, resolveHorseStyle } from './HorseLogic.js';
 import { InsuranceEngine } from './InsuranceEngine.js';
 import { monteCarloEquity } from './MonteCarloEquity.js';
@@ -861,28 +861,24 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     const totalPot = pots.reduce((sum, p) => sum + p.amount, 0);
     const { rake, bbjFee } = this.handController.computeRakeAndBBJ();
     const netPot = Math.max(0, totalPot - rake - bbjFee);
-    const rawTotal = [...rawDistribution.values()].reduce((s, a) => s + a, 0) || 1;
 
-    const totalDistribution = new Map<string, number>();
-    const netCents = Math.round(netPot * 100);
-    let assignedCents = 0;
+    // Scale every winner's pre-rake share down to the post-rake total.
+    //
+    // 2026-08-23: this was a bespoke proportional-scale-plus-repair loop whose
+    // positive drift cent went to the FIRST map entry unconditionally — a
+    // board-0 main-pot winner, exactly the defect scaleWinnerCentsForRake was
+    // extracted and rewritten for in completeHand (see HandController.ts). Two
+    // implementations of the same money math is how one of them stays wrong;
+    // this path now uses the shared, entitlement-capped, regression-tested one.
     const rawEntries = [...rawDistribution.entries()];
-    for (const [pid, amount] of rawEntries) {
-      const cents = Math.round((Math.round(amount * 100) * netCents) / Math.round(rawTotal * 100));
-      totalDistribution.set(pid, cents / 100);
-      assignedCents += cents;
-    }
-    // Repair rounding drift so sum(distribution) === netPot exactly.
-    let remainderCents = netCents - assignedCents;
-    for (let i = 0; i < rawEntries.length && remainderCents !== 0; i++) {
-      const [pid] = rawEntries[i];
-      const step = remainderCents > 0 ? 1 : -1;
-      const cur = Math.round((totalDistribution.get(pid) || 0) * 100);
-      if (cur + step >= 0) {
-        totalDistribution.set(pid, (cur + step) / 100);
-        remainderCents -= step;
-      }
-    }
+    const scaledCents = scaleWinnerCentsForRake(
+      rawEntries.map(([, amount]) => amount),
+      netPot
+    );
+    const totalDistribution = new Map<string, number>();
+    rawEntries.forEach(([pid], i) => {
+      totalDistribution.set(pid, scaledCents[i] / 100);
+    });
 
     // Apply distributions to player stacks
     //

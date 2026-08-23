@@ -71,6 +71,8 @@ import { waitlistService } from '../services/WaitlistService';
 import { roomService, type RoomMessage } from '../services/RoomService';
 import { HydraService } from '../services/HydraService';
 import TableChat, { type ChatMessage } from '../components/table/TableChat';
+import { ChatBubble, bubbleForSeat, useSeatChatBubbles } from '../components/table/ChatBubble';
+import { holeCardCountFor } from '../lib/holeCardCount';
 import { type InsuranceOffer } from '../components/table/InsuranceModal';
 import BadBeatJackpot from '../components/table/BadBeatJackpot';
 import { BBJCelebration } from '../components/table/BBJCelebration';
@@ -80,7 +82,10 @@ import { throwableService, type Throwable, type ThrowEvent } from '../services/T
 import { useTabKeepAlive, workerTimeout, cancelWorkerTimeout } from '../hooks/useTabKeepAlive';
 import { STORAGE_KEYS } from '../lib/storage';
 import StraddleToggle from '../components/table/StraddleToggle';
-import TimeBank from '../components/table/TimeBank';
+/* TimeBank (the floating countdown panel) is no longer mounted - see the note
+   at the Player Seats block. The hero's own seat ring carries the countdown;
+   the panel sat on top of the hole cards. TimeBankStoreModal is a different
+   component and is still imported below. */
 // Phase 1.2 PR-F: top-level disconnect FSM toast
 import DisconnectToast from '../components/table/DisconnectToast';
 // Phase 1.3 PR-C+D: server-rejection toast + auto-snap hint imported below
@@ -3111,6 +3116,22 @@ export default function TablePage({
 
   // FIX-232: Ref for cards_pre_sort to avoid stale closure in hole card callbacks
   const cardsPreSortRef = useRef(v8Settings.cards_pre_sort);
+  /* Dan 2026-08-23: "when you type a message inside the chat, it needs to appear
+     above the avatar as a bubble message for all players to see."
+
+     DERIVED from the chat feed, not a second transport. The realtime listener in
+     useTableChat already delivers every row to every client - the only thing a
+     message was missing was a SEAT, and tableState.players is already
+     seat-ordered (index 0 is seat 1). Broadcasting the same text again so the
+     bubble could have its own channel would have created two sources of truth
+     for one message, and a bubble that could disagree with the panel above it. */
+  const seatOwnerIds = useMemo(
+    () => tableState.players.map((p) => p?.id ?? null),
+    [tableState.players]
+  );
+  const seatChatBubbles = useSeatChatBubbles(chatMessages, seatOwnerIds, {
+    enabled: v8Settings.text_message && !isChatMuted,
+  });
   cardsPreSortRef.current = v8Settings.cards_pre_sort;
 
   // Bible V8 §11.2: Per-game-type theme from Supabase
@@ -5963,11 +5984,17 @@ export default function TablePage({
      * the engine granted the seconds, and the only clock the player could see
      * sat at zero.
      *
-     * Extend for everyone. Double-counting is not a risk: `extendTimer` adds to
-     * the live remainder, and the next engine snapshot reseeds the countdown
-     * from the authoritative `turn_deadline_ms` regardless.
+     * Dan 2026-08-23: "if the time bank is used, it must reset the clock for 20
+     * more seconds." RESET, not extend. `extendTimer` ADDS to the live
+     * remainder, which is the old stacking rule wearing a client-side costume -
+     * a bank pressed with twelve seconds left produced a 32-second clock, and
+     * the ring then disagreed with the engine, which now starts a fresh 20.
+     *
+     * Applies to everyone, not just hero: before 2026-08-21 hero was excluded
+     * outright and the only clock the player could see sat at zero while the
+     * engine had already granted the seconds.
      */
-    extendTimer(seconds);
+    resetTimer(seconds);
 
     // Update the Hero's specific localized UI if they are the one activating it
     if (evtPlayerId === userId) {
@@ -8810,10 +8837,16 @@ export default function TablePage({
     timeRemaining: actionTimeRemaining,
     timerProgress: actionTimerProgress,
     resetTimer,
-    extendTimer,
   } = useTableTimer({
     isActiveTurn: tableState.currentPlayerSeat > 0 && tableState.isHandInProgress,
-    isHeroTurn: isHeroTurnContext && !timeBankActive,
+    /* Dan 2026-08-23: `&& !timeBankActive` used to be here, and it did more harm
+       than the redundant countdown it was suppressing. It made isHeroTurnRef
+       false for the whole of a running bank, so useTableTimer's RAF could never
+       fire onTimeout again - no second bank, no client-side auto-fold fallback,
+       and the urgency state dead - during the exact window a player is closest
+       to timing out. The engine is authoritative on the deadline either way; the
+       client should keep watching it, not look away. */
+    isHeroTurn: isHeroTurnContext,
     isSoundEnabled,
     // Bible V8 §6.1: deadline-driven, server-authoritative. Reset whenever
     // the active seat changes OR the server pushes a new deadline. Without
@@ -8878,16 +8911,30 @@ export default function TablePage({
    */
   const handleActivateTimeBank = useCallback(async () => {
     if (!tableId || !userId || timeBanksRemaining <= 0) return;
+    const result = await GameServerAPI.activateTimeBank(tableId, userId);
+    if (!result?.success) {
+      toast?.error?.(result?.error || 'Could Not Start Your Time Bank');
+      return;
+    }
+    /* Dan 2026-08-23: "it should not take a time bank or add more time until you
+       have truly used your entire 15 seconds." The engine now ARMS a bank
+       pressed while ordinary clock remains and redeems it at expiry, so a press
+       has two successful outcomes and they must not look the same. Nothing has
+       been spent here, and painting a running bank would show the player seconds
+       they do not have.
+
+       The optimistic setTimeBankActive(true) that used to run BEFORE the await
+       is what made that unavoidable - it committed to "a bank is running" before
+       the server had said which of the two happened. */
+    if ((result as { armed?: boolean }).armed) {
+      toast?.info?.('Time Bank Armed. It Starts When Your Clock Runs Out');
+      return;
+    }
     setTimeBankActive(true);
     // ANIMATION/SOUND AUDIT 2026-08-19: was playChips (a wager sound) — the
     // dedicated time-bank cue existed and was only wired to the REMOTE event.
     soundService.playTimeBankActivated();
-    const result = await GameServerAPI.activateTimeBank(tableId, userId);
-    if (!result?.success) {
-      setTimeBankActive(false);
-      toast?.error?.(result?.error || 'Could not start your time bank');
-    }
-  }, [tableId, userId, timeBanksRemaining]);
+  }, [tableId, userId, timeBanksRemaining, toast]);
 
   /**
    * Buy one time-bank extension with diamonds.
@@ -10499,39 +10546,33 @@ export default function TablePage({
             )}
           </div>
 
-          {/* AUDIT FIX 2026-07-19: the TimeBank "engaging" panel (extra-time
-              countdown + activate/buy) was imported but never mounted, so when
-              the primary timer expired the time bank had no distinct visual and
-              its seconds-remaining were invisible. Render it as a fixed overlay
-              above the action area while active/engaging. The banks-remaining
-              counter (TimebankCounter) is separate and already shows. */}
-          {timeBankActive && (
-            <div
-              style={{
-                /* Dan 2026-08-18 (screenshot review): bottom 22% landed the
-                   countdown panel squarely ON the hero's avatar and hole
-                   cards. Anchored just above the action bar instead, where
-                   nothing else lives. */
-                position: 'fixed',
-                bottom: 'calc(150px + env(safe-area-inset-bottom, 0px))',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                zIndex: 60,
-                pointerEvents: 'none',
-              }}
-            >
-              <TimeBank
-                isVisible={true}
-                isActive={timeBankActive}
-                banksRemaining={timeBanksRemaining}
-                totalTime={timeBankGrantedSeconds}
-                timeRemaining={timeBankTimeRemaining}
-                onActivate={handleActivateTimeBank}
-                onBuyMore={handleBuyTimeBank}
-                diamondCost={timeBankDiamondCost}
-              />
-            </div>
-          )}
+          {/* THE FLOATING TIME BANK PANEL IS GONE. Do not re-add it.
+              ─────────────────────────────────────────────────────────────────
+              Dan 2026-08-23, two complaints that turned out to be one object:
+              "when you use a time bank, it gives you this generic pop up,
+              instead of resetting the countdown clock on the hero's box", and
+              "when you use a time bank, it makes your cards disappear or not
+              appear for a couple hands."
+
+              This panel was both. It was a fixed overlay at
+              `bottom: calc(150px + safe-area)`, which on a 375x812 phone is the
+              hero seat band - its own comment conceded the previous position
+              landed "squarely ON the hero's avatar and hole cards" and moved it
+              105px, which was not far enough. `pointerEvents: none` meant it
+              never blocked a tap, so the cards were not gone, they were
+              underneath it. And because `timeBankActive` has only one working
+              clear path, it could stay latched across hands - which is exactly
+              "for a couple hands".
+
+              The hero's own seat ring is the right surface and was already
+              wired for this: SeatSlot takes turnDeadlineMs / turnStartTimeMs
+              from the engine and already handles a bank-extended turn (yellow
+              owns the first 15 seconds, the borrowed seconds run red). A second
+              countdown floating over the felt was never additional information,
+              only a duplicate placed on top of the cards.
+
+              The banks-remaining counter (TimebankCounter) is a separate
+              component and still shows. */}
 
           {/* Player Seats */}
           {seatPositions.map((pos, idx) => {
@@ -10765,6 +10806,12 @@ export default function TablePage({
                   showHUD={userSettings.showHUD && !!player && !player.isHero}
                   deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                   cardBack={activeCardBack}
+                  /* Dan 2026-08-23: an opponent's hidden hand drew exactly two
+                     backs on every variant, so a PLO6 seat looked like Hold'em.
+                     The seat cannot work this out for itself - a hidden hand's
+                     holeCards array is empty, so there is nothing there to
+                     count. Only the table knows the variant. */
+                  holeCardCount={holeCardCountFor(tableState.gameType)}
                   showStackInBB={v8Settings.show_stack_in_bb}
                   showAvatar={v8Settings.show_avatars}
                   showBadges={v8Settings.show_badges}
@@ -10832,6 +10879,26 @@ export default function TablePage({
                   handNumber={tableState.handNumber ?? 0}
                   playSounds={ambientSoundsAllowed}
                 />
+
+                {/* Chat bubble over this seat. Mounted as a SIBLING of the seat
+                    rather than inside it: `.seat-wrapper` is already absolutely
+                    positioned, so the bubble follows the seat with no coordinate
+                    maths and SeatSlot needs no knowledge of chat at all. */}
+                {(() => {
+                  const bubble = bubbleForSeat(seatChatBubbles, seatNumber);
+                  if (!bubble) return null;
+                  return (
+                    <ChatBubble
+                      text={bubble.content}
+                      playerName={bubble.playerName}
+                      isOwn={bubble.playerId === userId}
+                      /* Top-arc seats have the BBJ banner directly overhead, so
+                         their bubble drops below the plate instead of colliding
+                         with it. Same threshold `.seat-wrapper--top` uses. */
+                      placement={pos.y < 22 ? 'below' : 'above'}
+                    />
+                  );
+                })()}
 
                 {/* FIX 89: All-In Equity Overlay — shown per seat during all-in */}
                 {allInEquities.length > 0 &&

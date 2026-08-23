@@ -321,7 +321,7 @@ export async function ensureHorseComplete(row: HorseRow): Promise<string[]> {
     if (error) throw new Error(`profile update: ${error.message}`);
   }
 
-  // 2. ensure social graph identity
+  // 2. ensure social graph identity: the row that grants the ability to post
   const { data: author, error: authorErr } = await (async () => {
     // Add enough padding so the primitive test regex (600 chars) doesn't false-flag
     // the avatar_url alias as an avatar_url write in the profiles update above.

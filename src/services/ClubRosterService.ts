@@ -60,6 +60,7 @@ export interface RosterMember {
   promo_wallet: number;
   /** Total rake this member has generated. */
   total_fees: number;
+  downline_fees: number;
   total_hands: number;
   downline_direct: number;
   downline_total: number;
@@ -90,6 +91,7 @@ function mapRosterRow(row: Record<string, unknown>): RosterMember {
     agent_wallet: num(row.agent_wallet),
     promo_wallet: num(row.promo_wallet),
     total_fees: num(row.total_fees),
+    downline_fees: num(row.downline_fees),
     total_hands: num(row.total_hands),
     downline_direct: num(row.downline_direct),
     downline_total: num(row.downline_total),

@@ -139,12 +139,42 @@ sw.addEventListener('fetch', (event) => {
       url.pathname.endsWith('.html') ||
       url.pathname.endsWith('/') ||
       url.pathname === '/hub/club-arena' ||
-      (url.pathname.startsWith('/hub/club-arena/') && !url.pathname.includes('/assets/')))) {
+      (url.pathname.startsWith('/hub/club-arena/') &&
+        !url.pathname.includes('/assets/') &&
+        !url.pathname.includes('/fonts/')))) {
     // Let the browser handle navigation requests normally (network-first)
     return;
   }
 
-  const isHashedAsset = /[-\.][a-zA-Z0-9_]{4,}\.(js|css)$/.test(url.pathname);
+  // WHAT COUNTS AS AN IMMUTABLE ASSET — path, not filename shape.
+  //
+  // 2026-08-23: this was /[-.][a-zA-Z0-9_]{4,}\.(js|css)$/ and it matched NONE
+  // of the files this build produces. vite.config.ts emits
+  // `assets/[name]-[hash]-v6.js`, so every chunk ends `-v6.js`; the regex
+  // needed four or more characters between the last separator and the
+  // extension and `v6` is two. Measured against the live bundle:
+  //
+  //   index-jBJgC_ty-v6.js        false
+  //   vendor-react-BPB2zS-3-v6.js false
+  //   index-C3-fYKPl-v6.css       false
+  //   TablePage-Iv6ZwCFl-v6.js    false
+  //
+  // So the cache-first branch below was dead for every real asset. The
+  // versioned cache was filled at install by PRECACHE_URLS and then never
+  // read: chunks went to the network on every load, the offline app shell
+  // booted to a shell whose scripts could not load, and the 503
+  // chunk-load-failed recovery path never ran. The `-v6` suffix has been
+  // there since long before the precache was added, so this never worked.
+  //
+  // Matching on the DIRECTORY is precise and cannot drift with the filename
+  // template: /assets/ and /fonts/ are exactly the two directories the
+  // precache scanner collects from (scripts/optimize-dist-media.mjs), and
+  // both are content-hashed and served immutable. sw-bus.js itself sits at
+  // the club-arena root, so it is not matched here and keeps revalidating.
+  const isHashedAsset =
+    (url.pathname.startsWith('/hub/club-arena/assets/') ||
+      url.pathname.startsWith('/hub/club-arena/fonts/')) &&
+    /\.(js|css)$/.test(url.pathname);
   const isImage = isMedia;
 
   if (isHashedAsset) {

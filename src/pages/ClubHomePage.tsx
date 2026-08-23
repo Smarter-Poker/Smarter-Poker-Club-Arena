@@ -1235,7 +1235,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
            by realtime - the two lists disagreeing, which is precisely what
            that rule exists to prevent. No such row exists today; this keeps
            it that way. */
-        .not('status', 'in', '("closed","deleted")')
+        .not('status', 'in', ['closed', 'deleted'])
         .is('tournament_id', null)
         .order('created_at', { ascending: false })
         .limit(QUERY_LIMITS.LIST);
@@ -1316,7 +1316,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       lobbyPainted = true;
 
       const tableData = tableResult.data;
-      if (tableData) setTables(tableData);
+      if (!tableResult.error && tableData) setTables(tableData);
       const tableCapped = (tableData?.length ?? 0) >= QUERY_LIMITS.LIST;
 
       // SWR: cache club + tables for instant display on revisit
@@ -1326,18 +1326,22 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       hasDataRef.current = true;
 
       // Merge club tournaments + XMTT tournaments
-      const allTournaments: TournamentData[] = clubTournamentResult.data
-        ? [...clubTournamentResult.data]
-        : [];
-      if (xmttResults.length > 0 && xmttResults[0]?.data) {
-        const existingIds = new Set(allTournaments.map((t) => t.id));
-        for (const xmtt of xmttResults[0].data) {
-          if (!existingIds.has(xmtt.id)) {
-            allTournaments.push(xmtt);
+      const tournamentError =
+        clubTournamentResult.error || (xmttResults.length > 0 && xmttResults[0].error);
+      if (!tournamentError) {
+        const allTournaments: TournamentData[] = clubTournamentResult.data
+          ? [...clubTournamentResult.data]
+          : [];
+        if (xmttResults.length > 0 && xmttResults[0]?.data) {
+          const existingIds = new Set(allTournaments.map((t) => t.id));
+          for (const xmtt of xmttResults[0].data) {
+            if (!existingIds.has(xmtt.id)) {
+              allTournaments.push(xmtt);
+            }
           }
         }
+        setTournaments(allTournaments);
       }
-      setTournaments(allTournaments);
       setCountsCapped(
         tableCapped ||
           (clubTournamentResult.data?.length ?? 0) >= QUERY_LIMITS.LIST ||
@@ -1577,7 +1581,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
     const stillEnterable = (t: TournamentData) => {
       const status = String(t.status).toUpperCase();
-      if (status === 'REGISTERING') return true;
+      if (['REGISTERING', 'LATE_REG', 'LATE_REGISTRATION', 'STARTING_SOON'].includes(status))
+        return true;
       if (status === 'RUNNING') {
         const levels = Number(t.late_reg_levels ?? 0);
         if (levels > 0) return Number(t.current_level ?? 0) <= levels;

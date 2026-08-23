@@ -67,6 +67,6 @@ describe('list caps are visible, never silently wrong', () => {
 describe('the fetch and the realtime admission rule agree', () => {
   it('excludes the same dead statuses on both paths', () => {
     // belongsInTableList drops 'closed' AND 'deleted'; so must the query.
-    expect(src).toMatch(/\.not\('status', 'in', '\("closed","deleted"\)'\)/);
+    expect(src).toMatch(/\.not\('status',\s*'in',\s*\[\s*'closed',\s*'deleted'\s*\]\)/);
   });
 });

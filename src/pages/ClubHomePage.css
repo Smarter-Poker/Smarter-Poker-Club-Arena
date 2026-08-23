@@ -507,10 +507,11 @@
 }
 
 .game-bar__types {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
+  flex-wrap: wrap;
   align-items: center;
   gap: 3px;
   overflow: visible;
@@ -518,8 +519,8 @@
 }
 
 .game-bar__type {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 auto;
+  min-width: 60px;
   display: flex;
   align-items: center;
   justify-content: center;

@@ -123,14 +123,31 @@
 /* ── Main Grid ── */
 .bdt-main-grid {
   display: grid;
-  grid-template-columns: 1fr 380px;
+  /* E2E 2026-08-23: bare 1fr tracks inherit the log lines' min-content width,
+     which forced every panel to ~1000px and clipped the page on phones.
+     minmax(0, 1fr) lets the track shrink; the log scrolls inside itself. */
+  grid-template-columns: minmax(0, 1fr) 380px;
   gap: 16px;
 }
 
 @media (max-width: 900px) {
   .bdt-main-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.bdt-panel {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.bdt-right-col {
+  min-width: 0;
+}
+
+.bdt-log-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 @media (max-width: 768px) {

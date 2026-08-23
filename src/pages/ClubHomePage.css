@@ -1750,3 +1750,19 @@
     padding-right: 0 !important;
   }
 }
+
+/* E2E 2026-08-23: the level badge row overflowed the club card at <=480px
+   (badge measured right:407 in a 390px viewport). Let the row wrap and the
+   badge shrink instead of clipping. */
+@media (max-width: 480px) {
+  .lobby-club__level {
+    flex-wrap: wrap;
+  }
+  .club-level-badge {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+  .club-level-badge__tier {
+    white-space: normal;
+  }
+}

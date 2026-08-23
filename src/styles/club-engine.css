@@ -946,3 +946,29 @@ textarea:focus-visible,
     background-position: 200% 0;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   MOBILE — NEVER LET A TAP ZOOM THE PAGE (2026-08-23)
+   ═══════════════════════════════════════════════════════════════════════════════
+   iOS Safari zooms the whole viewport when a text field is focused whose
+   font-size is under 16px, and it does NOT zoom back out when the field
+   blurs. The page is then left panned and oversized, which reads exactly like
+   "the app broke" — and the viewport meta here is `width=device-width,
+   initial-scale=1` with no `maximum-scale`, deliberately (locking zoom out
+   would fix the symptom by removing an accessibility feature).
+
+   55 input rules across the app set 0.8-0.9rem, so a tap on the friends
+   search, the members search, the stake fields or any club form triggered it.
+   16px is the exact threshold, so this is the smallest change that ends the
+   behaviour, and it applies ONLY at phone width — desktop keeps its type
+   scale untouched.
+
+   Excluded: checkbox, radio and range have no text to read and no zoom
+   behaviour, and forcing a font-size on them can alter their box metrics. */
+@media (max-width: 600px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}

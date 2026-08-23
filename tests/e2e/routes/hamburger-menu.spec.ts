@@ -305,25 +305,14 @@ test.describe('Hamburger Menu — Log Out', () => {
   });
 });
 
-test.describe('Hamburger Menu — Club Arena Lobby (ClubCarouselPage)', () => {
-  test('should open hamburger menu from the ≡ button on /clubs', async ({ page }) => {
-    await navigateAndWait(page, '/clubs');
-
-    /* This asserted `button.header__menu`, on the premise that the lobby has
-       its OWN ≡ button. It does not, and has not for some time: /clubs renders
-       the shared GlobalHeader, whose hamburger is
-       `aria-label="Open Menu"` + a CSS-module class. `.header__menu` now lives
-       only in ClubCarouselPage.css, matching nothing.
-
-       The old code ended in `else { test.skip() }`, so the button vanishing —
-       the exact regression this test exists to catch — retired the test
-       instead of failing it. */
-    if (!(await openMenuOrSkip(page))) return;
-
-    const gameModes = page.locator('text=Game Modes');
-    await expect(gameModes).toBeVisible({ timeout: 5000 });
-  });
-});
+/* REMOVED 2026-08-23: "Hamburger Menu - Club Arena Lobby (ClubCarouselPage)".
+   /clubs was a second, older lobby that Dan asked to be made unreachable - it
+   is now a redirect to the real lobby on `/`, and the component is deleted. A
+   spec that navigates to /clubs to prove the shared header works there would
+   now just be testing the redirect twice over: the '/' cases above already
+   cover that header, because it is the same GlobalHeader. See
+   tests/unit/deadLobbyIsGone.test.ts for the guard that keeps the old lobby
+   from coming back. */
 
 test.describe('Hamburger Menu — Version Footer', () => {
   test('should display version information', async ({ page }) => {

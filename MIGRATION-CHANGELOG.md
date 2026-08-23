@@ -13276,3 +13276,60 @@ earlier rule that union money must never appear on a club surface — so this is
 one flag, not a new concept.
 
 14 new tests. 289 files / 3,561 green.
+
+## Cowork session 2026-08-23 (15) — EVERY CLUB WALLET CLOSES INTO THE MAIN BANK
+
+Dan: "IF A CLUB HAS SPINS, BBJ, BACK UP BBJ OR PROMO FUNDS, ALL CHIPS IN THE
+WALLETS GO TO THE 'MAIN BANK' AND CLOSED WHEN A CLUB JOINS A UNION. ALL THOSE
+FUNDS ARE GIVEN TO THE CLUB TO KEEP OR DISBURSE AT THEIR OWN DISCRETION."
+
+**This overrules a decision I made an hour earlier.** The first union-join
+wind-down sent the Spins _seed_ back to the club but the remaining _float_ to
+the union, reasoning that the float was player money and the union now runs
+Spins for those players. Wrong: the club funded the wallet, the club carried the
+variance, the club keeps the balance. All of it.
+
+**Promo lives in two places** and both are swept — `bbj_pools.promo_balance` is
+the jackpot's own promo slice, `clubs.promo_balance` is the club's separate
+promo float. Sweeping one and not the other would have looked like it worked.
+
+**The trap this nearly walked into.** `fn_bbj_conservation_check` computes
+`gap = inflow − outflow − balances`, healthy only while that gap stays within
+1.00 of a recorded baseline. Taking money OUT of `bbj_pools` shrinks `balances`
+and pushes the gap up by exactly the amount swept — turning a correct transfer
+into a red money alarm. The check already counts `bbj_promo_sweep` rows in
+`chip_transactions` as OUTFLOW, which is precisely what this is, so the sweep is
+booked that way and the gap does not move.
+
+**And it surfaced something that is not mine.** The first attempt asserted the
+check was `healthy` and the whole migration rolled back — because it _already
+is not_. With nothing of this work applied, drift from the 2026-08-19 baseline
+was **−226.65 against a tolerance of 1.00**. That baseline's own note says the
+selftest "alerts on MOVEMENT from this baseline, which is what indicates new
+loss", so something has been quietly alerting. It predates all of this and needs
+its own investigation. The assertion was rewritten to measure the gap _before
+and after this transaction only_ — blocking a correct transfer on an unrelated
+fault would be the wrong call, adding to it would be worse, and that test is
+what tells the two apart.
+
+**Play moves, money does not follow it.** The club's BBJ pool is retired and
+pointed at the union's via `merged_into_pool_id`, because that is where its
+players now play. The balance still goes to the club. The ledger note says so
+explicitly, so nobody later reads the merge pointer as a money movement.
+
+Backfill closed **Club JAQK's 28,742.48 promo float** into its main bank
+(1,023,075.23 → 1,051,817.71). Its BBJ had already been retired into the union
+pool by an older manual step; that is history and was left alone rather than
+unwound out of a live jackpot players are now playing for.
+
+Verified by a rolled-back probe: a club holding all four wallets — 2,600 Spins
+including a 2,000 seed, 1,200 BBJ, 300 backup, 90 jackpot promo, 750 club promo
+— joined a union, its main bank went 8,000 → 12,940, the union received
+nothing, and the BBJ gap did not move across the join.
+
+One probe failure worth recording: the first version measured the gap before
+inserting its own synthetic BBJ pool, so it charged the test for conjuring 1,590
+of jackpot money with no matching contributions. The fixture was wrong, not the
+code — but it is exactly the shape of mistake that would hide a real leak.
+
+10 new tests. 290 files / 3,571 green.

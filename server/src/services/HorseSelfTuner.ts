@@ -499,6 +499,8 @@ const RUN_HOUR_UTC = 8;
 const CHECK_INTERVAL_MS = 10 * 60 * 1000;
 /** Hours after RUN_HOUR_UTC during which a missed run is still picked up. */
 const TUNER_CATCHUP_HOURS = 3;
+/** Settle time before the boot check. */
+const TUNER_BOOT_DELAY_MS = 120 * 1000;
 // V12.3: the window is now HONEST. It was declared as 7 days while
 // MAX_HANDS_TO_STUDY capped the read at 16000 rows — and production writes
 // ~5000 hands an HOUR, so the "7-day study" was really the newest ~3 hours,
@@ -514,21 +516,49 @@ let checkTimer: NodeJS.Timeout | null = null;
 let lastRunDate: string | null = null;
 let running = false;
 
+/**
+ * V13.1 — the same boot-check the league needed, for the same reason: an
+ * interval is reset by every restart, so on a night of frequent deploys the
+ * tick never arrives. The DB is the authority on whether tonight already ran,
+ * because `lastRunDate` is empty again after every restart.
+ */
+async function alreadyTunedToday(date: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from('horse_self_tune_log')
+      .select('horse_id')
+      .eq('run_date', date)
+      .limit(1);
+    if (error) throw new Error(error.message);
+    return (data?.length ?? 0) > 0;
+  } catch (err) {
+    // A failed lookup must not silently skip the night. The audit rows upsert
+    // on (horse_id, run_date), so a duplicate run is harmless.
+    reportError(err, 'HorseSelfTuner.alreadyTunedToday');
+    return false;
+  }
+}
+
+async function maybeRunSelfTune(): Promise<void> {
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const hour = now.getUTCHours();
+  const inWindow = hour >= RUN_HOUR_UTC && hour < RUN_HOUR_UTC + TUNER_CATCHUP_HOURS;
+  if (!inWindow || running || lastRunDate === today) return;
+  if (await alreadyTunedToday(today)) {
+    lastRunDate = today;
+    return;
+  }
+  lastRunDate = today;
+  await runSelfTune(today);
+}
+
 export function startHorseSelfTuner(): void {
   if (checkTimer) return;
-  checkTimer = setInterval(() => {
-    const now = new Date();
-    const today = now.toISOString().slice(0, 10);
-    // V13: same catch-up as the league — a restart late in the window used to
-    // skip the night entirely, silently.
-    const hour = now.getUTCHours();
-    const inWindow = hour >= RUN_HOUR_UTC && hour < RUN_HOUR_UTC + TUNER_CATCHUP_HOURS;
-    if (inWindow && lastRunDate !== today && !running) {
-      lastRunDate = today;
-      void runSelfTune(today);
-    }
-  }, CHECK_INTERVAL_MS);
+  checkTimer = setInterval(() => void maybeRunSelfTune(), CHECK_INTERVAL_MS);
   checkTimer.unref?.();
+  const boot = setTimeout(() => void maybeRunSelfTune(), TUNER_BOOT_DELAY_MS);
+  boot.unref?.();
 }
 
 export function stopHorseSelfTuner(): void {

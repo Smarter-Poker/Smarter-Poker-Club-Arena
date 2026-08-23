@@ -13195,3 +13195,59 @@ same commit that replaced the behaviour.
 
 18 new tests pinning the SQL rule and the TypeScript mirror to the same numbers.
 287 files / 3,531 green.
+
+## Cowork session 2026-08-23 (14) — THE SPINS WALLET, AND WHAT HAPPENS WHEN A CLUB JOINS A UNION
+
+Dan: "ADD THE SPINS WALLET TO THE UNION, AND CLUBS WHEN THEY ENABLE SPINS. IF A
+CLUB JOINS A UNION, THAT WALLET MUST DISAPPEAR."
+
+**Two pots that looked like one.** The union dashboard already carried a tile
+called "Spin Reserve" — and it does not show this wallet. That one reads
+`union_wallets.spin_reserve_wallet`: operator capital earmarked for Spins but
+**not yet deployed**. The migration that created it says so outright: "The
+DEPLOYED reserve is `spin_bonus_pools.balance` — this wallet holds only what is
+NOT currently in the pool, so the two never double-count." So the live float
+every multiplier is actually paid from appeared on **no wallet surface in the
+entire product**. Both tiles now sit side by side, in both union tabs, and the
+comment between them says which is which.
+
+Clubs get a "Spins Wallet" row in `DynamicWallet`, for club-bank staff only,
+and only when they have actually switched Spins on — no permanent 0.00 parked
+next to real balances.
+
+**The disappearing act is a data problem before it is a UI one.**
+`fn_spin_reserve_owner` resolves `COALESCE(clubs.union_id, club_id)`. The
+instant `clubs.union_id` is written, the club's own `spin_bonus_pools` row
+becomes unreachable through every code path in the platform — not deleted, not
+flagged, just orphaned, with its balance stranded, its seed no longer
+repayable, and `is_active` still true. Hiding the row in the UI would have left
+the money there. Neither join path knew the pool existed.
+
+So the wind-down is a **trigger on `clubs.union_id`**, not a patch to the two
+join routes: a third join path added later would reintroduce the leak, and the
+money must move in the _same transaction_ as the join — a club half-joined with
+its float in limbo is the worst of both states.
+
+Where the money goes: **the seed returns to the club** (its own capital, lent
+to its own pool — joining a union is not a reason to forfeit it), and **the
+remaining float goes to the union's pool** (player money, and the union now
+runs Spins for those players). It arrives as a `merge` — a ledger kind that had
+existed unused since the pool was first built.
+
+One guess made deliberately: if the seed has no recorded source wallet the
+repayment plan normally refuses to move it, because guessing which _entity_
+owns money is not a machine's job. Here the entity is not in doubt — it is this
+club — only which of its own wallets, so it goes to `chip_treasury` and the
+ledger says why.
+
+Verified by a rolled-back probe: a standalone club activated with a 2,000 seed
+and built a 600 float, then joined. Seed home to the treasury, 600 absorbed by
+the union, club row emptied and switched off, owner lookup moved to the union,
+and the platform total conserved to the chip. A backfill wound down any club
+that had already joined while holding a pool.
+
+The client half follows the same law `rake_treasury` already used — Dan's own
+earlier rule that union money must never appear on a club surface — so this is
+one flag, not a new concept.
+
+14 new tests. 289 files / 3,561 green.

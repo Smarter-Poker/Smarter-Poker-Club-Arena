@@ -64,8 +64,37 @@ const LIVE_STATUSES = ['REGISTERING', 'RUNNING', 'COMPLETING'];
 
 /** How far behind `now` a scheduled time still spawns (boot catch-up). */
 export const TIMED_WINDOW_PAST_MS = 5 * 60 * 1000;
-/** How far ahead of `now` an instance is created so it appears in the lobby. */
-export const TIMED_WINDOW_AHEAD_MS = 30 * 60 * 1000;
+/**
+ * How far ahead of `now` an instance is created so it appears in the lobby.
+ *
+ * WAS 30 MINUTES, AND THAT IS WHY THE BOARD LOOKED EMPTY (Dan, 2026-08-23:
+ * "there are currently no mtt's built, scheduled or running"). Thirty-eight
+ * schedules were live and firing exactly on time, but each event only existed
+ * for the half hour before it started — and since a full field starts on the
+ * minute and plays out fast, a player looking at the lobby at any given
+ * moment saw two joinable MTTs out of thirty-eight schedules. The schedule
+ * was real; the LOBBY was empty, which for a player is the same thing.
+ *
+ * A day's look-ahead publishes the whole card the way a real room does:
+ * tomorrow's events are on the board tonight, with their buy-ins, guarantees
+ * and start times, and a player can register whenever they like. The lobby's
+ * own display window is 72 hours, so 24 fits inside what the UI already
+ * shows, and `spawnAheadMinutes` still overrides per schedule (the Sunday
+ * Major uses a week so its satellites can resolve it all week).
+ */
+export const TIMED_WINDOW_AHEAD_MS = 24 * 60 * 60 * 1000;
+/**
+ * Horses are seeded only when the start is this close.
+ *
+ * Seeding at spawn was harmless at a 30-minute look-ahead and is actively
+ * harmful at 24 hours: a horse registered into tomorrow's event is a horse
+ * that cannot deal a cash table or fill a spin today, and the pool is
+ * finite. Events therefore open EMPTY and stay genuinely open for humans;
+ * GameServer's past-start top-up fills whatever is short the moment the
+ * clock strikes, which is the same mechanism that already rescues every
+ * short field.
+ */
+export const HORSE_SEED_WITHIN_MS = 15 * 60 * 1000;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PURE SCHEDULING LOGIC — exported so the matching rules are testable with no DB
@@ -238,7 +267,10 @@ export const SCHEDULE_BLIND_PRESETS: Record<string, Array<Record<string, number>
 SCHEDULE_BLIND_PRESETS.DEEP = SCHEDULE_BLIND_PRESETS.SLOW;
 
 /** Named payout presets, resolvable as `payoutPreset`. */
-export const SCHEDULE_PAYOUT_PRESETS: Record<string, Array<{ place: number; percentage: number }>> = {
+export const SCHEDULE_PAYOUT_PRESETS: Record<
+  string,
+  Array<{ place: number; percentage: number }>
+> = {
   THREE: [
     { place: 1, percentage: 50 },
     { place: 2, percentage: 30 },
@@ -525,18 +557,27 @@ export class ScheduledTournamentService {
       );
     }
 
-    // Horse seeding — same money-correct path the recurring service uses.
+    // Horse seeding — same money-correct path the recurring service uses,
+    // but ONLY for an event that is about to start. An event published a day
+    // ahead opens empty and stays open: seeding it now would lock horses out
+    // of today's games for a tournament that does not begin until tomorrow,
+    // and would also present a "full" board to the humans it is meant for.
+    // GameServer's past-start top-up fills any short field on the clock.
     const minPlayers = Number(row.min_players) || 3;
     const horsesRaw = Number((cfg as Record<string, unknown>).horsesToRegister);
     const horses =
       Number.isFinite(horsesRaw) && horsesRaw >= 0 ? Math.floor(horsesRaw) : minPlayers;
+    const startsWithinMs = startTime.getTime() - Date.now();
+    const seedNow = horses > 0 && startsWithinMs <= HORSE_SEED_WITHIN_MS;
     let seeded = 0;
-    if (horses > 0) {
+    if (seedNow) {
       seeded = await this.horseSeeder.topUpWithHorses(created.id, horses);
     }
 
     console.log(
-      `[ScheduledTournaments] Spawned "${row.name}" (${spawnKey}) start ${startTime.toISOString()} — ${seeded} horse(s) seeded`
+      `[ScheduledTournaments] Spawned "${row.name}" (${spawnKey}) start ${startTime.toISOString()} — ${
+        seedNow ? `${seeded} horse(s) seeded` : 'open for registration, horses join at start'
+      }`
     );
   }
 
@@ -623,12 +664,14 @@ export class ScheduledTournamentService {
     // full structure arrays in every config blob.
     const blindPreset = SCHEDULE_BLIND_PRESETS[String(cfg.blindPreset ?? '').toUpperCase()];
     const payoutPreset = SCHEDULE_PAYOUT_PRESETS[String(cfg.payoutPreset ?? '').toUpperCase()];
-    const blinds = Array.isArray(cfg.blindStructure) && cfg.blindStructure.length > 0
-      ? cfg.blindStructure
-      : blindPreset ?? [];
-    const payouts = Array.isArray(cfg.payoutStructure) && cfg.payoutStructure.length > 0
-      ? cfg.payoutStructure
-      : payoutPreset ?? [];
+    const blinds =
+      Array.isArray(cfg.blindStructure) && cfg.blindStructure.length > 0
+        ? cfg.blindStructure
+        : (blindPreset ?? []);
+    const payouts =
+      Array.isArray(cfg.payoutStructure) && cfg.payoutStructure.length > 0
+        ? cfg.payoutStructure
+        : (payoutPreset ?? []);
     if (blinds.length === 0 || payouts.length === 0) {
       reportError(
         new Error(
@@ -647,12 +690,8 @@ export class ScheduledTournamentService {
     const buyInAmount = isSpin ? buyIn : split.prize;
     const buyInFee = isSpin ? 0 : split.fee;
 
-    const maxPlayers =
-      clampInt(cfg.maxPlayers, 2, 10000, 0) || (isSpin ? 3 : isSng ? 6 : 100);
-    const minPlayers = Math.min(
-      Math.max(clampInt(cfg.minPlayers, 2, 10000, 3), 2),
-      maxPlayers
-    );
+    const maxPlayers = clampInt(cfg.maxPlayers, 2, 10000, 0) || (isSpin ? 3 : isSng ? 6 : 100);
+    const minPlayers = Math.min(Math.max(clampInt(cfg.minPlayers, 2, 10000, 3), 2), maxPlayers);
 
     // Bounty head: absolute bountyAmount wins; else the recurring service's
     // percent-of-total convention (default 30), never exceeding the prize half.
@@ -663,10 +702,7 @@ export class ScheduledTournamentService {
         bountyAmount = Math.min(split.prize, absolute);
       } else {
         const pct = Number(cfg.bountyPercent) || 30;
-        bountyAmount = Math.min(
-          split.prize,
-          Math.max(0, Math.round((split.total * pct) / 100))
-        );
+        bountyAmount = Math.min(split.prize, Math.max(0, Math.round((split.total * pct) / 100)));
       }
       if (bountyAmount <= 0) {
         reportError(
@@ -680,8 +716,10 @@ export class ScheduledTournamentService {
     }
     // Mystery range: config carries MULTIPLIERS, the columns store MONEY
     // (multiplier x head) — the 2026-08-21 advertised-range convention.
-    const mbMinMult = Number(cfg.mysteryBountyMin) > 0 ? Number(cfg.mysteryBountyMin) : MYSTERY_MIN_MULT;
-    const mbMaxMult = Number(cfg.mysteryBountyMax) > 0 ? Number(cfg.mysteryBountyMax) : MYSTERY_MAX_MULT;
+    const mbMinMult =
+      Number(cfg.mysteryBountyMin) > 0 ? Number(cfg.mysteryBountyMin) : MYSTERY_MIN_MULT;
+    const mbMaxMult =
+      Number(cfg.mysteryBountyMax) > 0 ? Number(cfg.mysteryBountyMax) : MYSTERY_MAX_MULT;
     const mysteryMin =
       type === 'mystery_bounty' ? Math.round(bountyAmount * mbMinMult * 100) / 100 : 0;
     const mysteryMax =
@@ -707,8 +745,7 @@ export class ScheduledTournamentService {
 
     const isRebuy = asBool(cfg.isRebuy) || asBool(cfg.rebuy);
     const addOn = asBool(cfg.addOnAvailable) || asBool(cfg.addOn);
-    const lateRegLevels =
-      isSng || isSpin ? 0 : clampInt(cfg.lateRegistrationLevels, 0, 100, 8);
+    const lateRegLevels = isSng || isSpin ? 0 : clampInt(cfg.lateRegistrationLevels, 0, 100, 8);
 
     const restartEveryRaw = Number(cfg.restartEveryMinutes);
     const restartEvery =
@@ -786,7 +823,8 @@ export class ScheduledTournamentService {
       bubble_protection: asBool(cfg.bubbleProtection),
       final_table_deal_enabled: asBool(cfg.finalTableDealEnabled),
       restart_every_minutes: restartEvery,
-      synchronized_breaks: cfg.synchronizedBreaks === undefined ? true : asBool(cfg.synchronizedBreaks),
+      synchronized_breaks:
+        cfg.synchronizedBreaks === undefined ? true : asBool(cfg.synchronizedBreaks),
       max_rebuys: Number.isFinite(maxRebuysRaw) ? Math.max(0, Math.round(maxRebuysRaw)) : null,
       max_reentries: Number.isFinite(maxReentriesRaw)
         ? Math.max(0, Math.round(maxReentriesRaw))

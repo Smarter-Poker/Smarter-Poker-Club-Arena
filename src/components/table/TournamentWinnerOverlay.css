@@ -77,7 +77,7 @@
 }
 
 .winner-entrance {
-  animation: winnerRise 0.85s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: winnerGrandEntrance 900ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* "WINNER" — the small caps kicker above the headline. */
@@ -98,7 +98,7 @@
 }
 
 .trophy-bounce {
-  animation: winnerKickerIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: trophyBounce 2000ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* "CHAMPION!" — metallic gold with a sheen that travels across it. */

@@ -51,11 +51,7 @@
      Previously this was a 1px green line on the top border and nothing else,
      which on a dark bar over a dark table is invisible. The bar now lifts out
      of the background and the buttons grow. */
-  background: linear-gradient(
-    180deg,
-    rgba(28, 42, 66, 0.97) 0%,
-    rgba(12, 20, 34, 0.99) 100%
-  );
+  background: linear-gradient(180deg, rgba(28, 42, 66, 0.97) 0%, rgba(12, 20, 34, 0.99) 100%);
   border-top: 2px solid var(--sp-blue, #2f80ed);
   box-shadow:
     0 -6px 28px rgba(47, 128, 237, 0.28),
@@ -80,8 +76,12 @@
 }
 
 @keyframes actionBtnRise {
-  from { transform: translateY(6px) scale(0.97); }
-  to   { transform: translateY(0) scale(1); }
+  from {
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* Someone else is acting: the bar recedes rather than competing with the
@@ -91,7 +91,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .action-panel--active .action-btn:not(:disabled) { animation: none; }
+  .action-panel--active .action-btn:not(:disabled) {
+    animation: none;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -105,7 +107,7 @@
   margin: 0 auto;
 }
 
-.action-panel .action-btn{
+.action-panel .action-btn {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -128,7 +130,7 @@
 }
 
 /* Shimmer sweep on buttons */
-.action-panel .action-btn::before{
+.action-panel .action-btn::before {
   content: '';
   position: absolute;
   top: 0;
@@ -141,11 +143,11 @@
   z-index: 1;
 }
 
-.action-panel .action-btn:hover:not(:disabled)::before{
+.action-panel .action-btn:hover:not(:disabled)::before {
   left: 100%;
 }
 
-.action-panel .action-btn:disabled{
+.action-panel .action-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
   box-shadow: none !important;
@@ -153,7 +155,7 @@
   pointer-events: none;
 }
 
-.action-panel .action-btn:active:not(:disabled){
+.action-panel .action-btn:active:not(:disabled) {
   transform: scale(0.96) translateY(2px);
   filter: brightness(1.3);
   box-shadow:
@@ -161,7 +163,7 @@
     0 2px 0 rgba(0, 0, 0, 0.3);
 }
 
-.action-panel .action-btn__label{
+.action-panel .action-btn__label {
   font-size: 1.125rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -171,7 +173,7 @@
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
-.action-panel .action-btn__amount{
+.action-panel .action-btn__amount {
   font-size: 0.875rem;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.95);
@@ -181,7 +183,7 @@
 }
 
 /* ─── FOLD (Red) ──────────────────────────────────────────── */
-.action-panel .action-btn--fold{
+.action-panel .action-btn--fold {
   background: linear-gradient(180deg, #ef4444 0%, #dc2626 40%, #b91c1c 100%);
   box-shadow:
     0 4px 0 #991b1b,
@@ -190,7 +192,7 @@
     inset 0 -2px 0 rgba(0, 0, 0, 0.2);
 }
 
-.action-panel .action-btn--fold:hover:not(:disabled){
+.action-panel .action-btn--fold:hover:not(:disabled) {
   filter: brightness(1.15);
   box-shadow:
     0 3px 0 #991b1b,
@@ -200,7 +202,7 @@
 }
 
 /* ─── CHECK (Green) ───────────────────────────────────────── */
-.action-panel .action-btn--check{
+.action-panel .action-btn--check {
   background: linear-gradient(180deg, #22c55e 0%, #16a34a 40%, #15803d 100%);
   box-shadow:
     0 4px 0 #166534,
@@ -209,7 +211,7 @@
     inset 0 -2px 0 rgba(0, 0, 0, 0.2);
 }
 
-.action-panel .action-btn--check:hover:not(:disabled){
+.action-panel .action-btn--check:hover:not(:disabled) {
   filter: brightness(1.15);
   box-shadow:
     0 3px 0 #166534,
@@ -219,7 +221,7 @@
 }
 
 /* ─── CALL (Green) ────────────────────────────────────────── */
-.action-panel .action-btn--call{
+.action-panel .action-btn--call {
   background: linear-gradient(180deg, #22c55e 0%, #16a34a 40%, #15803d 100%);
   box-shadow:
     0 4px 0 #166534,
@@ -228,7 +230,7 @@
     inset 0 -2px 0 rgba(0, 0, 0, 0.2);
 }
 
-.action-panel .action-btn--call:hover:not(:disabled){
+.action-panel .action-btn--call:hover:not(:disabled) {
   filter: brightness(1.15);
   box-shadow:
     0 3px 0 #166534,
@@ -238,7 +240,7 @@
 }
 
 /* ─── RAISE (Amber) ───────────────────────────────────────── */
-.action-panel .action-btn--raise{
+.action-panel .action-btn--raise {
   background: linear-gradient(180deg, #4f9dff 0%, #2f80ed 40%, #1b5fc4 100%);
   box-shadow:
     0 4px 0 #14468f,
@@ -247,7 +249,7 @@
     inset 0 -2px 0 rgba(0, 0, 0, 0.2);
 }
 
-.action-panel .action-btn--raise:hover:not(:disabled){
+.action-panel .action-btn--raise:hover:not(:disabled) {
   filter: brightness(1.15);
   box-shadow:
     0 3px 0 #14468f,
@@ -257,7 +259,7 @@
 }
 
 /* ─── ALL-IN (Purple) — The big play ─────────────────────── */
-.action-panel .action-btn--allin{
+.action-panel .action-btn--allin {
   background: linear-gradient(180deg, #a855f7 0%, #7c3aed 40%, #6d28d9 100%);
   box-shadow:
     0 4px 0 #5b21b6,
@@ -267,7 +269,7 @@
   animation: allinPulse 1.8s ease-in-out infinite;
 }
 
-.action-panel .action-btn--allin:hover:not(:disabled){
+.action-panel .action-btn--allin:hover:not(:disabled) {
   filter: brightness(1.15);
   box-shadow:
     0 3px 0 #5b21b6,
@@ -369,6 +371,16 @@
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
+  /* Dan 2026-08-23 (item 9): "there should also be an area to click and type."
+     The field was already tappable but looked exactly like static text, so
+     nobody would ever discover it. A dashed rule is the conventional "this is
+     editable" cue and costs no extra copy on a panel with no room for any. */
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.45);
+  padding-bottom: 1px;
+}
+
+.raise-value__amount:hover {
+  border-bottom-color: rgba(255, 255, 255, 0.85);
 }
 
 .raise-value__amount:focus-visible {
@@ -743,10 +755,23 @@
   display: flex;
   gap: 6px;
   margin-bottom: 12px;
+  /* Dan 2026-08-23 (item 9) added 2.5X, so the widest row is now SEVEN
+     buttons: 2X 2.5X 3X 4X 5X POT ALL IN (no-limit, facing a bet postflop).
+     Wrapping would push a second row up into the table felt, so the row must
+     SHRINK instead - see min-width on the button below, without which a flex
+     item refuses to go under its own text width and the row overflows the
+     panel on a 375px phone. */
+  flex-wrap: nowrap;
 }
 
 .raise-preset {
-  flex: 1;
+  /* `flex: 1` leaves min-width at its `auto` default, which pins each button
+     to its label width - that is the overflow. Basis 0 + min-width 0 lets all
+     seven share the row evenly. */
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 2px;
+  white-space: nowrap;
   height: 44px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -933,9 +958,13 @@
     gap: 4px;
   }
 
+  /* Seven buttons across a 390px phone: (390 - 24 padding - 24 gaps) / 7 is
+     about 49px each, and "ALL IN" at 0.6875rem needs roughly 41px of that.
+     Dropping a step keeps a comfortable margin instead of a hairline one. */
   .raise-preset {
     height: 40px;
-    font-size: 0.6875rem;
+    font-size: 0.625rem;
+    letter-spacing: 0.3px;
   }
 
   .raise-confirm {
@@ -999,9 +1028,18 @@
     flex-shrink: 0;
   }
 
+  /* 375px, seven buttons: (375 - 20 padding - 18 gaps) / 7 is about 48px, and
+     "ALL IN" at 0.5625rem is about 34px. The 2.5X label is 4 characters and
+     needs roughly 26px, so the tightest button still has room on both sides. */
+  .raise-presets {
+    gap: 3px;
+  }
+
   .raise-preset {
     height: 38px;
-    font-size: 0.625rem;
+    font-size: 0.5625rem;
+    letter-spacing: 0.2px;
+    padding: 0 1px;
   }
 
   .raise-confirm {
@@ -1048,7 +1086,7 @@
 }
 
 /* Keyboard shortcut hints */
-.action-panel .action-btn__shortcut{
+.action-panel .action-btn__shortcut {
   font-size: 0.5625rem;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.25);
@@ -1057,7 +1095,7 @@
   transition: color 0.15s ease;
 }
 
-.action-panel .action-btn:hover .action-btn__shortcut{
+.action-panel .action-btn:hover .action-btn__shortcut {
   color: rgba(255, 255, 255, 0.4);
 }
 

@@ -13,6 +13,7 @@ import styles from './TournamentLobbyCard.module.css';
 import { reportError } from '../../utils/errorReporter';
 // Whole-number tournament money (Dan 2026-08-20).
 import { money } from '../../utils/buyIn';
+import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
 
 interface Tournament {
   id: string;

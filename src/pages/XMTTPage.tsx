@@ -25,6 +25,8 @@ import { clubGamesOrFilter } from '../utils/unionScope';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
+
 const formatDate = (ts: string | null) => {
   if (!ts) return '';
   return new Date(ts).toLocaleDateString(undefined, {
@@ -77,6 +79,8 @@ interface TournamentDetail {
 }
 
 export default function XMTTPage() {
+  const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
+
   const { user } = useAuthUser();
   const toast = useToast();
   const [searchParams] = useSearchParams();

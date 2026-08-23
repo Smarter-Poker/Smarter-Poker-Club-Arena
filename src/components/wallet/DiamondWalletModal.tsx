@@ -45,6 +45,23 @@ interface DiamondTransaction {
 const TX_TYPES: Record<string, { icon: string; label: string; color: string }> = {
   purchase: { icon: 'cart', label: 'Purchase', color: '#ef4444' },
   feature_unlock: { icon: 'unlock', label: 'Feature Unlock', color: '#f97316' },
+  /**
+   * Dan 2026-08-23: "when you buy time banks, it actually deducts the diamonds
+   * and adds the transaction inside your diamond wallet."
+   *
+   * It always did both. `deduct_diamonds` debits `profiles.diamonds` and writes
+   * the `diamond_transactions` row in the same transaction (confirmed against
+   * production: one row, -2,500, "Time banks x500"). What was missing was this
+   * line. `deduct_diamonds` stamps `transaction_type` from
+   * COALESCE(p_source, p_transaction_type), which for every feature purchase is
+   * the literal 'feature_purchase' - a key no wallet map had. The lookup below
+   * falls back to `adjustment`, so a diamond spend the player had just made
+   * showed up in their own wallet as a grey "Adjustment", indistinguishable
+   * from an admin correction. That is what "no transaction in my wallet" was.
+   */
+  feature_purchase: { icon: 'unlock', label: 'Feature Purchase', color: '#f97316' },
+  /** Same gap, same writer: the diamond helpers also emit this type. */
+  chip_purchase: { icon: 'cart', label: 'Chip Purchase', color: '#ef4444' },
   game_cost: { icon: 'gamepad', label: 'Game Entry', color: '#ef4444' },
   arcade_entry: { icon: 'joystick', label: 'Arcade Entry', color: '#ef4444' },
   bonus: { icon: 'gift', label: 'Bonus', color: '#a855f7' },

@@ -3,11 +3,13 @@
  *  TIME BANK ENGINE — Extended Think Time for Critical Decisions
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * TIME BANK RULES:
- * - Each time bank adds 15 seconds of extra decision time (Bible V8 §6.2)
- * - Max 2 time bank uses per individual hand (1 auto + 1 manual, or 2 manual)
- * - No limit per session — player can use as many as they have available
- * - VIP members receive 120 time banks per month
+ * TIME BANK RULES (Dan 2026-08-23, binding — supersedes the earlier wording):
+ * - A bank is NOT consumed until the ordinary action clock (15s) is genuinely
+ *   exhausted. Pressing the button early ARMS the bank; it is spent at expiry.
+ * - Consuming one RESETS the clock to exactly 20 more seconds (Bible V8 §6.2).
+ *   It is not stacked on top of whatever the player had left.
+ * - Hard cap of 2 activations PER STREET, never more.
+ * - VIP members receive 120 time bank seconds per month
  * - Non-VIP (or depleted VIP) can purchase individually with Diamonds
  * - Auto-activate when player's primary action timer expires (if available)
  * - Player pool depletes over time; balance tracked in database
@@ -52,7 +54,28 @@ export interface PlayerTimeBank {
    * Reset at the start of every hand and again on every flop/turn/river.
    */
   streetActivations: number;
+  /**
+   * Dan 2026-08-23: the player pressed "use time bank" while their ordinary
+   * action clock was STILL RUNNING. Nothing is spent at the press. The intent
+   * is held here and redeemed by onPrimaryTimerExpired() the moment the 15s
+   * clock is genuinely exhausted, which is also what makes the manual button
+   * work on tables where autoActivate is off.
+   */
+  armed: boolean;
 }
+
+/**
+ * Why activate() did or did not spend a bank. The boolean `activate()` wrapper
+ * is kept for the existing call sites; callers that need to tell "you have no
+ * banks" apart from "your clock is still running" use tryActivate().
+ */
+export type TimeBankActivationResult =
+  | 'activated'
+  | 'not_initialized'
+  | 'already_active'
+  | 'depleted'
+  | 'street_limit'
+  | 'clock_not_exhausted';
 
 export type TimeBankEventType =
   | 'TIME_BANK_ACTIVATED'
@@ -77,6 +100,19 @@ export class TimeBankEngine {
   private playerBanks: Map<string, PlayerTimeBank> = new Map();
   private preciseTimer: PreciseActionTimer;
   private onEvent?: (event: TimeBankEvent) => void;
+
+  /**
+   * How much ordinary turn clock may still be showing and still count as
+   * "truly used your entire 15 seconds" (Dan 2026-08-23).
+   *
+   * It cannot be exactly zero. The client posts /timebank on its own RAF
+   * countdown reaching 0, and the engine then measures the leftover from its
+   * own stamps; network latency and the two clocks' skew routinely leave a
+   * few hundred milliseconds on the board at that instant. A zero tolerance
+   * would refuse every legitimate expiry-path activation and auto-fold the
+   * player instead.
+   */
+  public static readonly CLOCK_EXHAUSTED_EPSILON_SECONDS = 0.75;
 
   private readonly DEFAULT_CONFIG: TimeBankConfig = {
     totalBankSeconds: 2400, // 120 uses × 20 seconds = 2400s per month (VIP default)
@@ -120,6 +156,7 @@ export class TimeBankEngine {
       isActive: false,
       currentUseSeconds: 0,
       streetActivations: 0,
+      armed: false,
     });
   }
 
@@ -137,32 +174,52 @@ export class TimeBankEngine {
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
-   * Called when a player's primary action timer expires.
-   * If auto-activate is on and player has time bank remaining,
-   * automatically activates the time bank.
+   * Called when a player's primary action timer expires. This is the ONLY
+   * moment a bank may be spent (Dan 2026-08-23) — the 15s decision clock has
+   * to be genuinely gone first.
+   *
+   * Spends a bank when either the table auto-activates, or the player armed
+   * one by pressing the button earlier in the turn. The armed case is what
+   * keeps the manual button working on a table with autoActivate off.
    */
   onPrimaryTimerExpired(tableId: string, playerId: string, onExpire: () => void): boolean {
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
-    if (!config.autoActivate) return false;
+    const bank = this.playerBanks.get(`${tableId}:${playerId}`);
+    if (!config.autoActivate && !bank?.armed) return false;
     return this.activate(tableId, playerId, onExpire);
   }
 
   /**
-   * Manually activate time bank for a player.
+   * Record the player's INTENT to spend a bank on this decision, without
+   * spending it. Pressing the button with time still on the clock must not
+   * cost anything and must not add anything — see the file header.
    *
-   * @param extraCountdownSeconds ordinary turn clock the player still had left
-   *   when they pressed the button. The bank is granted ON TOP of that, so the
-   *   countdown armed here has to cover both.
-   *
-   *   The auto path leaves this 0: the primary timer has already expired, so
-   *   the bank allocation is the whole of the remaining time.
-   *
-   *   Before 2026-08-18 this parameter did not exist. The manual path armed a
-   *   bank-only countdown here while ServerTableEngineTurns armed a turn timer
-   *   for `remaining + bank`. Two deadlines under different keys on the same
-   *   PreciseActionTimer, both live — and the shorter one folded the player
-   *   while the clock on screen was still counting down. With 12s left and a
-   *   15s bank the display said 27s and the fold landed at 15s.
+   * Returns false when there is nothing to arm (no bank in the pool, the
+   * street allowance is used up, or one is already counting down), so the
+   * caller can tell the player why rather than showing a clock that lies.
+   */
+  arm(tableId: string, playerId: string): boolean {
+    const bank = this.playerBanks.get(`${tableId}:${playerId}`);
+    if (!bank || bank.isActive) return false;
+    if (bank.usesRemaining <= 0 || bank.remainingSeconds <= 0) return false;
+    if (bank.streetActivations >= 2) return false;
+    bank.armed = true;
+    return true;
+  }
+
+  isArmed(tableId: string, playerId: string): boolean {
+    return this.playerBanks.get(`${tableId}:${playerId}`)?.armed === true;
+  }
+
+  disarm(tableId: string, playerId: string): void {
+    const bank = this.playerBanks.get(`${tableId}:${playerId}`);
+    if (bank) bank.armed = false;
+  }
+
+  /**
+   * Spend one time bank. Boolean wrapper over tryActivate() so the existing
+   * call sites and tests keep working; use tryActivate() when you need to tell
+   * the player WHY it was refused.
    */
   activate(
     tableId: string,
@@ -170,18 +227,59 @@ export class TimeBankEngine {
     onExpire: () => void,
     extraCountdownSeconds = 0
   ): boolean {
+    return this.tryActivate(tableId, playerId, onExpire, extraCountdownSeconds) === 'activated';
+  }
+
+  /**
+   * Spend one time bank, reporting why if it refuses.
+   *
+   * @param extraCountdownSeconds ordinary turn clock the player still had left
+   *   at the moment of the call.
+   *
+   *   Dan 2026-08-23, binding: "It should not take a time bank or add more time
+   *   until you have truly used your entire 15 seconds. Then if the time bank
+   *   is used, it must reset the clock for 20 more seconds."
+   *
+   *   So a non-zero leftover is now a REFUSAL ('clock_not_exhausted'), not an
+   *   instruction to stack the bank on top of it. The caller's job in that case
+   *   is arm(), which costs nothing; the bank is redeemed at expiry.
+   *
+   *   HISTORY, so this does not get "fixed" back:
+   *   - Before 2026-08-18 this parameter did not exist. The manual path armed a
+   *     bank-only countdown here while ServerTableEngineTurns armed a turn timer
+   *     for `remaining + bank`. Two deadlines under different keys on the same
+   *     PreciseActionTimer, both live, and the shorter one folded the player
+   *     while the clock on screen was still counting down.
+   *   - 2026-08-18 fixed that by making this countdown span `remaining + bank`
+   *     too. Both deadlines agreed, but they agreed on the WRONG number: a bank
+   *     pressed at 12s produced a 32s turn and a bank already spent.
+   *   - 2026-08-23 removes the stacking entirely. There is nothing to span,
+   *     because a bank is only ever granted from a standing start. The
+   *     parameter survives as the exhaustion CHECK.
+   */
+  tryActivate(
+    tableId: string,
+    playerId: string,
+    onExpire: () => void,
+    extraCountdownSeconds = 0
+  ): TimeBankActivationResult {
     const key = `${tableId}:${playerId}`;
     const bank = this.playerBanks.get(key);
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
 
-    if (!bank || bank.isActive) return false;
-    if (bank.usesRemaining <= 0 || bank.remainingSeconds <= 0) return false;
+    if (!bank) return 'not_initialized';
+    if (bank.isActive) return 'already_active';
+    if (bank.usesRemaining <= 0 || bank.remainingSeconds <= 0) return 'depleted';
     // Bible V8 §6.2: max 2 activations PER STREET, never more. Preflop, flop,
     // turn and river each get their own allowance of 2; the counter is reset by
     // resetStreetActivations() at the start of the hand and on every new street.
     // The seconds pool is the other, harder cap — a player cannot activate a
     // bank they do not have, however many streets are left.
-    if (bank.streetActivations >= 2) return false;
+    if (bank.streetActivations >= 2) return 'street_limit';
+    // The 15 seconds have to be genuinely gone first.
+    if (extraCountdownSeconds > TimeBankEngine.CLOCK_EXHAUSTED_EPSILON_SECONDS) {
+      return 'clock_not_exhausted';
+    }
 
     const useSeconds = Math.min(config.secondsPerUse, bank.remainingSeconds);
 
@@ -190,6 +288,7 @@ export class TimeBankEngine {
     bank.currentUseSeconds = useSeconds;
     bank.usesRemaining--;
     bank.streetActivations++;
+    bank.armed = false;
     bank.onExpire = onExpire;
 
     this.emitEvent({
@@ -201,15 +300,14 @@ export class TimeBankEngine {
       totalRemaining: bank.remainingSeconds,
     });
 
-    // Use PreciseActionTimer for the countdown. It must span the caller's
-    // leftover turn clock as well as the bank, or it becomes a second, shorter
-    // deadline racing the turn timer.
-    const countdownSeconds = useSeconds + Math.max(0, extraCountdownSeconds);
-    this.preciseTimer.startTimer(tableId, `timebank:${playerId}`, countdownSeconds * 1000, () => {
+    // The countdown IS the new clock: exactly the bank allocation, from zero.
+    // The caller arms its turn timer with the same number, so the enforcement
+    // deadline and the deadline the client is shown cannot disagree.
+    this.preciseTimer.startTimer(tableId, `timebank:${playerId}`, useSeconds * 1000, () => {
       this.onTimeBankExpired(tableId, playerId);
     });
 
-    return true;
+    return 'activated';
   }
 
   /**
@@ -220,6 +318,10 @@ export class TimeBankEngine {
   playerActed(tableId: string, playerId: string): void {
     const key = `${tableId}:${playerId}`;
     const bank = this.playerBanks.get(key);
+    // An intent that was never redeemed dies with the decision it was made
+    // for. Leaving it set would spend a bank on the player's NEXT turn, which
+    // they did not ask for.
+    if (bank) bank.armed = false;
     if (!bank || !bank.isActive) return;
 
     // USE IT OR LOSE IT — deduct the FULL currentUseSeconds, not just elapsed time
@@ -243,7 +345,7 @@ export class TimeBankEngine {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // PER-HAND RESET (Bible V8 §6.2: max 2 activations per hand)
+  // PER-STREET RESET (Bible V8 §6.2: max 2 activations per street)
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
@@ -258,6 +360,9 @@ export class TimeBankEngine {
     for (const [key, bank] of this.playerBanks) {
       if (key.startsWith(`${tableId}:`)) {
         bank.streetActivations = 0;
+        // A new street is a new decision. An intent armed on the previous one
+        // must not carry over and silently spend a bank here.
+        bank.armed = false;
       }
     }
   }
@@ -376,6 +481,7 @@ export class TimeBankEngine {
     bank.remainingSeconds = Math.max(0, bank.remainingSeconds - bank.currentUseSeconds);
     bank.isActive = false;
     bank.activatedAt = undefined;
+    bank.armed = false;
 
     const isDepleted = bank.usesRemaining <= 0 || bank.remainingSeconds <= 0;
 

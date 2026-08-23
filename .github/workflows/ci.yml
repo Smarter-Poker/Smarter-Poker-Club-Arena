@@ -258,6 +258,35 @@ jobs:
             exit 1
           fi
 
+      # BLOCKING: a select() that embeds a related table needs a real FOREIGN KEY.
+      # Without one PostgREST answers 400 PGRST200 and returns NO ROWS — and every
+      # call site here swallows that identically (`if (error) return []`,
+      # `if (!error && data)`, a rejected promise inside Promise.allSettled), so
+      # the feature is simply blank forever and nothing goes red. Seven were live
+      # on 2026-08-22, including the admin seat list, hand replay, transaction
+      # history, friend suggestions and the whole blocked-players feature.
+      # Requires the SERVICE-ROLE key: it bypasses RLS, so the select is actually
+      # parsed. With an anon key every RLS-protected table answers 401 and the
+      # check would report success while validating nothing — it fails loudly
+      # rather than allow that.
+      - name: Supabase Invariants — Embed Relationships
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          echo "## Supabase Embed-Relationship Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-embed-relationships.mjs 2>&1 | tee /tmp/embeds.log; then
+            echo "OK — every embedded select resolves against the live schema." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Embedded select(s) that return 400 and no rows — see log for file:line." >> $GITHUB_STEP_SUMMARY
+            echo "Read the consumer before adding a foreign key: if the embedded data is" >> $GITHUB_STEP_SUMMARY
+            echo "never used, delete the embed; if the child outlives the parent, look the" >> $GITHUB_STEP_SUMMARY
+            echo "value up separately instead." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       # BLOCKING: a client-read table with NO writer anywhere (client
       # .from().insert/update, server/src, or an RPC/migration body) means the UI
       # reads a table nothing populates -> silent empty/stale values. Detection is

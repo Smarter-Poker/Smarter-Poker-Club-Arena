@@ -27,6 +27,7 @@ import { reportError } from '../services/errorReporter.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
+import { effectivePrizePool } from './startRules.js';
 import type { GameServer } from '../GameServer.js';
 
 export abstract class TournamentManagerBase {
@@ -926,13 +927,88 @@ export abstract class TournamentManagerBase {
         );
       }
 
+      // ── GUARANTEE, no-late-reg case (2026-08-23) ──
+      // An event with no late registration takes its last entry before this
+      // line, so the pool it holds now is the pool it dies with — apply the
+      // advertised guarantee here and finalize. Events WITH late reg are
+      // bumped at finalization instead, where the pool truly stops moving.
+      // Scheduler-spawned events accrue per-entry through the register RPCs
+      // and nothing else ever applied guaranteed_prize (the old recurring
+      // service pre-applied it at creation, which is why this was never seen
+      // before the 2026-08-22 data-driven schedules).
+      {
+        const lateRegCap = Number(tournament.late_reg_levels ?? tournament.rebuy_levels ?? 0);
+        const gtd = Number(tournament.guaranteed_prize) || 0;
+        if (lateRegCap <= 0 && gtd > 0 && !this.prizePoolFinalized) {
+          const { data: poolRow } = await supabase
+            .from('tournaments')
+            .select('prize_pool')
+            .eq('id', this.tournamentId)
+            .maybeSingle(); // FIX 168
+          const poolNow = Number(poolRow?.prize_pool) || 0;
+          const finalPool = effectivePrizePool(poolNow, gtd);
+          if (finalPool > poolNow) {
+            await supabase
+              .from('tournaments')
+              .update({ prize_pool: finalPool, prize_pool_finalized: true } as any)
+              .eq('id', this.tournamentId);
+            tournament.prize_pool = finalPool;
+            if (this.tournamentCache) this.tournamentCache.prize_pool = finalPool;
+            this.prizePoolFinalized = true;
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Guarantee applied at start: pool ${poolNow} -> ${finalPool}`
+            );
+          }
+        }
+      }
+
       // Set tournament to RUNNING
       // Guard: only transition REGISTERING → RUNNING (prevents re-starting)
-      await supabase
-        .from('tournaments')
-        .update({ status: 'RUNNING', started_at: new Date().toISOString() })
-        .eq('id', this.tournamentId)
-        .eq('status', 'REGISTERING');
+      //
+      // RETRIED AND VERIFIED (2026-08-23). This was fire-and-forget: no error
+      // check, no retry, no confirmation. When it failed — and it did, during
+      // the DB-starvation window that was timing statements out — the game
+      // went right on dealing from memory while its row still read
+      // REGISTERING. Nothing downstream heals that: the stuck-COMPLETING
+      // watchdog only reads COMPLETING, the decided-but-stalled watchdog only
+      // reads RUNNING, and fn_final_table_deal requires RUNNING. Eleven
+      // tournaments were found in exactly that state, 22-33 hours old, having
+      // played to a finish with 570 chips debited and 48 paid out — 522 owed
+      // to players who never got a result.
+      //
+      // The flip is now retried and then CONFIRMED by reading the row back.
+      // A row that reads RUNNING (or any later status) is success, including
+      // when another process won the race.
+      let runningFlipped = false;
+      for (let attempt = 1; attempt <= 3 && !runningFlipped; attempt++) {
+        const { error: flipErr } = await supabase
+          .from('tournaments')
+          .update({ status: 'RUNNING', started_at: new Date().toISOString() })
+          .eq('id', this.tournamentId)
+          .eq('status', 'REGISTERING');
+        const { data: confirmRow } = await supabase
+          .from('tournaments')
+          .select('status')
+          .eq('id', this.tournamentId)
+          .maybeSingle(); // FIX 168
+        const confirmed = String(confirmRow?.status ?? '');
+        if (!flipErr && confirmed !== 'REGISTERING' && confirmed !== '') {
+          runningFlipped = true;
+          break;
+        }
+        if (attempt < 3) await new Promise((r) => setTimeout(r, 250 * attempt));
+      }
+      if (!runningFlipped) {
+        // Loud, because the game is about to deal against a row that does not
+        // know it. The REGISTERING-but-played watchdog in GameServer is the
+        // safety net that settles it if this never lands.
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] RUNNING flip FAILED after 3 attempts — the game is starting with its row still REGISTERING`
+          ),
+          'Tournament.running_flip_failed'
+        );
+      }
 
       // LIVE E2E FIX 2026-08-15: tournamentCache was captured while status was
       // still REGISTERING and never refreshed after this transition — so
@@ -1925,24 +2001,31 @@ export abstract class TournamentManagerBase {
             this.prizePoolFinalized = true;
             const { data: freshT } = await supabase
               .from('tournaments')
-              .select('prize_pool')
+              .select('prize_pool, guaranteed_prize')
               .eq('id', this.tournamentId)
               .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
+            // GUARANTEE (2026-08-23): the pool stops moving here, so this is
+            // where the advertised guarantee becomes real money. Writing the
+            // max back to prize_pool keeps every reader — payouts, lobby,
+            // fn_tournament_payout_reconcile — agreeing on one number.
+            const finalPool = freshT
+              ? effectivePrizePool(freshT.prize_pool, freshT.guaranteed_prize)
+              : 0;
             if (freshT) {
               await supabase
                 .from('tournaments')
                 .update({
-                  prize_pool: freshT.prize_pool,
+                  prize_pool: finalPool,
                   prize_pool_finalized: true,
                 } as any)
                 .eq('id', this.tournamentId);
               console.log(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Late reg/rebuy closed at level ${this.currentLevel} — prize pool finalized: ${freshT.prize_pool}`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Late reg/rebuy closed at level ${this.currentLevel} — prize pool finalized: ${finalPool}`
               );
             }
-            await this.broadcast('late_reg_closed', { prizePool: freshT?.prize_pool || 0 });
+            await this.broadcast('late_reg_closed', { prizePool: finalPool });
             if (freshT) {
-              await this.recalculateEliminatedPrizes(freshT.prize_pool);
+              await this.recalculateEliminatedPrizes(finalPool);
             }
           }
         }
@@ -2171,19 +2254,22 @@ export abstract class TournamentManagerBase {
     this.prizePoolFinalized = true;
     const { data: freshT } = await supabase
       .from('tournaments')
-      .select('prize_pool')
+      .select('prize_pool, guaranteed_prize')
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
     if (freshT) {
+      // GUARANTEE (2026-08-23): same rule as the late-reg-close site — the
+      // pool is final now, so the advertised guarantee is applied here.
+      const finalPool = effectivePrizePool(freshT.prize_pool, freshT.guaranteed_prize);
       await supabase
         .from('tournaments')
         .update({
-          prize_pool: freshT.prize_pool,
+          prize_pool: finalPool,
           prize_pool_finalized: true,
         } as any)
         .eq('id', this.tournamentId);
 
-      await this.recalculateEliminatedPrizes(freshT.prize_pool);
+      await this.recalculateEliminatedPrizes(finalPool);
     }
 
     await this.broadcast('ADDON_PERIOD_END', {});

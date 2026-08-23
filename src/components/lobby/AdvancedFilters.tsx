@@ -280,7 +280,10 @@ export default function AdvancedFilters({
                     step={spec.range.max > 100 ? 1 : 0.01}
                     value={value.rangeMin}
                     onChange={(e) =>
-                      patch({ rangeMin: Math.min(Number(e.target.value), value.rangeMax), selectedRanges: [] })
+                      patch({
+                        rangeMin: Math.min(Number(e.target.value), value.rangeMax),
+                        selectedRanges: [],
+                      })
                     }
                   />
                   <input
@@ -291,7 +294,10 @@ export default function AdvancedFilters({
                     step={spec.range.max > 100 ? 1 : 0.01}
                     value={value.rangeMax}
                     onChange={(e) =>
-                      patch({ rangeMax: Math.max(Number(e.target.value), value.rangeMin), selectedRanges: [] })
+                      patch({
+                        rangeMax: Math.max(Number(e.target.value), value.rangeMin),
+                        selectedRanges: [],
+                      })
                     }
                   />
                 </div>
@@ -306,7 +312,7 @@ export default function AdvancedFilters({
                         aria-pressed={on}
                         onClick={() => {
                           const arr = value.selectedRanges || [];
-                          const nextArr = on ? arr.filter(k => k !== p.key) : [...arr, p.key];
+                          const nextArr = on ? arr.filter((k) => k !== p.key) : [...arr, p.key];
                           patch({ selectedRanges: nextArr });
                         }}
                       >

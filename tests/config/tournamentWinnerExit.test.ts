@@ -162,7 +162,7 @@ describe("The champion's exit", () => {
     expect(realtime).toMatch(/'tournament_winner'/);
   });
 
-  it("eliminatePlayer is still never called with place 1 — that is why this is needed", () => {
+  it('eliminatePlayer is still never called with place 1 — that is why this is needed', () => {
     // If this ever stops being true, the two paths can both fire and the
     // champion gets the card twice (or the elimination toast). The guard above
     // catches the double exit; this catches the cause.

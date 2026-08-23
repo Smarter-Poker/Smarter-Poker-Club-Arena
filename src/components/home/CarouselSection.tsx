@@ -7,7 +7,7 @@
  * live stats. Single-click navigates to the club's lobby.
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 import haptic from '../../services/HapticService';
 import PremiumSFX from '../../services/PremiumSFX';
@@ -19,10 +19,11 @@ import { Carousel } from '../carousel';
 import { preloadClubLobby } from '../../utils/ChunkPreloader';
 import type { ToastContextValue } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 // Lazy-load heavy component
 
-const ClubCardPanel = lazy(() => import('../club/ClubCardPanel'));
+const ClubCardPanel = lazyWithRetry(() => import('../club/ClubCardPanel'));
 
 // ── Types ─────────────────────────────────────────
 export interface UserClub {

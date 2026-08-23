@@ -9,23 +9,15 @@
  */
 
 /**
- * The minimum field a tournament may start with.
- *
- * History: this was a hard-coded 3 inside start(). The 2026-08-22 parity work
- * added 2-seat Heads-Up SNGs — which are FULL at two players — and the first
- * Heads-Up Hyper Duel spawned by the scheduler sat REGISTERING for hours:
- * 2/2 seated, GameServer's discovery said start, the floor said stand down,
- * and the interval scheduler saw a live instance so it never spawned another.
- * The whole Heads-Up lane was dead behind one constant.
- *
- * The floor is the smaller of 3 and the field's own max_players, never below
- * 2 — poker needs an opponent, and a 3+ seat game still waits for 3.
+ * NOTE (2026-08-23): this module used to also export `startFloorFor`, the
+ * min(3, max_players) rule that let a 2-seat Heads-Up game start. That rule
+ * landed on main independently as an inline expression in
+ * TournamentManagerBase (#424, "a heads-up game is not short of players, it
+ * is full"), so keeping a second copy here would mean two sources of truth
+ * for one rule and a helper nobody calls - the precise trap this session
+ * documented twice (TournamentHUD, lazyWithRetry). The live version is the
+ * one in TournamentManagerBase; this file keeps only what is still unique.
  */
-export function startFloorFor(maxPlayers: unknown): number {
-  const max = Number(maxPlayers);
-  if (!Number.isFinite(max) || max <= 0) return 3;
-  return Math.max(2, Math.min(3, Math.floor(max)));
-}
 
 /**
  * The pool a tournament actually pays: the accrued entries or the advertised

@@ -1862,6 +1862,77 @@ export class GameServer {
           }
         }
 
+        // ── PLAYED-BUT-STILL-REGISTERING RECOVERY (2026-08-23) ──
+        //
+        // The mirror of the stalled-RUNNING sweep below, for the failure at
+        // the OTHER end of the lifecycle: start() dealt the game but its
+        // REGISTERING -> RUNNING flip never landed (see the retry there). The
+        // row still says REGISTERING while its players hold positions and
+        // elimination stamps, so every other watchdog looks straight past it
+        // — COMPLETING sweeps read COMPLETING, the decided sweep reads
+        // RUNNING. Found live: 11 tournaments, 22-33 hours old, 570 chips
+        // debited against 48 paid out.
+        //
+        // The evidence a game actually dealt is an eliminated/winner/finished
+        // player row; registration alone never produces one. Given that, the
+        // row is relabelled to what it truly is: still contested -> RUNNING
+        // (the resume path above adopts it on the next pass); already decided
+        // -> COMPLETING, then through the SAME recovery that pays stuck
+        // finishers.
+        const { data: playedButRegistering } = await supabase
+          .from('tournaments')
+          .select('id, name, status')
+          .in('status', ['REGISTERING', 'ANNOUNCED'])
+          .lt('start_time', new Date(Date.now() - 10 * 60 * 1000).toISOString());
+        for (const t of playedButRegistering || []) {
+          const { count: playedCount, error: playedErr } = await supabase
+            .from('tournament_players')
+            .select('*', { count: 'exact', head: true })
+            .eq('tournament_id', t.id)
+            .in('status', ['eliminated', 'winner', 'finished']);
+          // Unreadable is UNKNOWN, never "it never dealt" — fail closed.
+          if (playedErr || !playedCount) continue;
+
+          const { count: stillPlaying, error: stillErr } = await supabase
+            .from('tournament_players')
+            .select('*', { count: 'exact', head: true })
+            .eq('tournament_id', t.id)
+            .eq('status', 'playing');
+          if (stillErr || stillPlaying === null || stillPlaying === undefined) continue;
+
+          console.warn(
+            `[GameServer] ${t.name} (${t.id.slice(0, 8)}) dealt but never left ${t.status} — ${playedCount} finished, ${stillPlaying} playing; relabelling`
+          );
+
+          if (stillPlaying > 1) {
+            // A live contest wearing the wrong label. Hand it to the resume
+            // path rather than settling a game that is still being played.
+            await supabase
+              .from('tournaments')
+              .update({ status: 'RUNNING', started_at: new Date().toISOString() })
+              .eq('id', t.id)
+              .in('status', ['REGISTERING', 'ANNOUNCED']);
+            continue;
+          }
+
+          const staleTm = this.tournamentEngines.get(t.id);
+          if (staleTm) {
+            try {
+              staleTm.stop();
+            } catch (err) {
+              reportError(err, 'GameServer.played_registering_stop_engine');
+            }
+            this.tournamentEngines.delete(t.id);
+          }
+          // CAS so a concurrent legitimate transition is never clobbered.
+          await supabase
+            .from('tournaments')
+            .update({ status: 'COMPLETING' })
+            .eq('id', t.id)
+            .in('status', ['REGISTERING', 'ANNOUNCED']);
+          await recoverStuckCompletingTournaments('played-but-registering', t.id);
+        }
+
         // ── STALLED DECIDED-BUT-RUNNING RECOVERY (2026-08-21) ──
         // A tournament whose LAST elimination was processed but whose finish
         // check never ran (engine restart in the gap) stays RUNNING forever:

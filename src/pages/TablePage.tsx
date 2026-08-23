@@ -232,6 +232,8 @@ import { useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';
 // Bible V8 §11: 4-Corner Table HUD Components
 import { TableHUD } from '../components/table/TableHUD';
 import { MiniStatsCard } from '../components/table/MiniStatsCard';
+import TournamentInfoPanel from '../components/tournament/TournamentInfoPanel';
+import { TournamentHUD } from '../components/tournament/TournamentHUD';
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
 import { reportError } from '../utils/errorReporter';
@@ -4347,6 +4349,13 @@ export default function TablePage({
   const [showShareHand, setShowShareHand] = useState(false);
   const [showTableMenu, setShowTableMenu] = useState(false);
   const [showSessionStats, setShowSessionStats] = useState(false);
+  /**
+   * Dan 2026-08-23: on a tournament table the upper-right button must open
+   * the TOURNAMENT, not the cash session. Session stats (stack, buy-in,
+   * VPIP) answer a cash question; in an MTT the questions are where am I,
+   * what is left to play for, and when do the blinds move.
+   */
+  const [showTournamentInfo, setShowTournamentInfo] = useState(false);
   const [sharedHandData, setSharedHandData] = useState<any>(null);
 
   // Real Name vs Alias
@@ -9779,7 +9788,11 @@ export default function TablePage({
             vpipCount={vpipCountRef.current}
             handsWon={handsWonRef.current}
             isSeated={tableState.heroSeat > 0}
-            onTap={() => setShowSessionStats(true)}
+            onTap={() =>
+              tableState.isTournament && tableState.tournamentId
+                ? setShowTournamentInfo(true)
+                : setShowSessionStats(true)
+            }
           />
         }
         bottomLeft={
@@ -11729,6 +11742,32 @@ export default function TablePage({
         safeBB={safeBB}
         getPlayerHUDStats={getPlayerHUDStats}
       />
+
+      {/* Dan 2026-08-23: "when players are seated at the table, or are on
+          break, there should be a countdown clock."
+
+          TournamentHUD is exactly that - level, blinds, ante, a live countdown
+          to the next level, players remaining and average stack, sized to sit
+          on the felt - and it was built, documented and rendered NOWHERE. Same
+          shape of miss as lazyWithRetry: a finished component wired to
+          nothing, so the feature looked absent when it was only unmounted.
+          The break countdown (TournamentBreakScreen) already ticks; this is
+          the other half, the one you watch while you are still playing. */}
+      {tableState.isTournament && tableState.tournamentId && (
+        <TournamentHUD tournamentId={tableState.tournamentId} />
+      )}
+
+      {/* Tournament lobby/stats, opened from the upper-right button while
+          seated in an MTT, Spin or Heads-Up (Dan 2026-08-23). Mounted last so
+          it layers above the felt, and only while open so it costs nothing on
+          a cash table. */}
+      {showTournamentInfo && tableState.tournamentId && (
+        <TournamentInfoPanel
+          tournamentId={tableState.tournamentId}
+          heroUserId={userId || undefined}
+          onClose={() => setShowTournamentInfo(false)}
+        />
+      )}
     </div>
   );
 }

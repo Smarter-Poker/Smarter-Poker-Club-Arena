@@ -23,6 +23,7 @@ import PageErrorBoundary from '../../components/common/PageErrorBoundary';
 import { TournamentClock } from '../../components/tournament/TournamentClock';
 import { HandForHandBanner } from '../../components/tournament/HandForHandBanner';
 import { FinalTableOverlay } from '../../components/tournament/FinalTableOverlay';
+import RegistrationApprovalsPanel from '../../components/tournament/RegistrationApprovalsPanel';
 import { reportError } from '../../utils/errorReporter';
 import { spinMultiplierLabel } from '../../utils/spinReveal';
 import { formatBuyIn, money, totalBuyIn } from '../../utils/buyIn';
@@ -965,6 +966,14 @@ export default function TournamentDetails({
 
         {activeTab === 'detail' && (
           <>
+            {/* Authorized-to-register approvals (2026-08-23): the owner-facing
+                whitelist manager the gate shipped without. Renders null for
+                non-admins and for events without the flag. */}
+            <RegistrationApprovalsPanel
+              tournamentId={tournament.id}
+              clubId={String((tournament as any).club_id || '')}
+              authorizedToRegister={Boolean((tournament as any).authorized_to_register)}
+            />
             {/* Tournament Results (for completed tournaments) */}
             {tournament.status === 'COMPLETED' && entries.length > 0 && (
               <div className="results-summary">

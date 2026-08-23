@@ -1366,7 +1366,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // spec rather than falling through to "winner takes the whole pool",
         // which on a 10x+ Spin is a 20% overpay on top of money already sent
         // to 2nd and 3rd at elimination. See payoutStructure.ts.
-        'payout_structure, prize_pool, buy_in_fee, current_players, club_id, name, status, is_bounty, is_pko, is_mystery_bounty, variant, tournament_type, spin_multiplier, satellite_target_id'
+        'payout_structure, prize_pool, buy_in_fee, current_players, club_id, name, status, is_bounty, is_pko, is_mystery_bounty, variant, tournament_type, spin_multiplier, satellite_target_id, satellite_seats'
       )
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single

@@ -3,16 +3,17 @@
  * premium-style hand history replay with timeline scrubbing
  */
 
-import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import type { Card, CardSuit, CardRank } from '../../types/database.types';
 import { CardImage } from '../table/CardImage';
 import type { Card as CardImageCard } from '../table/CardImage';
 import './HandReplay.css';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 // Lazy-load HandReplay3D — Three.js is large and only needed when 3D tab is opened
-const HandReplay3D = lazy(() => import('./HandReplay3D'));
+const HandReplay3D = lazyWithRetry(() => import('./HandReplay3D'));
 
 interface PlayerAction {
   player_id: string;

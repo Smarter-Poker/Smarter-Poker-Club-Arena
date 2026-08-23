@@ -460,7 +460,23 @@ export class TournamentManager extends TournamentManagerEliminations {
     const ranked = finishers ?? [];
     if (ranked.length === 0) return;
 
-    const seats = ticketCost > 0 ? Math.floor(pool / ticketCost) : 0;
+    // 2026-08-23 parity follow-up: satellite_seats is the ADVERTISED seat
+    // count and wins when set (the 2026-08-22 template stores it; the Sunday
+    // Major Satellite promises 5). floor(pool / ticket) remains the fallback
+    // for legacy satellites created before the column existed. With no open
+    // target (ticketCost 0) seats stay 0 so the whole pool falls through to
+    // the cash path below — advertised seats into a vanished target would
+    // otherwise pay nothing at all.
+    const configuredSeats = Math.max(
+      0,
+      Math.floor(Number((tournament as { satellite_seats?: unknown })?.satellite_seats) || 0)
+    );
+    const seats =
+      ticketCost > 0
+        ? configuredSeats > 0
+          ? configuredSeats
+          : Math.floor(pool / ticketCost)
+        : 0;
     const awardCount = Math.min(seats, ranked.length);
     const remainder = Math.round((pool - awardCount * ticketCost) * 100) / 100;
 
@@ -520,15 +536,38 @@ export class TournamentManager extends TournamentManagerEliminations {
     for (let i = 0; i < awardCount; i++) {
       const w = ranked[i];
       if (targetOpen && target) {
-        // Register the seat winner into the target (idempotent on unique key)
-        const { error: regErr } = await supabase.from('tournament_players').insert({
-          tournament_id: target.id,
-          user_id: w.user_id,
-          username: w.username || 'Player',
-          status: 'registered',
-          chips: 0,
-        });
-        if (regErr && !/duplicate|unique/i.test(regErr.message || '')) {
+        /**
+         * THE MONEY FOLLOWS THE PLAYER (2026-08-23).
+         *
+         * This was a raw INSERT of a tournament_players row at chips 0. It
+         * seated the winner and moved nothing else: the target's prize_pool
+         * never grew, no rake row was written, and the satellite's own
+         * collected pool was never disbursed to anybody. So the chips players
+         * paid into the satellite were destroyed, and the target went on to
+         * pay a pool one buy-in short for every seat it took in.
+         *
+         * fn_award_satellite_seat does the seating and the money in one
+         * transaction under a row lock — prize_pool += target buy-in, rake
+         * row for the target fee — which is exactly where a direct buy-in
+         * would have landed, funded by the ticket the satellite pool just
+         * bought. It is idempotent: the movement happens only when the seat
+         * row is genuinely inserted, so a recovery re-drive seats nobody
+         * twice and credits nothing twice.
+         */
+        const { data: seatRes, error: seatErr } = await supabase.rpc(
+          'fn_award_satellite_seat',
+          {
+            p_satellite_id: this.tournamentId,
+            p_target_id: target.id,
+            p_user_id: w.user_id,
+            p_username: w.username || 'Player',
+          }
+        );
+        const seat = seatRes as { ok?: boolean; reason?: string } | null;
+        // A refusal that is simply "they already hold this seat" is success.
+        const regErr =
+          seatErr || (seat?.ok === false ? { message: seat?.reason || 'seat_refused' } : null);
+        if (regErr && !/duplicate|unique|already_registered/i.test(regErr.message || '')) {
           // Registration failed for a real reason — pay ticket value in cash
           await payCash(
             w.user_id,

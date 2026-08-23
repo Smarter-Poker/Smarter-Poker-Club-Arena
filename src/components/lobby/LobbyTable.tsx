@@ -27,7 +27,10 @@ export type LobbyCategory = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' | 'MT
 const SORT_KEY = (clubId: string | undefined, category: string) =>
   `ca_lobby_sort_${clubId || 'any'}_${category}`;
 
-function readSort(clubId: string | undefined, category: string): { key: string; dir: SortDir } | null {
+function readSort(
+  clubId: string | undefined,
+  category: string
+): { key: string; dir: SortDir } | null {
   try {
     const raw = localStorage.getItem(SORT_KEY(clubId, category));
     if (!raw) return null;
@@ -40,7 +43,11 @@ function readSort(clubId: string | undefined, category: string): { key: string; 
   }
 }
 
-function writeSort(clubId: string | undefined, category: string, sort: { key: string; dir: SortDir } | null) {
+function writeSort(
+  clubId: string | undefined,
+  category: string,
+  sort: { key: string; dir: SortDir } | null
+) {
   try {
     if (sort) localStorage.setItem(SORT_KEY(clubId, category), JSON.stringify(sort));
     else localStorage.removeItem(SORT_KEY(clubId, category));
@@ -389,8 +396,6 @@ interface LobbyTableProps {
   /** Scopes the remembered sort; omit and it is remembered globally. */
   clubId?: string;
 }
-
-
 
 export default function LobbyTable({
   entries,

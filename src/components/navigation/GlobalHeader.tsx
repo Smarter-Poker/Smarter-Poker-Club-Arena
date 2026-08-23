@@ -4,9 +4,9 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
-const HamburgerMenu = lazy(() => import('./HamburgerMenu'));
+const HamburgerMenu = lazyWithRetry(() => import('./HamburgerMenu'));
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
@@ -16,6 +16,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 
 import styles from './GlobalHeader.module.css';
 import { generateDefaultAvatar, getAvatarWithFallback } from '../../utils/avatarGenerator';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 const BASE = MEDIA_BASE;
 

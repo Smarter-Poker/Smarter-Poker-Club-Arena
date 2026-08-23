@@ -7,6 +7,12 @@
 
 ---
 
+## Cowork session 2026-08-23 (11) — tournament audit
+
+Full write-up: `.agent/audits/2026-08-23-tournament-audit-session11.md`
+(kept out of this file because a changelog entry conflicts with every other
+agent's on every merge, which stalled the PR for hours).
+
 ## Cowork session 2026-08-23 (2) — MOBILE, THE SECOND PASS: what the first pass missed (PRs #420, #429)
 
 The first pass fixed what it measured. This one went looking for what it had

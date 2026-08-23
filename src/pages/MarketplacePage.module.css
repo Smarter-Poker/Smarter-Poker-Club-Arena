@@ -5,7 +5,7 @@
 .page {
   max-width: 680px;
   margin: 0 auto;
-  padding-bottom: 70px;
+  padding-bottom: var(--bottom-nav-clearance, 74px);
   color: #e2e8f0;
   font-family: 'Rajdhani', 'Rajdhani', 'Exo 2', sans-serif;
   min-height: 100dvh;
@@ -803,7 +803,7 @@
 
 @media (max-width: 640px) {
   .page {
-    padding: 12px 12px 100px;
+    padding: 12px 12px var(--bottom-nav-clearance, 74px);
   }
 
   .header {

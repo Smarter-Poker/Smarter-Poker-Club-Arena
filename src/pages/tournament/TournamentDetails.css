@@ -8,7 +8,7 @@
   background: linear-gradient(180deg, #0a0e1a 0%, #141828 50%, #0a0e1a 100%);
   display: flex;
   flex-direction: column;
-  padding-bottom: 80px;
+  padding-bottom: var(--bottom-nav-clearance, 74px);
 }
 
 .tournament-details.loading,
@@ -1013,7 +1013,7 @@
 @media (max-width: 768px) {
   .tournament-details {
     padding: 0.75rem;
-    padding-bottom: 90px;
+    padding-bottom: var(--bottom-nav-clearance, 74px);
   }
 
   .details-grid {
@@ -1038,7 +1038,7 @@
 @media (max-width: 480px) {
   .tournament-details {
     padding: 0.5rem;
-    padding-bottom: 80px;
+    padding-bottom: var(--bottom-nav-clearance, 74px);
   }
 
   .quick-stats {

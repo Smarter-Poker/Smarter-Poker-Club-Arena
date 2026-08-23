@@ -5,7 +5,7 @@
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   background: linear-gradient(180deg, #0d1226 0%, #0a0d1c 100%);
   color: #fff;
-  padding-bottom: 96px;
+  padding-bottom: var(--bottom-nav-clearance, 74px);
 }
 
 .header {

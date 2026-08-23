@@ -226,7 +226,7 @@
   border-radius: 8px;
   padding: 10px;
   color: var(--text-primary, #fff);
-  font-size: 0.85rem;
+  font-size: 16px; /* was 0.85rem; under 16px makes iOS zoom the page on focus */
   resize: vertical;
   min-height: 50px;
 }
@@ -246,7 +246,7 @@
   border-radius: 8px;
   padding: 8px 10px;
   color: var(--text-primary, #fff);
-  font-size: 0.8rem;
+  font-size: 16px; /* was 0.8rem; under 16px makes iOS zoom the page on focus */
 }
 .adjustment-row select {
   flex: 1;

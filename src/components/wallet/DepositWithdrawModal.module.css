@@ -359,7 +359,7 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 10px;
   color: white;
-  font-size: 15px;
+  font-size: 16px; /* was 15px; under 16px makes iOS zoom the page on focus */
   transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 

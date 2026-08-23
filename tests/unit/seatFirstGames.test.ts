@@ -25,8 +25,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
-const strip = (src: string) =>
-  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 const RECURRING = strip(
   readFileSync(
@@ -37,9 +36,7 @@ const RECURRING = strip(
 const BASE = strip(
   readFileSync(resolve(__dirname, '../../server/src/tournament/TournamentManagerBase.ts'), 'utf8')
 );
-const TABLE_PAGE = strip(
-  readFileSync(resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8')
-);
+const TABLE_PAGE = strip(readFileSync(resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8'));
 const LOBBY = strip(readFileSync(resolve(__dirname, '../../src/pages/ClubHomePage.tsx'), 'utf8'));
 const MIGRATION = readFileSync(
   resolve(__dirname, '../../supabase/migrations/20260821d_seat_first_spins_and_heads_up.sql'),
@@ -141,16 +138,24 @@ describe('the client buys the seat instead of opening a cash buy-in', () => {
     expect(TABLE_PAGE).toMatch(/setSeatFirstBuyIn\(null\)/);
   });
 
-  it('the lobby tile OPENS THE TABLE rather than registering the player', () => {
+  it('the lobby tile OPENS THE TABLE and never registers the player', () => {
     const fn = LOBBY.slice(
       LOBBY.indexOf('const spinQuickJoin'),
       LOBBY.indexOf('const spinQuickJoin') + 4000
     );
-    // Navigating to the table must come before any fallback registration.
-    const navAt = fn.indexOf('navigate(`/table/${tableId}`)');
-    const regAt = fn.indexOf('fn_register_for_tournament');
-    expect(navAt).toBeGreaterThan(-1);
-    expect(regAt).toBeGreaterThan(navAt);
+    // The tile navigates to the table...
+    expect(fn.indexOf('navigate(`/table/${tableId}`)')).toBeGreaterThan(-1);
+
+    /**
+     * ...and registration is GONE, not merely late (Dan 2026-08-23: "it
+     * currently now only gives you this generic 'dealing you in' pop up").
+     * That pop-up was the fallback branch calling fn_register_for_tournament,
+     * which takes the buy-in before the player has chosen a seat. A tile must
+     * never move money. Comments naming the retired call are fine; a live call
+     * is not.
+     */
+    expect(fn).not.toMatch(/rpc\(\s*'fn_register_for_tournament'/);
+    expect(fn).not.toMatch(/Dealing You In/);
   });
 });
 

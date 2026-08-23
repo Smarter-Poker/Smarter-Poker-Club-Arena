@@ -24,12 +24,16 @@ import { useUserTableSettings } from '../hooks/useUserTableSettings';
 import { useToast } from '../components/common/Toast';
 import { supabase } from '../lib/supabase';
 import { gameCode, gameCodeFromName } from '../utils/gameCode';
+import { rankQuickJoinTables, bigBlindFromStakesLabel } from '../lib/quickJoinRanking';
+import { fetchFavoriteTableIds } from '../components/quickactions/favoriteTables';
 import { swipeTargetIndex } from '../utils/swipeTarget';
 import { soundService, haptic } from '../services/SoundService';
 import { setSitOut, submitAction } from '../services/GameServerAPI';
 import { sessionStatsService } from '../services/SessionStatsService';
 import './MultiTablePage.css';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { resolveLobbyClubId } from '../utils/clubQuickLink';
+import { useUserStore } from '../stores/useUserStore';
 
 // Lazy-load TablePage for code splitting
 const TablePage = lazyWithRetry(() => import('./TablePage'));
@@ -1153,6 +1157,13 @@ export default function MultiTablePage() {
     max: number;
     /** Short game code, shown on the row and carried onto the new tab. */
     code: string;
+    /**
+     * Dan 2026-08-23: why this row is where it is — "Favourite", "Similar
+     * Game", "Same Game", "Open Seats". A ranked list whose ranking is
+     * invisible reads as an arbitrary one, which is the complaint this change
+     * answers. Supplied by `rankQuickJoinTables`.
+     */
+    reason: string;
   }
   const [quickJoin, setQuickJoin] = useState<{
     open: boolean;
@@ -1204,6 +1215,36 @@ export default function MultiTablePage() {
     }
   }, []);
 
+  /**
+   * UNION LAW (Dan 2026-08-23) — "if I'm playing inside a club, SHARK CLUB or
+   * MIDWAY CLUB, and I click the + button and go to the lobby, it should never
+   * ever ever take me to the MIDWAY UNION lobby."
+   *
+   * It did. `homeClubId` was `tables.club_id` verbatim, and a union's games
+   * hang off the union's own HUB CLUB — so every union table reported the UNION
+   * as its club. The lobby tab then rendered <ClubHomePage> for the union,
+   * complete with Union Bank / rake treasury / clubs wallet, to players, agents
+   * and super agents who have no business seeing any of it.
+   *
+   * Every write to homeClubId now goes through here. `currentClubId` is the
+   * club the player ENTERED THROUGH (ClubHomePage stamps it on mount) — the
+   * club their chips and rake belong to — and it wins over the table's own
+   * club_id precisely so a union table cannot drag them into the union.
+   */
+  const commitHomeClub = useCallback(async (tableClubId: string | null) => {
+    const resolved = await resolveLobbyClubId({
+      viewerClubId: useUserStore.getState().currentClubId,
+      tableClubId,
+    });
+    // null means "no club survived the union filter" — the lobby tab falls back
+    // to <HomePage>, which is a correct destination. Never store the union.
+    if (homeClubIdRef.current !== resolved) {
+      homeClubIdRef.current = resolved;
+      setHomeClubId(resolved);
+    }
+    return resolved;
+  }, []);
+
   const handleAddTable = useCallback(async () => {
     if (tables.length >= MAX_TABLES) {
       notifyCapReached('add');
@@ -1224,10 +1265,11 @@ export default function MultiTablePage() {
      */
     let club = homeClubIdRef.current;
     if (!club) {
+      let tableClubId: string | null = null;
       const active = tablesRef.current.filter((t) => !isLobbyTab(t));
       const cached = active.map((t) => clubLookupCacheRef.current.get(t.id)).find(Boolean);
       if (cached) {
-        club = cached;
+        tableClubId = cached;
       } else if (active.length > 0) {
         setQuickJoin({ open: true, loading: true, rows: [] });
         try {
@@ -1244,15 +1286,15 @@ export default function MultiTablePage() {
           for (const row of (data ?? []) as { id: string; club_id: string | null }[]) {
             if (row.club_id) clubLookupCacheRef.current.set(row.id, row.club_id);
           }
-          club = active.map((t) => clubLookupCacheRef.current.get(t.id)).find(Boolean) ?? null;
+          tableClubId =
+            active.map((t) => clubLookupCacheRef.current.get(t.id)).find(Boolean) ?? null;
         } catch {
-          club = null;
+          tableClubId = null;
         }
       }
-      if (club) {
-        homeClubIdRef.current = club;
-        setHomeClubId(club);
-      }
+      // UNION LAW: the table's club_id is the UNION on any union game, so it is
+      // a candidate here, never the answer. See commitHomeClub.
+      club = await commitHomeClub(tableClubId);
     }
     if (!club) {
       // Genuinely nothing to pick from — no club behind any open table.
@@ -1265,7 +1307,18 @@ export default function MultiTablePage() {
     setQuickJoin({ open: true, loading: true, rows: [] });
     try {
       const openIds = new Set(tablesRef.current.map((t) => t.id));
-      const activeStakes = tablesRef.current[activeIndexRef.current]?.stakes || '';
+      const activeTab = tablesRef.current[activeIndexRef.current];
+      const activeTableId = activeTab && !isLobbyTab(activeTab) ? activeTab.id : null;
+      /**
+       * Dan 2026-08-23: "'quick join' should be users favorite games, or
+       * similar games to the one they are playing."
+       *
+       * Fetched alongside the table list rather than before it, so favourites
+       * cost no extra wall time on the path to the sheet. Wrapped in the same
+       * withTimeout as everything else here: a stalled favourites read must
+       * degrade the ORDER, never hold the sheet on "Finding Games…".
+       */
+      const favoritesPromise = withTimeout(fetchFavoriteTableIds(user?.id));
       const res = await withTimeout(
         supabase
           .from('tables')
@@ -1287,39 +1340,77 @@ export default function MultiTablePage() {
         masterBus.emit('OPEN_LOBBY_TAB', {});
         return;
       }
-      const rows: QuickJoinRow[] = (res.data ?? [])
-        .filter(
-          (r) =>
-            !openIds.has(r.id as string) &&
-            (Number(r.current_players) || 0) < (Number(r.max_players) || 0)
-        )
-        .map((r) => ({
-          id: r.id as string,
-          name: (r.name as string) || 'Table',
-          stakes:
-            r.small_blind != null && r.big_blind != null ? `${r.small_blind}/${r.big_blind}` : '',
-          players: Number(r.current_players) || 0,
-          max: Number(r.max_players) || 0,
-          code: gameCode({
-            variant: r.game_variant as string | undefined,
-            isTournament: r.game_type === 'tournament',
-            maxPlayers: Number(r.max_players) || undefined,
-          }),
-        }))
-        .sort((a, b) => {
-          const sameA = a.stakes === activeStakes ? 0 : 1;
-          const sameB = b.stakes === activeStakes ? 0 : 1;
-          if (sameA !== sameB) return sameA - sameB;
-          return b.players - a.players; // fullest first - games, not ghost towns
-        })
-        .slice(0, 5);
+      const fetched = (res.data ?? []) as Array<Record<string, unknown>>;
+      const favoriteIds = (await favoritesPromise) ?? [];
+
+      /**
+       * The game the player is at right now, which is what "similar" is
+       * measured against.
+       *
+       * The active table's OWN row is preferred, because it carries the real
+       * `game_variant` enum and a numeric `big_blind`. The tab record carries
+       * neither: only a `gameCode` string and a "sb/bb" LABEL. Falling back to
+       * those is why `bigBlindFromStakesLabel` exists — and why the old
+       * `a.stakes === activeStakes` compare was wrong, since "0.5/1" and
+       * "0.50/1.00" are one game and never matched as strings.
+       */
+      const activeRow = activeTableId ? fetched.find((r) => r.id === activeTableId) : undefined;
+      const currentTable = activeTableId
+        ? {
+            id: activeTableId,
+            variant: (activeRow?.game_variant as string | undefined) ?? activeTab?.gameCode ?? null,
+            bigBlind:
+              activeRow?.big_blind != null
+                ? Number(activeRow.big_blind)
+                : bigBlindFromStakesLabel(activeTab?.stakes),
+          }
+        : null;
+
+      const rows: QuickJoinRow[] = rankQuickJoinTables(
+        fetched
+          .filter((r) => (Number(r.current_players) || 0) < (Number(r.max_players) || 0))
+          .map((r) => ({
+            id: r.id as string,
+            name: (r.name as string) || 'Table',
+            variant: (r.game_variant as string | undefined) ?? null,
+            smallBlind: r.small_blind != null ? Number(r.small_blind) : null,
+            bigBlind: r.big_blind != null ? Number(r.big_blind) : null,
+            players: Number(r.current_players) || 0,
+            maxPlayers: Number(r.max_players) || 0,
+            /* Carried through the ranker untouched so the row can render the
+               same code the tab will wear once the table opens. */
+            code: gameCode({
+              variant: r.game_variant as string | undefined,
+              isTournament: r.game_type === 'tournament',
+              maxPlayers: Number(r.max_players) || undefined,
+            }),
+          })),
+        {
+          favoriteTableIds: favoriteIds,
+          currentTable,
+          // Tables already open in another tab are not somewhere to go.
+          excludeIds: Array.from(openIds),
+          limit: 5,
+        }
+      ).map((r) => ({
+        id: r.id,
+        name: r.name,
+        stakes:
+          r.smallBlind != null && r.bigBlind != null ? `${r.smallBlind}/${r.bigBlind}` : '',
+        players: Number(r.players) || 0,
+        max: Number(r.maxPlayers) || 0,
+        code: (r as { code?: string }).code || '',
+        reason: r.reason,
+      }));
       setQuickJoin((q) => (q.open ? { open: true, loading: false, rows } : q));
     } catch {
       // Query failed - fall back to the lobby tab rather than a dead sheet.
       setQuickJoin({ open: false, loading: false, rows: [] });
       masterBus.emit('OPEN_LOBBY_TAB', {});
     }
-  }, [tables.length, notifyCapReached, withTimeout]);
+    // user?.id joined the deps when favourites did: a sign-in mid-session must
+    // start producing a favourites-first sheet, not keep the signed-out one.
+  }, [tables.length, notifyCapReached, withTimeout, commitHomeClub, user?.id]);
 
   const handleQuickJoinPick = useCallback(
     (row: QuickJoinRow) => {
@@ -1370,6 +1461,11 @@ export default function MultiTablePage() {
    * Resolve which club the open tables belong to, so leaving lands the player
    * in that club's lobby. Cached per table id; the value is sticky so closing
    * the last tab still knows where "home" was.
+   *
+   * UNION LAW (Dan 2026-08-23): this used to store `tables.club_id` RAW, and a
+   * union game's club_id is the union's hub club — so a SHARK CLUB player at a
+   * Midway Union table got the MIDWAY UNION lobby, union skins and all. The
+   * table's club is now only a candidate; commitHomeClub decides.
    */
   useEffect(() => {
     const unresolved = tables
@@ -1386,14 +1482,13 @@ export default function MultiTablePage() {
         for (const row of data as { id: string; club_id: string | null }[]) {
           if (row.club_id) clubLookupCacheRef.current.set(row.id, row.club_id);
         }
-        const firstKnown = tables
-          .filter((t) => !isLobbyTab(t))
-          .map((t) => clubLookupCacheRef.current.get(t.id))
-          .find(Boolean);
-        if (firstKnown && homeClubIdRef.current !== firstKnown) {
-          homeClubIdRef.current = firstKnown;
-          setHomeClubId(firstKnown);
-        }
+        const firstKnown =
+          tables
+            .filter((t) => !isLobbyTab(t))
+            .map((t) => clubLookupCacheRef.current.get(t.id))
+            .find(Boolean) ?? null;
+        if (cancelled) return;
+        await commitHomeClub(firstKnown);
       } catch {
         /* lobby routing falls back to the pre-lobby */
       }
@@ -1401,7 +1496,7 @@ export default function MultiTablePage() {
     return () => {
       cancelled = true;
     };
-  }, [tables]);
+  }, [tables, commitHomeClub]);
 
   /** Where to send a player who has no tables left open. */
   const goToLobby = useCallback(() => {
@@ -2018,7 +2113,24 @@ export default function MultiTablePage() {
                     className="multi-table-page__quickjoin-row"
                     onClick={() => handleQuickJoinPick(row)}
                   >
-                    <span className="multi-table-page__quickjoin-name">{row.name}</span>
+                    <span className="multi-table-page__quickjoin-name">
+                      {row.name}
+                      {/* Dan 2026-08-23: the badge that says WHY this row is
+                          here. Only for the ranked reasons — tagging the
+                          leftovers "Open Seats" would put a badge on every row
+                          and the badge would stop meaning anything. */}
+                      {row.reason && row.reason !== 'Open Seats' && (
+                        <span
+                          className={`multi-table-page__quickjoin-tag${
+                            row.reason === 'Favourite'
+                              ? ' multi-table-page__quickjoin-tag--fav'
+                              : ''
+                          }`}
+                        >
+                          {row.reason}
+                        </span>
+                      )}
+                    </span>
                     <span className="multi-table-page__quickjoin-meta">
                       {row.code && <span>{row.code}</span>}
                       {row.stakes && <span>{row.stakes}</span>}

@@ -204,8 +204,8 @@
 }
 
 .lobby-club__avatar {
-  width: 64px;
-  height: 64px;
+  width: 192px;
+  height: 192px;
   flex-shrink: 0;
   border-radius: 12px;
   overflow: hidden;
@@ -230,7 +230,7 @@
 
 .lobby-club__avatar-fallback {
   color: #3b82f6;
-  font-size: 1.5rem;
+  font-size: 4.5rem;
   line-height: 1;
 }
 

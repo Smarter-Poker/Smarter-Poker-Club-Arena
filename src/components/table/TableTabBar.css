@@ -502,7 +502,23 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 .table-tab-bar__menu-container {
-  margin-left: auto; /* Push to the right */
+  /* Dan 2026-08-23: "the hamburger menu needs to move to the left and always
+     stay locked in place there."
+
+     Was `margin-left: auto`, which pushed it to the far right of the bar. With
+     one table open that put it immediately after the "+" button, so its
+     position moved every time a tab was opened or closed — the opposite of
+     locked.
+
+     `order: -1` moves it ahead of every tab in the flex row without touching
+     DOM order, so the trigger keeps its place in the tab sequence for focus
+     and for TableMenu's click-outside ref. `flex: 0 0 auto` is the "locked"
+     half: the tab strip can grow, scroll or overflow and the hamburger does
+     not move a pixel. */
+  order: -1;
+  flex: 0 0 auto;
+  margin-left: 0;
+  margin-right: 4px;
   display: flex;
   align-items: center;
   position: relative;

@@ -263,7 +263,7 @@ export default function ClubBankCashierModal({
         const { data: page, error } = await supabase
           .from('club_members')
           .select(
-            'user_id, role, display_name, nickname, avatar_url:arena_avatar_url, short_id, chip_balance'
+            'user_id, role, display_name, nickname, chip_balance, profiles!inner ( player_number, arena_avatar_url )'
           )
           .eq('club_id', uuid)
           .in('status', MEMBER_IN_CLUB)
@@ -284,8 +284,10 @@ export default function ClubBankCashierModal({
             (m.nickname as string) ||
             `Member ${String(m.user_id).slice(0, 8)}`,
           chip_balance: Number(m.chip_balance) || 0,
-          avatar_url: (m.avatar_url as string) || '',
-          short_id: (m.short_id as string) || '----',
+          avatar_url: ((m.profiles as Record<string, unknown>)?.arena_avatar_url as string) || '',
+          short_id: String(
+            ((m.profiles as Record<string, unknown>)?.player_number as number) || '----'
+          ),
         }))
       );
       setMembersLoading(false);

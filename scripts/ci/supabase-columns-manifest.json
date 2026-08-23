@@ -16,6 +16,11 @@
       "message",
       "created_at"
     ],
+    "_pgss_b": [
+      "queryid",
+      "calls",
+      "total_exec_time"
+    ],
     "_pps_backfill_state": [
       "id",
       "last_created",

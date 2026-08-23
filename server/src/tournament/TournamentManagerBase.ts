@@ -27,7 +27,7 @@ import { reportError } from '../services/errorReporter.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
-import { startFloorFor, effectivePrizePool } from './startRules.js';
+import { effectivePrizePool } from './startRules.js';
 import type { GameServer } from '../GameServer.js';
 
 export abstract class TournamentManagerBase {
@@ -440,7 +440,23 @@ export abstract class TournamentManagerBase {
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
 
       /**
-       * Enforce minimum 3 players.
+       * Enforce a minimum field of three -- OR EVERY SEAT, WHEN THERE ARE
+       * FEWER THAN THREE OF THEM.
+       *
+       * FIX 2026-08-23 [P0]: the floor was the literal 3, which a HEADS-UP
+       * game (max_players = 2) can never reach. It is not short of players --
+       * it is FULL. Every heads-up game on the platform therefore stood down
+       * on every discovery pass and never dealt a hand: 17 of them sat
+       * REGISTERING for FIFTY HOURS with two paid entrants each and zero
+       * tables ever created, while the top-up loop was asked, every five
+       * seconds, to find a third player for a two-seat game.
+       *
+       * The rule Dan set is about a Spin ("spins can NEVER START until 3
+       * players are registered AND HAVE PAID") and a Spin has three seats, so
+       * capping the floor at max_players leaves that rule bit-for-bit intact
+       * and changes behaviour ONLY for the formats the literal broke -- the
+       * ones with fewer than three seats. An MTT is unaffected: its floor is
+       * min(3, 50) = 3, exactly as before.
        *
        * FIX 2026-08-20 [P0]: this counted `status = 'registered'` ONLY, which
        * made any tournament that got PART WAY through starting permanently
@@ -470,12 +486,15 @@ export abstract class TournamentManagerBase {
         .eq('tournament_id', this.tournamentId)
         .in('status', ['registered', 'playing']);
 
-      // Heads-Up SNGs (2-seat, 2026-08-22 parity) are FULL at two players —
-      // the historical hard floor of 3 held every duel in REGISTERING forever
-      // (see startRules.ts for the incident). The floor is now min(3,
-      // max_players), never below 2.
-      const startFloor = startFloorFor(tournament.max_players);
-      if ((regCount || 0) < startFloor) {
+      /**
+       * Never more than the table holds, never fewer than two -- a game of
+       * one is not a game. `max_players` is read defensively because a null
+       * or 0 here must not silently lower the Spin floor.
+       */
+      const seatsAvailable = Number(tournament.max_players) || 0;
+      const requiredField = seatsAvailable > 0 ? Math.max(2, Math.min(3, seatsAvailable)) : 3;
+
+      if ((regCount || 0) < requiredField) {
         /**
          * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
          *
@@ -487,7 +506,7 @@ export abstract class TournamentManagerBase {
          * scheduled game disappears from the lobby.
          */
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Only ${regCount} player(s) of the ${startFloor} needed — standing down so the field can be filled (NOT cancelling)`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Only ${regCount} of ${requiredField} player(s) — standing down so the field can be filled (NOT cancelling)`
         );
         this.running = false;
         return;
@@ -918,9 +937,7 @@ export abstract class TournamentManagerBase {
       // service pre-applied it at creation, which is why this was never seen
       // before the 2026-08-22 data-driven schedules).
       {
-        const lateRegCap = Number(
-          tournament.late_reg_levels ?? tournament.rebuy_levels ?? 0
-        );
+        const lateRegCap = Number(tournament.late_reg_levels ?? tournament.rebuy_levels ?? 0);
         const gtd = Number(tournament.guaranteed_prize) || 0;
         if (lateRegCap <= 0 && gtd > 0 && !this.prizePoolFinalized) {
           const { data: poolRow } = await supabase
@@ -1446,10 +1463,7 @@ export abstract class TournamentManagerBase {
         } catch (err) {
           // A missing button draw is survivable: the engine falls back to its
           // normal rotation. A throw here is not.
-          reportError(
-            err,
-            'Tournament.' + this.tournamentId.slice(0, 8) + '.spin_button_draw'
-          );
+          reportError(err, 'Tournament.' + this.tournamentId.slice(0, 8) + '.spin_button_draw');
         }
       }
     });

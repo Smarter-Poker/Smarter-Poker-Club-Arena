@@ -55,6 +55,8 @@ import { startFunnelTracker } from './lib/funnelTracker';
 import SystemOffline from './core/SystemOffline';
 import { ErrorBoundary } from './components/common';
 import { reportError } from './utils/errorReporter';
+import { warmUserMemberships } from './services/ClubsService';
+import { hasLocalSession } from './lib/authUtils';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  GLOBAL SAFETY NET — Catch unhandled promise rejections from service throws
@@ -95,6 +97,24 @@ if (bootStatus.antigravityOk) {
   const identityPromise = initIdentityDNA().catch((err) => {
     reportError(err, 'main.IdentityDNA_init_error_app_already_rende');
   });
+
+  // PHASE 3.5: warm the lobby's first query NOW.
+  //
+  // PERF 2026-08-23. getUserMemberships() is the first thing the app asks the
+  // network for, and nothing could ask for it until React had mounted,
+  // resolved the route and loaded HomePage's chunk - several hundred
+  // milliseconds on a phone with the connection sitting idle. Starting it here
+  // overlaps that request with React's own start-up; ClubsService de-duplicates
+  // in flight, so HomePage's call joins this one instead of making a second.
+  //
+  // Only with a local session: a signed-out visitor has nothing to fetch.
+  // Fire-and-forget, and it swallows its own errors - whoever asks next sees
+  // the real failure through the normal path.
+  try {
+    if (hasLocalSession()) warmUserMemberships();
+  } catch (err) {
+    reportError(err, 'main.Membership_warm_start_non_blocking');
+  }
 
   // PHASE 4: Activation-funnel tracker (Phase 5.1.2b). Fire-and-forget;
   // subscribes to MasterBus + IdentityDNA for first_table_seat,

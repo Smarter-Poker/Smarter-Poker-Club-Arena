@@ -7,7 +7,18 @@
     href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♠</text></svg>" />
   <link rel="manifest" href="/manifest.json" />
   <link rel="apple-touch-icon" href="/hub/club-arena/poker-chip-logo.png" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <!-- PINCH-ZOOM RESTORED 2026-08-23 (Dan approved). This carried
+       `maximum-scale=1.0, user-scalable=no`, which disabled pinch-zoom for
+       everyone — a WCAG 1.4.4 failure, and on iOS it is what was masking the
+       real bug: any text field under 16px makes Safari auto-zoom on focus and
+       never zoom back. The lock hid that symptom instead of fixing it.
+
+       Every text field is now at least 16px at phone width (56 rules fixed at
+       source across PRs #380/#391/#408), so the auto-zoom cannot fire and the
+       lock has nothing left to hold back. tests/e2e/mobile-input-zoom.spec.ts
+       fails CI if a sub-16px field ever comes back — do not re-add the lock,
+       fix the field. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="description"
     content="Club Arena — Private online poker clubs with real-time gameplay, tournaments, hand histories, player stats, leaderboards, and club management on Smarter.Poker." />
   <meta name="robots" content="noindex, nofollow" />

@@ -670,3 +670,30 @@
   font-weight: 700;
   letter-spacing: 0.04em;
 }
+
+/* Touch target (2026-08-23): measured under 44px at 375px. The control keeps
+   its painted size; an invisible 44px-tall ::after gives the thumb something
+   to hit. Vertical only — these sit in horizontal rows and widening would
+   steal the neighbour's taps. See club-engine.css for the full rationale. */
+@media (pointer: coarse) {
+  .resetButton,
+  .actionButton,
+  .actionButtonSecondary,
+  .dangerButton {
+    position: relative;
+  }
+
+  .resetButton::after,
+  .actionButton::after,
+  .actionButtonSecondary::after,
+  .dangerButton::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 44px;
+    background: transparent;
+  }
+}

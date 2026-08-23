@@ -668,3 +668,18 @@
     box-shadow: 0 0 14px rgba(16, 185, 129, 0.6);
   }
 }
+
+
+@media (max-width: 768px) {
+  .achievements-page {
+    padding: 0 !important;
+  }
+  .streak-activity-header {
+    border-radius: 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+  }
+  .achievements-grid {
+    gap: 0 !important;
+  }
+}

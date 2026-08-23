@@ -458,6 +458,14 @@ export class HorseMind {
     }
   }
 
+  /** V12.3: drop hydrated pair memory (used when a failed stats hydrate forces
+   *  a full-window replay, which would otherwise double-count them). The DB
+   *  copy is untouched — the next boot restores it. */
+  static clearPairs(): void {
+    this.pairs.clear();
+    this.dirtyPairs.clear();
+  }
+
   static dirtyPairsCount(): number {
     return this.dirtyPairs.size;
   }

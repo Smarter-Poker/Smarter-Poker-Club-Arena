@@ -13736,3 +13736,78 @@ after the repair: **zero free horses**, 667 live seat occupancies, 77 horses
 already holding two seats. 20 Spins remain at 0/3 for want of bodies. Filling
 every seat-first game at seats-1 needs ~83 opening horses that do not exist.
 Either the population grows or the board narrows.
+
+## Cowork session 2026-08-23 (20) — THE ENGINE RAN 13:23 CODE FOR EIGHT HOURS, AND HALF THE FLEET WAS ON THE WRONG INSTANCE
+
+`Auto-Deploy Hetzner Engine` had failed on every push since 18:36 UTC — four in
+a row. Each one built, cut over, failed verification and rolled back, so
+production kept running `d3c3bf3f` (13:23) while every run reported a tidy
+rollback and nothing anywhere went red.
+
+### What was actually on the box
+
+```
+club-arena-engine     :3d2ca6a6   0.0.0.0:8080->8080
+club-arena-engine-2   :d3c3bf3f   0.0.0.0:8081->8080     created 13:29:16Z
+```
+
+A SECOND engine container, stood up six minutes after `d3c3bf3f` merged, wearing
+the same `sp.role=engine` / `autoheal=true` run-spec — and **unknown to every
+part of the pipeline**. The workflow only ever names `club-arena-engine`, so
+8081 had never received a deploy and never would.
+
+The morning's Caddyfile (backup at 08:00 shows a single `reverse_proxy
+localhost:8080`) had been changed to an active/standby pair:
+
+```
+reverse_proxy localhost:8080 localhost:8081 { lb_policy first ... }
+```
+
+**That is what broke the deploys.** The verify step polls `$ENGINE_URL`, the
+public vhost. While the deploy restarts 8080, Caddy fails over to 8081 — which
+answers with the version it was built from in the morning. Verification read the
+wrong instance, never matched, and rolled back a build that was fine.
+
+It was a RACE, which is why it looked intermittent: when 8080 came back inside
+Caddy's 5s health interval the failover never happened and the same pipeline
+passed. That is how `#559` slipped through at 21:15 while four before it died.
+
+### And the pair was splitting the fleet
+
+Measured live before the fix:
+
+```
+8080  version 3d2ca6a6  leadership.role=leader  activeTables 14
+8081  version d3c3bf3f  leadership.role=leader  activeTables 10
+```
+
+**Both leaders. Fleet split across both.** The Caddyfile's own comment says why
+that must never happen: "~half of all player requests hit an instance that does
+not own their table and get 404 / close 4404." The standby did not stand by.
+
+### Done
+
+- Caddy collapsed to the single upstream it had at 08:00, backed up first.
+- `club-arena-engine-2` stopped with a 45s SIGTERM grace and removed. 8080
+  absorbed the fleet within a minute: **14 tables -> 132, one leader, liveness ok.**
+- **The verify step now asks the CONTAINER**, over ssh at `127.0.0.1:$PORT`,
+  not the load-balanced hostname. A load balancer's job is to hide which
+  instance answers, which makes it the wrong thing to ask "is the build I just
+  shipped running?". The public URL is then checked for what it CAN answer —
+  that it serves that same SHA — which would have caught the twin on day one.
+- **A one-engine guard before cutover.** Any container labelled `sp.role=engine`
+  that is not the managed one stops the deploy. A second engine is not
+  automatically wrong; an unmanaged one is.
+
+Restore the pair only once a standby genuinely answers 503 and owns zero tables,
+and once this workflow deploys both.
+
+### Confirmed on the live engine afterwards
+
+```
+[TournamentRecurring] repaired 1 seat-first game(s) that had no table
+[TournamentRecurring] Opened 12 spin(s) for house fade0000; 3 still to fill
+[TournamentRecurring] Opened 2 spin(s) for house fade0000; 0 still to fill
+```
+
+The Spin board is reopening price points that had been wedged for fifteen hours.

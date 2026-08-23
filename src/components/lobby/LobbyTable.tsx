@@ -82,15 +82,15 @@ const RULE_ABBR: Record<string, string> = {
 };
 
 function RulesCell({ entry }: { entry: LobbyEntry }) {
-  const shown = entry.rules.slice(0, 4);
-  const hidden = entry.rules.slice(4);
+  const shown = entry.rules;
+  const hidden = [];
   const extra = hidden.length;
   if (shown.length === 0) return <span className="lt-dim">-</span>;
   return (
     <span className="lt-rules">
       {shown.map((r) => (
         <abbr key={r.key} title={r.tip} className="lt-rule">
-          {RULE_ABBR[r.key] || r.label.slice(0, 4)}
+          {r.label}
         </abbr>
       ))}
       {/* "+2" used to be the end of the sentence: the player could see that

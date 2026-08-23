@@ -67,17 +67,11 @@ import {
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { playerStatusService } from '../services/PlayerStatusService';
 import { avatarService } from '../services/AvatarService';
-import PlayerNotesPanel from '../components/gameplay/PlayerNotesPanel';
-import HandReplay from '../components/replay/HandReplay';
-import { GameRulesModal } from '../components/table/GameRulesModal';
-import SitOutModal from '../components/table/SitOutModal';
-import WaitListModal from '../components/table/WaitListModal';
 import { waitlistService } from '../services/WaitlistService';
 import { roomService, type RoomMessage } from '../services/RoomService';
 import { HydraService } from '../services/HydraService';
 import TableChat, { type ChatMessage } from '../components/table/TableChat';
-import InsuranceModal, { type InsuranceOffer } from '../components/table/InsuranceModal';
-import { RunItTwicePrompt } from '../components/table/RunItTwice';
+import { type InsuranceOffer } from '../components/table/InsuranceModal';
 import BadBeatJackpot from '../components/table/BadBeatJackpot';
 import { BBJCelebration } from '../components/table/BBJCelebration';
 import { ThrowableSelector } from '../components/table/ThrowableSelector';
@@ -87,9 +81,6 @@ import { useTabKeepAlive, workerTimeout, cancelWorkerTimeout } from '../hooks/us
 import { STORAGE_KEYS } from '../lib/storage';
 import StraddleToggle from '../components/table/StraddleToggle';
 import TimeBank from '../components/table/TimeBank';
-import CashierModal from '../components/table/CashierModal';
-import BuyInModal from '../components/table/BuyInModal';
-import IdentityModal from '../components/table/IdentityModal';
 // Phase 1.2 PR-F: top-level disconnect FSM toast
 import DisconnectToast from '../components/table/DisconnectToast';
 // Phase 1.3 PR-C+D: server-rejection toast + auto-snap hint imported below
@@ -102,7 +93,6 @@ import TimebankCounter from '../components/table/TimebankCounter';
 import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
 import RabbitHunt from '../components/table/RabbitHunt';
-import LeaderboardPanel from '../components/table/LeaderboardPanel';
 import HandNotation from '../components/table/HandNotation';
 import { soundService, haptic } from '../services/SoundService';
 import { ConfettiCanvas } from '../components/table/ConfettiCanvas';
@@ -158,7 +148,6 @@ import LeaveTableConfirm from '../components/table/LeaveTableConfirm';
 import PresenceIndicator from '../components/social/PresenceIndicator';
 import { useToast } from '../components/common/Toast';
 import TournamentBreakScreen from '../components/table/TournamentBreakScreen';
-import AddOnModal from '../components/table/AddOnModal';
 import TournamentAnnouncementOverlay from '../components/table/TournamentAnnouncementOverlay';
 import KnockoutAnimation, { type KnockoutData } from '../components/tournament/KnockoutAnimation';
 import MysteryBountyChest, {
@@ -170,7 +159,6 @@ import SpinWheel, {
   parseLockedTiers,
   type SpinWheelData,
 } from '../components/tournament/SpinWheel';
-import RebuyModal from '../components/table/RebuyModal';
 import TournamentWinnerOverlay from '../components/table/TournamentWinnerOverlay';
 import { isSpinTournament, type SpinRevealSubject } from '../utils/spinReveal';
 // RealtimeChannelService imported if needed for future use
@@ -211,7 +199,6 @@ import GameServerAPI, {
   toggleStraddle as serverToggleStraddle,
   postBBToEnter as serverPostBBToEnter,
 } from '../services/GameServerAPI';
-import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import { retryAsync } from '../utils/retryAsync';
 //monteCarloEquity import removed — server-authoritative
 import './TablePage.css';

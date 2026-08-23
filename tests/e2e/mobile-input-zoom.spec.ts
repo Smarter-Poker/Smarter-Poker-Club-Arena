@@ -6,10 +6,17 @@
  * The user is left on a panned, oversized page — indistinguishable from the
  * app breaking. 16px is the exact threshold.
  *
- * The app's viewport meta is `width=device-width, initial-scale=1` with no
- * `maximum-scale`, which is correct: suppressing zoom would hide this bug by
- * taking pinch-zoom away from people who need it. So the fields have to be
- * big enough instead, which club-engine.css enforces at phone width.
+ * CORRECTION 2026-08-23: an earlier version of this comment said the viewport
+ * carries no `maximum-scale`. That was the World Hub's `_app.js` viewport, not
+ * this app's. Club Arena's own index.html declares
+ * `maximum-scale=1.0, user-scalable=no`, which suppresses the symptom AND
+ * takes pinch-zoom away from people who need it (WCAG 1.4.4).
+ *
+ * That makes this spec more useful, not less: the zoom lock is the only thing
+ * standing between an undersized field and a broken-looking page, and it is a
+ * lock worth removing. It cannot be removed safely until every field is at
+ * least 16px — which is what this asserts. Keep it green and the lock becomes
+ * a free win rather than a load-bearing workaround.
  *
  * Headless Chromium does not emulate the iOS zoom itself, so this asserts the
  * measurable cause rather than the symptom: at 375px, every focusable text

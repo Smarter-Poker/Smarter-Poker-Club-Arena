@@ -1,5 +1,11 @@
 # Dependencies
 node_modules
+# npm writes a temporary `.node_modules-<hash>` symlink during install and
+# leaves it behind if the install is interrupted. The name does not match the
+# `node_modules` pattern above, so it is NOT ignored -- and `git add -A` will
+# happily commit a broken symlink into the repo. Nearly shipped one on
+# 2026-08-23.
+.node_modules-*
 
 # Build
 dist

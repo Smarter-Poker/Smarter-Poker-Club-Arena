@@ -1,3 +1,18 @@
+#!/usr/bin/env sh
+# WITHOUT set -e A REFUSED COMMIT STILL LANDS.
+#
+# 2026-08-23: this file had no shebang and no set -e. git ran it through sh, so
+# a guard below could print a full-page REFUSED banner, exit 1, and execution
+# would simply continue to the next line. The hook's status is the status of
+# its LAST command, so the commit was created anyway - with the banner sitting
+# in the output as though it had stopped something.
+#
+# That was demonstrated live: guard-commit-identity.sh printed its refusal and
+# the unattributable commit was made regardless. guard-shared-clone.sh, the
+# one-worktree-per-agent rule, had been in the same position since it was
+# written. Two guards, both correct, both unable to refuse anything.
+set -e
+
 # One working tree per agent. Runs FIRST: if this commit should not be
 # happening here at all, there is no point formatting it.
 bash "$(git rev-parse --show-toplevel)/scripts/guard-shared-clone.sh"

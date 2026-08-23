@@ -1137,6 +1137,42 @@ export class GameServer {
         );
       }
 
+      /**
+       * 3b. Prune dead lease rows.
+       *
+       * `claim_table_lease` upserts on a unique id, so the tables never hold
+       * more than one row per table/tournament — but nothing ever DELETES a row
+       * whose table is long gone. `release_*` only runs on a graceful shutdown,
+       * and a container that dies hard leaves its rows behind for good. Live
+       * count when this was written: 2,054 rows, 1,348 of them untouched for
+       * over a day, and growing.
+       *
+       * It is not a correctness problem — a lease stale by more than 30 SECONDS
+       * is already ignored by every claim — but it is unbounded growth on a
+       * table read on every discovery sweep, and this release adds a second one
+       * exactly like it. Leaving a known leak while adding another would be
+       * sloppy.
+       *
+       * Seven days is deliberately absurd next to a 30-second staleness window:
+       * nothing this old can possibly be a live lease, so the delete cannot
+       * race a running engine. Best-effort — housekeeping must never be the
+       * reason a boot fails.
+       */
+      const leaseCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      for (const leaseTable of ['engine_table_leases', 'engine_tournament_leases']) {
+        try {
+          const { error: pruneErr } = await supabase
+            .from(leaseTable)
+            .delete()
+            .lt('heartbeat_at', leaseCutoff);
+          if (pruneErr) {
+            console.warn(`[GameServer] ${leaseTable} prune skipped: ${pruneErr.message}`);
+          }
+        } catch (pruneThrew) {
+          console.warn(`[GameServer] ${leaseTable} prune threw:`, (pruneThrew as Error)?.message);
+        }
+      }
+
       // 4. Cancel stale REGISTERING/ANNOUNCED tournaments whose start time is
       //    well past — with REFUNDS.
       // SWEEP #4 P1-2 FIX (2026-07-23): this previously (a) keyed on created_at,

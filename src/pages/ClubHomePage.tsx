@@ -2434,6 +2434,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         {(lobbyEntries.length > 0 || loading) && (
           <LobbyTable
             entries={lobbyEntries}
+            clubId={resolvedClubId || clubId}
             category={gameType as LobbyCategory}
             selectedId={panelOpen ? selectedId : null}
             onSelect={openEntry}

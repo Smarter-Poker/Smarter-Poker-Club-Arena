@@ -15,7 +15,39 @@ import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import type { LobbyEntry, LobbyStatusKey } from './lobbyEntries';
 import './LobbyTable.css';
 
+type SortDir = 'asc' | 'desc';
+
 export type LobbyCategory = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
+
+/* Remembered column sort, per club and per category. A player who sorts by
+   Stakes lost it the moment they looked at another tab and came back, which
+   on a lobby this dense is the sort of small forgetting that makes a screen
+   feel like it is not listening. Storage failures are silent: the sort still
+   works for the session, only the memory of it is lost. */
+const SORT_KEY = (clubId: string | undefined, category: string) =>
+  `ca_lobby_sort_${clubId || 'any'}_${category}`;
+
+function readSort(clubId: string | undefined, category: string): { key: string; dir: SortDir } | null {
+  try {
+    const raw = localStorage.getItem(SORT_KEY(clubId, category));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { key?: unknown; dir?: unknown };
+    if (typeof parsed?.key !== 'string') return null;
+    if (parsed.dir !== 'asc' && parsed.dir !== 'desc') return null;
+    return { key: parsed.key, dir: parsed.dir };
+  } catch {
+    return null;
+  }
+}
+
+function writeSort(clubId: string | undefined, category: string, sort: { key: string; dir: SortDir } | null) {
+  try {
+    if (sort) localStorage.setItem(SORT_KEY(clubId, category), JSON.stringify(sort));
+    else localStorage.removeItem(SORT_KEY(clubId, category));
+  } catch {
+    /* quota or private mode - the sort still applies for this session */
+  }
+}
 
 export interface LobbyRowContext {
   waitlistedIds: Set<string>;
@@ -342,9 +374,11 @@ interface LobbyTableProps {
   onActivate: (entry: LobbyEntry) => void;
   ctx: LobbyRowContext;
   loading?: boolean;
+  /** Scopes the remembered sort; omit and it is remembered globally. */
+  clubId?: string;
 }
 
-type SortDir = 'asc' | 'desc';
+
 
 export default function LobbyTable({
   entries,
@@ -354,13 +388,19 @@ export default function LobbyTable({
   onActivate,
   ctx,
   loading,
+  clubId,
 }: LobbyTableProps) {
   const columns = useMemo(() => columnsFor(category), [category]);
-  const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(null);
+  const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(() =>
+    readSort(clubId, category)
+  );
   const bodyRef = useRef<HTMLTableSectionElement>(null);
 
-  // Column sort resets when the category (and therefore the columns) change.
-  useEffect(() => setSort(null), [category]);
+  /* The columns change with the category, so the sort cannot carry across -
+     it is restored from what this player last chose on THIS tab instead. A
+     remembered key that the new column set does not define is dropped by the
+     sort itself (columns.find returns undefined -> original order). */
+  useEffect(() => setSort(readSort(clubId, category)), [category, clubId]);
 
   const sorted = useMemo(() => {
     if (!sort) return entries;
@@ -389,9 +429,14 @@ export default function LobbyTable({
   const handleHeaderClick = (col: ColumnDef) => {
     if (!col.sortable) return;
     setSort((prev) => {
-      if (!prev || prev.key !== col.key) return { key: col.key, dir: 'asc' };
-      if (prev.dir === 'asc') return { key: col.key, dir: 'desc' };
-      return null; // third click clears back to the page-level order
+      const next: { key: string; dir: SortDir } | null =
+        !prev || prev.key !== col.key
+          ? { key: col.key, dir: 'asc' }
+          : prev.dir === 'asc'
+            ? { key: col.key, dir: 'desc' }
+            : null; // third click clears back to the page-level order
+      writeSort(clubId, category, next);
+      return next;
     });
   };
 

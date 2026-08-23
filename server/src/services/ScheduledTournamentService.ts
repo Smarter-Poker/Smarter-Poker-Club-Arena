@@ -484,6 +484,27 @@ export class ScheduledTournamentService {
         );
         return;
       }
+      // RELEASE THE CLAIM (2026-08-23). The key is claimed before the
+      // insert so two spawners cannot race — but on a FAILED insert it was
+      // left claimed, which permanently burns that instance: the next poll
+      // sees the key, stands down, and the event simply never happens. Two
+      // orphan rows (tournament_id NULL) were sitting in prod from exactly
+      // this, one of them the Saturday Speedway 21:30. Deleting the claim
+      // hands the slot back to the next poll; if the delete itself fails the
+      // old burn-forever behaviour is what remains, which is no worse.
+      const { error: releaseErr } = await supabase
+        .from('tournament_schedule_spawns')
+        .delete()
+        .eq('spawn_key', spawnKey)
+        .is('tournament_id', null);
+      if (releaseErr) {
+        reportError(
+          new Error(
+            `[ScheduledTournaments] could not release burnt spawn key ${spawnKey}: ${releaseErr.message}`
+          ),
+          'ScheduledTournaments.spawn_release_failed'
+        );
+      }
       reportError(
         new Error(`[ScheduledTournaments] insert failed for ${spawnKey}: ${msg}`),
         'ScheduledTournaments.insert_failed'

@@ -947,11 +947,51 @@ export abstract class TournamentManagerBase {
 
       // Set tournament to RUNNING
       // Guard: only transition REGISTERING → RUNNING (prevents re-starting)
-      await supabase
-        .from('tournaments')
-        .update({ status: 'RUNNING', started_at: new Date().toISOString() })
-        .eq('id', this.tournamentId)
-        .eq('status', 'REGISTERING');
+      //
+      // RETRIED AND VERIFIED (2026-08-23). This was fire-and-forget: no error
+      // check, no retry, no confirmation. When it failed — and it did, during
+      // the DB-starvation window that was timing statements out — the game
+      // went right on dealing from memory while its row still read
+      // REGISTERING. Nothing downstream heals that: the stuck-COMPLETING
+      // watchdog only reads COMPLETING, the decided-but-stalled watchdog only
+      // reads RUNNING, and fn_final_table_deal requires RUNNING. Eleven
+      // tournaments were found in exactly that state, 22-33 hours old, having
+      // played to a finish with 570 chips debited and 48 paid out — 522 owed
+      // to players who never got a result.
+      //
+      // The flip is now retried and then CONFIRMED by reading the row back.
+      // A row that reads RUNNING (or any later status) is success, including
+      // when another process won the race.
+      let runningFlipped = false;
+      for (let attempt = 1; attempt <= 3 && !runningFlipped; attempt++) {
+        const { error: flipErr } = await supabase
+          .from('tournaments')
+          .update({ status: 'RUNNING', started_at: new Date().toISOString() })
+          .eq('id', this.tournamentId)
+          .eq('status', 'REGISTERING');
+        const { data: confirmRow } = await supabase
+          .from('tournaments')
+          .select('status')
+          .eq('id', this.tournamentId)
+          .maybeSingle(); // FIX 168
+        const confirmed = String(confirmRow?.status ?? '');
+        if (!flipErr && confirmed !== 'REGISTERING' && confirmed !== '') {
+          runningFlipped = true;
+          break;
+        }
+        if (attempt < 3) await new Promise((r) => setTimeout(r, 250 * attempt));
+      }
+      if (!runningFlipped) {
+        // Loud, because the game is about to deal against a row that does not
+        // know it. The REGISTERING-but-played watchdog in GameServer is the
+        // safety net that settles it if this never lands.
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] RUNNING flip FAILED after 3 attempts — the game is starting with its row still REGISTERING`
+          ),
+          'Tournament.running_flip_failed'
+        );
+      }
 
       // LIVE E2E FIX 2026-08-15: tournamentCache was captured while status was
       // still REGISTERING and never refreshed after this transition — so

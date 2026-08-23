@@ -1152,6 +1152,38 @@ export abstract class ServerTableEngineBase {
     return Date.now() - this.lastProgressAtMs;
   }
 
+  /**
+   * Did this engine stop without tearing itself down? Cancel what it left, and
+   * say what that was.
+   *
+   * Every path that clears `running` today — stop(), killForRestart() — does
+   * full teardown at source, so this is expected to return null forever. But
+   * GameServer's reaper deletes a not-running engine on TRUST that this is so,
+   * and the cost of that trust being wrong once is a heartbeat entry and armed
+   * turn deadlines belonging to a table nothing owns any more: the table stops
+   * being watched, and every stall on it becomes permanent.
+   *
+   * The ownership guard is what makes the cleanup safe. If a replacement engine
+   * has already claimed this tableId then the scheduler entries are ITS entries
+   * and cancelling them would cause the exact freeze this is guarding against —
+   * so a superseded instance reports and cancels nothing.
+   */
+  public reconcileTeardown(): string | null {
+    if (this.running) return null;
+    if (!ServerTableEngineBase.isCurrentEngineFor(this.tableId, this)) return null;
+    // persistPending is the scheduler's read-only view of one table's entries
+    // (it serializes them, it does not remove them). listTable lives on the
+    // inner heap and is not public.
+    const stranded = deadlineScheduler.persistPending(this.tableId);
+    if (stranded.length === 0) return null;
+    const ids = stranded
+      .map((d) => d.eventId)
+      .sort()
+      .join(', ');
+    deadlineScheduler.cancelAll(this.tableId);
+    return ids;
+  }
+
   // ═════════════════════════════════════════════════════════════════════════
   // DEALING-LOOP PHASE — Dan 2026-08-22: "find every reason games freeze"
   //

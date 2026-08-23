@@ -117,6 +117,18 @@ const MAX_TRACKED_PLAYERS = 4000;
 const MAX_SEEN_ACTIONS = 60_000;
 const MAX_HAND_FLAGS = 20_000;
 
+/** A spare, isolated set of HorseMind's state containers (V12.2). Opaque to
+ *  callers — create with HorseMind.createSandbox(), use via runInSandbox(). */
+export interface HorseMindSandbox {
+  stats: Map<string, OpponentStats>;
+  seenActions: Set<string>;
+  handFlags: Set<string>;
+  dirty: Set<string>;
+  pairs: Map<string, { n3: number; opp3: number; nR: number; oppR: number }>;
+  dirtyPairs: Set<string>;
+  plans: Map<string, boolean>;
+}
+
 export class HorseMind {
   private static stats = new Map<string, OpponentStats>();
   /** dedupe of processed ActionRecords across repeated decide() calls */
@@ -481,6 +493,77 @@ export class HorseMind {
       applied++;
     }
     return applied;
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // V12.2 SANDBOX (2026-08-22) — a pollution-free mind for self-play
+  // ───────────────────────────────────────────────────────────────────────
+
+  /**
+   * The league runs thousands of synthetic hands inside the production
+   * process. Until V12.2 it had to pass `mind:false`, because HorseMind's
+   * state is static and shared — observing a synthetic hand would write
+   * `league-*` reads into the live opponent memory (and into the DB via the
+   * persistence flush). That meant the one layer the league could never
+   * measure was the mind itself.
+   *
+   * A sandbox is a complete spare set of the seven state containers.
+   * `runInSandbox` swaps them in, runs the callback, and swaps the live set
+   * back in a finally — the callback is SYNCHRONOUS by contract, and every
+   * HorseLogic.decide call is synchronous, so nothing else in the process
+   * can observe the swapped state: timers and flushes only run when the
+   * event loop yields, which it cannot do mid-callback. The sandbox's dirty
+   * sets are never exported, so nothing synthetic can reach the DB.
+   */
+  private static sandboxDepth = 0;
+
+  static createSandbox(): HorseMindSandbox {
+    return {
+      stats: new Map(),
+      seenActions: new Set(),
+      handFlags: new Set(),
+      dirty: new Set(),
+      pairs: new Map(),
+      dirtyPairs: new Set(),
+      plans: new Map(),
+    };
+  }
+
+  static runInSandbox<T>(sandbox: HorseMindSandbox, fn: () => T): T {
+    if (this.sandboxDepth > 0) {
+      // Nested sandboxes have no use case; refusing beats silently mixing
+      // two sandboxes' state.
+      throw new Error('HorseMind.runInSandbox: already inside a sandbox');
+    }
+    const live = {
+      stats: this.stats,
+      seenActions: this.seenActions,
+      handFlags: this.handFlags,
+      dirty: this.dirty,
+      pairs: this.pairs,
+      dirtyPairs: this.dirtyPairs,
+      plans: this.plans,
+    };
+    this.stats = sandbox.stats;
+    this.seenActions = sandbox.seenActions;
+    this.handFlags = sandbox.handFlags;
+    this.dirty = sandbox.dirty;
+    this.pairs = sandbox.pairs;
+    this.dirtyPairs = sandbox.dirtyPairs;
+    this.plans = sandbox.plans;
+    this.sandboxDepth = 1;
+    try {
+      return fn();
+    } finally {
+      this.stats = live.stats;
+      this.seenActions = live.seenActions;
+      this.handFlags = live.handFlags;
+      this.dirty = live.dirty;
+      this.pairs = live.pairs;
+      this.dirtyPairs = live.dirtyPairs;
+      this.plans = live.plans;
+      this.sandboxDepth = 0;
+    }
   }
 
   // ───────────────────────────────────────────────────────────────────────

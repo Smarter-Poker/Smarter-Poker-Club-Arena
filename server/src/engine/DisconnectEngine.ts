@@ -107,6 +107,38 @@ export class DisconnectEngine {
 
   private tableConfigs: Map<string, DisconnectConfig> = new Map();
   private playerStates: Map<string, PlayerConnectionState> = new Map();
+
+  /**
+   * ── The false disconnect alarm (2026-08-22) ──
+   *
+   * A player has TWO independent transports to this table: the websocket, and
+   * the HTTP heartbeat their client posts every 5s. The websocket close is the
+   * fast signal — round 2 wired it up precisely so a player who closes their
+   * tab starts the auto-action ladder in milliseconds instead of waiting out
+   * the 30s stale-heartbeat sweep.
+   *
+   * But it fired on the socket dying, not on the PLAYER being gone. A websocket
+   * blip on a player whose heartbeat is landing normally marked them
+   * disconnected, and their next heartbeat — at most 5s later — marked them
+   * back. That pair is not a log line. On the client it is
+   * `ConnectionHUD`: the disconnect warning banner, `soundService.playDisconnect()`,
+   * a double haptic buzz, then a reconnect sound, another buzz, a "Connection
+   * restored" toast and a stale-data banner. A jarring false alarm, mid-hand,
+   * for somebody who never lost their connection.
+   *
+   * So the websocket close now opens a short window instead of concluding.
+   * Anything from EITHER transport inside it cancels the conclusion. Nothing
+   * from either, and the player really is gone — marked at 8s, still four
+   * times faster than the sweep it replaced.
+   *
+   * These timers live here rather than on PreciseActionTimer deliberately:
+   * transport presence is a property of the PLAYER, not of a hand, and the
+   * namespaced countdowns on PreciseActionTimer are cancelled at every hand
+   * boundary.
+   */
+  private transportGraceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  /** Just over the client's 5s heartbeat period, so one missed beat is forgiven. */
+  private static readonly TRANSPORT_GRACE_MS = 8_000;
   private actionCallbacks: Map<string, (action: DisconnectAction) => void> = new Map();
   private preciseTimer: PreciseActionTimer;
   private onEvent?: (event: DisconnectEvent) => void;
@@ -178,6 +210,7 @@ export class DisconnectEngine {
   unregisterPlayer(tableId: string, playerId: string): void {
     const key = `${tableId}:${playerId}`;
     this.preciseTimer.cancelTimer(tableId, `disconnect:${playerId}`);
+    this.cancelTransportGrace(key);
     this.playerStates.delete(key);
   }
 
@@ -189,6 +222,10 @@ export class DisconnectEngine {
     const key = `${tableId}:${playerId}`;
     const state = this.playerStates.get(key);
     if (!state) return;
+
+    // Proof of life from the other transport. Cancel any open websocket window
+    // BEFORE it can conclude — this is the line that removes the false alarm.
+    this.cancelTransportGrace(key);
 
     const wasDisconnected = !state.isConnected;
     state.isConnected = true;
@@ -215,8 +252,45 @@ export class DisconnectEngine {
    * Mark a player as disconnected.
    * Called when WebSocket connection drops or heartbeat times out.
    */
+  /**
+   * A player's LAST websocket for this table closed. See transportGraceTimers.
+   *
+   * This does NOT mark them disconnected. It starts a short window; a heartbeat
+   * or a new socket inside it cancels the whole thing and nothing is ever
+   * emitted, so a blip costs the player nothing at all.
+   */
+  markTransportGone(tableId: string, playerId: string): void {
+    const key = `${tableId}:${playerId}`;
+    const state = this.playerStates.get(key);
+    if (!state || !state.isConnected) return;
+    if (this.transportGraceTimers.has(key)) return; // window already open
+
+    const timer = setTimeout(() => {
+      this.transportGraceTimers.delete(key);
+      const current = this.playerStates.get(key);
+      if (!current || !current.isConnected) return;
+      // Defence in depth: heartbeat() cancels this timer, so reaching here with
+      // a fresh beat should be impossible. Standing down is the safe way to be
+      // wrong — a false disconnect is felt by the player, a late one is not.
+      if (Date.now() - current.lastHeartbeat < DisconnectEngine.TRANSPORT_GRACE_MS) return;
+      this.markDisconnected(tableId, playerId);
+    }, DisconnectEngine.TRANSPORT_GRACE_MS);
+    (timer as { unref?: () => void }).unref?.();
+    this.transportGraceTimers.set(key, timer);
+  }
+
+  /** Close the transport window: the player proved they are still here. */
+  private cancelTransportGrace(key: string): void {
+    const timer = this.transportGraceTimers.get(key);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.transportGraceTimers.delete(key);
+  }
+
   markDisconnected(tableId: string, playerId: string): void {
     const key = `${tableId}:${playerId}`;
+    // Whoever concluded first wins; a pending window has nothing left to decide.
+    this.cancelTransportGrace(key);
     const state = this.playerStates.get(key);
     if (!state || !state.isConnected) return;
 
@@ -465,6 +539,8 @@ export class DisconnectEngine {
   }
 
   disposeAll(): void {
+    for (const timer of this.transportGraceTimers.values()) clearTimeout(timer);
+    this.transportGraceTimers.clear();
     this.playerStates.clear();
     this.tableConfigs.clear();
     this.actionCallbacks.clear();

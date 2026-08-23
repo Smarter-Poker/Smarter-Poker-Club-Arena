@@ -407,6 +407,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // club data that renders the existing "Club Not Found / Retry" panel; with
   // cached data it simply ends a background refresh that was going nowhere.
   const [loadStalled, setLoadStalled] = useState(false);
+  /** Why the club read came back empty, shown on the error panel (2026-08-23). */
+  const [loadFailure, setLoadFailure] = useState<string | null>(null);
   useEffect(() => {
     if (!loading) return;
     const watchdog = setTimeout(() => {
@@ -909,7 +911,23 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       if (clubError || !clubData) {
         reportError(clubError, 'ClubHomePage.Failed_to_load_club');
         toast.error('Failed to load club details');
-        if (!getIsMounted || getIsMounted()) setLoading(false);
+        /* Dan 2026-08-23 reported this panel appearing every time on his phone,
+           and it could not be reproduced from a clean session on any of his
+           three clubs, by either entry path. The reason is that this state
+           throws away the only fact that matters: WHY the read came back
+           empty. A refused row (RLS), a malformed id (PostgREST 400) and a
+           dropped connection all render the identical "moved or deleted"
+           sentence, which is also a lie in two of those three cases.
+           Keep the cause so the panel can show it and the next report carries
+           its own diagnosis. */
+        if (!getIsMounted || getIsMounted()) {
+          setLoadFailure(
+            clubError
+              ? `${clubError.code ? clubError.code + ': ' : ''}${clubError.message || 'request failed'}`
+              : `no club matched ${String(clubId).slice(0, 40)}`
+          );
+          setLoading(false);
+        }
         return;
       }
 
@@ -1422,7 +1440,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     const bb = (t: TableData) => Number(t.big_blind) || 0;
     const cmpStakes = (a: TableData, b: TableData) => bb(b) - bb(a);
     const cmpStakesLow = (a: TableData, b: TableData) => bb(a) - bb(b);
-    const cmpPlayers = (a: TableData, b: TableData) => (b.current_players || 0) - (a.current_players || 0);
+    const cmpPlayers = (a: TableData, b: TableData) =>
+      (b.current_players || 0) - (a.current_players || 0);
     const cmpName = (a: TableData, b: TableData) => (a.name || '').localeCompare(b.name || '');
 
     switch (sortKey) {
@@ -1523,14 +1542,18 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       (Number(t.buy_in_amount) || 0) + (Number(t.buy_in_fee) || 0);
     const cmpBuyIn = (a: TournamentData, b: TournamentData) => buyIn(b) - buyIn(a);
     const cmpBuyInLow = (a: TournamentData, b: TournamentData) => buyIn(a) - buyIn(b);
-    const cmpPlayersTourn = (a: TournamentData, b: TournamentData) => (b.current_players || 0) - (a.current_players || 0);
-    const cmpNameTourn = (a: TournamentData, b: TournamentData) => (a.name || '').localeCompare(b.name || '');
+    const cmpPlayersTourn = (a: TournamentData, b: TournamentData) =>
+      (b.current_players || 0) - (a.current_players || 0);
+    const cmpNameTourn = (a: TournamentData, b: TournamentData) =>
+      (a.name || '').localeCompare(b.name || '');
 
     switch (sortKey) {
       case 'stakes_high':
         return rows.sort((a, b) => cmpBuyIn(a, b) || cmpPlayersTourn(a, b) || cmpNameTourn(a, b));
       case 'stakes_low':
-        return rows.sort((a, b) => cmpBuyInLow(a, b) || cmpPlayersTourn(a, b) || cmpNameTourn(a, b));
+        return rows.sort(
+          (a, b) => cmpBuyInLow(a, b) || cmpPlayersTourn(a, b) || cmpNameTourn(a, b)
+        );
       case 'players':
         return rows.sort((a, b) => cmpPlayersTourn(a, b) || cmpBuyIn(a, b) || cmpNameTourn(a, b));
       case 'starting_soon': {
@@ -1573,7 +1596,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       }
       case 'recommended':
       default:
-        return rows.sort((a, b) => tournamentOpenFirst(a, b) || cmpBuyIn(a, b) || cmpPlayersTourn(a, b) || cmpNameTourn(a, b));
+        return rows.sort(
+          (a, b) =>
+            tournamentOpenFirst(a, b) ||
+            cmpBuyIn(a, b) ||
+            cmpPlayersTourn(a, b) ||
+            cmpNameTourn(a, b)
+        );
     }
   }, [tournaments, gameType, showsTournaments, sortKey, searchQuery, advFilters]);
 
@@ -1992,12 +2021,30 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             ? 'This is taking longer than usual - the connection may be slow right now. Your chips and seats are safe.'
             : 'The club may have been moved or deleted.'}
         </p>
+        {/* The cause, verbatim. A player can read it out and it names the bug
+            immediately; without it every failure mode looks the same. */}
+        {!loadStalled && loadFailure && (
+          <p
+            style={{
+              color: '#6a7a8a',
+              fontSize: '0.72rem',
+              fontFamily: 'monospace',
+              margin: '0 0 1rem',
+              wordBreak: 'break-word',
+            }}
+          >
+            {loadFailure}
+          </p>
+        )}
         <div style={{ display: 'flex', gap: '0.75rem' }}>
           <button
             className="btn btn-primary"
             onClick={() => {
               loadingRef.current = false;
               setLoadStalled(false);
+              /* Drop the previous cause, or a retry that fails differently
+                 would still be showing the first attempt's reason. */
+              setLoadFailure(null);
               loadClubData();
             }}
             style={{

@@ -24,7 +24,11 @@ on:
   schedule:
     # Catches everything workflow_run cannot: a publish that never started, a
     # Vercel deploy that failed after the sync pushed, a CDN serving stale.
-    - cron: '*/15 * * * *'
+    # Halved from */15 on 2026-08-23 for cost. `workflow_run` above is the real
+    # trigger and fires the moment the publisher finishes; this schedule only
+    # catches a publish that never STARTED, and thirty minutes is well inside
+    # the window where that matters.
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 permissions:

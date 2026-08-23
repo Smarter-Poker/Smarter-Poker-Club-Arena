@@ -409,7 +409,7 @@
 
 .member-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.4rem;
   margin-top: 0.15rem;
 }
@@ -418,10 +418,11 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  text-align: center;
 }
 
 .member-metric__value {
-  font-size: 0.8rem;
+  font-size: 1.05rem;
   font-weight: 700;
   color: var(--ca-text);
   font-family: 'Rajdhani', monospace;
@@ -435,7 +436,7 @@
 }
 
 .member-metric__label {
-  font-size: 0.58rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.4px;
   color: var(--ca-text-faint);
@@ -534,7 +535,7 @@
   }
 }
 
-/* 375px and below: four metrics in one row stops being legible, so they go two
+/* 375px and below: five metrics in one row stops being legible, so they go two
    by two rather than shrinking to the point of truncation. */
 @media (max-width: 380px) {
   .member-metrics {

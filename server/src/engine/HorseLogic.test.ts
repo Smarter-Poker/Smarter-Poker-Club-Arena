@@ -246,7 +246,11 @@ describe('HorseLogic V2 — legality fuzz (all variants, all streets)', () => {
           }
         }
         expect(decision.thinkTime).toBeGreaterThanOrEqual(0);
-        expect(decision.thinkTime).toBeLessThanOrEqual(10000);
+        // V14: a deliberate time-bank burn is encoded as a sentinel above the
+        // turn clock (the engine translates it into "let the clock expire,
+        // then act inside the auto-granted bank"), so the ceiling is the
+        // sentinel band, not the old 10s cap.
+        expect(decision.thinkTime).toBeLessThanOrEqual(HorseLogic.THINK_TIMEBANK_SENTINEL + 10000);
 
         // Validate against the engine's own rules
         const check = validateAction(decision.action, decision.amount, hero.stack, bettingState);
@@ -2357,7 +2361,14 @@ describe('HorseLogic V11 — game modes + leak fixes', () => {
           dealerSeat: 6,
           gameMode,
           actionHistory: [
-            { seat: 3, userId: 'utg-open', action: 'raise', amount: 75, timestamp: 42, stage: 'preflop' },
+            {
+              seat: 3,
+              userId: 'utg-open',
+              action: 'raise',
+              amount: 75,
+              timestamp: 42,
+              stage: 'preflop',
+            },
           ],
         },
       };
@@ -2398,8 +2409,22 @@ describe('HorseLogic V11 — game modes + leak fixes', () => {
         bigBlind: 2,
         dealerSeat: 6,
         actionHistory: [
-          { seat: 6, userId: 'horse-6', action: 'raise', amount: 6, timestamp: 42, stage: 'preflop' },
-          { seat: 2, userId: 'horse-2', action: 'call', amount: 4, timestamp: 43, stage: 'preflop' },
+          {
+            seat: 6,
+            userId: 'horse-6',
+            action: 'raise',
+            amount: 6,
+            timestamp: 42,
+            stage: 'preflop',
+          },
+          {
+            seat: 2,
+            userId: 'horse-2',
+            action: 'call',
+            amount: 4,
+            timestamp: 43,
+            stage: 'preflop',
+          },
         ],
       };
       return HorseLogic.decide(hero, gs, 'balanced', {}, v11 ? {} : { v11: false });
@@ -2475,8 +2500,22 @@ describe('HorseLogic V11 — game modes + leak fixes', () => {
         bigBlind: 2,
         dealerSeat: 6,
         actionHistory: [
-          { seat: 6, userId: 'horse-6', action: 'raise', amount: 6, timestamp: 42, stage: 'preflop' },
-          { seat: 2, userId: 'horse-2', action: 'call', amount: 6, timestamp: 43, stage: 'preflop' },
+          {
+            seat: 6,
+            userId: 'horse-6',
+            action: 'raise',
+            amount: 6,
+            timestamp: 42,
+            stage: 'preflop',
+          },
+          {
+            seat: 2,
+            userId: 'horse-2',
+            action: 'call',
+            amount: 6,
+            timestamp: 43,
+            stage: 'preflop',
+          },
           { seat: 6, userId: 'horse-6', action: 'bet', amount: 10, timestamp: 44, stage: 'flop' },
         ],
       };
@@ -2513,7 +2552,14 @@ describe('HorseLogic V11 — game modes + leak fixes', () => {
           pot,
           currentBet,
           minRaise: Math.max(bb, currentBet > 0 ? bb : bb),
-          stage: boardLen === 0 ? 'preflop' : boardLen === 3 ? 'flop' : boardLen === 4 ? 'turn' : 'river',
+          stage:
+            boardLen === 0
+              ? 'preflop'
+              : boardLen === 3
+                ? 'flop'
+                : boardLen === 4
+                  ? 'turn'
+                  : 'river',
           gameVariant: 'nlh',
           bigBlind: bb,
           dealerSeat: 4,

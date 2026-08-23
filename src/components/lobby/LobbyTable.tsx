@@ -116,9 +116,10 @@ function RulesCell({ entry }: { entry: LobbyEntry }) {
   );
 }
 
-
 function LiveCountdown({ time }: { time: string | number | Date }) {
-  const [mins, setMins] = useState(() => Math.max(0, Math.floor((new Date(time).getTime() - Date.now()) / 60000)));
+  const [mins, setMins] = useState(() =>
+    Math.max(0, Math.floor((new Date(time).getTime() - Date.now()) / 60000))
+  );
 
   useEffect(() => {
     const t = new Date(time).getTime();
@@ -132,7 +133,20 @@ function LiveCountdown({ time }: { time: string | number | Date }) {
   }, [time]);
 
   if (isNaN(mins) || mins <= 0 || mins > 60) return null;
-  return <span className="lt-countdown" style={{ fontSize: '0.65rem', color: '#f59e0b', fontWeight: 700, marginRight: '8px', letterSpacing: '0.02em' }}>Starts In {mins} Min...</span>;
+  return (
+    <span
+      className="lt-countdown"
+      style={{
+        fontSize: '0.65rem',
+        color: '#f59e0b',
+        fontWeight: 700,
+        marginRight: '8px',
+        letterSpacing: '0.02em',
+      }}
+    >
+      Starts In {mins} Min...
+    </span>
+  );
 }
 
 export function LobbyStatusBadge({ status, label }: { status: LobbyStatusKey; label: string }) {
@@ -228,7 +242,7 @@ const COL_NAME: ColumnDef = {
     </span>
   ),
 };
-const COL_TNAME: ColumnDef = { ...COL_NAME, label: 'Tournament' };
+const COL_TNAME: ColumnDef = { ...COL_NAME, label: 'Tournament Name' };
 const COL_STAKES: ColumnDef = {
   key: 'stakes',
   label: 'Stakes',
@@ -286,7 +300,7 @@ const COL_RULES: ColumnDef = {
 };
 const COL_STARTS: ColumnDef = {
   key: 'starts',
-  label: 'Starts',
+  label: 'Starting Time',
   className: 'lt-col-starts',
   sortable: true,
   sortValue: (e) => e.startValue,
@@ -321,7 +335,9 @@ const COL_STATUS: ColumnDef = {
   sortValue: (e) => STATUS_RANK[e.status] ?? 9,
   render: (e, ctx) => (
     <span className="lt-statuscell">
-      {e.kind !== 'cash' && ['registering', 'starting_soon'].includes(e.status) && e.startTime && <LiveCountdown time={e.startTime} />}
+      {e.kind !== 'cash' && ['registering', 'starting_soon'].includes(e.status) && e.startTime && (
+        <LiveCountdown time={e.startTime} />
+      )}
       <LobbyStatusBadge status={e.status} label={e.statusLabel} />
       <PlayerStateChip entry={e} ctx={ctx} />
     </span>
@@ -374,13 +390,13 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
       ];
     case 'MTT':
       return [
-        COL_TNAME,
-        COL_VARIANT,
         COL_STARTS,
+        { ...COL_VARIANT, label: 'Game Type' },
         COL_BUYIN,
+        COL_TNAME,
         COL_GTD,
-        COL_PLAYERS,
         COL_SPEED,
+        { ...COL_PLAYERS, label: 'Enrolled' },
         COL_STATUS,
       ];
     case 'SPIN':

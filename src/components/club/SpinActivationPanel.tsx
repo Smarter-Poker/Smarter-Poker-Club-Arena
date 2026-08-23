@@ -1,0 +1,258 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE OWNER'S SPIN PANEL
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan, 2026-08-23: "SPINS SHOULD BE 'ACTIVATED' IN THE OWNERS MENU, AND WHEN
+ * THEY ARE, THEY NEED TO DECIDE HOW MUCH THEY ARE 'SEEDING' INTO THE WALLET.
+ * (THOSE FUNDS ARE RETURNED ONCE ENOUGH IS COLLECTED) AND ALL PROCEEDS ARE
+ * KEPT THERE TO FUND THE MULTIPLIER PAYOUTS."
+ *
+ * The panel has to be honest about three things that are easy to hide:
+ *
+ *   1. WHOSE MONEY THIS IS. A club inside a union does not have its own Spin
+ *      wallet — its union does. Rather than show a club owner a switch that
+ *      will refuse them, the panel says so plainly and shows the union's
+ *      numbers read-only.
+ *   2. WHAT THE SEED COSTS. Two top-tier jackpots at the largest stake offered,
+ *      quoted before the owner commits, and recalculated the moment they change
+ *      the stake.
+ *   3. THAT THE SEED IS A LOAN, NOT A FEE. It comes back once play alone has
+ *      collected as much, and the panel shows exactly how far away that is
+ *      rather than leaving the owner to wonder whether it ever will.
+ */
+
+import { useCallback, useEffect, useState } from 'react';
+import {
+  spinActivationApi,
+  requiredSeedForStake,
+  SPIN_BOARD_STAKES,
+  SPIN_SEED_SOURCES,
+  type SpinOwnerState,
+} from '../../services/SpinActivationService';
+import { useToast } from '../common/Toast';
+
+interface Props {
+  clubId: string;
+  /** Whether this viewer may actually flip the switch. */
+  canManage: boolean;
+}
+
+const chips = (n: number | null | undefined) =>
+  Number(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+export default function SpinActivationPanel({ clubId, canManage }: Props) {
+  const toast = useToast();
+  const [state, setState] = useState<SpinOwnerState | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [maxStake, setMaxStake] = useState<number>(10);
+  const [wallet, setWallet] = useState<string>('chip_treasury');
+
+  const load = useCallback(async () => {
+    try {
+      const res = await spinActivationApi.getState(clubId);
+      setState(res.state);
+      // Default the source wallet to the first one this owner actually has.
+      const sources = SPIN_SEED_SOURCES[res.state?.owner_kind ?? 'club'];
+      setWallet((w) => (sources.some((s) => s.value === w) ? w : sources[0].value));
+      if (res.state?.offered_max_stake > 0) setMaxStake(res.state.offered_max_stake);
+    } catch (err) {
+      // A viewer with no permission is a normal outcome, not an error worth
+      // shouting about — the panel simply shows nothing it cannot prove.
+      setState(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [clubId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const required = requiredSeedForStake(maxStake);
+  const sources = SPIN_SEED_SOURCES[state?.owner_kind ?? 'club'];
+  const isUnionOwned = state?.owner_kind === 'union';
+
+  const activate = async () => {
+    setBusy(true);
+    try {
+      await spinActivationApi.activate(clubId, required, maxStake, wallet);
+      toast.success(`Spins Activated With A Seed Of ${chips(required)} Chips`);
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could Not Activate Spins');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deactivate = async () => {
+    setBusy(true);
+    try {
+      await spinActivationApi.deactivate(clubId);
+      toast.success('Spins Deactivated. No Money Was Moved.');
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could Not Deactivate Spins');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <section className="settings-section">
+        <h3>Spins</h3>
+        <small className="form-hint">Loading</small>
+      </section>
+    );
+  }
+
+  if (!state) {
+    return (
+      <section className="settings-section">
+        <h3>Spins</h3>
+        <small className="form-hint">Spin Settings Are Not Available For This Club</small>
+      </section>
+    );
+  }
+
+  return (
+    <section className="settings-section">
+      <h3>Spins</h3>
+
+      {isUnionOwned && (
+        <small className="form-hint" style={{ display: 'block', marginBottom: 10 }}>
+          This Club Belongs To A Union, So The Spin Wallet Belongs To The Union. Only The Union Lead
+          Can Change It.
+        </small>
+      )}
+
+      <div className="toggle-row">
+        <div>
+          <label>Status</label>
+          <small className="form-hint">
+            {state.is_active ? 'Spins Are Running' : 'Spins Are Off'}
+          </small>
+        </div>
+        <span
+          className={`toggle-btn ${state.is_active ? 'on' : ''}`}
+          style={{ pointerEvents: 'none' }}
+        >
+          {state.is_active ? 'ON' : 'OFF'}
+        </span>
+      </div>
+
+      {state.is_active ? (
+        <>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Wallet Balance</label>
+              <strong>{chips(state.balance)}</strong>
+            </div>
+            <div className="form-group">
+              <label>Largest Stake Offered</label>
+              <strong>{chips(state.offered_max_stake)}</strong>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Collected From Play</label>
+              <strong>{chips(state.collected_from_play)}</strong>
+            </div>
+            <div className="form-group">
+              <label>Paid Out As Multipliers</label>
+              <strong>{chips(state.total_drawn)}</strong>
+            </div>
+          </div>
+
+          {state.seeded_amount > 0 ? (
+            <small className="form-hint" style={{ display: 'block' }}>
+              Seed Outstanding {chips(state.seeded_amount)}.{' '}
+              {state.seed_repayable_in > 0
+                ? `Returns After Another ${chips(state.seed_repayable_in)} Is Collected From Play.`
+                : 'Returns As Soon As The Wallet Can Give It Back And Still Cover Its Jackpots.'}
+            </small>
+          ) : (
+            <small className="form-hint" style={{ display: 'block' }}>
+              Seed Of {chips(state.seed_returned_amount)} Has Been Returned. Every Chip Collected
+              Now Stays Here To Fund Multipliers.
+            </small>
+          )}
+
+          {canManage && !isUnionOwned && (
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ marginTop: 12 }}
+              onClick={deactivate}
+              disabled={busy}
+            >
+              {busy ? 'Working' : 'Turn Spins Off'}
+            </button>
+          )}
+        </>
+      ) : (
+        <>
+          <small className="form-hint" style={{ display: 'block', marginBottom: 10 }}>
+            Seed The Wallet To Open Spins. The Seed Is A Loan, Not A Fee. It Comes Back Once Play
+            Has Collected As Much On Its Own, And Every Chip Collected After That Stays Here To Pay
+            Multipliers.
+          </small>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label htmlFor="spin-max-stake">Largest Stake To Offer</label>
+              <select
+                id="spin-max-stake"
+                value={maxStake}
+                onChange={(e) => setMaxStake(Number(e.target.value))}
+                disabled={!canManage || busy}
+              >
+                {SPIN_BOARD_STAKES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label htmlFor="spin-seed-source">Seed From</label>
+              <select
+                id="spin-seed-source"
+                value={wallet}
+                onChange={(e) => setWallet(e.target.value)}
+                disabled={!canManage || busy}
+              >
+                {sources.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <small className="form-hint" style={{ display: 'block' }}>
+            Required Seed {chips(required)} Chips. That Is Two Top Multiplier Jackpots At A Stake Of{' '}
+            {maxStake}, So The Wallet Can Always Pay The Biggest Prize It Offers.
+          </small>
+
+          {canManage && (
+            <button
+              type="button"
+              className="btn-primary"
+              style={{ marginTop: 12 }}
+              onClick={activate}
+              disabled={busy}
+            >
+              {busy ? 'Working' : `Activate Spins And Seed ${chips(required)}`}
+            </button>
+          )}
+        </>
+      )}
+    </section>
+  );
+}

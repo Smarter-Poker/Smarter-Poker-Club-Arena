@@ -116,6 +116,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * class owns — it deliberately leaves the heartbeat and the TimeBankEngine's
    * separate `timebank:<playerId>` deadlines alone.
    */
+  /** V14: how far into an auto-granted time bank a horse may tank. The bank
+   *  grants ~20s per use, so this leaves a wide safety margin against the
+   *  bank expiring and auto-folding the hand. */
+  private static readonly HORSE_MAX_BANK_BURN_MS = 9000;
+
   protected clearTurnTimer(): void {
     this.preciseTimer.clearTable(this.tableId);
     // V13: this function's own doc says "every turn deadline this table owns",
@@ -1601,17 +1606,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     //    out in full. Each turn to check/bet/call/fold, every action needs
     //    time, nothing can EVER be skipped." ──
     //
-    // The old floor was 700ms. A single action has to render its label, slide
-    // its chips onto the felt (cpSlideIn 500ms) and be READ before the turn
-    // moves on — 700ms clips the chip slide and makes a horse-heavy table blur
-    // past. Worse, a fold at 700ms cut cardFoldOut (380ms + 55ms stagger)
-    // right as the next seat's action arrived, so the muck barely registered.
-    //
-    // HORSE_MIN_THINK_MS is the floor for the FASTEST possible horse action.
-    // Instant/snap decisions still read as snap (1.8s is fast at a poker
-    // table) but every animation now completes. HorseLogic's own style- and
-    // situation-aware think times above this floor are unchanged, so varied
-    // pacing is preserved.
+    // HISTORY, kept because it explains what replaced it: this used to impose
+    // a hard think-time floor so that no action could be fast enough to clip
+    // its own animation. The animation concern was real, but the floor was the
+    // wrong instrument — the settle beat in the TURN_CHANGE handler is what
+    // actually guarantees an action gets airtime, and it applies to human
+    // actions too. The floor only flattened the horses' timing, which is what
+    // Dan reported on 2026-08-23.
     // Dan 2026-08-20: "THE GAME SPEED NEEDS TO SLOW DOWN TO FEEL MORE REAL.
     // Focus more on the user experience rather than getting more hands dealt."
     // Raised 1800 -> 2200. A live dealer's table does not fire an action every
@@ -1619,14 +1620,39 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // thinking rather than a script executing. This is ON TOP of the 650ms
     // settle every action now gets in the TURN_CHANGE handler, so the slowest
     // visible cadence per seat is ~2.85s and the fastest is never instant.
-    const HORSE_MIN_THINK_MS = 2200;
+    // ── V14 TEMPO (Dan 2026-08-23, binding) ────────────────────────────────
+    // "TIMING ON STREETS MUST BE MORE RANDOM... completely random, from
+    //  instant, to full 15 seconds or even using time banks."
+    //
+    // The 2200ms floor above was the single biggest reason the fleet felt
+    // scripted. HorseLogic already produced a spread, and this clamped the
+    // whole fast half of it onto ONE NUMBER — so seat after seat acted at
+    // exactly 2.2 seconds. Removing it is the point of this change; the
+    // 650ms settle in the TURN_CHANGE handler still keeps a snap from being
+    // literally instantaneous.
+    //
+    // This supersedes the 2026-08-20 note above it. That instruction was
+    // "slow the game down so it feels real"; this one is "make the timing
+    // genuinely random", and a uniform slow cadence is just a slower script.
     const actionTimeMs = (this.tableInfo?.action_time_seconds || 15) * 1000;
-    const thinkTimeMs = Math.round(
-      Math.max(
-        HORSE_MIN_THINK_MS,
-        Math.min(decision.thinkTime || 2500, Math.max(2000, actionTimeMs - 3000))
-      )
-    );
+    const requested = decision.thinkTime || 2500;
+    let thinkTimeMs: number;
+    if (requested >= HorseLogic.THINK_TIMEBANK_SENTINEL) {
+      // A deliberate TIME BANK burn. Let the turn clock expire — the engine
+      // auto-activates the bank on primary-timer expiry (Bible V8 6.2) — then
+      // act a few seconds into it. Bounded well inside the granted bank so a
+      // tank can never become an auto-fold.
+      const intoBank = 2000 + (requested - HorseLogic.THINK_TIMEBANK_SENTINEL) * 0.55;
+      thinkTimeMs = Math.round(
+        actionTimeMs + Math.min(intoBank, ServerTableEngineTurns.HORSE_MAX_BANK_BURN_MS)
+      );
+    } else {
+      // Everything else must land inside the ordinary clock, with a small
+      // margin so a genuine tank still acts rather than timing out.
+      thinkTimeMs = Math.round(
+        Math.max(250, Math.min(requested, Math.max(2000, actionTimeMs - 1200)))
+      );
+    }
 
     const handControllerRef = this.handController;
 

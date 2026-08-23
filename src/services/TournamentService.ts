@@ -368,12 +368,51 @@ class TournamentService {
     // Also fetch XMTT tournaments for the club's union (if any)
     let xmttTournaments: Tournament[] = [];
     try {
-      const { data: unionClub } = await supabase
+      /**
+       * SAME CASCADE, SAME RULE AS ClubHomePage (2026-08-23): a union club
+       * that cannot resolve its union lists only what it owns, which is
+       * almost nothing - the lobby empties while the union's games run one
+       * join away. `.maybeSingle()` returns { data: null } for BOTH "no such
+       * row" and "the query failed", and this call discarded the error, so a
+       * timeout was indistinguishable from a standalone club.
+       *
+       * Resolution order: the union_clubs row, then clubs.union_id, then the
+       * scope cached from the last successful load. Standalone is concluded
+       * only when a read SUCCEEDS and finds nothing everywhere.
+       */
+      const unionCacheKey = `ca_union_of_${resolvedId}`;
+      const { data: unionClubRow, error: unionClubErr } = await supabase
         .from('union_clubs')
         .select('union_id')
         .eq('club_id', resolvedId)
         .limit(1)
         .maybeSingle();
+
+      let resolvedUnionId: string | null = unionClubRow?.union_id ?? null;
+
+      if (!resolvedUnionId) {
+        const { data: clubRow } = await supabase
+          .from('clubs')
+          .select('union_id')
+          .eq('id', resolvedId)
+          .maybeSingle();
+        resolvedUnionId = (clubRow as { union_id?: string | null } | null)?.union_id ?? null;
+      }
+      if (!resolvedUnionId && unionClubErr) {
+        try {
+          resolvedUnionId = sessionStorage.getItem(unionCacheKey);
+        } catch {
+          /* storage unavailable */
+        }
+      }
+      try {
+        if (resolvedUnionId) sessionStorage.setItem(unionCacheKey, resolvedUnionId);
+        else if (!unionClubErr) sessionStorage.removeItem(unionCacheKey);
+      } catch {
+        /* storage unavailable */
+      }
+
+      const unionClub = resolvedUnionId ? { union_id: resolvedUnionId } : null;
 
       if (unionClub?.union_id) {
         // IMPORTANT: Only fetch XMTT if union allows cross-club tournaments

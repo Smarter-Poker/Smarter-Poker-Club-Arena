@@ -885,6 +885,45 @@ const XMTT_SCHEDULE: { hours: number[]; tournaments: XMTTConfig[] }[] = [
  */
 const BOARD_REFILL_INTERVAL_MS = 30 * 1000;
 
+/**
+ * How many games one tick may create, ACROSS EVERY BOARD IT TOUCHES.
+ *
+ * This used to be a per-board cap. Once a tick can service the house board
+ * plus every club and union that has activated Spins, a per-board cap is not a
+ * cap at all -- twenty activated owners would mean twenty times the work, and
+ * the tick that fills a cold board also has to share a connection with live
+ * hands being dealt. The budget is threaded through every ensureBoardOpen call
+ * in the pass, so the ceiling holds no matter how many owners exist.
+ */
+const BURST = 12;
+
+/**
+ * Whose board is being filled. A Spin is visible to players ENTIRELY through
+ * the club_id / union_id on its row -- ClubHomePage scopes its lobby query by
+ * one or the other and never consults membership -- so these two fields decide
+ * who can see the game, and getting them wrong makes a board invisible to the
+ * very club that paid for it.
+ */
+interface BoardOwner {
+  /** The tournaments.club_id to stamp. */
+  clubId: string;
+  /**
+   * The tournaments.union_id to stamp, or null.
+   *
+   * NOT cosmetic. A club inside a union has its lobby scoped by
+   * `.eq('club_id', id).eq('is_private', true)`, so a PUBLIC club-owned Spin
+   * would be dropped by its own club's page. A standalone club's lobby scopes
+   * by club_id alone and shows it. A union's games are found by union_id
+   * across every club in that union -- which is exactly how the house board
+   * has always reached players.
+   */
+  unionId: string | null;
+  /** The largest buy-in this owner's wallet is seeded to cover. */
+  maxStake: number;
+  /** For logs only. */
+  kind: 'house' | 'club' | 'union';
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TOURNAMENT RECURRING SERVICE CLASS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -915,6 +954,20 @@ export class TournamentRecurringService {
   // referenced elsewhere for rake-routing fallbacks only.
   private readonly ownerClubId = MIDWAY_UNION_ID;
   private readonly ownerUnionId = MIDWAY_UNION_ID;
+
+  /**
+   * The board the platform runs itself. It stays exactly as it was: club_id
+   * and union_id both the Midway union id, which is how every club in that
+   * union has always found these games. Activated owners get their own boards
+   * IN ADDITION to this one, so a player who belongs to no activated club
+   * still has somewhere to sit.
+   */
+  private readonly houseOwner: BoardOwner = {
+    clubId: MIDWAY_UNION_ID,
+    unionId: MIDWAY_UNION_ID,
+    maxStake: Number.POSITIVE_INFINITY,
+    kind: 'house',
+  };
 
   start(): void {
     if (this.isRunning) {
@@ -1053,8 +1106,95 @@ export class TournamentRecurringService {
   // SNG CHECK
   // ─────────────────────────────────────────────────────────────────────────
 
+  /**
+   * One pass over a board family at a time.
+   *
+   * The guard used to live inside ensureBoardOpen. It cannot stay there now
+   * that a single Spin pass calls ensureBoardOpen once per OWNER: the second
+   * owner in the same tick would find the flag set by the first and be skipped
+   * forever. It belongs around the whole pass, which is also what it always
+   * meant.
+   */
+  private async withBoardTick(variant: 'spin' | 'sng', run: () => Promise<void>): Promise<void> {
+    if (this.boardTickInFlight[variant]) {
+      console.log(`[TournamentRecurring] ${variant} board tick still running — skipping this one`);
+      return;
+    }
+    this.boardTickInFlight[variant] = true;
+    try {
+      await run();
+    } catch (err: any) {
+      reportError(
+        new Error(`[TournamentRecurring] ${variant} board error: ${err?.message}`),
+        'TournamentRecurring.board_error'
+      );
+    } finally {
+      // finally, not the end of try: every path inside returns early on a read
+      // error, and leaving the flag set would freeze the board permanently.
+      this.boardTickInFlight[variant] = false;
+    }
+  }
+
   private async checkAndLaunchSNGs(): Promise<void> {
-    await this.ensureBoardOpen('sng', SNG_CONFIGS, (c) => this.createSNG(c as any));
+    await this.withBoardTick('sng', async () => {
+      const budget = { left: BURST };
+      await this.ensureBoardOpen(
+        'sng',
+        SNG_CONFIGS,
+        (c, o) => this.createSNG(c as any, o),
+        this.houseOwner,
+        budget
+      );
+    });
+  }
+
+  /**
+   * Every owner who has switched Spins on and funded the wallet behind them.
+   *
+   * spin_bonus_pools.club_id is the OWNER id, not necessarily a club: for a
+   * union-owned pool it is the union's id, and owner_kind says which. That
+   * distinction is the whole reason BoardOwner carries unionId separately --
+   * see the comment on it for what happens when it is wrong.
+   *
+   * balance > 0 is deliberate belt-and-braces alongside is_active: a pool that
+   * has been drained cannot pay a multiplier, and opening games it cannot
+   * settle would hand players a prize the wallet has to clamp.
+   */
+  private async activatedSpinOwners(): Promise<BoardOwner[]> {
+    try {
+      const { data, error } = await supabase
+        .from('spin_bonus_pools')
+        .select('club_id, owner_kind, offered_max_stake, balance')
+        .eq('is_active', true)
+        .not('activated_at', 'is', null)
+        .gt('balance', 0)
+        .limit(200);
+
+      if (error) {
+        reportError(
+          new Error(`[TournamentRecurring] activated spin owners read failed: ${error.message}`),
+          'TournamentRecurring.spin_owners_read_failed'
+        );
+        return [];
+      }
+
+      return (
+        (data ?? [])
+          .map((r: any) => ({
+            clubId: String(r.club_id),
+            unionId: r.owner_kind === 'union' ? String(r.club_id) : null,
+            maxStake: Number(r.offered_max_stake) || 0,
+            kind: (r.owner_kind === 'union' ? 'union' : 'club') as 'union' | 'club',
+          }))
+          // The house runs from houseOwner above; listing it twice would have one
+          // pass fill the board and the next see it already full, alternating.
+          .filter((o) => o.clubId !== this.houseOwner.clubId)
+          // An owner who never chose a stake has nothing we can price a board at.
+          .filter((o) => o.maxStake > 0)
+      );
+    } catch {
+      return [];
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1062,7 +1202,37 @@ export class TournamentRecurringService {
   // ─────────────────────────────────────────────────────────────────────────
 
   private async checkAndLaunchSpins(): Promise<void> {
-    await this.ensureBoardOpen('spin', SPIN_CONFIGS, (c) => this.createSpin(c as any));
+    await this.withBoardTick('spin', async () => {
+      // ONE budget for the whole pass. See BURST.
+      const budget = { left: BURST };
+
+      // The house board first: it serves every player who is not in a club
+      // that has activated Spins, so it must never be starved by owner boards.
+      await this.ensureBoardOpen(
+        'spin',
+        SPIN_CONFIGS,
+        (c, o) => this.createSpin(c as any, o),
+        this.houseOwner,
+        budget
+      );
+
+      for (const owner of await this.activatedSpinOwners()) {
+        if (budget.left <= 0) break;
+        // Only the price points this owner's seed can actually cover. The
+        // required seed is two top-tier jackpots at their largest stake, so
+        // offering a bigger buy-in than they seeded for would advertise a
+        // multiplier the wallet cannot pay.
+        const affordable = SPIN_CONFIGS.filter((c) => c.buyIn <= owner.maxStake);
+        if (affordable.length === 0) continue;
+        await this.ensureBoardOpen(
+          'spin',
+          affordable,
+          (c, o) => this.createSpin(c as any, o),
+          owner,
+          budget
+        );
+      }
+    });
   }
 
   /**
@@ -1094,22 +1264,35 @@ export class TournamentRecurringService {
   private async ensureBoardOpen<T extends { name: string }>(
     variant: 'spin' | 'sng',
     configs: T[],
-    create: (config: T) => Promise<{ tournamentId: string | null }>
+    create: (config: T, owner: BoardOwner) => Promise<{ tournamentId: string | null }>,
+    owner: BoardOwner,
+    budget: { left: number }
   ): Promise<void> {
-    // See boardTickInFlight: overlapping ticks duplicate the board.
-    if (this.boardTickInFlight[variant]) {
-      console.log(`[TournamentRecurring] ${variant} board tick still running — skipping this one`);
-      return;
-    }
-    this.boardTickInFlight[variant] = true;
+    if (budget.left <= 0) return;
     try {
-      const { data: openRows, error } = await supabase
+      /**
+       * SCOPED TO THIS OWNER. Without the scope, one owner's board would be
+       * read as satisfying another's: the set is keyed on the config NAME, and
+       * "10 Chip Spin PLO4" is the same string on every board. The house would
+       * fill first and every activated club would then look already-full and
+       * never open a single game.
+       *
+       * Scoped the same way the lobby reads it, so what this counts is what a
+       * player of that owner can actually see: by union_id when a union owns
+       * the board, by club_id when a club owns it alone.
+       */
+      const openQuery = supabase
         .from('tournaments')
         .select('name')
         .eq('variant', variant)
         // REGISTERING only. ANNOUNCED is not joinable and RUNNING is too late;
         // counting either is what let a board of live games starve the lobby.
         .eq('status', 'REGISTERING');
+
+      if (owner.unionId) openQuery.eq('union_id', owner.unionId);
+      else openQuery.eq('club_id', owner.clubId).is('union_id', null);
+
+      const { data: openRows, error } = await openQuery;
 
       if (error) {
         // Fail CLOSED, exactly as getActiveCount does: on a transient read
@@ -1126,21 +1309,26 @@ export class TournamentRecurringService {
       const missing = configs.filter((c) => !open.has(c.name));
       if (missing.length === 0) return;
 
-      /* Cap the per-tick burst. A cold start has all 80 missing, and creating
-         80 tournaments in one tick means 80 inserts plus 80 horse-registration
-         batches against the same connection - enough to stall the engine loop
-         that also has live hands to deal. The board fills over a few ticks
-         instead, newest price points last. */
-      const BURST = 12;
+      /* Cap the per-tick burst. A cold start has every config missing, and
+         creating them all in one tick means one insert plus one
+         horse-registration batch each against the same connection - enough to
+         stall the engine loop that also has live hands to deal. The budget is
+         shared across every owner in this pass (see BURST), so the ceiling
+         holds however many owners have activated. Boards fill over a few
+         ticks instead. */
       let launched = 0;
-      for (const config of missing.slice(0, BURST)) {
-        const result = await create(config);
-        if (result.tournamentId) launched++;
+      for (const config of missing.slice(0, budget.left)) {
+        const result = await create(config, owner);
+        if (result.tournamentId) {
+          launched++;
+          budget.left--;
+        }
+        if (budget.left <= 0) break;
       }
 
       if (launched > 0) {
         console.log(
-          `[TournamentRecurring] Opened ${launched} ${variant}(s); ${missing.length - launched} still to fill`
+          `[TournamentRecurring] Opened ${launched} ${variant}(s) for ${owner.kind} ${owner.clubId.slice(0, 8)}; ${missing.length - launched} still to fill`
         );
       }
     } catch (err: any) {
@@ -1148,10 +1336,6 @@ export class TournamentRecurringService {
         new Error(`[TournamentRecurring] ${variant} board error: ${err.message}`),
         'TournamentRecurring.board_error'
       );
-    } finally {
-      // finally, not the end of try: the read-error path above RETURNS early,
-      // and leaving the flag set there would freeze the board permanently.
-      this.boardTickInFlight[variant] = false;
     }
   }
 
@@ -1602,7 +1786,8 @@ export class TournamentRecurringService {
   }
 
   private async createSNG(
-    config: SNGConfig
+    config: SNGConfig,
+    owner: BoardOwner = this.houseOwner
   ): Promise<{ tournamentId: string | null; registered: number }> {
     try {
       // A heads-up game is seat-first: one horse opens it and the second seat
@@ -1625,8 +1810,10 @@ export class TournamentRecurringService {
       const { data: sng, error } = await supabase
         .from('tournaments')
         .insert({
-          club_id: this.ownerClubId,
-          union_id: this.ownerUnionId,
+          // Whose board this is. See BoardOwner: these two fields are the
+          // ONLY thing that decides which lobby the game appears in.
+          club_id: owner.clubId,
+          union_id: owner.unionId,
           name: config.name,
           game_type: dbGameType,
           variant: 'sng',
@@ -1871,7 +2058,8 @@ export class TournamentRecurringService {
   }
 
   private async createSpin(
-    config: SpinConfig
+    config: SpinConfig,
+    owner: BoardOwner = this.houseOwner
   ): Promise<{ tournamentId: string | null; registered: number }> {
     try {
       // A Spin is three-handed by definition. The seat count is forced below
@@ -1942,8 +2130,10 @@ export class TournamentRecurringService {
       const { data: spin, error } = await supabase
         .from('tournaments')
         .insert({
-          club_id: this.ownerClubId,
-          union_id: this.ownerUnionId,
+          // Whose board this is. See BoardOwner: these two fields are the
+          // ONLY thing that decides which lobby the game appears in.
+          club_id: owner.clubId,
+          union_id: owner.unionId,
           // THE NAME MUST NOT CARRY THE MULTIPLIER. It used to read
           // "3 Chip Spin NLH (4x)", and that one string reached the lobby
           // tile, the tournament list, the table masthead and the browser tab

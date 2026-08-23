@@ -66,7 +66,14 @@ describe('the seat-first boards are refilled faster than they drain', () => {
 
   it('still caps a cold start, so a faster tick cannot stampede the engine', () => {
     expect(code).toMatch(/const\s+BURST\s*=\s*12\s*;/);
-    expect(code).toMatch(/missing\.slice\(0,\s*BURST\)/);
+    // Changed 2026-08-23 with per-owner boards. BURST used to be sliced
+    // directly, once per board. A pass now services the house board PLUS every
+    // owner who has activated Spins, so a per-board cap stops being a cap at
+    // all -- twenty owners would mean twenty times the work. BURST is now the
+    // opening balance of a budget threaded through every board in the pass,
+    // and the slice spends what is left of it.
+    expect(code).toMatch(/const budget = \{ left: BURST \}/);
+    expect(code).toMatch(/missing\.slice\(0,\s*budget\.left\)/);
   });
 
   it('returns without writing when the board is already full', () => {

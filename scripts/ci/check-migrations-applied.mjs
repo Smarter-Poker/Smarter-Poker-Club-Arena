@@ -100,7 +100,29 @@ function changedMigrations(base) {
  *  already exists, so every other check stays green. A column is the most
  *  common thing a migration adds and the easiest thing to strand. */
 function declaredObjects(sql) {
-  const clean = sql.replace(/--[^\n]*/g, '');
+  /**
+   * Comments FIRST, then string literals.
+   *
+   * A quoted string is not a declaration, and until 2026-08-23 this function
+   * could not tell the difference. An event-trigger migration that legitimately
+   * contains
+   *
+   *   WHEN TAG IN ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')
+   *
+   * was read as declaring a table named "as", and a COMMENT ON FUNCTION whose
+   * prose said "CREATE TABLE here inherits ..." was read as declaring a table
+   * named "here". Both are phantoms by construction: the gate then demands they
+   * exist in the live schema, and no amount of applying the migration can ever
+   * satisfy it.
+   *
+   * Stripping quoted strings cannot hide a real declaration, because a real
+   * CREATE TABLE is never inside quotes. The order matters: comments are
+   * removed first so that an apostrophe in prose ("someone else's change")
+   * cannot unbalance the quote scan that follows.
+   */
+  const clean = sql
+    .replace(/--[^\n]*/g, '')
+    .replace(/'(?:[^']|'')*'/g, "''");
   const fns = [
     ...clean.matchAll(
       /create\s+(?:or\s+replace\s+)?function\s+(?:public\.)?"?([a-z0-9_]+)"?\s*\(/gi

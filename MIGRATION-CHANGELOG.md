@@ -160,6 +160,80 @@ on during an incident.
 
 ---
 
+## Cowork session 2026-08-23 (2) — CLOSING THE TWO THINGS I WRONGLY CALLED DECISIONS
+
+Both of these were written up as open questions for Dan. Neither should have
+been; both were mine to solve.
+
+### 2,116 Spins that ran and were never booked
+
+`fn_spin_sweep_unbooked` and `v_spin_reserve_health.unbooked_24h` both filter on
+`buy_in_fee = 0`. Every Spin created before the 2026-08-20 cutover carried a
+fee, so the backstop refused to settle them and the counter that exists to
+notice unsettled games did not count them.
+
+**Not by replaying `fn_spin_settle_game`,** which is the obvious move and is
+wrong here: 863 of the 2,116 games already have `rake_records`, so a replay
+would double-count 665.70 of house rake and date 2,116 rake rows TODAY for games
+that ran days ago. It is the right function for a live game and the wrong one
+for a historical repair. This books the reserve movements only, and asserts that
+rake was untouched.
+
+It also refuses to CLAMP a prize the way the live function does. A clamp writes
+`kind='adjustment'`, `v_spin_reserve_health` counts those as `shortfall_events`
+with no time window, and spin-sweep pages on any non-zero count — so a backfill
+that clamped even once would have put a permanent red light on the operator
+dashboard for a game from last week. The pool has zero adjustment rows and still
+does.
+
+Outcome, matching the rolled-back dry run to the cent:
+
+```
+games 2,116 · reserve_in 12,431.04 · prize_out 11,488.00 · net +943.04
+pool 24,415.58 -> 25,358.62 · ceiling 30,000 never breached
+shortfall rows created 0 · fee-era spins still unbooked 0
+```
+
+**The first attempt aborted itself, and that was the assertion working.** The
+rake check was a GLOBAL before/after count; a live Spin settled mid-loop and
+wrote a rake record, so the count moved by one and the whole migration rolled
+back. Nothing partial survived. The fix was to make the assertion precise — both
+it and the money-conservation check are now scoped to this migration's own games
+and its own ledger rows, which no concurrent Spin can be a member of.
+
+### A new table could not stop being born writable by the internet
+
+Two tables, hours apart, from two different agents, both RLS-off with
+INSERT/UPDATE/DELETE granted to `anon`. Neither agent did anything wrong:
+`CREATE TABLE` in `public` inherits `arwdxtm` for `anon` and `authenticated`
+from the schema default privileges. Each one failed CHECK 10, which reads the
+LIVE catalog, so each blocked **every open PR in the World Hub at once**,
+attached to nobody's diff.
+
+Locking each table as it appears is not a fix. `trg_rls_on_new_public_table` is:
+a `ddl_command_end` trigger that enables RLS on every new `public` table,
+modelled directly on the estate's existing `trg_autorevoke_privileged_anon`,
+which does the same job for money-shaped functions and was simply never extended
+to tables — which is where both incidents happened.
+
+RLS rather than revoking grants, deliberately: CHECK 10 tests
+`NOT relrowsecurity AND client-writable`, so enabling RLS makes the first half
+false no matter what anyone grants later. `service_role` bypasses RLS and the
+owner is exempt, so the engine, the crons and every SECURITY DEFINER function
+are untouched — which is exactly what both incidents were, a log and a backup
+written only by the service role.
+
+Proven against production and rolled back: plain `CREATE TABLE` and
+`CREATE TABLE AS` both come out with RLS on, `SET app.allow_rls_off_table = on`
+still lets someone opt out on the record, grants are unchanged, and 0 probe
+tables survived. It can never fail a migration — every action is wrapped and a
+problem is a WARNING, with CHECK 10 still underneath as the backstop.
+
+13 new cases in `tests/config/spinFeeEraBackfill.test.ts`. Suite: 257 files,
+3,214 passed, tsc clean, all Supabase CI gates green.
+
+---
+
 ## Cowork session 2026-08-23 — the V12 horse brain audit: two jobs that would have broken production on their first night (PRs #358, #363)
 
 The V12 build-out shipped two nightly jobs that had never actually run. This

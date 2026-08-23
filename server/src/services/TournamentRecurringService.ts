@@ -892,6 +892,20 @@ export class TournamentRecurringService {
   private tournamentInterval: ReturnType<typeof setInterval> | null = null;
   private sngInterval: ReturnType<typeof setInterval> | null = null;
   private spinInterval: ReturnType<typeof setInterval> | null = null;
+  /**
+   * One board tick at a time, per board. setInterval does NOT wait for the
+   * previous callback to finish, and a tick that has to fill a drained board
+   * makes up to BURST creations one after another -- comfortably longer than
+   * the 30-second period. Two overlapping runs then read the SAME "what is
+   * missing" snapshot and both create it.
+   *
+   * That is not theoretical. Within two minutes of the 30-second cadence
+   * reaching production the Spin board held 56 open games against a
+   * 40-config board: sixteen names with exactly TWO copies each. (Only ever
+   * two -- once the duplicate is REGISTERING the name is no longer missing,
+   * so the board self-heals as the extra copies play out. It is still wrong.)
+   */
+  private boardTickInFlight: Record<'spin' | 'sng', boolean> = { spin: false, sng: false };
   private xmttInterval: ReturnType<typeof setInterval> | null = null;
   private isRunning = false;
 
@@ -1081,6 +1095,12 @@ export class TournamentRecurringService {
     configs: T[],
     create: (config: T) => Promise<{ tournamentId: string | null }>
   ): Promise<void> {
+    // See boardTickInFlight: overlapping ticks duplicate the board.
+    if (this.boardTickInFlight[variant]) {
+      console.log(`[TournamentRecurring] ${variant} board tick still running — skipping this one`);
+      return;
+    }
+    this.boardTickInFlight[variant] = true;
     try {
       const { data: openRows, error } = await supabase
         .from('tournaments')
@@ -1127,6 +1147,10 @@ export class TournamentRecurringService {
         new Error(`[TournamentRecurring] ${variant} board error: ${err.message}`),
         'TournamentRecurring.board_error'
       );
+    } finally {
+      // finally, not the end of try: the read-error path above RETURNS early,
+      // and leaving the flag set there would freeze the board permanently.
+      this.boardTickInFlight[variant] = false;
     }
   }
 

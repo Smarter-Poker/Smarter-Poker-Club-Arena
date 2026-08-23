@@ -12566,3 +12566,44 @@ writing when the board is full, and its BURST cap still bounds a cold start to
 events, not boards.
 
 9 new tests, 5 of which fail against origin/main.
+
+## Cowork session 2026-08-23 (7) — TWO TICKS, ONE SNAPSHOT, DOUBLE BOARD
+
+The 30-second board refill from session 6 was right about the cadence and
+wrong about concurrency, and it took two minutes in production to show it.
+
+`setInterval` does not wait for its previous callback. A tick filling a
+drained board makes up to BURST (12) creations SEQUENTIALLY, each an insert
+plus a table plus two horse registrations — comfortably longer than thirty
+seconds. The next tick then started while the first was still working, read
+the same "what is missing" snapshot, and created every one of the same games
+again.
+
+Measured: 56 open Spins against a 40-config board — sixteen names with
+exactly TWO copies each. Only ever two, because once the duplicate is
+REGISTERING the name stops being missing, so the board self-heals as the
+extra copies play out and no repair is needed. It was still wrong, and it
+doubled the write load in the same window the engine was restarting for the
+deploy.
+
+`boardTickInFlight` is now claimed before the snapshot read and released in a
+`finally` — the read-error path returns early by design, and releasing at the
+end of the `try` would have stranded the flag and frozen the board forever.
+Per board, so a slow SNG fill cannot stall Spins.
+
+8 new tests, 6 of which fail against origin/main. 280 files / 3,401 green.
+
+### What the deploy proved
+
+- All 17 heads-up games started within TWENTY SECONDS of the engine picking up
+  the new floor, and created their first tables in fifty hours. Ten had
+  completed within fifteen minutes.
+- The Spin board no longer empties: 40 configs held open continuously.
+- The engine restart window (two deploys four minutes apart) briefly exhausted
+  the Supabase connection pool — `/api/health` and PostgREST both timed out for
+  about eight minutes while `discoveryStaleMs` climbed. It drained on its own;
+  active connections were back to 1. The duplicate-creation bug above was
+  making that window worse than it needed to be.
+- `trg_sync_tournament_current_players` counts against
+  `idx_tournament_players_status (tournament_id, status)` — an index-only scan,
+  so the per-registration recount carries no scan cost.

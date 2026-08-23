@@ -697,7 +697,7 @@ export function TableTabBar({
           duplicated BBJ in the header that needs to be removed."
           BadBeatJackpot's .bbj-widget banner sits directly below this bar and
           shows the same pool for the same table. Two live copies of one number
-          is one too many, and the header is the copy with less room. */
+          is one too many, and the header is the copy with less room. */}
 
       {/* Batch 3: long-press / right-click quick menu */}
       {quickMenu &&

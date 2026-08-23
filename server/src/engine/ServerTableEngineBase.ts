@@ -681,8 +681,29 @@ export abstract class ServerTableEngineBase {
     this.insuranceEngine = new InsuranceEngine((event) => {
       console.log(`[ServerTableEngine:${tableId}] Insurance: ${event.type}`);
     });
+    /**
+     * Dan 2026-08-23: "WHY WOULD YOU LEAVE THIS INSTEAD OF FIXING IT?!"
+     *
+     * These callbacks were console.log and nothing else, so the events never
+     * left the process. TablePage has always subscribed to RAKEBACK_DISTRIBUTED
+     * and TABLE_BALANCE_EXECUTED on MasterBus and its handlers were already
+     * written - "Received +$N rakeback!" and "You were moved to balance the
+     * tables." - they simply could not run. Both now go out on the hub, which
+     * is the same path insurance and RIT already use.
+     */
     this.rakebackEngine = new RakebackEngine(supabase, (event) => {
       console.log(`[ServerTableEngine:${tableId}] Rakeback: ${event.type}`);
+      if (event.type === 'RAKEBACK_DISTRIBUTED') {
+        try {
+          this.hub?.emitEvent(this.tableId, {
+            ...(event as unknown as Record<string, unknown>),
+            type: 'rakeback_distributed',
+            table_id: this.tableId,
+          });
+        } catch {
+          /* broadcast failure is non-fatal */
+        }
+      }
     });
 
     // Step 7: Initialize tournament & extras modules
@@ -691,6 +712,17 @@ export abstract class ServerTableEngineBase {
     });
     this.tableBalancer = new TableBalancer((event) => {
       console.log(`[ServerTableEngine:${tableId}] TableBalancer: ${event.type}`);
+      if (event.type === 'TABLE_BALANCE_EXECUTED') {
+        try {
+          this.hub?.emitEvent(this.tableId, {
+            ...(event as unknown as Record<string, unknown>),
+            type: 'table_balance_executed',
+            table_id: this.tableId,
+          });
+        } catch {
+          /* broadcast failure is non-fatal */
+        }
+      }
     });
     this.tableBreakEngine = new TableBreakEngine((event) => {
       console.log(`[ServerTableEngine:${tableId}] TableBreak: ${event.type}`);

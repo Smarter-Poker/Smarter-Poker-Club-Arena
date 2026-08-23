@@ -7,6 +7,242 @@
 
 ---
 
+## Cowork session 2026-08-23 (2) — MOBILE, THE SECOND PASS: what the first pass missed (PRs #420, #429)
+
+The first pass fixed what it measured. This one went looking for what it had
+not thought to measure, and found four more classes of defect.
+
+### 1. `min-height: 100vh` was only a third of the problem
+
+The earlier sweep patched `min-height: 100vh` and stopped there. `height` and
+`max-height` carry the same flaw and are WORSE: `min-height` merely allows a
+page to be too tall, `height: 100vh` FORCES it, so the bottom of the element
+is guaranteed to sit under the browser toolbar. Eleven more occurrences,
+including both chat pages — where the thing pushed off-screen is the message
+input — plus the side nav, the tournament clock, the BBJ celebration and four
+`calc(100vh - …)` modal heights. All now carry a `100dvh` companion (PR #420).
+
+### 2. Twelve controls a thumb could not reliably hit
+
+Measured in production at 375px: 27 interactive controls compute under
+Apple's 44px minimum on their short axis, the worst an 18px-tall "View All"
+with 2px of padding. A 20px chip in a horizontal row is a coin flip between
+two adjacent filters.
+
+They are NOT resized. A 20px range tab becoming 44px is a redesign, not a
+repair. Each keeps its painted size and gains an invisible 44px-tall `::after`
+hit area — a click on a pseudo-element is dispatched to its host, so nothing
+moves and nothing repaints. VERTICAL ONLY, deliberately: every one of these
+fails on height while already being 45-108px wide, and they sit in horizontal
+rows, so widening would overlap the neighbour and hand it the wrong taps. Two
+controls that fail on both axes (`.dw__plus` 22x22, `.lobby-club__share`
+32x32) are the only ones that grow sideways. Scoped to `pointer: coarse` so a
+mouse is untouched. `.tap-target` is the opt-in class for one-offs with no
+class of their own.
+
+### 3. PINCH-ZOOM IS BACK (Dan approved)
+
+`index.html` carried `maximum-scale=1.0, user-scalable=no`. That disables
+pinch-zoom for everyone — a WCAG 1.4.4 failure — and on iOS it was also the
+thing quietly masking the sub-16px focus-zoom bug. The lock hid the symptom
+instead of fixing the cause. Now that every text field is at least 16px at
+phone width (57 rules across #380/#391/#408/#429), the auto-zoom cannot fire
+and the lock has nothing left to hold back. Removed.
+
+Do not re-add it. `tests/e2e/mobile-input-zoom.spec.ts` fails CI the moment a
+sub-16px field returns; fix the field, not the viewport.
+
+### 4. A correction to this changelog's own previous entry
+
+The earlier entry stated the viewport had "no maximum-scale, deliberately".
+That was the WORLD HUB's `_app.js` viewport, not Club Arena's. Club Arena's
+own index.html had the lock all along. Both the spec and the CSS comment that
+repeated the claim are corrected in place. Reading the right file is not a
+detail — the wrong one produced a confident, published, wrong sentence.
+
+### A third gate
+
+`tests/e2e/mobile-tap-targets.spec.ts` asserts REACH, not box height: it
+probes points across a 44px vertical span and requires `elementFromPoint` to
+resolve back to the control. That is true whether the target is genuinely
+44px or is 20px with an expanded hit area, so it tests the behaviour rather
+than the technique and stays honest if someone swaps one for the other. It
+emulates touch, because the expansion is touch-scoped on purpose.
+
+### Two more near-misses, both caught by checking instead of assuming
+
+- Deleting the two `/src/styles/*` preloads from index.html looked like free
+  cleanup (Vite strips them from the built HTML). It is not: those tags are
+  what makes Vite BUNDLE globals.css and design-system.css at all. Removing
+  them dropped every design token — `--bottom-nav-clearance` included — out
+  of the entry CSS. Reverted within the same build. The tags are
+  load-bearing; label them, do not tidy them.
+- `MarketplacePage.module.css .searchInput` was written off as dead CSS
+  because MarketplacePage.tsx never references it. `StoreTab.tsx` imports
+  that stylesheet and does. It is a live 13px search field, so it was fixed,
+  not deleted. Grep the stylesheet's importers, not just its namesake.
+
+Verification: tsc clean; vitest 274 files / 3,347 passed; vite build clean;
+the tap-target gate correctly RED against the pre-deploy build (6 controls,
+24-32px of reach) which is the evidence it works.
+
+---
+
+## Cowork session 2026-08-23 (4) — the last three items, and three more traps avoided by measuring
+
+Closing out the outage work. Every remaining item was either fixed or proven not
+to be a problem, and in three cases the obvious fix would have caused a
+regression worse than the thing it fixed.
+
+### The club money panel: 1,454 ms -> a rollup
+
+It was the #1 statement on the instance by 3.7x (1,238 calls, 1,785 s total) and
+client facing. Two covering indexes removed every wasted row from its two weekly
+sums and each was STILL ~150 ms, because the work was real: 699,425 rake rows,
+~180,000 in the current week, growing daily. Those collapse to **16 rollup rows**.
+
+`union_rake_weekly` is derived display data; `union_wallet_transactions` stays
+the sole source of truth. Each sum is now **rollup -> ledger fallback -> zero**,
+so a missing row costs latency, never correctness, and the maintaining trigger
+swallows its own errors because a display rollup must never block the engine
+banking rake. **Union-wide sum: 189,415 buffers / 331 ms -> 2 buffers / 0.311 ms.**
+
+The first attempt **failed its own assertion**: it backfilled then created the
+trigger, and under READ COMMITTED rake banked in between was counted by neither.
+`SHARE ROW EXCLUSIVE` makes the two atomic. The 5,028-character function was
+patched by surgical replacement on `pg_get_functiondef`, never retyped.
+
+### The hand insert: 46.4 ms -> ~9 ms on the worst trigger
+
+`EXPLAIN ANALYZE` on a real insert attributed it exactly: the row and all eight
+indexes are **3.9 ms**; the three per-row triggers are **42.5 ms**.
+
+`club_member_table_state` (119,823 rows) and `club_member_daily_stats` (154,780
+rows, 28,770 dead, the **#1 write source in the database**) had _never_ been
+vacuumed. The first fix missed the second table and the trigger re-degraded from
+7.8 ms to 19.5 ms within eight minutes — which is how the omission was caught.
+
+### Three traps, each disproven with a measurement
+
+1. **The 177 MB GIN index on `hand_history.players`** shows 0 scans and looks
+   droppable. Five call sites use `.contains('players', ...)`. Dropping it saves
+   ~nothing (the write is 3.9 ms) and turns every hand search into a full scan of
+   a 10 GB table.
+2. **REPLICA IDENTITY FULL on `tournament_players`** (34,425 UPDATEs) looks like
+   free WAL. It is required — clients filter on `tournament_id` (non-PK) and read
+   `payload.old`.
+3. **Pruning `tables`** (62k closed rows) would cascade to eight child tables and,
+   because `rake_records_table_id_fkey` is `ON DELETE SET NULL`, silently blank
+   `table_id` on historical rake records and destroy financial provenance.
+
+### Realtime, honestly
+
+~299 s CPU/30 min, still the largest single cost. Publication trimming and
+replica-identity changes are both disproven. Logical decoding reads **all** WAL,
+and the top producers are not even published — `club_member_daily_stats`,
+`engine_table_leases`, `player_stats`, `player_position_stats`,
+`club_member_table_state`, ~139k writes, nearly all of them the per-hand
+per-player stat upserts from the same three triggers. Reducing it further means
+batching those stats, which is engine architecture, not configuration.
+
+### Standing lesson
+
+An index with 0 scans, a huge table, and a replica-identity setting all look like
+free wins and none of them were. Every one needed a measurement or a grep across
+both repos to tell "unused" from "not used in the last two hours".
+
+---
+
+## Cowork session 2026-08-23 (2) — the deep audit: seventeen points of equity, and three layers that reported success while doing nothing (PRs #399, #409)
+
+Asked to go through the horse brain line by line before claiming success. The
+honest summary is that claiming success earlier would have been wrong: the
+worst defect in the engine was found on this pass, not the previous one.
+
+### The equity sampler was 17 points wrong against every tight read
+
+The band sampler used REJECTION sampling — redraw uniformly up to `tries`
+times, and if nothing landed in the read, keep the CLOSEST MISS at full weight.
+For a tight read that inverts the read it exists to honour: the tighter the
+band, the lower the hit rate, so the more often the fallback fires — and the
+fallback's expected value is the best of ~15 draws that all FAILED the band.
+
+Measured against exhaustive ground truth. Hero AQs on A-K-7 facing a
+[0.85, 1.0] read (27 legal combos, 2.5% of the deck):
+
+|                                 | equity    |
+| ------------------------------- | --------- |
+| true, enumerated over the range | 55.4%     |
+| what the sampler reported       | **72.4%** |
+
+Seventeen points, systematically, in hero's favour, every time a horse faced a
+strong range — so a horse looking at a 4-bet priced its hand as a crush and
+called off. Every equity-driven threshold downstream was reading an inflated
+number precisely when the pot was biggest.
+
+A two-card range is small enough to enumerate, so it is no longer sampled by
+rejection at all: every combo is pre-sorted by percentile at module load, a
+band is a contiguous slice found by binary search, and sampling is one uniform
+draw plus a collision check. Same spot after: **55.3% against a truth of 55.5%**.
+Omaha keeps the old path — its combo space cannot be enumerated. Cost 0.81 ms
+per decision against a 25 ms budget.
+
+The V12 board-contact redraw had the matching defect: it drew uniformly from
+the whole deck and never re-tested the band, so an in-band hand that failed to
+connect was replaced by an unconditioned one — a 3-bettor's c-betting range
+acquired bottom two pair and 72o. It draws from the band now.
+
+### fastRandom could return exactly 1.0, and that folded real hands
+
+It divided by 2^32-1. xorshift32's period covers every non-zero state, so the
+state hits 0xffffffff once per period and the draw returned EXACTLY 1.0 —
+`Math.floor(r * (n - i))` then indexed one past the deck, the partial
+Fisher-Yates swapped in `undefined`, the evaluator threw, and `decide()`'s
+safety net turned it into a FOLD. A silent, unexplained fold of an arbitrary
+hand, fleet-wide, with no telemetry, because that same catch swallowed the
+error. One character, plus a test pinning the [0,1) contract — and the catch
+reports now, so the next one like it is visible.
+
+### Three layers that reported success while doing nothing
+
+- **The nightly league never ran.** Its checker ticks every 30 minutes against
+  a ONE-HOUR window, and a 04:32 deploy restart pushed the next tick to ~05:02.
+  Hand production was perfectly steady the whole time, so every health signal
+  looked green while the job quietly skipped the day. Both nightly jobs now
+  check every 10 minutes with a 3-hour catch-up window.
+- **The tournament context could disable itself permanently.** `refresh()` had
+  no timeout and clears its in-flight flag only in a `finally` that never runs
+  if the promise never settles — one hung fetch froze that tournament's ICM
+  context for the process lifetime, or left it null forever, so the horses
+  played the whole event including the bubble on the flat premium. Bounded at
+  5s with a stuck-guard. A transient read miss also wiped a good context; it
+  keeps the stale one now, as the catch beside it already did.
+- **`connectsBoard` counted the board's own hand as opponent contact** — 32o on
+  K K 7 "had" kings — so on ~17% of flops the V12 conditioning was a no-op.
+
+### Also fixed
+
+Payout parsing now uses the repo's canonical validator (the local one counted
+`[null, null]` as two paid places; verified against all 14,280 live rows, every
+one accepted). The 5000-row player query had no ORDER BY. Bluff RAISES never
+registered a barrel plan, so a flop check-raise bluff arrived at the turn with
+no plan and re-rolled the dice. `difficultyHint` is a module global that the
+safety net left stranded, handing the next horse on any table a tank
+multiplier. The pineapple discard street evaluated three hole cards as if all
+three played. Two V12 layers were gated on the v11 flag, so `v12:false` never
+disabled them.
+
+### On evidence
+
+The V12 ablation, re-measured now that the sampler under it is exact, gave
++15.00 bb/100 (se 7.03) on one seed and −0.40 (se 7.67) on another — pooled,
+**not resolved**. Recorded as unresolved rather than quoting the seed that
+agrees. The sampler fix itself is proven against enumeration, which is a
+stronger instrument than a league A/B when it is available; the v13 decision
+group is not, and ships on correctness with that stated.
+
+**1151/1151.**
+
 ## Cowork session 2026-08-23 (4) — RE-READING THE SPIN FIX: one query per horse was mine
 
 An adversarial pass over the Spin work from an hour earlier. One real defect,

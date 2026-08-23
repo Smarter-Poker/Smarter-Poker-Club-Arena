@@ -329,6 +329,61 @@ export default function ProfilePage() {
           /* corrupt cache */
         }
 
+        // PERF 2026-08-23: this batch needs only authUser.id - never the
+        // profile row - but sat behind it, so the page paid two round trips
+        // in series where one would do. The query array below is the
+        // original, moved verbatim; only where it is AWAITED changed, so
+        // the order of state updates is untouched.
+        const secondaryDataPromise = Promise.allSettled([
+          // Achievements
+          retryFetch(
+            () =>
+              supabase
+                .from('training_user_achievements')
+                /* `achievement:achievements(*)` 400'd on every profile load,
+                   for every user, since it was written: there is no
+                   `achievements` table in this schema. PostgREST said so in
+                   the response body — PGRST200, "Perhaps you meant
+                   'training_achievement_definitions' instead" — and the FK
+                   confirms it (training_user_achievements.achievement_id ->
+                   training_achievement_definitions). Nothing surfaced it,
+                   because the result is read through Promise.allSettled and a
+                   rejected fetch just renders an empty achievement list, and
+                   retryFetch dutifully retried the impossible query 3x a load.
+
+                   The aliases matter too: the definitions table has `icon_url`
+                   and `threshold`, not `icon` and `max_progress`, so the
+                   consumer below would have rendered a blank icon and an
+                   undefined progress cap even once the embed resolved.
+
+                   Explicit columns rather than `*` for the same reason
+                   `select('*')` was removed from the profile readers in
+                   August: a star-select touching one ungranted column makes
+                   Postgres reject the whole statement. */
+                .select(
+                  'id, achievement_id, user_id, progress, unlocked_at, ' +
+                    'achievement:training_achievement_definitions(' +
+                    'id, name, description, icon:icon_url, max_progress:threshold)'
+                )
+                .eq('user_id', authUser.id)
+                .limit(200)
+                .then((r) => r),
+            { maxRetries: 2, isMountedRef: isMountedRef }
+          ),
+          // Transaction history
+          retryFetch(
+            () =>
+              supabase
+                .from('wallet_transactions')
+                .select('id, type, amount, created_at, description')
+                .eq('user_id', authUser.id)
+                .order('created_at', { ascending: true })
+                .limit(200)
+                .then((r) => r),
+            { maxRetries: 2, isMountedRef: isMountedRef }
+          ),
+        ]);
+
         // Fetch basic profile and stats
         const { data: profile } = await retryFetch(
           () =>
@@ -392,55 +447,7 @@ export default function ProfilePage() {
         // Challenges are NOT loaded here any more: this page links to
         // /challenges instead of rendering them, so fetching all three tiers on
         // every profile visit was pure waste (9 round trips on a fresh day).
-        const [achievementsResult, transactionsResult] = await Promise.allSettled([
-          // Achievements
-          retryFetch(
-            () =>
-              supabase
-                .from('training_user_achievements')
-                /* `achievement:achievements(*)` 400'd on every profile load,
-                   for every user, since it was written: there is no
-                   `achievements` table in this schema. PostgREST said so in
-                   the response body — PGRST200, "Perhaps you meant
-                   'training_achievement_definitions' instead" — and the FK
-                   confirms it (training_user_achievements.achievement_id ->
-                   training_achievement_definitions). Nothing surfaced it,
-                   because the result is read through Promise.allSettled and a
-                   rejected fetch just renders an empty achievement list, and
-                   retryFetch dutifully retried the impossible query 3x a load.
-
-                   The aliases matter too: the definitions table has `icon_url`
-                   and `threshold`, not `icon` and `max_progress`, so the
-                   consumer below would have rendered a blank icon and an
-                   undefined progress cap even once the embed resolved.
-
-                   Explicit columns rather than `*` for the same reason
-                   `select('*')` was removed from the profile readers in
-                   August: a star-select touching one ungranted column makes
-                   Postgres reject the whole statement. */
-                .select(
-                  'id, achievement_id, user_id, progress, unlocked_at, ' +
-                    'achievement:training_achievement_definitions(' +
-                    'id, name, description, icon:icon_url, max_progress:threshold)'
-                )
-                .eq('user_id', authUser.id)
-                .limit(200)
-                .then((r) => r),
-            { maxRetries: 2, isMountedRef: isMountedRef }
-          ),
-          // Transaction history
-          retryFetch(
-            () =>
-              supabase
-                .from('wallet_transactions')
-                .select('id, type, amount, created_at, description')
-                .eq('user_id', authUser.id)
-                .order('created_at', { ascending: true })
-                .limit(200)
-                .then((r) => r),
-            { maxRetries: 2, isMountedRef: isMountedRef }
-          ),
-        ]);
+        const [achievementsResult, transactionsResult] = await secondaryDataPromise;
 
         if (!isMounted) return;
 

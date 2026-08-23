@@ -43,7 +43,6 @@ const ACRONYMS = new Set([
   'plo8',
   'flh',
   'flo',
-  'ofc',
   'nl',
   'pl',
   'fl',

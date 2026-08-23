@@ -953,9 +953,14 @@ textarea:focus-visible,
    iOS Safari zooms the whole viewport when a text field is focused whose
    font-size is under 16px, and it does NOT zoom back out when the field
    blurs. The page is then left panned and oversized, which reads exactly like
-   "the app broke" — and the viewport meta here is `width=device-width,
-   initial-scale=1` with no `maximum-scale`, deliberately (locking zoom out
-   would fix the symptom by removing an accessibility feature).
+   "the app broke".
+
+   CORRECTION 2026-08-23: this comment used to claim the viewport carries no
+   `maximum-scale`. It does — index.html declares
+   `maximum-scale=1.0, user-scalable=no`, which today is what actually holds
+   the symptom back, at the cost of pinch-zoom for everyone (WCAG 1.4.4).
+   Sizing the fields correctly is what makes that lock removable rather than
+   load-bearing; see tests/e2e/mobile-input-zoom.spec.ts.
 
    55 input rules across the app set 0.8-0.9rem, so a tap on the friends
    search, the members search, the stake fields or any club form triggered it.
@@ -970,5 +975,78 @@ textarea:focus-visible,
   textarea,
   select {
     font-size: 16px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TOUCH TARGETS — REACHABLE WITHOUT REDRAWING THE CHIP (2026-08-23)
+   ═══════════════════════════════════════════════════════════════════════════════
+   Measured in production at 375px: 27 controls compute under 44px on their
+   short axis, the worst at 18px. Apple's guidance is 44pt, and a 4px-padding
+   chip is genuinely hard to hit with a thumb on a moving train.
+
+   Forcing `min-height: 44px` would work and would also REDRAW every one of
+   these — a 20px range tab becoming 44px is a visual redesign, not a fix.
+   Instead each control keeps its exact painted size and gains an invisible
+   44px-tall hit area via ::after. A click on a pseudo-element is dispatched
+   to its host, so nothing else changes.
+
+   VERTICAL ONLY, deliberately: every one of these fails on height (18-23px)
+   while already being 45-108px wide, and these chips sit in horizontal rows.
+   Expanding sideways would overlap the neighbouring chip and hand its taps to
+   the wrong control — the exact bug this is meant to prevent.
+
+   Scoped to `pointer: coarse` so a mouse, which does not need it, is
+   unaffected, and to the specific classes that were measured — not a blanket
+   rule, because a blanket rule would put a 44px invisible box around controls
+   that are already fine and start stealing taps.
+
+   `.dw__plus` is the one that also fails horizontally (22x22), so it is the
+   only one that grows both ways. */
+@media (pointer: coarse) {
+  .pt-range-tab,
+  .pl-tab,
+  .fr-challenge-btn,
+  .refd-copy-btn,
+  .stats-export-btn,
+  .replay-btn,
+  .analyze-btn,
+  .share-btn,
+  .fr-filter-chip,
+  .hh-filter-chip,
+  .lobby-favtoggle,
+  .dw__plus {
+    position: relative;
+  }
+
+  .pt-range-tab::after,
+  .pl-tab::after,
+  .fr-challenge-btn::after,
+  .refd-copy-btn::after,
+  .stats-export-btn::after,
+  .replay-btn::after,
+  .analyze-btn::after,
+  .share-btn::after,
+  .fr-filter-chip::after,
+  .hh-filter-chip::after,
+  .lobby-favtoggle::after,
+  .dw__plus::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 44px;
+    /* Purely a hit area: never paints, never affects layout. */
+    background: transparent;
+  }
+
+  .dw__plus::after {
+    left: 50%;
+    right: auto;
+    min-width: 44px;
+    width: 44px;
+    transform: translate(-50%, -50%);
   }
 }

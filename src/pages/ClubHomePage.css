@@ -610,6 +610,7 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: #0f1420;
   color: #cfd8e5;
+  transition: all 0.2s ease;
   font-size: 0.72rem;
   font-weight: 600;
   white-space: nowrap;
@@ -628,7 +629,7 @@
 .quickprefs__chip.is-on {
   background: linear-gradient(135deg, #3b82f6, #2563eb);
   border-color: #3b82f6;
-  color: #17130a;
+  color: #ffffff;
   font-weight: 800;
 }
 
@@ -697,7 +698,7 @@
    last week and comes back to a short list must be able to see WHY. Gold
    fill plus a dot, matching how the sort control signals a non-default. */
 .game-bar__filter-btn.is-set {
-  color: #17130a;
+  color: #ffffff;
   background: linear-gradient(135deg, #3b82f6, #2563eb);
   border-color: #3b82f6;
   font-weight: 800;
@@ -1245,7 +1246,6 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    BACKGROUND (Premium Bar Scene)
 ═══════════════════════════════════════════════════════════════════════════════ */
-
 
 /* Table Card Wrapper — contains Link + Delete button */
 .table-card-wrapper {

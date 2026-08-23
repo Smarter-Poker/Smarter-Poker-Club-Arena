@@ -1706,10 +1706,9 @@ export class TournamentRecurringService {
        * and the next human to sit at one became its FOURTH entrant.
        */
       const opening = openingHorsesForSeatFirst(seats);
+      const candidates = await this.pickFreeHorses(opening);
       let seated = 0;
-      for (let i = 0; i < opening; i++) {
-        const horse = await this.pickFreeHorse();
-        if (!horse) break;
+      for (const horse of candidates) {
         const { data: res } = await supabase.rpc('fn_seat_horse_in_seat_first_game', {
           p_tournament_id: tournament.id,
           p_user_id: horse,
@@ -1730,12 +1729,27 @@ export class TournamentRecurringService {
   }
 
   /**
-   * One horse that is genuinely free: not in a live tournament, not sitting at
+   * Horses that are genuinely free: not in a live tournament, not sitting at
    * any table. Same exclusions registerHorses uses, for the same reason -
    * taking a horse out of a hand it is already playing is worse than opening a
    * table one seat short.
+   *
+   * BATCHED, and that is the whole point of this signature.
+   *
+   * The first version of this took no argument and answered with ONE horse, so
+   * seating a Spin called it twice and a top-up called it once per empty seat.
+   * Each call reads up to 2,000 tournament_players, 2,000 table_seats and 400
+   * profiles. GameServer's discovery pass runs every FIVE SECONDS across every
+   * past-start short tournament, so that shape multiplies into thousands of
+   * rows scanned per second against a database that had already been saturated
+   * once today ("no tables load, nothing is playing", 2026-08-22).
+   *
+   * One busy-set read per call, however many horses are wanted. It is also the
+   * pattern registerHorses right below already used - the per-horse version was
+   * a regression against a convention this very file had settled on.
    */
-  private async pickFreeHorse(): Promise<string | null> {
+  private async pickFreeHorses(count: number): Promise<string[]> {
+    if (count <= 0) return [];
     try {
       const { data: busyRows } = await supabase
         .from('tournament_players')
@@ -1760,13 +1774,16 @@ export class TournamentRecurringService {
         .eq('is_horse', true)
         .limit(400);
 
+      const free: string[] = [];
       for (const h of horses ?? []) {
         const id = (h as { id: string }).id;
-        if (!busy.has(id)) return id;
+        if (busy.has(id)) continue;
+        free.push(id);
+        if (free.length >= count) break;
       }
-      return null;
+      return free;
     } catch {
-      return null;
+      return [];
     }
   }
 
@@ -1995,9 +2012,8 @@ export class TournamentRecurringService {
 
       let added = 0;
       if (seatFirst) {
-        for (let i = 0; i < shortfall; i++) {
-          const horse = await this.pickFreeHorse();
-          if (!horse) break;
+        const candidates = await this.pickFreeHorses(shortfall);
+        for (const horse of candidates) {
           const { data: res } = await supabase.rpc('fn_seat_horse_in_seat_first_game', {
             p_tournament_id: tournamentId,
             p_user_id: horse,

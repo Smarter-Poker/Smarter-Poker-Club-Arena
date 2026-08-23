@@ -7,6 +7,46 @@
 
 ---
 
+## Cowork session 2026-08-23 (4) — RE-READING THE SPIN FIX: one query per horse was mine
+
+An adversarial pass over the Spin work from an hour earlier. One real defect,
+and it was a performance regression I had just introduced.
+
+`pickFreeHorse()` answered with a SINGLE horse. Seating a Spin called it twice;
+the past-start top-up called it once per empty seat. Each call reads up to
+2,000 `tournament_players`, 2,000 `table_seats` and 400 `profiles`.
+GameServer's discovery pass runs **every five seconds** across every past-start
+short tournament — so that shape multiplies into thousands of rows scanned per
+second, against a database that had already been saturated once the same day
+("no tables load, nothing is playing").
+
+Worse, it was a regression against a convention this very file had already
+settled: `registerHorses`, twenty lines below, does exactly one busy-set read
+and then loops.
+
+`pickFreeHorses(count)` now reads the busy set once however many horses are
+wanted, and both callers batch. The test asserts exactly one read of each
+source inside the function, and that the singular form is gone entirely — a
+caller can otherwise quietly reintroduce the per-horse shape.
+
+Also confirmed while re-reading, so it is on the record rather than assumed:
+
+- `fn_register_horse_for_tournament` **does** increment
+  `tournaments.current_players`, so a seated horse is counted on the lobby and
+  a Spin genuinely reads 2/3 rather than 0/3.
+- Seating a horse at `stack 0` is correct and matches the human path
+  (`fn_take_seat_and_buy_in` also seats at 0). Chips arrive at the reveal via
+  `creditSeatStacks`; a 0-chip seat before the draw is the normal state of a
+  seat-first Spin, not the bust condition that produced "you finished 4th".
+- The discovery interval being 5s means the 60-180s human window is honoured
+  tightly rather than rounded up to some coarser cycle.
+
+3 new cases (11 total in the file), 3 failing against the version shipped an
+hour ago. Suite: 273 files, 3,340 passed, client tsc clean, server tsc error
+count unchanged at 8 pre-existing.
+
+---
+
 ## Cowork session 2026-08-23 (3) — "I FINISHED 4TH" IN A THREE-HANDED GAME
 
 Dan, from a seat: _"I registered, said final table, then I was booted and said

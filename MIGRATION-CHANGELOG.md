@@ -7,6 +7,350 @@
 
 ---
 
+## Cowork session 2026-08-23 — MOBILE ONE-SCREEN PASS: a regression fixed, three systemic bugs found by measuring (PR #380)
+
+Dan, from a phone, mid-session: "club arena is not running correctly or
+loading on mobile, all the top padding is now gone as well."
+
+### The regression, and what actually caused it
+
+The previous session's mobile-fit sweep zeroed the AppLayout shell's SIDE
+padding at <=600px, copying the social pages, whose <main> is edge-to-edge.
+That works there because every social surface is a card carrying its own
+internal padding. Club Arena is not uniform: the pages sampled before
+shipping (settings, cashier, leaderboard, promotions, legal) do pad
+themselves, but others do not, and those went flush against the screen edge —
+which reads as "the padding is gone". REVERTED (PR #377); the shell keeps its
+gutter. overflow-x: hidden stayed, because that part cost nothing and is what
+stops a stray wide child panning the page.
+
+The lesson is in the diff: removing a page's DOUBLE padding is a per-page job
+with a per-page measurement. One global switch cannot tell a page that pads
+itself from one that does not.
+
+"Not loading" did not reproduce. Signed in at 375px every route rendered
+(profile, friends, clubs, club home, lobby, wallet, settings), no page
+errors, nothing stuck loading. Two things that LOOK like failures and are
+not, recorded so the next agent does not chase them: the 401 on
+`/rest/v1/` is supabaseConnectionWatchdog's deliberate probe, and the
+ERR_ABORTED requests are a sweep navigating away mid-flight.
+
+### Three systemic bugs, each found by measuring rather than reading
+
+1. 100vh IS THE WRONG VIEWPORT ON A PHONE. 70 occurrences of
+   `min-height: 100vh` across 67 stylesheets, only 5 paired with dvh. On iOS
+   `100vh` is the TOOLBAR-HIDDEN height, so every one of those page roots was
+   taller than the visible screen — the page always scrolled a little and the
+   last strip sat under the browser chrome. Every occurrence now has a
+   `100dvh` line after it (progressive enhancement: browsers without dvh keep
+   the vh value). AppLayout already used this pattern; it was never rolled
+   out. 64 files.
+2. A TAP ON A SMALL FIELD ZOOMED iOS AND NEVER ZOOMED BACK. Safari zooms the
+   whole viewport when a focused text field computes under 16px, and does not
+   restore on blur — the user is left panned and oversized, which is
+   indistinguishable from the app breaking. Measured live in production:
+   friends search 13.6px, search 13.3px, settings selects 12.8px, 12 fields
+   across 6 routes. One rule in club-engine.css sets 16px for text fields at
+   phone width only. Note the viewport meta stays `initial-scale=1` with NO
+   `maximum-scale`: locking zoom would hide the bug by removing an
+   accessibility feature.
+3. NINE PAGES RENDER A FIXED BOTTOM NAV AND RESERVED LESS THAN ITS HEIGHT.
+   `--bottom-nav-clearance` was created on 2026-08-20 as "what a page must
+   actually reserve" and only ClubHomePage ever used it. The other pages
+   reserved 2rem (32px), 80px or nothing against a 74px bar plus the
+   home-indicator inset. A fixed bar is out of flow, so what it covers is not
+   clipped, it is simply unreachable. Nine page roots now use the token.
+
+### Two gates, so none of it can come back
+
+- `tests/e2e/mobile-chrome-occlusion.spec.ts` — the VERTICAL half of "fits in
+  one screen": at rest nothing may sit under the sticky header, and scrolled
+  to the end nothing may sit under the fixed bottom nav.
+- `tests/e2e/mobile-input-zoom.spec.ts` — no text field under 16px at 375px,
+  with a guard that fails if the sweep finds no fields at all (an empty
+  assertion is how this suite fooled itself twice before).
+
+Both strict in CI, where the e2e job runs against production after a deploy.
+
+### Two false alarms, both caught before they were reported
+
+Worth recording because each cost real time and each looked exactly like a
+P0: a `tps://...supabase.co` URL in probe output was the probe's own
+`slice(-60)` truncation, not a malformed request; and `--bottom-nav-clearance`
+appearing "never defined" was a grep of the wrong artifact — Vite bundles
+globals.css/design-system.css into the entry CSS and strips the dev-only
+`/src/styles/*` preloads, so the tokens do resolve in production. Verify the
+built bundle, not the import graph.
+
+A third was in my own instrument: the occlusion gate first reported the
+jackpot page hiding 704px of a paragraph. A text leaf in a flex row stretches
+to the row's height, so its BOX ran far past text that was plainly visible.
+The gate now measures a Range over the text node — the glyphs a reader can
+actually see — and the false positive is gone.
+
+Verification: tsc clean; vitest 254 files / 3,189 passed; vite build clean;
+occlusion gate green against production (12 routes); horizontal fit gate green
+(58 routes); the input-zoom gate correctly RED against production before the
+fix deploys, which is the evidence it works.
+
+---
+
+## Cowork session 2026-08-23 (2) — the club money panel was 1.5s, and the fix for it was wrong twice
+
+Follow-on measurement after the outage work. With `hand_history` no longer
+dominating, a fresh 30-minute `pg_stat_statements` delta put
+**`fn_club_money_panel` second on the whole instance: 168 calls at a mean of
+1,483.8 ms**. It is client facing, so that is a page taking a second and a half
+to answer.
+
+### Cause
+
+It sums a week of `union_wallet_transactions`, which the engine appends to on
+every raked hand. The existing partial index matched the predicate but did not
+carry `amount`, so all ~330,000 rows in the current week needed a heap visit:
+
+    Parallel Index Scan idx_uwt_rake_credit_basis
+    rows=330,476   Buffers: shared hit=287,862   Execution: 331 ms
+
+### Two wrong turns, both caught by measuring instead of assuming
+
+1. **The covering index alone did nothing.** Adding `INCLUDE (amount, club_id)`
+   produced an Index Only Scan that still did **226,432 heap fetches**, because
+   the table had never been vacuumed and its visibility map was unset — the
+   identical failure that caused the outage, on a different table.
+2. **The autovacuum settings I then added could never fire.**
+   `autovacuum_vacuum_threshold` counts DEAD tuples, and this is an append-only
+   ledger: `n_dead_tup = 0` permanently. The correct knob for an append-only
+   table is `autovacuum_vacuum_insert_threshold` (PG13+; this instance is 17.6).
+
+The first-ever VACUUM of the 698,820-row table then took **1.4 seconds** — every
+earlier attempt had timed out purely from contention, not from the work.
+
+### Result
+
+|              | before  | after                 |
+| ------------ | ------- | --------------------- |
+| heap fetches | 226,432 | **2,117**             |
+| buffers      | 189,415 | **3,274** (58x fewer) |
+| execution    | 331 ms  | **103 ms**            |
+
+### Migrations
+
+- `20260823065000_covering_index_for_weekly_rake_sums` — built `CONCURRENTLY` on
+  production so it never took a ShareLock against the engine's rake writes.
+- `20260823070000_autovacuum_union_wallet_transactions` — the incomplete attempt,
+  kept in history because the next one only makes sense against it.
+- `20260823080000_insert_only_tables_need_the_insert_threshold` — the correction.
+
+### Standing lesson
+
+An append-only table is invisible to dead-tuple autovacuum thresholds, so it
+never gets vacuumed, so its visibility map is never set, so every index-only
+scan against it silently becomes a heap scan. Ledgers, event logs and history
+tables all have this shape. Check `autovacuum_vacuum_insert_threshold`, not just
+the dead-tuple one.
+
+### Still open
+
+The weekly sum walks the whole week and the week only grows — ~330k rows by
+Saturday. A covering index makes each row cheap; it does not make there be fewer
+of them. The durable fix is an incrementally maintained weekly rollup, which
+changes financial aggregation and wants its own review rather than being bolted
+on during an incident.
+
+---
+
+## Cowork session 2026-08-23 (2) — CLOSING THE TWO THINGS I WRONGLY CALLED DECISIONS
+
+Both of these were written up as open questions for Dan. Neither should have
+been; both were mine to solve.
+
+### 2,116 Spins that ran and were never booked
+
+`fn_spin_sweep_unbooked` and `v_spin_reserve_health.unbooked_24h` both filter on
+`buy_in_fee = 0`. Every Spin created before the 2026-08-20 cutover carried a
+fee, so the backstop refused to settle them and the counter that exists to
+notice unsettled games did not count them.
+
+**Not by replaying `fn_spin_settle_game`,** which is the obvious move and is
+wrong here: 863 of the 2,116 games already have `rake_records`, so a replay
+would double-count 665.70 of house rake and date 2,116 rake rows TODAY for games
+that ran days ago. It is the right function for a live game and the wrong one
+for a historical repair. This books the reserve movements only, and asserts that
+rake was untouched.
+
+It also refuses to CLAMP a prize the way the live function does. A clamp writes
+`kind='adjustment'`, `v_spin_reserve_health` counts those as `shortfall_events`
+with no time window, and spin-sweep pages on any non-zero count — so a backfill
+that clamped even once would have put a permanent red light on the operator
+dashboard for a game from last week. The pool has zero adjustment rows and still
+does.
+
+Outcome, matching the rolled-back dry run to the cent:
+
+```
+games 2,116 · reserve_in 12,431.04 · prize_out 11,488.00 · net +943.04
+pool 24,415.58 -> 25,358.62 · ceiling 30,000 never breached
+shortfall rows created 0 · fee-era spins still unbooked 0
+```
+
+**The first attempt aborted itself, and that was the assertion working.** The
+rake check was a GLOBAL before/after count; a live Spin settled mid-loop and
+wrote a rake record, so the count moved by one and the whole migration rolled
+back. Nothing partial survived. The fix was to make the assertion precise — both
+it and the money-conservation check are now scoped to this migration's own games
+and its own ledger rows, which no concurrent Spin can be a member of.
+
+### A new table could not stop being born writable by the internet
+
+Two tables, hours apart, from two different agents, both RLS-off with
+INSERT/UPDATE/DELETE granted to `anon`. Neither agent did anything wrong:
+`CREATE TABLE` in `public` inherits `arwdxtm` for `anon` and `authenticated`
+from the schema default privileges. Each one failed CHECK 10, which reads the
+LIVE catalog, so each blocked **every open PR in the World Hub at once**,
+attached to nobody's diff.
+
+Locking each table as it appears is not a fix. `trg_rls_on_new_public_table` is:
+a `ddl_command_end` trigger that enables RLS on every new `public` table,
+modelled directly on the estate's existing `trg_autorevoke_privileged_anon`,
+which does the same job for money-shaped functions and was simply never extended
+to tables — which is where both incidents happened.
+
+RLS rather than revoking grants, deliberately: CHECK 10 tests
+`NOT relrowsecurity AND client-writable`, so enabling RLS makes the first half
+false no matter what anyone grants later. `service_role` bypasses RLS and the
+owner is exempt, so the engine, the crons and every SECURITY DEFINER function
+are untouched — which is exactly what both incidents were, a log and a backup
+written only by the service role.
+
+Proven against production and rolled back: plain `CREATE TABLE` and
+`CREATE TABLE AS` both come out with RLS on, `SET app.allow_rls_off_table = on`
+still lets someone opt out on the record, grants are unchanged, and 0 probe
+tables survived. It can never fail a migration — every action is wrapped and a
+problem is a WARNING, with CHECK 10 still underneath as the backstop.
+
+13 new cases in `tests/config/spinFeeEraBackfill.test.ts`. Suite: 257 files,
+3,214 passed, tsc clean, all Supabase CI gates green.
+
+---
+
+## Cowork session 2026-08-23 — the V12 horse brain audit: two jobs that would have broken production on their first night (PRs #358, #363)
+
+The V12 build-out shipped two nightly jobs that had never actually run. This
+session audited the whole stack line by line, in the hours before their first
+fire. Twenty defects; the two worst would each have caused visible damage on
+2026-08-23, and neither would have looked like a failure afterwards.
+
+### The league would have frozen every live table (04:30 UTC)
+
+`runMatchup` ran 3000 hands in a plain synchronous loop, inside the process
+serving live poker. Measured: **10.3 seconds of solid event-loop blocking per
+matchup**, six matchups. `DeadlineScheduler` ticks every 100ms and its
+deadlines are absolute wall-clock, so every action clock, timebank grant and
+disconnect grace in the fleet would have been past due the moment the loop
+resumed — a fleet-wide auto-fold storm at the exact hour the code called
+"quietest". Measured against 24h of `hand_history`, hour 4 is the SECOND
+BUSIEST (5354 hands; hour 3 is 6239). It yields every 16 hands now: worst
+measured lateness **133ms** across a full matchup.
+
+Nine more in the same file, every one of them silent:
+
+- **The RNG was not sandboxed.** `playHand` seeds `HorseEval`'s module-global
+  `rngState` once per synthetic hand, and live decisions share that stream. The
+  "sandbox" from session (13) isolated HorseMind and nothing else, so after any
+  league run the live bluff/sizing stream sat at a state determined entirely by
+  the run date. Bracketed with `saveFastRandom`/`restoreFastRandom`, pinned.
+- **Sandboxing is no longer opt-in.** `mind:false` suppresses stats and pair
+  writes but NOT barrel plans, so the four unsandboxed matchups wrote thousands
+  of synthetic plan keys into the live map and tripped its 8000-key wipe,
+  clearing the barrel plan of every hand in progress on every live table.
+  `useBarrels` obeys `mind:false` now, and every matchup gets a sandbox.
+- **Duplicate-pair independence was broken.** Both passes derived their action
+  timestamps from the same deal seed, so they produced identical HorseMind
+  keys: pass 2's actions were deduped away as already-seen and config B read
+  config A's barrel plan. Timestamps are monotonic now.
+- **bb/100 was 6x inflated** — the per-pair difference spans six A-seat hands
+  and was never divided by them. Every number ever written to
+  `horse_league_results` carried that factor. Signs and ratios are unaffected.
+- **A short all-in illegally reopened the betting** for players who had already
+  acted (TDA 44, which `HandController` enforces correctly), and a non-raising
+  raise rebuilt the queue unconditionally — a directional bias toward whichever
+  config raises more, in an instrument whose whole purpose is to compare them.
+- **Hitting the action cap silently forgave unpaid bets**, letting players reach
+  a showdown they never called. Chip conservation still held, so no test could
+  see it. Debtors are folded and counted now; cap raised 24 -> 48.
+- **Sizing validation was gated on `counters` being passed**, so both
+  conservation tests exercised a different code path from production.
+- `isFullRaise` was hard-coded `true` on any all-in; `full_vs_v2_legacy` never
+  disabled v12 or the mind, so "vs v2 legacy" measured the wrong thing. A test
+  now fails if any future layer drifts out of that ablation.
+
+Sample size 1500 -> 10000 pairs: the old standard error was ~7 bb/100 against
+single-digit real edges, so the instrument could not resolve what it was built
+to measure. Unresolved results now log as `not resolved` instead of reading as
+findings.
+
+### The self-tuner would have flattened every horse's dials (08:00 UTC)
+
+Four statistics were wrong in the same direction, and the audit trail would
+have looked plausible either way.
+
+**The uncalled bet was never returned.** The engine refunds it before pots and
+rake, so `winners[].amount` is post-refund while the actions array still
+carries the full posted bet. Charging the full bet and crediting the reduced
+award scored EVERY uncontested pot as a loss — the most common way a hand is
+won. Nearly every horse would have fallen under the `bb100 < -15` trigger,
+which halves tightness, aggression and bluffFreq toward neutral. Every night.
+Erasing the fleet's per-horse differentiation while logging that it had fixed
+leaks. The existing unit test asserted -0.5bb on a hand the horse won 7 chips
+of: it encoded the bug as the expected answer. Now +3.5bb, with a
+chip-conservation check across all three seats.
+
+- Blinds were added to the contribution total but never seeded as the posting
+  player's opening street bet, and bet amounts are street totals — a BB who
+  posts 2 and 3-bets to 20 was billed 22.
+- A short all-in counted as a raise, so the next genuine opener looked like a
+  3-bettor: PFR, 3-bet, fold-to-3-bet and opener attribution all corrupted.
+- **`isFullRaise` was never persisted.** `HandController` records it; the write
+  to `hand_history` dropped it. So in HorseMind's 72h boot replay every all-in
+  counted as neither aggression nor passivity — hydrated reads biased passive
+  for anyone who shoves, and all-in 3-bets invisible to the anti-exploit
+  counters. That one was degrading live play already, not just the first run.
+- `threeBetOpps` excluded everyone in `didPfr`, which includes the 3-bettor, so
+  the numerator's own hands were missing from the denominator.
+- AF used `Math.max(1, passive)`: 59 bets and one call scored AF 59.
+- The "7-day window" was capped at 16000 rows against ~5000 hands/hour, so it
+  studied the newest ~3 hours while every log line claimed seven days. Raised
+  to 120k, and the ACTUAL coverage is now logged and can no longer lie.
+- Paging used `.lt(created_at)` on a non-unique column, silently dropping every
+  row tied on a page boundary.
+
+### Persistence, same audit
+
+A poison row wedged the flush forever — the whole 400-row chunk was requeued
+and resent identically every five minutes, one error report per chunk per
+cycle, no backoff. Chunks now retry row-by-row and drop the single offender.
+The pair hydrate read 3000 rows against a 20000 cap, so ~85% of the targeting
+memory session (10) added was still discarded on every boot. A failed stats
+hydrate triggered a full 72h replay ON TOP of already-hydrated pairs,
+double-counting them permanently through the GREATEST merge. The flush loop
+only started after two unbounded awaits that swallow their own errors. And a
+shutdown landing mid-flush found an empty dirty set and saved nothing.
+
+In HorseMind itself: `pairOf()` ran before classification, minting empty pair
+rows that reached the DB and consumed the `MAX_PAIRS` budget whose overflow
+wipes every learned hunter; and the bounded-memory guards did a wholesale
+`clear()` that could land mid-hand — double-counting aggression, letting VPIP
+exceed hands, and permanently inflating counters through the monotonic merge.
+A hand-boundary check cannot fix that (with N tables interleaved the "current"
+hand changes on nearly every call), so they evict oldest-first instead, which
+is correct however the tables interleave.
+
+**Server suite 1137/1137.** Both nightly jobs verified in production before
+their first run.
+
+---
+
 ## Cowork session 2026-08-22 (14) — OUTAGE: "no tables load, nothing is playing" was a saturated database, not the client
 
 Dan: "NONE OF THE TABLES ARE ACTIVE OR LOADING IN ANY CLUB. It says there are
@@ -32,7 +376,7 @@ NULL, with 234,091 dead tuples on an 8,955 MB heap and 1.1 GB across 8 indexes
    `Heap Fetches: 1,921`, **36,964 ms**. ~20 ms per 8 KB page — a saturated disk.
 2. **That exact scan is on the hand-insert path.** `hand_history` carries three
    per-row AFTER INSERT triggers, and `trg_hand_history_club_member_stats` runs
-   a correlated `NOT EXISTS` over `hand_history` *for each seated player*. One
+   a correlated `NOT EXISTS` over `hand_history` _for each seated player_. One
    hand insert cost a mean of **913 ms** over 32,274 calls — 8.2 CPU-hours, the
    top entry in `pg_stat_statements`.
 3. **Everything else starved.** The club lobby's table list took **3,737 ms
@@ -60,7 +404,7 @@ default-throttled autovacuum could never finish a 10 GB table. **The prune was
 added without the matching autovacuum tuning.** That omission is the regression.
 
 This was also a **recurrence**. Three hours earlier the same evening,
-`20260822233000_prune_snapshots_bounded_scan.sql` fixed *one* prune predicate
+`20260822233000_prune_snapshots_bounded_scan.sql` fixed _one_ prune predicate
 after the same saturation produced the "Still Loading" screen Dan first hit on
 2026-08-20. That fix was correct and incomplete, and nothing was watching for
 the next occurrence.
@@ -85,16 +429,16 @@ the next occurrence.
 
 ### Measured, same instance, same queries
 
-| | before | after |
-|---|---|---|
-| club lobby table list | 3,737 ms | **0.415 ms** |
-| trigger subquery on insert path | 36,964 ms | **934 ms** (heap fetches 1,921 → 76) |
-| `hand_history` INSERT | 913 ms | **32.7 ms** |
-| `sp_prune_hand_history` | 38–155 s, rolled back | **3 s, 1,000 rows committed** |
-| `hand_history` dead tuples | 234,091 | **0** (3 autovacuums, was 0 ever) |
-| hand throughput | 25–71 /min | **90–100 /min** |
-| cron runs failing | 59% of prune runs | **0 failures in 20 min** |
-| self-test breaches | 12 | **0** |
+|                                 | before                | after                                |
+| ------------------------------- | --------------------- | ------------------------------------ |
+| club lobby table list           | 3,737 ms              | **0.415 ms**                         |
+| trigger subquery on insert path | 36,964 ms             | **934 ms** (heap fetches 1,921 → 76) |
+| `hand_history` INSERT           | 913 ms                | **32.7 ms**                          |
+| `sp_prune_hand_history`         | 38–155 s, rolled back | **3 s, 1,000 rows committed**        |
+| `hand_history` dead tuples      | 234,091               | **0** (3 autovacuums, was 0 ever)    |
+| hand throughput                 | 25–71 /min            | **90–100 /min**                      |
+| cron runs failing               | 59% of prune runs     | **0 failures in 20 min**             |
+| self-test breaches              | 12                    | **0**                                |
 
 Also ANALYZEd seven other large tables the guard caught with no planner
 statistics at all: `solved_spots_gold` (72 GB), `ca_hand_player_idx`,
@@ -106,6 +450,53 @@ statistics at all: `solved_spots_gold` (72 GB), `ca_hand_player_idx`,
 When the symptom is "the page does nothing", measure the database before
 reading React. A plan that reads **zero disk pages and still takes seconds** is
 the signature of a starved instance, and it is invisible from the client.
+
+---
+
+## Cowork session 2026-08-23 (1) — RE-READING MY OWN DIFFS: two defects, one of them mine
+
+An adversarial line-by-line pass over everything shipped in the previous
+session. Two real findings.
+
+**The tile you could not open.** `UnionWalletModal` had turned the four union
+wallets into openable views - balance, history, send flow. The Spin reserve,
+added the same day, was left a plain `<div>` with a comment explaining that it
+is not a send source. True, and beside the point: it meant the one wallet that
+had just gained a money-movement control was also the only one whose movements
+could not be seen anywhere in the product. Its rows go to
+`union_wallet_transactions`, and nothing in the SPA read that table at all.
+
+It opens now, read-only. Balance in the Spin green, the full ledger with
+direction, tx type, timestamp and running balance, and a line saying where to
+add funds. No kind selector, no member picker, no send button, and no roster
+fetch for a list it would never render.
+
+**Read-only is the load-bearing part.** `spinSpec.ts` prices the format on the
+pool being net-neutral over volume - `E[multiplier] = seats x (1 - rake)` - so
+one manual withdrawal breaks the invariant every tier is derived from, and
+breaks it silently, because solvency is only ever read afterwards. The test
+that pins the send flow behind `!readOnly` is the most valuable one in the file.
+
+**The theme that never resolved — my regression.** The previous session taught
+`useUserThemeSettings` to WAIT on a null tournament format rather than guess
+MTT. But `TablePage` sets that format only inside `if (tournData)`. A tournament
+row that cannot be read - deleted, RLS-denied, transient - therefore left the
+format null for the life of the table, and the guard then held the felt on the
+DEFAULT theme permanently. Before the guard that case quietly used the MTT
+theme; the guard turned one wrong answer into no answer.
+
+Fixed with `setTournamentFormat((prev) => prev ?? 'mtt')` on the failure path -
+`prev ??` and not a bare assignment, because that branch can interleave with the
+spin reveal path and clobbering a resolved `'spin'` would swap the felt mid-sit,
+which is the exact fault the guard exists to prevent. There is a test for that
+distinction.
+
+12 new cases in `tests/config/spinReserveWalletView.test.ts`, 9 of which fail
+against `origin/main`. Suite: 249 files, 3,144 passed, tsc clean, all three
+Supabase CI gates green.
+
+---
+
 ## Cowork session 2026-08-22 (13) — the league can finally see the mind (PR #309)
 
 The nightly duplicate-deal league (#271) measures every strategy layer in

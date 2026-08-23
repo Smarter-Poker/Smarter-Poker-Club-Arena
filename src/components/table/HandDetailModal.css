@@ -3,6 +3,15 @@
    Dark panel, amber accents, mini playing cards, street sections, tab bar.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* Dan 2026-08-23: "when you click previous hands it's not displaying right, it
+   should open as a 3/4 screen popup left to right."
+
+   It was a 480px column centred in the viewport — a phone sheet shown on a
+   desktop table, so the street rows wrapped into a tall ribbon and the board
+   cards, action chips and pot all fought for the same narrow gutter. It now
+   fills three quarters of the width and slides in from the left, which is also
+   what makes the two-column body below possible. The 480px shape is kept as
+   the floor for real phones, where three quarters of 375px is unreadable. */
 .hdm-overlay {
   position: fixed;
   inset: 0;
@@ -10,18 +19,54 @@
   background: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: stretch;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .hdm-panel {
   display: flex;
   flex-direction: column;
-  width: min(480px, 100vw);
+  width: 75vw;
+  min-width: min(480px, 100vw);
+  max-width: 100vw;
   height: 100%;
   background: linear-gradient(180deg, #14182a 0%, #0e1120 100%);
-  border-left: 1px solid rgba(255, 255, 255, 0.06);
   border-right: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.5);
   color: #e8eaf0;
+  animation: hdmSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes hdmSlideIn {
+  from {
+    transform: translateX(-24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* On a phone there is no "three quarters" worth having — take the screen. */
+@media (max-width: 640px) {
+  .hdm-panel {
+    width: 100vw;
+    min-width: 0;
+  }
+}
+
+/* With real width available, the streets read as two columns instead of one
+   very long scroll, so a whole hand is visible without scrolling at all. */
+@media (min-width: 900px) {
+  .hdm-body {
+    column-count: 2;
+    column-gap: 18px;
+  }
+
+  .hdm-street {
+    break-inside: avoid;
+    -webkit-column-break-inside: avoid;
+  }
 }
 
 /* ── Header ── */

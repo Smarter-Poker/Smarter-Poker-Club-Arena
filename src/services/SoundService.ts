@@ -448,6 +448,37 @@ class SoundService {
     osc.stop(t + duration);
   }
 
+  /**
+   * Like playTone, but takes an ABSOLUTE AudioContext time rather than a delay
+   * from "now". Needed wherever several hits belong to one gesture — a double
+   * tap, a chip stack — because scheduling the later hits with setTimeout puts
+   * their spacing at the mercy of the main thread, and at a poker table the
+   * main thread is always busy. The audio clock is not.
+   */
+  private scheduleTone(
+    at: number,
+    freq: number,
+    duration: number,
+    volume = 0.2,
+    type: OscillatorType = 'sine'
+  ) {
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, at);
+
+    gain.gain.setValueAtTime(volume, at);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + duration);
+
+    osc.connect(gain);
+    gain.connect(this.out);
+
+    osc.start(at);
+    osc.stop(at + duration);
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   // GAME SOUNDS
   // ═══════════════════════════════════════════════════════════════════════
@@ -573,23 +604,43 @@ class SoundService {
   }
 
   /**
-   * Check — double table tap (wood-like thud)
+   * Check — two knuckle raps on the felt.
+   *
+   * Dan 2026-08-23: "the check sound effect needs to sound like two taps. like
+   * you're tapping the table twice." It already tried to be two taps and did
+   * not read as two, for two reasons, both fixed here.
+   *
+   * 1. The second tap was scheduled with `setTimeout(..., 120)` and then read
+   *    `ctx.currentTime` fresh inside the callback. setTimeout is a MAIN-THREAD
+   *    timer: at a poker table it competes with card animations, chip flights
+   *    and React renders, so the gap wobbled with the frame rate and under
+   *    load the two taps smeared into one thud. Both taps are now scheduled on
+   *    the AudioContext clock, which is sample-accurate and does not care what
+   *    the main thread is doing.
+   * 2. 120 ms is inside the window where the ear fuses two transients into a
+   *    single event. A real double rap on a table is nearer 160 ms apart, and
+   *    the second is softer because it is the rebound of the same gesture.
+   *
+   * Each rap is a knuckle, not a click: a short filtered noise transient for
+   * the impact, plus two low sine partials for the hollow of the table under
+   * it, which is what makes it read as wood rather than as a UI blip.
    */
   playCheck() {
     if (!this.shouldPlay('check', 'action') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
-    // First tap
-    this.createNoiseBurst(t, 0.04, 0.25, 800);
-    this.playTone(200, 0.04, 0.15, 'sine');
+    /** One knuckle rap on the felt at absolute AudioContext time `at`. */
+    const rap = (at: number, level: number) => {
+      // Impact: brief, heavily lowpassed noise — the knuckle itself.
+      this.createNoiseBurst(at, 0.045, 0.28 * level, 700);
+      // Body: the table resonating under it. Two partials a fifth apart give
+      // it a hollow wooden pitch instead of a bare sine thump.
+      this.scheduleTone(at, 172, 0.11, 0.16 * level, 'sine');
+      this.scheduleTone(at, 258, 0.07, 0.06 * level, 'sine');
+    };
 
-    // Second tap (slightly softer)
-    setTimeout(() => {
-      if (!this.ctx) return;
-      const t2 = this.ctx.currentTime;
-      this.createNoiseBurst(t2, 0.04, 0.18, 800);
-      this.playTone(180, 0.04, 0.1, 'sine');
-    }, 120);
+    rap(t, 1);
+    rap(t + 0.16, 0.72);
 
     haptic.light();
   }
@@ -1715,7 +1766,6 @@ class SoundService {
       /* already stopped */
     }
   }
-
 
   /**
    * THE FLAPPER. Dan 2026-08-21: "I WANT THE SOUND EFFECT WHILE ITS SPINNING

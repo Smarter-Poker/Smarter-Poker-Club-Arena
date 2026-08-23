@@ -6,7 +6,7 @@
  * Root application with routing, auth guards, and global providers
  */
 
-import { Routes, Route, Link } from 'react-router-dom';
+import { Routes, Route, Link, Navigate } from 'react-router-dom';
 import { SessionSummaryHost } from './components/session/SessionSummaryHost';
 import TournamentRankingHost from './components/tournament/TournamentRankingHost';
 import TournamentStartingTicker from './components/tournament/TournamentStartingTicker';
@@ -56,7 +56,6 @@ const AuthPage = lazy(() => import('./pages/AuthPage'));
 const HomePage = lazy(() => import('./pages/HomePage'));
 
 const ClubsPage = lazy(() => import('./pages/ClubsPage'));
-const ClubCarouselPage = lazy(() => import('./pages/ClubCarouselPage'));
 const ClubHomePage = lazy(() => import('./pages/ClubHomePage'));
 const ClubDashboard = lazy(() => import('./pages/club/ClubDashboard'));
 const ClubDataPage = lazy(() => import('./pages/club/ClubDataPage'));
@@ -427,17 +426,30 @@ export default function App() {
               <Route element={<AppLayout />}>
                 {/* RouteErrorBoundary wraps all AppLayout children */}
 
-                {/* Clubs */}
-                <Route
-                  path="clubs"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Clubs">
-                        <ClubCarouselPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
-                />
+                {/* ── /clubs IS THE OLD LOBBY. IT IS GONE. ──────────────────
+                   Dan 2026-08-23: "any time there experiences a crash, and you
+                   click back, you get brought to this page which i believe is a
+                   very old and rough club arena lobby. this needs to be 100%
+                   removed and deleted and never allowed to be seen or displayed
+                   again."
+
+                   ClubCarouselPage was a SECOND lobby, predating the one on
+                   `/`. It rendered clubs as generic bank glyphs instead of their
+                   card art, had no ACTIVE stat at all, and computed level from a
+                   different code path - so it could and did disagree with the
+                   real lobby about the same club. Nothing linked to it
+                   deliberately any more; it was reached by history, by a crash
+                   recovery landing on the previous entry, and by nine stale
+                   `/clubs` links scattered around the app.
+
+                   Deleting the component alone would only turn those into a
+                   blank route, so the path REDIRECTS. That is what makes the
+                   page unreachable by any means - old link, bookmark, back
+                   button after a crash - rather than merely unused. The file
+                   and its stylesheet are deleted in this commit; the guard test
+                   in tests/unit/deadLobbyIsGone.test.ts fails if either the
+                   route or the component comes back. */}
+                <Route path="clubs" element={<Navigate to="/" replace />} />
                 <Route
                   path="clubs/create"
                   element={

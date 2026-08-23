@@ -24,6 +24,7 @@ import { pushNotificationService } from '../services/PushNotificationService';
 import { clearSessionCache } from '../hooks/useSessionCache';
 import { useHeaderDataStore } from '../stores/useHeaderDataStore';
 import { reportError } from '../utils/errorReporter';
+import { clearUserCaches } from '../utils/clearUserCaches';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -232,6 +233,10 @@ class IdentityDNACore {
 
           case 'SIGNED_OUT':
             this.clearUser();
+            // Storage outlives the store. Until 2026-08-23 nothing here
+            // touched it, so the next person to use the device was served
+            // the previous account's cached clubs, hand history and lobby.
+            clearUserCaches();
             clearSentryUser(); // Clear Sentry user context
             postgresSyncHooks.destroy(); // Shut down external DB listener
             this.updateStatus(false, null);

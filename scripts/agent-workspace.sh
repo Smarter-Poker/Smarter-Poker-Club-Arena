@@ -92,6 +92,27 @@ else
   git -C "$ROOT" worktree add --force -B "$BRANCH" "$DIR" origin/main >/dev/null
 fi
 
+# The one identity this estate can deploy under. Vercel refuses to build a
+# commit whose author it cannot resolve to a GitHub user; the deployment goes
+# to BLOCKED with no logs. Setting it here means an agent cannot get it wrong,
+# and scripts/guard-commit-identity.sh catches anyone working outside this tree.
+git -C "$DIR" config user.name  "Smarter-Poker"
+git -C "$DIR" config user.email "254329056+Smarter-Poker@users.noreply.github.com"
+
+# HOOKS AND DEPENDENCIES BEFORE THE FIRST COMMIT, NOT AFTER.
+# 2026-08-23: a fresh worktree had neither, and both failures were silent.
+# core.hooksPath pointed at the gitignored .husky/_, so git ran no hooks here at
+# all; and with no node_modules the hooks that did run went to the network.
+bash "$ROOT/scripts/ensure-hooks.sh" 2>&1 | sed "s/^/# /" >&2 || true
+
+# Share the main clone's dependencies. The alternative is an npm install per
+# tree - minutes each, gigabytes across 47 trees - or a test gate that silently
+# skips, which is how a red test reaches main and blocks the bundle for all.
+if [ ! -e "$DIR/node_modules" ] && [ -d "$ROOT/node_modules" ]; then
+  ln -s "$ROOT/node_modules" "$DIR/node_modules" 2>/dev/null \
+    && echo "# node_modules: linked from the main clone" >&2
+fi
+
 echo "# worktree: $DIR" >&2
 echo "# branch:   $BRANCH  (from origin/main)" >&2
 if [ "$MODE" = "--print-path" ]; then

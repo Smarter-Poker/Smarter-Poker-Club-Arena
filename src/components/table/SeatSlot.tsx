@@ -334,6 +334,42 @@ function formatStackAsBB(stack: number, bigBlind: number): string {
  * a request hint — nothing lays out from them — so being a little generous is
  * cheap and being too small is visible.
  */
+/**
+ * How much bigger a particular character has to be drawn to LOOK the same size
+ * as the others.
+ *
+ * Dan 2026-08-23: "the viking and chef need to be 2x current size."
+ *
+ * Until now `--sp-bust-scale` was a single number, 1.45, for all 76 characters,
+ * on the assumption that art delivered at one canvas size renders at one size.
+ * It does not. Every asset is 125x170, but the SUBJECT inside that canvas is
+ * not drawn to a common scale, and `object-fit: contain` fits the CANVAS, so
+ * whatever headroom the artist left is rendered as empty pixels. Measured off
+ * the shipped assets, as a share of canvas height:
+ *
+ *     vip_eagle    97%      free_viking  93%
+ *     free_owl     82%      free_chef    70%
+ *
+ * So the chef is drawn at about three quarters the owl's size and renders that
+ * way, through no fault of the CSS. One global number cannot correct for a
+ * per-file difference; only a per-file number can. This is that number, applied
+ * as a MULTIPLIER on the global scale so the shared rule keeps owning
+ * everything else (breakpoints, the top-rail cap, the holo and rig mirrors).
+ *
+ * Keyed on the asset slug, which is stable: the URL is always
+ * /avatars/table/{free|vip}_{slug}.webp.
+ */
+const BUST_ART_GAIN: Readonly<Record<string, number>> = {
+  viking: 2,
+  chef: 2,
+};
+
+export function bustArtGain(avatarUrl: string | null | undefined): number {
+  if (!avatarUrl) return 1;
+  const m = /\/avatars\/table\/(?:free|vip)_([\w-]+?)(?:@2x)?\.webp/.exec(avatarUrl);
+  return (m && BUST_ART_GAIN[m[1]]) || 1;
+}
+
 const SEAT_AVATAR_PX = 84;
 const SEAT_AVATAR_PX_HERO = 112;
 
@@ -1000,6 +1036,7 @@ export const SeatSlot = memo(
       player.name,
       player.isHero ? SEAT_AVATAR_PX_HERO : SEAT_AVATAR_PX
     );
+    const bustGain = bustArtGain(avatarUrl);
     // 2026-08-04 PokerBros-style: library bust art (/avatars/table|free|vip/*)
     // is a transparent-background character PNG — render it free-floating
     // (no circle crop, no ring, larger) like the reference client. Uploaded
@@ -1357,6 +1394,12 @@ export const SeatSlot = memo(
                 srcSet={`${avatarUrl} 1x, ${avatarUrl.replace(/\.webp$/, '@2x.webp')} 2x`}
                 alt=""
                 className="seat__avatar-img"
+                /* Per-avatar size correction. See bustArtGain(). */
+                style={
+                  bustGain === 1
+                    ? undefined
+                    : ({ '--sp-bust-gain': bustGain } as React.CSSProperties)
+                }
                 /* Hero eager + high priority: it is the largest avatar on the
                    table (1.33x), always in view, and the one the player looks
                    at first — `lazy` bought nothing there but a deferred request

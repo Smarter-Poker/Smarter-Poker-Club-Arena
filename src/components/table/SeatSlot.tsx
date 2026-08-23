@@ -29,6 +29,7 @@ import { soundService, haptic } from '../../services/SoundService';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import RiveAvatar from './RiveAvatar';
 import { startMotionBudget } from '../../utils/motionBudget';
+import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
 import './avatarChoreography.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -336,39 +337,27 @@ function formatStackAsBB(stack: number, bigBlind: number): string {
  */
 /**
  * How much bigger a particular character has to be drawn to LOOK the same size
- * as the others.
+ * as the others. See `./bustArtGain` - it is a GENERATED table covering every
+ * character in the library, measured from the art itself.
  *
- * Dan 2026-08-23: "the viking and chef need to be 2x current size."
+ * Re-exported here because this module was its original home and the `table`
+ * barrel (index.ts) re-exports from it.
  *
- * Until now `--sp-bust-scale` was a single number, 1.45, for all 76 characters,
- * on the assumption that art delivered at one canvas size renders at one size.
- * It does not. Every asset is 125x170, but the SUBJECT inside that canvas is
- * not drawn to a common scale, and `object-fit: contain` fits the CANVAS, so
- * whatever headroom the artist left is rendered as empty pixels. Measured off
- * the shipped assets, as a share of canvas height:
+ * It used to be two entries typed by hand - `viking: 2, chef: 2` - written from
+ * a four-character sample after Dan asked for "the viking and chef 2x current
+ * size". The chef is genuinely small (71% of its canvas). The viking is the 6th
+ * LARGEST asset of 100 at 95%, so 2x gave it a 2.9x render that swallowed its
+ * seat and spilled onto the felt. Two characters named in one sentence, given
+ * one number, sitting at opposite ends of the distribution.
  *
- *     vip_eagle    97%      free_viking  93%
- *     free_owl     82%      free_chef    70%
+ * A sample cannot correct a per-file difference across 100 files. Measurement
+ * can, so the numbers are now computed for all of them and cannot drift from
+ * the art:  python3 scripts/measure-bust-art.py
  *
- * So the chef is drawn at about three quarters the owl's size and renders that
- * way, through no fault of the CSS. One global number cannot correct for a
- * per-file difference; only a per-file number can. This is that number, applied
- * as a MULTIPLIER on the global scale so the shared rule keeps owning
- * everything else (breakpoints, the top-rail cap, the holo and rig mirrors).
- *
- * Keyed on the asset slug, which is stable: the URL is always
- * /avatars/table/{free|vip}_{slug}.webp.
+ * Imported at the top of this file (the render path calls it directly) and
+ * re-exported here so the `table` barrel keeps the same public surface.
  */
-const BUST_ART_GAIN: Readonly<Record<string, number>> = {
-  viking: 2,
-  chef: 2,
-};
-
-export function bustArtGain(avatarUrl: string | null | undefined): number {
-  if (!avatarUrl) return 1;
-  const m = /\/avatars\/table\/(?:free|vip)_([\w-]+?)(?:@2x)?\.webp/.exec(avatarUrl);
-  return (m && BUST_ART_GAIN[m[1]]) || 1;
-}
+export { bustArtGain, BUST_ART_GAIN };
 
 const SEAT_AVATAR_PX = 84;
 const SEAT_AVATAR_PX_HERO = 112;
@@ -518,6 +507,34 @@ export const SeatSlot = memo(
       showPickedCardIndexes,
       onToggleShowCard,
     } = props;
+
+    /**
+     * Dan 2026-08-23: "when a player folds, their blue countdown light should
+     * stop at once."
+     *
+     * A folded seat is not acting, whatever the last snapshot still says. The
+     * two sources disagree for a moment by design, and the class list further
+     * down already documents it: `lastAction` flips the instant the fold is
+     * dispatched, `player.status` only turns 'folded' when the next server
+     * snapshot lands. But `isActive` is derived from the SNAPSHOT's
+     * currentPlayerSeat, so for that whole round trip - the fold leaves, the
+     * engine advances the turn, the delta comes back - the seat that just
+     * folded is still formally "the player to act", and its ring keeps
+     * draining on a player who is already out of the hand.
+     *
+     * Dimming was taught to honour whichever source lands first. The clock was
+     * not, so the seat went dark with a live countdown still running on it.
+     * Declared here, above every consumer, so the ring, the urgency colours,
+     * the tense idle animation, the turn gesture and the screen-reader label
+     * all read ONE value instead of four sites each re-deciding what "acting"
+     * means - which is how they drifted apart in the first place.
+     *
+     * Deliberately CLIENT-side and optimistic. The engine remains the authority
+     * on whose turn it is; this only refuses to draw a clock for a player we
+     * already know cannot act.
+     */
+    const hasFolded = !!player && (lastAction === 'fold' || player.status === 'folded');
+    const isActingNow = isActive && !hasFolded;
 
     // Animated stack change — flash green/red when stack changes
     const [stackDelta, setStackDelta] = useState<number>(0);
@@ -716,10 +733,10 @@ export const SeatSlot = memo(
      * alert is a reaction to the turn ARRIVING; arriving late to someone else's
      * turn is not that.
      */
-    const prevGestureActiveRef = useRef(isActive);
+    const prevGestureActiveRef = useRef(isActingNow);
     useEffect(() => {
-      const rising = isActive && !prevGestureActiveRef.current;
-      prevGestureActiveRef.current = isActive;
+      const rising = isActingNow && !prevGestureActiveRef.current;
+      prevGestureActiveRef.current = isActingNow;
       if (!rising || prefersReducedMotion()) return;
       setAvatarGesture('alert');
       if (gestureTimerRef.current) clearTimeout(gestureTimerRef.current);
@@ -727,7 +744,7 @@ export const SeatSlot = memo(
         () => setAvatarGesture(null),
         ALERT_MS * getAnimationSpeed()
       );
-    }, [isActive]);
+    }, [isActingNow]);
     /**
      * THE OTHER HALF OF THE OUTCOME 2026-08-21.
      *
@@ -773,7 +790,7 @@ export const SeatSlot = memo(
      * Same approach as `--rigged`.
      */
     const showTense =
-      isActive &&
+      isActingNow &&
       !avatarGesture &&
       !rigActive &&
       timerProgress !== undefined &&
@@ -937,7 +954,10 @@ export const SeatSlot = memo(
           cls.push(`seat--${player.status}`);
         }
         if (player.isHero) cls.push('seat--hero');
-        if (isActive) cls.push('seat--active');
+        // isActingNow, not isActive: a seat that has just folded must lose the
+        // acting chrome (and its countdown ring) immediately, without waiting
+        // for the snapshot that moves currentPlayerSeat along. See hasFolded.
+        if (isActingNow) cls.push('seat--active');
         if (isWinner) {
           cls.push('seat--winner');
           cls.push('seat--winner-glow');
@@ -959,13 +979,22 @@ export const SeatSlot = memo(
         if (allinShake) cls.push('seat--allin-shake');
         if (stackGlow) cls.push('seat--stack-glow');
         // Timer urgency classes for color transitions
-        if (isActive && timerProgress !== undefined) {
+        if (isActingNow && timerProgress !== undefined) {
           if (timerProgress <= 20) cls.push('seat--timer-critical');
           else if (timerProgress <= 33) cls.push('seat--timer-urgent');
         }
       }
       return cls.join(' ');
-    }, [player, isActive, lastAction, isWinner, timerProgress, winnerPop, allinShake, stackGlow]);
+    }, [
+      player,
+      isActingNow,
+      lastAction,
+      isWinner,
+      timerProgress,
+      winnerPop,
+      allinShake,
+      stackGlow,
+    ]);
 
     // ─── EMPTY SEAT ────────────────────────────────────────────────────────
     if (!player) {
@@ -1098,7 +1127,7 @@ export const SeatSlot = memo(
     // unavailable so the prior JS-driven visual still shows.
     let timerStyle: React.CSSProperties | undefined;
     let timerKey: number | string = 'no-turn';
-    if (isActive && turnDeadlineMs && turnDeadlineMs > 0) {
+    if (isActingNow && turnDeadlineMs && turnDeadlineMs > 0) {
       // ── Dan 2026-08-20: "the yellow countdown timer is not 15 seconds — it
       //    needs to be exactly 15 seconds long to make the yellow disappear."
       //
@@ -1199,7 +1228,7 @@ export const SeatSlot = memo(
       // precisely the desired behaviour (the ring keeps draining from where
       // it is, just more slowly).
       timerKey = turnStartTimeMs || turnDeadlineMs;
-    } else if (isActive && timerProgress !== undefined) {
+    } else if (isActingNow && timerProgress !== undefined) {
       // Legacy JS-hook fallback (visible tabs only).
       timerStyle = {
         '--timer-progress': `${timerProgress}%`,
@@ -1212,8 +1241,11 @@ export const SeatSlot = memo(
         onClick={onAction}
         data-seat-num={seatNumber}
         role="region"
-        aria-label={`Seat ${seatNumber}: ${player.name}${isActive ? ' (acting now)' : ''}${player.status === 'folded' ? ' (folded)' : ''}${player.status === 'all_in' ? ' (all in)' : ''}, stack ${player.stack}`}
-        aria-live={isActive ? 'polite' : 'off'}
+        /* isActingNow: a screen reader must not keep announcing a folded seat
+           as "acting now" for the round trip it takes the snapshot to move the
+           turn along - the same stale-turn window the countdown ring had. */
+        aria-label={`Seat ${seatNumber}: ${player.name}${isActingNow ? ' (acting now)' : ''}${player.status === 'folded' ? ' (folded)' : ''}${player.status === 'all_in' ? ' (all in)' : ''}, stack ${player.stack}`}
+        aria-live={isActingNow ? 'polite' : 'off'}
       >
         {/* Last Action Badge — floats ABOVE the seat (premium style) */}
         {lastAction && (
@@ -1327,10 +1359,22 @@ export const SeatSlot = memo(
                character's silhouette instead of sweeping a rectangle across the
                felt. CSS cannot read the img's src, so hand it over as a custom
                property. Only set for VIP busts — everyone else gets no extra
-               property and no pseudo-element at all. */
+               property and no pseudo-element at all.
+
+               --sp-bust-gain rides here rather than on the <img> BECAUSE of that
+               ::after. This element owns all three things that draw the
+               character — the <img>, the Rive canvas that can stand in for it,
+               and the masked pseudo-element — so a property declared here
+               inherits to every one of them. Declared on the <img> (where it
+               started) only the <img> could see it, which is precisely how the
+               rig and the holo mask ended up scaling differently from the art
+               they are meant to sit exactly on top of. */
             style={
-              showHolo
-                ? ({ ['--sp-avatar-src' as string]: `url("${avatarUrl}")` } as React.CSSProperties)
+              showHolo || bustGain !== 1
+                ? ({
+                    ...(showHolo ? { '--sp-avatar-src': `url("${avatarUrl}")` } : null),
+                    ...(bustGain !== 1 ? { '--sp-bust-gain': bustGain } : null),
+                  } as React.CSSProperties)
                 : undefined
             }
             onClick={
@@ -1394,12 +1438,9 @@ export const SeatSlot = memo(
                 srcSet={`${avatarUrl} 1x, ${avatarUrl.replace(/\.webp$/, '@2x.webp')} 2x`}
                 alt=""
                 className="seat__avatar-img"
-                /* Per-avatar size correction. See bustArtGain(). */
-                style={
-                  bustGain === 1
-                    ? undefined
-                    : ({ '--sp-bust-gain': bustGain } as React.CSSProperties)
-                }
+                /* Per-avatar size correction (--sp-bust-gain) is NOT set here.
+                   It is declared on `.seat__avatar` above so the Rive rig and
+                   the holo mask inherit the same value; see the note there. */
                 /* Hero eager + high priority: it is the largest avatar on the
                    table (1.33x), always in view, and the one the player looks
                    at first — `lazy` bought nothing there but a deferred request
@@ -1668,12 +1709,24 @@ export const SeatSlot = memo(
           </div>
         )}
 
-        {/* Phase 2 T1-01 — PokerBros net-profit "+N" yellow floating text.
-         *  Shows only when isWinner=true AND netWinAmount>0. Keyed on the
-         *  amount so each new win re-triggers the float animation. */}
-        {isWinner && typeof netWinAmount === 'number' && netWinAmount > 0 && (
-          <div className="seat__net-win" key={netWinAmount}>
-            +{formatStack(netWinAmount)}
+        {/* Phase 2 T1-01 — PokerBros net-profit floating text.
+         *  Keyed on the amount so each new win re-triggers the float.
+         *
+         *  Dan 2026-08-23: shows for any NON-ZERO net, not just a positive one,
+         *  and carries its own sign. Taking down a pot and making money on it
+         *  are different things - chop one after the rake comes off and a
+         *  winner can be genuinely down on the hand. That used to render as
+         *  nothing at all (the mapper clamped the net to 0, and 0 failed this
+         *  `> 0` gate), so the hand a player most wants explained was the one
+         *  the table went quiet on. A true zero still renders nothing, because
+         *  "you broke even" needs no animation. */}
+        {isWinner && typeof netWinAmount === 'number' && netWinAmount !== 0 && (
+          <div
+            className={`seat__net-win${netWinAmount < 0 ? ' seat__net-win--loss' : ''}`}
+            key={netWinAmount}
+          >
+            {netWinAmount > 0 ? '+' : '-'}
+            {formatStack(Math.abs(netWinAmount))}
           </div>
         )}
 

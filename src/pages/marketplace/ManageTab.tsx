@@ -377,7 +377,7 @@ export default function ManageTab({
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Item name"
+            placeholder="Item Name"
             aria-label="Item name"
             className={styles.formInput}
             maxLength={100}
@@ -386,7 +386,7 @@ export default function ManageTab({
             type="number"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
-            placeholder="Price (chips)"
+            placeholder="Price (Chips)"
             aria-label="Item price in chips"
             min="1"
             step="1"
@@ -396,7 +396,7 @@ export default function ManageTab({
         <input
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
-          placeholder="Description (optional)"
+          placeholder="Description (Optional)"
           className={styles.formInput}
           maxLength={500}
         />
@@ -416,7 +416,7 @@ export default function ManageTab({
           <input
             value={imageUrl}
             onChange={(e) => setImageUrl(e.target.value)}
-            placeholder="Image URL (https only, optional)"
+            placeholder="Image URL (Https Only, Optional)"
             aria-label="Item image URL"
             className={styles.formInput}
           />
@@ -428,7 +428,7 @@ export default function ManageTab({
             step="1"
             value={stock}
             onChange={(e) => setStock(e.target.value)}
-            placeholder="Stock (blank = unlimited)"
+            placeholder="Stock (Blank = Unlimited)"
             aria-label="Stock quantity, blank for unlimited"
             className={styles.formInput}
           />
@@ -438,7 +438,7 @@ export default function ManageTab({
             step="1"
             value={perUserLimit}
             onChange={(e) => setPerUserLimit(e.target.value)}
-            placeholder="Max per member (blank = no cap)"
+            placeholder="Max Per Member (Blank = No Cap)"
             aria-label="Maximum purchases per member"
             className={styles.formInput}
           />
@@ -450,7 +450,7 @@ export default function ManageTab({
             step="1"
             value={salePrice}
             onChange={(e) => setSalePrice(e.target.value)}
-            placeholder="Sale price (blank = none)"
+            placeholder="Sale Price (Blank = None)"
             aria-label="Discounted sale price"
             className={styles.formInput}
           />
@@ -475,7 +475,7 @@ export default function ManageTab({
             step="1"
             value={sortOrder}
             onChange={(e) => setSortOrder(e.target.value)}
-            placeholder="Sort order (lower shows first)"
+            placeholder="Sort Order (Lower Shows First)"
             aria-label="Storefront sort order"
             className={styles.formInput}
           />
@@ -636,7 +636,7 @@ export default function ManageTab({
                     <input
                       value={draft.name}
                       onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                      placeholder="Item name"
+                      placeholder="Item Name"
                       className={styles.formInput}
                       maxLength={100}
                     />
@@ -644,7 +644,7 @@ export default function ManageTab({
                       type="number"
                       value={draft.price}
                       onChange={(e) => setDraft({ ...draft, price: e.target.value })}
-                      placeholder="Price (chips)"
+                      placeholder="Price (Chips)"
                       min="1"
                       className={styles.formInput}
                     />
@@ -675,7 +675,7 @@ export default function ManageTab({
                     <input
                       value={draft.imageUrl}
                       onChange={(e) => setDraft({ ...draft, imageUrl: e.target.value })}
-                      placeholder="Image URL (optional)"
+                      placeholder="Image URL (Optional)"
                       className={styles.formInput}
                     />
                   </div>
@@ -686,7 +686,7 @@ export default function ManageTab({
                       step="1"
                       value={draft.stock}
                       onChange={(e) => setDraft({ ...draft, stock: e.target.value })}
-                      placeholder="Stock (blank = unlimited)"
+                      placeholder="Stock (Blank = Unlimited)"
                       aria-label="Stock quantity, blank for unlimited"
                       className={styles.formInput}
                     />
@@ -696,7 +696,7 @@ export default function ManageTab({
                       step="1"
                       value={draft.salePrice}
                       onChange={(e) => setDraft({ ...draft, salePrice: e.target.value })}
-                      placeholder="Sale price (blank ends the sale)"
+                      placeholder="Sale Price (Blank Ends The Sale)"
                       aria-label="Sale price, blank to end the sale"
                       className={styles.formInput}
                     />
@@ -711,7 +711,7 @@ export default function ManageTab({
                       step="1"
                       value={draft.perUserLimit}
                       onChange={(e) => setDraft({ ...draft, perUserLimit: e.target.value })}
-                      placeholder="Max per member (blank = no cap)"
+                      placeholder="Max Per Member (Blank = No Cap)"
                       aria-label="Maximum purchases per member"
                       className={styles.formInput}
                     />
@@ -720,7 +720,7 @@ export default function ManageTab({
                       step="1"
                       value={draft.sortOrder}
                       onChange={(e) => setDraft({ ...draft, sortOrder: e.target.value })}
-                      placeholder="Sort order"
+                      placeholder="Sort Order"
                       aria-label="Storefront sort order"
                       className={styles.formInput}
                     />

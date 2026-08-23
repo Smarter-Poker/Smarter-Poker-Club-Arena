@@ -377,7 +377,8 @@ export default function CreateTournamentModal({
         if (!Number.isFinite(n)) return dflt;
         return Math.min(hi, Math.max(lo, n));
       };
-      const maxRebuysNum = maxRebuysStr.trim() === '' ? undefined : Math.round(Number(maxRebuysStr));
+      const maxRebuysNum =
+        maxRebuysStr.trim() === '' ? undefined : Math.round(Number(maxRebuysStr));
 
       const tournamentConfig: import('../../services/TournamentService').TournamentConfig = {
         name,
@@ -533,9 +534,7 @@ export default function CreateTournamentModal({
           name,
           daysOfWeek: schedule.daysOfWeek,
           startTimesUtc:
-            schedule.mode === 'times'
-              ? schedule.startTimesUtc.filter((t) => t.trim() !== '')
-              : [],
+            schedule.mode === 'times' ? schedule.startTimesUtc.filter((t) => t.trim() !== '') : [],
           intervalMinutes: schedule.mode === 'interval' ? schedule.intervalMinutes : null,
           active: true,
           config: rpcConfig,
@@ -629,7 +628,7 @@ export default function CreateTournamentModal({
               className={styles.input}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Saturday Night Turbo"
+              placeholder="E.g. Saturday Night Turbo"
               required
               style={!name.trim() ? { borderColor: '#ef4444' } : undefined}
             />
@@ -1310,7 +1309,7 @@ export default function CreateTournamentModal({
                     value={shortDescription}
                     maxLength={200}
                     onChange={(e) => setShortDescription(e.target.value)}
-                    placeholder="Optional line shown on the tournament page"
+                    placeholder="Optional Line Shown On The Tournament Page"
                   />
                 </div>
 
@@ -1494,8 +1493,7 @@ export default function CreateTournamentModal({
                   Tournament Schedule (Recurring)
                 </label>
                 <span className={styles.helperText}>
-                  Repeats This Tournament Weekly. Spawned Instances Use Exactly This
-                  Configuration.
+                  Repeats This Tournament Weekly. Spawned Instances Use Exactly This Configuration.
                 </span>
               </div>
               {scheduleEnabled && <WeeklyScheduleEditor value={schedule} onChange={setSchedule} />}

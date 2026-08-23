@@ -121,7 +121,7 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
                 <span className={styles.inputIcon}>◆</span>
                 <input
                   className={styles.input}
-                  placeholder="e.g. SharkPro99"
+                  placeholder="E.g. SharkPro99"
                   value={alias}
                   onChange={(e) => setAlias(e.target.value)}
                   maxLength={16}
@@ -136,7 +136,7 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
                 <span className={styles.inputIcon}>◉</span>
                 <input
                   className={styles.input}
-                  placeholder="e.g. John Doe"
+                  placeholder="E.g. John Doe"
                   value={realName}
                   onChange={(e) => setRealName(e.target.value)}
                   maxLength={24}

@@ -795,7 +795,7 @@ export default function ClubDataPage() {
               className={styles.searchInput}
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Type in the name of the game, creator ID or player ID"
+              placeholder="Type In The Name Of The Game, Creator ID Or Player ID"
               aria-label="Search games"
             />
           </div>

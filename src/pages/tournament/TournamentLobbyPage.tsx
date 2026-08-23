@@ -723,7 +723,7 @@ export default function TournamentLobbyPage() {
       <div className={styles.searchBar}>
         <input
           type="text"
-          placeholder="Search tournaments..."
+          placeholder="Search Tournaments..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className={styles.searchInput}

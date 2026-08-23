@@ -1500,7 +1500,7 @@ export default function ClubDetailPage() {
               <h3>All Members ({filteredMembers.length})</h3>
               <input
                 type="search"
-                placeholder="Search members..."
+                placeholder="Search Members..."
                 className={styles.searchInput}
                 value={memberSearch}
                 onChange={(e) => setMemberSearch(e.target.value)}

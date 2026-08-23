@@ -357,7 +357,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && text.trim()) sendMessage();
               }}
-              placeholder="Type a message..."
+              placeholder="Type A Message..."
               maxLength={500}
               style={{
                 flex: 1,

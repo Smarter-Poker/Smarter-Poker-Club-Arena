@@ -133,7 +133,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
             setOffset(0);
             setQuery(e.target.value);
           }}
-          placeholder="Search item or member..."
+          placeholder="Search Item Or Member..."
           aria-label="Search purchases by item or member"
           className={styles.formInput}
         />

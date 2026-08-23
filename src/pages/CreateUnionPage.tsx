@@ -235,7 +235,7 @@ export default function CreateUnionPage() {
                 <input
                   type="text"
                   className={styles.textInput}
-                  placeholder="Enter union name..."
+                  placeholder="Enter Union Name..."
                   value={form.name}
                   onChange={(e) => updateForm({ name: e.target.value })}
                   maxLength={50}
@@ -246,7 +246,7 @@ export default function CreateUnionPage() {
                 <label>Description</label>
                 <textarea
                   className={styles.textArea}
-                  placeholder="Describe your union..."
+                  placeholder="Describe Your Union..."
                   value={form.description}
                   onChange={(e) => updateForm({ description: e.target.value })}
                   rows={4}

@@ -281,7 +281,7 @@ export default function StoreTab({
       <div className={styles.toolbar}>
         <input
           type="text"
-          placeholder="Search items..."
+          placeholder="Search Items..."
           aria-label="Search shop items"
           value={searchFilter}
           onChange={(e) => setSearchFilter(e.target.value)}

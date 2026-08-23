@@ -321,7 +321,7 @@ function FriendListPanelInner({
       <div className={styles.searchBar}>
         <input
           type="text"
-          placeholder="Search friends..."
+          placeholder="Search Friends..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
@@ -335,7 +335,7 @@ function FriendListPanelInner({
         <div className={styles.addFriendRow}>
           <input
             type="text"
-            placeholder="Enter username..."
+            placeholder="Enter Username..."
             value={addFriendInput}
             onChange={(e) => setAddFriendInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleAddFriend()}

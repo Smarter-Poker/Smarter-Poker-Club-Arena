@@ -1270,7 +1270,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder="Content (optional)"
+          placeholder="Content (Optional)"
           rows={3}
           className="admin-input admin-textarea"
         />
@@ -1787,7 +1787,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
             <input
               value={theme.bannerUrl || ''}
               onChange={(e) => setTheme((prev) => ({ ...prev, bannerUrl: e.target.value }))}
-              placeholder="https://example.com/banner.png"
+              placeholder="Https://example.com/banner.png"
               className="admin-input"
             />
           </div>
@@ -1796,7 +1796,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
             <input
               value={theme.welcomeMessage || ''}
               onChange={(e) => setTheme((prev) => ({ ...prev, welcomeMessage: e.target.value }))}
-              placeholder="Welcome to our club!"
+              placeholder="Welcome To Our Club!"
               className="admin-input"
             />
           </div>
@@ -1839,7 +1839,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
         <div style={{ display: 'flex', gap: '8px' }}>
           <input
             id="ownership-target"
-            placeholder="New owner's User ID (UUID)"
+            placeholder="New Owner's User ID (UUID)"
             className="admin-input"
             style={{ flex: 1 }}
           />
@@ -2350,7 +2350,7 @@ function MintChipsTab({ clubId }: { clubId: string }) {
             <input
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Reason for minting..."
+              placeholder="Reason For Minting..."
               className="admin-input"
             />
           </div>

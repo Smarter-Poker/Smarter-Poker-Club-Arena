@@ -903,7 +903,7 @@ export default function CashierTradePage() {
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search members"
+              placeholder="Search Members"
               aria-label={`Search ${downline.length} member${downline.length === 1 ? '' : 's'}`}
             />
             <span className={styles.memberCount} aria-hidden="true">
@@ -1172,14 +1172,14 @@ export default function CashierTradePage() {
               min={0}
               value={askAmount}
               onChange={(e) => setAskAmount(e.target.value)}
-              placeholder="How many chips?"
+              placeholder="How Many Chips?"
               autoFocus
             />
             <input
               type="text"
               value={askNote}
               onChange={(e) => setAskNote(e.target.value)}
-              placeholder="Note (optional)"
+              placeholder="Note (Optional)"
               maxLength={120}
             />
             <div className={styles.modalHint}>

@@ -457,7 +457,9 @@ export default function ClubMembersPage() {
           () =>
             supabase
               .from('club_members')
-              .select('user_id, role, chip_balance, joined_at, parent_agent_id, profiles(id, username, display_name, arena_avatar_url)')
+              .select(
+                'user_id, role, chip_balance, joined_at, parent_agent_id, profiles(id, username, display_name, arena_avatar_url)'
+              )
               .eq('club_id', resolvedId)
               .not('status', 'in', '("banned","suspended")')
               .order('joined_at', { ascending: true })
@@ -534,10 +536,7 @@ export default function ClubMembersPage() {
 
   // Subscribe to bus-level events for cross-component sync
   useMasterBusSubscriptions(
-    [
-      'CLUB_JOINED',
-      'CLUB_LEFT',
-    ],
+    ['CLUB_JOINED', 'CLUB_LEFT'],
     () => {
       // We only reload on join/left to ensure the list is structurally correct
       // chip balance updates are handled by the realtime table subscription below
@@ -773,7 +772,7 @@ export default function ClubMembersPage() {
       <div className="members-search">
         <input
           type="text"
-          placeholder="Search members..."
+          placeholder="Search Members..."
           aria-label="Search club members"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}

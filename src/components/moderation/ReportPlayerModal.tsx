@@ -150,7 +150,7 @@ export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
             <textarea
               value={details}
               onChange={(e) => setDetails(e.target.value)}
-              placeholder="Provide any additional context..."
+              placeholder="Provide Any Additional Context..."
               rows={3}
             />
           </label>
@@ -163,7 +163,7 @@ export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
               type="text"
               value={handId}
               onChange={(e) => setHandId(e.target.value)}
-              placeholder="e.g., #12345678"
+              placeholder="E.g., #12345678"
             />
           </label>
         </div>

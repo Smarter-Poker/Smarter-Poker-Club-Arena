@@ -639,7 +639,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
               <input
                 type="text"
                 className={styles.searchInput}
-                placeholder="Search by name or alias..."
+                placeholder="Search By Name Or Alias..."
                 value={searchQuery}
                 onChange={(e) => handleInputChange(e.target.value)}
                 onKeyDown={(e) => {

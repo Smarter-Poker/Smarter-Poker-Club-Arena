@@ -70,7 +70,7 @@ export const RatingModal: React.FC<RatingModalProps> = ({
 
             <textarea
               className="feedback-input"
-              placeholder="Any additional feedback? (optional)"
+              placeholder="Any Additional Feedback? (Optional)"
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
               rows={3}

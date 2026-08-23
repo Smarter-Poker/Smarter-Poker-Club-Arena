@@ -944,7 +944,7 @@ export default function ClubSettingsPage() {
               type="button"
               className="btn btn--primary"
               onClick={() => {
-                const url = `https://smarter.poker/invite?c=${clubNumericId}&ref=${playerNumber}`;
+                const url = `${window.location.origin}/clubs?join=true&c=${clubNumericId}&ref=${playerNumber}`;
                 navigator.clipboard.writeText(url);
                 toast.success('Invite Link Copied To Clipboard!');
               }}

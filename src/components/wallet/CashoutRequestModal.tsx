@@ -481,7 +481,7 @@ export default function CashoutRequestModal({
                 <label htmlFor="cashout-note">Note (Optional)</label>
                 <textarea
                   id="cashout-note"
-                  placeholder="Any message for your agent..."
+                  placeholder="Any Message For Your Agent..."
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   rows={2}

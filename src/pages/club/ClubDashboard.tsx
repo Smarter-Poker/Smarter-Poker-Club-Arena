@@ -1315,7 +1315,7 @@ export default function ClubDashboard() {
             <input
               value={memberSearch}
               onChange={(e) => setMemberSearch(e.target.value)}
-              placeholder="Search members by name"
+              placeholder="Search Members By Name"
               aria-label="Search members"
               style={{
                 width: '100%',

@@ -61,6 +61,7 @@
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
+import { raiseEngineAlert, resolveEngineAlert } from './engineAlerts.js';
 
 /** How often to ask the database. */
 const CHECK_INTERVAL_MS = 60_000;
@@ -70,6 +71,34 @@ const LOOKBACK_MS = 3 * 60_000;
 const MIN_TABLES_TO_JUDGE = 3;
 /** Consecutive confirmed-silent checks before the process is called dead. */
 const CONSECUTIVE_TO_DECLARE_DEAD = 3;
+
+/**
+ * ── THE CANARY HOLE ────────────────────────────────────────────────────────
+ *
+ * MIN_TABLES_TO_JUDGE makes this verifier stand down on a small fleet, which is
+ * right — one table between hands proves nothing. But it means a failure that
+ * ALSO empties the fleet silences the detector completely: zero dealable tables
+ * reads as "nothing to check" rather than "the platform is gone".
+ *
+ * The horse fleet keeps dozens of tables dealing around the clock, so the floor
+ * is not a normal state — losing it IS the incident. Falling below the floor is
+ * therefore its own alarm, and the one that would catch a catastrophe the
+ * deal-rate check cannot even see.
+ */
+const FLEET_FLOOR_TABLES = 3;
+/** Consecutive checks below the floor before it is called in. */
+const CONSECUTIVE_BELOW_FLOOR = 3;
+
+/** Kill-rate: recovery events in this window that count as a storm. */
+const KILL_WINDOW_MS = 15 * 60_000;
+/**
+ * On 2026-08-22 the fleet sustained ~4.5 kills/min for six hours. Healthy is
+ * now under one an hour, so 30 in fifteen minutes is unambiguous without being
+ * trigger-happy about a single bad table recovering itself.
+ */
+const KILL_STORM_THRESHOLD = 30;
+
+const COMPONENT = 'club-arena-engine';
 
 export interface DealRateSnapshot {
   /** Consecutive checks where the DB confirmed zero hands on a dealing fleet. */
@@ -82,6 +111,10 @@ export interface DealRateSnapshot {
   handsInWindow: number | null;
   /** When the last check completed. 0 = never run. */
   lastCheckedAt: number;
+  /** Consecutive checks with fewer dealable tables than the floor. */
+  belowFloorChecks: number;
+  /** Engine kills seen in the kill window; null when it could not be asked. */
+  killsInWindow: number | null;
 }
 
 export class DealRateVerifier {
@@ -90,6 +123,8 @@ export class DealRateVerifier {
   private tablesExpectedDealing = 0;
   private handsInWindow: number | null = null;
   private lastCheckedAt = 0;
+  private belowFloorChecks = 0;
+  private killsInWindow: number | null = null;
 
   /**
    * @param dealingTableIds returns the tables this process believes it owns
@@ -118,7 +153,56 @@ export class DealRateVerifier {
       tablesExpectedDealing: this.tablesExpectedDealing,
       handsInWindow: this.handsInWindow,
       lastCheckedAt: this.lastCheckedAt,
+      belowFloorChecks: this.belowFloorChecks,
+      killsInWindow: this.killsInWindow,
     };
+  }
+
+  /**
+   * A kill storm is not a freeze — the tables come back — so it must not touch
+   * liveness. But it is the exact signature of 2026-08-22, when 1,603 kills
+   * over six hours went entirely unreported, and it deserves to be noticed in
+   * minutes rather than found by somebody reading the database later.
+   */
+  private async checkKillRate(): Promise<void> {
+    const since = new Date(Date.now() - KILL_WINDOW_MS).toISOString();
+    try {
+      const { count, error } = await supabase
+        .from('engine_recovery_events')
+        .select('id', { count: 'exact', head: true })
+        .gt('created_at', since);
+      if (error) {
+        this.killsInWindow = null;
+        return;
+      }
+      const kills = count ?? 0;
+      this.killsInWindow = kills;
+      if (kills >= KILL_STORM_THRESHOLD) {
+        void raiseEngineAlert({
+          alertname: 'ClubArenaEngineKillStorm',
+          severity: 'critical',
+          component: COMPONENT,
+          summary:
+            kills +
+            ' engine kills in ' +
+            Math.round(KILL_WINDOW_MS / 60_000) +
+            'min — tables are being destroyed and rebuilt in a loop',
+          description:
+            'Healthy is under one an hour. Read engine_recovery_events.detail: it names ' +
+            'the phase or stage each kill happened in.',
+          labels: { kills: String(kills) },
+        });
+      } else {
+        void resolveEngineAlert(
+          'ClubArenaEngineKillStorm',
+          COMPONENT,
+          'Kill rate back to normal (' + kills + ' in window)'
+        );
+      }
+    } catch {
+      // Same rule as everywhere else here: could-not-ask is not evidence.
+      this.killsInWindow = null;
+    }
   }
 
   /** Exposed for tests; the timer calls this. */
@@ -126,13 +210,35 @@ export class DealRateVerifier {
     const tableIds = this.dealingTableIds();
     this.tablesExpectedDealing = tableIds.length;
 
-    // Guard 2: too small a fleet to conclude anything from.
-    if (tableIds.length < MIN_TABLES_TO_JUDGE) {
+    // Guard 2: too small a fleet to conclude anything about the DEAL RATE
+    // from. But standing down silently is the canary hole — a failure that also
+    // empties the fleet would switch this detector off exactly when it matters.
+    // So the floor is watched separately, and losing it is its own alarm.
+    if (tableIds.length < FLEET_FLOOR_TABLES) {
+      this.belowFloorChecks++;
       this.silentChecks = 0;
       this.handsInWindow = null;
       this.lastCheckedAt = Date.now();
+      if (this.belowFloorChecks >= CONSECUTIVE_BELOW_FLOOR) {
+        void raiseEngineAlert({
+          alertname: 'ClubArenaFleetFloorLost',
+          severity: 'critical',
+          component: COMPONENT,
+          summary:
+            'Only ' + tableIds.length + ' table(s) should be dealing — the fleet has collapsed',
+          description:
+            'The horse fleet normally keeps dozens of tables dealing around the clock. ' +
+            'Below ' +
+            FLEET_FLOOR_TABLES +
+            ' the deal-rate check cannot judge anything, so ' +
+            'this is the alarm that covers it. Check HorseFleetManager and table discovery.',
+          labels: { tables: String(tableIds.length) },
+        });
+      }
       return;
     }
+    this.belowFloorChecks = 0;
+    void resolveEngineAlert('ClubArenaFleetFloorLost', COMPONENT, 'Fleet is back above the floor');
 
     const since = new Date(Date.now() - LOOKBACK_MS).toISOString();
     try {
@@ -154,13 +260,34 @@ export class DealRateVerifier {
       this.handsInWindow = hands;
       this.lastCheckedAt = Date.now();
 
+      await this.checkKillRate();
+
       if (hands > 0) {
         // Guard 4: a single hand anywhere clears the alarm.
         this.silentChecks = 0;
+        void resolveEngineAlert('ClubArenaFleetSilent', COMPONENT, 'Hands are being dealt again');
         return;
       }
 
       this.silentChecks++;
+      if (this.silentChecks >= CONSECUTIVE_TO_DECLARE_DEAD) {
+        void raiseEngineAlert({
+          alertname: 'ClubArenaFleetSilent',
+          severity: 'critical',
+          component: COMPONENT,
+          summary:
+            'ZERO hands in ' +
+            Math.round(LOOKBACK_MS / 60_000) +
+            'min across ' +
+            tableIds.length +
+            ' tables that should be dealing',
+          description:
+            'The database confirms no hands were recorded while this process believes ' +
+            'these tables are dealing. /health is reporting liveness "dead"; Docker will ' +
+            'restart the container. If this repeats, the restart is not fixing the cause.',
+          labels: { tables: String(tableIds.length) },
+        });
+      }
       reportError(
         new Error(
           'Database confirms ZERO hands in ' +

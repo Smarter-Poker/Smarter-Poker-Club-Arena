@@ -490,6 +490,12 @@ export class GameServer {
        * `handsInWindow: null` means the database could not be asked — which is
        * explicitly NOT counted as silence.
        */
+      /**
+       * Independent evidence, reported whether or not it has reached a verdict.
+       * `belowFloorChecks` is the canary: the deal-rate check stands down on a
+       * tiny fleet, so a failure that also empties the fleet would silence it —
+       * losing the floor is its own alarm.
+       */
       dealRate,
       stalledTableCount: stalledTables.length,
       // Deploy drain gate reads this. A restart voids in-flight hands, so a

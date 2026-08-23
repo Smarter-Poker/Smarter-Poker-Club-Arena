@@ -4015,6 +4015,37 @@ export default function TablePage({
         return;
       }
 
+      /**
+       * Dan 2026-08-23: "I just tried to run it twice, and it did not run a
+       * second board... only ran it the one time and awarded me the pot."
+       *
+       * The engine was not at fault - a hand that evening (#1729271) really did
+       * deal two boards and split the pot. What was missing is the OTHER
+       * outcome: a chooser picking 1, an all-in opponent declining, or nobody
+       * answering inside the window all end in a single board, and none of them
+       * put anything on the wire. `rit_result` only fires when two or more
+       * boards are dealt, so the single-run case was silent and a player who
+       * had just asked to run it twice was left to conclude it is broken.
+       *
+       * All three are legitimate poker. Say which one happened.
+       */
+      if (eventType === 'rit_single_run') {
+        setShowRIT(false);
+        const reason = handState.reason as string;
+        const who = handState.player_id as string | null;
+        const name = who
+          ? tableStateRef.current?.players?.find((pp) => pp?.id === who)?.name || 'A Player'
+          : '';
+        const message =
+          reason === 'chooser_chose_one'
+            ? `Running It Once. ${name} Chose One Board.`
+            : reason === 'player_declined'
+              ? `Running It Once. ${name} Declined.`
+              : 'Running It Once. Not Everyone Agreed In Time.';
+        toast.info(message, 4000);
+        return;
+      }
+
       // FIX 97 → 2026-08-18: RIT result — show the boards and payouts. The
       // extra boards exist ONLY in this event (they never enter the engine's
       // community-card state), so discarding it meant players watched the

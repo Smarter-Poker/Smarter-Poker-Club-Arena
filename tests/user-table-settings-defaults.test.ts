@@ -20,25 +20,55 @@
  * Notification permission behind it contradicts the rule that the app never
  * prompts on its own.
  *
- * The database is the source of truth. These values are the live column
- * defaults, read from information_schema on 2026-08-23:
+ * AND IT IS NOT ONLY A DISPLAY BUG. The save path is a PER-KEY upsert:
  *
- *   multi_auto_switch     NOT NULL DEFAULT true
- *   multi_action_queue    NOT NULL DEFAULT true
- *   multi_desktop_alerts  NOT NULL DEFAULT false
- *   multi_shared_socket   NOT NULL DEFAULT false
+ *     upsert({ user_id, [key]: newValue }, { onConflict: 'user_id' })
  *
- * If you change one, change it in a migration FIRST and then here.
+ * so for a user with no row, changing ANY one setting inserts the row and
+ * every OTHER column takes its column default. Where the two disagreed, the
+ * user's unrelated settings silently flipped underneath them and stuck, on
+ * every device. `card_slide` and `enhanced_view` did exactly that: on since
+ * forever, off the moment you touched anything else.
+ *
+ * Fixed in the direction that preserves what users already have — the two
+ * betas came DOWN to the database (never enrol anyone silently), the two
+ * display settings brought the DATABASE up to the client (that is what people
+ * have actually been seeing).
+ *
+ * Every boolean is pinned below, not just the ones that were wrong: the first
+ * pass here checked only the four `multi_*` settings and missed the other two.
+ * The database is the source of truth — change it in a migration FIRST, then
+ * here.
  */
 import { describe, it, expect } from 'vitest';
 import { DEFAULT_USER_TABLE_SETTINGS } from '../src/hooks/useUserTableSettings';
 
-/** The live `user_table_settings` column defaults. */
+/**
+ * EVERY boolean column's live default, read from information_schema on
+ * 2026-08-23. Not just the ones that were wrong — the first pass here checked
+ * only the four `multi_*` settings and missed `card_slide` and
+ * `enhanced_view`, which were broken in exactly the same way.
+ */
 const DB_COLUMN_DEFAULTS = {
-  multi_auto_switch: true,
+  auto_time_bank: false,
+  card_slide: true,
+  card_squeeze: false,
+  cards_pre_sort: true,
+  emoji_enabled: true,
+  enhanced_view: true,
+  gestures_enabled: false,
+  highlight_active_players: true,
   multi_action_queue: true,
+  multi_auto_switch: true,
   multi_desktop_alerts: false,
   multi_shared_socket: false,
+  show_avatars: true,
+  show_badges: false,
+  show_stack_in_bb: false,
+  skip_animations: false,
+  text_message: true,
+  use_alias: false,
+  voice_message: true,
 } as const;
 
 describe('DEFAULT_USER_TABLE_SETTINGS agrees with the database', () => {

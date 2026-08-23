@@ -110,8 +110,13 @@ const VARIANT_LABELS: Record<string, { short: string; long: string }> = {
   plo8: { short: 'PLO8', long: 'Pot Limit Omaha Hi-Lo' },
   pineapple: { short: 'PNPL', long: 'Pineapple' },
   short_deck: { short: '6+', long: 'Short Deck' },
-  ofc_pineapple: { short: 'OFC', long: 'OFC Pineapple' },
-  ofc: { short: 'OFC', long: 'Open Face Chinese' },
+  /* OFC removed 2026-08-23. Open Face Chinese is a card-PLACEMENT game with no
+     betting rounds and no board; this platform has never dealt one. Every row
+     that carried `ofc_pineapple` was a Crazy Pineapple table wearing the wrong
+     label - all of them NAMED "Pineapple", all with flop/turn/river streets,
+     and HorseFleetManager's own comment called them legacy drift. The bare
+     `ofc` variant was never used by a single row. Relabelled by migration
+     20260823_retire_ofc_pineapple_variant.sql. */
   // Limit family (the LIMIT lobby category classifies on these strings)
   flh: { short: 'FLH', long: "Fixed Limit Hold'em" },
   limit_holdem: { short: 'FLH', long: "Fixed Limit Hold'em" },
@@ -121,8 +126,6 @@ const VARIANT_LABELS: Record<string, { short: string; long: string }> = {
 
 const TOURNEY_VARIANT_KEYS: Record<string, string> = {
   NLH: 'nlh',
-  OFC: 'ofc',
-  OFC_PINEAPPLE: 'ofc_pineapple',
   PLO4: 'plo4',
   PLO5: 'plo5',
   PLO6: 'plo6',

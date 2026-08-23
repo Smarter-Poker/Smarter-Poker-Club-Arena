@@ -13,9 +13,11 @@ import { resolve } from 'node:path';
  *
  *    The live catalogue, from `hand_history` over the three days to
  *    2026-08-23: nlh (218,040), plo4 (73,166), plo5 (42,100), short_deck
- *    (22,180), plo6 (21,175), plo8 (15,212), ofc_pineapple (13,860),
- *    pineapple (13,825). Every one of them is asserted below, because the
- *    failure mode both times was a mapping written without looking at the list.
+ *    (22,180), plo6 (21,175), plo8 (15,212), pineapple (13,825). Every one is
+ *    asserted below, because the failure mode both times was a mapping written
+ *    without looking at the list.
+ *
+ *    `ofc_pineapple` (13,860) was RETIRED rather than mapped - see below.
  *
  * 2. THE DISCARD STREET. `pineapple_discard` was missing from the adapter's
  *    street list, so every discard in a pineapple hand was filtered out and
@@ -32,7 +34,6 @@ const readSrc = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8')
    page says something else would be worse than no test. */
 function toShareVariant(gameType: string | undefined): string {
   const g = (gameType || '').toUpperCase();
-  if (g.includes('OFC')) return 'OFC Pineapple';
   if (g.includes('PINEAPPLE')) return 'Pineapple';
   if (g.includes('SHORT')) return 'Short Deck';
   if (g.includes('PLO8')) return 'PLO8';
@@ -52,7 +53,12 @@ const LIVE_CATALOGUE: Array<[string, string]> = [
   ['PLO8', 'PLO8'],
   ['SHORT_DECK', 'Short Deck'],
   ['PINEAPPLE', 'Pineapple'],
-  ['OFC_PINEAPPLE', 'OFC Pineapple'],
+  /* `ofc_pineapple` was RETIRED on 2026-08-23, not mapped. Open Face Chinese
+     has no betting rounds and no board; every row carrying that variant was a
+     Crazy Pineapple table wearing the wrong label, and all of them are named
+     "Pineapple". Migration 20260823_retire_ofc_pineapple_variant.sql relabels
+     them. A legacy row now falls through to the NLH default like any other
+     unknown variant, which is asserted below. */
 ];
 
 describe('share variant covers the whole live catalogue', () => {
@@ -69,11 +75,16 @@ describe('share variant covers the whole live catalogue', () => {
   it('does not collapse short deck or pineapple into NLH', () => {
     expect(toShareVariant('SHORT_DECK')).not.toBe('NLH');
     expect(toShareVariant('PINEAPPLE')).not.toBe('NLH');
-    expect(toShareVariant('OFC_PINEAPPLE')).not.toBe('NLH');
   });
 
-  it('tests OFC before PINEAPPLE, since one contains the other', () => {
-    expect(toShareVariant('OFC_PINEAPPLE')).toBe('OFC Pineapple');
+  it('offers no OFC variant at all', () => {
+    const share = readSrc('src/components/table/ShareHand.tsx');
+    expect(share).not.toContain("'OFC Pineapple'");
+    const page = readSrc('src/pages/HandHistoryPage.tsx');
+    expect(page).not.toContain("includes('OFC')");
+    // A legacy ofc_pineapple row still contains "PINEAPPLE", so it lands on
+    // Pineapple - which is what those tables always actually were.
+    expect(toShareVariant('OFC_PINEAPPLE')).toBe('Pineapple');
   });
 
   it('still falls back to NLH for something it has never seen', () => {
@@ -90,7 +101,7 @@ describe('share variant covers the whole live catalogue', () => {
 
   it('the page still uses these ordered rules', () => {
     const page = readSrc('src/pages/HandHistoryPage.tsx');
-    const order = ['OFC', 'PINEAPPLE', 'SHORT', 'PLO8', 'PLO6', 'PLO5'];
+    const order = ['PINEAPPLE', 'SHORT', 'PLO8', 'PLO6', 'PLO5'];
     const positions = order.map((t) => page.indexOf(`includes('${t}')`));
     expect(positions.every((p) => p > -1)).toBe(true);
     // Ordered, because PLO8 after the PLO catch-all is the original bug.

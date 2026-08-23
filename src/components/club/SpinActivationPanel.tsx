@@ -34,7 +34,12 @@ import { useToast } from '../common/Toast';
 
 interface Props {
   clubId: string;
-  /** Whether this viewer may actually flip the switch. */
+  /**
+   * Whether this viewer looks like an owner from the PAGE's point of view.
+   * Necessary but not sufficient: the pool may belong to a union this club is
+   * in, and only the union lead may spend that. The route answers that
+   * question properly and its answer wins -- see canAct below.
+   */
   canManage: boolean;
 }
 
@@ -48,11 +53,14 @@ export default function SpinActivationPanel({ clubId, canManage }: Props) {
   const [busy, setBusy] = useState(false);
   const [maxStake, setMaxStake] = useState<number>(10);
   const [wallet, setWallet] = useState<string>('chip_treasury');
+  /** What the ROUTE says about this viewer. Null until the first read lands. */
+  const [routeCanManage, setRouteCanManage] = useState<boolean | null>(null);
 
   const load = useCallback(async () => {
     try {
       const res = await spinActivationApi.getState(clubId);
       setState(res.state);
+      setRouteCanManage(Boolean(res.canManage));
       // Default the source wallet to the first one this owner actually has.
       const sources = SPIN_SEED_SOURCES[res.state?.owner_kind ?? 'club'];
       setWallet((w) => (sources.some((s) => s.value === w) ? w : sources[0].value));
@@ -73,6 +81,13 @@ export default function SpinActivationPanel({ clubId, canManage }: Props) {
   const required = requiredSeedForStake(maxStake);
   const sources = SPIN_SEED_SOURCES[state?.owner_kind ?? 'club'];
   const isUnionOwned = state?.owner_kind === 'union';
+
+  /**
+   * The single answer both buttons obey. Fails CLOSED while the route's answer
+   * is still unknown, so a slow read can never briefly offer a control the
+   * server will refuse.
+   */
+  const canAct = canManage && routeCanManage === true;
 
   const activate = async () => {
     setBusy(true);
@@ -122,7 +137,7 @@ export default function SpinActivationPanel({ clubId, canManage }: Props) {
     <section className="settings-section">
       <h3>Spins</h3>
 
-      {isUnionOwned && (
+      {isUnionOwned && !canAct && (
         <small className="form-hint" style={{ display: 'block', marginBottom: 10 }}>
           This Club Belongs To A Union, So The Spin Wallet Belongs To The Union. Only The Union Lead
           Can Change It.
@@ -182,7 +197,7 @@ export default function SpinActivationPanel({ clubId, canManage }: Props) {
             </small>
           )}
 
-          {canManage && !isUnionOwned && (
+          {canAct && (
             <button
               type="button"
               className="btn-secondary"
@@ -209,7 +224,7 @@ export default function SpinActivationPanel({ clubId, canManage }: Props) {
                 id="spin-max-stake"
                 value={maxStake}
                 onChange={(e) => setMaxStake(Number(e.target.value))}
-                disabled={!canManage || busy}
+                disabled={!canAct || busy}
               >
                 {SPIN_BOARD_STAKES.map((s) => (
                   <option key={s} value={s}>
@@ -224,7 +239,7 @@ export default function SpinActivationPanel({ clubId, canManage }: Props) {
                 id="spin-seed-source"
                 value={wallet}
                 onChange={(e) => setWallet(e.target.value)}
-                disabled={!canManage || busy}
+                disabled={!canAct || busy}
               >
                 {sources.map((s) => (
                   <option key={s.value} value={s.value}>
@@ -240,7 +255,7 @@ export default function SpinActivationPanel({ clubId, canManage }: Props) {
             {maxStake}, So The Wallet Can Always Pay The Biggest Prize It Offers.
           </small>
 
-          {canManage && (
+          {canAct && (
             <button
               type="button"
               className="btn-primary"

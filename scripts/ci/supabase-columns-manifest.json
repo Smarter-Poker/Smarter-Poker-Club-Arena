@@ -5570,6 +5570,31 @@
       "weight",
       "active"
     ],
+    "member_fee_rollup": [
+      "user_id",
+      "day",
+      "game_variant",
+      "is_mtt",
+      "hands",
+      "fees",
+      "contributed",
+      "won",
+      "wins",
+      "vpip_hands",
+      "pfr_hands",
+      "three_bet_hands",
+      "three_bet_opps",
+      "cbet_hands",
+      "cbet_opps",
+      "updated_at"
+    ],
+    "member_fee_rollup_state": [
+      "id",
+      "watermark",
+      "last_run_at",
+      "hands_seen",
+      "hands_no_actions"
+    ],
     "memory_achievement_definitions": [
       "key",
       "name",
@@ -7216,6 +7241,20 @@
       "user_agent",
       "scanned_at"
     ],
+    "rabbit_hunt_offers": [
+      "table_id",
+      "hand_number",
+      "cards",
+      "board_len",
+      "created_at"
+    ],
+    "rabbit_hunt_reveals": [
+      "user_id",
+      "table_id",
+      "hand_number",
+      "charged",
+      "revealed_at"
+    ],
     "rake_attributions": [
       "id",
       "hand_id",
@@ -8415,7 +8454,8 @@
       "deactivated_at",
       "seed_source_wallet",
       "seed_returned_at",
-      "seed_returned_amount"
+      "seed_returned_amount",
+      "required_seed_at_activation"
     ],
     "spin_reserve_ledger": [
       "id",

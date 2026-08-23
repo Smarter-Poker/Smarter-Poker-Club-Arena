@@ -375,7 +375,7 @@ export async function sweepIncompleteHorses(limit = 1000): Promise<{
     const { data, error } = await supabase
       .from('profiles')
       .select(
-        'id, display_name, username, alias, player_number, avatar_url, is_vip, vip_tier, horse_profile'
+        'id, display_name, username, alias, player_number, avatar_url:arena_avatar_url, is_vip, vip_tier, horse_profile'
       )
       .eq('is_horse', true)
       .limit(limit);
@@ -480,7 +480,7 @@ export async function createHorse(opts: { clubId?: string; realName?: string } =
       username: ident.username,
       alias: ident.alias,
       player_number: playerNumber,
-      avatar_url: null,
+      arena_avatar_url: null,
       is_vip: true,
       vip_tier: 'lifetime',
       horse_profile: brainFor(id, null),

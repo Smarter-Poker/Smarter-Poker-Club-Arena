@@ -103,6 +103,8 @@ interface Member {
   user_id: string;
   role: string;
   name: string;
+  avatar_url?: string;
+  short_id?: string;
   chip_balance: number;
 }
 
@@ -260,7 +262,9 @@ export default function ClubBankCashierModal({
       for (let from = 0; from < 10000; from += PAGE) {
         const { data: page, error } = await supabase
           .from('club_members')
-          .select('user_id, role, display_name, nickname, chip_balance')
+          .select(
+            'user_id, role, display_name, nickname, avatar_url:arena_avatar_url, short_id, chip_balance'
+          )
           .eq('club_id', uuid)
           .in('status', MEMBER_IN_CLUB)
           .order('joined_at', { ascending: true })
@@ -280,6 +284,8 @@ export default function ClubBankCashierModal({
             (m.nickname as string) ||
             `Member ${String(m.user_id).slice(0, 8)}`,
           chip_balance: Number(m.chip_balance) || 0,
+          avatar_url: (m.avatar_url as string) || '',
+          short_id: (m.short_id as string) || '----',
         }))
       );
       setMembersLoading(false);
@@ -618,11 +624,7 @@ export default function ClubBankCashierModal({
           {/* ── Header ───────────────────────────────────────────────────── */}
           <div className="cbc-head">
             <div>
-              <div className="cbc-title">CLUB BANK CASHIER</div>
-              <div className="cbc-sub">
-                {clubName}
-                <span className="cbc-role">{roleLabel(viewerRole)}</span>
-              </div>
+              <div className="cbc-title">CLUB BANK</div>
             </div>
             <button className="cbc-x" onClick={onClose} aria-label="Close">
               &times;
@@ -646,12 +648,6 @@ export default function ClubBankCashierModal({
             <button className="cbc-mint" onClick={() => setShowMint(true)}>
               Mint Chips Into The Club Bank
             </button>
-          )}
-          {inUnion === true && (
-            <div className="cbc-note">
-              This Club Is In A Union, So Chip Minting Is Revoked. Chips Flow Down From The Union
-              Bank.
-            </div>
           )}
 
           {/* ── Tabs ─────────────────────────────────────────────────────── */}
@@ -707,7 +703,7 @@ export default function ClubBankCashierModal({
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder={
-                      AGENT_ONLY.includes(destination) ? 'Search agents' : 'Search members'
+                      AGENT_ONLY.includes(destination) ? 'Search Agents' : 'Search Members'
                     }
                     aria-label="Search recipients"
                   />
@@ -731,7 +727,14 @@ export default function ClubBankCashierModal({
                         onClick={() => setRecipient(m)}
                         aria-pressed={recipient?.user_id === m.user_id}
                       >
-                        <span className="cbc-member-name">{m.name}</span>
+                        <div
+                          className="cbc-member-avatar"
+                          style={{ backgroundImage: `url(${m.avatar_url || ''})` }}
+                        />
+                        <div className="cbc-member-info">
+                          <span className="cbc-member-name">{m.name}</span>
+                          <span className="cbc-member-id">#{m.short_id}</span>
+                        </div>
                         <span className="cbc-member-role">{roleLabel(m.role)}</span>
                         <span className="cbc-member-bal">{fmt(m.chip_balance)}</span>
                       </button>
@@ -752,27 +755,10 @@ export default function ClubBankCashierModal({
                     min={1}
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    placeholder="Chips to send"
-                    aria-label="Chips to send"
+                    placeholder=""
+                    aria-label=""
                   />
-                  <div className="cbc-quick">
-                    {[10000, 50000, 100000, 500000].map((q) => (
-                      <button
-                        key={q}
-                        disabled={bank !== null && q > bank}
-                        onClick={() => setAmount(String(q))}
-                      >
-                        {fmtWhole(q)}
-                      </button>
-                    ))}
-                    <button
-                      className="cbc-max"
-                      disabled={!bank}
-                      onClick={() => setAmount(String(bank ?? 0))}
-                    >
-                      MAX
-                    </button>
-                  </div>
+
                   {amt > 0 && !overBank && (
                     <div className="cbc-blurb">
                       Sending {fmt(amt)}. The Club Bank Would Hold {fmt((bank ?? 0) - amt)}{' '}
@@ -794,7 +780,7 @@ export default function ClubBankCashierModal({
                     className="cbc-input"
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
-                    placeholder="Shows on the ledger entry"
+                    placeholder="Shows On The Ledger Entry"
                     maxLength={140}
                     aria-label="Reason"
                   />

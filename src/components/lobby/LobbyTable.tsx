@@ -83,7 +83,8 @@ const RULE_ABBR: Record<string, string> = {
 
 function RulesCell({ entry }: { entry: LobbyEntry }) {
   const shown = entry.rules.slice(0, 4);
-  const extra = entry.rules.length - shown.length;
+  const hidden = entry.rules.slice(4);
+  const extra = hidden.length;
   if (shown.length === 0) return <span className="lt-dim">-</span>;
   return (
     <span className="lt-rules">
@@ -92,7 +93,18 @@ function RulesCell({ entry }: { entry: LobbyEntry }) {
           {RULE_ABBR[r.key] || r.label.slice(0, 4)}
         </abbr>
       ))}
-      {extra > 0 && <span className="lt-rule lt-rule--more">+{extra}</span>}
+      {/* "+2" used to be the end of the sentence: the player could see that
+          something was hidden and had no way to learn what without opening the
+          game. It names them now, and the panel still lists all of them with
+          full explanations. */}
+      {extra > 0 && (
+        <abbr
+          className="lt-rule lt-rule--more"
+          title={`Also: ${hidden.map((r) => r.label).join(', ')}`}
+        >
+          +{extra}
+        </abbr>
+      )}
     </span>
   );
 }
@@ -492,6 +504,16 @@ export default function LobbyTable({
       {/* role=grid: aria-selected on a <tr> is only valid inside a grid, and
           without it a screen reader announces none of the selection state the
           keyboard navigation produces. */}
+      {/* Sorting rearranges the whole list with no visible message and, until
+          now, no audible one either: a screen-reader user pressed Enter on a
+          header and nothing was announced. */}
+      <span className="sr-only" role="status" aria-live="polite">
+        {sort
+          ? `Sorted by ${columns.find((c) => c.key === sort.key)?.label || sort.key}, ${
+              sort.dir === 'asc' ? 'ascending' : 'descending'
+            }`
+          : 'Default order'}
+      </span>
       <table className="lobby-table" role="grid">
         <thead>
           <tr>

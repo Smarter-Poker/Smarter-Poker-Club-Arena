@@ -529,6 +529,7 @@ import {
 } from '../lib/tableTheme';
 import { adaptServiceHandToPanel } from '../lib/handHistoryAdapter';
 import { useUserStore } from '../stores/useUserStore';
+import { relayTournamentEvent } from '../services/tournamentEventBridge';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WINDOW-LEVEL LOCKS — TRUE singletons that survive module reloads, lazy-load
@@ -4925,6 +4926,12 @@ export default function TablePage({
           breakChan
             .on('broadcast', { event: 'tournament_event' }, (payload: any) => {
               const data = payload.payload;
+              /* Relay the breaks onto MasterBus. TournamentClock (rendered on
+                 this page during an MTT) subscribes to BREAK_START /
+                 TOURNAMENT_BREAK there and nothing had ever emitted them, so
+                 its clock never flipped to break even while the local
+                 tournamentBreak state below did. See tournamentEventBridge. */
+              relayTournamentEvent(table.tournament_id as string, data);
               if (data?.type === 'tournament_break' || data?.type === 'BREAK_START') {
                 setTournamentBreak({
                   active: true,
@@ -7915,6 +7922,33 @@ export default function TablePage({
          POT_DISTRIBUTED directly above already normalises table_id for exactly
          this reason. Same treatment, plus player_id, which the subscriber uses
          to decide whether the bank was HERO's. */
+      /* Dan 2026-08-23. Both of these have had a handler in this file since it
+         was written, and neither could ever run: the engines that raise them
+         were constructed with an onEvent callback that was a console.log, so
+         the events never left the server. They go out on the hub now (see
+         ServerTableEngineBase), and the hub uppercases `type`, so
+         `rakeback_distributed` arrives here as RAKEBACK_DISTRIBUTED.
+
+         Normalised on the way to the bus for the same reason the time bank
+         cases below are: the hub speaks snake_case and the subscribers read
+         camelCase, which is exactly how TIME_BANK_ACTIVATED spent months being
+         dropped on its first line. */
+      case 'RAKEBACK_DISTRIBUTED': {
+        const d = (evt.data ?? {}) as Record<string, unknown>;
+        masterBus.emit('RAKEBACK_DISTRIBUTED', {
+          ...d,
+          tableId: (d.tableId as string) || (d.table_id as string) || tableId || '',
+        } as any);
+        break;
+      }
+      case 'TABLE_BALANCE_EXECUTED': {
+        const d = (evt.data ?? {}) as Record<string, unknown>;
+        masterBus.emit('TABLE_BALANCE_EXECUTED', {
+          ...d,
+          tableId: (d.tableId as string) || (d.table_id as string) || tableId || '',
+        } as any);
+        break;
+      }
       case 'TIME_BANK_ACTIVATED':
       case 'TIME_BANK_LOW':
       case 'TIME_BANK_TIMEOUT': {

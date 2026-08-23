@@ -4290,6 +4290,13 @@
       "acquired_at",
       "heartbeat_at"
     ],
+    "engine_tournament_leases": [
+      "tournament_id",
+      "instance_id",
+      "engine_version",
+      "acquired_at",
+      "heartbeat_at"
+    ],
     "execution_audit_logs": [
       "id",
       "executed_at",
@@ -10235,6 +10242,13 @@
       "day",
       "records_seen",
       "computed_at"
+    ],
+    "union_rake_weekly": [
+      "union_id",
+      "club_id",
+      "week_start",
+      "rake_total",
+      "updated_at"
     ],
     "union_rakeback_log": [
       "id",

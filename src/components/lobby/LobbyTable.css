@@ -13,6 +13,9 @@
   background: var(--club-dark, #0a0b0f);
   outline: none;
   max-height: calc(100vh - 300px);
+  max-height: calc(
+    100dvh - 300px
+  ); /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   min-height: 200px;
   -webkit-overflow-scrolling: touch;
 }

@@ -3,7 +3,6 @@
   "tables": [
     "_audit_horse_avatar_restore_20260815",
     "_audit_phase40_results",
-    "_pgss_snap",
     "_pps_backfill_state",
     "abuse_logs",
     "action_audit_logs",

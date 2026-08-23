@@ -9774,15 +9774,23 @@ export default function TablePage({
                 running table: the current game keeps dealing in its own tab on
                 its own live engine socket, and picking a cash game or
                 tournament from that lobby converts the lobby tab into the new
-                table tab in place. Add Chips lives on in the table menu. */}
+                table tab in place. Add Chips lives on in the table menu.
+
+                2026-08-23 — this was labelled "Open another table", which is
+                the tab bar's "+" verbatim: two buttons, one accessible name,
+                two different actions (that one opens the Quick Join sheet,
+                this one opens a lobby tab). A screen reader announced them
+                identically and a getByLabel query matched both, so Playwright
+                resolved two elements and silently drove whichever came first
+                in the DOM. Named for what it does. */}
             <button
               className="add-chips-icon-btn"
               onClick={() => {
                 soundService.playButtonClick();
                 masterBus.emit('OPEN_LOBBY_TAB', { requestedBy: userId });
               }}
-              title="Open another table"
-              aria-label="Open another table"
+              title="Open the lobby in a new tab"
+              aria-label="Open the lobby in a new tab"
             >
               <svg width="20" height="20" viewBox="0 0 18 18" fill="none">
                 <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.5" />

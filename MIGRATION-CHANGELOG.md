@@ -12677,3 +12677,43 @@ Per board, so a slow SNG fill cannot stall Spins.
 - `trg_sync_tournament_current_players` counts against
   `idx_tournament_players_status (tournament_id, status)` — an index-only scan,
   so the per-registration recount carries no scan cost.
+
+## Cowork session 2026-08-23 (9) — THE OWNER'S SPIN MENU
+
+Phase 2 of the Spin wallet. Phase 1 gave the wallet an owner and made the seed
+real; this makes it something a person can actually operate.
+
+`SpinActivationPanel` sits in the club owner's settings page, below Buy-In
+Limits — the only other setting there that commits the club's own money. It
+shows status, wallet balance, collected from play, paid out as multipliers, and
+the seed's outstanding balance with **how much further play has to go before it
+comes back**. When Spins are off it quotes the required seed before the owner
+commits and recalculates the instant they change the stake.
+
+Three things it refuses to hide:
+
+- **Whose money this is.** A club inside a union does not have its own Spin
+  wallet — its union does (`fn_spin_reserve_owner` resolves
+  `COALESCE(clubs.union_id, club_id)`). Rather than show a club owner a switch
+  that will refuse them, the panel says so and hides the control.
+- **What the seed costs**, quoted on the button itself.
+- **That the seed is a loan, not a fee.**
+
+`/api/club-arena/spin-activation` (World Hub PR #685) is the only path. The
+activation functions are REVOKEd from `authenticated`, so a browser cannot call
+them at all — and the database, which can prove the seed is big enough and the
+wallet can afford it, cannot prove the caller is the owner. The route
+establishes that from the JWT. Its own trap: checking `clubs.owner_id` alone
+would let any one club in a union spend the union's Spin wallet, so a
+union-owned pool routes to the union lead.
+
+The seed quote now exists in three places — `requiredSeed()` in spinSpec,
+`fn_spin_required_seed` in the database, and `requiredSeedForStake()` in the
+panel's service. A test pins all three together across every board price point,
+because a disagreement means an owner is quoted one number and charged another.
+
+18 new tests here, 13 on the route. 281 files / 3,420 green, title-case clean.
+
+**Still open:** every Spin is created under one house id, so activation governs
+the wallet correctly but there is no per-club board for it to switch on yet.
+That is Phase 3.

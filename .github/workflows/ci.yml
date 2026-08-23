@@ -86,7 +86,11 @@ jobs:
           has() { echo "$FILES" | grep -qE "$1" && echo true || echo false; }
           # A change to the workflow, the lockfile or the build config can break
           # anything, so treat those as touching everything.
-          WIDE=$(has '^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.github/workflows/ci\.yml)')
+          # .npmrc and .nvmrc are in this list because they change how
+          # dependencies INSTALL and which runtime runs them, so they can break
+          # anything - added 2026-08-23 when the pull request REMOVING an .npmrc
+          # setting skipped the build job that was supposed to prove it safe.
+          WIDE=$(has '^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github/workflows/ci\.yml)')
           if [ "$WIDE" = "true" ]; then
             echo "src=true"    >> "$GITHUB_OUTPUT"
             echo "server=true" >> "$GITHUB_OUTPUT"

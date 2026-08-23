@@ -1,46 +1,41 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * 🎬 HAND REPLAY VIEWER — Animated Hand Playback
+ * HAND REPLAY VIEWER — Animated Hand Playback
  * Step-by-step replay of past hands with player actions
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import { CardImage } from '../table/CardImage';
-import type { Card } from '../table/CardImage';
+import { toDeckCards, type DeckCard } from '../../utils/deckCards';
+import {
+  normaliseStoredHand,
+  cardsVisibleAtStage,
+  type ReplayAction,
+  type ReplayPlayer,
+  type ReplayWinner,
+} from '../../utils/handHistoryShape';
 import styles from './HandReplayViewer.module.css';
 import { reportError } from '../../utils/errorReporter';
 
-interface HandAction {
-  playerId: string;
-  playerName: string;
-  action: 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all-in';
-  amount?: number;
-  street: 'preflop' | 'flop' | 'turn' | 'river';
-  timestamp: number;
-}
-
-interface HandPlayer {
-  id: string;
-  name: string;
-  position: number;
-  holeCards?: string[];
-  startStack: number;
-  finalStack: number;
-  isWinner: boolean;
-}
+/* The stored shape of hand_history — the field names, why each one bit, and
+   the normaliser that maps them — lives in `src/utils/handHistoryShape.ts`
+   and is pinned by `tests/hand-history-shape.test.ts`. */
 
 interface HandData {
   id: string;
   tableName: string;
   gameType: string;
   blinds: string;
-  pot: number;
+  /** Authoritative final pot from `hand_history.pot_size`. */
+  finalPot: number;
   communityCards: string[];
-  players: HandPlayer[];
-  actions: HandAction[];
-  winners: { playerId: string; amount: number }[];
+  /** Run-it-twice second board, when the hand carries one. */
+  secondBoard: string[];
+  players: ReplayPlayer[];
+  actions: ReplayAction[];
+  winners: ReplayWinner[];
   playedAt: string;
 }
 
@@ -59,46 +54,61 @@ export default function HandReplayViewer({
 }: HandReplayViewerProps) {
   const [hand, setHand] = useState<HandData | null>(propHandData || null);
   const [loading, setLoading] = useState(!propHandData);
+  /* A failed load is NOT "Hand Not Found". Conflating the two is what let the
+     PGRST200 and the 42703 sit unnoticed: the component rendered a calm,
+     plausible empty state over a query that had errored. */
+  const [loadFailed, setLoadFailed] = useState(false);
   const [currentStep, setCurrentStep] = useState(-1);
   const [isPlaying, setIsPlaying] = useState(autoPlay);
   const [playSpeed, setPlaySpeed] = useState(1);
-  const [visibleCards, setVisibleCards] = useState<string[]>([]);
   const [currentPot, setCurrentPot] = useState(0);
   const [visibleActions, setVisibleActions] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const clearStaggerTimers = () => {
+    staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    staggerTimersRef.current = [];
+  };
+
+  /* These timeouts were never cancelled. Autoplay at 3X through a 20-action
+     hand queued one per action per step change, all of them calling setState
+     after the modal had closed. */
+  useEffect(() => clearStaggerTimers, []);
 
   useEffect(() => {
     if (!hand) return;
-    hand.actions.forEach((_, i) => {
-      if (i <= currentStep) {
-        setTimeout(() => setVisibleActions((prev) => new Set(prev).add(i)), i * 40);
-      }
-    });
-  }, [hand?.actions.length, currentStep]);
+    clearStaggerTimers();
+    staggerTimersRef.current = hand.actions
+      .map((_, i) =>
+        i <= currentStep
+          ? setTimeout(() => setVisibleActions((prev) => new Set(prev).add(i)), i * 40)
+          : null
+      )
+      .filter((t): t is ReturnType<typeof setTimeout> => t !== null);
+  }, [hand, currentStep]);
 
   useEffect(() => {
     if (handId && !propHandData) {
-      loadHand();
+      void loadHand();
     }
   }, [handId]);
 
   useEffect(() => {
     if (!isPlaying || !hand) return;
-    const interval = setInterval(() => {
-      setCurrentStep((prev) => {
-        if (prev >= hand.actions.length - 1) {
-          setIsPlaying(false);
-          return prev;
-        }
-        return prev + 1;
-      });
-    }, 1500 / playSpeed);
+    const interval = setInterval(
+      () => {
+        setCurrentStep((prev) => {
+          if (prev >= hand.actions.length - 1) {
+            setIsPlaying(false);
+            return prev;
+          }
+          return prev + 1;
+        });
+      },
+      1500 / Math.max(playSpeed, 0.25)
+    );
     return () => clearInterval(interval);
   }, [isPlaying, hand, playSpeed]);
-
-  useEffect(() => {
-    if (!hand) return;
-    updateBoard();
-  }, [currentStep, hand]);
 
   /** hand_history.table_id has no FK to `tables` (see loadHand), so the name
       is fetched separately. A hand whose table has since been removed keeps
@@ -119,6 +129,7 @@ export default function HandReplayViewer({
 
   const loadHand = async () => {
     setLoading(true);
+    setLoadFailed(false);
     try {
       /* 2026-08-19: this read `hands`, a table with ZERO rows ever, so hand
          replay could never load a hand — it silently rendered nothing. The
@@ -135,7 +146,11 @@ export default function HandReplayViewer({
          they reference: a foreign key would assert an invariant this schema
          does not hold, and ON DELETE CASCADE would erase hand history every
          time a table closed. The name is resolved with a second, tiny lookup
-         instead. */
+         instead.
+
+         2026-08-23: the query was right by then and the MAPPING was not. Every
+         field below was read under a name the row does not use. See the shape
+         note at the top of this file. */
       const { data, error } = await supabase
         .from('hand_history')
         .select(
@@ -156,54 +171,79 @@ export default function HandReplayViewer({
         .eq('id', handId)
         .maybeSingle();
 
-      if (error) reportError(error, 'HandReplayViewer.loadHand');
-
-      if (!error && data) {
-        const d = data as any;
-        const sb = d.small_blind ?? null;
-        const bb = d.big_blind ?? null;
-        setHand({
-          id: d.id,
-          tableName: await resolveTableName(d.table_id),
-          gameType: d.game_variant,
-          blinds: sb != null && bb != null ? `${sb}/${bb}` : '',
-          pot: d.pot_size,
-          communityCards: d.community_cards || [],
-          players: d.players || [],
-          actions: d.actions || [],
-          winners: d.winners || [],
-          playedAt: d.created_at,
-        });
+      if (error) {
+        reportError(error, 'HandReplayViewer.loadHand');
+        setLoadFailed(true);
+        return;
       }
+      if (!data) return; // genuinely no such hand
+
+      const d = data as Record<string, unknown>;
+      const sb = (d.small_blind as number | null) ?? null;
+      const bb = (d.big_blind as number | null) ?? null;
+
+      const { players, actions, winners, secondBoard } = normaliseStoredHand(
+        d.players,
+        d.actions,
+        d.winners
+      );
+
+      setHand({
+        id: String(d.id),
+        tableName: await resolveTableName(d.table_id as string | null),
+        gameType: (d.game_variant as string) || '',
+        blinds: sb != null && bb != null ? `${sb}/${bb}` : '',
+        finalPot: Number(d.pot_size ?? 0),
+        communityCards: Array.isArray(d.community_cards) ? (d.community_cards as string[]) : [],
+        secondBoard,
+        players,
+        actions,
+        winners,
+        playedAt: String(d.created_at ?? ''),
+      });
     } catch (error) {
       reportError(error, 'HandReplayViewer.Failed_to_load_hand');
+      setLoadFailed(true);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
+
+  /* Community cards are stored as "Khearts"/"Tspades", not "Kh"/"Ts".
+     `toDeckCards` is the one normaliser for that; the hand-rolled parser this
+     replaced did `slice(-1)` and produced { rank: "Kheart", suit: "s" }. */
+  const boardCards: DeckCard[] = useMemo(
+    () => toDeckCards(hand?.communityCards),
+    [hand?.communityCards]
+  );
+  const secondBoardCards: DeckCard[] = useMemo(
+    () => toDeckCards(hand?.secondBoard),
+    [hand?.secondBoard]
+  );
+
+  const [visibleCards, setVisibleCards] = useState<DeckCard[]>([]);
 
   const updateBoard = useCallback(() => {
     if (!hand) return;
-
     const actionsUpToStep = hand.actions.slice(0, currentStep + 1);
+
+    /* A running total, and honestly labelled as one. Measured over 40 hands on
+       2026-08-23: the sum of action amounts does not reconcile to pot_size in
+       either direction — blinds and antes are not in the action stream, and
+       rake is already out of pot_size. The authoritative figure is shown at
+       the end of the hand instead of pretending this one is it. */
+    setCurrentPot(actionsUpToStep.reduce((sum, a) => sum + (a.amount || 0), 0));
+
     const lastAction = actionsUpToStep[actionsUpToStep.length - 1];
+    const reveal = lastAction ? cardsVisibleAtStage(lastAction.stage) : 0;
+    setVisibleCards(boardCards.slice(0, reveal));
+  }, [hand, currentStep, boardCards]);
 
-    // Calculate pot up to this point
-    const potTotal = actionsUpToStep.reduce((sum, a) => sum + (a.amount || 0), 0);
-    setCurrentPot(potTotal);
+  useEffect(() => {
+    updateBoard();
+  }, [updateBoard]);
 
-    // Determine visible community cards
-    if (!lastAction) {
-      setVisibleCards([]);
-    } else if (lastAction.street === 'preflop') {
-      setVisibleCards([]);
-    } else if (lastAction.street === 'flop') {
-      setVisibleCards(hand.communityCards.slice(0, 3));
-    } else if (lastAction.street === 'turn') {
-      setVisibleCards(hand.communityCards.slice(0, 4));
-    } else if (lastAction.street === 'river') {
-      setVisibleCards(hand.communityCards);
-    }
-  }, [hand, currentStep]);
+  const atEnd = !!hand && currentStep >= hand.actions.length - 1;
 
   const stepForward = () => {
     if (!hand || currentStep >= hand.actions.length - 1) return;
@@ -215,11 +255,13 @@ export default function HandReplayViewer({
     setCurrentStep((prev) => prev - 1);
   };
 
-  const togglePlay = () => setIsPlaying(!isPlaying);
+  const togglePlay = () => setIsPlaying((p) => !p);
 
   const reset = () => {
     setCurrentStep(-1);
     setIsPlaying(false);
+    /* Without this the stagger never replays: every index stayed in the set. */
+    setVisibleActions(new Set());
   };
 
   const skipToEnd = () => {
@@ -228,36 +270,51 @@ export default function HandReplayViewer({
     setIsPlaying(false);
   };
 
-  const getActionDisplay = (action: HandAction): { text: string; color: string } => {
-    switch (action.action) {
+  const formatAmount = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+  const getActionDisplay = (action: ReplayAction): { text: string; color: string } => {
+    switch (action.verb) {
       case 'fold':
         return { text: 'Folds', color: '#6b7280' };
       case 'check':
         return { text: 'Checks', color: '#3b82f6' };
       case 'call':
-        return { text: `Calls ${action.amount}`, color: '#10b981' };
+        return { text: `Calls ${formatAmount(action.amount)}`, color: '#10b981' };
       case 'bet':
-        return { text: `Bets ${action.amount}`, color: '#f59e0b' };
+        return { text: `Bets ${formatAmount(action.amount)}`, color: '#f59e0b' };
       case 'raise':
-        return { text: `Raises to ${action.amount}`, color: '#ef4444' };
-      case 'all-in':
-        return { text: `All-In ${action.amount}`, color: '#a855f7' };
+        return { text: `Raises To ${formatAmount(action.amount)}`, color: '#ef4444' };
+      /* Stored as all_in, not all-in. The hyphen meant 236,898 all-ins fell to
+         `default` and rendered the raw token in white. */
+      case 'all_in':
+        return { text: `All-In ${formatAmount(action.amount)}`, color: '#a855f7' };
+      /* Draw and pineapple games. 74,631 of these had no case at all. */
+      case 'discard':
+        return { text: 'Discards', color: '#94a3b8' };
       default:
-        return { text: action.action, color: '#ffffff' };
+        return { text: action.verb, color: '#ffffff' };
     }
-  };
-
-  const parseCard = (cardStr: string): Card => {
-    const suit = cardStr.slice(-1) as Card['suit'];
-    let rank = cardStr.slice(0, -1);
-    if (rank === '10') rank = 'T';
-    return { rank: rank as Card['rank'], suit };
   };
 
   if (loading) {
     return (
       <div className={styles.viewer}>
         <div className={styles.loading}>Loading Hand...</div>
+      </div>
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <div className={styles.viewer}>
+        <div className={styles.error}>
+          Could Not Load This Hand. Please Try Again.
+          {onClose && (
+            <button className={styles.closeBtn} onClick={onClose} aria-label="Close replay">
+              Close
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -279,11 +336,11 @@ export default function HandReplayViewer({
         <div className={styles.handInfo}>
           <h3>Hand Replay</h3>
           <span className={styles.subtitle}>
-            {hand.tableName} • {hand.blinds} {hand.gameType}
+            {[hand.tableName, hand.blinds, hand.gameType].filter(Boolean).join(' • ')}
           </span>
         </div>
         {onClose && (
-          <button className={styles.closeBtn} onClick={onClose}>
+          <button className={styles.closeBtn} onClick={onClose} aria-label="Close replay">
             ✕
           </button>
         )}
@@ -294,15 +351,31 @@ export default function HandReplayViewer({
         <div className={styles.communityCards}>
           {visibleCards.length > 0 ? (
             visibleCards.map((card, i) => (
-              <div key={i} className={styles.cardWrapper}>
-                <CardImage card={parseCard(card)} size="sm" />
+              <div key={`${card.rank}${card.suit}-${i}`} className={styles.cardWrapper}>
+                <CardImage card={card} size="sm" />
               </div>
             ))
           ) : (
             <span className={styles.noCards}>Preflop</span>
           )}
         </div>
-        <div className={styles.potDisplay}>Pot: {currentPot.toLocaleString()}</div>
+
+        {/* Run it twice: the second board, once the hand has run out */}
+        {atEnd && secondBoardCards.length > 0 && (
+          <div className={styles.communityCards}>
+            {secondBoardCards.map((card, i) => (
+              <div key={`rit-${card.rank}${card.suit}-${i}`} className={styles.cardWrapper}>
+                <CardImage card={card} size="sm" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className={styles.potDisplay}>
+          {atEnd
+            ? `Pot: ${formatAmount(hand.finalPot)}`
+            : `Pot So Far: ${formatAmount(currentPot)}`}
+        </div>
       </div>
 
       {/* Current Action */}
@@ -340,25 +413,33 @@ export default function HandReplayViewer({
 
       {/* Controls */}
       <div className={styles.controls}>
-        <button onClick={reset} title="Reset">
+        <button onClick={reset} title="Reset" aria-label="Reset replay">
           ⏮
         </button>
-        <button onClick={stepBackward} title="Step Back">
+        <button onClick={stepBackward} title="Step Back" aria-label="Step back one action">
           ⏪
         </button>
-        <button onClick={togglePlay} className={styles.playBtn}>
+        <button
+          onClick={togglePlay}
+          className={styles.playBtn}
+          aria-label={isPlaying ? 'Pause replay' : 'Play replay'}
+        >
           {isPlaying ? '▮' : '▶'}
         </button>
-        <button onClick={stepForward} title="Step Forward">
+        <button onClick={stepForward} title="Step Forward" aria-label="Step forward one action">
           ⏩
         </button>
-        <button onClick={skipToEnd} title="Skip to End">
+        <button onClick={skipToEnd} title="Skip to End" aria-label="Skip to end of hand">
           ⏭
         </button>
 
         <div className={styles.speedControl}>
           <span>Speed:</span>
-          <select value={playSpeed} onChange={(e) => setPlaySpeed(Number(e.target.value))}>
+          <select
+            value={playSpeed}
+            onChange={(e) => setPlaySpeed(Number(e.target.value))}
+            aria-label="Playback speed"
+          >
             <option value={0.5}>0.5X</option>
             <option value={1}>1X</option>
             <option value={2}>2X</option>
@@ -378,26 +459,18 @@ export default function HandReplayViewer({
       </div>
 
       {/* Winners (at end) */}
-      {currentStep >= hand.actions.length - 1 && hand.winners.length > 0 && (
+      {atEnd && hand.winners.length > 0 && (
         <div className={styles.winners}>
           {hand.winners
-            .map((w, i) => {
-              const player = hand.players.find((p) => p.id === w.playerId);
-              return (
-                <span key={i}>
-                  {player?.name || 'Unknown'} Wins{' '}
-                  {w.amount.toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </span>
-              );
+            .map((w) => {
+              /* Winners are keyed by userId. The old lookup compared
+                 `p.id === w.playerId` — neither field exists, so it matched
+                 undefined against undefined and named the first player in the
+                 array as the winner of every hand. */
+              const madeHand = w.handName ? ` (${w.handName})` : '';
+              return `${w.playerName} Wins ${formatAmount(w.amount)}${madeHand}`;
             })
-            .reduce((prev, curr) => (
-              <>
-                {prev}, {curr}
-              </>
-            ))}
+            .join(', ')}
         </div>
       )}
     </div>

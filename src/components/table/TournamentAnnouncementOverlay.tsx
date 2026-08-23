@@ -43,7 +43,10 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
           setVisible(false);
           dismissCallbackTimerRef.current = setTimeout(onDismiss, 500); // Wait for fade-out
         },
-        type === 'level_up' ? 2000 : type === 'mystery_bounty_revealed' ? 5000 : 4000
+        // Dan 2026-08-23: a level change is INFORMATION, not an event. It gets
+        // the short banner treatment and gets out of the way; the moments that
+        // genuinely deserve the table's full attention keep the long beat.
+        type === 'level_up' ? 2600 : type === 'mystery_bounty_revealed' ? 5000 : 4000
       );
       return () => {
         if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
@@ -103,7 +106,9 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
           data?.avgBounty && data?.amount && Number(data.amount) >= Number(data.avgBounty) * 3
             ? ' - JACKPOT!'
             : '';
-        return victim ? `${who} opened ${victim}'s envelope: ${amt}${big}` : `${who} revealed ${amt}${big}`;
+        return victim
+          ? `${who} opened ${victim}'s envelope: ${amt}${big}`
+          : `${who} revealed ${amt}${big}`;
       })(),
       color: '#eab308',
     },
@@ -119,15 +124,38 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
 
   const c = config[type] || config.level_up;
 
+  /**
+   * Dan 2026-08-23: "when the level goes up there should be a small pop up
+   * that announces it and then disappears. Currently it blocks the whole
+   * screen."
+   *
+   * A blind change happens every few minutes for the whole life of a
+   * tournament. Blacking out the felt, blurring the cards and stopping the
+   * eye for it - which is what the full-bleed treatment did - is the wrong
+   * weight for something that routine, and it lands right when a player is
+   * trying to read the board. It now rides in as a compact banner at the top
+   * of the table: never covers the cards, never blurs anything, never takes
+   * pointer events, and leaves on its own.
+   *
+   * The rare, genuinely dramatic beats - the bubble bursting, the final table
+   * forming, a mystery bounty opening - keep the cinematic treatment, because
+   * those happen once.
+   */
+  const compact = type === 'level_up';
+
   return (
     <div
-      className={`tournamentAnnouncement ${visible ? 'visible' : ''}`}
+      className={`tournamentAnnouncement ${compact ? 'compact' : ''} ${visible ? 'visible' : ''}`}
       style={{ '--accent-color': c.color } as React.CSSProperties}
+      role="status"
+      aria-live="polite"
     >
       <div className="announcementContent">
         <div className="announcementIcon">{c.icon}</div>
-        <div className="announcementTitle">{c.title}</div>
-        <div className="announcementSubtitle">{c.subtitle}</div>
+        <div className="announcementText">
+          <div className="announcementTitle">{c.title}</div>
+          <div className="announcementSubtitle">{c.subtitle}</div>
+        </div>
       </div>
     </div>
   );

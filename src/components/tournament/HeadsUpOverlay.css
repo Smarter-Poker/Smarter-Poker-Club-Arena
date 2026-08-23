@@ -1,200 +1,289 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  HEADS UP OVERLAY STYLES
- * ═══════════════════════════════════════════════════════════════════════════════
+ * HEADS UP — the duel card.
+ *
+ * Dan 2026-08-23: "boring, flat and basic." It was two grey boxes either side
+ * of a grey circle. This is the moment a field of sixty becomes two people, so
+ * the two sides now actually oppose each other: each player's panel is lit in
+ * its own colour, they slide in from opposite edges, and the VS badge lands
+ * between them with a shockwave.
  */
 
 .hu-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;
-  pointer-events: auto; /* Allow tap to dismiss */
-  perspective: 1000px;
+  z-index: 9998;
+  cursor: pointer;
 }
 
-/* Backdrop */
 .hu-overlay__backdrop {
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at center, rgba(10, 10, 12, 0.8) 0%, rgba(5, 5, 8, 0.95) 100%);
-  backdrop-filter: blur(8px);
-  opacity: 0;
-  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 45%, rgba(239, 68, 68, 0.14) 0%, transparent 62%),
+    radial-gradient(ellipse at center, rgba(2, 6, 23, 0.9), rgba(2, 6, 23, 0.985));
+  backdrop-filter: blur(8px) saturate(115%);
+  -webkit-backdrop-filter: blur(8px) saturate(115%);
+  animation: huFade 0.45s ease both;
 }
 
-.hu-overlay--show .hu-overlay__backdrop {
-  opacity: 1;
-}
-
-.hu-overlay--exit .hu-overlay__backdrop {
-  opacity: 0;
-  transition: opacity 0.4s ease-out;
-}
-
-/* Content Container */
 .hu-overlay__content {
   position: relative;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2rem;
-  width: 90%;
-  max-width: 600px;
-  transform: translateY(40px) scale(0.9) rotateX(20deg);
-  opacity: 0;
-  transition: all 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); /* Bouncy entry */
-}
-
-.hu-overlay--show .hu-overlay__content {
-  transform: translateY(0) scale(1) rotateX(0);
-  opacity: 1;
-}
-
-.hu-overlay--exit .hu-overlay__content {
-  transform: translateY(-40px) scale(0.95) rotateX(-10deg);
-  opacity: 0;
-  transition: all 0.4s cubic-bezier(0.55, 0.085, 0.68, 0.53); /* Snap exit */
-}
-
-/* Title Section */
-.hu-overlay__title-wrap {
+  z-index: 2;
+  width: min(46rem, 94vw);
   text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
+  padding: 0 1rem;
+}
+
+.hu-overlay__title-wrap {
+  margin-bottom: 1.9rem;
 }
 
 .hu-overlay__swords {
-  font-size: 3rem;
-  line-height: 1;
-  filter: drop-shadow(0 0 10px rgba(255, 60, 60, 0.8));
-  animation: hu-pulse 2s infinite ease-in-out;
+  font-size: 1.9rem;
+  color: #f8fafc;
+  filter: drop-shadow(0 0 16px rgba(248, 113, 113, 0.85));
+  animation: huSwordsIn 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .hu-overlay__title {
-  margin: 0;
-  font-size: 3rem;
+  margin: 0.5rem 0 0;
+  font-size: clamp(2.1rem, 9.5vw, 3.5rem);
   font-weight: 900;
-  letter-spacing: 0.15em;
-  color: #fff;
+  letter-spacing: 0.2em;
+  text-indent: 0.2em;
   text-transform: uppercase;
-  background: linear-gradient(180deg, #fff 0%, #ff4d4d 100%);
+  background: linear-gradient(100deg, #b91c1c 0%, #f87171 25%, #fff 46%, #f87171 66%, #b91c1c 100%);
+  background-size: 250% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  text-shadow: 0 4px 20px rgba(255, 60, 60, 0.5);
+  filter: drop-shadow(0 3px 12px rgba(0, 0, 0, 0.9));
+  animation:
+    huTitleIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) both,
+    huSheen 3.4s ease-in-out 0.7s infinite;
 }
 
 .hu-overlay__subtitle {
-  font-size: 1rem;
-  color: rgba(255, 255, 255, 0.6);
+  margin-top: 0.55rem;
+  font-size: 0.86rem;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  color: #94a3b8;
+  animation: huFade 0.5s ease 0.25s both;
 }
 
-/* VS Container */
 .hu-overlay__vs-container {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: center;
-  gap: 2rem;
-  width: 100%;
+  gap: clamp(0.5rem, 2.5vw, 1.25rem);
 }
 
 .hu-overlay__player {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  padding: 1.5rem 1rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  position: relative;
+  padding: 1.15rem 1rem;
+  border-radius: 1rem;
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.82), rgba(2, 6, 23, 0.86));
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  box-shadow:
+    0 22px 50px -22px rgba(0, 0, 0, 0.95),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  overflow: hidden;
 }
 
-.hu-overlay__player:first-child {
-  border-left: 2px solid #ff4d4d;
-  background: linear-gradient(90deg, rgba(255, 77, 77, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+/* Each side is lit from its own edge, so they read as opponents. */
+.hu-overlay__player:first-of-type {
+  border-color: rgba(248, 113, 113, 0.42);
+  box-shadow:
+    0 22px 50px -22px rgba(0, 0, 0, 0.95),
+    0 0 38px -18px rgba(248, 113, 113, 0.95);
+  animation: huSlideL 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.12s both;
 }
 
-.hu-overlay__player:last-child {
-  border-right: 2px solid #ff4d4d;
-  background: linear-gradient(-90deg, rgba(255, 77, 77, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+.hu-overlay__player:last-of-type {
+  border-color: rgba(96, 165, 250, 0.42);
+  box-shadow:
+    0 22px 50px -22px rgba(0, 0, 0, 0.95),
+    0 0 38px -18px rgba(96, 165, 250, 0.95);
+  animation: huSlideR 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.12s both;
+}
+
+.hu-overlay__player::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(180deg, transparent, currentColor, transparent);
+}
+.hu-overlay__player:first-of-type::before {
+  color: #f87171;
+}
+.hu-overlay__player:last-of-type::before {
+  color: #60a5fa;
+  left: auto;
+  right: 0;
 }
 
 .hu-overlay__player-name {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: #fff;
-  text-align: center;
+  font-size: clamp(0.95rem, 3.6vw, 1.3rem);
+  font-weight: 800;
+  color: #f8fafc;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hu-overlay__player-chips {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #eedd82; /* Gold */
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
+  margin-top: 0.4rem;
+  font-size: clamp(0.9rem, 3.2vw, 1.05rem);
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
-}
-
-.hu-overlay__chip-icon {
-  font-size: 0.85rem;
-  opacity: 0.8;
-}
-
-/* VS Badge */
-.hu-overlay__vs-badge {
-  flex-shrink: 0;
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #111, #222);
-  border: 2px solid #555;
-  color: #aaa;
+  color: #fcd34d;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 900;
-  font-size: 1.25rem;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
-  position: relative;
-  z-index: 2;
+  gap: 0.35rem;
 }
 
-@keyframes hu-pulse {
-  0% {
-    transform: scale(1);
-    filter: drop-shadow(0 0 10px rgba(255, 60, 60, 0.6));
+.hu-overlay__chip-icon {
+  opacity: 0.85;
+}
+
+.hu-overlay__vs-badge {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: clamp(2.9rem, 11vw, 3.6rem);
+  height: clamp(2.9rem, 11vw, 3.6rem);
+  border-radius: 50%;
+  font-size: clamp(0.85rem, 3.4vw, 1.05rem);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: #0f172a;
+  background: linear-gradient(180deg, #f8fafc, #cbd5e1);
+  box-shadow:
+    0 0 34px -6px rgba(255, 255, 255, 0.75),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  animation: huBadgeIn 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) 0.42s both;
+}
+
+/* The shockwave that sells the impact. */
+.hu-overlay__vs-badge::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.65);
+  animation: huShock 1.6s ease-out 0.62s infinite;
+}
+
+.hu-overlay--exit {
+  animation: huFadeOut 0.6s ease forwards;
+}
+
+@keyframes huFade {
+  from {
+    opacity: 0;
   }
-  50% {
-    transform: scale(1.1);
-    filter: drop-shadow(0 0 20px rgba(255, 60, 60, 0.9));
+  to {
+    opacity: 1;
+  }
+}
+@keyframes huFadeOut {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes huSheen {
+  0% {
+    background-position: 150% 0;
   }
   100% {
-    transform: scale(1);
-    filter: drop-shadow(0 0 10px rgba(255, 60, 60, 0.6));
+    background-position: -60% 0;
   }
 }
 
-/* Mobile Adjustments */
-@media (max-width: 480px) {
+@keyframes huSwordsIn {
+  0% {
+    opacity: 0;
+    transform: rotate(-35deg) scale(0.5);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+}
+
+@keyframes huTitleIn {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+    letter-spacing: 0.6em;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    letter-spacing: 0.2em;
+  }
+}
+
+@keyframes huSlideL {
+  0% {
+    opacity: 0;
+    transform: translateX(-46px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes huSlideR {
+  0% {
+    opacity: 0;
+    transform: translateX(46px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes huBadgeIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.2) rotate(-25deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
+}
+
+@keyframes huShock {
+  0% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.75);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hu-overlay__swords,
+  .hu-overlay__title,
+  .hu-overlay__player,
+  .hu-overlay__vs-badge,
+  .hu-overlay__vs-badge::after {
+    animation: none !important;
+  }
   .hu-overlay__title {
-    font-size: 2.5rem;
-  }
-  .hu-overlay__vs-container {
-    flex-direction: column;
-    gap: 1rem;
-  }
-  .hu-overlay__vs-badge {
-    margin: -1rem 0;
+    -webkit-text-fill-color: #f87171;
   }
 }

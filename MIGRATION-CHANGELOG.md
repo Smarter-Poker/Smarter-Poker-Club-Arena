@@ -72,6 +72,25 @@ ERR_ABORTED requests are a sweep navigating away mid-flight.
 
 Both strict in CI, where the e2e job runs against production after a deploy.
 
+### Addendum — the global rule was not enough (PR #391)
+
+The 16px rule added above used ELEMENT selectors (`input`, `textarea`,
+`select`, specificity 0-0-1). Almost every field in this app is styled by a
+CSS Module class (0-1-0), which wins — so the rule fixed only the handful of
+fields nobody had styled, and the settings selects were still 12.8px in
+production after it shipped. Caught by re-running the gate against the
+deployed build rather than trusting the merge.
+
+Raising the global rule's specificity was the wrong repair: nine rules
+deliberately set fields ABOVE 16px (the amount, credit and club-code inputs,
+where large type is the point), and a blunt override would have SHRUNK those.
+CSS cannot express "at least 16px" against an unknown author value.
+
+So the 47 offending rules were fixed at source instead — only rules whose
+selector ends in a real field element, only where the declared size was under
+16px, each annotated with what it was. Verified in production's served CSS:
+`friends-search input` now computes 16px where it computed 13.6px.
+
 ### Two false alarms, both caught before they were reported
 
 Worth recording because each cost real time and each looked exactly like a

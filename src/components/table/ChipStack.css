@@ -121,6 +121,32 @@
   z-index: 2;
 }
 
+/* A sub-1 residue no chip on Dan's ladder can represent (a 0.5 small blind).
+   Dashed and translucent so it is never read as a white 1 chip, which would
+   claim twice its value. See src/lib/chipDenominations.ts. */
+.chip--partial {
+    opacity: 0.75;
+    border-style: dashed;
+}
+
+/* True count for a stack clamped to fit the layout. Dan's ladder has nothing
+   between 5,000 and 100,000, so a 60,000 pile really is twelve orange chips —
+   the DISCS are capped, the value they stand for is not. */
+.chip-stack__multi {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-bottom: 2px;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 800;
+    line-height: 1;
+    color: #ffd700;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+    white-space: nowrap;
+    z-index: 2;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    CHIP AMOUNT LABEL
    ═══════════════════════════════════════════════════════════════════════════════ */

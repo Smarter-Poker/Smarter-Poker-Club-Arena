@@ -184,7 +184,7 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     multiplier: 4,
     freq: 900_000,
     payouts: [1],
-    startingStack: 400,
+    startingStack: 1000,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -192,7 +192,7 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     multiplier: 5,
     freq: 250_000,
     payouts: [1],
-    startingStack: 400,
+    startingStack: 1000,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -200,7 +200,7 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     multiplier: 10,
     freq: 100_000,
     payouts: [0.8, 0.2],
-    startingStack: 500,
+    startingStack: 1000,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -208,7 +208,7 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     multiplier: 25,
     freq: 7_500,
     payouts: [0.8, 0.12, 0.08],
-    startingStack: 500,
+    startingStack: 1000,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -216,7 +216,7 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     multiplier: 50,
     freq: 1_000,
     payouts: [0.8, 0.12, 0.08],
-    startingStack: 500,
+    startingStack: 5000,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -226,7 +226,7 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     // plus the extra mass needed to hold the expectation flat.
     freq: 1_008,
     payouts: [0.8, 0.12, 0.08],
-    startingStack: 500,
+    startingStack: 5000,
     levelMinutes: 3,
     // Deliberately still 1.5, not the 2.0 the 500x used. Raising it would lock
     // the top of the ladder out of thin pools far more often than before, now
@@ -237,7 +237,25 @@ export const SPIN_TIERS: SpinTierSpec[] = [
 
 /**
  * Blind ladder. Identical at every multiplier — only the starting stack
- * changes, which is what turns one structure into eight.
+ * changes, which is what turns one structure into three.
+ *
+ * ─── STACK BANDS (Dan 2026-08-23) ───────────────────────────────────────────
+ *
+ * "SPEED SHOULDN'T CHANGE, ONLY THE STARTING STACK. BLIND LEVELS WILL ALWAYS
+ * BE THE SAME." Then, exactly: "STANDARD / TURBO SHOULD BE 300. DEEP STACK
+ * SHOULD BE 1000 CHIPS, ANY MULTIPLIERS OVER 25X SHOULD BE 5000 CHIPS."
+ *
+ * Three bands, not eight nudges:
+ *
+ *   2x, 3x              300 chips   standard / turbo — 15bb, over fast
+ *   4x, 5x, 10x, 25x   1000 chips   deep stack — real poker for a real prize
+ *   50x, 100x          5000 chips   over 25x — the lottery ticket you get to PLAY
+ *
+ * The old ladder (300/300/400/400/500/500/500/500) was eight values spanning
+ * 15bb to 25bb, a range no player could feel. A 100x hit used to be decided in
+ * a handful of shoves; at 5000 chips it is 250bb and the money is won rather
+ * than dealt. Level length stays 3 minutes everywhere, so the ONLY thing that
+ * separates one Spin from another is how deep it starts.
  */
 export const SPIN_BLINDS: Array<{ small: number; big: number }> = [
   { small: 10, big: 20 },

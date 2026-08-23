@@ -910,7 +910,12 @@ export const SPIN_CONFIGS: SpinConfig[] = SPIN_BOARD_VARIANTS.flatMap((v) =>
     buyIn,
     // Spins are rake-free by product rule; the edge lives in the multipliers.
     rake: 0,
-    startingStack: 500,
+    /* The seed value only. The real stack is set the moment the multiplier is
+       drawn, from SPIN_TIERS (TournamentManagerBase writes tier.startingStack
+       into starting_chips). 300 is the floor of the new band table (Dan
+       2026-08-23), so a table waiting on its draw advertises the shallowest
+       thing it could be rather than a number no tier uses. */
+    startingStack: 300,
     maxPlayers: SPIN_SEATS,
     minPlayers: SPIN_SEATS,
     /* Seat all but ONE chair with horses.
@@ -2627,19 +2632,38 @@ export class TournamentRecurringService {
         added = await this.registerHorses(tournamentId, shortfall);
       }
 
-      // Re-read rather than trusting `liveCount + added`: a human may have
-      // registered while we were seating horses.
-      const { count: finalCount } = await supabase
-        .from('tournament_players')
-        .select('id', { count: 'exact', head: true })
-        .eq('tournament_id', tournamentId)
-        .in('status', ['registered', 'playing']);
+      /**
+       * Dan 2026-08-23: "spins can never ever start until 3 players have sat
+       * down, and paid for there seat."
+       *
+       * A seat-first game counts SEATS, not rows in tournament_players. Those
+       * two disagree constantly — a registration is never removed when a
+       * player leaves or busts, so writing the registration count back into
+       * current_players re-introduced the drift that had live spins reading
+       * 3/3 with two seats sold (which then refuses every further sit-down
+       * with 'tournament_full') and 0/3 with three sold (which never starts).
+       * Derive it from the seat rows for seat-first, and keep the registration
+       * count for MTTs, where a registration IS the entry.
+       */
+      if (seatFirst) {
+        await supabase.rpc('fn_sync_seat_first_player_count', {
+          p_tournament_id: tournamentId,
+        });
+      } else {
+        // Re-read rather than trusting `liveCount + added`: a human may have
+        // registered while we were seating horses.
+        const { count: finalCount } = await supabase
+          .from('tournament_players')
+          .select('id', { count: 'exact', head: true })
+          .eq('tournament_id', tournamentId)
+          .in('status', ['registered', 'playing']);
 
-      if (typeof finalCount === 'number') {
-        await supabase
-          .from('tournaments')
-          .update({ current_players: finalCount })
-          .eq('id', tournamentId);
+        if (typeof finalCount === 'number') {
+          await supabase
+            .from('tournaments')
+            .update({ current_players: finalCount })
+            .eq('id', tournamentId);
+        }
       }
 
       return added;

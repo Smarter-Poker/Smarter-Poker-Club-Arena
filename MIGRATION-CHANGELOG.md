@@ -7,6 +7,87 @@
 
 ---
 
+## Cowork session 2026-08-23 (4) — multi-table was blocked by a 34px strip (PRs #493, #517)
+
+Dan: "multi table functionality isn't working, when you click the + button to
+add a second, 3rd or 4th game, it doesn't create the action box for that game."
+
+Two separate occluders, both measured on production rather than reasoned about.
+
+### 1. `.table-page` covered the whole app when embedded (PR #493)
+
+`.table-page` is `position: fixed; inset: 0; z-index: 1100`. That is right when
+the table owns the viewport and wrong when `<MultiTablePage>` embeds it inside a
+tab: the felt then covered its own tab bar. Added a `--embedded` modifier
+(`position: absolute; z-index: auto`), placed AFTER the base rule — at equal
+specificity source order decides, and putting it before changed nothing.
+
+### 2. The MTT ticker was sitting on the "+" (PR #517)
+
+With #493 shipped the button was reachable, and still nothing happened on a
+tournament table. Instrumented on production:
+
+- `elementFromPoint` at the button's centre returned `.mtt-ticker__track`
+- Playwright: `<button class=mtt-ticker__track> ... intercepts pointer events`
+- dispatching the click straight at `.table-tab-bar__add` opened Quick Join and
+  listed games correctly — so `handleAddTable` was never the problem
+
+`.mtt-ticker` is fixed, 34px, `z-index: 9400`, positioned at `top: headerBottom`.
+That measurement only looked for `#global-header` / `header`. Inside `/table/*`
+neither exists — TablePage is fixed to the viewport and its top chrome is
+`.table-tab-bar` — so the offset fell to **0** and the strip landed on a tab bar
+that stacks at 200, burying the "+" at y=24-30. The tap opened the tournament
+lobby instead, which reads exactly like a dead button.
+
+The rule was never "sit under the header", it is "sit under whatever top chrome
+this route actually has". Moved the geometry into `src/components/tournament/
+topChrome.ts` (pure: selector lookup in, one number out) so it is assertable
+without mounting a table, and made the ResizeObserver watch every candidate —
+the tab bar mounts late, grows a row per table, and collapses off `/table/*`.
+
+`tests/unit/mttTickerAnchor.test.ts` pins it. Anti-vacuity checked: dropping
+`.table-tab-bar` back out of the selector list turns 3 of the 6 red.
+
+### 3. Two buttons, one accessible name
+
+`aria-label="Open another table"` was on both the tab bar's "+" (Quick Join) and
+TablePage's in-felt "+" (opens a lobby tab). A screen reader announced them
+identically and `getByLabel` resolved two elements, so the mobile suite silently
+drove whichever came first in the DOM. The second is now named for what it does.
+
+### 4. Quick Join spent 6.7 seconds on "Finding Games…"
+
+Long enough to be indistinguishable from a broken button, and on a slow
+connection it ran past 18s. Not the query — 11.5ms as service_role — but the
+plan under RLS:
+
+```
+Index Scan using idx_tables_club_id
+  Filter: (tournament_id IS NULL AND is_deleted IS NOT TRUE AND status <> 'closed')
+  ROWS REMOVED BY FILTER: 7261
+```
+
+To return 30 open tables it walked 7,291 rows, and `tables_select_scoped` runs
+`is_club_member()` / `fn_union_oversees_club()` against each one — ~14.5k
+function calls for a 30-row answer, growing with every hand ever dealt (the club
+holds 64,374 closed tables).
+
+`20260823170000_tables_open_by_club_partial_index.sql` puts the open-ness
+predicate in the index. Applied to production and re-measured: **11.588ms ->
+0.376ms**, 1,480 buffers -> 35, and the "Rows Removed by Filter" line is gone —
+nothing left for the policy to be evaluated against.
+
+### Note for whoever chases "Club Not Found" next
+
+Not reproduced again this session. Ruled out from a clean session: the club row,
+RLS, every selected column, both entry paths, tap vs click, mobile emulation,
+all three clubs, the service worker, an expired/corrupted token, and the
+`?game=<id>` lobby-panel route. The diagnostic cause line shipped earlier still
+stands, so the next occurrence should name its own cause rather than needing
+this guesswork repeated.
+
+---
+
 ## Cowork session 2026-08-23 (3) — round two: PLO was deciding inside its own noise (PRs #436)
 
 Continuing the line-by-line pass. Every item below is measured.
@@ -13055,3 +13136,62 @@ on their own explanatory comment — `Math.random`, `ceiling_amount`, and now
 too. Negative assertions in this file now read a comment-stripped copy.
 
 33 tests across the two files. 286 files / 3,513 green.
+
+## Cowork session 2026-08-23 (13) — THE SEED REPAYMENT PLAN
+
+Dan: "IMPLEMENT A REPAYMENT PLAN THAT'S STRUCTURED INTO THE ARCHITECTURE OF THE
+POOL, THAT PAYS BACK A CERTAIN PERCENTAGE TO THE FUNDING WALLET EVERY TIME THE
+WALLET REACHES A CERTAIN THRESHOLD OF FUNDS."
+
+**This is not a nicety — it is the only mechanism that can work here, and the
+rule it replaces may never have paid anyone back.**
+
+The pool has ZERO DRIFT by construction. spinSpec's own identity,
+`E[multiplier] = seats × (1 − rake)`, makes `E[reserve_out]` equal `reserve_in`
+exactly. The rake is taken _before_ the pool and is the revenue; what remains is
+a float that random-walks and never grows in expectation. The previous rule
+waited for the balance to exceed the bar by a **whole further seed** before
+returning anything — on a zero-drift walk that is a wait for a large excursion
+that may never arrive. An owner's capital could have sat in the pool forever
+with nothing wrong and nothing happening. Harvesting the upswings is the only
+thing a zero-drift process reliably offers.
+
+**The plan.** FLOOR = the required seed (two 100x jackpots at the largest stake
+offered) — repayment never takes the balance below it, so the top prize on the
+wheel is always real money. TRIGGER = floor × 1.25; nothing moves until the
+balance sits 25% clear, because skimming the moment it peeks over would nibble
+the working capital on every ripple and re-lock the top tiers. RATE = 50% of the
+surplus above the floor — half, not all, because a wheel whose top prize
+flickers in and out of reach as the balance is shaved back is a worse product
+than one that repays a little slower.
+
+Repayment **stops the moment the seed is square**. It is a loan being retired,
+not a rake — which is why the old ceiling sweep is gone and is not returning in
+a new coat.
+
+At a 100 stake: floor 20,000, nothing until 25,000, where 2,500 of the 5,000
+surplus goes home leaving 22,500. Eight visits retire a 20,000 seed.
+
+**Measured, by rolled-back probe at a stake of 10:** exactly EIGHT instalments
+retired a 2,000 seed, the treasury returned to 100,000 to the chip, the pool
+never dipped below 2,255 against its 2,000 floor, and once square the plan took
+nothing further even with the balance forced to 500,000.
+
+Safety is by construction: the instalment is at most `RATE × (balance − floor)`,
+strictly less than the surplus, so `balance_after ≥ floor` always; and it is
+capped at what is owed, so the plan cannot overpay. Both the migration and the
+test sweep every balance from 20,000 to 60,000 to prove the floor holds.
+
+The owner menu now shows the plan rather than a number: the floor, the trigger,
+what the next instalment will be, how much is still owed, how much has come
+back, and the wallet it returns to — and it explains all of that **before** the
+owner commits any money.
+
+Two guards earned their keep. `spinSpec` has a **server copy** that must stay
+byte-identical, and editing only the client tripped it immediately — the comment
+on that guard says the drift is "exactly how three conflicting multiplier tables
+happened". And a test pinned the old all-or-nothing copy, updated here in the
+same commit that replaced the behaviour.
+
+18 new tests pinning the SQL rule and the TypeScript mirror to the same numbers.
+287 files / 3,531 green.

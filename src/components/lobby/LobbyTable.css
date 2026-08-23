@@ -31,7 +31,8 @@
   font-size: 0.8125rem;
   color: var(--text-primary, #f3f4f6);
   table-layout: fixed;
-  min-width: 640px;
+  min-width: 100%;
+  white-space: nowrap;
 }
 
 /* ── Sticky header ── */
@@ -492,3 +493,25 @@ abbr.lt-variant[title] {
 .lobby-table tbody tr:nth-child(9) { animation-delay: 0.24s; }
 .lobby-table tbody tr:nth-child(10) { animation-delay: 0.27s; }
 .lobby-table tbody tr:nth-child(n+11) { animation-delay: 0.30s; }
+
+@media (max-width: 768px) {
+  .lobby-table {
+    font-size: 0.65rem;
+  }
+  .lobby-table th, .lobby-table td {
+    padding: 6px 4px;
+  }
+  .lt-countdown {
+    font-size: 0.6rem !important;
+  }
+  .lt-badge {
+    font-size: 0.55rem;
+    padding: 0.1rem 0.25rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .hide-on-mobile {
+    display: none !important;
+  }
+}

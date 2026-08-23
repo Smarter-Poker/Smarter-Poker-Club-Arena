@@ -41,6 +41,12 @@ interface Props {
   clubId: string;
 }
 
+/** The funding wallet's display name, for copy that says where money goes. */
+function walletLabel(kind: string | undefined, wallet: string | null | undefined): string {
+  const list = SPIN_SEED_SOURCES[(kind as 'club' | 'union') ?? 'club'] ?? [];
+  return list.find((w) => w.value === wallet)?.label ?? 'The Funding Wallet';
+}
+
 const chips = (n: number | null | undefined) =>
   Number(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
@@ -211,12 +217,29 @@ export default function SpinActivationPanel({ clubId }: Props) {
               Cannot Be Returned Automatically.
             </small>
           ) : state.seeded_amount > 0 ? (
-            <small className="form-hint" style={{ display: 'block' }}>
-              Seed Outstanding {chips(state.seeded_amount)}.{' '}
-              {state.seed_repayable_in > 0
-                ? `Returns After Another ${chips(state.seed_repayable_in)} Is Collected From Play.`
-                : 'Returns As Soon As The Wallet Can Give It Back And Still Cover Its Jackpots.'}
-            </small>
+            <>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Seed Still Owed</label>
+                  <strong>{chips(state.seeded_amount)}</strong>
+                </div>
+                <div className="form-group">
+                  <label>Returned So Far</label>
+                  <strong>{chips(state.seed_returned_amount)}</strong>
+                </div>
+              </div>
+              <small className="form-hint" style={{ display: 'block' }}>
+                Repayment Plan. Half Of Everything Above {chips(state.repay_floor)} Returns To{' '}
+                {walletLabel(state.owner_kind, state.seed_source_wallet)} Each Time The Wallet
+                Reaches {chips(state.repay_trigger_at)}, Until The Seed Is Square. The Floor Stays
+                Behind So The Top Multiplier Is Always Payable.
+              </small>
+              <small className="form-hint" style={{ display: 'block' }}>
+                {state.next_instalment > 0
+                  ? `Next Instalment ${chips(state.next_instalment)}, Due On The Next Spin.`
+                  : `Next Instalment Once The Wallet Climbs Another ${chips(state.seed_repayable_in)}.`}
+              </small>
+            </>
           ) : (
             <small className="form-hint" style={{ display: 'block' }}>
               Seed Of {chips(state.seed_returned_amount)} Has Been Returned. Every Chip Collected
@@ -277,6 +300,12 @@ export default function SpinActivationPanel({ clubId }: Props) {
             </div>
           </div>
 
+          <small className="form-hint" style={{ display: 'block', marginBottom: 6 }}>
+            How It Comes Back. Once The Wallet Reaches{' '}
+            {chips(requiredSeedForStake(maxStake) * 1.25)}, Half Of Everything Above{' '}
+            {chips(required)} Returns To Your Wallet On Each Spin, Until The Seed Is Repaid. Then
+            Every Chip Stays In The Pool To Fund Multipliers.
+          </small>
           <small className="form-hint" style={{ display: 'block' }}>
             Required Seed {chips(required)} Chips. That Is Two Top Multiplier Jackpots At A Stake Of{' '}
             {maxStake}, So The Wallet Can Always Pay The Biggest Prize It Offers.

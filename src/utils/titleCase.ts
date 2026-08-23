@@ -165,4 +165,26 @@ export function titleCase(input: string | null | undefined): string {
     .join('');
 }
 
+/**
+ * Alias. The Players tab and the three pages behind it (Member Management,
+ * Player Statistics, Promo Vault) were written against `toTitleCase`, which is
+ * the name the same transform carries inside utils/popupStyle.ts. Exporting it
+ * here rather than renaming call sites keeps one implementation -- the
+ * acronym-aware one above, which is the reason NLH does not render as "Nlh".
+ */
+export const toTitleCase = titleCase;
+
+/**
+ * Postgres hands roles and statuses over as snake_case enums: 'super_agent',
+ * 'sub_agent', 'vip_card'. An underscore is not a word boundary a reader sees,
+ * so it becomes a space before the casing runs: 'super_agent' -> 'Super Agent'.
+ *
+ * Acronyms still survive the trip, which is the whole point of routing through
+ * titleCase rather than doing this inline: 'mtt_fee' -> 'MTT Fee'.
+ */
+export function enumToTitleCase(value: string | null | undefined): string {
+  if (!value) return '';
+  return titleCase(String(value).replace(/_/g, ' '));
+}
+
 export default titleCase;

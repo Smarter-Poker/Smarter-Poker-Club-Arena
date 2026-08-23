@@ -145,9 +145,14 @@ describe('the seed is presented as a loan, because that is what it is', () => {
     expect(panel).toMatch(/The Seed Is A Loan, Not A Fee/);
   });
 
-  it('shows how much further play has to go before it returns', () => {
+  it('shows the repayment PLAN, not a single distant date', () => {
+    // Was `Returns After Another N Is Collected From Play` - an all-or-nothing
+    // rule that, on a zero-drift pool, described an event that might never
+    // arrive. It is instalments now: a share of the surplus each time the
+    // wallet clears its trigger.
     expect(panel).toMatch(/seed_repayable_in/);
-    expect(panel).toMatch(/Returns After Another/);
+    expect(panel).toMatch(/Repayment Plan/);
+    expect(panel).toMatch(/Next Instalment/);
   });
 
   it('says what happens to proceeds once the seed is repaid', () => {

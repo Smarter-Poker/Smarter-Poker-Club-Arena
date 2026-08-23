@@ -239,13 +239,13 @@ const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
 const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
   /* LOBBY V2: All Games is a real tab now — the line-based table renders a
      combined column set for it, so it no longer needs to be hidden. */
-  { key: 'ALL', label: 'All Games' },
+  { key: 'ALL', label: 'ALL' },
   { key: 'MTT', label: 'MTT' },
   { key: 'HOLDEM', label: 'NLH' },
-  { key: 'OMAHA', label: 'Omaha' },
-  { key: 'LIMIT', label: 'Limit' },
-  { key: 'SPIN', label: 'Spins' },
-  { key: 'SNG', label: 'Heads Up' },
+  { key: 'OMAHA', label: 'PLO' },
+  { key: 'LIMIT', label: 'LMT' },
+  { key: 'SPIN', label: 'SPIN' },
+  { key: 'SNG', label: 'SNG' },
 ];
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
@@ -2413,21 +2413,16 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         {/* Advanced Filters. Hidden on ALL, which has no spec of its own and
             means "show everything" - offering a filter sheet there would imply
             the tab can be narrowed when it deliberately cannot. */}
-        {gameType !== 'ALL' && (
-          <button
-            /* AUDIT 2026-08-21: this lit up whenever a saved object EXISTED
-               for the tab, which is true the moment a player opens the sheet
-               and presses Save without changing anything - a permanent gold
-               badge announcing a filter that filters nothing. isFilterActive
-               compares against the spec's defaults, so the badge means what it
-               looks like it means. */
+        <button
             className={`game-bar__filter-btn ${(() => {
+              if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
               const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
               const fVal = advFilters[gameType as FilterGameType];
-              return fSpec && fVal && isFilterActive(fSpec, fVal) ? 'is-set' : '';
+              const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
+              return isFilt || (sortKey !== 'recommended') ? 'is-set' : '';
             })()}`}
-            aria-label="Advanced filters"
-            title="Advanced Filters"
+            aria-label="Filters and Sort"
+            title="Filters and Sort"
             onClick={() => {
               haptic.light();
               setSortOpen(false);
@@ -2437,49 +2432,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             <IconSort />
             <span>Filters</span>
           </button>
-        )}
 
-        <div className="game-bar__sort">
-          <button
-            className={`game-bar__sort-btn ${sortKey !== 'recommended' ? 'is-set' : ''}`}
-            aria-haspopup="listbox"
-            aria-expanded={sortOpen}
-            onClick={() => {
-              haptic.light();
-              setSortOpen((o) => !o);
-            }}
-          >
-            <IconSort />
-            <span>{SORT_OPTIONS.find((o) => o.key === sortKey)?.label ?? 'Sort'}</span>
-          </button>
-
-          {sortOpen && (
-            <>
-              {/* Click-away shield. Without it the menu could only be closed by
-                  re-tapping the button, which on a phone is the one place a
-                  thumb is unlikely to go next. */}
-              <div className="game-bar__sort-shield" onClick={() => setSortOpen(false)} />
-              <ul className="game-bar__sort-menu" role="listbox" aria-label="Sort games by">
-                {SORT_OPTIONS.map((opt) => (
-                  <li key={opt.key}>
-                    <button
-                      role="option"
-                      aria-selected={sortKey === opt.key}
-                      className={sortKey === opt.key ? 'is-active' : ''}
-                      onClick={() => {
-                        haptic.selection();
-                        setSortKey(opt.key);
-                        setSortOpen(false);
-                      }}
-                    >
-                      {opt.label}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </div>
+        
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════
@@ -2592,6 +2546,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           initialType={gameType as FilterGameType}
           onClose={() => setFiltersOpen(false)}
           onApply={setAdvFilters}
+          sortKey={sortKey}
+          onSortChange={setSortKey}
+          sortOptions={SORT_OPTIONS}
         />
       )}
 

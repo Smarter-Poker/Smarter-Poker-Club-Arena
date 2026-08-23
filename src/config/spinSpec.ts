@@ -454,6 +454,81 @@ export function requiredSeed(highestStake: number): number {
   return Math.round(highestStake * top.multiplier * 2 * 100) / 100;
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE SEED REPAYMENT PLAN
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan, 2026-08-23: "IMPLEMENT A REPAYMENT PLAN THAT'S STRUCTURED INTO THE
+ * ARCHITECTURE OF THE POOL, THAT PAYS BACK A CERTAIN PERCENTAGE TO THE FUNDING
+ * WALLET EVERY TIME THE WALLET REACHES A CERTAIN THRESHOLD OF FUNDS."
+ *
+ * WHY INSTALMENTS ARE NOT JUST NICER, THEY ARE THE ONLY THING THAT WORKS.
+ *
+ * This pool has ZERO DRIFT by construction. The identity at the top of this
+ * file — E[multiplier] = seats × (1 − rake) — means E[reserve_out] equals
+ * reserve_in exactly. The rake is taken BEFORE the pool and is the revenue;
+ * what is left is a float that random-walks and never grows in expectation.
+ *
+ * The first repayment rule waited for the pool to hold a whole extra seed's
+ * worth before returning anything. On a zero-drift walk that is a wait for a
+ * large excursion which may never arrive — the owner's capital could sit in
+ * the pool forever. Harvesting the UPSWINGS is the only mechanism available,
+ * because upswings are the only thing a zero-drift process reliably produces.
+ *
+ * THE PLAN
+ *
+ *   FLOOR    the pool must always be able to pay its biggest advertised prize.
+ *            That is requiredSeed(): two top-tier jackpots at the largest
+ *            stake offered. Repayment never takes the balance below it, so the
+ *            100x on the wheel is always real money.
+ *
+ *   TRIGGER  nothing is returned until the balance sits 25% clear of the
+ *            floor. Skimming the instant it peeks above would nibble the
+ *            working capital on every ripple and re-lock the top tiers.
+ *
+ *   RATE     half of everything above the floor goes back. Half, not all,
+ *            because the pool needs to keep some of its own upswing: a wheel
+ *            whose top prize flickers in and out of reach as the balance is
+ *            shaved to the floor is a worse product than one that pays the
+ *            operator back a little more slowly.
+ *
+ * Repayment STOPS the moment the seed is square. It is a loan being retired,
+ * not a rake — Dan, on the same day: "IT RETURNS EVERYTHING IT COLLECTS...
+ * ALL PROCEEDS ARE KEPT THERE TO FUND THE MULTIPLIER PAYOUTS." Once the owner
+ * is whole, every chip stays in the pool. This is why the old ceiling sweep is
+ * gone and is not coming back in a new coat.
+ *
+ * Worked, at a 100 stake: floor 20,000, so nothing moves until 25,000. At
+ * 25,000 the surplus is 5,000 and 2,500 goes home, leaving 22,500 — still
+ * clear of the floor. A 20,000 seed retires in eight such visits.
+ */
+export const SEED_REPAY_TRIGGER_X = 1.25;
+export const SEED_REPAY_RATE = 0.5;
+/** Below this an instalment is dust and only makes ledger noise. */
+export const SEED_REPAY_MIN_INSTALMENT = 1;
+
+/** The balance at which the next instalment becomes due. */
+export function seedRepayTriggerAt(highestStake: number): number {
+  return Math.round(requiredSeed(highestStake) * SEED_REPAY_TRIGGER_X * 100) / 100;
+}
+
+/**
+ * What the next instalment would be at this balance, given what is still owed.
+ * Returns 0 when nothing is due. Mirrors fn_spin_seed_instalment in the
+ * database — a test pins the two together, because a disagreement means the
+ * owner menu quotes one number and the wallet moves another.
+ */
+export function seedInstalmentDue(balance: number, outstandingSeed: number, floor: number): number {
+  if (outstandingSeed <= 0 || floor <= 0) return 0;
+  if (balance < floor * SEED_REPAY_TRIGGER_X) return 0;
+  const surplus = balance - floor;
+  if (surplus <= 0) return 0;
+  const instalment = Math.min(outstandingSeed, surplus * SEED_REPAY_RATE);
+  const rounded = Math.round(instalment * 100) / 100;
+  return rounded >= SEED_REPAY_MIN_INSTALMENT ? rounded : 0;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  THE REVEAL — one wheel, watched together (Dan 2026-08-21)
 // ═══════════════════════════════════════════════════════════════════════════════

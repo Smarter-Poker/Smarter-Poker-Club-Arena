@@ -1,385 +1,112 @@
 /**
- *  CLUB MEMBERS PAGE — Member Management with Live Presence & Role Promotion
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  CLUB MEMBERS PAGE - The Players Tab
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Dan 2026-08-23, rebuilt against a single server-side roster. What changed and
+ * why, point by point against the brief:
+ *
+ *  1. NO GREEN, NO PURPLE. The summary cards were emerald (#10B981) and violet
+ *     (#A855F7), neither of which appears anywhere else in smarter.poker. They
+ *     are now arena cyan, club blue and royal blue, and presence is drawn as a
+ *     cyan ring on the avatar rather than a green dot.
+ *
+ *     ONLINE NOW read 1 while hundreds of members were mid-hand. The old effect
+ *     asked `tables` for rows with this club_id and a live status; Club JAQK owns
+ *     34,138 table rows and every one of them is closed, because the live tables
+ *     belong to Midway Union above it. Zero tables came back, the effect returned
+ *     before it ever looked at a seat, and the count fell through to browser
+ *     presence: one, the person reading the screen. The seat row knows what the
+ *     table does not - table_seats.club_id is the player's home club - and
+ *     ca_club_members_overview reads it that way round. Anyone at a live table is
+ *     online, horses included.
+ *
+ *  2. AN OVERVIEW OF EVERYTHING. Opening this on a union now lists every player
+ *     in every club beneath it, deduplicated, each at their highest role. Player
+ *     number sits beside the role; the Club Arena alias leads and the account
+ *     username follows it.
+ *
+ *  3. BADGES, NOT DOTS. All seven roles carry one - see components/club/RoleBadge.
+ *     Each row also carries the four numbers the brief asked for: downlines,
+ *     agent wallet, player wallet, fees.
+ *
+ *  4. A ROW IS A LINK, not a modal. Promote and demote, the downline and the
+ *     date-ranged stats all live on the Member Management page behind it.
+ *
+ *  8. TITLE CASE, including the search placeholder, via utils/titleCase - the
+ *     acronym-aware one, so a variant never renders as "Nlh".
+ *
+ *  9. HIERARCHY FIRST by default, then sortable by name, downlines, wallet or
+ *     fees. The server returns hierarchy order; every other order is a re-sort
+ *     of the same array, so switching is instant and costs no round trip.
+ *
+ * WHAT THIS PAGE NO LONGER DOES. It no longer joins club_members to profiles in
+ * chunks of thirty, polls `tables` and `table_seats` on a 30 second timer, or
+ * runs a presence channel to produce a number the database already knows. One
+ * RPC, one realtime subscription for invalidation.
+ *
+ * Horses are players. There is no horse filter, no horse badge and nothing here
+ * that lets a member tell a horse from a human. Do not reintroduce one.
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { useUserStore } from '../stores/useUserStore';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { masterBus } from '../core/MasterBus';
-import {
-  useMasterBusSubscription,
-  useMasterBusSubscriptions,
-} from '../hooks/useMasterBusSubscription';
+import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useToast } from '../components/common/Toast';
 import { useVirtualScroll } from '../hooks/useVirtualScroll';
 import PageSkeleton from '../components/common/PageSkeleton';
 import ClubBottomNav from '../components/club/ClubBottomNav';
-import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import { retryFetch } from '../utils/retryFetch';
+import RoleBadge, { roleColor } from '../components/club/RoleBadge';
 import { exportToCSV } from '../lib/export';
 import './ClubMembersPage.css';
-import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
-import { WalletService } from '../services/WalletService';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
-import {
-  type ClubRole,
-  ROLE_DESCRIPTION,
-  normaliseRole,
-  roleLabel,
-  roleRank,
-} from '../types/clubRoles';
+import { titleCase } from '../utils/titleCase';
+import { normaliseRole, roleLabel, type ClubRole } from '../types/clubRoles';
+import ClubRosterService, { type RosterMember } from '../services/ClubRosterService';
 
-import { safeErrorMessage } from '../utils/safeErrorMessage';
 /* ═══════════════════════════════════════════════════════════════════════════════
-   TYPES
+   FILTERS AND SORTS
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-// The seven live in src/types/clubRoles.ts and mirror the database exactly.
-type MemberRole = ClubRole;
-
-interface ClubMember {
-  id: string;
-  user_id: string;
-  username: string;
-  avatar_url?: string;
-  role: MemberRole;
-  chip_balance: number;
-  joined_at: string;
-  is_online: boolean;
-  last_active?: string;
-  parent_agent_id?: string;
-}
-
-/**
- * Dan 2026-08-19: horses are players. There is no "horses" filter, no HORSE
- * badge, and nothing anywhere in Club Arena that lets a member tell a horse
- * from a human. Do not reintroduce a horse-only view here.
- */
 type MemberFilter = 'all' | 'online' | 'agents' | 'admins';
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   ROLE HIERARCHY & PERMISSIONS
-   ═══════════════════════════════════════════════════════════════════════════════ */
+const FILTER_LABEL: Record<MemberFilter, string> = {
+  all: 'All',
+  online: 'Online',
+  agents: 'Agents',
+  admins: 'Admins',
+};
 
-/*
- * The vocabulary, the ranks and the grant matrix moved to
- * src/types/clubRoles.ts, which mirrors fn_club_grantable_roles in Postgres.
- * What used to sit here disagreed with the database three ways at once: no
- * co_owner, an admin able to appoint a super agent, and a super agent able to
- * promote ANY member rather than only their own downline. The screen now asks
- * the server what it may offer, so the two cannot drift again.
+/**
+ * Requirement 9. `hierarchy` is what the server already returned, so choosing it
+ * is a no-op rather than a re-sort - which is why it is the default and why
+ * every other option is a stable sort layered on top of that order.
  */
+type SortKey = 'hierarchy' | 'name' | 'downlines' | 'wallet' | 'fees';
 
-function getRoleColor(role: ClubRole): string {
-  switch (role) {
-    case 'owner':
-      return '#FFD700';
-    case 'co_owner':
-      return '#F0B429';
-    case 'admin':
-      return '#FF6B6B';
-    case 'super_agent':
-      return '#A855F7';
-    case 'agent':
-      return '#00d4ff';
-    case 'sub_agent':
-      return '#38BDF8';
-    default:
-      return '#6a7a8a';
-  }
-}
+const SORT_LABEL: Record<SortKey, string> = {
+  hierarchy: 'Role Hierarchy',
+  name: 'Name (A To Z)',
+  downlines: 'Downlines',
+  wallet: 'Wallet Balance',
+  fees: 'Fees',
+};
 
-function getRoleBadgeIcon(role: ClubRole): string {
-  switch (role) {
-    case 'owner':
-      return '\u2605'; // ★
-    case 'co_owner':
-      return '\u2606'; // ☆
-    case 'admin':
-      return '\u25B2'; // ▲
-    case 'super_agent':
-      return '\u25C6'; // ◆
-    case 'agent':
-      return '\u25CF'; // ●
-    case 'sub_agent':
-      return '\u25CB'; // ○
-    default:
-      return '';
-  }
+const AGENT_ROLE_SET: ClubRole[] = ['super_agent', 'agent', 'sub_agent'];
+const STAFF_ROLE_SET: ClubRole[] = ['owner', 'co_owner', 'admin'];
+
+/** Chips, fees and balances all read the same way. Never padStart. */
+function chips(value: number): string {
+  return (value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   PLAYER ACTION MODAL
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-interface PlayerActionModalProps {
-  member: ClubMember;
-  myRole: MemberRole;
-  clubId: string;
-  onClose: () => void;
-  onRoleChanged: () => void;
-}
-
-function PlayerActionModal({
-  member,
-  myRole,
-  clubId,
-  onClose,
-  onRoleChanged,
-}: PlayerActionModalProps) {
-  const safeUsername = member.username || 'Unknown';
-  const [promoting, setPromoting] = useState(false);
-  const [confirmRole, setConfirmRole] = useState<MemberRole | null>(null);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  // CA-18 BUG FIX: the 1.2s "show success then refresh" timer was fire-and-forget.
-  // If the user clicked outside to dismiss the modal before 1.2s, the component
-  // unmounted and onRoleChanged()/onClose() fired on a dead component tree.
-  const roleChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (roleChangeTimerRef.current) clearTimeout(roleChangeTimerRef.current);
-    };
-  }, []);
-
-  // Accessibility: close modal on Escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
-  // The server decides what may be offered. fn_club_grantable_roles is the
-  // rule; this asks it rather than guessing, so the buttons on screen and the
-  // write that follows cannot disagree - and "is this player in my downline",
-  // which the client has no way to answer, is answered where the tree lives.
-  const [promotableRoles, setPromotableRoles] = useState<MemberRole[]>([]);
-  const [rolesLoading, setRolesLoading] = useState(true);
-
-  useEffect(() => {
-    let live = true;
-    (async () => {
-      setRolesLoading(true);
-      try {
-        const resolvedClubId = await resolveClubUUID(clubId);
-        if (!resolvedClubId) throw new Error('club not found');
-        const { data, error: rolesErr } = await supabase.rpc('ca_club_grantable_roles', {
-          p_club_id: resolvedClubId,
-          p_target_user_id: member.user_id,
-        });
-        if (!live) return;
-        if (rolesErr) throw rolesErr;
-        const roles = (data as { roles?: string[] } | null)?.roles ?? [];
-        setPromotableRoles(roles.map(normaliseRole));
-      } catch (e) {
-        reportError(e, 'ClubMembersPage.grantable_roles');
-        // Offering nothing is the safe direction to be wrong in: the user is
-        // told, rather than shown a button the server will refuse.
-        if (live) setPromotableRoles([]);
-      } finally {
-        if (live) setRolesLoading(false);
-      }
-    })();
-    return () => {
-      live = false;
-    };
-  }, [clubId, member.user_id]);
-
-  const canManage = promotableRoles.length > 0 && member.role !== 'owner';
-  const noRolesReason =
-    member.role === 'owner'
-      ? 'The club owner cannot be changed from here.'
-      : roleRank(myRole) <= roleRank('sub_agent')
-        ? 'Your role does not allow changing anyone else\u2019s.'
-        : 'You can only change the role of players in your own downline.';
-
-  const handlePromote = async (newRole: MemberRole) => {
-    setPromoting(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      const resolvedClubId = await resolveClubUUID(clubId);
-      if (!resolvedClubId) throw new Error('Club not found');
-
-      // ONE WRITE PATH. This used to fall back to
-      // `.from('club_members').update({ role })` whenever the RPC errored,
-      // which skipped every rule the RPC enforces - a club admin could appoint
-      // a co-owner, or promote outside their downline, by making one request
-      // fail. A trigger on club_members now refuses that update outright, so
-      // the fallback could not work even if someone put it back.
-      const { data, error: rpcError } = await supabase.rpc('fn_club_set_member_role', {
-        p_club_id: resolvedClubId,
-        p_user_id: member.user_id,
-        p_role: newRole,
-      });
-      if (rpcError) throw rpcError;
-
-      const result = data as { success?: boolean; error?: string } | null;
-      if (!result?.success) throw new Error(result?.error || 'Role change refused');
-
-      setSuccess(`${member.username} is now ${roleLabel(newRole)}`);
-      setConfirmRole(null);
-
-      masterBus.emit('CLUB_UPDATED', { clubId });
-      const agentRoles = ['super_agent', 'agent', 'sub_agent'];
-      if (agentRoles.includes(newRole) || agentRoles.includes(member.role)) {
-        masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId: member.user_id });
-      }
-      masterBus.emit('MEMBER_ROLE_CHANGED', {
-        clubId: clubId || '',
-        userId: member.user_id,
-        newRole,
-        previousRole: member.role,
-      });
-
-      if (roleChangeTimerRef.current) clearTimeout(roleChangeTimerRef.current);
-      roleChangeTimerRef.current = setTimeout(() => {
-        roleChangeTimerRef.current = null;
-        onRoleChanged();
-        onClose();
-      }, 1200);
-    } catch (err: any) {
-      setError(safeErrorMessage(err, 'Failed to update role'));
-    } finally {
-      setPromoting(false);
-    }
-  };
-
-  return (
-    <div
-      className="player-modal-overlay"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Actions for ${safeUsername}`}
-    >
-      <div className="player-modal" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="player-modal__header">
-          <div className="player-modal__avatar">
-            {member.avatar_url ? (
-              <img src={member.avatar_url} alt="" loading="lazy" />
-            ) : (
-              <span>{safeUsername[0]?.toUpperCase()}</span>
-            )}
-            {member.is_online && <span className="online-dot" />}
-          </div>
-          <div className="player-modal__info">
-            <h3>{member.username}</h3>
-            <span className="player-modal__role-badge" style={{ color: getRoleColor(member.role) }}>
-              {getRoleBadgeIcon(member.role)} {roleLabel(member.role)}
-            </span>
-          </div>
-          <button className="player-modal__close" onClick={onClose} aria-label="Close modal">
-            &times;
-          </button>
-        </div>
-
-        {/* Stats */}
-        <div className="player-modal__stats">
-          <div className="player-modal__stat">
-            <span className="stat-value">{(member.chip_balance ?? 0).toLocaleString()}</span>
-            <span className="stat-label">Chips</span>
-          </div>
-          <div className="player-modal__stat">
-            <span className="stat-value">{member.is_online ? 'Online' : 'Offline'}</span>
-            <span className="stat-label">Status</span>
-          </div>
-          <div className="player-modal__stat">
-            <span className="stat-value">
-              {new Date(member.joined_at).toLocaleDateString('en-US', {
-                month: 'short',
-                year: 'numeric',
-              })}
-            </span>
-            <span className="stat-label">Joined</span>
-          </div>
-        </div>
-
-        {/* Role Management */}
-        {canManage && (
-          <div className="player-modal__roles">
-            <h4>Change Role</h4>
-
-            {error && <div className="player-modal__error">{error}</div>}
-            {success && <div className="player-modal__success">{success}</div>}
-
-            {confirmRole ? (
-              <div className="player-modal__confirm">
-                <p>
-                  Promote <strong>{member.username}</strong> To{' '}
-                  <strong style={{ color: getRoleColor(confirmRole) }}>
-                    {roleLabel(confirmRole)}
-                  </strong>
-                  ?
-                </p>
-                <div className="player-modal__confirm-actions">
-                  <button
-                    className="confirm-btn confirm"
-                    onClick={() => handlePromote(confirmRole)}
-                    disabled={promoting}
-                  >
-                    {promoting ? 'Updating...' : 'Confirm'}
-                  </button>
-                  <button
-                    className="confirm-btn cancel"
-                    onClick={() => setConfirmRole(null)}
-                    disabled={promoting}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="player-modal__role-grid">
-                {promotableRoles.map((role) => (
-                  <button
-                    key={role}
-                    className="role-option"
-                    style={{ borderColor: getRoleColor(role) }}
-                    onClick={() => setConfirmRole(role)}
-                  >
-                    <span className="role-option__icon" style={{ color: getRoleColor(role) }}>
-                      {getRoleBadgeIcon(role)}
-                    </span>
-                    <span className="role-option__label">{roleLabel(role)}</span>
-                    <span className="role-option__desc">{ROLE_DESCRIPTION[role]}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Why nothing is on offer. "You don't have permission" was the same
-            sentence for four different situations, one of which was simply
-            still loading. */}
-        {rolesLoading && !canManage && (
-          <div className="player-modal__info-section">
-            <p>Checking What You Can Change...</p>
-          </div>
-        )}
-        {!rolesLoading && !canManage && (
-          <div className="player-modal__info-section">
-            <p>{noRolesReason}</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   MAIN PAGE COMPONENT
+   MAIN PAGE
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 export default function ClubMembersPage() {
@@ -388,38 +115,33 @@ export default function ClubMembersPage() {
   const clubId = routeClubId || searchParams.get('club') || undefined;
   const { user } = useAuthUser();
   const toast = useToast();
+  const navigate = useNavigate();
   const isMountedRef = useIsMounted();
-  // useVisibilityRefresh(() => loadMembers()); // Disabled per request
 
-  const [members, setMembers] = useState<ClubMember[]>([]);
+  const [members, setMembers] = useState<RosterMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [filter, setFilter] = useState<MemberFilter>('all');
+  const [sortKey, setSortKey] = useState<SortKey>('hierarchy');
   const [searchQuery, setSearchQuery] = useState('');
-  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
-  const [userRole, setUserRole] = useState<MemberRole>('player');
-  const [visibleMembers, setVisibleMembers] = useState<Set<string>>(new Set());
-  const [selectedMember, setSelectedMember] = useState<ClubMember | null>(null);
+  const [userRole, setUserRole] = useState<ClubRole>('player');
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
 
   const loadingRef = useRef(false);
-  // Players currently occupying a seat at one of this club's tables. Merged
-  // into onlineUserIds so seated players count as online (see effect below).
-  const seatedUserIdsRef = useRef<Set<string>>(new Set());
 
-  // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
+  // Safety net: never leave a skeleton on screen forever if auth or the network
+  // hangs. The empty state is a better answer than a spinner that never stops.
   useEffect(() => {
-    const timeout = setTimeout(() => setLoading(false), 5000);
+    const timeout = setTimeout(() => setLoading(false), 8000);
     return () => clearTimeout(timeout);
   }, []);
 
-  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  // Navigating between clubs must not show the previous club's filters.
   useEffect(() => {
     setUserRole('player');
     setFilter('all');
+    setSortKey('hierarchy');
     setSearchQuery('');
-    setSelectedMember(null);
-    setVisibleMembers(new Set());
     setIsRefreshing(false);
     loadingRef.current = false;
   }, [clubId]);
@@ -427,344 +149,244 @@ export default function ClubMembersPage() {
   const loadMembers = useCallback(
     async (getIsMounted?: () => boolean) => {
       if (!clubId) return;
+      const live = () => (getIsMounted ? getIsMounted() : true) && isMountedRef.current;
 
       loadingRef.current = true;
-      if (!getIsMounted || getIsMounted()) setLoading(true);
+      if (live()) setLoading(true);
       try {
         const resolvedId = await resolveClubUUID(clubId);
-        // Update resolved ID for realtime subscriptions
-        if (getIsMounted && !getIsMounted()) return;
+        if (!live()) return;
+        if (!resolvedId) {
+          setMembers([]);
+          return;
+        }
         setResolvedClubId(resolvedId);
 
-        // SWR: Show cached members instantly while loading fresh data
-        const swrKey = `members_cache_${resolvedId}`;
+        // SWR: paint the previous roster instantly, then replace it. The cache
+        // holds the whole row now rather than a trimmed copy, because the row IS
+        // the screen - wallets, downlines and fees included.
+        const swrKey = `roster_cache_${resolvedId}`;
         try {
           const cached = sessionStorage.getItem(swrKey);
           if (cached) {
-            const cm = JSON.parse(cached);
-            if (Array.isArray(cm) && cm.length > 0) {
-              setMembers(cm);
-              if (getIsMounted && !getIsMounted()) return;
-              setLoading(false); // Show cached list instantly
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setMembers(parsed as RosterMember[]);
+              if (!live()) return;
+              setLoading(false);
             }
           }
         } catch (e) {
-          reportError(e, 'ClubMembersPage.async');
-          /* corrupt cache */
+          reportError(e, 'ClubMembersPage.swr_cache_read');
         }
 
-        const { data, error } = await retryFetch(
-          () =>
-            supabase
+        // One call. Identity, role, player number, wallets, downline counts,
+        // fees and live-seat presence, for the club or for every club in the
+        // union above it.
+        const roster = await ClubRosterService.getRoster(resolvedId);
+        if (!live()) return;
+        setMembers(roster);
+
+        try {
+          sessionStorage.setItem(swrKey, JSON.stringify(roster.slice(0, 300)));
+        } catch {
+          /* quota; the roster is already on screen */
+        }
+
+        // Whoever is reading decides which actions the rows offer. Their row is
+        // already in the roster, so this usually costs nothing.
+        if (user?.id) {
+          const me = roster.find((m) => m.user_id === user.id);
+          if (me) {
+            setUserRole(me.role);
+          } else {
+            const { data: memberData } = await supabase
               .from('club_members')
-              .select('user_id, role, chip_balance, joined_at, parent_agent_id, profiles(id, username, display_name, arena_avatar_url)')
+              .select('role')
               .eq('club_id', resolvedId)
-              .not('status', 'in', '("banned","suspended")')
-              .order('joined_at', { ascending: true })
-              .limit(5000)
-              .then((r) => r),
-          { maxRetries: 2, isMountedRef: isMountedRef }
-        );
-
-        if (getIsMounted && !getIsMounted()) return;
-        if (!error && data) {
-          const mapped = data.map((m: any) => {
-            const profile = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles;
-            return {
-              id: m.user_id,
-              user_id: m.user_id,
-              username: profile?.display_name || profile?.username || 'Unknown',
-              avatar_url: profile?.arena_avatar_url,
-              role: normaliseRole(m.role),
-              chip_balance: m.chip_balance || 0,
-              joined_at: m.joined_at,
-              is_online: false,
-              last_active: undefined,
-              parent_agent_id: m.parent_agent_id,
-            };
-          });
-          setMembers(mapped);
-
-          // Save to SWR cache (lightweight: just top-level fields)
-          try {
-            sessionStorage.setItem(swrKey, JSON.stringify(mapped.slice(0, 200)));
-          } catch {
-            /* storage full */
-          }
-
-          // Fetch current user's role
-          if (user?.id) {
-            const { data: memberData } = await retryFetch(
-              () =>
-                supabase
-                  .from('club_members')
-                  .select('role')
-                  .eq('club_id', resolvedId)
-                  .eq('user_id', user.id)
-                  .maybeSingle()
-                  .then((r) => r),
-              { maxRetries: 2, isMountedRef: isMountedRef }
-            );
-
-            if (getIsMounted && !getIsMounted()) return;
-            if (memberData) {
-              setUserRole(normaliseRole(memberData.role));
-            }
+              .eq('user_id', user.id)
+              .maybeSingle();
+            if (live() && memberData) setUserRole(normaliseRole(memberData.role));
           }
         }
+
+        // Fees come from a rollup fed forward from a watermark. Nudge it and
+        // move on; the roster is correct either way.
+        ClubRosterService.touchFeeRollup();
       } catch (error) {
-        reportError(error, 'ClubMembersPage.Failed_to_load_members');
-        toast.error('Failed to load members');
+        reportError(error, 'ClubMembersPage.loadMembers');
+        if (live()) toast.error('Failed To Load Members');
       } finally {
         loadingRef.current = false;
-        if (!getIsMounted || getIsMounted()) setLoading(false);
+        if (live()) setLoading(false);
       }
     },
     [clubId, user?.id, isMountedRef, toast]
   );
 
-  useEffect(() => {
-    let isMounted = true;
-    if (clubId) loadMembers(() => isMounted);
+  /* NO REFRESH ON TAB FOCUS. PR #508 ("ClubMembersPage loads instantly and
+     prevents auto-refresh") removed this from the old implementation and it is
+     deliberately not reinstated here: coming back to a tab is not news about
+     the roster, and the reload made the page visibly rebuild for nothing. */
 
+  useEffect(() => {
+    let mounted = true;
+    if (clubId) loadMembers(() => mounted);
     return () => {
-      isMounted = false;
+      mounted = false;
     };
   }, [clubId, loadMembers]);
 
-  // Subscribe to bus-level events for cross-component sync
+  const refresh = useCallback(() => {
+    setIsRefreshing(true);
+    loadMembers(() => true).finally(() => setIsRefreshing(false));
+  }, [loadMembers]);
+
+  /**
+   * STRUCTURAL EVENTS ONLY - who is in the club and what rank they hold.
+   *
+   * The wallet and chip events (BALANCE_UPDATED, CHIPS_ADDED, CHIPS_WITHDRAWN,
+   * CHIPS_DISTRIBUTED, CASHOUT_APPROVED) used to be in this list. They fire
+   * continuously at a live club, and PR #508 removed them for exactly that
+   * reason. Keeping the roster architecture while quietly putting the churn
+   * back would be a silent revert, so they stay out. A stale wallet figure for
+   * a few seconds is a far smaller defect than a list that rebuilds under the
+   * reader's finger, and pull-to-refresh is right there when it matters.
+   */
   useMasterBusSubscriptions(
-    [
-      'CLUB_JOINED',
-      'CLUB_LEFT',
-    ],
+    ['CLUB_JOINED', 'CLUB_LEFT', 'MEMBER_ROLE_CHANGED'],
     () => {
-      // We only reload on join/left to ensure the list is structurally correct
-      // chip balance updates are handled by the realtime table subscription below
-      if (!clubId) return;
-      // loadMembers() disabled per request for performance
+      if (clubId) refresh();
     },
     { debounce: 500 }
   );
 
-  useMasterBusSubscription(
-    'CLUB_UPDATED',
-    (payload: any) => {
-      // Auto-refresh disabled per request
-    },
-    { debounce: 500 }
-  );
-
-  // Stagger animation for members
-  useEffect(() => {
-    if (members.length === 0) return;
-    setVisibleMembers(new Set());
-    const timers = members.map((member, index) =>
-      setTimeout(() => {
-        setVisibleMembers((prev) => new Set(prev).add(member.id));
-      }, index * 60)
-    );
-    return () => timers.forEach(clearTimeout);
-  }, [members]);
-
-  // Real-time club members table updates using hook
+  /**
+   * Realtime is an invalidation signal, not a source of truth. Patching a row in
+   * place used to leave downlines, wallets and fees stale, because none of those
+   * live on club_members - so a change simply re-asks the server.
+   */
   useMasterBusChannel({
     channelName: resolvedClubId ? `club-members-sync-${clubId}` : null,
     table: 'club_members',
     filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
     event: '*',
     onPayload: (payload) => {
-      if (!payload) return;
-      const { eventType, new: newRec, old: oldRec } = payload;
-
-      if (eventType === 'DELETE' && oldRec) {
-        setMembers((prev) => prev.filter((m) => m.user_id !== oldRec.user_id));
-      } else if (eventType === 'UPDATE' && newRec) {
-        if (newRec.status === 'banned' || newRec.status === 'suspended') {
-          setMembers((prev) => prev.filter((m) => m.user_id !== newRec.user_id));
-        } else {
-          setMembers((prev) => {
-            const idx = prev.findIndex((m) => m.user_id === newRec.user_id);
-            if (idx === -1) {
-              // We ignore INSERTs for now to avoid auto-refreshing the page
-              return prev;
-            }
-            const next = [...prev];
-            next[idx] = {
-              ...next[idx],
-              role: newRec.role,
-              chip_balance: newRec.chip_balance,
-              parent_agent_id: newRec.parent_agent_id,
-            };
-            return next;
-          });
-        }
-      } else {
-        // Auto-refresh disabled for INSERT events
+      /* INSERT/DELETE only. An UPDATE on club_members is nearly always a
+         chip_balance tick, and refetching on those is the auto-refresh PR #508
+         removed. A row appearing or leaving genuinely changes the roster. */
+      const p = payload as { eventType?: string; new?: { status?: string } } | null;
+      const kind = p?.eventType;
+      if (kind === 'INSERT' || kind === 'DELETE') {
+        refresh();
+        return;
       }
+      /* Carried over from main: banning or suspending someone is an UPDATE, and
+         they must leave the roster at once rather than linger until the next
+         structural event. This is the ONLY UPDATE worth a refetch. */
+      const status = p?.new?.status;
+      if (kind === 'UPDATE' && (status === 'banned' || status === 'suspended')) refresh();
     },
     enabled: !!resolvedClubId,
   });
 
-  /**
-   * Dan 2026-08-19: "Online" used to come from the Realtime presence channel
-   * alone. Presence only tracks connected browser clients, so every
-   * server-driven player was invisible and the roster reported 1 online while
-   * the club had hundreds of members seated in live hands. Anyone occupying a
-   * seat at one of this club's tables is, by any honest definition, online.
-   */
-  useEffect(() => {
-    if (!resolvedClubId) return;
-    let cancelled = false;
+  /* ── Filter, search, sort ─────────────────────────────────────────────── */
 
-    const loadSeated = async () => {
-      try {
-        /**
-         * LIVE_TABLE_STATUSES, not a boolean flag: `tables` has no `is_active`
-         * column. The first version of this query filtered on `.eq('is_active',
-         * true)`, which PostgREST rejected outright — and because supabase-js
-         * RETURNS errors rather than throwing, the try/catch never fired, the
-         * result was silently null, and "Online" stayed stuck at 1. Any error
-         * here is now surfaced instead of swallowed.
-         *
-         * Seats on `closed` tables are deliberately excluded: stale rows on
-         * closed tables would otherwise count long-gone players as online.
-         */
-        const { data: clubTables, error: tablesErr } = await supabase
-          .from('tables')
-          .select('id')
-          .eq('club_id', resolvedClubId)
-          .in('status', ['waiting', 'running']);
-        if (tablesErr) {
-          reportError(tablesErr.message, 'ClubMembersPage.Seated_online_tables_query');
-          return;
-        }
-        const tableIds = (clubTables || []).map((t: { id: string }) => t.id);
-        if (cancelled || tableIds.length === 0) return;
+  const filteredMembers = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const matched = members.filter((m) => {
+      if (filter === 'online' && !m.is_online) return false;
+      if (filter === 'agents' && !AGENT_ROLE_SET.includes(m.role)) return false;
+      if (filter === 'admins' && !STAFF_ROLE_SET.includes(m.role)) return false;
+      if (!q) return true;
+      // Searching by player number matters as much as by name: it is what one
+      // member gives another, and what an agent is handed in a support ticket.
+      return (
+        m.alias.toLowerCase().includes(q) ||
+        m.username.toLowerCase().includes(q) ||
+        (m.player_number ?? '').toLowerCase().includes(q)
+      );
+    });
 
-        const seated = new Set<string>();
-        const chunkSize = 100;
-        for (let i = 0; i < tableIds.length; i += chunkSize) {
-          const { data: seats, error: seatsErr } = await supabase
-            .from('table_seats')
-            .select('user_id')
-            .in('table_id', tableIds.slice(i, i + chunkSize))
-            .is('left_at', null);
-          if (seatsErr) {
-            reportError(seatsErr.message, 'ClubMembersPage.Seated_online_seats_query');
-            return;
-          }
-          (seats || []).forEach((s: { user_id: string | null }) => {
-            if (s.user_id) seated.add(s.user_id);
-          });
-          if (cancelled) return;
-        }
-        if (cancelled) return;
+    if (sortKey === 'hierarchy') return matched; // already in server order
 
-        seatedUserIdsRef.current = seated;
-        setOnlineUserIds((prev) => {
-          const next = new Set(prev);
-          seated.forEach((id) => next.add(id));
-          return next.size === prev.size ? prev : next;
-        });
-      } catch (err) {
-        reportError(err, 'ClubMembersPage.Seated_online_sync');
-      }
-    };
+    const sorted = [...matched];
+    switch (sortKey) {
+      case 'name':
+        sorted.sort((a, b) => a.alias.localeCompare(b.alias, undefined, { sensitivity: 'base' }));
+        break;
+      case 'downlines':
+        sorted.sort((a, b) => b.downline_total - a.downline_total || b.role_rank - a.role_rank);
+        break;
+      case 'wallet':
+        sorted.sort(
+          (a, b) =>
+            b.player_wallet + b.agent_wallet - (a.player_wallet + a.agent_wallet) ||
+            b.role_rank - a.role_rank
+        );
+        break;
+      case 'fees':
+        sorted.sort((a, b) => b.total_fees - a.total_fees || b.role_rank - a.role_rank);
+        break;
+    }
+    return sorted;
+  }, [members, filter, searchQuery, sortKey]);
 
-    loadSeated();
-    const interval = setInterval(loadSeated, 30000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [resolvedClubId]);
-
-  // Real-time presence tracking for club members
-  useEffect(() => {
-    if (!clubId || !user?.id) return;
-
-    const presenceKey = `club-members-${clubId}`;
-    const channel = masterBus.getOrCreateChannel(presenceKey);
-
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        const onlineIds = new Set<string>();
-        Object.values(state).forEach((presences) => {
-          (presences as any[]).forEach((p) => onlineIds.add(p.user_id));
-        });
-        // Merge in players we know are seated. Presence only covers browser
-        // clients, so a seated horse never appeared — the roster read "1 online"
-        // while hundreds of members were mid-hand.
-        setOnlineUserIds((prev) => {
-          seatedUserIdsRef.current.forEach((id) => onlineIds.add(id));
-          return onlineIds.size === prev.size && [...onlineIds].every((id) => prev.has(id))
-            ? prev
-            : onlineIds;
-        });
-      })
-      .subscribe(async (status: string, err?: Error) => {
-        if (status === 'SUBSCRIBED') {
-          await channel.track({ user_id: user.id, club_id: clubId });
-        } else if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'ClubMembersPage._Presence_channel_error');
-        } else if (status === 'TIMED_OUT') {
-          console.warn('[ClubMembersPage] Presence channel timed out');
-        }
-      });
-
-    return () => {
-      masterBus.removeRegisteredChannel(presenceKey);
-    };
-  }, [clubId, user?.id]);
-
-  // Update member online status when presence changes
-  const membersWithStatus = useMemo(
-    () =>
-      members.map((m) => ({
-        ...m,
-        is_online: onlineUserIds.has(m.user_id),
-      })),
-    [members, onlineUserIds]
-  );
-
-  const filteredMembers = useMemo(
-    () =>
-      membersWithStatus.filter((m) => {
-        if (filter === 'online' && !m.is_online) return false;
-        if (filter === 'agents' && !['super_agent', 'agent', 'sub_agent'].includes(m.role))
-          return false;
-        if (filter === 'admins' && !['owner', 'co_owner', 'admin'].includes(m.role)) return false;
-        if (searchQuery && !(m.username || '').toLowerCase().includes(searchQuery.toLowerCase()))
-          return false;
-        return true;
-      }),
-    [membersWithStatus, filter, searchQuery]
-  );
-
-  // Virtual scrolling: only render visible members for large clubs
   const virtualScroll = useVirtualScroll(filteredMembers, { initialCount: 30, pageSize: 20 });
 
-  const onlineCount = membersWithStatus.filter((m) => m.is_online).length;
-  const agentCount = membersWithStatus.filter((m) =>
-    ['super_agent', 'agent', 'sub_agent'].includes(m.role)
-  ).length;
+  const onlineCount = useMemo(() => members.filter((m) => m.is_online).length, [members]);
+  const agentCount = useMemo(
+    () => members.filter((m) => AGENT_ROLE_SET.includes(m.role)).length,
+    [members]
+  );
+
+  const openMember = useCallback(
+    (userId: string) => {
+      if (!clubId) return;
+      navigate(`/clubs/${clubId}/members/${userId}`);
+    },
+    [clubId, navigate]
+  );
+
+  const handleExport = useCallback(() => {
+    try {
+      exportToCSV(filteredMembers, 'club_members.csv', [
+        { key: 'player_number', label: 'Player Number' },
+        { key: 'alias', label: 'Club Arena Name' },
+        { key: 'username', label: 'Username' },
+        { key: 'role', label: 'Role' },
+        { key: 'downline_total', label: 'Downlines' },
+        { key: 'agent_wallet', label: 'Agent Wallet' },
+        { key: 'player_wallet', label: 'Player Wallet' },
+        { key: 'total_fees', label: 'Fees' },
+        { key: 'chip_balance', label: 'Club Chips' },
+        { key: 'is_online', label: 'Online' },
+        { key: 'home_club_name', label: 'Club' },
+        { key: 'joined_at', label: 'Joined' },
+        { key: 'user_id', label: 'User ID' },
+      ]);
+    } catch (e) {
+      reportError(e, 'ClubMembersPage.export');
+      toast.error('Could Not Export The Roster');
+    }
+  }, [filteredMembers, toast]);
+
+  /* ── Render ───────────────────────────────────────────────────────────── */
 
   return (
     <div className="club-members-page">
       <div className="members-summary">
         <div className="summary-stat">
-          <span className="stat-value">{members.length}</span>
+          <span className="stat-value">{members.length.toLocaleString()}</span>
           <span className="stat-label">Total Members</span>
         </div>
-        <div className="summary-stat online">
-          <span className="stat-value">{onlineCount}</span>
+        <div className="summary-stat summary-stat--online">
+          <span className="stat-value">{onlineCount.toLocaleString()}</span>
           <span className="stat-label">Online Now</span>
         </div>
         {agentCount > 0 && (
-          <div className="summary-stat agents">
-            <span className="stat-value">{agentCount}</span>
+          <div className="summary-stat summary-stat--agents">
+            <span className="stat-value">{agentCount.toLocaleString()}</span>
             <span className="stat-label">Agents</span>
           </div>
         )}
@@ -773,160 +395,184 @@ export default function ClubMembersPage() {
       <div className="members-search">
         <input
           type="text"
-          placeholder="Search members..."
-          aria-label="Search club members"
+          placeholder={titleCase('search by name, username or player number')}
+          aria-label="Search Club Members"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
       </div>
 
-      <div className="members-filters">
-        {(['all', 'online', 'agents', 'admins'] as MemberFilter[]).map((f) => (
-          <button key={f} className={filter === f ? 'active' : ''} onClick={() => setFilter(f)}>
-            {f.charAt(0).toUpperCase() + f.slice(1)}
-            {f === 'agents' && agentCount > 0 ? ` (${agentCount})` : ''}
-          </button>
-        ))}
-        {filteredMembers.length > 0 && (
-          <button
-            style={{
-              marginLeft: 'auto',
-              padding: '6px 14px',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              background: 'rgba(0,200,83,0.12)',
-              color: '#00C853',
-              border: '1px solid rgba(0,200,83,0.3)',
-              fontWeight: 600,
-              fontSize: '13px',
-            }}
-            onClick={() => {
-              try {
-                exportToCSV(filteredMembers, 'club_members.csv', [
-                  { key: 'username', label: 'Username' },
-                  { key: 'role', label: 'Role' },
-                  { key: 'chip_balance', label: 'Chip Balance' },
-                  { key: 'is_online', label: 'Online' },
-                  { key: 'joined_at', label: 'Joined' },
-                  { key: 'user_id', label: 'User ID' },
-                ]);
-              } catch (e) {
-                reportError(e, 'ClubMembersPage.filter');
-                /* silent */
-              }
-            }}
-          >
-            ⬇ Export CSV
-          </button>
-        )}
+      <div className="members-controls">
+        <div className="members-filters">
+          {(Object.keys(FILTER_LABEL) as MemberFilter[]).map((f) => (
+            <button
+              key={f}
+              type="button"
+              className={filter === f ? 'active' : ''}
+              onClick={() => setFilter(f)}
+            >
+              {FILTER_LABEL[f]}
+              {f === 'agents' && agentCount > 0 ? ` (${agentCount})` : ''}
+            </button>
+          ))}
+        </div>
+
+        <div className="members-toolbar">
+          <label className="members-sort">
+            <span className="members-sort__label">Sort By</span>
+            <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)}>
+              {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
+                <option key={k} value={k}>
+                  {SORT_LABEL[k]}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {filteredMembers.length > 0 && (
+            <button type="button" className="members-export" onClick={handleExport}>
+              Export CSV
+            </button>
+          )}
+        </div>
       </div>
 
+      {isRefreshing && <div className="members-refreshing">Refreshing...</div>}
+
       <div className="members-list" ref={virtualScroll.containerRef}>
-        {loading ? (
+        {loading && members.length === 0 ? (
           <PageSkeleton variant="list" />
         ) : filteredMembers.length === 0 ? (
-          <div className="empty-state" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
-            <span
-              style={{
-                fontSize: '2.5rem',
-                display: 'block',
-                marginBottom: '0.75rem',
-                opacity: 0.5,
-              }}
-            >
-              {filter === 'agents'
-                ? '◈'
-                : filter === 'admins'
-                  ? '◈'
-                  : filter === 'online'
-                    ? '●'
-                    : '◉'}
-            </span>
-            <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
-              {filter === 'agents'
-                ? 'No Agents Yet'
-                : filter === 'admins'
-                  ? 'No Admins Found'
-                  : filter === 'online'
-                    ? 'No Members Online'
-                    : 'No Members Found'}
-            </p>
-            <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
-              {filter === 'agents'
-                ? 'Promote a member to Agent to get started.'
-                : filter === 'admins'
-                  ? 'No one has admin privileges in this club yet.'
-                  : filter === 'online'
-                    ? 'No club members are currently online.'
-                    : searchQuery
-                      ? `No results for "${searchQuery}".`
-                      : 'Invite players to grow your club.'}
-            </p>
-          </div>
+          <EmptyRoster filter={filter} searchQuery={searchQuery} />
         ) : (
           <>
             {virtualScroll.visibleItems.map((member) => (
-              <div
-                key={member.id}
-                className={`member-row ${visibleMembers.has(member.id) ? 'fadeInUp' : 'hidden'}`}
-                style={
-                  visibleMembers.has(member.id)
-                    ? undefined
-                    : { opacity: 0, transform: 'translateY(8px)' }
-                }
-                onClick={() => setSelectedMember(member)}
-              >
-                <div className="member-avatar">
-                  {member.avatar_url ? (
-                    <img src={member.avatar_url} alt="" loading="lazy" />
-                  ) : (
-                    <span>{(member.username || '?')[0]?.toUpperCase()}</span>
-                  )}
-                  {member.is_online && <span className="online-dot" />}
-                </div>
-                <div className="member-info">
-                  <span className="member-name">
-                    <span style={{ color: getRoleColor(member.role) }}>
-                      {getRoleBadgeIcon(member.role)}
-                    </span>{' '}
-                    {member.username}
-                  </span>
-                  <span className="member-role" style={{ color: getRoleColor(member.role) }}>
-                    {roleLabel(member.role)}
-                  </span>
-                </div>
-                <div className="member-balance">{(member.chip_balance ?? 0).toLocaleString()}</div>
-              </div>
+              <MemberRow key={member.user_id} member={member} onOpen={openMember} />
             ))}
             {virtualScroll.hasMore && <div ref={virtualScroll.sentinelRef} style={{ height: 1 }} />}
             {virtualScroll.hasMore && (
-              <div
-                style={{
-                  textAlign: 'center',
-                  padding: '8px',
-                  color: '#6b7a8a',
-                  fontSize: '0.7rem',
-                }}
-              >
-                Showing {virtualScroll.visibleCount} Of {virtualScroll.totalCount}
+              <div className="members-count">
+                Showing {virtualScroll.visibleCount.toLocaleString()} Of{' '}
+                {virtualScroll.totalCount.toLocaleString()}
               </div>
             )}
           </>
         )}
       </div>
 
-      {/* Player Action Modal */}
-      {selectedMember && clubId && (
-        <PlayerActionModal
-          member={selectedMember}
-          myRole={userRole}
-          clubId={clubId}
-          onClose={() => setSelectedMember(null)}
-          onRoleChanged={() => loadMembers()}
-        />
-      )}
-
       {clubId && <ClubBottomNav clubId={clubId} userRole={userRole as any} />}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ONE ROW
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+function MemberRow({ member, onOpen }: { member: RosterMember; onOpen: (userId: string) => void }) {
+  const initial = (member.alias || '?')[0]?.toUpperCase() ?? '?';
+
+  return (
+    <button
+      type="button"
+      className={`member-row${member.is_online ? ' member-row--online' : ''}`}
+      onClick={() => onOpen(member.user_id)}
+      aria-label={`Open Member Management For ${member.alias}`}
+    >
+      <div className="member-avatar">
+        {member.avatar_url ? (
+          <img src={member.avatar_url} alt="" loading="lazy" />
+        ) : (
+          <span>{initial}</span>
+        )}
+      </div>
+
+      <div className="member-main">
+        <span className="member-identity">
+          <RoleBadge role={member.role} size="sm" />
+          {/* The Club Arena name leads; the account username follows it. */}
+          <span className="member-alias">{member.alias}</span>
+          {member.username && member.username.toLowerCase() !== member.alias.toLowerCase() && (
+            <span className="member-username">{member.username}</span>
+          )}
+        </span>
+
+        <span className="member-subline">
+          <span className="member-role" style={{ color: roleColor(member.role) }}>
+            {roleLabel(member.role)}
+          </span>
+          {/* Requirement 2: the player number sits next to the role. */}
+          {member.player_number && (
+            <span className="member-number">No. {member.player_number}</span>
+          )}
+          {member.home_club_name && <span className="member-club">{member.home_club_name}</span>}
+        </span>
+
+        {/* Requirement 3, in the order Dan asked for it. */}
+        <span className="member-metrics">
+          <Metric label="Downlines" value={member.downline_total.toLocaleString()} />
+          <Metric label="Agent Wallet" value={chips(member.agent_wallet)} />
+          <Metric label="Player Wallet" value={chips(member.player_wallet)} />
+          <Metric label="Fees" value={chips(member.total_fees)} accent />
+        </span>
+      </div>
+
+      <span className="member-chevron" aria-hidden="true">
+        &rsaquo;
+      </span>
+    </button>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  accent = false,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
+  return (
+    <span className={`member-metric${accent ? ' member-metric--accent' : ''}`}>
+      <span className="member-metric__value">{value}</span>
+      <span className="member-metric__label">{label}</span>
+    </span>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   EMPTY STATE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+function EmptyRoster({ filter, searchQuery }: { filter: MemberFilter; searchQuery: string }) {
+  const heading =
+    filter === 'agents'
+      ? 'No Agents Yet'
+      : filter === 'admins'
+        ? 'No Admins Found'
+        : filter === 'online'
+          ? 'No Members Online'
+          : 'No Members Found';
+
+  const body =
+    filter === 'agents'
+      ? 'Promote A Member To Agent To Get Started.'
+      : filter === 'admins'
+        ? 'No One Has Admin Privileges In This Club Yet.'
+        : filter === 'online'
+          ? 'No Club Members Are Currently At A Table.'
+          : searchQuery
+            ? `No Results For "${searchQuery}".`
+            : 'Invite Players To Grow Your Club.';
+
+  return (
+    <div className="members-empty">
+      <span className="members-empty__mark" aria-hidden="true">
+        {filter === 'online' ? '●' : '◉'}
+      </span>
+      <p className="members-empty__heading">{heading}</p>
+      <p className="members-empty__body">{body}</p>
     </div>
   );
 }

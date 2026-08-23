@@ -138,7 +138,7 @@ function LiveCountdown({ time }: { time: string | number | Date }) {
       className="lt-countdown"
       style={{
         fontSize: '0.65rem',
-        color: '#f59e0b',
+        color: 'var(--text-secondary, #c8ccd4)',
         fontWeight: 700,
         marginRight: '8px',
         letterSpacing: '0.02em',

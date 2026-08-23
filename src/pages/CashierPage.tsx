@@ -51,6 +51,7 @@ import { checkSettlementLock } from '../utils/settlementLock';
 import AgentPromoPanel from '../components/agent/AgentPromoPanel';
 import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
 import DynamicWallet from '../components/wallet/DynamicWallet';
+import ClubBankCashierModal from '../components/wallet/ClubBankCashierModal';
 import styles from './CashierPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
@@ -264,6 +265,9 @@ export default function CashierPage() {
 
   // Role state
   const [userRole, setUserRole] = useState<string>('member');
+  // Dan 2026-08-23: the Club Bank row opens the Club Bank Cashier here too, so
+  // the control means the same thing on every surface it appears on.
+  const [showClubBank, setShowClubBank] = useState(false);
   const [isInUnion, setIsInUnion] = useState(false);
   const [isUnionOwner, setIsUnionOwner] = useState(false);
   const [clubName, setClubName] = useState('');
@@ -1118,10 +1122,17 @@ export default function CashierPage() {
     userRole === 'agent' ||
     userRole === 'super_agent' ||
     userRole === 'sub_agent';
-  const canMint = (userRole === 'owner' && !isInUnion) || isUnionOwner;
+  // Mirrors fn_mint_chips_from_diamonds: a STANDALONE club's owner, co-owner
+  // or admin, or a union owner minting into the union bank. co_owner and admin
+  // were missing here while the RPC has always admitted them, so two roles saw
+  // no Mint tab on a club they are entitled to mint for. (Dan 2026-08-23.)
+  const canMint = (!isInUnion && ['owner', 'co_owner', 'admin'].includes(userRole)) || isUnionOwner;
 
+  // The Club Bank row routes here, and it renders for owner / co_owner / admin
+  // / super_agent — so all four must have the tab, or the row would open a tab
+  // that does not exist and the clamp below would bounce them elsewhere.
   const canDistribute =
-    userRole === 'owner' || isUnionOwner || userRole === 'agent' || userRole === 'super_agent';
+    ['owner', 'co_owner', 'admin', 'super_agent', 'agent'].includes(userRole) || isUnionOwner;
 
   const tabs = useMemo(() => {
     const t: CashierAction[] = [];
@@ -1666,9 +1677,23 @@ export default function CashierPage() {
              * not make its treasury this club's balance. Union funds are
              * managed on the union's own surfaces; never here.
              */
-            variant={userRole === 'owner' ? 'owner' : 'player'}
+            variant="club"
+            // Dan 2026-08-23: which rows exist is the viewer's role, not a
+            // second variant. A player sees one wallet here, an agent three,
+            // and only owner/co-owner/admin/super agent see the Club Bank.
+            role={userRole}
+            // userRole starts at 'member' and hydrates from club_members. Until
+            // it lands, normaliseRole reads it as 'player' and the panel would
+            // show one row and then pop three more in underneath. The skeleton
+            // holds instead.
+            roleReady={!loadingContext}
             onBuyDiamonds={() => navigate(`/vip`)}
-            onMintChips={() => setAction('mint')}
+            // Dan 2026-08-23: clicking Club Bank opens the Club Bank Cashier.
+            // It opens the SAME modal here as it does in the lobby - an earlier
+            // version routed to this page's own distribute tab, which meant the
+            // row's own hint ("Tap For The Club Bank Cashier") described
+            // something that did not happen.
+            onOpenClubBank={() => setShowClubBank(true)}
             onOpenBBJ={() => clubId && navigate(`/clubs/${clubId}/jackpot`)}
           />
           {/* "Get Chips" (diamonds -> chips) REMOVED 2026-08-19.
@@ -1679,6 +1704,17 @@ export default function CashierPage() {
               every application role, so this was the last of three layers.
               Do not reinstate without an explicit product decision. */}
         </div>
+      )}
+
+      {/* Club Bank Cashier — the same modal the lobby opens. Role-gated inside,
+          and gated again by fn_can_use_club_bank on every read and write. */}
+      {clubId && (
+        <ClubBankCashierModal
+          isOpen={showClubBank}
+          onClose={() => setShowClubBank(false)}
+          clubId={clubId}
+          role={userRole}
+        />
       )}
 
       {/* Action Tabs */}

@@ -262,7 +262,7 @@
   font-family: 'Exo 2', sans-serif;
   font-size: 0.95rem;
   line-height: 1.6;
-  text-transform: none; /* Keep answer text normal casing for readability */
+  text-transform: capitalize; /* User requested every word on page to be capitalized */
 }
 
 /* ── Empty State ── */

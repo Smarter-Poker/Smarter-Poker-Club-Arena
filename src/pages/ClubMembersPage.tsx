@@ -389,7 +389,7 @@ export default function ClubMembersPage() {
   const { user } = useAuthUser();
   const toast = useToast();
   const isMountedRef = useIsMounted();
-  useVisibilityRefresh(() => loadMembers());
+  // useVisibilityRefresh(() => loadMembers()); // Disabled per request
 
   const [members, setMembers] = useState<ClubMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -457,7 +457,9 @@ export default function ClubMembersPage() {
           () =>
             supabase
               .from('club_members')
-              .select('user_id, role, chip_balance, joined_at, parent_agent_id')
+              .select(
+                'user_id, role, chip_balance, joined_at, parent_agent_id, profiles(id, username, display_name, arena_avatar_url)'
+              )
               .eq('club_id', resolvedId)
               .not('status', 'in', '("banned","suspended")')
               .order('joined_at', { ascending: true })
@@ -468,42 +470,21 @@ export default function ClubMembersPage() {
 
         if (getIsMounted && !getIsMounted()) return;
         if (!error && data) {
-          // Batch-fetch profiles (no FK between club_members → profiles)
-          const userIds = data.map((m: any) => m.user_id);
-          const profileMap: Record<string, any> = {};
-          if (userIds.length > 0) {
-            const chunkSize = 30;
-            for (let i = 0; i < userIds.length; i += chunkSize) {
-              const chunk = userIds.slice(i, i + chunkSize);
-              const { data: profiles, error: profileErr } = await supabase
-                .from('profiles')
-                .select('id, username, display_name, avatar_url:arena_avatar_url')
-                .in('id', chunk);
-              if (profileErr) console.error('Profiles error:', profileErr);
-              if (profiles) {
-                for (const p of profiles) profileMap[p.id] = p;
-              }
-            }
-          }
-          const mapped = data.map((m: any) => ({
-            id: m.user_id,
-            user_id: m.user_id,
-            /**
-             * Dan 2026-08-19: `profiles.username` is forced lowercase by the
-             * trg_normalize_username trigger, which is why the roster read as a
-             * wall of "semibluff sal" / "tulsajeff". display_name is the real
-             * display field and carries the intended capitalisation.
-             */
-            username:
-              profileMap[m.user_id]?.display_name || profileMap[m.user_id]?.username || 'Unknown',
-            avatar_url: profileMap[m.user_id]?.avatar_url,
-            role: normaliseRole(m.role),
-            chip_balance: m.chip_balance || 0,
-            joined_at: m.joined_at,
-            is_online: false, // mapped via membersWithStatus useMemo
-            last_active: undefined,
-            parent_agent_id: m.parent_agent_id,
-          }));
+          const mapped = data.map((m: any) => {
+            const profile = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles;
+            return {
+              id: m.user_id,
+              user_id: m.user_id,
+              username: profile?.display_name || profile?.username || 'Unknown',
+              avatar_url: profile?.arena_avatar_url,
+              role: normaliseRole(m.role),
+              chip_balance: m.chip_balance || 0,
+              joined_at: m.joined_at,
+              is_online: false,
+              last_active: undefined,
+              parent_agent_id: m.parent_agent_id,
+            };
+          });
           setMembers(mapped);
 
           // Save to SWR cache (lightweight: just top-level fields)
@@ -555,21 +536,12 @@ export default function ClubMembersPage() {
 
   // Subscribe to bus-level events for cross-component sync
   useMasterBusSubscriptions(
-    [
-      'CLUB_JOINED',
-      'CLUB_LEFT',
-      'BALANCE_UPDATED',
-      'CHIPS_ADDED',
-      'CHIPS_WITHDRAWN',
-      'CHIPS_DISTRIBUTED',
-      'CASHOUT_APPROVED',
-    ],
+    ['CLUB_JOINED', 'CLUB_LEFT'],
     () => {
+      // We only reload on join/left to ensure the list is structurally correct
+      // chip balance updates are handled by the realtime table subscription below
       if (!clubId) return;
-      setIsRefreshing(true);
-      loadMembers(() => true).finally(() => {
-        setIsRefreshing(false);
-      });
+      // loadMembers() disabled per request for performance
     },
     { debounce: 500 }
   );
@@ -577,12 +549,7 @@ export default function ClubMembersPage() {
   useMasterBusSubscription(
     'CLUB_UPDATED',
     (payload: any) => {
-      if (!clubId || !payload?.clubId || payload.clubId === clubId) {
-        setIsRefreshing(true);
-        loadMembers(() => true).finally(() => {
-          setIsRefreshing(false);
-        });
-      }
+      // Auto-refresh disabled per request
     },
     { debounce: 500 }
   );
@@ -618,7 +585,7 @@ export default function ClubMembersPage() {
           setMembers((prev) => {
             const idx = prev.findIndex((m) => m.user_id === newRec.user_id);
             if (idx === -1) {
-              setTimeout(() => loadMembers(() => true), 100);
+              // We ignore INSERTs for now to avoid auto-refreshing the page
               return prev;
             }
             const next = [...prev];
@@ -632,7 +599,7 @@ export default function ClubMembersPage() {
           });
         }
       } else {
-        setTimeout(() => loadMembers(() => true), 100);
+        // Auto-refresh disabled for INSERT events
       }
     },
     enabled: !!resolvedClubId,

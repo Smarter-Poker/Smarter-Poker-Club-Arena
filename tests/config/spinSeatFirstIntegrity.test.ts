@@ -66,12 +66,45 @@ describe('horses take seats, not just places on a list', () => {
 
   it('never takes a horse out of a game it is already in', () => {
     const pick = recurring.slice(
-      recurring.indexOf('private async pickFreeHorse'),
+      recurring.indexOf('private async pickFreeHorses'),
       recurring.indexOf('private async createSpin')
     );
     expect(pick).toMatch(/tournament_players/);
     expect(pick).toMatch(/table_seats/);
     expect(pick).toMatch(/is_horse/);
+  });
+
+  it('reads the busy set ONCE per call, not once per horse', () => {
+    /**
+     * The first version answered with a single horse, so seating a Spin called
+     * it twice and a top-up called it once per empty seat - each call scanning
+     * up to 2,000 tournament_players, 2,000 table_seats and 400 profiles.
+     * GameServer's discovery pass runs every FIVE SECONDS across every
+     * past-start short tournament, and this database had already been
+     * saturated once that day. Batching is not a micro-optimisation here.
+     */
+    expect(recurring).toMatch(/private async pickFreeHorses\(count: number\): Promise<string\[\]>/);
+    // The singular form must be gone, or a caller can quietly reintroduce the
+    // per-horse shape.
+    expect(recurring).not.toMatch(/pickFreeHorse\(\)/);
+
+    const pick = recurring.slice(
+      recurring.indexOf('private async pickFreeHorses'),
+      recurring.indexOf('private async createSpin')
+    );
+    // Exactly one read of each source inside the function.
+    expect((pick.match(/from\('tournament_players'\)/g) || []).length).toBe(1);
+    expect((pick.match(/from\('table_seats'\)/g) || []).length).toBe(1);
+    expect((pick.match(/from\('profiles'\)/g) || []).length).toBe(1);
+  });
+
+  it('both callers batch, so neither loops a query', () => {
+    for (const caller of ['createOpenSeatTable', 'topUpWithHorses']) {
+      const start = recurring.indexOf(caller);
+      expect(start, `${caller} is gone`).toBeGreaterThan(-1);
+      const body = recurring.slice(start, start + 3000);
+      expect(body).toMatch(/pickFreeHorses\(/);
+    }
   });
 });
 

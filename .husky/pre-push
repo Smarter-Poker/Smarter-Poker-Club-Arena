@@ -27,8 +27,58 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     RANGE="$LOCAL_SHA"
     FILES=$(git diff --name-only "$LOCAL_SHA")
   else
-    RANGE="$REMOTE_SHA..$LOCAL_SHA"
-    FILES=$(git diff --name-only "$REMOTE_SHA" "$LOCAL_SHA")
+    # ─────────────────────────────────────────────────────────────────────
+    # THE REMOTE TIP MAY NOT BE IN THIS CLONE, AND THAT IS NORMAL HERE.
+    #
+    # Agents work in worktrees from scripts/agent-workspace.sh and sync with
+    # `git fetch origin main`, which does NOT fetch other branches. Autopilot
+    # meanwhile pushes merge commits onto agent branches to keep them fresh,
+    # so the remote tip of YOUR OWN branch is routinely a commit you have
+    # never seen.
+    #
+    # Until 2026-08-23 the next line ran `git diff` against it with `set -e`
+    # still in force, so the hook died on its first instruction with a bare
+    #
+    #     fatal: bad object 73ea7423e942f8c91ed417fd8f23124f5eefd307
+    #     husky - pre-push script failed (code 128)
+    #
+    # before a single house rule or test had run. The message names nothing,
+    # suggests nothing, and points at no file. It cost a real debugging cycle
+    # to trace to this line.
+    #
+    # The danger is not the wasted time. The obvious way out of an
+    # inscrutable pre-push failure is --no-verify, and every rule below this
+    # point exists because something was lost. A guard whose failure mode
+    # invites its own bypass is worse than no guard.
+    #
+    # So: fetch it, and if it still is not here, check against main instead.
+    # Never die, and never silently check nothing.
+    # ─────────────────────────────────────────────────────────────────────
+    if ! git cat-file -e "${REMOTE_SHA}^{commit}" 2>/dev/null; then
+      git fetch -q "$REMOTE" "$REMOTE_SHA" 2>/dev/null || true
+    fi
+    if git cat-file -e "${REMOTE_SHA}^{commit}" 2>/dev/null; then
+      RANGE="$REMOTE_SHA..$LOCAL_SHA"
+      FILES=$(git diff --name-only "$REMOTE_SHA" "$LOCAL_SHA" 2>/dev/null || true)
+    else
+      BASE=$(git merge-base "$LOCAL_SHA" "$REMOTE/main" 2>/dev/null \
+             || git merge-base "$LOCAL_SHA" main 2>/dev/null || true)
+      if [ -n "$BASE" ]; then
+        echo "[club-arena pre-push] NOTE: the remote tip of this branch"
+        echo "                      ($REMOTE_SHA)"
+        echo "                      is not in this clone, so there is nothing to diff it"
+        echo "                      against. Checking everything since main instead —"
+        echo "                      a WIDER check, never a skipped one."
+        echo "                      (A plain \`git fetch $REMOTE\` brings it in.)"
+        RANGE="$BASE..$LOCAL_SHA"
+        FILES=$(git diff --name-only "$BASE" "$LOCAL_SHA" 2>/dev/null || true)
+      else
+        echo "[club-arena pre-push] NOTE: no common base with main could be found."
+        echo "                      Checking the whole tree rather than nothing."
+        RANGE="$LOCAL_SHA"
+        FILES=$(git ls-files 2>/dev/null || true)
+      fi
+    fi
   fi
 
   # ═══════════════════════════════════════════════════════════════════════

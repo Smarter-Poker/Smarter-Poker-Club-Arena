@@ -51,32 +51,41 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
   const loadBlockedPlayers = async () => {
     setLoading(true);
     try {
+      /* Every column name here was wrong, and had been since this component
+         was written. `user_blocks` is (id, blocker_id, blocked_id, reason,
+         created_at) — there is no blocked_user_id, no blocked_at and no
+         user_id. The select 400'd (42703, then PGRST200 once the columns were
+         right), `if (error) throw error` sent it to the catch, and the blocked
+         list was permanently empty for everyone.
+         The embed also needed fk_user_blocks_blocked_id_profiles, added
+         2026-08-22 — blocker_id had had its FK all along, blocked_id never
+         did. */
       const { data, error } = await supabase
         .from('user_blocks')
         .select(
           `
                     id,
-                    blocked_user_id,
-                    blocked_at,
+                    blocked_id,
+                    created_at,
                     reason,
-                    blocked_user:blocked_user_id(
+                    blocked_user:blocked_id(
                         username,
                         avatar_url:arena_avatar_url
                     )
                 `
         )
-        .eq('user_id', user?.id)
-        .order('blocked_at', { ascending: false });
+        .eq('blocker_id', user?.id)
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
 
       setBlockedPlayers(
         data?.map((b: any) => ({
           id: b.id,
-          blockedUserId: b.blocked_user_id,
+          blockedUserId: b.blocked_id,
           username: b.blocked_user?.username || 'Unknown',
           avatar: b.blocked_user?.avatar_url,
-          blockedAt: new Date(b.blocked_at),
+          blockedAt: new Date(b.created_at),
           reason: b.reason,
         })) || []
       );
@@ -102,7 +111,10 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
         .from('user_blocks')
         .delete()
         .eq('id', player.id)
-        .eq('user_id', user?.id || '')
+        // `user_id` does not exist on this table; the owner column is
+        // blocker_id. The delete 400'd, the rollback fired, and the toast said
+        // "Failed to unblock player" every time — nobody could unblock anyone.
+        .eq('blocker_id', user?.id || '')
     )
       .then(({ error }) => {
         if (error) {

@@ -435,7 +435,9 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                     {Array.from({ length: entry.capacity }).map((_, i) => {
                       const n = i + 1;
                       const taken = seatMap.find((x) => x.seat_number === n);
-                      const mine = Boolean(taken && currentUserId && taken.user_id === currentUserId);
+                      const mine = Boolean(
+                        taken && currentUserId && taken.user_id === currentUserId
+                      );
                       return (
                         <span
                           key={n}

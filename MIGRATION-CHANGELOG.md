@@ -7,7 +7,7 @@
 
 ---
 
-## Cowork session 2026-08-22 (13) — OUTAGE: "no tables load, nothing is playing" was a saturated database, not the client
+## Cowork session 2026-08-22 (14) — OUTAGE: "no tables load, nothing is playing" was a saturated database, not the client
 
 Dan: "NONE OF THE TABLES ARE ACTIVE OR LOADING IN ANY CLUB. It says there are
 active games, but when you go to the lobby and then go to tables, nothing
@@ -106,6 +106,51 @@ statistics at all: `solved_spots_gold` (72 GB), `ca_hand_player_idx`,
 When the symptom is "the page does nothing", measure the database before
 reading React. A plan that reads **zero disk pages and still takes seconds** is
 the signature of a starved instance, and it is invisible from the client.
+## Cowork session 2026-08-22 (13) — the league can finally see the mind (PR #309)
+
+The nightly duplicate-deal league (#271) measures every strategy layer in
+bb/100 — except the one that reads opponents. HorseMind's state is static and
+shared, so every league hand was forced to `mind:false`: observing a synthetic
+hand would have written `league-*` reads into live opponent memory, and since
+session (10), into the DB. V12's board-conditioned ranges and river polish
+therefore shipped validated only by seeded equity-shift tests. This was the
+last structural gap in the handoff's deferred list, and the one the "tuning
+authority" rule depends on.
+
+**The sandbox.** `HorseMind.createSandbox()` builds a spare set of all seven
+state containers (stats, action dedupe, hand flags, both dirty sets, pairs,
+barrel plans); `runInSandbox(sb, fn)` swaps them in, runs the callback, and
+swaps the live set back in a finally. The trick that makes this safe in the
+production process: every `HorseLogic.decide` call is synchronous, and timers,
+persistence flushes and live decisions only run when the event loop yields —
+which it cannot do mid-callback. So live memory and the flush queue are
+unreachable from inside a sandbox, in both directions. Nesting is refused
+rather than silently mixed.
+
+**The league integration.** `playHand` takes an optional sandbox; with one, the
+per-seat `mind` flag is honored instead of forced off. `runMatchup` keeps ONE
+SANDBOX PER PASS for the whole matchup — pass 1 always plays sandbox 1, pass 2
+sandbox 2 — so each pass accumulates a coherent memory of its own seat
+assignment, identical configs evolve identical memories, and the mirror
+invariant survives mind-on play. Two new standing matchups: `v12_ranges_river`
+(full engine vs `v12:false`, both minds on) and `mind_layer` (full engine vs
+`mind:false` — playing with reads vs playing blind).
+
+**Measured before shipping** (1500 duplicate pairs each, the instrument's own
+rule): `mind_layer` +249.3 bb/100 (se 61.7) — the opponent-intelligence layer
+is a four-sigma edge, the largest measured for any layer so far.
+`v12_ranges_river` +36.6 bb/100 (se 46.2) — sign positive, not yet resolved at
+3000 hands; the nightly runs accumulate. Zero illegal actions in both; ~10s of
+CPU per matchup added to the nightly.
+
+**Tests.** 9 new specs in `HorseLeagueSandbox.test.ts`: two-way isolation
+(including restore-on-throw and the nesting refusal), no synthetic id or dirty
+entry ever reaching live state after a full matchup, chip conservation with
+the mind on, zero illegal actions, seed determinism, mirror symmetry, and the
+standing card carrying both sandbox matchups.
+
+**Verified in production:** Hetzner deploy green, restart dip 22:53 UTC. First
+nightly run with the new matchups: 2026-08-23 04:30 UTC.
 
 ---
 
@@ -437,7 +482,7 @@ deleted (zero importers); spinReveal.test.ts updated in the same commit - the
 four V2 surfaces replace DynamicGameCard in lobbySurfaces, and the FORMAT-
 ceiling case retired with the tile it tested. Still open, deliberately: the
 fate of src/pages/club/ClubLobby.tsx (/clubs/:id/lobby) and the legacy
-.club-home__games grid CSS it still uses - port or retire is Dan's call.
+.club-home\_\_games grid CSS it still uses - port or retire is Dan's call.
 
 **Also this session (10 in this file): the DB starvation fix** - see the
 session (9) entry below for sp_prune_hand_state_snapshots.

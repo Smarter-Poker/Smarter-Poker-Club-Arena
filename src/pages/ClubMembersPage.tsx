@@ -53,17 +53,13 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
-import {
-  useMasterBusSubscription,
-  useMasterBusSubscriptions,
-} from '../hooks/useMasterBusSubscription';
+import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useToast } from '../components/common/Toast';
 import { useVirtualScroll } from '../hooks/useVirtualScroll';
 import PageSkeleton from '../components/common/PageSkeleton';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import RoleBadge, { roleColor } from '../components/club/RoleBadge';
-import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { exportToCSV } from '../lib/export';
 import './ClubMembersPage.css';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -228,7 +224,10 @@ export default function ClubMembersPage() {
     [clubId, user?.id, isMountedRef, toast]
   );
 
-  useVisibilityRefresh(() => loadMembers());
+  /* NO REFRESH ON TAB FOCUS. PR #508 ("ClubMembersPage loads instantly and
+     prevents auto-refresh") removed this from the old implementation and it is
+     deliberately not reinstated here: coming back to a tab is not news about
+     the roster, and the reload made the page visibly rebuild for nothing. */
 
   useEffect(() => {
     let mounted = true;
@@ -243,27 +242,21 @@ export default function ClubMembersPage() {
     loadMembers(() => true).finally(() => setIsRefreshing(false));
   }, [loadMembers]);
 
+  /**
+   * STRUCTURAL EVENTS ONLY - who is in the club and what rank they hold.
+   *
+   * The wallet and chip events (BALANCE_UPDATED, CHIPS_ADDED, CHIPS_WITHDRAWN,
+   * CHIPS_DISTRIBUTED, CASHOUT_APPROVED) used to be in this list. They fire
+   * continuously at a live club, and PR #508 removed them for exactly that
+   * reason. Keeping the roster architecture while quietly putting the churn
+   * back would be a silent revert, so they stay out. A stale wallet figure for
+   * a few seconds is a far smaller defect than a list that rebuilds under the
+   * reader's finger, and pull-to-refresh is right there when it matters.
+   */
   useMasterBusSubscriptions(
-    [
-      'CLUB_JOINED',
-      'CLUB_LEFT',
-      'BALANCE_UPDATED',
-      'CHIPS_ADDED',
-      'CHIPS_WITHDRAWN',
-      'CHIPS_DISTRIBUTED',
-      'CASHOUT_APPROVED',
-      'MEMBER_ROLE_CHANGED',
-    ],
+    ['CLUB_JOINED', 'CLUB_LEFT', 'MEMBER_ROLE_CHANGED'],
     () => {
       if (clubId) refresh();
-    },
-    { debounce: 500 }
-  );
-
-  useMasterBusSubscription(
-    'CLUB_UPDATED',
-    (payload: any) => {
-      if (!clubId || !payload?.clubId || payload.clubId === clubId) refresh();
     },
     { debounce: 500 }
   );
@@ -279,7 +272,11 @@ export default function ClubMembersPage() {
     filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
     event: '*',
     onPayload: (payload) => {
-      if (payload) refresh();
+      /* INSERT/DELETE only. An UPDATE on club_members is nearly always a
+         chip_balance tick, and refetching on those is the auto-refresh PR #508
+         removed. A row appearing or leaving genuinely changes the roster. */
+      const kind = (payload as { eventType?: string } | null)?.eventType;
+      if (kind === 'INSERT' || kind === 'DELETE') refresh();
     },
     enabled: !!resolvedClubId,
   });

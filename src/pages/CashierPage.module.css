@@ -62,7 +62,11 @@
 
 .tabActive {
   color: #fff;
-  background: linear-gradient(135deg, rgba(24, 119, 242, 0.2) 0%, rgba(24, 119, 242, 0.08) 100%);
+  background: linear-gradient(180deg, rgba(24, 119, 242, 0.2) 0%, rgba(10, 93, 194, 0.1) 100%);
+  border: 1px solid #1877f2;
+  box-shadow:
+    0 0 12px rgba(24, 119, 242, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
   box-shadow:
     0 0 12px rgba(24, 119, 242, 0.15),
     inset 0 -2px 0 #1877f2;
@@ -93,7 +97,7 @@
 .quickLinkWarning {
   background: rgba(255, 184, 0, 0.1);
   border: 1px solid rgba(255, 184, 0, 0.25);
-  color: #ffb800;
+  color: #6fdcff;
 }
 
 .quickLinkDanger {
@@ -375,7 +379,7 @@
 .messageInfo {
   background: rgba(255, 184, 0, 0.08);
   border: 1px solid rgba(255, 184, 0, 0.2);
-  color: #ffb800;
+  color: #6fdcff;
 }
 
 /* ═══ Transfer Preview ═══ */
@@ -411,7 +415,7 @@
 .pendingTitle {
   font-size: 11px;
   font-weight: 700;
-  color: #ffb800;
+  color: #6fdcff;
   text-transform: capitalize;
   letter-spacing: 0.5px;
   margin-bottom: 8px;
@@ -426,7 +430,7 @@
 }
 
 .pendingStatus {
-  color: #ffb800;
+  color: #6fdcff;
   font-size: 12px;
   font-weight: 600;
 }
@@ -504,7 +508,7 @@
 
 .escrowCheckAmber {
   background: rgba(255, 184, 0, 0.12);
-  color: #ffb800;
+  color: #6fdcff;
   animation: checkPulse 2s ease-in-out infinite;
 }
 
@@ -1012,7 +1016,7 @@
 .confirmTitle {
   font-size: 16px;
   font-weight: 800;
-  color: #ffb800;
+  color: #6fdcff;
   margin: 0 0 16px;
   text-align: center;
 }

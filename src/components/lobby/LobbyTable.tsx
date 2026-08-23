@@ -132,7 +132,7 @@ function LiveCountdown({ time }: { time: string | number | Date }) {
   }, [time]);
 
   if (isNaN(mins) || mins <= 0 || mins > 60) return null;
-  return <span className="lt-countdown" style={{ fontSize: '0.65rem', color: '#f59e0b', fontWeight: 700, marginRight: '8px', letterSpacing: '0.02em' }}>Starts In {mins} Min...</span>;
+  return <span className="lt-countdown" style={{ fontSize: '0.65rem', color: 'var(--text-secondary, #c8ccd4)', fontWeight: 700, marginRight: '8px', letterSpacing: '0.02em' }}>Starts In {mins} Min...</span>;
 }
 
 export function LobbyStatusBadge({ status, label }: { status: LobbyStatusKey; label: string }) {

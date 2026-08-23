@@ -13,9 +13,19 @@
  * 20260821), which owns ALL of the law server-side:
  *   - rate locked at 1 diamond = 100 chips;
  *   - diamonds burned through the whitelisted deduct_diamonds();
- *   - standalone club  -> owner/admin mints into clubs.chip_pool;
+ *   - standalone club  -> owner/co_owner/admin mints into the CLUB BANK
+ *     (clubs.chip_treasury, migration 20260823170000);
  *   - club in a union  -> mint REVOKED unless the caller owns/administers the
  *     union, in which case chips land in union_wallets.chip_balance.
+ *
+ * Dan 2026-08-23: the only entry point is inside the Club Bank Cashier. It
+ * used to be a "+" on the wallet panel, which put a money-creation control one
+ * tap from a balance on every owner's lobby, and offered it on union clubs
+ * where the server could only ever refuse it. Minting is a Club Bank action.
+ *
+ * The standalone mint credits clubs.chip_treasury, NOT clubs.chip_pool. Those
+ * were two different accounts and the panel only ever showed the first, so
+ * "mint inside your Club Bank" would have moved a figure nobody could see.
  */
 
 import { useEffect, useState } from 'react';
@@ -123,7 +133,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
         club.owner_id === user.id || ['owner', 'co_owner', 'admin'].includes(role);
       setTarget(
         mayMint
-          ? { state: 'club', clubUuid: uuid, label: `${club.name || 'Club'} Pool` }
+          ? { state: 'club', clubUuid: uuid, label: `${club.name || 'Club'} Bank` }
           : { state: 'denied', label: 'Only A Club Owner Or Admin May Mint' }
       );
     })();
@@ -164,7 +174,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
       setBalance(Number(res.diamonds_after) || 0);
       toast?.success?.(
         `Minted ${fmt(Number(res.chips) || chips)} Chips Into The ${
-          res.scope === 'union' ? 'Union Bank' : 'Club Pool'
+          res.scope === 'union' ? 'Union Bank' : 'Club Bank'
         }`
       );
       masterBus.emit('BALANCE_UPDATED', { source: 'chip_mint', userId: user?.id || '' });

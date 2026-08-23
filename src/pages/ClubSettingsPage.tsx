@@ -1254,7 +1254,7 @@ export default function ClubSettingsPage() {
         {/* Spins — the owner's switch and the wallet behind it.
             Placed here, after Buy-In Limits, because it is the only other
             setting on this page that commits the club's own money. */}
-        {clubId && <SpinActivationPanel clubId={clubId} canManage={isOwner} />}
+        {clubId && <SpinActivationPanel clubId={clubId} />}
 
         {/* Audit Log — visible to anyone the audit_trail RLS lets read it:
             the owner, plus club admins/agents via is_club_admin(). It was

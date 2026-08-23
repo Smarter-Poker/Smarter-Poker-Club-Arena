@@ -20,6 +20,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { fmt, timeAgo } from '../utils/format';
 import { SettlementService } from '../services/SettlementService';
 import UnionWalletModal, { type UnionWalletKey } from '../components/union/UnionWalletModal';
+import SpinActivationPanel from '../components/club/SpinActivationPanel';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import { getUnionLevel } from '../utils/clubLevels';
 import { reportError } from '../utils/errorReporter';
@@ -2437,6 +2438,24 @@ export default function UnionDashboardPage() {
 
         {tab === 'settings' && (
           <div className="admin-tab-content">
+            {/* SPINS - the union half of the owner menu.
+                A union OWNS the Spin wallet for every club inside it
+                (fn_spin_reserve_owner resolves COALESCE(clubs.union_id,
+                club_id)), so this is the only place its lead can switch Spins
+                on, choose the stake and seed the wallet. Passing the union's
+                own id is correct and deliberate: it resolves through the same
+                owner lookup as a club id and lands on the union's pool.
+
+                Rendered for every admin, not just isLead. The panel asks the
+                route who may act and shows a read-only view to anyone else -
+                a union admin should be able to SEE where the multiplier money
+                comes from without being able to spend it. */}
+            {unionId && (
+              <div className="admin-card" style={{ padding: '20px', marginBottom: '16px' }}>
+                <SpinActivationPanel clubId={unionId} />
+              </div>
+            )}
+
             {isLead ? (
               <div className="admin-card" style={{ padding: '20px' }}>
                 <h3 className="admin-card-title">Union Settings</h3>

@@ -923,7 +923,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * A reconnect (WS onConnect -> heartbeat) cancels it just as fast.
    */
   public notifyTransportDisconnect(userId: string): void {
-    this.disconnectEngine.markDisconnected(this.tableId, userId);
+    // 2026-08-22: markTransportGone, not markDisconnected. The socket dying is
+    // not the player leaving — their HTTP heartbeat is a second transport, and
+    // concluding on the first one alone fired a disconnect banner, a sound and
+    // a haptic buzz at players who never went anywhere.
+    this.disconnectEngine.markTransportGone(this.tableId, userId);
   }
 
   /**

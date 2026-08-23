@@ -260,6 +260,11 @@
   align-items: center;
   gap: 1rem;
   margin-top: 0.75rem;
+  /* Mobile-fit sweep (2026-08-22): stakes + player count + three buttons in
+     one non-wrapping row measured 402px at a 375px viewport — the Replay
+     button ran off the felt edge. Wrapping is the social-page behaviour: the
+     buttons drop to their own line instead of leaving the screen. */
+  flex-wrap: wrap;
 }
 
 .stakes {

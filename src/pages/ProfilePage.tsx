@@ -259,6 +259,21 @@ export default function ProfilePage() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [visibleStats, setVisibleStats] = useState<Set<number>>(new Set());
 
+  /* Mobile-fit sweep (2026-08-22): three 120px gauges plus gaps and padding
+     measured 429px inside a 375px viewport — the Win Rate gauge ran off the
+     right edge. The gauge's size is an SVG attribute, so CSS cannot shrink
+     it; the social-page answer is that the content itself scales down to fit
+     one screen. 92px x 3 + gaps + padding = 340px, inside every phone. */
+  const [gaugeSize, setGaugeSize] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 480px)').matches ? 92 : 120
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 480px)');
+    const apply = () => setGaugeSize(mq.matches ? 92 : 120);
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
+
   // Stat stagger animation
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -1103,6 +1118,7 @@ export default function ProfilePage() {
                     label="VPIP"
                     sublabel="Volun. Put In Pot"
                     accent="#00d4ff"
+                    size={gaugeSize}
                   />
                 </div>
                 <div
@@ -1113,6 +1129,7 @@ export default function ProfilePage() {
                     label="PFR"
                     sublabel="Pre-Flop Raise"
                     accent="#fbbf24"
+                    size={gaugeSize}
                   />
                 </div>
                 <div
@@ -1123,6 +1140,7 @@ export default function ProfilePage() {
                     label="Win Rate"
                     sublabel="Hands Won"
                     accent="#10b981"
+                    size={gaugeSize}
                   />
                 </div>
               </div>

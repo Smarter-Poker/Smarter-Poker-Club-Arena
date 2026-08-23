@@ -328,12 +328,23 @@ export default function CarouselSection({
              neighbour beside the centre, so the strip read as a single card
              even though three were mounted and swiping worked.
 
-             Three across, at full spacing so they sit side by side instead of
-             tucking under one another, and a gentle edge scale so the outer
-             two are plainly there rather than shrunken afterthoughts. */
+             Three across, side by side rather than tucked under one another.
+
+             Dan 2026-08-22: "IT SHOULD SHOW 1-3 CARDS ON THE PAGE, WITH THE
+             CARD IN THE MIDDLE THE LARGEST."
+
+             0.9 was too gentle to read as a hierarchy - a 10% difference seen
+             across a gap is invisible, so the three looked like equals and
+             nothing drew the eye to the middle. 0.8 is plainly a step down
+             while still leaving the neighbours' names and stats legible.
+
+             Spacing drops to 0.94 to match: the neighbours are narrower now,
+             so full spacing would open a gap where the shrink already made
+             one. 0.94 stays above (1 + 0.8) / 2 = 0.9, the point below which a
+             neighbour would start to overlap the centre card. */
           visibleCards={3}
-          spacingRatio={1.0}
-          edgeScale={0.9}
+          spacingRatio={0.94}
+          edgeScale={0.8}
           initialIndex={initialIndex}
           renderItem={renderClubCard}
         />

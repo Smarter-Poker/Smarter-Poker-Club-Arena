@@ -244,9 +244,23 @@ export function Carousel<T>({
   /**
    * Card width.
    *
-   * `visibleCards` divides the track so that many cards fit; the +0.5 leaves
-   * roughly half a card of margin so the outer two are clearly framed rather
-   * than flush to the edges.
+   * Solved from the composition rather than guessed at. A strip of
+   * `visibleCards` cards, centre at scale 1 and the outer pair at `edgeScale`,
+   * spaced `spacingRatio` of a card apart, occupies exactly
+   *
+   *     span = w * ((visibleCards - 1) * spacingRatio + edgeScale)
+   *
+   * measured outer edge to outer edge - because the outermost card is DRAWN
+   * SCALED, so it contributes `edgeScale * w` of visible width, not `w`. Set
+   * span = trackWidth and the width falls out.
+   *
+   * The old rule was `trackWidth / (visibleCards + 0.5)`, a divisor that knew
+   * nothing about either scale or spacing. At three-up it reserved a phantom
+   * half-card of margin that the scale falloff had already paid for, so the
+   * cards came out ~30% narrower than the stage they sat in and the lobby read
+   * as three small cards adrift in a wide empty band. Dan 2026-08-22: "IT
+   * SHOULD SHOW 1-3 CARDS ON THE PAGE, WITH THE CARD IN THE MIDDLE THE
+   * LARGEST."
    *
    * Below NARROW_TRACK_PX there is not enough room for three readable club
    * cards - a phone would get three ~110px slivers - so it falls back to a
@@ -259,16 +273,23 @@ export function Carousel<T>({
       ? Math.min(visibleCards, 1.6)
       : visibleCards;
 
+  /* Guarded at 1: a divisor below one would make a card WIDER than its own
+     track, which is how a "make them bigger" tweak becomes overflow. */
+  const spanDivisor = effectiveVisible
+    ? Math.max(1, (effectiveVisible - 1) * spacingRatio + edgeScale)
+    : 0;
+
   const resolvedItemWidth =
     itemWidth ??
     (trackWidth > 0
       ? effectiveVisible
-        ? Math.min(420, Math.max(190, trackWidth / (effectiveVisible + 0.5)))
+        ? Math.min(420, Math.max(190, trackWidth / spanDivisor))
         : Math.min(300, Math.max(200, trackWidth * 0.55))
       : 300);
-  /* 0.88 leaves the neighbours clearly readable with only a slight tuck under
-     the centre card. The 3D engine can pack tighter because depth and scale do
-     the separating; flat cards carrying a club name and live stats cannot. */
+  /* Adjacent centres sit `spacingRatio` of a card apart. Anything below
+     (1 + edgeScale) / 2 makes a neighbour physically overlap the centre card,
+     which flat cards carrying a club name and live stats cannot survive - the
+     3D engine can pack tighter only because depth does the separating. */
   const step = spacing ?? resolvedItemWidth * spacingRatio;
 
   /* Keep a ref alongside the state. The animation loop and the pointer
@@ -528,6 +549,40 @@ export function Carousel<T>({
    * children React now leaves alone.
    */
   const renderedRef = useRef(new Map<string, { active: boolean; node: ReactNode }>());
+
+  /* -- THE CACHE MUST DIE WHEN renderItem DOES (Dan 2026-08-22) -------------
+     Bug this fixes: LEVEL read 1 and ACTIVE read 0 on every club and union
+     card, permanently, while MEMBERS was correct.
+
+     Nothing was wrong with the data. clubs.member_count was 588, the ladder
+     puts that at level 29, and fn_batch_active_player_counts returned 112 -
+     all verified against production. The card simply never showed them,
+     because the cache below is a plain ref keyed on identity ALONE. The
+     lobby's first paint happens BEFORE the stats query resolves, so it renders
+     the `?? 1` / `?? 0` fallbacks in CarouselSection, and THAT node is what got
+     stored. A second later the stats land, `clubStats` changes, `renderItem`
+     gets a new identity - and `renderCard` handed back the frozen node anyway.
+     The 20-second poll then re-fetched correct numbers forever and could not
+     put a single one of them on screen. MEMBERS looked fine only because ITS
+     fallback (club.member_count, already loaded) was already the right answer.
+
+     A cache keyed on less than its inputs is not a cache, it is a snapshot. So
+     drop everything the moment the render function itself changes. This costs
+     nothing the cache was bought for: `renderItem` is memoised by its caller
+     and changes only when the DATA changes (a few times per page), never per
+     frame. The drag path - `visible` recomputing 60 times a second with a
+     stable `renderItem` - still hits the cache every time.
+
+     Done in the render body rather than in an effect ON PURPOSE: an effect runs
+     AFTER this render is already committed with stale children, so the new
+     numbers would be a frame late and would only appear at all if something
+     else re-rendered afterwards. */
+  const lastRenderItemRef = useRef(renderItem);
+  if (lastRenderItemRef.current !== renderItem) {
+    lastRenderItemRef.current = renderItem;
+    renderedRef.current.clear();
+  }
+
   const renderCard = useCallback(
     (item: T, index: number, isActive: boolean): ReactNode => {
       const key = getKey(item, index);

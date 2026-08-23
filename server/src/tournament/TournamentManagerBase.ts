@@ -27,6 +27,7 @@ import { reportError } from '../services/errorReporter.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
+import { startFloorFor, effectivePrizePool } from './startRules.js';
 import type { GameServer } from '../GameServer.js';
 
 export abstract class TournamentManagerBase {
@@ -469,7 +470,12 @@ export abstract class TournamentManagerBase {
         .eq('tournament_id', this.tournamentId)
         .in('status', ['registered', 'playing']);
 
-      if ((regCount || 0) < 3) {
+      // Heads-Up SNGs (2-seat, 2026-08-22 parity) are FULL at two players —
+      // the historical hard floor of 3 held every duel in REGISTERING forever
+      // (see startRules.ts for the incident). The floor is now min(3,
+      // max_players), never below 2.
+      const startFloor = startFloorFor(tournament.max_players);
+      if ((regCount || 0) < startFloor) {
         /**
          * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
          *
@@ -481,7 +487,7 @@ export abstract class TournamentManagerBase {
          * scheduled game disappears from the lobby.
          */
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Only ${regCount} player(s) — standing down so the field can be filled (NOT cancelling)`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Only ${regCount} player(s) of the ${startFloor} needed — standing down so the field can be filled (NOT cancelling)`
         );
         this.running = false;
         return;
@@ -900,6 +906,43 @@ export abstract class TournamentManagerBase {
         console.log(
           `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reveal broadcast — ${revealMultiplier}x, dealing held ${spinRevealToDealMs()}ms`
         );
+      }
+
+      // ── GUARANTEE, no-late-reg case (2026-08-23) ──
+      // An event with no late registration takes its last entry before this
+      // line, so the pool it holds now is the pool it dies with — apply the
+      // advertised guarantee here and finalize. Events WITH late reg are
+      // bumped at finalization instead, where the pool truly stops moving.
+      // Scheduler-spawned events accrue per-entry through the register RPCs
+      // and nothing else ever applied guaranteed_prize (the old recurring
+      // service pre-applied it at creation, which is why this was never seen
+      // before the 2026-08-22 data-driven schedules).
+      {
+        const lateRegCap = Number(
+          tournament.late_reg_levels ?? tournament.rebuy_levels ?? 0
+        );
+        const gtd = Number(tournament.guaranteed_prize) || 0;
+        if (lateRegCap <= 0 && gtd > 0 && !this.prizePoolFinalized) {
+          const { data: poolRow } = await supabase
+            .from('tournaments')
+            .select('prize_pool')
+            .eq('id', this.tournamentId)
+            .maybeSingle(); // FIX 168
+          const poolNow = Number(poolRow?.prize_pool) || 0;
+          const finalPool = effectivePrizePool(poolNow, gtd);
+          if (finalPool > poolNow) {
+            await supabase
+              .from('tournaments')
+              .update({ prize_pool: finalPool, prize_pool_finalized: true } as any)
+              .eq('id', this.tournamentId);
+            tournament.prize_pool = finalPool;
+            if (this.tournamentCache) this.tournamentCache.prize_pool = finalPool;
+            this.prizePoolFinalized = true;
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Guarantee applied at start: pool ${poolNow} -> ${finalPool}`
+            );
+          }
+        }
       }
 
       // Set tournament to RUNNING
@@ -1904,24 +1947,31 @@ export abstract class TournamentManagerBase {
             this.prizePoolFinalized = true;
             const { data: freshT } = await supabase
               .from('tournaments')
-              .select('prize_pool')
+              .select('prize_pool, guaranteed_prize')
               .eq('id', this.tournamentId)
               .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
+            // GUARANTEE (2026-08-23): the pool stops moving here, so this is
+            // where the advertised guarantee becomes real money. Writing the
+            // max back to prize_pool keeps every reader — payouts, lobby,
+            // fn_tournament_payout_reconcile — agreeing on one number.
+            const finalPool = freshT
+              ? effectivePrizePool(freshT.prize_pool, freshT.guaranteed_prize)
+              : 0;
             if (freshT) {
               await supabase
                 .from('tournaments')
                 .update({
-                  prize_pool: freshT.prize_pool,
+                  prize_pool: finalPool,
                   prize_pool_finalized: true,
                 } as any)
                 .eq('id', this.tournamentId);
               console.log(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Late reg/rebuy closed at level ${this.currentLevel} — prize pool finalized: ${freshT.prize_pool}`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Late reg/rebuy closed at level ${this.currentLevel} — prize pool finalized: ${finalPool}`
               );
             }
-            await this.broadcast('late_reg_closed', { prizePool: freshT?.prize_pool || 0 });
+            await this.broadcast('late_reg_closed', { prizePool: finalPool });
             if (freshT) {
-              await this.recalculateEliminatedPrizes(freshT.prize_pool);
+              await this.recalculateEliminatedPrizes(finalPool);
             }
           }
         }
@@ -2150,19 +2200,22 @@ export abstract class TournamentManagerBase {
     this.prizePoolFinalized = true;
     const { data: freshT } = await supabase
       .from('tournaments')
-      .select('prize_pool')
+      .select('prize_pool, guaranteed_prize')
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
     if (freshT) {
+      // GUARANTEE (2026-08-23): same rule as the late-reg-close site — the
+      // pool is final now, so the advertised guarantee is applied here.
+      const finalPool = effectivePrizePool(freshT.prize_pool, freshT.guaranteed_prize);
       await supabase
         .from('tournaments')
         .update({
-          prize_pool: freshT.prize_pool,
+          prize_pool: finalPool,
           prize_pool_finalized: true,
         } as any)
         .eq('id', this.tournamentId);
 
-      await this.recalculateEliminatedPrizes(freshT.prize_pool);
+      await this.recalculateEliminatedPrizes(finalPool);
     }
 
     await this.broadcast('ADDON_PERIOD_END', {});

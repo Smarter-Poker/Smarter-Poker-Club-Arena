@@ -460,7 +460,23 @@ export class TournamentManager extends TournamentManagerEliminations {
     const ranked = finishers ?? [];
     if (ranked.length === 0) return;
 
-    const seats = ticketCost > 0 ? Math.floor(pool / ticketCost) : 0;
+    // 2026-08-23 parity follow-up: satellite_seats is the ADVERTISED seat
+    // count and wins when set (the 2026-08-22 template stores it; the Sunday
+    // Major Satellite promises 5). floor(pool / ticket) remains the fallback
+    // for legacy satellites created before the column existed. With no open
+    // target (ticketCost 0) seats stay 0 so the whole pool falls through to
+    // the cash path below — advertised seats into a vanished target would
+    // otherwise pay nothing at all.
+    const configuredSeats = Math.max(
+      0,
+      Math.floor(Number((tournament as { satellite_seats?: unknown })?.satellite_seats) || 0)
+    );
+    const seats =
+      ticketCost > 0
+        ? configuredSeats > 0
+          ? configuredSeats
+          : Math.floor(pool / ticketCost)
+        : 0;
     const awardCount = Math.min(seats, ranked.length);
     const remainder = Math.round((pool - awardCount * ticketCost) * 100) / 100;
 

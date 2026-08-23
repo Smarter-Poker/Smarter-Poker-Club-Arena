@@ -948,6 +948,22 @@ export class ScheduledTournamentService {
       if (old[col] !== undefined) row[col] = old[col];
     }
 
+    // A legacy instance can carry a pre-floor fee split (e.g. 22+3 = 12%)
+    // that tournaments_rake_within_10_pct now rejects on INSERT — the clone
+    // would fail on every poll for 24 hours. Re-cut the fee from the same
+    // player-paid total (floor 10%, splitBuyIn's arithmetic without the
+    // ladder snap — a manual event keeps its price). Compliant splits,
+    // including every spin's fee-free 0, pass through untouched.
+    {
+      const amt = Number(row.buy_in_amount) || 0;
+      const fee = Number(row.buy_in_fee) || 0;
+      const cap = Math.floor((amt + fee) * 0.1 + 1e-9);
+      if (fee > cap) {
+        row.buy_in_amount = amt + fee - cap;
+        row.buy_in_fee = cap;
+      }
+    }
+
     const { data: created, error: insertErr } = await supabase
       .from('tournaments')
       .insert(row)

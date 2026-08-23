@@ -134,16 +134,21 @@ describe('nothing renders itself invisible', () => {
 
 describe('the cosmetic backlog only ever shrinks', () => {
   /**
-   * The remaining references animate something that is already visible, so a
-   * dead name costs a transition rather than the whole page. They are real
-   * though, and this pins the count so the number cannot grow: a new one fails
-   * here, and fixing one requires lowering the baseline in the same commit.
-   * Same rule the cron governance check uses in the World Hub.
+   * These 40 animated something that was already visible, so a dead name cost
+   * a transition rather than a whole page — which is why they survived the
+   * first pass with a baseline instead of a fix. The baseline is zero now: all
+   * fourteen distinct names were given real definitions in
+   * src/styles/animations.css and all forty references repointed at them.
+   *
+   * Kept as its own assertion rather than folded into the one above, because
+   * the two failures mean different things: that one says a page is BLANK,
+   * this one says an animation is silently dead. Both should be zero; only one
+   * of them is an outage.
    */
-  const BASELINE = 40;
+  const BASELINE = 0;
 
-  it(`has no more than ${BASELINE} unreachable cosmetic animations`, () => {
-    const cosmetic = refs.filter((r) => !r.hidden);
-    expect(cosmetic.length).toBeLessThanOrEqual(BASELINE);
+  it('leaves no unreachable animation name anywhere in src, visible or not', () => {
+    const cosmetic = refs.filter((r) => !r.hidden).map((r) => `${r.file}:${r.line} -> ${r.name}`);
+    expect(cosmetic).toEqual([]);
   });
 });

@@ -43,7 +43,7 @@ export default function ProfitChart({ transactions }: ProfitChartProps) {
             fontSize: '2rem',
             opacity: 0.3,
             marginBottom: 8,
-            animation: 'profitChartPulse 3s ease-in-out infinite',
+            animation: 'animationsProfitChartPulse 3s ease-in-out infinite',
           }}
         >
           ▦

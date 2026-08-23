@@ -216,7 +216,7 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
             color: '#fff',
             fontSize: '0.8rem',
             fontWeight: 600,
-            animation: 'slideInDown 0.3s ease-out',
+            animation: 'animationsSlideInDown 0.3s ease-out',
           }}
         >
           <span style={{ fontWeight: 700 }}>--</span>

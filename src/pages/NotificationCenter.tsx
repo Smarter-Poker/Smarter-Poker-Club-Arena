@@ -255,7 +255,7 @@ export default function NotificationCenter() {
                     height: 40,
                     borderRadius: '50%',
                     background: 'rgba(255,255,255,0.08)',
-                    animation: 'pulse 1.5s ease-in-out infinite',
+                    animation: 'animationsPulse 1.5s ease-in-out infinite',
                   }}
                 />
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -265,7 +265,7 @@ export default function NotificationCenter() {
                       height: 14,
                       borderRadius: 4,
                       background: 'rgba(255,255,255,0.08)',
-                      animation: 'pulse 1.5s ease-in-out infinite',
+                      animation: 'animationsPulse 1.5s ease-in-out infinite',
                     }}
                   />
                   <div
@@ -274,7 +274,7 @@ export default function NotificationCenter() {
                       height: 10,
                       borderRadius: 4,
                       background: 'rgba(255,255,255,0.06)',
-                      animation: 'pulse 1.5s ease-in-out infinite',
+                      animation: 'animationsPulse 1.5s ease-in-out infinite',
                     }}
                   />
                 </div>

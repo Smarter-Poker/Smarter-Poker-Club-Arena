@@ -338,7 +338,7 @@ export default function SearchPage() {
                     height: 44,
                     borderRadius: '50%',
                     background: 'rgba(255,255,255,0.05)',
-                    animation: 'pulse 1.5s infinite',
+                    animation: 'animationsPulse 1.5s infinite',
                   }}
                 />
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -348,7 +348,7 @@ export default function SearchPage() {
                       height: 16,
                       borderRadius: 4,
                       background: 'rgba(255,255,255,0.05)',
-                      animation: 'pulse 1.5s infinite',
+                      animation: 'animationsPulse 1.5s infinite',
                     }}
                   />
                   <div
@@ -357,7 +357,7 @@ export default function SearchPage() {
                       height: 12,
                       borderRadius: 4,
                       background: 'rgba(255,255,255,0.05)',
-                      animation: 'pulse 1.5s infinite',
+                      animation: 'animationsPulse 1.5s infinite',
                     }}
                   />
                 </div>

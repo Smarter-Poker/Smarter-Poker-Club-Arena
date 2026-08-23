@@ -2066,7 +2066,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               height: 56,
               borderRadius: '50%',
               background: 'rgba(255,255,255,0.08)',
-              animation: 'pulse 1.5s ease-in-out infinite',
+              animation: 'animationsPulse 1.5s ease-in-out infinite',
             }}
           />
           <div style={{ flex: 1 }}>
@@ -2077,7 +2077,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 borderRadius: 6,
                 background: 'rgba(255,255,255,0.08)',
                 marginBottom: 8,
-                animation: 'pulse 1.5s ease-in-out infinite',
+                animation: 'animationsPulse 1.5s ease-in-out infinite',
               }}
             />
             <div
@@ -2086,7 +2086,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 height: 14,
                 borderRadius: 4,
                 background: 'rgba(255,255,255,0.06)',
-                animation: 'pulse 1.5s ease-in-out infinite',
+                animation: 'animationsPulse 1.5s ease-in-out infinite',
               }}
             />
           </div>
@@ -2101,7 +2101,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 height: 60,
                 borderRadius: 10,
                 background: 'rgba(255,255,255,0.05)',
-                animation: 'pulse 1.5s ease-in-out infinite',
+                animation: 'animationsPulse 1.5s ease-in-out infinite',
               }}
             />
           ))}
@@ -2115,7 +2115,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               borderRadius: 12,
               background: 'rgba(255,255,255,0.04)',
               marginBottom: 12,
-              animation: 'pulse 1.5s ease-in-out infinite',
+              animation: 'animationsPulse 1.5s ease-in-out infinite',
             }}
           />
         ))}

@@ -1209,7 +1209,6 @@
     "fn_bump_friend_challenge_progress",
     "fn_bump_group_activity_on_reservation",
     "fn_bump_home_group_activity",
-    "fn_bust_player_from_table",
     "fn_ca_club_games",
     "fn_calculate_rakeback",
     "fn_caller_can_moderate_user",

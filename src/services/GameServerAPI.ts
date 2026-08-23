@@ -375,6 +375,55 @@ export async function sendHeartbeat(tableId: string): Promise<ActionResult> {
 }
 
 /**
+ * Dan 2026-08-23: tell the server we are leaving the page or the app.
+ *
+ * Fires from `pagehide`, the last event a browser reliably delivers before it
+ * tears the document down (`unload` does not fire on mobile Safari at all,
+ * and an ordinary fetch started there is cancelled with the document).
+ *
+ * Why this exists when the websocket close already tells the server
+ * something: a socket close is ambiguous, so it only opens an 8s grace window
+ * in case the player is still there on the HTTP heartbeat. This is
+ * unambiguous — the server marks them AWAY immediately and the
+ * one-SB-one-BB cap starts counting. Coming back cancels it for free.
+ *
+ * Uses `fetch(..., { keepalive: true })` rather than `navigator.sendBeacon`
+ * deliberately. sendBeacon cannot set an Authorization header, which would
+ * force the JWT into the request body and force the SERVER's shared auth
+ * helper to learn a second way to receive a token — a change to the one
+ * function guarding every money route, for the benefit of the least
+ * important route on the server. Not a trade worth making. A keepalive fetch
+ * carries the normal Bearer header, is owned by the browser's network stack
+ * once dispatched, and outlives the document exactly like a beacon does.
+ *
+ * Best-effort by design: if it fails, the websocket close still reaches the
+ * server, just 8 seconds later via the transport grace window. Nothing is
+ * lost, the player is simply marked away slightly less promptly.
+ *
+ * Takes the token as an argument rather than awaiting `getAuthHeaders()` —
+ * `pagehide` handlers must be synchronous, and an `await` there means the
+ * request is never dispatched at all.
+ */
+export function sendAwayBeacon(tableId: string, accessToken: string | null): void {
+  if (!tableId || !accessToken) return;
+  try {
+    void fetch(`${GAME_SERVER_URL}/away`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ tableId }),
+      keepalive: true,
+    }).catch(() => {
+      /* the page is going away; there is nobody left to tell */
+    });
+  } catch {
+    /* never let a teardown path throw */
+  }
+}
+
+/**
  * Bible V8 §4.15: Set or clear a pre-action (auto-fold, auto-check, etc.)
  * @param action - Pre-action type or 'clear' to remove
  * @param maxCallAmount - Optional max call amount for auto_call

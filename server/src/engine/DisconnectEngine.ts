@@ -48,6 +48,24 @@ export interface PlayerConnectionState {
   sitOutSince?: number | null;
   /** Hands dealt at this table since the sit-out began (button-pass proxy). */
   sitOutOrbits?: number;
+  /**
+   * Dan 2026-08-23: BLIND CAP WHILE AWAY.
+   * "You can't keep blinding out a player who has disconnected." An away
+   * player at a CASH table may be charged at most one small blind and one
+   * big blind. Once both have been taken they are stood up and cashed out.
+   * Each flag is set the first time that blind is charged while away, and
+   * both are cleared the moment the player proves they are back (heartbeat
+   * reconnect, sit-in, or a voluntary action).
+   */
+  awayBlindSbCharged?: boolean;
+  awayBlindBbCharged?: boolean;
+  /**
+   * Epoch ms the client reported it was leaving the page/app (pagehide, tab
+   * close, app backgrounded past freeze). Treated as away IMMEDIATELY — no
+   * transport grace — because the client is telling us rather than us
+   * inferring it from silence. Cleared on the next heartbeat.
+   */
+  pageLeftAt?: number | null;
   /** Timestamp when disconnect was detected */
   disconnectedAt?: number;
   /** Timestamp when player reconnected (for grace period tracking — Bible V8 §6.3) */
@@ -104,6 +122,23 @@ export class DisconnectEngine {
   /** Sit-out eviction limits (Dan 2026-08-21): button passes, then minutes. */
   static readonly SITOUT_MAX_ORBITS = 2;
   static readonly SITOUT_MAX_MS = 5 * 60 * 1000;
+  /**
+   * Dan 2026-08-23, BINDING: an AWAY player at a cash table pays at most ONE
+   * small blind and ONE big blind, then is removed. Sit-out already costs
+   * nothing (a sat-out cash player is not dealt in at all) — this closes the
+   * other door, the window between "went away" and "auto-sat-out after
+   * `maxConsecutiveTimeouts` strikes", which is the only place a disconnected
+   * player's stack could be ground down.
+   *
+   * How many consecutive action-clock expiries make a CONNECTED player count
+   * as away. Not 1: letting one clock run out is something present players do
+   * — a deep tank, a misclick, a two-second lag spike — and treating it as
+   * absence would start charging blinds against somebody sitting right there.
+   * Two in a row with no voluntary action between them (any action resets the
+   * streak) is nobody home. The third strike force-sits them out anyway, at
+   * which point they stop being dealt in and pay nothing more regardless.
+   */
+  static readonly AFK_AWAY_MIN_STRIKES = 2;
 
   private tableConfigs: Map<string, DisconnectConfig> = new Map();
   private playerStates: Map<string, PlayerConnectionState> = new Map();
@@ -201,6 +236,9 @@ export class DisconnectEngine {
       isSittingOut: false,
       sitOutSince: null,
       sitOutOrbits: 0,
+      awayBlindSbCharged: false,
+      awayBlindBbCharged: false,
+      pageLeftAt: null,
     });
   }
 
@@ -230,10 +268,19 @@ export class DisconnectEngine {
     const wasDisconnected = !state.isConnected;
     state.isConnected = true;
     state.lastHeartbeat = Date.now();
+    // Dan 2026-08-23: a beat is proof the page/app is back. Clear the
+    // page-left flag unconditionally (not only on the wasDisconnected edge) —
+    // a pagehide followed by a resume never opened a disconnect, so there is
+    // no edge to hang the reset on, and a stale flag would keep charging
+    // away-blinds against a player who is sitting right there.
+    state.pageLeftAt = null;
 
     if (wasDisconnected) {
       state.disconnectedAt = undefined;
       state.consecutiveTimeouts = 0;
+      // The blind cap is a budget for ONE absence. They came back — refund it.
+      state.awayBlindSbCharged = false;
+      state.awayBlindBbCharged = false;
       // Bible V8 §6.3: Track reconnect time for grace period (5s before auto-action)
       state.reconnectedAt = Date.now();
 
@@ -419,7 +466,94 @@ export class DisconnectEngine {
   /** A player acted voluntarily — clear their consecutive-timeout streak. */
   recordPlayerActed(tableId: string, playerId: string): void {
     const state = this.playerStates.get(`${tableId}:${playerId}`);
-    if (state) state.consecutiveTimeouts = 0;
+    if (!state) return;
+    state.consecutiveTimeouts = 0;
+    // A deliberate action is the strongest possible proof of presence — it
+    // outranks a missing heartbeat. Clear the away-blind budget with it.
+    state.awayBlindSbCharged = false;
+    state.awayBlindBbCharged = false;
+    state.pageLeftAt = null;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AWAY BLIND CAP (Dan 2026-08-23)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * The client told us it is going away — pagehide, tab close, or the app
+   * being frozen by the OS. Unlike `markTransportGone` this concludes
+   * immediately: silence is ambiguous, but "I am leaving" is not.
+   *
+   * The player keeps their seat. They are simply AWAY, which means the blind
+   * cap now applies to them: one SB + one BB and they are stood up.
+   */
+  markPageLeft(tableId: string, playerId: string): void {
+    const key = `${tableId}:${playerId}`;
+    const state = this.playerStates.get(key);
+    if (!state) return;
+    state.pageLeftAt = Date.now();
+    // Conclude the disconnect now rather than waiting out TRANSPORT_GRACE_MS.
+    this.markDisconnected(tableId, playerId);
+  }
+
+  /**
+   * Is this player AWAY, in the sense Dan defined for the blind cap?
+   *
+   * Three ways in, all of them "the seat is warm but nobody is behind it":
+   *   1. transport gone / heartbeat stale  → `isConnected === false`
+   *   2. connected but not acting (AFK)    → `consecutiveTimeouts >= 2`
+   *   3. client said it is leaving         → `pageLeftAt !== null`
+   *
+   * Deliberately NOT included: a voluntary sit-out. That is a player making a
+   * choice, it costs them nothing (sat-out cash players are never dealt in),
+   * and it already has its own 2-hand / 5-minute eviction rule.
+   */
+  isAway(tableId: string, playerId: string): boolean {
+    const state = this.playerStates.get(`${tableId}:${playerId}`);
+    if (!state) return false;
+    if (state.isSittingOut) return false;
+    if (!state.isConnected) return true;
+    if (state.pageLeftAt != null) return true;
+    return (state.consecutiveTimeouts ?? 0) >= DisconnectEngine.AFK_AWAY_MIN_STRIKES;
+  }
+
+  /**
+   * Record that a blind was taken from a player. A no-op unless they are away
+   * — a present player may be blinded all night, that is poker.
+   *
+   * Idempotent per blind: charging the same blind twice in one absence still
+   * only burns one slot of the two-blind budget, so a re-deal or a hand that
+   * is voided and re-dealt cannot evict somebody early.
+   */
+  noteBlindChargedWhileAway(tableId: string, playerId: string, which: 'sb' | 'bb'): void {
+    if (!this.isAway(tableId, playerId)) return;
+    const state = this.playerStates.get(`${tableId}:${playerId}`);
+    if (!state) return;
+    if (which === 'sb') state.awayBlindSbCharged = true;
+    else state.awayBlindBbCharged = true;
+  }
+
+  /**
+   * Players who have now spent their whole away-blind budget (one SB AND one
+   * BB) and must be stood up and cashed out. Called from the dealing loop
+   * alongside the sit-out eviction sweep, so removal happens between hands.
+   *
+   * The `isAway` re-check is not redundant with the flags. Coming back clears
+   * them, but "coming back" and "the dealing loop sweeping" are two different
+   * clocks: a player whose reconnect lands microseconds after this sweep
+   * starts would otherwise be cashed out of a table they are actively sitting
+   * at. Presence is checked at the moment of the decision, and it wins.
+   */
+  collectAwayBlindEvictions(tableId: string, playerIds: string[]): string[] {
+    const evict: string[] = [];
+    for (const playerId of playerIds) {
+      const state = this.playerStates.get(`${tableId}:${playerId}`);
+      if (!state) continue;
+      if (state.awayBlindSbCharged !== true || state.awayBlindBbCharged !== true) continue;
+      if (!this.isAway(tableId, playerId)) continue;
+      evict.push(playerId);
+    }
+    return evict;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -463,6 +597,13 @@ export class DisconnectEngine {
     state.consecutiveTimeouts = 0;
     state.sitOutSince = null;
     state.sitOutOrbits = 0;
+    // Sitting back in is a return to the game — the away-blind budget resets
+    // with everything else. Without this, a player who went away, paid a
+    // blind, sat out and sat back in would carry the charge into their next
+    // absence and be evicted after a single blind.
+    state.awayBlindSbCharged = false;
+    state.awayBlindBbCharged = false;
+    state.pageLeftAt = null;
 
     this.emitEvent({
       type: 'PLAYER_SAT_BACK',

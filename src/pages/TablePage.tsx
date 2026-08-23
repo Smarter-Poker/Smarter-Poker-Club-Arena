@@ -193,6 +193,7 @@ import GameServerAPI, {
   respondToRIT,
   respondToInsurance,
   sendHeartbeat,
+  sendAwayBeacon,
   setPreAction as serverSetPreAction,
   setSitOut,
   showHand as serverShowHand,
@@ -553,6 +554,17 @@ if (!_win.__pokerLocks) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Dan 2026-08-23: how long the engine socket must be continuously down before
+ * the player is told anything at all.
+ *
+ * Sized against the reconnect ladder in EngineStateClient, not picked by feel.
+ * Its backoff is 1s, 2s, 4s, 8s (+30% jitter), so 15s means the client has
+ * already failed roughly four attempts. Anything shorter announces a retry
+ * that is about to succeed — which is what the old 3s threshold did.
+ */
+const ENGINE_LOSS_TOAST_DELAY_MS = 15_000;
 
 // Props for embedded multi-table mode
 interface TablePageProps {
@@ -1535,30 +1547,77 @@ export default function TablePage({
     const beat = async () => {
       const res = await sendHeartbeat(tableId);
       if (res?.success) {
-        if (warned) {
-          heartbeatToastRef.current?.success?.('Reconnected to the table.');
-          warned = false;
-        }
+        // Silent recovery (Dan 2026-08-23). A "Reconnected" toast is only
+        // reassuring if the player was told something broke - and they no
+        // longer are. On its own it just announces a problem after the fact.
+        warned = false;
         consecutiveMisses = 0;
         return;
       }
       consecutiveMisses += 1;
-      // Three misses is 15s of silence — well before the server's own
-      // disconnect thresholds, so the warning arrives while it still helps.
+      // Dan 2026-08-23: this used to raise its OWN "Connection lost" toast at
+      // 3 misses, which is why one outage produced two separate alarms - this
+      // one and the engine-WS watcher below - on every mounted table at once,
+      // including the ones you were not looking at.
+      //
+      // The heartbeat is the SECOND transport, not the game connection. When
+      // the link is genuinely down the engine socket is down too, and that
+      // watcher is the single voice that speaks. Losing only the heartbeat
+      // while the socket is fine is a partial failure the backoff ladder
+      // handles by itself and the player does not need to hear about it.
+      //
+      // The telemetry stays - that is what it was actually good for.
       if (consecutiveMisses >= 3 && !warned) {
         warned = true;
         reportError(
           new Error(`heartbeat missed ${consecutiveMisses}x`),
           'TablePage.Heartbeat_lost'
         );
-        heartbeatToastRef.current?.error?.(
-          'Connection lost - the server may fold for you. Check your connection.'
-        );
       }
     };
     void beat();
     const heartbeatInterval = setInterval(() => void beat(), 5000);
     return () => clearInterval(heartbeatInterval);
+  }, [tableId, userId]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PAGE-LEAVE BEACON (Dan 2026-08-23)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // "IF THEY JUST LEAVE THE WEBPAGE OR APP" they are away, and the away-blind
+  // cap should start counting immediately rather than after the server infers
+  // it from silence.
+  //
+  // `pagehide` rather than `beforeunload`/`unload`: those never fire on iOS
+  // Safari, and both block the bfcache. pagehide fires in every case that
+  // matters — tab close, navigation away, and the OS freezing a backgrounded
+  // PWA — and does not disqualify the page from being restored.
+  //
+  // The token is read synchronously from localStorage. An `await
+  // supabase.auth.getSession()` here would resolve after the document is
+  // already gone and the request would never leave. A slightly stale token is
+  // fine: the worst case is a 401 on a fire-and-forget beacon, after which
+  // the websocket close marks them away 8s later anyway.
+  //
+  // NOT sent on unmount — leaving the /table route does not close the table
+  // (PersistentTableLayer keeps it mounted and playing on purpose). Only a
+  // real page/app exit counts.
+  useEffect(() => {
+    if (!tableId || !userId) return;
+    const onPageHide = () => {
+      let accessToken: string | null = null;
+      try {
+        const raw = localStorage.getItem('smarter-poker-auth');
+        accessToken = raw
+          ? ((JSON.parse(raw) as { access_token?: string })?.access_token ?? null)
+          : null;
+      } catch {
+        accessToken = null;
+      }
+      sendAwayBeacon(tableId, accessToken);
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
   }, [tableId, userId]);
 
   // ── Dan 2026-08-21: "the games can never freeze or die" — last-resort
@@ -5972,27 +6031,62 @@ export default function TablePage({
   //   - never toast until the FIRST successful connect has been seen;
   //   - "Connection lost" only after 3s of continuous disconnection;
   //   - "Reconnected" only if the loss toast was actually shown.
+  //
+  // ── Dan 2026-08-23: SILENT UNTIL RECOVERY ACTUALLY FAILS ──
+  //
+  // The 3s debounce above was still far too eager, and the reason is
+  // PersistentTableLayer: every table you have open stays MOUNTED for the
+  // whole session, so this effect was running on all of them at once. Browse
+  // the tournament lobby, let one backgrounded table's socket hiccup, and you
+  // get "Connection Lost - Reconnecting..." over a page that has nothing to
+  // do with that table — which is exactly the screenshot.
+  //
+  // And 3s is shorter than the reconnect ladder's FIRST rung (1s + jitter,
+  // then 2s, 4s...). A blip that the client fixes by itself on attempt two
+  // still fired the alarm. The toast was reporting that a retry was in
+  // progress, not that anything had gone wrong.
+  //
+  // Three gates now, all of which must hold before we say a word:
+  //   1. FOREGROUND    — `isActive` is true only for the table currently on
+  //                      screen (MultiTablePage passes `idx === activeIndex
+  //                      && !hidden`), so background tables never speak.
+  //   2. MONEY AT RISK — hero is actually seated. A railbird watching a table
+  //                      loses nothing to a dropped socket.
+  //   3. PERSISTENT    — 15s of continuous failure, which is past several
+  //                      rungs of the backoff ladder AND past the watchdog's
+  //                      35s soft / 3-unanswered-RESYNC escalation having had
+  //                      a chance to start. If it is still down at 15s, the
+  //                      retries are not quietly working; the player needs to
+  //                      know before the server starts auto-folding for them.
+  //
+  // Recovery is silent in every case. A "Reconnected" toast is only
+  // reassuring to somebody who was told it broke; on its own it manufactures
+  // anxiety about a problem that already fixed itself.
   const engineToastStateRef = useRef({ everConnected: false, lossToastShown: false });
+  const heroIsSeated = tableState.heroSeat > 0;
   useEffect(() => {
     const st = engineToastStateRef.current;
     if (engineWsStatus === 'connected') {
       st.everConnected = true;
-      if (st.lossToastShown) {
-        st.lossToastShown = false;
-        heartbeatToastRef.current?.success?.('Reconnected');
-        if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playReconnect();
-      }
+      st.lossToastShown = false;
       return;
     }
     if (!st.everConnected) return; // initial mount noise
+    if (!isActive || !heroIsSeated) return; // gates 1 and 2
     const t = window.setTimeout(() => {
       if (st.lossToastShown) return;
+      // Re-check at fire time, not just at schedule time: 15s is long enough
+      // for the player to have switched tables or stood up, and a toast for a
+      // table they walked away from is the same noise in a new costume.
+      if (!isActive || !heroIsSeated) return;
       st.lossToastShown = true;
-      heartbeatToastRef.current?.warning?.('Connection lost - reconnecting…');
+      heartbeatToastRef.current?.warning?.(
+        'Still reconnecting. Your seat and chips are safe on the server.'
+      );
       if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playDisconnect();
-    }, 3000);
+    }, ENGINE_LOSS_TOAST_DELAY_MS);
     return () => window.clearTimeout(t);
-  }, [engineWsStatus]);
+  }, [engineWsStatus, isActive, heroIsSeated, ambientSoundsAllowed]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // HORSE LOADING — Load seated horses from DB into React table state
@@ -7963,6 +8057,33 @@ export default function TablePage({
       }
       case 'SEAT_LEFT': {
         masterBus.emit('SEAT_LEFT', evt.data as any);
+        // Dan 2026-08-23: until now this event was emitted onto masterBus and
+        // NOTHING subscribed to it. A player removed by the server — sat out
+        // too long, kicked, or (new) away past the one-SB-one-BB cap — found
+        // their seat empty and their chips back in their wallet with no
+        // explanation offered anywhere in the product. Being moved without
+        // being told is the part that reads as a bug even when the removal
+        // was correct.
+        //
+        // A voluntary leave carries no `reason` (the player knows why they
+        // left), so this only ever speaks for removals the player did not ask
+        // for, and only to the player it happened to.
+        {
+          const d = evt.data as { user_id?: string; reason?: string };
+          const reason = d?.reason;
+          if (reason && userId && String(d?.user_id) === String(userId)) {
+            const EXPLANATIONS: Record<string, string> = {
+              away_blind_cap:
+                'You were away, so we cashed you out after one small blind and one big blind. Your chips are back in your wallet.',
+              sit_out_timeout:
+                'You sat out too long and were cashed out. Your chips are back in your wallet.',
+            };
+            heartbeatToastRef.current?.info?.(
+              EXPLANATIONS[reason] ??
+                `You were removed from the table (${reason.replace(/_/g, ' ')}). Your chips are back in your wallet.`
+            );
+          }
+        }
         break;
       }
       case 'TABLE_PAUSED': {

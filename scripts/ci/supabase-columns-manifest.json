@@ -16,11 +16,6 @@
       "message",
       "created_at"
     ],
-    "_pgss_b": [
-      "queryid",
-      "calls",
-      "total_exec_time"
-    ],
     "_pps_backfill_state": [
       "id",
       "last_created",
@@ -4273,6 +4268,13 @@
       "received_at",
       "notified_via"
     ],
+    "engine_leader": [
+      "id",
+      "instance_id",
+      "engine_version",
+      "acquired_at",
+      "heartbeat_at"
+    ],
     "engine_recovery_events": [
       "id",
       "table_id",
@@ -4904,6 +4906,12 @@
       "big_blind",
       "net",
       "net_bb"
+    ],
+    "horse_job_runs": [
+      "job",
+      "run_date",
+      "claimed_at",
+      "claimed_by"
     ],
     "horse_league_results": [
       "id",
@@ -8400,7 +8408,14 @@
       "highest_stake",
       "surplus_returned",
       "is_active",
-      "owner_kind"
+      "owner_kind",
+      "offered_max_stake",
+      "activated_at",
+      "activated_by",
+      "deactivated_at",
+      "seed_source_wallet",
+      "seed_returned_at",
+      "seed_returned_amount"
     ],
     "spin_reserve_ledger": [
       "id",

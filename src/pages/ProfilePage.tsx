@@ -37,6 +37,7 @@ import PromotionsList from '../components/promotions/PromotionsList';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import { useToast } from '../components/common/Toast';
 import { retryFetch } from '../utils/retryFetch';
+import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './ProfilePage.module.css';
 
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -809,16 +810,13 @@ export default function ProfilePage() {
 
   if (!user) {
     return (
-      <div className={styles.page}>
-        <div className={styles.emptyProfile}>
-          <p>Profile Not Found</p>
-        </div>
-      </div>
+      <StandardContentLayout className={styles.page}>
+        <div className={styles.emptyProfile}><p>Profile Not Found</p></div></StandardContentLayout>
     );
   }
 
   return (
-    <div className={styles.page}>
+    <StandardContentLayout className={styles.page}>
       {/* Profile Header */}
       <section className={styles.profileHeader}>
         <div className={styles.avatarContainer}>
@@ -1478,6 +1476,6 @@ export default function ProfilePage() {
           }}
         />
       )}
-    </div>
+    </StandardContentLayout>
   );
 }

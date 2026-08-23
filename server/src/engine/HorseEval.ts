@@ -86,7 +86,16 @@ export function fastRandom(): number {
   rngState ^= rngState >>> 17;
   rngState ^= rngState << 5;
   rngState >>>= 0;
-  return rngState / 0xffffffff;
+  // V13 (2026-08-23): divide by 2^32, NOT 2^32-1. xorshift32's period covers
+  // every non-zero state, so rngState hits 0xffffffff exactly once per period
+  // and this returned EXACTLY 1.0. Every consumer here is
+  // `Math.floor(fastRandom() * (n - i))`, which then yields `n - i`, so the
+  // partial Fisher-Yates swapped in `deck[n]` — undefined — and extended the
+  // array, corrupting the rest of that simulation. The undefined card reaches
+  // scoreHoldem, throws on `.rank`, and HorseLogic.decide's safety net turns
+  // it into a FOLD. Roughly one silent, unexplained fold of an arbitrary hand
+  // per 2^32 draws, fleet-wide, with no telemetry. [0, 1) is the contract.
+  return rngState / 0x100000000;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -520,7 +529,15 @@ export function connectsBoard(hole: Card[], board: Card[], shortDeck: boolean): 
   // draw like real contact.
   const all = hole.concat(board);
   const cat = Math.floor(scoreHoldem(all, all.length, shortDeck) / 0x100000);
-  if (cat >= 2) {
+  // V13: the hole cards must IMPROVE on what the board already makes. This
+  // scored the board's own hand as opponent contact, so on any paired board
+  // (~17% of flops) every holding "connected" — 32o on K K 7 returned a pair
+  // of kings — and the whole V12 board-contact conditioning became a no-op
+  // exactly where reads matter most. A pocket pair stays contact by intent.
+  const boardCat =
+    board.length > 0 ? Math.floor(scoreHoldem(board, board.length, shortDeck) / 0x100000) : 0;
+  const isPocketPair = hole.length === 2 && hole[0].rank === hole[1].rank;
+  if (cat >= 2 && (cat > boardCat || isPocketPair)) {
     // A pocket pair UNDER every board card is a hidden non-connector — but it
     // still bets sometimes; treat pocket pairs as contact.
     return cat;

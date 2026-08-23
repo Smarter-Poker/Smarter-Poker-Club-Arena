@@ -65,7 +65,11 @@ describe('raise hotkey opens the raise panel', () => {
     // Half pot of 30 is 15, which is BELOW minRaise 20 — it must clamp up, not
     // offer an amount the server will refuse.
     rerender(
-      <ActionPanel {...base} onAction={vi.fn()} raiseIntent={{ nonce: 1, open: true, amount: 15 }} />
+      <ActionPanel
+        {...base}
+        onAction={vi.fn()}
+        raiseIntent={{ nonce: 1, open: true, amount: 15 }}
+      />
     );
     expect(screen.getByLabelText(/^Edit bet amount 20\b/)).toBeTruthy();
   });
@@ -120,7 +124,9 @@ describe('raise hotkey opens the raise panel', () => {
     const { rerender } = render(
       <ActionPanel {...noRaise} onAction={vi.fn()} raiseIntent={{ nonce: 0, open: false }} />
     );
-    rerender(<ActionPanel {...noRaise} onAction={vi.fn()} raiseIntent={{ nonce: 1, open: true }} />);
+    rerender(
+      <ActionPanel {...noRaise} onAction={vi.fn()} raiseIntent={{ nonce: 1, open: true }} />
+    );
     expect(document.body.classList.contains('ca-raising')).toBe(false);
   });
 });

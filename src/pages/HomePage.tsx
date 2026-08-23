@@ -607,7 +607,7 @@ function HomePageInner() {
           haptic.light();
           PremiumSFX.navigate();
           const target = resolveTargetClub(userClubs);
-          if (target) navigate(`/clubs/${target.id}/cashier`);
+          if (target) navigate(`/clubs/${target.slug || target.id}/cashier`);
           else toast.info('Join a club first to access the cashier');
           break;
         }
@@ -1130,7 +1130,7 @@ function HomePageInner() {
       setQuickLinkClubId(club.id);
       haptic.light();
       PremiumSFX.navigate();
-      navigate(`/clubs/${club.id}/cashier`);
+      navigate(`/clubs/${club.slug || club.id}/cashier`);
     },
     [navigate]
   );

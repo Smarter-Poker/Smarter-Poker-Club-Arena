@@ -145,14 +145,16 @@ describe('every bus subscription has a publisher', () => {
     expect(
       revived,
       'These now HAVE a publisher, so they are no longer dead. Remove them from ' +
-        'KNOWN_DEAD so the list keeps shrinking:\n' + revived.join('\n')
+        'KNOWN_DEAD so the list keeps shrinking:\n' +
+        revived.join('\n')
     ).toEqual([]);
   });
 
   it('KNOWN_DEAD contains nothing that is not actually subscribed', () => {
     const stale = [...KNOWN_DEAD].filter((n) => !subscribed.has(n)).sort();
-    expect(stale, 'No longer subscribed anywhere; drop from KNOWN_DEAD:\n' + stale.join('\n')).toEqual(
-      []
-    );
+    expect(
+      stale,
+      'No longer subscribed anywhere; drop from KNOWN_DEAD:\n' + stale.join('\n')
+    ).toEqual([]);
   });
 });

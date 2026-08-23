@@ -47,7 +47,9 @@ describe('the add-table button does not lose a race with its own lookup', () => 
   it('does not strand the picker open when it bails to the lobby', () => {
     // The on-demand lookup opens the sheet in its loading state; the bail-out
     // path has to close it again or the player is left on a dead spinner.
-    const tail = HANDLER.slice(HANDLER.indexOf('if (!club) {', HANDLER.indexOf('clubLookupCacheRef')));
+    const tail = HANDLER.slice(
+      HANDLER.indexOf('if (!club) {', HANDLER.indexOf('clubLookupCacheRef'))
+    );
     expect(tail).toMatch(/setQuickJoin\(\{ open: false/);
   });
 

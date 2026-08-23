@@ -1690,7 +1690,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         return rows.sort((a, b) => cmpPlayers(a, b) || cmpStakes(a, b) || cmpName(a, b));
       case 'recommended':
       default:
-        return rows.sort((a, b) => cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b));
+        return rows.sort(
+          (a, b) =>
+            cashRank(a) - cashRank(b) ||
+            cmpStakes(a, b) ||
+            cmpPlayers(a, b) ||
+            cmpName(a, b)
+        );
     }
   }, [tables, gameType, showsCash, sortKey, searchQuery, advFilters]);
 

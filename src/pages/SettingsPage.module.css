@@ -297,7 +297,7 @@
   border: 2px solid #2a3a4a;
   border-radius: 8px;
   color: #fff;
-  font-size: 0.875rem;
+  font-size: 16px; /* was 0.875rem; under 16px makes iOS zoom the page on focus */
   cursor: pointer;
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2300d4ff' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
@@ -484,7 +484,7 @@
     min-width: 140px;
   }
   .select {
-    font-size: 0.8rem;
+    font-size: 16px; /* was 0.8rem; under 16px makes iOS zoom the page on focus */
     padding: 0.5rem 2rem 0.5rem 0.75rem;
   }
   .colorOption {
@@ -593,7 +593,7 @@
   border: 2px solid #2a3a4a;
   border-radius: 8px;
   color: #fff;
-  font-size: 0.875rem;
+  font-size: 16px; /* was 0.875rem; under 16px makes iOS zoom the page on focus */
   transition: border-color 0.2s;
 }
 

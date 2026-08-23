@@ -393,6 +393,19 @@
     0 4px 20px rgba(0, 0, 0, 0.5);
 }
 
+/* Scope caption under the summary. The figures above cover the hands LOADED,
+   not the account lifetime, and "Biggest Pot" in particular reads as an
+   all-time record when it is the biggest of the 25 on screen. */
+.hh-summary-scope {
+  margin: -0.5rem 1rem 1rem;
+  padding: 0 0.25rem;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.45);
+  text-align: center;
+}
+
 .hh-summary .summary-stat {
   display: flex;
   flex-direction: column;

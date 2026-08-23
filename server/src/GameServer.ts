@@ -21,6 +21,7 @@ import { TournamentRecurringService } from './services/TournamentRecurringServic
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
 import { AutoRebuyService } from './services/AutoRebuyService.js';
+import { DealRateVerifier } from './services/DealRateVerifier.js';
 // BUG 008 FIX: Periodic rakeback settler - flushes per-hand rake_records into rakeback_periods.
 import { RakebackSettlerService } from './services/RakebackSettlerService.js';
 import {
@@ -89,6 +90,19 @@ export class GameServer {
   private scheduledTournaments = new ScheduledTournamentService();
   private lifecycle = new HorseLifecycleManager();
   private autoRebuy = new AutoRebuyService();
+
+  /**
+   * Liveness the engine cannot fake — see services/DealRateVerifier.ts.
+   *
+   * Every other freeze detector in this process is this process judging
+   * itself. This one asks the DATABASE whether the tables it claims should be
+   * dealing are actually producing hands.
+   */
+  private dealRateVerifier = new DealRateVerifier(() =>
+    this.tableLivenessSnapshot()
+      .filter((t) => t.dealable >= 2 && !t.paused)
+      .map((t) => t.tableId)
+  );
   // BUG 008 FIX: settler reads rake_records (durable per-hand log) every 30 min and
   // upserts per-player rakeback_periods rows. Without this the in-memory accumulator
   // inside RakebackEngine never flushes (zero callers of settleRakeback before fix).
@@ -159,6 +173,10 @@ export class GameServer {
 
       // Step 5: Start server-side auto-rebuy wallet funder
       this.autoRebuy.start();
+
+      // Step 5a: the only liveness check that does not ask this process
+      // whether it is alive. See services/DealRateVerifier.ts.
+      this.dealRateVerifier.start();
 
       // Step 5b (BUG 008 FIX): Start periodic rakeback settler (30-min interval).
       // Reads rake_records → upserts rakeback_periods so players see accumulated
@@ -254,6 +272,7 @@ export class GameServer {
     this.scheduledTournaments.stop();
     this.lifecycle.stop();
     this.autoRebuy.stop();
+    this.dealRateVerifier.stop();
     this.rakebackSettler.stop();
     if (this.breakTimer) {
       clearTimeout(this.breakTimer);
@@ -403,6 +422,12 @@ export class GameServer {
       (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 300_000
     ).length;
     const discoveryStaleMs = Date.now() - this.lastDiscoveryOkAt;
+    // The one liveness signal not derived from this process's own beliefs.
+    // deadStalledCount above is computed from msSinceProgress(), which
+    // markProgress() sets about our own work; on 2026-08-22 that belief was
+    // wrong for six hours and every layer above /health inherited it. This
+    // asks the database instead. See services/DealRateVerifier.ts.
+    const dealRate = this.dealRateVerifier.snapshot();
 
     let totalHands = 0;
     // FIX 153: Aggregate telemetry from all table engines for health endpoint
@@ -455,7 +480,23 @@ export class GameServer {
       // progress for 2 minutes, or when the discovery loop itself has stalled.
       // The Docker HEALTHCHECK reads this field, so a wedged process restarts
       // itself with no human involved.
-      liveness: deadStalledCount > 0 || discoveryStaleMs > 60_000 ? 'dead' : 'ok',
+      liveness:
+        deadStalledCount > 0 || discoveryStaleMs > 60_000 || dealRate.dbConfirmedDead
+          ? 'dead'
+          : 'ok',
+      /**
+       * Independent evidence, reported whether or not it has reached a
+       * verdict, so a fleet going quiet is visible BEFORE anything restarts.
+       * `handsInWindow: null` means the database could not be asked — which is
+       * explicitly NOT counted as silence.
+       */
+      /**
+       * Independent evidence, reported whether or not it has reached a verdict.
+       * `belowFloorChecks` is the canary: the deal-rate check stands down on a
+       * tiny fleet, so a failure that also empties the fleet would silence it —
+       * losing the floor is its own alarm.
+       */
+      dealRate,
       stalledTableCount: stalledTables.length,
       // Deploy drain gate reads this. A restart voids in-flight hands, so a
       // routine server/ push waits (or is explicitly forced) while real people

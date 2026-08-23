@@ -260,7 +260,7 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   color: #fff;
-  font-size: 13px;
+  font-size: 16px; /* was 13px; under 16px makes iOS zoom the page on focus */
   outline: none;
   transition: border-color 0.2s;
 }

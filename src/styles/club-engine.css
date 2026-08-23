@@ -1022,7 +1022,9 @@ textarea:focus-visible,
   .refd-share-btn,
   .hero-diamonds,
   .lobby-club__share,
-  .dw__plus {
+  .dw__plus,
+  /* Opt-in for one-off controls (inline styles, no class of their own). */
+  .tap-target {
     position: relative;
   }
 
@@ -1044,7 +1046,8 @@ textarea:focus-visible,
   .refd-share-btn::after,
   .hero-diamonds::after,
   .lobby-club__share::after,
-  .dw__plus::after {
+  .dw__plus::after,
+  .tap-target::after {
     content: '';
     position: absolute;
     left: 0;

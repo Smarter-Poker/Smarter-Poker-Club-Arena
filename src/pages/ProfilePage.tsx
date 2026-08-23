@@ -1041,6 +1041,12 @@ export default function ProfilePage() {
                 cursor: 'pointer',
                 padding: '2px 6px',
               }}
+              /* 2026-08-23: 2px of padding made this 18px tall — the smallest
+                 tap target measured anywhere in the app. It has no class of
+                 its own to style, so it opts into the shared touch utility,
+                 which adds an invisible 44px hit area without changing how
+                 the link looks. */
+              className="tap-target"
             >
               View All
             </button>

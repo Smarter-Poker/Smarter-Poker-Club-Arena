@@ -3,6 +3,7 @@
   "tables": [
     "_audit_horse_avatar_restore_20260815",
     "_audit_phase40_results",
+    "_pgss_snap",
     "_pps_backfill_state",
     "abuse_logs",
     "action_audit_logs",
@@ -1273,6 +1274,7 @@
     "fn_credit_diamonds",
     "fn_credit_player_wallet_once",
     "fn_credit_treasury",
+    "fn_cron_field",
     "fn_daily_bonus_status",
     "fn_db_saturation_selftest",
     "fn_debit_chips",

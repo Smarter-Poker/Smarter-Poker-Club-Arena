@@ -7,6 +7,105 @@
 
 ---
 
+## Cowork session 2026-08-22 (14) — OUTAGE: "no tables load, nothing is playing" was a saturated database, not the client
+
+Dan: "NONE OF THE TABLES ARE ACTIVE OR LOADING IN ANY CLUB. It says there are
+active games, but when you go to the lobby and then go to tables, nothing
+happens, the games aren't running or active, you can't sit down and nothing is
+playing."
+
+### It was never the client
+
+The engine was healthy throughout — `hand_history` had a row written 0.8 s
+before the first query of the investigation, and 63 tables were updating every
+second. No client code was changed to fix this.
+
+### Root cause
+
+`public.hand_history` had **never been vacuumed or analyzed**:
+`autovacuum_count = 0`, `last_autovacuum`/`last_analyze`/`last_autoanalyze` all
+NULL, with 234,091 dead tuples on an 8,955 MB heap and 1.1 GB across 8 indexes
+(one GIN).
+
+1. **The visibility map was entirely unset**, so index-only scans degenerated
+   into random heap fetches. One scan: 5,563 rows, 1,993 buffers (~16 MB),
+   `Heap Fetches: 1,921`, **36,964 ms**. ~20 ms per 8 KB page — a saturated disk.
+2. **That exact scan is on the hand-insert path.** `hand_history` carries three
+   per-row AFTER INSERT triggers, and `trg_hand_history_club_member_stats` runs
+   a correlated `NOT EXISTS` over `hand_history` *for each seated player*. One
+   hand insert cost a mean of **913 ms** over 32,274 calls — 8.2 CPU-hours, the
+   top entry in `pg_stat_statements`.
+3. **Everything else starved.** The club lobby's table list took **3,737 ms
+   while reading only cached pages** (`Buffers: shared hit=57, read=0`). A query
+   that touches no disk and still takes 3.7 s is not a bad plan — it is a
+   backend that cannot get CPU or I/O. Realtime's wal2json decode averaged
+   285 ms over 61,855 calls and fell behind, so no live table state reached the
+   client.
+
+Net effect: the lobby rendered (its counts come from a cheap rollup) but opening
+a table timed out and no state ever arrived. Exactly what Dan described.
+
+### Why it was allowed to happen — the actual regression
+
+Two pg_cron prune jobs delete from these tables continuously (117 every 5 min,
+119 every 2 min) while single runs took 38–155 s. They had **no overlap guard**,
+so copies stacked. Worse, a run exceeding the 2 min role `statement_timeout` was
+cancelled and **rolled back** — committing nothing while still leaving up to
+`p_batch` dead tuples behind. Confirmed: 400,000 sampled rows had `has_human`
+set on **zero** of them. The job had been running every 5 minutes and had never
+pruned a row.
+
+So the prune manufactured garbage forever and reclaimed none, while a
+default-throttled autovacuum could never finish a 10 GB table. **The prune was
+added without the matching autovacuum tuning.** That omission is the regression.
+
+This was also a **recurrence**. Three hours earlier the same evening,
+`20260822233000_prune_snapshots_bounded_scan.sql` fixed *one* prune predicate
+after the same saturation produced the "Still Loading" screen Dan first hit on
+2026-08-20. That fix was correct and incomplete, and nothing was watching for
+the next occurrence.
+
+### Fixes (all applied to production and recorded as migrations)
+
+- `20260822230941_autovacuum_tuning_hot_write_tables` — per-table autovacuum
+  settings on `hand_history`, `hand_state_snapshots`, `tables`, `table_seats`.
+  Scale factor 0 with a flat threshold, and cost_delay 0 / cost_limit 10000 so a
+  worker can actually finish.
+- `20260823010000_prune_jobs_overlap_guard_and_self_bound` — advisory-lock
+  overlap guard (job-76 house pattern), a 30 s `statement_timeout` self-bound so
+  no run can ever monopolise I/O again, batches measured to commit inside it,
+  and halved cadence.
+- `20260823020000_db_saturation_selftest` — **the guard.** `fn_db_saturation_selftest()`
+  runs every 30 min and reports large tables that are unvacuumed or never
+  analyzed, autovacuum switched off, cleanup jobs with no overlap guard, and
+  jobs running long or failing. Results land in `db_saturation_selftest_log`.
+- `20260823030000_overlap_guard_remaining_cleanup_jobs` — the new guard's first
+  run found five more unguarded cleanup jobs (9, 13, 25, 27, 123); all wrapped.
+  A guard that always reports breaches is one people learn to ignore.
+
+### Measured, same instance, same queries
+
+| | before | after |
+|---|---|---|
+| club lobby table list | 3,737 ms | **0.415 ms** |
+| trigger subquery on insert path | 36,964 ms | **934 ms** (heap fetches 1,921 → 76) |
+| `hand_history` INSERT | 913 ms | **32.7 ms** |
+| `sp_prune_hand_history` | 38–155 s, rolled back | **3 s, 1,000 rows committed** |
+| `hand_history` dead tuples | 234,091 | **0** (3 autovacuums, was 0 ever) |
+| hand throughput | 25–71 /min | **90–100 /min** |
+| cron runs failing | 59% of prune runs | **0 failures in 20 min** |
+| self-test breaches | 12 | **0** |
+
+Also ANALYZEd seven other large tables the guard caught with no planner
+statistics at all: `solved_spots_gold` (72 GB), `ca_hand_player_idx`,
+`data_audit_log`, `rake_records`, `vip_points_ledger`, `wallet_transactions`,
+`rakeback_stats_applied`.
+
+### Standing lesson
+
+When the symptom is "the page does nothing", measure the database before
+reading React. A plan that reads **zero disk pages and still takes seconds** is
+the signature of a starved instance, and it is invisible from the client.
 ## Cowork session 2026-08-22 (13) — the league can finally see the mind (PR #309)
 
 The nightly duplicate-deal league (#271) measures every strategy layer in

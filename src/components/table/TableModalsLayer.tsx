@@ -13,6 +13,7 @@ import { useEffectiveRake } from '../../hooks/useEffectiveRake';
 import PlayerNotesPanel from '../gameplay/PlayerNotesPanel';
 import HandReplay from '../replay/HandReplay';
 import { GameRulesModal } from './GameRulesModal';
+import { ClubProfileModal } from './ClubProfileModal';
 import SitOutModal from './SitOutModal';
 import WaitListModal from './WaitListModal';
 import { waitlistService } from '../../services/WaitlistService';
@@ -249,6 +250,9 @@ export interface TableModalsLayerProps {
   onCancelBustRebuy: () => void;
   onConfirmBustRebuy: (amount: number) => Promise<void>;
 
+  showProfileModal: boolean;
+  onCloseProfileModal: () => void;
+  clubName?: string;
   // Buy-In Modal
   showBuyInModal: boolean;
   selectedSeat: number | null;
@@ -379,6 +383,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
   const {
     tableId,
     userId,
+    username,
     ambientSoundsAllowed = true,
     tableName,
     blinds,
@@ -490,8 +495,13 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     bustWalletBalance,
     onCancelBustRebuy,
     onConfirmBustRebuy,
+    showProfileModal,
+    onCloseProfileModal,
+    clubName,
     // Buy-In
     showBuyInModal,
+    selectedSeat,
+    heroAvatarUrl,
     onCloseBuyInModal,
     onConfirmBuyIn,
     // Rabbit Hunt
@@ -1146,6 +1156,16 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           />
         </TableErrorBoundary>
       )}
+
+      {/* Club Profile Modal */}
+      <ClubProfileModal
+        isOpen={showProfileModal}
+        onClose={onCloseProfileModal}
+        userId={userId}
+        username={username}
+        avatarUrl={heroAvatarUrl}
+        clubName={clubName}
+      />
     </>
   );
 }

@@ -1619,6 +1619,7 @@ export default function TablePage({
   }, [engineWsStatus]);
 
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [showBuyInModal, setShowBuyInModal] = useState(false);
   // 2026-04-14 per Dan: bust rebuy flow
   const [bustRebuyOpen, setBustRebuyOpen] = useState(false);
@@ -10574,12 +10575,16 @@ export default function TablePage({
                     tableState.heroSeat === seatNumber || pendingSeat === seatNumber
                   }
                   onAvatarClick={() => {
-                    // Open throwable selector targeting this seat
-                    setThrowTargetSeat(seatNumber);
-                    setShowThrowableSelector(true);
-                    // Also record clicked player for Player Notes targeting
-                    if (player && !player.isHero) {
-                      setSelectedPlayerForNotes({ id: player.id, name: player.name });
+                    if (player?.isHero) {
+                      setShowProfileModal(true);
+                    } else {
+                      // Open throwable selector targeting this seat
+                      setThrowTargetSeat(seatNumber);
+                      setShowThrowableSelector(true);
+                      // Also record clicked player for Player Notes targeting
+                      if (player) {
+                        setSelectedPlayerForNotes({ id: player.id, name: player.name });
+                      }
                     }
                   }}
                   isDealing={isSeatDealing}
@@ -11481,6 +11486,9 @@ export default function TablePage({
         bustRebuyProcessing={bustRebuyProcessing}
         onCancelBustRebuy={cancelBustRebuy}
         onConfirmBustRebuy={confirmBustRebuy}
+        showProfileModal={showProfileModal}
+        onCloseProfileModal={() => setShowProfileModal(false)}
+        clubName={tableState.clubName}
         // Buy-In
         showBuyInModal={showBuyInModal}
         selectedSeat={selectedSeat}

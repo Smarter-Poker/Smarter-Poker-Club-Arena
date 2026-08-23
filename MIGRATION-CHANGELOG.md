@@ -7,6 +7,65 @@
 
 ---
 
+## Cowork session 2026-08-23 (11i) — THE COMPONENTS WERE ALREADY BUILT, THEY WERE JUST WIRED TO NOTHING
+
+Dan, on an empty MTT tab: "tournaments are FAR FROM WORKING! WE DON'T EVEN
+HAVE ANY LISTED." He was right, and the earlier "it works" reports were read
+off a snapshot instead of the lobby.
+
+THE EMPTY BOARD, FIXED WITHOUT A DEPLOY. At 04:25 UTC the board carried two
+registering MTTs against thirty-eight active schedules. The engine and the
+schedules were both fine - every schedule fired on time - but the spawner
+only created an instance 30 MINUTES before its start, and a horse-filled
+field starts on the minute and plays out fast. The code fix was sitting in an
+unmerged PR, so it had helped nobody.
+
+The same behaviour turned out to be reachable as pure DATA, because the
+deployed spawner already honours two per-schedule config keys:
+spawnAheadMinutes (proven live - the Sunday Major carries 10080 and had been
+on the board a week) and horsesToRegister. Setting 1440 and 0 across all 38
+schedules published a full day of card, opening every event EMPTY so no horse
+is locked into a game that has not started; GameServer's past-start top-up
+still fills short fields on the clock. Next poll: 2 -> 27 registering MTTs,
+26 of them upcoming and empty, running from 12:00 today to 03:00 tomorrow.
+No deploy, no code, no restart.
+
+TWO RED CHECKS, BOTH MINE. The CSS-beat E2E pins the champion celebration by
+animation NAME and DURATION (winnerGrandEntrance 900, trophyBounce 2000,
+sparkleFloat 4000, prizeCounterSlideIn 800) and my overlay rewrite had
+renamed all four out of existence. Loosening the test was the weak move, so
+the new visuals were rebuilt INSIDE the contract. And check-migrations-applied
+was reading a manifest that had not been regenerated since two functions were
+applied straight to prod - the objects existed, the manifest was stale, which
+is the second case its own message names. Regenerated from the live schema
+through the documented MCP fallback.
+
+THE PATTERN WORTH REMEMBERING. Two of the features Dan asked for as missing
+were already written, documented, tested - and rendered NOWHERE:
+
+- TournamentHUD: "a small, self-contained tournament status bar meant to sit
+  on the poker table so a seated player always sees the current level, blinds,
+  ante, the live countdown to the next level, players remaining and average
+  stack." Exactly his request. Zero call sites. Now mounted on every
+  tournament table.
+- lazyWithRetry (11f): written for the stale-chunk crash, quoting that crash
+  in its own docblock. Zero call sites.
+
+A finished component wired to nothing is indistinguishable from a missing
+feature, and it is worse than one, because everybody assumes it is working.
+When a feature looks absent here, grep for it before building it.
+
+ALSO SHIPPED: TournamentInfoPanel - the upper-right button on a tournament
+table opened SESSION stats (stack, buy-in, VPIP), which answer a cash
+question. It now opens the tournament: My Position / Entries / Prize Pool /
+Bounty Pool / Level / Late Reg / Avg / Largest / Smallest over Ranking,
+Prizes, Tables and Blinds, with your own row and your current level
+highlighted. Cash tables keep session stats.
+
+STILL OPEN: the 17 Heads-Up boards stuck at 2/2 and the ~14 games that played
+to a finish but never left REGISTERING both need the engine fixes in PR #342
+(start floor + played-but-registering watchdog). Data cannot reach them.
+
 ## Cowork session 2026-08-23 (11f) — THE CLUB PAGE WAS NOT EMPTY, IT WAS CRASHING
 
 Dan: "they are displaying in midway union, but are not displaying inside the

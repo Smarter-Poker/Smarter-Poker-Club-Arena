@@ -356,7 +356,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [isEditingNotice, setIsEditingNotice] = useState(false);
   const [noticeDraft, setNoticeDraft] = useState('');
-  const [isSavingNotice, setIsSavingNotice] = useState(false);
   // Status defaults are 'all' on BOTH axes now. They used to be 'live' and
   // 'running', which was invisible: picking a game type silently hid every
   // empty table and every tournament still taking registrations, so a club
@@ -2205,37 +2204,34 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                   onChange={(e) => setNoticeDraft(e.target.value)}
                   placeholder="Welcome to the Shark Club, all fish of all shapes and sizes are welcome!"
                   autoFocus
-                  disabled={isSavingNotice}
                   onKeyDown={(e) => {
                     if (e.key === 'Escape') setIsEditingNotice(false);
                   }}
                 />
                 <div className="lobby-top__notice-actions">
-                  <button onClick={() => setIsEditingNotice(false)} disabled={isSavingNotice}>
-                    Cancel
-                  </button>
+                  <button onClick={() => setIsEditingNotice(false)}>Cancel</button>
                   <button
-                    onClick={async () => {
-                      setIsSavingNotice(true);
-                      try {
-                        const { error } = await supabase
-                          .from('clubs')
-                          .update({ description: noticeDraft.trim() })
-                          .eq('id', resolvedClubId);
-                        if (error) throw error;
-                        setClub((prev) =>
-                          prev ? { ...prev, description: noticeDraft.trim() } : prev
-                        );
-                        setIsEditingNotice(false);
-                      } catch (e) {
-                        toast.error('Failed to save welcome message');
-                      } finally {
-                        setIsSavingNotice(false);
-                      }
+                    onClick={() => {
+                      const newDesc = noticeDraft.trim();
+                      // Optimistic UI update
+                      setClub((prev) => (prev ? { ...prev, description: newDesc } : prev));
+                      setIsEditingNotice(false);
+                      toast.success('Successfully updated');
+
+                      // Fire and forget background update
+                      supabase
+                        .from('clubs')
+                        .update({ description: newDesc })
+                        .eq('id', resolvedClubId)
+                        .then(({ error }) => {
+                          if (error) {
+                            console.error('Background save failed', error);
+                            toast.error('Failed to sync welcome message to server');
+                          }
+                        });
                     }}
-                    disabled={isSavingNotice}
                   >
-                    {isSavingNotice ? 'Saving...' : 'Save'}
+                    Save
                   </button>
                 </div>
               </div>

@@ -39,6 +39,7 @@ import { spinMultiplierLabel } from '../utils/spinReveal';
 // figure on this page renders through these, never as a raw column value.
 import { digitsOnly, formatBuyIn, money, splitBuyIn, totalBuyIn } from '../utils/buyIn';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
+import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 
 type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
 
@@ -76,6 +77,8 @@ function isLateRegOpen(t: {
 const GUEST_USER = { id: 'guest', username: 'Guest' };
 
 export default function TournamentPage() {
+  const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
+
   useEffect(() => {
     document.title = 'Tournaments | Smarter Poker';
   }, []);
@@ -475,60 +478,38 @@ export default function TournamentPage() {
   };
 
   // Register for tournament
-  const handleRegister = async () => {
+  const handleRegister = () => {
     if (!selectedTournament) return;
-    if (currentUser.id === 'guest') {
-      toast.error('You must be logged in to register');
-      return;
-    }
-    try {
-      // NOTE: Do NOT call WalletService.lockForBuyIn here — registerPlayer()
-      // already handles wallet deduction atomically (buy_in + rake).
-      // Calling both would double-deduct the player's chips.
-
-      await tournamentService.registerPlayer(
-        selectedTournament.id,
-        currentUser.id,
-        currentUser.username
-      );
-      setIsRegistered(true);
-
-      // Update tournament in list. Only the PRIZE half of the split feeds the
-      // pool; the fee half is the house cut. Whole chips either way.
-      const prizeContribution = Math.round(Number(selectedTournament.buy_in_amount) || 0);
-      const chargedTotal = totalBuyIn(
-        selectedTournament.buy_in_amount,
-        selectedTournament.buy_in_fee
-      );
-      setTournaments((prev) =>
-        prev.map((t) =>
-          t.id === selectedTournament.id
-            ? {
-                ...t,
-                current_players: t.current_players + 1,
-                prize_pool: t.prize_pool + prizeContribution,
-              }
-            : t
-        )
-      );
-      setSelectedTournament((prev) =>
-        prev
-          ? {
-              ...prev,
-              current_players: prev.current_players + 1,
-              prize_pool: prev.prize_pool + prizeContribution,
-            }
-          : null
-      );
-
-      // The wallet is debited the TOTAL (prize + fee), not the prize half, so
-      // that is the figure the player is told about.
-      notifyWalletChange(chargedTotal, true);
-
-      toast.success(`Registered! ${money(chargedTotal)} chips deducted.`);
-    } catch (error) {
-      toast.error('Registration failed: ' + (error as Error).message);
-    }
+    registerMtt(
+      {
+        id: selectedTournament.id,
+        name: selectedTournament.name,
+        buy_in_amount: selectedTournament.buy_in_amount,
+        buy_in_fee: selectedTournament.buy_in_fee,
+      },
+      () => {
+        setIsRegistered(true);
+        const prizeContribution = Math.round(Number(selectedTournament.buy_in_amount) || 0);
+        setTournaments((prev) =>
+          prev.map((t) =>
+            t.id === selectedTournament.id
+              ? {
+                  ...t,
+                  current_players: (t.current_players || 0) + 1,
+                  prize_pool: (t.prize_pool || 0) + prizeContribution,
+                }
+              : t
+          )
+        );
+        if (selectedTournament) {
+          setSelectedTournament({
+            ...selectedTournament,
+            current_players: (selectedTournament.current_players || 0) + 1,
+            prize_pool: (selectedTournament.prize_pool || 0) + prizeContribution,
+          });
+        }
+      }
+    );
   };
 
   const handleStart = async () => {

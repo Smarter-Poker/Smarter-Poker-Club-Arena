@@ -1127,8 +1127,7 @@ export default function CashierPage() {
   // or admin, or a union owner minting into the union bank. co_owner and admin
   // were missing here while the RPC has always admitted them, so two roles saw
   // no Mint tab on a club they are entitled to mint for. (Dan 2026-08-23.)
-  const canMint =
-    (!isInUnion && ['owner', 'co_owner', 'admin'].includes(userRole)) || isUnionOwner;
+  const canMint = (!isInUnion && ['owner', 'co_owner', 'admin'].includes(userRole)) || isUnionOwner;
 
   // The Club Bank row routes here, and it renders for owner / co_owner / admin
   // / super_agent — so all four must have the tab, or the row would open a tab

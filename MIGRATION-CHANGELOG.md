@@ -13333,3 +13333,125 @@ of jackpot money with no matching contributions. The fixture was wrong, not the
 code — but it is exactly the shape of mistake that would hide a real leak.
 
 10 new tests. 290 files / 3,571 green.
+
+## Cowork session 2026-08-23 (10) — PER-OWNER SPIN BOARDS
+
+Phase 3, and the piece that makes the switch mean anything. Phases 1 and 2 gave
+the Spin wallet an owner, a real seed and an owner menu — but every Spin on the
+platform was still created with `club_id = union_id = MIDWAY_UNION_ID`, so
+activation governed a wallet with no tables behind it.
+
+An owner who activates now gets **their own board**, funded by their own
+wallet. The house board is untouched and filled FIRST, so a player who is not
+in an activated club always has somewhere to sit.
+
+### The part that is easy to get silently wrong
+
+A Spin's visibility is decided _entirely_ by `club_id` / `union_id` on its row.
+`ClubHomePage` scopes its lobby query by one or the other and never consults
+club membership, so those two fields are the whole access model:
+
+- a club **inside a union** has its page scoped by
+  `.eq('club_id', id).eq('is_private', true)` — a PUBLIC club-owned Spin is
+  dropped by the very club that paid for it;
+- a **standalone** club's page scopes by `club_id` alone, and shows it;
+- a **union's** games are found by `union_id` across every club in that union,
+  which is exactly how the house board has always reached players.
+
+So a union-owned pool stamps `union_id`, and a club-owned pool must not. Get it
+backwards and there is no error anywhere — just a board nobody can see. That is
+why `BoardOwner` carries the two fields separately and documents why.
+
+### What else had to change
+
+- **The open-board read is now scoped to the owner.** The set is keyed on the
+  config NAME, and "10 Chip Spin PLO4" is the same string on every board.
+  Unscoped, the house would fill first and every activated club would look
+  already-full and never open a single game.
+- **The in-flight guard moved up** from `ensureBoardOpen` to a `withBoardTick`
+  wrapper around the whole pass. A pass now calls `ensureBoardOpen` once per
+  owner, so the old placement would have let the first owner set the flag and
+  every owner behind them be skipped forever.
+- **BURST became a shared budget.** A per-board cap is not a cap once one pass
+  can service the house plus every activated owner — twenty owners would be
+  twenty times the work. One `{ left: 12 }` is threaded through every board in
+  the pass and only decremented on a game that was actually created, so a run
+  of failed inserts cannot starve the boards behind it.
+- **An owner is only offered the stakes their seed covers.** The required seed
+  is two 100x jackpots at their largest stake, so advertising a bigger buy-in
+  than they seeded for would offer a multiplier the wallet cannot pay.
+
+Gated on `is_active`, `activated_at IS NOT NULL` and `balance > 0` — a drained
+pool cannot pay a multiplier, and opening games it cannot settle hands the
+player a prize the wallet has to clamp.
+
+**Zero immediate production effect:** exactly one pool is activated today (the
+house), and it is filtered out of the owner list because it is served by
+`houseOwner`. The first real change happens the first time a club activates.
+
+Two tests from earlier today were updated in this commit because this change
+deliberately replaces the behaviour they pinned (`missing.slice(0, BURST)` and
+the guard living inside `ensureBoardOpen`). 20 new tests, 18 of which fail
+against origin/main. 282 files / 3,458 green.
+
+## Cowork session 2026-08-23 (16) — AN ALARM THAT CANNOT RING IS NOT AN ALARM
+
+Chasing the −226.65 BBJ conservation drift turned up something much larger than
+the drift.
+
+**`public.bbj_contributions` had never been analysed.** `last_analyze`,
+`last_autoanalyze`, `last_vacuum`, `last_autovacuum` — all NULL. The planner
+therefore believed it held **2,600 rows. It holds 648,543.** A 250x
+underestimate on a 242 MB table.
+
+Planned on that fiction, `fn_union_treasury_selftest`'s duplicate-contribution
+scan chose a catastrophic plan and hit the statement timeout — **the treasury
+self-test could not run at all.** Which is exactly why a −226.65 breach of a
+1.00 tolerance sat unreported. The alarm was not ignored; it was unable to ring.
+One `ANALYZE` later it completes in normal time and reports the breach it was
+always supposed to report.
+
+**And it was never one table.** Twelve relations over 20 MB had never been
+analysed, including money that settlement and rakeback read every day:
+`rake_records` (1 GB, estimated 8,932 rows), `wallet_transactions` (797 MB,
+estimated 14,979), `vip_points_ledger`, `agent_commissions`,
+`club_wallet_transactions`, `rake_distribution_legs`, `rakeback_stats_applied`
+— plus `solved_spots_gold` at **72 GB estimated as 4,846 rows**. Every query
+planned against those is planned on a guess. That is the most likely
+explanation for the slow IO-bound money queries seen repeatedly today —
+`fn_rakeback_recompute_periods` sitting 49 seconds on `DataFileRead` — and for
+the repeated connection-pool timeouts.
+
+**Why autoanalyze never fired:** none of them carry table-level settings, there
+are three autovacuum workers, and this database holds a 72 GB table and a 10 GB
+one. The giants monopolise the workers and everything behind them starves.
+`hand_history` is the only table with explicit settings — added this morning
+after its unthrottled vacuum saturated disk IO and took `/api/health` down.
+
+The eight money tables now analyse on a **row count** rather than a percentage
+of a total nothing has ever measured, and every one keeps `cost_delay = 2ms` —
+the same gentle value `hand_history` was given, because the cure for a starving
+autovacuum must not be a second IO saturation. The migration asserts both: that
+none is left without a threshold, and that unthrottled autovacuum has not come
+back anywhere.
+
+The three non-money giants are deliberately left alone and the migration says
+why — handing three more giants aggressive settings on a three-worker
+autovacuum is how the starvation happened in the first place.
+
+**Also closed three stale PRs (#486, #487, #488)** that the stuck-PR sweeper had
+re-opened. Each was 100–200 commits behind `main`, and merging any one would
+have **reverted 30,000–72,000 lines across 300–580 files**. Their content is
+already on main under different SHAs — the pattern CLAUDE.md §12 documents —
+and `tests/config/spinSeatFirstIntegrity.test.ts` proves it: main carries 157
+lines where the branch has 124, because tests were added afterwards. Merging
+would have deleted them. Each PR was closed with that reasoning recorded.
+
+17 new tests.
+
+**Still open, and not mine to guess at:** the −226.65 drift itself. It is
+static across every measurement over ninety minutes, so it is a one-time
+historical event rather than an active leak; the three payouts since the
+baseline are fully explained by their recipients, and there is no single
+transaction of that size. It wants a targeted audit of the 2026-08-21 pool
+consolidation, with the watchdog now able to run while that happens.

@@ -1,3 +1,57 @@
+# RULE 1 — VERIFICATION PASS. Do not take your own word for it.
+
+Every claim below needs a command behind it, and you must paste the output.
+
+PART A — IS IT ACTUALLY SHIPPED?
+git status --porcelain # must be empty of tracked files
+git log --oneline origin/main..HEAD # must be empty
+git branch -r --contains HEAD # must name your branch
+gh pr list --head <your-branch> # must show a PR, or explain why not
+If any of those is wrong, you are not finished. Fix it before continuing.
+
+PART B — DID YOU FOLLOW THE RULES?
+pwd # must be under .agent-trees/
+git log -1 --format='%an <%ae>' # must be Smarter-Poker # <254329056+...@users.noreply.github.com>
+git log --oneline origin/main..HEAD | wc -l
+State plainly whether you used --no-verify at any point. If you did, say where and why.
+
+PART C — IS THE CODE ACTUALLY DONE?
+Re-read your own diff before answering: `git diff origin/main...HEAD`
+
+1. STUBS — any TODO, FIXME, `throw new Error('not implemented')`,
+   empty catch, hardcoded placeholder, mock left in a real path?
+   Search for them; do not rely on memory.
+2. WIRING — is every new function actually CALLED? Every new component
+   rendered? Every new route reachable? Every emitted event listened
+   for? Name the caller for each thing you added.
+3. DATABASE — did you add a migration? Was it APPLIED to production
+   via the Supabase MCP? A migration file that never ran is a feature
+   the code believes in and the database has never heard of.
+4. REGRESSIONS — what existing behaviour does this change? Which tests
+   covered it? Did you update them in the SAME commit, or leave them
+   asserting the old rule?
+5. ERROR PATHS — what happens when the network fails, the row is
+   missing, the user is logged out? Show me where each is handled.
+
+PART D — DOES IT RUN?
+npx tsc --noEmit # paste the result
+npx vitest run <the tests covering your change>
+npm run build # if you touched src/
+Paste real output. "Tests pass" without a count is not an answer.
+
+PART E — IS IT LIVE?
+If your PR merged: what SHA does production serve right now, and does it
+contain your commit? Check it. Do not say "should be live shortly".
+If your PR has not merged: what is blocking it, in the words of the
+check that is failing?
+
+ANSWER FORMAT: for each of A–E, either the command output showing it is
+satisfied, or a plain statement of what is not done and what you are
+doing about it. If something is incomplete, say so — an honest gap is
+worth more than a confident claim I have to discover is wrong.
+
+---
+
 # AGENT PLAYBOOK
 
 **Read this before you touch anything.** Claude, Antigravity, Cowork, Codex,
@@ -84,14 +138,14 @@ not break them, and to know what they are telling you when they speak.
 
 ### Your work cannot be destroyed
 
-| File                                                  | What it does                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `scripts/agent-workspace.sh`                          | Gives you your own git worktree, branched from fresh `origin/main`. Refuses to move you off uncommitted work                                                                                                                                                                                                                                                                                                             |
-| `.husky/pre-commit` → `scripts/guard-shared-clone.sh` | **Refuses a commit made in the shared clone.** Prints the exact command to get a proper tree. Never stashes, never checks anything out                                                                                                                                                                                                                                                                                   |
-| `.husky/reference-transaction`                        | Fires _before_ any ref update lands and refuses one that would orphan local commits — **and writes them to `refs/wip/orphan-guard/<stamp>` first**, so even an override leaves the work recoverable                                                                                                                                                                                                                      |
-| `scripts/agent-trees-snapshot.sh`                     | Snapshots every working tree's uncommitted state as a git ref. Safe mid-edit: `git stash create` builds objects without touching the index, the tree, or the stash stack                                                                                                                                                                                                                                                 |
-| `scripts/install-wip-snapshot-agent.sh`               | Runs that snapshot every 10 minutes as a launchd agent — **once the Mac has granted Full Disk Access**. `~/Documents` is TCC-protected and a launchd agent cannot read inside it without that; on 2026-08-22 this had captured nothing in 73 runs. `--status` now says which state it is in, and the installer refuses to claim success. Until it is granted, run the snapshot by hand at the start and end of a session |
-| `scripts/agent-trees-audit.sh`                        | Lists every tree holding work that exists in exactly one place                                                                                                                                                                                                                                                                                                                                                           |
+| File                                                               | What it does                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `scripts/agent-workspace.sh`                                       | Gives you your own git worktree, branched from fresh `origin/main`. Refuses to move you off uncommitted work                                                                                                                                                                                                                                                                                                             |
+| `.husky/pre-commit` & `pre-push` → `scripts/guard-shared-clone.sh` | **Refuses a commit or push made in the shared clone.** Prints the exact command to get a proper tree. Never stashes, never checks anything out                                                                                                                                                                                                                                                                           |
+| `.husky/reference-transaction`                                     | Fires _before_ any ref update lands and refuses one that would orphan local commits — **and writes them to `refs/wip/orphan-guard/<stamp>` first**, so even an override leaves the work recoverable                                                                                                                                                                                                                      |
+| `scripts/agent-trees-snapshot.sh`                                  | Snapshots every working tree's uncommitted state as a git ref. Safe mid-edit: `git stash create` builds objects without touching the index, the tree, or the stash stack                                                                                                                                                                                                                                                 |
+| `scripts/install-wip-snapshot-agent.sh`                            | Runs that snapshot every 10 minutes as a launchd agent — **once the Mac has granted Full Disk Access**. `~/Documents` is TCC-protected and a launchd agent cannot read inside it without that; on 2026-08-22 this had captured nothing in 73 runs. `--status` now says which state it is in, and the installer refuses to claim success. Until it is granted, run the snapshot by hand at the start and end of a session |
+| `scripts/agent-trees-audit.sh`                                     | Lists every tree holding work that exists in exactly one place                                                                                                                                                                                                                                                                                                                                                           |
 
 ```bash
 bash scripts/agent-trees-audit.sh              # what is at risk right now

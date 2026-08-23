@@ -144,6 +144,7 @@ export default function CashierTradePage() {
   const [groupByRole, setGroupByRole] = useState(false);
   const [sortKey, setSortKey] = useState<'balance' | 'name'>('balance');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [visibleCount, setVisibleCount] = useState(25);
 
   const [records, setRecords] = useState<TradeRecordRow[]>([]);
   // Dan 2026-08-21: the three tabs/buttons that used to say "coming soon" are
@@ -623,6 +624,8 @@ export default function CashierTradePage() {
   // ── Derived list ───────────────────────────────────────────────────────────
   const mineCount = useMemo(() => downline.filter((r) => r.isMine).length, [downline]);
 
+  useEffect(() => { setVisibleCount(25); }, [search, filterRole, sortMode]);
+
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
     let rows = downline.filter(
@@ -874,7 +877,7 @@ export default function CashierTradePage() {
               <span className={styles.stripValue}>{fmt(agencyBalance)}</span>
             </div>
             <div className={styles.stripCell}>
-              <span className={styles.stripLabel}>Available Chips</span>
+              <span className={styles.stripLabel}>{effectiveVariant === 'union' ? 'Union Bank' : 'Club Bank'}</span>
               <span className={styles.stripValue}>
                 {fmt(availableChips)}
                 {/* Dan 2026-08-23: this used to open the Chip Mint directly.
@@ -964,7 +967,7 @@ export default function CashierTradePage() {
             */}
             {!loading &&
               !loadError &&
-              list.map((r) => (
+              list.slice(0, visibleCount).map((r) => (
                 <div
                   key={r.userId}
                   className={`${styles.row} ${selected.has(r.userId) ? styles.rowSelected : ''}`}
@@ -1005,7 +1008,12 @@ export default function CashierTradePage() {
                   />
                 </div>
               ))}
-            <button
+            {!loading && !loadError && visibleCount < list.length && (
+            <button className={styles.classicLink} style={{marginBottom: '1rem'}} onClick={() => setVisibleCount(c => c + 25)}>
+              Load More ({list.length - visibleCount} hidden)
+            </button>
+          )}
+          <button
               className={styles.classicLink}
               onClick={() => navigate(`/clubs/${clubParam}/cashier-classic`)}
             >

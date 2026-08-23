@@ -7,6 +7,94 @@
 
 ---
 
+## Cowork session 2026-08-23 — MOBILE ONE-SCREEN PASS: a regression fixed, three systemic bugs found by measuring (PR #380)
+
+Dan, from a phone, mid-session: "club arena is not running correctly or
+loading on mobile, all the top padding is now gone as well."
+
+### The regression, and what actually caused it
+
+The previous session's mobile-fit sweep zeroed the AppLayout shell's SIDE
+padding at <=600px, copying the social pages, whose <main> is edge-to-edge.
+That works there because every social surface is a card carrying its own
+internal padding. Club Arena is not uniform: the pages sampled before
+shipping (settings, cashier, leaderboard, promotions, legal) do pad
+themselves, but others do not, and those went flush against the screen edge —
+which reads as "the padding is gone". REVERTED (PR #377); the shell keeps its
+gutter. overflow-x: hidden stayed, because that part cost nothing and is what
+stops a stray wide child panning the page.
+
+The lesson is in the diff: removing a page's DOUBLE padding is a per-page job
+with a per-page measurement. One global switch cannot tell a page that pads
+itself from one that does not.
+
+"Not loading" did not reproduce. Signed in at 375px every route rendered
+(profile, friends, clubs, club home, lobby, wallet, settings), no page
+errors, nothing stuck loading. Two things that LOOK like failures and are
+not, recorded so the next agent does not chase them: the 401 on
+`/rest/v1/` is supabaseConnectionWatchdog's deliberate probe, and the
+ERR_ABORTED requests are a sweep navigating away mid-flight.
+
+### Three systemic bugs, each found by measuring rather than reading
+
+1. 100vh IS THE WRONG VIEWPORT ON A PHONE. 70 occurrences of
+   `min-height: 100vh` across 67 stylesheets, only 5 paired with dvh. On iOS
+   `100vh` is the TOOLBAR-HIDDEN height, so every one of those page roots was
+   taller than the visible screen — the page always scrolled a little and the
+   last strip sat under the browser chrome. Every occurrence now has a
+   `100dvh` line after it (progressive enhancement: browsers without dvh keep
+   the vh value). AppLayout already used this pattern; it was never rolled
+   out. 64 files.
+2. A TAP ON A SMALL FIELD ZOOMED iOS AND NEVER ZOOMED BACK. Safari zooms the
+   whole viewport when a focused text field computes under 16px, and does not
+   restore on blur — the user is left panned and oversized, which is
+   indistinguishable from the app breaking. Measured live in production:
+   friends search 13.6px, search 13.3px, settings selects 12.8px, 12 fields
+   across 6 routes. One rule in club-engine.css sets 16px for text fields at
+   phone width only. Note the viewport meta stays `initial-scale=1` with NO
+   `maximum-scale`: locking zoom would hide the bug by removing an
+   accessibility feature.
+3. NINE PAGES RENDER A FIXED BOTTOM NAV AND RESERVED LESS THAN ITS HEIGHT.
+   `--bottom-nav-clearance` was created on 2026-08-20 as "what a page must
+   actually reserve" and only ClubHomePage ever used it. The other pages
+   reserved 2rem (32px), 80px or nothing against a 74px bar plus the
+   home-indicator inset. A fixed bar is out of flow, so what it covers is not
+   clipped, it is simply unreachable. Nine page roots now use the token.
+
+### Two gates, so none of it can come back
+
+- `tests/e2e/mobile-chrome-occlusion.spec.ts` — the VERTICAL half of "fits in
+  one screen": at rest nothing may sit under the sticky header, and scrolled
+  to the end nothing may sit under the fixed bottom nav.
+- `tests/e2e/mobile-input-zoom.spec.ts` — no text field under 16px at 375px,
+  with a guard that fails if the sweep finds no fields at all (an empty
+  assertion is how this suite fooled itself twice before).
+
+Both strict in CI, where the e2e job runs against production after a deploy.
+
+### Two false alarms, both caught before they were reported
+
+Worth recording because each cost real time and each looked exactly like a
+P0: a `tps://...supabase.co` URL in probe output was the probe's own
+`slice(-60)` truncation, not a malformed request; and `--bottom-nav-clearance`
+appearing "never defined" was a grep of the wrong artifact — Vite bundles
+globals.css/design-system.css into the entry CSS and strips the dev-only
+`/src/styles/*` preloads, so the tokens do resolve in production. Verify the
+built bundle, not the import graph.
+
+A third was in my own instrument: the occlusion gate first reported the
+jackpot page hiding 704px of a paragraph. A text leaf in a flex row stretches
+to the row's height, so its BOX ran far past text that was plainly visible.
+The gate now measures a Range over the text node — the glyphs a reader can
+actually see — and the false positive is gone.
+
+Verification: tsc clean; vitest 254 files / 3,189 passed; vite build clean;
+occlusion gate green against production (12 routes); horizontal fit gate green
+(58 routes); the input-zoom gate correctly RED against production before the
+fix deploys, which is the evidence it works.
+
+---
+
 ## Cowork session 2026-08-23 (2) — the club money panel was 1.5s, and the fix for it was wrong twice
 
 Follow-on measurement after the outage work. With `hand_history` no longer

@@ -33,6 +33,36 @@ the single largest cause of destroyed work here.
 
 ---
 
+## 1b. ONE CLONE PER REPO. THESE EXACT PATHS.
+
+```
+~/Documents/club-arena                 Club Arena
+~/Documents/Smarter-Poker-World-Hub    World Hub
+```
+
+Every agent — Claude, Antigravity, any other — and the dev server work in those
+two directories and nowhere else. You never work in them directly; you claim a
+worktree off them:
+
+```bash
+cd ~/Documents/club-arena
+eval "$(bash scripts/agent-workspace.sh <your-name> fix/<slug>)"
+```
+
+**Why this is a rule and not a preference.** On 2026-08-23 this machine had SIX
+clones of these two repos — `Smarter-Poker-Club-Arena`, `hub-vanguard`,
+`hub-vanguard3`, `hub-vanguard-clean`. Claude worked in one, Antigravity in
+another, the dev server ran from a third. `Smarter-Poker-Club-Arena` drifted
+**293 commits behind** while a Vite process served it, and two days were spent
+believing deploys were broken. They were not; the work was live the whole time.
+
+The old directory names are now **symlinks** to the canonical clone, so any
+path you already have memorised still works and lands in the right tree.
+`scripts/check-canonical-clone.sh` refuses a commit made in a fresh duplicate,
+which is how all six started.
+
+---
+
 ## 2. THE SEVEN REPOS
 
 | Repo                          | What it is                                                                                                 | Publishes to                                  |

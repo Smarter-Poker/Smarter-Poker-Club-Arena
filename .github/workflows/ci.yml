@@ -64,7 +64,24 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
         run: |
-          FILES=$(gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '.[].filename')
+          # RETRY (2026-08-23): this call answered
+          #   "Sorry, this diff is temporarily unavailable due to heavy server
+          #    load. (HTTP 500)"
+          # and the job died. Every heavy job gates on this one, so a single
+          # upstream blip skips them all, no required check reports, and every
+          # open pull request sits at BLOCKED until someone re-runs it by hand.
+          # One flaky read should not strand the queue.
+          for attempt in 1 2 3 4 5; do
+            if FILES=$(gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '.[].filename'); then
+              break
+            fi
+            if [ "$attempt" = "5" ]; then
+              echo "::error::could not read the PR file list after 5 attempts"
+              exit 1
+            fi
+            echo "attempt $attempt failed - retrying in $((attempt * 5))s"
+            sleep $((attempt * 5))
+          done
           echo "$FILES" | sed 's/^/  /'
           has() { echo "$FILES" | grep -qE "$1" && echo true || echo false; }
           # A change to the workflow, the lockfile or the build config can break

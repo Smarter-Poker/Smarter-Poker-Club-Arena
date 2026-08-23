@@ -1055,7 +1055,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       // real cash tables. Exclude closed + tournament tables and cap the result.
       tableQuery
         .eq('is_deleted', false)
-        .neq('status', 'closed')
+        /* belongsInTableList (the realtime admission rule above) drops BOTH
+           'closed' and 'deleted'. The fetch only dropped 'closed', so a
+           status='deleted' row would load on first paint and then be refused
+           by realtime - the two lists disagreeing, which is precisely what
+           that rule exists to prevent. No such row exists today; this keeps
+           it that way. */
+        .not('status', 'in', '("closed","deleted")')
         .is('tournament_id', null)
         .order('created_at', { ascending: false })
         .limit(QUERY_LIMITS.LIST);
@@ -1077,7 +1083,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         // runs its own query rather than the service. Same rule as the
         // service now: a lobby lists what can be ENTERED.
         .in('status', ['REGISTERING', 'RUNNING'])
-        .order('start_time', { ascending: true });
+        .order('start_time', { ascending: true })
+        /* The tables query has been capped since P1-1; these two were not
+           capped at all. An unbounded list query is the shape that pulled
+           tens of thousands of rows into this page once already. */
+        .limit(QUERY_LIMITS.LIST);
       if (unionId) {
         clubTournamentQuery.eq('club_id', resolvedId).eq('is_private', true);
       } else {
@@ -1118,7 +1128,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 .eq('union_id', unionId)
                 // Joinable-only -- same rule as the club query above.
                 .in('status', ['REGISTERING', 'RUNNING'])
-                .order('start_time', { ascending: true }),
+                .order('start_time', { ascending: true })
+                .limit(QUERY_LIMITS.LIST),
             ]
           : []),
       ]);
@@ -1127,6 +1138,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
       const tableData = tableResult.data;
       if (tableData) setTables(tableData);
+      const tableCapped = (tableData?.length ?? 0) >= QUERY_LIMITS.LIST;
 
       // SWR: cache club + tables for instant display on revisit
       if (clubId && clubData) {
@@ -1147,6 +1159,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         }
       }
       setTournaments(allTournaments);
+      setCountsCapped(
+        tableCapped ||
+          (clubTournamentResult.data?.length ?? 0) >= QUERY_LIMITS.LIST ||
+          (xmttResults[0]?.data?.length ?? 0) >= QUERY_LIMITS.LIST
+      );
 
       // BBJ jackpot. Number() is load-bearing, not cosmetic: main_balance is
       // numeric(14,2) and arrives as the STRING "10500.67". Assigning it raw
@@ -1416,7 +1433,20 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       case 'players':
         return rows.sort((a, b) => (b.current_players || 0) - (a.current_players || 0));
       case 'starting_soon': {
-        const isLateReg = (t: TournamentData) => {
+        /* A SORT MUST NOT DELETE ROWS (2026-08-23). This case used to
+           `rows.filter(isLateReg)` and return only what was still enterable -
+           a filter wearing a sort's clothes, and this is the DEFAULT sort, so
+           the lobby's first impression silently dropped every tournament past
+           late registration. Worse, the result count blamed the tab and the
+           saved filters ("Showing 12 Of 111") for a narrowing neither of them
+           did, which is the exact shape of bug the empty-state rewrite was
+           meant to end.
+
+           The intent survives without the lie: what you can still enter comes
+           FIRST, soonest first, and everything else follows in start order.
+           Players who want only enterable games have the Open Registration /
+           Late Reg status chips, which are filters and say so. */
+        const stillEnterable = (t: TournamentData) => {
           const status = String(t.status).toUpperCase();
           if (status === 'REGISTERING') return true;
           if (status === 'RUNNING') {
@@ -1429,10 +1459,16 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           }
           return false;
         };
-        const activeOnly = rows.filter(isLateReg);
-        return activeOnly.sort(
-          (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-        );
+        const at = (t: TournamentData) => {
+          const ms = new Date(t.start_time).getTime();
+          return Number.isFinite(ms) ? ms : Number.MAX_SAFE_INTEGER;
+        };
+        return rows.sort((a, b) => {
+          const ea = stillEnterable(a) ? 0 : 1;
+          const eb = stillEnterable(b) ? 0 : 1;
+          if (ea !== eb) return ea - eb;
+          return at(a) - at(b);
+        });
       }
       case 'recommended':
       default:
@@ -1518,6 +1554,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // LOBBY V2 — player relationship to games (seated / registered / favorite)
   // plus row selection + the game lobby panel.
   // ═══════════════════════════════════════════════════════════════════════
+  /* True when a list query came back exactly full, i.e. the cap may have cut
+     it. The lobby then reports its total as a floor ("200+ Games") instead of
+     an exact number it cannot know. Counting for real would cost two extra
+     round trips on every club load to answer a question that, at today's
+     ceiling of 42 live tables in any club, nobody is asking. */
+  const [countsCapped, setCountsCapped] = useState(false);
   const [seatedTableIds, setSeatedTableIds] = useState<Set<string>>(new Set());
   const [registeredTournamentIds, setRegisteredTournamentIds] = useState<Set<string>>(new Set());
   const [favoriteTableIds, setFavoriteTableIds] = useState<Set<string>>(new Set());
@@ -2365,8 +2407,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           <span className="lobby-count__text">
             {narrowing.any && totalGameCount > shownCount ? (
               <>
+                {/* countsCapped: a list query came back exactly full, so the
+                    total is a floor, not a fact. Say "200+" rather than a
+                    number we cannot stand behind. */}
                 Showing <strong>{shownCount.toLocaleString()}</strong> Of{' '}
-                {totalGameCount.toLocaleString()} Games
+                {totalGameCount.toLocaleString()}
+                {countsCapped ? '+' : ''} Games
               </>
             ) : (
               <>
@@ -2489,8 +2535,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                         never set (QA 2026-08-22). Name the real cause. */}
                     <p>Nothing Here On This Tab</p>
                     <p className="empty-hint">
-                      {totalHere.toLocaleString()} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
-                      This Club, Just None Of This Type Right Now.
+                      {totalHere.toLocaleString()}
+                      {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In This
+                      Club, Just None Of This Type Right Now.
                     </p>
                     <div className="empty-actions">
                       <button className="empty-action" onClick={clearAllNarrowing}>
@@ -2502,7 +2549,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                   <>
                     <p>Nothing Matches Your Filters</p>
                     <p className="empty-hint">
-                      {totalHere.toLocaleString()} Game{totalHere === 1 ? '' : 's'} Are Open In This
+                      {totalHere.toLocaleString()}
+                      {countsCapped ? '+' : ''} Game{totalHere === 1 ? '' : 's'} Are Open In This
                       Club, But {searching ? 'your search and ' : ''}
                       The Filters On This Tab Hide {totalHere === 1 ? 'it' : 'them all'}.
                     </p>

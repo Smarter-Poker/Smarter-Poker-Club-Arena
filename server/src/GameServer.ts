@@ -190,33 +190,45 @@ export class GameServer {
     }
     console.log('═══════════════════════════════════════════════════════════════');
 
-    // Step 1: Clean up stale data from previous runs.
-    // Test mode passes the protected id so cleanup spares it.
-    await this.cleanupStaleData(testTableId);
-
     /**
-     * LEADER OR STANDBY (2026-08-23). Exactly one instance owns the fleet.
+     * LEADER OR STANDBY — RESOLVED FIRST, BEFORE ANYTHING ELSE.
      *
-     * Resolved BEFORE anything is started, because a standby must never claim
-     * a table, run a tournament or seat a horse -- it holds nothing and serves
-     * nothing until the leader's lease goes stale, then takes everything.
+     * This was originally placed after cleanupStaleData(), and running it for
+     * real showed why that is wrong. A standby booted, spent nine seconds
+     * hydrating 20,000 HorseMind pairs, and -- far worse -- ran the cleanup:
      *
-     * Fail-open: any RPC problem answers 'leader'. Nobody running the fleet is
-     * the worst outcome available, and being wrong lands us on today's
-     * behaviour -- one instance doing everything.
+     *     [GameServer] Closed 10 orphaned tournament tables and released their seats
+     *
+     * A standby had mutated shared state while another instance was live. It
+     * then discovered it was a standby and returned, having already done the
+     * one thing it must never do. It also took so long to get there that it
+     * failed its healthcheck and autoheal restarted it, which started the whole
+     * sequence again.
+     *
+     * cleanupStaleData closes tables, releases seats and resets horses. It is
+     * recovery work that belongs to exactly one process: the one that owns the
+     * fleet. So leadership is now the FIRST thing start() decides, before any
+     * read, any write and any hydration.
+     *
+     * Fail-open on error, and a standby retains standby -- see
+     * services/leadership.ts for why that asymmetry matters.
      */
     const role = await renewLeadership();
     startLeadershipRenewal();
     if (role === 'standby') {
       const d = leadershipDiagnostics();
       console.log(
-        `[GameServer] STANDBY — ${d.holder} holds leadership. Claiming nothing; ` +
-          `will take the fleet if its lease goes stale (${'' + 30}s).`
+        `[GameServer] STANDBY — ${d.holder} holds leadership. Claiming nothing, ` +
+          'cleaning nothing, hydrating nothing. Will take the fleet if that lease goes stale.'
       );
-      // Nothing below this point runs. The renewal interval is the only thing
-      // alive, and /health reports 503 so Caddy keeps traffic off us.
+      // Nothing below runs. The renewal interval is the only thing alive, and
+      // /health answers 503 so Caddy keeps traffic on the leader.
       return;
     }
+
+    // Step 1: Clean up stale data from previous runs.
+    // Test mode passes the protected id so cleanup spares it.
+    await this.cleanupStaleData(testTableId);
 
     if (!maintenanceMode && !testTableId) {
       // Step 2: Start horse fleet manager (creates tables, seats horses)

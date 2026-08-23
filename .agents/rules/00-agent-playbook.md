@@ -1,3 +1,8 @@
+---
+description: The one and only way agents ship code in this repo. Binding on Claude, Antigravity, Cowork and every other agent.
+trigger: always_on
+---
+
 # RULE 1 — VERIFICATION PASS. Do not take your own word for it.
 
 Every claim below needs a command behind it, and you must paste the output.

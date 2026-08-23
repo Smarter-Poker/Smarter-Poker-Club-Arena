@@ -1933,6 +1933,7 @@
     "get_club_agents",
     "get_club_financial_summary",
     "get_club_flags",
+    "get_club_home",
     "get_club_traffic",
     "get_commander_access_details",
     "get_current_settlement_period",

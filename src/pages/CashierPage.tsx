@@ -1118,10 +1118,18 @@ export default function CashierPage() {
     userRole === 'agent' ||
     userRole === 'super_agent' ||
     userRole === 'sub_agent';
-  const canMint = (userRole === 'owner' && !isInUnion) || isUnionOwner;
+  // Mirrors fn_mint_chips_from_diamonds: a STANDALONE club's owner, co-owner
+  // or admin, or a union owner minting into the union bank. co_owner and admin
+  // were missing here while the RPC has always admitted them, so two roles saw
+  // no Mint tab on a club they are entitled to mint for. (Dan 2026-08-23.)
+  const canMint =
+    (!isInUnion && ['owner', 'co_owner', 'admin'].includes(userRole)) || isUnionOwner;
 
+  // The Club Bank row routes here, and it renders for owner / co_owner / admin
+  // / super_agent — so all four must have the tab, or the row would open a tab
+  // that does not exist and the clamp above would bounce them elsewhere.
   const canDistribute =
-    userRole === 'owner' || isUnionOwner || userRole === 'agent' || userRole === 'super_agent';
+    ['owner', 'co_owner', 'admin', 'super_agent', 'agent'].includes(userRole) || isUnionOwner;
 
   const tabs = useMemo(() => {
     const t: CashierAction[] = [];
@@ -1666,9 +1674,16 @@ export default function CashierPage() {
              * not make its treasury this club's balance. Union funds are
              * managed on the union's own surfaces; never here.
              */
-            variant={userRole === 'owner' ? 'owner' : 'player'}
+            variant="club"
+            // Dan 2026-08-23: which rows exist is the viewer's role, not a
+            // second variant. A player sees one wallet here, an agent three,
+            // and only owner/co-owner/admin/super agent see the Club Bank.
+            role={userRole}
             onBuyDiamonds={() => navigate(`/vip`)}
-            onMintChips={() => setAction('mint')}
+            // The Club Bank row opens the Club Bank Cashier. This page already
+            // IS a cashier, so it opens its own mint/distribute action rather
+            // than stacking a second modal on top of itself.
+            onOpenClubBank={() => setAction('distribute')}
             onOpenBBJ={() => clubId && navigate(`/clubs/${clubId}/jackpot`)}
           />
           {/* "Get Chips" (diamonds -> chips) REMOVED 2026-08-19.

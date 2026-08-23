@@ -51,7 +51,7 @@ import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
-import ChipMintModal from '../components/wallet/ChipMintModal';
+import ClubBankCashierModal from '../components/wallet/ClubBankCashierModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
@@ -333,8 +333,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // last 5 hits, qualifying hands per game, payout % per stakes (Dan 2026-08-18).
   const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
   const [showBBJInfo, setShowBBJInfo] = useState(false);
-  // Dan 2026-08-21: Chip Mint (diamonds -> chips, 100 = 10,000).
-  const [showChipMint, setShowChipMint] = useState(false);
+  // Dan 2026-08-23: the Club Bank row opens the Club Bank Cashier - send outs
+  // to agent wallets, the full chip ledger, and (standalone clubs only) the
+  // Chip Mint, which used to be a "+" on the wallet panel itself.
+  const [showClubBank, setShowClubBank] = useState(false);
   /* LOBBY V2 follow-up (Dan's QA, 2026-08-22): the lobby landed on the MTT
      tab, a leftover from before All Games was a real tab. A club with no open
      MTTs therefore opened onto an empty screen blaming "filters" - every
@@ -407,8 +409,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // club data that renders the existing "Club Not Found / Retry" panel; with
   // cached data it simply ends a background refresh that was going nowhere.
   const [loadStalled, setLoadStalled] = useState(false);
-  /** Why the club read came back empty, shown on the error panel (2026-08-23). */
-  const [loadFailure, setLoadFailure] = useState<string | null>(null);
   useEffect(() => {
     if (!loading) return;
     const watchdog = setTimeout(() => {
@@ -911,23 +911,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       if (clubError || !clubData) {
         reportError(clubError, 'ClubHomePage.Failed_to_load_club');
         toast.error('Failed to load club details');
-        /* Dan 2026-08-23 reported this panel appearing every time on his phone,
-           and it could not be reproduced from a clean session on any of his
-           three clubs, by either entry path. The reason is that this state
-           throws away the only fact that matters: WHY the read came back
-           empty. A refused row (RLS), a malformed id (PostgREST 400) and a
-           dropped connection all render the identical "moved or deleted"
-           sentence, which is also a lie in two of those three cases.
-           Keep the cause so the panel can show it and the next report carries
-           its own diagnosis. */
-        if (!getIsMounted || getIsMounted()) {
-          setLoadFailure(
-            clubError
-              ? `${clubError.code ? clubError.code + ': ' : ''}${clubError.message || 'request failed'}`
-              : `no club matched ${String(clubId).slice(0, 40)}`
-          );
-          setLoading(false);
-        }
+        if (!getIsMounted || getIsMounted()) setLoading(false);
         return;
       }
 
@@ -1193,7 +1177,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         // joinable 6/6 card after TournamentService was fixed, because it
         // runs its own query rather than the service. Same rule as the
         // service now: a lobby lists what can be ENTERED.
-        .in('status', ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTING_SOON'])
+        .in('status', ['REGISTERING', 'RUNNING'])
         .order('start_time', { ascending: true })
         /* The tables query has been capped since P1-1; these two were not
            capped at all. An unbounded list query is the shape that pulled
@@ -1238,7 +1222,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 // (XMTT and union-stamped recurring games), not just XMTT.
                 .eq('union_id', unionId)
                 // Joinable-only -- same rule as the club query above.
-                .in('status', ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTING_SOON'])
+                .in('status', ['REGISTERING', 'RUNNING'])
                 .order('start_time', { ascending: true })
                 .limit(QUERY_LIMITS.LIST),
             ]
@@ -1438,23 +1422,24 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     });
 
     const bb = (t: TableData) => Number(t.big_blind) || 0;
-    const cmpStakes = (a: TableData, b: TableData) => bb(b) - bb(a);
-    const cmpStakesLow = (a: TableData, b: TableData) => bb(a) - bb(b);
-    const cmpPlayers = (a: TableData, b: TableData) =>
-      (b.current_players || 0) - (a.current_players || 0);
-    const cmpName = (a: TableData, b: TableData) => (a.name || '').localeCompare(b.name || '');
-
     switch (sortKey) {
       case 'stakes_high':
-        return rows.sort((a, b) => cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b));
+        return rows.sort((a, b) => bb(b) - bb(a));
       case 'stakes_low':
-        return rows.sort((a, b) => cmpStakesLow(a, b) || cmpPlayers(a, b) || cmpName(a, b));
+        return rows.sort((a, b) => bb(a) - bb(b));
       case 'players':
+        return rows.sort((a, b) => (b.current_players || 0) - (a.current_players || 0));
       case 'starting_soon':
-        return rows.sort((a, b) => cmpPlayers(a, b) || cmpStakes(a, b) || cmpName(a, b));
+        // Cash tables have no start time. Rather than sorting them by an
+        // absent field (which is a no-op that LOOKS like a sort), fall back to
+        // the busiest first — the nearest cash equivalent of "starting soon".
+        return rows.sort((a, b) => (b.current_players || 0) - (a.current_players || 0));
       case 'recommended':
       default:
-        return rows.sort((a, b) => cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b));
+        // Hold'em → Omaha → Mixed, busiest first inside each family.
+        return rows.sort(
+          (a, b) => cashRank(a) - cashRank(b) || (b.current_players || 0) - (a.current_players || 0)
+        );
     }
   }, [tables, gameType, showsCash, sortKey, searchQuery, advFilters]);
 
@@ -1540,22 +1525,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
     const buyIn = (t: TournamentData) =>
       (Number(t.buy_in_amount) || 0) + (Number(t.buy_in_fee) || 0);
-    const cmpBuyIn = (a: TournamentData, b: TournamentData) => buyIn(b) - buyIn(a);
-    const cmpBuyInLow = (a: TournamentData, b: TournamentData) => buyIn(a) - buyIn(b);
-    const cmpPlayersTourn = (a: TournamentData, b: TournamentData) =>
-      (b.current_players || 0) - (a.current_players || 0);
-    const cmpNameTourn = (a: TournamentData, b: TournamentData) =>
-      (a.name || '').localeCompare(b.name || '');
-
     switch (sortKey) {
       case 'stakes_high':
-        return rows.sort((a, b) => cmpBuyIn(a, b) || cmpPlayersTourn(a, b) || cmpNameTourn(a, b));
+        return rows.sort((a, b) => buyIn(b) - buyIn(a));
       case 'stakes_low':
-        return rows.sort(
-          (a, b) => cmpBuyInLow(a, b) || cmpPlayersTourn(a, b) || cmpNameTourn(a, b)
-        );
+        return rows.sort((a, b) => buyIn(a) - buyIn(b));
       case 'players':
-        return rows.sort((a, b) => cmpPlayersTourn(a, b) || cmpBuyIn(a, b) || cmpNameTourn(a, b));
+        return rows.sort((a, b) => (b.current_players || 0) - (a.current_players || 0));
       case 'starting_soon': {
         /* A SORT MUST NOT DELETE ROWS (2026-08-23). This case used to
            `rows.filter(isLateReg)` and return only what was still enterable -
@@ -1591,18 +1567,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           const ea = stillEnterable(a) ? 0 : 1;
           const eb = stillEnterable(b) ? 0 : 1;
           if (ea !== eb) return ea - eb;
-          return at(a) - at(b) || cmpBuyIn(a, b) || cmpPlayersTourn(a, b) || cmpNameTourn(a, b);
+          return at(a) - at(b);
         });
       }
       case 'recommended':
       default:
-        return rows.sort(
-          (a, b) =>
-            tournamentOpenFirst(a, b) ||
-            cmpBuyIn(a, b) ||
-            cmpPlayersTourn(a, b) ||
-            cmpNameTourn(a, b)
-        );
+        return rows.sort(tournamentOpenFirst);
     }
   }, [tournaments, gameType, showsTournaments, sortKey, searchQuery, advFilters]);
 
@@ -2021,30 +1991,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             ? 'This is taking longer than usual - the connection may be slow right now. Your chips and seats are safe.'
             : 'The club may have been moved or deleted.'}
         </p>
-        {/* The cause, verbatim. A player can read it out and it names the bug
-            immediately; without it every failure mode looks the same. */}
-        {!loadStalled && loadFailure && (
-          <p
-            style={{
-              color: '#6a7a8a',
-              fontSize: '0.72rem',
-              fontFamily: 'monospace',
-              margin: '0 0 1rem',
-              wordBreak: 'break-word',
-            }}
-          >
-            {loadFailure}
-          </p>
-        )}
         <div style={{ display: 'flex', gap: '0.75rem' }}>
           <button
             className="btn btn-primary"
             onClick={() => {
               loadingRef.current = false;
               setLoadStalled(false);
-              /* Drop the previous cause, or a retry that fails differently
-                 would still be showing the first attempt's reason. */
-              setLoadFailure(null);
               loadClubData();
             }}
             style={{
@@ -2210,22 +2162,27 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               <DynamicWallet
                 userId={currentUserId}
                 clubId={resolvedClubId}
-                variant={
-                  club?.is_union ? 'union' : isOwner || userRole === 'owner' ? 'owner' : 'player'
-                }
+                // WHOSE books. A union's own lobby shows union books; every
+                // club lobby shows club books, whoever is standing in it.
+                variant={club?.is_union ? 'union' : 'club'}
+                // WHO is looking. Decides which rows exist - see walletRows.ts.
+                // The club's owner_id outranks a stale club_members row, which
+                // is how a brand new owner sees their own Club Bank.
+                role={isOwner ? 'owner' : userRole}
                 showBBJ
                 onBuyDiamonds={() => {
                   haptic.medium();
                   navigate(`/clubs/${clubId}/detail`);
                 }}
-                onMintChips={() => {
+                // Dan 2026-08-23: "if they click on Club Bank, that should
+                // open the Club Bank Cashier." The row only renders for owner,
+                // co-owner, admin and super agent, and fn_can_use_club_bank
+                // refuses everyone else server-side. The Chip Mint moved
+                // INSIDE that cashier - there is no mint button out here any
+                // more, and no mint at all once the club is in a union.
+                onOpenClubBank={() => {
                   haptic.medium();
-                  // Dan 2026-08-21: the Mint button IS the Chip Mint now
-                  // (diamonds -> chips, 100 = 10,000). The RPC enforces the
-                  // law: standalone clubs mint into their pool; union clubs
-                  // are revoked unless you own the union, in which case the
-                  // chips land in the union bank.
-                  setShowChipMint(true);
+                  setShowClubBank(true);
                 }}
                 onOpenBBJ={() => {
                   haptic.medium();
@@ -2292,10 +2249,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         )}
       </header>
 
-      <ChipMintModal
-        isOpen={showChipMint}
-        onClose={() => setShowChipMint(false)}
+      <ClubBankCashierModal
+        isOpen={showClubBank}
+        onClose={() => setShowClubBank(false)}
         clubId={resolvedClubId || clubId || ''}
+        role={isOwner ? 'owner' : userRole}
       />
       <BBJInfoModal
         isOpen={showBBJInfo}

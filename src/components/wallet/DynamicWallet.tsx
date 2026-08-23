@@ -6,10 +6,23 @@
  * Compact wallet display positioned below the club card.
  * Shows BBJ banner + role-specific wallet balance rows with action buttons.
  *
- * Three variants, chosen EXPLICITLY by the caller — never inferred:
- *   'player' — Chip Balance, Agent Wallet, Promo Wallet
- *   'owner'  — Club Bank, Agent Wallet, Promo Wallet
- *   'union'  — Union Bank, Rake Treasury, Clubs Wallet, Promo Wallet, Backup BBJ
+ * TWO SCOPES, chosen EXPLICITLY by the caller — never inferred:
+ *   'club'  — the club's books. WHICH rows appear is decided by the viewer's
+ *             role, in walletRows.ts (see WALLET VISIBILITY LAW there).
+ *   'union' — Rake Treasury, BBJ Backup, Promo. Union surfaces only.
+ *
+ * ── WALLET VISIBILITY LAW (Dan 2026-08-23, binding) ─────────────────────────
+ * A player sees Diamonds and their Player Wallet, nothing else. Agents and sub
+ * agents add an Agent Wallet and a Promo Wallet. Only an owner, co-owner,
+ * admin or super agent ever sees the CLUB BANK, and clicking it opens the Club
+ * Bank Cashier. The rule lives in walletRows.ts; the server enforces the same
+ * four roles in fn_can_use_club_bank, so this is presentation, not security.
+ *
+ * ── CHIP MINT (Dan 2026-08-23) ──────────────────────────────────────────────
+ * There is no mint button on this panel any more. Minting is not a wallet
+ * action, it is a Club Bank action, and it exists only for a STANDALONE club —
+ * the moment a club joins a union its mint is revoked and chips flow down from
+ * the union instead. The entry point is inside the Club Bank Cashier.
  *
  * ── WALLET SEPARATION LAW (Dan 2026-08-20, binding) ─────────────────────────
  * Union money and club money are DIFFERENT MONEY and must never appear on the
@@ -36,7 +49,6 @@
  *   - RT channel reconnect with exponential backoff
  *   - union_wallets RT channel for instant union bank updates
  *   - Accessibility: keyboard handlers, focus indicators, aria-live
- *   - Mint button gated to owner/union only
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -45,6 +57,8 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { normaliseRole, type ClubRole } from '../../types/clubRoles';
+import { clubWalletRows, type WalletRowKey } from './walletRows';
 import './DynamicWallet.css';
 import { reportError } from '../../utils/errorReporter';
 
@@ -68,12 +82,28 @@ const BACKOFF_DELAYS = [2000, 4000, 8000, 16000, 30000];
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-type WalletVariant = 'player' | 'owner' | 'union';
+/**
+ * WHOSE BOOKS this panel is showing. Not "who is looking" — that is `role`.
+ * The two were once the same prop and the result is documented at
+ * effectiveVariant below.
+ */
+type WalletVariant = 'club' | 'union';
 
 interface DynamicWalletProps {
   userId: string;
   clubId: string;
   variant?: WalletVariant;
+  /**
+   * The viewer's role IN THIS CLUB. Decides which club rows exist — see
+   * walletRows.ts. Defaults to 'player', the least-privileged reading, so a
+   * caller that forgets to pass it under-shows rather than over-shows.
+   * Ignored by the 'union' scope, which has its own fixed row set.
+   *
+   * Widened to `string` because CashierPage still holds its role as a bare
+   * string carrying legacy values like 'member'. normaliseRole maps anything
+   * unrecognised onto 'player', so a stale vocabulary can only ever show LESS.
+   */
+  role?: ClubRole | string;
   /**
    * Render the BBJ banner. Default true. The club lobby passes false because
    * BBJTicker already owns the jackpot up there — two live copies of the same
@@ -82,7 +112,8 @@ interface DynamicWalletProps {
    */
   showBBJ?: boolean;
   onBuyDiamonds?: () => void;
-  onMintChips?: () => void;
+  /** Opens the Club Bank Cashier. Only ever wired on the four bank roles. */
+  onOpenClubBank?: () => void;
   onOpenBBJ?: () => void;
 }
 
@@ -113,6 +144,13 @@ interface WalletData {
   clubTreasury: number;
   unionRake: number;
   unionPromo: number;
+  /**
+   * A STANDALONE club's own rake treasury (fn_club_money_panel ->
+   * club_rake_treasury). A club inside a union has none — its rake goes to the
+   * union's treasury, which is union money. `null` means "not applicable or
+   * not readable", and renders as "-" rather than as 0.00.
+   */
+  clubRakeTreasury: number | null;
   /** Sum of member clubs' operational banks — the real union-level figure. */
   clubsWallet: number;
   /** What Monday's close hands back to THIS club / to all clubs. */
@@ -187,10 +225,11 @@ function formatBalance(num: number): string {
 export default function DynamicWallet({
   userId,
   clubId,
-  variant = 'player',
+  variant = 'club',
+  role = 'player',
   showBBJ = true,
   onBuyDiamonds,
-  onMintChips,
+  onOpenClubBank,
   onOpenBBJ,
 }: DynamicWalletProps) {
   const [data, setData] = useState<WalletData>({
@@ -205,6 +244,7 @@ export default function DynamicWallet({
     clubTreasury: 0,
     unionRake: 0,
     unionPromo: 0,
+    clubRakeTreasury: null,
     clubsWallet: 0,
     clubProjectedRakeback: 0,
     projectedClubsShare: 0,
@@ -284,40 +324,35 @@ export default function DynamicWallet({
   //           rendered as one balance sheet on a club screen.
   //
   // Being permitted to see union money elsewhere is not permission to show it
-  // HERE. The surface decides: club surfaces pass 'player'/'owner', union
-  // surfaces pass 'union'. Nothing infers it. Do not reintroduce a promotion
-  // rule of any shape.
+  // HERE. The surface decides: club surfaces pass 'club', union surfaces pass
+  // 'union'. Nothing infers it. Do not reintroduce a promotion rule of any
+  // shape. (WHICH rows a club surface shows is a separate question, answered
+  // by the viewer's role in walletRows.ts — that is not a scope promotion.)
   const effectiveVariant: WalletVariant = variant;
+  const viewerRole: ClubRole = normaliseRole(role);
 
   // Animated values
   const animDiamonds = useAnimatedCounter(data.diamonds);
   const animBBJ = useAnimatedCounter(data.bbjPool);
-  const animRow1 = useAnimatedCounter(
-    effectiveVariant === 'union'
-      ? data.unionBank
-      : effectiveVariant === 'owner'
-        ? data.clubBank
-        : data.chipBalance
-  );
-  const animRow2 = useAnimatedCounter(
+  const animAgent = useAnimatedCounter(
     // Union: the combined operational banks of the member clubs. This used to
     // read the SELECTED club's own bank, which is not a union-level figure at
     // all — it read 0.00 for a union whose clubs held 800k.
     effectiveVariant === 'union' ? data.clubsWallet : data.agentBalance
   );
-  const animRow3 = useAnimatedCounter(
+  const animPromo = useAnimatedCounter(
     // Union promo is the swept 25% BBJ slice in union_wallets, not the
     // club-agent promo wallet.
     effectiveVariant === 'union' ? data.unionPromo : data.promoBalance
   );
   const animBackupBBJ = useAnimatedCounter(data.backupBBJ);
   // Dan 2026-08-21: "even club owners need a player wallet, that's the only
-  // wallet they can play out of." The owner stack now leads with the viewer's
-  // own per-club chip balance — the money that actually buys into games.
+  // wallet they can play out of." Every club stack leads with the viewer's own
+  // per-club chip balance — the money that actually buys into games.
   const animPlayerWallet = useAnimatedCounter(data.chipBalance);
-  const animTreasury = useAnimatedCounter(
-    effectiveVariant === 'union' ? data.unionRake : data.clubTreasury
-  );
+  const animClubBank = useAnimatedCounter(data.clubBank);
+  const animClubRake = useAnimatedCounter(data.clubRakeTreasury ?? 0);
+  const animUnionRake = useAnimatedCounter(data.unionRake);
 
   // ── Fetch data — uses resolvedId (UUID) for all Supabase queries ───────────
   const fetchData = useCallback(async () => {
@@ -383,6 +418,13 @@ export default function DynamicWallet({
         agentBalance: Number(agentRes.data?.agent_wallet_balance) || 0,
         clubBank: num(panel.club_treasury),
         clubTreasury: num(panel.club_treasury),
+        // Present ONLY for a standalone club, and only for club staff. Absent
+        // means "you have no such account" or "you may not read it" — both of
+        // which render "-", never 0.00.
+        clubRakeTreasury:
+          panel.club_rake_treasury === undefined || panel.club_rake_treasury === null
+            ? null
+            : num(panel.club_rake_treasury),
         unionBank: unionScoped ? num(panel.union_bank) : 0,
         unionRake: unionScoped ? num(panel.rake_treasury) : 0,
         unionPromo: unionScoped ? num(panel.union_promo) : 0,
@@ -672,76 +714,89 @@ export default function DynamicWallet({
     : 'Monday';
 
   type WalletRow = {
+    key: string;
     label: string;
     icon: WalletIconName;
     value: number;
     hint?: string;
     known?: boolean;
+    /** Makes the row a button. Only the Club Bank has one. */
+    onOpen?: () => void;
   };
 
-  const ROW_CONFIG: Record<WalletVariant, WalletRow[]> = {
-    player: [
+  // ── Club rows: the viewer's ROLE decides which of these exist ─────────────
+  // Dan 2026-08-23. A player gets one row. An agent gets three. Only the four
+  // bank roles get the Club Bank, and only a standalone club has a rake
+  // treasury of its own to show beneath it. The rule is in walletRows.ts.
+  const CLUB_ROW_BY_KEY: Record<WalletRowKey, WalletRow> = {
+    player_wallet: {
+      key: 'player_wallet',
       // Dan 2026-08-21: named for what it IS across every role — the wallet
-      // you play out of. (Was "Chip Balance".)
-      { label: 'Player Wallet', icon: 'chip', value: animRow1 },
-      { label: 'Agent Wallet', icon: 'agent', value: animRow2 },
-      { label: 'Promo Wallet', icon: 'promo', value: animRow3 },
-    ],
-    owner: [
-      // Dan 2026-08-21: "even club owners need a player wallet, that's the
-      // only wallet they can play out of. Agents must move chips from their
-      // agent wallets to player wallets to buy into games." Owners get the
-      // same row players see, first, so the money that buys in is never
-      // hidden behind club treasury figures.
-      {
-        label: 'Player Wallet',
-        icon: 'chip',
-        value: animPlayerWallet,
-        hint: 'The Wallet You Play From',
-      },
-      { label: 'Club Bank', icon: 'bank', value: animRow1 },
-      // Dan 2026-08-21: "Due at close" removed from the wallet stack — that
-      // figure lives on the Data tab (ClubDataPage settlement breakdown shows
-      // the 90% rakeback due line). A money panel lists wallets, not
-      // projections.
-      { label: 'Agent Wallet', icon: 'agent', value: animRow2 },
-      { label: 'Promo Wallet', icon: 'promo', value: animRow3 },
-    ],
-    union: [
-      {
-        label: 'Rake Treasury',
-        icon: 'treasury',
-        value: animTreasury,
-        known: unionFiguresKnown,
-        hint: unionFiguresKnown
-          ? `Held In Trust · ${formatBalance(data.projectedClubsShare)} To Clubs ${closeDay}`
-          : 'Union Admins Only',
-      },
-      {
-        label: 'BBJ Backup Wallet',
-        icon: 'reserve',
-        value: animBackupBBJ,
-        known: unionFiguresKnown,
-        hint: 'Next Jackpot Seed',
-      },
-      {
-        label: 'Promo Wallet',
-        icon: 'promo',
-        value: animRow3,
-        known: unionFiguresKnown,
-        // The 25% promo slice accrues inside the BBJ pool and is swept across
-        // to this wallet every ~5 minutes, so it steps rather than streams.
-        // Saying so stops it reading as "not being funded".
-        hint: unionFiguresKnown ? '25% BBJ Slice · Swept Every 5 Min' : undefined,
-      },
-    ],
+      // you play out of. (Was "Chip Balance".) Dan 2026-08-23: the "The Wallet
+      // You Play From" hint is gone — self-explanatory, and it was the only
+      // row carrying one on a club panel.
+      label: 'Player Wallet',
+      icon: 'chip',
+      value: animPlayerWallet,
+    },
+    agent_wallet: { key: 'agent_wallet', label: 'Agent Wallet', icon: 'agent', value: animAgent },
+    promo_wallet: { key: 'promo_wallet', label: 'Promo Wallet', icon: 'promo', value: animPromo },
+    club_bank: {
+      key: 'club_bank',
+      label: 'Club Bank',
+      icon: 'bank',
+      value: animClubBank,
+      hint: onOpenClubBank ? 'Tap For The Club Bank Cashier' : undefined,
+      onOpen: onOpenClubBank,
+    },
+    rake_treasury: {
+      key: 'rake_treasury',
+      label: 'Rake Treasury',
+      icon: 'treasury',
+      value: animClubRake,
+      // A standalone club keeps its own rake. `null` from the panel means the
+      // account is not applicable or not readable — "-" beats a made-up zero.
+      known: data.clubRakeTreasury !== null,
+      hint: 'This Club Keeps Its Own Rake',
+    },
   };
 
-  const rows = ROW_CONFIG[effectiveVariant];
+  const UNION_ROWS: WalletRow[] = [
+    {
+      key: 'union_rake',
+      label: 'Rake Treasury',
+      icon: 'treasury',
+      value: animUnionRake,
+      known: unionFiguresKnown,
+      hint: unionFiguresKnown
+        ? `Held In Trust · ${formatBalance(data.projectedClubsShare)} To Clubs ${closeDay}`
+        : 'Union Admins Only',
+    },
+    {
+      key: 'union_backup_bbj',
+      label: 'BBJ Backup Wallet',
+      icon: 'reserve',
+      value: animBackupBBJ,
+      known: unionFiguresKnown,
+      hint: 'Next Jackpot Seed',
+    },
+    {
+      key: 'union_promo',
+      label: 'Promo Wallet',
+      icon: 'promo',
+      value: animPromo,
+      known: unionFiguresKnown,
+      // The 25% promo slice accrues inside the BBJ pool and is swept across
+      // to this wallet every ~5 minutes, so it steps rather than streams.
+      // Saying so stops it reading as "not being funded".
+      hint: unionFiguresKnown ? '25% BBJ Slice · Swept Every 5 Min' : undefined,
+    },
+  ];
 
-  // Only show mint button for owner/union variants (players should never see it)
-  const showMintButton =
-    onMintChips && (effectiveVariant === 'owner' || effectiveVariant === 'union');
+  const rows: WalletRow[] =
+    effectiveVariant === 'union'
+      ? UNION_ROWS
+      : clubWalletRows(viewerRole, { standalone: !isClubInUnion }).map((k) => CLUB_ROW_BY_KEY[k]);
 
   // ── Keyboard handler for BBJ banner (accessibility) ─────────────────────────
   const handleBbjKeyDown = (e: React.KeyboardEvent) => {
@@ -821,11 +876,32 @@ export default function DynamicWallet({
           )}
         </div>
 
-        {/* Role-specific wallet rows */}
+        {/* Role-specific wallet rows.
+            The Club Bank row is a button: "if they click on Club Bank, that
+            should open the Club Bank Cashier" (Dan 2026-08-23). Every other
+            row is inert — a balance, not a control. */}
         {rows.map((row, idx) => (
           <div
-            key={row.label}
-            className={`dw__row dw__row--wallet${idx === 0 ? ' dw__row--primary' : ''}`}
+            key={row.key}
+            className={
+              `dw__row dw__row--wallet` +
+              (idx === 0 ? ' dw__row--primary' : '') +
+              (row.onOpen ? ' dw__row--actionable' : '')
+            }
+            onClick={row.onOpen}
+            onKeyDown={
+              row.onOpen
+                ? (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      row.onOpen!();
+                    }
+                  }
+                : undefined
+            }
+            role={row.onOpen ? 'button' : undefined}
+            tabIndex={row.onOpen ? 0 : undefined}
+            aria-label={row.onOpen ? `${row.label}: open the Club Bank Cashier` : undefined}
           >
             <span className="dw__row-icon" aria-hidden="true">
               <WalletIcon name={row.icon} />
@@ -837,17 +913,10 @@ export default function DynamicWallet({
             <span className="dw__row-value">
               {row.known === false ? '-' : formatBalance(row.value)}
             </span>
-            {idx === 0 && showMintButton && (
-              <button
-                className="dw__plus"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onMintChips!();
-                }}
-                aria-label="Mint Chips"
-              >
-                +
-              </button>
+            {row.onOpen && (
+              <span className="dw__row-chevron" aria-hidden="true">
+                &rsaquo;
+              </span>
             )}
           </div>
         ))}

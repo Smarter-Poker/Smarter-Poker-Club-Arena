@@ -375,7 +375,7 @@ export async function sweepIncompleteHorses(limit = 1000): Promise<{
     const { data, error } = await supabase
       .from('profiles')
       .select(
-        'id, display_name, username, alias, player_number, avatar_url, is_vip, vip_tier, horse_profile'
+        'id, display_name, username, alias, player_number, avatar_url:arena_avatar_url, is_vip, vip_tier, horse_profile'
       )
       .eq('is_horse', true)
       .limit(limit);
@@ -412,7 +412,7 @@ export async function sweepIncompleteHorses(limit = 1000): Promise<{
 async function ensureClubMembership(horseId: string, clubId: string): Promise<void> {
   const { data } = await supabase
     .from('club_members')
-    .select('id, chip_balance')
+    .select('chip_balance')
     .eq('club_id', clubId)
     .eq('user_id', horseId)
     .maybeSingle();

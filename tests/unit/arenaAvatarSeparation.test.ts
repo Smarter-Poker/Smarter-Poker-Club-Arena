@@ -51,8 +51,11 @@ describe('Club Arena never touches the social media photo column', () => {
       const re = /\.from\(\s*['"]profiles['"]\s*\)/g;
       let m: RegExpExecArray | null;
       while ((m = re.exec(src))) {
-        const sel = /\.select\(/.exec(src.slice(m.index, m.index + 500));
+        const slice = src.slice(m.index, m.index + 500);
+        const sel = /\.select\(/.exec(slice);
         if (!sel) continue;
+        const intervening = slice.slice(0, sel.index);
+        if (/\.(from|update|upsert|insert|delete)\(/.test(intervening)) continue;
         const start = m.index + sel.index + sel[0].length;
         let depth = 1;
         let j = start;

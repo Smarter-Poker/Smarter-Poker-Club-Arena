@@ -25,7 +25,14 @@
  *   club_home_cache_ → ClubHomePage (Phase 8)
  */
 
-const SWR_PREFIXES = [
+/**
+ * The canonical list of sessionStorage SWR cache prefixes.
+ *
+ * Exported because clearUserCaches.ts must purge exactly this set on sign-out.
+ * Two copies of this list would drift, and the failure mode of a drifted copy
+ * is one account's cached data being read by the next one.
+ */
+export const SWR_CACHE_PREFIXES = [
   'ps_stats_',
   'ps_sessions_',
   'sh_cache_',
@@ -59,7 +66,7 @@ function reapStaleCaches(): void {
       if (!key) continue;
 
       // Only touch our known SWR keys
-      const isOurs = SWR_PREFIXES.some((prefix) => key.startsWith(prefix));
+      const isOurs = SWR_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix));
       if (!isOurs) continue;
 
       // Try to parse — if it's an array/object, check for staleness

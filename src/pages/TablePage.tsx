@@ -680,6 +680,15 @@ function MastheadLevelClock({
   );
 }
 
+/**
+ * Dan 2026-08-23: "you should never ask if they want to show cards."
+ *
+ * The only remaining reader of the old `autoMuckWinners` opt-out. Left as a
+ * named constant so the behaviour it controls is greppable and reversible in
+ * one line, instead of being an absence.
+ */
+const ASK_TO_SHOW_ON_UNCONTESTED_WIN = false;
+
 export default function TablePage({
   embeddedTableId,
   onTableInfoUpdate,
@@ -3389,6 +3398,26 @@ export default function TablePage({
     handleLeaveTableRef.current?.();
   }, []);
 
+  /**
+   * Where leaving a table puts you.
+   *
+   * Dan 2026-08-23: "when you leave a table, it should take you to the club in
+   * game lobby, not the actual lobby." Both exit paths below called
+   * `navigate('/')`, which is the Club Arena home carousel — Create A Club /
+   * Find A Player / Join A Club. You stood up from a seat in Club JAQK and
+   * landed on a screen for choosing a club, with no trace of the one you were
+   * just sitting in.
+   *
+   * `actualClubIdRef` is stamped from `table.club_id` when the table loads, so
+   * it is the club this seat actually belonged to rather than whatever the URL
+   * happened to carry. '/' remains the fallback for the case that ref is empty
+   * — a table with no club is the only way back to nowhere in particular.
+   */
+  const exitDestination = () => {
+    const clubId = actualClubIdRef.current;
+    return clubId ? `/clubs/${clubId}` : '/';
+  };
+
   const handleLeaveTable = async () => {
     if (!tableId || !userId) return;
     setLeaveNotice(null);
@@ -3497,7 +3526,7 @@ export default function TablePage({
           tableId: tableId ?? '',
           action: 'CLOSE_TABLE_TAB',
         });
-        navigate('/');
+        navigate(exitDestination());
 
         // Phase E: Route session end to Notifications tab for async review
         if (userId && userId !== 'guest') {
@@ -3550,7 +3579,7 @@ export default function TablePage({
             tableId: tableId ?? '',
             action: 'CLOSE_TABLE_TAB',
           });
-          navigate('/');
+          navigate(exitDestination());
         }
       }
     } catch (error) {
@@ -7492,12 +7521,26 @@ export default function TablePage({
         // already true by the time POT_WIN lands. Test it first, and keep the
         // boardStage check as a fallback for any path that sets the stage
         // without emitting SHOWDOWN.
+        /*
+         * Dan 2026-08-23: "auto muck should be on by default, you should never
+         * ask if they want to show cards."
+         *
+         * This block is what asked. On an uncontested win it opened the
+         * HandReveal modal — Show / Muck on a 6-second auto-close — for every
+         * player whose `autoMuckWinners` was false, which was the DEFAULT and
+         * so every player who had never opened the settings panel.
+         *
+         * Gated on a named constant rather than deleted: the winner handling
+         * immediately below (sounds, haptics, stats) reads the same locals, and
+         * one flag is a cleaner revert than restoring a block. Nothing else
+         * sets showHandRevealModal true, so this is the whole prompt.
+         */
         if (
+          ASK_TO_SHOW_ON_UNCONTESTED_WIN &&
           winnerIds.length > 0 &&
           winnerIds.includes(userId) &&
           !heroHandOutcomeRef.current.showdown &&
-          tableStateRef.current.boardStage !== 'showdown' &&
-          !userSettingsRef.current.autoMuckWinners
+          tableStateRef.current.boardStage !== 'showdown'
         ) {
           const heroPlayer = tableStateRef.current.players.find((p) => p?.id === userId);
           setHandRevealWinnerId(userId);

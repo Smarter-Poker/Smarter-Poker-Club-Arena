@@ -29,7 +29,13 @@
 import type { Card, SeatPlayer, HandStage, ActionRecord } from '../types.js';
 import { HorseLogic, type HorseDecideOpts, type HorseGameStateV2 } from '../engine/HorseLogic.js';
 import { HorseMind, type HorseMindSandbox } from '../engine/HorseMind.js';
-import { seedFastRandom, fastRandom, scoreHoldem } from '../engine/HorseEval.js';
+import {
+  seedFastRandom,
+  saveFastRandom,
+  restoreFastRandom,
+  fastRandom,
+  scoreHoldem,
+} from '../engine/HorseEval.js';
 import { SUITS, RANKS, validateAction, calculateBettingState } from '../engine/PokerEngine.js';
 import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
@@ -47,16 +53,21 @@ export interface LeagueResult {
   stderr: number;
   durationMs: number;
   illegalActions: number;
+  /** streets cut short by the action cap (must be 0; see runStreet) */
+  truncatedStreets: number;
 }
 
 export interface LeagueMatchup {
   name: string;
   a: HorseDecideOpts;
   b: HorseDecideOpts;
-  /** V12.2: run this matchup's hands against sandboxed HorseMind state so the
-   *  mind layer participates without touching live opponent memory. Each pass
-   *  of the duplicate pair keeps its own sandbox for the whole matchup, so
-   *  memory accumulates coherently and symmetrically and luck still cancels. */
+  /** V12.3: RETIRED as an opt-in — EVERY matchup is now sandboxed. It was
+   *  never safe to run a league hand against live HorseMind state: `mind:false`
+   *  suppresses stats and pair writes but NOT barrel plans, so the four
+   *  unsandboxed matchups were writing thousands of synthetic plan keys into
+   *  the live map and tripping its 8000-key wipe — clearing the barrel plan of
+   *  every hand in progress on every live table. Kept only so an existing
+   *  config object still type-checks. */
   mind?: 'sandbox';
 }
 
@@ -64,7 +75,19 @@ const SEATS = 6;
 const BB = 2;
 const SB = 1;
 const START_STACK = 200; // 100bb
-const MAX_ACTIONS_PER_STREET = 24;
+// V12.3: raised from 24. A six-way preflop raise war can legitimately exceed
+// 24 actions, and hitting the cap now folds the debtors (see runStreet)
+// rather than silently forgiving their unpaid bets.
+const MAX_ACTIONS_PER_STREET = 48;
+
+/** V12.3: process-wide monotonic base for synthetic action timestamps. Two
+ *  hands must never share a HorseMind hand key (see playHand). */
+let handTsCounter = 1;
+const TS_STRIDE = 4096; // room for every action in a hand
+function nextHandTsBase(): number {
+  handTsCounter += TS_STRIDE;
+  return handTsCounter;
+}
 
 const FULL_DECK: Card[] = [];
 for (const suit of SUITS) for (const rank of RANKS) FULL_DECK.push({ rank, suit });
@@ -88,7 +111,7 @@ export function playHand(
   handSeed: number,
   dealerSeat: number,
   configOf: (seatIdx: number) => HorseDecideOpts,
-  counters?: { illegal: number },
+  counters?: { illegal: number; truncated: number },
   /** V12.2: when present, decisions run against this sandboxed HorseMind and
    *  the per-seat `mind` flag is honored (default on) instead of forced off. */
   sandbox?: HorseMindSandbox
@@ -102,6 +125,8 @@ export function playHand(
     deck[i] = deck[j];
     deck[j] = tmp;
   }
+
+  const tally = counters ?? { illegal: 0, truncated: 0 };
 
   const seats: Seat[] = [];
   for (let s = 0; s < SEATS; s++) {
@@ -146,7 +171,12 @@ export function playHand(
   let minRaise = BB;
   let lastRaise = BB;
   const history: ActionRecord[] = [];
-  let ts = handSeed >>> 1;
+  // V12.3: a per-call monotonic timestamp base. `handSeed >>> 1` collided
+  // across the two passes of a duplicate pair (same seed, same base), which
+  // made HorseMind.handKeyOf identical in both passes — config B then read
+  // config A's barrel plan, destroying the independence the duplicate design
+  // exists to provide. A process-wide counter cannot collide.
+  let ts = nextHandTsBase();
 
   const live = () => seats.filter((s) => !s.player.is_folded);
   const canAct = () => seats.filter((s) => !s.player.is_folded && !s.player.is_all_in);
@@ -161,6 +191,20 @@ export function playHand(
     }
     let actions = 0;
     let lastAggressor = -1;
+    // V12.3: who has already acted on this street. A short all-in reopens
+    // nothing for them (TDA 44); a full raise reopens for everyone.
+    const acted = new Set<number>();
+    const rebuildQueue = (raiserIdx: number, reopens: boolean, actedSet: Set<number>): number[] => {
+      const q: number[] = [];
+      for (let k = 1; k < SEATS; k++) {
+        const j = (raiserIdx + k) % SEATS;
+        const other = seats[j].player;
+        if (other.is_folded || other.is_all_in) continue;
+        if (!reopens && actedSet.has(j)) continue; // owes the difference only
+        q.push(j);
+      }
+      return q;
+    };
     while (toActQueue.length > 0 && actions < MAX_ACTIONS_PER_STREET) {
       const i = toActQueue.shift()!;
       const seat = seats[i];
@@ -206,15 +250,20 @@ export function playHand(
       if (action === 'call' && toCall === 0) action = 'check';
       if (action === 'bet' && currentBet > 0) action = 'raise';
       if (action === 'raise' && currentBet === 0) action = 'bet';
-      if ((action === 'bet' || action === 'raise') && counters) {
+      // V12.3: validation is UNCONDITIONAL. It used to be gated on `counters`
+      // being passed, so the chip-conservation tests — which pass none — ran a
+      // different code path from production and could never catch an illegal
+      // sizing. `tally` keeps the counting optional without changing the path.
+      if (action === 'bet' || action === 'raise') {
         const bs = calculateBettingState(pot, currentBet, p.bet, BB, lastRaise, false);
         if (!validateAction(action as never, amount, p.stack, bs).valid) {
-          counters.illegal++;
+          tally.illegal++;
           action = toCall > 0 ? 'fold' : 'check';
         }
       }
 
       ts++;
+      acted.add(i);
       if (action === 'fold') {
         p.is_folded = true;
         history.push({
@@ -257,13 +306,13 @@ export function playHand(
           }
           currentBet = target;
           lastAggressor = i;
-          // everyone else gets to act again
-          toActQueue = [];
-          for (let k = 1; k < SEATS; k++) {
-            const j = (i + k) % SEATS;
-            const q = seats[j].player;
-            if (!q.is_folded && !q.is_all_in) toActQueue.push(j);
-          }
+          // V12.3 (TDA Rule 44, as HandController.canReopenBetting enforces):
+          // a SHORT all-in does not reopen the betting. Players who already
+          // acted owe the difference and may call or fold, but may not
+          // re-raise. Rebuilding the full queue on any all-in let the
+          // simulator model a more permissive game than the engine it tunes,
+          // biasing every matchup toward whichever config raises more.
+          toActQueue = rebuildQueue(i, isFullRaise, acted);
         }
         history.push({
           seat: p.seat,
@@ -277,19 +326,22 @@ export function playHand(
       } else {
         // bet / raise to `amount`
         const target = Math.min(amount, p.bet + p.stack);
-        const inc = post(i, target - p.bet);
+        // V12.3: floor at 0. `target - p.bet` could go negative on a
+        // raise-to below the actor's own street bet, and post() would then
+        // ADD chips to the stack and drive `contributed` negative — silent
+        // chip creation that chip conservation cannot see.
+        const inc = post(i, Math.max(0, target - p.bet));
         pot += inc;
+        // V12.3: the real reopening test, not a hard-coded true.
+        const reopens = target >= currentBet + lastRaise - 1e-9 && target > currentBet;
         if (target > currentBet) {
-          lastRaise = target - currentBet;
-          minRaise = lastRaise;
+          if (reopens) {
+            lastRaise = target - currentBet;
+            minRaise = lastRaise;
+          }
           currentBet = target;
-        }
-        lastAggressor = i;
-        toActQueue = [];
-        for (let k = 1; k < SEATS; k++) {
-          const j = (i + k) % SEATS;
-          const q = seats[j].player;
-          if (!q.is_folded && !q.is_all_in) toActQueue.push(j);
+          lastAggressor = i;
+          toActQueue = rebuildQueue(i, reopens, acted);
         }
         history.push({
           seat: p.seat,
@@ -298,12 +350,29 @@ export function playHand(
           amount: target,
           timestamp: ts,
           stage,
-          ...(p.is_all_in ? { isFullRaise: true } : {}),
+          ...(p.is_all_in ? { isFullRaise: reopens } : {}),
         } as ActionRecord);
       }
       actions++;
       void lastAggressor;
       if (live().length < 2) return true;
+    }
+    // V12.3: if we left the loop with players still owing chips, the street
+    // was TRUNCATED by MAX_ACTIONS_PER_STREET. Resetting bets here would
+    // treat their unpaid debt as matched and let them reach a showdown they
+    // never paid for — chip conservation still holds (settlement uses
+    // `contributed`), so no test could see it. Fold the debtors and count it.
+    if (toActQueue.length > 0) {
+      let truncated = false;
+      for (const j of toActQueue) {
+        const q = seats[j].player;
+        if (q.is_folded || q.is_all_in) continue;
+        if (currentBet - q.bet > 1e-9) {
+          q.is_folded = true;
+          truncated = true;
+        }
+      }
+      if (truncated) tally.truncated++;
     }
     // Street over: reset per-street bets.
     for (const s of seats) {
@@ -385,19 +454,36 @@ export function playHand(
  * same seed twice with the seat->config assignment inverted, so identical
  * cards flow to both configs and luck cancels in the difference.
  */
-export function runMatchup(matchup: LeagueMatchup, pairs: number, runSeed: number): LeagueResult {
+export async function runMatchup(
+  matchup: LeagueMatchup,
+  pairs: number,
+  runSeed: number
+): Promise<LeagueResult> {
   const t0 = Date.now();
-  const counters = { illegal: 0 };
+  const counters = { illegal: 0, truncated: 0 };
   const perPairDiff: number[] = [];
+  // V12.3: the league runs INSIDE the live engine process. `rngState` in
+  // HorseEval is a module global shared with every live decision, and
+  // playHand reseeds it once per synthetic hand. Bracket the whole matchup so
+  // the live stream resumes exactly where it was.
+  const rngBefore = saveFastRandom();
   // V12.2: one sandbox PER PASS, alive for the whole matchup. Pass 1 always
   // plays sandbox 1 and pass 2 always plays sandbox 2, so each accumulates a
   // coherent memory of its own seat assignment; identical configs therefore
   // produce identical evolutions in both sandboxes and the mirror invariant
   // survives mind-on play.
-  const sb1 = matchup.mind === 'sandbox' ? HorseMind.createSandbox() : undefined;
-  const sb2 = matchup.mind === 'sandbox' ? HorseMind.createSandbox() : undefined;
+  const sb1 = HorseMind.createSandbox();
+  const sb2 = HorseMind.createSandbox();
 
   for (let p = 0; p < pairs; p++) {
+    // V12.3: YIELD THE EVENT LOOP. This loop used to run all 1500 pairs (3000
+    // hands, measured at 7-10 seconds) without a single yield, inside the
+    // process serving live poker. DeadlineScheduler ticks every 100ms and its
+    // deadlines are absolute wall-clock, so a multi-second freeze means every
+    // action clock, timebank grant and disconnect grace across the fleet is
+    // already past due when the loop resumes — a fleet-wide auto-fold storm.
+    // 16 hands is well under one scheduler tick budget.
+    if (p > 0 && (p & 0x0f) === 0) await new Promise((res) => setImmediate(res));
     const handSeed = (runSeed ^ (p * 2654435761)) >>> 0 || 1;
     const dealerSeat = (p % SEATS) + 1;
     const evenIsA = (s: number) => (s % 2 === 0 ? matchup.a : matchup.b);
@@ -416,17 +502,26 @@ export function runMatchup(matchup: LeagueMatchup, pairs: number, runSeed: numbe
     perPairDiff.push(aNet / 2 / BB);
   }
 
+  restoreFastRandom(rngBefore);
+
   const n = perPairDiff.length;
   const mean = perPairDiff.reduce((a, b) => a + b, 0) / Math.max(1, n);
   const varsum = perPairDiff.reduce((a, b) => a + (b - mean) * (b - mean), 0);
   const sd = Math.sqrt(varsum / Math.max(1, n - 1));
+  // V12.3: `perPairDiff[p]` is A's edge in bb summed over SEATS/2 A-seats x 2
+  // passes = 6 player-hands. Dividing by that is what makes the number an
+  // actual bb/100; without it every figure ever written to
+  // horse_league_results was inflated 6x. Ratios and signs are unchanged, so
+  // historical comparisons still hold — only the scale was wrong.
+  const A_HANDS_PER_PAIR = (SEATS / 2) * 2;
   return {
     matchup: matchup.name,
     hands: n * 2,
-    bb100: mean * 100,
-    stderr: (sd / Math.sqrt(Math.max(1, n))) * 100,
+    bb100: (mean / A_HANDS_PER_PAIR) * 100,
+    stderr: (sd / Math.sqrt(Math.max(1, n)) / A_HANDS_PER_PAIR) * 100,
     durationMs: Date.now() - t0,
     illegalActions: counters.illegal,
+    truncatedStreets: counters.truncated,
   };
 }
 
@@ -445,10 +540,10 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // Full V12 (board-conditioned ranges + river polish) vs the engine without
   // it, both sides with the mind on — the matchup the 2026-08-22 handoff
   // deferred for lack of a pollution-free mind mode.
-  { name: 'v12_ranges_river', a: {}, b: { v12: false }, mind: 'sandbox' },
+  { name: 'v12_ranges_river', a: {}, b: { v12: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
-  { name: 'mind_layer', a: {}, b: { mind: false }, mind: 'sandbox' },
+  { name: 'mind_layer', a: {}, b: { mind: false } },
   {
     name: 'full_vs_v2_legacy',
     a: {},
@@ -458,15 +553,33 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v9: false,
       v10: false,
       v11: false,
+      // V12.3: v12 was missing, so "vs v2 legacy" kept board-conditioned
+      // sampling and the river polish and measured the wrong thing.
+      // LeagueAblationCompleteness.test.ts now fails if a future layer
+      // drifts out of this list the same way.
+      v12: false,
+      mind: false,
       streetIQ: false,
       handReading: false,
     },
   },
 ];
 
-const LEAGUE_HOUR_UTC = 4; // quietest hour on the engine host
+// V12.3: the old comment here claimed hour 4 was "the quietest hour on the
+// engine host". Measured over 24h of hand_history it is the SECOND BUSIEST
+// (5354 hands vs 6239 at hour 3) — the fleet plays around the clock and there
+// is no quiet hour. The league is safe here only because runMatchup now
+// yields the event loop every 16 hands; do not remove that yield.
+const LEAGUE_HOUR_UTC = 4;
 const LEAGUE_CHECK_MS = 30 * 60 * 1000;
-const PAIRS_PER_MATCHUP = 1500; // 3000 hands per matchup, ~1-2 min total CPU
+// V12.3: raised 1500 -> 10000. At 1500 pairs the standard error was ~7 bb/100
+// while real strategy-layer edges are single-digit bb/100 — the instrument
+// could only ever detect catastrophic regressions, and its own header claimed
+// it would catch a sign flip "within days". 10000 pairs puts the error near
+// 2.8 bb/100. The cost is wall clock, not responsiveness: runMatchup yields
+// every 16 hands, so this is ~70s of shared CPU per matchup rather than 70s
+// of frozen tables.
+const PAIRS_PER_MATCHUP = 10000;
 
 let leagueTimer: NodeJS.Timeout | null = null;
 let lastLeagueDate: string | null = null;
@@ -500,7 +613,7 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
   try {
     const runSeed = (Date.parse(date) / 86_400_000) >>> 0;
     for (const m of LEAGUE_MATCHUPS) {
-      const r = runMatchup(m, PAIRS_PER_MATCHUP, runSeed ^ hash32(m.name));
+      const r = await runMatchup(m, PAIRS_PER_MATCHUP, runSeed ^ hash32(m.name));
       results.push(r);
       try {
         const { error } = await supabase.from('horse_league_results').upsert(
@@ -513,7 +626,7 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
             config_a: m.a as never,
             config_b: m.b as never,
             duration_ms: r.durationMs,
-            illegal_actions: r.illegalActions,
+            illegal_actions: r.illegalActions + r.truncatedStreets,
           },
           { onConflict: 'run_date,matchup' }
         );
@@ -522,8 +635,10 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
         reportError(err, 'HorseLeague.write');
       }
       console.log(
-        `[HorseLeague] ${r.matchup}: ${round2(r.bb100)} bb/100 (se ${round2(r.stderr)}) over ` +
-          `${r.hands} hands in ${r.durationMs}ms, illegal=${r.illegalActions}`
+        `[HorseLeague] ${r.matchup}: ${round2(r.bb100)} bb/100 (se ${round2(r.stderr)}) ` +
+          `${Math.abs(r.bb100) > 2 * r.stderr ? 'SIGNIFICANT' : 'not resolved'} over ` +
+          `${r.hands} hands in ${r.durationMs}ms, illegal=${r.illegalActions}, ` +
+          `truncated=${r.truncatedStreets}`
       );
       // Yield the event loop between matchups — production tables come first.
       await new Promise((res) => setTimeout(res, 250));

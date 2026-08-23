@@ -13393,3 +13393,65 @@ Two tests from earlier today were updated in this commit because this change
 deliberately replaces the behaviour they pinned (`missing.slice(0, BURST)` and
 the guard living inside `ensureBoardOpen`). 20 new tests, 18 of which fail
 against origin/main. 282 files / 3,458 green.
+
+## Cowork session 2026-08-23 (16) — AN ALARM THAT CANNOT RING IS NOT AN ALARM
+
+Chasing the −226.65 BBJ conservation drift turned up something much larger than
+the drift.
+
+**`public.bbj_contributions` had never been analysed.** `last_analyze`,
+`last_autoanalyze`, `last_vacuum`, `last_autovacuum` — all NULL. The planner
+therefore believed it held **2,600 rows. It holds 648,543.** A 250x
+underestimate on a 242 MB table.
+
+Planned on that fiction, `fn_union_treasury_selftest`'s duplicate-contribution
+scan chose a catastrophic plan and hit the statement timeout — **the treasury
+self-test could not run at all.** Which is exactly why a −226.65 breach of a
+1.00 tolerance sat unreported. The alarm was not ignored; it was unable to ring.
+One `ANALYZE` later it completes in normal time and reports the breach it was
+always supposed to report.
+
+**And it was never one table.** Twelve relations over 20 MB had never been
+analysed, including money that settlement and rakeback read every day:
+`rake_records` (1 GB, estimated 8,932 rows), `wallet_transactions` (797 MB,
+estimated 14,979), `vip_points_ledger`, `agent_commissions`,
+`club_wallet_transactions`, `rake_distribution_legs`, `rakeback_stats_applied`
+— plus `solved_spots_gold` at **72 GB estimated as 4,846 rows**. Every query
+planned against those is planned on a guess. That is the most likely
+explanation for the slow IO-bound money queries seen repeatedly today —
+`fn_rakeback_recompute_periods` sitting 49 seconds on `DataFileRead` — and for
+the repeated connection-pool timeouts.
+
+**Why autoanalyze never fired:** none of them carry table-level settings, there
+are three autovacuum workers, and this database holds a 72 GB table and a 10 GB
+one. The giants monopolise the workers and everything behind them starves.
+`hand_history` is the only table with explicit settings — added this morning
+after its unthrottled vacuum saturated disk IO and took `/api/health` down.
+
+The eight money tables now analyse on a **row count** rather than a percentage
+of a total nothing has ever measured, and every one keeps `cost_delay = 2ms` —
+the same gentle value `hand_history` was given, because the cure for a starving
+autovacuum must not be a second IO saturation. The migration asserts both: that
+none is left without a threshold, and that unthrottled autovacuum has not come
+back anywhere.
+
+The three non-money giants are deliberately left alone and the migration says
+why — handing three more giants aggressive settings on a three-worker
+autovacuum is how the starvation happened in the first place.
+
+**Also closed three stale PRs (#486, #487, #488)** that the stuck-PR sweeper had
+re-opened. Each was 100–200 commits behind `main`, and merging any one would
+have **reverted 30,000–72,000 lines across 300–580 files**. Their content is
+already on main under different SHAs — the pattern CLAUDE.md §12 documents —
+and `tests/config/spinSeatFirstIntegrity.test.ts` proves it: main carries 157
+lines where the branch has 124, because tests were added afterwards. Merging
+would have deleted them. Each PR was closed with that reasoning recorded.
+
+17 new tests.
+
+**Still open, and not mine to guess at:** the −226.65 drift itself. It is
+static across every measurement over ninety minutes, so it is a one-time
+historical event rather than an active leak; the three payouts since the
+baseline are fully explained by their recipients, and there is no single
+transaction of that size. It wants a targeted audit of the 2026-08-21 pool
+consolidation, with the watchdog now able to run while that happens.

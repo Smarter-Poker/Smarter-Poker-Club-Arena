@@ -186,7 +186,7 @@
 }
 
 .lobby-top__wallet {
-  flex: 0 1 220px;
+  flex: 0 1 260px;
   min-width: 0;
 }
 
@@ -336,7 +336,7 @@
   overflow: hidden;
 }
 
-@media (max-width: 420px) {
+@media (max-width: 480px) {
   .lobby-top__main {
     flex-direction: column;
   }

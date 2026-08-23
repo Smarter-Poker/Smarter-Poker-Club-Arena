@@ -34,8 +34,8 @@
       "note": "throwables: enforced 3.5-5s timing, Food tab, sports moves, Card Shark removed"
     },
     {
-      "sha": "db61c77",
-      "note": "throwables: voices, impact captions, 30+ per-item signatures (ORPHANED ONCE - restored)"
+      "sha": "3ea93d45",
+      "note": "throwables: voices, impact captions, 30+ per-item signatures (repinned 2026-08-23: db61c77 was orphaned and re-landed on main as 3ea93d45; the stale pin blocked every push)"
     }
   ]
 }

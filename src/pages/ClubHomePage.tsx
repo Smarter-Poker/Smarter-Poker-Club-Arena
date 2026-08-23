@@ -917,64 +917,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       if (getIsMounted && !getIsMounted()) return;
       setClub(clubData);
 
-      // ── ONE ROUND TRIP FOR THE WHOLE VISIBLE LOBBY ────────────────────────
-      //
-      // PERF 2026-08-23. Painting this page took SIX sequential round trips:
-      // club row, membership+wallet, union row, union club ids, member count,
-      // then finally tables+tournaments+BBJ. Measured against production the
-      // queries cost ~9ms server-side; the wait is network latency, 150-250ms
-      // per trip wired and 250-400ms on mobile - 1-1.5s, or 2-3s on a phone,
-      // of watching a skeleton.
-      //
-      // public.get_club_home() returns all of it in ONE call (38ms measured on
-      // the largest club: 1,172 members, 42 tables). It is SECURITY INVOKER,
-      // so every RLS policy still applies and it can return only what this
-      // browser could already fetch for itself - a latency fix, not a
-      // permissions change.
-      //
-      // It runs ALONGSIDE the existing chain rather than replacing it: the
-      // chain below still fills in diamonds, club level, XMTT tournaments and
-      // the rest, and remains authoritative. This just gets the tables on
-      // screen five round trips earlier. `lobbyPainted` guarantees the fast
-      // path can only ever paint BEFORE the authoritative data, never over it.
-      let lobbyPainted = false;
-      Promise.resolve(supabase.rpc('get_club_home', { p_club_key: clubId }))
-        .then(({ data: home, error: homeErr }) => {
-          if (homeErr || !home || home.found !== true) return;
-          if (lobbyPainted) return; // the real chain already answered
-          if (getIsMounted && !getIsMounted()) return;
-          lobbyPainted = true;
-          try {
-            if (home.club) {
-              setClub((prev) => ({
-                ...(prev || {}),
-                ...home.club,
-                member_count: home.member_count ?? home.club.member_count,
-              }));
-            }
-            if (Array.isArray(home.tables)) setTables(home.tables);
-            if (Array.isArray(home.tournaments)) setTournaments(home.tournaments);
-            if (home.union_id) {
-              setIsInUnion(true);
-              setUnionIdForCreate(home.union_id);
-            }
-            if (home.membership) {
-              setUserRole((home.membership.role as ClubRole) || 'player');
-            }
-            const bal = Number(home.bbj?.main_balance);
-            if (Number.isFinite(bal)) setJackpotAmount(bal);
-            if (home.bbj?.id) setBbjPoolId(home.bbj.id);
-            hasDataRef.current = true;
-            setLoading(false);
-          } catch (e) {
-            reportError(e, 'ClubHomePage.fastPath');
-          }
-        })
-        .catch(() => {
-          // Best effort only. The authoritative chain below is untouched, so a
-          // failure here costs the speed-up and nothing else.
-        });
-
       // Use resolved UUID for all downstream FK queries
       const resolvedId = clubData.id;
 
@@ -1229,11 +1171,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       ]);
 
       if (getIsMounted && !getIsMounted()) return;
-
-      // From here the authoritative data is in hand; the fast path above must
-      // not paint after this point (it would replace fresher rows with the
-      // snapshot it fetched a moment earlier).
-      lobbyPainted = true;
 
       const tableData = tableResult.data;
       if (tableData) setTables(tableData);
@@ -2227,6 +2164,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                           prev ? { ...prev, description: noticeDraft.trim() } : prev
                         );
                         setIsEditingNotice(false);
+                        toast.success('Successfully updated');
                       } catch (e) {
                         toast.error('Failed to save welcome message');
                       } finally {
@@ -2376,11 +2314,20 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           if (!qSpec) return null;
           const qVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
 
+          const applyRange = (min: number, max: number) => {
+            const next: FilterStore = {
+              ...advFilters,
+              [gameType]: { ...qVal, rangeMin: min, rangeMax: max },
+            };
+            setAdvFilters(next);
+            if (resolvedClubId) saveFilters(resolvedClubId, next);
+          };
+
           return (
             <div className="quickprefs">
               <div className="quickprefs__row">
                 {qSpec.range.presets.map((p) => {
-                  const on = (qVal.selectedRanges || []).includes(p.key);
+                  const on = qVal.rangeMin === p.min && qVal.rangeMax === p.max;
                   return (
                     <button
                       key={p.key}
@@ -2388,14 +2335,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                       aria-pressed={on}
                       onClick={() => {
                         haptic.selection();
-                        const arr = qVal.selectedRanges || [];
-                        const nextArr = on ? arr.filter((k) => k !== p.key) : [...arr, p.key];
-                        const next: FilterStore = {
-                          ...advFilters,
-                          [gameType]: { ...qVal, selectedRanges: nextArr },
-                        };
-                        setAdvFilters(next);
-                        if (resolvedClubId) saveFilters(resolvedClubId, next);
+                        /* Tapping the active tier CLEARS it back to the full
+                           range. Without that the only way to undo a tier is to
+                           open the sheet and hit Reset, which is three taps to
+                           undo one. */
+                        if (on) applyRange(qSpec.range.min, qSpec.range.max);
+                        else applyRange(p.min, p.max);
                       }}
                     >
                       {p.label}
@@ -2705,6 +2650,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       {/* ═══════════════════════════════════════════════════════════════════
                 BACKGROUND IMAGE (Premium Bar Scene)
             ═══════════════════════════════════════════════════════════════════ */}
+      <div className="club-home__background"></div>
 
       {/* ═══════════════════════════════════════════════════════════════════
                 BOTTOM NAVIGATION BAR

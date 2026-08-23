@@ -2993,6 +2993,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 BACKGROUND IMAGE (Premium Bar Scene)
             ═══════════════════════════════════════════════════════════════════ */}
 
+
       {/* ═══════════════════════════════════════════════════════════════════
                 BOTTOM NAVIGATION BAR
             ═══════════════════════════════════════════════════════════════════ */}

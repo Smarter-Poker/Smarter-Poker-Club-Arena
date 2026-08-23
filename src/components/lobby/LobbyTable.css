@@ -166,7 +166,8 @@
   }
 }
 .lt-mono {
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
   font-size: 0.75rem;
   letter-spacing: 0.01em;
 }
@@ -284,7 +285,7 @@ abbr.lt-variant[title] {
   background: rgba(255, 255, 255, 0.05);
 }
 .lt-status--waitlist {
-  color: var(--warning-gold, #ffd700);
+  color: #ffffff;
   border-color: rgba(255, 215, 0, 0.3);
   background: rgba(255, 215, 0, 0.07);
 }
@@ -294,12 +295,12 @@ abbr.lt-variant[title] {
   background: rgba(65, 105, 225, 0.1);
 }
 .lt-status--late_reg {
-  color: var(--warning-gold, #ffd700);
+  color: #ffffff;
   border-color: rgba(255, 215, 0, 0.35);
   background: rgba(255, 215, 0, 0.08);
 }
 .lt-status--starting_soon {
-  color: #ffb020;
+  color: #ffffff;
   border-color: rgba(255, 176, 32, 0.35);
   background: rgba(255, 176, 32, 0.08);
 }

@@ -97,7 +97,9 @@ export default function HandReplayerPage() {
           const player = record.players.find((p) => p.user_id === a.player_id);
           return {
             player: player?.username || a.player_id.slice(0, 8),
-            action: a.action === 'all-in' ? 'all_in' : (a.action as HandAction['action']),
+            // Already `all_in` as stored; the old ternary tested a spelling
+            // nothing produces and only worked by falling through.
+            action: a.action as HandAction['action'],
             amount: a.amount,
             timestamp: idx,
           };

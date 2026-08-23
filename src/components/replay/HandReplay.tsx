@@ -17,7 +17,7 @@ const HandReplay3D = lazyWithRetry(() => import('./HandReplay3D'));
 
 interface PlayerAction {
   player_id: string;
-  action: 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all-in';
+  action: 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | 'discard';
   amount?: number;
   timestamp: number;
 }

@@ -460,7 +460,76 @@ export async function leaveClub(clubId: string): Promise<void> {
  * Accepts an optional pre-resolved user to avoid redundant getAuthUser() calls.
  * This avoids redundant auth lookups when the caller already has the user.
  */
+/**
+ * In-flight de-duplication for the lobby's first query.
+ *
+ * PERF 2026-08-23. This is the first thing the app asks for after boot, and
+ * nothing could ask for it until React had mounted, resolved the route and
+ * loaded HomePage's chunk - several hundred milliseconds on mobile during
+ * which the network sat idle. warmUserMemberships() below starts it at
+ * module-eval time instead, and this memo makes HomePage's later call reuse
+ * that same request rather than issuing a second one.
+ *
+ * A SHORT TTL, deliberately: this is a warm-start window, not a cache. Five
+ * seconds is long enough to cover boot -> first render on a slow phone and
+ * short enough that nobody can observe a stale membership list; the page also
+ * has realtime subscriptions and its own SWR cache behind it.
+ *
+ * Keyed by user so a sign-out and sign-in cannot serve the previous account's
+ * clubs, and cleared on rejection so a failure is never memoised.
+ */
+const MEMBERSHIPS_WARM_TTL_MS = 5000;
+let _membershipsInflight: {
+  key: string;
+  at: number;
+  promise: Promise<(ClubMember & { club: Club })[]>;
+} | null = null;
+
+/** Test seam: drop the warm-start window. */
+export function clearMembershipsWarmCache(): void {
+  _membershipsInflight = null;
+}
+
+/**
+ * Start the lobby's first query before anything renders. Fire-and-forget:
+ * failures are swallowed here and surfaced normally to whoever asks next.
+ */
+export function warmUserMemberships(): void {
+  try {
+    void getUserMemberships().catch(() => {});
+  } catch {
+    /* never let a warm-up break boot */
+  }
+}
+
 export async function getUserMemberships(
+  preResolvedUser?: { id: string } | null
+): Promise<(ClubMember & { club: Club })[]> {
+  // Key on the RESOLVED user id, never on the argument. The warm start at boot
+  // has no user to hand, while HomePage passes the one it already resolved -
+  // keying on the argument gave them different keys, so they never shared and
+  // the warm start was pure extra load. A test pins this.
+  let warmKey = preResolvedUser?.id;
+  if (!warmKey) {
+    const { data: authed } = await getAuthUser();
+    warmKey = authed?.user?.id;
+    if (!warmKey) return [];
+  }
+
+  const warm = _membershipsInflight;
+  if (warm && warm.key === warmKey && Date.now() - warm.at < MEMBERSHIPS_WARM_TTL_MS) {
+    return warm.promise;
+  }
+  const promise = _getUserMembershipsUncached({ id: warmKey });
+  _membershipsInflight = { key: warmKey, at: Date.now(), promise };
+  // A failed request must not be remembered for five seconds.
+  promise.catch(() => {
+    if (_membershipsInflight?.promise === promise) _membershipsInflight = null;
+  });
+  return promise;
+}
+
+async function _getUserMembershipsUncached(
   preResolvedUser?: { id: string } | null
 ): Promise<(ClubMember & { club: Club })[]> {
   let userId: string;

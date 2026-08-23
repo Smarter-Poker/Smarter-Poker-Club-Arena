@@ -132,6 +132,10 @@
 }
 
 /* The prize sits on its own pedestal — it is the number people screenshot. */
+.prize-counter {
+  animation: prizeCounterSlideIn 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 .winnerPrize {
   margin: 1.35rem auto 0;
   padding: 0.75rem 1.4rem;
@@ -200,10 +204,10 @@
   background: radial-gradient(circle, #fffbeb 0%, #fbbf24 55%, transparent 72%);
   box-shadow: 0 0 12px 2px rgba(251, 191, 36, 0.75);
   opacity: 0;
-  animation: winnerEmber 4.2s ease-in-out infinite;
+  animation: sparkleFloat 4000ms ease-in-out infinite;
 }
 
-@keyframes winnerEmber {
+@keyframes sparkleFloat {
   0% {
     opacity: 0;
     transform: translateY(18px) scale(0.6);
@@ -217,6 +221,17 @@
   100% {
     opacity: 0;
     transform: translateY(-120px) scale(1.05);
+  }
+}
+
+@keyframes prizeCounterSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -234,7 +249,7 @@
   }
 }
 
-@keyframes winnerRise {
+@keyframes winnerGrandEntrance {
   0% {
     opacity: 0;
     transform: translateY(26px) scale(0.93);
@@ -245,7 +260,7 @@
   }
 }
 
-@keyframes winnerKickerIn {
+@keyframes trophyBounce {
   0% {
     opacity: 0;
     transform: translateY(-8px);

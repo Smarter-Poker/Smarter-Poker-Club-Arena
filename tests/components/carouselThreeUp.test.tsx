@@ -54,7 +54,13 @@ function renderCarousel(items: Club[] = CLUBS, itemWidth?: number) {
   );
 }
 
-/** The lobby's real configuration: three across, side by side. */
+/** The lobby's real configuration. Keep these two numbers in step with
+ *  CarouselSection.tsx - a test mirroring a configuration nobody ships is
+ *  worse than no test, because it reports green about a layout that is not on
+ *  screen. */
+const LOBBY_SPACING = 0.94;
+const LOBBY_EDGE_SCALE = 0.8;
+
 function renderThreeUp(items: Club[] = CLUBS) {
   return render(
     <Carousel
@@ -62,11 +68,17 @@ function renderThreeUp(items: Club[] = CLUBS) {
       getKey={(c) => c.id}
       renderItem={(c) => <div data-testid={`card-${c.id}`}>{c.name}</div>}
       visibleCards={3}
-      spacingRatio={1.0}
-      edgeScale={0.9}
+      spacingRatio={LOBBY_SPACING}
+      edgeScale={LOBBY_EDGE_SCALE}
       ariaLabel="Your Clubs"
     />
   );
+}
+
+/** The scale the component baked into a card's transform. */
+function scaleOf(el: HTMLElement): number {
+  const m = /scale\(([\d.]+)\)/.exec(el.style.transform || '');
+  return m ? parseFloat(m[1]) : NaN;
 }
 
 /** Slot width the component wrote onto the track. */
@@ -207,30 +219,71 @@ describe('foldOffset — the endless wrap', () => {
 });
 
 describe('visibleCards={3} — the lobby configuration', () => {
-  it('sizes cards so three FIT ACROSS the track instead of one filling it', () => {
+  it('fills the stage - the three-up composition spans the whole track', () => {
     const spy = withTrackWidth(928); // .mainContent at its 960px cap, less padding
     renderThreeUp();
     const w = slotWidth();
 
-    // The old rule was track * 0.55 = 510px: over half the track for ONE card,
-    // which is why only the centre one was ever really on screen.
-    expect(w).toBeLessThan(928 * 0.4);
-    // Three of them plus margin must still fit inside the track.
-    expect(w * 3).toBeLessThanOrEqual(928);
+    /* The composition's true width, outer edge to outer edge. The outermost
+       card is DRAWN SCALED, so it contributes edgeScale * w of visible width -
+       exactly what the old `visibleCards + 0.5` divisor failed to account for.
+       It reserved a phantom half-card of margin the scale falloff had already
+       paid for, and the cards came out ~30% narrower than the band they sat
+       in. */
+    const step = w * LOBBY_SPACING;
+    const span = 2 * step + w * LOBBY_EDGE_SCALE;
+
+    // Fits: nothing is clipped at either edge.
+    expect(span).toBeLessThanOrEqual(928 + 0.5);
+    // And genuinely fills it, rather than floating in an empty band.
+    expect(span).toBeGreaterThan(928 * 0.95);
+
     spy.mockRestore();
     cleanup();
   });
 
-  it('places the three side by side, not tucked under one another', () => {
+  it('makes the MIDDLE card the largest of the three', () => {
+    /* Dan 2026-08-22: "IT SHOULD SHOW 1-3 CARDS ON THE PAGE, WITH THE CARD IN
+       THE MIDDLE THE LARGEST."
+
+       Three cards at the same size is a row, not a carousel - nothing tells the
+       eye which one a tap would open. The previous 0.9 edge scale was a 10%
+       difference seen across a gap, which reads as no difference at all. */
+    const spy = withTrackWidth(928);
+    renderThreeUp();
+
+    const items = itemEls();
+    const centre = items.find((el) => Math.abs(translateXOf(el)) < 1)!;
+    const sides = items.filter((el) => Math.abs(translateXOf(el)) > 1);
+
+    expect(centre).toBeDefined();
+    expect(sides).toHaveLength(2);
+    for (const el of sides) {
+      expect(scaleOf(el)).toBeLessThan(scaleOf(centre));
+      // A hierarchy you can actually see: at least a 15% step down.
+      expect(scaleOf(el)).toBeLessThanOrEqual(0.85);
+      // ...but still a readable club card, not a shrunken afterthought.
+      expect(scaleOf(el)).toBeGreaterThanOrEqual(0.7);
+    }
+    expect(scaleOf(centre)).toBeCloseTo(1, 2);
+
+    spy.mockRestore();
+    cleanup();
+  });
+
+  it('places the three side by side, never overlapping the centre card', () => {
     const spy = withTrackWidth(928);
     renderThreeUp();
     const w = slotWidth();
     const offsets = itemEls().map(translateXOf).sort((a, b) => a - b);
 
-    // At spacingRatio 1.0 adjacent centres are one full card apart, so the
-    // neighbour's inner edge is at or beyond the centre card's outer edge.
-    expect(Math.abs(offsets[0])).toBeGreaterThanOrEqual(w * 0.95);
-    expect(Math.abs(offsets[2])).toBeGreaterThanOrEqual(w * 0.95);
+    /* Two cards do not overlap when the distance between their centres is at
+       least the sum of their half-widths. Centre is w/2; a neighbour, drawn at
+       edgeScale, is edgeScale * w / 2. Hence (1 + edgeScale) / 2. That is the
+       rule a future spacing tweak has to satisfy - not a magic 0.95. */
+    const minGap = (w * (1 + LOBBY_EDGE_SCALE)) / 2;
+    expect(Math.abs(offsets[0])).toBeGreaterThanOrEqual(minGap);
+    expect(Math.abs(offsets[2])).toBeGreaterThanOrEqual(minGap);
     spy.mockRestore();
     cleanup();
   });

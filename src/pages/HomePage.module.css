@@ -436,7 +436,13 @@
    context, and `align-items: flex-end` on it was actively wrong. */
 .clubCarousel {
   width: 100%;
-  padding: 8px max(20px, 4vw) 10px max(20px, 4vw);
+  /* 4vw of side padding was inherited from when this was a scrolling strip
+     that needed a visible inset at both ends. The carousel positions its cards
+     absolutely and centres them, so that padding now only narrows the track -
+     and the track is what the card width is solved from, so every pixel here
+     comes straight off the middle card. 16px keeps the outer cards' shadows
+     clear of the clip edge. */
+  padding: 8px 16px 10px 16px;
   margin-top: -4px;
   box-sizing: border-box;
   z-index: 10;
@@ -958,11 +964,40 @@
    wider than the 960px column the rest of the layout uses. Full-bleed out of
    .mainContent, then capped - without a cap the cards keep growing on an
    ultrawide monitor until three of them are billboards. */
+/* -- THE CAROUSEL IS CENTRED THE BORING WAY. LEAVE IT THAT WAY. -----------
+   Dan 2026-08-22: "THIS NEEDS TO BE CENTERED TO THE PAGE, RIGHT NOW ITS LEFT
+   JUSTIFIED. 'SHARK CLUB' SHOULD BE IN THE MIDDLE WITH CARDS ON BOTH SIDES OF
+   IT."
+
+   What was here: `width: 100vw; margin-left: 50%; transform: translateX(-50%)`
+   - the standard full-bleed escape hatch. Those three cancel out ONLY in BLOCK
+   layout, where `margin-left: 50%` pushes the box to the centre of its
+   container and `translateX(-50%)` pulls it back by half its own width.
+
+   `.mainContent` is `display: flex; flex-direction: column; align-items:
+   center`. In a column flex container the cross axis is horizontal, so the item
+   is placed by CENTRING ITS MARGIN BOX, not by the block rules the trick
+   assumes. That margin box was 464px of margin plus a full-viewport strip - far
+   wider than the 928px container - so centring it hung the left edge off the
+   start, and the -50% transform then dragged the whole carousel a further half
+   viewport left. Measured on a 1201px window the strip landed ~230px left of
+   the page centre while every other section sat centred. Exactly the
+   screenshot.
+
+   The full bleed was buying nothing anyway: `.mainContent` is capped at 960px
+   and clips overflow-x, so the extra width was cropped the moment it existed.
+
+   So: no negative-margin trick, no transform. A plain full-width block inside a
+   centred column is centred, in every layout mode, at every width. The
+   transform is additionally reset because a transform here would make this a
+   containing block for the cards' absolute positioning. */
 .carouselScrollFade {
-  width: 100vw;
+  width: 100%;
   max-width: 1360px;
-  margin-left: 50%;
-  transform: translateX(-50%);
+  margin-left: auto;
+  margin-right: auto;
+  align-self: center;
+  transform: none;
   position: relative;
   /* Dan 2026-08-21: club cards are layer 1 — above the action-bar console's
      oversized image canvas (z-index 0). */
@@ -1769,18 +1804,21 @@
   }
 
   .clubCarousel {
-    gap: 14px;
-    padding: 8px max(12px, 3vw) 24px max(12px, 3vw);
-    scroll-padding-inline: max(12px, 3vw);
+    /* gap / scroll-padding-inline are dead here: the strip is neither a flex
+       row nor a scroll container any more. Removed rather than left to read
+       like live layout. */
+    padding: 8px 12px 24px 12px;
   }
 
   .ctaCard {
     width: 180px;
   }
 
-  .carouselCardFeatured {
-    width: clamp(180px, 50vw, 260px);
-  }
+  /* .carouselCardFeatured is deliberately NOT re-widthed at any breakpoint.
+     See the base rule: `.sp-carousel__item` owns the width and derives it from
+     the measured track, so a fixed clamp here desynchronises the card from its
+     own slot - wider and it overlaps its neighbour, narrower and it rattles
+     around inside a gap. One source of truth. */
 
   /* (Legacy breakpoint overrides for .carouselCardTitle/.carouselCardIcon/.carouselCardLogo removed) */
 
@@ -1804,9 +1842,7 @@
   }
 
   .clubCarousel {
-    gap: 10px;
-    padding: 8px max(8px, 2vw) 20px max(8px, 2vw);
-    scroll-padding-inline: max(8px, 2vw);
+    padding: 8px 8px 20px 8px;
   }
 
   .ctaCard {
@@ -1824,9 +1860,7 @@
     font-size: 10px;
   }
 
-  .carouselCardFeatured {
-    width: clamp(160px, 52vw, 220px);
-  }
+  /* (No .carouselCardFeatured width override - the slot owns the width.) */
 
   /* (Legacy breakpoint overrides removed — dead CSS) */
 
@@ -1879,9 +1913,7 @@
   }
 
   .clubCarousel {
-    gap: 8px;
     padding: 4px 8px 10px 8px;
-    scroll-padding-inline: 8px;
   }
 
   .ctaCard {
@@ -1905,9 +1937,7 @@
     display: none;
   }
 
-  .carouselCardFeatured {
-    width: clamp(140px, 50vw, 180px);
-  }
+  /* (No .carouselCardFeatured width override - the slot owns the width.) */
 
   /* (Legacy breakpoint overrides removed — dead CSS) */
 

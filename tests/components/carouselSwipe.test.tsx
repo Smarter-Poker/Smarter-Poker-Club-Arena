@@ -191,13 +191,23 @@ describe('Carousel position indicator', () => {
     expect(document.querySelector('.dot.active')).not.toBeNull();
   });
 
-  it('switches to a counter once dots stop being a control', () => {
-    // Thirty dots is a texture, not something anyone aims at.
+  it('keeps the dots AND adds a count once the list outgrows the window', () => {
+    /* REPLACED 2026-08-23. This used to assert the dots vanished entirely above
+       eight clubs, leaving only "1 / 30" text.
+
+       That deleted the control at exactly the moment it became useful: with
+       thirty clubs you most want something to tap to move between them, and
+       there was nothing. Thirty dots really is a texture rather than a target -
+       the old comment was right about that - but the fix is to window the dots,
+       not to remove them. Seven never outgrow their space.
+
+       So both now: a seven-dot window you can still tap, and the count beside
+       it, which is the one thing an endless strip cannot show on its own. */
     const many = Array.from({ length: 30 }, (_, i) => `Club ${i + 1}`);
     render(
       <Carousel items={many} getKey={(c) => c} itemWidth={300} renderItem={(c) => <div>{c}</div>} />
     );
-    expect(document.querySelectorAll('.carousel-dots .dot')).toHaveLength(0);
+    expect(document.querySelectorAll('.carousel-dots .dot')).toHaveLength(7);
     expect(document.querySelector('.carousel-counter')?.textContent).toBe('1 / 30');
   });
 

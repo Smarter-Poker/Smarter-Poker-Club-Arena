@@ -632,6 +632,25 @@ export default function ActionPanel({
   const sliderProgress =
     maxRaise > minRaise ? ((raiseAmount - minRaise) / (maxRaise - minRaise)) * 100 : 0;
 
+  /**
+   * Dan 2026-08-23: "when you aren't facing a bet, and enter an amount, it's a
+   * bet, not a raise" — the sizing panel said RAISE 24 on an unopened street.
+   *
+   * The predicate is `currentBet`, the highest wager on THIS street, and not
+   * `callAmount`. They differ in the one spot that matters: the big blind
+   * preflop with no raisers has callAmount 0 but currentBet = the blind, and
+   * putting in more there is a RAISE — the blind is already a bet. Keying off
+   * callAmount would have called that a bet, which is the same error in the
+   * opposite direction. (The main action bar keys off callAmount and had
+   * exactly that hole; it now shares this value.)
+   *
+   * Note this is a LABEL, not the wire action. The engine models an opening
+   * bet as a raise from zero and every consumer downstream of `onAction`
+   * expects 'raise'; the word on the button is what was wrong.
+   */
+  const isOpeningBet = currentBet <= 0;
+  const wagerVerb = isOpeningBet ? 'Bet' : 'Raise';
+
   // ─── RAISE MODE ──────────────────────────────────────────────
   if (isRaiseMode) {
     // Phase 2 T1-02: shared slider markup so the vertical and horizontal
@@ -646,11 +665,11 @@ export default function ActionPanel({
         value={raiseAmount}
         onChange={handleSliderChange}
         style={{ '--slider-progress': `${sliderProgress}%` } as React.CSSProperties}
-        aria-label="Raise amount"
+        aria-label={`${wagerVerb} amount`}
         aria-valuemin={minRaise}
         aria-valuemax={maxRaise}
         aria-valuenow={raiseAmount}
-        aria-valuetext={`Raise to ${formatChips(raiseAmount)}`}
+        aria-valuetext={`${wagerVerb} ${formatChips(raiseAmount)}`}
         // Firefox-specific: native vertical orientation.
         // WebKit/Blink rotate the horizontal slider via CSS in the
         // .raise-slider--vertical wrapper.
@@ -753,8 +772,8 @@ export default function ActionPanel({
                        greyed out every preset a short stack could still shove
                        into. Over-stack now snaps to all-in, per spec 5.2. */
                     disabled={minRaise > maxRaise}
-                    title={`Raise to ${formatChips(p.value)}`}
-                    aria-label={`Bet ${p.label} - raise to ${formatChips(p.value)}`}
+                    title={`${wagerVerb} ${formatChips(p.value)}`}
+                    aria-label={`${p.label} - ${wagerVerb.toLowerCase()} ${formatChips(p.value)}`}
                   >
                     {p.label}
                   </button>
@@ -796,10 +815,10 @@ export default function ActionPanel({
                 aria-label={
                   raiseAmount >= allInThreshold
                     ? `All in for ${formatChips(raiseAmount)}`
-                    : `Raise to ${formatChips(raiseAmount)}`
+                    : `${wagerVerb} ${formatChips(raiseAmount)}`
                 }
               >
-                {raiseAmount >= allInThreshold ? 'All In' : 'Raise'} {formatChips(raiseAmount)}
+                {raiseAmount >= allInThreshold ? 'All In' : wagerVerb} {formatChips(raiseAmount)}
               </button>
             </div>
           </div>
@@ -941,7 +960,7 @@ export default function ActionPanel({
             onClick={handleRaiseClick}
             disabled={!canRaise}
             title={isDesktop ? 'Raise/Bet (R or E)' : undefined}
-            aria-label="Open raise panel"
+            aria-label={`Open ${wagerVerb.toLowerCase()} panel`}
           >
             {/* Per PokerBros spec §5.1: the Raise button itself shows ONLY
                 the word "Raise" (or "Bet" when no current bet). The actual
@@ -949,7 +968,7 @@ export default function ActionPanel({
                 postflop presets — lives in the bet-sizing panel that opens
                 when this button is tapped. We removed the prior "{N} BB"
                 sub-label which the user explicitly flagged as wrong. */}
-            <span className="action-btn__label">{callAmount > 0 ? 'Raise' : 'Bet'}</span>
+            <span className="action-btn__label">{wagerVerb}</span>
             {isDesktop && <span className="action-btn__shortcut">R</span>}
           </button>
         )}

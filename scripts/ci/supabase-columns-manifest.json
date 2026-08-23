@@ -1658,7 +1658,11 @@
       "admin_count",
       "super_agent_count",
       "agent_count",
-      "chip_pool"
+      "chip_pool",
+      "bbj_rake_enabled",
+      "spins_enabled",
+      "spins_preseed_amount",
+      "spins_wallet_funding"
     ],
     "collusion_tracking": [
       "id",
@@ -7113,6 +7117,40 @@
       "agent_user_id",
       "player_user_id",
       "amount",
+      "note",
+      "created_at"
+    ],
+    "promo_vault_catalog": [
+      "item_key",
+      "category",
+      "label",
+      "description",
+      "duration_days",
+      "pack_size",
+      "tier",
+      "diamond_cost",
+      "icon_key",
+      "sort_order",
+      "is_active",
+      "created_at"
+    ],
+    "promo_vault_inventory": [
+      "id",
+      "club_id",
+      "item_key",
+      "quantity",
+      "created_at",
+      "updated_at"
+    ],
+    "promo_vault_records": [
+      "id",
+      "club_id",
+      "item_key",
+      "action",
+      "quantity",
+      "diamonds_spent",
+      "actor_user_id",
+      "recipient_user_id",
       "note",
       "created_at"
     ],

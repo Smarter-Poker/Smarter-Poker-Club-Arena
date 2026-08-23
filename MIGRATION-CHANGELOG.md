@@ -7,6 +7,76 @@
 
 ---
 
+## Cowork session 2026-08-23 (3) — round two: PLO was deciding inside its own noise (PRs #436)
+
+Continuing the line-by-line pass. Every item below is measured.
+
+### Omaha decisions were partly the random seed
+
+Banded multiway pots had their Monte Carlo sample HALVED "to hold the latency
+budget", which took plo6 to 60 iterations. Measured run-to-run spread of a
+four-opponent banded estimate at those counts:
+
+| variant | 2 x sd of the estimate |
+| ------- | ---------------------- |
+| plo4    | 8.7 points             |
+| plo5    | 7.1 points             |
+| plo6    | **10.4 points**        |
+| plo8    | 6.5 points             |
+
+The strategy tiers those numbers are compared against are **10 to 12 points
+apart**. So which tier a PLO hand landed in was partly the seed — and
+`difficultyHint`, the "tank on close spots" humanisation, was measuring that
+noise rather than a close decision. Real latency at the untrimmed count is 9 to
+12.6 ms against a 25 ms budget, so the trim was buying headroom the engine
+never needed. Softened: 2sd is now 5.5 to 8.2 points. NLH unchanged at 0.75 ms.
+
+**The adaptive early exit was dead for every Omaha variant, and always had
+been.** Its first checkpoint was `Math.max(60, iterations * 0.4)` — for a
+trimmed 60-iteration budget that EQUALS the whole budget, a no-op, and it left
+the remaining checkpoints out of order. The iteration counts had been cut on
+the assumption it was live. Sorted, with a reachable floor, it works again and
+pays for the larger samples on the decisions that are not close.
+
+### An open jam was read as a four-bet spot
+
+`isFullRaise` answers "does this reopen the betting" (TDA 44) — HandController's
+question, not the brain's. The brain's question is who put in the last
+aggression. An opponent who OPEN JAMS for less than a full raise failed that
+test, so `raises` stayed 0 and there was no raiser at all: hero fell past the
+unopened branch (the bet is above a blind) into the facing-a-3-bet-or-bigger
+block and measured a single open shove against a **0.93 four-bet bar** with no
+raiser position. A large share of correct calls became folds, most often
+against a short stack in a tournament. The bet level is tracked directly now.
+
+### The overbet read had never executed
+
+`betRatio` is `toCall / pot` where the pot already includes the bet, so it is
+B/(P+B) and cannot reach 1 — and the V7 overbet-polarity branch tests `> 1.2`.
+It has never run once in production, so a 2x-pot river bomb earned the same
+respect as a half-pot bet. It compares against the pot BEFORE the bet now. The
+other five thresholds reading `betRatio` are deliberately left on their
+original scale: moving tuned constants is a strategy change needing its own
+A/B, whereas this one is dead code becoming live code, exactly as its own
+comment always claimed.
+
+### Smaller
+
+A horse with the nuts and a short stack CHECKED instead of jamming — once
+`minBet >= stack` no legal sized bet exists, so the jam is the bet, but the code
+additionally demanded the intended size be within 10% of the whole stack.
+
+And the league now **says that it started**, and carries a 90-minute wall-clock
+budget. While verifying the first live run I could not tell whether it was
+working or had never begun: rows are written only as each matchup finishes, and
+a matchup yields the event loop every 16 hands on a host also dealing live
+poker, so a run in progress and a run that never started were indistinguishable
+from outside. That is the same shape as nearly everything this audit has found.
+
+**1186/1186.**
+
+---
+
 ## Cowork session 2026-08-23 (11) — tournament audit
 
 Full write-up: `.agent/audits/2026-08-23-tournament-audit-session11.md`

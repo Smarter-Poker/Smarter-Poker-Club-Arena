@@ -588,6 +588,8 @@ const LEAGUE_CATCHUP_HOURS = 3;
 // every 16 hands, so this is ~70s of shared CPU per matchup rather than 70s
 // of frozen tables.
 const PAIRS_PER_MATCHUP = 10000;
+/** Wall-clock ceiling for a whole run. See the note in runLeague. */
+const MAX_RUN_MS = 90 * 60 * 1000;
 
 let leagueTimer: NodeJS.Timeout | null = null;
 let lastLeagueDate: string | null = null;
@@ -620,9 +622,31 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
   leagueRunning = true;
   const date = runDate ?? new Date().toISOString().slice(0, 10);
   const results: LeagueResult[] = [];
+  const startedAt = Date.now();
+  // V13: SAY THAT IT STARTED. Rows are only written as each matchup finishes,
+  // and a matchup yields the event loop every 16 hands on a host that is also
+  // dealing live poker — so a run in progress and a run that never began were
+  // indistinguishable from outside. That is exactly the state this whole audit
+  // keeps finding: a job that looks identical whether or not it is working.
+  console.log(
+    `[HorseLeague] run ${date} starting: ${LEAGUE_MATCHUPS.length} matchups x ` +
+      `${PAIRS_PER_MATCHUP} pairs (budget ${Math.round(MAX_RUN_MS / 60000)} min)`
+  );
   try {
     const runSeed = (Date.parse(date) / 86_400_000) >>> 0;
     for (const m of LEAGUE_MATCHUPS) {
+      // V13: a wall-clock budget. The league shares the event loop with live
+      // tables by design, so its duration depends on how busy the fleet is,
+      // not on its own CPU cost — an unbounded run could still be going when
+      // the next night's window opens. Stop cleanly and keep what completed;
+      // partial results are still valid measurements.
+      if (Date.now() - startedAt > MAX_RUN_MS) {
+        console.warn(
+          `[HorseLeague] run ${date} hit its ${Math.round(MAX_RUN_MS / 60000)}-minute budget ` +
+            `after ${results.length}/${LEAGUE_MATCHUPS.length} matchups - stopping cleanly`
+        );
+        break;
+      }
       const r = await runMatchup(m, PAIRS_PER_MATCHUP, runSeed ^ hash32(m.name));
       results.push(r);
       try {
@@ -653,6 +677,10 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
       // Yield the event loop between matchups — production tables come first.
       await new Promise((res) => setTimeout(res, 250));
     }
+    console.log(
+      `[HorseLeague] run ${date} finished: ${results.length}/${LEAGUE_MATCHUPS.length} matchups ` +
+        `in ${Math.round((Date.now() - startedAt) / 1000)}s`
+    );
   } catch (err) {
     reportError(err, 'HorseLeague.run');
     lastLeagueDate = null;

@@ -3886,6 +3886,7 @@
       "agent_id",
       "created_at"
     ],
+    "db_saturation_selftest_log": ["id", "ran_at", "breach_count", "warn_count", "result"],
     "dealer_calendar_events": [
       "id",
       "user_id",

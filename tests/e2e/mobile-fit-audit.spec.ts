@@ -127,10 +127,30 @@ test('no Club Arena route scrolls horizontally at 375px', async ({ page }) => {
 
   const violations: Violation[] = [];
   const skipped: string[] = [];
+  const unreachable: string[] = [];
 
   for (const route of ROUTES) {
-    await page.goto(route === '' ? '.' : route);
-    await page.waitForLoadState('domcontentloaded');
+    /* A route that redirects the moment it mounts (a guard bouncing you to a
+       club, /auth, or a default tab) ABORTS the in-flight navigation, and
+       page.goto rejects with net::ERR_ABORTED. That is not a layout defect
+       and it is not a broken route — it is the SPA doing its job, and the
+       page that replaced it is the one worth measuring. The first CI run of
+       this spec died on exactly that at /agent-management, throwing away a
+       sweep that had found zero violations in every route before it.
+
+       So: never let navigation failure end the sweep. Wait for whatever did
+       land and measure that; only record a route as unreachable if the page
+       is left with nothing to measure. */
+    try {
+      await page.goto(route === '' ? '.' : route, { waitUntil: 'domcontentloaded' });
+    } catch (err) {
+      const msg = String(err);
+      if (!msg.includes('ERR_ABORTED')) {
+        unreachable.push(`${route}: ${msg.split('\n')[0]}`);
+        continue;
+      }
+      /* Redirected. Give the replacement route the same settle below. */
+    }
     await page.waitForTimeout(2200);
 
     if (page.url().includes('/auth')) {
@@ -203,7 +223,11 @@ test('no Club Arena route scrolls horizontally at 375px', async ({ page }) => {
 
   console.log(
     'MOBILE_FIT_AUDIT ' +
-      JSON.stringify({ violations, skipped, routesChecked: ROUTES.length }, null, 1)
+      JSON.stringify(
+        { violations, skipped, unreachable, routesChecked: ROUTES.length },
+        null,
+        1
+      )
   );
 
   if (process.env.MOBILE_FIT_STRICT || process.env.CI) {
@@ -213,5 +237,11 @@ test('no Club Arena route scrolls horizontally at 375px', async ({ page }) => {
         .map((v) => `  ${v.route}: ${v.scrollWidth}px wide (${v.offenders[0]?.sel ?? '?'})`)
         .join('\n')}`
     ).toEqual([]);
+
+    /* A route that could not be loaded AT ALL was not measured, and an
+       unmeasured route passing silently is how a suite ends up asserting
+       nothing (this repo has done that twice). Report it separately from a
+       layout violation, because the fix is a different one. */
+    expect(unreachable, `Routes that failed to load:\n  ${unreachable.join('\n  ')}`).toEqual([]);
   }
 });

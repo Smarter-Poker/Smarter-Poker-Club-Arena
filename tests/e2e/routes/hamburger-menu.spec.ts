@@ -331,8 +331,11 @@ test.describe('Hamburger Menu — Version Footer', () => {
 
     if (!(await openMenuOrSkip(page))) return;
 
-    // Look for version text (e.g., "Club Arena v1.12")
-    const version = page.locator('text=/Club Arena v/');
+    // Look for version text. Case-insensitive on purpose: the footer renders
+    // "Club Arena V1.12" (capital V — house Title Case), and the original
+    // lower-case regex could never match it. It never had to: signed out this
+    // spec skipped, so the assertion was first evaluated on 2026-08-23.
+    const version = page.locator('text=/Club Arena v/i');
     await expect(version).toBeVisible({ timeout: 3000 });
   });
 });

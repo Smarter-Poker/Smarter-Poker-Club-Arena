@@ -365,10 +365,13 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   padding: 0.3rem 0.65rem;
-  color: #10b981;
+  color: #ffffff;
   font-weight: bold;
   font-size: 1rem;
-  font-family: 'Oswald', 'Impact', monospace;
+  font-family:
+    'Inter',
+    -apple-system,
+    sans-serif;
   letter-spacing: 0.5px;
   position: relative;
   overflow: hidden;
@@ -1109,7 +1112,7 @@
 }
 
 .tournament-card__status.registering {
-  color: #10b981;
+  color: #ffffff;
 }
 
 .tournament-card__body {
@@ -1136,7 +1139,7 @@
 }
 
 .tournament-card__gtd {
-  color: #10b981;
+  color: #ffffff;
   font-weight: 600;
   font-size: 0.75rem;
   margin-top: 0.15rem;

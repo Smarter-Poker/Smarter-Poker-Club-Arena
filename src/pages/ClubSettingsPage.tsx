@@ -52,11 +52,10 @@ interface ClubSettings {
   requires_approval: boolean;
   default_rake_percent: number;
   rake_cap: number;
-  allow_straddle: boolean;
-  allow_run_it_twice: boolean;
-  allow_rabbit_hunt: boolean;
-  min_buyin_bb: number;
-  max_buyin_bb: number;
+  bbj_rake_enabled: boolean;
+  spins_enabled: boolean;
+  spins_preseed_amount: number;
+  spins_wallet_funding: string;
 }
 
 export default function ClubSettingsPage() {
@@ -67,6 +66,9 @@ export default function ClubSettingsPage() {
   const { user } = useAuthUser();
   const toast = useToast();
 
+  const [playerNumber, setPlayerNumber] = useState<number | null>(null);
+  const [inUnion, setInUnion] = useState<boolean>(false);
+  const [clubNumericId, setClubNumericId] = useState<number | null>(null);
   const [settings, setSettings] = useState<ClubSettings>({
     name: '',
     description: '',
@@ -74,11 +76,10 @@ export default function ClubSettingsPage() {
     requires_approval: false,
     default_rake_percent: RAKE_INHERIT,
     rake_cap: RAKE_INHERIT,
-    allow_straddle: true,
-    allow_run_it_twice: true,
-    allow_rabbit_hunt: true,
-    min_buyin_bb: 40,
-    max_buyin_bb: 200,
+    bbj_rake_enabled: true,
+    spins_enabled: false,
+    spins_preseed_amount: 0,
+    spins_wallet_funding: 'PROMO',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -107,11 +108,10 @@ export default function ClubSettingsPage() {
     if (settings.requires_approval !== orig.requires_approval) changes.push('Approval');
     if (settings.default_rake_percent !== orig.default_rake_percent) changes.push('Rake %');
     if (settings.rake_cap !== orig.rake_cap) changes.push('Rake Cap');
-    if (settings.allow_straddle !== orig.allow_straddle) changes.push('Straddle');
-    if (settings.allow_run_it_twice !== orig.allow_run_it_twice) changes.push('Run It Twice');
-    if (settings.allow_rabbit_hunt !== orig.allow_rabbit_hunt) changes.push('Rabbit Hunt');
-    if (settings.min_buyin_bb !== orig.min_buyin_bb) changes.push('Min Buy-in');
-    if (settings.max_buyin_bb !== orig.max_buyin_bb) changes.push('Max Buy-in');
+    if (settings.bbj_rake_enabled !== orig.bbj_rake_enabled) changes.push('BBJ Rake');
+    if (settings.spins_enabled !== orig.spins_enabled) changes.push('Spins Enabled');
+    if (settings.spins_preseed_amount !== orig.spins_preseed_amount) changes.push('Spins Pre-seed');
+    if (settings.spins_wallet_funding !== orig.spins_wallet_funding) changes.push('Spins Wallet');
     return changes;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings, baselineVersion]);
@@ -127,7 +127,7 @@ export default function ClubSettingsPage() {
   // attributes on a number input are advisory outside a submitting <form>, and
   // this page never submits one — so "max 10, min 5000" saved happily and every
   // table in the club then had an impossible buy-in range.
-  const buyinError = validateBuyinRange(settings.min_buyin_bb, settings.max_buyin_bb);
+  const buyinError = '';
   // clubs.name is NOT NULL but has no CHECK against '', and this page had no
   // name validation at all — a blank name saved happily, leaving a nameless
   // club whose delete confirmation was armed by an empty box.
@@ -307,6 +307,18 @@ export default function ClubSettingsPage() {
 
   useEffect(() => {
     let isMounted = true;
+    if (user?.id) {
+      supabase
+        .from('profiles')
+        .select('player_number')
+        .eq('id', user.id)
+        .single()
+        .then(({ data }) => {
+          if (isMounted && data) {
+            setPlayerNumber(data.player_number);
+          }
+        });
+    }
     if (clubId) loadClubSettings(() => isMounted);
     return () => {
       isMounted = false;
@@ -416,7 +428,7 @@ export default function ClubSettingsPage() {
           supabase
             .from('clubs')
             .select(
-              'id, owner_id, club_id, logo_url, name, description, is_public, requires_approval, default_rake_percent, rake_cap, allow_straddle, allow_run_it_twice, allow_rabbit_hunt, min_buyin_bb, max_buyin_bb'
+              'id, owner_id, club_id, logo_url, name, description, is_public, requires_approval, default_rake_percent, rake_cap, bbj_rake_enabled, spins_enabled, spins_preseed_amount, spins_wallet_funding, union_id'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -441,11 +453,10 @@ export default function ClubSettingsPage() {
           requires_approval: data.requires_approval ?? false,
           default_rake_percent: data.default_rake_percent ?? RAKE_INHERIT,
           rake_cap: data.rake_cap ?? RAKE_INHERIT,
-          allow_straddle: data.allow_straddle ?? true,
-          allow_run_it_twice: data.allow_run_it_twice ?? true,
-          allow_rabbit_hunt: data.allow_rabbit_hunt ?? true,
-          min_buyin_bb: data.min_buyin_bb ?? 40,
-          max_buyin_bb: data.max_buyin_bb ?? 200,
+          bbj_rake_enabled: data.bbj_rake_enabled ?? true,
+          spins_enabled: data.spins_enabled ?? false,
+          spins_preseed_amount: data.spins_preseed_amount ?? 0,
+          spins_wallet_funding: data.spins_wallet_funding || 'PROMO',
         };
 
         // A background refresh must never overwrite edits the owner has typed
@@ -560,11 +571,10 @@ export default function ClubSettingsPage() {
               requires_approval: toSave.requires_approval,
               default_rake_percent: toSave.default_rake_percent,
               rake_cap: toSave.rake_cap,
-              allow_straddle: toSave.allow_straddle,
-              allow_run_it_twice: toSave.allow_run_it_twice,
-              allow_rabbit_hunt: toSave.allow_rabbit_hunt,
-              min_buyin_bb: toSave.min_buyin_bb,
-              max_buyin_bb: toSave.max_buyin_bb,
+              bbj_rake_enabled: toSave.bbj_rake_enabled,
+              spins_enabled: toSave.spins_enabled,
+              spins_preseed_amount: toSave.spins_preseed_amount,
+              spins_wallet_funding: toSave.spins_wallet_funding,
             })
             .eq(resolveClubIdFilter(clubId!).column, resolveClubIdFilter(clubId!).value)
             // .select() is what makes a rejected write observable. Without it
@@ -865,6 +875,105 @@ export default function ClubSettingsPage() {
             Read-Only View. Only The Club Owner Can Change These Settings.
           </div>
         )}
+        {/* Share Club Link */}
+        <section
+          className="settings-section"
+          style={{
+            background: 'linear-gradient(145deg, #1f1f2e 0%, #151522 100%)',
+            border: '1px solid #333',
+          }}
+        >
+          <h3>Share Club</h3>
+          <p className="setting-description" style={{ marginBottom: 16 }}>
+            Invite Players To Join Your Club By Sharing Your Unique Referral Link.
+          </p>
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: 16 }}>
+            <div
+              style={{
+                flex: 1,
+                minWidth: '120px',
+                padding: '12px',
+                background: 'rgba(0,0,0,0.4)',
+                borderRadius: '8px',
+                border: '1px solid rgba(255,255,255,0.05)',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '11px',
+                  textTransform: 'uppercase',
+                  color: 'rgba(255,255,255,0.5)',
+                  marginBottom: '4px',
+                }}
+              >
+                Club Code
+              </div>
+              <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#fff' }}>
+                {clubNumericId || '...'}
+              </div>
+            </div>
+            {playerNumber && (
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: '120px',
+                  padding: '12px',
+                  background: 'rgba(0,0,0,0.4)',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(255,255,255,0.05)',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '11px',
+                    textTransform: 'uppercase',
+                    color: 'rgba(255,255,255,0.5)',
+                    marginBottom: '4px',
+                  }}
+                >
+                  Referral Code
+                </div>
+                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#4caf50' }}>
+                  {playerNumber}
+                </div>
+              </div>
+            )}
+          </div>
+          {playerNumber && (
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={() => {
+                const url = `https://smarter.poker/invite?c=${clubNumericId}&ref=${playerNumber}`;
+                navigator.clipboard.writeText(url);
+                toast.success('Invite Link Copied To Clipboard!');
+              }}
+              style={{
+                width: '100%',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+              </svg>
+              Copy Invite Link
+            </button>
+          )}
+        </section>
+
         {/* Basic Info */}
         {/* Role Management (Moved to Profile Tab conceptually as requested) */}
         {canSeeAuditLog && (
@@ -1080,10 +1189,12 @@ export default function ClubSettingsPage() {
           </div>
         </section>
 
-        {/* Game Rules */}
-        <section className="settings-section">
-          <h3>Game Rules</h3>
-          {/* 2026-08-18: these two are real now. They used to persist to
+        {/* Rake & BBJ Settings */}
+        {!inUnion && (
+          <section className="settings-section">
+            <h3>Rake & BBJ Settings</h3>
+
+            {/* 2026-08-18: these two are real now. They used to persist to
               clubs.default_rake_percent / clubs.rake_cap and be read by
               nothing — the engine took 10% with a fixed cash cap whatever an
               owner set here.
@@ -1095,166 +1206,92 @@ export default function ClubSettingsPage() {
               run here, so the previous handler happily saved 500. The real
               guard is server-side in getFullRakeConfig, since any club admin
               can UPDATE this row directly through RLS. */}
-          <div className="form-group">
-            <label htmlFor="club-rake-percent">Default Rake (%)</label>
-            <input
-              id="club-rake-percent"
-              type="number"
-              placeholder="Use house schedule"
-              value={settings.default_rake_percent < 0 ? '' : settings.default_rake_percent}
-              onChange={(e) => {
-                if (e.target.value === '') {
-                  updateSetting('default_rake_percent', RAKE_INHERIT);
-                  return;
-                }
-                const val = parseFloat(e.target.value);
-                updateSetting(
-                  'default_rake_percent',
-                  isNaN(val) ? RAKE_INHERIT : Math.min(MAX_RAKE_PERCENT, Math.max(0, val))
-                );
-              }}
-              min={0}
-              max={MAX_RAKE_PERCENT}
-              step={0.5}
-              disabled={!isOwner}
-            />
-            <small className="form-hint">
-              Leave Blank To Use The House Schedule (10%). A Club Can Take Less, Never More.{' '}
-              {settings.default_rake_percent < 0
-                ? 'Currently: house schedule.'
-                : `Currently: ${settings.default_rake_percent}% (house caps still apply).`}
-            </small>
-          </div>
-          <div className="form-group">
-            <label htmlFor="club-rake-cap">Rake Cap (BB)</label>
-            <input
-              id="club-rake-cap"
-              type="number"
-              placeholder="Use house schedule"
-              value={settings.rake_cap < 0 ? '' : settings.rake_cap}
-              onChange={(e) => {
-                if (e.target.value === '') {
-                  updateSetting('rake_cap', RAKE_INHERIT);
-                  return;
-                }
-                const val = parseFloat(e.target.value);
-                updateSetting(
-                  'rake_cap',
-                  isNaN(val) ? RAKE_INHERIT : Math.min(MAX_RAKE_CAP_BB, Math.max(0, val))
-                );
-              }}
-              min={0}
-              max={MAX_RAKE_CAP_BB}
-              step={0.5}
-              disabled={!isOwner}
-            />
-            <small className="form-hint">
-              Most That Can Be Raked From One Pot, In Big Blinds. Blank Uses The House Cap For Each
-              Stake ($3-$20 Depending On Blinds).{' '}
-              {settings.rake_cap < 0 ? 'Currently: house cap.' : capPreview}
-            </small>
-          </div>
-          {/* 2026-08-18: the "Time Bank (seconds)" field was removed. It
+            <div className="form-group">
+              <label htmlFor="club-rake-percent">Default Rake (%)</label>
+              <input
+                id="club-rake-percent"
+                type="number"
+                placeholder="Use House Schedule"
+                value={settings.default_rake_percent < 0 ? '' : settings.default_rake_percent}
+                onChange={(e) => {
+                  if (e.target.value === '') {
+                    updateSetting('default_rake_percent', RAKE_INHERIT);
+                    return;
+                  }
+                  const val = parseFloat(e.target.value);
+                  updateSetting(
+                    'default_rake_percent',
+                    isNaN(val) ? RAKE_INHERIT : Math.min(MAX_RAKE_PERCENT, Math.max(0, val))
+                  );
+                }}
+                min={0}
+                max={MAX_RAKE_PERCENT}
+                step={0.5}
+                disabled={!isOwner}
+              />
+              <small className="form-hint">
+                Leave Blank To Use The House Schedule (10%). A Club Can Take Less, Never More.{' '}
+                {settings.default_rake_percent < 0
+                  ? 'Currently: House Schedule.'
+                  : `Currently: ${settings.default_rake_percent}% (House Caps Still Apply).`}
+              </small>
+            </div>
+            <div className="form-group">
+              <label htmlFor="club-rake-cap">Rake Cap (BB)</label>
+              <input
+                id="club-rake-cap"
+                type="number"
+                placeholder="Use House Schedule"
+                value={settings.rake_cap < 0 ? '' : settings.rake_cap}
+                onChange={(e) => {
+                  if (e.target.value === '') {
+                    updateSetting('rake_cap', RAKE_INHERIT);
+                    return;
+                  }
+                  const val = parseFloat(e.target.value);
+                  updateSetting(
+                    'rake_cap',
+                    isNaN(val) ? RAKE_INHERIT : Math.min(MAX_RAKE_CAP_BB, Math.max(0, val))
+                  );
+                }}
+                min={0}
+                max={MAX_RAKE_CAP_BB}
+                step={0.5}
+                disabled={!isOwner}
+              />
+              <small className="form-hint">
+                Most That Can Be Raked From One Pot, In Big Blinds. Blank Uses The House Cap For
+                Each Stake ($3-$20 Depending On Blinds).{' '}
+                {settings.rake_cap < 0 ? 'Currently: House Cap.' : capPreview}
+              </small>
+            </div>
+            {/* 2026-08-18: the "Time Bank (seconds)" field was removed. It
               persisted to clubs.time_bank_seconds, which no engine code has
               ever read — an owner could set it to 15 or to 120 and every table
               behaved identically. A time bank is a flat 20-second grant, 2 per
               street (Bible V8 s6.2); there is nothing per-club left to set. */}
-          <div className="toggle-row">
-            <div className="toggle-info">
-              <span className="toggle-label">Allow Straddle</span>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={settings.allow_straddle}
-              aria-label="Allow Straddle"
-              className={`toggle-btn ${settings.allow_straddle ? 'on' : ''}`}
-              onClick={() => updateSetting('allow_straddle', !settings.allow_straddle)}
-              disabled={!isOwner}
-            >
-              {settings.allow_straddle ? 'ON' : 'OFF'}
-            </button>
-          </div>
-          <div className="toggle-row">
-            <div className="toggle-info">
-              <span className="toggle-label">Run It Twice</span>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={settings.allow_run_it_twice}
-              aria-label="Run It Twice"
-              className={`toggle-btn ${settings.allow_run_it_twice ? 'on' : ''}`}
-              onClick={() => updateSetting('allow_run_it_twice', !settings.allow_run_it_twice)}
-              disabled={!isOwner}
-            >
-              {settings.allow_run_it_twice ? 'ON' : 'OFF'}
-            </button>
-          </div>
-          <div className="toggle-row">
-            <div className="toggle-info">
-              <span className="toggle-label">Rabbit Hunt</span>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={settings.allow_rabbit_hunt}
-              aria-label="Rabbit Hunt"
-              className={`toggle-btn ${settings.allow_rabbit_hunt ? 'on' : ''}`}
-              onClick={() => updateSetting('allow_rabbit_hunt', !settings.allow_rabbit_hunt)}
-              disabled={!isOwner}
-            >
-              {settings.allow_rabbit_hunt ? 'ON' : 'OFF'}
-            </button>
-          </div>
-        </section>
-
-        {/* Buy-in Limits */}
-        <section className="settings-section">
-          <h3>Buy-In Limits</h3>
-          <div className="form-row">
-            <div className="form-group">
-              <label htmlFor="club-min-buyin">Min (BB)</label>
-              <input
-                type="number"
-                id="club-min-buyin"
-                value={Number.isFinite(settings.min_buyin_bb) ? settings.min_buyin_bb : ''}
-                onChange={(e) => updateSetting('min_buyin_bb', parseInt(e.target.value, 10))}
-                onBlur={() =>
-                  updateSetting('min_buyin_bb', clampBuyin(settings.min_buyin_bb, BUYIN_BB_FLOOR))
-                }
-                min={BUYIN_BB_FLOOR}
-                max={BUYIN_BB_CEILING}
+            <div className="toggle-row">
+              <div className="toggle-info">
+                <span className="toggle-label">BBJ Rake</span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings.bbj_rake_enabled}
+                aria-label="BBJ Rake"
+                className={`toggle-btn ${settings.bbj_rake_enabled ? 'on' : ''}`}
+                onClick={() => updateSetting('bbj_rake_enabled', !settings.bbj_rake_enabled)}
                 disabled={!isOwner}
-              />
+              >
+                {settings.bbj_rake_enabled ? 'ON' : 'OFF'}
+              </button>
             </div>
-            <div className="form-group">
-              <label htmlFor="club-max-buyin">Max (BB)</label>
-              <input
-                type="number"
-                id="club-max-buyin"
-                value={Number.isFinite(settings.max_buyin_bb) ? settings.max_buyin_bb : ''}
-                onChange={(e) => updateSetting('max_buyin_bb', parseInt(e.target.value, 10))}
-                onBlur={() =>
-                  updateSetting('max_buyin_bb', clampBuyin(settings.max_buyin_bb, BUYIN_BB_CEILING))
-                }
-                min={BUYIN_BB_FLOOR}
-                max={BUYIN_BB_CEILING}
-                disabled={!isOwner}
-              />
-            </div>
-          </div>
-          {buyinError && (
-            <small className="form-hint" role="alert" style={{ color: '#ff6b6b' }}>
-              {buyinError}
-            </small>
-          )}
-        </section>
-
+          </section>
+        )}
         {/* Spins — the owner's switch and the wallet behind it.
             Placed here, after Buy-In Limits, because it is the only other
             setting on this page that commits the club's own money. */}
-        {clubId && <SpinActivationPanel clubId={clubId} canManage={isOwner} />}
+        {clubId && !inUnion && <SpinActivationPanel clubId={clubId} canManage={isOwner} />}
 
         {/* Audit Log — visible to anyone the audit_trail RLS lets read it:
             the owner, plus club admins/agents via is_club_admin(). It was

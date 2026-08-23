@@ -7,6 +7,87 @@
 
 ---
 
+## Cowork session 2026-08-23 (2) — MOBILE, THE SECOND PASS: what the first pass missed (PRs #420, #429)
+
+The first pass fixed what it measured. This one went looking for what it had
+not thought to measure, and found four more classes of defect.
+
+### 1. `min-height: 100vh` was only a third of the problem
+
+The earlier sweep patched `min-height: 100vh` and stopped there. `height` and
+`max-height` carry the same flaw and are WORSE: `min-height` merely allows a
+page to be too tall, `height: 100vh` FORCES it, so the bottom of the element
+is guaranteed to sit under the browser toolbar. Eleven more occurrences,
+including both chat pages — where the thing pushed off-screen is the message
+input — plus the side nav, the tournament clock, the BBJ celebration and four
+`calc(100vh - …)` modal heights. All now carry a `100dvh` companion (PR #420).
+
+### 2. Twelve controls a thumb could not reliably hit
+
+Measured in production at 375px: 27 interactive controls compute under
+Apple's 44px minimum on their short axis, the worst an 18px-tall "View All"
+with 2px of padding. A 20px chip in a horizontal row is a coin flip between
+two adjacent filters.
+
+They are NOT resized. A 20px range tab becoming 44px is a redesign, not a
+repair. Each keeps its painted size and gains an invisible 44px-tall `::after`
+hit area — a click on a pseudo-element is dispatched to its host, so nothing
+moves and nothing repaints. VERTICAL ONLY, deliberately: every one of these
+fails on height while already being 45-108px wide, and they sit in horizontal
+rows, so widening would overlap the neighbour and hand it the wrong taps. Two
+controls that fail on both axes (`.dw__plus` 22x22, `.lobby-club__share`
+32x32) are the only ones that grow sideways. Scoped to `pointer: coarse` so a
+mouse is untouched. `.tap-target` is the opt-in class for one-offs with no
+class of their own.
+
+### 3. PINCH-ZOOM IS BACK (Dan approved)
+
+`index.html` carried `maximum-scale=1.0, user-scalable=no`. That disables
+pinch-zoom for everyone — a WCAG 1.4.4 failure — and on iOS it was also the
+thing quietly masking the sub-16px focus-zoom bug. The lock hid the symptom
+instead of fixing the cause. Now that every text field is at least 16px at
+phone width (57 rules across #380/#391/#408/#429), the auto-zoom cannot fire
+and the lock has nothing left to hold back. Removed.
+
+Do not re-add it. `tests/e2e/mobile-input-zoom.spec.ts` fails CI the moment a
+sub-16px field returns; fix the field, not the viewport.
+
+### 4. A correction to this changelog's own previous entry
+
+The earlier entry stated the viewport had "no maximum-scale, deliberately".
+That was the WORLD HUB's `_app.js` viewport, not Club Arena's. Club Arena's
+own index.html had the lock all along. Both the spec and the CSS comment that
+repeated the claim are corrected in place. Reading the right file is not a
+detail — the wrong one produced a confident, published, wrong sentence.
+
+### A third gate
+
+`tests/e2e/mobile-tap-targets.spec.ts` asserts REACH, not box height: it
+probes points across a 44px vertical span and requires `elementFromPoint` to
+resolve back to the control. That is true whether the target is genuinely
+44px or is 20px with an expanded hit area, so it tests the behaviour rather
+than the technique and stays honest if someone swaps one for the other. It
+emulates touch, because the expansion is touch-scoped on purpose.
+
+### Two more near-misses, both caught by checking instead of assuming
+
+- Deleting the two `/src/styles/*` preloads from index.html looked like free
+  cleanup (Vite strips them from the built HTML). It is not: those tags are
+  what makes Vite BUNDLE globals.css and design-system.css at all. Removing
+  them dropped every design token — `--bottom-nav-clearance` included — out
+  of the entry CSS. Reverted within the same build. The tags are
+  load-bearing; label them, do not tidy them.
+- `MarketplacePage.module.css .searchInput` was written off as dead CSS
+  because MarketplacePage.tsx never references it. `StoreTab.tsx` imports
+  that stylesheet and does. It is a live 13px search field, so it was fixed,
+  not deleted. Grep the stylesheet's importers, not just its namesake.
+
+Verification: tsc clean; vitest 274 files / 3,347 passed; vite build clean;
+the tap-target gate correctly RED against the pre-deploy build (6 controls,
+24-32px of reach) which is the evidence it works.
+
+---
+
 ## Cowork session 2026-08-23 (4) — the last three items, and three more traps avoided by measuring
 
 Closing out the outage work. Every remaining item was either fixed or proven not

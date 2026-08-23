@@ -1092,15 +1092,29 @@ export default function UnionDashboardPage() {
                     <div className="admin-stat-label">{w.label} ›</div>
                   </button>
                 ))}
-                {/* Spin reserve — funded by fn_spin_reserve_seed_from_union; not a
-                    send source, so it stays a plain tile alongside the four
-                    clickable wallets. */}
-                <div className="admin-stat-card">
+                {/* Spin reserve. It is NOT a send source - the pool is priced on
+                    being net-neutral over volume, and a manual withdrawal would
+                    break that silently - but it was the only tile on the page
+                    you could not open, which meant the wallet that funds the
+                    entire Spin economy had no ledger anywhere in the product.
+                    It opens read-only: balance and full history, no send flow. */}
+                <button
+                  className="admin-stat-card"
+                  style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                  aria-label="Open Spin Reserve"
+                  onClick={() =>
+                    setWalletModal({
+                      key: 'spin_reserve',
+                      label: 'Spin Reserve',
+                      balance: wallets.spin_reserve_wallet || 0,
+                    })
+                  }
+                >
                   <div className="admin-stat-value" style={{ color: '#39d17a' }}>
                     {fmt(wallets.spin_reserve_wallet)}
                   </div>
-                  <div className="admin-stat-label">Spin Reserve</div>
-                </div>
+                  <div className="admin-stat-label">Spin Reserve ›</div>
+                </button>
               </div>
             )}
 
@@ -1464,15 +1478,29 @@ export default function UnionDashboardPage() {
                     <div className="admin-stat-label">{w.label} ›</div>
                   </button>
                 ))}
-                {/* Spin reserve — funded by fn_spin_reserve_seed_from_union; not a
-                    send source, so it stays a plain tile alongside the four
-                    clickable wallets. */}
-                <div className="admin-stat-card">
+                {/* Spin reserve. It is NOT a send source - the pool is priced on
+                    being net-neutral over volume, and a manual withdrawal would
+                    break that silently - but it was the only tile on the page
+                    you could not open, which meant the wallet that funds the
+                    entire Spin economy had no ledger anywhere in the product.
+                    It opens read-only: balance and full history, no send flow. */}
+                <button
+                  className="admin-stat-card"
+                  style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                  aria-label="Open Spin Reserve"
+                  onClick={() =>
+                    setWalletModal({
+                      key: 'spin_reserve',
+                      label: 'Spin Reserve',
+                      balance: wallets.spin_reserve_wallet || 0,
+                    })
+                  }
+                >
                   <div className="admin-stat-value" style={{ color: '#39d17a' }}>
                     {fmt(wallets.spin_reserve_wallet)}
                   </div>
-                  <div className="admin-stat-label">Spin Reserve</div>
-                </div>
+                  <div className="admin-stat-label">Spin Reserve ›</div>
+                </button>
               </div>
             )}
 

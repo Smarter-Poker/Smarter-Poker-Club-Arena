@@ -7,6 +7,50 @@
 
 ---
 
+## Cowork session 2026-08-23 (1) — RE-READING MY OWN DIFFS: two defects, one of them mine
+
+An adversarial line-by-line pass over everything shipped in the previous
+session. Two real findings.
+
+**The tile you could not open.** `UnionWalletModal` had turned the four union
+wallets into openable views - balance, history, send flow. The Spin reserve,
+added the same day, was left a plain `<div>` with a comment explaining that it
+is not a send source. True, and beside the point: it meant the one wallet that
+had just gained a money-movement control was also the only one whose movements
+could not be seen anywhere in the product. Its rows go to
+`union_wallet_transactions`, and nothing in the SPA read that table at all.
+
+It opens now, read-only. Balance in the Spin green, the full ledger with
+direction, tx type, timestamp and running balance, and a line saying where to
+add funds. No kind selector, no member picker, no send button, and no roster
+fetch for a list it would never render.
+
+**Read-only is the load-bearing part.** `spinSpec.ts` prices the format on the
+pool being net-neutral over volume - `E[multiplier] = seats x (1 - rake)` - so
+one manual withdrawal breaks the invariant every tier is derived from, and
+breaks it silently, because solvency is only ever read afterwards. The test
+that pins the send flow behind `!readOnly` is the most valuable one in the file.
+
+**The theme that never resolved — my regression.** The previous session taught
+`useUserThemeSettings` to WAIT on a null tournament format rather than guess
+MTT. But `TablePage` sets that format only inside `if (tournData)`. A tournament
+row that cannot be read - deleted, RLS-denied, transient - therefore left the
+format null for the life of the table, and the guard then held the felt on the
+DEFAULT theme permanently. Before the guard that case quietly used the MTT
+theme; the guard turned one wrong answer into no answer.
+
+Fixed with `setTournamentFormat((prev) => prev ?? 'mtt')` on the failure path -
+`prev ??` and not a bare assignment, because that branch can interleave with the
+spin reveal path and clobbering a resolved `'spin'` would swap the felt mid-sit,
+which is the exact fault the guard exists to prevent. There is a test for that
+distinction.
+
+12 new cases in `tests/config/spinReserveWalletView.test.ts`, 9 of which fail
+against `origin/main`. Suite: 249 files, 3,144 passed, tsc clean, all three
+Supabase CI gates green.
+
+---
+
 ## Cowork session 2026-08-22 (13) — the league can finally see the mind (PR #309)
 
 The nightly duplicate-deal league (#271) measures every strategy layer in

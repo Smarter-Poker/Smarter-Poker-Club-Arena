@@ -1,17 +1,19 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * TOURNAMENT STANDINGS — Premium Dark Theme CSS
+ * TOURNAMENT STANDINGS — Premium 3D Dark Theme CSS
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 .container {
-  background: linear-gradient(180deg, #1a1a2e 0%, #16162a 100%);
-  border: 1px solid rgba(251, 191, 36, 0.2);
-  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(26, 36, 54, 0.7) 0%, rgba(19, 27, 40, 0.9) 100%);
+  border: 1px solid #223046;
+  border-radius: 20px;
   overflow: hidden;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .header {
@@ -19,13 +21,15 @@
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(111, 220, 255, 0.1);
+  background: linear-gradient(180deg, rgba(34, 48, 70, 0.4) 0%, rgba(26, 36, 54, 0.6) 100%);
 }
 
 .header h3 {
   margin: 0;
   font-size: 18px;
-  color: white;
+  color: #6fdcff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .stats {
@@ -42,12 +46,13 @@
 .statValue {
   font-size: 20px;
   font-weight: 700;
-  color: #fbbf24;
+  color: #e8eaf0;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 .statLabel {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: #6fdcff;
   text-transform: uppercase;
 }
 
@@ -55,7 +60,7 @@
 .loading {
   padding: 40px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.4);
+  color: #8892a4;
 }
 
 /* Section */
@@ -71,7 +76,7 @@
 .section h4 {
   margin: 0 0 16px 0;
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.6);
+  color: #8892a4;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -80,7 +85,7 @@
 .playerGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 12px;
+  gap: 16px;
 }
 
 /* Player Card */
@@ -89,60 +94,76 @@
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  transition: transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  background: linear-gradient(180deg, #223046 0%, #1a2436 100%);
+  border: 1px solid #223046;
+  border-radius: 12px;
+  box-shadow:
+    0 4px 8px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .playerCard:hover {
-  transform: translateY(-1px);
+  transform: translateY(-4px) scale(1.02);
+  border-color: #6fdcff;
+  box-shadow:
+    0 8px 16px rgba(0, 0, 0, 0.4),
+    0 0 12px rgba(111, 220, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .playerCard:nth-child(1) {
-  border-color: rgba(251, 191, 36, 0.3);
-  background: rgba(251, 191, 36, 0.05);
+  background: linear-gradient(180deg, rgba(0, 180, 230, 0.3) 0%, rgba(10, 93, 194, 0.2) 100%);
+  border-color: #6fdcff;
+  box-shadow:
+    0 8px 16px rgba(0, 0, 0, 0.4),
+    0 0 16px rgba(111, 220, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .playerCard:nth-child(2) {
-  border-color: rgba(192, 192, 192, 0.2);
+  background: linear-gradient(180deg, rgba(24, 119, 242, 0.2) 0%, rgba(10, 93, 194, 0.1) 100%);
+  border-color: #1877f2;
 }
 
 .playerCard:nth-child(3) {
-  border-color: rgba(205, 127, 50, 0.2);
+  background: linear-gradient(180deg, rgba(34, 48, 70, 0.4) 0%, rgba(26, 36, 54, 0.6) 100%);
+  border-color: #8892a4;
 }
 
 .rank {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, #1a2436 0%, #131b28 100%);
+  border: 1px solid #223046;
   border-radius: 50%;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
-  color: white;
+  color: #e8eaf0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 .playerCard:nth-child(1) .rank {
-  background: #fbbf24;
-  color: #1a1a2e;
+  background: linear-gradient(180deg, #00b4e6 0%, #0a5dc2 100%);
+  color: #fff;
+  border-color: #6fdcff;
+  box-shadow: 0 0 8px rgba(111, 220, 255, 0.5);
 }
 
 .avatar {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
+  background: #131b28;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   flex-shrink: 0;
+  border: 1px solid #223046;
 }
 
 .avatar img {
@@ -163,18 +184,20 @@
 .name {
   display: block;
   font-size: 14px;
-  font-weight: 500;
-  color: white;
+  font-weight: 600;
+  color: #e8eaf0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .chips {
   display: block;
   font-size: 12px;
-  color: #10b981;
+  color: #6fdcff;
   margin-top: 2px;
+  font-weight: 500;
 }
 
 /* Eliminated List */
@@ -188,27 +211,35 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.02);
-  border-radius: 8px;
-  opacity: 0.7;
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  padding: 10px 16px;
+  background: linear-gradient(90deg, #131b28 0%, #1a2436 100%);
+  border: 1px solid #223046;
+  border-radius: 12px;
+  opacity: 0.8;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s;
+}
+
+.eliminatedRow:hover {
+  transform: translateX(4px);
+  border-color: #1877f2;
 }
 
 .eliminatedRow .avatar {
-  width: 28px;
-  height: 28px;
-  filter: grayscale(50%);
+  width: 32px;
+  height: 32px;
+  filter: grayscale(80%);
 }
 
 .eliminatedRow .name {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.7);
+  color: #8892a4;
+  font-weight: 500;
 }
 
 .position {
   font-size: 16px;
   min-width: 32px;
   text-align: center;
+  color: #1877f2;
 }

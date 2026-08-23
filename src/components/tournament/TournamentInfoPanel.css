@@ -100,7 +100,7 @@
 .tip__statValue {
   font-size: 0.92rem;
   font-weight: 700;
-  color: #fbbf24;
+  color: #6fdcff;
   font-variant-numeric: tabular-nums;
 }
 
@@ -125,8 +125,8 @@
 
 .tip__tab.is-active {
   color: #0b1120;
-  background: linear-gradient(180deg, #fcd34d, #f59e0b);
-  border-color: rgba(251, 191, 36, 0.6);
+  background: linear-gradient(180deg, #fcd34d, #0a5dc2);
+  border-color: rgba(111, 220, 255, 0.6);
 }
 
 .tip__body {
@@ -173,7 +173,7 @@
 
 /* Your own row, and the level you are on, are the two things you look for. */
 .tip__table tr.is-me td {
-  background: rgba(251, 191, 36, 0.1);
+  background: rgba(111, 220, 255, 0.1);
   color: #fde68a;
   font-weight: 700;
 }

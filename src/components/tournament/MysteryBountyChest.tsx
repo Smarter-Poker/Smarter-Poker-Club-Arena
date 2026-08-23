@@ -112,12 +112,12 @@ const SPECTATOR_FAILSAFE_MS = 14000;
 const TIER_COLORS: Record<string, string> = {
   min: '#6b7280',
   small: '#60a5fa',
-  medium: '#34d399',
-  large: '#fbbf24',
-  huge: '#f97316',
+  medium: '#6fdcff',
+  large: '#6fdcff',
+  huge: '#1877f2',
   mega: '#ef4444',
   grand: '#a855f7',
-  jackpot: '#FFD700',
+  jackpot: '#6fdcff',
 };
 
 /**
@@ -172,7 +172,7 @@ function fireConfetti(isJackpot: boolean) {
     .then((mod) => {
       const confetti = mod.default;
       confettiReset = () => (confetti as unknown as { reset?: () => void }).reset?.();
-      const gold = ['#FFD700', '#FFC107', '#FFB300', '#FF8F00', '#FFECB3'];
+      const gold = ['#6fdcff', '#00b4e6', '#0a5dc2', '#1877f2', '#e8eaf0'];
       confetti({
         particleCount: isJackpot ? 300 : 140,
         spread: isJackpot ? 180 : 110,

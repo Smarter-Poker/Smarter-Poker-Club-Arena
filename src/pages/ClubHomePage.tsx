@@ -940,6 +940,29 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       Promise.resolve(supabase.rpc('get_club_home', { p_club_key: clubId }))
         .then(({ data: home, error: homeErr }) => {
           if (homeErr || !home || home.found !== true) return;
+
+          /**
+           * PLAYERS CURRENTLY PLAYING (Dan, 2026-08-23): "the 0 players
+           * currently playing is a bug... every horse needs to be considered a
+           * current player, this an accumulation of all active players in all
+           * clubs total."
+           *
+           * clubs.online_count is a denormalised column nothing keeps current
+           * - it read 12 for JAQK and 0 for Shark and Midway while 579 seats
+           * were occupied. get_club_home counts the live seats themselves,
+           * horses included, across the whole platform.
+           *
+           * SET BEFORE THE lobbyPainted GUARD, deliberately. That guard exists
+           * to stop a stale SNAPSHOT OF THE LISTS painting over fresher rows;
+           * this number is not in the lists and has no fresher writer. Behind
+           * the guard it was skipped on every warm load where the chain won
+           * the race, and the header fell back to the stale 12 - which is
+           * precisely the flapping being fixed here.
+           */
+          if (typeof home.players_playing === 'number') {
+            setPlayersPlaying(home.players_playing);
+          }
+
           if (lobbyPainted) return; // the real chain already answered
           if (getIsMounted && !getIsMounted()) return;
           lobbyPainted = true;
@@ -950,22 +973,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 ...home.club,
                 member_count: home.member_count ?? home.club.member_count,
               }));
-            }
-            /**
-             * PLAYERS CURRENTLY PLAYING (Dan, 2026-08-23): "the 0 players
-             * currently playing is a bug... every horse needs to be considered
-             * a current player, this an accumulation of all active players in
-             * all clubs total."
-             *
-             * clubs.online_count is a denormalised column nothing keeps
-             * current - it read 12 for JAQK and 0 for Shark and Midway while
-             * 579 seats were occupied. get_club_home counts the live seats
-             * themselves, horses included, across the whole platform. Held in
-             * its own state rather than merged into `club` so the stale column
-             * can never win a race against it.
-             */
-            if (typeof home.players_playing === 'number') {
-              setPlayersPlaying(home.players_playing);
             }
             if (Array.isArray(home.tables)) setTables(home.tables);
             if (Array.isArray(home.tournaments)) setTournaments(home.tournaments);

@@ -27,6 +27,7 @@ const inviteStepAnimationStyle = {
 
 interface ClubInfo {
   id: string;
+  slug?: string;
   name: string;
   description?: string;
   member_count: number;
@@ -83,7 +84,7 @@ export default function InvitePage() {
     try {
       let clubQuery = supabase
         .from('clubs')
-        .select('id, name, description, member_count, avatar_url, is_public');
+        .select('id, slug, name, description, member_count, avatar_url, is_public');
 
       if (inviteCode) {
         clubQuery = clubQuery.eq('invite_code', inviteCode);
@@ -233,7 +234,7 @@ export default function InvitePage() {
       }
 
       toast.success(`Welcome to ${club.name}!`);
-      navigate(`/clubs/${club.id}`);
+      navigate(`/clubs/${club.slug || club.id}`);
     } catch (err: any) {
       reportError(err, 'InvitePage.Failed_to_join');
       toast.error(err.message || 'Failed to join club');
@@ -305,7 +306,10 @@ export default function InvitePage() {
           <>
             <div className="already-member">
               <span>You're Already A Member!</span>
-              <button className="btn btn-primary" onClick={() => navigate(`/clubs/${club.id}`)}>
+              <button
+                className="btn btn-primary"
+                onClick={() => navigate(`/clubs/${club.slug || club.id}`)}
+              >
                 Enter Club
               </button>
             </div>

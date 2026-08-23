@@ -40,12 +40,12 @@ export default function ClubContextMenu({
 
   const handleGoToLobby = useCallback(() => {
     onClose();
-    navigate(`/clubs/${club.id}`);
-  }, [club.id, navigate, onClose]);
+    navigate(`/clubs/${club.slug || club.id}`);
+  }, [club.id, club.slug, navigate, onClose]);
 
   const handleCashier = useCallback(() => {
     onClose();
-    navigate(`/clubs/${club.id}/cashier`);
+    navigate(`/clubs/${club.slug || club.id}/cashier`);
   }, [club.id, navigate, onClose]);
 
   const handleShareCode = useCallback(() => {

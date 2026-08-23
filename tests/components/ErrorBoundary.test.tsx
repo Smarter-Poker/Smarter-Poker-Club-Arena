@@ -67,7 +67,13 @@ describe('ErrorBoundary Component', () => {
     // the text AND that it is the oversized icon element.
     const icon = screen.getByText('Warning');
     expect(icon).toBeInTheDocument();
-    expect(icon).toHaveStyle('font-size: 4rem');
+    // The component declares fontSize: '4rem' (ErrorBoundary.tsx:147). happy-dom
+    // resolves that against the 16px root and reports the computed '64px';
+    // jsdom hands back the literal '4rem'. Same size, different engine spelling,
+    // so assert the size rather than the spelling - otherwise this test pins the
+    // DOM implementation instead of the component.
+    const fontSize = getComputedStyle(icon).fontSize;
+    expect(['4rem', '64px']).toContain(fontSize);
 
     consoleErrorSpy.mockRestore();
   });

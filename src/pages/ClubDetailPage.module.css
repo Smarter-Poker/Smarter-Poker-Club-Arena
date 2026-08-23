@@ -849,7 +849,7 @@
   border: 2px solid #2a3a4a;
   border-radius: 8px;
   color: #fff;
-  font-size: 0.875rem;
+  font-size: 16px; /* was 0.875rem; under 16px makes iOS zoom the page on focus */
   width: 200px;
   transition: border-color 0.2s;
 }

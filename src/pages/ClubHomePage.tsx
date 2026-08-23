@@ -157,6 +157,7 @@ interface ClubData {
   hierarchy_threshold_current: number;
   hierarchy_threshold_next: number;
   created_at: string;
+  is_union: boolean;
 }
 
 interface TableData {
@@ -898,7 +899,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, description, avatar_url, logo_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at'
+              'id, club_id, name, description, avatar_url, logo_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at, is_union'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -918,6 +919,49 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
       // Use resolved UUID for all downstream FK queries
       const resolvedId = clubData.id;
+
+      // ── START THE resolvedId-ONLY QUERIES NOW, AWAIT THEM WHERE THEY WERE ──
+      //
+      // PERF 2026-08-23. Getting the table list on screen took SIX sequential
+      // round trips after the club row: member+diamonds, union row, union
+      // clubs, member count, live count, then finally tables. Measured against
+      // production the queries themselves are ~9ms; the wait is almost
+      // entirely network latency, ~150-250ms per trip wired and 250-400ms on
+      // mobile. That is 1-1.5s wired and 2-3s on mobile of pure waiting, more
+      // than every remaining byte on the boot path combined.
+      //
+      // Neither of these two depends on the auth/membership chain they were
+      // queued behind - both need only resolvedId - so they are started here
+      // and awaited unchanged below. Nothing about the order of state updates
+      // moves; only the network overlaps.
+      //
+      // The rejection handlers matter: a hoisted promise that rejects before
+      // its await would otherwise surface as an unhandled rejection. Shaping
+      // the failure as { data|count: null, error } keeps the existing
+      // fail-open handling at each await site exactly as it was.
+      const unionRowPromise = supabase
+        .from('union_clubs')
+        .select('union_id')
+        .eq('club_id', resolvedId)
+        .limit(1)
+        .maybeSingle()
+        .then(
+          (r) => r,
+          (error) => ({ data: null, error })
+        );
+
+      // Standalone clubs need a live member count (clubs.member_count is
+      // denormalised and goes stale). Union clubs ignore it - one cheap
+      // indexed count is a better trade than a whole round trip in series.
+      const liveMemberCountPromise = supabase
+        .from('club_members')
+        .select('user_id', { count: 'exact', head: true })
+        .eq('club_id', resolvedId)
+        .in('status', ['active', 'approved'])
+        .then(
+          (r) => r,
+          (error) => ({ count: null, error })
+        );
 
       // Check if current user is owner
       const {
@@ -953,12 +997,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       let unionId: string | null = null;
       let unionClubIds: string[] = [resolvedId];
       try {
-        const { data: ucRow, error: ucErr } = await supabase
-          .from('union_clubs')
-          .select('union_id')
-          .eq('club_id', resolvedId)
-          .limit(1)
-          .maybeSingle();
+        const { data: ucRow, error: ucErr } = await unionRowPromise;
         if (!ucErr && ucRow) {
           if (getIsMounted && !getIsMounted()) return;
           setIsInUnion(true);
@@ -1017,11 +1056,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       // Without this, standalone clubs display the stale clubs.member_count value
       if (!unionId) {
         try {
-          const { count: liveCount } = await supabase
-            .from('club_members')
-            .select('user_id', { count: 'exact', head: true })
-            .eq('club_id', resolvedId)
-            .in('status', ['active', 'approved']);
+          const { count: liveCount } = await liveMemberCountPromise;
 
           if (liveCount != null && liveCount > 0) {
             if (getIsMounted && !getIsMounted()) return;
@@ -2063,7 +2098,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               <DynamicWallet
                 userId={currentUserId}
                 clubId={resolvedClubId}
-                variant={isOwner || userRole === 'owner' ? 'owner' : 'player'}
+                variant={
+                  club?.is_union ? 'union' : isOwner || userRole === 'owner' ? 'owner' : 'player'
+                }
                 showBBJ
                 onBuyDiamonds={() => {
                   haptic.medium();
@@ -2276,20 +2313,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           if (!qSpec) return null;
           const qVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
 
-          const applyRange = (min: number, max: number) => {
-            const next: FilterStore = {
-              ...advFilters,
-              [gameType]: { ...qVal, rangeMin: min, rangeMax: max },
-            };
-            setAdvFilters(next);
-            if (resolvedClubId) saveFilters(resolvedClubId, next);
-          };
-
           return (
             <div className="quickprefs">
               <div className="quickprefs__row">
                 {qSpec.range.presets.map((p) => {
-                  const on = qVal.rangeMin === p.min && qVal.rangeMax === p.max;
+                  const on = (qVal.selectedRanges || []).includes(p.key);
                   return (
                     <button
                       key={p.key}
@@ -2297,12 +2325,14 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                       aria-pressed={on}
                       onClick={() => {
                         haptic.selection();
-                        /* Tapping the active tier CLEARS it back to the full
-                           range. Without that the only way to undo a tier is to
-                           open the sheet and hit Reset, which is three taps to
-                           undo one. */
-                        if (on) applyRange(qSpec.range.min, qSpec.range.max);
-                        else applyRange(p.min, p.max);
+                        const arr = qVal.selectedRanges || [];
+                        const nextArr = on ? arr.filter((k) => k !== p.key) : [...arr, p.key];
+                        const next: FilterStore = {
+                          ...advFilters,
+                          [gameType]: { ...qVal, selectedRanges: nextArr },
+                        };
+                        setAdvFilters(next);
+                        if (resolvedClubId) saveFilters(resolvedClubId, next);
                       }}
                     >
                       {p.label}
@@ -2612,7 +2642,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       {/* ═══════════════════════════════════════════════════════════════════
                 BACKGROUND IMAGE (Premium Bar Scene)
             ═══════════════════════════════════════════════════════════════════ */}
-      <div className="club-home__background"></div>
 
       {/* ═══════════════════════════════════════════════════════════════════
                 BOTTOM NAVIGATION BAR

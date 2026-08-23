@@ -180,7 +180,7 @@
   background: none;
   border: none;
   color: #e8ecf7;
-  font-size: 0.8125rem;
+  font-size: 16px; /* was 0.8125rem; under 16px makes iOS zoom the page on focus */
   /* the row around this adds padding; 40 here clears 44 in total */
   min-height: 40px;
 }

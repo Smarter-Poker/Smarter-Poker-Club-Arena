@@ -1169,10 +1169,53 @@ export default function MultiTablePage() {
       notifyCapReached('add');
       return;
     }
-    const club = homeClubIdRef.current;
+    /**
+     * `homeClubIdRef` is filled by an ASYNC lookup of the open tables' club_id
+     * (see the effect below). Press "+" before that round trip lands - which is
+     * exactly what happens if you sit down and immediately add a second table -
+     * and this used to fall straight through to a lobby tab. No picker, no
+     * message, a tab you did not ask for: indistinguishable from the button
+     * being broken.
+     *
+     * The club id is knowable right here without waiting: the table you are
+     * looking at has one. Resolve it on demand, cache it the same way the
+     * effect does, and only fall back to the lobby when there genuinely is no
+     * club to pick from.
+     */
+    let club = homeClubIdRef.current;
     if (!club) {
+      const active = tablesRef.current.filter((t) => !isLobbyTab(t));
+      const cached = active.map((t) => clubLookupCacheRef.current.get(t.id)).find(Boolean);
+      if (cached) {
+        club = cached;
+      } else if (active.length > 0) {
+        setQuickJoin({ open: true, loading: true, rows: [] });
+        try {
+          const { data } = await supabase
+            .from('tables')
+            .select('id, club_id')
+            .in(
+              'id',
+              active.map((t) => t.id)
+            );
+          for (const row of (data ?? []) as { id: string; club_id: string | null }[]) {
+            if (row.club_id) clubLookupCacheRef.current.set(row.id, row.club_id);
+          }
+          club = active.map((t) => clubLookupCacheRef.current.get(t.id)).find(Boolean) ?? null;
+        } catch {
+          club = null;
+        }
+      }
+      if (club) {
+        homeClubIdRef.current = club;
+        setHomeClubId(club);
+      }
+    }
+    if (!club) {
+      // Genuinely nothing to pick from — no club behind any open table.
       // Dan 2026-08-15: was `navigate('/?returnToMulti=true')` (dead param,
       // container unmounted). The lobby TAB keeps every game mounted.
+      setQuickJoin({ open: false, loading: false, rows: [] });
       masterBus.emit('OPEN_LOBBY_TAB', {});
       return;
     }

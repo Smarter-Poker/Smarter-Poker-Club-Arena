@@ -336,6 +336,25 @@ export function normalizeCardBack(style: string | undefined | null): string {
   return CARD_BACK_ALIASES[style] ?? DEFAULT_CARD_BACK;
 }
 
+/**
+ * The URL of a card back's artwork.
+ *
+ * This lives in TS and not in CardImage.css for the same reason every card FACE
+ * already resolves through MEDIA_BASE: the stylesheet's twelve
+ * `url('/cards/backs/table/<id>.webp')` declarations were ROOT-relative, and
+ * Club Arena is served from `/hub/club-arena/`. Every one of them 404'd in
+ * production, so each back fell through to the bare `--cb-gradient` — a dark
+ * navy rectangle that on dark felt reads as an empty outline, which is what
+ * "their card backs should be visible" was reporting.
+ *
+ * CSS also cannot follow MEDIA_BASE anywhere else: the whole point of Phase
+ * U5.3 is that media may be served from an R2 bucket on another origin, and a
+ * hardcoded `url()` cannot know that.
+ */
+export function cardBackImageUrl(style: string | undefined | null): string {
+  return `${MEDIA_BASE}cards/backs/table/${normalizeCardBack(style)}.webp`;
+}
+
 export function CardBack({ style, size = 'md', className = '' }: CardBackProps) {
   const sizeClass = SIZE_CLASSES[size];
   const backStyle = normalizeCardBack(style);
@@ -345,7 +364,10 @@ export function CardBack({ style, size = 'md', className = '' }: CardBackProps) 
 
   return (
     <div className={classes}>
-      <div className={`card-back card-back--${backStyle}`} />
+      <div
+        className={`card-back card-back--${backStyle}`}
+        style={{ '--cb-image': `url('${cardBackImageUrl(backStyle)}')` } as React.CSSProperties}
+      />
     </div>
   );
 }

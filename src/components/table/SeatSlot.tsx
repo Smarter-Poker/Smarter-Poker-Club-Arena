@@ -1077,8 +1077,8 @@ export const SeatSlot = memo(
      * the character would no longer agree. A rigged avatar carries its own look.
      */
     const showHolo = isVipBust && !avatarBroken && !rigActive;
-    // The hero cannot open a menu on themselves.
-    const avatarClickable = !!onAvatarClick && !player.isHero;
+    // The hero can now be clicked to open the profile modal.
+    const avatarClickable = !!onAvatarClick;
 
     // COMPETITOR-PARITY 2026-08-19 (Card Squeeze): single source of truth for
     // "the hero's cards are currently face down awaiting a squeeze".

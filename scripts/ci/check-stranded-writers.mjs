@@ -69,6 +69,20 @@ const ALLOWLIST = new Set([
   // CA reads these from src/ but CA's server/ does not write them.
   'chip_ledger', // WH: Smarter-Poker-World-Hub/supabase/migrations/20260319_create_chip_ledger.sql
   'club_arena_audit_logs', // WH: 20260311000001_orb8_phase4_audit.sql
+  // Read-only REFERENCE data. Not stranded — there is deliberately no runtime
+  // writer, because a fee schedule that application code can rewrite is a
+  // schedule nobody can audit. `bbj_stakes_tiers` is the published stakes
+  // ladder (blind range, BBJ fee, and the loser/winner/table payout split) and
+  // it is the table fn_bbj_payout pays FROM. Rows are seeded by migration and
+  // changed by an operator; the only non-read grant is to service_role.
+  // Verified against production 2026-08-23 via the Supabase MCP: 6 rows
+  // (nano/micro/small/mid/high/nosebleeds), RLS on, SELECT policy
+  // `read_bbj_stakes_tiers` for `authenticated`, USING (true).
+  // Read from src/components/bbj/BBJBasicPanel.tsx — deliberately, so the
+  // schedule shown to a player is the same object the engine pays from. The
+  // client copy in src/config/RakeConfig.ts had drifted from it on fees,
+  // blind ranges AND tier boundaries.
+  'bbj_stakes_tiers',
   // Supabase auth schema
   'users',
   'members',

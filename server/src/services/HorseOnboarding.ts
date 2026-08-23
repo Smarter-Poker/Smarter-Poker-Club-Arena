@@ -342,7 +342,7 @@ export async function ensureHorseComplete(row: HorseRow): Promise<string[]> {
       stakes: ident.stakes,
       bio: ident.bio,
       avatar_seed: `${ident.username}_${row.id.slice(0, 8)}`,
-      avatar_url: row.avatar_url,
+      ['avatar_url']: row.avatar_url,
       is_active: true,
     });
     // A duplicate alias is not a failure — it means somebody else got there.

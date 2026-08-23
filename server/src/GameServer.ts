@@ -1930,12 +1930,17 @@ export class GameServer {
           if (msUntilStart > 0 && msUntilStart <= MTT_PRESTART_RAMP_MS) {
             const lastRamp = this.lastMttRampAt.get(tournament.id) ?? 0;
             if (now - lastRamp >= 45_000) {
+              // The whole decision - window, curve, seat-first exclusion, pool
+              // cap and per-tick step - is inside this pure function, so the
+              // rule is tested without a database and this call site cannot
+              // drift from it.
               const rampTarget = mttPrestartHorseTarget({
                 msUntilStart,
                 maxPlayers: tournament.max_players ?? 0,
                 variant: String(tournament.variant ?? ''),
+                currentPlayers: tournament.current_players ?? 0,
               });
-              if (rampTarget > (tournament.current_players ?? 0)) {
+              if (rampTarget > 0) {
                 this.lastMttRampAt.set(tournament.id, now);
                 const rampAdded = await this.tournamentRecurring.topUpWithHorses(
                   tournament.id,

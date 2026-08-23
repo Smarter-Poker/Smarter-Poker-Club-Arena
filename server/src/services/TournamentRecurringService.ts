@@ -636,6 +636,87 @@ export function isSeatFirstFormat(variant: string, maxPlayers: number): boolean 
   return String(variant).toLowerCase() === 'spin' || maxPlayers <= 2;
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * MTT PRE-START HORSE RAMP — Dan 2026-08-23, BINDING, STANDARD PRACTICE
+ * ───────────────────────────────────────────────────────────────────────────
+ * "HORSES NEED TO BE REGISTERING FOR MTT TOURNAMENTS UP TO AN HOUR BEFORE THE
+ *  TOURNAMENT STARTS. PLAYERS DON'T JUMP IN AND PLAY TOURNAMENTS THAT HAVE NO
+ *  PLAYERS IN THEM."
+ *
+ * WHAT WAS ACTUALLY HAPPENING
+ * Horse seeding ran at exactly two moments: once when the tournament row was
+ * created, and again only AFTER the start time had passed. Neither covers the
+ * hour a human spends looking at the lobby deciding what to play. Measured on
+ * production while writing this: "All-In or Fold Frenzy", a 200-seat event,
+ * had been sitting in the lobby for SEVENTEEN AND A HALF HOURS reading 0/200,
+ * two minutes from its start. Nobody registers for that, so it stayed empty,
+ * and the only thing that ever filled it was the past-start rescue - by which
+ * point every human who looked at it had already gone elsewhere.
+ *
+ * The spawn-time check made this inevitable rather than unlucky: it asked "does
+ * this start within 15 minutes?" ONCE, at creation. An event published a day
+ * ahead answered no, and was never asked again.
+ *
+ * THE CURVE, AND WHY IT IS NOT A STEP
+ * A field that appears all at once reads as fake, and a field that appears at
+ * T-60 and then never moves reads as dead. Real MTT registration is slow early
+ * and piles in near the close, so the target is quadratic in elapsed ramp time:
+ * gentle for the first half hour, steep in the last ten minutes. A player
+ * refreshing the lobby sees a number that keeps going up, which is the actual
+ * product goal here - not the final count.
+ *
+ * THREE SAFETY PROPERTIES, ALL DELIBERATE
+ *  1. It never targets more than `maxPlayers - 1`, so the ramp can NEVER trip
+ *     the `maxReached` start gate in discoverTournaments and begin an event
+ *     ahead of its own clock. There is always a seat for a human.
+ *  2. It is capped at MTT_PRESTART_MAX_HORSES regardless of field size. The
+ *     pool is finite (584 horses, most of them already dealing cash or in
+ *     another event) and every registration is a REAL buy-in through
+ *     fn_register_horse_for_tournament - real wallet debit, real rake, real
+ *     prize-pool contribution. A 200-seat event must not swallow the pool or
+ *     inflate a prize pool with a hundred horse buy-ins an hour early. Filling
+ *     the rest is the existing past-start top-up's job, on the clock, when it
+ *     is actually needed.
+ *  3. Seat-first games (Spin, heads-up) return 0 and are left completely
+ *     alone. Their binding rule is that they start when seats are BOUGHT, and
+ *     registrations are not seats.
+ *
+ * Returns the number of registered entrants the field SHOULD have right now.
+ * The caller tops up toward it and never removes anybody.
+ */
+export const MTT_PRESTART_RAMP_MS = 60 * 60 * 1000;
+export const MTT_PRESTART_MAX_HORSES = 24;
+
+export function mttPrestartHorseTarget(opts: {
+  /** Milliseconds until the scheduled start. Negative means already past. */
+  msUntilStart: number;
+  maxPlayers: number;
+  variant: string;
+}): number {
+  const { msUntilStart, maxPlayers, variant } = opts;
+
+  // Past start, or not started ramping yet. Past start belongs to the existing
+  // top-up, which aims at a full field; this function must not fight it.
+  if (!Number.isFinite(msUntilStart)) return 0;
+  if (msUntilStart <= 0 || msUntilStart > MTT_PRESTART_RAMP_MS) return 0;
+
+  // Spins and heads-up start on bought seats. Not our business.
+  if (isSeatFirstFormat(String(variant ?? ''), Number(maxPlayers) || 0)) return 0;
+
+  const seats = Number(maxPlayers) || 0;
+  // Always leave a seat: see safety property 1.
+  const fieldGoal = Math.min(seats - 1, MTT_PRESTART_MAX_HORSES);
+  if (fieldGoal < 1) return 0;
+
+  const elapsed = 1 - msUntilStart / MTT_PRESTART_RAMP_MS; // 0 at T-60, 1 at T-0
+  const curve = elapsed * elapsed; // slow early, steep near the close
+
+  // At least one entrant the moment the window opens: a lobby row reading 1
+  // is a game somebody is in, and 0 is a game nobody will join.
+  return Math.max(1, Math.min(fieldGoal, Math.ceil(fieldGoal * curve)));
+}
+
 function horsesForSeatHeldGame(maxPlayers: number): { horses: number; isSim: boolean } {
   if (!HOLD_SEAT_FOR_HUMAN) return { horses: maxPlayers, isSim: true };
   return { horses: Math.max(1, maxPlayers - 1), isSim: false };

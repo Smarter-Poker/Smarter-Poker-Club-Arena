@@ -13,6 +13,7 @@ import {
   TIMED_WINDOW_AHEAD_MS,
   HORSE_SEED_WITHIN_MS,
 } from './ScheduledTournamentService.js';
+import { MTT_PRESTART_RAMP_MS } from './TournamentRecurringService.js';
 
 const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
 
@@ -75,9 +76,24 @@ describe('the card is published a day ahead', () => {
 });
 
 describe('horses do not occupy an event that has not started', () => {
-  it('the seed window is far shorter than the look-ahead', () => {
+  /**
+   * Dan 2026-08-23 widened this from 15 minutes to an hour, to match the MTT
+   * pre-start ramp: "HORSES NEED TO BE REGISTERING FOR MTT TOURNAMENTS UP TO
+   * AN HOUR BEFORE THE TOURNAMENT STARTS."
+   *
+   * What this describe block is still protecting is unchanged and is the
+   * reason the constant exists at all: a horse registered into TOMORROW's
+   * event is a horse that cannot deal a cash table or fill a spin today, and
+   * the pool is finite. An hour is a lobby-visibility window. A day is a
+   * pool leak.
+   */
+  it('the seed window stays far shorter than the look-ahead', () => {
     expect(HORSE_SEED_WITHIN_MS).toBeLessThan(TIMED_WINDOW_AHEAD_MS);
-    expect(HORSE_SEED_WITHIN_MS).toBe(15 * 60 * 1000);
+    expect(HORSE_SEED_WITHIN_MS).toBe(60 * 60 * 1000);
+  });
+
+  it('matches the ramp window, so spawn-time seeding and the ramp agree', () => {
+    expect(HORSE_SEED_WITHIN_MS).toBe(MTT_PRESTART_RAMP_MS);
   });
 
   it('an event published a day out is outside the seed window', () => {
@@ -86,7 +102,9 @@ describe('horses do not occupy an event that has not started', () => {
     expect(tomorrow <= HORSE_SEED_WITHIN_MS).toBe(false);
   });
 
-  it('an event minutes away is inside it', () => {
+  it('an event an hour or less away is inside it', () => {
     expect(5 * 60 * 1000 <= HORSE_SEED_WITHIN_MS).toBe(true);
+    expect(59 * 60 * 1000 <= HORSE_SEED_WITHIN_MS).toBe(true);
+    expect(61 * 60 * 1000 <= HORSE_SEED_WITHIN_MS).toBe(false);
   });
 });

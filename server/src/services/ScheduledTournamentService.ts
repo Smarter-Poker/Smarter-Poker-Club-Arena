@@ -84,17 +84,26 @@ export const TIMED_WINDOW_PAST_MS = 5 * 60 * 1000;
  */
 export const TIMED_WINDOW_AHEAD_MS = 24 * 60 * 60 * 1000;
 /**
- * Horses are seeded only when the start is this close.
+ * Horses are seeded at SPAWN only when the start is this close.
  *
  * Seeding at spawn was harmless at a 30-minute look-ahead and is actively
  * harmful at 24 hours: a horse registered into tomorrow's event is a horse
- * that cannot deal a cash table or fill a spin today, and the pool is
- * finite. Events therefore open EMPTY and stay genuinely open for humans;
- * GameServer's past-start top-up fills whatever is short the moment the
- * clock strikes, which is the same mechanism that already rescues every
- * short field.
+ * that cannot deal a cash table or fill a spin today, and the pool is finite.
+ *
+ * Dan 2026-08-23: aligned to the one-hour MTT ramp (MTT_PRESTART_RAMP_MS), so
+ * an event that spawns already inside the hour gets its opening field
+ * immediately instead of waiting up to a ramp tick for it.
+ *
+ * WHAT THIS CONSTANT NO LONGER MEANS. It used to be the whole policy, and the
+ * note here used to say events "open EMPTY and stay genuinely open", with the
+ * past-start top-up as the only filler. That was checked ONCE, at creation, so
+ * a day-ahead event answered "no" and was never asked again - which is how a
+ * 200-seat MTT sat in the lobby for seventeen hours reading 0/200. The field
+ * is now built by the pre-start ramp in GameServer.discoverTournaments, which
+ * re-evaluates every REGISTERING tournament on a timer. This is just the
+ * head start; the ramp is the rule.
  */
-export const HORSE_SEED_WITHIN_MS = 15 * 60 * 1000;
+export const HORSE_SEED_WITHIN_MS = 60 * 60 * 1000;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PURE SCHEDULING LOGIC — exported so the matching rules are testable with no DB

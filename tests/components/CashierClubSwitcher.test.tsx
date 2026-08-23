@@ -10,7 +10,7 @@
 // the casing of copy makes these fail on a styling rule rather than on the
 // behaviour they exist to protect. The words are the contract.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -139,8 +139,9 @@ describe('CashierClubSwitcher', () => {
   it('records the resolved club as last-visited (numeric deep-link gap)', async () => {
     inMock.mockResolvedValue({ data: [{ club: A }, { club: B }], error: null });
     renderSwitcher('22222', 'Bravo Club');
-    await screen.findByRole('button', { name: /Current club: Bravo Club/ });
-    expect(localStorage.getItem(STORAGE_KEYS.LAST_CLUB)).toBe(B.id);
+    await waitFor(() => {
+      expect(localStorage.getItem(STORAGE_KEYS.LAST_CLUB)).toBe(B.id);
+    });
   });
 
   it('renders nothing when there is no club to show at all', async () => {

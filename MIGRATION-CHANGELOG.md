@@ -12678,6 +12678,81 @@ Per board, so a slow SNG fill cannot stall Spins.
   `idx_tournament_players_status (tournament_id, status)` — an index-only scan,
   so the per-registration recount carries no scan cost.
 
+## Cowork session 2026-08-23 (8) — A SPIN WALLET THAT BELONGS TO SOMEBODY
+
+Dan: "YOU NEED TO CREATE A WALLET FOR THE SPINS FOR CLUB OWNERS NOT APART OF
+THE UNION, AND FOR UNIONS. SPINS SHOULD BE 'ACTIVATED' IN THE OWNERS MENU...
+THEY NEED TO DECIDE HOW MUCH THEY ARE 'SEEDING'... THOSE FUNDS ARE RETURNED
+ONCE ENOUGH IS COLLECTED, AND ALL PROCEEDS ARE KEPT THERE TO FUND THE
+MULTIPLIER PAYOUTS." On the cap: "100X IS THE HIGHEST IT GOES. YES IT RETURNS
+EVERYTHING IT COLLECTS, RAKE GOES INTO THE RAKE TREASURY, BUT IT NEEDS TO
+COLLECT FIRST TO DISTRIBUTE."
+
+**Most of the shape already existed and almost none of it was connected.**
+`spin_bonus_pools` was already keyed on an owner — `fn_spin_reserve_owner`
+resolves `COALESCE(clubs.union_id, club_id)`, so a union owns the pool for its
+clubs and a standalone club owns its own. That part was right. Everything that
+made it a feature was missing:
+
+- `is_active` was DEAD CODE — not read by any function, API route, the engine
+  or the client. Every pool was active forever by default.
+- `seeded_amount` existed and nothing ever repaid it.
+- `fn_spin_reserve_seed` **minted**: it credited the pool and debited nobody, so
+  a "seed" created chips from nothing. It had no caller in application code,
+  which is the only reason that never mattered.
+- A standalone club had **no destination wallet at all**, so the surplus return
+  resolved to nothing and was booked with no counterparty.
+
+The whole platform therefore ran on exactly ONE pool.
+
+**What landed.** Activation is now a real event (`activated_at/by`,
+`deactivated_at`) and `fn_spin_activate` DEBITS a wallet the owner actually
+holds — `union_wallets` for a union, `clubs.chip_treasury`/`promo_balance` for a
+club. The wallet column is allow-listed, because `format(%I)` on an unchecked
+string inside a SECURITY DEFINER function is an arbitrary-column write
+primitive. Required seed is two 100x jackpots at the largest offered stake,
+mirroring `requiredSeed()` in spinSpec.
+
+**The ceiling is retired.** It used to sweep everything above a cap back to the
+operator on every settle. The pool is not a revenue account — it is the float
+the multipliers are paid from, and capping it just re-locks the top tiers after
+a big hit. Rake is untouched and still books per playing club.
+
+**The seed is a loan with two conditions, and the second one matters most:**
+play alone must have collected the seed's worth (so it is never repaid out of
+itself), AND the pool must still hold that much _after_ repaying. Without the
+second, `total_deposited` being cumulative-forever means a mature pool
+qualifies instantly and drains the float the moment it does — measured against
+the live house pool, 24,964.26 with a 20,000 seed would have dropped to
+4,964.26, which cannot cover a single 100x.
+
+**Verified by a rolled-back behavioural probe against production**, seven cases:
+under-seed refused; underfunded wallet refused with no money moved; activation
+takes 2,000 out of a club treasury (50,000 → 48,000); double activation
+refused; NOT repaid while it would leave the pool thin; repaid once both
+conditions hold (treasury back to 50,000, pool still 2,010 over its 2,000
+floor); deactivation moves no money. Nothing leaked — the probe club is absent
+from production.
+
+**One trap worth recording.** The migration's own assertion grepped the settle
+body for `ceiling_amount`, and `pg_get_functiondef` returns comments — so the
+paragraph explaining why the ceiling was retired tripped the assertion on its
+own explanation. It was applied with comments stripped, which silently made the
+repo file and the database differ. The assertion now matches the sweep's
+signature instead of the noun, and 20260823140500 replays the commented body so
+the file and production are the same text. Same class as the `Math.random`
+comment that broke CryptoRandom.test.ts earlier today: a check that reads raw
+text will read the prose too.
+
+The legacy house pool keeps its 20,000 seed outstanding on purpose — no source
+wallet was ever recorded for it, and money does not move on a guess.
+
+34 new tests. 281 files / 3,436 green.
+
+**Not yet built (next):** the owner-menu UI, and per-owner Spin boards. Every
+Spin today is still created under one house id, so activation governs the
+wallet correctly but there is not yet a per-club board for it to switch on.
+
 ## Cowork session 2026-08-23 (9) — THE OWNER'S SPIN MENU
 
 Phase 2 of the Spin wallet. Phase 1 gave the wallet an owner and made the seed

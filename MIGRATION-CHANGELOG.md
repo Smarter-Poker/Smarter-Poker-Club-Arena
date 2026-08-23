@@ -7,6 +7,71 @@
 
 ---
 
+## Cowork session 2026-08-23 (11c) — THE ROW THAT NEVER SAID RUNNING, and the Heads-Up board that never dealt
+
+Continuation of 11b, same PR. Asked to keep auditing to the end, the sweep
+moved from the code to the BOARD — what is actually sitting in prod right
+now — and found two silent outages plus a repo leak.
+
+1. THE ENTIRE HEADS-UP PRODUCT HAD NEVER RUN A GAME. Sixteen Heads-Up SNGs
+   (NLH and PLO4, every rung 1 through 100) sat REGISTERING at 2/2 for 47.7
+   hours: fully seated, both buy-ins debited, zero tables ever built. Same
+   root cause as 11b's start floor — a 2-seat duel is FULL at two players and
+   the hard floor of 3 stood every one of them down on every pass, forever.
+   11b's startFloorFor() releases all sixteen on the next engine deploy. The
+   scheduled "Heads-Up Hyper Duel" was not one unlucky event; it was the
+   visible corner of the whole board being frozen, and because each frozen
+   duel holds two horses hostage, the pool that fills spins and MTTs was
+   being drained by games that could never start.
+
+2. A GAME CAN DEAL FOR 33 HOURS WHILE ITS ROW STILL SAYS REGISTERING. The
+   REGISTERING -> RUNNING flip at the end of start() was fire-and-forget: no
+   error check, no retry, no read-back. When it failed — and it did, during
+   the DB-starvation window that was timing statements out — the game went
+   on dealing from memory against a row that never learned it had started.
+   Nothing heals that state: the stuck-COMPLETING watchdog reads COMPLETING,
+   the decided-but-stalled watchdog reads RUNNING, fn_final_table_deal
+   requires RUNNING. ELEVEN tournaments were sitting in that blind spot,
+   22-33 hours old, PLAYED TO A FINISH (players carrying elimination stamps
+   and positions), with 570 chips debited against 48 paid out — 522 chips
+   owed to players who never got a result. Verified one by one: on "100 Chip
+   Spin NLH" all three entrants were debited 100, two are 'eliminated', one
+   is still 'playing', and no credit ever went back.
+
+   FIX, two halves. The flip is retried three times and CONFIRMED by reading
+   the row back (a row reading RUNNING or later is success, including when
+   another process won the race), and a failure is now loud instead of
+   invisible. And a new watchdog in the discovery loop — the mirror of the
+   stalled-RUNNING sweep — relabels any pre-start row whose players carry
+   elimination stamps: still contested goes to RUNNING for the resume path,
+   already decided goes to COMPLETING and through the SAME recovery that
+   pays stuck finishers. Registration alone can never produce an eliminated
+   row, so that stamp is honest evidence the game dealt.
+
+3. A FAILED SPAWN BURNED ITS SLOT FOREVER. ScheduledTournamentService claims
+   a spawn key BEFORE inserting (correct — it is what stops two spawners
+   racing), but on a failed insert it left the claim standing, so the next
+   poll saw the key, stood down, and that instance simply never happened.
+   Two orphan claims (tournament_id NULL) were sitting in prod from exactly
+   this, one of them the Saturday Speedway 21:30. The claim is now released
+   on a failed insert; if the release itself fails, the old behaviour is
+   what remains, which is no worse.
+
+4. AGENT SCRATCH WAS BEING COMMITTED TO MAIN. `_agent_tmp/` — where agents
+   stage probes and patch sets — was never in .gitignore, so a routine
+   `git add -A` swept it in. Nineteen files were tracked on main by today,
+   including probe dumps, an orphan.js, and this session's own staging
+   directory (via #345). Nothing in src/, server/, scripts/ or the workflows
+   references any of it. Untracked and ignored.
+
+VERIFICATION NOTE for whoever picks this up: items 1 and 2 are engine fixes,
+so they take effect on the auto-deploy that follows this merge (server/**
+changed). Confirm behaviourally, not by exit code — the sixteen Heads-Up
+boards should build tables and start within a poll or two, and the eleven
+stuck rows should settle and pay out. The 522 chips are owed to real player
+rows; the recovery path pays them under the standard prize idempotency keys,
+so it can be re-driven safely if the first pass misses any.
+
 ## Cowork session 2026-08-23 (11b) — LINE-BY-LINE PARITY AUDIT: four live bugs, one panel the gate never had
 
 Dan asked for everything pending finished and the whole tournament surface

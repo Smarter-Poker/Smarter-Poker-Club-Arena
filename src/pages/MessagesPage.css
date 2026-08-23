@@ -8,6 +8,7 @@
 .messages-page {
   position: relative;
   height: 100vh;
+  height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   display: flex;
   flex-direction: column;
   overflow: hidden;

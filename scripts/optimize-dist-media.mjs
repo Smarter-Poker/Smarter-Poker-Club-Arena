@@ -48,6 +48,20 @@ const DIR_RULES = [
   { prefix: 'cards/', maxDim: 512 }, // full-size card faces (root + 2color/4color PNGs)
   { prefix: 'images/', maxDim: 1280 },
   { prefix: 'assets/', maxDim: 1280 }, // public/assets media (metal-ui frames etc.)
+  // The PWA/apple-touch icon. manifest.json declares it "sizes": "512x512"
+  // and the file was 1024x1024, so this makes the asset match its own
+  // declaration as well as shrinking it. It is fetched on every iOS
+  // add-to-home-screen and by the SW precache list in public/sw.ts.
+  { prefix: 'poker-chip-logo.png', maxDim: 512 },
+  // CATCH-ALL, and it must stay last. Before 2026-08-23 ruleFor() returned
+  // null for anything outside the prefixes above, so every image sitting at
+  // the ROOT of public/ was shipped at full size — which is how a
+  // 180x180 apple-touch-icon (poker-chip-logo.png) went out as 637KB. An
+  // opt-in list silently misses whatever nobody remembered to add; a
+  // catch-all only ever misses on the safe side. Earlier rules still win,
+  // including cards/backs/table's explicit skip, and RASTER_RE keeps this
+  // away from video, fonts and svg.
+  { prefix: '', maxDim: 1280 },
 ];
 
 const MIN_BYTES = 40 * 1024; // leave already-small files alone

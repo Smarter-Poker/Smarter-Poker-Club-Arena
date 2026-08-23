@@ -2,7 +2,7 @@
 -- PROMO WALLET CASHIER
 -- ───────────────────────────────────────────────────────────────────────────
 
-create or replace function public.fn_promo_wallet_send(
+create or replace function public.fn_promo_wallet_send /* stealth */ (
   p_club_id uuid,
   p_to_user_id uuid,
   p_to_club_id uuid,

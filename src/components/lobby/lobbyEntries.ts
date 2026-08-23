@@ -387,6 +387,28 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
     return { key: 'running', label: 'Running' };
   }
   if (status === 'REGISTERING' || status === 'ANNOUNCED') {
+    /**
+     * SEAT-FIRST GAMES DO NOT HAVE A START TIME (Dan 2026-08-23: "THE STATUS
+     * IS BROKEN SAYS 'STARTING SOON' EVEN FOR GAMES THAT ARE FULL").
+     *
+     * A Spin or Heads-Up starts when its last seat is bought, not at a clock
+     * time. The recycler still stamps a start_time on the row, and it is
+     * always in the past, so the branch below matched unconditionally and
+     * every Spin on the board — empty, half full, or sold out — carried the
+     * identical "Starting Soon". The one column meant to tell the games apart
+     * told the player nothing.
+     *
+     * Report what is actually true: how the seats are going.
+     */
+    const seatFirst = classifyTournament(t) !== 'mtt';
+    if (seatFirst) {
+      const cap = t.max_players || 0;
+      const taken = t.current_players || 0;
+      if (cap > 0 && taken >= cap) return { key: 'full', label: 'Starting' };
+      if (taken > 0) return { key: 'registering', label: `Filling ${taken}/${cap}` };
+      return { key: 'registering', label: 'Open Seats' };
+    }
+
     // House rule (tournamentFilters): overdue-but-still-registering is the
     // most "starting soon" thing in the lobby, so no lower bound here.
     const startMs = t.start_time ? new Date(t.start_time).getTime() : NaN;

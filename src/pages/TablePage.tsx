@@ -51,6 +51,7 @@ import { normalizeCardBack } from '../components/table/CardImage';
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
+import { parseBlindStructure } from '../utils/parseBlindStructure';
 // Phase 1.1 PR-3: authoritative engine WS state. Mounted always; becomes the
 // source of truth for game-state fields when VITE_USE_ENGINE_WS=1. The old
 // Supabase Realtime game-state path stays wired in parallel until PR-5 deletes
@@ -1954,6 +1955,43 @@ export default function TablePage({
     label: string;
   } | null>(null);
   const [seatFirstPending, setSeatFirstPending] = useState(false);
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  AM I A PAID ENTRANT WHO IS NOT SITTING DOWN? (Dan 2026-08-23)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * "I REGISTERED FOR A TOURNAMENT DURING LATE REGISTRATION... IT TOOK ME TO
+   *  THE PAGE, BUT DIDN'T SIT ME, GIVE ME CHIPS OR ANYTHING."
+   *
+   * The footer had exactly two ideas about a viewer with no seat: dealt in, or
+   * "Spectating, Tap An Open Seat To Join". A late registrant is neither. He
+   * has paid, he is on the roster, and he cannot tap a seat — `canSit` is
+   * false for every MTT table by design, so those seats render as inert divs
+   * with no click handler. The footer was instructing him to do the one thing
+   * the same screen had made impossible.
+   *
+   * True when the viewer holds a live tournament_players row for THIS
+   * tournament and has no seat yet. Nothing else in this file could answer
+   * that question — tournament_players was never read for the viewer at mount.
+   */
+  const [awaitingTournamentSeat, setAwaitingTournamentSeat] = useState(false);
+  /**
+   * Dan 2026-08-23, verbatim: "you should sit down, then confirm 'buy in
+   * amount'. once the user confirms, chips taken from player [wallet] and seat
+   * access granted." Tapping a seat used to fire fn_take_seat_and_buy_in
+   * immediately, so the wallet was debited on a single stray tap with no price
+   * ever shown. The tap now only PROPOSES a seat; this holds the proposal
+   * until the player confirms the price, and nothing is charged until they do.
+   */
+  const [seatFirstConfirm, setSeatFirstConfirm] = useState<number | null>(null);
+  /**
+   * Synchronous twin of `seatFirstPending`, mirroring `buyInProcessingRef` on
+   * the cash path. State updates are batched, so two Buy In presses landing in
+   * the same tick both read `seatFirstPending === false` and both reach the
+   * RPC. The button's `disabled` catches almost every real double-tap, but
+   * "almost" is not a word that belongs on a path that debits a wallet.
+   */
+  const seatFirstPendingRef = useRef(false);
   // The running level countdown. Kept OUT of tableState on purpose: the clock
   // ticks every second, and a per-second re-render belongs in the tiny
   // MastheadLevelClock component, not in a 9,000-line page.
@@ -4496,14 +4534,43 @@ export default function TablePage({
           gameType: (table.game_variant || table.game_type || 'NLH') as any,
           isTournament: table.game_type === 'tournament' || !!table.tournament_id,
           tournamentId: table.tournament_id || undefined,
+          /**
+           * ═══════════════════════════════════════════════════════════════════
+           *  A TOURNAMENT'S BLINDS COME FROM ITS BLINDS, NOT ITS BIRTH CERTIFICATE
+           * ═══════════════════════════════════════════════════════════════════
+           *
+           * `tables.stakes` is written ONCE, at table creation, as the level-1
+           * blinds (TournamentManagerBase.createTablesAndSeatPlayers:
+           * `stakes: ${firstLevel.smallBlind}/${firstLevel.bigBlind}`), and
+           * advanceBlindLevel never touches it again — it updates
+           * small_blind/big_blind/ante and leaves `stakes` frozen forever.
+           *
+           * Preferring `stakes` therefore pinned every tournament table to its
+           * opening level for life. Measured 2026-08-23 on "Prime Time Main
+           * Event (NLH) - Table 4": stakes '25/50' against small_blind 750,
+           * big_blind 1500. The masthead read "LEVEL 1 · 25/50" nine levels in,
+           * and because every seat's depth badge is stack / safeBB(blinds),
+           * EVERY STACK ON THE TABLE WAS DISPLAYED THIRTY TIMES TOO DEEP. A
+           * player reading 697 BB actually had 23.
+           *
+           * small_blind/big_blind are the engine's own live values, written on
+           * every level-up, so a tournament table trusts those and nothing
+           * else. Cash tables keep the old preference: their `stakes` string is
+           * the authored display value and it does not drift.
+           */
           blinds:
-            table.stakes &&
-            table.stakes !== 'undefined/undefined' &&
-            !table.stakes.includes('undefined')
-              ? table.stakes
-              : table.small_blind != null && table.big_blind != null
-                ? `${table.small_blind}/${table.big_blind}`
-                : '?/?',
+            (table.game_type === 'tournament' || !!table.tournament_id) &&
+            table.small_blind != null &&
+            table.big_blind != null
+              ? `${table.small_blind}/${table.big_blind}`
+              : table.stakes &&
+                  table.stakes !== 'undefined/undefined' &&
+                  !table.stakes.includes('undefined') &&
+                  table.stakes.includes('/')
+                ? table.stakes
+                : table.small_blind != null && table.big_blind != null
+                  ? `${table.small_blind}/${table.big_blind}`
+                  : '?/?',
           maxPlayers: table.max_players || 6,
           players: createEmptySeats(table.max_players || 6),
           positions: Array(table.max_players || 6).fill(null),
@@ -4613,7 +4680,26 @@ export default function TablePage({
           // Tournament tables don't have static small_blind/big_blind columns —
           // blinds come from the blind_structure array at current_level.
           if (tournData) {
-            const blindStructure = tournData.blind_structure as Array<{
+            /**
+             * ═════════════════════════════════════════════════════════════════
+             *  blind_structure IS A STRING (2026-08-23)
+             * ═════════════════════════════════════════════════════════════════
+             *
+             * `tournaments.blind_structure` is a TEXT column holding JSON, and
+             * PostgREST hands JSON columns back as strings regardless. This
+             * site cast the raw value straight to an array — so `blindStructure`
+             * was an ~800-character STRING, `.length > 0` passed, and
+             * `struct[8]` returned the ninth CHARACTER. `levelEntry.smallBlind`
+             * on a character is undefined, the `sb > 0 && bbl > 0` guard failed,
+             * and `currentLevel` was consequently never assigned once — which
+             * is why the masthead rendered its `|| 1` fallback and said "Level
+             * 1" for a tournament nine levels deep.
+             *
+             * parseBlindStructure is the codebase's existing answer to exactly
+             * this (see its header comment); this call site simply never used
+             * it.
+             */
+            const blindStructure = parseBlindStructure(tournData.blind_structure) as Array<{
               level?: number;
               smallBlind?: number;
               small_blind?: number;
@@ -4623,7 +4709,7 @@ export default function TablePage({
               duration?: number;
               duration_minutes?: number;
               durationMinutes?: number;
-            }> | null;
+            }>;
             // LEVEL INDEXING 2026-08-21: tournaments.current_level is a
             // 0-BASED INDEX into blind_structure (engine convention: the
             // active entry is struct[current_level], whose 'level' field is
@@ -4686,18 +4772,60 @@ export default function TablePage({
                 setSeatFirstBuyIn(null);
               }
             }
-            if (blindStructure && blindStructure.length > 0) {
-              if (levelEntry) {
-                const sb = levelEntry.smallBlind ?? levelEntry.small_blind ?? 0;
-                const bbl = levelEntry.bigBlind ?? levelEntry.big_blind ?? 0;
-                if (sb > 0 && bbl > 0) {
-                  setTableState((prev) => ({
-                    ...prev,
-                    blinds: `${sb}/${bbl}`,
-                    currentLevel,
-                  }));
-                }
-              }
+            /**
+             * ═════════════════════════════════════════════════════════════════
+             *  THE LEVEL NUMBER IS NOT CONDITIONAL ON THE BLIND TABLE
+             * ═════════════════════════════════════════════════════════════════
+             *
+             * This used to sit inside `if (structure) if (levelEntry) if (sb>0
+             * && bbl>0)`, so a tournament whose blind_structure would not parse
+             * — which, until the fix above, was ALL of them — never had
+             * `currentLevel` written at all and the masthead fell back to its
+             * `|| 1`.
+             *
+             * `current_level` is the engine's own persisted counter. It needs no
+             * corroboration from the blind table to be printed, so it is set
+             * unconditionally.
+             *
+             * The blinds are a separate question and the ANSWER IS THE TABLE
+             * ROW: advanceBlindLevel writes tables.small_blind/big_blind on
+             * every level-up, including the auto-escalated levels that run past
+             * the end of the structure — where the structure would silently
+             * clamp to its last entry and under-report. So the structure only
+             * fills in when the table row could not.
+             */
+            const sb = levelEntry?.smallBlind ?? levelEntry?.small_blind ?? 0;
+            const bbl = levelEntry?.bigBlind ?? levelEntry?.big_blind ?? 0;
+            const tableHasLiveBlinds = table.small_blind != null && table.big_blind != null;
+            setTableState((prev) => ({
+              ...prev,
+              currentLevel,
+              blinds: tableHasLiveBlinds
+                ? `${table.small_blind}/${table.big_blind}`
+                : sb > 0 && bbl > 0
+                  ? `${sb}/${bbl}`
+                  : prev.blinds,
+            }));
+
+            /**
+             * ═════════════════════════════════════════════════════════════════
+             *  IS THE VIEWER A PAID ENTRANT WAITING ON A SEAT? (2026-08-23)
+             * ═════════════════════════════════════════════════════════════════
+             *
+             * The one question the footer needed answered, and nothing in this
+             * file ever asked it. A late registrant lands on a tournament table
+             * with no table_seats row, so every seat-derived signal here says
+             * "spectator" — while tournament_players says he has paid.
+             */
+            if (userId) {
+              const { data: myEntry } = await supabase
+                .from('tournament_players')
+                .select('status, table_id')
+                .eq('tournament_id', table.tournament_id)
+                .eq('user_id', userId)
+                .maybeSingle();
+              const live = myEntry?.status === 'registered' || myEntry?.status === 'playing';
+              if (isMounted) setAwaitingTournamentSeat(Boolean(live && !myEntry?.table_id));
             }
           } else {
             /**
@@ -5268,7 +5396,21 @@ export default function TablePage({
                 // TournamentTimerService.checkTableSize -- zero callers. Derive
                 // it here: `position` is the finishing place, so the player who
                 // busts in 3rd leaves exactly two behind.
-                if (Number(elimData.position) === 3 && tableStateRef.current.tournamentId) {
+                //
+                // NOT ON A SPIN (Dan 2026-08-23, verbatim: "you never have to
+                // announce 'heads up' with an animation or final table on a
+                // spin"). A Spin is three-handed from the first card, so the
+                // third player busting is simply the game reaching its last
+                // hand — there is no field to narrow and nothing to announce.
+                // The overlay was interrupting the most important moment of a
+                // 90-second game to tell the two survivors what they could
+                // already see. An SNG keeps it: there, going from nine to two
+                // is a genuine milestone.
+                if (
+                  Number(elimData.position) === 3 &&
+                  tournamentFormatRef.current !== 'spin' &&
+                  tableStateRef.current.tournamentId
+                ) {
                   const tid = tableStateRef.current.tournamentId;
                   (async () => {
                     try {
@@ -8533,63 +8675,23 @@ export default function TablePage({
       console.debug('[Seat] A seat reservation is already pending - ignoring click');
       return;
     }
-    // ── SEAT-FIRST: buy the seat, do not open the cash buy-in range ──
+    // ── SEAT-FIRST: propose the seat, then confirm the price ──
+    // Dan 2026-08-23: "you should sit down, then confirm 'buy in amount'. once
+    // the user confirms, chips taken from player [wallet] and seat access
+    // granted." So the tap does NOT charge. It opens the confirmation sheet,
+    // which names the price, and only the confirm button spends money. The
+    // seat is deliberately NOT painted as pending here — an unpaid seat is
+    // still an open seat, and pretending otherwise is how a player ends up
+    // believing they hold a seat they never bought.
     if (seatFirstBuyIn) {
-      if (seatFirstPending) return;
-      setSeatFirstPending(true);
-      setPendingSeat(seatNumber); // paint it taken this frame
-      void (async () => {
-        try {
-          const { data, error } = await supabase.rpc('fn_take_seat_and_buy_in', {
-            p_table_id: tableId,
-            p_seat_number: seatNumber,
-          });
-          const res = (data ?? {}) as {
-            ok?: boolean;
-            reason?: string;
-            seat_number?: number;
-            seats_taken?: number;
-            seats_needed?: number;
-            starts_now?: boolean;
-          };
-          if (error || !res.ok) {
-            setPendingSeat(null);
-            const reason = error?.message || res.reason || '';
-            const msg = /seat_taken/.test(reason)
-              ? 'That Seat Was Just Taken'
-              : /insufficient/.test(reason)
-                ? 'Not Enough Chips For This Buy In'
-                : /already_started/.test(reason)
-                  ? 'This Game Has Already Started'
-                  : 'Could Not Take That Seat, Please Try Again';
-            toast?.error?.(msg);
-            return;
-          }
-          // Seated. The realtime seats subscription paints the seat; the
-          // engine starts the game the moment the last seat is sold.
-          const mySeat = res.seat_number ?? seatNumber;
-          heroSeatRef.current = mySeat;
-          setTableState((prev) => ({ ...prev, heroSeat: mySeat }));
-          if (res.starts_now) {
-            toast?.success?.('Seats Full, Game Starting');
-          } else {
-            // Dan 2026-08-21: "THEY ARE SIMPLY SECURING A SEAT." Say exactly
-            // that — chips arrive when the spin resolves and play begins.
-            const left = Math.max(0, (res.seats_needed ?? 0) - (res.seats_taken ?? 0));
-            toast?.success?.(
-              left === 1
-                ? 'Seat Reserved, Waiting For 1 More Player'
-                : `Seat Reserved, Waiting For ${left} More Players`
-            );
-          }
-        } catch (err) {
-          setPendingSeat(null);
-          reportError(err as Error, 'TablePage.seat_first_buy_in');
-          toast?.error?.('Could Not Take That Seat, Please Try Again');
-        } finally {
-          setSeatFirstPending(false);
-        }
-      })();
+      if (seatFirstPending || seatFirstPendingRef.current) return;
+      /* A sheet already asking about a seat must be answered, not silently
+         re-pointed. The overlay covers the felt so a tap cannot reach another
+         seat, but the seat buttons are still in the DOM and still tabbable —
+         without this a keyboard user could move the question to a different
+         seat and then confirm a price they were never shown for it. */
+      if (seatFirstConfirm !== null) return;
+      setSeatFirstConfirm(seatNumber);
       return;
     }
 
@@ -8601,6 +8703,160 @@ export default function TablePage({
     // Fire-and-forget: update presence (non-blocking — do NOT await)
     updateSeat(seatNumber).catch((e) => console.warn('[Seat] Presence update failed:', e));
   };
+
+  /**
+   * SEAT-FIRST COMMIT (Dan 2026-08-23). The only place a seat-first buy-in
+   * spends money. Called from the confirmation sheet, never from a raw tap:
+   * "once the user confirms, chips taken from player [wallet] and seat access
+   * granted." Seat access is granted by the RPC's success, so the seat is
+   * painted only after the debit lands.
+   *
+   * Spin tables are recycled roughly every minute or two. If this table has
+   * been retired underneath the player, the RPC answers with a stale-table
+   * reason and we re-point at the tournament's current live table rather than
+   * leaving them staring at "That Seat Was Just Taken" on a seat that reads
+   * empty — the exact dead end Dan hit.
+   */
+  const commitSeatFirstBuyIn = useCallback(
+    async (seatNumber: number) => {
+      /* Ref first, and set synchronously: this is the last gate before money
+         moves, and React state is too late to be a lock. */
+      if (!tableId || seatFirstPending || seatFirstPendingRef.current) return;
+      seatFirstPendingRef.current = true;
+      setSeatFirstPending(true);
+      try {
+        const { data, error } = await supabase.rpc('fn_take_seat_and_buy_in', {
+          p_table_id: tableId,
+          p_seat_number: seatNumber,
+        });
+        const res = (data ?? {}) as {
+          ok?: boolean;
+          reason?: string;
+          seat_number?: number;
+          seats_taken?: number;
+          seats_needed?: number;
+          starts_now?: boolean;
+        };
+
+        if (error || !res.ok) {
+          const reason = error?.message || res.reason || '';
+          setSeatFirstConfirm(null);
+
+          // Stale table: the recycler replaced it while this page was open.
+          // Follow the tournament to whatever table is live now.
+          const stale =
+            /table_not_found|table_closed|not_a_game_table|game_not_found|game_already_started|already_started|tournament_full|seat_taken/.test(
+              reason
+            );
+          if (stale && tableState.tournamentId) {
+            const { data: live } = await supabase
+              .from('tables')
+              .select('id, created_at')
+              .eq('tournament_id', tableState.tournamentId)
+              .neq('status', 'closed')
+              .order('created_at', { ascending: false })
+              .limit(1);
+            const liveId = (live || [])[0]?.id as string | undefined;
+            if (liveId && liveId !== tableId) {
+              toast?.info?.('This Table Was Recycled, Opening The Live One');
+              navigate(`/table/${liveId}`);
+              return;
+            }
+          }
+
+          toast?.error?.(
+            /seat_taken/.test(reason)
+              ? 'That Seat Was Just Taken'
+              : /insufficient/.test(reason)
+                ? 'Not Enough Chips For This Buy In'
+                : /already_started|game_already_started/.test(reason)
+                  ? 'This Game Has Already Started'
+                  : /tournament_full/.test(reason)
+                    ? 'This Game Is Full'
+                    : 'Could Not Take That Seat, Please Try Again'
+          );
+          return;
+        }
+
+        // Paid. The seat is ours — paint it and close the sheet.
+        const mySeat = res.seat_number ?? seatNumber;
+        heroSeatRef.current = mySeat;
+        setPendingSeat(mySeat);
+        setTableState((prev) => ({ ...prev, heroSeat: mySeat }));
+        setSeatFirstConfirm(null);
+
+        if (res.starts_now) {
+          toast?.success?.('Seats Full, Game Starting');
+        } else {
+          // Dan 2026-08-21: "THEY ARE SIMPLY SECURING A SEAT." Say exactly
+          // that — chips arrive when the spin resolves and play begins.
+          const left = Math.max(0, (res.seats_needed ?? 0) - (res.seats_taken ?? 0));
+          toast?.success?.(
+            left === 1
+              ? 'Seat Bought, Waiting For 1 More Player'
+              : `Seat Bought, Waiting For ${left} More Players`
+          );
+        }
+      } catch (err) {
+        setSeatFirstConfirm(null);
+        reportError(err as Error, 'TablePage.seat_first_buy_in');
+        toast?.error?.('Could Not Take That Seat, Please Try Again');
+      } finally {
+        seatFirstPendingRef.current = false;
+        setSeatFirstPending(false);
+      }
+    },
+    [tableId, seatFirstPending, tableState.tournamentId, navigate, toast]
+  );
+
+  /**
+   * RECYCLED-TABLE WATCH (Dan 2026-08-23). Spin tables are torn down and
+   * rebuilt continuously — roughly ten a minute across the lobby — so a player
+   * who opens a spin and hesitates is left holding a table id that has already
+   * been retired. Every seat on that corpse reads empty (its seat rows are
+   * gone from the page's view) but the database still calls them taken, which
+   * is the "That Seat Was Just Taken" wall on a seat that is plainly free.
+   *
+   * While spectating a seat-first game that has not started, follow the
+   * tournament to whichever table is live now. Deliberately narrow: it stops
+   * the moment the hero owns a seat, so nobody is ever yanked off a table they
+   * have paid for.
+   */
+  useEffect(() => {
+    const tournId = tableState.tournamentId;
+    if (!seatFirstBuyIn || !tournId || !tableId) return;
+    if (tableState.heroSeat > 0 || heroSeatRef.current > 0) return;
+    if (seatFirstConfirm !== null || seatFirstPending) return;
+
+    let cancelled = false;
+    const check = async () => {
+      const { data } = await supabase
+        .from('tables')
+        .select('id, created_at')
+        .eq('tournament_id', tournId)
+        .neq('status', 'closed')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      const liveId = (data || [])[0]?.id as string | undefined;
+      if (cancelled || !liveId || liveId === tableId) return;
+      console.debug('[Seat] Table recycled - following tournament to', liveId);
+      navigate(`/table/${liveId}`, { replace: true });
+    };
+
+    const id = window.setInterval(() => void check(), 20_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [
+    seatFirstBuyIn,
+    tableId,
+    tableState.tournamentId,
+    tableState.heroSeat,
+    seatFirstConfirm,
+    seatFirstPending,
+    navigate,
+  ]);
 
   //broadcastLocalHandState removed — server broadcasts state authoritatively
 
@@ -10883,15 +11139,92 @@ export default function TablePage({
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
+          SEAT-FIRST BUY-IN CONFIRMATION (Dan 2026-08-23)
+          "you should sit down, then confirm 'buy in amount'. once the user
+          confirms, chips taken from player [wallet] and seat access granted."
+          Nothing above this sheet spends money. The seat is held by nobody
+          until Buy In is pressed and the debit succeeds.
+          ═══════════════════════════════════════════════════════════════════════ */}
+      {seatFirstBuyIn && seatFirstConfirm !== null && (
+        <div className="seat-buyin-confirm" role="dialog" aria-modal="true">
+          <div
+            className="seat-buyin-confirm__backdrop"
+            onClick={() => !seatFirstPending && setSeatFirstConfirm(null)}
+          />
+          <div className="seat-buyin-confirm__card">
+            <div className="seat-buyin-confirm__eyebrow">
+              Seat {seatFirstConfirm} · {seatFirstBuyIn.label}
+            </div>
+            <div className="seat-buyin-confirm__title">Buy In</div>
+            <div className="seat-buyin-confirm__amount">{seatFirstBuyIn.cost.toLocaleString()}</div>
+            <div className="seat-buyin-confirm__meta">
+              Your Balance {Number(accountBalance || 0).toLocaleString()}
+            </div>
+            <div className="seat-buyin-confirm__note">
+              This {seatFirstBuyIn.label} Starts When All {seatFirstBuyIn.seats} Seats Are Bought
+            </div>
+            <div className="seat-buyin-confirm__actions">
+              <button
+                type="button"
+                className="seat-buyin-confirm__btn seat-buyin-confirm__btn--ghost"
+                disabled={seatFirstPending}
+                onClick={() => setSeatFirstConfirm(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="seat-buyin-confirm__btn seat-buyin-confirm__btn--go"
+                disabled={seatFirstPending || Number(accountBalance || 0) < seatFirstBuyIn.cost}
+                onClick={() => void commitSeatFirstBuyIn(seatFirstConfirm)}
+              >
+                {seatFirstPending
+                  ? 'Taking Your Chips'
+                  : Number(accountBalance || 0) < seatFirstBuyIn.cost
+                    ? 'Not Enough Chips'
+                    : `Buy In ${seatFirstBuyIn.cost.toLocaleString()}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════════
           BOTTOM CONTROLS + ACTION PANEL
           ═══════════════════════════════════════════════════════════════════════ */}
       <div className="action-panel-wrapper">
         {/* POKERBROS-spec: persistent footer bar — NEVER empty. Dan rule
             2026-04-17: action bar fixed to footer at all times, every state. */}
-        {!tableState.players.some((p) => p?.isHero) && tableState.heroSeat <= 0 ? (
+        {!tableState.players.some((p) => p?.isHero) &&
+        tableState.heroSeat <= 0 &&
+        awaitingTournamentSeat ? (
+          /**
+           * PAID, ON THE ROSTER, NOT YET SEATED (Dan 2026-08-23).
+           *
+           * "IT TOOK ME TO THE PAGE, BUT DIDN'T SIT ME, GIVE ME CHIPS OR
+           *  ANYTHING." This is that player, and he must not be told he is a
+           * spectator who can tap a seat — `canSit` is false for every MTT
+           * table, so those seats are inert divs and the instruction was
+           * impossible to follow. The seat is coming from the server
+           * (fn_seat_late_registrant at registration, or the engine's 5s
+           * seating sweep once a table has room); say so instead.
+           */
+          <div className="spectator-footer-bar" data-state="reserved">
+            <span className="spectator-footer-bar__label">
+              You Are Registered, Your Seat Is Being Assigned
+            </span>
+          </div>
+        ) : !tableState.players.some((p) => p?.isHero) && tableState.heroSeat <= 0 ? (
           <div className="spectator-footer-bar">
             <span className="spectator-footer-bar__label">
-              Spectating, Tap An Open Seat To Join
+              {/* An MTT table has no seat a spectator may take — `canSit` is
+                  false for every one of them (see the SeatSlot `canSit` prop
+                  below), so telling them to tap one is an instruction the same
+                  screen refuses. Only a table that actually sells seats gets
+                  the invitation. */}
+              {tableState.isTournament && !seatFirstBuyIn
+                ? 'Spectating'
+                : 'Spectating, Tap An Open Seat To Join'}
             </span>
           </div>
         ) : !tableState.players.some((p) => p?.isHero) ? (

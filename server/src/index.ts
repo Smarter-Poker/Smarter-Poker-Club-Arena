@@ -37,6 +37,7 @@ import {
   stopHorseMindPersistence,
 } from './services/HorseMindPersistence.js';
 import { startHorseSelfTuner } from './services/HorseSelfTuner.js';
+import { sweepIncompleteHorses } from './services/HorseOnboarding.js';
 import { startHorseLeague } from './benchmark/HorseLeague.js';
 import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 
@@ -110,6 +111,14 @@ httpServer.listen(PORT, () => {
   // V12 (2026-08-22): nightly per-horse self-study — every horse reviews its
   // own week of play, diagnoses leaks vs winning benchmarks, and nudges its
   // own profile dials. See HorseSelfTuner.ts + horse_self_tune_log.
+  // V14 (Dan 2026-08-23): every horse must be a complete person — real name,
+  // poker alias, player number, lifetime VIP, wired brain, and the ability to
+  // post. Six different seed paths each created a different subset, so 484 of
+  // 584 had no alias, 276 no lifetime VIP, and 177 could not post at all.
+  // Enforcing completeness at boot means a horse created by ANY path, now or
+  // later, converges on being whole instead of depending on which script made
+  // it. Fire-and-forget and fail-safe: it never blocks startup.
+  void sweepIncompleteHorses();
   startHorseSelfTuner();
   // V12 (2026-08-22): nightly duplicate-deal self-play league — measures
   // every strategy layer in bb/100 so tuning is evidence, not vibes. See

@@ -134,9 +134,9 @@ git push -u origin HEAD
 gh pr create --fill
 ```
 
-**Then stop.** `.github/workflows/agent-autopilot.yml` enables squash
+**Then use the `schedule` tool to wait.** `.github/workflows/agent-autopilot.yml` enables squash
 auto-merge within seconds, keeps the branch fresh as main moves, and GitHub
-merges it the moment the required checks go green.
+merges it the moment the required checks go green. Set a `schedule` timer for 5 minutes, end your turn to sleep, and check `gh pr status` when you wake up. Do not report success until it is fully merged, fixing any CI failures that appear.
 
 ## 1a. One working tree per agent — NEVER share a checkout
 
@@ -197,7 +197,7 @@ uncommitted files whose newest edit was 3h 43m old.
 | `gh pr merge --admin`                                                              | Bypasses required checks. Red code reached main four times.                                                                        |
 | `gh pr merge --merge`                                                              | Merge commits are **disabled** on this repo. The API call fails **silently**; the PR sits open for hours while you report success. |
 | `gh pr merge --rebase`                                                             | Also disabled. Same silent failure.                                                                                                |
-| Background polling scripts (`wait_and_merge.sh`, `while true; do gh run list ...`) | Fragile, unobservable, and the source of both failures above. Autopilot already does this, server-side.                            |
+| Background polling scripts (`wait_and_merge.sh`, `while true; do gh run list ...`) | Fragile, unobservable, and wastes compute. Use the Antigravity `schedule` tool to sleep and wake up instead.                       |
 | `git push` directly to `main`                                                      | Blocked by the ruleset. Attempting it wastes a cycle.                                                                              |
 | `git push --force` / `--force-with-lease` on main                                  | Rewound main and dropped four commits that were already live in production.                                                        |
 | `git pull --rebase origin main` on the Mac clone                                   | Strands the clone mid-rebase. Use `bash scripts/git-unstick.sh`.                                                                   |

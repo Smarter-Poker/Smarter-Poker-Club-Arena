@@ -131,8 +131,12 @@ is on GitHub.
 git push -u origin HEAD && gh pr create --fill
 ```
 
-Then stop. Autopilot enables squash auto-merge and GitHub merges it when the
-required checks go green. **You never merge, and you never wait.**
+Then **do not exit immediately**. You must verify the PR actually goes green. Do not use bash polling (`while true; do ...`) as it wastes resources. Instead, use the **`schedule`** tool:
+
+1. Call `schedule` with `DurationSeconds=300` (5 minutes) and `Prompt="Check if the PR went green and merged. If it failed, read the logs, fix it, and push again."`
+2. End your turn. The system will wake you up when the timer fires.
+3. Check `gh pr status`. If it failed (e.g. `Behind main` or a red test), fix it, rebase, force-push, and set another timer.
+4. **Only report task complete** to the user when the PR is verified green and merged.
 
 On 2026-08-23, ten commits across seven branches sat on this Mac for up to
 nineteen hours — the union Spin reserve, spin rake parity, the horse busy-set

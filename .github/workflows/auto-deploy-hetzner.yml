@@ -261,6 +261,28 @@ jobs:
           # someone who already holds the deploy key.
           ~/hssh "REPO_DIR=$REPO_DIR ADMIN_ALLOW_IPS='${{ vars.ADMIN_ALLOW_IPS }}' $REPO_DIR/server/scripts/install-engine-supervisor.sh"
 
+      - name: Exactly one engine may answer for this host
+        run: |
+          # club-arena-engine-2 was created 2026-08-23T13:29Z on port 8081 with
+          # this same run-spec and nothing in this pipeline knew about it. It
+          # never received a deploy, it took the fleet whenever the managed
+          # container blinked, and for a while BOTH containers reported
+          # leadership.role=leader with the tables split between them — 14 on
+          # one, 10 on the other — which is the 404/close-4404 state the
+          # Caddyfile explicitly says must never happen.
+          #
+          # A second engine is not automatically wrong; an UNMANAGED one is.
+          # If the standby pair is ever restored, teach this workflow to deploy
+          # both and update this guard. Until then, finding a stranger wearing
+          # the engine label is a stop.
+          FOUND=$(~/hssh "docker ps --filter label=sp.role=engine --format '{{.Names}}'" | tr -d '\r' | grep -v "^$CONTAINER$" || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::Unmanaged engine container(s) running alongside $CONTAINER: $FOUND"
+            ~/hssh "docker ps --filter label=sp.role=engine --format '{{.Names}} {{.Image}} {{.Ports}}'" || true
+            exit 1
+          fi
+          echo "OK — $CONTAINER is the only container labelled sp.role=engine"
+
       - name: Cut over to the new image
         run: |
           # Runs the SHA tag directly. :current is NOT moved yet — see design
@@ -272,14 +294,32 @@ jobs:
         id: health
         run: |
           SHORT="${SHA:0:8}"
-          # 24x5s = 120s. The image declares --health-start-period=90s and the
-          # supervisor allows 120s of boot grace; a 60s budget declared failure
-          # on engines that were merely still loading their tables, and then
-          # rolled back a healthy deploy.
+          # ── ASK THE CONTAINER, NOT THE HOSTNAME ─────────────────────────────
+          # This polled $ENGINE_URL until 2026-08-23. That is a Caddy vhost, and
+          # Caddy was configured that morning as an active/standby PAIR:
+          #
+          #     reverse_proxy localhost:8080 localhost:8081 { lb_policy first }
+          #
+          # So while THIS deploy restarted 8080, Caddy failed over to 8081 — a
+          # second engine container that no part of this pipeline has ever
+          # updated. Verification therefore read the OTHER instance's version,
+          # never matched $SHORT, and rolled back a build that was fine. Four
+          # consecutive deploys died that way (18:36-21:05 UTC) and production
+          # ran 13:23 code for eight hours while every one of those runs
+          # reported a tidy rollback.
+          #
+          # It was also a RACE, which is why it looked intermittent: when 8080
+          # came back inside Caddy's 5s health interval the failover never
+          # happened and the same pipeline passed.
+          #
+          # A load balancer's job is to hide which instance answers. That makes
+          # it the wrong thing to ask "is the build I just shipped running?".
+          # Ask the container. The public URL is checked immediately after, for
+          # what it CAN answer: that the proxy is serving at all.
           for i in $(seq 1 24); do
             sleep 5
-            BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" || echo "")
-            [ -z "$BODY" ] && { echo "attempt $i: no response"; continue; }
+            BODY=$(~/hssh "curl -sf --max-time 10 http://127.0.0.1:${PORT:-8080}/health" 2>/dev/null || echo "")
+            [ -z "$BODY" ] && { echo "attempt $i: container not answering yet"; continue; }
             RUNNING=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('running'))" 2>/dev/null || echo "")
             VER=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
             LIVE=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('liveness',''))" 2>/dev/null || echo "")
@@ -288,12 +328,29 @@ jobs:
               UPTIME=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('uptime',-1))")
               echo "uptime=$UPTIME" >> $GITHUB_OUTPUT
               echo "verified=true" >> $GITHUB_OUTPUT
-              echo "Engine healthy AND serving $SHORT"
-              exit 0
+              echo "Container $CONTAINER healthy AND serving $SHORT"
+              break
+            fi
+            if [ "$i" = "24" ]; then
+              echo "::error::Verification failed after 24 attempts — $CONTAINER is not serving $SHORT"
+              ~/hssh "docker logs --tail 120 $CONTAINER" || true
+              exit 1
             fi
           done
-          echo "::error::Verification failed after 24 attempts — engine is not serving $SHORT"
-          ~/hssh "docker logs --tail 120 $CONTAINER" || true
+
+          # ── AND THE PUBLIC HOSTNAME MUST BE SERVING THAT SAME BUILD ─────────
+          # Liveness alone is not enough: an unmanaged twin answering this
+          # hostname is exactly how eight hours of stale code went unnoticed.
+          # If the proxy is serving a DIFFERENT version than the one we just
+          # verified in the container, something else is behind that name.
+          for i in $(seq 1 12); do
+            PUB=$(curl -sf --max-time 10 "$ENGINE_URL/health" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
+            echo "public attempt $i: $ENGINE_URL serves version=$PUB (want $SHORT)"
+            [ "$PUB" = "$SHORT" ] && { echo "Public hostname serving $SHORT"; exit 0; }
+            sleep 5
+          done
+          echo "::error::$CONTAINER serves $SHORT but $ENGINE_URL does not — another instance is answering that hostname."
+          ~/hssh "docker ps --filter label=sp.role=engine --format '{{.Names}} {{.Image}} {{.Ports}}'" || true
           exit 1
 
       - name: Promote :current to the verified build

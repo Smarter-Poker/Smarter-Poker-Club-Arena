@@ -616,6 +616,32 @@ let leagueRunning = false;
  * run already happened. `horse_league_results` is keyed (run_date, matchup),
  * which makes it the authoritative record of what has been done.
  */
+
+/**
+ * V13.1: claim a night's work for exactly one engine instance. Returns true
+ * when THIS process won the claim. The INSERT is the lock — a duplicate-key
+ * violation means another instance got there first.
+ *
+ * Fails CLOSED on an unexpected error: if we cannot tell whether someone else
+ * owns tonight, not running is the safe answer, because the other instance
+ * almost certainly is. (The date guard below fails OPEN, deliberately — there,
+ * nobody is holding the work and both writers upsert.)
+ */
+export async function claimNightlyJob(job: string, date: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('horse_job_runs')
+      .insert({ job, run_date: date, claimed_by: process.env.HOSTNAME ?? 'engine' });
+    if (!error) return true;
+    const code = (error as { code?: string }).code;
+    if (code === '23505') return false; // unique_violation: another instance owns tonight
+    throw new Error(error.message);
+  } catch (err) {
+    reportError(err, 'HorseLeague.claimNightlyJob');
+    return false;
+  }
+}
+
 async function alreadyRanToday(date: string): Promise<boolean> {
   try {
     const { data, error } = await supabase
@@ -643,6 +669,13 @@ async function maybeRunLeague(): Promise<void> {
   if (!inWindow || leagueRunning || lastLeagueDate === today) return;
   if (await alreadyRanToday(today)) {
     lastLeagueDate = today; // remember for the rest of this process's life
+    return;
+  }
+  // V13.1: leader/standby means TWO containers boot the full engine path and
+  // both reach this line within seconds. Claim the night before working it.
+  if (!(await claimNightlyJob('league', today))) {
+    lastLeagueDate = today;
+    console.log(`[HorseLeague] run ${today} claimed by another instance - standing down`);
     return;
   }
   lastLeagueDate = today;

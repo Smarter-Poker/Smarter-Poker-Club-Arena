@@ -341,6 +341,7 @@
     "horse_error_log",
     "horse_hand_history",
     "horse_hand_results",
+    "horse_job_runs",
     "horse_league_results",
     "horse_memory",
     "horse_mind_pairs",

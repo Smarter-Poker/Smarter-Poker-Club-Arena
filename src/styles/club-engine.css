@@ -1015,6 +1015,13 @@ textarea:focus-visible,
   .fr-filter-chip,
   .hh-filter-chip,
   .lobby-favtoggle,
+  .export-btn,
+  .game-bar__sort-btn,
+  .game-bar__type,
+  .gl-tab,
+  .refd-share-btn,
+  .hero-diamonds,
+  .lobby-club__share,
   .dw__plus {
     position: relative;
   }
@@ -1030,6 +1037,13 @@ textarea:focus-visible,
   .fr-filter-chip::after,
   .hh-filter-chip::after,
   .lobby-favtoggle::after,
+  .export-btn::after,
+  .game-bar__sort-btn::after,
+  .game-bar__type::after,
+  .gl-tab::after,
+  .refd-share-btn::after,
+  .hero-diamonds::after,
+  .lobby-club__share::after,
   .dw__plus::after {
     content: '';
     position: absolute;
@@ -1042,6 +1056,7 @@ textarea:focus-visible,
     background: transparent;
   }
 
+  .lobby-club__share::after,
   .dw__plus::after {
     left: 50%;
     right: auto;

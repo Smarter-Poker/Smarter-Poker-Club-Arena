@@ -5,84 +5,107 @@
  */
 
 .container {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 300px;
-    padding: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  padding: 2rem;
 }
 
 .content {
-    text-align: center;
-    max-width: 400px;
+  text-align: center;
+  max-width: 400px;
 }
 
 .icon {
-    font-size: 4rem;
-    display: block;
-    margin-bottom: 1rem;
-    opacity: 0.8;
+  font-size: 4rem;
+  display: block;
+  margin-bottom: 1rem;
+  opacity: 0.8;
 }
 
 .title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: #FFFFFF;
-    margin: 0 0 0.5rem 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0 0 0.5rem 0;
 }
 
 .description {
-    font-size: 0.9rem;
-    color: #8888AA;
-    margin: 0 0 1.5rem 0;
-    line-height: 1.5;
+  font-size: 0.9rem;
+  color: #8888aa;
+  margin: 0 0 1.5rem 0;
+  line-height: 1.5;
 }
 
 .actionButton {
-    padding: 0.75rem 1.5rem;
-    background: linear-gradient(135deg, #4169E1 0%, #5B7FEE 100%);
-    border: none;
-    border-radius: 8px;
-    color: #FFFFFF;
-    font-size: 0.9rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-    box-shadow: 0 4px 15px rgba(65, 105, 225, 0.3), 0 0 20px rgba(65, 105, 225, 0.25);
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #4169e1 0%, #5b7fee 100%);
+  border: none;
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow:
+    0 4px 15px rgba(65, 105, 225, 0.3),
+    0 0 20px rgba(65, 105, 225, 0.25);
 }
 
 .actionButton:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(65, 105, 225, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(65, 105, 225, 0.4);
 }
 
 /* Loading State */
 .loadingContainer {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 200px;
-    gap: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  gap: 1rem;
 }
 
 .spinner {
-    width: 40px;
-    height: 40px;
-    border: 3px solid rgba(65, 105, 225, 0.2);
-    border-top-color: #4169E1;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(65, 105, 225, 0.2);
+  border-top-color: #4169e1;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .loadingText {
-    color: #8888AA;
-    font-size: 0.9rem;
-    margin: 0;
+  color: #8888aa;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+/* Touch target (2026-08-23): measured under 44px at 375px. The control keeps
+   its painted size; an invisible 44px-tall ::after gives the thumb something
+   to hit. Vertical only — these sit in horizontal rows and widening would
+   steal the neighbour's taps. See club-engine.css for the full rationale. */
+@media (pointer: coarse) {
+  .actionButton {
+    position: relative;
+  }
+
+  .actionButton::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 44px;
+    background: transparent;
+  }
 }

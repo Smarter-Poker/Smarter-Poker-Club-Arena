@@ -440,31 +440,133 @@
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }
 
-/* Tiny 3-chip stack icon */
-.pot-display__mini-chips {
-  position: relative;
-  width: 14px;
-  height: 14px;
-  display: inline-block;
+/* ── The pot, drawn as real chips (Dan 2026-08-23) ──────────────────────────
+   Replaces the old .pot-display__mini-chip* trio, which drew three identical
+   teal circles whatever the pot held. Dan: "THE POT SHOULD SHOW THE AMOUNT OF
+   CHIPS NECESSARY TO EQUAL THE TOTAL CHIPS IN THE POT... ALWAYS COLORING UP TO
+   USE THE FEWEST AMOUNT OF CHIPS." Colours and counts come from
+   src/lib/chipDenominations.ts via PotChipPile.
+
+   NOTE FOR ANYONE EDITING THIS BLOCK: do not move it into `.pot-display`'s
+   column flow, and do not touch `.pot-display` or `.pot-display__main`.
+   tests/e2e/pot-above-chips.spec.ts asserts the POT pill's box is identical to
+   a checked-in pre-fix stylesheet at four viewport widths, and it only stays
+   that way while this pile is out of flow. */
+
+.pot-display__pile {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  pointer-events: none;
 }
-.pot-display__mini-chip {
+
+/* The collected pot: floats just above the POT pill, centred on it, and out of
+   flow so the pill itself does not move. */
+.pot-display__pile--pot {
   position: absolute;
-  left: 0;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 5px;
+}
+
+/* The live-bets pill: inline, one pill-height of room, so smaller chips. */
+.pot-display__pile--street {
+  position: relative;
+  gap: 3px;
+}
+
+.pot-display__pile-stack {
+  position: relative;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  animation: pdPileIn 0.3s var(--pd-ease-spring) calc(var(--pile-group, 0) * 45ms) backwards;
+}
+
+@keyframes pdPileIn {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.7);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.pot-display__pile-chip {
+  width: 16px;
+  height: 16px;
+  margin-top: -11px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  /* Same two-tone treatment as the seat chips: the darker rim is what makes a
+     16px disc read as a clay chip rather than a coloured dot. */
+  background:
+    radial-gradient(
+      circle at 50% 50%,
+      var(--pile-chip-color, #f2f3f5) 0%,
+      var(--pile-chip-color, #f2f3f5) 60%,
+      var(--pile-chip-accent, #b3b7c0) 64%,
+      var(--pile-chip-accent, #b3b7c0) 100%
+    ),
+    var(--pile-chip-color, #f2f3f5);
+  box-shadow:
+    0 1.5px 0 rgba(0, 0, 0, 0.45),
+    0 2px 5px rgba(0, 0, 0, 0.5),
+    inset 0 2px 3px rgba(255, 255, 255, 0.28),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.25);
+}
+
+.pot-display__pile-chip:first-of-type {
+  margin-top: 0;
+}
+
+/* A sub-1 residue that no chip on Dan's ladder can represent (a 0.5 blind).
+   Drawn as a sliver, never as a full white 1 chip — see chipDenominations.ts. */
+.pot-display__pile-chip--partial {
+  height: 9px;
+  opacity: 0.75;
+  border-style: dashed;
+}
+
+/* True count for a stack clamped to fit. The pile is clamped; the value is not. */
+.pot-display__pile-multi {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 2px;
+  font-size: 0.55rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--pd-gold, #ffd700);
+  font-family: 'JetBrains Mono', monospace;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  white-space: nowrap;
+}
+
+.pot-display__pile--street .pot-display__pile-chip {
   width: 12px;
   height: 12px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #35d0c5 0%, #17877f 70%);
-  border: 1.5px dashed rgba(255, 255, 255, 0.75);
-  box-sizing: border-box;
+  margin-top: -8px;
+  border-width: 1px;
 }
-.pot-display__mini-chip--b {
-  bottom: 0;
+
+.pot-display__pile--street .pot-display__pile-chip--partial {
+  height: 7px;
 }
-.pot-display__mini-chip--m {
-  bottom: 3px;
+
+.pot-display__pile--street .pot-display__pile-multi {
+  font-size: 0.45rem;
 }
-.pot-display__mini-chip--t {
-  bottom: 6px;
+
+@media (prefers-reduced-motion: reduce) {
+  .pot-display__pile-stack {
+    animation: none;
+  }
 }
 
 /*

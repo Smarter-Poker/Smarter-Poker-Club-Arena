@@ -7,55 +7,45 @@
  *   - Stack height proportional to bet size
  *   - Bet-to-pot arc trajectory
  *   - Splash animation (chips scatter then settle)
- *   - Denomination color system (white → gold per tier)
+ *   - Denomination color system (src/lib/chipDenominations.ts)
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Dan 2026-08-23: "IF A PLAYER RAISES, OR CALLS TO 7, ONE RED AND TWO WHITE
+ * CHIPS SHOULD BE ADDED IN FRONT OF THEM."
+ *
+ * SeatSlot renders this component in `compact` mode for every seat's live bet,
+ * and compact mode used to draw EXACTLY ONE CHIP regardless of the amount. The
+ * comment there said that was deliberate, "to avoid misleading chip counts
+ * that don't match the bet value" — the right instinct aimed at the wrong fix.
+ * The counts did not match because the local breakdown clamped each stack at
+ * five chips and then subtracted the UNCLAMPED count from the remainder, so
+ * the discs never summed to the bet. Drawing one chip for every bet is not
+ * less misleading than a wrong count, it only hides it.
+ *
+ * The breakdown now comes from src/lib/chipDenominations.ts, which is exact
+ * and unit-tested, so compact mode can draw the real chips: a 7 bet draws one
+ * red and two white.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import React, { useMemo, useEffect, useState } from 'react';
+import { visualChipStacks, type ChipStackVisual } from '../../lib/chipDenominations';
 import './ChipPhysics.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// DENOMINATION SYSTEM
+// DENOMINATION SYSTEM — see src/lib/chipDenominations.ts for the ladder, why
+// greedy descent is the "fewest chips" Dan asked for, and both spec
+// ambiguities (purple listed twice; the 5,000 -> 100,000 gap).
 // ═══════════════════════════════════════════════════════════════════════════════
 
-interface ChipDenom {
-  value: number;
-  color: string;
-  accent: string;
-  label: string;
-}
-
-const DENOMINATIONS: ChipDenom[] = [
-  { value: 1, color: '#e0e0e0', accent: '#ababab', label: '1' }, // White
-  { value: 5, color: '#ef4444', accent: '#b91c1c', label: '5' }, // Red
-  { value: 25, color: '#22c55e', accent: '#15803d', label: '25' }, // Green
-  { value: 100, color: '#1a1a2e', accent: '#374151', label: '100' }, // Black
-  { value: 500, color: '#7c3aed', accent: '#5b21b6', label: '500' }, // Violet
-  { value: 1000, color: '#f97316', accent: '#ea580c', label: '1K' }, // Orange
-  { value: 5000, color: '#a855f7', accent: '#7c3aed', label: '5K' }, // Purple
-];
-
-function getChipBreakdown(amount: number): { denom: ChipDenom; count: number }[] {
-  const breakdown: { denom: ChipDenom; count: number }[] = [];
-  let remaining = Math.abs(amount);
-
-  // Work from highest to lowest denomination
-  for (let i = DENOMINATIONS.length - 1; i >= 0; i--) {
-    const denom = DENOMINATIONS[i];
-    const count = Math.floor(remaining / denom.value);
-    if (count > 0) {
-      // Cap visual chips at 5 per denomination for clarity
-      breakdown.push({ denom, count: Math.min(count, 5) });
-      remaining -= count * denom.value;
-    }
-  }
-
-  // Ensure at least 1 chip displays
-  if (breakdown.length === 0 && amount > 0) {
-    breakdown.push({ denom: DENOMINATIONS[0], count: 1 });
-  }
-
-  return breakdown.slice(0, 3); // Max 3 denomination groups visible
-}
+/**
+ * In front of a seat there is room for a short row of short stacks; the pot in
+ * the middle of the felt can carry a taller pile. Neither cap ever changes the
+ * VALUE drawn — a clamped stack reports `truncated` and prints its real count
+ * beside itself, which is exactly what the old local breakdown failed to do.
+ */
+const COMPACT_LAYOUT = { maxStacks: 4, maxPerStack: 6 };
+const FULL_LAYOUT = { maxStacks: 5, maxPerStack: 10 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -82,7 +72,10 @@ export function ChipPhysics({
 }: ChipPhysicsProps) {
   const [isVisible, setIsVisible] = useState(animate === 'none');
 
-  const breakdown = useMemo(() => getChipBreakdown(amount), [amount]);
+  const stacks = useMemo(
+    () => visualChipStacks(amount, compact ? COMPACT_LAYOUT : FULL_LAYOUT),
+    [amount, compact]
+  );
 
   useEffect(() => {
     if (animate !== 'none') {
@@ -93,70 +86,56 @@ export function ChipPhysics({
 
   if (amount <= 0) return null;
 
-  // In compact mode (bet chips next to player), show single chip icon + amount
-  // to avoid misleading chip counts that don't match the bet value
-  if (compact) {
-    const topDenom = breakdown.length > 0 ? breakdown[0].denom : DENOMINATIONS[0];
-    return (
-      <div
-        className={`chip-physics cp--compact ${isVisible ? 'cp--visible' : ''} cp--${animate} ${className}`}
-      >
-        <div className="cp-stacks">
-          <div className="cp-stack" style={{ '--group-idx': 0 } as React.CSSProperties}>
-            <div
-              className="cp-chip"
-              style={
-                {
-                  '--chip-color': topDenom.color,
-                  '--chip-accent': topDenom.accent,
-                  '--chip-idx': 0,
-                  '--total-chips': 1,
-                } as React.CSSProperties
-              }
-            >
-              <div className="cp-chip__face" />
-            </div>
-          </div>
-        </div>
-        {showAmount && <span className="cp-amount">{formatChipAmount(amount)}</span>}
-      </div>
-    );
-  }
-
+  // Compact (in front of a seat) and full (the pot) differ only in chip size
+  // and how much room the stacks get — both draw the real, exact breakdown.
   return (
-    <div className={`chip-physics ${isVisible ? 'cp--visible' : ''} cp--${animate} ${className}`}>
-      {/* Full chip stacks — only used for pot display, not per-player bets */}
+    <div
+      className={`chip-physics${compact ? ' cp--compact' : ''} ${isVisible ? 'cp--visible' : ''} cp--${animate} ${className}`}
+    >
       <div className="cp-stacks">
-        {breakdown.map(({ denom, count }, groupIdx) => (
-          <div
-            key={denom.value}
-            className="cp-stack"
-            style={{ '--group-idx': groupIdx } as React.CSSProperties}
-          >
-            {Array.from({ length: count }, (_, chipIdx) => (
-              <div
-                key={chipIdx}
-                className="cp-chip"
-                style={
-                  {
-                    '--chip-color': denom.color,
-                    '--chip-accent': denom.accent,
-                    '--chip-idx': chipIdx,
-                    '--total-chips': count,
-                  } as React.CSSProperties
-                }
-              >
-                <div className="cp-chip__face">
-                  <span className="cp-chip__label">{denom.label}</span>
-                </div>
-              </div>
-            ))}
-          </div>
+        {stacks.map((stack, groupIdx) => (
+          <ChipTower key={stack.denom.value} stack={stack} groupIdx={groupIdx} />
         ))}
       </div>
 
       {/* Amount display */}
       {showAmount && <span className="cp-amount">{formatChipAmount(amount)}</span>}
+    </div>
+  );
+}
+
+/** One denomination's stack: N discs of a single colour, tallest disc labelled. */
+function ChipTower({ stack, groupIdx }: { stack: ChipStackVisual; groupIdx: number }) {
+  const { denom, count, drawn, truncated, partial } = stack;
+
+  return (
+    <div className="cp-stack" style={{ '--group-idx': groupIdx } as React.CSSProperties}>
+      {/* A stack too tall to draw prints its real count, so the pile never
+          claims a value it is not showing. See visualChipStacks. */}
+      {truncated && <span className="cp-stack__multi">x{count.toLocaleString()}</span>}
+
+      {Array.from({ length: drawn }, (_, chipIdx) => (
+        <div
+          key={chipIdx}
+          className={`cp-chip${partial ? ' cp-chip--partial' : ''}`}
+          style={
+            {
+              '--chip-color': denom.color,
+              '--chip-accent': denom.accent,
+              '--chip-ink': denom.ink,
+              '--chip-idx': chipIdx,
+              '--total-chips': drawn,
+            } as React.CSSProperties
+          }
+        >
+          <div className="cp-chip__face">
+            {/* The partial disc stands in for a sub-1 remainder that no chip on
+                the ladder can represent (a 0.5 small blind). Labelling it "1"
+                would be a lie about its value, so it carries no label. */}
+            {!partial && <span className="cp-chip__label">{denom.label}</span>}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

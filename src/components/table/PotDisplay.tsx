@@ -12,11 +12,32 @@
  *    and the lower pill disappears.
  *  - The old casino chip-pile visualization next to the pot is GONE — it is
  *    what kept leaving stray red chips painted in the middle of the felt.
+ *
+ * Dan 2026-08-23 (chips and pots): "THE POT SHOULD SHOW THE AMOUNT OF CHIPS
+ * NECESSARY TO EQUAL THE TOTAL CHIPS IN THE POT, AND THATS HOW IT SHOULD LOOK
+ * WHEN ITS CALCULATED... ALWAYS COLORING UP TO USE THE FEWEST AMOUNT OF CHIPS
+ * IN THE POT."
+ *
+ * So a chip pile is back — but NOT the one removed on 2026-08-20, and it
+ * cannot fail the same way. The old pile was table/ChipStack's own `PotDisplay`
+ * export: a separately-positioned block that drew a fixed red chip whatever
+ * the pot held, and when it and the flying-chip layer disagreed about who
+ * owned the middle of the felt, its chips were the ones left painted there.
+ * This pile is a child of `.pot-display` itself, so it mounts, moves and
+ * unmounts with the pot pill and cannot outlive it; it is derived purely from
+ * `displayPot`, so no animation owns its lifetime; and it is pointer-events
+ * none like the rest of the pot.
+ *
+ * It is also absolutely positioned ABOVE the pill instead of sitting in the
+ * column flow, so `.pot-display__main` does not move by a pixel. That is load
+ * bearing: tests/e2e/pot-above-chips.spec.ts pins the pill's box against a
+ * checked-in pre-fix stylesheet at four viewport widths.
  */
 
 import React, { useMemo, memo, useState, useEffect, useRef } from 'react';
 import { AnimatedNumber } from '../common/AnimatedNumber';
 import { soundService } from '../../services/SoundService';
+import { visualChipStacks } from '../../lib/chipDenominations';
 import './PotDisplay.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -106,14 +127,65 @@ function SidePotBadge({
   );
 }
 
-/** Tiny decorative chip stack for the street-bets pill (pure CSS circles). */
-function MiniChipIcon() {
+/**
+ * The pot, drawn as actual chips.
+ *
+ * Replaces MiniChipIcon, which drew three identical teal circles no matter
+ * what the pot held — decoration, not information. This draws the fewest chips
+ * that add up to `amount` on Dan's ladder, so a 21 pot is four red and one
+ * white and it is readable at a glance without reading the number.
+ *
+ * `size` is the only difference between the two places it appears: `pot` is
+ * the collected pot floating above the POT pill, `street` is the inline icon
+ * in the live-bets pill under it, which has one line of pill height to live in.
+ */
+function PotChipPile({ amount, size }: { amount: number; size: 'pot' | 'street' }) {
+  // The pot can hold far more denominations than a single bet, and it has the
+  // middle of the felt to spread across, so it gets more room than a seat.
+  const stacks = useMemo(
+    () =>
+      visualChipStacks(
+        amount,
+        size === 'pot' ? { maxStacks: 6, maxPerStack: 10 } : { maxStacks: 3, maxPerStack: 4 }
+      ),
+    [amount, size]
+  );
+
+  if (stacks.length === 0) return null;
+
   return (
-    <span className="pot-display__mini-chips" aria-hidden="true">
-      <span className="pot-display__mini-chip pot-display__mini-chip--b" />
-      <span className="pot-display__mini-chip pot-display__mini-chip--m" />
-      <span className="pot-display__mini-chip pot-display__mini-chip--t" />
-    </span>
+    /* aria-hidden: the amount is already announced by the pill's aria-label,
+       and reading out "four red chips, one white chip" adds nothing a screen
+       reader user can act on. */
+    <div className={`pot-display__pile pot-display__pile--${size}`} aria-hidden="true">
+      {stacks.map((stack, groupIdx) => (
+        <div
+          key={stack.denom.value}
+          className="pot-display__pile-stack"
+          style={{ '--pile-group': groupIdx } as React.CSSProperties}
+        >
+          {/* A stack clamped for layout prints its true count, so the pile
+              never claims a value it is not showing. Dan's ladder has nothing
+              between 5,000 and 100,000, so a 60,000 pot really is twelve
+              orange chips. */}
+          {stack.truncated && (
+            <span className="pot-display__pile-multi">x{stack.count.toLocaleString()}</span>
+          )}
+          {Array.from({ length: stack.drawn }, (_, chipIdx) => (
+            <span
+              key={chipIdx}
+              className={`pot-display__pile-chip${stack.partial ? ' pot-display__pile-chip--partial' : ''}`}
+              style={
+                {
+                  '--pile-chip-color': stack.denom.color,
+                  '--pile-chip-accent': stack.denom.accent,
+                } as React.CSSProperties
+              }
+            />
+          ))}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -196,6 +268,11 @@ function PotDisplayComponent({
       aria-live="polite"
       aria-label={`Pot: ${formatAmount(displayPot, currency)}${streetBets > 0 ? `, ${formatAmount(streetBets, currency)} in front of players` : ''}${sidePots && sidePots.length > 0 ? ` plus ${sidePots.length} side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}
     >
+      {/* The collected pot as real chips, floating just above the pill.
+          Absolutely positioned, so adding it does not move the pill — see the
+          file header for why that matters. */}
+      <PotChipPile amount={displayPot} size="pot" />
+
       {/* Main Pot pill — click to toggle chips/BB display */}
       <div
         className={`pot-display__main ${onToggleDisplayMode ? 'pot-display__main--clickable' : ''}`}
@@ -212,7 +289,7 @@ function PotDisplayComponent({
           total when the street completes and the chips sweep in. */}
       {streetBets > 0 && (
         <div className="pot-display__street" aria-hidden="true">
-          <MiniChipIcon />
+          <PotChipPile amount={streetBets} size="street" />
           <span className="pot-display__street-amount">
             <AnimatedNumber value={streetBets} duration={250} format={fmt} />
           </span>

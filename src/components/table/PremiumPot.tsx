@@ -10,6 +10,7 @@
  */
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { visualChipStacks } from '../../lib/chipDenominations';
 import './PremiumPot.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -118,6 +119,15 @@ export function PremiumPot({
       {/* Glow layer */}
       <div className={`pp-glow ${showBurst ? 'pp-glow--burst' : ''}`} />
 
+      {/* Dan 2026-08-23: the pot as real chips, coloured up to the fewest that
+          equal it. Drawn from the animated value so the pile grows with the
+          counter rather than snapping ahead of it.
+          NOTE: this component is not currently mounted anywhere (TablePage
+          dropped it on 2026-07-19 as a duplicate of PotDisplay). The pile is
+          here so that if it is ever remounted it agrees with the felt instead
+          of growing a third denomination ladder of its own. */}
+      <PremiumPotChips amount={animatedMain} />
+
       {/* Main pot */}
       <div className="pp-main">
         <span className="pp-main__label">POT</span>
@@ -144,6 +154,48 @@ export function PremiumPot({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The pot drawn as chips: the fewest that add up to it, coloured by Dan's
+ * ladder. Counts and colours come from src/lib/chipDenominations.ts, which is
+ * also what the seats and PotDisplay draw from, so all three agree by
+ * construction rather than by three people remembering to update three lists.
+ */
+function PremiumPotChips({ amount }: { amount: number }) {
+  const stacks = useMemo(
+    () => visualChipStacks(amount, { maxStacks: 5, maxPerStack: 8 }),
+    [amount]
+  );
+
+  if (stacks.length === 0) return null;
+
+  return (
+    /* aria-hidden: the pot value is already announced by .pp-main__value. */
+    <div className="pp-chips" aria-hidden="true">
+      {stacks.map((stack) => (
+        <div key={stack.denom.value} className="pp-chip-stack">
+          {/* A clamped stack prints its true count: the pile is capped for
+              layout, the value it stands for never is. */}
+          {stack.truncated && (
+            <span className="pp-chip-multi">×{stack.count.toLocaleString()}</span>
+          )}
+          {Array.from({ length: stack.drawn }, (_, i) => (
+            <span
+              key={i}
+              className={`pp-chip${stack.partial ? ' pp-chip--partial' : ''}`}
+              style={
+                {
+                  '--pp-chip-color': stack.denom.color,
+                  '--pp-chip-accent': stack.denom.accent,
+                } as React.CSSProperties
+              }
+            />
+          ))}
+        </div>
+      ))}
     </div>
   );
 }

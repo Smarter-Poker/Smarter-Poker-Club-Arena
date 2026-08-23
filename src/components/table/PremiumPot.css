@@ -61,6 +61,76 @@
   }
 }
 
+/* ── The pot as real chips (Dan 2026-08-23) ──
+   Fewest chips that add up to the pot, coloured by the ladder in
+   src/lib/chipDenominations.ts — the same source the seats and PotDisplay use,
+   so all three agree by construction rather than by three people remembering
+   to update three lists. */
+.pp-chips {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.pp-chip-stack {
+  position: relative;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+}
+
+.pp-chip {
+  width: 15px;
+  height: 15px;
+  margin-top: -10px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  /* Two-tone: the darker rim is what makes a 15px disc read as a clay chip
+     rather than a coloured dot. */
+  background:
+    radial-gradient(
+      circle at 50% 50%,
+      var(--pp-chip-color, #f2f3f5) 0%,
+      var(--pp-chip-color, #f2f3f5) 60%,
+      var(--pp-chip-accent, #b3b7c0) 64%,
+      var(--pp-chip-accent, #b3b7c0) 100%
+    ),
+    var(--pp-chip-color, #f2f3f5);
+  box-shadow:
+    0 1.5px 0 rgba(0, 0, 0, 0.45),
+    0 2px 5px rgba(0, 0, 0, 0.5),
+    inset 0 2px 3px rgba(255, 255, 255, 0.28);
+}
+
+.pp-chip:first-of-type {
+  margin-top: 0;
+}
+
+/* A sub-1 residue no chip on the ladder can represent (a 0.5 small blind).
+   Never a full white 1 chip: that would claim twice its value. */
+.pp-chip--partial {
+  height: 8px;
+  opacity: 0.75;
+  border-style: dashed;
+}
+
+/* True count for a stack clamped to fit. Discs capped, value never. */
+.pp-chip-multi {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 2px;
+  font-size: 0.5rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #ffd700;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  white-space: nowrap;
+}
+
 /* ── Main Pot ── */
 .pp-main {
   display: flex;

@@ -1,20 +1,27 @@
 /**
  *  CHIP STACK COMPONENT
  * Premium visual chip stacks with denomination colors and animations
+ *
+ * Dan 2026-08-23: the denomination ladder that used to live in this file has
+ * moved to src/lib/chipDenominations.ts, the single source for the colours,
+ * the "fewest chips" rule, and both spec ambiguities (purple listed twice;
+ * nothing between 5,000 and 100,000).
+ *
+ * The local copy was wrong in two ways worth recording so neither comes back:
+ *
+ *   1. It stopped at 5,000, so every chip above that (100K blue, 500K pink,
+ *      1M teal, 5M maroon) did not exist and a million-chip pot drew as a pile
+ *      of oranges.
+ *   2. calculateChips clamped each stack at ten chips for "visual clarity" and
+ *      then subtracted the CLAMPED count from the remainder. Value therefore
+ *      evaporated: the chips drawn never added up to the amount, which is the
+ *      one property Dan actually asked for. visualChipStacks clamps the DISCS
+ *      DRAWN and keeps the true count, so a clamped stack prints "x12" rather
+ *      than quietly losing 35,000.
  */
 
+import { visualChipStacks, type ChipStackVisual } from '../../lib/chipDenominations';
 import './ChipStack.css';
-
-// Chip denomination colors (inspired by real casino chips)
-const CHIP_COLORS: Record<number, { bg: string; border: string; text: string }> = {
-  1: { bg: '#ffffff', border: '#888888', text: '#333333' }, // White - 1 chip
-  5: { bg: '#e74c3c', border: '#c0392b', text: '#ffffff' }, // Red - 5 chips
-  25: { bg: '#27ae60', border: '#1e8449', text: '#ffffff' }, // Green - 25 chips
-  100: { bg: '#1a1a2e', border: '#333355', text: '#ffffff' }, // Black - 100 chips
-  500: { bg: '#8e44ad', border: '#6c3483', text: '#ffffff' }, // Purple - 500 chips
-  1000: { bg: '#f1c40f', border: '#d4ac0d', text: '#1a1a2e' }, // Gold - 1,000 chips
-  5000: { bg: '#e67e22', border: '#d35400', text: '#ffffff' }, // Orange - 5,000 chips
-};
 
 export interface ChipStackProps {
   amount: number;
@@ -23,37 +30,6 @@ export interface ChipStackProps {
   animated?: boolean;
   className?: string;
   prevAmount?: number; // For detecting amount changes
-}
-
-// Calculate optimal chip breakdown
-function calculateChips(amount: number): { value: number; count: number }[] {
-  const denominations = [5000, 1000, 500, 100, 25, 5, 1];
-  const chips: { value: number; count: number }[] = [];
-  let remaining = amount;
-
-  for (const denom of denominations) {
-    if (remaining >= denom) {
-      const count = Math.floor(remaining / denom);
-      const displayCount = Math.min(count, 10); // Cap at 10 per denomination for visual
-      chips.push({ value: denom, count: displayCount });
-      remaining -= displayCount * denom; // Subtract capped count, not uncapped
-    }
-  }
-
-  return chips.slice(0, 5); // Max 5 stacks for visual clarity
-}
-
-// Get chip color based on closest denomination
-function getChipColor(value: number) {
-  const denoms = Object.keys(CHIP_COLORS)
-    .map(Number)
-    .sort((a, b) => b - a);
-  for (const denom of denoms) {
-    if (value >= denom) {
-      return CHIP_COLORS[denom];
-    }
-  }
-  return CHIP_COLORS[1];
 }
 
 // Chip sizes
@@ -73,7 +49,9 @@ export default function ChipStack({
 }: ChipStackProps) {
   if (amount <= 0) return null;
 
-  const chips = calculateChips(amount);
+  // Five stacks of five is what this component's absolute-positioned chip
+  // layout can hold without stacks overlapping their neighbours.
+  const stacks: ChipStackVisual[] = visualChipStacks(amount, { maxStacks: 5, maxPerStack: 5 });
   const { chipSize, spacing } = SIZES[size];
 
   // Detect amount change for bounce animation
@@ -84,42 +62,54 @@ export default function ChipStack({
     <div className={`chip-stack-container ${bounceClass} ${className}`}>
       {/* Chip Stacks */}
       <div className="chip-stacks">
-        {chips.map((stack, stackIndex) => {
-          const color = getChipColor(stack.value);
-          const stackHeight = Math.min(stack.count, 5);
-          const shadowDepth = Math.min(stackHeight * 3, 16);
+        {stacks.map((stack, stackIndex) => {
+          const { denom, count, drawn, truncated, partial } = stack;
+          const shadowDepth = Math.min(drawn * 3, 16);
 
           return (
             <div
-              key={stack.value}
+              key={denom.value}
               className={`chip-stack ${animated ? 'animated' : ''}`}
               style={{
                 animationDelay: `${stackIndex * 50}ms`,
-                filter: `drop-shadow(0 ${shadowDepth}px ${shadowDepth * 1.5}px rgba(0, 0, 0, ${0.3 + stackHeight * 0.1}))`,
+                // The stack is absolutely positioned from the bottom, so it
+                // needs explicit room or the amount label overlaps its top chip.
+                height: chipSize * 0.2 + (drawn - 1) * spacing,
+                width: chipSize,
+                filter: `drop-shadow(0 ${shadowDepth}px ${shadowDepth * 1.5}px rgba(0, 0, 0, ${0.3 + drawn * 0.1}))`,
               }}
             >
-              {Array.from({ length: stackHeight }).map((_, chipIndex) => (
+              {/* Clamped stacks print their real count: the pile is capped for
+                  layout, the value it represents never is. */}
+              {truncated && (
+                <span className="chip-stack__multi" style={{ fontSize: chipSize * 0.3 }}>
+                  ×{count.toLocaleString()}
+                </span>
+              )}
+
+              {Array.from({ length: drawn }).map((_, chipIndex) => (
                 <div
                   key={chipIndex}
-                  className="chip"
+                  className={`chip${partial ? ' chip--partial' : ''}`}
                   style={{
                     width: chipSize,
-                    height: chipSize * 0.2,
-                    background: `linear-gradient(135deg, ${color.bg} 0%, ${color.border} 100%)`,
-                    borderColor: color.border,
+                    height: chipSize * (partial ? 0.12 : 0.2),
+                    background: `linear-gradient(135deg, ${denom.color} 0%, ${denom.accent} 100%)`,
+                    borderColor: denom.accent,
                     bottom: chipIndex * spacing,
-                    zIndex: stackHeight - chipIndex,
+                    zIndex: drawn - chipIndex,
                   }}
                 >
-                  {chipIndex === stackHeight - 1 && (
+                  {/* Only the top chip carries the value, and the partial
+                      sliver carries none: it stands in for a sub-1 remainder
+                      no chip on the ladder can represent, so labelling it "1"
+                      would overstate it. See chipDenominations.ts. */}
+                  {chipIndex === drawn - 1 && !partial && (
                     <span
                       className="chip-value"
-                      style={{ color: color.text, fontSize: chipSize * 0.35 }}
+                      style={{ color: denom.ink, fontSize: chipSize * 0.35 }}
                     >
-                      {stack.value.toLocaleString('en-US', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                      {denom.label}
                     </span>
                   )}
                 </div>

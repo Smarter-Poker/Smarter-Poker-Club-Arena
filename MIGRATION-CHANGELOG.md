@@ -7,6 +7,87 @@
 
 ---
 
+## Cowork session 2026-08-23 (4) — multi-table was blocked by a 34px strip (PRs #493, #517)
+
+Dan: "multi table functionality isn't working, when you click the + button to
+add a second, 3rd or 4th game, it doesn't create the action box for that game."
+
+Two separate occluders, both measured on production rather than reasoned about.
+
+### 1. `.table-page` covered the whole app when embedded (PR #493)
+
+`.table-page` is `position: fixed; inset: 0; z-index: 1100`. That is right when
+the table owns the viewport and wrong when `<MultiTablePage>` embeds it inside a
+tab: the felt then covered its own tab bar. Added a `--embedded` modifier
+(`position: absolute; z-index: auto`), placed AFTER the base rule — at equal
+specificity source order decides, and putting it before changed nothing.
+
+### 2. The MTT ticker was sitting on the "+" (PR #517)
+
+With #493 shipped the button was reachable, and still nothing happened on a
+tournament table. Instrumented on production:
+
+- `elementFromPoint` at the button's centre returned `.mtt-ticker__track`
+- Playwright: `<button class=mtt-ticker__track> ... intercepts pointer events`
+- dispatching the click straight at `.table-tab-bar__add` opened Quick Join and
+  listed games correctly — so `handleAddTable` was never the problem
+
+`.mtt-ticker` is fixed, 34px, `z-index: 9400`, positioned at `top: headerBottom`.
+That measurement only looked for `#global-header` / `header`. Inside `/table/*`
+neither exists — TablePage is fixed to the viewport and its top chrome is
+`.table-tab-bar` — so the offset fell to **0** and the strip landed on a tab bar
+that stacks at 200, burying the "+" at y=24-30. The tap opened the tournament
+lobby instead, which reads exactly like a dead button.
+
+The rule was never "sit under the header", it is "sit under whatever top chrome
+this route actually has". Moved the geometry into `src/components/tournament/
+topChrome.ts` (pure: selector lookup in, one number out) so it is assertable
+without mounting a table, and made the ResizeObserver watch every candidate —
+the tab bar mounts late, grows a row per table, and collapses off `/table/*`.
+
+`tests/unit/mttTickerAnchor.test.ts` pins it. Anti-vacuity checked: dropping
+`.table-tab-bar` back out of the selector list turns 3 of the 6 red.
+
+### 3. Two buttons, one accessible name
+
+`aria-label="Open another table"` was on both the tab bar's "+" (Quick Join) and
+TablePage's in-felt "+" (opens a lobby tab). A screen reader announced them
+identically and `getByLabel` resolved two elements, so the mobile suite silently
+drove whichever came first in the DOM. The second is now named for what it does.
+
+### 4. Quick Join spent 6.7 seconds on "Finding Games…"
+
+Long enough to be indistinguishable from a broken button, and on a slow
+connection it ran past 18s. Not the query — 11.5ms as service_role — but the
+plan under RLS:
+
+```
+Index Scan using idx_tables_club_id
+  Filter: (tournament_id IS NULL AND is_deleted IS NOT TRUE AND status <> 'closed')
+  ROWS REMOVED BY FILTER: 7261
+```
+
+To return 30 open tables it walked 7,291 rows, and `tables_select_scoped` runs
+`is_club_member()` / `fn_union_oversees_club()` against each one — ~14.5k
+function calls for a 30-row answer, growing with every hand ever dealt (the club
+holds 64,374 closed tables).
+
+`20260823170000_tables_open_by_club_partial_index.sql` puts the open-ness
+predicate in the index. Applied to production and re-measured: **11.588ms ->
+0.376ms**, 1,480 buffers -> 35, and the "Rows Removed by Filter" line is gone —
+nothing left for the policy to be evaluated against.
+
+### Note for whoever chases "Club Not Found" next
+
+Not reproduced again this session. Ruled out from a clean session: the club row,
+RLS, every selected column, both entry paths, tap vs click, mobile emulation,
+all three clubs, the service worker, an expired/corrupted token, and the
+`?game=<id>` lobby-panel route. The diagnostic cause line shipped earlier still
+stands, so the next occurrence should name its own cause rather than needing
+this guesswork repeated.
+
+---
+
 ## Cowork session 2026-08-23 (3) — round two: PLO was deciding inside its own noise (PRs #436)
 
 Continuing the line-by-line pass. Every item below is measured.

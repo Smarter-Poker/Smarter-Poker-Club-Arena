@@ -553,17 +553,6 @@ if (!_win.__pokerLocks) {
   };
 }
 
-/**
- * Dan 2026-08-23: how long the engine socket must be continuously down before
- * the player is told anything at all.
- *
- * Sized against the reconnect ladder in EngineStateClient, not picked by feel.
- * Its backoff is 1s, 2s, 4s, 8s (+30% jitter), so 15s means the client has
- * already failed roughly four attempts. Anything shorter announces a retry
- * that is about to succeed — which is what the old 3s threshold did.
- */
-const ENGINE_LOSS_TOAST_DELAY_MS = 15_000;
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -4797,12 +4786,11 @@ export default function TablePage({
             setTableState((prev) => ({
               ...prev,
               currentLevel,
-              blinds:
-                tableHasLiveBlinds
-                  ? `${table.small_blind}/${table.big_blind}`
-                  : sb > 0 && bbl > 0
-                    ? `${sb}/${bbl}`
-                    : prev.blinds,
+              blinds: tableHasLiveBlinds
+                ? `${table.small_blind}/${table.big_blind}`
+                : sb > 0 && bbl > 0
+                  ? `${sb}/${bbl}`
+                  : prev.blinds,
             }));
 
             /**
@@ -8801,7 +8789,7 @@ export default function TablePage({
         .limit(1);
       const liveId = (data || [])[0]?.id as string | undefined;
       if (cancelled || !liveId || liveId === tableId) return;
-      console.debug('[Seat] Table recycled — following tournament to', liveId);
+      console.debug('[Seat] Table recycled - following tournament to', liveId);
       navigate(`/table/${liveId}`, { replace: true });
     };
 

@@ -35,11 +35,11 @@ const CLUBS: Club[] = [
 /** jsdom gives every element a clientWidth of 0, so the component's responsive
  *  sizing would collapse. Pin a realistic desktop track width. */
 function withTrackWidth(px: number) {
-  return vi
-    .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
-    .mockImplementation(function (this: HTMLElement) {
-      return this.classList.contains('sp-carousel__track') ? px : px;
-    });
+  return vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (
+    this: HTMLElement
+  ) {
+    return this.classList.contains('sp-carousel__track') ? px : px;
+  });
 }
 
 function renderCarousel(items: Club[] = CLUBS, itemWidth?: number) {
@@ -134,7 +134,9 @@ describe('three cards at once', () => {
   it('places the neighbours to the LEFT and RIGHT of centre, not on top of it', () => {
     const spy = withTrackWidth(1200);
     renderCarousel(CLUBS, 300);
-    const offsets = itemEls().map(translateXOf).sort((x, y) => x - y);
+    const offsets = itemEls()
+      .map(translateXOf)
+      .sort((x, y) => x - y);
 
     // One centred, one each side.
     expect(offsets).toHaveLength(3);
@@ -275,7 +277,9 @@ describe('visibleCards={3} — the lobby configuration', () => {
     const spy = withTrackWidth(928);
     renderThreeUp();
     const w = slotWidth();
-    const offsets = itemEls().map(translateXOf).sort((a, b) => a - b);
+    const offsets = itemEls()
+      .map(translateXOf)
+      .sort((a, b) => a - b);
 
     /* Two cards do not overlap when the distance between their centres is at
        least the sum of their half-widths. Centre is w/2; a neighbour, drawn at
@@ -298,13 +302,13 @@ describe('visibleCards={3} — the lobby configuration', () => {
     cleanup();
   });
 
-  it('falls back to a centre-plus-peek layout on a phone', () => {
-    // Three readable club cards do not fit in 375px; three slivers help nobody.
+  it('maintains a 3-card layout even on a phone per explicit user requirement', () => {
+    // 3 cards must fit on screen simultaneously, so the width scales down.
     const spy = withTrackWidth(375);
     renderThreeUp();
     const w = slotWidth();
-    expect(w).toBeGreaterThan(150); // still a legible card, not a sliver
-    expect(itemEls().length).toBeGreaterThanOrEqual(3); // neighbours still mounted
+    expect(w).toBeGreaterThan(119); // > 120px minimum
+    expect(itemEls().length).toBeGreaterThanOrEqual(3);
     spy.mockRestore();
     cleanup();
   });

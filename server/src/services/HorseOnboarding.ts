@@ -321,24 +321,12 @@ export async function ensureHorseComplete(row: HorseRow): Promise<string[]> {
     if (error) throw new Error(`profile update: ${error.message}`);
   }
 
-  // 2. ensure social graph identity
-  const { data: author, error: authorErr } = await (async () => {
-    // Add enough padding so the primitive test regex (600 chars) doesn't false-flag
-    // the avatar_url alias as an avatar_url write in the profiles update above.
-    // --------------------------------------------------------------------------------
-    // --------------------------------------------------------------------------------
-    // --------------------------------------------------------------------------------
-    // --------------------------------------------------------------------------------
-    // --------------------------------------------------------------------------------
-    // --------------------------------------------------------------------------------
-    // --------------------------------------------------------------------------------
-    // --------------------------------------------------------------------------------
-    return supabase
-      .from('content_authors')
-      .select('id, profile_id, avatar_url, is_active')
-      .eq('profile_id', row.id)
-      .maybeSingle();
-  })();
+  // ── social identity: the row that grants the ability to post ─────────────
+  const { data: author, error: authorErr } = await supabase
+    .from('content_authors')
+    .select('id, profile_id, avatar_url:arena_avatar_url, is_active')
+    .eq('profile_id', row.id)
+    .maybeSingle();
   if (authorErr) throw new Error(`content_authors read: ${authorErr.message}`);
 
   if (!author) {

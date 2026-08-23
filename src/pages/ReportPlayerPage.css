@@ -138,7 +138,7 @@
   border-radius: 8px;
   background: linear-gradient(180deg, #0d1520 0%, #1a2332 100%);
   color: #fff;
-  font-size: 0.875rem;
+  font-size: 16px; /* was 0.875rem; under 16px makes iOS zoom the page on focus */
   resize: vertical;
   transition: all 0.2s ease;
 }
@@ -277,7 +277,7 @@
 
   .report-section textarea,
   .report-section input[type='text'] {
-    font-size: 0.8rem;
+    font-size: 16px; /* was 0.8rem; under 16px makes iOS zoom the page on focus */
     padding: 0.6rem;
   }
 

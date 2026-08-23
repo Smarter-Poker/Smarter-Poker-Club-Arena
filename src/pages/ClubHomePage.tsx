@@ -816,8 +816,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     const unsubs = [
       masterBus.subscribeDebounced('CLUB_JOINED', reload, 300),
       masterBus.subscribeDebounced('CLUB_LEFT', reload, 300),
-      masterBus.subscribeDebounced('TABLE_SEATED', reload, 300),
-      masterBus.subscribeDebounced('TABLE_LEFT', reload, 300),
       masterBus.subscribeDebounced('BALANCE_UPDATED', reload, 300),
       masterBus.subscribeDebounced('DIAMOND_BALANCE_CHANGED', reload, 300),
       masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', reload, 300),
@@ -832,41 +830,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         300
       ),
       masterBus.subscribeDebounced(
-        'TABLE_UPDATED',
-        () => {
-          // Reload when any table linked to this club changes
-          reload();
-        },
-        300
-      ),
-      masterBus.subscribeDebounced(
-        'TOURNAMENT_UPDATED',
-        () => {
-          // Reload when any tournament changes — payload has tournamentId, not clubId
-          reload();
-        },
-        300
-      ),
-      masterBus.subscribeDebounced(
         'CLUB_SETTINGS_UPDATED',
-        (event) => {
-          if (!clubIdRef.current || event.payload?.clubId === clubIdRef.current) {
-            reload();
-          }
-        },
-        300
-      ),
-      masterBus.subscribeDebounced(
-        'TABLE_CREATED',
-        (event) => {
-          if (!clubIdRef.current || event.payload?.clubId === clubIdRef.current) {
-            reload();
-          }
-        },
-        300
-      ),
-      masterBus.subscribeDebounced(
-        'TABLE_DELETED',
         (event) => {
           if (!clubIdRef.current || event.payload?.clubId === clubIdRef.current) {
             reload();
@@ -876,8 +840,16 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       ),
       masterBus.subscribeDebounced('WAITLIST_PROMOTED', reload, 300),
     ];
+
+    // 1-minute fallback interval to ensure the page data doesn't get completely stale
+    // when real-time events are missed.
+    const fallbackInterval = setInterval(() => {
+      reload();
+    }, 60_000);
+
     return () => {
       isMounted = false;
+      clearInterval(fallbackInterval);
       unsubs.forEach((u) => u());
     };
   }, []);
@@ -1596,7 +1568,22 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     const advSpec = advType && advType !== 'ALL' ? FILTER_SPECS[advType] : undefined;
     const advValue = advType ? advFilters[advType] : undefined;
 
+    const stillEnterable = (t: TournamentData) => {
+      const status = String(t.status).toUpperCase();
+      if (status === 'REGISTERING') return true;
+      if (status === 'RUNNING') {
+        const levels = Number(t.late_reg_levels ?? 0);
+        if (levels > 0) return Number(t.current_level ?? 0) <= levels;
+        const mins = Number(t.late_reg_mins ?? 0);
+        if (mins > 0 && t.started_at) {
+          return Date.now() - new Date(t.started_at).getTime() <= mins * 60_000;
+        }
+      }
+      return false;
+    };
+
     const rows = tournaments.filter((t) => {
+      if (!stillEnterable(t)) return false;
       if (q && !((t.name as string) || '').toLowerCase().includes(q)) return false;
       if (!matchesVariant(t, variant)) return false;
 
@@ -1641,32 +1628,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       case 'players':
         return rows.sort((a, b) => cmpPlayersTourn(a, b) || cmpBuyIn(a, b) || cmpNameTourn(a, b));
       case 'starting_soon': {
-        /* A SORT MUST NOT DELETE ROWS (2026-08-23). This case used to
-           `rows.filter(isLateReg)` and return only what was still enterable -
-           a filter wearing a sort's clothes, and this is the DEFAULT sort, so
-           the lobby's first impression silently dropped every tournament past
-           late registration. Worse, the result count blamed the tab and the
-           saved filters ("Showing 12 Of 111") for a narrowing neither of them
-           did, which is the exact shape of bug the empty-state rewrite was
-           meant to end.
-
-           The intent survives without the lie: what you can still enter comes
-           FIRST, soonest first, and everything else follows in start order.
-           Players who want only enterable games have the Open Registration /
-           Late Reg status chips, which are filters and say so. */
-        const stillEnterable = (t: TournamentData) => {
-          const status = String(t.status).toUpperCase();
-          if (status === 'REGISTERING') return true;
-          if (status === 'RUNNING') {
-            const levels = Number(t.late_reg_levels ?? 0);
-            if (levels > 0) return Number(t.current_level ?? 0) <= levels;
-            const mins = Number(t.late_reg_mins ?? 0);
-            if (mins > 0 && t.started_at) {
-              return Date.now() - new Date(t.started_at).getTime() <= mins * 60_000;
-            }
-          }
-          return false;
-        };
         const at = (t: TournamentData) => {
           const ms = new Date(t.start_time).getTime();
           return Number.isFinite(ms) ? ms : Number.MAX_SAFE_INTEGER;
@@ -1893,11 +1854,21 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   );
 
   /** Row selection — opens the game lobby panel. NEVER joins or spends. */
-  const openEntry = useCallback((entry: LobbyEntry) => {
-    haptic.selection();
-    setSelectedId(entry.id);
-    setPanelOpen(true);
-  }, []);
+  const openEntry = useCallback(
+    (entry: LobbyEntry) => {
+      haptic.selection();
+      if (
+        entry.kind === 'mtt' &&
+        (entry.status === 'running' || entry.status === 'late_reg' || entry.status === 'completed')
+      ) {
+        navigate(`/tournaments/${entry.id}`);
+        return;
+      }
+      setSelectedId(entry.id);
+      setPanelOpen(true);
+    },
+    [navigate]
+  );
 
   const handleJoinTable = useCallback(
     (tableId: string) => {
@@ -1967,10 +1938,25 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     );
     let cash = filteredTables.map(cashEntry);
     if (favoritesOnly) cash = cash.filter((e) => favoriteTableIds.has(e.id));
+
+    if (gameType === 'ALL') {
+      const isMtt = (e: LobbyEntry) => e.kind === 'mtt';
+      const isLateRegOrStarting = (e: LobbyEntry) =>
+        e.status === 'registering' || e.status === 'late_reg' || e.status === 'starting_soon';
+
+      const selectedTourns = tourns.filter((t) => isMtt(t) && isLateRegOrStarting(t)).slice(0, 10);
+
+      const holdemCash = cash.filter((c) => cashKind(c.raw as any) === 'HOLDEM').slice(0, 10);
+      const omahaCash = cash.filter((c) => cashKind(c.raw as any) === 'OMAHA').slice(0, 10);
+      const limitCash = cash.filter((c) => cashKind(c.raw as any) === 'LIMIT').slice(0, 10);
+
+      return [...selectedTourns, ...holdemCash, ...omahaCash, ...limitCash];
+    }
+
     // Tournaments first, cash after — same order the card grid used, so the
     // page-level sort control keeps meaning what it meant.
     return [...tourns, ...cash];
-  }, [filteredTournaments, filteredTables, favoritesOnly, favoriteTableIds]);
+  }, [filteredTournaments, filteredTables, favoritesOnly, favoriteTableIds, gameType]);
 
   const selectedEntry = useMemo(
     () => (selectedId ? lobbyEntries.find((e) => e.id === selectedId) || null : null),

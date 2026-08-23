@@ -58,6 +58,34 @@
   overscroll-behavior: none;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   EMBEDDED IN MULTI-TABLE (Dan 2026-08-23: "+ does not create the action box")
+   ─────────────────────────────────────────────────────────────────────────────
+   As a ROUTE this page is the whole screen, which is what `position: fixed;
+   inset: 0; z-index: 1100` above says. Inside MultiTablePage it is not: it is
+   one slot in a flex column whose first row is the tab bar carrying every
+   table's status and the "+" button.
+
+   Fixed positioning took each embedded instance out of that column and
+   stretched it back across the entire viewport, on top of the tab bar. The bar
+   still LOOKED right — the table paints its own background further in — so the
+   only symptom was that pressing "+" did nothing at all.
+
+   Measured on a live table before this: elementFromPoint at the centre of the
+   "+" returned .table-page, Playwright refused the click as not-actionable,
+   and no query ever left the browser. Nobody could open a second table.
+
+   Must come AFTER .table-page: both selectors are one class, so source order
+   is what decides. .multi-table-page__table-slot is position: relative, so
+   inset: 0 fills exactly the slot. */
+.table-page--embedded {
+  position: absolute;
+  inset: 0;
+  /* Back inside the multi-table stacking context instead of over its chrome. */
+  z-index: auto;
+  height: 100%;
+}
+
 /* Dan 2026-08-18: the blurred-skin .table-backdrop layer is GONE ("remove
    the weird images around the table"). The page background is a designed,
    interchangeable image set inline by TablePage (TABLE_BACKGROUNDS). */

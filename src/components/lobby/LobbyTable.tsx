@@ -228,7 +228,7 @@ const COL_NAME: ColumnDef = {
     </span>
   ),
 };
-const COL_TNAME: ColumnDef = { ...COL_NAME, label: 'Tournament' };
+const COL_TNAME: ColumnDef = { ...COL_NAME, label: 'Tournament Name' };
 const COL_STAKES: ColumnDef = {
   key: 'stakes',
   label: 'Stakes',
@@ -286,7 +286,7 @@ const COL_RULES: ColumnDef = {
 };
 const COL_STARTS: ColumnDef = {
   key: 'starts',
-  label: 'Starts',
+  label: 'Starting Time',
   className: 'lt-col-starts',
   sortable: true,
   sortValue: (e) => e.startValue,
@@ -374,13 +374,13 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
       ];
     case 'MTT':
       return [
-        COL_TNAME,
-        COL_VARIANT,
         COL_STARTS,
+        { ...COL_VARIANT, label: 'Game Type' },
         COL_BUYIN,
+        COL_TNAME,
         COL_GTD,
-        COL_PLAYERS,
         COL_SPEED,
+        { ...COL_PLAYERS, label: 'Enrolled' },
         COL_STATUS,
       ];
     case 'SPIN':

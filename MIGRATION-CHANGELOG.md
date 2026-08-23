@@ -11522,3 +11522,126 @@ with. `broadcastWinner` sitting in the service unused is exactly what made
 Tests: `tournamentWinnerExit` 9 -> 16 source-level invariants,
 `tournamentRankingHost` 7 -> 12 behavioural cases; 11 of the new assertions fail
 against the previous main. Full suite 231 files / 2928 tests green.
+
+---
+
+## 2026-08-22 — THE HEADER ORB WAS NEVER ALLOWED TO READ ITS OWN AVATAR
+
+Dan: "profile pics are broken in the global header of the club arena."
+
+**THE GRANT.** `public.profiles` is not granted at the table level. A security
+lockdown replaced `GRANT SELECT ON profiles` with a per-COLUMN grant list so
+that `email`, `phone` and `stripe_customer_id` stop being readable by the
+`authenticated` role. Column-level grants do not extend to columns added later,
+and `20260822_arena_avatar_column.sql` added `arena_avatar_url` earlier the same
+day with no GRANT beside it.
+
+Every client read of that column returned 42501 / PostgREST 403 — for all 1022
+profiles, on every surface. Roughly 40 queries in this repo select
+`avatar_url:arena_avatar_url`: seats, friends, leaderboards, tournament chip
+counts, player search. `UPDATE` was missing for the same reason, so equipping an
+avatar never persisted either.
+
+**IT WAS NOT ONE COLUMN. IT WAS TEN.** Nine more columns were added after the
+same lockdown and are read by client code with the anon key, so nine more
+features have been silently running on their fallback defaults:
+`club_arena_tos_accepted_at` (the Club Arena seat gate — every player read as
+not-accepted), `equipped_frame` / `equipped_aura` (frames and auras never
+rendered), five `*_preferences` columns (saved settings appeared to reset on
+every page load) and `memory_elo` (everyone displayed the default rating).
+
+**WHY IT WAS SILENT, WHICH IS THE REAL DEFECT.** `supabase-js` RESOLVES a
+rejected request: a 403 arrives as `{ data: null, error }`, never as a throw.
+`useHeaderDataStore` read `.data?.avatar_url` and never looked at `.error`, so
+its try/catch could not see it, nothing reached Sentry or the console, and
+"you are not allowed to read this" was indistinguishable from "this player has
+no avatar". Every one of the other nine call sites has the same shape — one of
+them even carries the comment "Column may not exist in DB — gracefully
+degrade", which is exactly the reflex that hid a permission fault for a day.
+
+### Fixed in the database (applied to production, no deploy involved)
+
+- `20260822143000_arena_avatar_url_grants.sql` — SELECT + UPDATE on
+  `arena_avatar_url`.
+- `20260822150000_profiles_restore_client_read_grants.sql` — SELECT on the other
+  nine, UPDATE on `equipped_frame` / `equipped_aura` only. `memory_elo` is
+  SELECT-ONLY on purpose: `ELOService.js` updates it from the browser, and
+  granting UPDATE would let any player set their own rating. That write belongs
+  server-side and is left failing rather than opened up to make a broken feature
+  look fixed. `email`, `phone`, `stripe_customer_id` and `is_farming_flagged`
+  stay withheld, and both migrations assert that they did not become readable.
+- `20260822151000_fn_profiles_ungranted_client_columns.sql` — the detector.
+  `select * from public.fn_profiles_ungranted_client_columns();` returns every
+  profiles column the browser cannot read that is not on the deliberate
+  deny-list. Run it after any migration that touches profiles. The right guard
+  would be a DDL event trigger; `CREATE EVENT TRIGGER` needs superuser and is
+  refused for the postgres role on Supabase, verified on this project, so a
+  one-query detector is what is actually available.
+
+### Fixed in the client
+
+- **The store no longer swallows the error.** All three initial-load queries and
+  all three retry queries report `.error` through `reportError`. A permission
+  fault now looks like a permission fault.
+- **A failed read no longer erases a good avatar.** Only a query that actually
+  came back may write null.
+- **The orb no longer flashes empty on every cold load.** The badge counts have
+  been hydrated from `localStorage` since this store was written and the avatar
+  never was, so every entry into Club Arena painted the empty orb and popped the
+  picture in a round trip later — the World Hub's UniversalHeader carries a long
+  comment about never showing "the un-hydrated (avatar-less) frame" and solved
+  this; Club Arena had not. Cached WITH the user id and only read back for that
+  same id, so a shared device cannot flash the previous account's face, and
+  cleared on teardown.
+- **The failure fallback is declarative.** `onError` used to assign
+  `e.target.src` imperatively. React does not know about a `src` it did not set,
+  so after one transient failure any later render computing the same string was
+  a no-op and the real avatar could not come back for the rest of the session.
+  Held in state and reset when `avatarUrl` changes.
+- **The orb goes through the shared resolver.** It was the one avatar surface in
+  the app that did not call `getAvatarWithFallback`, so it did not resize
+  Storage objects or map library art the way every seat and friend row does.
+  The bare `◉` placeholder is gone with it: the resolver returns a deterministic
+  monogram for a player with no avatar, which is a face rather than a hole.
+- **One `USER_PROFILE_LOADED` subscriber, not two.** The store already
+  subscribes at store level, where it survives route changes; the component's
+  duplicate was torn down and rebuilt on every navigation.
+
+### Removed
+
+`src/components/avatars/AvatarGenerator.tsx` + `.css`. Nothing mounted it, and
+it ran `.from('profiles').update({ arena_avatar_url: selectedImage })` on a URL
+straight from an AI generation endpoint — skipping `normalizeAvatarUrl` and,
+worse, `isLibraryAvatarUrl`, the guard `AvatarService` exists to be. Its own
+comment calls a rule that lives only in a component "a locked door in a building
+with no walls"; this was a second door in the same wall, and it passed the
+existing separation tests because those police the column NAME, not the write
+PATH. The Hub owns AI avatar generation now (`AvatarGallery.handleGenerate`
+says so), which is what left this behind. `arenaAvatarSeparation.test.ts` gains
+`has exactly one write path to profiles.arena_avatar_url` so it cannot come
+back; that test fails against the previous main.
+
+### Local clone hygiene, same session
+
+- `club-arena/.git/config` and `Smarter-Poker-Training/.git/config` had a live
+  PAT embedded in the origin URL (`https://github_pat_...@github.com/...`).
+  `.git/config` is not treated as a secrets file: `git remote -v` prints it into
+  every log, screenshot and agent transcript. Both now use SSH, matching the
+  five other repos on this Mac. **The two tokens must be rotated** — they were
+  in plaintext on disk and have been read aloud.
+- `Smarter-Poker-World-Hub/.git/config` had `branch.main.remote` set to a
+  tokenised HTTPS URL instead of `origin`, so a bare `git push` on main bypassed
+  the `origin` remote entirely. Set to `origin`.
+- The same file's `git sync` alias was
+  `!git pull --rebase origin main && git push origin main` — the exact operation
+  section 12 of CLAUDE.md was written about after it stranded a clone mid-rebase
+  with 54 local commits. Now `fetch` + `merge --ff-only`.
+
+Tests: `headerAvatarResilience` 6 new behaviour-under-failure cases,
+`arenaAvatarSeparation` 4 -> 5, `GlobalHeader` 3 unchanged and green.
+`tsc --noEmit` clean.
+
+STILL OPEN: `ELOService.js` writes `profiles.memory_elo` from the browser. The
+grant is deliberately withheld, so that feature stays broken until the write
+moves behind a SECURITY DEFINER RPC like `update_page_preferences` already does
+for the five preference columns.

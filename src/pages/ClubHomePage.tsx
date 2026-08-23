@@ -157,6 +157,7 @@ interface ClubData {
   hierarchy_threshold_current: number;
   hierarchy_threshold_next: number;
   created_at: string;
+  is_union: boolean;
 }
 
 interface TableData {
@@ -898,7 +899,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, description, avatar_url, logo_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at'
+              'id, club_id, name, description, avatar_url, logo_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at, is_union'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -2097,7 +2098,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               <DynamicWallet
                 userId={currentUserId}
                 clubId={resolvedClubId}
-                variant={isOwner || userRole === 'owner' ? 'owner' : 'player'}
+                variant={
+                  club?.is_union ? 'union' : isOwner || userRole === 'owner' ? 'owner' : 'player'
+                }
                 showBBJ
                 onBuyDiamonds={() => {
                   haptic.medium();

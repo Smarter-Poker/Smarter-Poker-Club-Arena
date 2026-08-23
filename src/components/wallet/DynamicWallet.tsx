@@ -709,21 +709,6 @@ export default function DynamicWallet({
     ],
     union: [
       {
-        label: 'Union Bank',
-        icon: 'bank',
-        value: animRow1,
-        known: unionFiguresKnown,
-        // Dan 2026-08-20: rake used to be credited to the bank AND the
-        // treasury, so the bank climbed with every hand and this hint had to
-        // explain how much of it was actually free. Rake now lands ONLY in the
-        // treasury, so the bank is the union's own money, full stop.
-        hint: unionFiguresKnown ? "Union's Own Funds" : 'Union Admins Only',
-      },
-      {
-        // Dan 2026-08-20: these ARE two separate pots now. The treasury holds
-        // the member clubs' rake in trust until the Monday close; the bank
-        // holds the union's own money. They do not overlap and they do not sum
-        // into one spendable figure, so the hint says what leaves and when.
         label: 'Rake Treasury',
         icon: 'treasury',
         value: animTreasury,
@@ -733,11 +718,11 @@ export default function DynamicWallet({
           : 'Union Admins Only',
       },
       {
-        label: 'Clubs Wallet',
-        icon: 'agent',
-        value: animRow2,
+        label: 'BBJ Backup Wallet',
+        icon: 'reserve',
+        value: animBackupBBJ,
         known: unionFiguresKnown,
-        hint: unionFiguresKnown ? 'Member Club Banks' : undefined,
+        hint: 'Next Jackpot Seed',
       },
       {
         label: 'Promo Wallet',
@@ -874,7 +859,7 @@ export default function DynamicWallet({
             backup figure by fn_club_money_panel, so rendering it here would
             put union money back on a club screen through the side door —
             the same leak as Union Bank, one row further down. */}
-        {(effectiveVariant === 'union' || (!isClubInUnion && data.backupBBJ > 0)) && (
+        {!isClubInUnion && data.backupBBJ > 0 && (
           <div className="dw__row dw__row--backup-bbj">
             <span className="dw__row-icon" aria-hidden="true">
               <WalletIcon name="reserve" />

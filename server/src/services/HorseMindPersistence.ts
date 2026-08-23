@@ -30,11 +30,18 @@ import { reportError } from './errorReporter.js';
 
 const FLUSH_INTERVAL_MS = 5 * 60 * 1000;
 const FLUSH_CHUNK = 400;
-/** Hydrate the most-observed opponents first, bounded well under the engine's
- *  own MAX_TRACKED_PLAYERS cap. */
-const HYDRATE_LIMIT = 3000;
+/** Hydrate the most-observed opponents first, matching the engine's own
+ *  MAX_TRACKED_PLAYERS cap. */
+const HYDRATE_LIMIT = 4000;
+/** V12.3: pairs have their OWN cap (MAX_PAIRS = 20000) and there are far more
+ *  of them than players — one shared 3000 was dropping ~85% of the targeting
+ *  memory on every boot, so most hunters still got the clean slate this table
+ *  was built to deny them. Paged, because it is over PostgREST's default. */
+const HYDRATE_LIMIT_PAIRS = 20_000;
+const HYDRATE_PAGE = 1000;
 
 let flushTimer: NodeJS.Timeout | null = null;
+let inFlight: Promise<void> | null = null;
 
 type DbRow = {
   user_id: string;
@@ -88,6 +95,10 @@ const fromDb = (r: DbRow): { user_id: string } & OpponentStats => ({
   rPassive: r.r_passive,
 });
 
+/** V12.3: the newest flush timestamp seen by the pair hydrate, so the caller
+ *  can bound the history replay by BOTH tables (see hydrateHorseMindFromDb). */
+let pairsNewestFlush: string | null = null;
+
 type DbPairRow = {
   attacker_id: string;
   victim_id: string;
@@ -95,6 +106,7 @@ type DbPairRow = {
   opp3: number;
   n_r: number;
   opp_r: number;
+  updated_at?: string;
 };
 
 /**
@@ -126,8 +138,36 @@ export async function flushHorseMindPairs(): Promise<{ flushed: number; failed: 
       if (error) throw new Error(error.message || 'upsert_horse_mind_pairs failed');
       flushed += chunk.length;
     } catch (err) {
-      failed += chunk.length;
-      HorseMind.requeueDirtyPairs(chunk);
+      // V12.3: DO NOT blindly requeue. The chunk is one transaction, so a
+      // single unparseable value aborts all 400 rows — and requeueing resent
+      // the identical payload every 5 minutes forever, failing identically,
+      // with one error report per chunk per cycle and no backoff. Retry the
+      // chunk row by row; a row that fails alone is the poison and is dropped
+      // (its counters are already safe in memory and will be re-offered as it
+      // keeps changing), everything else gets through.
+      let recovered = 0;
+      for (const row of chunk) {
+        try {
+          const { error } = await supabase.rpc('upsert_horse_mind_pairs', {
+            rows: [
+              {
+                attacker_id: row.attacker_id,
+                victim_id: row.victim_id,
+                n3: row.n3,
+                opp3: row.opp3,
+                n_r: row.nR,
+                opp_r: row.oppR,
+              },
+            ],
+          });
+          if (error) throw new Error(error.message);
+          recovered++;
+        } catch {
+          /* this row is the poison — drop it rather than wedge the queue */
+        }
+      }
+      flushed += recovered;
+      failed += chunk.length - recovered;
       reportError(err, 'HorseMindPersistence.flushPairs');
     }
   }
@@ -143,25 +183,39 @@ export async function flushHorseMindPairs(): Promise<{ flushed: number; failed: 
 export async function hydrateHorsePairsFromDb(): Promise<number> {
   try {
     const t0 = Date.now();
-    const { data, error } = await supabase
-      .from('horse_mind_pairs')
-      .select('attacker_id,victim_id,n3,opp3,n_r,opp_r')
-      .order('opps', { ascending: false })
-      .limit(HYDRATE_LIMIT);
-    if (error) throw new Error(error.message || 'horse_mind_pairs read failed');
-    if (!data || data.length === 0) return 0;
-    const applied = HorseMind.importPairs(
-      (data as DbPairRow[]).map((r) => ({
-        attacker_id: r.attacker_id,
-        victim_id: r.victim_id,
-        n3: r.n3,
-        opp3: r.opp3,
-        nR: r.n_r,
-        oppR: r.opp_r,
-      }))
-    );
+    let applied = 0;
+    let read = 0;
+    let newest: string | null = null;
+    for (let offset = 0; offset < HYDRATE_LIMIT_PAIRS; offset += HYDRATE_PAGE) {
+      const { data, error } = await supabase
+        .from('horse_mind_pairs')
+        .select('attacker_id,victim_id,n3,opp3,n_r,opp_r,updated_at')
+        .order('opps', { ascending: false })
+        .order('attacker_id', { ascending: true })
+        .range(offset, offset + HYDRATE_PAGE - 1);
+      if (error) throw new Error(error.message || 'horse_mind_pairs read failed');
+      if (!data || data.length === 0) break;
+      read += data.length;
+      applied += HorseMind.importPairs(
+        (data as DbPairRow[]).map((r) => ({
+          attacker_id: r.attacker_id,
+          victim_id: r.victim_id,
+          n3: r.n3,
+          opp3: r.opp3,
+          nR: r.n_r,
+          oppR: r.opp_r,
+        }))
+      );
+      for (const r of data as DbPairRow[]) {
+        if (r.updated_at && (!newest || Date.parse(r.updated_at) > Date.parse(newest)))
+          newest = r.updated_at;
+      }
+      if (data.length < HYDRATE_PAGE) break;
+    }
+    if (read === 0) return 0;
+    pairsNewestFlush = newest;
     console.log(
-      `[HorseMind] DB pair hydration: ${applied}/${data.length} targeting pairs restored in ` +
+      `[HorseMind] DB pair hydration: ${applied}/${read} targeting pairs restored in ` +
         `${Date.now() - t0}ms`
     );
     return applied;
@@ -186,8 +240,22 @@ export async function flushHorseMind(): Promise<{ flushed: number; failed: numbe
       if (error) throw new Error(error.message || 'upsert_horse_mind_stats failed');
       flushed += chunk.length;
     } catch (err) {
-      failed += chunk.length;
-      HorseMind.requeueDirty(chunk.map((c) => c.user_id));
+      // V12.3: same poison-row isolation as flushHorseMindPairs — a whole-chunk
+      // requeue on a permanently-failing row wedges the flush forever.
+      let recovered = 0;
+      for (const row of chunk) {
+        try {
+          const { error } = await supabase.rpc('upsert_horse_mind_stats', {
+            rows: [toDb(row)],
+          });
+          if (error) throw new Error(error.message);
+          recovered++;
+        } catch {
+          /* drop the offender, keep the queue moving */
+        }
+      }
+      flushed += recovered;
+      failed += chunk.length - recovered;
       reportError(err, 'HorseMindPersistence.flush');
     }
   }
@@ -203,7 +271,8 @@ export async function flushHorseMind(): Promise<{ flushed: number; failed: numbe
 export async function hydrateHorseMindFromDb(): Promise<string | null> {
   // V12.1: pair hydration rides the same boot call, with its own fail-safe —
   // a pairs failure must never cost the stats hydration (or vice versa).
-  await hydrateHorsePairsFromDb();
+  pairsNewestFlush = null;
+  const pairsApplied = await hydrateHorsePairsFromDb();
   try {
     const t0 = Date.now();
     const { data, error } = await supabase
@@ -221,13 +290,35 @@ export async function hydrateHorseMindFromDb(): Promise<string | null> {
     for (const r of data as DbRow[]) {
       if (r.updated_at && (!newest || r.updated_at > newest)) newest = r.updated_at;
     }
+    // ── V12.3: bound the replay by BOTH tables ───────────────────────────
+    // observe() INCREMENTS pair counters, so replaying history that the
+    // hydrated pairs already contain double-counts them — and the DB merge is
+    // GREATEST-monotonic, which makes that inflation permanent and
+    // unrecoverable. Replay from the OLDER of the two flush marks so neither
+    // table is double-fed and neither has a gap.
+    const replayFrom =
+      newest && pairsNewestFlush
+        ? Date.parse(pairsNewestFlush) < Date.parse(newest)
+          ? pairsNewestFlush
+          : newest
+        : newest;
     console.log(
       `[HorseMind] DB hydration: ${applied}/${data.length} opponent profiles restored in ` +
-        `${Date.now() - t0}ms (replay tail since ${newest ?? 'n/a'})`
+        `${Date.now() - t0}ms (replay tail since ${replayFrom ?? 'n/a'})`
     );
-    return newest;
+    return replayFrom;
   } catch (err) {
     reportError(err, 'HorseMindPersistence.hydrate');
+    // The stats read failed, so the caller falls back to a FULL-WINDOW replay.
+    // Any pairs we just hydrated would then be incremented by history they
+    // already contain. Drop them and let the replay rebuild them cleanly —
+    // the DB copy is untouched and the next boot restores it.
+    if (pairsApplied > 0) {
+      HorseMind.clearPairs();
+      console.warn(
+        '[HorseMind] stats hydrate failed; dropped hydrated pairs so the full replay cannot double-count them'
+      );
+    }
     return null;
   }
 }
@@ -236,10 +327,16 @@ export async function hydrateHorseMindFromDb(): Promise<string | null> {
 export function startHorseMindPersistence(): void {
   if (flushTimer) return;
   flushTimer = setInterval(() => {
-    void (async () => {
-      await flushHorseMind();
-      await flushHorseMindPairs();
-    })();
+    // V12.3: track the in-flight flush. exportDirty() CLEARS the dirty set
+    // before the network call, so a shutdown that lands mid-flush used to find
+    // an empty set, flush nothing, and exit — losing up to five minutes of
+    // learning. stopHorseMindPersistence() now awaits this first.
+    inFlight = (async () => {
+      await Promise.all([flushHorseMind(), flushHorseMindPairs()]);
+    })().finally(() => {
+      inFlight = null;
+    });
+    void inFlight;
   }, FLUSH_INTERVAL_MS);
   // Never keep the process alive just to flush horse memory.
   flushTimer.unref?.();
@@ -251,6 +348,16 @@ export async function stopHorseMindPersistence(): Promise<void> {
     clearInterval(flushTimer);
     flushTimer = null;
   }
-  await flushHorseMind();
-  await flushHorseMindPairs();
+  // Let any in-flight cycle finish before draining, or its already-cleared
+  // dirty entries are lost.
+  if (inFlight) {
+    try {
+      await inFlight;
+    } catch {
+      /* the flush reports its own errors */
+    }
+  }
+  // Run both together: sequential awaits inside the caller's 20s shutdown race
+  // meant the pair flush was always the first thing sacrificed.
+  await Promise.all([flushHorseMind(), flushHorseMindPairs()]);
 }

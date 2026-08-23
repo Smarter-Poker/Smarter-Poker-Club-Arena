@@ -85,10 +85,92 @@ describe('HorseSelfTuner V12 — measurement', () => {
     const tracked = new Set(['hero', 'bb']);
     const stats = new Map<string, PlayStats>();
     accumulatePlayStats([wwsfWinHand()], tracked, stats);
-    // hero: contributed 6 (open) + 8 (c-bet) = 14, won 13 -> net -1 chip = -0.5bb
-    expect(stats.get('hero')!.netBB).toBeCloseTo(-0.5, 5);
+    // V12.3 CORRECTED. The old expectation (-0.5bb) encoded a real bug: it
+    // charged hero the full 8-chip c-bet that nobody called. The engine returns
+    // an uncalled bet before pots and rake, which is why `winners` says 13 and
+    // not 21 — sb 1 + bb 6 + hero 6. Hero's true result is won 13 against 6
+    // actually invested = +7 chips = +3.5bb. Scoring the most common way a
+    // hand is won as a LOSS drove essentially every horse under the
+    // bb100 < -15 regression trigger, which halves all three dials toward
+    // neutral every night.
+    expect(stats.get('hero')!.netBB).toBeCloseTo(3.5, 5);
     // bb: posted 2, called 4 more, folded -> net -6 chips = -3bb
     expect(stats.get('bb')!.netBB).toBeCloseTo(-3, 5);
+  });
+
+  it('returns the uncalled bet on an all-fold pot (net is a WIN, not a loss)', () => {
+    const tracked = new Set(['hero']);
+    const stats = new Map<string, PlayStats>();
+    accumulatePlayStats([wwsfWinHand()], tracked, stats);
+    // Chip conservation across the whole hand is the sharpest check: with the
+    // refund modelled, every player's net must sum to zero (there is no rake
+    // in this fixture).
+    const all = new Map<string, PlayStats>();
+    accumulatePlayStats([wwsfWinHand()], new Set(['hero', 'bb', 'sb']), all);
+    const sum = [...all.values()].reduce((acc, s) => acc + s.netBB, 0);
+    expect(sum).toBeCloseTo(0, 5);
+    expect(stats.get('hero')!.netBB).toBeGreaterThan(0);
+  });
+
+  it('does not charge a blind twice when the blind raises', () => {
+    // BB posts 2 then 3-bets to 20. Bet amounts are STREET TOTALS, so without
+    // seeding the posted blind as the opening street bet the increment is
+    // (20 - 0) on top of the 2 already counted: billed 22 for a 20-chip hand.
+    const tracked = new Set(['bbRaiser']);
+    const stats = new Map<string, PlayStats>();
+    accumulatePlayStats(
+      [
+        {
+          actions: [a('opener', 'raise', 6), a('bbRaiser', 'raise', 20), a('opener', 'fold', 0)],
+          players: [
+            { userId: 'sb', seat: 1 },
+            { userId: 'bbRaiser', seat: 2 },
+            { userId: 'opener', seat: 3 },
+          ],
+          winners: [{ userId: 'bbRaiser', amount: 13 }],
+          big_blind: 2,
+          button_seat: 6,
+        } as HandRow,
+      ],
+      tracked,
+      stats
+    );
+    // Invested 20 total (the 2 blind is part of it), won 13, and the uncalled
+    // 14 over the opener's 6 comes back: net = 13 - 6 = +7 chips = +3.5bb.
+    expect(stats.get('bbRaiser')!.netBB).toBeCloseTo(3.5, 5);
+  });
+
+  it('a short all-in is not counted as a raise', () => {
+    // A forced shove for less than the open is a call, not aggression. Reading
+    // it as an open made the genuine opener that followed look like a
+    // 3-bettor, corrupting PFR, 3-bet, fold-to-3-bet and opener attribution.
+    const tracked = new Set(['shorty', 'opener']);
+    const stats = new Map<string, PlayStats>();
+    accumulatePlayStats(
+      [
+        {
+          actions: [
+            { userId: 'shorty', action: 'all_in', amount: 2, stage: 'preflop', isFullRaise: false },
+            a('opener', 'raise', 6),
+            a('sb', 'fold', 0),
+          ],
+          players: [
+            { userId: 'sb', seat: 1 },
+            { userId: 'shorty', seat: 2 },
+            { userId: 'opener', seat: 3 },
+          ],
+          winners: [{ userId: 'opener', amount: 9 }],
+          big_blind: 2,
+          button_seat: 6,
+        } as HandRow,
+      ],
+      tracked,
+      stats
+    );
+    expect(stats.get('shorty')!.pfr).toBe(0);
+    // the real opener is an OPEN, never a 3-bet
+    expect(stats.get('opener')!.openRaises).toBe(1);
+    expect(stats.get('opener')!.threeBets).toBe(0);
   });
 
   it('survives malformed hands without throwing', () => {

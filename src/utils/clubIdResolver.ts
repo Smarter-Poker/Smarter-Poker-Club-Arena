@@ -30,13 +30,16 @@ export function isUUID(value: string): boolean {
  *   supabase.from('clubs').select('*').eq(column, value).maybeSingle();
  */
 export function resolveClubIdFilter(clubIdParam: string): {
-  column: 'id' | 'club_id';
+  column: 'id' | 'club_id' | 'slug';
   value: string | number;
 } {
   if (isUUID(clubIdParam)) {
     return { column: 'id', value: clubIdParam };
   }
-  return { column: 'club_id', value: Number(clubIdParam) };
+  if (/^\d+$/.test(clubIdParam)) {
+    return { column: 'club_id', value: Number(clubIdParam) };
+  }
+  return { column: 'slug', value: clubIdParam };
 }
 
 // ─── In-memory cache for resolved UUIDs ────────────────────────────────────
@@ -61,11 +64,13 @@ export async function resolveClubUUID(clubIdParam: string): Promise<string> {
   const cached = uuidCache.get(clubIdParam);
   if (cached) return cached;
 
+  const filter = resolveClubIdFilter(clubIdParam);
+
   // Query clubs table to get the UUID
   const { data } = await supabase
     .from('clubs')
     .select('id')
-    .eq('club_id', Number(clubIdParam))
+    .eq(filter.column, filter.value)
     .maybeSingle();
 
   if (data?.id) {

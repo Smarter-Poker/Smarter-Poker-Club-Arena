@@ -808,7 +808,8 @@ export class HorseLogic {
       gs,
       params,
       toCall,
-      (opts.v9Timing ?? opts.v9) !== false
+      (opts.v9Timing ?? opts.v9) !== false,
+      player.user_id
     );
     return decision;
   }
@@ -2122,29 +2123,117 @@ export class HorseLogic {
   // THINK TIME — humanlike pacing, style- and situation-aware
   // ─────────────────────────────────────────────────────────────────────
 
+  /**
+   * V14: any think time at or above this is a deliberate TIME BANK burn. The
+   * caller translates it into "let the turn clock expire, then act inside the
+   * bank the engine auto-grants".
+   */
+  static readonly THINK_TIMEBANK_SENTINEL = 90_000;
+
   private static computeThinkTime(
     d: HorseDecision,
     gs: HorseGameStateV2,
     params: StyleParams,
     toCall: number,
-    useTiming: boolean = true
+    useTiming: boolean = true,
+    /** stable per-horse string (the user id) — gives each horse its own tempo */
+    tempoSeed: string = ''
   ): number {
-    const [minT, maxT] = params.thinkRange;
-    let think = minT + fastRandom() * (maxT - minT);
-    // V9: humans TANK on close decisions and act in tempo on clear ones. The
-    // postflop path records how close the equity landed to the nearest
-    // strategy threshold; razor-thin spots take up to ~70% longer.
+    // ── V14 TEMPO (Dan 2026-08-23, binding) ────────────────────────────────
+    // "TIMING ON STREETS MUST BE MORE RANDOM. Most horses are making their
+    //  decisions at about the same rate on every street. This must be
+    //  completely random, from instant, to full 15 seconds or even using time
+    //  banks."
+    //
+    // The old model drew uniformly from a per-style band of roughly 1.1-5.2s
+    // and then multiplied. A uniform draw over a narrow band IS the tell: the
+    // gaps between actions all felt alike, and the caller's 2200ms floor then
+    // collapsed every fast decision onto the SAME NUMBER, so a large share of
+    // the fleet acted at exactly 2.2 seconds all night.
+    //
+    // Humans do not act on a band, they act on a MIXTURE. Most decisions are
+    // already made when the action arrives (snap), a good share take a beat,
+    // some genuinely tank, and once in a while somebody burns a time bank.
+    // Modelling those as four modes with per-horse weighting produces the
+    // spread a real table has, where the previous model produced a rhythm.
     const difficulty = difficultyHint;
     difficultyHint = 0;
-    if (useTiming && difficulty > 0) think *= 1 + difficulty * 0.7;
+    if (!useTiming) {
+      // Ablation path keeps the old shape so timing never confounds a league
+      // measurement.
+      const [lo, hi] = params.thinkRange;
+      return Math.round(lo + fastRandom() * (hi - lo));
+    }
+
     const simple = d.action === 'check' || d.action === 'fold';
-    if (simple) think *= 0.55;
-    if (d.action === 'raise' || d.action === 'all_in') think *= 1.25;
+    const aggressive = d.action === 'raise' || d.action === 'all_in';
+    const stage = gs.stage;
+    const bigRiverCall = stage === 'river' && toCall > gs.pot * 0.5;
+
+    // Per-horse TEMPO, stable for the life of the horse: some people are just
+    // fast and some are just deliberate, and that is most of what makes a
+    // table feel populated rather than generated. 0 = quickest, 1 = slowest.
+    let h = 2166136261;
+    for (let i = 0; i < tempoSeed.length; i++) {
+      h ^= tempoSeed.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    // FNV-1a, then take the HIGH bits — a low-bit modulo on similar ids
+    // (which horse user ids often are) clusters, and clustered tempo is the
+    // very thing this is here to prevent.
+    const tempo = (h >>> 11) / 2097152;
+
+    // Mode weights. They shift with the spot: a fold facing no bet is nearly
+    // always instant; a big river call almost never is.
+    let wSnap = 0.34 + (simple ? 0.3 : 0) + (stage === 'preflop' ? 0.14 : 0);
+    let wBeat = 0.52;
+    let wTank = 0.12 + (difficulty > 0 ? difficulty * 0.28 : 0) + (aggressive ? 0.05 : 0);
+    let wBank = 0.012 + (bigRiverCall ? 0.04 : 0) + (difficulty > 0.6 ? 0.02 : 0);
+    if (bigRiverCall) wSnap *= 0.25;
+    if (difficulty > 0.5) wSnap *= 0.5;
+    // A deliberate horse tanks more and snaps less; a fast one does the
+    // reverse. This is what stops every seat sharing one rhythm.
+    // Strong, not decorative. A quick horse should visibly be a quick horse
+    // across a whole session, and a deliberate one visibly deliberate — that
+    // contrast between seats is most of what makes a table read as people.
+    wSnap *= 0.4 + (1 - tempo) * 1.7;
+    wTank *= 0.35 + tempo * 1.5;
+    wBank *= 0.3 + tempo * 1.7;
+
+    const total = wSnap + wBeat + wTank + wBank;
+    const roll = fastRandom() * total;
+    let think: number;
+    if (roll < wSnap) {
+      // SNAP: the decision was made before the action arrived.
+      think = 180 + fastRandom() * 620;
+    } else if (roll < wSnap + wBeat) {
+      // A BEAT: read the board, count the pot, act.
+      think = 1100 + fastRandom() * 3400;
+    } else if (roll < wSnap + wBeat + wTank) {
+      // TANK: a genuinely close spot, or a big bet to size up.
+      think = 4600 + fastRandom() * 6200;
+    } else {
+      // TIME BANK: past the turn clock. The engine auto-activates the bank
+      // when the primary timer expires, so this is a real bank burn, not a
+      // timeout — the caller keeps it inside the granted bank.
+      //
+      // Returned IMMEDIATELY: the sentinel is a signal, not a duration, so
+      // the shaping multipliers below must never touch it. (They did in the
+      // first cut, which pushed the value to ~140k and quietly changed what
+      // the caller would decode it as.)
+      return Math.round(HorseLogic.THINK_TIMEBANK_SENTINEL + fastRandom() * 6500);
+    }
+
+    // Fine-grained shaping WITHIN the chosen mode, so two horses in the same
+    // mode still differ.
+    think *= 0.6 + tempo * 0.85;
+    if (difficulty > 0) think *= 1 + difficulty * 0.35;
+    if (simple && stage === 'preflop') think *= 0.8;
+    if (aggressive) think *= 1.1;
     const headsUp = gs.players.filter((p) => !p.is_folded).length === 2;
-    if (headsUp) think *= 0.75;
-    if (gs.stage === 'river' && toCall > gs.pot * 0.5) think *= 1.35; // big river decision
-    if (gs.stage === 'preflop' && simple) think *= 0.7; // snap-folds preflop
-    return Math.round(Math.max(700, Math.min(think, 8000)));
+    if (headsUp) think *= 0.85;
+
+    return Math.round(Math.max(180, think));
   }
 
   // ─────────────────────────────────────────────────────────────────────

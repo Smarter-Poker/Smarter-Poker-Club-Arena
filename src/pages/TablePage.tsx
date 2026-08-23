@@ -2857,20 +2857,80 @@ export default function TablePage({
   const [currentBoard, setCurrentBoard] = useState<
     Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>
   >([]);
-  /** Server-provided remaining deck cards for authentic rabbit hunt reveal */
+  /**
+   * Legacy transport ONLY. Dan 2026-08-23: rabbit hunt costs 1 diamond past a
+   * VIP's 100 free monthly hunts, so the engine no longer broadcasts the cards
+   * — it stores them in rabbit_hunt_offers and fn_reveal_rabbit_hunt hands them
+   * over after charging. This ref stays so that a client running against an
+   * engine that has not deployed yet still works; it is empty once both sides
+   * are current.
+   */
   const serverRabbitCardsRef = useRef<Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>>([]);
+  /** Hand number the current rabbit-hunt offer belongs to. */
+  const rabbitHandNumberRef = useRef<number | null>(null);
 
-  // Handle rabbit hunt reveal — uses real server-dealt deck cards
+  // Handle rabbit hunt reveal — pays through the server, which owns the cards.
   const handleRabbitReveal = async (): Promise<
     Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>
   > => {
     const cardsNeeded = 5 - currentBoard.length;
     if (cardsNeeded <= 0) return [];
 
-    // Use server-provided cards (authentic from the actual deck)
+    const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
+      hearts: 'h',
+      diamonds: 'd',
+      clubs: 'c',
+      spades: 's',
+      h: 'h',
+      d: 'd',
+      c: 'c',
+      s: 's',
+    };
+
+    // Authoritative path: the database holds the cards and charges for them.
+    // VIP: first 100 per calendar month free. Everyone else, and VIPs past the
+    // allowance: 1 diamond. The price is read server-side; nothing here is
+    // trusted.
+    const handNumber = rabbitHandNumberRef.current;
+    if (tableId && handNumber != null) {
+      try {
+        const { data, error } = await supabase.rpc('fn_reveal_rabbit_hunt', {
+          p_table_id: tableId,
+          p_hand_number: handNumber,
+        });
+
+        if (!error && data?.success) {
+          const cards = ((data.cards as any[]) || []).map((c) => ({
+            rank: String(c.rank),
+            suit: suitMap[c.suit] || 'h',
+          }));
+          if (cards.length > 0) {
+            if (data.charged > 0) {
+              toast.success(`Rabbit Hunt - ${data.charged} Diamond Spent`);
+            } else if (typeof data.free_remaining === 'number') {
+              toast.success(`Rabbit Hunt - ${data.free_remaining} Free Hunts Left This Month`);
+            }
+            setIsRabbitAvailable(false);
+            return cards.slice(0, cardsNeeded);
+          }
+        }
+
+        // A real refusal (not enough diamonds, did not play the hand) must be
+        // shown rather than silently falling through to the legacy transport.
+        if (!error && data && data.success === false && serverRabbitCardsRef.current.length === 0) {
+          toast.error(String(data.error || 'Rabbit Hunt Unavailable'));
+          setIsRabbitAvailable(false);
+          return [];
+        }
+      } catch (err) {
+        reportError(err, 'TablePage.handleRabbitReveal');
+      }
+    }
+
+    // Transitional fallback: engine not yet redeployed, so the cards still
+    // arrived on the event. Remove once the engine change is live everywhere.
     if (serverRabbitCardsRef.current.length > 0) {
       const cards = serverRabbitCardsRef.current.slice(0, cardsNeeded);
-      // Clear after reveal (one-time use)
       serverRabbitCardsRef.current = [];
       setIsRabbitAvailable(false);
       return cards;
@@ -4315,7 +4375,13 @@ export default function TablePage({
       // Rabbit Hunt: Server sends remaining deck cards after hand completes
       if (eventType === 'rabbit_hunt_available') {
         const rabbitCards = (handState.rabbit_cards as any[]) || [];
-        if (rabbitCards.length > 0 && heroFoldedInCurrentHandRef.current) {
+        // The engine no longer sends the cards (they are paid for via
+        // fn_reveal_rabbit_hunt); it sends how many are waiting. Accept either
+        // shape so this works across the deploy boundary.
+        const rabbitCount = Number(handState.rabbit_card_count ?? 0) || rabbitCards.length;
+        rabbitHandNumberRef.current =
+          handState.hand_number != null ? Number(handState.hand_number) : null;
+        if (rabbitCount > 0 && heroFoldedInCurrentHandRef.current) {
           // Convert server card format (hearts/diamonds/clubs/spades) to client shorthand (h/d/c/s)
           const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
             hearts: 'h',

@@ -55,7 +55,11 @@ export type VIPFeature =
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const VIP_GOLD_LIMITS = {
-  rabbitHunts: Infinity, // Unlimited rabbit hunts
+  // Dan 2026-08-23: 100 free rabbit hunts per calendar month, then 1 diamond
+  // each. Resets monthly, the same window as timeBankSeconds below. The
+  // authoritative check is fn_reveal_rabbit_hunt in the database; this constant
+  // drives the UI counter only.
+  rabbitHunts: 100,
   showStackBB: true, // Always available
   offlineProtection: true, // Always available
   autoTimeBank: true, // Always available
@@ -79,7 +83,9 @@ export const FEATURE_PRICING: Record<
     description: string;
   }
 > = {
-  rabbit_hunt: { cost: 5, usageType: 'per_use', description: 'See what cards would have come' },
+  // Display price only. fn_purchase_feature and fn_reveal_rabbit_hunt read the
+  // real cost from the feature_pricing table and ignore anything the client says.
+  rabbit_hunt: { cost: 1, usageType: 'per_use', description: 'See what cards would have come' },
   show_stack_bb: {
     cost: 0,
     usageType: 'per_session',
@@ -303,15 +309,18 @@ class VIPServiceClass {
    */
   private async checkVIPQuota(userId: string, feature: VIPFeature): Promise<boolean> {
     // Some features are unlimited for VIP
-    if (
-      ['rabbit_hunt', 'show_stack_bb', 'offline_protection', 'auto_time_bank'].includes(feature)
-    ) {
+    // Dan 2026-08-23: rabbit_hunt is NO LONGER unlimited for VIP - it is 100 per
+    // calendar month, then 1 diamond. It was in this short-circuit, which is why
+    // the quota never depleted and VIPs were never asked to pay.
+    if (['show_stack_bb', 'offline_protection', 'auto_time_bank'].includes(feature)) {
       return true;
     }
 
     const limits = await this.getMonthlyUsage(userId);
 
     switch (feature) {
+      case 'rabbit_hunt':
+        return limits.rabbitHunts.used < limits.rabbitHunts.limit;
       case 'time_bank_seconds':
         return limits.timeBankSeconds.used < limits.timeBankSeconds.limit;
       default:

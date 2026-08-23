@@ -91,6 +91,14 @@ export class GameServer {
    * the only thing that starts engines AND the only thing that reaps zombies —
    * if it stalls, the whole platform is frozen with nothing to notice.
    */
+  /**
+   * How long a boot is given before discovery staleness may declare the
+   * process dead. Generous on purpose: it only delays a verdict that Docker's
+   * own 90s start-period already suppresses, and the cost of being early is
+   * killing a container that is starting correctly.
+   */
+  private static readonly STARTUP_GRACE_MS = 180_000;
+
   private lastDiscoveryOkAt: number = Date.now();
   /**
    * When the discovery loop last RAN, as opposed to last succeeded.
@@ -101,6 +109,11 @@ export class GameServer {
    * when the loop was in fact running perfectly and being told "no" each time.
    */
   private lastDiscoveryAttemptAt: number = Date.now();
+  /**
+   * When this process started. Used to keep boot from looking like death --
+   * see the startup grace in getStatus().
+   */
+  private readonly processStartedAt: number = Date.now();
   private tournamentEngines: Map<string, TournamentManager> = new Map();
   private running: boolean = false;
   private startTime: number = Date.now();
@@ -494,6 +507,30 @@ export class GameServer {
      * the fleet alarms — it simply no longer restarts a healthy container.
      */
     const discoveryLoopStalledMs = Date.now() - this.lastDiscoveryAttemptAt;
+    /**
+     * ── BOOTING IS NOT DEAD (2026-08-23) ────────────────────────────────────
+     *
+     * discoveryLoopStalledMs is measured from lastDiscoveryAttemptAt, which is
+     * seeded at construction and then stamped by the discovery loop. But the
+     * loop does not START until start() has finished cleanupStaleData, the
+     * horse fleet and HorseMind hydration -- and on a busy database that can
+     * take longer than 60s. During that window the engine reports 'dead' while
+     * doing exactly what it is supposed to.
+     *
+     * OBSERVED LIVE, not theorised: on the 2026-08-23 leader/standby rollout
+     * /health returned liveness 'dead' at ~60s uptime on a container that was
+     * booting perfectly and reported 'ok' thirty seconds later.
+     *
+     * Docker's --health-start-period=90s covers the usual case, which is why
+     * this has not bitten -- but a boot slower than 90s is exactly a boot
+     * against a struggling database, and that is the worst possible moment to
+     * have autoheal kill the container. Same reasoning, and the same fix, as
+     * the fleet-floor startup grace in DealRateVerifier.
+     *
+     * A boot that never finishes is still caught: the process either fails to
+     * answer /health at all, or finishes and starts being judged normally.
+     */
+    const stillBooting = Date.now() - this.processStartedAt < GameServer.STARTUP_GRACE_MS;
     // The one liveness signal not derived from this process's own beliefs.
     // deadStalledCount above is computed from msSinceProgress(), which
     // markProgress() sets about our own work; on 2026-08-22 that belief was
@@ -563,7 +600,9 @@ export class GameServer {
        */
       liveness: !isLeader()
         ? 'standby'
-        : deadStalledCount > 0 || discoveryLoopStalledMs > 60_000 || dealRate.dbConfirmedDead
+        : deadStalledCount > 0 ||
+            (!stillBooting && discoveryLoopStalledMs > 60_000) ||
+            dealRate.dbConfirmedDead
           ? 'dead'
           : 'ok',
       /**

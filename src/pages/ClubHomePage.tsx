@@ -46,6 +46,7 @@ import {
 import { tournamentService } from '../services/TournamentService';
 import { getClubLevel, ClubLevelInfo } from '../utils/clubLevels';
 import { useToast } from '../components/common/Toast';
+import { applyClubScope, inClubScope, type ClubScope } from '../utils/clubScope';
 import { waitlistService } from '../services/WaitlistService';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { retryFetch } from '../utils/retryFetch';
@@ -845,29 +846,27 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       // only supports single-column equality, so anything more expressive than
       // that has to be re-checked here or the live list and the fetched list
       // diverge until the next reload.
+      /**
+       * The scope these admission rules judge by is THE SAME OBJECT the
+       * fetches below are scoped with. It used to be re-typed here with a
+       * comment saying it "MUST mirror the fetch queries" - which is how it
+       * drifted. See src/utils/clubScope.ts.
+       */
+      const rtScope: ClubScope = { clubId: resolvedId, unionId };
+
       const belongsInTableList = (row: any): boolean => {
         if (!row) return false;
         if (row.tournament_id) return false; // tournament sub-table, not a cash game
         if (row.is_deleted === true) return false;
         if (row.status === 'closed' || row.status === 'deleted') return false;
-        if (unionId) {
-          // Union club: the union's tables, plus THIS club's own private games.
-          if (row.union_id === unionId) return true;
-          return row.club_id === resolvedId && row.is_private === true;
-        }
-        return true;
+        return inClubScope(row, rtScope);
       };
 
       const JOINABLE_TOURNAMENT_STATUS = ['REGISTERING', 'RUNNING'];
       const belongsInTournamentList = (row: any): boolean => {
         if (!row) return false;
         if (!JOINABLE_TOURNAMENT_STATUS.includes(String(row.status))) return false;
-        if (unionId) {
-          // Union club: union-owned tournaments, plus this club's own private ones.
-          if (row.union_id === unionId) return true;
-          return row.club_id === resolvedId && row.is_private === true;
-        }
-        return true;
+        return inClubScope(row, rtScope);
       };
 
       const handleTableChange = (payload: any) => {
@@ -987,12 +986,39 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         handleBBJChange
       );
 
+      /**
+       * A DROPPED SOCKET USED TO MEAN A STALE LOBBY UNTIL THE NEXT RELOAD.
+       *
+       * Dan 2026-08-23: "ANY TIME THE UNION CREATES NEW TABLES, THEY MUST BE
+       * DISPLAYED INSIDE THEIR ATTACHED CLUBS RIGHT AWAY."
+       *
+       * That held only while the websocket stayed up. This callback set a
+       * flag and logged; nothing re-read the lists. Every game the union
+       * opened while the connection was down - and CHANNEL_ERROR and
+       * TIMED_OUT are both handled here, so it does go down - stayed
+       * invisible to that club until the player happened to reload.
+       *
+       * Realtime gives no backlog on resubscribe: the events fired during the
+       * gap are simply gone. The only way to close it is to re-read once the
+       * channel is live again. `firstSubscribe` keeps the initial SUBSCRIBED
+       * from firing a second fetch on top of the one already in flight.
+       */
+      let firstSubscribe = true;
       channel.subscribe((status: string, err?: Error) => {
         /* Every other handler in this effect checks isMounted; this one did
            not, so a late CHANNEL_ERROR or TIMED_OUT arriving after the page
            unmounted set state on a torn-down component. */
         if (!isMounted) return;
         setWsConnected(status === 'SUBSCRIBED');
+        if (status === 'SUBSCRIBED') {
+          if (firstSubscribe) {
+            firstSubscribe = false;
+          } else {
+            // Re-armed after a drop: whatever happened in the gap is missing.
+            void loadClubData(() => isMounted);
+          }
+          return;
+        }
         if (status === 'CHANNEL_ERROR') {
           if (err) reportError(err?.message || err, 'ClubHomePage._Tables_RT_channel_error');
         } else if (status === 'TIMED_OUT') {
@@ -1803,14 +1829,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         .select(
           'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands'
         );
-      if (unionId) {
-        // Union governance (2026-08-19): union clubs see the UNION's tables
-        // plus their OWN private club games. Other clubs' private games are
-        // never visible here.
-        tableQuery.or(`union_id.eq.${unionId},and(club_id.eq.${resolvedId},is_private.eq.true)`);
-      } else {
-        tableQuery.in('club_id', unionClubIds);
-      }
+      // ONE rule, applied. Union clubs see the UNION's tables plus their OWN
+      // private games; another club's private game is never visible.
+      applyClubScope(tableQuery, {
+        clubId: resolvedId,
+        unionId,
+        siblingClubIds: unionClubIds,
+      });
       // P1-1: mirror TableService cash-lobby filters on BOTH branches (chained
       // on the shared builder). Without status/tournament filters and a limit,
       // this pulled tens of thousands of closed/tournament rows and buried the
@@ -1859,13 +1884,22 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
            capped at all. An unbounded list query is the shape that pulled
            tens of thousands of rows into this page once already. */
         .limit(QUERY_LIMITS.LIST);
-      if (unionId) {
-        clubTournamentQuery.eq('club_id', resolvedId).eq('is_private', true);
-      } else {
-        clubTournamentQuery.in('club_id', unionClubIds);
-      }
+      // THE SAME rule, THE SAME shape as the cash-table query above.
+      //
+      // This used to be two queries: one for the club's own private games and
+      // a second, conditional one for the union's. That asymmetry is how both
+      // of this lobby's scope bugs hid - the tournament path simply looked
+      // different enough from the table path that a fix to one did not
+      // obviously apply to the other, and on 2026-08-23 the union branch was
+      // found missing from the tournament side of get_club_home while the
+      // table side had been fixed. One query now, one rule, one shape.
+      applyClubScope(clubTournamentQuery, {
+        clubId: resolvedId,
+        unionId,
+        siblingClubIds: unionClubIds,
+      });
 
-      const [tableResult, clubTournamentResult, bbjResult, ...xmttResults] = await Promise.all([
+      const [tableResult, clubTournamentResult, bbjResult] = await Promise.all([
         tableQuery,
         clubTournamentQuery,
         (async () => {
@@ -1888,23 +1922,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             return { data: null, error: null };
           }
         })(),
-        // Conditionally fetch XMTT tournaments if in a union
-        ...(unionId
-          ? [
-              supabase
-                .from('tournaments')
-                .select(
-                  'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, union_id, variant, table_size, is_xmtt, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name'
-                )
-                // Union governance (2026-08-19): ALL union-owned tournaments
-                // (XMTT and union-stamped recurring games), not just XMTT.
-                .eq('union_id', unionId)
-                // Joinable-only -- same rule as the club query above.
-                .in('status', ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTING_SOON'])
-                .order('start_time', { ascending: true })
-                .limit(QUERY_LIMITS.LIST),
-            ]
-          : []),
+        // The separate union tournament query is GONE: applyClubScope above
+        // already returns union-owned games and this club's private ones in a
+        // single round trip. Two queries meant two failure modes, and the one
+        // that mattered - the union query timing out - emptied every
+        // tournament tab while the club query quietly succeeded with nothing.
       ]);
 
       if (getIsMounted && !getIsMounted()) return;
@@ -1932,31 +1954,15 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       }
       hasDataRef.current = true;
 
-      // Merge club tournaments + XMTT tournaments
-      /* Both reads are reported, separately. This used to OR the two errors
-         and skip the whole merge, so a union whose XMTT query failed threw
-         away the club query that SUCCEEDED - and neither failure was
-         reported, so the lobby simply kept a stale tournament list forever
-         with nothing to notice. Whatever answered is merged; whatever failed
-         is reported. */
+      // Merge club tournaments + XMTT tournaments (now just club tournaments due to scope rule)
       if (clubTournamentResult.error)
         reportError(clubTournamentResult.error, 'ClubHomePage.Club_tournaments_failed');
-      if (xmttResults.length > 0 && xmttResults[0]?.error)
-        reportError(xmttResults[0].error, 'ClubHomePage.Union_tournaments_failed');
-      const tournamentError =
-        clubTournamentResult.error && (xmttResults.length === 0 || xmttResults[0]?.error);
-      if (!tournamentError) {
+
+      if (!clubTournamentResult.error) {
         const allTournaments: TournamentData[] = clubTournamentResult.data
           ? [...clubTournamentResult.data]
           : [];
-        if (xmttResults.length > 0 && xmttResults[0]?.data) {
-          const existingIds = new Set(allTournaments.map((t) => t.id));
-          for (const xmtt of xmttResults[0].data) {
-            if (!existingIds.has(xmtt.id)) {
-              allTournaments.push(xmtt);
-            }
-          }
-        }
+
         /**
          * AN EMPTY ANSWER NEVER ERASES A FULL ONE.
          *
@@ -1998,8 +2004,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       }
       setCountsCapped(
         tableCapped ||
-          (clubTournamentResult.data?.length ?? 0) >= QUERY_LIMITS.LIST ||
-          (xmttResults[0]?.data?.length ?? 0) >= QUERY_LIMITS.LIST
+          (clubTournamentResult.data?.length ?? 0) >= QUERY_LIMITS.LIST
       );
 
       // BBJ jackpot. Number() is load-bearing, not cosmetic: main_balance is

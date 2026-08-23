@@ -14976,3 +14976,62 @@ sends -1 defaults) and applies reveal_order for reconnecting clients.
 
 Scheduled task verify-showdown-review-fix-landing independently re-verifies
 both tiers and reports.
+## Cowork session 2026-08-23 (18) — THE SCOPE RULE, WRITTEN ONCE
+
+Dan, after the Shark Club / Club JAQK fix: "HOW ELSE CAN THIS IMPROVE? THIS CAN
+NEVER BREAK. ANY TIME THE UNION CREATES NEW TABLES, THEY MUST BE DISPLAYED
+INSIDE THEIR ATTACHED CLUBS RIGHT AWAY."
+
+Fixing the missing clause was the symptom. One sentence — _a union club sees the
+union's games plus its own private ones_ — was written **six times in three
+languages**:
+
+| #    | Where                                            | Form                 |
+| ---- | ------------------------------------------------ | -------------------- |
+| 1, 2 | `get_club_home` tables + tournaments             | SQL                  |
+| 3    | cash-table fetch                                 | PostgREST `.or`      |
+| 4    | tournament fetch                                 | two separate queries |
+| 5, 6 | `belongsInTableList` / `belongsInTournamentList` | JS predicates        |
+
+Copy 2 had drifted. The realtime rules even carried a comment saying they "MUST
+mirror the fetch queries" — which _is_ the disease: a rule six places must
+remember is a rule that drifts, and this one drifted twice.
+
+**Now there are two shapes of one rule, in one file.** `src/utils/clubScope.ts`
+exports `inClubScope` (the predicate realtime judges a live row by) and
+`clubScopeOrExpression` / `applyClubScope` (what the database is filtered with).
+A test walks the **full matrix** of `union_id × club_id × is_private` and holds
+both to the same answer — so "the live list and the fetched list agree" is a
+fact, not a comment. Further tests fail if a seventh copy appears: no
+hand-written union scope may survive in the page.
+
+**Tournaments are now fetched in ONE query, the same shape as tables.** They
+used to be two — the club's private games, plus a conditional union query,
+merged and deduped. That asymmetry is precisely what hid both bugs: the
+tournament path looked different enough that a fix to the table path did not
+obviously apply. It was also the worse failure mode — when the union query
+timed out (which it did repeatedly today) the club query quietly succeeded with
+nothing and every tournament tab emptied.
+
+**And a dropped socket can no longer leave a club stale.** The subscribe
+callback set a flag and logged; nothing re-read the lists. Realtime gives no
+backlog on resubscribe, so every game the union opened while the connection was
+down — and `CHANNEL_ERROR` and `TIMED_OUT` are both handled there, so it does go
+down — stayed invisible until the player happened to reload. It now refetches on
+re-subscribe, with a `firstSubscribe` guard so the initial connect does not
+double-fetch on top of the load already in flight.
+
+Realtime subscriptions were checked and were already correct: dual-channel on
+`club_id` **and** `union_id`, so union rows do arrive live. Without that filter
+the admission rule would never even run.
+
+Two tests were updated in this commit because they pinned the two-query shape
+this deliberately replaces — the list-cap guard (3 → 2 capped queries) and my
+own `variant` assertion from earlier today.
+
+15 new tests. 295 files / 3,638 green.
+
+**Noted, not fixed:** `tests/unit/POYService.test.ts` failed twice in a full
+parallel run and passes in isolation on both this branch and a clean main. That
+is a flake — probably cross-test pollution — and it is worth someone chasing
+before it masks a real failure.

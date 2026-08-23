@@ -116,3 +116,4 @@ async function getSession() {
   await b.close();
   console.log('DONE');
 })().catch(e => { console.error('FATAL', e); process.exit(1); });
+

@@ -39,6 +39,7 @@ import { readLocalSession } from '../../lib/authUtils';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import type { TournamentResult } from '../../services/pendingSessionSummary';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 import './TournamentRankingCard.css';
 
 export interface TournamentRankingCardProps {
@@ -153,12 +154,17 @@ export default function TournamentRankingCard({
         if (!uid) return;
         const { data } = await supabase
           .from('profiles')
-          .select('username, display_name, avatar_url:arena_avatar_url, player_number')
+          .select(`${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, player_number`)
           .eq('id', uid)
           .maybeSingle();
         if (cancelled || !data) return;
         setProfile({
-          username: data.display_name || data.username || 'Player',
+          /* Was `data.display_name || data.username`, which is how this card
+             came to greet Dan as "Marcus Chen" - a seed-data value sitting in
+             display_name while his actual preference (full_name -> "Dan
+             Bekavac") went unread. playerDisplayName reads the preference
+             first. See src/utils/playerDisplayName.ts. */
+          username: playerDisplayName(data),
           avatarUrl: data.avatar_url || generateDefaultAvatar(),
           playerNumber: data.player_number ?? null,
         });

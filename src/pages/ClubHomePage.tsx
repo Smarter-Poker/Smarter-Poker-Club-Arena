@@ -245,9 +245,9 @@ const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
   { key: 'MTT', label: 'MTT' },
   { key: 'HOLDEM', label: 'NLH' },
   { key: 'OMAHA', label: 'PLO' },
-  { key: 'LIMIT', label: 'LMT' },
-  { key: 'SPIN', label: 'SPIN' },
-  { key: 'SNG', label: 'SNG' },
+  { key: 'LIMIT', label: 'LIMIT' },
+  { key: 'SPIN', label: 'SPINS' },
+  { key: 'SNG', label: 'HEADS UP' },
 ];
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
@@ -2513,6 +2513,19 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                     </button>
                   );
                 })}
+                {currentUserId && (
+                  <button
+                    type="button"
+                    className={`quickprefs__chip ${favoritesOnly ? 'is-on' : ''}`}
+                    aria-pressed={favoritesOnly}
+                    onClick={() => {
+                      haptic.selection();
+                      setFavoritesOnly((v) => !v);
+                    }}
+                  >
+                    Favorites
+                  </button>
+                )}
                 <button
                   className="quickprefs__more"
                   aria-label="Advanced filters"
@@ -2629,11 +2642,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               </>
             )}
           </span>
-          {narrowing.any && totalGameCount > shownCount && (
-            <button type="button" className="lobby-count__clear" onClick={clearAllNarrowing}>
-              Show All
-            </button>
-          )}
         </div>
       )}
 
@@ -2665,19 +2673,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               }}
             >
               + Create New {TOURNAMENT_TYPES.includes(gameType) ? 'Game' : 'Table'}
-            </button>
-          )}
-          {currentUserId && (gameType === 'ALL' || CASH_TYPES.includes(gameType)) && (
-            <button
-              type="button"
-              className={`lobby-favtoggle${favoritesOnly ? ' is-on' : ''}`}
-              aria-pressed={favoritesOnly}
-              onClick={() => {
-                haptic.selection();
-                setFavoritesOnly((v) => !v);
-              }}
-            >
-              Favorites
             </button>
           )}
         </div>

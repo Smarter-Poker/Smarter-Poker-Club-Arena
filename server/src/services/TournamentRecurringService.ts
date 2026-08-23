@@ -2156,6 +2156,47 @@ export class TournamentRecurringService {
         );
       }
 
+      /**
+       * Dan 2026-08-23: TELL THE LOBBY THE SEATS ARE SOLD.
+       *
+       * The horses above take REAL seats, and that fixed the game logic. It
+       * did not fix the shop window: `current_players` is a stored column, a
+       * seat row does not touch it, and this was the one seat-first path that
+       * never synced it. Measured live before this fix: 16 open Spins
+       * advertising "0/3" while holding 32 paid seats between them - two of
+       * three sold, ONE SEAT FROM DEALING, and the lobby said empty. Nine SNGs
+       * the same. The fourteen Spins that read correctly all got there through
+       * topUpWithHorses, which does sync.
+       *
+       * That is the same complaint as the MTT ramp, arriving from the opposite
+       * direction: "PLAYERS DON'T JUMP IN AND PLAY TOURNAMENTS THAT HAVE NO
+       * PLAYERS IN THEM." Here the players were already in them. Only the
+       * number was wrong, and the number is the entire thing a player decides
+       * on.
+       *
+       * Derived from the seat rows, never incremented: registrations and seats
+       * disagree constantly for these formats, which is why a counter that
+       * counts registrations had spins reading 3/3 on two bought seats
+       * (refusing every further sit-down as 'tournament_full') and 0/3 on
+       * three (never starting).
+       *
+       * Best-effort by design. A failed sync must not fail table creation -
+       * the seats are real either way, and the next top-up pass syncs again.
+       */
+      if (seated > 0) {
+        const { error: syncErr } = await supabase.rpc('fn_sync_seat_first_player_count', {
+          p_tournament_id: tournament.id,
+        });
+        if (syncErr) {
+          reportError(
+            new Error(
+              `[TournamentRecurring] seat-count sync failed for ${tournament.name}: ${syncErr.message}`
+            ),
+            'TournamentRecurring.seat_first_count_sync_failed'
+          );
+        }
+      }
+
       return table.id as string;
     } catch (err: any) {
       reportError(err, 'TournamentRecurring.createOpenSeatTable_threw');
@@ -2569,19 +2610,42 @@ export class TournamentRecurringService {
         added = await this.registerHorses(tournamentId, shortfall);
       }
 
-      // Re-read rather than trusting `liveCount + added`: a human may have
-      // registered while we were seating horses.
-      const { count: finalCount } = await supabase
-        .from('tournament_players')
-        .select('id', { count: 'exact', head: true })
-        .eq('tournament_id', tournamentId)
-        .in('status', ['registered', 'playing']);
+      /**
+       * RESTORED 2026-08-23. This branch was written, reviewed and lost.
+       *
+       * The comment above still describes it exactly - "Derive it from the
+       * seat rows for seat-first, and keep the registration count for MTTs" -
+       * but the code under it had been flattened to the MTT half alone, so
+       * every seat-first game had its REGISTRATION count written into
+       * current_players. Horses seated by fn_seat_horse_in_seat_first_game
+       * hold seats, not registrations, so that number is zero: 16 open Spins
+       * were advertising "0/3" while holding 32 paid seats between them, two
+       * of three sold and one seat from dealing.
+       *
+       * The original lives on five branches under five different SHAs and on
+       * none of them is it an ancestor of main - it merged as prose and not as
+       * code, which is the "merge resolved by taking a stale side" failure
+       * .agent/protected-commits.json exists to catch. It is pinned there now.
+       */
+      if (seatFirst) {
+        await supabase.rpc('fn_sync_seat_first_player_count', {
+          p_tournament_id: tournamentId,
+        });
+      } else {
+        // Re-read rather than trusting `liveCount + added`: a human may have
+        // registered while we were seating horses.
+        const { count: finalCount } = await supabase
+          .from('tournament_players')
+          .select('id', { count: 'exact', head: true })
+          .eq('tournament_id', tournamentId)
+          .in('status', ['registered', 'playing']);
 
-      if (typeof finalCount === 'number') {
-        await supabase
-          .from('tournaments')
-          .update({ current_players: finalCount })
-          .eq('id', tournamentId);
+        if (typeof finalCount === 'number') {
+          await supabase
+            .from('tournaments')
+            .update({ current_players: finalCount })
+            .eq('id', tournamentId);
+        }
       }
 
       return added;

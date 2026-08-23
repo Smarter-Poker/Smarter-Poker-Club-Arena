@@ -31,8 +31,13 @@ function isDead(o: {
   deadStalledCount: number;
   discoveryLoopStalledMs: number;
   dbConfirmedDead: boolean;
+  stillBooting?: boolean;
 }): boolean {
-  return o.deadStalledCount > 0 || o.discoveryLoopStalledMs > 60_000 || o.dbConfirmedDead;
+  return (
+    o.deadStalledCount > 0 ||
+    (!o.stillBooting && o.discoveryLoopStalledMs > 60_000) ||
+    o.dbConfirmedDead
+  );
 }
 
 describe('engine liveness', () => {
@@ -65,6 +70,52 @@ describe('engine liveness', () => {
   });
 });
 
+describe('booting is not dead', () => {
+  /**
+   * The discovery loop does not start until start() has finished
+   * cleanupStaleData, the horse fleet and HorseMind hydration -- which on a
+   * busy database takes longer than 60s. OBSERVED LIVE on the 2026-08-23
+   * leader/standby rollout: /health returned 'dead' at ~60s uptime on a
+   * container that was booting perfectly and read 'ok' thirty seconds later.
+   *
+   * Docker's 90s start-period covers the usual case, but a boot slower than
+   * 90s is a boot against a struggling database -- the worst possible moment
+   * to have autoheal kill the container.
+   */
+  it('does not die while still booting, even with no discovery yet', () => {
+    expect(
+      isDead({
+        deadStalledCount: 0,
+        discoveryLoopStalledMs: 120_000,
+        dbConfirmedDead: false,
+        stillBooting: true,
+      })
+    ).toBe(false);
+  });
+
+  it('starts judging discovery once the boot window has passed', () => {
+    expect(
+      isDead({
+        deadStalledCount: 0,
+        discoveryLoopStalledMs: 120_000,
+        dbConfirmedDead: false,
+        stillBooting: false,
+      })
+    ).toBe(true);
+  });
+
+  it('a stalled TABLE still counts during boot — that is real, not startup', () => {
+    expect(
+      isDead({
+        deadStalledCount: 1,
+        discoveryLoopStalledMs: 0,
+        dbConfirmedDead: false,
+        stillBooting: true,
+      })
+    ).toBe(true);
+  });
+});
+
 describe('the rule in the source matches the rule tested here', () => {
   it('getStatus keys liveness on the loop, never on the last successful rpc', async () => {
     const { readFileSync } = await import('node:fs');
@@ -73,6 +124,9 @@ describe('the rule in the source matches the rule tested here', () => {
     expect(i, 'liveness field missing from getStatus').toBeGreaterThan(-1);
     const expr = src.slice(i, i + 260);
     expect(expr).toMatch(/discoveryLoopStalledMs > 60_000/);
+    // The boot grace must be part of the same expression, or a slow start
+    // gets the container killed at the worst possible moment.
+    expect(expr).toMatch(/stillBooting/);
     // The regression this guards: reinstating the ok-based signal would make a
     // slow database restart the container again.
     expect(expr).not.toMatch(/discoveryStaleMs > 60_000/);

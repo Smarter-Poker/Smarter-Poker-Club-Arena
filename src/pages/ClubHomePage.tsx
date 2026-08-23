@@ -919,6 +919,49 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       // Use resolved UUID for all downstream FK queries
       const resolvedId = clubData.id;
 
+      // ── START THE resolvedId-ONLY QUERIES NOW, AWAIT THEM WHERE THEY WERE ──
+      //
+      // PERF 2026-08-23. Getting the table list on screen took SIX sequential
+      // round trips after the club row: member+diamonds, union row, union
+      // clubs, member count, live count, then finally tables. Measured against
+      // production the queries themselves are ~9ms; the wait is almost
+      // entirely network latency, ~150-250ms per trip wired and 250-400ms on
+      // mobile. That is 1-1.5s wired and 2-3s on mobile of pure waiting, more
+      // than every remaining byte on the boot path combined.
+      //
+      // Neither of these two depends on the auth/membership chain they were
+      // queued behind - both need only resolvedId - so they are started here
+      // and awaited unchanged below. Nothing about the order of state updates
+      // moves; only the network overlaps.
+      //
+      // The rejection handlers matter: a hoisted promise that rejects before
+      // its await would otherwise surface as an unhandled rejection. Shaping
+      // the failure as { data|count: null, error } keeps the existing
+      // fail-open handling at each await site exactly as it was.
+      const unionRowPromise = supabase
+        .from('union_clubs')
+        .select('union_id')
+        .eq('club_id', resolvedId)
+        .limit(1)
+        .maybeSingle()
+        .then(
+          (r) => r,
+          (error) => ({ data: null, error })
+        );
+
+      // Standalone clubs need a live member count (clubs.member_count is
+      // denormalised and goes stale). Union clubs ignore it - one cheap
+      // indexed count is a better trade than a whole round trip in series.
+      const liveMemberCountPromise = supabase
+        .from('club_members')
+        .select('user_id', { count: 'exact', head: true })
+        .eq('club_id', resolvedId)
+        .in('status', ['active', 'approved'])
+        .then(
+          (r) => r,
+          (error) => ({ count: null, error })
+        );
+
       // Check if current user is owner
       const {
         data: { user: authUser },
@@ -953,12 +996,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       let unionId: string | null = null;
       let unionClubIds: string[] = [resolvedId];
       try {
-        const { data: ucRow, error: ucErr } = await supabase
-          .from('union_clubs')
-          .select('union_id')
-          .eq('club_id', resolvedId)
-          .limit(1)
-          .maybeSingle();
+        const { data: ucRow, error: ucErr } = await unionRowPromise;
         if (!ucErr && ucRow) {
           if (getIsMounted && !getIsMounted()) return;
           setIsInUnion(true);
@@ -1017,11 +1055,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       // Without this, standalone clubs display the stale clubs.member_count value
       if (!unionId) {
         try {
-          const { count: liveCount } = await supabase
-            .from('club_members')
-            .select('user_id', { count: 'exact', head: true })
-            .eq('club_id', resolvedId)
-            .in('status', ['active', 'approved']);
+          const { count: liveCount } = await liveMemberCountPromise;
 
           if (liveCount != null && liveCount > 0) {
             if (getIsMounted && !getIsMounted()) return;

@@ -76,6 +76,22 @@ const CLICK_SLOP_PX = 10;
 /** |offset| under this counts as "the centre card". */
 const ACTIVE_OFFSET = 0.3;
 
+/**
+ * |offset| within this is a card the player can actually see and therefore
+ * click.
+ *
+ * Every card used to be `inert` unless it was dead centre, which is what made
+ * "click the side card" do nothing at all: `inert` removes an element from hit
+ * testing AND from the tab order, so the onClick sitting on it never fired.
+ * Opening a neighbour was impossible rather than merely two taps.
+ *
+ * 1.5 is one full step plus half, so at three-up it covers exactly the three
+ * cards on stage and nothing beyond them. The outer pair the strip keeps
+ * mounted for a smooth wrap sit at ±2 with 44% opacity, largely off-stage -
+ * those stay inert, because a tab stop on a card nobody can see is noise.
+ */
+const INTERACTIVE_OFFSET = 1.5;
+
 /** How many cards each side of centre are rendered. */
 const VISIBLE_HALF = 2.5;
 
@@ -501,17 +517,24 @@ export function Carousel<T>({
   );
 
   const handleCardClick = useCallback(
-    (item: T, index: number, offset: number) => {
-      // Exactly the engine's rule: a gesture that moved is not a click, and a
-      // click on a card that is not centred brings it to the centre instead of
-      // opening it.
+    (item: T, index: number, _offset: number) => {
+      /* A gesture that MOVED is still not a click - that part of the engine's
+         rule stays, or every swipe would open whatever it started on.
+
+         What is gone is the second half: "a click on a card that is not centred
+         brings it to the centre instead of opening it." Dan 2026-08-23: "even
+         though the one card is front and center, you should still be able to
+         click on any card to go to that club or union."
+
+         That rule came from the World Hub's 3D carousel, where the off-centre
+         orbs are small, angled and half behind the centre one - there, centring
+         first is genuinely the only sane reading of a tap. Here the neighbours
+         are full club cards at 0.8 scale with a readable name and live stats.
+         Tapping one and being made to tap again is a toll, not a safeguard. */
       const dragDistance = Math.abs(startX.current - lastX.current);
       if (dragDistance >= CLICK_SLOP_PX) return;
-      if (Math.abs(offset) < ACTIVE_OFFSET) {
-        onSelect?.(item, index);
-      } else {
-        targetRef.current = Math.round(positionRef.current + offset);
-      }
+      void _offset;
+      onSelect?.(item, index);
     },
     [onSelect]
   );
@@ -663,6 +686,7 @@ export function Carousel<T>({
         {visible.map(({ item, index, offset }) => {
           const absOffset = Math.abs(offset);
           const isActive = absOffset < ACTIVE_OFFSET;
+          const isInteractive = absOffset <= INTERACTIVE_OFFSET;
           // Linear falloff, clamped. Flat: no Y, no Z, no rotation.
           const scale = Math.max(edgeScale, 1 - absOffset * (1 - edgeScale));
           return (
@@ -679,8 +703,13 @@ export function Carousel<T>({
                  something reachable by Tab is an outright a11y violation: a
                  keyboard user lands on a control screen readers were told does
                  not exist. inert removes it from BOTH, and React 19 passes it
-                 through to the DOM. The centre card stays fully interactive. */
-              inert={!isActive}
+                 through to the DOM.
+
+                 Scoped to INTERACTIVE_OFFSET rather than to the centre card:
+                 every card the player can SEE is a club they can open, by
+                 pointer or by keyboard. Only the off-stage pair kept mounted
+                 for the wrap is inert. */
+              inert={!isInteractive}
               onClick={() => handleCardClick(item, index, offset)}
             >
               {renderCard(item, index, isActive)}

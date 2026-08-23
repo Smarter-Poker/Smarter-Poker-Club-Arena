@@ -1,6 +1,19 @@
+/* ── BRUSHED NICKEL, NOT GOLD (Dan 2026-08-23) ─────────────────────────────
+   "make the dots and pill brushed nickel instead of gold"
+
+   Brushed metal is two things, and a flat grey is neither: a vertical tone ramp
+   (light top, dark waist, light again at the base, which is how a curved metal
+   surface catches a room) and a fine horizontal grain from the brushing. The
+   ramp is one linear-gradient; the grain is a 2px repeating-linear-gradient
+   laid over it. Both are paint, so there is no image to load and it stays crisp
+   at any zoom.
+
+   The gold was #ffd700 flat. */
+
 .carousel-dots {
   display: flex;
   justify-content: center;
+  align-items: center;
   gap: 8px;
   margin-top: 16px;
 }
@@ -9,37 +22,53 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.3);
+  /* Unlit nickel: the same metal, in shadow. */
+  background: linear-gradient(180deg, rgba(216, 221, 226, 0.4) 0%, rgba(138, 145, 152, 0.4) 100%);
   border: none;
   padding: 0;
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .dot:hover {
-  background: rgba(255, 255, 255, 0.5);
+  background: linear-gradient(180deg, rgba(232, 236, 240, 0.7) 0%, rgba(160, 167, 174, 0.7) 100%);
   transform: translateY(-2px);
   box-shadow:
-    0 2px 8px rgba(255, 255, 255, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    0 2px 8px rgba(196, 203, 210, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
 .dot.active {
   width: 24px;
   border-radius: 4px;
-  background: #ffd700;
+  background:
+    /* the brushed grain */
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 0px,
+      rgba(255, 255, 255, 0.1) 1px,
+      rgba(0, 0, 0, 0.05) 1px,
+      rgba(0, 0, 0, 0.05) 2px
+    ),
+    /* the tone ramp across the pill's height */
+      linear-gradient(180deg, #eef1f4 0%, #c6ccd2 42%, #969da4 58%, #d8dde1 100%);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28);
 }
-/* Counter mode, for lists too long to dot. See MAX_DOTS. */
-.carousel-dots--counter {
-  gap: 0;
+
+.dot.active:hover {
+  transform: none; /* the pill is where you already are; it should not bob */
 }
 
 .carousel-counter {
+  margin-left: 4px;
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(206, 212, 218, 0.6);
   font-variant-numeric: tabular-nums;
 }
 
@@ -56,6 +85,16 @@
 }
 
 .dot:focus-visible {
-  outline: 2px solid rgba(255, 184, 0, 0.7);
+  outline: 2px solid rgba(206, 213, 219, 0.8);
   outline-offset: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot {
+    transition: none;
+  }
+
+  .dot:hover {
+    transform: none;
+  }
 }

@@ -15,6 +15,7 @@
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
+import nodeCrypto from 'node:crypto';
 import { buyInFor, wholeChips } from '../config/buyIn.js';
 
 /**
@@ -1809,32 +1810,61 @@ export class TournamentRecurringService {
         .select('user_id, tournaments!inner(status)')
         .in('status', ['registered', 'playing'])
         .in('tournaments.status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
-        .limit(2000);
+        // A TRUNCATED BUSY SET MARKS BUSY HORSES FREE, which is the
+        // double-booking bug in its worst form - so this ceiling has to sit
+        // far above any plausible live count, not just above today's.
+        .limit(20000);
       const busy = new Set((busyRows ?? []).map((r: any) => r.user_id));
 
       const { data: seatRows } = await supabase
         .from('table_seats')
         .select('user_id')
         .is('left_at', null)
-        .limit(2000);
+        .limit(20000);
       for (const r of seatRows ?? []) {
         if ((r as { user_id?: string }).user_id) busy.add((r as { user_id: string }).user_id);
       }
 
+      /**
+       * TWO BUGS FIXED HERE (2026-08-23).
+       *
+       * 1. `.limit(400)` against a pool that is 584 horses and growing. The
+       *    last 184 could never be picked by this path at all, so the fleet
+       *    read as exhausted while nearly a third of it sat idle. Measured
+       *    live: 24 spins and 12 heads-up games waiting 2-8 hours past their
+       *    start for a seat. registerHorses right below already sizes its
+       *    fetch as `count + busy.size`, which the comment above calls the
+       *    convention this file settled on - this one had drifted from it.
+       *
+       * 2. Every caller drew from the SAME first rows in the SAME order, and
+       *    the busy set is read before the claim rather than atomically with
+       *    it, so two concurrent callers (the recurring service, the
+       *    scheduler, and GameServer's past-start top-up all run this) pick
+       *    the same horses and double-book them. Live count: 41 horses in a
+       *    tournament AND at a cash table, plus 24 seated at two cash tables
+       *    - one AI identity being asked to act in two places at once.
+       *    Shuffling the candidates does not make the claim atomic, but it
+       *    turns a near-certain collision into an unlikely one, which is the
+       *    difference between systematic and occasional.
+       */
       const { data: horses } = await supabase
         .from('profiles')
         .select('id')
         .eq('is_horse', true)
-        .limit(400);
+        .limit(count + busy.size + 50);
 
-      const free: string[] = [];
-      for (const h of horses ?? []) {
-        const id = (h as { id: string }).id;
-        if (busy.has(id)) continue;
-        free.push(id);
-        if (free.length >= count) break;
+      const candidates = (horses ?? [])
+        .map((h) => (h as { id: string }).id)
+        .filter((id) => id && !busy.has(id));
+      // nodeCrypto, not Math.random: CryptoRandom.test.ts forbids Math.random
+      // anywhere in the engine services, and it is right to - a weak source
+      // that starts life shuffling a horse list is one refactor away from
+      // deciding a payout.
+      for (let i = candidates.length - 1; i > 0; i--) {
+        const j = nodeCrypto.randomInt(i + 1);
+        [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
       }
-      return free;
+      return candidates.slice(0, count);
     } catch {
       return [];
     }

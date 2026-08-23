@@ -33,6 +33,7 @@
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
+import { claimNightlyJob } from '../benchmark/HorseLeague.js';
 import type { HorseProfileMods } from '../engine/HorseLogic.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -547,6 +548,13 @@ async function maybeRunSelfTune(): Promise<void> {
   if (!inWindow || running || lastRunDate === today) return;
   if (await alreadyTunedToday(today)) {
     lastRunDate = today;
+    return;
+  }
+  // V13.1: one claim, one runner — otherwise both instances stream 120,000
+  // hand_history rows at the same time.
+  if (!(await claimNightlyJob('self_tuner', today))) {
+    lastRunDate = today;
+    console.log(`[HorseSelfTuner] run ${today} claimed by another instance - standing down`);
     return;
   }
   lastRunDate = today;

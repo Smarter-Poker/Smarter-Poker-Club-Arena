@@ -204,8 +204,8 @@
 }
 
 .lobby-club__avatar {
-  width: 220px;
-  height: 220px;
+  width: 64px;
+  height: 64px;
   flex-shrink: 0;
   border-radius: 12px;
   overflow: hidden;

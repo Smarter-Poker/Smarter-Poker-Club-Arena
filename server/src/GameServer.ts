@@ -91,6 +91,14 @@ export class GameServer {
    * the only thing that starts engines AND the only thing that reaps zombies —
    * if it stalls, the whole platform is frozen with nothing to notice.
    */
+  /**
+   * How long a boot is given before discovery staleness may declare the
+   * process dead. Generous on purpose: it only delays a verdict that Docker's
+   * own 90s start-period already suppresses, and the cost of being early is
+   * killing a container that is starting correctly.
+   */
+  private static readonly STARTUP_GRACE_MS = 180_000;
+
   private lastDiscoveryOkAt: number = Date.now();
   /**
    * When the discovery loop last RAN, as opposed to last succeeded.
@@ -101,6 +109,11 @@ export class GameServer {
    * when the loop was in fact running perfectly and being told "no" each time.
    */
   private lastDiscoveryAttemptAt: number = Date.now();
+  /**
+   * When this process started. Used to keep boot from looking like death --
+   * see the startup grace in getStatus().
+   */
+  private readonly processStartedAt: number = Date.now();
   private tournamentEngines: Map<string, TournamentManager> = new Map();
   private running: boolean = false;
   private startTime: number = Date.now();
@@ -177,33 +190,45 @@ export class GameServer {
     }
     console.log('═══════════════════════════════════════════════════════════════');
 
-    // Step 1: Clean up stale data from previous runs.
-    // Test mode passes the protected id so cleanup spares it.
-    await this.cleanupStaleData(testTableId);
-
     /**
-     * LEADER OR STANDBY (2026-08-23). Exactly one instance owns the fleet.
+     * LEADER OR STANDBY — RESOLVED FIRST, BEFORE ANYTHING ELSE.
      *
-     * Resolved BEFORE anything is started, because a standby must never claim
-     * a table, run a tournament or seat a horse -- it holds nothing and serves
-     * nothing until the leader's lease goes stale, then takes everything.
+     * This was originally placed after cleanupStaleData(), and running it for
+     * real showed why that is wrong. A standby booted, spent nine seconds
+     * hydrating 20,000 HorseMind pairs, and -- far worse -- ran the cleanup:
      *
-     * Fail-open: any RPC problem answers 'leader'. Nobody running the fleet is
-     * the worst outcome available, and being wrong lands us on today's
-     * behaviour -- one instance doing everything.
+     *     [GameServer] Closed 10 orphaned tournament tables and released their seats
+     *
+     * A standby had mutated shared state while another instance was live. It
+     * then discovered it was a standby and returned, having already done the
+     * one thing it must never do. It also took so long to get there that it
+     * failed its healthcheck and autoheal restarted it, which started the whole
+     * sequence again.
+     *
+     * cleanupStaleData closes tables, releases seats and resets horses. It is
+     * recovery work that belongs to exactly one process: the one that owns the
+     * fleet. So leadership is now the FIRST thing start() decides, before any
+     * read, any write and any hydration.
+     *
+     * Fail-open on error, and a standby retains standby -- see
+     * services/leadership.ts for why that asymmetry matters.
      */
     const role = await renewLeadership();
     startLeadershipRenewal();
     if (role === 'standby') {
       const d = leadershipDiagnostics();
       console.log(
-        `[GameServer] STANDBY — ${d.holder} holds leadership. Claiming nothing; ` +
-          `will take the fleet if its lease goes stale (${'' + 30}s).`
+        `[GameServer] STANDBY — ${d.holder} holds leadership. Claiming nothing, ` +
+          'cleaning nothing, hydrating nothing. Will take the fleet if that lease goes stale.'
       );
-      // Nothing below this point runs. The renewal interval is the only thing
-      // alive, and /health reports 503 so Caddy keeps traffic off us.
+      // Nothing below runs. The renewal interval is the only thing alive, and
+      // /health answers 503 so Caddy keeps traffic on the leader.
       return;
     }
+
+    // Step 1: Clean up stale data from previous runs.
+    // Test mode passes the protected id so cleanup spares it.
+    await this.cleanupStaleData(testTableId);
 
     if (!maintenanceMode && !testTableId) {
       // Step 2: Start horse fleet manager (creates tables, seats horses)
@@ -494,6 +519,30 @@ export class GameServer {
      * the fleet alarms — it simply no longer restarts a healthy container.
      */
     const discoveryLoopStalledMs = Date.now() - this.lastDiscoveryAttemptAt;
+    /**
+     * ── BOOTING IS NOT DEAD (2026-08-23) ────────────────────────────────────
+     *
+     * discoveryLoopStalledMs is measured from lastDiscoveryAttemptAt, which is
+     * seeded at construction and then stamped by the discovery loop. But the
+     * loop does not START until start() has finished cleanupStaleData, the
+     * horse fleet and HorseMind hydration -- and on a busy database that can
+     * take longer than 60s. During that window the engine reports 'dead' while
+     * doing exactly what it is supposed to.
+     *
+     * OBSERVED LIVE, not theorised: on the 2026-08-23 leader/standby rollout
+     * /health returned liveness 'dead' at ~60s uptime on a container that was
+     * booting perfectly and reported 'ok' thirty seconds later.
+     *
+     * Docker's --health-start-period=90s covers the usual case, which is why
+     * this has not bitten -- but a boot slower than 90s is exactly a boot
+     * against a struggling database, and that is the worst possible moment to
+     * have autoheal kill the container. Same reasoning, and the same fix, as
+     * the fleet-floor startup grace in DealRateVerifier.
+     *
+     * A boot that never finishes is still caught: the process either fails to
+     * answer /health at all, or finishes and starts being judged normally.
+     */
+    const stillBooting = Date.now() - this.processStartedAt < GameServer.STARTUP_GRACE_MS;
     // The one liveness signal not derived from this process's own beliefs.
     // deadStalledCount above is computed from msSinceProgress(), which
     // markProgress() sets about our own work; on 2026-08-22 that belief was
@@ -563,7 +612,9 @@ export class GameServer {
        */
       liveness: !isLeader()
         ? 'standby'
-        : deadStalledCount > 0 || discoveryLoopStalledMs > 60_000 || dealRate.dbConfirmedDead
+        : deadStalledCount > 0 ||
+            (!stillBooting && discoveryLoopStalledMs > 60_000) ||
+            dealRate.dbConfirmedDead
           ? 'dead'
           : 'ok',
       /**

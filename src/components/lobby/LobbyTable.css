@@ -166,8 +166,7 @@
   }
 }
 .lt-mono {
-  font-family: var(--font-sans, system-ui, sans-serif);
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
   font-size: 0.75rem;
   letter-spacing: 0.01em;
 }
@@ -175,7 +174,7 @@
   color: var(--text-disabled, #565a63);
 }
 .lt-gtd {
-  color: var(--warning-gold, #ffd700);
+  color: var(--text-secondary, #c8ccd4);
 }
 .lt-kind,
 .lt-variant {
@@ -286,9 +285,9 @@ abbr.lt-variant[title] {
   background: rgba(255, 255, 255, 0.05);
 }
 .lt-status--waitlist {
-  color: #ffffff;
-  border-color: rgba(255, 215, 0, 0.3);
-  background: rgba(255, 215, 0, 0.07);
+  color: var(--text-secondary, #c8ccd4);
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
 }
 .lt-status--registering {
   color: var(--club-blue-light, #5b83e8);
@@ -296,14 +295,14 @@ abbr.lt-variant[title] {
   background: rgba(65, 105, 225, 0.1);
 }
 .lt-status--late_reg {
-  color: #ffffff;
-  border-color: rgba(255, 215, 0, 0.35);
-  background: rgba(255, 215, 0, 0.08);
+  color: var(--text-secondary, #c8ccd4);
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
 }
 .lt-status--starting_soon {
-  color: #ffffff;
-  border-color: rgba(255, 176, 32, 0.35);
-  background: rgba(255, 176, 32, 0.08);
+  color: var(--text-secondary, #c8ccd4);
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 /* Player's own relationship to the game */
@@ -318,7 +317,7 @@ abbr.lt-variant[title] {
   background: var(--club-blue-light, #5b83e8);
 }
 .lt-mine--wait {
-  background: var(--warning-gold, #ffd700);
+  background: var(--text-secondary, #c8ccd4);
 }
 
 /* Favorite star */

@@ -34,6 +34,17 @@
   position: sticky;
   top: 0;
   z-index: 100;
+  /* NOTCH (Dan 2026-08-23, from a phone: "ZERO PADDING AT THE TOP, THE TOP
+     ACTION BAR IS CUT OFF"). index.html declares `viewport-fit=cover`, which
+     deliberately extends the page under the status bar and home indicator —
+     that is what makes the app look full-bleed. The cost is that anything
+     pinned to top: 0 renders UNDERNEATH the clock and the notch unless it
+     pays the inset back, and this header never did: Back, Hub and the
+     profile orb sat behind the status bar on every notched iPhone.
+
+     env() resolves to 0 on hardware without an inset, so desktop and older
+     phones are untouched. */
+  padding-top: env(safe-area-inset-top, 0px);
   gap: 8px;
   flex-wrap: nowrap;
   width: 100%;

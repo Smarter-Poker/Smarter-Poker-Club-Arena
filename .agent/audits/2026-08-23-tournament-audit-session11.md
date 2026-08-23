@@ -359,3 +359,47 @@ flag-only; ban_chat remains client-enforced (no server chat path exists);
 schedule GTD configs are generous relative to horse-filled fields, so
 overlays are real house spend — Dan should review the seeded guarantee
 numbers if that matters.
+
+---
+
+## 11j — the fleet read as exhausted while a third of it sat idle (PR #462)
+
+Found while sweeping the board after #342 published: 24 spins and 12 heads-up
+games sitting 2 to 8 hours past their start with nobody in them. The obvious
+read was "the horse pool is exhausted". It was not. Counted directly:
+
+    584 horses total
+    384 busy (tournament or seated)
+    200 FREE — while 36 games waited for players
+
+pickFreeHorses fetched the fleet with a bare `.limit(400)` against a pool of
+584, so the last 184 could never be picked by that path at all. Its sibling
+registerHorses has always sized the fetch as `count + busy.size`, and the
+comment above pickFreeHorses even calls that "the convention this file
+settled on" — this one had drifted off it.
+
+The busy-set reads carried `.limit(2000)` as well. A TRUNCATED BUSY SET MARKS
+BUSY HORSES FREE, which is the double-booking bug in its worst form, so those
+ceilings now sit far above any plausible live count rather than just above
+today's. The double-booking was already visible: 41 horses in a tournament
+AND at a cash table, 24 seated at two cash tables at once — one AI identity
+asked to act in two places.
+
+Candidates are now shuffled before selection. Three callers run this — the
+recurring service, the scheduler, and GameServer's past-start top-up — and
+each was handed the same rows in the same order, with the busy set read
+before the claim rather than atomically with it. Shuffling does not make the
+claim atomic; it turns a near-certain collision into an unlikely one. A
+proper fix is an atomic claim (a `claimed_by`/`claimed_at` on the horse row,
+or a SECURITY DEFINER RPC that selects and marks in one statement) — worth
+doing when someone next touches this path.
+
+The shuffle uses nodeCrypto.randomInt. My first attempt used Math.random and
+CryptoRandom.test.ts rejected it, correctly: a weak source that starts life
+shuffling a horse list is one refactor away from deciding a payout.
+
+VERIFIED AFTER DEPLOY: engine restart visible in hand_history (13:16-13:20),
+running tournaments 16 -> 19 within two minutes, heads-up games starting
+again. Pinned by pickFreeHorsesLimits.test.ts, which fails on a bare numeric
+limit in the fleet read, on losing the busy-set sizing, and on losing the
+shuffle.

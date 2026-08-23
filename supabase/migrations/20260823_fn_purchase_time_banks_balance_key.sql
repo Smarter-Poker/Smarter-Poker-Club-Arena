@@ -10,7 +10,7 @@
 -- `feature_purchases` rows beside it.
 --
 -- What was broken is what the client was TOLD afterwards. `deduct_diamonds`
--- returns its post-charge balance under the key `balance`:
+-- returns its post-charge balance under the key "balance":
 --
 --     RETURN jsonb_build_object('success', true, 'balance', v_new_balance, ...)
 --
@@ -97,8 +97,7 @@ BEGIN
     'quantity', p_quantity,
     'unit_cost', v_unit_cost,
     'total_cost', v_total_cost,
-    -- THE FIX: `balance` is the key deduct_diamonds actually returns.
-    -- `new_balance` was always NULL, so the wallet never moved on screen.
+    -- THE FIX: "balance" is the key deduct_diamonds actually returns.
     'diamonds_remaining', (v_deduct->>'balance')::integer);
 END;
 $$;
@@ -106,17 +105,23 @@ $$;
 revoke all on function public.fn_purchase_time_banks(integer) from public;
 grant execute on function public.fn_purchase_time_banks(integer) to authenticated;
 
--- Post-apply assertion: the function must no longer read the phantom key.
+-- Post-apply assertions.
+--
+-- These match the DEREFERENCE, not the bare word. The first version of this
+-- migration asserted on the word alone and aborted its own apply, because
+-- pg_get_functiondef returns the comments too and the comment above explains
+-- the bug by name. An assertion that cannot tell code from prose is not
+-- checking the thing it claims to check.
 DO $assert$
 BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_proc p
-    JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public'
-      AND p.proname = 'fn_purchase_time_banks'
-      AND pg_get_functiondef(p.oid) LIKE '%new_balance%'
-  ) THEN
-    RAISE EXCEPTION 'fn_purchase_time_banks still reads the non-existent new_balance key';
+  IF pg_get_functiondef('public.fn_purchase_time_banks(integer)'::regprocedure)
+       LIKE '%->>''new_balance''%' THEN
+    RAISE EXCEPTION 'fn_purchase_time_banks still dereferences the non-existent new_balance key';
+  END IF;
+
+  IF pg_get_functiondef('public.fn_purchase_time_banks(integer)'::regprocedure)
+       NOT LIKE '%->>''balance''%' THEN
+    RAISE EXCEPTION 'fn_purchase_time_banks does not read the balance key that deduct_diamonds returns';
   END IF;
 END
 $assert$;

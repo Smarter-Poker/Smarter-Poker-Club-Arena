@@ -359,6 +359,21 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         <span className="cplaque__cta-note">Sign In To Play</span>
       )}
       {cta.note && <span className="cplaque__cta-note">{cta.note}</span>}
+      {isCash && (
+        <Link
+          className="cplaque__observe-link"
+          to={`/table/${entry.id}`}
+          style={{
+            marginTop: '0.5rem',
+            display: 'block',
+            textAlign: 'center',
+            fontSize: '0.9rem',
+            color: 'var(--text-muted)',
+          }}
+        >
+          Observe Table
+        </Link>
+      )}
     </>
   );
 

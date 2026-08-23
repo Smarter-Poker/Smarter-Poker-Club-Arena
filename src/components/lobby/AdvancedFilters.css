@@ -191,6 +191,7 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: #0f1420;
   color: #cfd8e5;
+  transition: all 0.2s ease;
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
@@ -311,6 +312,7 @@
   border: 1px solid rgba(255, 255, 255, 0.09);
   background: #0f1420;
   color: #cfd8e5;
+  transition: all 0.2s ease;
   /* Several labels are two words that must not truncate ("Run It Player's
      Choice", "PC Emulator Restriction"), so the cell wraps and the type is
      small rather than the text being clipped. */

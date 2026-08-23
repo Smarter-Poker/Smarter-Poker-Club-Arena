@@ -55,7 +55,7 @@ function setCachedEntries(key: string, data: LeaderboardEntry[]) {
 const podiumAnimationStyle = {
   opacity: 0,
   transform: 'translateY(16px)',
-  animation: 'fadeInUp 0.7s ease-out forwards',
+  animation: 'animationsFadeInUp 0.7s ease-out forwards',
 };
 
 const rankingRowAnimationStyle = (index: number) =>
@@ -64,7 +64,7 @@ const rankingRowAnimationStyle = (index: number) =>
     : {
         opacity: 0,
         transform: 'translateY(8px)',
-        animation: `fadeInUp 0.5s ease-out ${index * 60}ms forwards`,
+        animation: `animationsFadeInUp 0.5s ease-out ${index * 60}ms forwards`,
       };
 
 type LeaderboardScope = 'my-clubs' | 'global';

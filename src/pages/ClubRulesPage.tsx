@@ -24,7 +24,7 @@ import { reportError } from '../utils/errorReporter';
 const rulesLineAnimationStyle = (index: number) => ({
   opacity: 0,
   transform: 'translateY(4px)',
-  animation: `fadeInUp 0.4s ease-out ${index * 40}ms forwards`,
+  animation: `animationsFadeInUp 0.4s ease-out ${index * 40}ms forwards`,
 });
 
 export default function ClubRulesPage() {
@@ -236,7 +236,7 @@ export default function ClubRulesPage() {
 
   if (loading) {
     return (
-    <StandardContentLayout className="club-rules-page" title="Club Rules">
+      <StandardContentLayout className="club-rules-page" title="Club Rules">
         <div className="loading-state">
           <PageSkeleton variant="settings" />
         </div>
@@ -246,7 +246,7 @@ export default function ClubRulesPage() {
 
   if (loadError) {
     return (
-    <StandardContentLayout className="club-rules-page" title="Club Rules">
+      <StandardContentLayout className="club-rules-page" title="Club Rules">
         <div style={{ textAlign: 'center', padding: '60px 20px', color: '#aaa' }}>
           <p style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠</p>
           <p style={{ marginBottom: '16px' }}>Failed To Load Club Rules</p>
@@ -339,5 +339,5 @@ export default function ClubRulesPage() {
 
       <ClubBottomNav clubId={clubId || ''} userRole={userRole} />
     </StandardContentLayout>
-    );
-  }
+  );
+}

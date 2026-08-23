@@ -380,6 +380,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null);
   const [isInUnion, setIsInUnion] = useState(false);
+  /** Live seat count from get_club_home. Null until it answers; see the note
+      where it is set - the stale clubs.online_count is never used. */
+  const [playersPlaying, setPlayersPlaying] = useState<number | null>(null);
   const [unionIdForCreate, setUnionIdForCreate] = useState<string | undefined>(undefined);
   const [showCreateTournament, setShowCreateTournament] = useState(false);
   const [clubLevel, setClubLevel] = useState<ClubLevelInfo | null>(null);
@@ -948,6 +951,22 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 member_count: home.member_count ?? home.club.member_count,
               }));
             }
+            /**
+             * PLAYERS CURRENTLY PLAYING (Dan, 2026-08-23): "the 0 players
+             * currently playing is a bug... every horse needs to be considered
+             * a current player, this an accumulation of all active players in
+             * all clubs total."
+             *
+             * clubs.online_count is a denormalised column nothing keeps
+             * current - it read 12 for JAQK and 0 for Shark and Midway while
+             * 579 seats were occupied. get_club_home counts the live seats
+             * themselves, horses included, across the whole platform. Held in
+             * its own state rather than merged into `club` so the stale column
+             * can never win a race against it.
+             */
+            if (typeof home.players_playing === 'number') {
+              setPlayersPlaying(home.players_playing);
+            }
             if (Array.isArray(home.tables)) setTables(home.tables);
             if (Array.isArray(home.tournaments)) setTournaments(home.tournaments);
             if (home.union_id) {
@@ -1154,35 +1173,31 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
           if (allUcResult.data && allUcResult.data.length > 0) {
             unionClubIds = allUcResult.data.map((r) => r.club_id);
+          }
 
-            // If union has multiple clubs, re-query with all club IDs
-            if (unionClubIds.length > 1) {
-              try {
-                const { count: totalMembers } = await supabase
-                  .from('club_members')
-                  .select('user_id', { count: 'exact', head: true })
-                  .in('club_id', unionClubIds)
-                  .in('status', ['active', 'approved']);
-
-                if (getIsMounted && !getIsMounted()) return;
-                setClub((prev) =>
-                  prev ? { ...prev, member_count: totalMembers || prev.member_count || 0 } : prev
-                );
-              } catch (e) {
-                reportError(e, 'ClubHomePage.setClub');
-                // Fall back to club-level counts
-              }
-            } else {
-              // Single club — use the result from the parallel batch
-              if (memberCountResult.count != null) {
-                if (getIsMounted && !getIsMounted()) return;
-                setClub((prev) =>
-                  prev
-                    ? { ...prev, member_count: memberCountResult.count || prev.member_count || 0 }
-                    : prev
-                );
-              }
-            }
+          /**
+           * A CLUB'S MEMBER COUNT IS ITS OWN (Dan, 2026-08-23).
+           *
+           * "club jaqk doesn't have 1172 players" - and it does not: it has
+           * 584. 1,172 was Club JAQK plus Shark Club, because a union club
+           * used to be shown the whole union's membership. Shark then read
+           * 1,172 as well, and the two clubs were indistinguishable.
+           *
+           * It also FLIPPED. Dan: "bounces back and forth from 1172 players to
+           * 588." get_club_home answered with one number and this block with
+           * the other, and whichever landed last won - the same two-writers,
+           * one-rule shape as the lobby scope bug earlier today. There is one
+           * rule now, stated in both places: count this club's members.
+           *
+           * The union-wide re-query that used to sit here was also AWAITED IN
+           * SERIES, ahead of the tables and tournaments queries, so the games
+           * waited on a number nobody wanted.
+           */
+          if (memberCountResult.count != null) {
+            if (getIsMounted && !getIsMounted()) return;
+            setClub((prev) =>
+              prev ? { ...prev, member_count: memberCountResult.count as number } : prev
+            );
           }
         }
       } catch (e) {
@@ -2241,9 +2256,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 <div
                   style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}
                 >
-                  {club.online_count >= 0 && (
+                  {playersPlaying !== null && (
                     <div style={{ fontSize: '0.8rem', color: '#9aa5b6' }}>
-                      {club.online_count.toLocaleString()} Players Currently Playing
+                      {playersPlaying.toLocaleString()} Players Currently Playing
                     </div>
                   )}
 

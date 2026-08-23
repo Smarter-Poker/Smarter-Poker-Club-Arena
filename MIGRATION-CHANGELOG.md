@@ -13643,3 +13643,96 @@ From Dan's own browser, cold hard load of Club JAQK, at t=0s:
 Before: every tab empty for several seconds, then cash permanently absent.
 
 18 new/updated assertions across three test files; `tsc --noEmit` clean.
+
+## Cowork session 2026-08-23 (19) — THE SPIN BOARD HAD WEDGED ITSELF, AND THE HEADER COUNTED THE WRONG THINGS
+
+Four reports, four unrelated causes.
+
+### 1. 44 of the 50 Spins and Heads-Ups could never be joined
+
+Dan: "make sure the horses are sitting and playing the spins. two horses should
+fill the first two seats... wait 60-180 seconds before a 3rd horse sits."
+
+That design was already written, correctly, in `TournamentRecurringService`.
+What was on the board: of 33 REGISTERING Spins, **THIRTY had no table row**, and
+of 17 heads-ups, **FOURTEEN**. Oldest 05:24 UTC — fifteen hours listed and
+unjoinable. A seat-first game _is_ a table with seats; these had none.
+
+**And the state was self-sustaining.** `ensureBoardOpen` decides what to open by
+NAME: a husk is REGISTERING, so its name is "covered", so its price point is
+never reopened — and it can never leave REGISTERING, because a seat-first game
+starts when every seat is sold. One dead row wedges one price point forever.
+Exactly two of thirty-two Spin configs were still cycling: 1 Chip NLH and 3 Chip
+NLH, the only two whose live instance could still fill and free its name.
+
+`fn_repair_seat_first_games` gives a husk the table it never got, seats its
+opening horses (seats-1) and restarts its human window at a fresh 60–180s
+rather than cancelling it — section 8 is explicit that tournaments run, they do
+not cancel. Called at the top of both board ticks, before the keeper decides
+what is missing. **First run: 44 repaired.** `ensureBoardOpen` now also refuses
+to count a table-less seat-first game as covering its price point, so one failed
+repair cannot wedge the board again.
+
+### 2. Horses were sitting and the board said 0/3
+
+`fn_seat_horse_in_seat_first_game` seated the horse, wrote `tournament_players`
+and updated `tables.current_players` — but never `tournaments.current_players`,
+which is the number the lobby card reads. The two healthy Spins had two horses
+genuinely in seats 1 and 2 and advertised themselves as empty. The count is now
+maintained in the seating function itself, so it cannot drift from the seats.
+
+**After:** 9 Spins and 21 Heads-Ups RUNNING, 12 more partly full.
+
+### 3. "Create New Table" opened a page of invisible cards
+
+Dan: "the create new table button doesn't work for any of the cash games or
+tournaments." The button worked. The page rendered seven game-type cards that
+were in the DOM, laid out, occupying space, and completely transparent:
+
+```js
+opacity: 0,
+animation: `fadeInUp 0.5s ease-out ${index * 70}ms forwards`,
+```
+
+`@keyframes fadeInUp` is not reachable on that route. `ba1af5a8b` — "ZERO
+colliding @keyframes names", **93 .css files, 0 .tsx** — renamed every keyframe
+to a file-prefixed name and nothing updated the names that live as RAW STRINGS
+in inline style objects, where no CSS tool can see them. An unresolvable
+`animation-name` is not an error: the declaration is dropped, the animation
+never runs, and the `opacity: 0` it was meant to clear stays forever. No console
+error, no failed request, no type error. **Eleven pages** were rendering blank
+content with tsc, vitest and the production build all green.
+
+Twelve references repointed at the global `animationsFadeInUp`.
+`tests/unit/inlineAnimationsResolve.test.ts` now resolves every inline animation
+name against the stylesheets that are actually loaded where it renders — the
+globals `main.tsx` imports, plus the file's own sibling `.css` — and hard-fails
+on any paired with `opacity: 0`. Verified it fails, naming file and line, when
+the fix is reverted. The 40 remaining cosmetic cases are pinned to a baseline
+that can only shrink.
+
+### 4. The header's two numbers
+
+Dan: "club jaqk doesn't have 1172 players"; "shark club... bounces back and
+forth from 1172 players to 588"; "the 0 players currently playing is a bug...
+every horse needs to be considered a current player".
+
+**Members** — `get_club_home` counted the whole union, so JAQK (584) and Shark
+(588) both read 1,172 and Midway read 1,500. The client's own query counts the
+club alone, so the header FLIPPED depending on which landed last — two writers,
+one rule, the same shape as this morning's scope bug. Both now count this club's
+members, and the union-wide re-query that caused it is gone (it was also awaited
+_in series_ ahead of the games queries).
+
+**Playing** — `clubs.online_count` is denormalised and nothing keeps it current:
+12 for JAQK, 0 for Shark and Midway, while 579 seats were occupied. It is not
+corrected, it is bypassed: the RPC counts live seats directly, horses included,
+platform-wide as instructed.
+
+### Known limit, not a bug: the horse pool is the ceiling
+
+584 horses against 46 cash tables, 40 Spins, 36 Heads-Ups and 26 MTTs. Measured
+after the repair: **zero free horses**, 667 live seat occupancies, 77 horses
+already holding two seats. 20 Spins remain at 0/3 for want of bodies. Filling
+every seat-first game at seats-1 needs ~83 opening horses that do not exist.
+Either the population grows or the board narrows.

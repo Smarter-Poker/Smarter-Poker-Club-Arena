@@ -17,7 +17,7 @@ import './CreateTablePage.css';
 const gameTypeCardAnimationStyle = (index: number) => ({
   opacity: 0,
   transform: 'translateY(10px)',
-  animation: `fadeInUp 0.5s ease-out ${index * 70}ms forwards`,
+  animation: `animationsFadeInUp 0.5s ease-out ${index * 70}ms forwards`,
 });
 
 interface GameType {

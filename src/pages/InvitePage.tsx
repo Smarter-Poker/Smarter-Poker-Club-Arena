@@ -22,7 +22,7 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 const inviteStepAnimationStyle = {
   opacity: 0,
   transform: 'translateY(12px)',
-  animation: 'fadeInUp 0.6s ease-out forwards',
+  animation: 'animationsFadeInUp 0.6s ease-out forwards',
 };
 
 interface ClubInfo {

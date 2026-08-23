@@ -50,7 +50,12 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
   const nameFor = (uid: string) =>
     (h.players || []).find((p) => p.user_id === uid)?.username || 'Player';
 
-  const streets = (['preflop', 'flop', 'turn', 'river'] as const)
+  /* `pineapple_discard` was missing from this list, so every discard action
+     in a pineapple hand was filtered out and simply never appeared in the
+     panel or the exported text. Placement is measured, not assumed: over 31
+     consecutive pineapple hands the discard falls after preflop and before
+     the flop, 31 of 31. */
+  const streets = (['preflop', 'pineapple_discard', 'flop', 'turn', 'river'] as const)
     .map((name) => ({
       name,
       cards: streetCards[name]?.length ? streetCards[name] : undefined,

@@ -50,7 +50,11 @@ export interface ShareablePlayer {
 export interface ShareableHand {
   id: string;
   tableName: string;
-  variant: 'NLH' | 'PLO4' | 'PLO5' | 'PLO6';
+  /* The live catalogue is nlh, plo4, plo5, plo6, plo8, short_deck,
+     pineapple and ofc_pineapple. This union named half of it, so PLO8 was
+     shared as PLO4 and short deck and both pineapples were shared as NLH.
+     Encoded values ride inside a base64 payload, so labels round-trip. */
+  variant: 'NLH' | 'PLO4' | 'PLO5' | 'PLO6' | 'PLO8' | 'Short Deck' | 'Pineapple' | 'OFC Pineapple';
   stakes: string; // "1/2", "5/10", etc
   timestamp: number; // Unix timestamp
   buttonSeat: number;

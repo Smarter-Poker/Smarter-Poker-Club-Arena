@@ -224,6 +224,30 @@ describe('shipped functionality is still here', () => {
       ).toBe(true);
     });
 
+    it('the build output travels as an artifact, not an 84MB branch push', () => {
+      /* 2026-08-23: the sync job used to read dist/ out of an orphan branch
+         force-pushed as `build/world-hub-sync-<sha>`. From 05:17 UTC every
+         publish died there with `remote: fatal error in commit_refs`, four
+         runs and a manual dispatch, and production sat 40 minutes behind main
+         with a dozen merged pull requests stuck behind it. A small push to the
+         repo worked and the same 84MB dist pushed from a workstation over SSH
+         worked, so it was neither the ref backend nor the size - only the
+         runner's HTTPS push of that pack. upload-artifact is what passing
+         build output between jobs is for, and it also ends the 84MB push per
+         commit and the ref left behind by every failed run. */
+      const wf = publisher();
+      expect(wf.includes('actions/upload-artifact')).toBe(true);
+      expect(wf.includes('actions/download-artifact')).toBe(true);
+      expect(
+        /git push[^\n]*build\/world-hub-sync/.test(wf),
+        'the orphan sync branch is back - that push is what deadlocked publishing'
+      ).toBe(false);
+      expect(
+        wf.includes('if-no-files-found: error'),
+        'an empty dist would upload silently and the sync would publish nothing'
+      ).toBe(true);
+    });
+
     it('something asks production what it is actually serving', () => {
       // Without this, "merged" and "published" have the same green tick, and
       // three separate incidents here were merges that never published.

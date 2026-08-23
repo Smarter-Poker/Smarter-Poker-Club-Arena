@@ -28,7 +28,6 @@ let preloaded = false;
 const CRITICAL_CHUNKS: Array<() => Promise<any>> = [
   () => import('../pages/HomePage'),
   () => import('../pages/ClubHomePage'),
-  () => import('../pages/club/ClubLobby'),
   () => import('../pages/ClubCarouselPage'),
   () => import('../pages/ProfilePage'),
   () => import('../pages/club/ClubDashboard'),
@@ -81,13 +80,16 @@ export function preloadCriticalChunks(): void {
     // warm the player's card deck (~500KB of WebP) so the first hands dealt
     // never wait on image fetches. The service worker media cache makes this
     // a one-time cost per device; deckWarmer skips Data Saver / 2g users.
-    setTimeout(() => {
-      import('./deckWarmer')
-        .then(({ warmDeckImages }) => warmDeckImages())
-        .catch(() => {
-          // Preloading is best-effort — the per-card PNG fallback still applies
-        });
-    }, CRITICAL_CHUNKS.length * 150 + 3000);
+    setTimeout(
+      () => {
+        import('./deckWarmer')
+          .then(({ warmDeckImages }) => warmDeckImages())
+          .catch(() => {
+            // Preloading is best-effort — the per-card PNG fallback still applies
+          });
+      },
+      CRITICAL_CHUNKS.length * 150 + 3000
+    );
   });
 }
 

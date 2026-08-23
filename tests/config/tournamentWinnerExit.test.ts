@@ -54,13 +54,13 @@ const tsCode = (src: string) =>
 const ELIMINATIONS = 'server/src/tournament/TournamentManagerEliminations.ts';
 const TABLE_PAGE = 'src/pages/TablePage.tsx';
 const REALTIME = 'src/services/RealtimeChannelService.ts';
-const CLUB_LOBBY = 'src/pages/club/ClubLobby.tsx';
+const CLUB_HOME_PAGE = 'src/pages/ClubHomePage.tsx';
 const TOURNAMENT_SERVICE = 'src/services/TournamentService.ts';
 
 const engine = tsCode(read(ELIMINATIONS));
 const tablePage = tsCode(read(TABLE_PAGE));
 const realtime = tsCode(read(REALTIME));
-const clubLobby = tsCode(read(CLUB_LOBBY));
+const clubHomePage = tsCode(read(CLUB_HOME_PAGE));
 const tournamentService = tsCode(read(TOURNAMENT_SERVICE));
 
 /** The body of `goToLobbyWithResult`, from its declaration to the channel. */
@@ -162,7 +162,7 @@ describe("The champion's exit", () => {
     expect(realtime).toMatch(/'tournament_winner'/);
   });
 
-  it("eliminatePlayer is still never called with place 1 — that is why this is needed", () => {
+  it('eliminatePlayer is still never called with place 1 — that is why this is needed', () => {
     // If this ever stops being true, the two paths can both fire and the
     // champion gets the card twice (or the elimination toast). The guard above
     // catches the double exit; this catches the cause.
@@ -237,14 +237,18 @@ describe('The exit actually leaves the table', () => {
 });
 
 describe('One card, one carrier', () => {
-  it('ClubLobby no longer reads a result out of router state', () => {
+  it('no lobby page reads a result out of router state', () => {
     /* It could never work: the state was addressed to `/clubs/:clubId`
        (ClubHomePage) and only `/clubs/:clubId/lobby` read it, so the card was
-       dropped on arrival every time. More fundamentally "the lobby" is three
-       different pages, so no route-level reader can cover it — which is why
-       the app-root host exists. */
-    expect(clubLobby).not.toMatch(/tournamentResult/);
-    expect(clubLobby).not.toMatch(/TournamentResultCard/);
+       dropped on arrival every time. No route-level reader can cover "the
+       lobby" — which is why the app-root host exists.
+
+       ClubLobby.tsx, the page this case was written against, was deleted on
+       2026-08-23: /clubs/:clubId/lobby now renders ClubHomePage, so there is
+       one lobby component instead of two. The rule is unchanged and now
+       points at the page that survived. */
+    expect(clubHomePage).not.toMatch(/TournamentResultCard/);
+    expect(clubHomePage).not.toMatch(/location\.state[^\n]*tournamentResult/);
   });
 
   it('the client cannot announce an elimination or a winner', () => {

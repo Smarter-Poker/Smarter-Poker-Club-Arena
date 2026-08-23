@@ -1163,6 +1163,7 @@
     "fn_auto_end_stale_streams",
     "fn_auto_promote_waitlist",
     "fn_autorevoke_privileged_anon",
+    "fn_award_satellite_seat",
     "fn_award_share_streak_diamonds",
     "fn_award_vip_points_from_rake",
     "fn_backfill_position_stats",

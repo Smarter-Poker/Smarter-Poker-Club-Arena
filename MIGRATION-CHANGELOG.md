@@ -32,9 +32,13 @@ NULL, with 234,091 dead tuples on an 8,955 MB heap and 1.1 GB across 8 indexes
    `Heap Fetches: 1,921`, **36,964 ms**. ~20 ms per 8 KB page — a saturated disk.
 2. **That exact scan is on the hand-insert path.** `hand_history` carries three
    per-row AFTER INSERT triggers, and `trg_hand_history_club_member_stats` runs
-   a correlated `NOT EXISTS` over `hand_history` *for each seated player*. One
-   hand insert cost a mean of **913 ms** over 32,274 calls — 8.2 CPU-hours, the
-   top entry in `pg_stat_statements`.
+   <<<<<<< HEAD
+   a correlated `NOT EXISTS` over `hand_history` _for each seated player_. One
+   =======
+   a correlated `NOT EXISTS` over `hand_history` _for each seated player_. One
+   > > > > > > > origin/main
+   > > > > > > > hand insert cost a mean of **913 ms** over 32,274 calls — 8.2 CPU-hours, the
+   > > > > > > > top entry in `pg_stat_statements`.
 3. **Everything else starved.** The club lobby's table list took **3,737 ms
    while reading only cached pages** (`Buffers: shared hit=57, read=0`). A query
    that touches no disk and still takes 3.7 s is not a bad plan — it is a
@@ -60,10 +64,15 @@ default-throttled autovacuum could never finish a 10 GB table. **The prune was
 added without the matching autovacuum tuning.** That omission is the regression.
 
 This was also a **recurrence**. Three hours earlier the same evening,
-`20260822233000_prune_snapshots_bounded_scan.sql` fixed *one* prune predicate
-after the same saturation produced the "Still Loading" screen Dan first hit on
-2026-08-20. That fix was correct and incomplete, and nothing was watching for
-the next occurrence.
+<<<<<<< HEAD
+`20260822233000_prune_snapshots_bounded_scan.sql` fixed _one_ prune predicate
+=======
+`20260822233000_prune_snapshots_bounded_scan.sql` fixed _one_ prune predicate
+
+> > > > > > > origin/main
+> > > > > > > after the same saturation produced the "Still Loading" screen Dan first hit on
+> > > > > > > 2026-08-20. That fix was correct and incomplete, and nothing was watching for
+> > > > > > > the next occurrence.
 
 ### Fixes (all applied to production and recorded as migrations)
 
@@ -85,6 +94,7 @@ the next occurrence.
 
 ### Measured, same instance, same queries
 
+<<<<<<< HEAD
 | | before | after |
 |---|---|---|
 | club lobby table list | 3,737 ms | **0.415 ms** |
@@ -95,6 +105,19 @@ the next occurrence.
 | hand throughput | 25–71 /min | **90–100 /min** |
 | cron runs failing | 59% of prune runs | **0 failures in 20 min** |
 | self-test breaches | 12 | **0** |
+=======
+| | before | after |
+| ------------------------------- | --------------------- | ------------------------------------ |
+| club lobby table list | 3,737 ms | **0.415 ms** |
+| trigger subquery on insert path | 36,964 ms | **934 ms** (heap fetches 1,921 → 76) |
+| `hand_history` INSERT | 913 ms | **32.7 ms** |
+| `sp_prune_hand_history` | 38–155 s, rolled back | **3 s, 1,000 rows committed** |
+| `hand_history` dead tuples | 234,091 | **0** (3 autovacuums, was 0 ever) |
+| hand throughput | 25–71 /min | **90–100 /min** |
+| cron runs failing | 59% of prune runs | **0 failures in 20 min** |
+| self-test breaches | 12 | **0** |
+
+> > > > > > > origin/main
 
 Also ANALYZEd seven other large tables the guard caught with no planner
 statistics at all: `solved_spots_gold` (72 GB), `ca_hand_player_idx`,
@@ -106,6 +129,57 @@ statistics at all: `solved_spots_gold` (72 GB), `ca_hand_player_idx`,
 When the symptom is "the page does nothing", measure the database before
 reading React. A plan that reads **zero disk pages and still takes seconds** is
 the signature of a starved instance, and it is invisible from the client.
+<<<<<<< HEAD
+=======
+
+---
+
+## Cowork session 2026-08-23 (1) — RE-READING MY OWN DIFFS: two defects, one of them mine
+
+An adversarial line-by-line pass over everything shipped in the previous
+session. Two real findings.
+
+**The tile you could not open.** `UnionWalletModal` had turned the four union
+wallets into openable views - balance, history, send flow. The Spin reserve,
+added the same day, was left a plain `<div>` with a comment explaining that it
+is not a send source. True, and beside the point: it meant the one wallet that
+had just gained a money-movement control was also the only one whose movements
+could not be seen anywhere in the product. Its rows go to
+`union_wallet_transactions`, and nothing in the SPA read that table at all.
+
+It opens now, read-only. Balance in the Spin green, the full ledger with
+direction, tx type, timestamp and running balance, and a line saying where to
+add funds. No kind selector, no member picker, no send button, and no roster
+fetch for a list it would never render.
+
+**Read-only is the load-bearing part.** `spinSpec.ts` prices the format on the
+pool being net-neutral over volume - `E[multiplier] = seats x (1 - rake)` - so
+one manual withdrawal breaks the invariant every tier is derived from, and
+breaks it silently, because solvency is only ever read afterwards. The test
+that pins the send flow behind `!readOnly` is the most valuable one in the file.
+
+**The theme that never resolved — my regression.** The previous session taught
+`useUserThemeSettings` to WAIT on a null tournament format rather than guess
+MTT. But `TablePage` sets that format only inside `if (tournData)`. A tournament
+row that cannot be read - deleted, RLS-denied, transient - therefore left the
+format null for the life of the table, and the guard then held the felt on the
+DEFAULT theme permanently. Before the guard that case quietly used the MTT
+theme; the guard turned one wrong answer into no answer.
+
+Fixed with `setTournamentFormat((prev) => prev ?? 'mtt')` on the failure path -
+`prev ??` and not a bare assignment, because that branch can interleave with the
+spin reveal path and clobbering a resolved `'spin'` would swap the felt mid-sit,
+which is the exact fault the guard exists to prevent. There is a test for that
+distinction.
+
+12 new cases in `tests/config/spinReserveWalletView.test.ts`, 9 of which fail
+against `origin/main`. Suite: 249 files, 3,144 passed, tsc clean, all three
+Supabase CI gates green.
+
+---
+
+> > > > > > > origin/main
+
 ## Cowork session 2026-08-22 (13) — the league can finally see the mind (PR #309)
 
 The nightly duplicate-deal league (#271) measures every strategy layer in

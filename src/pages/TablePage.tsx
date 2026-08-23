@@ -4493,6 +4493,21 @@ export default function TablePage({
                 }
               }
             }
+          } else {
+            /**
+             * The tournament row could not be read - deleted, denied by RLS, or
+             * a transient failure. `tournamentFormat` would otherwise stay null
+             * for the life of the table, and useUserThemeSettings deliberately
+             * WAITS on a null format rather than guessing MTT, so the player
+             * would sit on the default felt permanently instead of their own.
+             *
+             * 'mtt' is the honest fallback: it is what getThemeGameType already
+             * answers for any tournament it cannot identify, so this restores
+             * the pre-2026-08-22 behaviour for the one case where the format is
+             * genuinely unknowable, without reintroducing the guess for the
+             * 99.9% of tables where it is known.
+             */
+            setTournamentFormat((prev) => prev ?? 'mtt');
           }
 
           if (

@@ -19,6 +19,7 @@ import { realtimeChannelService } from './services/RealtimeChannelService';
 import { OfflineQueueService } from './services/OfflineQueueService';
 import { busEventLogger } from './services/BusEventLogger';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
+import UnionSkinGuard from './components/common/UnionSkinGuard';
 import { ChallengeToastListener } from './components/notifications/ChallengeToastListener';
 import LastClubTracker from './components/common/LastClubTracker';
 import WaitlistBanner from './components/common/WaitlistBanner';
@@ -306,6 +307,13 @@ export default function App() {
         <ChallengeToastListener />
         <GlobalBalanceSync />
         <LastClubTracker />
+        {/* Dan 2026-08-23, binding: "players, agents, super agents, nobody
+          should ever see the union skins." A union is a `clubs` row, so every
+          /clubs/:clubId/* route will render it through the club chrome. The
+          links that did so are fixed at source; this is the backstop for a
+          bookmark, a shared URL, or the next feature to make the same mistake.
+          Owner and union admins pass through. */}
+        <UnionSkinGuard />
         <BusToastBridge />
         <ConfirmHost />
         {/* Dan 2026-08-18: Session Complete now pops in the LOBBY, so its host

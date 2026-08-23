@@ -361,13 +361,28 @@ export function TournamentStartingTicker() {
     >
       <span className="mtt-ticker__flag">STARTING SOON</span>
 
+      {/* Dan 2026-08-23: "if you click the ticker for the tournament running,
+          it should take you directly to the tournament registration page...
+          idk what this page even is that it took me to when clicked."
+
+          It went to a CLUB TOURNAMENT LIST — one step away from the event being
+          announced — built from the tournament's club id. Worse, on a union game
+          that id is the union's own hub club: the screenshot was the MIDWAY
+          UNION list with "+ CREATE TOURNAMENT" on it, shown to a player.
+
+          The ticker names ONE event and `primary.id` IS that event, so it now
+          opens that event. `/tournaments/:tournamentId` is TournamentDetails —
+          the registration page, which owns the Register button through
+          useTournamentRegistration. No club id is involved, so there is no
+          union surface left to leak. The '/tournaments' fallback is the GLOBAL
+          lobby, never club- or union-scoped. */}
       <button
         className="mtt-ticker__track"
         onClick={() => {
-          if (primary.clubId) navigate(`/clubs/${primary.clubId}/tournaments`);
+          if (primary.id) navigate(`/tournaments/${primary.id}`);
           else navigate('/tournaments');
         }}
-        title="Open the tournament lobby"
+        title={`Register For ${formatGameTitle(primary.name)}`}
       >
         {/* Duplicated so the marquee wraps seamlessly rather than snapping
             back to an empty bar. aria-hidden on the copy keeps a screen reader

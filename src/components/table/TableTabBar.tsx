@@ -766,8 +766,25 @@ export function TableTabBar({
                     false,
                     idx === tabs.length - 1
                   )}
+                {/* Dan 2026-08-23: "when you right click on an action tab, or
+                    hold it down on mobile, you should get an option to Leave
+                    Table (an alternate way to leave a table)."
+
+                    It was already here — behind `tabs.length > 1`. So the menu
+                    offered Leave Table at two tables and hid it at one, which
+                    is the case a player is in most of the time: the reported
+                    screenshot is a single MTT tab showing Sit Out, Mute Table
+                    and a greyed-out Move Left / Move Right, with no way out.
+
+                    Leaving one table has never needed a second table to exist.
+                    `'leave'` emits FORCE_LEAVE_TABLE to the owning TablePage —
+                    the secure cashout path — and when the last tab closes,
+                    MultiTablePage's TABLE_LEFT handler calls goToLobby(). The
+                    count gate stays only for a LOBBY tab, where "Close Lobby"
+                    on your only tab would close the thing you are looking at
+                    and leave an empty bar behind. */}
                 {onQuickAction &&
-                  tabs.length > 1 &&
+                  (!isLobby || tabs.length > 1) &&
                   item(
                     isLobby ? 'Close Lobby' : 'Leave Table',
                     () => onQuickAction(tab.id, 'leave'),

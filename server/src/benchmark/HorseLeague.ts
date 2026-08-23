@@ -580,6 +580,8 @@ const LEAGUE_HOUR_UTC = 4;
 const LEAGUE_CHECK_MS = 10 * 60 * 1000;
 /** Hours after LEAGUE_HOUR_UTC during which a missed run is still picked up. */
 const LEAGUE_CATCHUP_HOURS = 3;
+/** Settle time before the boot check, so it never competes with table startup. */
+const LEAGUE_BOOT_DELAY_MS = 90 * 1000;
 // V12.3: raised 1500 -> 10000. At 1500 pairs the standard error was ~7 bb/100
 // while real strategy-layer edges are single-digit bb/100 — the instrument
 // could only ever detect catastrophic regressions, and its own header claimed
@@ -593,19 +595,65 @@ let leagueTimer: NodeJS.Timeout | null = null;
 let lastLeagueDate: string | null = null;
 let leagueRunning = false;
 
+/**
+ * V13.1 — WHY THIS CHECKS AT BOOT, NOT ONLY ON A TIMER.
+ *
+ * A setInterval is reset by every process restart, so a job whose interval is
+ * longer than the gap between deploys NEVER FIRES. On 2026-08-23 the engine
+ * restarted roughly every ten to twenty minutes all night (an active repo, and
+ * every merge touching server/** redeploys), and the league's check simply
+ * never survived to its first tick: 90 minutes after its window opened the
+ * container logs contained not one league line. Widening the window did not
+ * help, because the clock kept going back to zero.
+ *
+ * So the check now runs shortly AFTER BOOT as well. That makes a restart the
+ * thing that triggers the run rather than the thing that prevents it.
+ *
+ * The in-memory `lastLeagueDate` cannot guard that on its own — it is empty
+ * again after every restart — so the guard asks the DATABASE whether today's
+ * run already happened. `horse_league_results` is keyed (run_date, matchup),
+ * which makes it the authoritative record of what has been done.
+ */
+async function alreadyRanToday(date: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from('horse_league_results')
+      .select('matchup')
+      .eq('run_date', date)
+      .limit(LEAGUE_MATCHUPS.length);
+    if (error) throw new Error(error.message);
+    // A partial run (fewer rows than matchups) SHOULD be resumed, so only a
+    // complete card counts as done.
+    return (data?.length ?? 0) >= LEAGUE_MATCHUPS.length;
+  } catch (err) {
+    // Never let a failed lookup silently skip the night; the upsert on
+    // (run_date, matchup) makes a duplicate run harmless.
+    reportError(err, 'HorseLeague.alreadyRanToday');
+    return false;
+  }
+}
+
+async function maybeRunLeague(): Promise<void> {
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const hour = now.getUTCHours();
+  const inWindow = hour >= LEAGUE_HOUR_UTC && hour < LEAGUE_HOUR_UTC + LEAGUE_CATCHUP_HOURS;
+  if (!inWindow || leagueRunning || lastLeagueDate === today) return;
+  if (await alreadyRanToday(today)) {
+    lastLeagueDate = today; // remember for the rest of this process's life
+    return;
+  }
+  lastLeagueDate = today;
+  await runLeague(today);
+}
+
 export function startHorseLeague(): void {
   if (leagueTimer) return;
-  leagueTimer = setInterval(() => {
-    const now = new Date();
-    const today = now.toISOString().slice(0, 10);
-    const hour = now.getUTCHours();
-    const inWindow = hour >= LEAGUE_HOUR_UTC && hour < LEAGUE_HOUR_UTC + LEAGUE_CATCHUP_HOURS;
-    if (inWindow && lastLeagueDate !== today && !leagueRunning) {
-      lastLeagueDate = today;
-      void runLeague(today);
-    }
-  }, LEAGUE_CHECK_MS);
+  leagueTimer = setInterval(() => void maybeRunLeague(), LEAGUE_CHECK_MS);
   leagueTimer.unref?.();
+  // Boot check, after a short settle so it never competes with table startup.
+  const boot = setTimeout(() => void maybeRunLeague(), LEAGUE_BOOT_DELAY_MS);
+  boot.unref?.();
 }
 
 export function stopHorseLeague(): void {

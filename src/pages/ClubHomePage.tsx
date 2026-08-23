@@ -147,6 +147,7 @@ interface ClubData {
   id: string;
   club_id: number;
   name: string;
+  slug?: string;
   description: string;
   avatar_url: string;
   logo_url?: string;
@@ -879,7 +880,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, description, avatar_url, logo_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at, is_union, union_id'
+              'id, club_id, name, slug, description, avatar_url, logo_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at, is_union, union_id'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -2253,7 +2254,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                     title="Share"
                     onClick={async () => {
                       haptic.medium();
-                      const shareUrl = `${window.location.origin}/clubs/${clubId}`;
+                      const shareUrl = `${window.location.origin}/clubs/${club.slug || clubId}`;
                       try {
                         if (navigator.share) {
                           await navigator.share({

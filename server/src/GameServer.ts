@@ -84,6 +84,15 @@ export class GameServer {
    * if it stalls, the whole platform is frozen with nothing to notice.
    */
   private lastDiscoveryOkAt: number = Date.now();
+  /**
+   * When the discovery loop last RAN, as opposed to last succeeded.
+   *
+   * These are different questions and conflating them restarted healthy
+   * engines. `lastDiscoveryOkAt` only advances when the RPC comes back clean,
+   * so a minute of database trouble made it look like the loop had stopped —
+   * when the loop was in fact running perfectly and being told "no" each time.
+   */
+  private lastDiscoveryAttemptAt: number = Date.now();
   private tournamentEngines: Map<string, TournamentManager> = new Map();
   private running: boolean = false;
   private startTime: number = Date.now();
@@ -429,6 +438,26 @@ export class GameServer {
       (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 300_000
     ).length;
     const discoveryStaleMs = Date.now() - this.lastDiscoveryOkAt;
+    /**
+     * ── A SLOW DATABASE IS NOT A DEAD PROCESS (2026-08-23) ──────────────────
+     *
+     * liveness used `discoveryStaleMs > 60_000`, and `lastDiscoveryOkAt` only
+     * advances on a SUCCESSFUL rpc. So one minute of database trouble flipped
+     * the whole process to 'dead' -> Docker healthcheck fails -> sp-autoheal
+     * kills the container -> every in-flight hand on every table it owned is
+     * voided. The engine was fine. The database was slow.
+     *
+     * Verified: `club-arena-engine-2` was marked unhealthy four times between
+     * 05:35 and 05:43 UTC while running a healthcheck that connects perfectly,
+     * so the probe was reaching the engine and being TOLD 'dead'.
+     *
+     * This is the same mistake as the dealing-loop watchdog in #281, one level
+     * up, and it takes the same shape of fix: ask whether the loop is RUNNING
+     * (`lastDiscoveryAttemptAt`), not whether its last answer was good.
+     * Sustained RPC failure is still reported — see discoveryStaleMs below and
+     * the fleet alarms — it simply no longer restarts a healthy container.
+     */
+    const discoveryLoopStalledMs = Date.now() - this.lastDiscoveryAttemptAt;
     // The one liveness signal not derived from this process's own beliefs.
     // deadStalledCount above is computed from msSinceProgress(), which
     // markProgress() sets about our own work; on 2026-08-22 that belief was
@@ -488,7 +517,7 @@ export class GameServer {
       // The Docker HEALTHCHECK reads this field, so a wedged process restarts
       // itself with no human involved.
       liveness:
-        deadStalledCount > 0 || discoveryStaleMs > 60_000 || dealRate.dbConfirmedDead
+        deadStalledCount > 0 || discoveryLoopStalledMs > 60_000 || dealRate.dbConfirmedDead
           ? 'dead'
           : 'ok',
       /**
@@ -504,6 +533,13 @@ export class GameServer {
        * losing the floor is its own alarm.
        */
       dealRate,
+      /**
+       * Time since discovery last SUCCEEDED. High means the database is
+       * struggling; it is reported for visibility but no longer flips
+       * liveness, because it cannot distinguish a slow database from a dead
+       * engine. `discoveryLoopStalledMs` can.
+       */
+      discoveryLoopStalledMs,
       tournamentLease: tournamentLeaseDiagnostics(),
       stalledTableCount: stalledTables.length,
       // Deploy drain gate reads this. A restart voids in-flight hands, so a
@@ -597,9 +633,16 @@ export class GameServer {
       '# HELP poker_discovery_stale_ms Milliseconds since the cash-table discovery loop last completed',
       '# TYPE poker_discovery_stale_ms gauge',
       `poker_discovery_stale_ms ${Date.now() - this.lastDiscoveryOkAt}`,
-      '# HELP poker_engine_liveness 1 when no table is stalled and discovery is fresh, else 0',
+      '# HELP poker_discovery_loop_stalled_ms Milliseconds since the discovery loop last RAN (not since it last succeeded)',
+      '# TYPE poker_discovery_loop_stalled_ms gauge',
+      `poker_discovery_loop_stalled_ms ${Date.now() - this.lastDiscoveryAttemptAt}`,
+      '# HELP poker_engine_liveness 1 when no table is stalled and the discovery loop is running, else 0',
       '# TYPE poker_engine_liveness gauge',
-      `poker_engine_liveness ${stalled.length === 0 && Date.now() - this.lastDiscoveryOkAt <= 60_000 ? 1 : 0}`,
+      // Must match getStatus(): a slow database is not a dead process, so this
+      // keys on whether the loop RAN, not on whether its last answer was good.
+      // Alerting on poker_discovery_stale_ms is still correct and still wired;
+      // it just must not be what declares the engine dead.
+      `poker_engine_liveness ${stalled.length === 0 && Date.now() - this.lastDiscoveryAttemptAt <= 60_000 ? 1 : 0}`,
       '# HELP poker_table_ms_since_progress Milliseconds since this table last made observable progress',
       '# TYPE poker_table_ms_since_progress gauge',
       ...liveness.map(
@@ -1420,6 +1463,8 @@ export class GameServer {
   private async discoverCashTables(): Promise<void> {
     while (this.running) {
       try {
+        // Proof the loop is EXECUTING, independent of what the database says.
+        this.lastDiscoveryAttemptAt = Date.now();
         // C17 FIX (2026-08-08): ONE grouped query, not an N+1.
         //
         // This used to read every waiting/running cash table and then issue a

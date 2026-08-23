@@ -56,6 +56,15 @@ export type { TimerBarProps } from './TimerBar';
 export { TableChat } from './TableChat';
 export type { TableChatProps, ChatMessage, ChatMessageType } from './TableChat';
 
+// Chat Bubble — the sent message shown over the sender's seat avatar
+export {
+  ChatBubble,
+  useSeatChatBubbles,
+  bubbleForSeat,
+  CHAT_BUBBLE_LIFETIME_MS,
+} from './ChatBubble';
+export type { ChatBubbleProps, SeatChatBubble } from './ChatBubble';
+
 // Wait List Modal
 export { WaitListModal } from './WaitListModal';
 export type { WaitListModalProps, WaitListPlayer } from './WaitListModal';

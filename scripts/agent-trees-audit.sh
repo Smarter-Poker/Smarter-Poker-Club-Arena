@@ -67,9 +67,38 @@ while IFS= read -r line; do
 done < <(git -C "$ROOT" worktree list --porcelain; echo)
 
 echo
+
+echo
+echo "--- Checking Production Pipeline ---"
+BUILD_INFO_URL="https://smarter.poker/hub/club-arena/build-info.json"
+NOW=$(date -u +%s)
+SERVED_JSON=$(curl -fsSL -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' "${BUILD_INFO_URL}?cb=${NOW}" 2>/dev/null || true)
+if [ -n "$SERVED_JSON" ]; then
+  SERVED_SHA=$(printf '%s' "$SERVED_JSON" | sed -n 's/.*"ca_sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' || true)
+  HEAD_SHA=$(git -C "$ROOT" rev-parse origin/main 2>/dev/null || true)
+  if [ -n "$SERVED_SHA" ] && [ -n "$HEAD_SHA" ]; then
+    if [ "$SERVED_SHA" = "$HEAD_SHA" ]; then
+      echo "OK: Production is serving origin/main ($HEAD_SHA)."
+    else
+      echo "WARNING: Production ($SERVED_SHA) is NOT serving origin/main ($HEAD_SHA)."
+      if git -C "$ROOT" merge-base --is-ancestor "$SERVED_SHA" "$HEAD_SHA" 2>/dev/null; then
+        echo "State: Lagging (Publish in flight or failed)."
+      else
+        echo "State: ORPHANED PUBLISH. Production is not an ancestor of main."
+        AT_RISK=$((AT_RISK + 1))
+      fi
+    fi
+  else
+    echo "WARNING: Could not parse SHAs."
+  fi
+else
+  echo "WARNING: Could not read $BUILD_INFO_URL"
+fi
+
+
 if [ "$AT_RISK" -gt 0 ]; then
-  echo "$AT_RISK tree(s) hold work that exists in exactly one place."
-  echo "Commit and push them - open the PR and stop, Autopilot merges it."
+  echo
+  echo "FAIL: $AT_RISK issue(s) detected. Production is orphaned or local trees hold unpushed work."
   exit 1
 fi
-echo "Every tree is committed and pushed. Nothing would be lost by a reset."
+echo "SUCCESS: Everything is pushed, committed, and safely deployed."

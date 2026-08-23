@@ -40,6 +40,7 @@
 
 import { STORAGE_KEYS } from '../lib/storage';
 import { SWR_CACHE_PREFIXES } from './staleCacheReaper';
+import { clearMembershipsWarmCache } from '../services/ClubsService';
 
 /** Written by ClubHomePage; imported there so writer and purger cannot drift. */
 export const CLUB_HOME_CACHE_PREFIX = 'club_home_cache_';
@@ -132,6 +133,13 @@ function purgeSession(): number {
  * purge is worth strictly less than a stuck sign-out.
  */
 export function clearUserCaches(): void {
+  // The in-flight membership warm window is keyed by user, but a sign-out
+  // should not leave the previous account's request resolvable at all.
+  try {
+    clearMembershipsWarmCache();
+  } catch {
+    /* never let a cache purge break sign-out */
+  }
   let local = 0;
   let session = 0;
   try {

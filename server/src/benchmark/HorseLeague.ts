@@ -614,6 +614,33 @@ let leagueRunning = false;
  * run already happened. `horse_league_results` is keyed (run_date, matchup),
  * which makes it the authoritative record of what has been done.
  */
+
+/**
+ * V13.1: claim a night's work for exactly one engine instance. Returns true
+ * when THIS process won the claim. The INSERT is the lock — a duplicate-key
+ * violation means another instance got there first.
+ *
+ * Fails CLOSED on an unexpected error: if we cannot tell whether someone else
+ * owns tonight, not running is the safe answer, because the other instance
+ * almost certainly is. (The opposite choice is safe for the date guard, which
+ * is why that one fails open — there, nobody else is holding the work.)
+ */
+export async function claimNightlyJob(job: string, date: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('horse_job_runs')
+      .insert({ job, run_date: date, claimed_by: process.env.HOSTNAME ?? 'engine' });
+    if (!error) return true;
+    // 23505 = unique_violation: someone else owns tonight.
+    const code = (error as { code?: string }).code;
+    if (code === '23505') return false;
+    throw new Error(error.message);
+  } catch (err) {
+    reportError(err, 'HorseLeague.claimNightlyJob');
+    return false;
+  }
+}
+
 async function alreadyRanToday(date: string): Promise<boolean> {
   try {
     const { data, error } = await supabase
@@ -641,6 +668,16 @@ async function maybeRunLeague(): Promise<void> {
   if (!inWindow || leagueRunning || lastLeagueDate === today) return;
   if (await alreadyRanToday(today)) {
     lastLeagueDate = today; // remember for the rest of this process's life
+    return;
+  }
+  // V13.1: the engine runs leader/standby — TWO containers boot the full path
+  // and both reach this line within seconds of each other. Claim the night
+  // before doing the work; the primary key on (job, run_date) means exactly
+  // one instance wins and the other stands down. Without it both would run the
+  // whole card, doubling the CPU (and doubling again per extra replica).
+  if (!(await claimNightlyJob('league', today))) {
+    lastLeagueDate = today;
+    console.log(`[HorseLeague] run ${today} claimed by another instance - standing down`);
     return;
   }
   lastLeagueDate = today;

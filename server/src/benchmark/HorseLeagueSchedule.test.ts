@@ -64,6 +64,29 @@ describe('nightly jobs — a restart must trigger the run, not prevent it', () =
     expect(tf.slice(0, tf.indexOf('\n}\n') + 3)).toContain('return false');
   });
 
+  it('only ONE engine instance may run a night (leader/standby is live)', () => {
+    // Verified on the host: club-arena-engine and club-arena-engine-2 BOTH
+    // boot the full engine path — both hydrate HorseMind, both run GameServer
+    // cleanup — so both reach the nightly check within seconds of each other.
+    // The claim's INSERT is the lock: the primary key on (job, run_date) lets
+    // exactly one win.
+    expect(leagueSrc).toContain('claimNightlyJob');
+    expect(leagueSrc).toContain("from('horse_job_runs')");
+    expect(leagueSrc).toContain("'23505'"); // unique_violation => stand down
+    expect(tunerSrc).toContain("claimNightlyJob('self_tuner'");
+  });
+
+  it('the claim fails CLOSED, while the date guard fails OPEN', () => {
+    // Opposite defaults on purpose. If we cannot tell whether someone else
+    // owns tonight, not running is safe (they probably do). If we cannot tell
+    // whether tonight already ran, running is safe (nobody is holding it, and
+    // both writers upsert).
+    const claim = leagueSrc.slice(leagueSrc.indexOf('export async function claimNightlyJob'));
+    expect(claim.slice(0, claim.indexOf('\n}\n') + 3)).toContain('return false');
+    const guard = leagueSrc.slice(leagueSrc.indexOf('async function alreadyRanToday'));
+    expect(guard.slice(0, guard.indexOf('\n}\n') + 3)).toContain('return false');
+  });
+
   it('both jobs accept a catch-up window rather than a single hour', () => {
     expect(leagueSrc).toContain('LEAGUE_CATCHUP_HOURS');
     expect(tunerSrc).toContain('TUNER_CATCHUP_HOURS');

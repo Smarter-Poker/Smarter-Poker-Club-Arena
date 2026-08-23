@@ -24,6 +24,7 @@ import { reportError } from '../../utils/errorReporter';
 // Whole-number tournament money (Dan 2026-08-20).
 import { totalBuyIn } from '../../utils/buyIn';
 import { relayTournamentEvent } from '../../services/tournamentEventBridge';
+import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
 
 type TournamentStatus = 'all' | 'upcoming' | 'REGISTERING' | 'RUNNING' | 'COMPLETED';
 type TournamentTypeFilter = 'all' | 'mtt' | 'sng' | 'spin' | 'bounty' | 'pko' | 'mystery';
@@ -61,6 +62,8 @@ interface Tournament {
 }
 
 export default function TournamentLobbyPage() {
+  const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
+
   const { clubId } = useParams<{ clubId?: string }>();
   const { user } = useAuthUser();
   const toast = useToast();

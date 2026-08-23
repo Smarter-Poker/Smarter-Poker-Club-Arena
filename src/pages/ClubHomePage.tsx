@@ -81,6 +81,7 @@ import {
   IconSort,
 } from '../components/icons/LobbyIcons';
 import { CLUB_HOME_CACHE_PREFIX } from '../utils/clearUserCaches';
+import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 
 // Shark Club fallback logo — used when DB logo_url is null
 /* Dan 2026-08-20: "replace the old logo image with the new one". v25 was a
@@ -310,6 +311,8 @@ function tournamentOpenFirst(
  * club lobby the player came from.
  */
 export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
+  const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
+
   const { clubId: routeClubId } = useParams<{ clubId: string }>();
   const clubId = clubIdOverride || routeClubId;
   useVisibilityRefresh(() => loadClubData());
@@ -1878,7 +1881,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     (tableId: string) => {
       haptic.medium();
       setPanelOpen(false);
-      // Execute navigate in the next tick to ensure the panel unmounts safely 
+      // Execute navigate in the next tick to ensure the panel unmounts safely
       // without interrupting React Router transition internals
       setTimeout(() => navigate(`/table/${tableId}`), 0);
     },
@@ -1886,59 +1889,21 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   );
 
   const handleRegister = useCallback(
-    async (t: LobbyTournamentRow) => {
-      if (!currentUserId) {
-        toast.error('Sign In To Register');
-        return;
-      }
-      if (actionBusy) return;
-
-      const totalCost = t.buy_in_amount + (t.buy_in_fee || 0);
-      const confirmed = await confirmDialog({
-        title: 'Confirm Buy In',
-        message: `Register for ${t.name}? This will debit ${fmtChips(totalCost)} from your wallet.`,
-        confirmText: 'Confirm Buy In',
-      });
-      if (!confirmed) return;
-
-      setActionBusy(true);
-      try {
-        const username = useUserStore.getState().user?.username || 'Player';
-        await tournamentService.registerPlayer(t.id, currentUserId, username);
-        setRegisteredTournamentIds((prev) => new Set(prev).add(t.id));
-        toast.success(`You Are Registered For ${t.name}`);
-        setPanelOpen(false);
-
-        // Check if the server assigned a table (late reg)
-        const { data: tp } = await supabase
-          .from('tournament_players')
-          .select('table_id')
-          .eq('tournament_id', t.id)
-          .eq('user_id', currentUserId)
-          .maybeSingle();
-
-        if (tp?.table_id) {
-          navigate(`/table/${tp.table_id}`);
-        } else {
-          // Find active tournament table to spectate
-          const { data: tbls } = await supabase
-            .from('tables')
-            .select('id, status')
-            .eq('tournament_id', t.id)
-            .neq('status', 'closed')
-            .limit(1);
-          if (tbls && tbls.length > 0 && tbls[0].id) {
-            navigate(`/table/${tbls[0].id}`);
-          }
+    (t: LobbyTournamentRow) => {
+      registerMtt(
+        {
+          id: t.id,
+          name: t.name,
+          buy_in_amount: t.buy_in_amount,
+          buy_in_fee: t.buy_in_fee,
+        },
+        () => {
+          setRegisteredTournamentIds((prev) => new Set(prev).add(t.id));
+          setPanelOpen(false);
         }
-      } catch (e) {
-        reportError(e, 'ClubHomePage.handleRegister', { tournamentId: t.id });
-        toast.error(e instanceof Error ? e.message : 'Registration Failed, Please Try Again');
-      } finally {
-        setActionBusy(false);
-      }
+      );
     },
-    [currentUserId, actionBusy, toast, navigate]
+    [registerMtt]
   );
 
   const handleUnregister = useCallback(
@@ -2447,26 +2412,24 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             means "show everything" - offering a filter sheet there would imply
             the tab can be narrowed when it deliberately cannot. */}
         <button
-            className={`game-bar__filter-btn ${(() => {
-              if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
-              const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
-              const fVal = advFilters[gameType as FilterGameType];
-              const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
-              return isFilt || (sortKey !== 'recommended') ? 'is-set' : '';
-            })()}`}
-            aria-label="Filters and Sort"
-            title="Filters and Sort"
-            onClick={() => {
-              haptic.light();
-              setSortOpen(false);
-              setFiltersOpen(true);
-            }}
-          >
-            <IconSort />
-            <span>Filters</span>
-          </button>
-
-        
+          className={`game-bar__filter-btn ${(() => {
+            if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
+            const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+            const fVal = advFilters[gameType as FilterGameType];
+            const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
+            return isFilt || sortKey !== 'recommended' ? 'is-set' : '';
+          })()}`}
+          aria-label="Filters and Sort"
+          title="Filters and Sort"
+          onClick={() => {
+            haptic.light();
+            setSortOpen(false);
+            setFiltersOpen(true);
+          }}
+        >
+          <IconSort />
+          <span>Filters</span>
+        </button>
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════

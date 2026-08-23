@@ -19,6 +19,7 @@ import styles from './UnionGamesPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { fmt, fmtChips } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
+import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 
 const formatDate = (ts: string | null) => {
   if (!ts) return '-';
@@ -83,6 +84,8 @@ interface BBJPool {
 }
 
 export default function UnionGamesPage() {
+  const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
+
   const { user } = useAuthUser();
   const toast = useToast();
   const { unionId: paramUnionId } = useParams<{ unionId: string }>();

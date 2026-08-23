@@ -27,6 +27,7 @@ import RegistrationApprovalsPanel from '../../components/tournament/Registration
 import { reportError } from '../../utils/errorReporter';
 import { spinMultiplierLabel } from '../../utils/spinReveal';
 import { formatBuyIn, money, totalBuyIn } from '../../utils/buyIn';
+import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
 
 type TabId =
   | 'detail'
@@ -75,6 +76,8 @@ function getOrdinal(n: number): string {
 export default function TournamentDetails({
   tournamentIdOverride,
 }: { tournamentIdOverride?: string } = {}) {
+  const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
+
   const { tournamentId: routeTournamentId } = useParams<{ tournamentId: string }>();
   const tournamentId = tournamentIdOverride || routeTournamentId;
   const navigate = useNavigate();
@@ -198,12 +201,7 @@ export default function TournamentDetails({
       alive = false;
       clearInterval(iv);
     };
-  }, [
-    tournamentId,
-    (tournament as any)?.final_table_deal_enabled,
-    tournament?.status,
-    user?.id,
-  ]);
+  }, [tournamentId, (tournament as any)?.final_table_deal_enabled, tournament?.status, user?.id]);
 
   const handleVoteForDeal = async () => {
     if (!user?.id || !tournamentId || votingDeal) return;
@@ -673,27 +671,21 @@ export default function TournamentDetails({
     timerRef.current = setInterval(updateCountdown, 1000);
   };
 
-  const handleRegister = async () => {
-    if (isProcessing || !tournament) return;
-    if (!user) {
-      toast.error('Loading your profile... please try again in a moment');
-      return;
-    }
+  const handleRegister = () => {
+    if (!tournament) return;
     setShowSignUpModal(false);
-    setIsProcessing(true);
-
-    try {
-      await tournamentService.registerPlayer(tournament.id, user.id, user.username || 'Player');
-      setIsRegistered(true);
-      // Defer reload so the UI updates instantly (fixes INP)
-      setTimeout(() => loadTournament(), 50);
-    } catch (error) {
-      reportError(error, 'TournamentDetails.Registration_failed');
-      const msg = (error as Error).message || 'Unknown error';
-      toast.error(`Registration failed: ${msg}`);
-    } finally {
-      setIsProcessing(false);
-    }
+    registerMtt(
+      {
+        id: tournament.id,
+        name: tournament.name,
+        buy_in_amount: tournament.buy_in_amount,
+        buy_in_fee: tournament.buy_in_fee,
+      },
+      () => {
+        setIsRegistered(true);
+        setTimeout(() => loadTournament(), 50);
+      }
+    );
   };
 
   const handleUnregister = async () => {
@@ -957,9 +949,8 @@ export default function TournamentDetails({
           {(tournament as any).early_bird_enabled &&
             Number((tournament as any).early_bird_chips) > 0 && (
               <p style={{ color: '#34d399', fontWeight: 600 }}>
-                EARLY BIRD: +
-                {Number((tournament as any).early_bird_chips).toLocaleString()} CHIPS FOR
-                REGISTERING BEFORE THE START
+                EARLY BIRD: +{Number((tournament as any).early_bird_chips).toLocaleString()} CHIPS
+                FOR REGISTERING BEFORE THE START
               </p>
             )}
         </div>

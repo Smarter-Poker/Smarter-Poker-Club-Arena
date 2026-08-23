@@ -608,7 +608,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // by construction (see the basePosition notes above), so exactly one
     // player can ever hold paidPlaces + 1; the in-memory flag and the
     // per-user idempotency key are belt and braces on top of that.
-    if (!isSatellite && tournament && (tournament as any).bubble_protection === true && prize <= 0) {
+    if (
+      !isSatellite &&
+      tournament &&
+      (tournament as any).bubble_protection === true &&
+      prize <= 0
+    ) {
       try {
         const payouts = resolvePayoutStructure(tournament as any);
         const paidPlaces = Array.isArray(payouts) ? payouts.length : 0;

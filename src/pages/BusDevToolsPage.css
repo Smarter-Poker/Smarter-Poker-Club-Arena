@@ -220,6 +220,10 @@
   display: flex;
   gap: 6px;
   align-items: center;
+  /* E2E 2026-08-23: pause/clear/filter controls measured right:408 in a 390px
+     viewport. Wrap instead of clipping. */
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .bdt-select {

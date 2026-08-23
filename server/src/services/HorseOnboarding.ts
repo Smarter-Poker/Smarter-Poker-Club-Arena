@@ -335,7 +335,7 @@ export async function ensureHorseComplete(row: HorseRow): Promise<string[]> {
     // --------------------------------------------------------------------------------
     return supabase
       .from('content_authors')
-      .select('id, profile_id, avatar_url:arena_avatar_url, is_active')
+      .select('id, profile_id, avatar_url, is_active')
       .eq('profile_id', row.id)
       .maybeSingle();
   })();
@@ -424,7 +424,7 @@ export async function sweepIncompleteHorses(limit = 1000): Promise<{
 async function ensureClubMembership(horseId: string, clubId: string): Promise<void> {
   const { data } = await supabase
     .from('club_members')
-    .select('id, chip_balance')
+    .select('user_id, chip_balance')
     .eq('club_id', clubId)
     .eq('user_id', horseId)
     .maybeSingle();
@@ -492,7 +492,7 @@ export async function createHorse(opts: { clubId?: string; realName?: string } =
       username: ident.username,
       alias: ident.alias,
       player_number: playerNumber,
-      arena_avatar_url: null,
+      avatar_url: null,
       is_vip: true,
       vip_tier: 'lifetime',
       horse_profile: brainFor(id, null),

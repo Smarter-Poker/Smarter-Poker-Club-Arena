@@ -78,7 +78,7 @@ export function PromoWalletCashierModal({ isOpen, onClose, clubId }: PromoWallet
             'user_id, role, status, chip_balance, profiles(display_name, username, full_name), clubs!inner(union_id)'
           )
           .eq('clubs.union_id', c.union_id)
-          .eq('status', 'active');
+          .in('status', ['active', 'approved']);
 
         if (unionMembers) {
           const mapped = unionMembers.map((m: any) => ({
@@ -102,7 +102,7 @@ export function PromoWalletCashierModal({ isOpen, onClose, clubId }: PromoWallet
             'user_id, role, status, chip_balance, profiles(display_name, username, full_name)'
           )
           .eq('club_id', clubId)
-          .eq('status', 'active');
+          .in('status', ['active', 'approved']);
 
         if (clubMembers) {
           const mapped = clubMembers.map((m: any) => ({

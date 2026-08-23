@@ -7,6 +7,7 @@
 /* ── Page Layout ── */
 .admin-page {
   min-height: 100vh;
+  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   padding: 16px;
   color: var(--text-primary, #e4e6eb);
 }

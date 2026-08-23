@@ -35,6 +35,7 @@ ceiling, so it cannot be updated from this session without clobber risk.
 ## What shipped
 
 ### World Hub repo (`next.config.js` headers)
+
 - `/hub/club-arena/assets/*` → `public, max-age=31536000, immutable`
   (filenames carry content hashes; index.html stays must-revalidate, so
   deploys still propagate on next navigation).
@@ -44,6 +45,7 @@ ceiling, so it cannot be updated from this session without clobber risk.
   never pin an old cache policy).
 
 ### Club Arena repo
+
 - **sw-bus.js**: media-precedence bug fixed; split into a deploy-versioned
   chunk cache + a persistent `club-arena-media-v1` cache that survives
   deploys; media entries capped at 600; DEPLOY_TS bumped.
@@ -66,12 +68,14 @@ ceiling, so it cannot be updated from this session without clobber risk.
   the Club Arena media path and both cache layers; now `MEDIA_BASE`-relative.
 
 ## Expected effect
+
 - **Repeat visits** (the common case): all JS/CSS/media served from disk with
   zero revalidation round-trips; only index.html + live data hit the network.
 - **First visit**: fonts no longer block render; Supabase handshake overlaps
   JS download; cards are 87% smaller and pre-warmed before the first deal.
 
 ## Verification done this session
+
 - `npx tsc --noEmit` → clean.
 - Full vitest suite (2,906 tests) → green (run from a local copy; the FUSE
   mount is too slow for vitest).
@@ -105,7 +109,7 @@ async loading from Phase 1 already removed the render-blocking cost.
 
 ## PHASE 3 (same day) — offline-capable app shell, self-hosted fonts, table warmup
 
-- **App-shell navigation caching** (sw-bus.js): /hub/club-arena/* navigations
+- **App-shell navigation caching** (sw-bus.js): /hub/club-arena/\* navigations
   are now network-first with a 3.5s deadline; on timeout, network failure, or
   5xx the SW serves the shell HTML that was precached at install TOGETHER
   with that deploy's exact chunks (same versioned cache, so the fallback is
@@ -128,6 +132,7 @@ async loading from Phase 1 already removed the render-blocking cost.
   localStorage SWR cache (CLUBS_CACHE); no change needed.
 
 ## Follow-ups worth doing (not in this pass)
+
 - Convert the big lobby PNGs (`images/tiles/player-stats-v9.png` 712KB, the
   wallet panels ~500KB each, `images/icons/*` 3.2MB total) to WebP the same
   way and update their references.
@@ -193,9 +198,9 @@ worth keeping.
   out. Also deleted three dead root images with zero references anywhere
   (`poker-table-bg.png` 810KB, `club-arena-design.png` 783KB, root
   `vip-card.png` 616KB — VIPPage uses `images/vip-card.png` and says so).
-  *Noted, not changed: `poker-chip-logo.png` and `poker-table-bg.png` are JPEG
+  _Noted, not changed: `poker-chip-logo.png` and `poker-table-bg.png` are JPEG
   data inside a `.png` filename. Harmless (browsers sniff) but a maskable PWA
-  icon wants real PNG alpha — worth a design pass.*
+  icon wants real PNG alpha — worth a design pass._
 
 ### Found by auditing changes that had already merged
 
@@ -215,12 +220,12 @@ worth keeping.
   `build-info.json` would make every deploy verification lie.
 - **The publish stand-down guard was comparing the bundle to itself** (PR
   #372). The `Sync dist/` step rsyncs our bundle into
-  `world-hub/public/hub/club-arena/` *before* the commit step, and the guard
+  `world-hub/public/hub/club-arena/` _before_ the commit step, and the guard
   read its "deployed" provenance from exactly that path — so `THEIRS_SHA`
   equalled `OURS_SHA` on attempt 1, every run. The ancestry check added in #273
   was correct and **inert**, live only from attempt 2 after a push had already
   been rejected. That left the original regression open: a losing older-sha run
-  that checks World Hub out *after* the winner pushed overwrites it, compares
+  that checks World Hub out _after_ the winner pushed overwrites it, compares
   ours-to-ours, and fast-forwards cleanly with every check green. Reproduced
   against real git repos both ways before fixing. Now reads
   `git show origin/main:public/hub/club-arena/build-info.json`.
@@ -228,7 +233,7 @@ worth keeping.
   `SIGNED_OUT` cleared the store, Sentry and realtime, and no storage at all:
   the next person to use the device got the previous account's club list
   (`club_arena_clubs_cache`), club lobby (`club_home_cache_*`, painted
-  *instantly*, before any fetch could correct it), `hand_history_*`, and every
+  _instantly_, before any fetch could correct it), `hand_history_*`, and every
   sessionStorage SWR cache — profile, transaction history, session stats, which
   die with the TAB, not the session, so a sign-out and sign-in in the same tab
   carried them across accounts. Moving ClubHomePage's cache to localStorage for
@@ -239,7 +244,7 @@ worth keeping.
 - **A missing `node` reported itself as a title-case violation** (PR #357, and
   World Hub #664 for the same bug in the bundle gate). A push from a shell
   without `/opt/homebrew/bin` on PATH got `127 command-not-found` and the hook
-  announced *"page copy is not Title Cased."* Worse than the wasted time: the
+  announced _"page copy is not Title Cased."_ Worse than the wasted time: the
   false failure stood in front of a **true** one — re-run with node found, the
   same push was correctly stopped on a real `supabase.auth.getUser()`
   violation.

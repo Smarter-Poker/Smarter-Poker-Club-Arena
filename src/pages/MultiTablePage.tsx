@@ -13,7 +13,7 @@
  * Legacy URL: /table/:tableId still routes here with a single table
  */
 
-import React, { useState, useCallback, useRef, useEffect, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense } from 'react';
 import { matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
 import LiveTablesBar from '../components/table/LiveTablesBar';
@@ -29,19 +29,20 @@ import { soundService, haptic } from '../services/SoundService';
 import { setSitOut, submitAction } from '../services/GameServerAPI';
 import { sessionStatsService } from '../services/SessionStatsService';
 import './MultiTablePage.css';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
 
 // Lazy-load TablePage for code splitting
-const TablePage = lazy(() => import('./TablePage'));
+const TablePage = lazyWithRetry(() => import('./TablePage'));
 // Dan 2026-08-15: the lobby rendered INSIDE a tab, so the in-table "+" can
 // show it without navigating away and unmounting the running games.
-const HomePage = lazy(() => import('./HomePage'));
+const HomePage = lazyWithRetry(() => import('./HomePage'));
 /**
  * Dan 2026-08-19: leaving a table must land on the CLUB lobby (the club's game
  * list, BBJ banner and wallet rows), not the pre-lobby landing page with
  * Create/Find/Join. HomePage is the pre-lobby and is now only the fallback for
  * when we genuinely cannot resolve which club the player came from.
  */
-const ClubHomePage = lazy(() => import('./ClubHomePage'));
+const ClubHomePage = lazyWithRetry(() => import('./ClubHomePage'));
 /**
  * Dan 2026-08-19: tournament cards in the in-tab lobby link to
  * /tournaments/:id, a route OUTSIDE table/:tableId — following it unmounted
@@ -49,7 +50,7 @@ const ClubHomePage = lazy(() => import('./ClubHomePage'));
  * TournamentDetails IN PLACE instead (see handleLobbyLinkCapture), so
  * registering for a tournament keeps the other tables dealing.
  */
-const TournamentDetails = lazy(() => import('./tournament/TournamentDetails'));
+const TournamentDetails = lazyWithRetry(() => import('./tournament/TournamentDetails'));
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES

@@ -14,7 +14,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import { isClubStaff, type ClubRole } from '../../types/clubRoles';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
@@ -51,6 +51,7 @@ import ClubChat from '../../components/club/ClubChat';
 import styles from './ClubDashboard.module.css';
 import { reportError } from '../../utils/errorReporter';
 import { clubGamesOrFilter } from '../../utils/unionScope';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 interface ClubInfo {
   id: string;
@@ -109,7 +110,7 @@ interface ClubTable {
 
 // Recharts is ~390KB; keep it out of the dashboard's initial chunk and pull it
 // in only when a tab that actually plots something is opened.
-const ClubActivityChart = lazy(() => import('../../components/club/ClubActivityChart'));
+const ClubActivityChart = lazyWithRetry(() => import('../../components/club/ClubActivityChart'));
 
 type TabId = 'overview' | 'activity' | 'players' | 'tables' | 'revenue' | 'tournaments';
 

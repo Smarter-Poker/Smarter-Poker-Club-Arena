@@ -15,7 +15,6 @@ import {
   useEffect,
   useRef,
   useCallback,
-  lazy,
   Suspense,
   Component,
   useMemo,
@@ -54,10 +53,11 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { STORAGE_KEYS } from '../lib/storage';
 import styles from './HomePage.module.css';
 import { reportError } from '../utils/errorReporter';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
 
 // Lazy-load heavy components to reduce initial bundle
-const CreateClubModal = lazy(() => import('../components/modals/CreateClubModal'));
-const FindPlayerModal = lazy(() => import('../components/modals/FindPlayerModal'));
+const CreateClubModal = lazyWithRetry(() => import('../components/modals/CreateClubModal'));
+const FindPlayerModal = lazyWithRetry(() => import('../components/modals/FindPlayerModal'));
 
 const SWR_CACHE_TTL = 60 * 60 * 1000; // 1 hour — skip stale cache from old sessions
 

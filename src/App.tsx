@@ -25,7 +25,7 @@ import WaitlistBanner from './components/common/WaitlistBanner';
 import { addBreadcrumb } from './core/SentryInit';
 
 // Intro Video — lazy-loaded (only shown once per session, not needed for initial paint)
-const IntroVideo = lazy(() => import('./components/IntroVideo'));
+const IntroVideo = lazyWithRetry(() => import('./components/IntroVideo'));
 import { useSettingsStore } from './stores/useSettingsStore';
 
 // Layouts
@@ -50,113 +50,116 @@ import { supabaseConnectionWatchdog } from './utils/supabaseConnectionWatchdog';
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
 import TOSGuard from './components/legal/TOSGuard';
+import { lazyWithRetry } from './utils/lazyWithRetry';
 
 // Pages (lazy loaded for performance)
-const AuthPage = lazy(() => import('./pages/AuthPage'));
-const HomePage = lazy(() => import('./pages/HomePage'));
+const AuthPage = lazyWithRetry(() => import('./pages/AuthPage'));
+const HomePage = lazyWithRetry(() => import('./pages/HomePage'));
 
-const ClubsPage = lazy(() => import('./pages/ClubsPage'));
-const ClubCarouselPage = lazy(() => import('./pages/ClubCarouselPage'));
-const ClubHomePage = lazy(() => import('./pages/ClubHomePage'));
-const ClubDashboard = lazy(() => import('./pages/club/ClubDashboard'));
-const ClubDataPage = lazy(() => import('./pages/club/ClubDataPage'));
-const CreateClubPage = lazy(() => import('./pages/CreateClubPage'));
-const CreateTablePage = lazy(() => import('./pages/CreateTablePage'));
-const TableConfigPage = lazy(() => import('./pages/TableConfigPage'));
-const AgentManagementPage = lazy(() => import('./pages/AgentManagementPage'));
-const TournamentPage = lazy(() => import('./pages/TournamentPage'));
-const TournamentDetails = lazy(() => import('./pages/tournament/TournamentDetails'));
-const TournamentLobbyPage = lazy(() => import('./pages/tournament/TournamentLobbyPage'));
-const TournamentResultsPage = lazy(() => import('./pages/tournament/TournamentResultsPage'));
-const TablePage = lazy(() => import('./pages/TablePage'));
-const ProfilePage = lazy(() => import('./pages/ProfilePage'));
-const DailyChallengesPage = lazy(() => import('./pages/DailyChallengesPage'));
-const SettingsPage = lazy(() => import('./pages/SettingsPage'));
-const UnionsPage = lazy(() => import('./pages/UnionsPage'));
-const UnionDetailPage = lazy(() => import('./pages/UnionDetailPage'));
-const UnionStatementsPage = lazy(() => import('./pages/UnionStatementsPage'));
-const CreateUnionPage = lazy(() => import('./pages/CreateUnionPage'));
-const SettlementPage = lazy(() => import('./pages/SettlementPage'));
+const ClubsPage = lazyWithRetry(() => import('./pages/ClubsPage'));
+const ClubCarouselPage = lazyWithRetry(() => import('./pages/ClubCarouselPage'));
+const ClubHomePage = lazyWithRetry(() => import('./pages/ClubHomePage'));
+const ClubDashboard = lazyWithRetry(() => import('./pages/club/ClubDashboard'));
+const ClubDataPage = lazyWithRetry(() => import('./pages/club/ClubDataPage'));
+const CreateClubPage = lazyWithRetry(() => import('./pages/CreateClubPage'));
+const CreateTablePage = lazyWithRetry(() => import('./pages/CreateTablePage'));
+const TableConfigPage = lazyWithRetry(() => import('./pages/TableConfigPage'));
+const AgentManagementPage = lazyWithRetry(() => import('./pages/AgentManagementPage'));
+const TournamentPage = lazyWithRetry(() => import('./pages/TournamentPage'));
+const TournamentDetails = lazyWithRetry(() => import('./pages/tournament/TournamentDetails'));
+const TournamentLobbyPage = lazyWithRetry(() => import('./pages/tournament/TournamentLobbyPage'));
+const TournamentResultsPage = lazyWithRetry(
+  () => import('./pages/tournament/TournamentResultsPage')
+);
+const TablePage = lazyWithRetry(() => import('./pages/TablePage'));
+const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'));
+const DailyChallengesPage = lazyWithRetry(() => import('./pages/DailyChallengesPage'));
+const SettingsPage = lazyWithRetry(() => import('./pages/SettingsPage'));
+const UnionsPage = lazyWithRetry(() => import('./pages/UnionsPage'));
+const UnionDetailPage = lazyWithRetry(() => import('./pages/UnionDetailPage'));
+const UnionStatementsPage = lazyWithRetry(() => import('./pages/UnionStatementsPage'));
+const CreateUnionPage = lazyWithRetry(() => import('./pages/CreateUnionPage'));
+const SettlementPage = lazyWithRetry(() => import('./pages/SettlementPage'));
 
 // New Pages
-const LeaderboardPage = lazy(() => import('./pages/LeaderboardPage'));
-const HandHistoryPage = lazy(() => import('./pages/HandHistoryPage'));
-const PlayerWalletPage = lazy(() => import('./pages/PlayerWalletPage'));
-const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
-const MessagesPage = lazy(() => import('./pages/MessagesPage'));
-const ClubMessagesPage = lazy(() => import('./pages/ClubMessagesPage'));
-const SearchPage = lazy(() => import('./pages/SearchPage'));
-const HelpPage = lazy(() => import('./pages/HelpPage'));
-const CashierPage = lazy(() => import('./pages/CashierPage'));
-const CashierTradePage = lazy(() => import('./pages/CashierTradePage'));
-const SuperAgentDashboard = lazy(() => import('./pages/SuperAgentDashboard'));
-const AchievementsPage = lazy(() => import('./pages/AchievementsPage'));
-const ClubMembersPage = lazy(() => import('./pages/ClubMembersPage'));
-const FriendsPage = lazy(() => import('./pages/FriendsPage'));
-const RakebackPage = lazy(() => import('./pages/RakebackPage'));
-const BadBeatJackpotPage = lazy(() => import('./pages/BadBeatJackpotPage'));
-const PlayerStatsPage = lazy(() => import('./pages/PlayerStatsPage'));
-const PromotionsPage = lazy(() => import('./pages/PromotionsPage'));
-const ClubSettingsPage = lazy(() => import('./pages/ClubSettingsPage'));
-const TransactionHistoryPage = lazy(() => import('./pages/TransactionHistoryPage'));
-const InvitePage = lazy(() => import('./pages/InvitePage'));
-const TableCreationPage = lazy(() => import('./pages/TableCreationPage'));
-const ReportPlayerPage = lazy(() => import('./pages/ReportPlayerPage'));
-const ReportReviewPage = lazy(() => import('./pages/ReportReviewPage'));
-const ClubAnnouncementsPage = lazy(() => import('./pages/ClubAnnouncementsPage'));
-const VIPPage = lazy(() => import('./pages/VIPPage'));
-const ClubFinancialsPage = lazy(() => import('./pages/ClubFinancialsPage'));
-const BonusPage = lazy(() => import('./pages/BonusPage'));
-const WaitlistPage = lazy(() => import('./pages/WaitlistPage'));
-const ClubRulesPage = lazy(() => import('./pages/ClubRulesPage'));
-const NotificationCenter = lazy(() => import('./pages/NotificationCenter'));
-const BusDevToolsPage = lazy(() => import('./pages/BusDevToolsPage'));
-const FinancialAlertsPage = lazy(() => import('./pages/FinancialAlertsPage'));
-const DisputeManagementPage = lazy(() => import('./pages/DisputeManagementPage'));
-const FinancialHealthPage = lazy(() => import('./pages/FinancialHealthPage'));
-const FinancialAdminHub = lazy(() => import('./pages/FinancialAdminHub'));
-const RateAuditPage = lazy(() => import('./pages/RateAuditPage'));
-const SettlementDashboardPage = lazy(() => import('./pages/SettlementDashboardPage'));
-const AgentPortalPage = lazy(() => import('./pages/AgentPortalPage'));
-const RakebackDashboard = lazy(() => import('./pages/RakebackDashboard'));
-const CreditAdminPanel = lazy(() => import('./pages/CreditAdminPanel'));
-const SettlementHistoryPage = lazy(() => import('./pages/SettlementHistoryPage'));
-const FlashPoolPage = lazy(() => import('./pages/FlashPoolPage'));
-const BlacklistManagerPage = lazy(() => import('./pages/BlacklistManagerPage'));
-const SessionHistoryPage = lazy(() => import('./pages/SessionHistoryPage'));
+const LeaderboardPage = lazyWithRetry(() => import('./pages/LeaderboardPage'));
+const HandHistoryPage = lazyWithRetry(() => import('./pages/HandHistoryPage'));
+const PlayerWalletPage = lazyWithRetry(() => import('./pages/PlayerWalletPage'));
+const NotificationsPage = lazyWithRetry(() => import('./pages/NotificationsPage'));
+const MessagesPage = lazyWithRetry(() => import('./pages/MessagesPage'));
+const ClubMessagesPage = lazyWithRetry(() => import('./pages/ClubMessagesPage'));
+const SearchPage = lazyWithRetry(() => import('./pages/SearchPage'));
+const HelpPage = lazyWithRetry(() => import('./pages/HelpPage'));
+const CashierPage = lazyWithRetry(() => import('./pages/CashierPage'));
+const CashierTradePage = lazyWithRetry(() => import('./pages/CashierTradePage'));
+const SuperAgentDashboard = lazyWithRetry(() => import('./pages/SuperAgentDashboard'));
+const AchievementsPage = lazyWithRetry(() => import('./pages/AchievementsPage'));
+const ClubMembersPage = lazyWithRetry(() => import('./pages/ClubMembersPage'));
+const FriendsPage = lazyWithRetry(() => import('./pages/FriendsPage'));
+const RakebackPage = lazyWithRetry(() => import('./pages/RakebackPage'));
+const BadBeatJackpotPage = lazyWithRetry(() => import('./pages/BadBeatJackpotPage'));
+const PlayerStatsPage = lazyWithRetry(() => import('./pages/PlayerStatsPage'));
+const PromotionsPage = lazyWithRetry(() => import('./pages/PromotionsPage'));
+const ClubSettingsPage = lazyWithRetry(() => import('./pages/ClubSettingsPage'));
+const TransactionHistoryPage = lazyWithRetry(() => import('./pages/TransactionHistoryPage'));
+const InvitePage = lazyWithRetry(() => import('./pages/InvitePage'));
+const TableCreationPage = lazyWithRetry(() => import('./pages/TableCreationPage'));
+const ReportPlayerPage = lazyWithRetry(() => import('./pages/ReportPlayerPage'));
+const ReportReviewPage = lazyWithRetry(() => import('./pages/ReportReviewPage'));
+const ClubAnnouncementsPage = lazyWithRetry(() => import('./pages/ClubAnnouncementsPage'));
+const VIPPage = lazyWithRetry(() => import('./pages/VIPPage'));
+const ClubFinancialsPage = lazyWithRetry(() => import('./pages/ClubFinancialsPage'));
+const BonusPage = lazyWithRetry(() => import('./pages/BonusPage'));
+const WaitlistPage = lazyWithRetry(() => import('./pages/WaitlistPage'));
+const ClubRulesPage = lazyWithRetry(() => import('./pages/ClubRulesPage'));
+const NotificationCenter = lazyWithRetry(() => import('./pages/NotificationCenter'));
+const BusDevToolsPage = lazyWithRetry(() => import('./pages/BusDevToolsPage'));
+const FinancialAlertsPage = lazyWithRetry(() => import('./pages/FinancialAlertsPage'));
+const DisputeManagementPage = lazyWithRetry(() => import('./pages/DisputeManagementPage'));
+const FinancialHealthPage = lazyWithRetry(() => import('./pages/FinancialHealthPage'));
+const FinancialAdminHub = lazyWithRetry(() => import('./pages/FinancialAdminHub'));
+const RateAuditPage = lazyWithRetry(() => import('./pages/RateAuditPage'));
+const SettlementDashboardPage = lazyWithRetry(() => import('./pages/SettlementDashboardPage'));
+const AgentPortalPage = lazyWithRetry(() => import('./pages/AgentPortalPage'));
+const RakebackDashboard = lazyWithRetry(() => import('./pages/RakebackDashboard'));
+const CreditAdminPanel = lazyWithRetry(() => import('./pages/CreditAdminPanel'));
+const SettlementHistoryPage = lazyWithRetry(() => import('./pages/SettlementHistoryPage'));
+const FlashPoolPage = lazyWithRetry(() => import('./pages/FlashPoolPage'));
+const BlacklistManagerPage = lazyWithRetry(() => import('./pages/BlacklistManagerPage'));
+const SessionHistoryPage = lazyWithRetry(() => import('./pages/SessionHistoryPage'));
 
 // Q4: New Backported Pages (Hub → Club Arena)
-const AntiCheatPage = lazy(() => import('./pages/AntiCheatPage'));
-const XMTTPage = lazy(() => import('./pages/XMTTPage'));
-const MarketplacePage = lazy(() => import('./pages/MarketplacePage'));
-const UnionGamesPage = lazy(() => import('./pages/UnionGamesPage'));
-const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage'));
-const PlayerSessionsPage = lazy(() => import('./pages/PlayerSessionsPage'));
-const AgentDashboardPage = lazy(() => import('./pages/AgentDashboardPage'));
-const UnionDashboardPage = lazy(() => import('./pages/UnionDashboardPage'));
+const AntiCheatPage = lazyWithRetry(() => import('./pages/AntiCheatPage'));
+const XMTTPage = lazyWithRetry(() => import('./pages/XMTTPage'));
+const MarketplacePage = lazyWithRetry(() => import('./pages/MarketplacePage'));
+const UnionGamesPage = lazyWithRetry(() => import('./pages/UnionGamesPage'));
+const AdminDashboardPage = lazyWithRetry(() => import('./pages/AdminDashboardPage'));
+const PlayerSessionsPage = lazyWithRetry(() => import('./pages/PlayerSessionsPage'));
+const AgentDashboardPage = lazyWithRetry(() => import('./pages/AgentDashboardPage'));
+const UnionDashboardPage = lazyWithRetry(() => import('./pages/UnionDashboardPage'));
 
 // Q3: Social, Messaging & Discovery Pages
-const PublicProfilePage = lazy(() => import('./pages/PublicProfilePage'));
+const PublicProfilePage = lazyWithRetry(() => import('./pages/PublicProfilePage'));
 
 // Shared/Public Pages
-const HandReplayerPage = lazy(() => import('./pages/share/HandReplayerPage'));
+const HandReplayerPage = lazyWithRetry(() => import('./pages/share/HandReplayerPage'));
 // VISIBLE FIX 2026-08-15: ShareHand emits /replay?h=<payload> for every share
 // channel, and no such route existed — every shared link 404'd.
-const SharedHandReplayPage = lazy(() => import('./pages/share/SharedHandReplayPage'));
-const SimPage = lazy(() => import('./pages/SimPage'));
+const SharedHandReplayPage = lazyWithRetry(() => import('./pages/share/SharedHandReplayPage'));
+const SimPage = lazyWithRetry(() => import('./pages/SimPage'));
 
 // System Pages
-const HealthCheckPage = lazy(() => import('./pages/HealthCheckPage'));
+const HealthCheckPage = lazyWithRetry(() => import('./pages/HealthCheckPage'));
 
 // Legal Pages
-const TermsOfServicePage = lazy(() => import('./pages/legal/TermsOfServicePage'));
-const ClubPromotionRulesPage = lazy(() => import('./pages/legal/PromotionsPage'));
-const FairGamingPage = lazy(() => import('./pages/legal/FairGamingPage'));
-const PrivacyPolicyPage = lazy(() => import('./pages/legal/PrivacyPolicyPage'));
+const TermsOfServicePage = lazyWithRetry(() => import('./pages/legal/TermsOfServicePage'));
+const ClubPromotionRulesPage = lazyWithRetry(() => import('./pages/legal/PromotionsPage'));
+const FairGamingPage = lazyWithRetry(() => import('./pages/legal/FairGamingPage'));
+const PrivacyPolicyPage = lazyWithRetry(() => import('./pages/legal/PrivacyPolicyPage'));
 
 // Admin Singletons
-const EngineDashboard = lazy(() => import('./pages/admin/EngineDashboard'));
-const AnalyticsDashboard = lazy(() => import('./pages/admin/AnalyticsDashboard'));
+const EngineDashboard = lazyWithRetry(() => import('./pages/admin/EngineDashboard'));
+const AnalyticsDashboard = lazyWithRetry(() => import('./pages/admin/AnalyticsDashboard'));
 
 // Loading fallback
 function LoadingSpinner() {

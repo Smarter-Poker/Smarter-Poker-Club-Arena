@@ -7,7 +7,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -42,9 +42,10 @@ import styles from './ProfilePage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { generateDefaultAvatar } from '../utils/avatarGenerator';
 import { reportError } from '../utils/errorReporter';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
 
 // #5: Lazy-load Recharts (387KB) — only imported when History tab is opened
-const LazyProfitChart = lazy(() => import('../components/profile/ProfitChart'));
+const LazyProfitChart = lazyWithRetry(() => import('../components/profile/ProfitChart'));
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES

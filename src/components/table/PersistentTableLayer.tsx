@@ -22,12 +22,13 @@
  * route's AuthGuard still redirects them to /auth).
  */
 
-import { Suspense, lazy } from 'react';
+import { Suspense } from 'react';
 import { matchPath, useLocation } from 'react-router-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import ErrorBoundary from '../common/ErrorBoundary';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
-const MultiTablePage = lazy(() => import('../../pages/MultiTablePage'));
+const MultiTablePage = lazyWithRetry(() => import('../../pages/MultiTablePage'));
 
 export default function PersistentTableLayer() {
   const { user } = useAuthUser();

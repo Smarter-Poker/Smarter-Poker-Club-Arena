@@ -33,8 +33,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
-import ClubBankCashierModal from '../components/wallet/ClubBankCashierModal';
-import { canSeeClubBank } from '../components/wallet/walletRows';
+import ChipMintModal from '../components/wallet/ChipMintModal';
 import styles from './CashierTradePage.module.css';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -161,10 +160,8 @@ export default function CashierTradePage() {
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
   // AUDIT 2026-08-21: the "+" on Available Chips used to punt to the classic
-  // cashier, then opened the Chip Mint directly.
-  // Dan 2026-08-23: it opens the CLUB BANK CASHIER now. The mint lives inside
-  // that, for standalone clubs only - a club in a union has no mint at all.
-  const [showClubBank, setShowClubBank] = useState(false);
+  // cashier. Chips originate at the mint, so it opens the Chip Mint here.
+  const [showMint, setShowMint] = useState(false);
   // Guards a double-submit that beats the re-render `busy` depends on.
   const busyRef = useRef(false);
   const isMounted = useRef(true);
@@ -877,22 +874,14 @@ export default function CashierTradePage() {
               <span className={styles.stripLabel}>Available Chips</span>
               <span className={styles.stripValue}>
                 {fmt(availableChips)}
-                {/* Dan 2026-08-23: this used to open the Chip Mint directly.
-                    Minting is a CLUB BANK action now - it exists only for a
-                    standalone club and only inside the cashier that holds the
-                    account it credits. So the "+" opens the Club Bank Cashier,
-                    and only for the four roles that may stand at it. An agent
-                    or a sub agent sees no "+" at all. */}
-                {canSeeClubBank(myRole) && (
-                  <button
-                    className={styles.plusBtn}
-                    aria-label="Open the Club Bank Cashier"
-                    title="Club Bank Cashier - fund agent wallets, ledger, chip mint"
-                    onClick={() => setShowClubBank(true)}
-                  >
-                    +
-                  </button>
-                )}
+                <button
+                  className={styles.plusBtn}
+                  aria-label="Mint chips"
+                  title="Chip Mint - convert diamonds into chips"
+                  onClick={() => setShowMint(true)}
+                >
+                  +
+                </button>
               </span>
             </div>
           </div>
@@ -1195,16 +1184,12 @@ export default function CashierTradePage() {
         </div>
       )}
 
-      {/* Club Bank Cashier — fund agent wallets, the full chip ledger, and
-          (standalone clubs only) the Chip Mint. */}
-      <ClubBankCashierModal
-        isOpen={showClubBank}
-        onClose={() => {
-          setShowClubBank(false);
-          loadClub();
-        }}
+      {/* Chip Mint — chips originate here (diamonds -> chips, 100 = 10,000). */}
+      <ChipMintModal
+        isOpen={showMint}
+        onClose={() => setShowMint(false)}
         clubId={clubUuid || clubParam || ''}
-        role={myRole}
+        onMinted={() => loadClub()}
       />
 
       {/* Amount modal */}

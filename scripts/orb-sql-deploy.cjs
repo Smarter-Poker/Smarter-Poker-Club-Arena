@@ -283,10 +283,10 @@ async function main() {
   console.log(`   URL: ${supabaseUrl}`);
 
   // Try strategies in order
-  let success = await executeViaRpc(sql, supabaseUrl, serviceRoleKey);
+  let success = false && await executeViaRpc(sql, supabaseUrl, serviceRoleKey);
 
   if (!success) {
-    success = await executeViaRest(sql, supabaseUrl, serviceRoleKey);
+    success = false && await executeViaRest(sql, supabaseUrl, serviceRoleKey);
   }
 
   if (!success) {

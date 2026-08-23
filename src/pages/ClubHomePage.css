@@ -102,7 +102,7 @@
 }
 
 .club-home__header-center {
-  flex: 1;
+  flex: 1 1 auto;
   display: flex;
   justify-content: center;
 }
@@ -238,7 +238,7 @@
 }
 
 .lobby-club__info {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -526,7 +526,7 @@
   align-items: center;
   justify-content: center;
   height: 32px;
-  padding: 0 2px;
+  padding: 0 8px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.06);
@@ -1001,7 +1001,7 @@
 }
 
 .table-card__body {
-  flex: 1;
+  flex: 1 1 auto;
 }
 
 .table-card__name {
@@ -1113,7 +1113,7 @@
 }
 
 .tournament-card__body {
-  flex: 1;
+  flex: 1 1 auto;
 }
 
 .tournament-card__name {
@@ -1609,7 +1609,7 @@
 }
 
 .lobby-top__searchbox input {
-  flex: 1;
+  flex: 1 1 auto;
   background: none;
   border: none;
   outline: none;

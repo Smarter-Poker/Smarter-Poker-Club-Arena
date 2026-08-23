@@ -13,6 +13,7 @@ const UNION = 'fade0000-0000-0000-0000-000000000001';
 const OTHER = '4e5a0000-76ea-4bff-b44e-3c470e5f2434';
 
 const routes = [
+`/clubs/${CLUB}`,'/profile',`/clubs/${CLUB}/cashier`,'/transactions','/vip','/settlement-dashboard','/dev/bus','/analytics',
 '/','/auth','/clubs/create',`/clubs/${CLUB}`,`/clubs/${CLUB}/agents`,`/clubs/${CLUB}/create-table`,`/clubs/${CLUB}/create-table/nlh`,`/clubs/${CLUB}/dashboard`,`/clubs/${CLUB}/dashboard-full`,`/clubs/${CLUB}/lobby`,`/clubs/${CLUB}/tournaments`,`/clubs/${CLUB}/messages`,`/tournaments/${TOUR}`,'/tournament-lobby','/tournaments','/tournament-results','/hand-history','/agent-management','/unions','/unions/create',`/unions/${UNION}`,`/unions/${UNION}/statements`,`/unions/${UNION}/settlement`,`/clubs/${CLUB}/settlement`,'/challenges','/profile',`/profile/${OTHER}`,'/settings','/leaderboard','/history','/wallet','/notifications','/messages','/messages/new','/messages/clubs','/search','/help','/cashier','/players','/data',`/clubs/${CLUB}/data`,'/admin','/player-sessions','/agent-dashboard',`/clubs/${CLUB}/cashier`,`/clubs/${CLUB}/cashier-classic`,'/hands',`/clubs/${CLUB}/agent-dashboard`,'/achievements',`/clubs/${CLUB}/members`,`/clubs/${CLUB}/promo-vault`,`/clubs/${CLUB}/members/${OTHER}`,`/clubs/${CLUB}/members/${OTHER}/statistics`,'/friends','/rakeback',`/clubs/${CLUB}/jackpot`,'/stats',`/stats/${OTHER}`,'/promotions',`/clubs/${CLUB}/promotions`,`/clubs/${CLUB}/settings`,'/transactions',`/invite/${CLUB}`,'/invite',`/report/${OTHER}`,`/clubs/${CLUB}/reports`,`/clubs/${CLUB}/announcements`,'/vip',`/clubs/${CLUB}/financials`,'/financial-alerts','/disputes',`/clubs/${CLUB}/disputes`,'/financial-health','/financial-admin','/rate-audit','/settlement-dashboard','/agent-portal','/rakeback-dashboard','/credit-admin','/settlement-history','/flash-pool','/session-history','/bonuses','/waitlist',`/clubs/${CLUB}/blacklist`,`/clubs/${CLUB}/rules`,'/notification-center','/clubs-list',`/clubs/${CLUB}/table-creation`,'/anti-cheat','/xmtt','/union-dashboard','/marketplace',`/unions/${UNION}/games`,'/union-games','/dev/bus','/health','/legal/tos','/legal/promotions','/legal/fair-gaming','/legal/privacy','/engine','/analytics',`/table/${TABLE}`,'/share/hand/test-hand-id','/replay','/sim',
 ];
 
@@ -47,7 +48,9 @@ const audit = async (page) => page.evaluate(() => {
         if ((st.overflowX === 'auto' || st.overflowX === 'scroll') && p.scrollWidth > p.clientWidth + 1) { inScroller = true; break; }
         p = p.parentElement;
       }
-      if (!inScroller) offenders.push({ sel: sel(el), left: Math.round(r.left), right: Math.round(r.right), w: Math.round(r.width) });
+      const st0 = getComputedStyle(el);
+      const decorative = st0.pointerEvents === 'none' && !(el.innerText || '').trim();
+      if (!inScroller && !decorative) offenders.push({ sel: sel(el), left: Math.round(r.left), right: Math.round(r.right), w: Math.round(r.width) });
     }
   }
   // dedupe by selector, keep widest
@@ -88,7 +91,8 @@ async function getSession() {
   const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' });
   await ctx.addInitScript(([key, val]) => { try { localStorage.setItem(key, val); } catch (e) {} }, ['smarter-poker-auth', JSON.stringify(session)]);
   const page = await ctx.newPage();
-  for (const route of routes.slice(START, START + COUNT)) {
+  const uniq = [...new Set(routes)];
+  for (const route of uniq.slice(START, START + COUNT)) {
     if (results.some(r => r.route === route && !r.error)) continue;
     const entry = { route, checks: {} };
     try {

@@ -24,6 +24,16 @@
  * winners lookup comparing `undefined === undefined` that named the first
  * player in the array as the winner of every hand.
  *
+ * RETAINED DELIBERATELY, AND NOT DEAD CODE. `HandReplayViewer`, the component
+ * this was extracted from, was retired on 2026-08-23 once `replay/HandReplay`
+ * was confirmed as the one live replay. What survives it is the part that had
+ * lasting value: an executable statement of what `hand_history` actually holds.
+ * `tests/hand-history-shape.test.ts` asserts these names against real
+ * production rows, and `HandHistoryService.mapHandHistoryRow` — the LIVE
+ * mapper — reads the same JSONB under the same names. If an engine rename ever
+ * lands, this fails first and says which key moved, before the live path starts
+ * quietly rendering blanks.
+ *
  * It lives here, as one pure function, so it can be pinned by tests instead of
  * rediscovered. Anything unrecognised degrades to a readable fallback rather
  * than throwing: a replay is a record of something that already happened, and

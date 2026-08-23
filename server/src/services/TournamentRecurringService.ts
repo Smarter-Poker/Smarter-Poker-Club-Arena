@@ -803,6 +803,16 @@ const SNG_CONFIGS: SNGConfig[] = SNG_BOARD_SHAPES.flatMap((shape) =>
 export const SPIN_SEATS = 3;
 
 /**
+ * Seats the cash room keeps, per live cash table, before the Spin and
+ * Heads-Up boards may claim another idle horse. See cashRoomReserve.
+ *
+ * Two, not more: the point is that a cash table is never a ghost, not that it
+ * is full. A table showing 2 players is one a human can sit down at; a table
+ * showing 0 is one they scroll past.
+ */
+export const CASH_FLOOR_PER_TABLE = 2;
+
+/**
  * ═══════════════════════════════════════════════════════════════════════════
  * SPIN BOARD — Dan 2026-08-21
  * ───────────────────────────────────────────────────────────────────────────
@@ -2173,6 +2183,46 @@ export class TournamentRecurringService {
    * pattern registerHorses right below already used - the per-horse version was
    * a regression against a convention this very file had settled on.
    */
+  /**
+   * How many idle horses the cash room still needs before the tournament
+   * boards may claim any more.
+   *
+   * CASH_FLOOR_PER_TABLE is per LIVE cash table, counted from the seats rather
+   * than from tables.current_players -- that column is maintained by a
+   * different path and was measured disagreeing with the seats (69 vs 72) on
+   * the same afternoon a denormalised count was found stale in three other
+   * places. Count the thing itself.
+   *
+   * Fails OPEN, returning 0: if this read errors the boards behave exactly as
+   * they did before the reserve existed. A reserve that turns a database blip
+   * into a frozen lobby would be worse than no reserve.
+   */
+  private async cashRoomReserve(): Promise<number> {
+    try {
+      const { data: cashTables, error: tErr } = await supabase
+        .from('tables')
+        .select('id')
+        .is('tournament_id', null)
+        .eq('is_deleted', false)
+        .in('status', ['waiting', 'running'])
+        .limit(2000);
+      if (tErr || !cashTables || cashTables.length === 0) return 0;
+
+      const ids = cashTables.map((t) => (t as { id: string }).id);
+      const { count: seated, error: sErr } = await supabase
+        .from('table_seats')
+        .select('user_id', { count: 'exact', head: true })
+        .is('left_at', null)
+        .in('table_id', ids);
+      if (sErr || typeof seated !== 'number') return 0;
+
+      const wanted = ids.length * CASH_FLOOR_PER_TABLE;
+      return Math.max(0, wanted - seated);
+    } catch {
+      return 0;
+    }
+  }
+
   private async pickFreeHorses(count: number): Promise<string[]> {
     if (count <= 0) return [];
     try {
@@ -2227,6 +2277,43 @@ export class TournamentRecurringService {
       const candidates = (horses ?? [])
         .map((h) => (h as { id: string }).id)
         .filter((id) => id && !busy.has(id));
+
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  THE CASH ROOM GETS A FLOOR BEFORE THE BOARD GETS ITS NEXT SPIN
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * Measured 2026-08-23, an hour after the seat-first board was unwedged
+       * and started opening every price point again:
+       *
+       *     MTT   190 horses      CASH  43 horses across 44 tables
+       *     SPIN  128 horses      -> 72 seats occupied in the whole cash room
+       *     SNG   107 horses
+       *
+       * The board did exactly what it was told and drank the fleet. Nothing
+       * here TAKES a horse off a cash table -- the busy set above forbids that
+       * -- but by claiming every idle horse the instant one stands up, it
+       * starves whatever puts horses back into cash seats, and the room
+       * hollows out one rotation at a time. 44 tables showing 1 or 2 players
+       * is a worse lobby than 30 spins showing 2/3.
+       *
+       * So the tournament side may not draw the pool below what the cash room
+       * still needs. This does not move anybody; it declines to claim the last
+       * horses, which leaves them for the cash seater to find. When the fleet
+       * is comfortable the reserve is zero and this costs one indexed count.
+       *
+       * The floor is deliberately LOW. It is not "fill the cash room", it is
+       * "never let it go empty while a board of spins fills": two horses is a
+       * table that is visibly alive and can take a human as a third.
+       */
+      const reserved = await this.cashRoomReserve();
+      const claimable = Math.max(0, candidates.length - reserved);
+      if (claimable < count) {
+        console.log(
+          `[TournamentRecurring] holding ${reserved} horse(s) back for the cash room; ${claimable} of ${count} claimable`
+        );
+      }
+      candidates.length = Math.min(candidates.length, claimable);
       // nodeCrypto, not Math.random: CryptoRandom.test.ts forbids Math.random
       // anywhere in the engine services, and it is right to - a weak source
       // that starts life shuffling a horse list is one refactor away from

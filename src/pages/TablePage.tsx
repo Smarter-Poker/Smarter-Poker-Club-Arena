@@ -517,6 +517,7 @@ import {
 } from '../lib/tableTheme';
 import { adaptServiceHandToPanel } from '../lib/handHistoryAdapter';
 import { useUserStore } from '../stores/useUserStore';
+import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2001,6 +2002,23 @@ export default function TablePage({
 
   // Actual club_id from the table record (NOT the tableId)
   const actualClubIdRef = useRef<string>('');
+  /**
+   * UNION LAW (Dan 2026-08-23) — where LEAVING this table puts the player.
+   *
+   * NOT the same thing as `actualClubIdRef`. That one is the table's owner club
+   * and stays exactly as it is, because rake, persistence, observer-chat
+   * permissions and the club leaderboard are all booked against it. But a
+   * union's games hang off the union's own HUB CLUB, so on a union table
+   * `actualClubIdRef` is the UNION — and every exit path here navigated
+   * straight to `/clubs/<union>`, dropping SHARK CLUB and Club JAQK players
+   * into the Midway Union lobby wearing union skins.
+   *
+   * Resolved when the table loads (see resolveLobbyClubId): the club the player
+   * entered through wins, the table's club is a fallback, and a union is never
+   * the answer. null until it resolves, and null means '/' — a home carousel is
+   * a fine place to land; the union's treasury is not.
+   */
+  const lobbyClubIdRef = useRef<string | null>(null);
   const [actualClubIdLoaded, setActualClubIdLoaded] = useState(false); // Tracks when club_id is available
   const [actionTimeSeconds, setActionTimeSeconds] = useState(15);
   useEffect(() => {
@@ -3506,13 +3524,17 @@ export default function TablePage({
    * landed on a screen for choosing a club, with no trace of the one you were
    * just sitting in.
    *
-   * `actualClubIdRef` is stamped from `table.club_id` when the table loads, so
+   * `lobbyClubIdRef` is resolved from `table.club_id` when the table loads, so
    * it is the club this seat actually belonged to rather than whatever the URL
    * happened to carry. '/' remains the fallback for the case that ref is empty
    * — a table with no club is the only way back to nowhere in particular.
+   *
+   * Dan 2026-08-23: this read `actualClubIdRef` (the table's OWNER club) and so
+   * exited a union game into the MIDWAY UNION lobby. It now reads the
+   * union-filtered `lobbyClubIdRef`.
    */
   const exitDestination = () => {
-    const clubId = actualClubIdRef.current;
+    const clubId = lobbyClubIdRef.current;
     return clubId ? `/clubs/${clubId}` : '/';
   };
 
@@ -4505,6 +4527,28 @@ export default function TablePage({
         // Store actual club_id for persistence and rake
         actualClubIdRef.current = table.club_id || '';
         setActualClubIdLoaded(true); // Signal observer chat permission check
+        // UNION LAW: separately work out where LEAVING lands. On a union game
+        // table.club_id is the union's hub club, which no player, agent or
+        // super agent may ever be shown. See lobbyClubIdRef.
+        //
+        // Two passes on purpose. exitDestination() is SYNCHRONOUS — it runs on
+        // a Leave click — so a player who stands up in the first moments after
+        // the table loads would have found the ref still null and been sent to
+        // '/'. The sync pass answers from the cache the lobby already filled
+        // (and returns null rather than guessing when it cannot); the async
+        // pass then settles it for the deep-link case with a cold cache.
+        //
+        // Neither pass may DOWNGRADE a known club back to null: from both of
+        // them null means "could not tell", never "there is no club".
+        const lobbyClubArgs = {
+          viewerClubId: useUserStore.getState().currentClubId,
+          tableClubId: table.club_id || null,
+        };
+        const syncClub = resolveLobbyClubIdSync(lobbyClubArgs);
+        if (syncClub) lobbyClubIdRef.current = syncClub;
+        void resolveLobbyClubId(lobbyClubArgs).then((id) => {
+          if (id) lobbyClubIdRef.current = id;
+        });
         setActionTimeSeconds(settings.time_bank_seconds || settings.action_time_seconds || 15);
 
         // Fetch club name (and the union it belongs to) for the felt masthead.
@@ -4954,7 +4998,11 @@ export default function TablePage({
                    this instance lives inside the container. */
                 if (embeddedTableId) return;
 
-                const clubId = actualClubIdRef.current;
+                // UNION LAW (Dan 2026-08-23): was actualClubIdRef, the table's
+                // OWNER club — the union's hub club on any union game, which
+                // busted a SHARK CLUB player straight into the Midway Union
+                // lobby. lobbyClubIdRef can never be a union.
+                const clubId = lobbyClubIdRef.current;
                 if (clubId) {
                   navigate(`/clubs/${clubId}`);
                 } else {
@@ -10893,7 +10941,10 @@ export default function TablePage({
                     toast?.success?.(
                       `Seat Released, ${Number(res.refunded ?? 0).toLocaleString()} Chips Refunded`
                     );
-                    const backTo = actualClubIdRef.current;
+                    // UNION LAW (Dan 2026-08-23): the union-filtered lobby club,
+                    // not actualClubIdRef — that is the union's hub club on a
+                    // union game and must never be a player destination.
+                    const backTo = lobbyClubIdRef.current;
                     if (backTo) navigate(`/clubs/${backTo}`);
                   } catch (err) {
                     reportError(err as Error, 'TablePage.leave_seat_refund');

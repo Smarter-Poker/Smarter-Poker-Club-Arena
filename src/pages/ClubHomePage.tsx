@@ -823,6 +823,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     const unsubs = [
       masterBus.subscribeDebounced('CLUB_JOINED', reload, 300),
       masterBus.subscribeDebounced('CLUB_LEFT', reload, 300),
+      masterBus.subscribeDebounced('TABLE_SEATED', reload, 300),
+      masterBus.subscribeDebounced('TABLE_LEFT', reload, 300),
       masterBus.subscribeDebounced('BALANCE_UPDATED', reload, 300),
       masterBus.subscribeDebounced('DIAMOND_BALANCE_CHANGED', reload, 300),
       masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', reload, 300),
@@ -837,7 +839,41 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         300
       ),
       masterBus.subscribeDebounced(
+        'TABLE_UPDATED',
+        () => {
+          // Reload when any table linked to this club changes
+          reload();
+        },
+        300
+      ),
+      masterBus.subscribeDebounced(
+        'TOURNAMENT_UPDATED',
+        () => {
+          // Reload when any tournament changes — payload has tournamentId, not clubId
+          reload();
+        },
+        300
+      ),
+      masterBus.subscribeDebounced(
         'CLUB_SETTINGS_UPDATED',
+        (event) => {
+          if (!clubIdRef.current || event.payload?.clubId === clubIdRef.current) {
+            reload();
+          }
+        },
+        300
+      ),
+      masterBus.subscribeDebounced(
+        'TABLE_CREATED',
+        (event) => {
+          if (!clubIdRef.current || event.payload?.clubId === clubIdRef.current) {
+            reload();
+          }
+        },
+        300
+      ),
+      masterBus.subscribeDebounced(
+        'TABLE_DELETED',
         (event) => {
           if (!clubIdRef.current || event.payload?.clubId === clubIdRef.current) {
             reload();
@@ -847,16 +883,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       ),
       masterBus.subscribeDebounced('WAITLIST_PROMOTED', reload, 300),
     ];
-
-    // 1-minute fallback interval to ensure the page data doesn't get completely stale
-    // when real-time events are missed.
-    const fallbackInterval = setInterval(() => {
-      reload();
-    }, 60_000);
-
     return () => {
       isMounted = false;
-      clearInterval(fallbackInterval);
       unsubs.forEach((u) => u());
     };
   }, []);
@@ -1861,21 +1889,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   );
 
   /** Row selection — opens the game lobby panel. NEVER joins or spends. */
-  const openEntry = useCallback(
-    (entry: LobbyEntry) => {
-      haptic.selection();
-      if (
-        entry.kind === 'mtt' &&
-        (entry.status === 'running' || entry.status === 'late_reg' || entry.status === 'completed')
-      ) {
-        navigate(`/tournaments/${entry.id}`);
-        return;
-      }
-      setSelectedId(entry.id);
-      setPanelOpen(true);
-    },
-    [navigate]
-  );
+  const openEntry = useCallback((entry: LobbyEntry) => {
+    haptic.selection();
+    setSelectedId(entry.id);
+    setPanelOpen(true);
+  }, []);
 
   const handleJoinTable = useCallback(
     (tableId: string) => {
@@ -1938,25 +1956,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     );
     let cash = filteredTables.map(cashEntry);
     if (favoritesOnly) cash = cash.filter((e) => favoriteTableIds.has(e.id));
-
-    if (gameType === 'ALL') {
-      const isMtt = (e: LobbyEntry) => e.kind === 'mtt';
-      const isLateRegOrStarting = (e: LobbyEntry) =>
-        e.status === 'registering' || e.status === 'late_reg' || e.status === 'starting_soon';
-
-      const selectedTourns = tourns.filter((t) => isMtt(t) && isLateRegOrStarting(t)).slice(0, 10);
-
-      const holdemCash = cash.filter((c) => cashKind(c.raw as any) === 'HOLDEM').slice(0, 10);
-      const omahaCash = cash.filter((c) => cashKind(c.raw as any) === 'OMAHA').slice(0, 10);
-      const limitCash = cash.filter((c) => cashKind(c.raw as any) === 'LIMIT').slice(0, 10);
-
-      return [...selectedTourns, ...holdemCash, ...omahaCash, ...limitCash];
-    }
-
     // Tournaments first, cash after — same order the card grid used, so the
     // page-level sort control keeps meaning what it meant.
     return [...tourns, ...cash];
-  }, [filteredTournaments, filteredTables, favoritesOnly, favoriteTableIds, gameType]);
+  }, [filteredTournaments, filteredTables, favoritesOnly, favoriteTableIds]);
 
   const selectedEntry = useMemo(
     () => (selectedId ? lobbyEntries.find((e) => e.id === selectedId) || null : null),

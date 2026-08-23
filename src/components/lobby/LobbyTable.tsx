@@ -397,7 +397,10 @@ export default function LobbyTable({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Enter') return;
+      /* Home/End/PageUp/PageDown are what a keyboard user reaches for in a
+         list this dense - 111 rows is a lot of ArrowDown. */
+      const NAV = ['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageDown', 'PageUp'];
+      if (!NAV.includes(e.key) && e.key !== 'Enter') return;
       if (sorted.length === 0) return;
       const idx = sorted.findIndex((r) => r.id === selectedId);
       if (e.key === 'Enter') {
@@ -408,10 +411,21 @@ export default function LobbyTable({
         return;
       }
       e.preventDefault();
+      const last = sorted.length - 1;
+      const from = idx < 0 ? 0 : idx;
+      const PAGE = 10;
       const next =
         e.key === 'ArrowDown'
-          ? Math.min(sorted.length - 1, idx + 1)
-          : Math.max(0, idx < 0 ? 0 : idx - 1);
+          ? Math.min(last, idx + 1)
+          : e.key === 'ArrowUp'
+            ? Math.max(0, from - 1)
+            : e.key === 'Home'
+              ? 0
+              : e.key === 'End'
+                ? last
+                : e.key === 'PageDown'
+                  ? Math.min(last, from + PAGE)
+                  : Math.max(0, from - PAGE);
       onSelect(sorted[next]);
       // Keep the focused row in view inside the sticky-header scroller.
       const rowEl = bodyRef.current?.querySelector<HTMLTableRowElement>(
@@ -426,11 +440,14 @@ export default function LobbyTable({
     <div
       className="lobby-table-wrap"
       role="region"
-      aria-label="Game list"
+      aria-label={`Game list, ${sorted.length} game${sorted.length === 1 ? '' : 's'}`}
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
-      <table className="lobby-table">
+      {/* role=grid: aria-selected on a <tr> is only valid inside a grid, and
+          without it a screen reader announces none of the selection state the
+          keyboard navigation produces. */}
+      <table className="lobby-table" role="grid">
         <thead>
           <tr>
             {columns.map((col) => {
@@ -442,7 +459,19 @@ export default function LobbyTable({
                   aria-sort={
                     active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : undefined
                   }
+                  /* Sorting was mouse-only: a click handler on a <th> with
+                     no role, no tab stop and no key handler, so keyboard and
+                     screen-reader users could not sort the lobby at all. */
+                  role={col.sortable ? 'columnheader' : undefined}
+                  tabIndex={col.sortable ? 0 : undefined}
                   onClick={() => handleHeaderClick(col)}
+                  onKeyDown={(e) => {
+                    if (!col.sortable) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleHeaderClick(col);
+                    }
+                  }}
                 >
                   <span className="lt-th">
                     {col.label}

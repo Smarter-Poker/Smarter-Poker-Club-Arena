@@ -58,7 +58,6 @@ const HomePage = lazy(() => import('./pages/HomePage'));
 const ClubsPage = lazy(() => import('./pages/ClubsPage'));
 const ClubCarouselPage = lazy(() => import('./pages/ClubCarouselPage'));
 const ClubHomePage = lazy(() => import('./pages/ClubHomePage'));
-const ClubLobby = lazy(() => import('./pages/club/ClubLobby'));
 const ClubDashboard = lazy(() => import('./pages/club/ClubDashboard'));
 const ClubDataPage = lazy(() => import('./pages/club/ClubDataPage'));
 const CreateClubPage = lazy(() => import('./pages/CreateClubPage'));
@@ -306,7 +305,8 @@ export default function App() {
         <ConfirmHost />
         {/* Dan 2026-08-18: Session Complete now pops in the LOBBY, so its host
           lives outside <Routes> - it has to survive the navigate() off the
-          table, and "the lobby" is HomePage OR ClubHomePage OR ClubLobby. */}
+          table, and "the lobby" is HomePage OR ClubHomePage (which now serves
+          /clubs/:clubId and /clubs/:clubId/lobby alike). */}
         <SessionSummaryHost />
         {/* Dan 2026-08-20: the tournament bust card. Same feed as the cash
           summary above, split on payload.tournament — see TournamentRankingHost. */}
@@ -508,12 +508,24 @@ export default function App() {
                     </AuthGuard>
                   }
                 />
+                {/* ONE LOBBY (2026-08-23). This route rendered ClubLobby: a
+                    second, 820-line club lobby with its own inline cards, its
+                    own filters and its own realtime, for the same club the
+                    canonical Lobby V2 at /clubs/:clubId already serves. Two
+                    implementations of one screen is the parallel system the
+                    Lobby V2 spec forbids, and it was the last surface still
+                    shipping the retired card look after PR #313.
+
+                    ClubHomePage reads :clubId from the route, so it renders
+                    here unchanged - every existing link (QuickActionsBar, the
+                    club dashboard, the table's back-navigation) keeps working
+                    and now lands on the same lobby as everything else. */}
                 <Route
                   path="clubs/:clubId/lobby"
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Club Lobby">
-                        <ClubLobby />
+                        <ClubHomePage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

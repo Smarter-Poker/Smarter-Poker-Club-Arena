@@ -1566,6 +1566,10 @@
       "insurance_balance"
     ],
     "clubs": [
+      "bbj_rake_enabled",
+      "spins_enabled",
+      "spins_preseed_amount",
+      "spins_wallet_funding",
       "id",
       "name",
       "description",

@@ -1245,21 +1245,7 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    BACKGROUND (Premium Bar Scene)
 ═══════════════════════════════════════════════════════════════════════════════ */
-.club-home__background {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 50vh;
-  background: linear-gradient(
-    180deg,
-    transparent 0%,
-    rgba(13, 79, 60, 0.3) 50%,
-    rgba(13, 79, 60, 0.5) 100%
-  );
-  pointer-events: none;
-  z-index: 0;
-}
+
 
 /* Table Card Wrapper — contains Link + Delete button */
 .table-card-wrapper {

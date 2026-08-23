@@ -280,7 +280,7 @@ export default function AdvancedFilters({
                     step={spec.range.max > 100 ? 1 : 0.01}
                     value={value.rangeMin}
                     onChange={(e) =>
-                      patch({ rangeMin: Math.min(Number(e.target.value), value.rangeMax) })
+                      patch({ rangeMin: Math.min(Number(e.target.value), value.rangeMax), selectedRanges: [] })
                     }
                   />
                   <input
@@ -291,26 +291,24 @@ export default function AdvancedFilters({
                     step={spec.range.max > 100 ? 1 : 0.01}
                     value={value.rangeMax}
                     onChange={(e) =>
-                      patch({ rangeMax: Math.max(Number(e.target.value), value.rangeMin) })
+                      patch({ rangeMax: Math.max(Number(e.target.value), value.rangeMin), selectedRanges: [] })
                     }
                   />
                 </div>
                 <div className="afx-chips">
                   {spec.range.presets.map((p) => {
-                    const on = value.rangeMin === p.min && value.rangeMax === p.max;
+                    const on = (value.selectedRanges || []).includes(p.key);
                     return (
                       <button
                         key={p.key}
                         type="button"
                         className={`afx-chip ${on ? 'is-on' : ''}`}
                         aria-pressed={on}
-                        onClick={() =>
-                          patch(
-                            on
-                              ? { rangeMin: spec.range.min, rangeMax: spec.range.max }
-                              : { rangeMin: p.min, rangeMax: p.max }
-                          )
-                        }
+                        onClick={() => {
+                          const arr = value.selectedRanges || [];
+                          const nextArr = on ? arr.filter(k => k !== p.key) : [...arr, p.key];
+                          patch({ selectedRanges: nextArr });
+                        }}
                       >
                         {p.label}
                       </button>

@@ -242,6 +242,7 @@ export interface GameFilterValue {
   format: string[];
   rangeMin: number;
   rangeMax: number;
+  selectedRanges?: string[];
   statuses: string[];
   seatMin: number;
   seatMax: number;
@@ -257,6 +258,7 @@ export function emptyFilterValue(spec: GameFilterSpec): GameFilterValue {
     format: [],
     rangeMin: spec.range.min,
     rangeMax: spec.range.max,
+    selectedRanges: [],
     statuses: [],
     seatMin: spec.seats?.min ?? 3,
     seatMax: spec.seats?.max ?? 3,
@@ -388,7 +390,15 @@ export function rowPassesFilter(
   // ── Price range (blinds for cash, total buy-in for tournaments) ──────────
   const price = Number(r.price);
   if (Number.isFinite(price) && price > 0) {
-    if (price < v.rangeMin || price > v.rangeMax) return false;
+    if (v.selectedRanges && v.selectedRanges.length > 0) {
+      const matchesPreset = spec.range.presets.some((p) => {
+        if (!v.selectedRanges!.includes(p.key)) return false;
+        return price >= p.min && price <= p.max;
+      });
+      if (!matchesPreset) return false;
+    } else {
+      if (price < v.rangeMin || price > v.rangeMax) return false;
+    }
   }
 
   // ── Seat range ───────────────────────────────────────────────────────────
@@ -454,6 +464,7 @@ export function isFilterActive(spec: GameFilterSpec, v: GameFilterValue): boolea
     v.statuses.length > 0 ||
     v.mustHave.length > 0 ||
     v.hide.length > 0 ||
+    (v.selectedRanges && v.selectedRanges.length > 0) ||
     v.rangeMin !== spec.range.min ||
     v.rangeMax !== spec.range.max ||
     (spec.seats ? v.seatMin !== spec.seats.min || v.seatMax !== spec.seats.max : false)

@@ -18,7 +18,10 @@ export interface HandHistoryAction {
 }
 
 export interface HandHistoryStreet {
-  name: 'preflop' | 'flop' | 'turn' | 'river';
+  /* `pineapple_discard` is a real street the engine writes. Measured on
+     2026-08-23 over 31 consecutive pineapple hands: it falls after preflop
+     and before the flop in 31 of 31, with no counterexample. */
+  name: 'preflop' | 'pineapple_discard' | 'flop' | 'turn' | 'river';
   cards?: string[]; // Board cards dealt this street
   actions: HandHistoryAction[];
   pot: number;
@@ -93,6 +96,8 @@ function getStreetLabel(name: string): string {
   switch (name) {
     case 'preflop':
       return 'Pre-Flop';
+    case 'pineapple_discard':
+      return 'Discard';
     case 'flop':
       return 'Flop';
     case 'turn':

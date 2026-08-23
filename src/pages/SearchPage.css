@@ -324,7 +324,7 @@
     gap: 0.5rem;
   }
   .search-input-wrapper input {
-    font-size: 0.9rem;
+    font-size: 16px; /* was 0.9rem; under 16px makes iOS zoom the page on focus */
   }
   .category-tabs {
     padding: 0.75rem;

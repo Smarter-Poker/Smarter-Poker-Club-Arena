@@ -5155,6 +5155,42 @@ export default function TablePage({
                 // A player was eliminated from the tournament
                 const elimData = data.payload || {};
 
+                /* Dan 2026-08-23: "when a player busts a tournament, they must
+                   be removed from the table, they are not allowed to still
+                   occupy that seat anymore... it currently doesn't remove
+                   them."
+
+                   This handler forwarded the event to the bus, derived
+                   heads-up and raised a toast — and never touched the seat.
+                   The server DOES stamp table_seats.left_at, but only at the
+                   very END of eliminatePlayer, after the bounty block's
+                   several round-trips (including a 10-row hand_history scan),
+                   and the 5s sweep can lag the bust by hands. Until the next
+                   snapshot happened to carry the vacancy, a busted player sat
+                   there with a stack of zero, occupying a seat nobody could
+                   take.
+
+                   The broadcast IS the elimination and it names the player, so
+                   empty the seat here rather than waiting for a snapshot to
+                   agree. An empty seat is `null` (see createEmptySeats), which
+                   is what the seat ring already renders as EMPTY. If the
+                   server's own release lands later it is a no-op — both write
+                   the same absence. */
+                {
+                  const bustedId = String(elimData.userId || '');
+                  if (bustedId) {
+                    setTableState((prev) => {
+                      const idx = prev.players.findIndex(
+                        (pl: any) => pl && (pl.id === bustedId || pl.user_id === bustedId)
+                      );
+                      if (idx < 0) return prev; // not seated here — another table's bust
+                      const players = [...prev.players];
+                      players[idx] = null;
+                      return { ...prev, players };
+                    });
+                  }
+                }
+
                 /* AUDIT 2026-08-20: PLAYER_ELIMINATED had a listener and no
                    emitter. TournamentTimerService subscribes to it to re-check
                    table size after a bust — the trigger for merging short

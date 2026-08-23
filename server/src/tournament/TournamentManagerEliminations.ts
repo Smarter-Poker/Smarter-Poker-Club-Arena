@@ -413,6 +413,64 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     return rebought;
   }
 
+  /**
+   * Vacate every seat this player holds AT THIS TOURNAMENT'S TABLES.
+   *
+   * Idempotent by construction (`.is('left_at', null)`), so it is safe to call
+   * from the already-eliminated early return as well as the main path.
+   *
+   * SCOPE, 2026-08-18: this UPDATE used to be scoped by user_id alone, so
+   * busting a player out of a tournament stamped left_at on EVERY open seat
+   * they held — including cash tables. Players are not confined to one context
+   * (HorseFleetManager explicitly allows multi-tabling, and registerHorses only
+   * excludes horses busy in another TOURNAMENT), so a bustout could silently
+   * eject someone from a cash game they were winning, stranding the stack in a
+   * left_at row that atomicCashout never sees.
+   *
+   * The result is CHECKED, 2026-08-23. It was not, and a seat release that
+   * fails silently is indistinguishable from one that never ran — which is
+   * exactly how "the busted player is still sitting there" reaches a player
+   * with nothing in the logs to explain it.
+   */
+  protected async releaseTournamentSeat(userId: string): Promise<void> {
+    try {
+      const { data: tournamentTables, error: tablesErr } = await supabase
+        .from('tables')
+        .select('id')
+        .eq('tournament_id', this.tournamentId);
+
+      if (tablesErr) {
+        console.error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] seat release: could not list tables — ${tablesErr.message}`
+        );
+        return;
+      }
+
+      const tournamentTableIds = (tournamentTables ?? []).map((t: { id: string }) => t.id);
+      if (tournamentTableIds.length === 0) {
+        console.warn(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] seat release: no tables carry this tournament_id — ${userId.slice(0, 8)} may still be seated`
+        );
+        return;
+      }
+
+      const { error: seatErr } = await supabase
+        .from('table_seats')
+        .update({ left_at: new Date().toISOString() })
+        .eq('user_id', userId)
+        .in('table_id', tournamentTableIds)
+        .is('left_at', null);
+
+      if (seatErr) {
+        console.error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] seat release FAILED for ${userId.slice(0, 8)} — ${seatErr.message}`
+        );
+      }
+    } catch (err) {
+      reportError(err, 'Tournament.release_tournament_seat_threw');
+    }
+  }
+
   protected async eliminatePlayer(userId: string, position: number): Promise<void> {
     // Guard: check if already eliminated (prevents double-processing)
     const { data: playerCheck, error: checkErr } = await supabase
@@ -428,6 +486,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       playerCheck.status === 'eliminated' ||
       playerCheck.status === 'winner'
     ) {
+      /* Dan 2026-08-23: a busted player must not keep the seat.
+         This early return is correct for the money and the position — those
+         are already done — but it used to skip the seat release at the bottom
+         of this method too. Any elimination first marked by another path (the
+         recovery watchdog, ChipRaceEngine, a raced sweep) therefore left the
+         player sitting at the table forever, because the ONLY code that
+         stamps left_at is below this line. Releasing is idempotent, so run it
+         on the way out. */
+      if (!checkErr && playerCheck?.status === 'eliminated') {
+        await this.releaseTournamentSeat(userId);
+      }
       return; // Already processed
     }
 
@@ -476,6 +545,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (updateErr || (updateCount !== null && updateCount === 0)) {
       return; // Player was already eliminated by another process
     }
+
+    /* Dan 2026-08-23: "they must be removed from the table... it currently
+       doesn't remove them."
+
+       The seat release used to sit at the very BOTTOM of this method, behind
+       the bounty block — a knocker lookup, a 10-row hand_history scan and an
+       RPC, every one of them an awaited round-trip, all wrapped in a try that
+       swallows. A player whose bust triggered any of that stayed visibly
+       seated for the duration, and the 5s sweep can already lag the bust by
+       hands. The seat is not payment and it is not attribution: it is the one
+       thing another player is waiting on. Release it the instant the status
+       write commits. */
+    await this.releaseTournamentSeat(userId);
 
     if (prize > 0) {
       // Retry prize credit up to 3 times with exponential backoff
@@ -646,19 +728,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // silently eject someone from a cash game they were winning, stranding the
     // stack in a left_at row that atomicCashout never sees. Scope it to the
     // tables that belong to this tournament.
-    const { data: tournamentTables } = await supabase
-      .from('tables')
-      .select('id')
-      .eq('tournament_id', this.tournamentId);
-    const tournamentTableIds = (tournamentTables ?? []).map((t: { id: string }) => t.id);
-    if (tournamentTableIds.length > 0) {
-      await supabase
-        .from('table_seats')
-        .update({ left_at: new Date().toISOString() })
-        .eq('user_id', userId)
-        .in('table_id', tournamentTableIds)
-        .is('left_at', null);
-    }
+    // Seat release now happens IMMEDIATELY after the status write above, not
+    // here. See releaseTournamentSeat() for why.
 
     // Broadcast player_eliminated event to all table pages
     // The elimination toast in TournamentDetails/TournamentPage needs a name;

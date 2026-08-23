@@ -82,6 +82,9 @@ function idleEngine() {
     // "collectAwayBlindEvictions is not a function" and the loop never reaches
     // the behaviour under test. Returns no evictions.
     collectAwayBlindEvictions: () => [] as string[],
+    // dealHand calls this for whoever is in the blind seats. Stubbed as a
+    // no-op: presence is not what these tests are about.
+    noteBlindChargedWhileAway: vi.fn(),
     unregisterPlayer: vi.fn(),
   };
   engine.timeBankEngine = { removePlayer: vi.fn() };

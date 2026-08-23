@@ -4788,12 +4788,11 @@ export default function TablePage({
             setTableState((prev) => ({
               ...prev,
               currentLevel,
-              blinds:
-                tableHasLiveBlinds
-                  ? `${table.small_blind}/${table.big_blind}`
-                  : sb > 0 && bbl > 0
-                    ? `${sb}/${bbl}`
-                    : prev.blinds,
+              blinds: tableHasLiveBlinds
+                ? `${table.small_blind}/${table.big_blind}`
+                : sb > 0 && bbl > 0
+                  ? `${sb}/${bbl}`
+                  : prev.blinds,
             }));
 
             /**
@@ -8792,7 +8791,7 @@ export default function TablePage({
         .limit(1);
       const liveId = (data || [])[0]?.id as string | undefined;
       if (cancelled || !liveId || liveId === tableId) return;
-      console.debug('[Seat] Table recycled — following tournament to', liveId);
+      console.debug('[Seat] Table recycled - following tournament to', liveId);
       navigate(`/table/${liveId}`, { replace: true });
     };
 

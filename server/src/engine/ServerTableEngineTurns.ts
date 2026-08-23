@@ -118,6 +118,17 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    */
   protected clearTurnTimer(): void {
     this.preciseTimer.clearTable(this.tableId);
+    // V13: this function's own doc says "every turn deadline this table owns",
+    // and it left the horse's think timer armed. injectTurnStall right above
+    // already clears both, for exactly this reason. The exposed caller is the
+    // insurance/RIT runout pause: currentPlayerSeat is not necessarily cleared
+    // there, so a think timer armed before the pause could fire an action INTO
+    // the paused window — the same class of bug this function was written to
+    // fix, reintroduced for the other timer.
+    if (this.horseActionTimer) {
+      clearTimeout(this.horseActionTimer);
+      this.horseActionTimer = null;
+    }
   }
 
   /**

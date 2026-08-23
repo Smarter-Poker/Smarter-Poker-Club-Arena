@@ -112,6 +112,12 @@ bash "$ROOT/scripts/ensure-hooks.sh" 2>&1 | sed "s/^/# /" >&2 || true
 # repair rather than report.
 bash "$ROOT/scripts/check-node-modules.sh" 2>&1 | sed "s/^/# /" >&2 || true
 
+# Every other guard in this estate queries GitHub, so all of them are blind to
+# work that never reached it. Ten commits sat in worktrees for nineteen hours on
+# 2026-08-23 and nothing noticed. An agent claiming a workspace is the most
+# frequent moment anybody looks at this machine, so the scan happens here.
+bash "$ROOT/scripts/check-unpushed-work.sh" --quiet 2>&1 | sed "s/^/# /" >&2 || true
+
 # Share the main clone's dependencies. The alternative is an npm install per
 # tree - minutes each, gigabytes across 47 trees - or a test gate that silently
 # skips, which is how a red test reaches main and blocks the bundle for all.

@@ -110,7 +110,10 @@
 }
 
 .dw__bbj-label {
-  font-family: 'Oswald', 'Impact', sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    sans-serif;
   font-size: 0.65rem;
   font-weight: 700;
   letter-spacing: 1px;
@@ -123,7 +126,10 @@
 }
 
 .dw__bbj-amount {
-  font-family: 'Oswald', 'Impact', sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    sans-serif;
   font-size: 0.95rem;
   font-weight: 700;
   color: #ffffff;

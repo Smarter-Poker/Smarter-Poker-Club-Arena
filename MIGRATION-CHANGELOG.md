@@ -12354,3 +12354,25 @@ seventeen heads-up games need this engine deploy.
 
 Verified: client tsc clean, server tsc unchanged at 8 pre-existing, 275 files /
 3,365 tests green. 13 of the 18 new tests fail against origin/main.
+
+## Cowork session 2026-08-23 (6) — AN EMPTY LOBBY IS AN OUTAGE
+
+Watching the seat-first fix work in production surfaced the next fault, and
+this one I caused. The Spin board is topped up every TEN MINUTES. That number
+was never measured — it matched the drain rate only because a seat-first game
+used to sit waiting about ten minutes for its field. Shortening the human
+window to 60-180 seconds broke the coincidence.
+
+A Spin is now alive about THREE MINUTES end to end. Measured: 125 Spins
+created and completed in ninety minutes; at the moment of measuring, ZERO open
+and the most recent created EIGHT MINUTES earlier. For most of every cycle a
+player opening the Spin lobby had nothing to sit down at.
+
+Both seat-first boards now refill every 30 seconds (`BOARD_REFILL_INTERVAL_MS`)
+— inside the shortest life any game can have. The tick is cheap by
+construction: `ensureBoardOpen` does one indexed read and returns without
+writing when the board is full, and its BURST cap still bounds a cold start to
+12 creations per tick. MTT and XMTT cadences are untouched; those are scheduled
+events, not boards.
+
+9 new tests, 5 of which fail against origin/main.

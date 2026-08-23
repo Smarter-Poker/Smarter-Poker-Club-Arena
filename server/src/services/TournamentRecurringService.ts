@@ -876,6 +876,14 @@ const XMTT_SCHEDULE: { hours: number[]; tournaments: XMTTConfig[] }[] = [
   },
 ];
 
+/**
+ * How often the seat-first boards (Spin, SNG) are topped back up. See
+ * TournamentRecurringService.start for why this is measured in seconds and not
+ * minutes: a board must be refilled as fast as it drains, and a Spin now lives
+ * about three minutes.
+ */
+const BOARD_REFILL_INTERVAL_MS = 30 * 1000;
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TOURNAMENT RECURRING SERVICE CLASS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -901,17 +909,38 @@ export class TournamentRecurringService {
 
     this.isRunning = true;
     console.log(
-      '[TournamentRecurring] Service started — MTTs every 5 min, SNGs every 15 min, Spins every 10 min, XMTTs every 5 min'
+      '[TournamentRecurring] Service started — MTTs every 5 min, SNG + Spin boards every 30 s, XMTTs every 5 min'
     );
 
     // Tournament check: every 5 minutes
     this.tournamentInterval = setInterval(() => this.checkAndLaunchTournaments(), 5 * 60 * 1000);
 
-    // SNG check: every 15 minutes
-    this.sngInterval = setInterval(() => this.checkAndLaunchSNGs(), 15 * 60 * 1000);
-
-    // Spin check: every 10 minutes
-    this.spinInterval = setInterval(() => this.checkAndLaunchSpins(), 10 * 60 * 1000);
+    /**
+     * A BOARD IS REFILLED AS FAST AS IT DRAINS.
+     *
+     * These were 15 and 10 minutes, chosen back when a seat-first game took
+     * about ten minutes to fill: the refill tick and the drain rate happened
+     * to match, so nobody noticed the cadence was a guess rather than a
+     * measurement.
+     *
+     * They no longer match. A Spin now opens with a 60-180 second human
+     * window, starts about 13 seconds after it closes, and plays out
+     * hyper-turbo three-handed -- alive for roughly THREE MINUTES end to end.
+     * Measured in production 2026-08-23: 125 Spins created and completed in
+     * ninety minutes, and at the moment of measuring ZERO were open and the
+     * last had been created eight minutes earlier. For most of every
+     * ten-minute cycle a player opening the Spin lobby saw an EMPTY BOARD with
+     * nothing to sit down at.
+     *
+     * Thirty seconds is well inside the shortest possible life of a game, so a
+     * seat that empties is offered again almost immediately. The tick is cheap
+     * by construction: ensureBoardOpen does ONE indexed read and returns
+     * without writing when the board is already full, which is the
+     * overwhelmingly common case, and its BURST cap still bounds a cold start
+     * to 12 creations per tick.
+     */
+    this.sngInterval = setInterval(() => this.checkAndLaunchSNGs(), BOARD_REFILL_INTERVAL_MS);
+    this.spinInterval = setInterval(() => this.checkAndLaunchSpins(), BOARD_REFILL_INTERVAL_MS);
 
     // XMTT check: every 5 minutes
     this.xmttInterval = setInterval(() => this.checkAndLaunchXMTTs(), 5 * 60 * 1000);

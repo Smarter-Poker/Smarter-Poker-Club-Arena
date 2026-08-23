@@ -11,7 +11,7 @@ interface BlockedPlayer {
   blockedUserId: string;
   username: string;
   avatar?: string;
-  blockedAt: Date;
+  blockedAt: Date | null;
   reason?: string;
 }
 
@@ -19,11 +19,18 @@ interface BlockedPlayersListProps {
   onUnblock?: (playerId: string) => void;
 }
 
+/** A user with more blocks than this has a moderation problem, not a list. */
+const MAX_BLOCKS_SHOWN = 200;
+
 export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnblock }) => {
   const { user } = useAuthUser();
   const toast = useToast();
   const [blockedPlayers, setBlockedPlayers] = useState<BlockedPlayer[]>([]);
   const [loading, setLoading] = useState(true);
+  /* A failed load is NOT an empty block list. Rendering the "No Blocked
+     Players" tick over a query that errored tells a user they have unblocked
+     everyone, which for a moderation surface is the worst possible lie. */
+  const [loadFailed, setLoadFailed] = useState(false);
   const [unblocking, setUnblocking] = useState<string | null>(null);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -37,7 +44,7 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
 
   useEffect(() => {
     if (user?.id) {
-      loadBlockedPlayers();
+      void loadBlockedPlayers();
     }
   }, [user?.id]);
 
@@ -50,6 +57,7 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
 
   const loadBlockedPlayers = async () => {
     setLoading(true);
+    setLoadFailed(false);
     try {
       /* Every column name here was wrong, and had been since this component
          was written. `user_blocks` is (id, blocker_id, blocked_id, reason,
@@ -75,7 +83,8 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
                 `
         )
         .eq('blocker_id', user?.id)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(MAX_BLOCKS_SHOWN);
 
       if (error) throw error;
 
@@ -85,27 +94,43 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
           blockedUserId: b.blocked_id,
           username: b.blocked_user?.username || 'Unknown',
           avatar: b.blocked_user?.avatar_url,
-          blockedAt: new Date(b.created_at),
+          /* new Date(null) is 1970 — a row with no created_at rendered
+             "Blocked 1/1/1970" rather than admitting it did not know. */
+          blockedAt: b.created_at ? new Date(b.created_at) : null,
           reason: b.reason,
         })) || []
       );
     } catch (error) {
       reportError(error, 'BlockedPlayersList.Failed_to_load_blocked_players');
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
   };
 
   const handleUnblock = (player: BlockedPlayer) => {
+    if (!user?.id) return;
     setUnblocking(player.id);
 
-    // EAGER STATE SYNCHRONIZATION: Remove from list immediately (BFCache-safe)
-    const prevBlocked = blockedPlayers;
+    /* EAGER STATE SYNCHRONIZATION: remove from the list immediately
+       (BFCache-safe). The removal is optimistic; telling the PARENT is not.
+       `onUnblock` used to fire here too and was never rolled back, so a failed
+       delete left the parent believing the block was gone while the row was
+       still in the database — a moderation surface disagreeing with itself. */
+    const originalIndex = blockedPlayers.findIndex((p) => p.id === player.id);
     setBlockedPlayers((prev) => prev.filter((p) => p.id !== player.id));
-    onUnblock?.(player.blockedUserId);
-    toast.success(`Unblocked ${player.username}`);
 
-    // Fire-and-forget delete with rollback on failure
+    const restore = () =>
+      /* Re-insert just this row at its old position. The old code snapshotted
+         the whole array and restored it wholesale, so unblocking A then B and
+         having B fail brought A back from the dead. */
+      setBlockedPlayers((prev) => {
+        if (prev.some((p) => p.id === player.id)) return prev;
+        const next = [...prev];
+        next.splice(originalIndex < 0 ? next.length : originalIndex, 0, player);
+        return next;
+      });
+
     void Promise.resolve(
       supabase
         .from('user_blocks')
@@ -114,19 +139,23 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
         // `user_id` does not exist on this table; the owner column is
         // blocker_id. The delete 400'd, the rollback fired, and the toast said
         // "Failed to unblock player" every time — nobody could unblock anyone.
-        .eq('blocker_id', user?.id || '')
+        .eq('blocker_id', user.id)
     )
       .then(({ error }) => {
         if (error) {
-          // Rollback on failure
-          setBlockedPlayers(prevBlocked);
+          restore();
           toast.error('Failed to unblock player');
           reportError(error, 'BlockedPlayersList.Failed_to_unblock');
+        } else {
+          /* Only now is it true. Announcing success first meant a failure
+             showed the user both "Unblocked X" and "Failed To Unblock X". */
+          toast.success(`Unblocked ${player.username}`);
+          onUnblock?.(player.blockedUserId);
         }
         setUnblocking(null);
       })
       .catch((error: unknown) => {
-        setBlockedPlayers(prevBlocked);
+        restore();
         toast.error('Failed to unblock player');
         reportError(error, 'BlockedPlayersList.Failed_to_unblock');
         setUnblocking(null);
@@ -141,10 +170,17 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
     <div className="blocked-players-list">
       <div className="blocked-header">
         <h3>Blocked Players</h3>
-        <span className="blocked-count">{blockedPlayers.length}</span>
+        {!loadFailed && <span className="blocked-count">{blockedPlayers.length}</span>}
       </div>
 
-      {blockedPlayers.length === 0 ? (
+      {loadFailed ? (
+        <div className="no-blocked">
+          <p>Could Not Load Your Blocked Players</p>
+          <button className="unblock-btn" onClick={() => void loadBlockedPlayers()}>
+            Retry
+          </button>
+        </div>
+      ) : blockedPlayers.length === 0 ? (
         <div className="no-blocked">
           <span className="no-blocked-icon">✓</span>
           <p>No Blocked Players</p>
@@ -173,19 +209,22 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
                     }}
                   />
                 ) : (
-                  <span>{player.username[0]}</span>
+                  <span>{player.username.charAt(0).toUpperCase()}</span>
                 )}
               </div>
               <div className="blocked-info">
                 <span className="blocked-name">{player.username}</span>
                 <span className="blocked-date">
-                  Blocked {player.blockedAt.toLocaleDateString()}
+                  {player.blockedAt
+                    ? `Blocked ${player.blockedAt.toLocaleDateString()}`
+                    : 'Blocked'}
                 </span>
               </div>
               <button
                 className="unblock-btn"
                 onClick={() => handleUnblock(player)}
                 disabled={unblocking === player.id}
+                aria-label={`Unblock ${player.username}`}
               >
                 {unblocking === player.id ? '...' : 'Unblock'}
               </button>

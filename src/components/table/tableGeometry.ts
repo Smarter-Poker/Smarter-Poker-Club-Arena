@@ -21,9 +21,29 @@ export interface Pos {
 /** Dealer button: tucks in toward the felt, stays close to its seat vertically. */
 export const DEALER_BUTTON_FACTOR = { x: 0.28, y: 0.16 } as const;
 
+/**
+ * The hero's button steps much further in than everyone else's.
+ *
+ * Dan 2026-08-23: "button needs to be raised up for the hero as well. it
+ * currently lays on top of the avatar."
+ *
+ * Not a style preference - it is geometry. Every other seat is off to a side,
+ * so the 0.28 x-factor carries its button sideways, clear of the art. The hero
+ * sits at x=50, dead centre of the bottom rail, so its x term is
+ * (50 - 50) * 0.28 = 0 and the button can only move on ONE axis. At y 0.16 it
+ * lands 8% of the table above the seat centre, which is inside the hero's own
+ * avatar: the hero box is 1.3333x everyone else's and its bust art rises about
+ * 160px from there. The button had nowhere to go but onto the player's head.
+ */
+export const DEALER_BUTTON_FACTOR_HERO = { x: 0.28, y: 0.42 } as const;
+
+/** A seat on the bottom rail, where the button and chips can only travel up. */
+export function isBottomSeat(seat: Pos): boolean {
+  return seat.y > 80;
+}
+
 /** Bet chips for an ordinary seat: close to the player, not out near the middle. */
 export const BET_CHIP_FACTOR = { x: 0.22, y: 0.22 } as const;
-
 
 /*
  * betChipFactor(), betChipPosition(), chipCollectFactor() and
@@ -37,9 +57,12 @@ export const BET_CHIP_FACTOR = { x: 0.22, y: 0.22 } as const;
 
 /** Absolute position of the dealer button for a seat, in scaler percentages. */
 export function dealerButtonPosition(seat: Pos): Pos {
+  /* Derived from the seat rather than taken as an argument, so every existing
+     caller keeps working and no call site can forget to pass it. */
+  const factor = isBottomSeat(seat) ? DEALER_BUTTON_FACTOR_HERO : DEALER_BUTTON_FACTOR;
   return {
-    x: seat.x + (50 - seat.x) * DEALER_BUTTON_FACTOR.x,
-    y: seat.y + (50 - seat.y) * DEALER_BUTTON_FACTOR.y,
+    x: seat.x + (50 - seat.x) * factor.x,
+    y: seat.y + (50 - seat.y) * factor.y,
   };
 }
 
@@ -84,6 +107,20 @@ export const CHIP_RAIL_INSET_PX = 46;
  */
 export const CHIP_RAIL_DEALER_EXTRA_PX = 20;
 
+/**
+ * Extra rail for a bottom-rail seat, the hero's included.
+ *
+ * Dan 2026-08-23: "chips for the hero need to be pushed out farther in front of
+ * them, they are literally on top of the avatar."
+ *
+ * Same cause as the button above. A side seat's chips travel diagonally and
+ * clear the art within the standard inset; the hero's travel straight up from
+ * x=50 into an avatar that is a third larger than everyone else's and whose art
+ * rises well past its own box. The rail is measured from the seat CENTRE, and
+ * for this one seat the thing it has to clear is much taller.
+ */
+export const CHIP_RAIL_BOTTOM_EXTRA_PX = 46;
+
 /** Where a chip finishes when it is collected, as a fraction of seat-to-centre. */
 export const CHIP_COLLECT_FRACTION = 0.66;
 
@@ -121,7 +158,8 @@ export function betChipOffsetPx(seat: Pos, size: Size, isDealer: boolean): Pos {
 
   // Never step more than most of the way to the middle, however small the
   // table gets - the chips belong to a player, not to the pot.
-  const inset = Math.min(chipRailInset(size, isDealer), len * 0.8);
+  const bottomExtra = isBottomSeat(seat) ? CHIP_RAIL_BOTTOM_EXTRA_PX : 0;
+  const inset = Math.min(chipRailInset(size, isDealer) + bottomExtra, len * 0.8);
   return {
     x: Math.round((dxPx / len) * inset),
     y: Math.round((dyPx / len) * inset),

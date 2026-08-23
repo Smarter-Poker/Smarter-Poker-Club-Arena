@@ -204,6 +204,26 @@ describe('shipped functionality is still here', () => {
       ).toBe(true);
     });
 
+    it('the stand-down guard reads the DEPLOYED file, not the one it just wrote', () => {
+      /* 2026-08-23: the "Sync dist/" step rsyncs our bundle into
+         public/hub/club-arena/ BEFORE the guard runs, so reading that path
+         compared the bundle to itself - THEIRS_SHA equalled OURS_SHA on
+         attempt 1 and the guard could not fire on the attempt that usually
+         decides the outcome. A losing older-sha run that checks World Hub out
+         after the winner pushed would then overwrite it and fast-forward
+         cleanly, with every check green. origin/main is the only honest
+         answer to "what is deployed". */
+      const wf = publisher();
+      expect(
+        wf.includes('git show origin/main:public/hub/club-arena/build-info.json'),
+        'the guard no longer reads the deployed provenance from git'
+      ).toBe(true);
+      expect(
+        /THEIRS_SHA=\$\(printf '%s' "\$THEIRS_JSON"/.test(wf),
+        'THEIRS_SHA is being parsed from something other than the deployed file'
+      ).toBe(true);
+    });
+
     it('something asks production what it is actually serving', () => {
       // Without this, "merged" and "published" have the same green tick, and
       // three separate incidents here were merges that never published.

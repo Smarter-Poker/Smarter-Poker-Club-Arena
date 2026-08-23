@@ -136,74 +136,81 @@
   justify-content: center;
 }
 
+/* 2026-08-23: the twelve design classes used to each carry
+   `--cb-image: url('/cards/backs/table/<id>.webp')`. That URL is ROOT-relative,
+   and Club Arena is served from /hub/club-arena/ — so every one of them
+   resolved to https://smarter.poker/cards/backs/table/<id>.webp, which is a
+   404 (verified in production; the Hub root really does have a /cards/ folder,
+   holding entirely different files, so nothing 404-logged loudly either).
+
+   Every seat therefore drew the FALLBACK GRADIENT with no art on it: a dark
+   navy box with a thin blue border, which on dark felt reads as an empty
+   outline. Dan, 2026-08-23: "if a player has cards, and is active in the
+   hand... their card backs should be visible until they fold. they must be
+   visible and not hidden or dimmed at all." They were not dimmed. The picture
+   was missing.
+
+   CSS cannot see MEDIA_BASE — that is a build-time env var read in TS, and the
+   whole point of it (Phase U5.3) is that media can move to an R2 bucket on a
+   different origin. So `--cb-image` is now set from CardBack/CardImage in JS,
+   through the same mediaUrl() every card FACE already used. The gradient and
+   border stay here as the fallback for a missing file. */
 .card-back--classic_red {
-  --cb-image: url('/cards/backs/table/classic_red.webp');
   --cb-gradient: linear-gradient(135deg, #8b0000 0%, #4a0000 100%);
   --cb-border: #b22222;
 }
 
 .card-back--classic_blue {
-  --cb-image: url('/cards/backs/table/classic_blue.webp');
   --cb-gradient: linear-gradient(135deg, #1e3a5f 0%, #0d2137 100%);
   --cb-border: #3a6ea5;
 }
 
 .card-back--diamond {
-  --cb-image: url('/cards/backs/table/diamond.webp');
   --cb-gradient: linear-gradient(135deg, #5e17eb 0%, #2a0a66 100%);
   --cb-border: #9b4dca;
 }
 
 .card-back--gold {
-  --cb-image: url('/cards/backs/table/gold.webp');
   --cb-gradient: linear-gradient(135deg, #ffd700 0%, #b8860b 100%);
   --cb-border: #daa520;
 }
 
 .card-back--dragon {
-  --cb-image: url('/cards/backs/table/dragon.webp');
   --cb-gradient: linear-gradient(135deg, #2d1b69 0%, #0f0a26 100%);
   --cb-border: #7c3aed;
 }
 
 .card-back--neon {
-  --cb-image: url('/cards/backs/table/neon.webp');
   --cb-gradient: linear-gradient(135deg, #00ff9f 0%, #00b8ff 50%, #ff00ff 100%);
   --cb-border: #00ffff;
 }
 
 .card-back--galaxy {
-  --cb-image: url('/cards/backs/table/galaxy.webp');
   --cb-gradient: linear-gradient(135deg, #0c0c1e 0%, #1a1a3e 50%, #2d1b69 100%);
   --cb-border: #5b21b6;
 }
 
 .card-back--royal {
-  --cb-image: url('/cards/backs/table/royal.webp');
   --cb-gradient: linear-gradient(135deg, #4a0080 0%, #1a0030 100%);
   --cb-border: #9333ea;
 }
 
 .card-back--holographic {
-  --cb-image: url('/cards/backs/table/holographic.webp');
   --cb-gradient: linear-gradient(135deg, #d3d3d3 0%, #a9a9a9 100%);
   --cb-border: #808080;
 }
 
 .card-back--carbon {
-  --cb-image: url('/cards/backs/table/carbon.webp');
   --cb-gradient: linear-gradient(135deg, #434343 0%, #000000 100%);
   --cb-border: #333333;
 }
 
 .card-back--club-branded {
-  --cb-image: url('/cards/backs/table/club-branded.webp');
   --cb-gradient: linear-gradient(135deg, #8b0000 0%, #4a0000 100%);
   --cb-border: #b22222;
 }
 
 .card-back--diamond-foil {
-  --cb-image: url('/cards/backs/table/diamond-foil.webp');
   --cb-gradient: linear-gradient(135deg, #e0e0e0 0%, #ffffff 100%);
   --cb-border: #cccccc;
 }

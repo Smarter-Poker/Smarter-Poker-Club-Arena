@@ -2,6 +2,7 @@
 
 .page {
   min-height: 100vh;
+  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   background: linear-gradient(180deg, #0d1226 0%, #0a0d1c 100%);
   color: #fff;
   padding-bottom: 96px;
@@ -33,8 +34,14 @@
   min-height: 40px;
 }
 
-.headerBtn:disabled { opacity: 0.35; cursor: default; }
-.headerBtn:focus-visible { outline: 2px solid #f0b429; outline-offset: 2px; }
+.headerBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.headerBtn:focus-visible {
+  outline: 2px solid #f0b429;
+  outline-offset: 2px;
+}
 
 .title {
   font-size: 1rem;
@@ -71,7 +78,9 @@
   scrollbar-width: none;
 }
 
-.periodChips::-webkit-scrollbar { display: none; }
+.periodChips::-webkit-scrollbar {
+  display: none;
+}
 
 .chip {
   flex: 0 0 auto;
@@ -93,7 +102,10 @@
   color: #f0b429;
 }
 
-.chip:focus-visible { outline: 2px solid #f0b429; outline-offset: 2px; }
+.chip:focus-visible {
+  outline: 2px solid #f0b429;
+  outline-offset: 2px;
+}
 
 .summary {
   display: grid;
@@ -103,7 +115,9 @@
 }
 
 @media (min-width: 640px) {
-  .summary { grid-template-columns: repeat(4, 1fr); }
+  .summary {
+    grid-template-columns: repeat(4, 1fr);
+  }
 }
 
 .tile {
@@ -131,8 +145,12 @@
   color: rgba(255, 255, 255, 0.42);
 }
 
-.pos { color: #35d07f; }
-.neg { color: #ff5c6c; }
+.pos {
+  color: #35d07f;
+}
+.neg {
+  color: #ff5c6c;
+}
 
 .statusStrip {
   display: flex;
@@ -144,7 +162,9 @@
   color: rgba(255, 255, 255, 0.6);
 }
 
-.warn { color: #f0b429; }
+.warn {
+  color: #f0b429;
+}
 
 .actions {
   display: flex;
@@ -184,11 +204,17 @@
 
 .primaryBtn:disabled,
 .dangerBtn:disabled,
-.ghostBtn:disabled { opacity: 0.4; cursor: default; }
+.ghostBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 
 .primaryBtn:focus-visible,
 .dangerBtn:focus-visible,
-.ghostBtn:focus-visible { outline: 2px solid #f0b429; outline-offset: 2px; }
+.ghostBtn:focus-visible {
+  outline: 2px solid #f0b429;
+  outline-offset: 2px;
+}
 
 .actionNote {
   padding: 0.5rem 1rem 0;
@@ -220,9 +246,14 @@
   min-height: 56px;
 }
 
-.clubMain:focus-visible { outline: 2px solid #f0b429; outline-offset: -2px; }
+.clubMain:focus-visible {
+  outline: 2px solid #f0b429;
+  outline-offset: -2px;
+}
 
-.clubText { min-width: 0; }
+.clubText {
+  min-width: 0;
+}
 
 .clubName {
   font-size: 0.875rem;
@@ -252,13 +283,29 @@
   text-transform: uppercase;
 }
 
-.pillOpen { background: rgba(255, 255, 255, 0.09); color: rgba(255, 255, 255, 0.66); }
-.pillPaid { background: rgba(53, 208, 127, 0.16); color: #35d07f; }
-.pillOverdue { background: rgba(255, 92, 108, 0.16); color: #ff5c6c; }
-.pillMissing { background: rgba(240, 180, 41, 0.18); color: #f0b429; }
+.pillOpen {
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.66);
+}
+.pillPaid {
+  background: rgba(53, 208, 127, 0.16);
+  color: #35d07f;
+}
+.pillOverdue {
+  background: rgba(255, 92, 108, 0.16);
+  color: #ff5c6c;
+}
+.pillMissing {
+  background: rgba(240, 180, 41, 0.18);
+  color: #f0b429;
+}
 
-.deliveredYes { color: rgba(53, 208, 127, 0.75); }
-.deliveredNo { color: rgba(255, 92, 108, 0.8); }
+.deliveredYes {
+  color: rgba(53, 208, 127, 0.75);
+}
+.deliveredNo {
+  color: rgba(255, 92, 108, 0.8);
+}
 
 .clubAmount {
   flex: 0 0 auto;
@@ -306,7 +353,10 @@
   min-height: 44px;
 }
 
-.linkBtn:focus-visible { outline: 2px solid #f0b429; outline-offset: 2px; }
+.linkBtn:focus-visible {
+  outline: 2px solid #f0b429;
+  outline-offset: 2px;
+}
 
 .state {
   padding: 1.5rem 1rem;
@@ -315,7 +365,9 @@
   color: rgba(255, 255, 255, 0.45);
 }
 
-.error { color: #ff5c6c; }
+.error {
+  color: #ff5c6c;
+}
 
 .skeletonRow {
   height: 56px;
@@ -332,8 +384,12 @@
 }
 
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .footNote {
@@ -361,8 +417,15 @@
   min-height: 44px;
 }
 
-.linkBtnMuted:focus-visible { outline: 2px solid #f0b429; outline-offset: 2px; }
-.linkBtn:disabled, .linkBtnMuted:disabled { opacity: 0.4; cursor: default; }
+.linkBtnMuted:focus-visible {
+  outline: 2px solid #f0b429;
+  outline-offset: 2px;
+}
+.linkBtn:disabled,
+.linkBtnMuted:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 
 /* Recording a payment received during a period, so the next statement asks
    for less. */
@@ -386,7 +449,10 @@
   min-height: 44px;
 }
 
-.payInput:focus-visible { outline: 2px solid #f0b429; outline-offset: 2px; }
+.payInput:focus-visible {
+  outline: 2px solid #f0b429;
+  outline-offset: 2px;
+}
 
 .payBtn {
   flex: 0 0 auto;
@@ -401,5 +467,11 @@
   cursor: pointer;
 }
 
-.payBtn:disabled { opacity: 0.4; cursor: default; }
-.payBtn:focus-visible { outline: 2px solid #f0b429; outline-offset: 2px; }
+.payBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.payBtn:focus-visible {
+  outline: 2px solid #f0b429;
+  outline-offset: 2px;
+}

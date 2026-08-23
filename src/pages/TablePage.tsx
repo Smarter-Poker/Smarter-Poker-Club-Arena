@@ -680,6 +680,15 @@ function MastheadLevelClock({
   );
 }
 
+/**
+ * Dan 2026-08-23: "you should never ask if they want to show cards."
+ *
+ * The only remaining reader of the old `autoMuckWinners` opt-out. Left as a
+ * named constant so the behaviour it controls is greppable and reversible in
+ * one line, instead of being an absence.
+ */
+const ASK_TO_SHOW_ON_UNCONTESTED_WIN = false;
+
 export default function TablePage({
   embeddedTableId,
   onTableInfoUpdate,
@@ -1242,6 +1251,54 @@ export default function TablePage({
 
   // Deal Animation State — triggers card dealing visual at start of new hand
   const [dealAnimationKey, setDealAnimationKey] = useState(0);
+  /**
+   * Dan 2026-08-23: "before any single hand is started there MUST BE a deal
+   * animation, where all players (small blind first) get dealt cards from the
+   * center of the table. Only after all cards are dealt out does the action
+   * start."
+   *
+   * The animation already dealt from the centre and already went round from the
+   * dealer's left, which IS the small blind. Two things were missing: it could
+   * be switched off, and nothing waited for it. On a fast table the action bar
+   * appeared under hero's thumb while the cards were still in the air, so you
+   * could act on a hand you had not been shown.
+   *
+   * This gates the action panel. It is a UI hold only - the engine's clock is
+   * already running, which is why the fallback below is not optional: if the
+   * animation is interrupted (tab backgrounded mid-flight, component unmounted,
+   * a dropped onComplete) the hold MUST expire on its own or the player is
+   * frozen out of their own turn and gets auto-folded watching a still table.
+   */
+  const [dealInFlight, setDealInFlight] = useState(false);
+  const dealHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const endDealHold = useCallback(() => {
+    if (dealHoldTimerRef.current) {
+      clearTimeout(dealHoldTimerRef.current);
+      dealHoldTimerRef.current = null;
+    }
+    setDealInFlight(false);
+  }, []);
+
+  const beginDealHold = useCallback(() => {
+    setDealInFlight(true);
+    if (dealHoldTimerRef.current) clearTimeout(dealHoldTimerRef.current);
+    // Hard ceiling. Two rounds of nine seats at the slowest speed still land
+    // well inside this; anything longer is a fault, and a fault must not cost
+    // the player their turn.
+    dealHoldTimerRef.current = setTimeout(() => {
+      dealHoldTimerRef.current = null;
+      setDealInFlight(false);
+    }, 2600);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (dealHoldTimerRef.current) clearTimeout(dealHoldTimerRef.current);
+    },
+    []
+  );
+
   const prevHandNumberForDealRef = useRef(0);
   // Per-seat deal animation — true for ~600ms after HAND_STARTED so SeatSlot
   // applies seat__cards--dealing class (card slide-in at each seat)
@@ -3389,6 +3446,26 @@ export default function TablePage({
     handleLeaveTableRef.current?.();
   }, []);
 
+  /**
+   * Where leaving a table puts you.
+   *
+   * Dan 2026-08-23: "when you leave a table, it should take you to the club in
+   * game lobby, not the actual lobby." Both exit paths below called
+   * `navigate('/')`, which is the Club Arena home carousel — Create A Club /
+   * Find A Player / Join A Club. You stood up from a seat in Club JAQK and
+   * landed on a screen for choosing a club, with no trace of the one you were
+   * just sitting in.
+   *
+   * `actualClubIdRef` is stamped from `table.club_id` when the table loads, so
+   * it is the club this seat actually belonged to rather than whatever the URL
+   * happened to carry. '/' remains the fallback for the case that ref is empty
+   * — a table with no club is the only way back to nowhere in particular.
+   */
+  const exitDestination = () => {
+    const clubId = actualClubIdRef.current;
+    return clubId ? `/clubs/${clubId}` : '/';
+  };
+
   const handleLeaveTable = async () => {
     if (!tableId || !userId) return;
     setLeaveNotice(null);
@@ -3497,7 +3574,7 @@ export default function TablePage({
           tableId: tableId ?? '',
           action: 'CLOSE_TABLE_TAB',
         });
-        navigate('/');
+        navigate(exitDestination());
 
         // Phase E: Route session end to Notifications tab for async review
         if (userId && userId !== 'guest') {
@@ -3550,7 +3627,7 @@ export default function TablePage({
             tableId: tableId ?? '',
             action: 'CLOSE_TABLE_TAB',
           });
-          navigate('/');
+          navigate(exitDestination());
         }
       }
     } catch (error) {
@@ -3935,6 +4012,37 @@ export default function TablePage({
         );
         setRitTimer(10); // Others get 10 seconds
         setShowRIT(true);
+        return;
+      }
+
+      /**
+       * Dan 2026-08-23: "I just tried to run it twice, and it did not run a
+       * second board... only ran it the one time and awarded me the pot."
+       *
+       * The engine was not at fault - a hand that evening (#1729271) really did
+       * deal two boards and split the pot. What was missing is the OTHER
+       * outcome: a chooser picking 1, an all-in opponent declining, or nobody
+       * answering inside the window all end in a single board, and none of them
+       * put anything on the wire. `rit_result` only fires when two or more
+       * boards are dealt, so the single-run case was silent and a player who
+       * had just asked to run it twice was left to conclude it is broken.
+       *
+       * All three are legitimate poker. Say which one happened.
+       */
+      if (eventType === 'rit_single_run') {
+        setShowRIT(false);
+        const reason = handState.reason as string;
+        const who = handState.player_id as string | null;
+        const name = who
+          ? tableStateRef.current?.players?.find((pp) => pp?.id === who)?.name || 'A Player'
+          : '';
+        const message =
+          reason === 'chooser_chose_one'
+            ? `Running It Once. ${name} Chose One Board.`
+            : reason === 'player_declined'
+              ? `Running It Once. ${name} Declined.`
+              : 'Running It Once. Not Everyone Agreed In Time.';
+        toast.info(message, 4000);
         return;
       }
 
@@ -5656,12 +5764,23 @@ export default function TablePage({
   // Legacy MasterBus handler removed — server is the single source of truth.
 
   useMasterBusSubscription('TIME_BANK_ACTIVATED', (payload: any) => {
-    if (payload.tableId !== tableId) return;
+    /* Two transports publish this - the supabase channel (camelCase, via
+       TableWebSocket) and the engine hub (snake_case). The hub's shape used to
+       fall straight through this guard and return. Normalised at both emit
+       sites now; accepted in either shape here so a third publisher cannot
+       silently reintroduce the same drop. */
+    const evtTableId = payload.tableId ?? payload.table_id;
+    const evtPlayerId = payload.playerId ?? payload.player_id;
+    if (evtTableId !== tableId) return;
 
     // Bible V8 §6.2: one bank is 20 seconds (TimeBankEngine secondsPerUse).
     // The 15 that used to sit here was the DECISION clock, a different number.
     const seconds =
-      payload.secondsGranted ?? payload.additionalSeconds ?? payload.secondsAdded ?? 20;
+      payload.secondsGranted ??
+      payload.additional_seconds ??
+      payload.additionalSeconds ??
+      payload.secondsAdded ??
+      20;
 
     // FIX 172: Play time bank activation sound (Bible V8 §5.3)
     // #175 gated for multi-table: only play on the active tab
@@ -5684,7 +5803,7 @@ export default function TablePage({
     extendTimer(seconds);
 
     // Update the Hero's specific localized UI if they are the one activating it
-    if (payload.playerId === userId) {
+    if (evtPlayerId === userId) {
       setTimeBankActive(true);
       setTimeBankTimeRemaining(seconds);
       setTimeBankGrantedSeconds(seconds);
@@ -6717,6 +6836,7 @@ export default function TablePage({
         // Trigger deal animation (legacy DealAnimation already wired to
         // dealAnimationKey; bump it so the cards fly from the dealer).
         setDealAnimationKey((k) => k + 1);
+        beginDealHold();
         // Bible V8 §10.1: per-seat card slide-in animation
         setIsSeatDealing(true);
         // CA-19: track so unmount can cancel — prevents setIsSeatDealing on dead page
@@ -6740,7 +6860,9 @@ export default function TablePage({
           // DealAnimation owns the per-card deal sounds (staggered with its
           // visuals). Only when the card-slide animation is disabled does the
           // page play a single deal slide as the audio fallback.
-          if (!v8Settings.card_slide) setTimeout(() => soundService.playDeal(), 380);
+          /* The single-deal audio fallback for `card_slide: false` is gone with
+             the branch that could disable the animation: DealAnimation always
+             runs now and owns the per-card deal sounds. */
         }
         break;
       }
@@ -7492,12 +7614,26 @@ export default function TablePage({
         // already true by the time POT_WIN lands. Test it first, and keep the
         // boardStage check as a fallback for any path that sets the stage
         // without emitting SHOWDOWN.
+        /*
+         * Dan 2026-08-23: "auto muck should be on by default, you should never
+         * ask if they want to show cards."
+         *
+         * This block is what asked. On an uncontested win it opened the
+         * HandReveal modal — Show / Muck on a 6-second auto-close — for every
+         * player whose `autoMuckWinners` was false, which was the DEFAULT and
+         * so every player who had never opened the settings panel.
+         *
+         * Gated on a named constant rather than deleted: the winner handling
+         * immediately below (sounds, haptics, stats) reads the same locals, and
+         * one flag is a cleaner revert than restoring a block. Nothing else
+         * sets showHandRevealModal true, so this is the whole prompt.
+         */
         if (
+          ASK_TO_SHOW_ON_UNCONTESTED_WIN &&
           winnerIds.length > 0 &&
           winnerIds.includes(userId) &&
           !heroHandOutcomeRef.current.showdown &&
-          tableStateRef.current.boardStage !== 'showdown' &&
-          !userSettingsRef.current.autoMuckWinners
+          tableStateRef.current.boardStage !== 'showdown'
         ) {
           const heroPlayer = tableStateRef.current.players.find((p) => p?.id === userId);
           setHandRevealWinnerId(userId);
@@ -7717,17 +7853,41 @@ export default function TablePage({
         masterBus.emit('SHOWDOWN_CARDS_REVEALED', evt.data as any);
         break;
       }
-      case 'TIME_BANK_ACTIVATED': {
-        masterBus.emit('TIME_BANK_ACTIVATED', evt.data as any);
-        break;
-      }
-      case 'TIME_BANK_LOW': {
-        import('../services/HapticService').then(({ haptic }) => haptic.light());
-        masterBus.emit('TIME_BANK_LOW', evt.data as any);
-        break;
-      }
+      /* Dan 2026-08-23: "time banks aren't working... when a time bank is used
+         or auto used it must reset the action clock."
+         
+         The engine and the clock were both right. The EVENT WAS BEING DROPPED
+         ON ARRIVAL. The hub speaks snake_case - the engine emits
+         `{ table_id, player_id, secondsGranted, ... }` - and these three cases
+         forwarded `evt.data` verbatim. The TIME_BANK_ACTIVATED subscriber
+         opens with `if (payload.tableId !== tableId) return;`, and
+         `payload.tableId` is undefined on every hub-delivered event, so every
+         one of them returned on its first line. extendTimer was never called,
+         hero's countdown kept draining, and the bank was spent for nothing.
+         
+         The supabase-broadcast transport in TableWebSocket.ts maps the names
+         correctly, which is why this looked intermittent rather than dead.
+         
+         POT_DISTRIBUTED directly above already normalises table_id for exactly
+         this reason. Same treatment, plus player_id, which the subscriber uses
+         to decide whether the bank was HERO's. */
+      case 'TIME_BANK_ACTIVATED':
+      case 'TIME_BANK_LOW':
       case 'TIME_BANK_TIMEOUT': {
-        masterBus.emit('TIME_BANK_TIMEOUT', evt.data as any);
+        if (evt.type === 'TIME_BANK_LOW') {
+          import('../services/HapticService').then(({ haptic }) => haptic.light());
+        }
+        const d = (evt.data ?? {}) as Record<string, unknown>;
+        masterBus.emit(evt.type, {
+          ...d,
+          tableId: (d.tableId as string) || (d.table_id as string) || tableId || '',
+          playerId: (d.playerId as string) || (d.player_id as string) || '',
+          secondsGranted:
+            (d.secondsGranted as number) ??
+            (d.additional_seconds as number) ??
+            (d.seconds_granted as number),
+          usesRemaining: (d.usesRemaining as number) ?? (d.uses_remaining as number),
+        } as any);
         break;
       }
       case 'LEVEL_UP': {
@@ -9922,7 +10082,12 @@ export default function TablePage({
 
           {/* Deal Animation — card backs flying from dealer to players on new hand */}
           {/* Bible V8 §11.1: card_slide toggle gates the deal animation */}
-          {dealAnimationKey > 0 && v8Settings.card_slide && (
+          {/* No longer gated on v8Settings.card_slide. Dan 2026-08-23: the deal
+              is not decoration, it is how a player is told a hand has begun and
+              which seats are in it - "there MUST BE a deal animation" before
+              any hand. The setting still scales speed elsewhere; it can no
+              longer remove the deal entirely. */}
+          {dealAnimationKey > 0 && (
             <DealAnimation
               key={dealAnimationKey}
               active={true}
@@ -9939,7 +10104,10 @@ export default function TablePage({
                 .filter((i) => i >= 0)}
               dealerSeatIndex={Math.max(0, tableState.dealerSeat - 1)}
               seatPositions={seatPositions}
-              onComplete={() => setDealAnimationKey(0)}
+              onComplete={() => {
+                setDealAnimationKey(0);
+                endDealHold();
+              }}
               playSounds={ambientSoundsAllowed}
             />
           )}
@@ -10170,7 +10338,28 @@ export default function TablePage({
                    no layout has both, so nothing looks mismatched. */
                 className={`seat-wrapper${seatDimmed ? ' seat-wrapper--dim' : ''}${
                   isActingSeat ? ' seat-wrapper--spot' : ''
-                }${pos.y < 20 && pos.x === 50 ? ' seat-wrapper--top' : ''}`}
+                }${pos.y < 20 && pos.x === 50 ? ' seat-wrapper--top' : ''}${
+                  /* Dan 2026-08-23: "when cards are displayed for showdown,
+                     they need to be layer one on top of the avatars...
+                     currently the avatars appear over the cards at showdown."
+
+                     The z-index inside the seat was never the problem: revealed
+                     cards already sit at 14, well above the avatar's 2. But a
+                     revealed row is deliberately drawn ABOVE its own plate
+                     (`bottom: calc(100% - 10px)`), which puts it in the
+                     NEIGHBOURING seat's airspace - and every .seat-wrapper is
+                     z-index 10, while .seat-wrapper's transform and .seat's
+                     will-change each open a stacking context that seals those
+                     14s inside. Between two sealed boxes of equal z-index, DOM
+                     order decides, so the seat rendered later simply painted
+                     its avatar over the cards.
+
+                     A card face-up at showdown is the most important thing on
+                     the table, so the seat showing one is lifted out of the tie
+                     entirely. Scoped to the moment of showdown: nothing moves
+                     while cards are face down. */
+                  player?.showCards && player?.holeCards?.length ? ' seat-wrapper--showing' : ''
+                }`}
                 style={
                   {
                     left: `${pos.x}%`,
@@ -10531,7 +10720,11 @@ export default function TablePage({
             {tableState.heroSeat > 0 &&
             tableState.currentPlayerSeat > 0 &&
             tableState.currentPlayerSeat === tableState.heroSeat &&
-            tableState.isHandInProgress
+            tableState.isHandInProgress &&
+            /* "only after all cards are dealt out does the action start" —
+               released by DealAnimation.onComplete, or by the 2.6s ceiling in
+               beginDealHold if the animation never reports back. */
+            !dealInFlight
               ? (() => {
                   // Bible V8 §1.4: Use SERVER-AUTHORITATIVE values, not local calculations
                   const heroPlayer = getPlayerAtSeat(tableState.heroSeat);

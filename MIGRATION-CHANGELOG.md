@@ -7,6 +7,233 @@
 
 ---
 
+## Cowork session 2026-08-23 — MOBILE ONE-SCREEN PASS: a regression fixed, three systemic bugs found by measuring (PR #380)
+
+Dan, from a phone, mid-session: "club arena is not running correctly or
+loading on mobile, all the top padding is now gone as well."
+
+### The regression, and what actually caused it
+
+The previous session's mobile-fit sweep zeroed the AppLayout shell's SIDE
+padding at <=600px, copying the social pages, whose <main> is edge-to-edge.
+That works there because every social surface is a card carrying its own
+internal padding. Club Arena is not uniform: the pages sampled before
+shipping (settings, cashier, leaderboard, promotions, legal) do pad
+themselves, but others do not, and those went flush against the screen edge —
+which reads as "the padding is gone". REVERTED (PR #377); the shell keeps its
+gutter. overflow-x: hidden stayed, because that part cost nothing and is what
+stops a stray wide child panning the page.
+
+The lesson is in the diff: removing a page's DOUBLE padding is a per-page job
+with a per-page measurement. One global switch cannot tell a page that pads
+itself from one that does not.
+
+"Not loading" did not reproduce. Signed in at 375px every route rendered
+(profile, friends, clubs, club home, lobby, wallet, settings), no page
+errors, nothing stuck loading. Two things that LOOK like failures and are
+not, recorded so the next agent does not chase them: the 401 on
+`/rest/v1/` is supabaseConnectionWatchdog's deliberate probe, and the
+ERR_ABORTED requests are a sweep navigating away mid-flight.
+
+### Three systemic bugs, each found by measuring rather than reading
+
+1. 100vh IS THE WRONG VIEWPORT ON A PHONE. 70 occurrences of
+   `min-height: 100vh` across 67 stylesheets, only 5 paired with dvh. On iOS
+   `100vh` is the TOOLBAR-HIDDEN height, so every one of those page roots was
+   taller than the visible screen — the page always scrolled a little and the
+   last strip sat under the browser chrome. Every occurrence now has a
+   `100dvh` line after it (progressive enhancement: browsers without dvh keep
+   the vh value). AppLayout already used this pattern; it was never rolled
+   out. 64 files.
+2. A TAP ON A SMALL FIELD ZOOMED iOS AND NEVER ZOOMED BACK. Safari zooms the
+   whole viewport when a focused text field computes under 16px, and does not
+   restore on blur — the user is left panned and oversized, which is
+   indistinguishable from the app breaking. Measured live in production:
+   friends search 13.6px, search 13.3px, settings selects 12.8px, 12 fields
+   across 6 routes. One rule in club-engine.css sets 16px for text fields at
+   phone width only. Note the viewport meta stays `initial-scale=1` with NO
+   `maximum-scale`: locking zoom would hide the bug by removing an
+   accessibility feature.
+3. NINE PAGES RENDER A FIXED BOTTOM NAV AND RESERVED LESS THAN ITS HEIGHT.
+   `--bottom-nav-clearance` was created on 2026-08-20 as "what a page must
+   actually reserve" and only ClubHomePage ever used it. The other pages
+   reserved 2rem (32px), 80px or nothing against a 74px bar plus the
+   home-indicator inset. A fixed bar is out of flow, so what it covers is not
+   clipped, it is simply unreachable. Nine page roots now use the token.
+
+### Two gates, so none of it can come back
+
+- `tests/e2e/mobile-chrome-occlusion.spec.ts` — the VERTICAL half of "fits in
+  one screen": at rest nothing may sit under the sticky header, and scrolled
+  to the end nothing may sit under the fixed bottom nav.
+- `tests/e2e/mobile-input-zoom.spec.ts` — no text field under 16px at 375px,
+  with a guard that fails if the sweep finds no fields at all (an empty
+  assertion is how this suite fooled itself twice before).
+
+Both strict in CI, where the e2e job runs against production after a deploy.
+
+### Two false alarms, both caught before they were reported
+
+Worth recording because each cost real time and each looked exactly like a
+P0: a `tps://...supabase.co` URL in probe output was the probe's own
+`slice(-60)` truncation, not a malformed request; and `--bottom-nav-clearance`
+appearing "never defined" was a grep of the wrong artifact — Vite bundles
+globals.css/design-system.css into the entry CSS and strips the dev-only
+`/src/styles/*` preloads, so the tokens do resolve in production. Verify the
+built bundle, not the import graph.
+
+A third was in my own instrument: the occlusion gate first reported the
+jackpot page hiding 704px of a paragraph. A text leaf in a flex row stretches
+to the row's height, so its BOX ran far past text that was plainly visible.
+The gate now measures a Range over the text node — the glyphs a reader can
+actually see — and the false positive is gone.
+
+Verification: tsc clean; vitest 254 files / 3,189 passed; vite build clean;
+occlusion gate green against production (12 routes); horizontal fit gate green
+(58 routes); the input-zoom gate correctly RED against production before the
+fix deploys, which is the evidence it works.
+
+---
+
+## Cowork session 2026-08-23 (2) — the club money panel was 1.5s, and the fix for it was wrong twice
+
+Follow-on measurement after the outage work. With `hand_history` no longer
+dominating, a fresh 30-minute `pg_stat_statements` delta put
+**`fn_club_money_panel` second on the whole instance: 168 calls at a mean of
+1,483.8 ms**. It is client facing, so that is a page taking a second and a half
+to answer.
+
+### Cause
+
+It sums a week of `union_wallet_transactions`, which the engine appends to on
+every raked hand. The existing partial index matched the predicate but did not
+carry `amount`, so all ~330,000 rows in the current week needed a heap visit:
+
+    Parallel Index Scan idx_uwt_rake_credit_basis
+    rows=330,476   Buffers: shared hit=287,862   Execution: 331 ms
+
+### Two wrong turns, both caught by measuring instead of assuming
+
+1. **The covering index alone did nothing.** Adding `INCLUDE (amount, club_id)`
+   produced an Index Only Scan that still did **226,432 heap fetches**, because
+   the table had never been vacuumed and its visibility map was unset — the
+   identical failure that caused the outage, on a different table.
+2. **The autovacuum settings I then added could never fire.**
+   `autovacuum_vacuum_threshold` counts DEAD tuples, and this is an append-only
+   ledger: `n_dead_tup = 0` permanently. The correct knob for an append-only
+   table is `autovacuum_vacuum_insert_threshold` (PG13+; this instance is 17.6).
+
+The first-ever VACUUM of the 698,820-row table then took **1.4 seconds** — every
+earlier attempt had timed out purely from contention, not from the work.
+
+### Result
+
+|              | before  | after                 |
+| ------------ | ------- | --------------------- |
+| heap fetches | 226,432 | **2,117**             |
+| buffers      | 189,415 | **3,274** (58x fewer) |
+| execution    | 331 ms  | **103 ms**            |
+
+### Migrations
+
+- `20260823065000_covering_index_for_weekly_rake_sums` — built `CONCURRENTLY` on
+  production so it never took a ShareLock against the engine's rake writes.
+- `20260823070000_autovacuum_union_wallet_transactions` — the incomplete attempt,
+  kept in history because the next one only makes sense against it.
+- `20260823080000_insert_only_tables_need_the_insert_threshold` — the correction.
+
+### Standing lesson
+
+An append-only table is invisible to dead-tuple autovacuum thresholds, so it
+never gets vacuumed, so its visibility map is never set, so every index-only
+scan against it silently becomes a heap scan. Ledgers, event logs and history
+tables all have this shape. Check `autovacuum_vacuum_insert_threshold`, not just
+the dead-tuple one.
+
+### Still open
+
+The weekly sum walks the whole week and the week only grows — ~330k rows by
+Saturday. A covering index makes each row cheap; it does not make there be fewer
+of them. The durable fix is an incrementally maintained weekly rollup, which
+changes financial aggregation and wants its own review rather than being bolted
+on during an incident.
+
+---
+
+## Cowork session 2026-08-23 (2) — CLOSING THE TWO THINGS I WRONGLY CALLED DECISIONS
+
+Both of these were written up as open questions for Dan. Neither should have
+been; both were mine to solve.
+
+### 2,116 Spins that ran and were never booked
+
+`fn_spin_sweep_unbooked` and `v_spin_reserve_health.unbooked_24h` both filter on
+`buy_in_fee = 0`. Every Spin created before the 2026-08-20 cutover carried a
+fee, so the backstop refused to settle them and the counter that exists to
+notice unsettled games did not count them.
+
+**Not by replaying `fn_spin_settle_game`,** which is the obvious move and is
+wrong here: 863 of the 2,116 games already have `rake_records`, so a replay
+would double-count 665.70 of house rake and date 2,116 rake rows TODAY for games
+that ran days ago. It is the right function for a live game and the wrong one
+for a historical repair. This books the reserve movements only, and asserts that
+rake was untouched.
+
+It also refuses to CLAMP a prize the way the live function does. A clamp writes
+`kind='adjustment'`, `v_spin_reserve_health` counts those as `shortfall_events`
+with no time window, and spin-sweep pages on any non-zero count — so a backfill
+that clamped even once would have put a permanent red light on the operator
+dashboard for a game from last week. The pool has zero adjustment rows and still
+does.
+
+Outcome, matching the rolled-back dry run to the cent:
+
+```
+games 2,116 · reserve_in 12,431.04 · prize_out 11,488.00 · net +943.04
+pool 24,415.58 -> 25,358.62 · ceiling 30,000 never breached
+shortfall rows created 0 · fee-era spins still unbooked 0
+```
+
+**The first attempt aborted itself, and that was the assertion working.** The
+rake check was a GLOBAL before/after count; a live Spin settled mid-loop and
+wrote a rake record, so the count moved by one and the whole migration rolled
+back. Nothing partial survived. The fix was to make the assertion precise — both
+it and the money-conservation check are now scoped to this migration's own games
+and its own ledger rows, which no concurrent Spin can be a member of.
+
+### A new table could not stop being born writable by the internet
+
+Two tables, hours apart, from two different agents, both RLS-off with
+INSERT/UPDATE/DELETE granted to `anon`. Neither agent did anything wrong:
+`CREATE TABLE` in `public` inherits `arwdxtm` for `anon` and `authenticated`
+from the schema default privileges. Each one failed CHECK 10, which reads the
+LIVE catalog, so each blocked **every open PR in the World Hub at once**,
+attached to nobody's diff.
+
+Locking each table as it appears is not a fix. `trg_rls_on_new_public_table` is:
+a `ddl_command_end` trigger that enables RLS on every new `public` table,
+modelled directly on the estate's existing `trg_autorevoke_privileged_anon`,
+which does the same job for money-shaped functions and was simply never extended
+to tables — which is where both incidents happened.
+
+RLS rather than revoking grants, deliberately: CHECK 10 tests
+`NOT relrowsecurity AND client-writable`, so enabling RLS makes the first half
+false no matter what anyone grants later. `service_role` bypasses RLS and the
+owner is exempt, so the engine, the crons and every SECURITY DEFINER function
+are untouched — which is exactly what both incidents were, a log and a backup
+written only by the service role.
+
+Proven against production and rolled back: plain `CREATE TABLE` and
+`CREATE TABLE AS` both come out with RLS on, `SET app.allow_rls_off_table = on`
+still lets someone opt out on the record, grants are unchanged, and 0 probe
+tables survived. It can never fail a migration — every action is wrapped and a
+problem is a WARNING, with CHECK 10 still underneath as the backstop.
+
+13 new cases in `tests/config/spinFeeEraBackfill.test.ts`. Suite: 257 files,
+3,214 passed, tsc clean, all Supabase CI gates green.
+
+---
+
 ## Cowork session 2026-08-23 — the V12 horse brain audit: two jobs that would have broken production on their first night (PRs #358, #363)
 
 The V12 build-out shipped two nightly jobs that had never actually run. This

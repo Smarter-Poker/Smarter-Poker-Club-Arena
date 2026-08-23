@@ -62,14 +62,36 @@
    and the button, which is what makes it look like the same application.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Cash: a win. Gold, because the result is MONEY. ── */
+/* ── Cash: a win. BRUSHED NICKEL (Dan 2026-08-23) ──────────────────────────
+   "change the yellow in profit to brushed nickel. and change any border or
+   font color that's yellow to brushed nickel."
+
+   Same metal, same recipe as CarouselDots.css, which Dan asked for on the same
+   day: a vertical tone ramp (light top, dark waist, light again at the base —
+   how a curved metal surface catches a room) plus a fine horizontal grain from
+   the brushing. Both are paint, so nothing loads and it stays crisp at any
+   zoom. The old gold was #ffb800 / #ffd76b.
+
+   The tokens below keep their names because everything downstream reads them;
+   only the pigment changed. --ssh-accent stays a flat colour for the places
+   that need one (borders, glows); --ssh-nickel is the full brushed fill for
+   the money line, which is large enough to show a grain. ── */
 .ssh-card--win {
-  --ssh-accent: #ffb800;
-  --ssh-accent-2: #ffd76b;
-  --ssh-glow: rgba(255, 184, 0, 0.18);
-  --ssh-edge: rgba(255, 184, 0, 0.34);
+  --ssh-accent: #c6ccd2;
+  --ssh-accent-2: #eef1f4;
+  --ssh-glow: rgba(198, 204, 210, 0.18);
+  --ssh-edge: rgba(198, 204, 210, 0.34);
   --ssh-cta: linear-gradient(135deg, #1877f2, #0a5dc2);
   --ssh-cta-ink: #ffffff;
+  --ssh-nickel:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 0px,
+      rgba(255, 255, 255, 0.1) 1px,
+      rgba(0, 0, 0, 0.05) 1px,
+      rgba(0, 0, 0, 0.05) 2px
+    ),
+    linear-gradient(180deg, #eef1f4 0%, #c6ccd2 42%, #969da4 58%, #d8dde1 100%);
 }
 
 /* ── Cash: a loss. ── */
@@ -105,7 +127,8 @@
    precisely the off-palette colour this whole pass exists to remove. The place
    is an event stat and stays cyan-to-blue; only the prize is gold. */
 .ssh-card--tourney .ssh-hero__sub--money {
-  color: #ffb800;
+  /* Nickel here too — "any border or font color that's yellow". */
+  color: #c6ccd2;
 }
 
 /* ── The X Dan asked for ── */
@@ -186,7 +209,11 @@
   font-weight: 900;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
-  background: linear-gradient(135deg, var(--ssh-accent), var(--ssh-accent-2));
+  /* The profit figure is the largest type on the card, which is the one place
+     the brushed GRAIN is actually legible — so the win card paints the full
+     nickel here (ramp + grain) and everything else falls back to the two-stop
+     accent gradient it always used. background-clip: text carries either. */
+  background: var(--ssh-nickel, linear-gradient(135deg, var(--ssh-accent), var(--ssh-accent-2)));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -353,4 +380,42 @@
   .ssh-done:hover {
     transform: none;
   }
+}
+
+/* ── Share + Done (Dan 2026-08-23: "add a share button to this") ───────────
+   Done keeps the full-width weight it had; Share sits beside it as the
+   secondary action, in the same brushed nickel as the rest of the card so it
+   reads as chrome rather than as a second call to action. */
+.ssh-actions {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.ssh-actions .ssh-done {
+  flex: 1 1 auto;
+}
+
+.ssh-share {
+  flex: 0 0 auto;
+  padding: 0 18px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  color: #e8ecf0;
+  background: linear-gradient(180deg, rgba(216, 221, 226, 0.16) 0%, rgba(138, 145, 152, 0.16) 100%);
+  border: 1px solid rgba(198, 204, 210, 0.42);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  transition:
+    transform 0.12s ease,
+    background 0.2s ease;
+}
+
+.ssh-share:hover {
+  background: linear-gradient(180deg, rgba(232, 236, 240, 0.26) 0%, rgba(160, 167, 174, 0.26) 100%);
+}
+
+.ssh-share:active {
+  transform: scale(0.97);
 }

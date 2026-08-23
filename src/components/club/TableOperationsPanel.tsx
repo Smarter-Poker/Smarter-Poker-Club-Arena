@@ -343,6 +343,8 @@ export default function TableOperationsPanel({ clubId }: Props) {
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [expandedTable, setExpandedTable] = useState<string | null>(null);
   const [seatedPlayers, setSeatedPlayers] = useState<Record<string, SeatedPlayer[]>>({});
+  /* Distinguishes "this table has nobody on it" from "we could not ask". */
+  const [seatLoadFailed, setSeatLoadFailed] = useState<Record<string, boolean>>({});
   const [tableStats, setTableStats] = useState<Record<string, TableStats>>({});
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -443,8 +445,15 @@ export default function TableOperationsPanel({ clubId }: Props) {
 
   // ─── Load seated players for a table ───────────────────────────────────────
   const loadSeatedPlayers = async (tableId: string) => {
-    const players = await tableService.getSeatedPlayers(tableId);
-    setSeatedPlayers((prev) => ({ ...prev, [tableId]: players as unknown as SeatedPlayer[] }));
+    try {
+      const players = await tableService.getSeatedPlayers(tableId);
+      setSeatedPlayers((prev) => ({ ...prev, [tableId]: players as unknown as SeatedPlayer[] }));
+      setSeatLoadFailed((prev) => ({ ...prev, [tableId]: false }));
+    } catch {
+      // getSeatedPlayers already reported it; show the operator the truth.
+      setSeatedPlayers((prev) => ({ ...prev, [tableId]: [] }));
+      setSeatLoadFailed((prev) => ({ ...prev, [tableId]: true }));
+    }
   };
 
   // ─── Load stats for a table ────────────────────────────────────────────────
@@ -633,7 +642,17 @@ export default function TableOperationsPanel({ clubId }: Props) {
 
                 {/* Seated Players */}
                 <div style={styles.sectionTitle}>Seated Players</div>
-                {players.length === 0 ? (
+                {seatLoadFailed[table.id] ? (
+                  <div style={styles.noPlayers}>
+                    Could Not Load Seated Players.{' '}
+                    <button
+                      style={styles.actionBtn}
+                      onClick={() => void loadSeatedPlayers(table.id)}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : players.length === 0 ? (
                   <div style={styles.noPlayers}>No Players Seated</div>
                 ) : (
                   players.map((player, pIdx) => {

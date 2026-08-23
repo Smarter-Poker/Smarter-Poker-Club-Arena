@@ -2419,6 +2419,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         )}
       </header>
 
+      <PromoWalletCashierModal
+        isOpen={showPromoWallet}
+        onClose={() => setShowPromoWallet(false)}
+        clubId={resolvedClubId || clubId || ''}
+      />
+
       <ClubBankCashierModal
         isOpen={showClubBank}
         onClose={() => setShowClubBank(false)}

@@ -52,14 +52,21 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
         .map((a) => ({
           playerId: a.player_id,
           playerName: nameFor(a.player_id),
-          // Service says 'all-in'; the panel's union says 'allin'.
-          action: (a.action === 'all-in' ? 'allin' : a.action) as
+          /* The engine stores `all_in`; the panel's union says `allin`. This
+             compared against `'all-in'`, a spelling nothing produces, so the
+             conversion NEVER fired: every all-in reached the panel as the raw
+             `all_in`, missed `getActionColor`'s case and printed the raw token
+             into the exported hand text too. The service type now says
+             `all_in`, which is what turned this from silence into a compiler
+             error. */
+          action: (a.action === 'all_in' ? 'allin' : a.action) as
             | 'fold'
             | 'check'
             | 'call'
             | 'bet'
             | 'raise'
-            | 'allin',
+            | 'allin'
+            | 'discard',
           amount: a.amount,
         })),
       pot: 0, // not stored per street — only the final pot is persisted

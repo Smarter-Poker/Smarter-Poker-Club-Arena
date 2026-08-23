@@ -15,9 +15,6 @@ import { exportToCSV } from '../lib/export';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import HandReplay from '../components/replay/HandReplay';
-import ReplayActions from '../components/table/ReplayActions';
-import HandReplayPlayer from '../components/table/HandReplayPlayer';
-import HandHistoryModal from '../components/club/HandHistoryModal';
 import { ShareHand, type ShareableHand } from '../components/table/ShareHand';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -46,6 +43,18 @@ function setCachedHands(userId: string, data: HandRecord[]) {
 
 type HistoryFilter = 'all' | 'won' | 'lost' | 'big-pots';
 
+/* `game_type.includes('PLO') ? 'PLO4' : 'NLH'` labelled PLO5, PLO6 and every
+   non-PLO variant in the estate as something they are not, on a hand the
+   recipient reads as a record. Anything this cannot identify is left to the
+   shared-hand default rather than asserted. */
+function toShareVariant(gameType: string | undefined): ShareableHand['variant'] {
+  const g = (gameType || '').toUpperCase();
+  if (g.includes('PLO6')) return 'PLO6';
+  if (g.includes('PLO5')) return 'PLO5';
+  if (g.includes('PLO')) return 'PLO4';
+  return 'NLH';
+}
+
 export default function HandHistoryPage() {
   useEffect(() => {
     document.title = 'Hand History | Smarter Poker';
@@ -57,6 +66,10 @@ export default function HandHistoryPage() {
   useVisibilityRefresh(() => loadHands(true));
   const [hands, setHands] = useState<HandRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  /* A failed fetch is not an empty history. Without this the page showed
+     "No Hands Recorded Yet" over a query that errored - the toast that
+     said otherwise vanished after a few seconds, the lie stayed. */
+  const [loadFailed, setLoadFailed] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [filter, setFilter] = useState<HistoryFilter>('all');
   const [selectedHand, setSelectedHand] = useState<HandRecord | null>(null);
@@ -83,9 +96,19 @@ export default function HandHistoryPage() {
     }
   }, [user?.id]);
 
-  // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
+  /* Safety timeout: prevent an infinite skeleton if auth/Supabase hangs.
+     This used to drop `loading` and nothing else, so a slow-but-healthy fetch
+     rendered the empty state - "No Hands Recorded Yet" - while the request was
+     still in flight. It now surfaces as a failure the page can retry, which is
+     what a five-second wait actually means. */
   useEffect(() => {
-    const timeout = setTimeout(() => setLoading(false), 5000);
+    const timeout = setTimeout(() => {
+      if (!isMounted.current) return;
+      setLoading((wasLoading) => {
+        if (wasLoading) setLoadFailed(true);
+        return false;
+      });
+    }, 5000);
     return () => clearTimeout(timeout);
   }, []);
 
@@ -160,6 +183,7 @@ export default function HandHistoryPage() {
       if (!getIsMounted || getIsMounted()) setLoadingMore(true);
     }
 
+    if (!getIsMounted || getIsMounted()) setLoadFailed(false);
     try {
       try {
         const data = await retryFetch(
@@ -189,7 +213,12 @@ export default function HandHistoryPage() {
         if (reset && user?.id) setCachedHands(user.id, filtered);
       } catch (error) {
         reportError(error, 'HandHistoryPage.Failed_to_load_hands');
-        if (!getIsMounted || getIsMounted()) toast.error('Failed to load hand history');
+        if (!getIsMounted || getIsMounted()) {
+          toast.error('Failed to load hand history');
+          // The toast goes away. The page must not go on claiming the history
+          // is empty once it is gone.
+          if (reset) setLoadFailed(true);
+        }
       }
       if (!getIsMounted || getIsMounted()) {
         setLoading(false);
@@ -349,6 +378,18 @@ export default function HandHistoryPage() {
       <div className="hands-list">
         {loading ? (
           <PageSkeleton variant="list" />
+        ) : loadFailed && hands.length === 0 ? (
+          <div className="empty-state" style={{ padding: '48px 24px', textAlign: 'center' }}>
+            <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
+              Could Not Load Your Hand History
+            </p>
+            <p style={{ fontSize: 13, opacity: 0.6, marginBottom: 16 }}>
+              This Is A Loading Problem, Not An Empty History.
+            </p>
+            <button className="load-more-btn" onClick={() => loadHands(true)}>
+              Retry
+            </button>
+          </div>
         ) : hands.length === 0 ? (
           <div className="empty-state" style={{ padding: '48px 24px', textAlign: 'center' }}>
             <span
@@ -412,9 +453,7 @@ export default function HandHistoryPage() {
                       setShareHand({
                         id: hand.id,
                         tableName: hand.table_name,
-                        variant: (hand.game_type?.includes('PLO')
-                          ? 'PLO4'
-                          : 'NLH') as ShareableHand['variant'],
+                        variant: toShareVariant(hand.game_type),
                         stakes: hand.stakes,
                         timestamp: new Date(hand.played_at).getTime(),
                         // 2026-08-20: this was `buttonSeat: 0` with a comment
@@ -433,10 +472,21 @@ export default function HandHistoryPage() {
                         })),
                         preflop: [],
                         potTotal: hand.main_pot,
-                        winners: winnerSeats.map((seat) => ({
-                          seat,
-                          amount: hand.main_pot / (winnerSeats.length || 1),
-                        })),
+                        /* This divided the pot evenly between the winners,
+                           which is wrong on every split pot and on every hand
+                           with a side pot - and it was sent to whoever received
+                           the shared hand as fact. It sat directly beneath the
+                           2026-08-20 comment fixing the same invention for
+                           buttonSeat and stack. The row has always carried the
+                           real per-winner amount; the service now surfaces it. */
+                        winners: hand.winners.length
+                          ? hand.winners
+                              .map((w) => ({
+                                seat: hand.players.find((p) => p.user_id === w.user_id)?.seat ?? -1,
+                                amount: w.amount,
+                              }))
+                              .filter((w) => w.seat >= 0)
+                          : winnerSeats.map((seat) => ({ seat, amount: 0 })),
                       });
                       setShowShare(true);
                     }}

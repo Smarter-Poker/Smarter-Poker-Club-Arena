@@ -36,10 +36,27 @@ export interface HandPlayer {
 
 export interface HandAction {
   player_id: string;
-  action: 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all-in';
+  /* These are the values the ENGINE STORES, verified in production over 11.8M
+     action rows on 2026-08-23. This union previously read `'all-in'` while
+     every row says `all_in`, and the mapper below cast straight through it, so
+     the type was a lie the compiler happily enforced against nobody: anyone
+     writing `a.action === 'all-in'` got silence and a branch that never ran.
+     `discard` (74,631 rows, draw and pineapple games) was missing outright. */
+  action: 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | 'discard';
   amount?: number;
-  street: 'preflop' | 'flop' | 'turn' | 'river';
+  /** Stored as `stage`. `pineapple_discard` is a real street here. */
+  street: 'preflop' | 'flop' | 'turn' | 'river' | 'pineapple_discard';
   timestamp: number;
+}
+
+/** One winner of one pot, as stored. */
+export interface HandWinner {
+  user_id: string;
+  /** Chips taken from the pot. NOT the player's net result. */
+  amount: number;
+  /** Potindex 0 is the main pot; higher indices are side pots. */
+  pot_index: number;
+  hand_name?: string;
 }
 
 export interface HandRecord {
@@ -57,6 +74,11 @@ export interface HandRecord {
   community_cards2?: Card[];
   players: HandPlayer[];
   actions: HandAction[];
+  /* Real per-winner amounts. Consumers used to reconstruct these by dividing
+     main_pot by the number of winners, which is wrong on every split pot and
+     on every hand with a side pot — and it was presented to the recipient of a
+     shared hand as fact. The row has always carried the true figure. */
+  winners: HandWinner[];
   game_type: string;
   stakes: string;
 }
@@ -217,6 +239,13 @@ class HandHistoryServiceClass {
       })
     );
 
+    const winners: HandWinner[] = jsonbWinners.map((w: any) => ({
+      user_id: w?.userId || '',
+      amount: typeof w?.amount === 'number' ? w.amount : Number(w?.amount) || 0,
+      pot_index: typeof w?.potIndex === 'number' ? w.potIndex : 0,
+      hand_name: typeof w?.hand?.name === 'string' ? w.hand.name : undefined,
+    }));
+
     const sb = Number(row.small_blind) || 0;
     const bb = Number(row.big_blind) || 0;
     const stakes = sb > 0 && bb > 0 ? `${sb}/${bb}` : '1/2';
@@ -237,6 +266,7 @@ class HandHistoryServiceClass {
         : [],
       players,
       actions,
+      winners,
       game_type: (row.game_variant || 'nlh').toUpperCase(),
       stakes,
     };

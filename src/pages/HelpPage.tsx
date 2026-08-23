@@ -17,34 +17,64 @@ interface FAQItem {
 
 const FAQ_ITEMS: FAQItem[] = [
   {
-    question: 'How do I join a club?',
+    question: 'How Do I Create An Account?',
     answer:
-      'Go to the Clubs page, find a club you like, and tap "Join". Some clubs require an invitation code or approval from an admin.',
+      'Click "Sign Up" On The Homepage And Enter Your Email, Username, And Password. You\'ll Receive A Verification Email To Activate Your Account.',
   },
   {
-    question: 'How do I buy chips?',
+    question: 'How Do I Customize My Profile?',
     answer:
-      'Use the Cashier to convert diamonds to chips. Go to your Wallet and tap "Mint Chips" to exchange diamonds at the current rate.',
+      'Go To Settings → Account, Then Click "Edit Profile". You Can Update Your Avatar, Bio, And Display Preferences.',
   },
   {
-    question: 'What is the rake structure?',
+    question: 'What Is The Diamond Economy?',
     answer:
-      'Rake is 10% of the pot, up to a cap that depends on the stake - from $3 at the smallest blinds to $20 at the largest. The cap is a cash amount, not a number of big blinds, and it is reduced when a hand is played heads-up or three-handed. No flop, no drop: an uncontested pot is never raked. A small portion of the rake also funds the Bad Beat Jackpot.',
+      'Diamonds Are The Premium Currency On Smarter.Poker. Earn Them Through Gameplay And Achievements.',
   },
   {
-    question: 'How do settlements work?',
+    question: 'How Do I Add Friends?',
     answer:
-      'Settlements happen weekly on Monday. Your net profit/loss is calculated, and rakeback is applied based on your agent hierarchy.',
+      "Visit The Friends Page, Search For Users By Username, And Send A Friend Request. They'll Receive A Notification To Accept.",
   },
   {
-    question: 'How do I become an agent?',
+    question: 'How Do I Send Messages?',
     answer:
-      'Contact your club owner to be promoted to an agent role. Agents can recruit players and earn commissions on their rake.',
+      'Open Messenger From The Sidebar Menu, Select A Contact, And Start Chatting. You Can Also Send Images And Videos.',
   },
   {
-    question: 'What is the Bad Beat Jackpot?',
+    question: 'Can I Go Live?',
     answer:
-      'The BBJ is a progressive jackpot for losing a monster hand. In Hold\u2019em, Aces full of Jacks or better must lose to Quads or better, and both of your hole cards must play. In Omaha games, Quad Kings or better must lose. When it hits, the losing hand takes 50%, the winning hand 25%, and everyone else dealt into the hand splits the remaining 25% \u2014 credited straight to your table stack.',
+      'Yes! Click The "Go Live" Button On The Social Feed To Start Broadcasting. You Can Stream Poker Gameplay, Tutorials, Or Just Chat With The Community.',
+  },
+  {
+    question: 'What Is GTO Training?',
+    answer:
+      'Game Theory Optimal (GTO) Training Helps You Learn Mathematically Sound Poker Strategies Through Interactive Scenarios And AI-Powered Feedback.',
+  },
+  {
+    question: 'How Do I Join A Tournament?',
+    answer:
+      'Visit The Tournaments Page, Browse Available Events, And Click "Register" On Any Tournament You Want To Join.',
+  },
+  {
+    question: 'What Is The Diamond Arena?',
+    answer:
+      'The Diamond Arena Is Our Competitive Poker Room Where You Can Play Cash Games And Tournaments With Other Players For Diamonds And XP.',
+  },
+  {
+    question: 'How Do I Change My Password?',
+    answer:
+      'Go To Settings → Account → Account Security, Then Click "Change Password". You\'ll Receive A Password Reset Email.',
+  },
+  {
+    question: 'Is Two-Factor Authentication Available?',
+    answer:
+      'Two-Factor Authentication (2FA) Is Coming Soon! This Will Add An Extra Layer Of Security To Your Account.',
+  },
+  {
+    question: 'How Do I Delete My Account?',
+    answer:
+      'Go To Settings → Data Export → Danger Zone. Please Note That Account Deletion Is Permanent And Cannot Be Undone.',
   },
 ];
 

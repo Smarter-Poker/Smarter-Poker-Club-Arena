@@ -420,6 +420,41 @@ export class EngineWebSocketServer {
     return this.connections.size;
   }
 
+  /**
+   * Who is actually on the multiplexed socket, and how much is it carrying?
+   *
+   * The `ca_ws_mux` beta has been "off, pending a soak" for two sessions, and
+   * the reason it never got soaked is that nothing could tell you whether it
+   * was on. /ws-metrics reported two numbers, neither of which distinguishes a
+   * client holding four per-table sockets from one holding a single mux socket
+   * with four subscriptions — the exact difference the beta exists to make.
+   *
+   * Everything here is already tracked per connection; this only counts it.
+   * Counts only, no payloads and no user ids: /ws-metrics is unauthenticated.
+   */
+  muxStats(): {
+    muxSockets: number;
+    singleSockets: number;
+    muxSubscriptions: number;
+    maxSubsOnOneSocket: number;
+  } {
+    let muxSockets = 0;
+    let singleSockets = 0;
+    let muxSubscriptions = 0;
+    let maxSubsOnOneSocket = 0;
+    for (const conn of this.connections.values()) {
+      if (!conn.isMux) {
+        singleSockets++;
+        continue;
+      }
+      muxSockets++;
+      const n = conn.subs?.size ?? 0;
+      muxSubscriptions += n;
+      if (n > maxSubsOnOneSocket) maxSubsOnOneSocket = n;
+    }
+    return { muxSockets, singleSockets, muxSubscriptions, maxSubsOnOneSocket };
+  }
+
   // ─── Round 70: blacklist gate ───────────────────────────────────────────
   /**
    * Check if `userId` is banned from `tableId`'s club (or its union).

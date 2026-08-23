@@ -88,8 +88,29 @@ export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
   table_alias: '',
   multi_auto_switch: true,
   multi_action_queue: true,
-  multi_desktop_alerts: true,
-  multi_shared_socket: true,
+  // ── THESE TWO MUST MATCH THE DATABASE (2026-08-23) ──
+  //
+  // `user_table_settings` declares both of these NOT NULL DEFAULT false. This
+  // object declared them true, and TableSettingsPanel renders every toggle
+  // straight from it — so a user with no settings row was shown "Desktop Turn
+  // Alerts" and "Shared Connection (Beta)" switched ON while both were, in
+  // fact, OFF:
+  //
+  //   * the `ca_ws_mux` mirror is only written inside `if (data)`, so with no
+  //     row EngineStateClient never sees the flag and opens per-table sockets
+  //     exactly as before;
+  //   * Notification permission is only ever requested by the toggle tap, so
+  //     an alerts switch that starts ON has no permission behind it.
+  //
+  // The toggle therefore displayed the opposite of reality, and the first tap
+  // "turned off" something that had never been on. For the mux that is worse
+  // than cosmetic: it makes the beta unsoakable, because you cannot tell who
+  // is actually running it.
+  //
+  // The database is the source of truth — these follow it. Pinned by
+  // tests/user-table-settings-defaults.test.ts so they cannot drift again.
+  multi_desktop_alerts: false,
+  multi_shared_socket: false,
 };
 
 // Metadata for rendering toggles

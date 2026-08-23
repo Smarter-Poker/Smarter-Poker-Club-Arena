@@ -123,6 +123,12 @@ You have every single credential (CLI, backend, DB access, GitHub, Supabase) to 
 No claim without a command behind it. "Tests pass" means you ran them and can
 paste the count. "It is deployed" means you checked what production serves.
 
+## RULE 7 — FIX YOUR OWN BUILD. DO NOT WAIT FOR HELP.
+
+If your PR fails CI, has a merge conflict, or gets blocked from deploying, **YOU MUST FIX IT YOURSELF IMMEDIATELY.**
+Do not abandon the PR. Do not wait for another agent to fix it. Do not wait for a human to fix it.
+Check the failing logs, resolve the issue, force-push the fix, and restart your `schedule` timer to verify it goes green.
+
 ## APPENDIX A — CI PIPELINE & REVERT GUARDS
 
 Required (a PR cannot merge until these are green):

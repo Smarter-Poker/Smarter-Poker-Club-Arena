@@ -131,7 +131,7 @@ function LiveCountdown({ time }: { time: string | number | Date }) {
     return () => clearInterval(interval);
   }, [time]);
 
-  if (mins <= 0 || mins > 60) return null;
+  if (isNaN(mins) || mins <= 0 || mins > 60) return null;
   return <span className="lt-countdown" style={{ fontSize: '0.65rem', color: '#f59e0b', fontWeight: 700, marginRight: '8px', letterSpacing: '0.02em' }}>Starts In {mins} Min...</span>;
 }
 
@@ -321,7 +321,7 @@ const COL_STATUS: ColumnDef = {
   sortValue: (e) => STATUS_RANK[e.status] ?? 9,
   render: (e, ctx) => (
     <span className="lt-statuscell">
-      {e.kind !== 'cash' && e.status === 'registering' && e.startTime && <LiveCountdown time={e.startTime} />}
+      {e.kind !== 'cash' && ['registering', 'starting_soon'].includes(e.status) && e.startTime && <LiveCountdown time={e.startTime} />}
       <LobbyStatusBadge status={e.status} label={e.statusLabel} />
       <PlayerStateChip entry={e} ctx={ctx} />
     </span>

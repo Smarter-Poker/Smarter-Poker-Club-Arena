@@ -324,7 +324,7 @@ export async function ensureHorseComplete(row: HorseRow): Promise<string[]> {
   // ── social identity: the row that grants the ability to post ─────────────
   const { data: author, error: authorErr } = await supabase
     .from('content_authors')
-    .select('id, profile_id, avatar_url, is_active')
+    .select('id, profile_id, avatar_url:arena_avatar_url, is_active')
     .eq('profile_id', row.id)
     .maybeSingle();
   if (authorErr) throw new Error(`content_authors read: ${authorErr.message}`);
@@ -375,7 +375,7 @@ export async function sweepIncompleteHorses(limit = 1000): Promise<{
     const { data, error } = await supabase
       .from('profiles')
       .select(
-        'id, display_name, username, alias, player_number, avatar_url, is_vip, vip_tier, horse_profile'
+        'id, display_name, username, alias, player_number, avatar_url:arena_avatar_url, is_vip, vip_tier, horse_profile'
       )
       .eq('is_horse', true)
       .limit(limit);

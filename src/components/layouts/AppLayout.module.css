@@ -239,18 +239,22 @@
 
 @media (max-width: 600px) {
   .main {
-    /* Mobile-fit sweep (2026-08-22, Dan: "use the same type of mobile layout
-       as the social media pages"). The social shell gives its <main> ZERO
-       side padding on a phone — cards run edge to edge and carry their own
-       internal spacing. This shell was adding 12px a side ON TOP of each
-       page's own ~16px container padding, so every Club Arena page wore
-       ~28px gutters where the social pages wear 16px. Pages keep their own
-       padding; the shell stops double-charging. overflow-x is clipped here
-       too, same as .social-page-container, so no page can ever pan
-       sideways. */
-    padding: var(--space-3) 0;
+    /* REVERTED 2026-08-23 (Dan, from a phone: "all the top padding is now
+       gone"). The mobile-fit sweep zeroed this shell's SIDE padding to copy
+       the social pages, whose <main> is edge-to-edge. That works there
+       because every social surface is a card with its own internal padding.
+       Club Arena is not uniform: the pages sampled before shipping (settings,
+       cashier, leaderboard, promotions, legal) do pad themselves, but others
+       do not, and those went flush against the screen edge — which reads as
+       "the padding is gone".
+
+       The shell keeps its gutter. Removing a page's DOUBLE padding is a
+       per-page job with a per-page measurement, not one global switch: the
+       global switch cannot tell a page that pads itself from one that
+       doesn't. overflow-x stays clipped — that part cost nothing and is what
+       stops a stray wide child from panning the whole page sideways. */
+    padding: var(--space-3);
     padding-top: calc(51px + var(--space-3));
-    /* mobile header: 48px + 3px border */
     overflow-x: hidden;
   }
 

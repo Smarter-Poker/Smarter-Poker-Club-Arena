@@ -300,6 +300,71 @@ schedule GTD configs are generous relative to horse-filled fields, so
 overlays are real house spend — Dan should review the seeded guarantee
 numbers if that matters.
 
+## Cowork session 2026-08-23 (2) — the club money panel was 1.5s, and the fix for it was wrong twice
+
+Follow-on measurement after the outage work. With `hand_history` no longer
+dominating, a fresh 30-minute `pg_stat_statements` delta put
+**`fn_club_money_panel` second on the whole instance: 168 calls at a mean of
+1,483.8 ms**. It is client facing, so that is a page taking a second and a half
+to answer.
+
+### Cause
+
+It sums a week of `union_wallet_transactions`, which the engine appends to on
+every raked hand. The existing partial index matched the predicate but did not
+carry `amount`, so all ~330,000 rows in the current week needed a heap visit:
+
+    Parallel Index Scan idx_uwt_rake_credit_basis
+    rows=330,476   Buffers: shared hit=287,862   Execution: 331 ms
+
+### Two wrong turns, both caught by measuring instead of assuming
+
+1. **The covering index alone did nothing.** Adding `INCLUDE (amount, club_id)`
+   produced an Index Only Scan that still did **226,432 heap fetches**, because
+   the table had never been vacuumed and its visibility map was unset — the
+   identical failure that caused the outage, on a different table.
+2. **The autovacuum settings I then added could never fire.**
+   `autovacuum_vacuum_threshold` counts DEAD tuples, and this is an append-only
+   ledger: `n_dead_tup = 0` permanently. The correct knob for an append-only
+   table is `autovacuum_vacuum_insert_threshold` (PG13+; this instance is 17.6).
+
+The first-ever VACUUM of the 698,820-row table then took **1.4 seconds** — every
+earlier attempt had timed out purely from contention, not from the work.
+
+### Result
+
+|              | before  | after                 |
+| ------------ | ------- | --------------------- |
+| heap fetches | 226,432 | **2,117**             |
+| buffers      | 189,415 | **3,274** (58x fewer) |
+| execution    | 331 ms  | **103 ms**            |
+
+### Migrations
+
+- `20260823065000_covering_index_for_weekly_rake_sums` — built `CONCURRENTLY` on
+  production so it never took a ShareLock against the engine's rake writes.
+- `20260823070000_autovacuum_union_wallet_transactions` — the incomplete attempt,
+  kept in history because the next one only makes sense against it.
+- `20260823080000_insert_only_tables_need_the_insert_threshold` — the correction.
+
+### Standing lesson
+
+An append-only table is invisible to dead-tuple autovacuum thresholds, so it
+never gets vacuumed, so its visibility map is never set, so every index-only
+scan against it silently becomes a heap scan. Ledgers, event logs and history
+tables all have this shape. Check `autovacuum_vacuum_insert_threshold`, not just
+the dead-tuple one.
+
+### Still open
+
+The weekly sum walks the whole week and the week only grows — ~330k rows by
+Saturday. A covering index makes each row cheap; it does not make there be fewer
+of them. The durable fix is an incrementally maintained weekly rollup, which
+changes financial aggregation and wants its own review rather than being bolted
+on during an incident.
+
+---
+
 ## Cowork session 2026-08-23 — the V12 horse brain audit: two jobs that would have broken production on their first night (PRs #358, #363)
 
 The V12 build-out shipped two nightly jobs that had never actually run. This

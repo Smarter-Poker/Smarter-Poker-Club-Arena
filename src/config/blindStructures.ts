@@ -20,6 +20,42 @@ export interface BlindLevel {
 }
 
 export const BLIND_STRUCTURES = {
+  // HYPER TURBO (2026-08-22): 2-minute levels with steeper jumps than turbo.
+  // Until now the create-table form's "HyperTurbo" radio silently aliased to
+  // the turbo ramp, so the choice changed nothing. Break pattern mirrors the
+  // other structures (5-minute breaks at the same cadence as turbo).
+  hyperTurbo: [
+    { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 2 },
+    { level: 2, smallBlind: 20, bigBlind: 40, ante: 0, durationMinutes: 2 },
+    { level: 3, smallBlind: 30, bigBlind: 60, ante: 0, durationMinutes: 2 },
+    { level: 4, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 2 },
+    { level: 5, smallBlind: 75, bigBlind: 150, ante: 15, durationMinutes: 2 },
+    { level: 6, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 2 },
+    { level: 7, smallBlind: 150, bigBlind: 300, ante: 40, durationMinutes: 2 },
+    { level: 8, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 9, smallBlind: 250, bigBlind: 500, ante: 60, durationMinutes: 2 },
+    { level: 10, smallBlind: 400, bigBlind: 800, ante: 100, durationMinutes: 2 },
+    { level: 11, smallBlind: 600, bigBlind: 1200, ante: 150, durationMinutes: 2 },
+    { level: 12, smallBlind: 800, bigBlind: 1600, ante: 200, durationMinutes: 2 },
+    { level: 13, smallBlind: 1000, bigBlind: 2000, ante: 250, durationMinutes: 2 },
+    { level: 14, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 15, smallBlind: 1500, bigBlind: 3000, ante: 400, durationMinutes: 2 },
+    { level: 16, smallBlind: 2000, bigBlind: 4000, ante: 500, durationMinutes: 2 },
+    { level: 17, smallBlind: 3000, bigBlind: 6000, ante: 750, durationMinutes: 2 },
+    { level: 18, smallBlind: 4000, bigBlind: 8000, ante: 1000, durationMinutes: 2 },
+    { level: 19, smallBlind: 6000, bigBlind: 12000, ante: 1500, durationMinutes: 2 },
+    { level: 20, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 21, smallBlind: 8000, bigBlind: 16000, ante: 2000, durationMinutes: 2 },
+    { level: 22, smallBlind: 10000, bigBlind: 20000, ante: 2500, durationMinutes: 2 },
+    { level: 23, smallBlind: 15000, bigBlind: 30000, ante: 4000, durationMinutes: 2 },
+    { level: 24, smallBlind: 20000, bigBlind: 40000, ante: 5000, durationMinutes: 2 },
+    { level: 25, smallBlind: 30000, bigBlind: 60000, ante: 7500, durationMinutes: 2 },
+    { level: 26, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 27, smallBlind: 40000, bigBlind: 80000, ante: 10000, durationMinutes: 2 },
+    { level: 28, smallBlind: 60000, bigBlind: 120000, ante: 15000, durationMinutes: 2 },
+    { level: 29, smallBlind: 80000, bigBlind: 160000, ante: 20000, durationMinutes: 2 },
+    { level: 30, smallBlind: 100000, bigBlind: 200000, ante: 25000, durationMinutes: 2 },
+  ],
   turbo: [
     { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 3 },
     { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 3 },

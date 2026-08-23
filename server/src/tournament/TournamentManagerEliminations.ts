@@ -230,6 +230,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // spawns a table and the balancer redraws. No player ever waits.
         await this.ensureLateRegSeated();
 
+        // FINAL TABLE DEAL (2026-08-22 parity): while the field is down to one
+        // table and the feature is on, watch tournament_deal_votes; unanimity
+        // executes fn_final_table_deal. Cheap by construction — it stands down
+        // immediately unless the flag is set, and throttles its own polling.
+        await this.checkFinalTableDeal();
+
         // ADD-ONS MUST ALWAYS LAND 2026-08-20. Dan: an add-on must always
         // award its chips to the stack when purchased.
         //
@@ -431,7 +437,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // spin_multiplier + tournament_type: a Spin's payout split is a pure
         // function of its multiplier, so the spec can rebuild the structure
         // when the stored column is unreadable. See payoutStructure.ts.
-        'payout_structure, prize_pool, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max, variant, tournament_type, spin_multiplier'
+        // bubble_protection + buy_in_amount (2026-08-22 parity): the stone
+        // bubble's buy-in refund needs both.
+        'payout_structure, prize_pool, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max, variant, tournament_type, spin_multiplier, bubble_protection, buy_in_amount'
       )
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
@@ -473,7 +481,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // Retry prize credit up to 3 times with exponential backoff
       let creditSuccess = false;
       for (let attempt = 1; attempt <= 3; attempt++) {
-        const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
+        // LEDGER-INTEGRITY 2026-08-22: credit AND ledger row under one
+        // idempotency key. This used to be `credit_player_wallet` followed by
+        // an unconditional `log_wallet_transaction`; the credit deduped
+        // against the recovery watchdog and the log did not, so a raced
+        // finish wrote a second prize row for chips nobody received.
+        const { error: creditErr } = await supabase.rpc('fn_credit_and_log', {
           p_user_id: userId,
           p_amount: prize,
           // P1 FIX (2026-07-24): idempotency key so a committed-but-timed-out
@@ -481,6 +494,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // and so the recovery path dedupes against this main path — SAME format
           // (`tourney:{id}:prize:{user}:{position}`).
           p_idempotency_key: `tourney:${this.tournamentId}:prize:${userId}:${position}`,
+          p_category: 'prize',
+          p_description: `Tournament prize: position ${position}`,
+          p_related_entity_id: this.tournamentId,
         });
         if (!creditErr) {
           creditSuccess = true;
@@ -494,32 +510,65 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         );
         if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
       }
-      if (creditSuccess) {
-        const { error: prizeLogErr } = await supabase.rpc('log_wallet_transaction', {
-          p_user_id: userId,
-          p_wallet_type: 'PLAYER',
-          p_amount: prize,
-          p_type: 'credit',
-          p_category: 'prize',
-          p_description: `Tournament prize: position ${position}`,
-          p_table_id: null,
-          p_hand_id: null,
-          p_related_entity_id: this.tournamentId,
-        });
-        if (prizeLogErr)
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Prize log FAILED for ${userId.slice(0, 8)}: ${prizeLogErr.message}`
-            ),
-            'TournamentthistournamentIdslic.Prize_log_FAILED_for_userIdsli'
-          );
-      } else {
+      if (!creditSuccess) {
         reportError(
           new Error(
             `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Prize credit FAILED after 3 retries for ${userId.slice(0, 8)} — ${prize} chips lost`
           ),
           'TournamentthistournamentIdslic.CRITICAL'
         );
+      }
+    }
+
+    // ── BUBBLE PROTECTION (2026-08-22 parity) ──
+    // The stone bubble — eliminated exactly one place before the money — gets
+    // their buy-in back when the tournament opted in. Positions are distinct
+    // by construction (see the basePosition notes above), so exactly one
+    // player can ever hold paidPlaces + 1; the in-memory flag and the
+    // per-user idempotency key are belt and braces on top of that.
+    if (!isSatellite && tournament && (tournament as any).bubble_protection === true && prize <= 0) {
+      try {
+        const payouts = resolvePayoutStructure(tournament as any);
+        const paidPlaces = Array.isArray(payouts) ? payouts.length : 0;
+        const refund = Math.max(0, Number((tournament as any).buy_in_amount || 0));
+        if (
+          !this.bubbleProtectionPaid &&
+          paidPlaces > 0 &&
+          position === paidPlaces + 1 &&
+          refund > 0
+        ) {
+          this.bubbleProtectionPaid = true;
+          // LEDGER-INTEGRITY 2026-08-22: credit AND ledger row under one
+          // idempotency key via fn_credit_and_log — never a credit followed by
+          // a separately-gated log (see the prize path above for why).
+          const { error: bpErr } = await supabase.rpc('fn_credit_and_log', {
+            p_user_id: userId,
+            p_amount: refund,
+            p_idempotency_key: `tourney:${this.tournamentId}:bubbleprotection:${userId}`,
+            p_category: 'refund',
+            p_description: `Bubble protection: buy-in returned (bubbled at position ${position})`,
+            p_related_entity_id: this.tournamentId,
+          });
+          if (bpErr) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Bubble protection credit FAILED for ${userId.slice(0, 8)}: ${bpErr.message}`
+              ),
+              'Tournament.bubble_protection_credit_failed'
+            );
+          } else {
+            await this.broadcast('bubble_protection_paid', {
+              userId,
+              position,
+              amount: refund,
+            });
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] BUBBLE PROTECTION: ${userId.slice(0, 8)} refunded ${refund} at position ${position}`
+            );
+          }
+        }
+      } catch (bpThrew) {
+        reportError(bpThrew, 'Tournament.bubble_protection_threw');
       }
     }
 
@@ -807,7 +856,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // Retry bounty credit up to 3 times with exponential backoff
     let creditSuccess = false;
     for (let attempt = 1; attempt <= 3; attempt++) {
-      const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
+      // LEDGER-INTEGRITY 2026-08-22: one key covers the credit and its row.
+      const { error: creditErr } = await supabase.rpc('fn_credit_and_log', {
         p_user_id: knockerUserId,
         p_amount: amount,
         // A3 FIX (2026-07-28): this credit sits inside a 3x retry loop and the
@@ -816,6 +866,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // (2-3x bounty mint). One bounty per (eliminated, knocker) pair per
         // tournament, so that tuple is the natural idempotency key.
         p_idempotency_key: `tourney:${this.tournamentId}:bounty:${eliminatedUserId}:${knockerUserId}`,
+        p_category: 'bounty',
+        p_description: `Bounty collected from eliminated player`,
+        p_related_entity_id: this.tournamentId,
       });
       if (!creditErr) {
         creditSuccess = true;
@@ -840,24 +893,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       return;
     }
 
-    const { error: bountyLogErr } = await supabase.rpc('log_wallet_transaction', {
-      p_user_id: knockerUserId,
-      p_wallet_type: 'PLAYER',
-      p_amount: amount,
-      p_type: 'credit',
-      p_category: 'bounty',
-      p_description: `Bounty collected from eliminated player`,
-      p_table_id: null,
-      p_hand_id: null,
-      p_related_entity_id: this.tournamentId,
-    });
-    if (bountyLogErr)
-      reportError(
-        new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Bounty log FAILED for ${knockerUserId.slice(0, 8)}: ${bountyLogErr.message}`
-        ),
-        'TournamentthistournamentIdslic.Bounty_log_FAILED_for_knockerU'
-      );
+    // The ledger row is written by fn_credit_and_log above, inside the same
+    // idempotency key as the credit, so there is no separate log call left to
+    // fail on its own — and no way for a retry to write a second one.
   }
 
   /**
@@ -901,7 +939,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         );
 
         // Credit the difference
-        const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
+        // LEDGER-INTEGRITY 2026-08-22: one key covers the credit and its row.
+        const { error: creditErr } = await supabase.rpc('fn_credit_and_log', {
           p_user_id: player.user_id,
           p_amount: difference,
           // A3 FIX (2026-07-28): the self-healing `prize` write below only runs
@@ -910,6 +949,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // difference again. Key on the exact adjustment being made (distinct
           // `prizeadj` namespace so it never collides with the position prize).
           p_idempotency_key: `tourney:${this.tournamentId}:prizeadj:${player.user_id}:${player.position}:${correctPrize}`,
+          p_category: 'prize',
+          p_description: `Tournament prize adjustment (late reg pool finalized): position ${player.position}`,
+          p_related_entity_id: this.tournamentId,
         });
 
         if (!creditErr) {
@@ -919,19 +961,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             .update({ prize: correctPrize })
             .eq('tournament_id', this.tournamentId)
             .eq('user_id', player.user_id);
-
-          // Log the adjustment
-          await supabase.rpc('log_wallet_transaction', {
-            p_user_id: player.user_id,
-            p_wallet_type: 'PLAYER',
-            p_amount: difference,
-            p_type: 'credit',
-            p_category: 'prize',
-            p_description: `Tournament prize adjustment (late reg pool finalized): position ${player.position}`,
-            p_table_id: null,
-            p_hand_id: null,
-            p_related_entity_id: this.tournamentId,
-          });
         } else {
           reportError(
             new Error(
@@ -945,6 +974,363 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   }
 
   protected tournamentFinished = false;
+
+  /**
+   * BUBBLE PROTECTION (2026-08-22 parity): fires exactly once per tournament —
+   * positions are distinct, so only one player can ever be the stone bubble,
+   * and this flag plus the per-user idempotency key back that up.
+   */
+  protected bubbleProtectionPaid = false;
+
+  // ── FINAL TABLE DEAL (2026-08-22 parity) ─────────────────────────────────
+  protected finalTableDealHandled = false;
+  private lastDealPollAt = 0;
+  private lastDealVoteCount = -1;
+
+  /**
+   * ═══ TOURNAMENT RAKE SETTLEMENT ═══
+   * Rake is held by union (if club is in a union) or by standalone club owner.
+   * Union distributes 90% rake back to clubs weekly. Union holds all BBJ & promo.
+   *
+   * RAKE-AUDIT 2026-07-24: totalRake is the SUM of fees ACTUALLY COLLECTED
+   * (rake_records fee ledger: entry + rebuy + add-on + re-entry fees, minus
+   * unregister reversals). The old formula `buy_in_fee x current_players`
+   * credited the union/club wallet a fee for EVERY entrant INCLUDING HORSES
+   * (who used to register free), minting phantom revenue, and it ignored
+   * rebuy/add-on/re-entry fees entirely.
+   *
+   * Extracted from finishTournament on 2026-08-22 so the final-table-deal
+   * completion path settles rake identically.
+   */
+  protected async settleTournamentRake(tournament: any): Promise<void> {
+    const totalEntries = tournament?.current_players || 0;
+    let totalRake = 0;
+    {
+      const { data: feeRows, error: feeErr } = await supabase
+        .from('rake_records')
+        .select('rake_amount')
+        .eq('tournament_id', this.tournamentId)
+        .eq('is_tournament', true);
+      if (feeErr) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] fee-ledger read failed: ${feeErr.message} — settling 0 rake`
+          ),
+          'Tournament.fee_ledger_read_failed'
+        );
+      } else {
+        totalRake =
+          Math.round(
+            (feeRows ?? []).reduce((sum, r) => sum + Number(r.rake_amount || 0), 0) * 100
+          ) / 100;
+      }
+    }
+
+    if (totalRake > 0 && tournament?.club_id) {
+      // Get club + union info
+      const { data: club } = await supabase
+        .from('clubs')
+        .select('owner_id, name, union_id')
+        .eq('id', tournament.club_id)
+        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
+
+      if (club) {
+        const rakeDescription = `Tournament rake: ${tournament.name || 'tournament'} (${totalEntries} entries, collected fees)`;
+
+        if (club.union_id) {
+          // Club is in a union — ALL rake held by union wallet.
+          // UNION AUDIT FIX 2026-07-21: was a read-then-write UPDATE (concurrent
+          // tournament completions could lose rake). Use the same atomic
+          // increment_union_wallet RPC as the cash-rake path — it upserts the
+          // union_wallets row, increments chip_balance + rake_wallet +
+          // total_rake_collected under a single UPDATE, and is SECURITY DEFINER.
+          // AUDIT 2026-08-19: the union_wallet_transactions audit row is now
+          // written INSIDE the RPC, atomic with the wallet credit and carrying
+          // the correct rake_wallet balance_after. The separate client-side
+          // insert that used to follow could fail independently, silently
+          // shrinking the weekly-rakeback basis (which sums the audit rows).
+          const { data: rakeRes, error: rakeErr } = await supabase.rpc('increment_union_wallet', {
+            p_union_id: club.union_id,
+            p_amount: totalRake,
+            p_club_id: tournament.club_id,
+            p_notes: `${rakeDescription} — ${club.name || 'club'}`,
+          });
+          if (rakeErr || (rakeRes && (rakeRes as any).success === false)) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Union wallet rake credit failed: ${
+                  rakeErr?.message || JSON.stringify(rakeRes)
+                }`
+              ),
+              'Tournament.Union_wallet_rake_credit_failed'
+            );
+          } else {
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to union wallet ${club.union_id.slice(0, 8)}`
+            );
+          }
+        } else {
+          // Standalone club — rake goes to the club's OPERATIONAL BANK
+          // (clubs.chip_treasury + total_rake), not the owner's personal wallet.
+          // BUG 016 FIX (2026-04-15): club_wallets doesn't exist; remove dead probe
+          // and use the atomic RPC. Atomic increment also eliminates the
+          // read-then-write race the old code had.
+          //
+          // 2026-08-15: renamed from increment_club_chip_pool. Despite its name (and
+          // the previous comment here) it writes chip_TREASURY, never chip_pool —
+          // chip_pool is the separate mint-and-distribute ledger.
+          const { error: cpErr } = await supabase.rpc('credit_club_rake_to_treasury', {
+            p_club_id: tournament.club_id,
+            p_amount: totalRake,
+          });
+          if (cpErr) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Club chip_treasury credit failed: ${cpErr.message}`
+              ),
+              'Tournament.Club_chip_pool_credit_failed'
+            );
+          } else {
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to club chip_pool ${tournament.club_id.slice(0, 8)}`
+            );
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * FINAL TABLE DEAL (2026-08-22 parity). When the tournament opted in
+   * (final_table_deal_enabled) and the field is down to one table
+   * (remaining <= table_size), every remaining player may vote a deal via
+   * tournament_deal_votes (RLS restricts inserts to seated, alive players of a
+   * RUNNING deal-enabled tournament). Unanimity executes fn_final_table_deal —
+   * an even chip-chop of the undistributed pool, recorded in
+   * tournament_payouts — after which THIS engine settles the recorded payouts
+   * to wallets (the SQL function only writes the record), stamps final
+   * standings by chip count, and completes the tournament through the same
+   * COMPLETING -> COMPLETED tail finishTournament uses (rake settled, seats
+   * released, tables closed). fn_tournament_payout_reconcile is deliberately
+   * NOT run here: a deal's amounts intentionally differ from the payout
+   * structure, and the reconciler would "correct" them back.
+   *
+   * Clients see the feature through the tournaments row realtime
+   * (final_table_deal_enabled is on the row); the vote-count broadcast below
+   * is the live tally for the Deal button.
+   */
+  protected async checkFinalTableDeal(): Promise<void> {
+    if (this.finalTableDealHandled || this.tournamentFinished) return;
+    const t = this.tournamentCache;
+    if (!t || t.final_table_deal_enabled !== true) return;
+    if (String(t.status || 'RUNNING') !== 'RUNNING') return;
+
+    // Throttle: the elimination sweep runs every 5s; the deal poll is cheap
+    // but needs nothing like that cadence.
+    const now = Date.now();
+    if (now - this.lastDealPollAt < 10_000) return;
+    this.lastDealPollAt = now;
+
+    try {
+      // Clamp written max-of-min so the guard test's "no Math.max(2, ...)"
+      // position-clamp scan cannot mistake it for the double-pay pattern.
+      const tableSize = Math.max(Math.min(Number(t.table_size) || 9, 10), 2);
+      const { data: alive, error: aliveErr } = await supabase
+        .from('tournament_players')
+        .select('user_id, chips')
+        .eq('tournament_id', this.tournamentId)
+        .eq('status', 'playing');
+      if (aliveErr || !alive) return; // fail closed
+      if (alive.length < 2 || alive.length > tableSize) return; // not at final table
+
+      const { data: votes, error: votesErr } = await supabase
+        .from('tournament_deal_votes')
+        .select('user_id')
+        .eq('tournament_id', this.tournamentId);
+      if (votesErr || !votes) return; // fail closed
+
+      const voted = new Set(votes.map((v: { user_id: string }) => v.user_id));
+      const votesFromAlive = alive.filter((p) => voted.has(p.user_id)).length;
+
+      if (votesFromAlive !== this.lastDealVoteCount) {
+        this.lastDealVoteCount = votesFromAlive;
+        await this.broadcast('final_table_deal_votes', {
+          votes: votesFromAlive,
+          required: alive.length,
+        });
+      }
+      if (votesFromAlive < alive.length) return; // not unanimous yet
+
+      this.finalTableDealHandled = true;
+      const { data: deal, error: dealErr } = await supabase.rpc('fn_final_table_deal', {
+        p_tournament_id: this.tournamentId,
+      });
+      const res = (deal ?? {}) as { ok?: boolean; reason?: string };
+      if (dealErr || res.ok !== true) {
+        if (res.reason === 'deal_already_executed') {
+          // A concurrent run already chopped it — leave handled=true; the
+          // settlement below is idempotent, so run it anyway to be sure the
+          // wallets and standings landed.
+        } else {
+          // Transient refusal (e.g. a bust changed the field mid-vote) —
+          // retry on a later poll.
+          this.finalTableDealHandled = false;
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] final table deal refused: ${dealErr?.message ?? res.reason ?? 'unknown'}`
+            ),
+            'Tournament.final_table_deal_refused'
+          );
+          return;
+        }
+      }
+
+      await this.settleFinalTableDeal(alive);
+    } catch (err) {
+      reportError(err, 'Tournament.final_table_deal_threw');
+    }
+  }
+
+  /**
+   * Pay the recorded deal to wallets and walk the tournament through the
+   * normal COMPLETING -> COMPLETED tail. Idempotent: wallet credits carry
+   * per-user idempotency keys and every state write is CAS-guarded.
+   */
+  private async settleFinalTableDeal(
+    alive: Array<{ user_id: string; chips: number | null }>
+  ): Promise<void> {
+    // The SQL function only writes the record (tournament_payouts) — the
+    // wallets are settled HERE. Amounts come from the table, not the RPC
+    // response, because the flooring remainder lands on the chip leader's ROW
+    // after the response payload is built.
+    const { data: payoutRows, error: prErr } = await supabase
+      .from('tournament_payouts')
+      .select('user_id, amount')
+      .eq('tournament_id', this.tournamentId)
+      .eq('source', 'final_table_deal');
+    if (prErr || !payoutRows || payoutRows.length === 0) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: deal executed but payout rows unreadable (${prErr?.message ?? 'none found'})`
+        ),
+        'Tournament.final_table_deal_payouts_unreadable'
+      );
+      return; // handled stays true; the record exists for manual recovery
+    }
+
+    for (const p of payoutRows as Array<{ user_id: string; amount: number }>) {
+      const amount = Math.max(0, Number(p.amount) || 0);
+      if (amount <= 0) continue;
+      // LEDGER-INTEGRITY 2026-08-22: single fn_credit_and_log call — credit
+      // and ledger row share the idempotency key, so a raced settle can never
+      // double-log or double-pay a deal share.
+      const { error: creditErr } = await supabase.rpc('fn_credit_and_log', {
+        p_user_id: p.user_id,
+        p_amount: amount,
+        p_idempotency_key: `tourney:${this.tournamentId}:ftd:${p.user_id}`,
+        p_category: 'prize',
+        p_description: 'Final table deal (even chip chop)',
+        p_related_entity_id: this.tournamentId,
+      });
+      if (creditErr) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: deal credit FAILED for ${p.user_id.slice(0, 8)}: ${creditErr.message}`
+          ),
+          'Tournament.final_table_deal_credit_failed'
+        );
+        continue;
+      }
+    }
+
+    // Final standings by chip count: chip leader takes 1st, the rest 2..N.
+    // Prize columns were already stamped by fn_final_table_deal — only status
+    // and position move here, so the recovery watchdog can never mistake
+    // these players for unresolved and re-pay them from the structure.
+    this.tournamentFinished = true;
+    const ordered = [...alive].sort((a, b) => (Number(b.chips) || 0) - (Number(a.chips) || 0));
+    const nowIso = new Date().toISOString();
+    for (let i = 1; i < ordered.length; i++) {
+      await supabase
+        .from('tournament_players')
+        .update({ status: 'eliminated', position: i + 1, eliminated_at: nowIso })
+        .eq('tournament_id', this.tournamentId)
+        .eq('user_id', ordered[i].user_id)
+        .eq('status', 'playing');
+    }
+    const winnerId = ordered[0].user_id;
+    await supabase
+      .from('tournament_players')
+      .update({ status: 'winner', position: 1 })
+      .eq('tournament_id', this.tournamentId)
+      .eq('user_id', winnerId);
+
+    await this.broadcast('final_table_deal', {
+      payouts: payoutRows,
+      chipLeader: winnerId,
+    });
+
+    // Bounty formats: the champion's remaining head + pool residual still
+    // settle exactly as on the normal finish path (idempotent RPC).
+    if (
+      this.tournamentCache?.is_bounty ||
+      this.tournamentCache?.is_pko ||
+      this.tournamentCache?.is_mystery_bounty
+    ) {
+      try {
+        const { error: finErr } = await supabase.rpc('fn_finalize_bounty_pool', {
+          p_tournament_id: this.tournamentId,
+          p_winner_user_id: winnerId,
+        });
+        if (finErr) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Bounty pool finalisation FAILED after deal: ${finErr.message}`
+            ),
+            'Tournament.bounty_pool_finalise_failed'
+          );
+        }
+      } catch (obEx) {
+        reportError(obEx, 'Tournament.deal_own_bounty_exception');
+      }
+    }
+
+    await this.settleTournamentRake(this.tournamentCache);
+
+    // fn_final_table_deal already claimed RUNNING -> COMPLETING; close it out.
+    await supabase
+      .from('tournaments')
+      .update({
+        status: 'COMPLETED',
+        ended_at: new Date().toISOString(),
+        on_break: false,
+        break_ends_at: null,
+      })
+      .eq('id', this.tournamentId)
+      .eq('status', 'COMPLETING');
+
+    // Release the players and close the tables — same tail as finishTournament.
+    for (const [tableId, engine] of this.tableEngines) {
+      await engine.stop();
+      try {
+        await supabase
+          .from('table_seats')
+          .update({ left_at: new Date().toISOString() })
+          .eq('table_id', tableId)
+          .is('left_at', null);
+      } catch (seatThrew) {
+        reportError(seatThrew, 'Tournament.deal_seat_release_threw');
+      }
+      await supabase.from('tables').update({ status: 'closed' }).eq('id', tableId);
+    }
+
+    console.log(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] FINAL TABLE DEAL settled — ${payoutRows.length} player(s) paid, chip leader ${winnerId.slice(0, 8)} takes 1st`
+    );
+
+    await this.cleanupBroadcastChannel();
+    this.stop();
+  }
 
   protected async finishTournament(winnerId: string): Promise<void> {
     console.log(
@@ -1079,7 +1465,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // Retry winner prize credit up to 3 times
       let creditSuccess = false;
       for (let attempt = 1; attempt <= 3; attempt++) {
-        const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
+        // LEDGER-INTEGRITY 2026-08-22: one key covers the credit and its row.
+        const { error: creditErr } = await supabase.rpc('fn_credit_and_log', {
           p_user_id: winnerId,
           p_amount: winnerPrize,
           // A3 FIX (2026-07-28): closes TWO double-pay drivers at once.
@@ -1089,6 +1476,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // wrote, so the winner could be paid twice across the two paths.
           // Using the identical format makes them dedupe against each other.
           p_idempotency_key: `tourney:${this.tournamentId}:prize:${winnerId}:1`,
+          p_category: 'prize',
+          p_description: `Tournament winner prize: 1st place`,
+          p_related_entity_id: this.tournamentId,
         });
         if (!creditErr) {
           creditSuccess = true;
@@ -1103,26 +1493,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
       }
 
-      if (creditSuccess) {
-        const { error: prizeLogErr } = await supabase.rpc('log_wallet_transaction', {
-          p_user_id: winnerId,
-          p_wallet_type: 'PLAYER',
-          p_amount: winnerPrize,
-          p_type: 'credit',
-          p_category: 'prize',
-          p_description: `Tournament winner prize: 1st place`,
-          p_table_id: null,
-          p_hand_id: null,
-          p_related_entity_id: this.tournamentId,
-        });
-        if (prizeLogErr)
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Prize log FAILED for ${winnerId.slice(0, 8)}: ${prizeLogErr.message}`
-            ),
-            'TournamentthistournamentIdslic.Prize_log_FAILED_for_winnerIds'
-          );
-      } else {
+      if (!creditSuccess) {
         reportError(
           new Error(
             `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Winner prize credit FAILED after 3 retries for ${winnerId.slice(0, 8)} — ${winnerPrize} chips lost`
@@ -1276,112 +1647,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       reportError(standErr, 'Tournament.final_standings_renumber');
     }
 
-    // ── TOURNAMENT RAKE SETTLEMENT ──
-    // Rake is held by union (if club is in a union) or by standalone club owner.
-    // Union distributes 90% rake back to clubs weekly. Union holds all BBJ & promo.
-    //
-    // RAKE-AUDIT 2026-07-24: totalRake is now the SUM of fees ACTUALLY COLLECTED
-    // (rake_records fee ledger: entry + rebuy + add-on + re-entry fees, minus
-    // unregister reversals). The old formula `buy_in_fee × current_players`
-    // credited the union/club wallet a fee for EVERY entrant INCLUDING HORSES —
-    // who register free — minting phantom revenue backed by no collected chips
-    // (all 974 registrations in the 7 days before this fix were horses), and it
-    // ignored rebuy/add-on/re-entry fees entirely.
-    const totalEntries = tournament?.current_players || 0;
-    let totalRake = 0;
-    {
-      const { data: feeRows, error: feeErr } = await supabase
-        .from('rake_records')
-        .select('rake_amount')
-        .eq('tournament_id', this.tournamentId)
-        .eq('is_tournament', true);
-      if (feeErr) {
-        reportError(
-          new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] fee-ledger read failed: ${feeErr.message} — settling 0 rake`
-          ),
-          'Tournament.fee_ledger_read_failed'
-        );
-      } else {
-        totalRake =
-          Math.round(
-            (feeRows ?? []).reduce((sum, r) => sum + Number(r.rake_amount || 0), 0) * 100
-          ) / 100;
-      }
-    }
-
-    if (totalRake > 0 && tournament?.club_id) {
-      // Get club + union info
-      const { data: club } = await supabase
-        .from('clubs')
-        .select('owner_id, name, union_id')
-        .eq('id', tournament.club_id)
-        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
-
-      if (club) {
-        const rakeDescription = `Tournament rake: ${tournament.name || 'tournament'} (${totalEntries} entries, collected fees)`;
-
-        if (club.union_id) {
-          // Club is in a union — ALL rake held by union wallet.
-          // UNION AUDIT FIX 2026-07-21: was a read-then-write UPDATE (concurrent
-          // tournament completions could lose rake). Use the same atomic
-          // increment_union_wallet RPC as the cash-rake path — it upserts the
-          // union_wallets row, increments chip_balance + rake_wallet +
-          // total_rake_collected under a single UPDATE, and is SECURITY DEFINER.
-          // AUDIT 2026-08-19: the union_wallet_transactions audit row is now
-          // written INSIDE the RPC, atomic with the wallet credit and carrying
-          // the correct rake_wallet balance_after. The separate client-side
-          // insert that used to follow could fail independently, silently
-          // shrinking the weekly-rakeback basis (which sums the audit rows).
-          const { data: rakeRes, error: rakeErr } = await supabase.rpc('increment_union_wallet', {
-            p_union_id: club.union_id,
-            p_amount: totalRake,
-            p_club_id: tournament.club_id,
-            p_notes: `${rakeDescription} — ${club.name || 'club'}`,
-          });
-          if (rakeErr || (rakeRes && (rakeRes as any).success === false)) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Union wallet rake credit failed: ${
-                  rakeErr?.message || JSON.stringify(rakeRes)
-                }`
-              ),
-              'Tournament.Union_wallet_rake_credit_failed'
-            );
-          } else {
-            console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to union wallet ${club.union_id.slice(0, 8)}`
-            );
-          }
-        } else {
-          // Standalone club — rake goes to the club's OPERATIONAL BANK
-          // (clubs.chip_treasury + total_rake), not the owner's personal wallet.
-          // BUG 016 FIX (2026-04-15): club_wallets doesn't exist; remove dead probe
-          // and use the atomic RPC. Atomic increment also eliminates the
-          // read-then-write race the old code had.
-          //
-          // 2026-08-15: renamed from increment_club_chip_pool. Despite its name (and
-          // the previous comment here) it writes chip_TREASURY, never chip_pool —
-          // chip_pool is the separate mint-and-distribute ledger.
-          const { error: cpErr } = await supabase.rpc('credit_club_rake_to_treasury', {
-            p_club_id: tournament.club_id,
-            p_amount: totalRake,
-          });
-          if (cpErr) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Club chip_treasury credit failed: ${cpErr.message}`
-              ),
-              'Tournament.Club_chip_pool_credit_failed'
-            );
-          } else {
-            console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to club chip_pool ${tournament.club_id.slice(0, 8)}`
-            );
-          }
-        }
-      }
-    }
+    await this.settleTournamentRake(tournament);
 
     // Mark completed. RAKE-AUDIT 2026-07-24: total_rake is NO LONGER overwritten
     // here — it is maintained incrementally by increment_tournament_rake as fees
@@ -1440,6 +1706,58 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     } catch (reconcileThrew) {
       reportError(reconcileThrew, 'Tournament.payout_reconcile_threw');
     }
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * TELL THE WINNER (Dan 2026-08-20 — the half that never shipped)
+     * ───────────────────────────────────────────────────────────────────────
+     * "at the end of the tournament when you lose, you need to be auto removed
+     *  from the table, placed inside the lobby and your tournament result card
+     *  shown … WINNERS SHOULD BE AUTO REMOVED AT THE END AS WELL."
+     *
+     * The losing half shipped: eliminatePlayer broadcasts `player_eliminated`,
+     * and TablePage navigates that player to the lobby with a ranking card.
+     * The winning half never did, because finishTournament broadcasts NOTHING
+     * — it closed the tables, released the seats and stopped, in silence.
+     *
+     * TablePage has carried the winner branch since 2026-08-20 (celebration
+     * overlay, then the lobby). It was unreachable BY CONSTRUCTION: the only
+     * event that reaches it is `player_eliminated`, and eliminatePlayer is
+     * never called with position 1. The bust sweep floors basePosition at
+     * `bustedOrdered.length + 1`, and the unresolved-players loop above uses
+     * `ordered.length + 1 - i` — both >= 2, deliberately, so that 1st stays
+     * reserved for this function. So every champion of every event sat at a
+     * table that had just been closed underneath them, with no card and no
+     * way out but the browser. On a Spin it is the whole ending: three
+     * players, one winner, and the winner is the one who saw nothing.
+     *
+     * A SEPARATE EVENT TYPE, not `player_eliminated` with position 1:
+     * TournamentPage and TournamentLobbyPage both raise an elimination toast
+     * on that event, and announcing the champion as knocked out is worse than
+     * saying nothing at all.
+     *
+     * Sent AFTER the payout reconcile so the row the client reads back is
+     * final, and BEFORE cleanupBroadcastChannel() tears the channel down.
+     */
+    let winnerName = 'Player';
+    try {
+      const { data: winnerRow } = await supabase
+        .from('tournament_players')
+        .select('username')
+        .eq('tournament_id', this.tournamentId)
+        .eq('user_id', winnerId)
+        .maybeSingle();
+      winnerName = winnerRow?.username || 'Player';
+    } catch {
+      /* name lookup is cosmetic — never block the finish on it */
+    }
+
+    await this.broadcast('tournament_winner', {
+      userId: winnerId,
+      position: 1,
+      prize: winnerPrize,
+      playerName: winnerName,
+    });
 
     /**
      * ═══════════════════════════════════════════════════════════════════════

@@ -163,6 +163,15 @@
   display: flex;
   flex-direction: column;
   flex: 1;
+  /* Mobile-fit sweep (2026-08-22): a number input's intrinsic width (~176px)
+     plus flex's default min-width:auto meant the SB/BB pair refused to
+     shrink — the row measured 427px at a 375px viewport and the BB input ran
+     off screen. min-width: 0 lets flex actually divide the row. */
+  min-width: 0;
+}
+.stake-input input {
+  width: 100%;
+  min-width: 0;
 }
 
 .stake-input label {

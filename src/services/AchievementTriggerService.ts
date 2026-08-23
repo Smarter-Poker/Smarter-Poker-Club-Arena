@@ -141,8 +141,34 @@ class AchievementTriggerServiceClass {
       wins: handData.won ? 1 : 0,
     });
 
-    // 5. Send push notification for unlocked achievements
+    // 5. Announce unlocked achievements.
+    //
+    // 2026-08-20: this only sent a PUSH notification. The whole in-app
+    // celebration layer — AchievementNotification, MilestoneToast (mounted
+    // app-wide in App.tsx) and FriendActivityFeed — listens on the bus for
+    // ACHIEVEMENT_UNLOCKED / MILESTONE_UNLOCKED, and NOTHING in the repo ever
+    // emitted either one. Achievements unlocked invisibly mid-session; the only
+    // way a player found out was a push notification on their phone or by going
+    // to /achievements later. Every one of those components was built, mounted
+    // and inert.
     for (const ach of result.triggeredAchievements) {
+      masterBus.emit('ACHIEVEMENT_UNLOCKED', {
+        userId,
+        achievementId: ach.id,
+        name: ach.name,
+        icon: ach.icon,
+        rarity: ach.rarity,
+        description: ach.description,
+      });
+      // MilestoneToast is the app-wide surface; it reads title/description/icon.
+      masterBus.emit('MILESTONE_UNLOCKED', {
+        milestoneId: ach.id,
+        userId,
+        milestoneName: ach.name,
+        description: ach.description,
+        icon: ach.icon,
+        ...(ach.chipReward ? { reward: { chips: ach.chipReward } } : {}),
+      });
       pushNotificationService
         .notifyAchievement(userId, ach.name)
         .catch((err) => reportError(err, 'AchievementTriggerService.Push_notification_failed'));

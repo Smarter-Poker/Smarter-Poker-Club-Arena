@@ -17,7 +17,8 @@ import { TournamentManagerEliminations } from './TournamentManagerEliminations.j
 
 export class TournamentManager extends TournamentManagerEliminations {
   protected async checkTableBalance(): Promise<void> {
-    // Check for final table (9 or fewer players remaining) — only announce once
+    // Check for final table (table_size or fewer players remaining, 2026-08-22
+    // parity: was hardcoded 9) — only announce once
     if (!this.isFinalTable) {
       const { count: remainingPlayers } = await supabase
         .from('tournament_players')
@@ -25,7 +26,11 @@ export class TournamentManager extends TournamentManagerEliminations {
         .eq('tournament_id', this.tournamentId)
         .eq('status', 'playing');
 
-      if ((remainingPlayers || 0) <= 9) {
+      const finalTableSize = Math.min(
+        10,
+        Math.max(2, Number(this.tournamentCache?.table_size) || 9)
+      );
+      if ((remainingPlayers || 0) <= finalTableSize) {
         this.isFinalTable = true;
         console.log(
           `[Tournament:${this.tournamentId.slice(0, 8)}] FINAL TABLE reached with ${remainingPlayers} players`
@@ -472,10 +477,18 @@ export class TournamentManager extends TournamentManagerEliminations {
       idempotencyKey: string
     ) => {
       if (amount <= 0) return;
-      const { error } = await supabase.rpc('credit_player_wallet', {
+      // LEDGER-INTEGRITY 2026-08-22: credit and ledger row under one key.
+      // These sites share `tourney:{id}:prize:{user}:{place}` with the
+      // stuck-COMPLETING watchdog deliberately, so the credit deduped — but
+      // the log used to run regardless and wrote a prize row for money that
+      // was never moved.
+      const { error } = await supabase.rpc('fn_credit_and_log', {
         p_user_id: userId,
         p_amount: amount,
         p_idempotency_key: idempotencyKey,
+        p_category: 'prize',
+        p_description: desc,
+        p_related_entity_id: this.tournamentId,
       });
       if (error) {
         reportError(
@@ -486,17 +499,6 @@ export class TournamentManager extends TournamentManagerEliminations {
         );
         return;
       }
-      await supabase.rpc('log_wallet_transaction', {
-        p_user_id: userId,
-        p_wallet_type: 'PLAYER',
-        p_amount: amount,
-        p_type: 'credit',
-        p_category: 'prize',
-        p_description: desc,
-        p_table_id: null,
-        p_hand_id: null,
-        p_related_entity_id: this.tournamentId,
-      });
     };
 
     if (awardCount === 0) {
@@ -651,10 +653,16 @@ export class TournamentManager extends TournamentManagerEliminations {
           }
         }
 
+        // EARLY BIRD (2026-08-22 parity): a 'registered' row's chips column is
+        // the pre-credited early-bird bonus (fn_register_for_tournament writes
+        // it at registration). Seating ADDS the starting stack to it — never
+        // overwrites it.
         const playerChips =
-          player.status === 'registered' || Number(player.chips || 0) <= 0
-            ? startingChips
-            : Number(player.chips);
+          player.status === 'registered'
+            ? startingChips + Math.max(0, Math.floor(Number(player.chips) || 0))
+            : Number(player.chips || 0) <= 0
+              ? startingChips
+              : Number(player.chips);
 
         if (!best) {
           // All tables full — promote to 'playing' so expansion counts them;
@@ -780,7 +788,8 @@ export class TournamentManager extends TournamentManagerEliminations {
     } else if (variant === 'sng' || tType === 'SNG') {
       maxPerTable = Math.min(this.tournamentCache?.max_players || 6, 9);
     } else {
-      maxPerTable = 9;
+      // table_size (2026-08-22 parity): same clamp as createTablesAndSeatPlayers.
+      maxPerTable = Math.min(10, Math.max(2, Number(this.tournamentCache?.table_size) || 9));
     }
 
     // Round 51 RE-RUN fix: ground currentTableCount in the DB, not the
@@ -837,6 +846,11 @@ export class TournamentManager extends TournamentManagerEliminations {
           max_players: maxPerTable,
           current_players: 0,
           status: 'running',
+          // 2026-08-22 parity: expansion tables carry the same per-tournament
+          // table settings as the ones built at start.
+          action_time_seconds: this.tournamentCache?.action_time_seconds || 15,
+          big_blind_ante_enabled: this.tournamentCache?.big_blind_ante === true,
+          all_in_or_fold: this.tournamentCache?.all_in_or_fold === true,
         })
         .select()
         .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single

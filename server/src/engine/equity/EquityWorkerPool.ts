@@ -33,7 +33,38 @@ interface Job {
   id: number;
   payload: JobPayload;
   resolve: (equities: number[]) => void;
+  /** FIX 2026-08-22: single-settle guard — timeout, worker reply and
+   *  worker-death recovery can all race to resolve the same job. */
+  settled?: boolean;
+  /** Per-job watchdog handle, armed at enqueue time. */
+  timer?: ReturnType<typeof setTimeout>;
 }
+
+/**
+ * FIX 2026-08-22: hard bound on how long ANY equity job may remain
+ * unresolved. estimateEquity's promise is awaited on the all-in runout
+ * critical path (broadcastAllInEquity -> safeContinueRunout); a worker that
+ * wedged without exiting used to leave that promise pending FOREVER, parking
+ * the hand at ALL_IN_RUNOUT until the table watchdog killed the engine — and
+ * because jobs queue, one wedged pool stalled every all-in on every table.
+ * The clock starts at enqueue so queue-wait behind a wedged pool is bounded
+ * too. On expiry: a queued job is pulled and computed synchronously; an
+ * in-flight job's worker is terminated (its 'exit' recovery resolves the job
+ * via the same sync fallback and respawns a replacement).
+ */
+const JOB_TIMEOUT_MS = 15_000;
+
+/**
+ * 2026-08-22 review: respawn discipline. Worker death used to shrink the pool
+ * permanently; the first respawn fix then allowed the opposite failure — a
+ * worker that crashes ON START (broken build artifact) emits 'error'/'exit'
+ * asynchronously, so each respawn scheduled the next: an unbounded spawn loop.
+ * A budget (refilled by any successful worker reply) plus a delay bounds it:
+ * budget exhausted -> the pool degrades to sync mode, exactly the pre-existing
+ * safe behaviour.
+ */
+const RESPAWN_DELAY_MS = 2_000;
+const RESPAWN_BUDGET = 10;
 
 export class EquityWorkerPool {
   private workers: Worker[] = [];
@@ -41,6 +72,15 @@ export class EquityWorkerPool {
   private queue: Job[] = [];
   private inFlight = new Map<Worker, Job>();
   private nextId = 1;
+  private respawnBudget = RESPAWN_BUDGET;
+  /**
+   * 2026-08-22 review: queued jobs that hit their timeout are drained ONE per
+   * macrotask. Draining them synchronously in the timeout callback ran the
+   * whole backlog of Monte-Carlo jobs back-to-back on the event loop — the
+   * exact all-tables stall the worker pool exists to prevent.
+   */
+  private syncDrainQueue: Job[] = [];
+  private syncDrainScheduled = false;
   private readonly size: number;
   private initialized = false;
   private readonly disabled: boolean;
@@ -104,9 +144,67 @@ export class EquityWorkerPool {
         payload: { hands, board, deadCards, iters, opts, seed: useSeed },
         resolve,
       };
+      job.timer = setTimeout(() => this.onJobTimeout(job), JOB_TIMEOUT_MS);
+      job.timer.unref?.();
       this.queue.push(job);
       this.pump();
     });
+  }
+
+  /** See JOB_TIMEOUT_MS. Never lets an equity await park a hand. */
+  private onJobTimeout(job: Job): void {
+    if (job.settled) return;
+    // Still waiting in the queue? Pull it and answer via the staggered drain
+    // (one sync compute per macrotask — see syncDrainQueue).
+    const qIdx = this.queue.indexOf(job);
+    if (qIdx !== -1) {
+      this.queue.splice(qIdx, 1);
+      this.scheduleSyncDrain(job);
+      return;
+    }
+    // In flight on a wedged worker: terminate it. The worker's 'exit' handler
+    // (onWorkerDown) recovers the job via syncFallback and respawns.
+    for (const [w, inFlightJob] of this.inFlight) {
+      if (inFlightJob === job) {
+        void w.terminate().catch(() => {});
+        return;
+      }
+    }
+    // Neither queued nor in flight and not settled — settle defensively.
+    this.settle(job, this.syncFallback(job));
+  }
+
+  private scheduleSyncDrain(job: Job): void {
+    this.syncDrainQueue.push(job);
+    if (this.syncDrainScheduled) return;
+    this.syncDrainScheduled = true;
+    const drainOne = () => {
+      const next = this.syncDrainQueue.shift();
+      if (next && !next.settled) {
+        try {
+          this.settle(next, this.syncFallback(next));
+        } catch {
+          this.settle(
+            next,
+            next.payload.hands.map(() => 1 / next.payload.hands.length)
+          );
+        }
+      }
+      if (this.syncDrainQueue.length > 0) {
+        setTimeout(drainOne, 0);
+      } else {
+        this.syncDrainScheduled = false;
+      }
+    };
+    setTimeout(drainOne, 0);
+  }
+
+  /** Resolve exactly once and clear the watchdog. */
+  private settle(job: Job, equities: number[]): void {
+    if (job.settled) return;
+    job.settled = true;
+    if (job.timer) clearTimeout(job.timer);
+    job.resolve(equities);
   }
 
   private deriveSeed(hands: Card[][], board: Card[], dead: Card[], iters: number): number {
@@ -128,28 +226,56 @@ export class EquityWorkerPool {
   }
 
   private onMessage(w: Worker, m: any): void {
+    // A worker that answers is healthy — refill the respawn budget.
+    this.respawnBudget = RESPAWN_BUDGET;
     const job = this.inFlight.get(w);
     this.inFlight.delete(w);
     if (this.workers.includes(w)) this.idle.push(w);
     if (job) {
       if (m && !m.error && Array.isArray(m.equities)) {
-        job.resolve(m.equities);
+        this.settle(job, m.equities);
       } else {
         // Worker reported an error — recover with the synchronous compute.
-        job.resolve(this.syncFallback(job));
+        this.settle(job, this.syncFallback(job));
       }
     }
     this.pump();
   }
 
   private onWorkerDown(w: Worker): void {
+    const wasKnown = this.workers.includes(w);
     this.workers = this.workers.filter((x) => x !== w);
     this.idle = this.idle.filter((x) => x !== w);
     const job = this.inFlight.get(w);
     if (job) {
       this.inFlight.delete(w);
       // Do not drop the job — recover it via the synchronous compute.
-      job.resolve(this.syncFallback(job));
+      this.settle(job, this.syncFallback(job));
+    }
+    // FIX 2026-08-22 (+review): the pool used to shrink permanently on every
+    // worker death. Respawn — but DELAYED and BUDGETED, because a worker that
+    // crashes on start emits 'error'/'exit' asynchronously and an immediate
+    // respawn chain would spin forever against a broken build artifact.
+    // Budget spent -> degrade to sync mode (the pre-existing safe behaviour);
+    // any successful worker reply refills the budget.
+    if (wasKnown && !this.disabled && this.workers.length < this.size && this.respawnBudget > 0) {
+      this.respawnBudget--;
+      const t = setTimeout(() => {
+        if (this.workers.length >= this.size) return;
+        try {
+          const nw = new Worker(this.workerUrl);
+          nw.on('message', (m) => this.onMessage(nw, m));
+          nw.on('error', () => this.onWorkerDown(nw));
+          nw.on('exit', () => this.onWorkerDown(nw));
+          nw.unref();
+          this.workers.push(nw);
+          this.idle.push(nw);
+          this.pump();
+        } catch {
+          /* degrade to sync mode */
+        }
+      }, RESPAWN_DELAY_MS);
+      t.unref?.();
     }
     this.pump();
   }

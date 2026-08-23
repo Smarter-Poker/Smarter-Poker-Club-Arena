@@ -19,6 +19,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { fmt, timeAgo } from '../utils/format';
 import { SettlementService } from '../services/SettlementService';
+import UnionWalletModal, { type UnionWalletKey } from '../components/union/UnionWalletModal';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import { getUnionLevel } from '../utils/clubLevels';
 import { reportError } from '../utils/errorReporter';
@@ -32,6 +33,7 @@ const pct = (n: number | null | undefined) => `${((Number(n) || 0) * 100).toFixe
 type UnionTab =
   | 'overview'
   | 'clubs'
+  | 'players'
   | 'agents'
   | 'wallet'
   | 'treasury'
@@ -95,6 +97,7 @@ interface UnionWallet {
   bbj_wallet: number;
   promo_wallet: number;
   insurance_wallet: number;
+  spin_reserve_wallet: number;
   total_rake_collected: number;
   total_settlements: number;
   created_at: string;
@@ -138,6 +141,28 @@ export default function UnionDashboardPage() {
   const [unionId, setUnionId] = useState<string | null>(null);
   const [union, setUnion] = useState<UnionRow | null>(null);
   const [adminRole, setAdminRole] = useState<string | null>(null);
+  /**
+   * Dan 2026-08-22: clicking any union wallet opens it with a send-to-member
+   * flow. Before this, the four wallet tiles were static divs.
+   */
+  const [walletModal, setWalletModal] = useState<{
+    key: UnionWalletKey;
+    label: string;
+    balance: number;
+  } | null>(null);
+  const [roster, setRoster] = useState<
+    {
+      user_id: string;
+      username: string | null;
+      display_name: string | null;
+      club_name: string | null;
+      member_role: string | null;
+      member_status: string | null;
+      currently_seated: boolean;
+    }[]
+  >([]);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [rosterSearch, setRosterSearch] = useState('');
   const [clubs, setClubs] = useState<EnrichedClub[]>([]);
   const [agents, setAgents] = useState<UnionAgent[]>([]);
   const [admins, setAdmins] = useState<UnionAdmin[]>([]);
@@ -154,6 +179,7 @@ export default function UnionDashboardPage() {
     last_hit_amount: number;
   } | null>(null);
   const [bbjFundAmount, setBbjFundAmount] = useState('');
+  const [spinReserveForm, setSpinReserveForm] = useState({ amount: '', from: 'promo_wallet' });
   const [recentPeriods, setRecentPeriods] = useState<SettlementPeriod[]>([]);
   /** Weekly union<->club player win/loss settlements (union_pnl_settlements). */
   const [pnlSettlements, setPnlSettlements] = useState<any[]>([]);
@@ -367,9 +393,13 @@ export default function UnionDashboardPage() {
     // Load wallets
     const { data: walletRow } = await supabase
       .from('union_wallets')
-      // union_wallets schema: chip_balance, rake_wallet, bbj_wallet, promo_wallet, insurance_wallet, total_rake_collected, total_settlements
+      // union_wallets schema: chip_balance, rake_wallet, bbj_wallet, promo_wallet,
+      // insurance_wallet, spin_reserve_wallet, total_rake_collected, total_settlements.
+      // spin_reserve_wallet holds the capital that seeds every Spin bonus pool this
+      // union owns. It existed unread since 2026-08-22 - the pools were being seeded
+      // out of promo_wallet because nothing surfaced the wallet meant to fund them.
       .select(
-        'id, union_id, chip_balance, rake_wallet, bbj_wallet, promo_wallet, insurance_wallet, total_rake_collected, total_settlements, created_at'
+        'id, union_id, chip_balance, rake_wallet, bbj_wallet, promo_wallet, insurance_wallet, spin_reserve_wallet, total_rake_collected, total_settlements, created_at'
       )
       .eq('union_id', uid)
       .maybeSingle();
@@ -693,6 +723,36 @@ export default function UnionDashboardPage() {
   // ── Computed ───────────────────────────────────────────────
   const isLead = adminRole === 'union_lead';
 
+  // ── Union-wide player roster (Dan 2026-08-22: every player of every club,
+  //    with their role — the union is for tracking, so it must SEE everyone). ──
+  useEffect(() => {
+    if (tab !== 'players' || !unionId) return;
+    setRosterLoading(true);
+    void supabase
+      .rpc('fn_union_player_directory', { p_union_id: unionId })
+      .then(({ data, error }) => {
+        if (error) {
+          reportError(error, 'UnionDashboard.roster_load_failed');
+          setRoster([]);
+        } else {
+          setRoster((data as typeof roster) || []);
+        }
+        setRosterLoading(false);
+      });
+  }, [tab, unionId]);
+
+  const filteredRoster = useMemo(() => {
+    const q = rosterSearch.trim().toLowerCase();
+    if (!q) return roster;
+    return roster.filter(
+      (r) =>
+        (r.display_name || '').toLowerCase().includes(q) ||
+        (r.username || '').toLowerCase().includes(q) ||
+        (r.club_name || '').toLowerCase().includes(q) ||
+        (r.member_role || '').toLowerCase().includes(q)
+    );
+  }, [roster, rosterSearch]);
+
   const filteredClubs = useMemo(() => {
     if (!clubSearch.trim()) return clubs;
     const q = clubSearch.toLowerCase();
@@ -723,6 +783,18 @@ export default function UnionDashboardPage() {
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const exportRoster = () => {
+    const headers = ['Player', 'Club', 'Role', 'Status', 'Seated'];
+    const rows = filteredRoster.map((r) => [
+      r.display_name || r.username || r.user_id,
+      r.club_name || '',
+      r.member_role || 'member',
+      r.member_status || '',
+      r.currently_seated ? 'yes' : '',
+    ]);
+    downloadCSV(`union_players_${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
   };
 
   const exportAgents = () => {
@@ -912,6 +984,7 @@ export default function UnionDashboardPage() {
             [
               { id: 'overview' as UnionTab, label: 'Overview' },
               { id: 'clubs' as UnionTab, label: `Clubs (${clubs.length})` },
+              { id: 'players' as UnionTab, label: 'Players' },
               { id: 'agents' as UnionTab, label: `Agents (${agents.length})` },
               { id: 'wallet' as UnionTab, label: 'Wallet' },
               { id: 'treasury' as UnionTab, label: 'Treasury' },
@@ -976,31 +1049,57 @@ export default function UnionDashboardPage() {
             {/* Wallet Summary */}
             {wallets && (
               <div className="admin-stats-grid" style={{ marginTop: '16px' }}>
+                {(
+                  [
+                    {
+                      key: 'chips',
+                      label: 'Chip Balance',
+                      color: '#4599FF',
+                      value: wallets.chip_balance,
+                    },
+                    {
+                      key: 'rake',
+                      label: 'Rake Wallet',
+                      color: '#31A24C',
+                      value: wallets.rake_wallet,
+                    },
+                    {
+                      key: 'bbj',
+                      label: `BBJ Pool${bbjPool ? ` (${bbjPool.hit_count} hits)` : ''}`,
+                      color: '#F7C52A',
+                      value: bbjPool?.main_balance ?? 0,
+                    },
+                    {
+                      key: 'promo',
+                      label: 'Promo Wallet',
+                      color: '#C084FC',
+                      value: wallets.promo_wallet,
+                    },
+                  ] as { key: UnionWalletKey; label: string; color: string; value: number }[]
+                ).map((w) => (
+                  <button
+                    key={w.key}
+                    className="admin-stat-card"
+                    style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                    aria-label={`Open ${w.label}`}
+                    onClick={() =>
+                      setWalletModal({ key: w.key, label: w.label, balance: w.value || 0 })
+                    }
+                  >
+                    <div className="admin-stat-value" style={{ color: w.color }}>
+                      {fmt(w.value)}
+                    </div>
+                    <div className="admin-stat-label">{w.label} ›</div>
+                  </button>
+                ))}
+                {/* Spin reserve — funded by fn_spin_reserve_seed_from_union; not a
+                    send source, so it stays a plain tile alongside the four
+                    clickable wallets. */}
                 <div className="admin-stat-card">
-                  <div className="admin-stat-value" style={{ color: '#4599FF' }}>
-                    {fmt(wallets.chip_balance)}
+                  <div className="admin-stat-value" style={{ color: '#39d17a' }}>
+                    {fmt(wallets.spin_reserve_wallet)}
                   </div>
-                  <div className="admin-stat-label">Chip Balance</div>
-                </div>
-                <div className="admin-stat-card">
-                  <div className="admin-stat-value" style={{ color: '#31A24C' }}>
-                    {fmt(wallets.rake_wallet)}
-                  </div>
-                  <div className="admin-stat-label">Rake Wallet</div>
-                </div>
-                <div className="admin-stat-card">
-                  <div className="admin-stat-value" style={{ color: '#F7C52A' }}>
-                    {fmt(bbjPool?.main_balance ?? 0)}
-                  </div>
-                  <div className="admin-stat-label">
-                    BBJ Pool{bbjPool ? ` (${bbjPool.hit_count} hits)` : ''}
-                  </div>
-                </div>
-                <div className="admin-stat-card">
-                  <div className="admin-stat-value" style={{ color: '#C084FC' }}>
-                    {fmt(wallets.promo_wallet)}
-                  </div>
-                  <div className="admin-stat-label">Promo Wallet</div>
+                  <div className="admin-stat-label">Spin Reserve</div>
                 </div>
               </div>
             )}
@@ -1244,34 +1343,135 @@ export default function UnionDashboardPage() {
           </div>
         )}
 
+        {/* ══════ TAB: PLAYERS — the union-wide roster ══════ */}
+        {tab === 'players' && (
+          <div className="admin-tab-content">
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <input
+                className="admin-input"
+                style={{ flex: 1 }}
+                placeholder="Search players by name, club or role…"
+                value={rosterSearch}
+                onChange={(e) => setRosterSearch(e.target.value)}
+              />
+              <span style={{ alignSelf: 'center', color: '#888', fontSize: 12 }}>
+                {fmt(filteredRoster.length)} Players
+              </span>
+              <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={exportRoster}>
+                Export CSV
+              </button>
+            </div>
+            {rosterLoading ? (
+              <div className="admin-empty">Loading Roster…</div>
+            ) : filteredRoster.length === 0 ? (
+              <div className="admin-empty">
+                <span className="admin-empty-icon">◉</span>
+                <span>{rosterSearch ? 'No players match' : 'No players found'}</span>
+              </div>
+            ) : (
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Player</th>
+                      <th>Club</th>
+                      <th>Role</th>
+                      <th>Status</th>
+                      <th>Seated</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRoster.slice(0, 500).map((r) => (
+                      <tr key={`${r.user_id}-${r.club_name}`}>
+                        <td style={{ color: '#fff', fontWeight: 600 }}>
+                          {r.display_name || r.username || r.user_id.slice(0, 8)}
+                        </td>
+                        <td>{r.club_name || ''}</td>
+                        <td>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              color:
+                                r.member_role === 'owner'
+                                  ? '#F7C52A'
+                                  : r.member_role === 'co_owner' || r.member_role === 'admin'
+                                    ? '#4599FF'
+                                    : r.member_role === 'agent' || r.member_role === 'super_agent'
+                                      ? '#31A24C'
+                                      : '#aaa',
+                            }}
+                          >
+                            {(r.member_role || 'member').replace('_', ' ').toUpperCase()}
+                          </span>
+                        </td>
+                        <td>{r.member_status || ''}</td>
+                        <td>{r.currently_seated ? '● at table' : ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ══════ TAB: WALLET ══════ */}
         {tab === 'wallet' && (
           <div className="admin-tab-content">
             {wallets && (
               <div className="admin-stats-grid" style={{ marginBottom: '16px' }}>
+                {(
+                  [
+                    {
+                      key: 'chips',
+                      label: 'Chip Balance',
+                      color: '#4599FF',
+                      value: wallets.chip_balance,
+                    },
+                    {
+                      key: 'rake',
+                      label: 'Weekly Rake Wallet',
+                      color: '#31A24C',
+                      value: wallets.rake_wallet,
+                    },
+                    {
+                      key: 'bbj',
+                      label: 'Backup BBJ Wallet',
+                      color: '#F7C52A',
+                      value: wallets.bbj_wallet,
+                    },
+                    {
+                      key: 'promo',
+                      label: 'Promo Wallet',
+                      color: '#C084FC',
+                      value: wallets.promo_wallet,
+                    },
+                  ] as { key: UnionWalletKey; label: string; color: string; value: number }[]
+                ).map((w) => (
+                  <button
+                    key={w.key}
+                    className="admin-stat-card"
+                    style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                    aria-label={`Open ${w.label}`}
+                    onClick={() =>
+                      setWalletModal({ key: w.key, label: w.label, balance: w.value || 0 })
+                    }
+                  >
+                    <div className="admin-stat-value" style={{ color: w.color }}>
+                      {fmt(w.value)}
+                    </div>
+                    <div className="admin-stat-label">{w.label} ›</div>
+                  </button>
+                ))}
+                {/* Spin reserve — funded by fn_spin_reserve_seed_from_union; not a
+                    send source, so it stays a plain tile alongside the four
+                    clickable wallets. */}
                 <div className="admin-stat-card">
-                  <div className="admin-stat-value" style={{ color: '#4599FF' }}>
-                    {fmt(wallets.chip_balance)}
+                  <div className="admin-stat-value" style={{ color: '#39d17a' }}>
+                    {fmt(wallets.spin_reserve_wallet)}
                   </div>
-                  <div className="admin-stat-label">Chip Balance</div>
-                </div>
-                <div className="admin-stat-card">
-                  <div className="admin-stat-value" style={{ color: '#31A24C' }}>
-                    {fmt(wallets.rake_wallet)}
-                  </div>
-                  <div className="admin-stat-label">Rake</div>
-                </div>
-                <div className="admin-stat-card">
-                  <div className="admin-stat-value" style={{ color: '#F7C52A' }}>
-                    {fmt(wallets.bbj_wallet)}
-                  </div>
-                  <div className="admin-stat-label">BBJ</div>
-                </div>
-                <div className="admin-stat-card">
-                  <div className="admin-stat-value" style={{ color: '#C084FC' }}>
-                    {fmt(wallets.promo_wallet)}
-                  </div>
-                  <div className="admin-stat-label">Promo</div>
+                  <div className="admin-stat-label">Spin Reserve</div>
                 </div>
               </div>
             )}
@@ -1353,6 +1553,79 @@ export default function UnionDashboardPage() {
                     }}
                   >
                     Deposit
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* FUND SPIN RESERVE — union wallet -> spin_reserve_wallet (2026-08-22)
+                The reserve is the capital every Spin bonus pool this union owns is
+                seeded from, and a 100x is paid out of it. Before this control the
+                only way in was the RPC typed by hand, which is why the live pool
+                had been seeded 20,000 out of promo_wallet. */}
+            {isLead && (
+              <div
+                className="admin-card"
+                style={{ padding: '16px', marginBottom: '16px', borderLeft: '3px solid #39d17a' }}
+              >
+                <h3 className="admin-card-title" style={{ color: '#39d17a' }}>
+                  Fund Spin Reserve
+                </h3>
+                <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
+                  Move Chips Into The Wallet That Seeds Every Spin Bonus Pool This Union Owns.
+                  {wallets ? ` Reserve holds ${fmt(wallets.spin_reserve_wallet)}.` : ''}
+                </p>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <select
+                    className="admin-input"
+                    style={{ flex: '1 1 160px' }}
+                    value={spinReserveForm.from}
+                    onChange={(e) => setSpinReserveForm((f) => ({ ...f, from: e.target.value }))}
+                  >
+                    <option value="promo_wallet">From Promo Wallet</option>
+                    <option value="rake_wallet">From Rake Wallet</option>
+                    <option value="chip_balance">From Chip Balance</option>
+                  </select>
+                  <input
+                    className="admin-input"
+                    style={{ flex: '0 0 150px' }}
+                    type="number"
+                    min="1"
+                    placeholder="Amount"
+                    value={spinReserveForm.amount}
+                    onChange={(e) => setSpinReserveForm((f) => ({ ...f, amount: e.target.value }))}
+                  />
+                  <button
+                    className="admin-btn admin-btn-primary"
+                    style={{ background: '#39d17a', color: '#000' }}
+                    disabled={processing || !spinReserveForm.amount}
+                    onClick={async () => {
+                      setProcessing(true);
+                      setError(null);
+                      try {
+                        const amt = parseInt(spinReserveForm.amount || '0', 10);
+                        if (isNaN(amt) || amt <= 0) {
+                          setError('Enter a valid amount');
+                          setProcessing(false);
+                          return;
+                        }
+                        await unionApi.fundSpinReserve(
+                          unionId!,
+                          amt,
+                          spinReserveForm.from as 'promo_wallet' | 'rake_wallet' | 'chip_balance'
+                        );
+                        setSuccess(`${amt.toLocaleString()} chips moved to the Spin reserve`);
+                        setSpinReserveForm((f) => ({ ...f, amount: '' }));
+                        masterBus.emit('BALANCE_UPDATED', { source: 'spin_reserve_fund' });
+                        loadDashboard(unionId);
+                      } catch (err: any) {
+                        setError(safeErrorMessage(err, 'Spin reserve funding failed'));
+                      } finally {
+                        setProcessing(false);
+                      }
+                    }}
+                  >
+                    Fund Reserve
                   </button>
                 </div>
               </div>
@@ -2475,6 +2748,18 @@ export default function UnionDashboardPage() {
           </div>
         )}
       </div>
+
+      {walletModal && unionId && (
+        <UnionWalletModal
+          isOpen
+          onClose={() => setWalletModal(null)}
+          unionId={unionId}
+          walletKey={walletModal.key}
+          walletLabel={walletModal.label}
+          balance={walletModal.balance}
+          onSent={() => void loadDashboard(unionId)}
+        />
+      )}
     </div>
   );
 }

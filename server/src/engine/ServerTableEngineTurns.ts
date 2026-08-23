@@ -10,6 +10,7 @@
 
 import { HandController } from './HandController.js';
 import { HorseLogic, resolveHorseStyle } from './HorseLogic.js';
+import { getTournamentBrainContext } from '../services/TournamentBrainContext.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { deadlineScheduler } from './DeadlineScheduler.js';
 import { ServerActionValidator } from './ServerActionValidator.js';
@@ -199,6 +200,33 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           !this.waitingForBB.has(p.user_id)
       ).length;
       if (dealable >= 2 && idleMs > ServerTableEngineBase.WATCHDOG_IDLE_MS) {
+        /**
+         * ── Dan 2026-08-22: "games randomly break, stop running or freeze" ──
+         *
+         * This branch used to read "no hand has started for 90s" as "the
+         * dealing loop is dead". Those are not the same statement, and the
+         * live fleet proved it: 1,603 kills in six hours, EVERY running cash
+         * table killed 22-30 times, each after an average of three hands.
+         * hand_history shows the shape exactly — normal 8-45s hand spacing,
+         * then 107s, 107s, 114s, 87s: two 90s trips plus a rebuild, forever,
+         * on fully funded tables with nothing wrong with them.
+         *
+         * The between-hands path is five Supabase round trips, none of which
+         * marked progress. Database slowness is CORRELATED across tables, so
+         * one slow minute stalled the whole fleet at once, killed every engine
+         * at once, and the rebuild storm then loaded the database harder than
+         * the slowness that started it. The watchdog was the engine of the
+         * outage it was built to prevent.
+         *
+         * So ask the loop, not the calendar. `msSinceLoopPhase()` is the time
+         * since the loop last MOVED. Wedged in one step is a dead loop and is
+         * killed as before, now naming the step it died in. Still cycling is
+         * an alive loop: it gets the five-minute horizon and, if it really
+         * never deals, a kill under its own name rather than this one.
+         */
+        const loopWedged = this.msSinceLoopPhase() > ServerTableEngineBase.WATCHDOG_IDLE_MS;
+        if (!loopWedged && idleMs <= ServerTableEngineBase.WATCHDOG_LOOP_ALIVE_IDLE_MS) return;
+
         this.watchdogTrips++;
         reportError(
           new Error(
@@ -206,12 +234,27 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               Math.round(idleMs / 1000) +
               's with ' +
               dealable +
-              ' dealable seats — dealing loop is not looping'
+              ' dealable seats — dealing loop ' +
+              (loopWedged ? 'is wedged at ' : 'is cycling without dealing, at ') +
+              this.describeLoopPhase()
           ),
           'ServerTableEngine.' + this.tableId + '.watchdog_loop_dead',
-          { handCount: this.handCount, trips: this.watchdogTrips }
+          {
+            handCount: this.handCount,
+            trips: this.watchdogTrips,
+            loopPhase: this.loopPhase,
+            loopPhaseMs: this.msSinceLoopPhase(),
+          }
         );
-        if (this.watchdogTrips >= 2) this.killForRestart('dealing_loop_dead');
+        // The phase goes in the kill reason, so `engine_recovery_events.detail`
+        // names the cause instead of repeating the symptom. Phase only, never
+        // the elapsed seconds — a detail that is unique per row cannot be
+        // grouped, and grouping is the entire point of recording it.
+        if (this.watchdogTrips >= 2) {
+          this.killForRestart(
+            (loopWedged ? 'dealing_loop_dead' : 'loop_ticking_no_hands') + ':' + this.loopPhase
+          );
+        }
       }
       return;
     }
@@ -872,6 +915,22 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   }
 
   /**
+   * CONNECTIVITY UPGRADE (2026-08-22): transport-level disconnect signal.
+   * Called by EngineWebSocketServer when a player's LAST live socket for this
+   * table closes. Millisecond-latency counterpart to the 30s stale-heartbeat
+   * sweep: the disconnect countdown / auto-action ladder starts immediately
+   * instead of the table burning a full action clock on a player who is gone.
+   * A reconnect (WS onConnect -> heartbeat) cancels it just as fast.
+   */
+  public notifyTransportDisconnect(userId: string): void {
+    // 2026-08-22: markTransportGone, not markDisconnected. The socket dying is
+    // not the player leaving — their HTTP heartbeat is a second transport, and
+    // concluding on the first one alone fired a disconnect banner, a sound and
+    // a haptic buzz at players who never went anywhere.
+    this.disconnectEngine.markTransportGone(this.tableId, userId);
+  }
+
+  /**
    * POST /preaction — Bible V8 §4.15: Set or clear a pre-action
    */
   public setPreAction(
@@ -1319,6 +1378,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const enginePlayer = state.players.find((p) => p.seat === seat);
     if (!enginePlayer) return;
 
+    // STALE-HANDLER GUARD (2026-08-22), defense in depth with the caller's
+    // check in ServerTableEngineHandEvents: never arm a clock or run
+    // disconnect/pre-action logic for a seat that is no longer on the clock.
+    if (state.currentPlayerSeat !== seat) return;
+
     // ═══════════════════════════════════════════════════════════════════════
     // UNIFIED TURN HANDLING — Horses and real players follow the EXACT same flow.
     // Bible V8: Horses MUST be indistinguishable from real players.
@@ -1428,6 +1492,36 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * The horse's turn timer is ALREADY running (same as real players).
    * The horse submits its action within that timer window, just like a human would.
    */
+  /**
+   * V12 (2026-08-22): tournament context + format for the horse brain.
+   * Synchronous — reads the TournamentBrainContext cache (background
+   * refresh, 20s TTL). Cash tables return format 'cash' and no tournament
+   * object; tournament tables before the first fetch return an empty
+   * tournament object (V11 flat-premium behavior).
+   */
+  private horseTournamentContext(): {
+    format: 'cash' | 'mtt' | 'spin' | 'hu_sng';
+    tournament?: Record<string, unknown>;
+  } {
+    if (!this.isTournamentTable()) return { format: 'cash' as const };
+    const tid = this.tableInfo?.tournament_id;
+    const tctx = tid ? getTournamentBrainContext(tid) : null;
+    const fallbackFormat =
+      (this.tableInfo?.max_players ?? 9) <= 2 ? ('hu_sng' as const) : ('mtt' as const);
+    if (!tctx) return { format: fallbackFormat, tournament: {} };
+    return {
+      format: tctx.format,
+      tournament: {
+        nearBubble: tctx.nearBubble,
+        inMoney: tctx.inMoney,
+        playersLeft: tctx.playersLeft,
+        spotsPaid: tctx.spotsPaid,
+        avgStackChips: tctx.avgStackChips,
+        bountyFactor: tctx.bountyFactor,
+      },
+    };
+  }
+
   protected scheduleHorseAction(
     player: SeatedPlayer,
     seat: number,
@@ -1467,6 +1561,17 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       dealerSeat: fullState?.dealerSeat ?? this.currentHandDealerSeat,
       lastRaise: fullState?.lastRaise,
       actionHistory: fullState?.actionHistory,
+      // V11 (Dan 2026-08-22): cash and tournaments are DIFFERENT games. Tell
+      // the brain EXPLICITLY which one this is (it was guessing from blind
+      // size) plus the ante, so preflop ranges, ICM pressure, push/fold
+      // tiers, and rake-aware pot odds all switch on the real game mode.
+      gameMode: this.isTournamentTable() ? ('tournament' as const) : ('cash' as const),
+      ante: this.tableInfo?.ante || 0,
+      // V12: REAL tournament state for the ICM layer — players left, spots
+      // paid, average stack, PKO bounty share — plus the table format
+      // (mtt/spin/hu_sng). Cached with a 20s TTL; null before the first
+      // fetch lands, which degrades to the V11 flat premium.
+      ...this.horseTournamentContext(),
     };
 
     // Get decision — SYNCHRONOUS (budgeted <15ms incl. Monte Carlo equity)
@@ -1514,6 +1619,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     const handControllerRef = this.handController;
 
+    // 2026-08-22: clear any prior think-timer before overwriting the handle —
+    // re-entry used to orphan the previous setTimeout (it still fired; only
+    // the identity guards below kept it harmless).
+    if (this.horseActionTimer) {
+      clearTimeout(this.horseActionTimer);
+      this.horseActionTimer = null;
+    }
     this.horseActionTimer = setTimeout(() => {
       this.horseActionTimer = null;
       if (!handControllerRef || !this.running) return;
@@ -1529,6 +1641,18 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
       let action = decision.action as string;
       let amount = decision.amount;
+
+      // ── ALL-IN-OR-FOLD (2026-08-22 parity) ────────────────────────────────
+      // At an AoF table the preflop menu is fold or shove, and HandController
+      // rejects everything else. The horse brain does not know about AoF, so
+      // its decision is coerced here: any non-fold intent becomes the all-in.
+      // (A fold with nothing owed still normalizes to the legal check below.)
+      if (this.tableInfo?.all_in_or_fold && currentState.stage === 'preflop') {
+        if (action !== 'fold') {
+          action = 'all_in';
+          amount = undefined;
+        }
+      }
 
       // Normalize actions
       if (action === 'allin') action = 'all_in';

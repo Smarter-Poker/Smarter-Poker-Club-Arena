@@ -173,6 +173,200 @@ describe('start time', () => {
   });
 });
 
+describe('payout structure choice (2026-08-22)', () => {
+  it('payout1/2/3 pay ~10/15/20% of a 100-player field', () => {
+    const places = (choice: string) =>
+      buildTournamentConfig({ ...base, maxPlayersRange: 100, payoutStructure: choice }, 'nlh')
+        .payoutStructure.length;
+    // These used to all fall through to autoSelectPayouts, making the four
+    // choices identical. Now the choice is honoured.
+    expect(places('payout1')).toBe(10);
+    expect(places('payout2')).toBe(15);
+    expect(places('payout3')).toBe(20);
+  });
+
+  it('each choice still totals 100 and pays fewer places than the field', () => {
+    for (const choice of ['payout1', 'payout2', 'payout3', 'winner_take_all']) {
+      for (const field of [4, 9, 50, 300]) {
+        const c = buildTournamentConfig(
+          { ...base, maxPlayersRange: field, payoutStructure: choice },
+          'nlh'
+        );
+        const total = c.payoutStructure.reduce((s, p) => s + p.percentage, 0);
+        expect(Math.abs(total - 100)).toBeLessThanOrEqual(0.01);
+        expect(c.payoutStructure.length).toBeLessThan(c.maxPlayers);
+      }
+    }
+  });
+});
+
+describe('hyper turbo (2026-08-22)', () => {
+  it('maps to a real hyper ramp instead of aliasing to turbo', () => {
+    const bigBlinds = (structure: string) =>
+      buildTournamentConfig({ ...base, blindStructure: structure }, 'nlh')
+        .blindStructure.filter((l) => !l.isBreak)
+        .map((l) => l.bigBlind);
+    const hyper = bigBlinds('hyper_turbo');
+    const turbo = bigBlinds('turbo');
+    expect(hyper.join(',')).not.toBe(turbo.join(','));
+    // Steeper jumps: the hyper ramp ends far above the turbo ramp.
+    expect(hyper[hyper.length - 1]).toBeGreaterThan(turbo[turbo.length - 1]);
+    // Still monotone, so the service accepts it.
+    for (let i = 1; i < hyper.length; i++) {
+      expect(hyper[i]).toBeGreaterThanOrEqual(hyper[i - 1]);
+    }
+  });
+});
+
+describe('parity fields (2026-08-22)', () => {
+  it('carries the shared toggles into the tournament config', () => {
+    const c = buildTournamentConfig(
+      {
+        ...base,
+        isVipOnly: true,
+        banChat: true,
+        allInOrFold: true,
+        labelAsNew: true,
+        hideClubName: true,
+        featuredTournament: true,
+        bigBlindAnte: true,
+        authorizedToRegister: true,
+        synchronizedBreaks: false,
+        shortDescription: '  Sunday special  ',
+      },
+      'nlh'
+    );
+    expect(c.isVipOnly).toBe(true);
+    expect(c.banChat).toBe(true);
+    expect(c.allInOrFold).toBe(true);
+    expect(c.labelAsNew).toBe(true);
+    expect(c.hideClubName).toBe(true);
+    expect(c.isFeatured).toBe(true);
+    expect(c.bigBlindAnte).toBe(true);
+    expect(c.authorizedToRegister).toBe(true);
+    expect(c.synchronizedBreaks).toBe(false);
+    expect(c.shortDescription).toBe('Sunday special');
+  });
+
+  it('clamps action time and table size to the server ranges', () => {
+    const c = buildTournamentConfig(
+      { ...base, actionTimeSeconds: 999, tableSize: 99 },
+      'nlh'
+    );
+    expect(c.actionTimeSeconds).toBe(60);
+    expect(c.tableSize).toBe(10);
+    const low = buildTournamentConfig({ ...base, actionTimeSeconds: 1, tableSize: 1 }, 'nlh');
+    expect(low.actionTimeSeconds).toBe(5);
+    expect(low.tableSize).toBe(2);
+  });
+
+  it('MTT-only fields never leave an SNG', () => {
+    const c = buildTournamentConfig(
+      {
+        ...base,
+        gameMode: 'sng',
+        sngPlayerCount: 9,
+        multiDayMtt: true,
+        totalDays: 3,
+        earlyBirdRegistration: true,
+        earlyBirdChips: 500,
+        restartTournamentEvery: true,
+        restartEveryMinutes: 30,
+        finalTableDeal: true,
+        bubbleProtection: true,
+        acceleratedMtt: true,
+      },
+      'nlh'
+    );
+    expect(c.isMultiDay).toBe(false);
+    expect(c.totalDays).toBeUndefined();
+    expect(c.earlyBirdEnabled).toBe(false);
+    expect(c.restartEveryMinutes).toBeUndefined();
+    expect(c.finalTableDealEnabled).toBe(false);
+    expect(c.bubbleProtection).toBe(false);
+    expect(c.acceleratedMtt).toBe(false);
+  });
+
+  it('a 2-player SNG is a real heads-up: min = max = table size = 2', () => {
+    const c = buildTournamentConfig({ ...base, gameMode: 'sng', sngPlayerCount: 2 }, 'nlh');
+    expect(c.maxPlayers).toBe(2);
+    expect(c.minPlayers).toBe(2);
+    expect(c.tableSize).toBe(2);
+  });
+
+  it('custom rebuy and add-on costs override the buy-in, whole numbers only', () => {
+    const c = buildTournamentConfig(
+      {
+        ...base,
+        numberOfRebuysReentries: 2,
+        customRebuyReentryCost: true,
+        rebuyReentryCost: 25,
+        addOnMultiplier: 1.5,
+        customAddOn: true,
+        customAddOnCost: 40,
+        addOnBreakLengthMinutes: 5,
+      },
+      'nlh'
+    );
+    expect(c.rebuyCost).toBe(25);
+    expect(c.addOnCost).toBe(40);
+    expect(c.addonBreakMinutes).toBe(5);
+    expect(c.maxRebuys).toBe(2);
+    expect(c.maxReentries).toBe(2);
+    // Without the custom toggles the costs default to the buy-in total.
+    const plain = buildTournamentConfig(
+      { ...base, numberOfRebuysReentries: 2, addOnMultiplier: 1 },
+      'nlh'
+    );
+    expect(plain.rebuyCost).toBe(plain.buyIn);
+    expect(plain.addOnCost).toBe(plain.buyIn);
+  });
+
+  it('multi-day, restart, early bird and GTD carry with their clamps', () => {
+    const c = buildTournamentConfig(
+      {
+        ...base,
+        multiDayMtt: true,
+        totalDays: 99,
+        restartTournamentEvery: true,
+        restartEveryMinutes: 3,
+        earlyBirdRegistration: true,
+        earlyBirdChips: 750,
+        gtdPrizePool: true,
+        gtdPrizeAmount: 5000,
+      },
+      'nlh'
+    );
+    expect(c.isMultiDay).toBe(true);
+    expect(c.totalDays).toBe(7); // clamped to the server's 2-7
+    expect(c.restartEveryMinutes).toBe(5); // clamped to the server's 5-1440
+    expect(c.earlyBirdEnabled).toBe(true);
+    expect(c.earlyBirdChips).toBe(750);
+    expect(c.guaranteedPrize).toBe(5000);
+  });
+
+  it('next-step satellite with a target becomes a real satellite', () => {
+    const c = buildTournamentConfig(
+      {
+        ...base,
+        nextStepSatellite: true,
+        satelliteTargetId: '11111111-1111-1111-1111-111111111111',
+        satelliteSeats: 3,
+      },
+      'nlh'
+    );
+    expect(c.type).toBe('satellite');
+    expect(c.satelliteTarget).toEqual({
+      tournamentId: '11111111-1111-1111-1111-111111111111',
+      seatsAwarded: 3,
+    });
+    // Without a target the toggle is inert - never a cash-paying "satellite".
+    const noTarget = buildTournamentConfig({ ...base, nextStepSatellite: true }, 'nlh');
+    expect(noTarget.type).toBe('mtt');
+    expect(noTarget.satelliteTarget).toBeUndefined();
+  });
+});
+
 describe('game variant', () => {
   it('only offers tournaments for variants the engine can deal', () => {
     expect(canRunAsTournament('nlh')).toBe(true);

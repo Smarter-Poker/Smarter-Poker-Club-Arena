@@ -351,6 +351,23 @@ export class TimeBankEngine {
   // PRIVATE
   // ═══════════════════════════════════════════════════════════════════════════
 
+  /**
+   * HAND-BOUNDARY CLEANUP (2026-08-22 review): deactivate any still-active
+   * bank for the table. Semantics match playerActed (use it or lose it: the
+   * activated allocation is burned). Without this, a bank left active at
+   * HAND_COMPLETE either strands `isActive` with no countdown (blocking
+   * rearmTurnTimerIfCurrent for a reconnecting player) or fires its expiry
+   * into the NEXT hand and can fold a live player at the same seat.
+   */
+  cancelActiveForTable(tableId: string): void {
+    const prefix = `${tableId}:`;
+    for (const [key, bank] of this.playerBanks) {
+      if (!key.startsWith(prefix) || !bank.isActive) continue;
+      const playerId = key.slice(prefix.length);
+      this.playerActed(tableId, playerId);
+    }
+  }
+
   private onTimeBankExpired(tableId: string, playerId: string): void {
     const key = `${tableId}:${playerId}`;
     const bank = this.playerBanks.get(key);

@@ -24,6 +24,7 @@ import {
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
+import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { handCompletionHoldMs, boardClearMs } from '../config/handCompletionSpec.js';
 
 export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
@@ -35,21 +36,68 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     while (this.running) {
       try {
         // FIX 211: Await any pending postHandTasks before reloading players
-        // This ensures DB stacks are synced before the next hand starts
+        // This ensures DB stacks are synced before the next hand starts.
+        // BOUNDED (2026-08-22): postHandTasks performs a chain of Supabase
+        // calls, each individually capped at 15s but with no cap on the SUM —
+        // and it never calls markProgress(), so a degraded DB could hold this
+        // await past the 90s idle watchdog and get the engine killed (across
+        // every table at once, since DB degradation is correlated). Cap the
+        // wait at 45s; on timeout the remaining tasks keep running in the
+        // background (their .catch already reports) and the loop proceeds —
+        // stack sync is idempotent and the next hand's settlement re-syncs.
         if (this.postHandTasksPromise) {
-          await this.postHandTasksPromise;
+          this.setLoopPhase('await_post_hand_tasks');
+          const pending = this.postHandTasksPromise;
+          let timedOut = false;
+          await Promise.race([
+            pending,
+            new Promise<void>((r) => {
+              const t = setTimeout(() => {
+                timedOut = true;
+                r();
+              }, 45_000);
+              (t as { unref?: () => void }).unref?.();
+            }),
+          ]);
+          if (timedOut) {
+            reportError(
+              new Error('postHandTasks exceeded 45s - continuing loop, tasks finish in background'),
+              'ServerTableEngine.' + this.tableId + '.postHandTasks_timeout'
+            );
+            this.markProgress();
+          }
           this.postHandTasksPromise = null;
         }
 
-        // Reload players + refresh blinds before each hand
+        // Reload players + refresh blinds before each hand.
+        //
+        // BUDGETED (2026-08-22): these are three Supabase round trips with
+        // nothing bounding them and nothing marking progress while they run,
+        // sitting directly under a 90s watchdog that kills the engine. On
+        // 2026-08-22 that combination killed every cash table in the fleet
+        // 22-30 times in six hours. Each step now stamps its own phase and
+        // carries its own budget, so a slow database produces a NAMED, retried
+        // step instead of an anonymous kill and a fleet-wide rebuild storm.
         const previousSeatedIds = new Set(this.seatedPlayers.map((p) => p.user_id));
-        this.seatedPlayers = await loadSeatedPlayers(this.tableId);
-        await this.refreshBlinds();
+        this.seatedPlayers = await this.withStepBudget(
+          'load_seats',
+          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+          loadSeatedPlayers(this.tableId)
+        );
+        await this.withStepBudget(
+          'refresh_blinds',
+          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+          this.refreshBlinds()
+        );
         // 2026-08-18: cash tables re-read their rake settings here (throttled
         // to once a minute inside the method). tableInfo is otherwise loaded
         // once per engine lifetime, so before this an owner changing the rake
         // saw nothing until the table restarted.
-        await this.refreshRakeConfig();
+        await this.withStepBudget(
+          'refresh_rake',
+          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+          this.refreshRakeConfig()
+        );
 
         // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_taken event for any
         // player who appeared in seatedPlayers since the previous hand.
@@ -163,6 +211,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           if (this.tableFSM.state === 'running') {
             this.tableFSM.transition('paused');
           }
+          this.setLoopPhase(this.adminPauseLock ? 'admin_pause_lock' : 'maintenance_lock');
           await this.sleep(3000);
           continue;
         }
@@ -238,7 +287,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // land this tick is dealt into THIS hand rather than the next one.
         // This is the human counterpart of recoverBustedSeatedHorses().
         if (!this.isTournamentTable()) {
-          await this.processPendingAddOns(this.seatedPlayers);
+          await this.withStepBudget(
+            'pending_addons',
+            ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+            this.processPendingAddOns(this.seatedPlayers)
+          );
         }
 
         // FIX 143: Bible V8 §7.12 — Exclude sitting-out players from the deal.
@@ -284,7 +337,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // rebuy-or-remove routine every idle tick — it is a no-op when no
         // seated horse is busted, and per-horse attempts are throttled.
         if (!this.isTournamentTable()) {
-          await this.recoverBustedSeatedHorses();
+          await this.withStepBudget(
+            'recover_busted_horses',
+            ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+            this.recoverBustedSeatedHorses()
+          );
         }
 
         if (activePlayers.length < 2) {
@@ -292,6 +349,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           if (this.tableFSM.state === 'running') {
             this.tableFSM.transition('waiting');
           }
+          this.setLoopPhase('idle_not_enough_players');
           await this.sleep(3000);
           continue;
         }
@@ -300,6 +358,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // shared wheel is still running. Re-checked in short slices so a
         // resume is responsive and the loop stays interruptible.
         if (this.dealHoldUntilMs > Date.now()) {
+          this.setLoopPhase('spin_reveal_hold');
           await this.sleep(Math.min(this.dealHoldUntilMs - Date.now(), 1000));
           continue;
         }
@@ -311,6 +370,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
 
         // Deal hand (self-transition: running → running for next hand)
+        this.setLoopPhase('dealing');
         await this.dealHand(activePlayers);
         this.consecutiveErrors = 0;
 
@@ -412,6 +472,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           });
 
           // Phase 1: the completion sequence actually plays out.
+          this.setLoopPhase('post_hand_hold');
           await this.sleep(resultDisplayMs);
           // Phase 2: board clear (clients animate the card/chip sweep).
           this.broadcastCurrentState(); // Sends clean state (no hand in progress)
@@ -426,21 +487,22 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // BUG-SENTRY-7463185461 FIX: 'fetch failed' is the Node.js wording for
         // a transient Supabase network blip — same as browser's 'Failed to fetch'.
         // Both must be listed or they increment consecutiveErrors and fire Sentry.
-        const isTransient =
-          errMsg.includes('Project not specified') ||
-          errMsg.includes('ECONNRESET') ||
-          errMsg.includes('ETIMEDOUT') ||
-          errMsg.includes('Failed to fetch') ||
-          errMsg.includes('fetch failed') ||
-          errMsg.includes('ENOTFOUND') ||
-          errMsg.includes('socket hang up') ||
-          // 2026-08-15: emitted by the new DB_TIMEOUT_MS abort in
-          // services/supabase/client.ts. A hung socket is by definition
-          // transient — it must back off and retry, not count toward the
-          // 10-error engine shutdown.
-          errMsg.includes('supabase_timeout') ||
-          errMsg.includes('This operation was aborted') ||
-          errMsg.includes('The operation was aborted');
+        // The list this used to carry inline now lives on the base, because
+        // `start()` needs the same answer and a second copy is how the two
+        // paths came to disagree — survivable here, fatal there.
+        const isTransient = ServerTableEngineBase.isTransientDbError(err);
+
+        // A blown step budget is the loop reporting that it is ALIVE and
+        // waiting, so it must not read to the watchdog as a dead loop. This
+        // is the same call the 45s postHandTasks bound above already makes,
+        // for the same reason.
+        if (errMsg.includes('deal_step_timeout')) {
+          this.markProgress();
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.deal_step_timeout', {
+            phase: this.loopPhase,
+            handCount: this.handCount,
+          });
+        }
 
         if (!isTransient) {
           this.consecutiveErrors++;
@@ -462,7 +524,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             new Error(`[ServerTableEngine:${this.tableId}] Too many errors — stopping`),
             'ServerTableEnginethistableId.Too_many_errors__stopping'
           );
-          this.running = false;
+          // FIX 2026-08-22: was `this.running = false` alone, which left a
+          // half-dead engine — deadlines armed, hand safety timer live,
+          // handController possibly non-null — that the reaper then deleted
+          // WITHOUT ever cleaning up. killForRestart does the full teardown
+          // (ownership-guarded) and lets discovery rebuild a fresh engine.
+          this.killForRestart('dealing_loop_10_consecutive_errors');
         } else {
           await this.sleep(backoffMs);
         }
@@ -488,14 +555,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
         return; // success
       } catch (err: any) {
-        const msg = err?.message || String(err);
-        const isTransient =
-          msg.includes('fetch failed') ||
-          msg.includes('Failed to fetch') ||
-          msg.includes('ECONNRESET') ||
-          msg.includes('ETIMEDOUT') ||
-          msg.includes('ENOTFOUND') ||
-          msg.includes('socket hang up');
+        // Third copy of the same list, now also on the base. This one was the
+        // narrowest of the three — it never listed `supabase_timeout`, the
+        // wording the DB_TIMEOUT_MS abort actually emits, so the retry it
+        // exists to perform did not fire for the most common timeout.
+        const isTransient = ServerTableEngineBase.isTransientDbError(err);
         if (!isTransient || attempt === MAX_ATTEMPTS) throw err;
         await new Promise((r) => setTimeout(r, 500 * attempt));
       }
@@ -713,6 +777,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // FIX-219: Bible V8 §4.3 — Respect ante_enabled toggle; if disabled, zero out ante
       ante: (this.tableInfo.ante_enabled ?? true) ? this.tableInfo.ante : undefined,
       bigBlindAnte: this.tableInfo.big_blind_ante_enabled ?? false,
+      // 2026-08-22 parity: AoF tables restrict preflop to fold / all-in.
+      allInOrFold: this.tableInfo.all_in_or_fold ?? false,
       bombPot: bombPotConfig,
       straddles: straddleResults.length > 0 ? straddleResults : undefined,
       // Bible V8 §4.2: Dead blinds for players returning from sit-out
@@ -918,6 +984,24 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // Declared with `let` so the timeout callback can call it (see AUDIT FIX).
       let unsub: () => void = () => {};
       const handTimeout = setTimeout(() => {
+        this.handSafetyTimer = null;
+        // CROSS-INSTANCE GUARD (2026-08-22): if this engine has been stopped
+        // or superseded while the void timer was armed, the shared timers now
+        // belong to the replacement engine — clearing them here would wipe the
+        // LIVE table's turn clock ten minutes after the handover. Detach and
+        // get out without touching anything shared.
+        if (!this.running || !this.isCurrentEngine()) {
+          // (review fix) Even when superseded we must still drop OUR OWN
+          // hand state: resolving with handController set would let
+          // dealingLoop deal the next hand from a superseded instance — two
+          // engines dealing one table. Local teardown only; never the shared
+          // timers (they belong to the successor).
+          unsub();
+          this.handController = null;
+          this.runoutRevealActive = false;
+          resolve();
+          return;
+        }
         console.warn(
           `[ServerTableEngine:${this.tableId}] Hand ${handNumber} timed out after 10 minutes`
         );
@@ -933,6 +1017,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         this.runoutRevealActive = false;
         resolve();
       }, HAND_SAFETY_TIMEOUT_MS);
+      // Track on the instance so stop()/killForRestart() can clear it.
+      this.handSafetyTimer = handTimeout;
 
       unsub = this.handController!.onEvent((event: HandEvent) => {
         // 2026-08-15: handleHandEvent is async and its promise was discarded,
@@ -949,24 +1035,35 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
         if (event.type === 'HAND_COMPLETE') {
           clearTimeout(handTimeout);
+          this.handSafetyTimer = null;
           unsub();
 
-          // FIX 149: Wire telemetry — record hand timing
-          const handElapsedMs = Date.now() - handStartMs;
-          this.engineTelemetry.recordHandTiming(this.tableId, 0, 0, handElapsedMs);
+          // GUARD (2026-08-22): everything between here and resolve() used to
+          // run unprotected inside HandController.emit's listener loop. A
+          // throw from recordHandTiming or clearTurnTimer escaped back into
+          // completeHand AFTER the void timer was cleared — the dealHand
+          // promise then hung forever and the table stopped dealing. Nothing
+          // in this block may prevent resolve() from running.
+          try {
+            // FIX 149: Wire telemetry — record hand timing
+            const handElapsedMs = Date.now() - handStartMs;
+            this.engineTelemetry.recordHandTiming(this.tableId, 0, 0, handElapsedMs);
 
-          // Fire hand-complete callback for tournament chip sync
-          this.clearTurnTimer();
-          if (this.handCompleteCallback) {
-            const finalStacks = players.map((p) => ({
-              user_id: p.user_id,
-              stack: p.stack,
-            }));
-            try {
-              this.handCompleteCallback(this.tableId, finalStacks);
-            } catch (e) {
-              reportError(e, 'ServerTableEnginethistableId.handCompleteCallback_error');
+            // Fire hand-complete callback for tournament chip sync
+            this.clearTurnTimer();
+            if (this.handCompleteCallback) {
+              const finalStacks = players.map((p) => ({
+                user_id: p.user_id,
+                stack: p.stack,
+              }));
+              try {
+                this.handCompleteCallback(this.tableId, finalStacks);
+              } catch (e) {
+                reportError(e, 'ServerTableEnginethistableId.handCompleteCallback_error');
+              }
             }
+          } catch (e) {
+            reportError(e, 'ServerTableEngine.' + this.tableId + '.hand_complete_listener_threw');
           }
 
           this.handController = null;
@@ -991,6 +1088,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       } catch (err) {
         reportError(err, 'ServerTableEnginethistableId.Failed_to_start_hand');
         clearTimeout(handTimeout);
+        this.handSafetyTimer = null;
         unsub();
         this.handController = null;
         resolve();

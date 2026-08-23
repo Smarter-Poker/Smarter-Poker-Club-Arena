@@ -6,7 +6,7 @@
 
 import { useState, useEffect } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
-import { getCardImagePath } from './CardImage';
+import { getCardImagePath, withPngFallback } from './CardImage';
 import type { Card as CardImageCard } from './CardImage';
 import './PremiumCard.css';
 
@@ -148,6 +148,7 @@ export default function PremiumCard({
                 src={cardImagePath}
                 alt={`${card.rank} of ${card.suit}`}
                 className="card-front-image"
+                onError={withPngFallback}
               />
               {/* Shine Effect */}
               <div className="card-shine" />

@@ -21,7 +21,7 @@
  */
 
 import jsonPatch from 'fast-json-patch';
-import { engineSocketMux, isMuxEnabled } from './EngineSocketMux';
+import { engineSocketMux, isMuxEnabled, CLOSE_MUX_SUPERSEDED } from './EngineSocketMux';
 import type { Operation } from 'fast-json-patch';
 const { applyPatch } = jsonPatch;
 
@@ -136,6 +136,25 @@ export class EngineStateClient {
   //          hatch that did not exist before.
   private lastInboundAt = 0;
   private watchdogTimer: number | null = null;
+  /**
+   * 2026-08-22: consecutive watchdog RESYNCs sent with NO inbound frame in
+   * between. A half-open socket answers nothing, so unanswered resyncs are
+   * the reliable dead-link signal even when tab switching keeps resetting the
+   * silence clock (the old hole: multi-tablers who alt-tabbed more than once
+   * per 60s could keep a dead socket looking alive forever). Reset on every
+   * inbound frame; at 3 unanswered we escalate to the HARD teardown.
+   */
+  private unansweredResyncs = 0;
+  /** 2026-08-22: bounds the CONNECTING state — see openOnce. */
+  private handshakeTimer: number | null = null;
+  /**
+   * 2026-08-22 review: single-flight guard for openOnce. openOnce awaits
+   * getToken() BEFORE assigning this.ws, so during that window this.ws is
+   * null and a late onclose from a detached socket could schedule a second
+   * reconnect — two live sockets, one orphaned OPEN forever (which also
+   * defeated the server's last-socket disconnect detection).
+   */
+  private opening = false;
   private onVisibility: (() => void) | null = null;
   /** Dan 2026-08-21: browser 'online' hook for instant post-outage reconnect. */
   private onOnline: (() => void) | null = null;
@@ -146,6 +165,10 @@ export class EngineStateClient {
   private static readonly STALE_SOFT_MS = 35_000;
   /** Silence beyond this tears the socket down and reconnects. */
   private static readonly STALE_HARD_MS = 60_000;
+  /** Unanswered watchdog RESYNCs before escalating to HARD teardown. */
+  private static readonly MAX_UNANSWERED_RESYNCS = 3;
+  /** A socket stuck in CONNECTING longer than this is torn down. */
+  private static readonly HANDSHAKE_TIMEOUT_MS = 15_000;
 
   constructor(opts: EngineStateClientOptions) {
     this.opts = {
@@ -173,7 +196,20 @@ export class EngineStateClient {
     if (this.onOnline === null && typeof window !== 'undefined') {
       this.onOnline = () => {
         if (this.intentionalClose) return;
-        if (this.ws !== null && this.ws.readyState <= 1) return;
+        // Healthy OPEN socket — nothing to do.
+        if (this.ws !== null && this.ws.readyState === 1) return;
+        // 2026-08-22: a socket wedged in CONNECTING (captive portal, TCP
+        // blackhole, network transition) used to BLOCK this recovery path —
+        // the guard treated CONNECTING as healthy, no timer was pending, and
+        // the table sat at 'connecting' forever. Tear it down and start over.
+        if (this.ws !== null && this.ws.readyState === 0) {
+          try {
+            this.ws.close();
+          } catch {
+            /* ignore */
+          }
+          this.ws = null;
+        }
         if (this.reconnectTimer !== null) {
           window.clearTimeout(this.reconnectTimer);
           this.reconnectTimer = null;
@@ -198,6 +234,7 @@ export class EngineStateClient {
     // up to four of these exist and tabs open/close freely, that leaks a timer
     // per closed table and keeps firing against a dead socket.
     this.stopWatchdog();
+    this.clearHandshakeTimer();
     if (this.reconnectTimer !== null) {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -213,6 +250,13 @@ export class EngineStateClient {
     this.setStatus('idle');
   }
 
+  private clearHandshakeTimer(): void {
+    if (this.handshakeTimer !== null) {
+      window.clearTimeout(this.handshakeTimer);
+      this.handshakeTimer = null;
+    }
+  }
+
   /** Current snapshot, or null if no snapshot has arrived yet. */
   getSnapshot(): EngineSnapshot | null {
     return this.snapshot;
@@ -225,8 +269,33 @@ export class EngineStateClient {
   // ─── Internal ─────────────────────────────────────────────────────────────
 
   private async openOnce(): Promise<void> {
+    // Single-flight + live-socket guard (see `opening`). scheduleReconnect's
+    // timer, the online handler and connect() can all race into here.
+    if (this.opening) return;
+    if (this.ws !== null && this.ws.readyState <= 1 /* OPEN or CONNECTING */) return;
+    this.opening = true;
+    try {
+      await this.openOnceInner();
+    } finally {
+      this.opening = false;
+    }
+  }
+
+  private async openOnceInner(): Promise<void> {
     this.setStatus(this.retryCount === 0 ? 'connecting' : 'reconnecting');
-    const token = await this.opts.getToken();
+    // 2026-08-22: getToken (supabase.auth.getSession) can REJECT — network
+    // error, storage error, auth-js internal throw. This await used to be
+    // unguarded, and because scheduleReconnect nulls its timer before calling
+    // us, a single rejection ended the reconnect ladder PERMANENTLY with the
+    // status stuck at 'connecting' — the single worst frozen-table path in
+    // the client. A rejection is now just another retry.
+    let token: string | null = null;
+    try {
+      token = await this.opts.getToken();
+    } catch {
+      if (!this.intentionalClose) this.scheduleReconnect();
+      return;
+    }
     // P2-1: disconnect() may have fired while getToken() was in flight
     // (tableId switch / unmount / StrictMode double-invoke). If so, abort before
     // creating the socket — opening one now would spawn a zombie WS the owning
@@ -263,8 +332,34 @@ export class EngineStateClient {
     }
     this.ws = ws;
 
+    // 2026-08-22: bound the CONNECTING state. A socket that never completes
+    // the handshake (captive portal, TCP blackhole, mid-transition mobile
+    // network) fires NEITHER onopen NOR onclose — no timer was pending, the
+    // online-event guard refused to help, and the table wedged at
+    // 'connecting' forever. If we are not OPEN within the timeout, tear the
+    // attempt down and route into the normal backoff ladder.
+    this.clearHandshakeTimer();
+    this.handshakeTimer = window.setTimeout(() => {
+      this.handshakeTimer = null;
+      if (this.ws !== ws) return;
+      if (ws.readyState === 0 /* CONNECTING */) {
+        try {
+          ws.close();
+        } catch {
+          /* ignore */
+        }
+        this.ws = null;
+        if (!this.intentionalClose) this.scheduleReconnect();
+      }
+    }, EngineStateClient.HANDSHAKE_TIMEOUT_MS);
+
     ws.onopen = () => {
+      // Stale-socket guard: a superseded socket's late events must not touch
+      // the live connection's state.
+      if (this.ws !== ws) return;
+      this.clearHandshakeTimer();
       this.retryCount = 0;
+      this.unansweredResyncs = 0;
       this.setStatus('connected');
       // Dan 2026-08-15 (item 6): arm the staleness watchdog for this socket.
       this.startWatchdog();
@@ -280,11 +375,13 @@ export class EngineStateClient {
     };
 
     ws.onmessage = (e) => {
+      if (this.ws !== ws) return;
       // Dan 2026-08-15 (item 6): stamp BEFORE parsing, and for every frame
       // including PING. Any byte from the server proves the link is alive;
       // gating this on a successful parse would let a malformed frame look
       // like silence and trip the watchdog on a healthy connection.
       this.lastInboundAt = Date.now();
+      this.unansweredResyncs = 0;
       let msg: ServerMessage | null = null;
       try {
         msg = JSON.parse(e.data) as ServerMessage;
@@ -296,6 +393,11 @@ export class EngineStateClient {
     };
 
     ws.onclose = (e) => {
+      // Stale-socket guard: only the CURRENT socket's close drives recovery.
+      // Without this, a superseded socket's late close could schedule a
+      // second reconnect against a live connection.
+      if (this.ws !== null && this.ws !== ws) return;
+      this.clearHandshakeTimer();
       // Clean intentional close
       if (this.intentionalClose) return;
 
@@ -308,11 +410,33 @@ export class EngineStateClient {
         return;
       }
 
-      // Table gone — stop trying
+      // 2026-08-22: 4404 used to be TERMINAL — but the engine returns it for
+      // ~2 minutes after every restart while tables rehydrate, and for a
+      // first player at an empty table. Giving up permanently turned every
+      // engine deploy into a page of dead tables (and the host's 'failed'
+      // auto-reload turned a truly closed table into a reload loop). Announce
+      // 'failed' so the UI can say so, but keep retrying on the slow ladder —
+      // if the table comes back, so do we.
       if (e.code === CLOSE_TABLE_NOT_FOUND) {
         this.setStatus('failed');
         this.opts.onError({ code: e.code, reason: e.reason });
+        this.retryCount = Math.max(this.retryCount, 5); // start at ~16s+ delays
+        this.scheduleReconnect();
         return;
+      }
+
+      // 2026-08-22 (mux): a newer client instance claimed this table's
+      // facade. Reconnecting would evict IT and ping-pong forever — the old
+      // owner stands down for good. The newer instance carries the game.
+      if (e.code === CLOSE_MUX_SUPERSEDED) {
+        this.setStatus('idle');
+        return;
+      }
+
+      // 2026-08-22: the server told us to slow down — honour it instead of
+      // rejoining the thundering herd at the fast end of the ladder.
+      if (e.code === CLOSE_RATE_LIMITED) {
+        this.retryCount = Math.max(this.retryCount, 4);
       }
 
       // Anything else (transient server/network issue) → reconnect
@@ -426,30 +550,44 @@ export class EngineStateClient {
 
       const silentFor = Date.now() - this.lastInboundAt;
 
-      if (silentFor >= EngineStateClient.STALE_HARD_MS) {
-        // The socket claims to be open but the server has said nothing for a
-        // full minute — well past two missed 25s pings. Force it closed so
-        // onclose -> scheduleReconnect runs. Without this the table is stuck.
+      if (
+        silentFor >= EngineStateClient.STALE_HARD_MS ||
+        // 2026-08-22: escalate on unanswered RESYNCs too. Tab switching used
+        // to reset the silence clock on every wake, so a half-open socket
+        // could dodge the HARD threshold forever while every soft RESYNC
+        // vanished into the void. Three RESYNCs with zero inbound frames is a
+        // dead link regardless of what the clock says.
+        this.unansweredResyncs >= EngineStateClient.MAX_UNANSWERED_RESYNCS
+      ) {
+        // The socket claims to be open but the server has said nothing —
+        // force it closed so onclose -> scheduleReconnect runs.
         this.opts.onError({
-          reason: `engine silent for ${Math.round(silentFor / 1000)}s - forcing reconnect`,
+          reason: `engine silent for ${Math.round(silentFor / 1000)}s (${this.unansweredResyncs} unanswered resyncs) - forcing reconnect`,
         });
         this.lastInboundAt = Date.now(); // don't re-fire while the close lands
+        this.unansweredResyncs = 0;
+        // 2026-08-22: announce the truth. This path used to leave status at
+        // 'connected' (green dot on a dead table), and when close() left the
+        // socket in CLOSING with onclose never firing, NO reconnect was ever
+        // scheduled — another full silent cycle per repeat. Detach the socket
+        // and drive the reconnect ourselves; the stale-socket guards make a
+        // late onclose from the old socket harmless.
+        this.setStatus('reconnecting');
+        const dead = this.ws;
+        this.ws = null;
         try {
-          this.ws?.close(4001, 'client staleness watchdog');
+          dead?.close(4001, 'client staleness watchdog');
         } catch {
-          /* fall through — schedule directly below */
+          /* ignore */
         }
-        // If close() did not synchronously trigger onclose (already CLOSING,
-        // or a wedged socket), drive the reconnect ourselves.
-        if (!this.ws || this.ws.readyState === 3 /* CLOSED */) {
-          this.scheduleReconnect();
-        }
+        this.scheduleReconnect();
         return;
       }
 
       if (silentFor >= EngineStateClient.STALE_SOFT_MS) {
         // Might just be dropped frames on a live socket — ask for a full
         // snapshot. A reply refreshes lastInboundAt and clears the condition.
+        this.unansweredResyncs++;
         this.requestResync();
       }
     }, EngineStateClient.WATCHDOG_TICK_MS);
@@ -460,7 +598,16 @@ export class EngineStateClient {
     if (typeof document !== 'undefined' && this.onVisibility === null) {
       this.onVisibility = () => {
         if (document.visibilityState !== 'visible') return;
-        this.lastInboundAt = Date.now();
+        // 2026-08-22: grant a BOUNDED grace on wake instead of a full clock
+        // reset. The unconditional `lastInboundAt = Date.now()` here was the
+        // hole that let a half-open socket survive forever under frequent tab
+        // switching. The link now has one soft interval to prove itself (the
+        // RESYNC below refreshes the clock for real when it is answered);
+        // unanswered resyncs escalate regardless.
+        this.lastInboundAt = Math.max(
+          this.lastInboundAt,
+          Date.now() - EngineStateClient.STALE_SOFT_MS
+        );
         if (this.status === 'connected') this.requestResync();
       };
       document.addEventListener('visibilitychange', this.onVisibility);
@@ -678,6 +825,40 @@ export class EngineChannelClient {
 
   // Queue of messages to send once connected
   private sendQueue: ChannelClientMessage[] = [];
+  /** 2026-08-22: bound the offline queue — an hour offline must not flush a
+   *  thousand stale messages into the server's rate limiter on reconnect. */
+  private static readonly MAX_QUEUE = 100;
+
+  // 2026-08-22: staleness watchdog + online-event recovery, mirroring
+  // EngineStateClient. This client previously had NEITHER — plus a reconnect
+  // ladder that gave up permanently after maxRetries — so one bad stretch of
+  // network silently killed club presence, lobby, tournament events and
+  // FINANCIAL_UPDATE (wallet!) for the rest of the page's life.
+  private lastInboundAt = 0;
+  private watchdogTimer: number | null = null;
+  private onOnline: (() => void) | null = null;
+  /** 2026-08-22: bounded wake grace — see startWatchdog. */
+  private onVisibility: (() => void) | null = null;
+  private static readonly WATCHDOG_TICK_MS = 10_000;
+  private static readonly STALE_HARD_MS = 60_000;
+  /**
+   * How much of the staleness budget a backgrounded tab is forgiven on wake.
+   *
+   * The watchdog skips its check while the tab is hidden but did NOT reset the
+   * clock on the way back, so the first tick after any background longer than
+   * STALE_HARD_MS saw a full minute of "silence" and tore down a socket that
+   * was very probably fine — dropping club presence, lobby, tournament events
+   * and FINANCIAL_UPDATE for a reconnect nobody needed. Every phone user who
+   * left the app for a minute paid that.
+   *
+   * A full reset would be the opposite error: that is exactly the hole that
+   * let a half-open socket survive forever in EngineStateClient under frequent
+   * tab switching. So the link is forgiven down to a bounded debt and gets one
+   * watchdog interval to prove itself — a genuinely dead one is still caught
+   * within WATCHDOG_TICK_MS of the wake.
+   */
+  private static readonly WAKE_GRACE_MS =
+    EngineChannelClient.STALE_HARD_MS - EngineChannelClient.WATCHDOG_TICK_MS;
 
   constructor(opts: EngineChannelClientOptions) {
     this.opts = {
@@ -694,12 +875,38 @@ export class EngineChannelClient {
     if (this.ws !== null && this.ws.readyState <= 1 /* OPEN or CONNECTING */) return;
     this.intentionalClose = false;
     this.retryCount = 0;
+    if (this.onOnline === null && typeof window !== 'undefined') {
+      this.onOnline = () => {
+        if (this.intentionalClose) return;
+        if (this.ws !== null && this.ws.readyState === 1) return;
+        if (this.ws !== null && this.ws.readyState === 0) {
+          try {
+            this.ws.close();
+          } catch {
+            /* ignore */
+          }
+          this.ws = null;
+        }
+        if (this.reconnectTimer !== null) {
+          window.clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
+        this.retryCount = 0;
+        void this.openOnce();
+      };
+      window.addEventListener('online', this.onOnline);
+    }
     await this.openOnce();
   }
 
   /** Close the channel connection permanently. */
   disconnect(): void {
     this.intentionalClose = true;
+    this.stopWatchdog();
+    if (this.onOnline !== null && typeof window !== 'undefined') {
+      window.removeEventListener('online', this.onOnline);
+      this.onOnline = null;
+    }
     if (this.reconnectTimer !== null) {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -735,7 +942,11 @@ export class EngineChannelClient {
         console.warn('[EngineChannelClient] send failed:', err);
       }
     } else {
-      // Queue for when the connection opens
+      // Queue for when the connection opens (bounded: drop the oldest first —
+      // fresher presence/join state supersedes stale state anyway).
+      if (this.sendQueue.length >= EngineChannelClient.MAX_QUEUE) {
+        this.sendQueue.shift();
+      }
       this.sendQueue.push(msg);
       // Auto-connect on first send
       void this.connect();
@@ -793,9 +1004,33 @@ export class EngineChannelClient {
 
   // ─── Internal ─────────────────────────────────────────────────────────────
 
+  private opening = false;
+
   private async openOnce(): Promise<void> {
+    // Single-flight + live-socket guard — same race as EngineStateClient:
+    // openOnce awaits getToken before assigning this.ws, so overlapping
+    // invocations would create a second socket and orphan one.
+    if (this.opening) return;
+    if (this.ws !== null && this.ws.readyState <= 1 /* OPEN or CONNECTING */) return;
+    this.opening = true;
+    try {
+      await this.openOnceInner();
+    } finally {
+      this.opening = false;
+    }
+  }
+
+  private async openOnceInner(): Promise<void> {
     this.setStatus(this.retryCount === 0 ? 'connecting' : 'reconnecting');
-    const token = await this.opts.getToken();
+    // 2026-08-22: a getToken rejection must be a retry, not the permanent end
+    // of the reconnect ladder (same fix as EngineStateClient.openOnce).
+    let token: string | null = null;
+    try {
+      token = await this.opts.getToken();
+    } catch {
+      if (!this.intentionalClose) this.scheduleReconnect();
+      return;
+    }
     // P2-1: disconnect() may have fired while getToken() was in flight. Abort
     // before creating the socket to avoid leaking a zombie channel connection.
     if (this.intentionalClose) return;
@@ -815,8 +1050,10 @@ export class EngineChannelClient {
     this.ws = ws;
 
     ws.onopen = () => {
+      if (this.ws !== ws) return;
       this.retryCount = 0;
       this.setStatus('connected');
+      this.startWatchdog();
       // Flush any queued messages
       const queued = this.sendQueue.splice(0);
       for (const msg of queued) {
@@ -829,6 +1066,9 @@ export class EngineChannelClient {
     };
 
     ws.onmessage = (e) => {
+      if (this.ws !== ws) return;
+      // Any byte proves the link is alive (see EngineStateClient.onmessage).
+      this.lastInboundAt = Date.now();
       let msg: ChannelServerMessage | null = null;
       try {
         msg = JSON.parse(e.data as string) as ChannelServerMessage;
@@ -840,6 +1080,7 @@ export class EngineChannelClient {
     };
 
     ws.onclose = (e) => {
+      if (this.ws !== null && this.ws !== ws) return;
       if (this.intentionalClose) return;
       if (e.code === CLOSE_AUTH_FAILED) {
         this.setStatus('auth_failed');
@@ -913,16 +1154,76 @@ export class EngineChannelClient {
     }, 0);
   }
 
+  /**
+   * 2026-08-22: dead-link detection. The channel server pings every 25s; a
+   * minute of silence on an OPEN socket is a half-open link that will never
+   * fire onclose on its own. Tear it down into the backoff ladder.
+   */
+  private startWatchdog(): void {
+    this.lastInboundAt = Date.now();
+    if (this.watchdogTimer !== null) return;
+    this.watchdogTimer = window.setInterval(() => {
+      if (this.intentionalClose || this.status !== 'connected') return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (Date.now() - this.lastInboundAt < EngineChannelClient.STALE_HARD_MS) return;
+      this.lastInboundAt = Date.now();
+      this.setStatus('reconnecting');
+      const dead = this.ws;
+      this.ws = null;
+      try {
+        dead?.close(4001, 'client staleness watchdog');
+      } catch {
+        /* ignore */
+      }
+      this.scheduleReconnect();
+    }, EngineChannelClient.WATCHDOG_TICK_MS);
+
+    // 2026-08-22: the tick above returns early while the tab is hidden, so
+    // without this the first tick after a long background reads the entire
+    // background as silence and tears down a healthy socket. Grant a BOUNDED
+    // grace on wake, never a full reset — the mirror of the game socket's
+    // handler, which learned both halves of this the hard way.
+    if (typeof document !== 'undefined' && this.onVisibility === null) {
+      this.onVisibility = () => {
+        if (document.visibilityState !== 'visible') return;
+        this.lastInboundAt = Math.max(
+          this.lastInboundAt,
+          Date.now() - EngineChannelClient.WAKE_GRACE_MS
+        );
+      };
+      document.addEventListener('visibilitychange', this.onVisibility);
+    }
+  }
+
+  private stopWatchdog(): void {
+    if (this.watchdogTimer !== null) {
+      window.clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+    // Must be removed with the timer: a listener that outlives the client keeps
+    // firing against a dead socket, and on MultiTablePage several of these come
+    // and go as tabs open and close.
+    if (this.onVisibility !== null && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.onVisibility);
+      this.onVisibility = null;
+    }
+  }
+
   private scheduleReconnect(): void {
     if (this.reconnectTimer !== null) return;
+    this.retryCount++;
+    // 2026-08-22: NEVER stop trying (same contract as EngineStateClient).
+    // The old code returned here at maxRetries with a terminal 'failed', so
+    // ~5 minutes of outage permanently killed presence/lobby/tournament/
+    // financial updates until a full page reload. 'failed' is now an
+    // announcement; the ladder keeps running at maxDelay cadence underneath.
     if (this.retryCount >= this.opts.maxRetries) {
       this.setStatus('failed');
-      return;
+    } else {
+      this.setStatus('reconnecting');
     }
-    this.retryCount++;
-    this.setStatus('reconnecting');
     const base = Math.min(
-      this.opts.initialDelay * Math.pow(2, this.retryCount - 1),
+      this.opts.initialDelay * Math.pow(2, Math.min(this.retryCount, 10) - 1),
       this.opts.maxDelay
     );
     const jitter = Math.random() * base * 0.3;
@@ -965,7 +1266,23 @@ function readTokenFromStorage(): string | null {
 
 export const engineChannelClient = new EngineChannelClient({
   baseUrl: ENGINE_BASE_URL,
-  getToken: async () => readTokenFromStorage(),
+  // 2026-08-22: read via supabase.auth.getSession(), which REFRESHES an
+  // expired token. The raw localStorage read never refreshed, so a device
+  // that suspended past token expiry 4401-looped and then died permanently.
+  // localStorage stays as the fallback for any getSession failure. Dynamic
+  // import keeps this module free of an eager supabase dependency (it is
+  // unit-tested under jsdom without the app's env).
+  getToken: async () => {
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data } = await supabase.auth.getSession();
+      const t = data.session?.access_token ?? null;
+      if (t) return t;
+    } catch {
+      /* fall back to storage */
+    }
+    return readTokenFromStorage();
+  },
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

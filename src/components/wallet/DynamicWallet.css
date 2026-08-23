@@ -66,7 +66,7 @@
   padding: 6px 12px;
   border-radius: 8px;
   background: linear-gradient(180deg, #223046 0%, #1a2436 40%, #131b28 100%);
-  border: 1px solid rgba(0, 212, 255, 0.38);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
@@ -131,7 +131,7 @@
   padding: 2px 10px;
   background: rgba(0, 0, 0, 0.45);
   border-radius: 4px;
-  border: 1px solid rgba(255, 184, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   min-width: 80px;
   text-align: center;
 }
@@ -182,11 +182,7 @@
 }
 
 .dw__row--diamond .dw__row-icon {
-  color: #c084fc;
-}
-
-.dw__row--primary .dw__row-icon {
-  color: #ffb800;
+  color: #0088ff;
 }
 
 .dw__row--backup-bbj .dw__row-icon {
@@ -219,20 +215,16 @@
 
 /* ── Diamond row ──────────────────────────────────────────────────────────── */
 .dw__row--diamond {
-  border-color: rgba(168, 85, 247, 0.2);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .dw__row--diamond .dw__row-value {
-  color: #c084fc;
+  color: #0088ff;
 }
 
 /* ── Primary wallet row (Chip Balance / Club Bank / Union Bank) ──────────── */
 .dw__row--primary {
-  border-color: rgba(255, 184, 0, 0.22);
-}
-
-.dw__row--primary .dw__row-value {
-  color: #ffb800;
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 /* ── Backup BBJ row ───────────────────────────────────────────────────────── */
@@ -296,7 +288,7 @@
    VARIANT ACCENTS — subtle border color differences per role
 ═══════════════════════════════════════════════════════════════════════════════ */
 .dw--owner .dw__bbj {
-  border-color: rgba(255, 184, 0, 0.4);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .dw--union .dw__bbj {

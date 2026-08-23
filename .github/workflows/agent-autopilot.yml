@@ -58,12 +58,29 @@ on:
   schedule:
     # Catches PRs opened by a workflow using GITHUB_TOKEN (those never emit a
     # `pull_request` event), plus anything a transient API error skipped.
-    - cron: '*/10 * * * *'
+    #
+    # COST, 2026-08-23: this was */10. Across seven repos that is 1,008 sweeps
+    # a day, every day, whether or not anybody is working — and GitHub bills
+    # per job rounded up to a whole minute, so a twenty-second sweep costs a
+    # full minute. It was the single largest recurring line on a week that
+    # reached $300.
+    #
+    # Halving the frequency costs almost nothing, because the schedule is a
+    # SAFETY NET, not the mechanism: the `pull_request` and `push` triggers
+    # above do the real work and fire within seconds. The sweep exists for the
+    # cases those cannot see — a PR opened by a workflow using GITHUB_TOKEN,
+    # or one an API error skipped — and thirty minutes is well inside the
+    # window where either matters.
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
   pull-requests: write
+  # A pull request Autopilot cannot land used to produce one line in a run log
+  # that nobody reads. It now produces an issue that closes itself when the
+  # list empties. See .github/scripts/report-stuck-prs.sh.
+  issues: write
 
 concurrency:
   group: agent-autopilot-${{ github.event.pull_request.number || github.ref }}
@@ -245,6 +262,24 @@ jobs:
               echo "#$N ($BRANCH): already queued (state=$STATE)."
             fi
           done
+
+      # Everything above lands what CAN land. This names what cannot, because
+      # a pull request nobody comes back for does not ship, and from outside
+      # the repo that is indistinguishable from the feature regressing.
+      # PepNationLab was carrying six of them - the oldest 68 days old - and
+      # nothing anywhere said so.
+      - name: Name the pull requests that cannot merge on their own
+        if: always()
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          # Reads use the App token; the ISSUE WRITE uses GITHUB_TOKEN, whose
+          # `issues: write` is declared above and therefore guaranteed. The
+          # App's installation scopes can be narrowed without anyone here
+          # noticing, and the first live run of this step hit exactly that: six
+          # stranded pull requests found in PepNationLab and no issue raised.
+          GH_TOKEN_ISSUES: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: bash .github/scripts/report-stuck-prs.sh
 
       - name: Report
         if: always()

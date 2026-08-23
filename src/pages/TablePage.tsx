@@ -172,6 +172,7 @@ import SpinWheel, {
 } from '../components/tournament/SpinWheel';
 import RebuyModal from '../components/table/RebuyModal';
 import TournamentWinnerOverlay from '../components/table/TournamentWinnerOverlay';
+import { isSpinTournament, type SpinRevealSubject } from '../utils/spinReveal';
 // RealtimeChannelService imported if needed for future use
 import ChipStack from '../components/table/ChipStack';
 import { tournamentService } from '../services/TournamentService';
@@ -214,7 +215,6 @@ import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import { retryAsync } from '../utils/retryAsync';
 //monteCarloEquity import removed — server-authoritative
 import './TablePage.css';
-import SessionSummary from '../components/table/SessionSummary';
 import { SessionHUD } from '../components/table/SessionHUD';
 import { BombPotOverlay } from '../components/table/BombPotOverlay';
 import { ConnectionHUD } from '../components/table/ConnectionHUD';
@@ -237,7 +237,6 @@ import { StreamerMode } from '../components/table/StreamerMode';
 import { BankrollWidget } from '../components/table/BankrollWidget';
 import { HandReveal } from '../components/table/HandReveal';
 import PositionStatsPopup from '../components/table/PositionStatsPopup';
-import { SessionAnalytics } from '../components/table/SessionAnalytics';
 import { SessionTrajectoryMini } from '../components/table/SessionTrajectoryMini';
 import { StreakBadge } from '../components/table/StreakBadge';
 
@@ -328,6 +327,7 @@ async function fetchTournamentResult(
     knockouts: 0,
     rebuys: 0,
     addOns: 0,
+    isSpin: false,
   };
 
   try {
@@ -349,7 +349,11 @@ async function fetchTournamentResult(
         .maybeSingle(),
       supabase
         .from('tournaments')
-        .select('name, current_players')
+        /* variant + tournament_type: the two columns isSpinTournament reads.
+           Either one may carry it, which is why the helper checks both and
+           nothing here re-derives it. Without them the ranking card branded
+           EVERY finished event a Spin. */
+        .select('name, current_players, variant, tournament_type')
         .eq('id', tournamentId)
         .maybeSingle(),
       supabase
@@ -370,6 +374,7 @@ async function fetchTournamentResult(
       // "how many add-ons", so coerce rather than trusting the column type.
       addOns:
         typeof entry?.add_on === 'boolean' ? (entry.add_on ? 1 : 0) : Number(entry?.add_on) || 0,
+      isSpin: isSpinTournament(tourney as SpinRevealSubject | null),
     };
   } catch (err) {
     reportError(err, 'TablePage.fetchTournamentResult');
@@ -874,6 +879,14 @@ export default function TablePage({
     }
     return () => {
       chestChannelRef.current = null;
+      // 2026-08-22: actually release the channel. Nulling the ref alone
+      // leaked one subscribed Supabase channel per table mount (x6 in
+      // MultiTablePage) for the life of the page.
+      try {
+        masterBus.removeRegisteredChannel(`mystery-chest-${tableId}`);
+      } catch {
+        /* best effort */
+      }
     };
   }, [tableId]);
   const [username, setUsername] = useState<string>('Player');
@@ -947,6 +960,7 @@ export default function TablePage({
     snapshot: engineSnapshot,
     status: engineWsStatus,
     lastEvent: engineLastEvent,
+    lastError: engineLastError,
   } = useEngineTableState(tableId || undefined, { enabled: USE_ENGINE_WS });
   // Phase 1.2 PR-F: disconnect FSM states per userId, surfaced by the
   // engine WS payload. Drives DisconnectToast below.
@@ -1451,6 +1465,14 @@ export default function TablePage({
 
   // Bible V8 §6.3: Heartbeat every 5 seconds while at the table
   // Server uses this to detect disconnected players and trigger auto-fold/sit-out
+  // 2026-08-22: `toast` lives in a ref so the heartbeat effect depends only on
+  // (tableId, userId). With `toast` in the dependency array, every toast
+  // add/remove re-created the interval, fired an extra immediate heartbeat,
+  // and RESET consecutiveMisses/warned — during an outage (when toasts fire
+  // most) the 3-miss warning could never accumulate and the "Reconnected"
+  // recovery toast was lost.
+  const heartbeatToastRef = useRef(toast);
+  heartbeatToastRef.current = toast;
   useEffect(() => {
     if (!tableId || !userId) return;
     // 2026-08-20: both `.catch`es here were dead — `sendHeartbeat` resolves
@@ -1467,7 +1489,7 @@ export default function TablePage({
       const res = await sendHeartbeat(tableId);
       if (res?.success) {
         if (warned) {
-          toast?.success?.('Reconnected to the table.');
+          heartbeatToastRef.current?.success?.('Reconnected to the table.');
           warned = false;
         }
         consecutiveMisses = 0;
@@ -1482,13 +1504,15 @@ export default function TablePage({
           new Error(`heartbeat missed ${consecutiveMisses}x`),
           'TablePage.Heartbeat_lost'
         );
-        toast?.error?.('Connection lost - the server may fold for you. Check your connection.');
+        heartbeatToastRef.current?.error?.(
+          'Connection lost - the server may fold for you. Check your connection.'
+        );
       }
     };
     void beat();
     const heartbeatInterval = setInterval(() => void beat(), 5000);
     return () => clearInterval(heartbeatInterval);
-  }, [tableId, userId, toast]);
+  }, [tableId, userId]);
 
   // ── Dan 2026-08-21: "the games can never freeze or die" — last-resort
   // auto-recovery. EngineStateClient now retries forever, but if the socket
@@ -1499,10 +1523,41 @@ export default function TablePage({
   // restores server-truth on mount — so take it rather than sitting dead.
   // Guarded to once per 2 minutes via sessionStorage so a hard outage cannot
   // reload-loop the browser.
+  // 2026-08-22 review: count consecutive 4404 (table not found) closes. The
+  // engine returns 4404 for ~2 minutes after every restart while tables
+  // rehydrate — that must keep retrying quietly. But a table that answers
+  // 4404 over and over is genuinely gone, and reloading the page cannot
+  // resurrect it: the old failsafe reload-looped the browser every 2 minutes
+  // forever. After 3 consecutive 4404s we suppress the reload failsafe and
+  // tell the player once instead.
+  const notFoundCountRef = useRef(0);
+  const tableClosedToastShownRef = useRef(false);
+  useEffect(() => {
+    if (!engineLastError) return;
+    if (engineLastError.code === 4404) {
+      notFoundCountRef.current += 1;
+      if (notFoundCountRef.current >= 3 && !tableClosedToastShownRef.current) {
+        tableClosedToastShownRef.current = true;
+        heartbeatToastRef.current?.info?.('This Table Is No Longer Running');
+      }
+    } else if (engineLastError.code !== undefined) {
+      notFoundCountRef.current = 0;
+    }
+  }, [engineLastError]);
+  useEffect(() => {
+    if (engineWsStatus === 'connected') {
+      notFoundCountRef.current = 0;
+      tableClosedToastShownRef.current = false;
+    }
+  }, [engineWsStatus]);
+
   useEffect(() => {
     if (engineWsStatus !== 'failed') return;
     const t = window.setTimeout(() => {
       if (document.visibilityState !== 'visible') return;
+      // A repeatedly-404ing table is closed, not wedged — a reload cannot
+      // help and used to loop the browser every 2 minutes indefinitely.
+      if (notFoundCountRef.current >= 3) return;
       const KEY = 'ca_ws_autoreload_at';
       const last = Number(sessionStorage.getItem(KEY) || 0);
       if (Date.now() - last < 120_000) return;
@@ -1601,8 +1656,9 @@ export default function TablePage({
     });
   }, [heroIsSittingOut]);
 
-  // Session tracking for end-of-session summary
-  const [showSessionSummary, setShowSessionSummary] = useState(false);
+  // showSessionSummary REMOVED (Phase 2 2026-08-22): it was never set true —
+  // the Session Complete card is published to SessionSummaryHost at the app
+  // root (services/pendingSessionSummary) and renders in the lobby.
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [showSessionHUD, setShowSessionHUD] = useState(false);
   const {
@@ -1650,6 +1706,9 @@ export default function TablePage({
   } | null>(null);
 
   // VPIP count tracking for mini stats card
+  /* The pending tournament-exit navigation, so the subscription's cleanup can
+     cancel it. See goToLobbyWithResult. */
+  const tournamentExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vpipCountRef = useRef(0);
   // Dan 2026-08-15 (Session Stats fix): per-HAND voluntary-action flags.
   // vpipCountRef above is cumulative and cannot answer "did hero VPIP THIS
@@ -2934,7 +2993,16 @@ export default function TablePage({
     userId !== 'guest' ? userId : null,
     tableState.gameType,
     tableState.isTournament,
-    undefined // tournamentType resolved internally from gameType
+    /**
+     * This argument used to be `undefined`, with a comment claiming the type was
+     * "resolved internally from gameType". It is not - getThemeGameType has no
+     * other source for it, so every tournament fell to its 'MTT' default and a
+     * Spin resolved the player's MTT felt, background, deck and button art
+     * rather than the SNG row it shares with heads-up. Four data-* theme
+     * attributes on the table root come off that same value, so a Spin did not
+     * merely miss a preference, it rendered a different table.
+     */
+    tournamentFormat ?? undefined
   );
 
   /**
@@ -3031,8 +3099,15 @@ export default function TablePage({
   // Hand history panel — hydrate from the service the Hand History PAGE
   // already uses. The local list only ever held what localStorage had cached,
   // and nothing wrote to it, so it was empty for everyone.
+  //
+  // Dan 2026-08-22 mobile audit item 5: "THE PREVIOUS HAND HAS NO
+  // FUNCTIONALITY, IT NEVER LOGS ANY OF THE HANDS." It didn't, and the reason
+  // was here: this effect only fired for showHandHistory (the panel), while
+  // the Previous Hand card opens showHandDetail (the breakdown modal) — which
+  // therefore paged through an empty array for anyone without a localStorage
+  // cache. Both openers hydrate now.
   useEffect(() => {
-    if (!showHandHistory || !userId || userId === 'guest') return;
+    if ((!showHandHistory && !showHandDetail) || !userId || userId === 'guest') return;
     let cancelled = false;
     (async () => {
       try {
@@ -3047,7 +3122,7 @@ export default function TablePage({
     return () => {
       cancelled = true;
     };
-  }, [showHandHistory, userId]);
+  }, [showHandHistory, showHandDetail, userId]);
 
   // Hand replay — resolve the most recent hand id lazily when the panel opens
   // rather than paying a lookup on every completed hand.
@@ -3345,8 +3420,17 @@ export default function TablePage({
         // Q3: Clear "Playing At" status when leaving table
         playerStatusService.clearPlayingAt(userId);
 
-        // P/L = chips returned to wallet minus total chips invested at table
-        sessionPLRef.current = (result.chipsReturned || 0) - totalBuyInRef.current;
+        // P/L = chips returned to wallet minus total chips invested at table.
+        //
+        // Dan 2026-08-22 (Session Complete "not pulling the real stats"): a
+        // mid-hand leave defers the cashout to settlement and reports
+        // chipsReturned 0, which used to render the ENTIRE buy-in as a loss
+        // (screenshot: stack 1,157 at leave, card said LOSS -1,000). When the
+        // service says the cashout is deferred, estimate with the live stack
+        // captured above — that is what settlement will return, give or take
+        // the hand in flight.
+        sessionPLRef.current =
+          (result.deferred ? stackAtLeave : result.chipsReturned || 0) - totalBuyInRef.current;
 
         // ── Dan 2026-08-18: leaving always lands you in the lobby ──
         //
@@ -3382,6 +3466,25 @@ export default function TablePage({
           peakStack: peakStackRef.current,
           tableName: tableState.tableName,
           tournament: tournamentResult,
+          // Dan 2026-08-22: the card shows VPIP (not hands/hour), the total
+          // buy-in, and the session's date + time.
+          vpipPercent:
+            handsPlayedRef.current > 0
+              ? Math.round((vpipCountRef.current / handsPlayedRef.current) * 100)
+              : 0,
+          totalBuyIn: totalBuyInRef.current,
+          sessionStart: sessionStartRef.current,
+          sessionEnd: Date.now(),
+          // Phase 3 (2026-08-22): when the cashout is deferred the P/L above
+          // is an estimate (live stack at leave); the card annotates it
+          // "Pending Settlement" so the estimate is never read as settled.
+          plPending: !!result.deferred,
+          // Phase 4 (2026-08-22): and the app-root host reconciles it — it
+          // polls for the settlement's wallet_transactions cashout row and
+          // swaps the estimate for the settled figure. This component is
+          // about to navigate away and unmount, so the host must be able to
+          // find the row on its own.
+          pendingCashout: result.deferred ? { tableId, userId, sinceMs: Date.now() } : undefined,
         });
 
         // Now actually leave. These three used to fire together from the
@@ -3466,11 +3569,9 @@ export default function TablePage({
   const handleForceLeaveTable = async () => {
     if (!tableId || !userId) return;
     try {
-      if (showSessionSummary) {
-        // Player already explicitly left and is viewing summary; just close the tab.
-        masterBus.emit('TABLE_LEFT', { tableId, seat: tableState.heroSeat });
-        return;
-      }
+      // (The old "already viewing summary" early-return is gone with the dead
+      // in-table SessionSummary modal — the summary now renders in the lobby,
+      // after this table is already torn down.)
       // Force cashout instantly without triggering the UI summary.
       //
       // 2026-08-20: this discarded the result. `leaveTable` never throws — its
@@ -3686,16 +3787,36 @@ export default function TablePage({
         }
       }
     };
-    // Initial fetch + retry at 2s, then poll every 5s
-    fetchExistingHand();
-    retryTimer = setTimeout(fetchExistingHand, 2000);
-    pollTimer = setInterval(fetchExistingHand, 5000);
+    // Initial fetch + retry at 2s, then poll every 5s.
+    // 2026-08-22: BOUNDED. For an observer or a sat-out player no hole-card
+    // row ever appears, and the old unconditional setInterval polled Supabase
+    // every 5s forever — x6 tables in MultiTablePage. The poll now stops
+    // after ~2 minutes without a recovery; every HAND_STARTED re-arms a fresh
+    // bounded cycle, so a player who gets dealt in is always covered.
+    const MAX_POLL_ATTEMPTS = 24;
+    let pollAttempts = 0;
+    const startPolling = () => {
+      if (retryTimer) clearTimeout(retryTimer);
+      if (pollTimer) clearInterval(pollTimer);
+      pollAttempts = 0;
+      fetchExistingHand();
+      retryTimer = setTimeout(fetchExistingHand, 2000);
+      pollTimer = setInterval(() => {
+        if (heroCardsRecoveredRef.current || ++pollAttempts > MAX_POLL_ATTEMPTS) {
+          if (pollTimer) clearInterval(pollTimer);
+          pollTimer = null;
+          return;
+        }
+        fetchExistingHand();
+      }, 5000);
+    };
+    startPolling();
     // Expose so HAND_STARTED can re-arm the fetch for the new hand.
     heroCardFetchRef.current = () => {
       if (!cancelled) {
-        // New hand: re-arm recovery so the poll runs again for the new cards.
+        // New hand: re-arm recovery so the bounded poll runs again.
         heroCardsRecoveredRef.current = false;
-        fetchExistingHand();
+        startPolling();
       }
     };
     return () => {
@@ -4520,6 +4641,154 @@ export default function TablePage({
           const breakChanKey = `t-break-${table.tournament_id}`;
 
           if (!isMounted) return;
+
+          /* ── Leaving a finished tournament: ONE implementation, TWO events ──
+             Dan 2026-08-20: "at the end of the tournament when you lose, you
+             need to be auto removed from the table, placed inside the lobby
+             and your tournament result card shown … winners should be auto
+             removed at the end as well."
+
+             This used to be declared INSIDE the `player_eliminated` branch,
+             which is why only the losing half of that sentence worked: the
+             winner's exit had no function to call. It is hoisted to the
+             subscription scope so `tournament_winner` can use the identical
+             path — same payload, same card, same navigation — rather than a
+             second copy that drifts from this one.
+
+             `exitStarted` lives here, at the lifetime of the subscription, so
+             a duplicate or retried broadcast cannot schedule two navigations.
+             A player finishes a tournament exactly once.
+
+             ── AUDIT 2026-08-22: this did not actually LEAVE the table ──
+             It published the card and navigated, and that was all. Every
+             manual leave in this file sends four more signals, and none of
+             them fired for a tournament finisher:
+
+               SESSION_ENDED            nothing closed the session
+               clearPlayingAt(userId)   "Playing At" still pointed at a table
+                                        the engine had already closed
+               TABLE_LEFT               the tab stayed open
+               CLOSE_TABLE_TAB          ditto — MultiTablePage subscribes to
+                                        both and each removes the tab
+
+             So Dan's "you kick the current players ... and move them to the
+             lobby" half-happened: the player was navigated away while the
+             finished table sat in their tab bar and their status said they
+             were still sitting at it.
+
+             ── AND THE NAVIGATE WAS ACTIVELY DESTRUCTIVE IN MULTI-TABLE ──
+             TablePage runs as up to FOUR embedded instances inside
+             MultiTablePage. An unconditional `navigate('/clubs/...')` from one
+             of them tears down the whole container, taking the other three
+             LIVE tables with it — bust out of a three-minute Spin on tab 2 and
+             your cash games are yanked off the screen mid-hand.
+
+             In multi-table mode the signals ARE the exit: MultiTablePage
+             removes just that tab and calls goToLobby() itself only when it
+             was the last one. Single-table mode has no such subscriber, so it
+             still navigates here. */
+          let exitStarted = false;
+
+          const goToLobbyWithResult = (position: number, prize: number, delayMs: number) => {
+            if (exitStarted) return;
+            exitStarted = true;
+
+            const tid = table.tournament_id || tableStateRef.current.tournamentId;
+
+            /* Held so the effect's cleanup can cancel it. Without that, a
+               player who closes this tab (or is moved off it) inside the 7s
+               winner beat is force-navigated out of wherever they went next —
+               which, in multi-table, is somebody else's live table. */
+            tournamentExitTimerRef.current = setTimeout(() => {
+              void (async () => {
+                const full = tid ? await fetchTournamentResult(tid, userId) : undefined;
+                publishSessionSummary({
+                  duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
+                  handsPlayed: handsPlayedRef.current,
+                  handsWon: handsWonRef.current,
+                  totalRebuys: totalRebuysRef.current,
+                  profitLoss: 0,
+                  biggestPot: biggestPotRef.current,
+                  peakStack: peakStackRef.current,
+                  tableName: tableStateRef.current.tableName,
+                  sessionStart: sessionStartRef.current,
+                  sessionEnd: Date.now(),
+                  /* Parity with the cash summary (#243). A tournament finisher
+                     bought in too, and played a measurable session; there is no
+                     reason their card should know less about it than a cash
+                     player's does. */
+                  vpipPercent:
+                    handsPlayedRef.current > 0
+                      ? Math.round((vpipCountRef.current / handsPlayedRef.current) * 100)
+                      : 0,
+                  totalBuyIn: totalBuyInRef.current,
+                  tournament: {
+                    ...(full ?? {
+                      entrants: null,
+                      bountyWinnings: 0,
+                      knockouts: 0,
+                      rebuys: 0,
+                      addOns: 0,
+                      prize: 0,
+                      finishPlace: null,
+                    }),
+                    name: full?.name || tableStateRef.current.tableName || 'Tournament',
+                    /* The broadcast is authoritative for these two: it is what
+                       the engine just decided, whereas the row may not have
+                       been written yet when we read it. */
+                    finishPlace: position || full?.finishPlace || null,
+                    prize: prize || full?.prize || 0,
+                  },
+                });
+
+                /* ── Now actually leave. ──
+                   The same four signals, in the same order, as every manual
+                   leave above. Emitted AFTER the publish so the card is
+                   already handed to the app-root host before this instance
+                   starts being torn down, and before the navigate so the
+                   destination is deterministic — the ordering the manual path
+                   settled on after three racing exits fought over it. */
+                const seatAtExit = tableStateRef.current.heroSeat;
+                heroSeatRef.current = 0;
+                setTableState((prev) => ({ ...prev, heroSeat: 0 }));
+
+                masterBus.emit('SESSION_ENDED', { tableId: tableId ?? '', userId });
+                playerStatusService.clearPlayingAt(userId);
+                masterBus.emit('TABLE_LEFT', { tableId: tableId ?? '', seat: seatAtExit });
+                masterBus.emit('TABLE_MENU_ACTION', {
+                  tableId: tableId ?? '',
+                  action: 'CLOSE_TABLE_TAB',
+                });
+
+                /* MultiTablePage owns the destination whenever it is mounted:
+                   it removes this tab and calls its own goToLobby() only if
+                   this was the last one. Navigating here as well would close
+                   the other three tables.
+
+                   The test is `embeddedTableId`, NOT `isMultiTable`. That prop
+                   is a sound/UX flag — MultiTablePage passes
+                   `tables.length > 1 || hidden`, so it is FALSE for a single
+                   visible table even though the container is mounted and
+                   subscribed to both signals above. Branching on it would
+                   leave the commonest case with two navigators racing for the
+                   destination (this one to the club, goToLobby() to the club
+                   or '/'), which is the same race the manual leave path had to
+                   be untangled from. `embeddedTableId` is set exactly when
+                   this instance lives inside the container. */
+                if (embeddedTableId) return;
+
+                const clubId = actualClubIdRef.current;
+                if (clubId) {
+                  navigate(`/clubs/${clubId}`);
+                } else {
+                  // No club to land in (should not happen) — the old results
+                  // page beats stranding them at a dead table.
+                  navigate(`/tournament-results?id=${tid ?? ''}`);
+                }
+              })();
+            }, delayMs);
+          };
+
           const breakChan = masterBus.getOrCreateChannel(breakChanKey);
           breakChan
             .on('broadcast', { event: 'tournament_event' }, (payload: any) => {
@@ -4776,56 +5045,11 @@ export default function TablePage({
                      knockouts, bounties, rebuys — rather than the two numbers
                      that fit in the old state object, because
                      fetchTournamentResult is already written and the elimination
-                     broadcast only knows position and prize. */
-                  const goToLobbyWithResult = (
-                    position: number,
-                    prize: number,
-                    delayMs: number
-                  ) => {
-                    const tid = table.tournament_id || tableStateRef.current.tournamentId;
+                     broadcast only knows position and prize.
 
-                    setTimeout(() => {
-                      void (async () => {
-                        const full = tid ? await fetchTournamentResult(tid, userId) : undefined;
-                        publishSessionSummary({
-                          duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
-                          handsPlayed: handsPlayedRef.current,
-                          handsWon: handsWonRef.current,
-                          totalRebuys: totalRebuysRef.current,
-                          profitLoss: 0,
-                          biggestPot: biggestPotRef.current,
-                          peakStack: peakStackRef.current,
-                          tableName: tableStateRef.current.tableName,
-                          tournament: {
-                            ...(full ?? {
-                              entrants: null,
-                              bountyWinnings: 0,
-                              knockouts: 0,
-                              rebuys: 0,
-                              addOns: 0,
-                              prize: 0,
-                              finishPlace: null,
-                            }),
-                            name: full?.name || tableStateRef.current.tableName || 'Tournament',
-                            /* The broadcast is authoritative for these two: it
-                               is what the engine just decided, whereas the row
-                               may not have been written yet when we read it. */
-                            finishPlace: position || full?.finishPlace || null,
-                            prize: prize || full?.prize || 0,
-                          },
-                        });
-
-                        const clubId = actualClubIdRef.current;
-                        if (clubId) {
-                          navigate(`/clubs/${clubId}`);
-                        } else {
-                          // No club to land in (should not happen) — the old
-                          // results page beats stranding them at a dead table.
-                          navigate(`/tournament-results?id=${tid ?? ''}`);
-                        }
-                      })();
-                    }, delayMs);
-                  };
+                     2026-08-22: `goToLobbyWithResult` moved up to the
+                     subscription scope so the `tournament_winner` branch below
+                     shares this exact path. See the note at its declaration. */
 
                   /* AUDIT 2026-08-20: `=== 1` on a value that arrives as
                      untyped JSON over a realtime broadcast. The same handler
@@ -4862,6 +5086,35 @@ export default function TablePage({
                       seat?.id === elimData.userId ? { ...seat, status: 'eliminated' } : seat
                     ),
                   }));
+                }
+              } else if (data?.type === 'tournament_winner') {
+                /* ── The champion's exit (2026-08-22) ─────────────────────
+                   Dan 2026-08-20: "winners should be auto removed at the end
+                   as well." Until now they never were, and it was not a bug
+                   in this file — nothing was ever SENT. finishTournament
+                   closed the tables, released the seats and stopped without
+                   broadcasting, so the winner branch above (position === 1)
+                   was unreachable: eliminatePlayer is only ever called with
+                   places >= 2, by construction, precisely so that 1st stays
+                   the winner's. The engine now emits `tournament_winner` from
+                   finishTournament, and this is where it lands.
+
+                   Its own event rather than `player_eliminated` with position
+                   1 because TournamentPage and TournamentLobbyPage both raise
+                   an elimination toast on that event — announcing the
+                   champion as knocked out is worse than saying nothing.
+
+                   Same 7s beat as the winner branch above, for the same
+                   reason: the celebration overlay has to play before the
+                   player is moved. */
+                const winData = data.payload || {};
+                if (winData.userId && winData.userId === userId) {
+                  const prize = Number(winData.prize) || 0;
+                  setTournamentWinner({
+                    prize,
+                    name: tableStateRef.current.tableName || 'Tournament',
+                  });
+                  goToLobbyWithResult(1, prize, 7000);
                 }
               } else if (data?.type === 'table_rebalance') {
                 // Players moved between tables — check if current user was moved
@@ -5208,6 +5461,14 @@ export default function TablePage({
         // Add-on events handled via break channel — no separate channel needed
         addOnChannelRef.current = null;
       }
+      /* AUDIT 2026-08-22: a scheduled tournament exit must not outlive the
+         subscription that scheduled it. The winner's beat is 7s long; a player
+         whose tab is closed inside it used to be force-navigated out of
+         whatever they were looking at when it fired. */
+      if (tournamentExitTimerRef.current) {
+        clearTimeout(tournamentExitTimerRef.current);
+        tournamentExitTimerRef.current = null;
+      }
       if (bountyChannelRef.current) {
         // BUG-C FIX: Read tournamentId from tableStateRef (fresh) instead of stale closure
         const tournId = tableStateRef.current.tournamentId || tableId;
@@ -5541,22 +5802,39 @@ export default function TablePage({
   // ═══════════════════════════════════════════════════════════════════════════
   // CONNECTION STATUS TOAST — visible feedback when WebSocket drops/reconnects
   // ═══════════════════════════════════════════════════════════════════════════
-  const prevConnectedRef = useRef<boolean | null>(null);
+  // 2026-08-22: these toasts used to watch the LEGACY Supabase channel, so
+  // players saw "Connection lost" on a healthy game (Supabase blip) and saw
+  // NOTHING when the actual game socket died. Watch the engine WS instead.
+  //
+  // Review fix (same day): DEBOUNCED for real this time. The engine socket
+  // flips through 'reconnecting' on every watchdog escalation, and the first
+  // version fired a toast + sound on every flip — and fired a spurious
+  // "Reconnected" on every fresh table mount (idle → connecting → connected
+  // counts as a reconnect if you only track booleans). Rules now:
+  //   - never toast until the FIRST successful connect has been seen;
+  //   - "Connection lost" only after 3s of continuous disconnection;
+  //   - "Reconnected" only if the loss toast was actually shown.
+  const engineToastStateRef = useRef({ everConnected: false, lossToastShown: false });
   useEffect(() => {
-    // Skip initial mount (isConnected starts false before first connect)
-    if (prevConnectedRef.current === null) {
-      prevConnectedRef.current = isConnected;
+    const st = engineToastStateRef.current;
+    if (engineWsStatus === 'connected') {
+      st.everConnected = true;
+      if (st.lossToastShown) {
+        st.lossToastShown = false;
+        heartbeatToastRef.current?.success?.('Reconnected');
+        if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playReconnect();
+      }
       return;
     }
-    if (!isConnected && prevConnectedRef.current) {
-      toast?.warning?.('Connection lost - reconnecting…');
+    if (!st.everConnected) return; // initial mount noise
+    const t = window.setTimeout(() => {
+      if (st.lossToastShown) return;
+      st.lossToastShown = true;
+      heartbeatToastRef.current?.warning?.('Connection lost - reconnecting…');
       if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playDisconnect();
-    } else if (isConnected && !prevConnectedRef.current) {
-      toast?.success?.('Reconnected');
-      if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playReconnect();
-    }
-    prevConnectedRef.current = isConnected;
-  }, [isConnected]);
+    }, 3000);
+    return () => window.clearTimeout(t);
+  }, [engineWsStatus]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // HORSE LOADING — Load seated horses from DB into React table state
@@ -6003,6 +6281,53 @@ export default function TablePage({
           // through rather than replaying from the top.
           revealAtMs: Number(d?.reveal_at) || Date.now(),
         });
+        break;
+      }
+
+      /**
+       * THE TWO BEATS AFTER THE WHEEL (Dan 2026-08-21).
+       *
+       *   "AFTER THE SPIN COMPLETES, CHIP STACKS GET ADDED, BUTTON RANDOMLY
+       *    ASSIGNED AND THE SPIN STARTS!"
+       *
+       * TournamentManagerBase.scheduleSpinPostReveal broadcasts these two
+       * events and holds the deal 1.8s to make room for them, saying in as many
+       * words that it does so "so the client can animate them rather than
+       * discovering them in a state diff". The client had no handler for
+       * either. The chips and the puck did still appear - whenever the next
+       * snapshot happened to land - so the beats existed on the engine's clock
+       * and nowhere on the player's.
+       *
+       * Neither handler invents anything. Both write the value the engine has
+       * already committed, on the instant the engine chose, and let the
+       * animations that already exist run: the stack diff drives
+       * seat__stack--up / stackDeltaFloat / seatStackGlow, and the button seat
+       * mounts .seat__position-chip, whose dealerButtonAppear is a mount
+       * animation. The snapshot that follows confirms the same values, so a
+       * dropped event costs the choreography and nothing else.
+       */
+      case 'SPIN_CHIPS': {
+        const d = evt.data as { starting_stack?: number };
+        const stack = Number(d?.starting_stack) || 0;
+        if (stack <= 0) break;
+        setTableState((prev) => {
+          // Only seats that are occupied and still empty-handed. A seat that
+          // already has chips has had its beat, and rewriting it would fire a
+          // second delta animation off a number that did not change.
+          if (!prev.players.some((pl) => pl && (pl.stack ?? 0) <= 0)) return prev;
+          return {
+            ...prev,
+            players: prev.players.map((pl) => (pl && (pl.stack ?? 0) <= 0 ? { ...pl, stack } : pl)),
+          };
+        });
+        break;
+      }
+
+      case 'SPIN_BUTTON': {
+        const d = evt.data as { dealer_seat?: number };
+        const seat = Number(d?.dealer_seat) || 0;
+        if (seat <= 0) break;
+        setTableState((prev) => (prev.dealerSeat === seat ? prev : { ...prev, dealerSeat: seat }));
         break;
       }
 
@@ -7560,6 +7885,16 @@ export default function TablePage({
   }, [tableState.handNumber, tableState.heroSeat, tableState.players]);
 
   // Update players from presence state
+  // 2026-08-22: GHOST-SEAT GUARD. Once the engine snapshot has arrived, the
+  // engine is the only authority on who sits where — Supabase presence lags
+  // seat changes and lingers after leaves, and this merge used to inject a
+  // 0-stack "ghost" player into a seat the engine says is empty (visible
+  // flicker, and validateAndExecuteAction reads players[heroSeat-1], so a
+  // ghost in the hero seat could block real actions). Presence may seed seats
+  // ONLY before the first engine snapshot (bootstrap), and afterwards may
+  // only backfill a missing avatar for the SAME player id.
+  const engineSnapArrivedRef = useRef(false);
+  if (engineSnapshot !== null) engineSnapArrivedRef.current = true;
   useEffect(() => {
     if (!presence) return;
 
@@ -7567,12 +7902,20 @@ export default function TablePage({
     setTableState((prev) => {
       const updatedPlayers = [...prev.players];
       let hasChanges = false;
+      const engineAuthoritative = engineSnapArrivedRef.current;
 
       presence.players.forEach((p) => {
         if (p.seatNumber !== undefined) {
           const seatIdx = p.seatNumber - 1;
           if (seatIdx >= 0 && seatIdx < updatedPlayers.length) {
             const existing = updatedPlayers[seatIdx];
+            if (engineAuthoritative) {
+              if (existing && existing.id === p.userId && !existing.avatar && p.avatar) {
+                updatedPlayers[seatIdx] = { ...existing, avatar: p.avatar };
+                hasChanges = true;
+              }
+              return;
+            }
             // Only update if actually different to prevent loops
             if (!existing || existing.id !== p.userId) {
               updatedPlayers[seatIdx] = {
@@ -8437,7 +8780,12 @@ export default function TablePage({
         live.boardStage === 'preflop' &&
         (action === 'call' || action === 'raise' || action === 'allin')
       ) {
-        vpipCountRef.current++;
+        // Phase 2 audit 2026-08-22: VPIP is a PER-HAND stat. This incremented
+        // on every voluntary preflop action, so limp-then-call-a-raise (or
+        // call-then-shove) counted one hand twice — vpip/handsPlayed could
+        // exceed 100%. The per-hand flag below already exists precisely to
+        // answer "did hero VPIP this hand"; use it as the increment guard.
+        if (!heroVpipThisHandRef.current) vpipCountRef.current++;
         // Dan 2026-08-15: also flag it for THIS hand so recordHand() can post
         // a real VPIP%. Raise/all-in additionally counts as a preflop raise.
         heroVpipThisHandRef.current = true;
@@ -8619,7 +8967,6 @@ export default function TablePage({
       showInsurance ||
       showRIT ||
       showBuyInModal ||
-      showSessionSummary ||
       showHandHistory ||
       showPlayerNotes ||
       showWaitList ||
@@ -9150,7 +9497,18 @@ export default function TablePage({
                 },
               ]}
               tableName={tableState.tableName}
-              connectionStatus={isConnected ? 'connected' : 'disconnected'}
+              // 2026-08-22: the indicator used to mirror the LEGACY Supabase
+              // channel (presence/chat) while the game rides the engine WS —
+              // a dead engine socket showed a green dot and a Supabase blip
+              // showed red on a healthy game. Report the transport that
+              // actually carries the game.
+              connectionStatus={
+                engineWsStatus === 'connected'
+                  ? 'connected'
+                  : engineWsStatus === 'connecting' || engineWsStatus === 'reconnecting'
+                    ? 'reconnecting'
+                    : 'disconnected'
+              }
             />
             {/* Dan 2026-08-15 — this "+" is ADD TABLE, not Add Chips.
                 It used to open CashierModal, which duplicated the wallet entry
@@ -9905,7 +10263,13 @@ export default function TablePage({
                   canSit={
                     tableState.heroSeat <= 0 &&
                     pendingSeat === null &&
-                    !tableState.players.some((pl) => pl && pl.id === userId)
+                    !tableState.players.some((pl) => pl && pl.id === userId) &&
+                    /* A tournament seat is not for sale - EXCEPT in the
+                       seat-first formats, where buying the seat IS how you
+                       enter. handleSeatClick already has the branch; without
+                       this the seat renders as a passive EMPTY marker and the
+                       footer's "Tap An Open Seat To Join" is a dead letter. */
+                    (!tableState.isTournament || !!seatFirstBuyIn)
                   }
                   /* Dan 2026-08-18: the hero's own reserved seat reads
                      "YOUR SEAT" instead of the generic EMPTY. */
@@ -10697,7 +11061,6 @@ export default function TablePage({
         gameType={tableState.gameType}
         isTournament={tableState.isTournament}
         tournamentId={tableState.tournamentId}
-        heroSeat={tableState.heroSeat}
         maxPlayers={tableState.maxPlayers}
         players={tableState.players}
         heroStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
@@ -11093,24 +11456,14 @@ export default function TablePage({
         showHandHistory={showHandHistory}
         handHistory={handHistory}
         onCloseHandHistory={() => setShowHandHistory(false)}
-        // Session Summary
-        showSessionSummary={showSessionSummary}
-        sessionStartTime={sessionStartRef.current}
-        handsPlayed={handsPlayedRef.current}
-        handsWon={handsWonRef.current}
-        totalRebuys={totalRebuysRef.current}
-        sessionPL={sessionPLRef.current}
-        biggestPot={biggestPotRef.current}
-        peakStack={peakStackRef.current}
-        onCloseSessionSummary={() => setShowSessionSummary(false)}
-        onResetSessionRefs={resetSession}
+        // Session Summary props removed (Phase 2 2026-08-22): the in-table
+        // modal was dead — SessionSummaryHost at the app root owns the card.
         // Session HUD
         showSessionHUD={showSessionHUD}
         onCloseSessionHUD={() => setShowSessionHUD(false)}
         // Helpers
         safeBB={safeBB}
         getPlayerHUDStats={getPlayerHUDStats}
-        navigate={navigate}
       />
     </div>
   );

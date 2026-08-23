@@ -7,8 +7,19 @@
 .table-chat {
   position: fixed;
   right: 8px;
-  bottom: 120px;
-  z-index: 100;
+  /* Dan 2026-08-22 item 6: anchored just above the action bar, on the line
+     where the background meets the black action box. */
+  bottom: calc(112px + env(safe-area-inset-bottom, 0px));
+  /* Phase 4 (2026-08-22): 99, one below the action panel's --z-action-panel
+     (100). The 112px line clears the COLLAPSED 3-button bar, but the open
+     raise panel is ~270px tall at 375px (measured headlessly) and chat used
+     to render LATER in the DOM at the same z-100 — the bubble floated on top
+     of the raise presets and stole their taps. One step down lets the panel
+     cover chat for exactly as long as the hero is raising; in normal play
+     nothing overlaps and chat is fully visible. The HUD's bottom corners
+     don't interact: the bottom-right corner is empty and the bottom-left
+     stack is on the other side. */
+  z-index: 99;
   display: flex;
   flex-direction: column;
   width: 280px;
@@ -44,8 +55,12 @@
 .chat-collapsed {
   position: fixed;
   right: 8px;
-  bottom: 120px;
-  z-index: 100;
+  /* Dan 2026-08-22 item 6: same anchor line as the expanded chat + the
+     bottom-left HUD stack — just above the action bar. */
+  bottom: calc(112px + env(safe-area-inset-bottom, 0px));
+  /* Phase 4 (2026-08-22): 99 for the same reason as .table-chat above — the
+     open raise panel (z-100) must cover this button, not sit under it. */
+  z-index: 99;
   width: 44px;
   height: 44px;
   display: flex;
@@ -512,12 +527,13 @@
     width: calc(100% - 16px);
     left: 8px;
     right: 8px;
-    bottom: 100px;
+    /* Dan 2026-08-22 item 6: same anchor as desktop — just above the bar. */
+    bottom: calc(112px + env(safe-area-inset-bottom, 0px));
     max-height: 280px;
   }
 
   .chat-collapsed {
     right: 8px;
-    bottom: 100px;
+    bottom: calc(112px + env(safe-area-inset-bottom, 0px));
   }
 }

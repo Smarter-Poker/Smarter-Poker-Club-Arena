@@ -492,7 +492,7 @@ export interface BusPayloadMap {
     timestamp: number;
   };
   SHOW_TOAST: {
-    severity: 'critical' | 'warning' | 'info';
+    severity: 'critical' | 'warning' | 'info' | 'clock';
     message: string;
     source?: string;
     durationMs?: number;
@@ -534,6 +534,9 @@ export interface BusPayloadMap {
     milestoneId: string;
     userId: string;
     milestoneName?: string;
+    /** MilestoneToast renders this as the toast body; without it every unlock
+     *  read "You reached a new milestone!" regardless of which one it was. */
+    description?: string;
     icon?: string;
     rewardDiamonds?: number;
     reward?: Record<string, unknown>;
@@ -1821,7 +1824,7 @@ export function isMasterBusOnline(): boolean {
  */
 export function busToast(
   message: string,
-  severity: 'critical' | 'warning' | 'info' = 'info',
+  severity: 'critical' | 'warning' | 'info' | 'clock' = 'info',
   durationMs?: number
 ): void {
   masterBus.emit('SHOW_TOAST', { message, severity, source: 'busToast', durationMs });

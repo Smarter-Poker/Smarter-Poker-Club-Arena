@@ -4,9 +4,10 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * Connects to PokerIQ-Production (kuklfnapbkmacvwxktbh)
  *
- * Phase 2 (2026-05-18): Removed subscribeToTable() and set eventsPerSecond: 0
- * to prevent any accidental Supabase Realtime connections. All real-time
- * functionality has been migrated to the Hetzner engine WebSocket.
+ * Phase 2 (2026-05-18): Removed subscribeToTable(). Game state rides the
+ * Hetzner engine WebSocket. 2026-08-22: Supabase Realtime is STILL used for
+ * table presence, chat, reactions and throwables (TableWebSocket/RoomService)
+ * — eventsPerSecond must stay a real limit (see below), not 0.
  */
 
 import { createClient } from '@supabase/supabase-js';
@@ -34,8 +35,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 // Create the Supabase client.
 // CRITICAL: storageKey MUST match Hub's 'smarter-poker-auth' for same-origin SSO.
-// eventsPerSecond: 0 — disables the Supabase Realtime heartbeat / multiplexer.
-// All real-time functionality now goes through the Hetzner engine WebSocket.
+// eventsPerSecond — the CLIENT->SERVER message rate limit the Realtime server
+// enforces from the connection URL. See the note on the value below.
 export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
   auth: {
     autoRefreshToken: true,
@@ -55,11 +56,15 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
   },
   realtime: {
     params: {
-      // 0 = effectively disabled. Supabase Realtime is no longer used in
-      // Club Arena — all channels have been migrated to the Hetzner WebSocket.
-      // This prevents the Supabase client from opening a Realtime WS connection
-      // which would count against MAU even if no channels are subscribed.
-      eventsPerSecond: 0,
+      // 2026-08-22: was 0 ("Realtime is no longer used") — but that was never
+      // true: TablePage still mounts a Supabase channel per table for
+      // presence, chat, reactions and throwables, and eventsPerSecond is the
+      // CLIENT->SERVER rate limit the Realtime server enforces from the
+      // connection URL. At 0, every channel.track() and channel.send() was
+      // refused server-side — presence/chat/reactions silently did nothing
+      // and refused sends drove CHANNEL_ERROR reconnect loops. 10/s is ample
+      // for presence + chat and still bounds abuse.
+      eventsPerSecond: 10,
     },
   },
 });

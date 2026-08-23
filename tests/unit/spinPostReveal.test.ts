@@ -90,9 +90,15 @@ describe('the stacks wait for the wheel', () => {
     // A restart between the reveal and the credit has to be recoverable by
     // simply calling it again, so it may only ever write the value start
     // already decided, and only to seats that disagree.
+    //
+    // 2026-08-22: "disagree" tightened from `!== target` to `< target` — the
+    // credit strictly RAISES a reservation seat to the decided stack and never
+    // lowers one, because an early-bird seat (starting chips + bonus) sits
+    // ABOVE the plain starting stack and flattening it would destroy the
+    // bonus. Idempotence is unchanged: a healthy seat still writes nothing.
     const fn = MANAGER.slice(MANAGER.indexOf('protected async creditSeatStacks'));
     const body = fn.slice(0, 1600);
-    expect(body).toMatch(/Number\(r\.stack\) !== target/);
+    expect(body).toMatch(/Number\(r\.stack\) < target/);
     expect(body).toMatch(/if \(stale\.length === 0\) return 0;/);
     expect(body).toMatch(/\.update\(\{ stack: target \}\)/);
   });

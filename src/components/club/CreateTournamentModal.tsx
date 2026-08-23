@@ -11,10 +11,18 @@ import { reportError } from '../../utils/errorReporter';
 import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { digitsOnly, isWholeBuyIn, money, splitBuyIn } from '../../utils/buyIn';
+import { tournamentScheduleService } from '../../services/TournamentScheduleService';
+import WeeklyScheduleEditor, {
+  DEFAULT_WEEKLY_SCHEDULE,
+  validateWeeklySchedule,
+  type WeeklyScheduleValue,
+} from '../tournament/WeeklyScheduleEditor';
 
 interface Props {
   clubId: string;
   unionId?: string; // If provided, this is a XMTT (union-level tournament)
+  /** Open the modal pre-set to a format (e.g. 'spin' from a Spins surface). */
+  initialFormat?: TournamentFormat;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -31,7 +39,13 @@ type TournamentFormat =
   | 'satellite'
   | 'xmtt';
 
-export default function CreateTournamentModal({ clubId, unionId, onClose, onSuccess }: Props) {
+export default function CreateTournamentModal({
+  clubId,
+  unionId,
+  initialFormat,
+  onClose,
+  onSuccess,
+}: Props) {
   const toast = useToast();
   const [visibleSections, setVisibleSections] = useState<boolean[]>([]);
 
@@ -44,9 +58,16 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
     });
   }, []);
 
+  // Apply the caller's preferred starting format ONCE, through the same
+  // handler a manual selection uses so its per-format defaults apply too.
+  useEffect(() => {
+    if (initialFormat) handleFormatChange(initialFormat);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Core Config ──
   const [name, setName] = useState('');
-  const [format, setFormat] = useState<TournamentFormat>('mtt_freezeout');
+  const [format, setFormat] = useState<TournamentFormat>(initialFormat || 'mtt_freezeout');
   const [gameVariant, setGameVariant] = useState<'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'SHORT_DECK'>(
     'NLH'
   );
@@ -67,7 +88,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
   const [satelliteTargets, setSatelliteTargets] = useState<{ id: string; name: string }[]>([]);
 
   // ── Start Time ──
-  const [startTimeMode, setStartTimeMode] = useState<'now' | 'scheduled'>('now');
+  const [startTimeMode, setStartTimeMode] = useState<'now' | 'scheduled' | 'schedule_only'>('now');
   const [scheduledDate, setScheduledDate] = useState('');
   const [scheduledTime, setScheduledTime] = useState('');
 
@@ -101,6 +122,36 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
   // ── Multi-Day Config ──
   const [isMultiDay, setIsMultiDay] = useState(false);
   const [totalDays, setTotalDays] = useState('2');
+
+  // ── Advanced options (PokerBros parity, 2026-08-22). Collapsed by default
+  // so the modal stays usable; every field maps to an fn_create_tournament
+  // p_config key. ──
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [shortDescription, setShortDescription] = useState('');
+  const [isVipOnly, setIsVipOnly] = useState(false);
+  const [banChat, setBanChat] = useState(false);
+  const [allInOrFold, setAllInOrFold] = useState(false);
+  const [labelAsNew, setLabelAsNew] = useState(false);
+  const [hideClubName, setHideClubName] = useState(false);
+  const [isFeatured, setIsFeatured] = useState(false);
+  const [acceleratedMtt, setAcceleratedMtt] = useState(false);
+  const [bigBlindAnte, setBigBlindAnte] = useState(false);
+  const [authorizedToRegister, setAuthorizedToRegister] = useState(false);
+  const [synchronizedBreaks, setSynchronizedBreaks] = useState(true);
+  const [actionTimeSeconds, setActionTimeSeconds] = useState('15');
+  const [tableSize, setTableSize] = useState('9');
+  const [addonBreakMinutes, setAddonBreakMinutes] = useState('1');
+  const [earlyBirdEnabled, setEarlyBirdEnabled] = useState(false);
+  const [earlyBirdChips, setEarlyBirdChips] = useState('0');
+  const [bubbleProtection, setBubbleProtection] = useState(false);
+  const [finalTableDeal, setFinalTableDeal] = useState(false);
+  /** Empty string = no auto-restart; otherwise minutes, 5-1440. */
+  const [restartEvery, setRestartEvery] = useState('');
+  const [maxRebuysStr, setMaxRebuysStr] = useState('');
+
+  // ── Weekly recurring schedule (tournament_schedules) ──
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [schedule, setSchedule] = useState<WeeklyScheduleValue>({ ...DEFAULT_WEEKLY_SCHEDULE });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -305,7 +356,30 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
         .replace('satellite', 'satellite')
         .replace('xmtt', 'mtt');
 
-      await tournamentService.createTournament(clubId, {
+      // ── Advanced-options validation mirroring the server ──
+      const restartMinutes = restartEvery.trim() === '' ? null : Math.round(Number(restartEvery));
+      if (restartMinutes !== null && (restartMinutes < 5 || restartMinutes > 1440)) {
+        toast.error('Restart interval must be between 5 and 1440 minutes.');
+        setIsSubmitting(false);
+        return;
+      }
+      if (scheduleEnabled) {
+        const problem = validateWeeklySchedule(schedule);
+        if (problem) {
+          toast.error(problem);
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      const clampInt = (raw: string, lo: number, hi: number, dflt: number) => {
+        const n = Math.round(Number(raw));
+        if (!Number.isFinite(n)) return dflt;
+        return Math.min(hi, Math.max(lo, n));
+      };
+      const maxRebuysNum = maxRebuysStr.trim() === '' ? undefined : Math.round(Number(maxRebuysStr));
+
+      const tournamentConfig: import('../../services/TournamentService').TournamentConfig = {
         name,
         type: serviceFormat as import('../../services/TournamentService').TournamentType,
         gameVariant,
@@ -412,8 +486,67 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                 possibleMultipliers: SPIN_MULTIPLIERS[spinType] || SPIN_MULTIPLIERS.standard,
               }
             : undefined,
-      });
-      toast.success('Tournament created');
+
+        // ── PokerBros parity (2026-08-22) ──
+        shortDescription: shortDescription.trim() || undefined,
+        isVipOnly,
+        banChat,
+        allInOrFold,
+        labelAsNew,
+        hideClubName,
+        isFeatured,
+        acceleratedMtt,
+        bigBlindAnte,
+        authorizedToRegister,
+        synchronizedBreaks,
+        actionTimeSeconds: clampInt(actionTimeSeconds, 5, 60, 15),
+        tableSize: clampInt(tableSize, 2, 10, 9),
+        addonBreakMinutes: addOnAvailable ? clampInt(addonBreakMinutes, 1, 10, 1) : undefined,
+        earlyBirdEnabled,
+        earlyBirdChips: earlyBirdEnabled
+          ? Math.max(0, Math.round(Number(earlyBirdChips) || 0))
+          : undefined,
+        bubbleProtection,
+        finalTableDealEnabled: finalTableDeal,
+        restartEveryMinutes: restartMinutes ?? undefined,
+        maxRebuys: isRebuy ? maxRebuysNum : undefined,
+        maxReentries: isReentry ? maxRebuysNum : undefined,
+        // Mystery bounty range multipliers — previously collected by this
+        // modal and never SENT, so the advertised range was cosmetic.
+        mysteryBountyMin:
+          format === 'mystery_bounty' ? Math.round(Number(mysteryBountyMin)) : undefined,
+        mysteryBountyMax:
+          format === 'mystery_bounty' ? Math.round(Number(mysteryBountyMax)) : undefined,
+      };
+
+      // ── Weekly recurring schedule (2026-08-22): save the recurrence with
+      // the exact p_config a hand-created tournament would send, minus
+      // startTime (the spawner owns it). A one-off is also created unless the
+      // owner chose "Schedule only". ──
+      if (scheduleEnabled) {
+        const resolvedClubId = await resolveClubUUID(clubId);
+        const rpcConfig = tournamentService.buildRpcConfig(tournamentConfig);
+        delete rpcConfig.startTime;
+        await tournamentScheduleService.upsert({
+          clubId: resolvedClubId,
+          unionId: unionId || null,
+          name,
+          daysOfWeek: schedule.daysOfWeek,
+          startTimesUtc:
+            schedule.mode === 'times'
+              ? schedule.startTimesUtc.filter((t) => t.trim() !== '')
+              : [],
+          intervalMinutes: schedule.mode === 'interval' ? schedule.intervalMinutes : null,
+          active: true,
+          config: rpcConfig,
+        });
+        toast.success('Recurring schedule saved.');
+      }
+
+      if (!scheduleEnabled || startTimeMode !== 'schedule_only') {
+        await tournamentService.createTournament(clubId, tournamentConfig);
+        toast.success('Tournament created');
+      }
       onSuccess();
     } catch (error: any) {
       reportError(error, 'CreateTournamentModal.Failed_to_create_tournament');
@@ -762,6 +895,9 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                   >
                     <option value="now">Start In 1 Min</option>
                     <option value="scheduled">Schedule</option>
+                    {scheduleEnabled && (
+                      <option value="schedule_only">Recurring Schedule Only</option>
+                    )}
                   </select>
                 </div>
                 {startTimeMode === 'scheduled' && (
@@ -1151,6 +1287,218 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── Advanced Options (PokerBros parity, 2026-08-22) ── */}
+          <div className={styles.sectionDivider}>
+            <button
+              type="button"
+              className={styles.select}
+              style={{ width: '100%', textAlign: 'left', cursor: 'pointer', fontWeight: 700 }}
+              onClick={() => setShowAdvanced((v) => !v)}
+            >
+              {showAdvanced ? '- Hide Advanced Options' : '+ Advanced Options'}
+            </button>
+
+            {showAdvanced && (
+              <>
+                <div className={styles.formGroup} style={{ marginTop: 8 }}>
+                  <label>Short Description</label>
+                  <input
+                    className={styles.input}
+                    value={shortDescription}
+                    maxLength={200}
+                    onChange={(e) => setShortDescription(e.target.value)}
+                    placeholder="Optional line shown on the tournament page"
+                  />
+                </div>
+
+                <div className={styles.row}>
+                  {(
+                    [
+                      ['VIP Only', isVipOnly, setIsVipOnly],
+                      ['Ban Chat', banChat, setBanChat],
+                      ['All-in Or Fold', allInOrFold, setAllInOrFold],
+                      ['Label As NEW', labelAsNew, setLabelAsNew],
+                      ['Hide Club Name', hideClubName, setHideClubName],
+                      ['Featured (Pinned)', isFeatured, setIsFeatured],
+                      ['Accelerated MTT', acceleratedMtt, setAcceleratedMtt],
+                      ['Big Blind Ante', bigBlindAnte, setBigBlindAnte],
+                      ['Authorized To Register', authorizedToRegister, setAuthorizedToRegister],
+                      ['Synchronized Breaks', synchronizedBreaks, setSynchronizedBreaks],
+                      ['Bubble Protection', bubbleProtection, setBubbleProtection],
+                      ['Final Table Deal', finalTableDeal, setFinalTableDeal],
+                    ] as Array<[string, boolean, (v: boolean) => void]>
+                  ).map(([label, value, setter]) => (
+                    <div className={styles.col} key={label} style={{ minWidth: '45%' }}>
+                      <div className={styles.formGroup}>
+                        <label className={styles.toggleLabel}>
+                          <input
+                            type="checkbox"
+                            checked={value}
+                            onChange={(e) => setter(e.target.checked)}
+                            className={styles.checkbox}
+                          />
+                          {label}
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className={styles.row}>
+                  <div className={styles.col}>
+                    <div className={styles.formGroup}>
+                      <label>Action Time (Seconds)</label>
+                      <input
+                        type="number"
+                        className={styles.input}
+                        value={actionTimeSeconds}
+                        onChange={(e) => setActionTimeSeconds(digitsOnly(e.target.value))}
+                        min={5}
+                        max={60}
+                        step={1}
+                        inputMode="numeric"
+                      />
+                      <span className={styles.helperText}>5 To 60 Seconds Per Action</span>
+                    </div>
+                  </div>
+                  <div className={styles.col}>
+                    <div className={styles.formGroup}>
+                      <label>Table Size</label>
+                      <input
+                        type="number"
+                        className={styles.input}
+                        value={tableSize}
+                        onChange={(e) => setTableSize(digitsOnly(e.target.value))}
+                        min={2}
+                        max={10}
+                        step={1}
+                        inputMode="numeric"
+                      />
+                      <span className={styles.helperText}>2 To 10 Seats Per Table</span>
+                    </div>
+                  </div>
+                  {addOnAvailable && (
+                    <div className={styles.col}>
+                      <div className={styles.formGroup}>
+                        <label>Add-On Break (Minutes)</label>
+                        <input
+                          type="number"
+                          className={styles.input}
+                          value={addonBreakMinutes}
+                          onChange={(e) => setAddonBreakMinutes(digitsOnly(e.target.value))}
+                          min={1}
+                          max={10}
+                          step={1}
+                          inputMode="numeric"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className={styles.row}>
+                  <div className={styles.col}>
+                    <div className={styles.formGroup}>
+                      <label className={styles.toggleLabel}>
+                        <input
+                          type="checkbox"
+                          checked={earlyBirdEnabled}
+                          onChange={(e) => setEarlyBirdEnabled(e.target.checked)}
+                          className={styles.checkbox}
+                        />
+                        Early Bird Registration
+                      </label>
+                    </div>
+                  </div>
+                  {earlyBirdEnabled && (
+                    <div className={styles.col}>
+                      <div className={styles.formGroup}>
+                        <label>Early Bird Chips</label>
+                        <input
+                          type="number"
+                          className={styles.input}
+                          value={earlyBirdChips}
+                          onChange={(e) => setEarlyBirdChips(digitsOnly(e.target.value))}
+                          min={0}
+                          step={1}
+                          inputMode="numeric"
+                        />
+                        <span className={styles.helperText}>
+                          Bonus Chips For Registering Before The Start
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className={styles.row}>
+                  <div className={styles.col}>
+                    <div className={styles.formGroup}>
+                      <label>Restart Every (Minutes)</label>
+                      <input
+                        type="number"
+                        className={styles.input}
+                        value={restartEvery}
+                        onChange={(e) => setRestartEvery(digitsOnly(e.target.value))}
+                        placeholder="Off"
+                        min={5}
+                        max={1440}
+                        step={5}
+                        inputMode="numeric"
+                      />
+                      <span className={styles.helperText}>
+                        Blank = Off. 5 To 1440: The Tournament Respawns On This Interval.
+                      </span>
+                    </div>
+                  </div>
+                  {(isRebuy || isReentry) && (
+                    <div className={styles.col}>
+                      <div className={styles.formGroup}>
+                        <label>Max {isRebuy ? 'Rebuys' : 'Re-Entries'} Per Player</label>
+                        <input
+                          type="number"
+                          className={styles.input}
+                          value={maxRebuysStr}
+                          onChange={(e) => setMaxRebuysStr(digitsOnly(e.target.value))}
+                          placeholder="Unlimited"
+                          min={0}
+                          step={1}
+                          inputMode="numeric"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* ── Weekly Recurring Schedule ── */}
+          {!isSngOrSpin && (
+            <div className={styles.sectionDivider}>
+              <div className={styles.formGroup}>
+                <label className={styles.toggleLabel}>
+                  <input
+                    type="checkbox"
+                    checked={scheduleEnabled}
+                    onChange={(e) => {
+                      setScheduleEnabled(e.target.checked);
+                      if (e.target.checked) setStartTimeMode('schedule_only');
+                      else if (startTimeMode === 'schedule_only') setStartTimeMode('now');
+                    }}
+                    className={styles.checkbox}
+                  />
+                  Tournament Schedule (Recurring)
+                </label>
+                <span className={styles.helperText}>
+                  Repeats This Tournament Weekly. Spawned Instances Use Exactly This
+                  Configuration.
+                </span>
+              </div>
+              {scheduleEnabled && <WeeklyScheduleEditor value={schedule} onChange={setSchedule} />}
             </div>
           )}
 

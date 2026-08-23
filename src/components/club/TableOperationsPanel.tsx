@@ -38,7 +38,9 @@ interface SeatedPlayer {
   user_id: string;
   seat_number: number;
   stack: number;
-  created_at: string;
+  /** table_seats has `joined_at`, not `created_at` — selecting the latter
+      returned 42703 and emptied this list on every load. */
+  joined_at: string;
   profiles: {
     display_name: string;
     username: string;

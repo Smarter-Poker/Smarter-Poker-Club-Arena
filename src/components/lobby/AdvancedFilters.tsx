@@ -40,6 +40,7 @@ const TABS: { key: FilterGameType; label: string }[] = [
   { key: 'ALL', label: 'All' },
   { key: 'HOLDEM', label: "Hold'em" },
   { key: 'OMAHA', label: 'Omaha' },
+  { key: 'LIMIT', label: 'Limit' },
   { key: 'MTT', label: 'MTT' },
   { key: 'SPIN', label: 'Spin-It' },
   { key: 'SNG', label: 'HU' },

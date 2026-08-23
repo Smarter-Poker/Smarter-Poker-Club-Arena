@@ -67,6 +67,46 @@ function persistCount(key: string, value: number): void {
   }
 }
 
+/**
+ * ── AVATAR CACHE ─────────────────────────────────────────────────────────────
+ *
+ * The badge counts have been hydrated from localStorage since this store was
+ * written, and the avatar never was. So every cold entry into Club Arena
+ * painted the empty orb first and popped the picture in once a round trip to
+ * Supabase came back — the World Hub's UniversalHeader carries a long comment
+ * about never showing "the un-hydrated (avatar-less) frame" and solved exactly
+ * this; Club Arena had not.
+ *
+ * Cached WITH the user id it belongs to, and only read back for that same id.
+ * A bare url under a shared key would flash the previous account's face at
+ * whoever logs in next on a shared device, which is worse than the flash it
+ * removes.
+ */
+const AVATAR_KEY = 'ca-avatar-cache';
+
+function hydrateAvatar(userId: string): string | null {
+  try {
+    const raw = localStorage.getItem(AVATAR_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { u?: string; a?: string };
+    return parsed?.u === userId && typeof parsed.a === 'string' ? parsed.a : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistAvatar(userId: string | null, url: string | null): void {
+  try {
+    if (!userId || !url) {
+      localStorage.removeItem(AVATAR_KEY);
+      return;
+    }
+    localStorage.setItem(AVATAR_KEY, JSON.stringify({ u: userId, a: url }));
+  } catch {
+    /* quota */
+  }
+}
+
 export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
   avatarUrl: null,
   notificationCount: hydrateCount('ca-notif-count'),
@@ -78,7 +118,10 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
   _channelKey: null,
   _busUnsubscribers: [],
 
-  setAvatarUrl: (url) => set({ avatarUrl: url }),
+  setAvatarUrl: (url) => {
+    set({ avatarUrl: url });
+    persistAvatar(get()._userId, url);
+  },
 
   setNotificationCount: (count) => {
     set({ notificationCount: count });
@@ -121,7 +164,9 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       });
     }
 
-    set({ _loaded: true, _userId: userId });
+    // Paint the cached avatar SYNCHRONOUSLY, before the fetch is even issued,
+    // so the first frame of the header already has the player's face.
+    set({ _loaded: true, _userId: userId, avatarUrl: hydrateAvatar(userId) });
 
     // ── Fetch initial data (non-blocking) ──
     (async () => {
@@ -148,11 +193,36 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         // Guard: if user switched while fetch was in-flight, discard stale result
         if (get()._userId !== userId) return;
 
-        const avatarUrl = profileResult.data?.avatar_url || null;
+        // supabase-js RESOLVES on a rejected request — a 403/42501 arrives as
+        // { data: null, error }, never as a throw, so the catch below cannot see
+        // it. Reading .data straight through turned a missing column grant on
+        // profiles.arena_avatar_url into "the header orb shows the placeholder",
+        // with nothing in Sentry and nothing in the console, for every account.
+        // Surface each failure on its own; a broken avatar must not look like a
+        // user who simply has none.
+        if (profileResult.error) {
+          reportError(profileResult.error, 'useHeaderDataStore.avatar_fetch');
+        }
+        if (notifResult.error) {
+          reportError(notifResult.error, 'useHeaderDataStore.notification_count_fetch');
+        }
+        if (msgResult.error) {
+          reportError(msgResult.error, 'useHeaderDataStore.message_count_fetch');
+        }
+
         const notifCount = notifResult.count || 0;
         const msgCount = msgResult.count || 0;
 
-        set({ avatarUrl, notificationCount: notifCount, unreadMessages: msgCount });
+        // A FAILED avatar read must not overwrite the cached one with null.
+        // Only a query that actually came back gets to say the player has no
+        // avatar; anything else keeps the face already on screen.
+        if (!profileResult.error) {
+          const avatarUrl = profileResult.data?.avatar_url || null;
+          set({ avatarUrl });
+          persistAvatar(userId, avatarUrl);
+        }
+
+        set({ notificationCount: notifCount, unreadMessages: msgCount });
         persistCount('ca-notif-count', notifCount);
         persistCount('ca-msg-count', msgCount);
         masterBus.emit('NOTIFICATION_COUNT_CHANGED', { count: notifCount });
@@ -181,8 +251,15 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
                 .eq('is_read', false),
             ]);
             if (get()._userId !== userId) return;
+            if (pR.error) reportError(pR.error, 'useHeaderDataStore.avatar_fetch_retry');
+            if (nR.error) reportError(nR.error, 'useHeaderDataStore.notification_count_fetch_retry');
+            if (mR.error) reportError(mR.error, 'useHeaderDataStore.message_count_fetch_retry');
+            if (!pR.error) {
+              const retriedAvatar = pR.data?.avatar_url || null;
+              set({ avatarUrl: retriedAvatar });
+              persistAvatar(userId, retriedAvatar);
+            }
             set({
-              avatarUrl: pR.data?.avatar_url || null,
               notificationCount: nR.count || 0,
               unreadMessages: mR.count || 0,
             });
@@ -343,6 +420,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
     try {
       localStorage.removeItem('ca-notif-count');
       localStorage.removeItem('ca-msg-count');
+      localStorage.removeItem(AVATAR_KEY);
     } catch {
       /* quota */
     }

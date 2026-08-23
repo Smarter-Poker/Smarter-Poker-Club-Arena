@@ -14,19 +14,30 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { ClubRole } from '../types/clubRoles';
+import { isClubStaff } from '../types/clubRoles';
 import { MEDIA_BASE } from '../utils/mediaBase';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import haptic from '../services/HapticService';
 import ClubBottomNav from '../components/club/ClubBottomNav';
+import CreateTournamentModal from '../components/club/CreateTournamentModal';
+/* LOBBY V2 (Dan 2026-08-22): the large card grid (DynamicGameCard) is replaced
+   by the dense line-based LobbyTable + the CasinoPlaque game lobby panel.
+   Selecting a row NEVER joins or spends; every commit action goes through the
+   panel, which reuses the existing flows (navigate-to-table seat+buy-in,
+   WaitlistService, TournamentService, spinQuickJoin). */
+import LobbyTable, { type LobbyCategory } from '../components/lobby/LobbyTable';
+import GameLobbyPanel from '../components/lobby/GameLobbyPanel';
 import {
-  CashGameCard,
-  TournamentCard,
-  SNGCard,
-  SpinCard,
-} from '../components/lobby/DynamicGameCard';
+  cashEntry,
+  tournamentEntry,
+  classifyTournament,
+  type LobbyEntry,
+  type LobbyTournamentRow,
+} from '../components/lobby/lobbyEntries';
+import { tournamentService } from '../services/TournamentService';
 import { getClubLevel, ClubLevelInfo } from '../utils/clubLevels';
 import { BusToastBridge } from '../components/common/BusToastBridge';
 import { DiamondService } from '../services/DiamondService';
@@ -75,20 +86,55 @@ import {
    emblem and fills the box as intended. */
 const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo.jpg`;
 
-// SWR cache helpers for instant club data display
+// SWR cache helpers for instant club data display.
+//
+// PERF PASS 2026-08-22 (handoff item 7): moved from sessionStorage to
+// localStorage. sessionStorage dies with the tab, so the one load that
+// matters most — a returning player cold-opening their club — always sat
+// on the skeleton while the heaviest screen in the app fetched from zero.
+// localStorage gives that visit the same instant paint the in-session
+// revisits already had; loadClubData still revalidates immediately after.
+// Only public club metadata and the table list are cached — never wallet,
+// role, or member data. Entries carry their own timestamp because the
+// staleCacheReaper only sweeps sessionStorage: reads ignore anything older
+// than the TTL, and a quota failure drops every club-home entry and retries
+// once, so the cache can never wedge itself full.
+const CLUB_HOME_CACHE_VER = 'v2';
+const CLUB_HOME_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 function getClubHomeCache(clubId: string) {
   try {
-    const raw = sessionStorage.getItem(`club_home_cache_${clubId}`);
-    return raw ? JSON.parse(raw) : null;
+    const raw =
+      localStorage.getItem(`club_home_cache_${CLUB_HOME_CACHE_VER}_${clubId}`) ??
+      // Pre-v2 entries (unwrapped, sessionStorage) still hydrate one last
+      // time during the transition; the next write lands in localStorage.
+      sessionStorage.getItem(`club_home_cache_${clubId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && 'at' in parsed && 'data' in parsed) {
+      if (Date.now() - parsed.at > CLUB_HOME_CACHE_TTL_MS) return null;
+      return parsed.data;
+    }
+    return parsed;
   } catch {
     return null;
   }
 }
 function setClubHomeCache(clubId: string, data: { club: any; tables: any[] }) {
+  const key = `club_home_cache_${CLUB_HOME_CACHE_VER}_${clubId}`;
+  const value = JSON.stringify({ at: Date.now(), data });
   try {
-    sessionStorage.setItem(`club_home_cache_${clubId}`, JSON.stringify(data));
+    localStorage.setItem(key, value);
   } catch {
-    /* storage full */
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('club_home_cache_')) localStorage.removeItem(k);
+      }
+      localStorage.setItem(key, value);
+    } catch {
+      /* storage unavailable — instant paint is best-effort */
+    }
   }
 }
 
@@ -169,14 +215,14 @@ interface WalletBalances {
  * and ordering moved to an explicit sort control instead of being implied by
  * whichever tab happened to be selected.
  */
-type GameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
+type GameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
 type SortKey = 'recommended' | 'stakes_high' | 'stakes_low' | 'players' | 'starting_soon';
 type TournVariant = 'ALL' | 'MTT' | 'Spin-It' | 'SN';
 /* The CashSubFilter / TournamentSubFilter types went with the state they
    described (see the note further down). Status is one mechanism now:
    GameFilterValue.statuses, defined per game type in advancedFilterSpec. */
 
-const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'MIXED'];
+const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'LIMIT', 'MIXED'];
 const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
 
 /**
@@ -189,10 +235,14 @@ const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
  * everything expects to find them.
  */
 const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
+  /* LOBBY V2: All Games is a real tab now — the line-based table renders a
+     combined column set for it, so it no longer needs to be hidden. */
+  { key: 'ALL', label: 'All Games' },
   { key: 'MTT', label: 'MTT' },
-  { key: 'HOLDEM', label: "Hold'em" },
+  { key: 'HOLDEM', label: 'NLH' },
   { key: 'OMAHA', label: 'Omaha' },
-  { key: 'SPIN', label: 'Spin' },
+  { key: 'LIMIT', label: 'Limit' },
+  { key: 'SPIN', label: 'Spins' },
   { key: 'SNG', label: 'Heads Up' },
 ];
 
@@ -212,20 +262,22 @@ const TOURN_VARIANT_FOR: Partial<Record<GameType, TournVariant>> = {
 };
 
 /** Classify a cash table into the bar's three cash types. */
-function cashKind(t: { game_variant?: string }): 'HOLDEM' | 'OMAHA' | 'MIXED' {
+function cashKind(t: { game_variant?: string }): 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' {
   const v = (t.game_variant || '').toLowerCase();
   // 'short' is Short Deck, which is a Hold'em variant — it belongs with NLH,
   // not in the Mixed bucket where an unlisted string falls.
+  if (v.includes('flh') || (v.includes('limit') && !v.includes('no') && !v.includes('pot')))
+    return 'LIMIT';
   if (v.includes('nlh') || v.includes('holdem') || v.includes("hold'em") || v.includes('short'))
     return 'HOLDEM';
   if (v.includes('plo') || v.includes('omaha')) return 'OMAHA';
   return 'MIXED';
 }
 
-// ── Lobby ordering (used by the ALL view): Hold'em → Omaha → Mixed for cash ──
+// ── Lobby ordering (used by the ALL view): Hold'em → Omaha → Limit → Mixed for cash ──
 function cashRank(t: { game_variant?: string }): number {
   const kind = cashKind(t);
-  return kind === 'HOLDEM' ? 0 : kind === 'OMAHA' ? 1 : 2;
+  return kind === 'HOLDEM' ? 0 : kind === 'OMAHA' ? 1 : kind === 'LIMIT' ? 2 : 3;
 }
 // Tournaments open for registration (or not past late-reg) come first, soonest first.
 function tournamentOpenFirst(
@@ -253,18 +305,6 @@ function tournamentOpenFirst(
  * in-tab lobby fell back to the pre-lobby landing page instead of the actual
  * club lobby the player came from.
  */
-/** Seconds between one card's entrance and the next. */
-const STAGGER_STEP = 0.08;
-
-/**
- * Cards past this index all animate together.
- *
- * Roughly a screenful on the 375px target. Beyond it the stagger is invisible
- * (the card is below the fold) but still delays the card's appearance, which
- * is how a 108-card lobby ended up finishing its entrance 8.6s late.
- */
-const STAGGER_MAX = 11;
-
 export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
   const { clubId: routeClubId } = useParams<{ clubId: string }>();
   const clubId = clubIdOverride || routeClubId;
@@ -293,7 +333,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [showBBJInfo, setShowBBJInfo] = useState(false);
   // Dan 2026-08-21: Chip Mint (diamonds -> chips, 100 = 10,000).
   const [showChipMint, setShowChipMint] = useState(false);
-  const [gameType, setGameType] = useState<GameType>('MTT');
+  /* LOBBY V2 follow-up (Dan's QA, 2026-08-22): the lobby landed on the MTT
+     tab, a leftover from before All Games was a real tab. A club with no open
+     MTTs therefore opened onto an empty screen blaming "filters" - every
+     single visit. All Games is the landing view of a dense lobby. */
+  const [gameType, setGameType] = useState<GameType>('ALL');
   const [sortKey, setSortKey] = useState<SortKey>('starting_soon');
   const [sortOpen, setSortOpen] = useState(false);
   /* Advanced Filters (Dan 2026-08-20). Loaded lazily from localStorage on
@@ -304,8 +348,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // Dan 2026-08-21: the header search icon was wired to `setSortOpen(false)` —
   // a literal no-op. It now toggles a real search box that filters both the
   // cash tables and the tournament cards by name.
-  const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  // LOBBY V2: show only starred cash tables. Declared here (not with the rest
+  // of the V2 state) because `narrowing` and `clearAllNarrowing` read it.
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [isEditingNotice, setIsEditingNotice] = useState(false);
+  const [noticeDraft, setNoticeDraft] = useState('');
+  const [isSavingNotice, setIsSavingNotice] = useState(false);
   // Status defaults are 'all' on BOTH axes now. They used to be 'live' and
   // 'running', which was invisible: picking a game type silently hid every
   // empty table and every tournament still taking registrations, so a club
@@ -323,6 +372,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null);
   const [isInUnion, setIsInUnion] = useState(false);
+  const [unionIdForCreate, setUnionIdForCreate] = useState<string | undefined>(undefined);
+  const [showCreateTournament, setShowCreateTournament] = useState(false);
   const [clubLevel, setClubLevel] = useState<ClubLevelInfo | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const toast = useToast();
@@ -911,6 +962,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           if (getIsMounted && !getIsMounted()) return;
           setIsInUnion(true);
           unionId = ucRow.union_id;
+          setUnionIdForCreate(ucRow.union_id);
 
           // Get ALL club IDs in this union + member count in parallel
           const [allUcResult, memberCountResult] = await Promise.all([
@@ -1292,9 +1344,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       filtered,
       searching,
       tabbed: gameType !== 'ALL',
-      any: filtered || searching || gameType !== 'ALL',
+      any: filtered || searching || gameType !== 'ALL' || favoritesOnly,
     };
-  }, [gameType, advFilters, searchQuery]);
+  }, [gameType, advFilters, searchQuery, favoritesOnly]);
 
   /**
    * Clear EVERY narrowing at once.
@@ -1307,7 +1359,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const clearAllNarrowing = useCallback(() => {
     haptic.selection();
     setSearchQuery('');
-    setSearchOpen(false);
+    setFavoritesOnly(false);
     setGameType('ALL');
     if (narrowing.fSpec) {
       const next: FilterStore = {
@@ -1462,25 +1514,236 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     [currentUserId, toast]
   );
 
-  /**
-   * Entrance-animation delay for the card at `idx`, in seconds.
-   *
-   * The stagger used to be a flat `idx * 0.08` with no ceiling. Measured on
-   * production this lobby renders 108 to 137 cards, so the last one began
-   * animating 8.6 to 11 SECONDS after the data arrived, and `both` fill keeps
-   * a card at opacity 0 until its delay elapses. The effect was a lobby that
-   * appeared to still be loading for another nine seconds after it had
-   * finished loading, which is worse than no animation at all.
-   *
-   * Capping at STAGGER_MAX keeps the effect where it is actually visible (the
-   * first screenful) and lets everything below the fold arrive at once. A
-   * player who scrolls immediately finds cards already there instead of
-   * scrolling into blank space waiting for its turn.
-   */
-  const cardDelay = (idx: number) => `${Math.min(idx, STAGGER_MAX) * STAGGER_STEP}s`;
+  // ═══════════════════════════════════════════════════════════════════════
+  // LOBBY V2 — player relationship to games (seated / registered / favorite)
+  // plus row selection + the game lobby panel.
+  // ═══════════════════════════════════════════════════════════════════════
+  const [seatedTableIds, setSeatedTableIds] = useState<Set<string>>(new Set());
+  const [registeredTournamentIds, setRegisteredTournamentIds] = useState<Set<string>>(new Set());
+  const [favoriteTableIds, setFavoriteTableIds] = useState<Set<string>>(new Set());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
 
-  /** How many cards the grid is about to render. */
-  const shownCount = filteredTables.length + filteredTournaments.length;
+  /* ── Selected game in the URL (?game=<id>) ──────────────────────────────
+     A refresh or a shared link reopens the same game lobby. replace:true
+     keeps history clean, so the back button still leaves the page rather
+     than stepping through every row the player looked at. The MultiTablePage
+     embed passes clubIdOverride and must never rewrite its host URL. */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlSyncEnabled = !clubIdOverride;
+  // Captured at first render, before the sync effect below can strip it.
+  const pendingGameRef = useRef<string | null>(searchParams.get('game'));
+
+  useEffect(() => {
+    if (!urlSyncEnabled) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (panelOpen && selectedId) next.set('game', selectedId);
+        else next.delete('game');
+        return next;
+      },
+      { replace: true }
+    );
+  }, [urlSyncEnabled, panelOpen, selectedId, setSearchParams]);
+  const [actionBusy, setActionBusy] = useState(false);
+
+  const loadMyGameStates = useCallback(async () => {
+    if (!currentUserId) {
+      setSeatedTableIds(new Set());
+      setRegisteredTournamentIds(new Set());
+      setFavoriteTableIds(new Set());
+      return;
+    }
+    try {
+      const [seatsRes, regsRes, favsRes] = await Promise.all([
+        supabase
+          .from('table_seats')
+          .select('table_id')
+          .eq('user_id', currentUserId)
+          .is('left_at', null),
+        supabase
+          .from('tournament_players')
+          .select('tournament_id')
+          .eq('user_id', currentUserId)
+          .in('status', ['registered', 'playing']),
+        supabase.from('favorite_tables').select('table_id').eq('user_id', currentUserId),
+      ]);
+      setSeatedTableIds(new Set((seatsRes.data || []).map((r) => r.table_id)));
+      setRegisteredTournamentIds(new Set((regsRes.data || []).map((r) => r.tournament_id)));
+      setFavoriteTableIds(new Set((favsRes.data || []).map((r) => r.table_id)));
+    } catch (e) {
+      reportError(e, 'ClubHomePage.loadMyGameStates');
+    }
+  }, [currentUserId]);
+
+  useEffect(() => {
+    loadMyGameStates();
+  }, [loadMyGameStates]);
+
+  // Keep the seated / registered chips live: these events already fire on the
+  // bus for the balance reload; they also change my relationship to the rows.
+  useEffect(() => {
+    const unsubs = [
+      masterBus.subscribeDebounced('TABLE_SEATED', loadMyGameStates, 300),
+      masterBus.subscribeDebounced('TABLE_LEFT', loadMyGameStates, 300),
+      masterBus.subscribeDebounced('TOURNAMENT_REGISTERED', loadMyGameStates, 300),
+      masterBus.subscribeDebounced('TOURNAMENT_UPDATED', loadMyGameStates, 300),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, [loadMyGameStates]);
+
+  /** Star / unstar a cash table. Reuses the favorite_tables infrastructure. */
+  const handleToggleFavorite = useCallback(
+    async (tableId: string, next: boolean) => {
+      if (!currentUserId) {
+        toast.error('Sign In To Save Favorites');
+        return;
+      }
+      haptic.selection();
+      setFavoriteTableIds((prev) => {
+        const s = new Set(prev);
+        if (next) s.add(tableId);
+        else s.delete(tableId);
+        return s;
+      });
+      try {
+        if (next) {
+          const { error } = await supabase
+            .from('favorite_tables')
+            .insert({ user_id: currentUserId, table_id: tableId });
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from('favorite_tables')
+            .delete()
+            .eq('user_id', currentUserId)
+            .eq('table_id', tableId);
+          if (error) throw error;
+        }
+      } catch (e) {
+        // Roll back the optimistic star; the row did not change.
+        setFavoriteTableIds((prev) => {
+          const s = new Set(prev);
+          if (next) s.delete(tableId);
+          else s.add(tableId);
+          return s;
+        });
+        reportError(e, 'ClubHomePage.handleToggleFavorite', { tableId, next });
+        toast.error(next ? 'Could Not Save Favorite' : 'Could Not Remove Favorite');
+      }
+    },
+    [currentUserId, toast]
+  );
+
+  /** Row selection — opens the game lobby panel. NEVER joins or spends. */
+  const openEntry = useCallback((entry: LobbyEntry) => {
+    haptic.selection();
+    setSelectedId(entry.id);
+    setPanelOpen(true);
+  }, []);
+
+  const handleJoinTable = useCallback(
+    (tableId: string) => {
+      haptic.medium();
+      setPanelOpen(false);
+      // Existing launch flow: seat choice + buy-in validation happen AT the
+      // table (fn_take_seat_and_buy_in) — nothing is spent from the lobby.
+      navigate(`/table/${tableId}`);
+    },
+    [navigate]
+  );
+
+  const handleRegister = useCallback(
+    async (t: LobbyTournamentRow) => {
+      if (!currentUserId) {
+        toast.error('Sign In To Register');
+        return;
+      }
+      if (actionBusy) return;
+      setActionBusy(true);
+      try {
+        const username = useUserStore.getState().user?.username || 'Player';
+        // Server-authoritative: fn_register_for_tournament validates status,
+        // late reg, capacity, duplicates and BALANCE, and debits atomically.
+        await tournamentService.registerPlayer(t.id, currentUserId, username);
+        setRegisteredTournamentIds((prev) => new Set(prev).add(t.id));
+        toast.success(`You Are Registered For ${t.name}`);
+      } catch (e) {
+        reportError(e, 'ClubHomePage.handleRegister', { tournamentId: t.id });
+        toast.error(e instanceof Error ? e.message : 'Registration Failed, Please Try Again');
+      } finally {
+        setActionBusy(false);
+      }
+    },
+    [currentUserId, actionBusy, toast]
+  );
+
+  const handleUnregister = useCallback(
+    async (t: LobbyTournamentRow) => {
+      if (!currentUserId || actionBusy) return;
+      setActionBusy(true);
+      try {
+        await tournamentService.unregisterPlayer(t.id, currentUserId);
+        setRegisteredTournamentIds((prev) => {
+          const s = new Set(prev);
+          s.delete(t.id);
+          return s;
+        });
+        toast.success('You Are No Longer Registered');
+      } catch (e) {
+        reportError(e, 'ClubHomePage.handleUnregister', { tournamentId: t.id });
+        toast.error(e instanceof Error ? e.message : 'Could Not Unregister, Please Try Again');
+      } finally {
+        setActionBusy(false);
+      }
+    },
+    [currentUserId, actionBusy, toast]
+  );
+
+  // ── LOBBY V2 view models — the SAME filtered/sorted rows, normalized ──
+  const lobbyEntries = useMemo<LobbyEntry[]>(() => {
+    const tourns = filteredTournaments.map((t) =>
+      tournamentEntry(
+        t as unknown as LobbyTournamentRow,
+        classifyTournament(t as unknown as LobbyTournamentRow)
+      )
+    );
+    let cash = filteredTables.map(cashEntry);
+    if (favoritesOnly) cash = cash.filter((e) => favoriteTableIds.has(e.id));
+    // Tournaments first, cash after — same order the card grid used, so the
+    // page-level sort control keeps meaning what it meant.
+    return [...tourns, ...cash];
+  }, [filteredTournaments, filteredTables, favoritesOnly, favoriteTableIds]);
+
+  const selectedEntry = useMemo(
+    () => (selectedId ? lobbyEntries.find((e) => e.id === selectedId) || null : null),
+    [selectedId, lobbyEntries]
+  );
+
+  // A selected row that leaves the list (deleted, filtered out, status change)
+  // closes the panel rather than showing a stale game.
+  useEffect(() => {
+    if (panelOpen && selectedId && !selectedEntry) setPanelOpen(false);
+  }, [panelOpen, selectedId, selectedEntry]);
+
+  // Reopen the game a ?game=<id> URL points at, once the list contains it.
+  // A dead id (deleted game, another club's game) is dropped on the first
+  // loaded list instead of lying in wait forever.
+  useEffect(() => {
+    if (!urlSyncEnabled || !pendingGameRef.current) return;
+    if (lobbyEntries.length === 0) return;
+    const id = pendingGameRef.current;
+    pendingGameRef.current = null;
+    const entry = lobbyEntries.find((e) => e.id === id);
+    if (entry) {
+      setSelectedId(id);
+      setPanelOpen(true);
+    }
+  }, [urlSyncEnabled, lobbyEntries]);
+
+  /** How many rows the lobby is about to render. */
+  const shownCount = lobbyEntries.length;
 
   /**
    * Everything the club is running, before ANY narrowing.
@@ -1643,86 +1906,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           them are inline SVG on currentColor now — see LobbyIcons.tsx.
       ═══════════════════════════════════════════════════════════════════ */}
       <header className="lobby-top">
-        <div className="lobby-top__bar">
-          {!clubIdOverride && (
-            <button
-              className="lobby-top__back"
-              aria-label="Back to clubs"
-              onClick={() => {
-                haptic.light();
-                navigate('/clubs');
-              }}
-            >
-              &#8249;&#8249;
-            </button>
-          )}
-
-          <div className="lobby-top__quick">
-            <button
-              className="lobby-quick"
-              onClick={() => {
-                haptic.selection();
-                // Dan 2026-08-21: this navigated to /clubs/:id/detail — a route
-                // that does not exist, so the button did nothing. Events = the
-                // club's tournament schedule.
-                navigate(`/clubs/${clubId}/tournaments`);
-              }}
-            >
-              <IconTrophy />
-              <span>Events</span>
-            </button>
-            <button
-              className="lobby-quick"
-              onClick={() => {
-                haptic.selection();
-                navigate('/leaderboard');
-              }}
-            >
-              <IconLeaderboard />
-              <span>Ranks</span>
-            </button>
-          </div>
-
-          <button
-            className="lobby-top__search"
-            aria-label="Search games"
-            onClick={() => {
-              haptic.light();
-              setSortOpen(false);
-              setSearchOpen((prev) => {
-                if (prev) setSearchQuery('');
-                return !prev;
-              });
-            }}
-          >
-            <IconSearch />
-          </button>
-        </div>
-
-        {/* Dan 2026-08-21: real game search — filters cash tables and
-            tournament cards by name as you type. */}
-        {searchOpen && (
-          <div className="lobby-top__searchbox">
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search games and tournaments..."
-              autoFocus
-              aria-label="Search games and tournaments"
-            />
-            {searchQuery && (
-              <button
-                className="lobby-top__searchclear"
-                aria-label="Clear search"
-                onClick={() => setSearchQuery('')}
-              >
-                &#10005;
-              </button>
-            )}
-          </div>
-        )}
-
         {/* ── Club identity + wallet ── */}
         <div className="lobby-top__main">
           <div className="lobby-club">
@@ -1746,78 +1929,67 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                   <IconMembers />
                   {(club.member_count || 0).toLocaleString()}
                 </span>
-                {club.online_count > 0 && (
-                  <span className="lobby-club__online">
-                    {club.online_count.toLocaleString()} Online
-                  </span>
-                )}
               </div>
 
-              {/* Club level.
-                  Dan 2026-08-20: this page already loaded the level, already
-                  called the recompute_club_levels RPC to correct a stale one,
-                  and already fired a "Level Up!" toast when it rose — while
-                  rendering the level itself NOWHERE. Players were congratulated
-                  on reaching a level they could not see, and the stylesheet had
-                  carried .club-level-badge / .club-level-progress rules with no
-                  markup behind them. The work was being done; it just was not
-                  reaching the screen. */}
-              {clubLevel && (
-                <div className="lobby-club__level">
-                  <span
-                    className="club-level-badge"
-                    style={{ background: clubLevel.gradient }}
-                    title={`Level ${clubLevel.level} - ${clubLevel.tierLabel}`}
-                  >
-                    <span className="club-level-badge__number">Lv.{clubLevel.level}</span>
-                    <span className="club-level-badge__tier">{clubLevel.tierLabel}</span>
-                  </span>
-                  <span className="club-level-progress">
-                    <span className="club-level-progress__bar">
-                      <span
-                        className="club-level-progress__fill"
-                        style={{
-                          // Clamped: a club past its next threshold returns >100
-                          // and overflowed the bar's rounded corners.
-                          width: `${Math.max(0, Math.min(100, clubLevel.progressPercent))}%`,
-                          background: clubLevel.gradient,
-                        }}
-                      />
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  marginTop: '6px',
+                  flexDirection: 'column',
+                }}
+              >
+                {clubLevel && (
+                  <div className="lobby-club__level">
+                    <span
+                      className="club-level-badge"
+                      style={{ background: clubLevel.gradient }}
+                      title={`Level ${clubLevel.level} - ${clubLevel.tierLabel}`}
+                    >
+                      <span className="club-level-badge__number">Level {clubLevel.level}</span>
+                      <span className="club-level-badge__tier">{clubLevel.tierLabel}</span>
                     </span>
-                    <span className="club-level-progress__text">
-                      {Math.round(Math.max(0, Math.min(100, clubLevel.progressPercent)))}%
-                    </span>
-                  </span>
-                </div>
-              )}
-            </div>
+                  </div>
+                )}
 
-            <button
-              className="lobby-club__share"
-              aria-label="Share club invite link"
-              title="Share"
-              onClick={async () => {
-                haptic.medium();
-                const shareUrl = `${window.location.origin}/clubs/${clubId}`;
-                try {
-                  if (navigator.share) {
-                    await navigator.share({
-                      title: club.name,
-                      text: `Join ${club.name} on Smarter Poker!`,
-                      url: shareUrl,
-                    });
-                  } else {
-                    await navigator.clipboard.writeText(shareUrl);
-                    toast.success('Club link copied!');
-                  }
-                } catch (e) {
-                  reportError(e, 'ClubHomePage.async');
-                  /* user cancelled share */
-                }
-              }}
-            >
-              <IconShareLink />
-            </button>
+                <div
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}
+                >
+                  {club.online_count >= 0 && (
+                    <div style={{ fontSize: '0.8rem', color: '#9aa5b6' }}>
+                      {club.online_count.toLocaleString()} Players Currently Playing
+                    </div>
+                  )}
+
+                  <button
+                    className="lobby-club__share"
+                    aria-label="Share club invite link"
+                    title="Share"
+                    onClick={async () => {
+                      haptic.medium();
+                      const shareUrl = `${window.location.origin}/clubs/${clubId}`;
+                      try {
+                        if (navigator.share) {
+                          await navigator.share({
+                            title: club.name,
+                            text: `Join ${club.name} on Smarter Poker!`,
+                            url: shareUrl,
+                          });
+                        } else {
+                          await navigator.clipboard.writeText(shareUrl);
+                          toast.success('Club link copied!');
+                        }
+                      } catch (e) {
+                        reportError(e, 'ClubHomePage.async');
+                        /* user cancelled share */
+                      }
+                    }}
+                  >
+                    <IconShareLink />
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* ── Wallet ──
@@ -1872,13 +2044,61 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           )}
         </div>
 
-        {/* ── Club notice. Rendered only when the club has actually written one:
-            the old copy printed the AUTHORING PLACEHOLDER ("Enter the club
-            introduction...(5000 characters limit)") to every player of every
-            club that had not set a description. ── */}
-        {club.description && club.description.trim().length > 0 && (
-          <div className="lobby-top__notice">
-            <p>{club.description}</p>
+        {/* ── Editable Club Notice ── */}
+        {(club.description?.trim() || isOwner || isClubStaff(userRole)) && (
+          <div
+            className={`lobby-top__notice ${isOwner || isClubStaff(userRole) ? 'lobby-top__notice--editable' : ''}`}
+            onClick={() => {
+              if ((isOwner || isClubStaff(userRole)) && !isEditingNotice) {
+                setNoticeDraft(club.description || '');
+                setIsEditingNotice(true);
+              }
+            }}
+          >
+            {isEditingNotice ? (
+              <div className="lobby-top__notice-editor" onClick={(e) => e.stopPropagation()}>
+                <textarea
+                  value={noticeDraft}
+                  onChange={(e) => setNoticeDraft(e.target.value)}
+                  placeholder="Welcome to the Shark Club, all fish of all shapes and sizes are welcome!"
+                  autoFocus
+                  disabled={isSavingNotice}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') setIsEditingNotice(false);
+                  }}
+                />
+                <div className="lobby-top__notice-actions">
+                  <button onClick={() => setIsEditingNotice(false)} disabled={isSavingNotice}>
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setIsSavingNotice(true);
+                      try {
+                        const { error } = await supabase
+                          .from('clubs')
+                          .update({ description: noticeDraft.trim() })
+                          .eq('id', resolvedClubId);
+                        if (error) throw error;
+                        setClub((prev) =>
+                          prev ? { ...prev, description: noticeDraft.trim() } : prev
+                        );
+                        setIsEditingNotice(false);
+                      } catch (e) {
+                        toast.error('Failed to save welcome message');
+                      } finally {
+                        setIsSavingNotice(false);
+                      }
+                    }}
+                    disabled={isSavingNotice}
+                  >
+                    {isSavingNotice ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p>{club.description?.trim() || 'Click to add a welcome message...'}</p>
+            )}
           </div>
         )}
       </header>
@@ -2164,67 +2384,70 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════
-                GAMES GRID - Tables & Create New Table Button
-            ═══════════════════════════════════════════════════════════════════ */}
-      <div className="club-home__games">
-        {/* CREATE NEW TABLE - Only visible to owners/admins of STANDALONE clubs (not in a union) */}
-        {(isOwner || userRole === 'admin') && !isInUnion && (
-          <Link to={`/clubs/${clubId}/create-table`} className="create-table-card">
-            <div className="create-table-card__table">
-              <div className="new-badge">NEW</div>
-              <div className="plus-icon">+</div>
-            </div>
-            <span className="create-table-card__label">Create New Table</span>
-          </Link>
+          LOBBY V2 — dense line-based game table + game lobby panel
+          ─────────────────────────────────────────────────────────────────
+          One compact row per game, columns adapted to the selected category.
+          Clicking a row SELECTS it and opens the CasinoPlaque game lobby —
+          it never joins, registers, or spends. All commit actions live in
+          the panel and reuse the existing platform flows.
+      ═══════════════════════════════════════════════════════════════════ */}
+      <div className="club-home__games club-home__games--v2">
+        <div className="lobby-actionsrow">
+          {/* CREATE NEW GAME - owners/admins of STANDALONE clubs only.
+              Same branch main shipped on the old create tile: a tournament
+              tab opens CreateTournamentModal, a cash tab goes to the
+              create-table page. */}
+          {(isOwner || userRole === 'admin') && !isInUnion && (
+            <button
+              type="button"
+              className="lobby-createbtn"
+              onClick={() => {
+                haptic.selection();
+                if (['MTT', 'SNG', 'SPIN'].includes(gameType)) {
+                  setShowCreateTournament(true);
+                } else {
+                  navigate(`/clubs/${clubId}/create-table`);
+                }
+              }}
+            >
+              + Create New {TOURNAMENT_TYPES.includes(gameType) ? 'Game' : 'Table'}
+            </button>
+          )}
+          {currentUserId && (gameType === 'ALL' || CASH_TYPES.includes(gameType)) && (
+            <button
+              type="button"
+              className={`lobby-favtoggle${favoritesOnly ? ' is-on' : ''}`}
+              aria-pressed={favoritesOnly}
+              onClick={() => {
+                haptic.selection();
+                setFavoritesOnly((v) => !v);
+              }}
+            >
+              Favorites
+            </button>
+          )}
+        </div>
+
+        {/* Render while loading too: LobbyTable owns the skeleton rows, and
+            gating on entries>0 made them unreachable - first load flashed the
+            empty state instead (review 2026-08-22). */}
+        {(lobbyEntries.length > 0 || loading) && (
+          <LobbyTable
+            entries={lobbyEntries}
+            category={gameType as LobbyCategory}
+            selectedId={panelOpen ? selectedId : null}
+            onSelect={openEntry}
+            onActivate={openEntry}
+            loading={loading}
+            ctx={{
+              waitlistedIds: waitlistedTableIds,
+              seatedIds: seatedTableIds,
+              registeredIds: registeredTournamentIds,
+              favoriteIds: favoriteTableIds,
+              onToggleFavorite: currentUserId ? handleToggleFavorite : undefined,
+            }}
+          />
         )}
-
-        {/* TOURNAMENT CARDS FIRST — ALL view shows tournaments (open-for-reg,
-            soonest first) ahead of cash. In the CASH GAMES tab this list is empty,
-            in the TOURNAMENTS tab the tables list below is empty, so the same order
-            works for every tab. */}
-        {filteredTournaments.map((tournament, idx) => {
-          const tName = (tournament.name || '').toLowerCase();
-          const isSNG = tName.includes('sng') || tournament.max_players <= 10;
-          const isSpin = tName.includes('spin');
-
-          return (
-            <div
-              key={tournament.id}
-              style={{
-                animation: `slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) ${cardDelay(idx)} both`,
-              }}
-            >
-              {isSpin && <SpinCard tournament={tournament} onQuickJoin={spinQuickJoin} />}
-              {isSNG && !isSpin && (
-                <SNGCard tournament={tournament} onQuickJoin={(t) => spinQuickJoin(t, 'sng')} />
-              )}
-              {!isSpin && !isSNG && <TournamentCard tournament={tournament} />}
-            </div>
-          );
-        })}
-
-        {/* CASH TABLES — Hold'em → Omaha → Mixed (sorted in filteredTables) */}
-        {filteredTables.map((table, idx) => {
-          const staggerIdx = filteredTournaments.length + idx;
-          return (
-            <div
-              key={table.id}
-              style={{
-                animation: `slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) ${cardDelay(staggerIdx)} both`,
-              }}
-            >
-              <CashGameCard
-                table={table}
-                isAdmin={isOwner || userRole === 'admin'}
-                waitlisted={waitlistedTableIds.has(table.id)}
-                onWaitlistToggle={currentUserId ? handleWaitlistToggle : undefined}
-                onDelete={(id) => {
-                  setDeleteTableConfirm({ show: true, tableId: id, tableName: table.name });
-                }}
-              />
-            </div>
-          );
-        })}
 
         {/* ═══════════════════════════════════════════════════════════════
             EMPTY STATE — say WHY, and offer the way out
@@ -2241,8 +2464,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             It now distinguishes the three real causes and, when the player
             caused it, clears the cause in one tap.
         ═══════════════════════════════════════════════════════════════ */}
-        {filteredTables.length === 0 &&
-          filteredTournaments.length === 0 &&
+        {!loading &&
+          lobbyEntries.length === 0 &&
           (() => {
             // Same three causes the result count reads, from the same place.
             const totalHere = totalGameCount;
@@ -2257,6 +2480,22 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                     <p className="empty-hint">
                       Nothing Is Running Here Right Now. New Games Open All The Time.
                     </p>
+                  </>
+                ) : !filtered && !searching ? (
+                  <>
+                    {/* Tab (or Favorites) is the ONLY narrowing: blaming
+                        "filters" here sent players hunting for filters they
+                        never set (QA 2026-08-22). Name the real cause. */}
+                    <p>Nothing Here On This Tab</p>
+                    <p className="empty-hint">
+                      {totalHere.toLocaleString()} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
+                      This Club, Just None Of This Type Right Now.
+                    </p>
+                    <div className="empty-actions">
+                      <button className="empty-action" onClick={clearAllNarrowing}>
+                        Show All Games
+                      </button>
+                    </div>
                   </>
                 ) : (
                   <>
@@ -2288,6 +2527,37 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             );
           })()}
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          SELECTED GAME LOBBY — CasinoPlaque panel (renders ONLY for the
+          selected game; closes on Escape, backdrop, or the X)
+      ═══════════════════════════════════════════════════════════════════ */}
+      {panelOpen && selectedEntry && clubId && (
+        <GameLobbyPanel
+          embedded={Boolean(clubIdOverride)}
+          entry={selectedEntry}
+          clubId={clubId}
+          currentUserId={currentUserId}
+          waitlisted={waitlistedTableIds.has(selectedEntry.id)}
+          seated={seatedTableIds.has(selectedEntry.id)}
+          registered={registeredTournamentIds.has(selectedEntry.id)}
+          busy={actionBusy}
+          onClose={() => setPanelOpen(false)}
+          onJoinTable={handleJoinTable}
+          onWaitlistToggle={handleWaitlistToggle}
+          onRegister={handleRegister}
+          onUnregister={handleUnregister}
+          onSpinJoin={(t, variant) => {
+            setPanelOpen(false);
+            spinQuickJoin({ id: t.id, name: t.name, buy_in_amount: t.buy_in_amount }, variant);
+          }}
+          canDelete={isOwner || userRole === 'admin'}
+          onDeleteTable={(id) => {
+            setPanelOpen(false);
+            setDeleteTableConfirm({ show: true, tableId: id, tableName: selectedEntry.name });
+          }}
+        />
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════════
                 BACKGROUND IMAGE (Premium Bar Scene)
@@ -2369,6 +2639,23 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         }}
         onCancel={() => setDeleteTableConfirm({ show: false, tableId: null, tableName: null })}
       />
+
+      {showCreateTournament && resolvedClubId && (
+        <CreateTournamentModal
+          clubId={resolvedClubId}
+          unionId={unionIdForCreate}
+          initialFormat={
+            gameType === 'SPIN' ? 'spin' : gameType === 'SNG' ? 'sng' : 'mtt_freezeout'
+          }
+          onClose={() => setShowCreateTournament(false)}
+          onSuccess={() => {
+            setShowCreateTournament(false);
+            haptic.success();
+            toast.success('Tournament created successfully');
+            // Tables auto-refresh via the visibility hook / focus return
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+# DID THE MERGE ACTUALLY REACH PRODUCTION?
+#
+# Everything else in this repo watches whether code MERGES. Nothing watched
+# whether it PUBLISHED, and that is the gap every "it worked, then it regressed
+# hours later" report has fallen through:
+#
+#   * a PR that touched .github/workflows/ merged, the bundle built, and the
+#     sync push was rejected because a GitHub App may not write workflow files.
+#     Red run, nobody looking, production served the previous build for hours;
+#   * `cancel-in-progress: true` killed every build before its sync step, so
+#     production sat on 7547a6e45 while main ran far ahead;
+#   * three syncs published a bundle built from a stale tree while naming the
+#     current sha in the commit message.
+#
+# In all three the merge was green, the agent reported success, and production
+# was stale. The only thing that can tell them apart is asking PRODUCTION what
+# it is serving and comparing it to main. That is this script.
+#
+# It is also self-healing: a lag with no successful build for HEAD gets ONE
+# automatic re-dispatch before a human is told, because the common causes
+# (a cancelled run, a rejected push, a transient 5xx) are all fixed by running
+# it again.
+#
+# Env: GH_TOKEN, GITHUB_REPOSITORY. Optional: LAG_BUDGET_MIN (default 25).
+set -uo pipefail
+
+REPO="${GITHUB_REPOSITORY:?}"
+BUILD_INFO_URL="${BUILD_INFO_URL:-https://smarter.poker/hub/club-arena/build-info.json}"
+PUBLISH_WORKFLOW="${PUBLISH_WORKFLOW:-build-for-world-hub.yml}"
+LAG_BUDGET_MIN="${LAG_BUDGET_MIN:-25}"
+ISSUE_TITLE="Publish watchdog: production is not serving main"
+
+say() { echo "$@"; }
+summary() { echo "$@" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
+
+# A watchdog whose alarm fails silently is not a watchdog. Every write here
+# goes through this: `gh ... >/dev/null 2>&1 && say "opened an issue"` prints
+# nothing at all when the write fails, which is how report-stuck-prs.sh found
+# six stranded pull requests in PepNationLab, could not raise the issue, and
+# logged 53 seconds of silence on a step that reported success.
+# ISSUE WRITES USE A DIFFERENT TOKEN ON PURPOSE. The App installation token is
+# required for MERGES, because a merge made with GITHUB_TOKEN does not trigger
+# downstream workflows and the commit would land without publishing. Raising an
+# issue has no downstream effect at all, so it does not need the App - and
+# GITHUB_TOKEN, with `issues: write` declared in the workflow, is guaranteed to
+# have the permission, where an App's installation scopes can be narrowed
+# without anyone here noticing. Use the narrow token for the narrow job.
+# FIND THE EXISTING ISSUE WITHOUT USING SEARCH.
+#
+# `gh issue list --search "<title> in:title"` reads GitHub's SEARCH INDEX, which
+# is eventually consistent - a freshly created issue is not findable for a
+# minute or two. Two sweeps 87 seconds apart both looked, both saw nothing, and
+# both created one: PepNationLab #79 and #80, same title, same content. A
+# de-duplicating guard that duplicates is worse than none, because the noise
+# teaches people to ignore it.
+#
+# The plain list endpoint is not an index. It is current.
+find_issue() {
+  # SAME TOKEN AS THE WRITE, and that is not a tidiness point. This read used
+  # plain $GH_TOKEN - the App installation token - while the write used
+  # GH_TOKEN_ISSUES. The App has no issues scope here, so the read returned
+  # nothing every time, the guard concluded there was no existing issue, and
+  # filed another one. World Hub #633, #637, #638 and PepNationLab #79, #81,
+  # #83 are that bug: a read and a write that disagreed about who they were.
+  GH_TOKEN="${GH_TOKEN_ISSUES:-${GH_TOKEN:-}}" \
+  gh issue list --repo "${REPO:-$GITHUB_REPOSITORY}" --state open --limit 100 --json number,title \
+    --jq "[.[] | select(.title == \"$1\")] | .[0].number // empty" 2>/dev/null
+}
+
+gh_write() {
+  local what="$1"; shift
+  local out
+  if out=$(GH_TOKEN="${GH_TOKEN_ISSUES:-${GH_TOKEN:-}}" gh "$@" 2>&1); then
+    say "  $what"
+    return 0
+  fi
+  say "::error::publish-watchdog could not $what -- production is behind and nobody was told."
+  printf '%s\n' "$out" | sed 's/^/    /'
+  return 1
+}
+
+HEAD_SHA=$(git rev-parse HEAD)
+HEAD_SHORT=${HEAD_SHA:0:8}
+HEAD_TIME=$(git show -s --format=%cI "$HEAD_SHA")
+HEAD_EPOCH=$(git show -s --format=%ct "$HEAD_SHA")
+NOW=$(date -u +%s)
+AGE_MIN=$(( (NOW - HEAD_EPOCH) / 60 ))
+
+# Cache-bust. A CDN-cached answer is worse than no answer: it is a stale fact
+# wearing a fresh timestamp, and this whole script exists to stop exactly that.
+SERVED_JSON=$(curl -fsSL -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+                "${BUILD_INFO_URL}?cb=${NOW}" 2>/dev/null || true)
+
+if [ -z "$SERVED_JSON" ]; then
+  say "::error::could not read $BUILD_INFO_URL — production is unreachable or the bundle has no provenance file."
+  SERVED_SHA=""
+else
+  SERVED_SHA=$(printf '%s' "$SERVED_JSON" | sed -n 's/.*"ca_sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+fi
+SERVED_SHORT=${SERVED_SHA:0:8}
+
+say "main HEAD : $HEAD_SHORT ($HEAD_TIME, ${AGE_MIN}m ago)"
+say "production: ${SERVED_SHORT:-<unreadable>}"
+
+close_issue() {
+  N=$(find_issue "$ISSUE_TITLE")
+  [ -n "${N:-}" ] || return 0
+  gh_write "comment on #$N" issue comment "$N" --repo "$REPO" \
+    --body "Recovered. Production is serving \`$HEAD_SHORT\`, which is main's HEAD. Closing." || true
+  gh_write "close issue #$N (production caught up)" issue close "$N" --repo "$REPO" || true
+}
+
+# ── Healthy ────────────────────────────────────────────────────────────────
+if [ "$SERVED_SHA" = "$HEAD_SHA" ]; then
+  say "OK — production is serving main."
+  summary "### Publish watchdog: OK"
+  summary ""
+  summary "Production serves \`$HEAD_SHORT\`, which is main's HEAD."
+  close_issue
+  exit 0
+fi
+
+# ── Serving something that is NOT on main at all ───────────────────────────
+# This is the dangerous one and nothing looked for it before. A rewound main,
+# a force-push, or a sync that published from a branch all land here, and none
+# of them are "lag" — waiting does not fix them.
+if [ -n "$SERVED_SHA" ] && ! git merge-base --is-ancestor "$SERVED_SHA" "$HEAD_SHA" 2>/dev/null; then
+  say "::error::production is serving $SERVED_SHORT, which is NOT an ancestor of main."
+  DIAG="Production is serving \`$SERVED_SHORT\`, and that commit **is not on main**.
+
+This is not publish lag — lag means production is serving an older commit that is still an ancestor of main, and it resolves itself. A non-ancestor means one of:
+
+- main was rewound or force-pushed after that bundle published;
+- the bundle was published from a branch rather than from main;
+- the commit was never fetched here (this job checks out with \`fetch-depth: 0\`, so that is unlikely).
+
+Nothing will fix this on its own. Find out which of the three it is before pushing anything else."
+  NOT_ANCESTOR=1
+else
+  NOT_ANCESTOR=0
+  say "production is behind main (lag), serving ${SERVED_SHORT:-nothing readable}."
+fi
+
+# ── Inside the budget: a build is probably still in flight ─────────────────
+if [ "$NOT_ANCESTOR" = "0" ] && [ "$AGE_MIN" -lt "$LAG_BUDGET_MIN" ]; then
+  say "main's HEAD is only ${AGE_MIN}m old and the budget is ${LAG_BUDGET_MIN}m — a build is probably still running. Not alarming."
+  summary "### Publish watchdog: in flight"
+  summary ""
+  summary "main \`$HEAD_SHORT\` is ${AGE_MIN}m old; production serves \`${SERVED_SHORT:-?}\`. Within the ${LAG_BUDGET_MIN}m budget."
+  exit 0
+fi
+
+# ── Over budget. What did the publish workflow actually do for this sha? ────
+RUN=$(gh run list --repo "$REPO" --workflow "$PUBLISH_WORKFLOW" --limit 30 \
+        --json databaseId,headSha,status,conclusion,event,url \
+        --jq "[.[] | select(.headSha == \"$HEAD_SHA\")] | .[0]" 2>/dev/null || echo "")
+RUN_STATUS=$(printf '%s' "$RUN" | jq -r '.status // "none"' 2>/dev/null || echo none)
+RUN_CONCL=$(printf '%s' "$RUN"  | jq -r '.conclusion // "none"' 2>/dev/null || echo none)
+RUN_URL=$(printf '%s' "$RUN"    | jq -r '.url // ""' 2>/dev/null || echo "")
+RUN_EVENT=$(printf '%s' "$RUN"  | jq -r '.event // ""' 2>/dev/null || echo "")
+say "publish run for $HEAD_SHORT: status=$RUN_STATUS conclusion=$RUN_CONCL event=$RUN_EVENT"
+
+if [ "$RUN_STATUS" = "in_progress" ] || [ "$RUN_STATUS" = "queued" ]; then
+  say "a publish run for this sha is still $RUN_STATUS — letting it finish."
+  exit 0
+fi
+
+# ── Self-heal, exactly once per sha ────────────────────────────────────────
+# The failures that strand a publish are overwhelmingly transient or one-shot
+# (a cancelled run, a rejected push, a 5xx). Re-running fixes those without a
+# human. Re-running twice fixes nothing and hides a real fault, so the retry is
+# capped by asking whether a manual dispatch for THIS sha already exists.
+ALREADY_RETRIED=$(gh run list --repo "$REPO" --workflow "$PUBLISH_WORKFLOW" \
+                    --event workflow_dispatch --limit 30 --json headSha \
+                    --jq "[.[] | select(.headSha == \"$HEAD_SHA\")] | length" 2>/dev/null || echo 0)
+
+RETRY_NOTE=""
+if [ "$NOT_ANCESTOR" = "0" ] && [ "${ALREADY_RETRIED:-0}" -eq 0 ]; then
+  if gh workflow run "$PUBLISH_WORKFLOW" --repo "$REPO" --ref main >/dev/null 2>&1; then
+    say "re-dispatched $PUBLISH_WORKFLOW for main — one automatic retry."
+    RETRY_NOTE="
+
+**One automatic retry has been dispatched.** If the next watchdog pass still finds production behind, the cause is not transient and this issue will say so."
+  else
+    RETRY_NOTE="
+
+An automatic retry was attempted and the dispatch itself failed — check the token's \`actions: write\`."
+  fi
+elif [ "${ALREADY_RETRIED:-0}" -gt 0 ]; then
+  RETRY_NOTE="
+
+An automatic retry was **already used** for this sha and production is still behind, so the cause is not transient. Read the publish run before dispatching another."
+fi
+
+BODY="Production is not serving main, and it is past the ${LAG_BUDGET_MIN}-minute budget.
+
+| | |
+|---|---|
+| main HEAD | \`$HEAD_SHORT\` — $HEAD_TIME (${AGE_MIN}m ago) |
+| production serving | \`${SERVED_SHORT:-unreadable}\` |
+| publish run for HEAD | ${RUN_STATUS}/${RUN_CONCL} ${RUN_URL} |
+
+${DIAG:-A merge that does not publish is indistinguishable from a regression: main moves, agents report success, and users keep seeing the previous build. That is the failure this watchdog exists to name.}
+
+**Where to look, in order**
+
+1. The publish run above. \`Client tests must pass before the bundle ships\` and the World Hub push are the two steps that fail most.
+2. \`gh run list --repo Smarter-Poker/Smarter-Poker-World-Hub --limit 5\` — the bundle can reach World Hub and still not deploy.
+3. \`curl -s $BUILD_INFO_URL\` — the authoritative answer to what is live.${RETRY_NOTE}
+
+_Raised automatically by \`.github/workflows/publish-watchdog.yml\`. It closes itself when production catches up._"
+
+EXISTING=$(find_issue "$ISSUE_TITLE")
+if [ -n "${EXISTING:-}" ]; then
+  gh_write "update issue #$EXISTING" issue comment "$EXISTING" --repo "$REPO" --body "$BODY" || true
+else
+  gh_write "open an issue" issue create --repo "$REPO" --title "$ISSUE_TITLE" --body "$BODY" || true
+fi
+
+summary "### Publish watchdog: PRODUCTION IS BEHIND"
+summary ""
+summary "main \`$HEAD_SHORT\` (${AGE_MIN}m old) vs production \`${SERVED_SHORT:-?}\`."
+
+# Exit non-zero so the run is red and shows up in the Actions list, not just in
+# an issue nobody has subscribed to.
+exit 1

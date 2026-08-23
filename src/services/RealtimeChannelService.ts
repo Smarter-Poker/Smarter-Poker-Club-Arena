@@ -74,6 +74,12 @@ export interface TournamentEvent {
     | 'tournament_started'
     | 'player_registered'
     | 'player_eliminated'
+    /* Emitted by finishTournament for the CHAMPION only. Deliberately not
+       `player_eliminated` with position 1: TournamentPage and
+       TournamentLobbyPage both raise an elimination toast on that event, and
+       eliminatePlayer is never called with place 1 anyway — the bust sweep
+       reserves it for the winner. See TournamentManagerEliminations. */
+    | 'tournament_winner'
     | 'level_up'
     | 'final_table'
     | 'heads_up'

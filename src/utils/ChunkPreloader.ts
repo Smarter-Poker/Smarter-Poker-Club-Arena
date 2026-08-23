@@ -38,6 +38,15 @@ const CRITICAL_CHUNKS: Array<() => Promise<any>> = [
   () => import('../pages/CashierPage'),
   () => import('../pages/NotificationsPage'),
   () => import('../pages/MessagesPage'),
+  // PERF PASS 3 (2026-08-22): TablePage is the single heaviest chunk
+  // (~413KB JS + ~383KB CSS) and the most common heavy destination — every
+  // player who sits down needs it. Warming it last (after the light pages)
+  // makes the first table entry instant instead of paying ~150KB gzipped at
+  // the moment the player taps a table.
+  () => import('../pages/TablePage'),
+  // MultiTablePage is the live table surface PersistentTableLayer actually
+  // mounts — small itself, but warming it completes the instant-seat path.
+  () => import('../pages/MultiTablePage'),
   // PlayerStatsPage intentionally NOT preloaded: it pulls the ~314KB recharts
   // chart bundle, which most users never open. It lazy-loads on navigation
   // instead (route intent), saving that bandwidth on mobile.
@@ -67,6 +76,18 @@ export function preloadCriticalChunks(): void {
         });
       }, index * 150); // 150ms stagger between each chunk
     });
+
+    // PERF PASS 2026-08-22: after the chunk preloads have been scheduled,
+    // warm the player's card deck (~500KB of WebP) so the first hands dealt
+    // never wait on image fetches. The service worker media cache makes this
+    // a one-time cost per device; deckWarmer skips Data Saver / 2g users.
+    setTimeout(() => {
+      import('./deckWarmer')
+        .then(({ warmDeckImages }) => warmDeckImages())
+        .catch(() => {
+          // Preloading is best-effort — the per-card PNG fallback still applies
+        });
+    }, CRITICAL_CHUNKS.length * 150 + 3000);
   });
 }
 

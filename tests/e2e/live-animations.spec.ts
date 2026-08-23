@@ -375,17 +375,95 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
   });
 
   test('the LOBBY RESULT CARD: the landing after a finished tournament', async ({ page }) => {
-    // "placed inside the lobby and your tournament result card shown" — the
-    // card must ARRIVE (backdrop fade + card pop), not blink into place.
+    /* "placed inside the lobby and your tournament result card shown" — the
+       card must ARRIVE (backdrop fade + card rise), not blink into place.
+
+       AUDIT 2026-08-22: this beat used to mount `.trc` / `.trc__backdrop` /
+       `.trc__card`, which is TournamentResultCard — a component that could
+       never render. Its result travelled as router state addressed to
+       `/clubs/:clubId` while the only reader lived at `/clubs/:clubId/lobby`,
+       so the card was dropped on arrival every single time. This spec was
+       therefore proving that a dead card had a beautiful entrance, and it was
+       the only thing in CI still holding that CSS alive.
+
+       Repointed at `.trc2` — TournamentRankingCard, rendered by
+       TournamentRankingHost at the app root, which is what a finisher
+       actually lands on. Same question, asked of the card that exists. */
     const b = await beat(
       page,
-      `const r=document.createElement('div');r.className='trc';
-       r.innerHTML='<div class="trc__backdrop"></div>'+
-         '<div class="trc__card trc__card--won"><div class="trc__place trc__place--won">1st Place</div></div>';
+      `const r=document.createElement('div');r.className='trc2';
+       r.innerHTML='<div class="trc2__backdrop"></div>'+
+         '<div class="trc2__card"><div class="trc2__placeband trc2-medal--gold">1st</div></div>';
        document.querySelector('.table-page').appendChild(r);`
     );
-    expect(b.trcFadeIn, 'the backdrop must fade in').toBe(300);
-    expect(b.trcCardIn, 'the result card must pop in').toBe(450);
+    expect(b.trc2Fade, 'the backdrop must fade in').toBe(200);
+    expect(b.trc2Rise, 'the result card must rise in').toBe(400);
+  });
+
+  /**
+   * THE TWO BEATS AFTER THE WHEEL.
+   *
+   * The SPIN-IT test above covers the wheel itself. These are what Dan named
+   * next: "AFTER THE SPIN COMPLETES, CHIP STACKS GET ADDED, BUTTON RANDOMLY
+   * ASSIGNED AND THE SPIN STARTS!" The engine broadcasts spin_chips and
+   * spin_button and holds the deal 1.8s to make room for them; TablePage now
+   * handles both and writes the values straight into table state.
+   *
+   * Neither handler owns an animation of its own - each drives one that already
+   * exists on the seat. This spec is what stops those from being deleted or
+   * retimed underneath the handlers, which would leave the beats silently dead
+   * again with every unit test still green.
+   */
+  test('the SPIN post-reveal beats: chips land, then the button is drawn', async ({ page }) => {
+    // Beat 1 — the chips arrive at a seat that had none.
+    const chips = await beat(
+      page,
+      `$('info').innerHTML =
+         '<span class="seat__stack seat__stack--up">500</span>' +
+         '<span class="seat__stack-delta seat__stack-delta--win">+500</span>';
+       $('seat').classList.add('seat--stack-glow');`
+    );
+    expect(chips.stackBounceUp, 'the stack must bounce as the chips land').toBe(400);
+    expect(chips.stackDeltaFloat, 'the +N must float off the seat').toBe(2000);
+    expect(chips.seatStackGlow, 'the seat must glow as it is credited').toBe(600);
+
+    // Beat 2 — the button is drawn. dealerButtonAppear is a MOUNT animation on
+    // .seat__position-chip, so writing the chip in is exactly what the real
+    // render does when dealerSeat first names this seat.
+    const button = await beat(
+      page,
+      `const c = document.createElement('div');
+       c.className = 'seat__position-chip';
+       c.textContent = 'D';
+       $('seat').appendChild(c);`
+    );
+    expect(button.dealerButtonAppear, 'the dealer button must be dealt in, not appear').toBe(400);
+  });
+
+  /**
+   * PARITY: the two seat states a Spin used to render differently from cash.
+   *
+   * Both are CSS that the TSX fixes now reach. If either keyframe is removed or
+   * retimed the fix becomes a no-op with nothing else failing, which is exactly
+   * how the original divergence survived: nothing anywhere rendered a table in
+   * tournament mode and compared it to one in cash mode.
+   */
+  test('a short stack warns, and an open seat breathes', async ({ page }) => {
+    const short = await beat(
+      page,
+      `$('info').innerHTML = '<span class="seat__stack seat__stack--critical">8</span>';`
+    );
+    expect(short.stackCriticalPulse, 'a sub-10bb stack must pulse, in every format').toBe(1500);
+
+    const open = await beat(
+      page,
+      `const s = document.createElement('div');
+       s.className = 'seat seat--empty';
+       s.innerHTML = '<span class="seat__empty-label"><span class="seat__empty-plus">+</span>' +
+                     '<span class="seat__empty-word">SIT</span></span>';
+       $('sw').appendChild(s);`
+    );
+    expect(open.emptyPulse, 'an open seat must breathe so it reads as tappable').toBe(3000);
   });
 
   test('reduced motion is honoured — every animation collapses', async ({ browser }) => {

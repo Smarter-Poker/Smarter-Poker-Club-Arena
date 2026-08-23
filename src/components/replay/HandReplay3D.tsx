@@ -10,6 +10,7 @@ import * as THREE from 'three';
    to tween DOM style properties — 63 kB of source this scene has no use for,
    because every tween here targets a three.js object3d, never an element. */
 import { gsap } from 'gsap/gsap-core';
+import { MEDIA_BASE } from '../../utils/mediaBase';
 import type { ReplaySnapshot, ReplaySpeed } from '../../types/engine/handReplay';
 
 export interface HandReplay3DProps {
@@ -49,7 +50,12 @@ function getTexture(path: string): THREE.Texture {
 }
 
 function getCardTexturePath(cardStr: string): string {
-  if (!cardStr || cardStr === '??') return '/cards/backs/carbon.webp';
+  // PERF PASS 2026-08-22: these paths were root-absolute ('/cards/...'), which
+  // bypassed the Club Arena media path entirely — no service-worker caching,
+  // no long-lived Cache-Control, and a dependency on the World Hub happening
+  // to host a copy at the apex. MEDIA_BASE serves the same files from
+  // /hub/club-arena/cards/, where both cache layers now apply.
+  if (!cardStr || cardStr === '??') return `${MEDIA_BASE}cards/backs/carbon.webp`;
 
   const rankChar = cardStr[0].toLowerCase();
   const suitChar = cardStr[1].toLowerCase();
@@ -63,7 +69,7 @@ function getCardTexturePath(cardStr: string): string {
   else if (suitChar === 'h') suit = 'hearts';
   else if (suitChar === 's') suit = 'spades';
 
-  return `/cards/${suit}_${rank}.png`;
+  return `${MEDIA_BASE}cards/${suit}_${rank}.png`;
 }
 
 function getSeatPosition(seatIndex: number, totalSeats: number): THREE.Vector3 {
@@ -190,7 +196,7 @@ class PokerTable3D {
 
   private createCardMesh(cardStr: string): THREE.Mesh {
     const geo = new THREE.BoxGeometry(CARD_WIDTH, 0.005, CARD_HEIGHT);
-    const backTex = getTexture('/cards/backs/carbon.webp');
+    const backTex = getTexture(`${MEDIA_BASE}cards/backs/carbon.webp`);
     let frontTex = backTex;
 
     if (cardStr !== '??') {

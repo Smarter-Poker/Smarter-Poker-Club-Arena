@@ -5,6 +5,11 @@ trigger: always_on
 
 # 100% AUTOMATIC PUBLISHING — ZERO HUMAN INTERVENTION
 
+> **↗ `AGENT-PLAYBOOK.md` at the repository root is the front door.** Same file
+> in all seven repos, checked hourly by `estate-integrity`. It carries the ship
+> sequence, every guard and what it is telling you, and **where each credential
+> lives**. This file is the Club Arena detail underneath it.
+
 Multiple agents commit here at once (128 commits in 26 hours is a normal day).
 Every regression we have traced ended at the same root cause: **an agent trying
 to drive the merge itself.** So agents no longer merge. At all.
@@ -132,6 +137,58 @@ Not required, and deliberately so:
   not your code, it is whatever main last shipped, so it can never validate the
   change under review. It runs after main deploys and opens an issue when
   production genuinely breaks.
+
+## 6a. Merging is not shipping, and nothing used to check
+
+A green tick answers "did it merge". It does not answer "did it reach
+production", and three incidents here were merges that never published while
+the agent reported success.
+
+`.github/workflows/publish-watchdog.yml` asks production directly — it compares
+`build-info.json` against `main` after every publish attempt and every 15
+minutes — and it tells lag apart from a rewind, because only one of those fixes
+itself. It re-dispatches the publisher **once** per sha before telling anyone,
+then stops and says why.
+
+You do not need to run it. You do need to not break the two things it protects:
+`cancel-in-progress: false` on the publisher, and the client suite running
+inside the publisher rather than in `ci.yml`. Both are pinned in
+`tests/shipped-invariants.test.ts`.
+
+## 6b. Work that stops moving gets named, not logged
+
+A pull request nobody comes back for does not ship, and from outside the repo
+that is indistinguishable from the feature regressing. Every sweep now files
+one issue per repo listing:
+
+- pull requests that cannot merge, split by cause — conflicts, a red required
+  check, or **no check ever reporting** (that last one waits forever for a
+  context that will never arrive, and the UI just says "pending");
+- branches pushed and never proposed, which nothing else here can see because
+  Autopilot queues pull requests and there is nothing to queue.
+
+The issue is edited in place and closes itself when the list empties. An
+`agent/*` branch under a day old gets a pull request opened for it
+automatically — that namespace exists to become one.
+
+## 6c. A reset can no longer destroy a commit or an edit
+
+`.husky/reference-transaction` fires before any ref update lands and refuses one
+that would orphan local commits — and it **writes them to
+`refs/wip/orphan-guard/<stamp>` first**, so even an override leaves the work
+recoverable. `scripts/agent-trees-snapshot.sh` does the same for uncommitted
+edits every ten minutes, using `git stash create`, which cannot disturb the tree
+it is reading.
+
+If you deliberately need to move a ref backwards, say so:
+`AGENT_REF_GUARD_OK=1`. `agent-workspace.sh` and `git-safe-push.sh` already do.
+
+To see what is exposed right now:
+
+```bash
+bash scripts/agent-trees-audit.sh       # trees holding work that exists once
+bash scripts/agent-trees-snapshot.sh --list
+```
 
 ## 7. If something is genuinely stuck
 

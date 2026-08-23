@@ -63,6 +63,22 @@ export interface TournamentResult {
   knockouts: number;
   rebuys: number;
   addOns: number;
+  /**
+   * Is this a Spin?
+   *
+   * Only the card's BRANDING turns on this — a Spin is still a tournament and
+   * every number above means exactly the same thing. It exists because the
+   * ranking card hard-coded the word SPIN into its banner for every event, so
+   * a 128-runner MTT finished under a Spin badge.
+   *
+   * Resolved by `isSpinTournament` from the tournament row (it checks both
+   * `variant` and `tournament_type`), never guessed from the event name.
+   *
+   * Optional, defaulting to false: an older payload simply is not a Spin, and
+   * that is the safe direction — a real Spin missing its badge is a cosmetic
+   * loss, an MTT wearing one is a lie.
+   */
+  isSpin?: boolean;
 }
 
 export interface SessionSummaryPayload {
@@ -87,6 +103,33 @@ export interface SessionSummaryPayload {
   totalBuyIn?: number;
   sessionStart?: number;
   sessionEnd?: number;
+  /**
+   * True when the cashout was DEFERRED (mid-hand leave): `profitLoss` is an
+   * estimate built from the live stack at the moment of leaving, not the
+   * settled number — the true cashout lands at settlement, after this popup
+   * is already on screen. The card annotates the money line so the estimate
+   * is never mistaken for the settled figure. Cash sessions only; a
+   * tournament payload never sets it.
+   */
+  plPending?: boolean;
+  /**
+   * Set alongside `plPending`: everything the app-root host needs to find the
+   * settlement on its own. The engine's processLeavePending credits the true
+   * post-hand stack via atomic_credit_wallet_and_log, which writes ONE
+   * wallet_transactions row (category 'cashout', this table, this user) —
+   * that row IS the settled number, and RLS already lets a user read their
+   * own rows. TablePage cannot watch for it (it navigates away and unmounts
+   * immediately after publishing), so the host polls while the card is open
+   * and swaps the estimate for the settled figure when the row lands.
+   */
+  pendingCashout?: {
+    tableId: string;
+    userId: string;
+    /** Epoch ms of the leave — bounds the ledger query so a cashout row from
+     *  an earlier session at the same table can never be mistaken for this
+     *  settlement. */
+    sinceMs: number;
+  };
 }
 
 type Listener = (payload: SessionSummaryPayload | null) => void;
@@ -113,6 +156,23 @@ export function publishSessionSummary(payload: SessionSummaryPayload): void {
 /** Read without consuming (used for the host's initial state). */
 export function peekSessionSummary(): SessionSummaryPayload | null {
   return pending;
+}
+
+/**
+ * The settlement landed: replace the estimated P/L with the settled figure
+ * and drop the "Pending Settlement" annotation. No-op if the popup was
+ * already dismissed (the one-shot value is gone — there is nothing to
+ * correct) or if the payload is not the pending one it was found for.
+ */
+export function settlePendingSummary(settledProfitLoss: number): void {
+  if (pending === null || !pending.plPending) return;
+  pending = {
+    ...pending,
+    profitLoss: settledProfitLoss,
+    plPending: false,
+    pendingCashout: undefined,
+  };
+  emit();
 }
 
 /** Clear it. Called when the player dismisses the popup. */

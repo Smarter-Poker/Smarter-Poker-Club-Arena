@@ -45,6 +45,41 @@ export interface TournamentFormInput {
   addOnMultiplier: number;
   koBounty: boolean;
   startTime: string;
+
+  // ── PokerBros parity (2026-08-22). Optional so restored drafts and older
+  // callers keep working; every one maps to an fn_create_tournament key. ──
+  isPrivate?: boolean;
+  isVipOnly?: boolean;
+  shortDescription?: string;
+  banChat?: boolean;
+  allInOrFold?: boolean;
+  labelAsNew?: boolean;
+  hideClubName?: boolean;
+  featuredTournament?: boolean;
+  tableSize?: number;
+  actionTimeSeconds?: number;
+  acceleratedMtt?: boolean;
+  bigBlindAnte?: boolean;
+  authorizedToRegister?: boolean;
+  synchronizedBreaks?: boolean;
+  customRebuyReentryCost?: boolean;
+  rebuyReentryCost?: number;
+  customAddOn?: boolean;
+  customAddOnCost?: number;
+  addOnBreakLengthMinutes?: number;
+  gtdPrizePool?: boolean;
+  gtdPrizeAmount?: number;
+  finalTableDeal?: boolean;
+  earlyBirdRegistration?: boolean;
+  earlyBirdChips?: number;
+  bubbleProtection?: boolean;
+  multiDayMtt?: boolean;
+  totalDays?: number;
+  restartTournamentEvery?: boolean;
+  restartEveryMinutes?: number;
+  nextStepSatellite?: boolean;
+  satelliteTargetId?: string;
+  satelliteSeats?: number;
 }
 
 export function canRunAsTournament(gameType: string | undefined): boolean {
@@ -87,26 +122,31 @@ export function buildTournamentConfig(
   // Blind ramp from the shared presets, with the owner's level length applied
   // to the playing levels. Break rows keep their own duration, and the blinds
   // themselves are untouched — the service validates that they never decrease.
+  // 2026-08-22: hyper_turbo maps to the REAL hyperTurbo ramp now (2-minute
+  // levels, steeper jumps) instead of silently aliasing to turbo.
   const preset = isSpins
     ? SPIN_BLIND_STRUCTURE
     : (BLIND_STRUCTURES[
-      ({ slow: 'deepStack', standard: 'regular', turbo: 'turbo', hyper_turbo: 'turbo' } as const)[
-      config.blindStructure
-      ] ?? 'regular'
+      ({
+        slow: 'deepStack',
+        standard: 'regular',
+        turbo: 'turbo',
+        hyper_turbo: 'hyperTurbo',
+      } as const)[config.blindStructure] ?? 'regular'
     ] as typeof SPIN_BLIND_STRUCTURE);
   const levelMinutes = Math.max(1, config.blindsUpMinutes);
   const blindStructure = preset.map((lvl) =>
     lvl.isBreak ? lvl : { ...lvl, durationMinutes: levelMinutes }
   );
 
-  // Payouts. A spin is winner-take-all by definition; otherwise scale the
-  // shape to the field. normalizePayouts guarantees exactly 100%, which the
-  // service and the engine both require.
+  // Payouts. A spin is winner-take-all by definition; otherwise the owner's
+  // Payout Structure choice is HONOURED (2026-08-22 — payout1/2/3 used to
+  // fall through to autoSelectPayouts, so all four choices were identical).
+  // payoutsForChoice normalizes to exactly 100%, which the service and the
+  // engine both require, and pays fewer places than the field.
   const payoutStructure = isSpins
     ? [{ place: 1, percentage: 100 }]
-    : config.payoutStructure === 'winner_take_all'
-    ? [{ place: 1, percentage: 100 }]
-    : payoutEngine.normalizePayouts(payoutEngine.autoSelectPayouts(maxPlayers));
+    : payoutEngine.payoutsForChoice(config.payoutStructure, maxPlayers);
 
   // WHOLE-DOLLAR BUY-IN (Dan 2026-08-20): "Sit and Go and any tournament
   // buy-ins must never be decimal buy-ins, whole numbers only." The Buy-in
@@ -117,9 +157,37 @@ export function buildTournamentConfig(
   const buyIn = Math.max(0, Math.round(Number(config.buyIn) || 0));
   const split = splitBuyIn(buyIn);
 
+  const isMtt = config.gameMode === 'mtt';
+  const clampInt = (v: number, lo: number, hi: number) =>
+    Math.min(hi, Math.max(lo, Math.round(Number(v) || 0)));
+
+  // Next Step (Satellite): only real with a target — a satellite without a
+  // target would silently pay cash, defeating the point.
+  const isSatellite = isMtt && Boolean(config.nextStepSatellite && config.satelliteTargetId);
+
+  // Rebuy / add-on money. Custom toggles switch the derived cost for a typed
+  // whole number; the whole-number rule is enforced by rounding here and
+  // refused (not rounded) server-side, matching the rest of the money path.
+  const rebuyCost =
+    config.customRebuyReentryCost && (config.rebuyReentryCost ?? 0) > 0
+      ? Math.round(config.rebuyReentryCost!)
+      : split.total;
+  const addOnCost =
+    config.customAddOn && (config.customAddOnCost ?? 0) > 0
+      ? Math.round(config.customAddOnCost!)
+      : split.total;
+
   return {
     name: config.name.trim() || 'Tournament',
-    type: isSpins ? 'spin' : isSng ? 'sng' : config.koBounty ? 'bounty' : 'mtt',
+    type: isSpins
+      ? 'spin'
+      : isSng
+        ? 'sng'
+        : isSatellite
+          ? 'satellite'
+          : config.koBounty
+            ? 'bounty'
+            : 'mtt',
     buyIn: split.total,
     // The house takes 10% of the buy-in on every tournament, rounded to a whole
     // number. It is recomputed identically server-side in fn_create_tournament;
@@ -145,22 +213,73 @@ export function buildTournamentConfig(
         : undefined;
       })()
       : undefined,
-    isRebuy: config.numberOfRebuysReentries > 0,
-    isReentry: config.numberOfRebuysReentries > 0,
-    rebuyCost: split.total,
+    isRebuy: isMtt && config.numberOfRebuysReentries > 0,
+    isReentry: isMtt && config.numberOfRebuysReentries > 0,
+    rebuyCost,
     rebuyChips: config.startingChips,
-    addOnAvailable: config.addOnMultiplier > 0,
-    addOnCost: split.total,
+    addOnAvailable: isMtt && config.addOnMultiplier > 0,
+    addOnCost,
     addOnChips: Math.round(config.startingChips * Math.max(1, config.addOnMultiplier)),
     addOnLevels: 1,
-    guaranteedPrize: 0,
+    guaranteedPrize:
+      isMtt && config.gtdPrizePool ? Math.max(0, Math.round(config.gtdPrizeAmount ?? 0)) : 0,
     gameVariant: TOURNAMENT_GAME_VARIANTS[gameType ?? 'nlh'] ?? 'NLH',
     spinType: isSpins ? 'standard' : undefined,
     // Half the buy-in as the head, floored to a whole number so the bounty can
     // never be a decimal and can never exceed the prize half of the split.
-    bountyConfig: config.koBounty
+    bountyConfig: !isSatellite && config.koBounty
     ? { baseBounty: Math.min(split.prize, Math.floor(split.total * 0.5)) }
     : undefined,
+    satelliteTarget: isSatellite
+      ? {
+          tournamentId: config.satelliteTargetId!,
+          seatsAwarded: Math.max(1, Math.round(config.satelliteSeats ?? 1)),
+        }
+      : undefined,
+
+    // ── PokerBros parity (2026-08-22). Shared fields on SNG and MTT alike;
+    // MTT-only fields gated so an SNG never sends keys its tab cannot set. ──
+    isPrivate: config.isPrivate ?? false,
+    isVipOnly: config.isVipOnly ?? false,
+    shortDescription: config.shortDescription?.trim() || undefined,
+    banChat: config.banChat ?? false,
+    allInOrFold: config.allInOrFold ?? false,
+    labelAsNew: config.labelAsNew ?? false,
+    hideClubName: config.hideClubName ?? false,
+    isFeatured: config.featuredTournament ?? false,
+    actionTimeSeconds: clampInt(config.actionTimeSeconds ?? 15, 5, 60),
+    // For an SNG the field IS the table (or a fixed multiple of 9), so the
+    // table can never seat more than the field itself.
+    tableSize: isSng
+      ? Math.min(clampInt(config.tableSize ?? 9, 2, 10), maxPlayers)
+      : clampInt(config.tableSize ?? 9, 2, 10),
+    bigBlindAnte: config.bigBlindAnte ?? false,
+    authorizedToRegister: config.authorizedToRegister ?? false,
+    synchronizedBreaks: config.synchronizedBreaks ?? true,
+    acceleratedMtt: isMtt ? (config.acceleratedMtt ?? false) : false,
+    maxRebuys: isMtt && config.numberOfRebuysReentries > 0
+      ? clampInt(config.numberOfRebuysReentries, 0, 100)
+      : undefined,
+    maxReentries: isMtt && config.numberOfRebuysReentries > 0
+      ? clampInt(config.numberOfRebuysReentries, 0, 100)
+      : undefined,
+    addonBreakMinutes:
+      isMtt && config.addOnMultiplier > 0
+        ? clampInt(config.addOnBreakLengthMinutes ?? 1, 1, 10)
+        : undefined,
+    earlyBirdEnabled: isMtt ? (config.earlyBirdRegistration ?? false) : false,
+    earlyBirdChips:
+      isMtt && config.earlyBirdRegistration
+        ? Math.max(0, Math.round(config.earlyBirdChips ?? 0))
+        : undefined,
+    bubbleProtection: isMtt ? (config.bubbleProtection ?? false) : false,
+    finalTableDealEnabled: isMtt ? (config.finalTableDeal ?? false) : false,
+    restartEveryMinutes:
+      isMtt && config.restartTournamentEvery
+        ? clampInt(config.restartEveryMinutes ?? 60, 5, 1440)
+        : undefined,
+    isMultiDay: isMtt ? (config.multiDayMtt ?? false) : false,
+    totalDays: isMtt && config.multiDayMtt ? clampInt(config.totalDays ?? 2, 2, 7) : undefined,
   } as TournamentConfig;
 }
 

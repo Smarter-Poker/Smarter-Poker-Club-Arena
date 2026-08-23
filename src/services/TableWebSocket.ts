@@ -95,6 +95,17 @@ export class TableWebSocket {
   private isConnected = false;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * 2026-08-22: terminal flag. The owning hook creates a fresh instance per
+   * mount and calls disconnect() on cleanup — but connect() awaits
+   * getSession() BEFORE assigning this.channel, so a disconnect() landing in
+   * that window nulled a channel that didn't exist yet and connect() then
+   * resumed, creating a subscribed zombie channel nothing could ever remove
+   * (duplicate presence + duplicate game_event handlers). The hook's
+   * userId/username props churn 2-3 times per table mount, so this raced
+   * routinely, not rarely.
+   */
+  private destroyed = false;
 
   private lastSequence = -1;
   private pendingEvents: GameEvent[] = [];
@@ -120,10 +131,27 @@ export class TableWebSocket {
       const {
         data: { session },
       } = await this.supabase.auth.getSession();
+      if (this.destroyed) return false; // disconnect() fired during the await
       if (!session) {
         reportError('No auth session, scheduling reconnect', 'TableWS.connect.noAuth');
         this.scheduleReconnect();
         return false;
+      }
+
+      // 2026-08-22 review: remove any previous channel FIRST. Reconnects used
+      // to stack a fresh `table:<id>` channel on top of the old one every
+      // time (supabase-js does not dedupe topics), and with RoomService now
+      // rebinding on reconnect, N stacked channels meant N duplicate
+      // deliveries of every reaction/chat/presence event.
+      if (this.channel) {
+        const stale = this.channel;
+        this.channel = null;
+        try {
+          await this.supabase.removeChannel(stale);
+        } catch {
+          /* best effort — a dead channel object can throw on removal */
+        }
+        if (this.destroyed) return false;
       }
 
       // Create channel for this table
@@ -134,9 +162,16 @@ export class TableWebSocket {
         },
       });
 
-      // Register with RoomService to share the channel and prevent duplicate subscriptions
+      // Register with RoomService to share the channel and prevent duplicate
+      // subscriptions. 2026-08-22: capture the channel NOW — this import
+      // resolves on a later microtask, by which time disconnect() may have
+      // nulled this.channel (the old code then registered `null!` or a
+      // replacement channel under the wrong lifecycle).
+      const channelForRoom = this.channel;
       import('./RoomService').then(({ roomService }) => {
-        roomService.registerChannel(this.tableId, this.channel!);
+        if (channelForRoom && this.channel === channelForRoom) {
+          roomService.registerChannel(this.tableId, channelForRoom);
+        }
       });
 
       // Set up event listeners
@@ -207,6 +242,7 @@ export class TableWebSocket {
   }
 
   async disconnect(): Promise<void> {
+    this.destroyed = true;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -227,13 +263,18 @@ export class TableWebSocket {
   }
 
   private scheduleReconnect(): void {
-    if (this.reconnectTimer) return;
+    if (this.reconnectTimer || this.destroyed) return;
 
-    const delay = RECONNECT_DELAYS[Math.min(this.reconnectAttempt, RECONNECT_DELAYS.length - 1)];
+    const base = RECONNECT_DELAYS[Math.min(this.reconnectAttempt, RECONNECT_DELAYS.length - 1)];
+    // 2026-08-22: jitter. Every client at a table drops at the same moment
+    // when Supabase blips, and identical delays retried them in lockstep — a
+    // thundering herd against the Realtime service at the worst time.
+    const delay = base + Math.random() * base * 0.3;
     this.reconnectAttempt++;
 
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
+      if (this.destroyed) return;
       await this.connect();
     }, delay);
   }
@@ -245,6 +286,19 @@ export class TableWebSocket {
   private handleGameEvent(event: GameEvent): void {
     // Chat events don't need sequence ordering
     if (event.type === 'CHAT_MESSAGE') {
+      this.dispatchEvent(event);
+      return;
+    }
+
+    // 2026-08-22: client-originated broadcasts share this channel/event name
+    // (RoomService reactions/throwables/show-cards, peers' optimistic
+    // actions) and carry no server sequence. They used to fall through the
+    // ordering checks below and either corrupt lastSequence (assigned
+    // `undefined`) or fake a forward gap at every peer, silently disabling
+    // gap detection / triggering spurious resyncs. Anything without a
+    // non-negative numeric sequence is dispatched as unordered instead
+    // (server sequences start at 0; client-originated frames use -1).
+    if (typeof event.sequence !== 'number' || event.sequence < 0) {
       this.dispatchEvent(event);
       return;
     }
@@ -364,7 +418,11 @@ export class TableWebSocket {
       playerId: this.userId,
       data: { action, ...data },
       timestamp: Date.now(),
-      sequence: this.lastSequence + 1, // Optimistic
+      // 2026-08-22: was `this.lastSequence + 1` — a GUESS that peers read as
+      // either a duplicate (silently dropped) or a false forward gap that
+      // queued the event and fired a resync round-trip. -1 = unordered; every
+      // receiver dispatches it without touching sequence tracking.
+      sequence: -1,
     };
 
     try {

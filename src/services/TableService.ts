@@ -389,7 +389,7 @@ class TableService {
     tableId: string,
     seatNumber: number,
     userId: string
-  ): Promise<{ success: boolean; chipsReturned: number; error?: string }> {
+  ): Promise<{ success: boolean; chipsReturned: number; deferred?: boolean; error?: string }> {
     try {
       // Step 1: Notify the game server engine — it will auto-fold if mid-hand
       // This is critical: without this, the engine keeps the player in-memory
@@ -483,7 +483,12 @@ class TableService {
           .eq('table_id', tableId)
           .eq('seat_number', seatNo)
           .is('left_at', null);
-        return { success: true, chipsReturned: 0 };
+        /* Dan 2026-08-22 (Session Complete card showed a full-buy-in "loss"):
+           chipsReturned 0 here does NOT mean the player left with nothing —
+           the true stack is cashed out at settlement. `deferred` lets the
+           caller estimate P/L from the live stack instead of reporting the
+           whole buy-in as lost. */
+        return { success: true, chipsReturned: 0, deferred: true };
       }
 
       // Check if player is in active hand (server already folded them, but seat may still be 'playing')
@@ -496,7 +501,8 @@ class TableService {
           .eq('seat_number', seatNo)
           .is('left_at', null);
 
-        return { success: true, chipsReturned: 0 };
+        // Same as above: cashout happens at settlement, not here.
+        return { success: true, chipsReturned: 0, deferred: true };
       }
 
       const chipsToReturn = seat.stack || 0;
@@ -925,7 +931,16 @@ class TableService {
   }
 
   /**
-   * Get seated players for a table (admin view)
+   * Get seated players for a table (admin view).
+   *
+   * This returned 400 on every call. Two independent faults, the second hidden
+   * behind the first:
+   *   1. PGRST200 — `table_seats.user_id` had no FK to profiles, so the embed
+   *      could not resolve. Added 2026-08-22 as fk_table_seats_user_id_profiles.
+   *   2. 42703 — there is no `created_at` on table_seats. The column is
+   *      `joined_at`. Only visible once the embed started resolving.
+   * `if (error) { reportError; return [] }` meant the admin seat list was
+   * simply always empty.
    */
   async getSeatedPlayers(tableId: string) {
     const { data, error } = await supabase
@@ -935,7 +950,7 @@ class TableService {
                 user_id,
                 seat_number,
                 stack,
-                created_at,
+                joined_at,
                 profiles(
                     display_name,
                     username,

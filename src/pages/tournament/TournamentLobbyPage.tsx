@@ -53,6 +53,10 @@ interface Tournament {
   bountyAmount: number;
   isMultiDay: boolean;
   isPinned: boolean;
+  // PokerBros parity (2026-08-22)
+  isNew: boolean;
+  isVipOnly: boolean;
+  isAllInOrFold: boolean;
 }
 
 export default function TournamentLobbyPage() {
@@ -336,6 +340,10 @@ export default function TournamentLobbyPage() {
                     bounty_amount,
                     is_multi_day,
                     is_pinned,
+                    label_as_new,
+                    is_vip_only,
+                    all_in_or_fold,
+                    hide_club_name,
                     blind_structure,
                     clubs!club_id(name)
                 `;
@@ -493,7 +501,9 @@ export default function TournamentLobbyPage() {
           id: t.id,
           name: t.name,
           clubId: t.club_id,
-          clubName: (t.clubs as any)?.name || 'Club',
+          // hide_club_name (2026-08-22): the owner chose to keep the club off
+          // the lobby card and out of club-name search.
+          clubName: t.hide_club_name ? '' : (t.clubs as any)?.name || 'Club',
           // The card advertises and charges the TOTAL, not the prize half of
           // the split - buy_in_amount alone understated every price by the fee.
           // totalBuyIn also rounds, so no decimal reaches the lobby.
@@ -544,6 +554,9 @@ export default function TournamentLobbyPage() {
           bountyAmount: t.bounty_amount || 0,
           isMultiDay: t.is_multi_day || false,
           isPinned: t.is_pinned || false,
+          isNew: t.label_as_new || false,
+          isVipOnly: t.is_vip_only || false,
+          isAllInOrFold: t.all_in_or_fold || false,
         }));
 
         setTournaments(mapped);
@@ -848,6 +861,9 @@ export default function TournamentLobbyPage() {
                       bountyAmount: tournament.bountyAmount,
                       isMultiDay: tournament.isMultiDay,
                       isPinned: tournament.isPinned,
+                      isNew: tournament.isNew,
+                      isVipOnly: tournament.isVipOnly,
+                      isAllInOrFold: tournament.isAllInOrFold,
                     }}
                     onRegister={() => handleRegister(tournament.id)}
                   />

@@ -38,6 +38,7 @@ import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import ClubContextMenu from '../components/home/ClubContextMenu';
 import ClubQuickLinkTile from '../components/home/ClubQuickLinkTile';
 import LOBBY_TILES from '../config/lobbyTiles.config';
+import { preloadRoute } from '../utils/ChunkPreloader';
 import {
   eligibleQuickLinkClubs,
   resolveTargetClub,
@@ -893,10 +894,24 @@ function HomePageInner() {
           reportError(e, 'HomePage.batchActiveCounts');
         }
 
+        /* The LIVE member count, not the denormalised column.
+           ClubsService.getUserMemberships already replaces club.member_count
+           with an fn_batch_club_member_counts result precisely because the
+           column goes stale. This effect re-queries `clubs` and would otherwise
+           throw that away and go back to the stale number - which then feeds
+           BOTH the level ladder and the active-player clamp below, so one stale
+           column silently wrongs three stats at once. */
+        const liveMemberCounts = new Map<string, number>(
+          displayClubs.map((c) => [c.id, Number(c.member_count) || 0])
+        );
+
         // Process each club in parallel
         await Promise.allSettled(
           clubRows.map(async (club: any) => {
-            const memberCount = club.member_count || 0;
+            const memberCount = Math.max(
+              Number(club.member_count) || 0,
+              liveMemberCounts.get(club.id) || 0
+            );
 
             const activePlayers = activeCountMap.get(club.id) || 0;
 
@@ -952,11 +967,16 @@ function HomePageInner() {
             void effectiveLevel;
 
             if (isMounted) {
-              // Safety clamp: active players can never exceed member count
               statsMap[club.id] = {
                 totalMembers: memberCount,
                 clubLevel,
-                activePlayers: Math.min(activePlayers, memberCount),
+                /* Active players cannot exceed members - but only clamp when we
+                   actually KNOW the member count. Clamping against an unknown
+                   (0) protects nothing; it just reports zero players at a club
+                   with tables running, which is the more alarming of the two
+                   wrong answers. */
+                activePlayers:
+                  memberCount > 0 ? Math.min(activePlayers, memberCount) : activePlayers,
               };
             }
           })
@@ -1028,7 +1048,10 @@ function HomePageInner() {
                 statsMap[clubId] = {
                   totalMembers,
                   clubLevel,
-                  activePlayers: Math.min(unionActive, totalMembers),
+                  // Same reasoning as the club clamp above: only clamp against a
+                  // member count we actually have.
+                  activePlayers:
+                    totalMembers > 0 ? Math.min(unionActive, totalMembers) : unionActive,
                 };
               }
             }
@@ -1330,6 +1353,15 @@ function HomePageInner() {
                     navigate(tile.route);
                   }
                 }}
+                /* PERF PASS 2026-08-22 (handoff item 8): warm the destination
+                   chunk on first intent, exactly like the quick-link tiles
+                   above. Matters most for Player Stats, whose recharts chunk
+                   (~314KB) is deliberately not in the boot-time preload list.
+                   preloadRoute is idempotent — a repeated dynamic import of a
+                   loaded module resolves from cache — so no dedupe ref. */
+                onMouseEnter={() => tile.route && preloadRoute(tile.route)}
+                onTouchStart={() => tile.route && preloadRoute(tile.route)}
+                onFocus={() => tile.route && preloadRoute(tile.route)}
                 aria-label={`${tile.alt} (press ${tile.shortcutKey})`}
               >
                 <div className={styles.tilePedestal}></div>

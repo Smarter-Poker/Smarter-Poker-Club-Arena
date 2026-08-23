@@ -34,9 +34,11 @@ import { createPortal } from 'react-dom';
 import {
   clearSessionSummary,
   peekSessionSummary,
+  settlePendingSummary,
   subscribeSessionSummary,
   type SessionSummaryPayload,
 } from '../../services/pendingSessionSummary';
+import { supabase } from '../../lib/supabase';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import { titleCase } from '../../utils/titleCase';
 import './SessionSummaryHost.css';
@@ -95,6 +97,16 @@ function formatChips(n: number): string {
   return Math.abs(v) >= 1000 ? v.toLocaleString() : String(v);
 }
 
+/**
+ * Dan 2026-08-22 (mobile audit item 8): "ALL GAMES OVER .50/1 SHOULD BE
+ * DISPLAYED PLO4 5/10" — whole-number stakes drop their trailing zeros.
+ * "PLO4 5.00/10.00" -> "PLO4 5/10", while genuine sub-unit stakes keep their
+ * decimals: "NLH 0.50/1.00" -> "NLH 0.50/1" and "0.10/0.25" is untouched.
+ */
+function stripWholeDecimals(title: string): string {
+  return title.replace(/(\d+)\.0+(?=\D|$)/g, '$1');
+}
+
 /** 1 -> "1st", 2 -> "2nd", 3 -> "3rd", 11 -> "11th", 22 -> "22nd". */
 function ordinal(n: number): string {
   const abs = Math.abs(Math.round(n));
@@ -120,6 +132,65 @@ export function SessionSummaryHost() {
   const close = useCallback(() => {
     clearSessionSummary();
   }, []);
+
+  /* ── Settlement reconciliation (Phase 4, 2026-08-22) ──
+     While the card shows a deferred estimate, poll for the ledger row the
+     engine's processLeavePending writes at settlement (wallet_transactions,
+     category 'cashout', this table, this user, after the leave). When it
+     lands, the module swaps the estimate for `amount - totalBuyIn` and the
+     card re-renders without the annotation — the count-up re-runs on the
+     corrected number, which doubles as the "this just updated" cue.
+
+     Polling, not realtime: the card lives on screen for seconds and the
+     settlement lands within one hand's tail. A realtime channel would spend
+     its whole life in setup/teardown, and its failure mode (silently no
+     events) is exactly the one this feature exists to close. 3s cadence,
+     3 minute cap; if the row never appears the annotation simply stays,
+     which remains an honest card. */
+  useEffect(() => {
+    const pc = payload?.plPending ? payload.pendingCashout : undefined;
+    if (!pc) return undefined;
+
+    const totalBuyIn = payload?.totalBuyIn ?? 0;
+    /* 2 min of slack: the engine stamps the row from its own clock, which can
+       run ahead of the client's `sinceMs`. The tableId + category filters do
+       the real disambiguation; the time bound only fences off past sessions. */
+    const sinceIso = new Date(pc.sinceMs - 120_000).toISOString();
+    let stopped = false;
+
+    const check = async () => {
+      try {
+        const { data } = await supabase
+          .from('wallet_transactions')
+          .select('amount, created_at')
+          .eq('user_id', pc.userId)
+          .eq('table_id', pc.tableId)
+          .eq('category', 'cashout')
+          .gte('created_at', sinceIso)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (stopped) return;
+        if (data && data.amount != null) {
+          settlePendingSummary(Number(data.amount) - totalBuyIn);
+        }
+      } catch {
+        /* transient read failure — the next tick retries */
+      }
+    };
+
+    void check();
+    const interval = window.setInterval(() => void check(), 3000);
+    const cap = window.setTimeout(() => {
+      stopped = true;
+      window.clearInterval(interval);
+    }, 180_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+      window.clearTimeout(cap);
+    };
+  }, [payload]);
 
   // Escape closes. The old modal had no keyboard dismissal at all.
   useEffect(() => {
@@ -181,14 +252,19 @@ export function SessionSummaryHost() {
     const winRate =
       payload.handsPlayed > 0 ? Math.round((payload.handsWon / payload.handsPlayed) * 100) : 0;
 
+    /* Dan 2026-08-22 (mobile audit item 8): Hands Per Hour is gone from the
+       cash card — VPIP takes its slot — and the total buy-in gets a tile. */
     const out = [
       { label: 'Duration', value: formatDuration(payload.duration) },
       { label: 'Hands Played', value: String(payload.handsPlayed) },
-      { label: 'Hands Per Hour', value: String(handsPerHour) },
+      { label: 'VPIP', value: `${payload.vpipPercent ?? 0}%` },
       { label: 'Biggest Pot', value: formatChips(payload.biggestPot) },
       { label: 'Peak Stack', value: formatChips(payload.peakStack) },
       { label: 'Win Rate', value: `${winRate}%` },
     ];
+    if (payload.totalBuyIn != null && payload.totalBuyIn > 0) {
+      out.push({ label: 'Total Buy In', value: formatChips(payload.totalBuyIn) });
+    }
     if (payload.totalRebuys > 0) {
       out.push({ label: 'Rebuys', value: String(payload.totalRebuys) });
     }
@@ -235,11 +311,13 @@ export function SessionSummaryHost() {
                 and strips any em dash out of a club-authored table name, then
                 formatGameTitle shouts the variant acronyms back to NLH/PLO4.
                 Reversing the order would let titleCase re-case "NLH" to "Nlh". */}
-            {formatGameTitle(
-              titleCase(
-                (isTournament ? tourney?.name : undefined) ||
-                  payload.tableName ||
-                  (isTournament ? 'Tournament' : 'Table Session')
+            {stripWholeDecimals(
+              formatGameTitle(
+                titleCase(
+                  (isTournament ? tourney?.name : undefined) ||
+                    payload.tableName ||
+                    (isTournament ? 'Tournament' : 'Table Session')
+                )
               )
             )}
           </h2>
@@ -279,6 +357,14 @@ export function SessionSummaryHost() {
               {isProfit ? '+' : '-'}
               {formatChips(Math.abs(displayPL))}
             </span>
+            {/* Phase 3 (2026-08-22): a mid-hand leave defers the cashout to
+                settlement, so this figure is the live stack at the moment of
+                leaving, not the settled number. Say so, rather than presenting
+                an estimate as fact. Title Case, no em dashes (house popup
+                rules). */}
+            {payload.plPending && (
+              <span className="ssh-hero__sub ssh-hero__sub--pending">Pending Settlement</span>
+            )}
             <span className="ssh-hero__sweep" aria-hidden="true" />
           </div>
         )}

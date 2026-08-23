@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+# .husky/reference-transaction refuses a ref update that would orphan local
+# commits. This script moves refs backwards as part of its job, so it
+# announces the intent rather than the guard learning to ignore a command
+# shape. See that hook for what it saves before it refuses.
+export AGENT_REF_GUARD_OK=1
+
 # 2026-08-21: this script owns its own rebase and always aborts+force-pushes on
 # conflict, so it can never leave a stranded rebase. Tell .husky/pre-rebase to
 # stand aside for it (that guard blocks ad-hoc `git pull --rebase` on main).

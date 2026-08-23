@@ -18,6 +18,7 @@ import {
 } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { TournamentRecurringService } from './services/TournamentRecurringService.js';
+import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
 import { AutoRebuyService } from './services/AutoRebuyService.js';
 // BUG 008 FIX: Periodic rakeback settler - flushes per-hand rake_records into rakeback_periods.
@@ -83,6 +84,9 @@ export class GameServer {
   // Server-side services (replaces browser-based DealerPage services)
   private horseFleet = new HorseFleetManager();
   private tournamentRecurring = new TournamentRecurringService();
+  // Data-driven recurring schedules (tournament_schedules) — runs alongside the
+  // hardcoded recurring blocks, acting only on rows written into the database.
+  private scheduledTournaments = new ScheduledTournamentService();
   private lifecycle = new HorseLifecycleManager();
   private autoRebuy = new AutoRebuyService();
   // BUG 008 FIX: settler reads rake_records (durable per-hand log) every 30 min and
@@ -146,6 +150,9 @@ export class GameServer {
 
       // Step 3: Start tournament recurring service (creates MTTs, SNGs, Spins)
       this.tournamentRecurring.start();
+
+      // Step 3b: Start the data-driven scheduler (tournament_schedules rows)
+      this.scheduledTournaments.start();
 
       // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
       this.lifecycle.start();
@@ -244,6 +251,7 @@ export class GameServer {
     // Stop services
     this.horseFleet.stop();
     this.tournamentRecurring.stop();
+    this.scheduledTournaments.stop();
     this.lifecycle.stop();
     this.autoRebuy.stop();
     this.rakebackSettler.stop();
@@ -383,6 +391,17 @@ export class GameServer {
         dealable: t.dealable,
         secsIdle: Math.round(t.msSinceProgress / 1000),
       }));
+    // LIVENESS RACE FIX (2026-08-22): the per-table recovery chain (watchdog
+    // Tier 1-3 -> killForRestart -> 180s zombie reaper -> discovery rebuild)
+    // needs up to ~3 minutes end to end. Flipping the whole process 'dead' at
+    // 120s meant Docker restarted the container — voiding every in-flight
+    // hand on every healthy table — BEFORE the single wedged table's own
+    // recovery had a chance to finish. Report stalls at 120s (visibility),
+    // but only declare the process dead once a table has out-stalled the
+    // entire in-process recovery chain.
+    const deadStalledCount = tableLiveness.filter(
+      (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 300_000
+    ).length;
     const discoveryStaleMs = Date.now() - this.lastDiscoveryOkAt;
 
     let totalHands = 0;
@@ -436,7 +455,7 @@ export class GameServer {
       // progress for 2 minutes, or when the discovery loop itself has stalled.
       // The Docker HEALTHCHECK reads this field, so a wedged process restarts
       // itself with no human involved.
-      liveness: stalledTables.length > 0 || discoveryStaleMs > 60_000 ? 'dead' : 'ok',
+      liveness: deadStalledCount > 0 || discoveryStaleMs > 60_000 ? 'dead' : 'ok',
       stalledTableCount: stalledTables.length,
       // Deploy drain gate reads this. A restart voids in-flight hands, so a
       // routine server/ push waits (or is explicitly forced) while real people
@@ -572,6 +591,11 @@ export class GameServer {
       humans: engine.humansSeated(),
       handCount: engine.getHandCount(),
       msSinceProgress: engine.msSinceProgress(),
+      // 2026-08-22: where the dealing loop actually is, e.g. `load_seats+96s`.
+      // /health could say a table had made no progress for 96 seconds but not
+      // what it was doing for those 96 seconds, so a fleet-wide stall showed up
+      // as ninety identical unexplained numbers. This is the missing half.
+      loopPhase: engine.describeLoopPhase(),
       paused: engine.isPausedByDesign(),
       isTournament: engine.isTournament(),
     }));
@@ -681,7 +705,11 @@ export class GameServer {
 
     const mttEngines: TournamentManager[] = [];
     for (const tm of this.tournamentEngines.values()) {
-      if (tm.isRunning() && tm.isMttOrXmtt()) {
+      // synchronized_breaks=false (2026-08-22 parity): the tournament opted out
+      // of the platform-wide :55 break and keeps playing straight through it.
+      // See TournamentManagerBase.synchronizedBreaksEnabled for the per-
+      // structure-break note.
+      if (tm.isRunning() && tm.isMttOrXmtt() && tm.synchronizedBreaksEnabled()) {
         mttEngines.push(tm);
       }
     }
@@ -885,7 +913,6 @@ export class GameServer {
               .select('id, user_id, table_id, seat_number, stack, tables!inner(tournament_id)')
               .is('left_at', null)
               .is('tables.tournament_id', null)
-              .in('user_id', horseIdList)
               .order('id', { ascending: true })
               .limit(want);
             if (protectedTableId) q = q.neq('table_id', protectedTableId);
@@ -895,7 +922,10 @@ export class GameServer {
           { label: 'GameServer.staleSweep.seats', maxRows: 50_000 }
         );
         // Same fail-closed rule as the horse list: this path DELETES seat rows.
-        const activeSeats = seatPage.complete ? seatPage.rows : [];
+        const horseIdSet = new Set(horseIdList);
+        const activeSeats = seatPage.complete
+          ? seatPage.rows.filter((s) => horseIdSet.has(s.user_id))
+          : [];
         if (!seatPage.complete) {
           console.warn(
             '[GameServer] Stale-seat sweep SKIPPED — the seat read was incomplete. ' +
@@ -935,9 +965,22 @@ export class GameServer {
             await Promise.all(
               batch.map(async ([userId, totalStack]) => {
                 try {
-                  const { error: walletErr } = await supabase.rpc('credit_player_wallet', {
+                  // 2026-08-22: was `credit_player_wallet`, which moved the
+                  // chips and wrote NOTHING to any ledger — a boot-time
+                  // cash-out appeared in a player's balance out of thin air,
+                  // with no wallet_transactions row and no chip_transactions
+                  // row to account for it. Every other cash-out path on the
+                  // platform goes through this RPC; this one now does too, so
+                  // the row exists and the club resolution matches. Same
+                  // idempotency key, so nothing about the dedupe changes.
+                  const { error: walletErr } = await supabase.rpc('atomic_credit_wallet_and_log', {
                     p_user_id: userId,
                     p_amount: totalStack,
+                    p_category: 'cashout',
+                    p_description: 'Cash-out from table (server startup cleanup)',
+                    p_table_id: null,
+                    p_hand_id: null,
+                    p_related_entity_id: null,
                     // A3 FIX (2026-07-28): `cleanupStaleData` runs on EVERY boot and
                     // deliberately spares the seats of users whose credit failed
                     // (see failedUserIds below) so their stacks survive - which means
@@ -1114,156 +1157,172 @@ export class GameServer {
         }
       }
 
-      // 6. Cancel stale RUNNING MTT tournaments (BUG 019 FIX 2026-04-15):
-      //    Prior threshold was 2 hours which killed every legitimate MTT — deep-stack
-      //    tournaments routinely run 6+ hours. 133 MTTs were nuked before this fix.
-      //    New policy:
-      //      - bump threshold to 12 hours (truly crashed servers would mean tournaments
-      //        stalled much longer than that)
-      //      - set ended_at = NOW() so audit trail is preserved (was NULL before)
-      //      - only target tournaments where last_activity is also stale
-      //      - DO NOT touch MTTs that have recent hand_history activity (they're live)
-      //    A separate scheduled cleanup should refund affected players; that's handled
-      //    by TournamentManager.cancelTournament via normal refund path. This startup
-      //    sweep is strictly a safety-net for server crashes and should rarely fire.
-      const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
-      const recentActivityCutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-      // Find stale RUNNING tournaments with no recent hand activity
-      const { data: staleTourneys } = await supabase
-        .from('tournaments')
-        .select('id, name')
-        .eq('status', 'RUNNING')
-        .lt('created_at', twelveHoursAgo);
-      for (const t of staleTourneys || []) {
-        const { count: recentHands } = await supabase
-          .from('hand_history')
-          .select('id', { count: 'exact', head: true })
-          .eq('tournament_id', t.id)
-          .gte('created_at', recentActivityCutoff);
-        if ((recentHands || 0) > 0) {
-          console.log(
-            `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} — ${recentHands} hands in last hour (still active)`
-          );
-          continue;
-        }
-        /**
-         * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
-         *
-         * This was the last cancel write on the server. A tournament wedged for
-         * over 12 hours with no hands is genuinely stuck, but voiding it is
-         * still the wrong ending: the players earned their chip positions. A
-         * real room settles the game and pays the places out.
-         *
-         * So instead of CANCELLED, this now walks it through the normal
-         * finish: flip to COMPLETING (CAS-guarded so a live engine that is
-         * mid-finish always wins the race) and hand it to
-         * recoverStuckCompletingTournaments, which ranks the remaining players
-         * by chip count, assigns the top positions, pays the payout structure
-         * and flips to COMPLETED. Money reaches the players who earned it and
-         * the game shows a real result instead of vanishing.
-         */
-        const { data: completingClaim } = await supabase
-          .from('tournaments')
-          .update({ status: 'COMPLETING' })
-          .eq('id', t.id)
-          .eq('status', 'RUNNING')
-          .select('id');
-
-        if (!completingClaim || completingClaim.length === 0) {
-          // Someone else moved it on — leave it alone.
-          continue;
-        }
-
-        await recoverStuckCompletingTournaments('startup-stale-12h-settle', t.id);
-        console.log(
-          `[GameServer] Settled genuinely stalled tournament ${t.id.slice(0, 8)} "${t.name}" (>12h, no hands) — paid out and COMPLETED, not cancelled`
-        );
-      }
-      console.log(
-        `[GameServer] Stale-tournament sweep complete (${staleTourneys?.length || 0} reviewed)`
-      );
-
-      // 7. Recover stuck COMPLETING tournaments (crashed during finishTournament flow)
-      // TOURNEY-AUDIT 2026-07-24 [CRITICAL]: the old path blind-flipped
-      // COMPLETING → COMPLETED. A crash between the COMPLETING claim and the
-      // winner credit meant the winner (and any unpaid ITM places) were NEVER
-      // paid — the tournament just "completed" with stranded 'playing' rows
-      // (verified live: a COMPLETED bounty MTT with 8 players still 'playing'
-      // and $60 of a $100 guaranteed pool never paid). Recovery now PAYS what
-      // is owed (positions by chip count, prizes per normalized payout
-      // structure) before completing.
-      await recoverStuckCompletingTournaments('startup-cleanup');
-
-      // 8. TOURNEY-AUDIT 2026-07-24 (sweep 4): close ORPHANED tournament tables.
-      // A crashed/abandoned tournament left its tables status='running' forever
-      // (finishTournament only closes tables in the in-memory engine map). Any
-      // open table whose tournament is COMPLETED/CANCELLED gets closed here.
-      try {
-        const { data: openTourneyTables } = await supabase
-          .from('tables')
-          .select('id, tournament_id')
-          .not('tournament_id', 'is', null)
-          .in('status', ['waiting', 'running', 'RUNNING'])
-          .limit(500);
-        if (openTourneyTables && openTourneyTables.length > 0) {
-          const tourneyIds = [...new Set(openTourneyTables.map((t) => t.tournament_id))];
-          const { data: finished } = await supabase
+      // Run slow background sweeps asynchronously so they don't block the server boot sequence!
+      Promise.resolve().then(async () => {
+        try {
+          // 6. Cancel stale RUNNING MTT tournaments (BUG 019 FIX 2026-04-15):
+          //    Prior threshold was 2 hours which killed every legitimate MTT — deep-stack
+          //    tournaments routinely run 6+ hours. 133 MTTs were nuked before this fix.
+          //    New policy:
+          //      - bump threshold to 12 hours (truly crashed servers would mean tournaments
+          //        stalled much longer than that)
+          //      - set ended_at = NOW() so audit trail is preserved (was NULL before)
+          //      - only target tournaments where last_activity is also stale
+          //      - DO NOT touch MTTs that have recent hand_history activity (they're live)
+          //    A separate scheduled cleanup should refund affected players; that's handled
+          //    by TournamentManager.cancelTournament via normal refund path. This startup
+          //    sweep is strictly a safety-net for server crashes and should rarely fire.
+          const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+          const recentActivityCutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+          // Find stale RUNNING tournaments with no recent hand activity
+          const { data: staleTourneys } = await supabase
             .from('tournaments')
-            .select('id')
-            .in('id', tourneyIds)
-            .in('status', ['COMPLETED', 'CANCELLED']);
-          const finishedSet = new Set((finished ?? []).map((t) => t.id));
-          const orphanIds = openTourneyTables
-            .filter((t) => finishedSet.has(t.tournament_id))
-            .map((t) => t.id);
-          for (let i = 0; i < orphanIds.length; i += 100) {
-            const batch = orphanIds.slice(i, i + 100);
+            .select('id, name')
+            .eq('status', 'RUNNING')
+            .lt('created_at', twelveHoursAgo);
+          for (const t of staleTourneys || []) {
+            const { data: recentHands, error } = await supabase
+              .from('hand_history')
+              .select('id')
+              .eq('tournament_id', t.id)
+              .gte('created_at', recentActivityCutoff)
+              .limit(1);
 
-            /**
-             * RELEASE THE SEATS, not just the table (audit 2026-08-21).
-             *
-             * TournamentManagerEliminations releases seats on the NORMAL
-             * finish, but a tournament can reach COMPLETED/CANCELLED without
-             * ever passing through it - a crashed engine, the stuck-COMPLETING
-             * recovery, or the 12-hour idle sweep. Those paths landed here,
-             * where the table was closed and `table_seats` was left untouched,
-             * so seats kept leaking at a slower rate after the main fix. Two
-             * had already reappeared within hours of it shipping.
-             *
-             * This is the catch-all: whatever route a tournament took to
-             * finished, its players end up released. `left_at IS NULL` is what
-             * the multi-table rebuild reads as "I am still playing here", so a
-             * seat left open at a closed table follows the player around as a
-             * dead tab until something clears it.
-             */
-            const { error: seatErr } = await supabase
-              .from('table_seats')
-              .update({ left_at: new Date().toISOString() })
-              .in('table_id', batch)
-              .is('left_at', null);
-            if (seatErr) {
-              reportError(
-                new Error(`[GameServer] orphan seat release failed: ${seatErr.message}`),
-                'GameServer.orphan_seat_release_failed'
+            if (error) {
+              console.log(
+                `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} — error checking activity, assuming active.`
               );
+              continue;
             }
 
-            await supabase
-              .from('tables')
-              .update({ status: 'closed', current_players: 0 })
-              .in('id', batch);
-          }
-          if (orphanIds.length > 0) {
+            if (recentHands && recentHands.length > 0) {
+              console.log(
+                `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} — found recent hands in last hour (still active)`
+              );
+              continue;
+            }
+            /**
+             * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
+             *
+             * This was the last cancel write on the server. A tournament wedged for
+             * over 12 hours with no hands is genuinely stuck, but voiding it is
+             * still the wrong ending: the players earned their chip positions. A
+             * real room settles the game and pays the places out.
+             *
+             * So instead of CANCELLED, this now walks it through the normal
+             * finish: flip to COMPLETING (CAS-guarded so a live engine that is
+             * mid-finish always wins the race) and hand it to
+             * recoverStuckCompletingTournaments, which ranks the remaining players
+             * by chip count, assigns the top positions, pays the payout structure
+             * and flips to COMPLETED. Money reaches the players who earned it and
+             * the game shows a real result instead of vanishing.
+             */
+            const { data: completingClaim } = await supabase
+              .from('tournaments')
+              .update({ status: 'COMPLETING' })
+              .eq('id', t.id)
+              .eq('status', 'RUNNING')
+              .select('id');
+
+            if (!completingClaim || completingClaim.length === 0) {
+              // Someone else moved it on — leave it alone.
+              continue;
+            }
+
+            await recoverStuckCompletingTournaments('startup-stale-12h-settle', t.id);
             console.log(
-              `[GameServer] Closed ${orphanIds.length} orphaned tournament tables and released their seats`
+              `[GameServer] Settled genuinely stalled tournament ${t.id.slice(0, 8)} "${t.name}" (>12h, no hands) — paid out and COMPLETED, not cancelled`
             );
           }
-        }
-      } catch (orphanErr) {
-        reportError(orphanErr, 'GameServer.orphan_table_sweep');
-      }
+          console.log(
+            `[GameServer] Stale-tournament sweep complete (${staleTourneys?.length || 0} reviewed)`
+          );
 
-      console.log('[GameServer] Stale data cleanup complete');
+          // 7. Recover stuck COMPLETING tournaments (crashed during finishTournament flow)
+          // TOURNEY-AUDIT 2026-07-24 [CRITICAL]: the old path blind-flipped
+          // COMPLETING → COMPLETED. A crash between the COMPLETING claim and the
+          // winner credit meant the winner (and any unpaid ITM places) were NEVER
+          // paid — the tournament just "completed" with stranded 'playing' rows
+          // (verified live: a COMPLETED bounty MTT with 8 players still 'playing'
+          // and $60 of a $100 guaranteed pool never paid). Recovery now PAYS what
+          // is owed (positions by chip count, prizes per normalized payout
+          // structure) before completing.
+          await recoverStuckCompletingTournaments('startup-cleanup');
+
+          // 8. TOURNEY-AUDIT 2026-07-24 (sweep 4): close ORPHANED tournament tables.
+          // A crashed/abandoned tournament left its tables status='running' forever
+          // (finishTournament only closes tables in the in-memory engine map). Any
+          // open table whose tournament is COMPLETED/CANCELLED gets closed here.
+          try {
+            const { data: openTourneyTables } = await supabase
+              .from('tables')
+              .select('id, tournament_id')
+              .not('tournament_id', 'is', null)
+              .in('status', ['waiting', 'running', 'RUNNING'])
+              .limit(500);
+            if (openTourneyTables && openTourneyTables.length > 0) {
+              const tourneyIds = [...new Set(openTourneyTables.map((t) => t.tournament_id))];
+              const { data: finished } = await supabase
+                .from('tournaments')
+                .select('id')
+                .in('id', tourneyIds)
+                .in('status', ['COMPLETED', 'CANCELLED']);
+              const finishedSet = new Set((finished ?? []).map((t) => t.id));
+              const orphanIds = openTourneyTables
+                .filter((t) => finishedSet.has(t.tournament_id))
+                .map((t) => t.id);
+              for (let i = 0; i < orphanIds.length; i += 100) {
+                const batch = orphanIds.slice(i, i + 100);
+
+                /**
+                 * RELEASE THE SEATS, not just the table (audit 2026-08-21).
+                 *
+                 * TournamentManagerEliminations releases seats on the NORMAL
+                 * finish, but a tournament can reach COMPLETED/CANCELLED without
+                 * ever passing through it - a crashed engine, the stuck-COMPLETING
+                 * recovery, or the 12-hour idle sweep. Those paths landed here,
+                 * where the table was closed and `table_seats` was left untouched,
+                 * so seats kept leaking at a slower rate after the main fix. Two
+                 * had already reappeared within hours of it shipping.
+                 *
+                 * This is the catch-all: whatever route a tournament took to
+                 * finished, its players end up released. `left_at IS NULL` is what
+                 * the multi-table rebuild reads as "I am still playing here", so a
+                 * seat left open at a closed table follows the player around as a
+                 * dead tab until something clears it.
+                 */
+                const { error: seatErr } = await supabase
+                  .from('table_seats')
+                  .update({ left_at: new Date().toISOString() })
+                  .in('table_id', batch)
+                  .is('left_at', null);
+                if (seatErr) {
+                  reportError(
+                    new Error(`[GameServer] orphan seat release failed: ${seatErr.message}`),
+                    'GameServer.orphan_seat_release_failed'
+                  );
+                }
+
+                await supabase
+                  .from('tables')
+                  .update({ status: 'closed', current_players: 0 })
+                  .in('id', batch);
+              }
+              if (orphanIds.length > 0) {
+                console.log(
+                  `[GameServer] Closed ${orphanIds.length} orphaned tournament tables and released their seats`
+                );
+              }
+            }
+          } catch (orphanErr) {
+            reportError(orphanErr, 'GameServer.orphan_table_sweep');
+          }
+
+          console.log('[GameServer] Stale data cleanup complete');
+        } catch (bgErr) {
+          reportError(bgErr, 'GameServer.background_stale_cleanup_error');
+        }
+      });
     } catch (err) {
       reportError(err, 'GameServer.Stale_data_cleanup_error');
     }
@@ -1288,7 +1347,19 @@ export class GameServer {
         // cash_tables_with_players() does the GROUP BY ... HAVING server-side
         // (PostgREST cannot express it) and returns only tables that already
         // meet the threshold, which is the only thing the loop below cared about.
-        const { data: ready, error } = await supabase.rpc('cash_tables_with_players', {
+        //
+        // 2026-08-22: `cash_tables_needing_engine` is `cash_tables_with_players`
+        // plus "...OR at least one seated human". Below two occupants no engine
+        // existed, so the FIRST person to sit at an empty table got WS close
+        // 4404 from the engine transport and sat on "connecting" until somebody
+        // else arrived — there was nothing to connect TO. The engine is what
+        // publishes the idle snapshot (stage 'waiting', seats, stacks), so its
+        // mere existence is the difference between a real table and an eternal
+        // spinner. A table of horses alone still does not get one.
+        //
+        // It returns `human_count` so the two ideas below can stay separate:
+        // "needs an engine" is NOT "should be dealing". See readyIds.
+        const { data: ready, error } = await supabase.rpc('cash_tables_needing_engine', {
           p_min: 2,
         });
 
@@ -1352,7 +1423,11 @@ export class GameServer {
          */
         const ENGINE_START_STAGGER_MS = 40;
         let startedThisSweep = 0;
-        for (const row of (ready || []) as Array<{ table_id: string; player_count: number }>) {
+        for (const row of (ready || []) as Array<{
+          table_id: string;
+          player_count: number;
+          human_count?: number;
+        }>) {
           // Skip if already running
           if (this.tableEngines.has(row.table_id)) continue;
 
@@ -1365,7 +1440,11 @@ export class GameServer {
           startedThisSweep++;
 
           console.log(
-            `[GameServer] Starting engine for cash table ${row.table_id} (${row.player_count} players)`
+            `[GameServer] Starting engine for cash table ${row.table_id} ` +
+              `(${row.player_count} seated, ${row.human_count ?? 0} human)` +
+              (row.player_count < 2
+                ? ' — lone seat, engine exists so the table is not a spinner'
+                : '')
           );
           const engine = new ServerTableEngine(row.table_id);
           engine.setHub(tableStateHub); // Phase 1.1 PR-2: authoritative WS publisher
@@ -1388,12 +1467,55 @@ export class GameServer {
         // against observable progress: if the discovery RPC still lists the
         // table as ready to deal but its engine has done nothing for three
         // minutes, its loop is gone — drop it so the next cycle rebuilds it.
+        /**
+         * DELIBERATELY NARROWER THAN THE SPAWN LIST (2026-08-22).
+         *
+         * This set feeds `shouldBeDealing` below, which is the ZOMBIE test: a
+         * table that should be dealing and has made no progress for 180s gets
+         * its engine killed. A table with one seated human makes no progress
+         * BY DESIGN — you cannot deal to one player — so including it here
+         * would kill and rebuild that engine every three minutes, which is the
+         * fleet-wide kill loop of PR #281 re-created in a new place.
+         *
+         * So: two or more occupants is what "should be dealing" means, exactly
+         * as before. A lone seat gets an engine and is left alone in it.
+         */
         const readyIds = new Set(
-          ((ready || []) as Array<{ table_id: string }>).map((r) => r.table_id)
+          ((ready || []) as Array<{ table_id: string; player_count: number }>)
+            .filter((r) => r.player_count >= 2)
+            .map((r) => r.table_id)
         );
         for (const [id, engine] of this.tableEngines) {
           if (!engine.isRunning()) {
             this.tableEngines.delete(id);
+            /**
+             * 2026-08-22: this branch used to delete the engine and trust that
+             * whatever cleared `running` had already torn it down. That is true
+             * of every path today — killForRestart and stop() both do full
+             * teardown at source — but it is trust, not enforcement, and the
+             * cost of it being wrong once is a leaked heartbeat entry and armed
+             * deadlines belonging to a table nothing owns any more.
+             *
+             * `stop()` cannot be that enforcement: its first line is
+             * `if (!this.running) return`, so calling it here would be a no-op
+             * dressed up as a safety net — worse than nothing, because the next
+             * reader would believe it.
+             *
+             * reconcileTeardown() is the real check. It asks whether this
+             * engine still OWNS the table (no successor has taken it) while
+             * holding scheduler entries it should have released, cancels them
+             * if so, and names them. Silent when the invariant holds, which is
+             * every path we know of today.
+             */
+            const leaked = engine.reconcileTeardown();
+            if (leaked) {
+              reportError(
+                new Error(
+                  'Engine for ' + id + ' stopped without tearing down: ' + leaked + ' still armed'
+                ),
+                'GameServer.engine_teardown_leak'
+              );
+            }
             // Leave the hub room alone for tournament tables: their
             // TournamentManager rebuilds the engine and the same players stay
             // connected throughout. dropTable() now preserves subscribers

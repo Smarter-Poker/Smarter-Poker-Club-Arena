@@ -230,6 +230,70 @@ export abstract class ServerTableEngineBase {
   protected snapshotDirty = false;
   protected snapshotTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /**
+   * CROSS-INSTANCE OWNERSHIP (2026-08-22).
+   * tableId -> the engine instance currently authoritative for that table.
+   * DeadlineScheduler and PreciseActionTimer are process-global and keyed by
+   * tableId ONLY, while GameServer routinely lets an old engine's async stop()
+   * overlap construction of its replacement (zombie reaper and lease-lost
+   * paths both do `void engine.stop()` then rebuild within one 5s sweep).
+   * Without ownership checks the OLD instance's teardown cancels the NEW
+   * instance's heartbeat and turn deadlines on the shared scheduler — the
+   * table then permanently loses its watchdog and every stall lasts forever.
+   * Every teardown path that touches a shared resource must check ownership.
+   */
+  private static liveEngines = new Map<string, ServerTableEngineBase>();
+
+  protected static isCurrentEngineFor(tableId: string, engine: ServerTableEngineBase): boolean {
+    return ServerTableEngineBase.liveEngines.get(tableId) === engine;
+  }
+
+  private static releaseCurrentEngine(tableId: string, engine: ServerTableEngineBase): void {
+    if (ServerTableEngineBase.liveEngines.get(tableId) === engine) {
+      ServerTableEngineBase.liveEngines.delete(tableId);
+    }
+  }
+
+  /** Is this instance still the authoritative engine for its table? */
+  protected isCurrentEngine(): boolean {
+    return ServerTableEngineBase.isCurrentEngineFor(this.tableId, this);
+  }
+
+  /**
+   * FIX 2026-08-22: the 10-minute hand-void timer is a raw setTimeout held per
+   * hand. It was never cleared by stop()/killForRestart(), so it could fire
+   * up to 10 minutes later — against a SUCCESSOR engine happily dealing on the
+   * same table — and wipe that live engine's turn deadlines (clearTable on the
+   * shared timer). Held here so both teardown paths can clear it.
+   */
+  protected handSafetyTimer: ReturnType<typeof setTimeout> | null = null;
+
+  protected clearHandSafetyTimer(): void {
+    if (this.handSafetyTimer) {
+      clearTimeout(this.handSafetyTimer);
+      this.handSafetyTimer = null;
+    }
+  }
+
+  /**
+   * 2026-08-22: raw setTimeout handles that live on the instance and were
+   * never cleared by stop()/killForRestart(). A leaked horse think-timer or
+   * pineapple discard timer holds a reference to a dead engine and fires its
+   * callback against it later (the callbacks carry controller-identity
+   * guards, so this is a leak/noise issue rather than a corruption one — but
+   * teardown should still be complete).
+   */
+  protected clearLooseHandTimers(): void {
+    if (this.horseActionTimer) {
+      clearTimeout(this.horseActionTimer);
+      this.horseActionTimer = null;
+    }
+    if (this.pineappleDiscardTimer) {
+      clearTimeout(this.pineappleDiscardTimer);
+      this.pineappleDiscardTimer = null;
+    }
+  }
+
   // FIX 2 (2026-07-24): per-hand hole cards kept in memory so we can (a) retry
   // the RLS insert and (b) re-push a player's cards on reconnect/RESYNC. The
   // public snapshot is re-sent by the hub, but hole cards ride a separate
@@ -388,6 +452,32 @@ export abstract class ServerTableEngineBase {
 
   /** No hand started while the table is dealable. */
   protected static readonly WATCHDOG_IDLE_MS = 90_000;
+
+  /**
+   * The longer horizon for a dealing loop that is CYCLING but never dealing.
+   *
+   * WATCHDOG_IDLE_MS answers "has a hand started lately", which a table
+   * waiting on a slow database answers wrongly — and on 2026-08-22 that wrong
+   * answer killed every cash table in the fleet 22-30 times in six hours. A
+   * loop that is still moving between steps is alive; if it is alive and STILL
+   * has not dealt after five minutes with two funded seats, that is a real
+   * fault, but it is a different one and it gets its own name.
+   */
+  protected static readonly WATCHDOG_LOOP_ALIVE_IDLE_MS = 5 * 60_000;
+
+  /**
+   * Per-step budget for the between-hands Supabase round trips. Deliberately
+   * well under WATCHDOG_IDLE_MS: each step re-stamps the loop phase, so five
+   * budgeted steps can outlast the idle window without ever looking wedged.
+   */
+  protected static readonly DEAL_STEP_BUDGET_MS = 20_000;
+
+  /**
+   * Attempts at the opening `loadTable` before start() gives up and lets the
+   * engine be rebuilt. Five attempts with exponential backoff span roughly
+   * eight seconds — longer than any blip, far shorter than the 180s reaper.
+   */
+  protected static readonly START_LOAD_ATTEMPTS = 5;
   /**
    * A by-design pause older than this is reported (never killed): 15 min
    * exceeds any plausible hand-for-hand or break coordination window.
@@ -464,6 +554,10 @@ export abstract class ServerTableEngineBase {
 
   constructor(tableId: string) {
     this.tableId = tableId;
+    // CROSS-INSTANCE OWNERSHIP: the newest instance for a tableId is the
+    // authoritative one. Any older instance still mid-stop() sees itself
+    // superseded and keeps its hands off the shared scheduler.
+    ServerTableEngineBase.liveEngines.set(tableId, this);
 
     // Initialize ported core modules
     this.preciseTimer = new PreciseActionTimer((event) => {
@@ -645,7 +739,48 @@ export abstract class ServerTableEngineBase {
     console.log(`[ServerTableEngine:${this.tableId}] Starting...`);
 
     try {
-      const tableData = await loadTable(this.tableId);
+      this.setLoopPhase('start_load_table');
+      /**
+       * ── The 5-second respawn loop (2026-08-22) ──
+       *
+       * This is the FIRST statement of start(), it is a database read, and a
+       * throw from it used to land in the catch below as `start_failed` ->
+       * killForRestart -> GameServer rebuilds the engine within 5s -> the same
+       * read -> the same throw. A transient blip became a permanent respawn
+       * loop, and each turn of it costs MORE database work than a retry would:
+       * a rebuilt engine re-runs seedHandCountFromHistory, checkCrashRecovery
+       * and resolveOrphanedAddOns as well.
+       *
+       * dealingLoop has always treated exactly these errors as transient and
+       * backed off. start() treated them as fatal. Same database, same error,
+       * opposite response — and the fatal one was the expensive one.
+       *
+       * Retried HERE rather than in the catch on purpose: nothing has been
+       * configured and no timer has been armed yet, so a retry is a clean
+       * re-attempt. `refreshBlinds` already retries this very call three
+       * times for this very reason; this is the same treatment at the one
+       * place every table passes through on every start.
+       */
+      let tableData: unknown;
+      for (let attempt = 1; ; attempt++) {
+        try {
+          tableData = await loadTable(this.tableId);
+          break;
+        } catch (err) {
+          if (
+            !ServerTableEngineBase.isTransientDbError(err) ||
+            attempt >= ServerTableEngineBase.START_LOAD_ATTEMPTS
+          ) {
+            throw err;
+          }
+          if (!this.running) return;
+          const backoff = Math.min(500 * 2 ** (attempt - 1), 8_000);
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] loadTable blipped on start (attempt ${attempt}/${ServerTableEngineBase.START_LOAD_ATTEMPTS}) — retrying in ${backoff}ms`
+          );
+          await this.sleep(backoff);
+        }
+      }
       this.tableInfo = tableData as TableInfo;
 
       // FIX 123: Bible V8 §6.2 + Dan's directive — Time bank auto-extend ONLY if:
@@ -791,8 +926,30 @@ export abstract class ServerTableEngineBase {
       this.tableFSM.transition('waiting');
 
       // Wait for minimum 2 players
+      this.setLoopPhase('start_wait_for_players');
       while (this.running) {
-        this.seatedPlayers = await loadSeatedPlayers(this.tableId);
+        try {
+          this.seatedPlayers = await loadSeatedPlayers(this.tableId);
+        } catch (err) {
+          // This is a POLL. It already runs every 5s, so a failed sweep costs
+          // one sweep — while letting it escape aborted start() entirely and
+          // killed the engine, which is how a table with players waiting on it
+          // ended up in a respawn loop. broadcastCurrentState below has been
+          // guarded like this since it was added; the read above never was.
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.start_seat_sweep_failed');
+          await this.sleep(5000);
+          continue;
+        }
+        // IDLE BROADCAST (2026-08-22): publish the waiting-state snapshot so
+        // a client joining an idle table gets a real SNAPSHOT (seats, stacks,
+        // 'waiting' stage) instead of an eternal spinner. The hub drops
+        // empty-patch publishes, so repeating this every sweep costs nothing
+        // when nothing changed.
+        try {
+          await this.broadcastCurrentState();
+        } catch {
+          /* idle publish must never stall the wait loop */
+        }
         if (this.seatedPlayers.length >= 2) break;
         console.log(
           `[ServerTableEngine:${this.tableId}] Waiting for players... (${this.seatedPlayers.length}/2)`
@@ -836,7 +993,14 @@ export abstract class ServerTableEngineBase {
       });
     } catch (err) {
       reportError(err, 'ServerTableEnginethistableId.Failed_to_start');
-      this.running = false;
+      // 2026-08-22: was a bare `running = false`, which could leak an armed
+      // heartbeat scheduler entry (scheduleHeartbeatCheck runs before the
+      // awaits later in start()) and left partial state for the reaper to
+      // delete uncleaned. killForRestart is the one true teardown-for-rebuild.
+      // Name the stage, exactly as the dealing-loop kills now do. A kill
+      // reason that is the same string for every possible cause is how 1,603
+      // dealing_loop_dead rows produced no diagnosis at all.
+      this.killForRestart('start_failed:' + this.loopPhase);
     }
   }
 
@@ -847,45 +1011,68 @@ export abstract class ServerTableEngineBase {
     if (!this.running) return;
     this.running = false;
 
+    // FIX 147 + Phase 1.2 PR-G-real: set the flag first so any heartbeat
+    // callback already mid-flight bails before re-arming.
+    this.heartbeatActive = false;
+
     // Bible V8 §3.1: Table FSM — running/waiting → closing → closed
     this.tableFSM.transition('closing');
 
-    this.clearTurnTimer();
-    // C15: flush any coalesced snapshot BEFORE dropping the controller — after
-    // handController is null saveSnapshot() early-returns, so a pending write
-    // would be silently lost on every shutdown.
-    await this.flushSnapshot();
+    // CROSS-INSTANCE GUARD (2026-08-22): if a replacement engine for this
+    // tableId has already been constructed, every shared resource (scheduler
+    // entries, precise timers, module deadline keys, the snapshot row) now
+    // belongs to IT. A superseded instance cancelling "its" entries would
+    // actually cancel the live engine's heartbeat + turn clocks — the exact
+    // bug that made tables permanently lose their watchdog. Superseded
+    // instances drop in-memory state only.
+    this.clearHandSafetyTimer();
+    this.clearLooseHandTimers();
+    if (ServerTableEngineBase.isCurrentEngineFor(this.tableId, this)) {
+      this.clearTurnTimer();
+      // C15: flush any coalesced snapshot BEFORE dropping the controller — after
+      // handController is null saveSnapshot() early-returns, so a pending write
+      // would be silently lost on every shutdown.
+      await this.flushSnapshot();
+    }
     if (this.snapshotTimer) {
       clearTimeout(this.snapshotTimer);
       this.snapshotTimer = null;
     }
     this.handController = null;
 
-    // FIX 147 + Phase 1.2 PR-G-real: tear down heartbeat scheduler entry.
-    // Set the flag first so any callback already mid-flight bails before
-    // re-arming, then cancel the pending entry.
-    this.heartbeatActive = false;
-    deadlineScheduler.cancel(this.tableId, ServerTableEngineBase.HEARTBEAT_EVENT_ID);
+    // TOCTOU FIX (2026-08-22 review): ownership MUST be re-read AFTER the
+    // flushSnapshot await. That Supabase write can take up to 15s on a
+    // degraded DB — exactly when engines get reaped — and the discovery sweep
+    // rebuilds a replacement within 5s. A pre-await ownership snapshot would
+    // resume `true` here and cancel the NEW engine's heartbeat/turn deadlines
+    // on the shared scheduler, silently recreating the permanent-freeze bug
+    // this guard exists to prevent.
+    if (ServerTableEngineBase.isCurrentEngineFor(this.tableId, this)) {
+      // FIX 147 + Phase 1.2 PR-G-real: tear down heartbeat scheduler entry.
+      deadlineScheduler.cancel(this.tableId, ServerTableEngineBase.HEARTBEAT_EVENT_ID);
 
-    // Step 4: Dispose ported core modules
-    this.preciseTimer.dispose();
-    this.actionValidator.dispose();
-    this.stateVerifier.dispose();
+      // Step 4: Dispose ported core modules
+      this.preciseTimer.dispose();
+      this.actionValidator.dispose();
+      this.stateVerifier.dispose();
 
-    // Step 5: Dispose supporting modules
-    this.timeBankEngine.disposeAll();
-    this.disconnectEngine.disposeAll();
-    this.preActionEngine.disposeAll();
-    this.atomicStackService.dispose();
+      // Step 5: Dispose supporting modules
+      this.timeBankEngine.disposeAll();
+      this.disconnectEngine.disposeAll();
+      this.preActionEngine.disposeAll();
+      this.atomicStackService.dispose();
 
-    // Step 6: Dispose advanced modules
-    this.straddleEngine.disposeAll();
-    this.runItTwiceEngine.disposeAll();
-    this.insuranceEngine.disposeAll();
-    this.rakebackEngine.disposeAll();
+      // Step 6: Dispose advanced modules
+      this.straddleEngine.disposeAll();
+      this.runItTwiceEngine.disposeAll();
+      this.insuranceEngine.disposeAll();
+      this.rakebackEngine.disposeAll();
 
-    // Step 7: Dispose tournament & extras modules
-    this.engineTelemetry.dispose();
+      // Step 7: Dispose tournament & extras modules
+      this.engineTelemetry.dispose();
+
+      ServerTableEngineBase.releaseCurrentEngine(this.tableId, this);
+    }
     // Note: chipRaceEngine, tableBalancer, tableBreakEngine are stateless per-call — no dispose needed
 
     // Phase 1.1 PR-5: no Supabase channel to clean up — engine WS is now the
@@ -966,6 +1153,158 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
+   * Did this engine stop without tearing itself down? Cancel what it left, and
+   * say what that was.
+   *
+   * Every path that clears `running` today — stop(), killForRestart() — does
+   * full teardown at source, so this is expected to return null forever. But
+   * GameServer's reaper deletes a not-running engine on TRUST that this is so,
+   * and the cost of that trust being wrong once is a heartbeat entry and armed
+   * turn deadlines belonging to a table nothing owns any more: the table stops
+   * being watched, and every stall on it becomes permanent.
+   *
+   * The ownership guard is what makes the cleanup safe. If a replacement engine
+   * has already claimed this tableId then the scheduler entries are ITS entries
+   * and cancelling them would cause the exact freeze this is guarding against —
+   * so a superseded instance reports and cancels nothing.
+   */
+  public reconcileTeardown(): string | null {
+    if (this.running) return null;
+    if (!ServerTableEngineBase.isCurrentEngineFor(this.tableId, this)) return null;
+    // persistPending is the scheduler's read-only view of one table's entries
+    // (it serializes them, it does not remove them). listTable lives on the
+    // inner heap and is not public.
+    const stranded = deadlineScheduler.persistPending(this.tableId);
+    if (stranded.length === 0) return null;
+    const ids = stranded
+      .map((d) => d.eventId)
+      .sort()
+      .join(', ');
+    deadlineScheduler.cancelAll(this.tableId);
+    return ids;
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // DEALING-LOOP PHASE — Dan 2026-08-22: "find every reason games freeze"
+  //
+  // On 2026-08-22 the live fleet logged 1,603 `dealing_loop_dead` kills in six
+  // hours. EVERY running cash table was killed 22-30 times, each one after an
+  // average of THREE hands, and hand_history showed the shape exactly: normal
+  // 8-45s hand spacing, then a gap of 107s, 107s, 114s, 87s — the two 90s
+  // watchdog trips plus the rebuild, over and over, on fully funded tables
+  // that nothing was actually wrong with.
+  //
+  // The kills carried no cause. `dealing_loop_dead` is inferred from the
+  // OUTSIDE: no handController, two dealable seats, no progress for 90s. That
+  // is the symptom of every possible stall in the between-hands path and it
+  // names none of them, so six hours of fleet-wide breakage produced 1,603
+  // identical rows and not one clue.
+  //
+  // The loop now says where it is. Every step stamps a phase, so a stall is
+  // reported as the thing it is (`load_seats+96s`) rather than as an
+  // anonymous death, and `msSinceLoopPhase()` gives the watchdog a way to ask
+  // "is this loop WEDGED" instead of only "has a hand started lately" — a
+  // question a table waiting on a slow database answers wrongly.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /** Where dealingLoop is right now. See the block above. */
+  protected loopPhase: string = 'not_started';
+  /** When the loop entered `loopPhase`. */
+  protected loopPhaseSinceMs: number = Date.now();
+
+  /**
+   * Stamp the loop's current step. Re-stamping the SAME phase still refreshes
+   * the clock: a loop cycling load_seats -> deal -> load_seats is alive, and
+   * the second visit is new evidence of that, not a continuation of the first.
+   */
+  protected setLoopPhase(phase: string): void {
+    this.loopPhase = phase;
+    this.loopPhaseSinceMs = Date.now();
+  }
+
+  /** Ms the dealing loop has been sitting in its current step. */
+  msSinceLoopPhase(): number {
+    return Date.now() - this.loopPhaseSinceMs;
+  }
+
+  /**
+   * Did the database blink, as opposed to the code being wrong?
+   *
+   * This list already existed, inline, inside dealingLoop's catch — and
+   * `start()` had no equivalent, so THE SAME transient error was survivable in
+   * one and fatal in the other. On 2026-08-22, after the dealing-loop kills
+   * were fixed, `start_failed` became the fleet's dominant fault: 117 in
+   * fifteen minutes, in bursts (86 across 43 tables in a single minute). Two
+   * places that must agree cannot agree while only one of them has the list.
+   */
+  protected static isTransientDbError(err: unknown): boolean {
+    const msg =
+      err instanceof Error
+        ? err.message
+        : (err as { message?: string })?.message ||
+          (typeof err === 'object' && err !== null ? JSON.stringify(err) : String(err));
+    return (
+      msg.includes('Project not specified') ||
+      msg.includes('ECONNRESET') ||
+      msg.includes('ETIMEDOUT') ||
+      msg.includes('Failed to fetch') ||
+      msg.includes('fetch failed') ||
+      msg.includes('ENOTFOUND') ||
+      msg.includes('socket hang up') ||
+      msg.includes('supabase_timeout') ||
+      msg.includes('This operation was aborted') ||
+      msg.includes('The operation was aborted') ||
+      msg.includes('deal_step_timeout')
+    );
+  }
+
+  /** `load_seats+96s` — for recovery-event details and /health. */
+  describeLoopPhase(): string {
+    return this.loopPhase + '+' + Math.round(this.msSinceLoopPhase() / 1000) + 's';
+  }
+
+  /**
+   * Await `work`, but never for longer than `budgetMs`.
+   *
+   * Every await in the between-hands path is a Supabase round trip, and the
+   * sum of them was unbounded while the watchdog that judges them was not.
+   * Database slowness is CORRELATED across tables, so one slow minute did not
+   * stall one table — it stalled the whole fleet at once, got every engine
+   * killed at once, and the rebuild storm that followed put the database
+   * under more load than the slowness that started it. A self-feeding spiral
+   * is how 1,603 kills happen in six hours.
+   *
+   * On timeout this REJECTS rather than returning a partial result: a hand
+   * dealt from a half-loaded seat list is worse than a hand not dealt. The
+   * message is in the dealing loop's existing transient list, so the loop
+   * backs off and retries the step instead of counting it toward the 10-error
+   * shutdown.
+   */
+  protected async withStepBudget<T>(phase: string, budgetMs: number, work: Promise<T>): Promise<T> {
+    this.setLoopPhase(phase);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        work,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  'deal_step_timeout: ' + phase + ' exceeded ' + Math.round(budgetMs / 1000) + 's'
+                )
+              ),
+            budgetMs
+          );
+          (timer as { unref?: () => void }).unref?.();
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  /**
    * Overridden in ServerTableEngineTurns, which is the first subclass with
    * access to the turn timer and the hand controller. No-op here so Base can
    * drive it from the heartbeat without a circular dependency.
@@ -987,12 +1326,19 @@ export abstract class ServerTableEngineBase {
     this.recordRecoveryEvent('watchdog_kill_rebuild', reason);
     this.running = false;
     this.heartbeatActive = false;
-    deadlineScheduler.cancel(this.tableId, ServerTableEngineBase.HEARTBEAT_EVENT_ID);
-    this.preciseTimer.clearTable(this.tableId);
-    // preciseTimer.clearTable only covers `turn:*`. insurance_offer:*, rit_offer
-    // and table_break:* live on the same shared scheduler under this tableId and
-    // would otherwise fire callbacks bound to this dead engine instance forever.
-    deadlineScheduler.cancelAll(this.tableId);
+    this.clearHandSafetyTimer();
+    this.clearLooseHandTimers();
+    // CROSS-INSTANCE GUARD (2026-08-22): only the authoritative instance may
+    // touch the shared scheduler — see stop() for the full rationale.
+    if (ServerTableEngineBase.isCurrentEngineFor(this.tableId, this)) {
+      deadlineScheduler.cancel(this.tableId, ServerTableEngineBase.HEARTBEAT_EVENT_ID);
+      this.preciseTimer.clearTable(this.tableId);
+      // preciseTimer.clearTable only covers `turn:*`. insurance_offer:*, rit_offer
+      // and table_break:* live on the same shared scheduler under this tableId and
+      // would otherwise fire callbacks bound to this dead engine instance forever.
+      deadlineScheduler.cancelAll(this.tableId);
+      ServerTableEngineBase.releaseCurrentEngine(this.tableId, this);
+    }
     this.handController = null;
   }
 
@@ -1459,8 +1805,7 @@ export abstract class ServerTableEngineBase {
     const roster = this.seatedPlayers.filter(
       (p) =>
         p.stack > 0 &&
-        (this.isTournamentTable() ||
-          !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
+        (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
     );
     if (roster.length < 2) return -1;
     const sortedSeats = roster.map((p) => p.seat_number).sort((a, b) => a - b);
@@ -1478,8 +1823,7 @@ export abstract class ServerTableEngineBase {
         p.stack > 0 &&
         // Tournament sit-outs stay in the blind rotation — they are dealt in
         // and blinded off, so the button/blinds must be able to reach them.
-        (this.isTournamentTable() ||
-          !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
+        (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
     );
     if (roster.length < 2) return -1;
     const sortedSeats = roster.map((p) => p.seat_number).sort((a, b) => a - b);
@@ -1613,8 +1957,7 @@ export abstract class ServerTableEngineBase {
         this.tableInfo.rake_cap_bb = tableRow.rake_cap_bb ?? undefined;
         this.tableInfo.bomb_pot_enabled = (tableRow as any).bomb_pot_enabled ?? false;
         this.tableInfo.bomb_pot_frequency = (tableRow as any).bomb_pot_frequency ?? 0;
-        this.tableInfo.bomb_pot_ante_multiplier =
-          (tableRow as any).bomb_pot_ante_multiplier ?? 2;
+        this.tableInfo.bomb_pot_ante_multiplier = (tableRow as any).bomb_pot_ante_multiplier ?? 2;
         this.tableInfo.bomb_pot_double_board = (tableRow as any).bomb_pot_double_board ?? false;
       }
       const clubId = this.tableInfo?.club_id;

@@ -30,13 +30,24 @@ import { supabase } from './supabase.js';
 import { HorseMind } from '../engine/HorseMind.js';
 import { reportError } from './errorReporter.js';
 
-const HYDRATION_WINDOW_HOURS = 24;
-const HYDRATION_MAX_HANDS = 4000;
+// V11 (Dan 2026-08-22): deeper memory — the horses keep improving the more
+// they play, and a restart should cost as little of that learning as
+// possible. 72h/12000 hands keeps replay under a few seconds while tripling
+// the retained sample per opponent (HorseMind's own caps still bound memory).
+const HYDRATION_WINDOW_HOURS = 72;
+const HYDRATION_MAX_HANDS = 12000;
 
-export async function hydrateHorseMind(): Promise<void> {
+/**
+ * @param sinceIso V12: when the DB hydration already restored the flushed
+ * stats, only the un-flushed tail needs replaying — pass the last flush
+ * timestamp. Clamped to the full window so a bogus future/ancient value can
+ * never replay more than the pre-V12 behavior did.
+ */
+export async function hydrateHorseMind(sinceIso?: string | null): Promise<void> {
   try {
     const t0 = Date.now();
-    const since = new Date(Date.now() - HYDRATION_WINDOW_HOURS * 3600 * 1000).toISOString();
+    const windowStart = new Date(Date.now() - HYDRATION_WINDOW_HOURS * 3600 * 1000).toISOString();
+    const since = sinceIso && sinceIso > windowStart ? sinceIso : windowStart;
 
     const { data, error } = await supabase
       .from('hand_history')

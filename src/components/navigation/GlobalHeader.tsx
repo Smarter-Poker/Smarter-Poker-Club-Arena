@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 const HamburgerMenu = lazy(() => import('./HamburgerMenu'));
 import { Link, useNavigate, useLocation } from 'react-router-dom';
@@ -15,7 +15,7 @@ import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { useAuthUser } from '../../hooks/useAuthUser';
 
 import styles from './GlobalHeader.module.css';
-import { generateDefaultAvatar, sizedStorageUrl } from '../../utils/avatarGenerator';
+import { generateDefaultAvatar, getAvatarWithFallback } from '../../utils/avatarGenerator';
 
 const BASE = MEDIA_BASE;
 
@@ -40,10 +40,47 @@ export default function GlobalHeader() {
   const { loadBalances, loadDiamonds } = useWalletStore();
   const { user: authUser } = useAuthUser();
 
-  const { avatarUrl, notificationCount, unreadMessages, loadOnce, setAvatarUrl } =
-    useHeaderDataStore();
+  const { avatarUrl, notificationCount, unreadMessages, loadOnce } = useHeaderDataStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [isNavigatingAway, setIsNavigatingAway] = useState(false);
+
+  /**
+   * ── THE PROFILE ORB ────────────────────────────────────────────────────────
+   *
+   * Two things were wrong here and both were invisible until 2026-08-22.
+   *
+   * 1. The failure fallback was written imperatively — onError assigned
+   *    `e.target.src = generateDefaultAvatar()`. React's virtual DOM does not
+   *    know about a src it did not set, so once a single transient failure
+   *    swapped in the monogram, any later render computing the SAME src string
+   *    was a no-op and the real avatar could never come back for the rest of
+   *    the session. Held in state instead, and reset whenever avatarUrl
+   *    changes, so a retry actually retries.
+   *
+   * 2. The empty state was a bare `◉` glyph, and this was the one avatar
+   *    surface in the app that did not go through getAvatarWithFallback — so it
+   *    also did not resize Storage objects or map library art the way every
+   *    seat, friend row and leaderboard entry does. The shared resolver returns
+   *    a deterministic monogram for a player with no avatar, which is a face
+   *    rather than a placeholder, so the orb is never empty and the branch that
+   *    made it empty is gone.
+   */
+  const [avatarFailed, setAvatarFailed] = useState(false);
+
+  const displayName =
+    (authUser as { display_name?: string; username?: string } | null)?.display_name ||
+    (authUser as { username?: string } | null)?.username ||
+    'Player';
+
+  const avatarSrc = useMemo(() => {
+    if (avatarFailed) return generateDefaultAvatar();
+    return getAvatarWithFallback(avatarUrl, authUser?.id || 'player', displayName, 40);
+  }, [avatarFailed, avatarUrl, authUser?.id, displayName]);
+
+  // A new avatar deserves a fresh attempt; the old one's failure is not its.
+  useEffect(() => {
+    setAvatarFailed(false);
+  }, [avatarUrl]);
 
   const handleMenuToggle = useCallback(() => setMenuOpen((prev) => !prev), []);
   const handleMenuClose = useCallback(() => setMenuOpen(false), []);
@@ -128,11 +165,13 @@ export default function GlobalHeader() {
     { debounce: 500 }
   );
 
-  useMasterBusSubscription('USER_PROFILE_LOADED', (payload) => {
-    if (payload?.avatarUrl) {
-      setAvatarUrl(payload.avatarUrl as string);
-    }
-  });
+  /*
+   * USER_PROFILE_LOADED is NOT subscribed here. useHeaderDataStore.loadOnce
+   * already subscribes to it and calls setAvatarUrl, and that subscription
+   * lives at store level so it survives route changes — this component's copy
+   * was a second handler doing the identical write, torn down and rebuilt on
+   * every navigation. One publisher, one subscriber.
+   */
 
   useEffect(() => {
     const handleIframeMessage = (event: MessageEvent) => {
@@ -255,20 +294,19 @@ export default function GlobalHeader() {
             aria-label="My Profile"
           >
             <div className={styles.profileOrb}>
-              {avatarUrl ? (
-                <img
-                  /* 40 CSS px orb — ask Storage for that, not the raw upload
-                     (263 KB on the owner account, on every page load). */
-                  src={sizedStorageUrl(avatarUrl, 40)}
-                  alt=""
-                  className={styles.profileImg}
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = generateDefaultAvatar();
-                  }}
-                />
-              ) : (
-                <span className={styles.profilePlaceholder}>◉</span>
-              )}
+              <img
+                src={avatarSrc}
+                alt=""
+                className={styles.profileImg}
+                /* The orb is 40 CSS px. getAvatarWithFallback passes that
+                   through to sizedStorageUrl for Storage objects, so an
+                   uploaded picture arrives at orb size rather than at whatever
+                   the player originally uploaded. */
+                width={40}
+                height={40}
+                decoding="async"
+                onError={() => setAvatarFailed(true)}
+              />
             </div>
           </button>
 
@@ -352,7 +390,7 @@ export default function GlobalHeader() {
           {/* Live Help */}
           <button
             className={styles.orbBtn}
-            onClick={() => navigateToHub('/hub/help')}
+            onClick={() => navigate('/help')}
             aria-label="Live Help"
           >
             <img

@@ -76,6 +76,23 @@ describe('scaleWinnerCentsForRake', () => {
     expect(out.reduce((a, b) => a + b, 0)).toBe(60);
   });
 
+  it('handles run-it-twice thirds without over-paying the main-pot winner', () => {
+    // The RIT path feeds this function FRACTIONAL pre-rake amounts (each
+    // board's win divided by `runs`), e.g. thirds that do not land on cents.
+    // Before 2026-08-23 RIT had its own bespoke copy of this scaling whose
+    // drift cent went to the first map entry — a board-0 main-pot winner —
+    // uncapped. Pin the shared function on RIT-shaped inputs: a tiny main-pot
+    // share (whose proportional rake deduction rounds to zero) must not rise
+    // above its pre-rake entitlement when the drift lands.
+    const preRake = [0.5 / 3 + 0.5 / 3 + 0.5 / 3, 61.13 / 3, 61.13 / 3, 61.14 / 3]; // ≈ [0.5, 20.376, 20.376, 20.38]
+    const gross = preRake.reduce((a2, b2) => a2 + b2, 0);
+    const net = Math.round(gross * 100 - 5) / 100; // 0.05 rake
+
+    const out = scaleWinnerCentsForRake(preRake, net);
+    expect(out.reduce((a2, b2) => a2 + b2, 0)).toBe(Math.round(net * 100));
+    out.forEach((c, i) => expect(c).toBeLessThanOrEqual(Math.round(preRake[i] * 100)));
+  });
+
   it('never returns a negative share when rake exceeds a small winner', () => {
     const out = scaleWinnerCentsForRake([0.01, 0.01, 5.0], 4.5);
     expect(out.every((c) => c >= 0)).toBe(true);

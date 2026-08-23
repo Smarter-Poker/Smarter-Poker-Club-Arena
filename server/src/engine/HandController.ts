@@ -169,7 +169,15 @@ export class HandController {
 
   private emit(event: HandEvent): void {
     for (const handler of this.eventHandlers) {
-      handler(event);
+      // 2026-08-22: per-listener guard. An unguarded throw here aborted the
+      // remaining listeners AND unwound back into the middle of
+      // performAction/completeHand — mid-settlement state corruption from a
+      // subscriber bug. A listener failure is the listener's problem.
+      try {
+        handler(event);
+      } catch (err) {
+        console.error('[HandController] event listener threw on ' + event.type + ':', err);
+      }
     }
   }
 
@@ -574,6 +582,19 @@ export class HandController {
     // not in the decision. This is the authoritative guard; every caller that
     // trusts currentPlayerSeat is now safe by construction.
     if (player.is_folded || player.is_all_in || player.is_sitting_out) return false;
+
+    // ── ALL-IN-OR-FOLD (2026-08-22 parity) ──────────────────────────────────
+    // Preflop the only actions are fold or all-in; the BB (or anyone owing
+    // nothing) may check when unraised. Bet/raise/call are rejected outright —
+    // this is the authoritative server enforcement, getAvailableActions is
+    // only the menu. Postflop needs no restriction: with every live player
+    // all-in or folded preflop, no postflop decision exists.
+    if (this.config.allInOrFold && this.state.stage === 'preflop') {
+      const owesNothing = this.state.currentBet - player.bet <= 0;
+      const aofLegal =
+        action === 'fold' || action === 'all_in' || (action === 'check' && owesNothing);
+      if (!aofLegal) return false;
+    }
 
     // Bible V8 §4.14: PLO variants use pot-limit betting
     const isPotLimit = this.config.gameVariant.startsWith('plo');
@@ -1205,8 +1226,7 @@ export class HandController {
       // full runout. Feasibility was checked at ante time, so the deck holds.
       let cards2: Card[] | undefined;
       if (this.doubleBoardActive && this.state.communityCards2.length < 5) {
-        const count2 =
-          stage === 'flop' ? Math.max(0, 3 - this.state.communityCards2.length) : 1;
+        const count2 = stage === 'flop' ? Math.max(0, 3 - this.state.communityCards2.length) : 1;
         if (count2 > 0) {
           cards2 = deck.deal(count2);
           this.state.communityCards2.push(...cards2);
@@ -1705,6 +1725,15 @@ export class HandController {
   }
 
   private getAvailableActions(player: SeatPlayer): ActionType[] {
+    // ── ALL-IN-OR-FOLD (2026-08-22 parity) ──────────────────────────────────
+    // The menu mirrors the performAction gate exactly: preflop offers fold,
+    // all-in (stack permitting), and check only when nothing is owed.
+    if (this.config.allInOrFold && this.state.stage === 'preflop') {
+      const aofActions: ActionType[] = ['fold'];
+      if (this.state.currentBet - player.bet <= 0) aofActions.push('check');
+      if (player.stack > 0) aofActions.push('all_in');
+      return aofActions;
+    }
     const actions: ActionType[] = ['fold'];
     const toCall = this.state.currentBet - player.bet;
     if (toCall === 0) {

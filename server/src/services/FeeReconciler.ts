@@ -75,6 +75,25 @@ interface PendingFeeRow {
 
 /** Give up re-driving after this many attempts and leave the row for a human. */
 const MAX_RECONCILE_ATTEMPTS = 25;
+/**
+ * Errors that mean "the network or the database was busy", not "this was
+ * rejected". The queue insert is safe to repeat — the partial unique index on
+ * (hand_id, kind) where resolved_at is null makes a duplicate a no-op — so
+ * these get retried rather than escalated.
+ */
+const TRANSIENT_DB_ERROR =
+  /timeout|timed out|fetch failed|socket hang up|ECONNRESET|ECONNREFUSED|EAI_AGAIN|network|502|503|504|57014|too many connections|schema cache|PGRST002|PGRST001/i;
+const QUEUE_INSERT_ATTEMPTS = 4;
+/**
+ * 300ms, 900ms, 2.7s. Was a flat 250 * attempt — 1.5s of total patience.
+ *
+ * A PostgREST schema-cache reload is not instant, and it is self-inflicted:
+ * every `apply_migration` triggers one. Five migrations were applied on
+ * 2026-08-22 and the reload window is visible in the alerts. Backing off
+ * further costs nothing on a path that only runs when banking has ALREADY
+ * failed, and buys the reload time to finish.
+ */
+const QUEUE_BACKOFF_MS = (attempt: number): number => 100 * 3 ** attempt;
 /** Bound the work a single cycle does so a large backlog cannot stall the loop. */
 const RECONCILE_BATCH = 100;
 
@@ -88,43 +107,171 @@ const RECONCILE_BATCH = 100;
  */
 export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): Promise<void> {
   try {
-    const { error } = await supabase.from('pending_fee_distributions').insert({
-      table_id: fee.tableId,
-      club_id: fee.clubId,
-      hand_id: fee.handId,
-      hand_number: fee.handNumber,
-      rake: fee.rake,
-      bbj: fee.bbj,
-      pot: fee.pot,
-      num_players: fee.numPlayers,
-      contributions: fee.contributions,
-      tournament_id: fee.tournamentId ?? null,
-      big_blind: fee.bigBlind ?? null,
-      kind,
-      last_error: fee.lastError,
-    });
-    if (error && !/duplicate|unique/i.test(error.message || '')) {
-      const detail =
-        `[A5] Could not queue unbanked ${kind} for hand ${fee.handId ?? fee.handNumber} ` +
-        `(rake ${fee.rake}, bbj ${fee.bbj}): ${error.message}. These chips left the pot and ` +
-        `are now recoverable only by hand.`;
-      reportError(new Error(detail), 'FeeReconciler.queue_failed');
-      // Sentry alone is not enough for a money alarm: financial_alerts is the
-      // durable, queryable channel an operator actually reads, and this is the
-      // last line of defence before chips become unrecoverable from data.
-      await raiseFinancialAlert('critical', 'FeeReconciler.queue_failed', detail, {
-        kind,
-        tableId: fee.tableId,
-        clubId: fee.clubId ?? null,
-        handId: fee.handId,
-        handNumber: fee.handNumber,
+    // RETRIED (2026-08-22). This is the last line of defence, and it was a
+    // single attempt: one transient blip and the safety net itself was the
+    // thing that failed. Measured over 2026-08-20..22, 938 of 988 of these
+    // alerts said `supabase_timeout` — the exact condition the net exists to
+    // survive. The insert is idempotent by index, so repeating it is free.
+    let lastError = '';
+    for (let attempt = 1; attempt <= QUEUE_INSERT_ATTEMPTS; attempt++) {
+      const { error } = await supabase.from('pending_fee_distributions').insert({
+        table_id: fee.tableId,
+        club_id: fee.clubId,
+        hand_id: fee.handId,
+        hand_number: fee.handNumber,
         rake: fee.rake,
         bbj: fee.bbj,
-        dbError: error.message,
+        pot: fee.pot,
+        num_players: fee.numPlayers,
+        contributions: fee.contributions,
+        tournament_id: fee.tournamentId ?? null,
+        big_blind: fee.bigBlind ?? null,
+        kind,
+        last_error: fee.lastError,
       });
+      if (!error) return;
+      // Already queued by an earlier attempt (possibly one that committed and
+      // then timed out on us). Nothing is lost; the drain loop owns it now.
+      if (/duplicate|unique/i.test(error.message || '')) return;
+
+      lastError = error.message || String(error);
+      if (!TRANSIENT_DB_ERROR.test(lastError) || attempt === QUEUE_INSERT_ATTEMPTS) break;
+      await new Promise((r) => setTimeout(r, QUEUE_BACKOFF_MS(attempt)));
     }
+
+    // ASK BEFORE ALARMING (2026-08-22).
+    //
+    // A timeout is not a failure — it is the absence of an answer, and the
+    // write underneath it usually committed. Of the 127 of these alerts that
+    // carried a hand id, 118 had a `rake_records` row for that very hand: the
+    // banking call had SUCCEEDED and only the response was lost. Nine had not,
+    // worth 29.44 chips.
+    //
+    // So 93% of a critical money alarm was noise, and noise on that channel is
+    // not harmless: 988 unresolved criticals is how the nine real ones stay
+    // invisible. Check whether the fee actually landed before declaring the
+    // chips unrecoverable.
+    if (await feeIsAccountedFor(kind, fee)) {
+      console.warn(
+        `[A5] Queue insert for ${kind} on hand ${fee.handId ?? fee.handNumber} reported ` +
+          `"${lastError}", but the fee is already queued or banked — no chips at risk, ` +
+          `not alarming.`
+      );
+      return;
+    }
+
+    const detail =
+      `[A5] Could not queue unbanked ${kind} for hand ${fee.handId ?? fee.handNumber} ` +
+      `(rake ${fee.rake}, bbj ${fee.bbj}): ${lastError}. These chips left the pot and ` +
+      `are now recoverable only by hand.`;
+    reportError(new Error(detail), 'FeeReconciler.queue_failed');
+    // Sentry alone is not enough for a money alarm: financial_alerts is the
+    // durable, queryable channel an operator actually reads, and this is the
+    // last line of defence before chips become unrecoverable from data.
+    // THE WHOLE PAYLOAD, NOT A SUMMARY (2026-08-22).
+    //
+    // This context used to carry kind/table/club/hand/rake/bbj and stop there.
+    // That is enough to say chips are missing and not enough to put them back:
+    // `atomic_distribute_rake` needs pot, num_players and — critically —
+    // `contributions`, the per-player split. Without it the rake can only be
+    // booked with no attribution, and `auditBBJDrift` in this same file already
+    // states the consequence: "guessing it would corrupt rakeback attribution".
+    //
+    // So the 190 alerts open on 2026-08-22 name chips nobody can safely
+    // re-drive, only because the alarm summarised a payload it was already
+    // holding in full. It costs nothing to write all of it.
+    await raiseFinancialAlert('critical', 'FeeReconciler.queue_failed', detail, {
+      kind,
+      tableId: fee.tableId,
+      clubId: fee.clubId ?? null,
+      handId: fee.handId,
+      handNumber: fee.handNumber,
+      rake: fee.rake,
+      bbj: fee.bbj,
+      // everything atomic_distribute_rake / logBBJCollection need to re-drive
+      pot: fee.pot,
+      numPlayers: fee.numPlayers,
+      contributions: fee.contributions ?? {},
+      tournamentId: fee.tournamentId ?? null,
+      bigBlind: fee.bigBlind ?? null,
+      dbError: lastError,
+      verifiedUnbanked: true,
+    });
   } catch (err) {
     reportError(err, 'FeeReconciler.queue_threw');
+  }
+}
+
+/**
+ * Are these chips accounted for somewhere after all?
+ *
+ * TWO places count, and the first one is the common case:
+ *
+ *   1. THE QUEUE ALREADY HAS THE ROW. A timeout is the absence of an answer,
+ *      not a rejection — the insert usually committed. Auditing the 1,020 open
+ *      alerts on 2026-08-22: 830 of them referred to a fee that was already
+ *      queued or already banked. The row is in `pending_fee_distributions`,
+ *      `reconcilePendingFees` owns it, and nothing is at risk. The duplicate-
+ *      key path above catches this only when Postgres gets to answer; a
+ *      timeout is precisely when it does not.
+ *   2. THE FEE IS ALREADY BANKED — the banking call succeeded and only its
+ *      response was lost.
+ *
+ * Fails CLOSED: anything unknown — a thrown query, a missing hand number —
+ * returns false, so the alarm is raised. Suppressing a money alert on a guess
+ * would be worse than the noise it removes.
+ */
+async function feeIsAccountedFor(kind: PendingFeeKind, fee: UnbankedFee): Promise<boolean> {
+  try {
+    // Cheapest check, and the one that is true most often.
+    if (Number(fee.handNumber) > 0) {
+      const { data: queued } = await supabase
+        .from('pending_fee_distributions')
+        .select('id')
+        .eq('table_id', fee.tableId)
+        .eq('hand_number', fee.handNumber)
+        .eq('kind', kind)
+        .limit(1)
+        .maybeSingle();
+      if (queued) return true;
+    }
+
+    if (kind === 'rake') {
+      if (fee.handId) {
+        const { data } = await supabase
+          .from('rake_records')
+          .select('id')
+          .eq('hand_id', fee.handId)
+          .limit(1)
+          .maybeSingle();
+        if (data) return true;
+      }
+      if (Number(fee.handNumber) > 0) {
+        // global_hand_id carries the hand number; scoped by table so it cannot
+        // match another table's hand.
+        const { data } = await supabase
+          .from('rake_records')
+          .select('id')
+          .eq('table_id', fee.tableId)
+          .eq('global_hand_id', fee.handNumber)
+          .limit(1)
+          .maybeSingle();
+        return !!data;
+      }
+      return false;
+    }
+
+    if (!(Number(fee.handNumber) > 0)) return false;
+    const { data } = await supabase
+      .from('bbj_contributions')
+      .select('id')
+      .eq('table_id', fee.tableId)
+      .eq('hand_number', fee.handNumber)
+      .limit(1)
+      .maybeSingle();
+    return !!data;
+  } catch {
+    return false;
   }
 }
 
@@ -262,6 +409,13 @@ export async function reconcilePendingFees(): Promise<{
         handNumber: row.hand_number,
         rake: row.rake,
         bbj: row.bbj,
+        // Same reason as queue_failed above: an alarm about money should carry
+        // what it takes to move that money back. This row already has it.
+        pot: row.pot,
+        numPlayers: row.num_players,
+        contributions: row.contributions ?? {},
+        tournamentId: row.tournament_id,
+        bigBlind: row.big_blind,
         attempts,
         lastError: failureMessage,
       });

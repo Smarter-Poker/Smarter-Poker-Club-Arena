@@ -123,6 +123,15 @@ const TOURNAMENT_CREATE_ERRORS: Record<string, string> = {
   bounty_amount_required: 'A bounty tournament needs a bounty amount.',
   bounty_exceeds_buy_in:
     'The bounty plus the 10% fee is more than the buy-in, so there would be nothing left for the prize pool.',
+  // Parity keys (2026-08-22)
+  early_bird_chips_must_not_be_negative: 'Early bird chips cannot be negative.',
+  restart_every_minutes_out_of_range: 'Restart interval must be between 5 and 1440 minutes.',
+  total_days_out_of_range: 'A multi-day tournament runs 2 to 7 days.',
+  mystery_range_requires_mystery_bounty:
+    'Mystery bounty multipliers only apply to mystery bounty tournaments.',
+  mystery_bounty_range_invalid: 'Mystery bounty multipliers must be positive, with max >= min.',
+  satellite_seats_invalid: 'A satellite must award at least 1 seat.',
+  satellite_seats_requires_target: 'Satellite seats need a target tournament.',
 };
 
 export interface TournamentConfig {
@@ -188,6 +197,39 @@ export interface TournamentConfig {
   // Private club tournament — visible only inside the club, never union-wide.
   // Forced true for non-XMTT tournaments created by clubs that are in a union.
   isPrivate?: boolean;
+
+  // ── PokerBros feature parity (2026-08-22) ──────────────────────────────
+  // Each key mirrors an fn_create_tournament p_config key of the same name.
+  // Only keys the creator actually set are sent; the server owns defaults.
+  shortDescription?: string;
+  isVipOnly?: boolean;
+  banChat?: boolean;
+  allInOrFold?: boolean;
+  labelAsNew?: boolean;
+  hideClubName?: boolean;
+  /** Per-action clock, clamped server-side to 5-60 seconds. */
+  actionTimeSeconds?: number;
+  /** Seats per tournament table, clamped server-side to 2-10. */
+  tableSize?: number;
+  acceleratedMtt?: boolean;
+  /** Add-on break length in minutes, clamped server-side to 1-10. */
+  addonBreakMinutes?: number;
+  bigBlindAnte?: boolean;
+  authorizedToRegister?: boolean;
+  earlyBirdEnabled?: boolean;
+  earlyBirdChips?: number;
+  bubbleProtection?: boolean;
+  finalTableDealEnabled?: boolean;
+  /** null/undefined = no auto-restart; otherwise 5-1440 minutes. */
+  restartEveryMinutes?: number | null;
+  synchronizedBreaks?: boolean;
+  maxRebuys?: number;
+  maxReentries?: number;
+  /** Mystery bounty advertised range, as MULTIPLIERS of the bounty head. */
+  mysteryBountyMin?: number;
+  mysteryBountyMax?: number;
+  /** Writes tournaments.is_pinned — pinned/featured in every lobby sort. */
+  isFeatured?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -304,7 +346,7 @@ class TournamentService {
     const { data: clubTournaments, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at'
+        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, max_rebuys, max_reentries, is_pinned, satellite_seats'
       )
       .eq('club_id', resolvedId)
       // Lobby fix 2026-08-15: this query had NO status filter, so every
@@ -358,7 +400,7 @@ class TournamentService {
           const { data: xmttData } = await supabase
             .from('tournaments')
             .select(
-              'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at'
+              'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, max_rebuys, max_reentries, is_pinned, satellite_seats'
             )
             .eq('union_id', unionClub.union_id)
             // 2026-08-19: dropped `.eq('is_xmtt', true)`. Under the union
@@ -402,7 +444,7 @@ class TournamentService {
     const { data, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at'
+        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, max_rebuys, max_reentries, is_pinned, satellite_seats'
       )
       .eq('id', tournamentId)
       .maybeSingle();
@@ -412,6 +454,99 @@ class TournamentService {
       return null;
     }
     return data;
+  }
+
+  /**
+   * TournamentConfig -> the exact p_config object fn_create_tournament reads.
+   *
+   * PUBLIC (2026-08-22) because tournament_schedules.config stores the same
+   * shape — the schedule editors build their recurring config through this so
+   * a scheduled spawn and a hand-created tournament can never drift apart.
+   * Parity keys are included only when the creator actually set them; the
+   * server owns every default. Clamped keys clamp here exactly as the server
+   * clamps them (sliders clamp silently; money/structure keys were already
+   * refused in createTournament's validation).
+   */
+  buildRpcConfig(config: TournamentConfig): Record<string, unknown> {
+    const clampInt = (v: number, lo: number, hi: number) =>
+      Math.min(hi, Math.max(lo, Math.round(Number(v) || 0)));
+
+    const p: Record<string, unknown> = {
+      name: config.name,
+      type: config.type,
+      gameVariant: config.gameVariant || 'NLH',
+      buyIn: config.buyIn,
+      startingStack: config.startingStack,
+      maxPlayers: config.maxPlayers,
+      minPlayers: config.minPlayers,
+      blindStructure: config.blindStructure,
+      payoutStructure: config.payoutStructure,
+      guaranteedPrize: config.guaranteedPrize || 0,
+      lateRegistrationLevels: config.lateRegistrationLevels || 0,
+      startTime: config.startTime?.toISOString() ?? null,
+      isRebuy: config.isRebuy || false,
+      isReentry: config.isReentry || false,
+      rebuyCost: config.rebuyCost || 0,
+      rebuyChips: config.rebuyChips || 0,
+      addOnAvailable: config.addOnAvailable || false,
+      addOnCost: config.addOnCost || 0,
+      addOnChips: config.addOnChips || 0,
+      addOnLevels: config.addOnLevels || 1,
+      bountyAmount: config.bountyConfig?.baseBounty || 0,
+      spinType: config.type === 'spin' ? config.spinType || 'standard' : null,
+      satelliteTargetId: config.satelliteTarget?.tournamentId || null,
+      isXmtt: config.isXmtt || false,
+      isPrivate: config.isPrivate || false,
+    };
+
+    // ── Parity keys: only what the creator set ──
+    const short = config.shortDescription?.trim();
+    if (short) p.shortDescription = short;
+    if (config.isVipOnly !== undefined) p.isVipOnly = config.isVipOnly;
+    if (config.banChat !== undefined) p.banChat = config.banChat;
+    if (config.allInOrFold !== undefined) p.allInOrFold = config.allInOrFold;
+    if (config.labelAsNew !== undefined) p.labelAsNew = config.labelAsNew;
+    if (config.hideClubName !== undefined) p.hideClubName = config.hideClubName;
+    if (config.actionTimeSeconds !== undefined) {
+      p.actionTimeSeconds = clampInt(config.actionTimeSeconds, 5, 60);
+    }
+    if (config.tableSize !== undefined) p.tableSize = clampInt(config.tableSize, 2, 10);
+    if (config.acceleratedMtt !== undefined) p.acceleratedMtt = config.acceleratedMtt;
+    if (config.addonBreakMinutes !== undefined) {
+      p.addonBreakMinutes = clampInt(config.addonBreakMinutes, 1, 10);
+    }
+    if (config.bigBlindAnte !== undefined) p.bigBlindAnte = config.bigBlindAnte;
+    if (config.authorizedToRegister !== undefined) {
+      p.authorizedToRegister = config.authorizedToRegister;
+    }
+    if (config.earlyBirdEnabled !== undefined) p.earlyBirdEnabled = config.earlyBirdEnabled;
+    if (config.earlyBirdChips !== undefined) {
+      p.earlyBirdChips = Math.max(0, Math.round(config.earlyBirdChips));
+    }
+    if (config.bubbleProtection !== undefined) p.bubbleProtection = config.bubbleProtection;
+    if (config.finalTableDealEnabled !== undefined) {
+      p.finalTableDealEnabled = config.finalTableDealEnabled;
+    }
+    if (config.restartEveryMinutes !== undefined && config.restartEveryMinutes !== null) {
+      p.restartEveryMinutes = clampInt(config.restartEveryMinutes, 5, 1440);
+    }
+    if (config.synchronizedBreaks !== undefined) p.synchronizedBreaks = config.synchronizedBreaks;
+    if (config.maxRebuys !== undefined) p.maxRebuys = config.maxRebuys;
+    if (config.maxReentries !== undefined) p.maxReentries = config.maxReentries;
+    if (config.isMultiDay !== undefined) p.isMultiDay = config.isMultiDay;
+    if (config.isMultiDay && config.totalDays !== undefined) p.totalDays = config.totalDays;
+    if (config.type === 'mystery_bounty') {
+      if (config.mysteryBountyMin !== undefined) p.mysteryBountyMin = config.mysteryBountyMin;
+      if (config.mysteryBountyMax !== undefined) p.mysteryBountyMax = config.mysteryBountyMax;
+    }
+    if (config.isFeatured !== undefined) p.isFeatured = config.isFeatured;
+    if (config.satelliteTarget?.seatsAwarded !== undefined) {
+      // Previously the seats HALF of the satellite config was never sent —
+      // the target id went up alone and every satellite awarded 1 seat.
+      p.satelliteSeats = config.satelliteTarget.seatsAwarded;
+    }
+
+    return p;
   }
 
   /**
@@ -526,6 +661,47 @@ class TournamentService {
       }
     }
 
+    // ── PARITY VALIDATION (2026-08-22) — mirrors fn_create_tournament ──
+    // Slider-backed keys (action time, table size, add-on break) clamp
+    // silently in buildRpcConfig, exactly as the server clamps them. Range
+    // keys that carry money or structure REFUSE here with the same message
+    // the server would send, so the owner is told before the round trip.
+    if (config.earlyBirdChips !== undefined && config.earlyBirdChips < 0) {
+      throw new Error(TOURNAMENT_CREATE_ERRORS.early_bird_chips_must_not_be_negative);
+    }
+    if (
+      config.restartEveryMinutes !== undefined &&
+      config.restartEveryMinutes !== null &&
+      (config.restartEveryMinutes < 5 || config.restartEveryMinutes > 1440)
+    ) {
+      throw new Error(TOURNAMENT_CREATE_ERRORS.restart_every_minutes_out_of_range);
+    }
+    if (config.isMultiDay) {
+      const days = Number(config.totalDays);
+      if (!Number.isInteger(days) || days < 2 || days > 7) {
+        throw new Error(TOURNAMENT_CREATE_ERRORS.total_days_out_of_range);
+      }
+    }
+    if (
+      (config.mysteryBountyMin !== undefined || config.mysteryBountyMax !== undefined) &&
+      config.type !== 'mystery_bounty'
+    ) {
+      throw new Error(TOURNAMENT_CREATE_ERRORS.mystery_range_requires_mystery_bounty);
+    }
+    if (config.type === 'mystery_bounty') {
+      const mbMin = config.mysteryBountyMin;
+      const mbMax = config.mysteryBountyMax;
+      if (mbMin !== undefined && mbMax !== undefined && (mbMin <= 0 || mbMax < mbMin)) {
+        throw new Error(TOURNAMENT_CREATE_ERRORS.mystery_bounty_range_invalid);
+      }
+    }
+    if (config.satelliteTarget) {
+      const seats = Number(config.satelliteTarget.seatsAwarded);
+      if (!Number.isInteger(seats) || seats < 1) {
+        throw new Error(TOURNAMENT_CREATE_ERRORS.satellite_seats_invalid);
+      }
+    }
+
     // Map format to variant for DB
     const variantMap: Record<string, string> = {
       mtt: 'freezeout',
@@ -568,33 +744,7 @@ class TournamentService {
     // not let a caller probe which clubs exist or who administers them).
     const { data: rpcResult, error: rpcError } = await supabase.rpc('fn_create_tournament', {
       p_club_id: await resolveClubUUID(clubId),
-      p_config: {
-        name: config.name,
-        type: config.type,
-        gameVariant: config.gameVariant || 'NLH',
-        buyIn: config.buyIn,
-        startingStack: config.startingStack,
-        maxPlayers: config.maxPlayers,
-        minPlayers: config.minPlayers,
-        blindStructure: config.blindStructure,
-        payoutStructure: config.payoutStructure,
-        guaranteedPrize: config.guaranteedPrize || 0,
-        lateRegistrationLevels: config.lateRegistrationLevels || 0,
-        startTime: config.startTime?.toISOString() ?? null,
-        isRebuy: config.isRebuy || false,
-        isReentry: config.isReentry || false,
-        rebuyCost: config.rebuyCost || 0,
-        rebuyChips: config.rebuyChips || 0,
-        addOnAvailable: config.addOnAvailable || false,
-        addOnCost: config.addOnCost || 0,
-        addOnChips: config.addOnChips || 0,
-        addOnLevels: config.addOnLevels || 1,
-        bountyAmount: config.bountyConfig?.baseBounty || 0,
-        spinType: config.type === 'spin' ? config.spinType || 'standard' : null,
-        satelliteTargetId: config.satelliteTarget?.tournamentId || null,
-        isXmtt: config.isXmtt || false,
-        isPrivate: config.isPrivate || false,
-      },
+      p_config: this.buildRpcConfig(config),
     });
 
     if (rpcError) throw rpcError;
@@ -2067,41 +2217,20 @@ class TournamentService {
     }
   }
 
-  /**
-   * Broadcast player elimination
-   */
-  async broadcastElimination(
-    tournamentId: string,
-    eliminatedPlayer: { id: string; name: string; position: number; prize: number }
-  ): Promise<void> {
-    try {
-      const { realtimeChannelService } = await import('./RealtimeChannelService');
-      await realtimeChannelService.broadcastTournamentEvent(tournamentId, {
-        type: 'player_eliminated',
-        payload: eliminatedPlayer,
-      });
-    } catch (e: unknown) {
-      reportError(e, 'TournamentService.Failed_to_broadcast_elimination');
-    }
-  }
+  /* AUDIT 2026-08-22: `broadcastElimination` and `broadcastWinner` were
+     removed from here. Neither had a caller, and neither ever could have been
+     right: elimination and completion are decided by the ENGINE, which owns
+     the tournament's state and broadcasts `player_eliminated` and
+     `tournament_winner` itself (TournamentManagerEliminations). A client
+     announcing either would be a client asserting a fact it does not own, and
+     two publishers on one channel is how a table ends up acting on a result
+     the database disagrees with.
 
-  /**
-   * Broadcast tournament winner
-   */
-  async broadcastWinner(
-    tournamentId: string,
-    winner: { id: string; name: string; prize: number }
-  ): Promise<void> {
-    try {
-      const { realtimeChannelService } = await import('./RealtimeChannelService');
-      await realtimeChannelService.broadcastTournamentEvent(tournamentId, {
-        type: 'winner',
-        payload: winner,
-      });
-    } catch (e: unknown) {
-      reportError(e, 'TournamentService.Failed_to_broadcast_winner');
-    }
-  }
+     They are worth a note rather than a silent delete because their existence
+     is what made the real gap so easy to miss: `broadcastWinner` sitting in
+     the service read, to anyone grepping, as "the winner is announced
+     somewhere". Nothing called it, and for months nothing announced the
+     winner at all. */
 
   /**
    * Finalize tournament (process payouts)

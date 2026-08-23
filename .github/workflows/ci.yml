@@ -62,6 +62,16 @@ jobs:
       - name: UI copy — no em dashes in player-facing text
         run: node scripts/ci/check-ui-text.mjs
 
+      # Copy invariant. Dan 2026-08-21: the first letter of every word is
+      # capitalized on every forward-facing page. Until 2026-08-22 this ran
+      # only in the local pre-push hook, so any agent shipping through the
+      # API landed violations straight onto main — it went red THREE times
+      # that day (#280, #279, #284), and each time the red was discovered by
+      # whichever agent next tried to push, not by the agent who caused it.
+      # Autofix locally with: node scripts/ci/check-title-case.mjs --fix
+      - name: UI copy — page copy is Title Cased
+        run: node scripts/ci/check-title-case.mjs
+
       # A CSS module key with no matching class resolves to undefined, React
       # drops className={undefined} without a word, and the element ships with
       # no styling at all. Build green, tests green, page visibly broken. It
@@ -248,6 +258,35 @@ jobs:
             exit 1
           fi
 
+      # BLOCKING: a select() that embeds a related table needs a real FOREIGN KEY.
+      # Without one PostgREST answers 400 PGRST200 and returns NO ROWS — and every
+      # call site here swallows that identically (`if (error) return []`,
+      # `if (!error && data)`, a rejected promise inside Promise.allSettled), so
+      # the feature is simply blank forever and nothing goes red. Seven were live
+      # on 2026-08-22, including the admin seat list, hand replay, transaction
+      # history, friend suggestions and the whole blocked-players feature.
+      # Requires the SERVICE-ROLE key: it bypasses RLS, so the select is actually
+      # parsed. With an anon key every RLS-protected table answers 401 and the
+      # check would report success while validating nothing — it fails loudly
+      # rather than allow that.
+      - name: Supabase Invariants — Embed Relationships
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          echo "## Supabase Embed-Relationship Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-embed-relationships.mjs 2>&1 | tee /tmp/embeds.log; then
+            echo "OK — every embedded select resolves against the live schema." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Embedded select(s) that return 400 and no rows — see log for file:line." >> $GITHUB_STEP_SUMMARY
+            echo "Read the consumer before adding a foreign key: if the embedded data is" >> $GITHUB_STEP_SUMMARY
+            echo "never used, delete the embed; if the child outlives the parent, look the" >> $GITHUB_STEP_SUMMARY
+            echo "value up separately instead." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       # BLOCKING: a client-read table with NO writer anywhere (client
       # .from().insert/update, server/src, or an RPC/migration body) means the UI
       # reads a table nothing populates -> silent empty/stale values. Detection is
@@ -313,6 +352,16 @@ jobs:
             echo "the Supabase MCP apply_migration, or regenerate the manifest in this PR." >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
+
+      - name: Nothing here may deploy to Vercel
+        run: |
+          # CLAUDE.md 1.3 has said this since March, and until 2026-08-22 two
+          # things in this repo did it anyway: deploy-production.sh at the root
+          # and manual-deploy.yml, the latter dispatched three times on
+          # 2026-08-21 and failing all three, which is why the repository page
+          # carried a red Production badge for a day. A rule in a document
+          # loses to a script with a plausible filename every time.
+          node scripts/ci/check-no-vercel-deploy.mjs
 
       - name: Supabase Invariants — Phantom Columns
         env:

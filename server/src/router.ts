@@ -27,6 +27,7 @@ import { handleHealth, handleWsMetrics, handleMetrics } from './handlers/health.
 import { handleAction } from './handlers/action.js';
 import { handleTimebank } from './handlers/timebank.js';
 import { handleHeartbeat } from './handlers/heartbeat.js';
+import { handleAway } from './handlers/away.js';
 import { handlePreaction } from './handlers/preaction.js';
 import { handleAddchips } from './handlers/addchips.js';
 import { handleWithdrawchips } from './handlers/withdrawchips.js';
@@ -59,6 +60,7 @@ const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 type AnyGameServer = Parameters<typeof handleAction>[2]['gameServer'] &
   Parameters<typeof handleTimebank>[2]['gameServer'] &
   Parameters<typeof handleHeartbeat>[2]['gameServer'] &
+  Parameters<typeof handleAway>[2]['gameServer'] &
   Parameters<typeof handlePreaction>[2]['gameServer'] &
   Parameters<typeof handleAddchips>[2]['gameServer'] &
   Parameters<typeof handleWithdrawchips>[2]['gameServer'] &
@@ -169,6 +171,9 @@ export function createRouter(
     if (method === 'POST' && url === '/action') return handleAction(req, res, { gameServer });
     if (method === 'POST' && url === '/timebank') return handleTimebank(req, res, { gameServer });
     if (method === 'POST' && url === '/heartbeat') return handleHeartbeat(req, res, { gameServer });
+    // Dan 2026-08-23: pagehide/app-freeze beacon. Marks the player AWAY (blind
+    // cap armed) without removing them — see handlers/away.ts.
+    if (method === 'POST' && url === '/away') return handleAway(req, res, { gameServer });
     if (method === 'POST' && url === '/preaction') return handlePreaction(req, res, { gameServer });
     if (method === 'POST' && url === '/addchips') return handleAddchips(req, res, { gameServer });
     if (method === 'POST' && url === '/withdrawchips')

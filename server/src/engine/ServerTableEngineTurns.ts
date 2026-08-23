@@ -977,6 +977,21 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * instead of the table burning a full action clock on a player who is gone.
    * A reconnect (WS onConnect -> heartbeat) cancels it just as fast.
    */
+  /**
+   * POST /away — Dan 2026-08-23: the CLIENT is telling us it is going away
+   * (pagehide, tab close, app frozen by the OS), rather than us inferring it
+   * from silence.
+   *
+   * That distinction is why this skips the transport grace window that
+   * `notifyTransportDisconnect` opens: a socket dying is ambiguous, but "I am
+   * leaving" is not. The player keeps their seat — they are simply AWAY, so
+   * the one-SB-one-BB cap applies and they are stood up and cashed out once
+   * it is spent. Coming back (any heartbeat) clears it at no cost.
+   */
+  public notifyPageLeft(userId: string): void {
+    this.disconnectEngine.markPageLeft(this.tableId, userId);
+  }
+
   public notifyTransportDisconnect(userId: string): void {
     // 2026-08-22: markTransportGone, not markDisconnected. The socket dying is
     // not the player leaving — their HTTP heartbeat is a second transport, and

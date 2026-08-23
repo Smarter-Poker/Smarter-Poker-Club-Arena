@@ -1049,7 +1049,7 @@
 .mbc--jackpot .mbc__glow {
   background: radial-gradient(
     circle,
-    rgba(255, 215, 0, 0.6),
+    rgba(111, 220, 255, 0.6),
     rgba(255, 140, 0, 0.24) 45%,
     rgba(0, 0, 0, 0) 70%
   );

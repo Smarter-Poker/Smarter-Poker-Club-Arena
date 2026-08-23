@@ -593,7 +593,7 @@ export default function TournamentResultsPage() {
                             const isMe = r.user_id === user?.id;
                             const posColor =
                               r.position === 1
-                                ? '#fbbf24'
+                                ? '#6fdcff'
                                 : r.position === 2
                                   ? '#94a3b8'
                                   : r.position === 3

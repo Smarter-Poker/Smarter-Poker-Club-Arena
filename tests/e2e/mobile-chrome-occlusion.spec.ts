@@ -1,0 +1,206 @@
+/**
+ * MOBILE CHROME OCCLUSION — the vertical half of "everything fits into one
+ * screen" (Dan, 2026-08-22).
+ *
+ * mobile-fit-audit.spec.ts answers the horizontal question: nothing may run
+ * off the right edge. This answers the vertical one, which is where the
+ * damage actually hides: the app frames every page between a sticky header
+ * and — on club pages — a FIXED bottom nav. A fixed bar is out of flow, so a
+ * page that does not deliberately reserve its height renders its last row of
+ * content UNDERNEATH it. The content is not clipped and the page does not
+ * scroll any further, so nothing looks broken in a screenshot: the row is
+ * simply unreachable. That is exactly the "the footer links are not at the
+ * bottom" symptom recorded in globals.css on 2026-08-20, which is when
+ * `--bottom-nav-clearance` was introduced as "what a page must actually
+ * reserve".
+ *
+ * Two checks per route:
+ *
+ *   TOP     at scroll 0, no content may sit under the sticky header. The
+ *           header is in normal flow today, so this should be free — it is
+ *           here because a page that gives itself a negative margin, or its
+ *           own fixed sub-header, reintroduces the bug silently.
+ *   BOTTOM  scrolled all the way down, no content may sit under the fixed
+ *           bottom bar. This is the one that catches a missing clearance.
+ *
+ * Deliberately measured on LEAF elements only, and only on elements that
+ * carry something a person can read or press. A wrapper that extends under
+ * the bar while its children stop short is not a defect, and counting it
+ * would make this spec cry wolf on every page with a full-height background.
+ */
+import { test, expect } from '@playwright/test';
+
+const CLUB = process.env.AUDIT_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+
+/* The routes that carry the fixed bottom nav, plus a few plain ones so the
+   top check has non-club coverage too. */
+const ROUTES = [
+  'profile',
+  'wallet',
+  'settings',
+  'friends',
+  `clubs/${CLUB}`,
+  `clubs/${CLUB}/members`,
+  `clubs/${CLUB}/rules`,
+  `clubs/${CLUB}/announcements`,
+  `clubs/${CLUB}/promotions`,
+  `clubs/${CLUB}/jackpot`,
+  `clubs/${CLUB}/lobby`,
+  `clubs/${CLUB}/messages`,
+];
+
+/** Tolerance: sub-pixel layout and 1px borders are not defects. */
+const SLACK = 4;
+
+interface Occlusion {
+  route: string;
+  edge: 'top' | 'bottom';
+  coveredPx: number;
+  sel: string;
+  text: string;
+}
+
+test('no chrome covers reachable content at 375px', async ({ page }) => {
+  test.setTimeout(ROUTES.length * 15_000 + 120_000);
+  await page.setViewportSize({ width: 375, height: 812 });
+
+  const occlusions: Occlusion[] = [];
+  const skipped: string[] = [];
+  const noChrome: string[] = [];
+
+  for (const route of ROUTES) {
+    try {
+      await page.goto(route, { waitUntil: 'domcontentloaded' });
+    } catch (err) {
+      if (!String(err).includes('ERR_ABORTED')) {
+        skipped.push(`${route}: navigation failed`);
+        continue;
+      }
+    }
+    await page.waitForTimeout(2600);
+    if (page.url().includes('/auth')) {
+      skipped.push(route);
+      continue;
+    }
+
+    const found = await page.evaluate(
+      async ({ SLACK }) => {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+
+        const bars = Array.from(document.querySelectorAll('nav,header,div,footer'));
+        const isWide = (b: DOMRect) => b.width > vw * 0.8 && b.height > 24;
+        const topBar = bars.find((el) => {
+          const s = getComputedStyle(el);
+          if (s.position !== 'fixed' && s.position !== 'sticky') return false;
+          const b = el.getBoundingClientRect();
+          return b.top <= 2 && b.bottom > 8 && b.bottom < vh * 0.3 && isWide(b);
+        });
+        const bottomBar = bars.find((el) => {
+          const s = getComputedStyle(el);
+          if (s.position !== 'fixed') return false;
+          const b = el.getBoundingClientRect();
+          return b.bottom >= vh - 3 && b.height > 40 && b.height < 160 && isWide(b);
+        });
+
+        const root = document.querySelector('#main-content') || document.body;
+
+        /* Content, for this purpose, is a LEAF that a person can read or
+           press. Anything living inside a fixed layer (the bars themselves,
+           a parked drawer, a modal) is chrome, not page content. */
+        const leaves = () => {
+          const out: Array<{ el: Element; b: DOMRect }> = [];
+          for (const el of root.querySelectorAll('*')) {
+            if (el.children.length > 0) continue;
+            const s = getComputedStyle(el);
+            if (s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0) continue;
+            const b = el.getBoundingClientRect();
+            if (b.width === 0 || b.height === 0) continue;
+            if (b.right <= 0 || b.left >= vw) continue;
+            const txt = (el.textContent || '').trim();
+            const pressable = ['IMG', 'INPUT', 'BUTTON', 'SVG', 'PATH'].includes(el.tagName);
+            if (!txt && !pressable) continue;
+            let p: Element | null = el;
+            let inFixed = false;
+            while (p && p !== root) {
+              const ps = getComputedStyle(p);
+              if (ps.position === 'fixed') {
+                inFixed = true;
+                break;
+              }
+              p = p.parentElement;
+            }
+            if (inFixed) continue;
+            out.push({ el, b });
+          }
+          return out;
+        };
+
+        const describe = (el: Element, b: DOMRect, covered: number) => ({
+          coveredPx: Math.round(covered),
+          sel:
+            el.tagName.toLowerCase() +
+            (el.className ? '.' + String(el.className).split(' ')[0].slice(0, 26) : ''),
+          text: (el.textContent || '').trim().slice(0, 34).replace(/\s+/g, ' '),
+        });
+
+        const hits: Array<{ edge: 'top' | 'bottom' } & ReturnType<typeof describe>> = [];
+
+        // ── TOP: at rest, nothing should already be under the header.
+        window.scrollTo(0, 0);
+        await new Promise((r) => setTimeout(r, 350));
+        if (topBar) {
+          const headerBottom = topBar.getBoundingClientRect().bottom;
+          let worst: ReturnType<typeof describe> | null = null;
+          for (const { el, b } of leaves()) {
+            const covered = headerBottom - b.top;
+            if (covered > SLACK && b.bottom > 0) {
+              const d = describe(el, b, covered);
+              if (!worst || d.coveredPx > worst.coveredPx) worst = d;
+            }
+          }
+          if (worst) hits.push({ edge: 'top', ...worst });
+        }
+
+        // ── BOTTOM: only provable once the page cannot scroll further.
+        if (bottomBar) {
+          window.scrollTo(0, document.documentElement.scrollHeight);
+          await new Promise((r) => setTimeout(r, 450));
+          const navTop = bottomBar.getBoundingClientRect().top;
+          let worst: ReturnType<typeof describe> | null = null;
+          for (const { el, b } of leaves()) {
+            if (b.top >= vh) continue; // below the fold entirely, not on screen
+            const covered = b.bottom - navTop;
+            if (covered > SLACK) {
+              const d = describe(el, b, covered);
+              if (!worst || d.coveredPx > worst.coveredPx) worst = d;
+            }
+          }
+          if (worst) hits.push({ edge: 'bottom', ...worst });
+        }
+
+        return { hits, hadTop: !!topBar, hadBottom: !!bottomBar };
+      },
+      { SLACK }
+    );
+
+    if (!found.hadTop && !found.hadBottom) noChrome.push(route);
+    for (const h of found.hits) {
+      occlusions.push({ route, edge: h.edge, coveredPx: h.coveredPx, sel: h.sel, text: h.text });
+    }
+  }
+
+  console.log(
+    'MOBILE_CHROME_OCCLUSION ' +
+      JSON.stringify({ occlusions, skipped, noChrome, routesChecked: ROUTES.length }, null, 1)
+  );
+
+  if (process.env.MOBILE_FIT_STRICT || process.env.CI) {
+    expect(
+      occlusions,
+      `Chrome covering content at 375px (reserve var(--bottom-nav-clearance)):\n${occlusions
+        .map((o) => `  ${o.route} [${o.edge}] ${o.coveredPx}px under the bar: ${o.sel} "${o.text}"`)
+        .join('\n')}`
+    ).toEqual([]);
+  }
+});

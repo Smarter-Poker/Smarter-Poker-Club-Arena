@@ -7,6 +7,152 @@
 
 ---
 
+## Cowork session 2026-08-23 (2) — MOBILE, THE SECOND PASS: what the first pass missed (PRs #420, #429)
+
+The first pass fixed what it measured. This one went looking for what it had
+not thought to measure, and found four more classes of defect.
+
+### 1. `min-height: 100vh` was only a third of the problem
+
+The earlier sweep patched `min-height: 100vh` and stopped there. `height` and
+`max-height` carry the same flaw and are WORSE: `min-height` merely allows a
+page to be too tall, `height: 100vh` FORCES it, so the bottom of the element
+is guaranteed to sit under the browser toolbar. Eleven more occurrences,
+including both chat pages — where the thing pushed off-screen is the message
+input — plus the side nav, the tournament clock, the BBJ celebration and four
+`calc(100vh - …)` modal heights. All now carry a `100dvh` companion (PR #420).
+
+### 2. Twelve controls a thumb could not reliably hit
+
+Measured in production at 375px: 27 interactive controls compute under
+Apple's 44px minimum on their short axis, the worst an 18px-tall "View All"
+with 2px of padding. A 20px chip in a horizontal row is a coin flip between
+two adjacent filters.
+
+They are NOT resized. A 20px range tab becoming 44px is a redesign, not a
+repair. Each keeps its painted size and gains an invisible 44px-tall `::after`
+hit area — a click on a pseudo-element is dispatched to its host, so nothing
+moves and nothing repaints. VERTICAL ONLY, deliberately: every one of these
+fails on height while already being 45-108px wide, and they sit in horizontal
+rows, so widening would overlap the neighbour and hand it the wrong taps. Two
+controls that fail on both axes (`.dw__plus` 22x22, `.lobby-club__share`
+32x32) are the only ones that grow sideways. Scoped to `pointer: coarse` so a
+mouse is untouched. `.tap-target` is the opt-in class for one-offs with no
+class of their own.
+
+### 3. PINCH-ZOOM IS BACK (Dan approved)
+
+`index.html` carried `maximum-scale=1.0, user-scalable=no`. That disables
+pinch-zoom for everyone — a WCAG 1.4.4 failure — and on iOS it was also the
+thing quietly masking the sub-16px focus-zoom bug. The lock hid the symptom
+instead of fixing the cause. Now that every text field is at least 16px at
+phone width (57 rules across #380/#391/#408/#429), the auto-zoom cannot fire
+and the lock has nothing left to hold back. Removed.
+
+Do not re-add it. `tests/e2e/mobile-input-zoom.spec.ts` fails CI the moment a
+sub-16px field returns; fix the field, not the viewport.
+
+### 4. A correction to this changelog's own previous entry
+
+The earlier entry stated the viewport had "no maximum-scale, deliberately".
+That was the WORLD HUB's `_app.js` viewport, not Club Arena's. Club Arena's
+own index.html had the lock all along. Both the spec and the CSS comment that
+repeated the claim are corrected in place. Reading the right file is not a
+detail — the wrong one produced a confident, published, wrong sentence.
+
+### A third gate
+
+`tests/e2e/mobile-tap-targets.spec.ts` asserts REACH, not box height: it
+probes points across a 44px vertical span and requires `elementFromPoint` to
+resolve back to the control. That is true whether the target is genuinely
+44px or is 20px with an expanded hit area, so it tests the behaviour rather
+than the technique and stays honest if someone swaps one for the other. It
+emulates touch, because the expansion is touch-scoped on purpose.
+
+### Two more near-misses, both caught by checking instead of assuming
+
+- Deleting the two `/src/styles/*` preloads from index.html looked like free
+  cleanup (Vite strips them from the built HTML). It is not: those tags are
+  what makes Vite BUNDLE globals.css and design-system.css at all. Removing
+  them dropped every design token — `--bottom-nav-clearance` included — out
+  of the entry CSS. Reverted within the same build. The tags are
+  load-bearing; label them, do not tidy them.
+- `MarketplacePage.module.css .searchInput` was written off as dead CSS
+  because MarketplacePage.tsx never references it. `StoreTab.tsx` imports
+  that stylesheet and does. It is a live 13px search field, so it was fixed,
+  not deleted. Grep the stylesheet's importers, not just its namesake.
+
+Verification: tsc clean; vitest 274 files / 3,347 passed; vite build clean;
+the tap-target gate correctly RED against the pre-deploy build (6 controls,
+24-32px of reach) which is the evidence it works.
+
+---
+
+## Cowork session 2026-08-23 (4) — the last three items, and three more traps avoided by measuring
+
+Closing out the outage work. Every remaining item was either fixed or proven not
+to be a problem, and in three cases the obvious fix would have caused a
+regression worse than the thing it fixed.
+
+### The club money panel: 1,454 ms -> a rollup
+
+It was the #1 statement on the instance by 3.7x (1,238 calls, 1,785 s total) and
+client facing. Two covering indexes removed every wasted row from its two weekly
+sums and each was STILL ~150 ms, because the work was real: 699,425 rake rows,
+~180,000 in the current week, growing daily. Those collapse to **16 rollup rows**.
+
+`union_rake_weekly` is derived display data; `union_wallet_transactions` stays
+the sole source of truth. Each sum is now **rollup -> ledger fallback -> zero**,
+so a missing row costs latency, never correctness, and the maintaining trigger
+swallows its own errors because a display rollup must never block the engine
+banking rake. **Union-wide sum: 189,415 buffers / 331 ms -> 2 buffers / 0.311 ms.**
+
+The first attempt **failed its own assertion**: it backfilled then created the
+trigger, and under READ COMMITTED rake banked in between was counted by neither.
+`SHARE ROW EXCLUSIVE` makes the two atomic. The 5,028-character function was
+patched by surgical replacement on `pg_get_functiondef`, never retyped.
+
+### The hand insert: 46.4 ms -> ~9 ms on the worst trigger
+
+`EXPLAIN ANALYZE` on a real insert attributed it exactly: the row and all eight
+indexes are **3.9 ms**; the three per-row triggers are **42.5 ms**.
+
+`club_member_table_state` (119,823 rows) and `club_member_daily_stats` (154,780
+rows, 28,770 dead, the **#1 write source in the database**) had _never_ been
+vacuumed. The first fix missed the second table and the trigger re-degraded from
+7.8 ms to 19.5 ms within eight minutes — which is how the omission was caught.
+
+### Three traps, each disproven with a measurement
+
+1. **The 177 MB GIN index on `hand_history.players`** shows 0 scans and looks
+   droppable. Five call sites use `.contains('players', ...)`. Dropping it saves
+   ~nothing (the write is 3.9 ms) and turns every hand search into a full scan of
+   a 10 GB table.
+2. **REPLICA IDENTITY FULL on `tournament_players`** (34,425 UPDATEs) looks like
+   free WAL. It is required — clients filter on `tournament_id` (non-PK) and read
+   `payload.old`.
+3. **Pruning `tables`** (62k closed rows) would cascade to eight child tables and,
+   because `rake_records_table_id_fkey` is `ON DELETE SET NULL`, silently blank
+   `table_id` on historical rake records and destroy financial provenance.
+
+### Realtime, honestly
+
+~299 s CPU/30 min, still the largest single cost. Publication trimming and
+replica-identity changes are both disproven. Logical decoding reads **all** WAL,
+and the top producers are not even published — `club_member_daily_stats`,
+`engine_table_leases`, `player_stats`, `player_position_stats`,
+`club_member_table_state`, ~139k writes, nearly all of them the per-hand
+per-player stat upserts from the same three triggers. Reducing it further means
+batching those stats, which is engine architecture, not configuration.
+
+### Standing lesson
+
+An index with 0 scans, a huge table, and a replica-identity setting all look like
+free wins and none of them were. Every one needed a measurement or a grep across
+both repos to tell "unused" from "not used in the last two hours".
+
+---
+
 ## Cowork session 2026-08-23 (2) — the deep audit: seventeen points of equity, and three layers that reported success while doing nothing (PRs #399, #409)
 
 Asked to go through the horse brain line by line before claiming success. The

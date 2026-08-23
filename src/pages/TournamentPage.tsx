@@ -38,6 +38,7 @@ import { spinMultiplierLabel } from '../utils/spinReveal';
 // WHOLE-NUMBER TOURNAMENT MONEY (Dan 2026-08-20). Every buy-in / fee / prize
 // figure on this page renders through these, never as a raw column value.
 import { digitsOnly, formatBuyIn, money, splitBuyIn, totalBuyIn } from '../utils/buyIn';
+import { relayTournamentEvent } from '../services/tournamentEventBridge';
 
 type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
 
@@ -741,6 +742,12 @@ export default function TournamentPage() {
       .on('broadcast', { event: 'tournament_event' }, (payload) => {
         const eventType = payload.payload?.type;
         const data = payload.payload?.payload;
+
+        /* Put the break events on MasterBus. TournamentClock and
+           TournamentDetails have always subscribed to them there and nothing
+           ever emitted them, so the clock never flipped to break and the
+           toasts never fired. See tournamentEventBridge. */
+        relayTournamentEvent(selectedTournament.id, payload.payload);
 
         switch (eventType) {
           case 'level_up':

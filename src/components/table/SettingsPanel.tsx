@@ -65,7 +65,13 @@ export interface SettingsPanelProps {
 
 export const DEFAULT_TABLE_SETTINGS: TableSettings = {
   autoMuckLosers: true,
-  autoMuckWinners: false,
+  /* Dan 2026-08-23: "auto muck should be on by default, you should never ask
+     if they want to show cards." This was the ONLY switch keeping the
+     post-hand "show your cards?" modal alive: it fired on an uncontested win
+     when the setting was false, which it was for every player who had never
+     opened the settings panel. Default true, and the modal is gone with it —
+     see the note where the toggle used to be. */
+  autoMuckWinners: true,
   autoPostBlinds: true,
   soundEnabled: true,
   soundVolume: 70,
@@ -231,12 +237,15 @@ export function SettingsPanel({
                 player's call: winning when everyone folds. No showdown
                 happened, so nobody is entitled to see the hand. The label says
                 so explicitly, and says what it does NOT cover. */}
-            <SettingToggle
-              label="Auto-muck uncontested wins"
-              description="When everyone folds, take the pot without showing. Showdowns always reveal."
-              checked={settings.autoMuckWinners}
-              onChange={() => handleToggle('autoMuckWinners')}
-            />
+            {/* Dan 2026-08-23: "auto muck should be on by default, you should
+                never ask if they want to show cards." The toggle is removed
+                rather than merely defaulted, for the same reason the
+                confirm-all-in control was removed a few days earlier: a
+                default is a suggestion, and a control that can restore a
+                behaviour Dan asked to be gone will eventually restore it.
+                `autoMuckWinners` stays in the settings type and is pinned true
+                so any stored `false` from before today has nothing to switch
+                on — TablePage no longer reads it to decide whether to ask. */}
 
             <SettingToggle
               label="Auto-post blinds"

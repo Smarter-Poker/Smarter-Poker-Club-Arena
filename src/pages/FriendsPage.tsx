@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
@@ -648,7 +649,7 @@ export default function FriendsPage() {
               >
                 <div className="request-avatar">
                   {request.avatar_url ? (
-                    <img src={request.avatar_url} alt="" loading="lazy" />
+                    <img src={sizedStorageUrl(request.avatar_url!, 44)} alt="" loading="lazy" />
                   ) : (
                     <span>{request.username[0]?.toUpperCase()}</span>
                   )}
@@ -768,7 +769,7 @@ function SwipeableFriendRow({
       >
         <div className="friend-avatar">
           {friend.avatar_url ? (
-            <img src={friend.avatar_url} alt="" loading="lazy" />
+            <img src={sizedStorageUrl(friend.avatar_url!, 44)} alt="" loading="lazy" />
           ) : (
             <span>{friend.username[0]?.toUpperCase()}</span>
           )}

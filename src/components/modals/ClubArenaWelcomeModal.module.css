@@ -12,7 +12,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  /* 2026-08-23 (live mobile audit): the tournament STARTING SOON strip is
+     fixed at z-index 9400 and was drawing straight across this modal's text.
+     House convention (TournamentStartingTicker.css): dialogs live at 9600+. */
+  z-index: 9600;
   padding: 1rem;
 }
 

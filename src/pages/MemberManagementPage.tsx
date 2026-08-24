@@ -40,6 +40,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
@@ -283,7 +284,7 @@ export default function MemberManagementPage() {
       <section className="mm-card mm-identity">
         <div className={`mm-avatar${detail!.presence.is_online ? ' mm-avatar--online' : ''}`}>
           {identity!.avatar_url ? (
-            <img src={identity!.avatar_url} alt="" loading="lazy" />
+            <img src={sizedStorageUrl(identity!.avatar_url!, 56)} alt="" loading="lazy" />
           ) : (
             <span>{initial}</span>
           )}

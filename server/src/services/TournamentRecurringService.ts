@@ -2754,16 +2754,6 @@ export class TournamentRecurringService {
    */
   async topUpWithHorses(tournamentId: string, targetPlayers: number): Promise<number> {
     try {
-      const { count: liveCount, error: countErr } = await supabase
-        .from('tournament_players')
-        .select('id', { count: 'exact', head: true })
-        .eq('tournament_id', tournamentId)
-        .in('status', ['registered', 'playing']);
-      if (countErr) return 0;
-
-      const shortfall = targetPlayers - (liveCount || 0);
-      if (shortfall <= 0) return 0;
-
       /**
        * A seat-first game needs BODIES IN SEATS, not names on a list.
        *
@@ -2782,6 +2772,67 @@ export class TournamentRecurringService {
         String((tRow as { variant?: string } | null)?.variant ?? ''),
         Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
       );
+
+      /**
+       * MEASURE THE SHORTFALL IN THE UNIT THE START GATE READS.
+       *
+       * This counted rows in tournament_players for every format. For a
+       * seat-first game that is the wrong unit, and it deadlocks the game
+       * permanently rather than delaying it:
+       *
+       *   registrations 3 of 3  ->  shortfall 0, no horse is ever seated
+       *   live seats    1 of 3  ->  the start gate never opens
+       *
+       * Neither side can move, and nothing else in the system tops a game up.
+       * Five Spins were sitting in exactly that state on 2026-08-24, the
+       * oldest 486 minutes past its start time, each holding three
+       * registrations against one or two live seats.
+       *
+       * Seats for a seat-first game, registrations for an MTT - the same
+       * split the counter itself uses.
+       */
+      let liveCount = 0;
+      if (seatFirst) {
+        const { data: primaryId, error: primErr } = await supabase.rpc(
+          'fn_tournament_primary_table',
+          { p_tournament_id: tournamentId }
+        );
+        if (primErr) return 0;
+        if (primaryId) {
+          const { count: seatCount, error: seatErr } = await supabase
+            .from('table_seats')
+            .select('table_id', { count: 'exact', head: true })
+            .eq('table_id', String(primaryId))
+            .is('left_at', null);
+          if (seatErr) return 0;
+          liveCount = seatCount || 0;
+        }
+      } else {
+        const { count: regCount, error: countErr } = await supabase
+          .from('tournament_players')
+          .select('id', { count: 'exact', head: true })
+          .eq('tournament_id', tournamentId)
+          .in('status', ['registered', 'playing']);
+        if (countErr) return 0;
+        liveCount = regCount || 0;
+      }
+
+      const shortfall = targetPlayers - liveCount;
+      if (shortfall <= 0) {
+        /**
+         * Nothing to add - but the COUNTER may still be stale, and a stale
+         * counter is precisely what stops the game starting. The old code
+         * returned here, before the reconciliation at the foot of this
+         * function, so a full field whose count had drifted could never
+         * repair itself. That is the loop that held 39 live tournaments.
+         */
+        if (seatFirst) {
+          await supabase.rpc('fn_sync_seat_first_player_count', {
+            p_tournament_id: tournamentId,
+          });
+        }
+        return 0;
+      }
 
       let added = 0;
       if (seatFirst) {

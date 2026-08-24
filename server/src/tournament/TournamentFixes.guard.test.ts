@@ -39,8 +39,7 @@ const RECOVERY = read('src/tournament/tournamentRecovery.ts');
 const MANAGER = read('src/tournament/TournamentManager.ts');
 
 /** Strip line and block comments so a guard cannot pass on a mention in prose. */
-const code = (src: string) =>
-  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 describe('a failed query must never read as "nobody is left"', () => {
   it('the finish check treats an unreadable count as UNKNOWN, not zero', () => {
@@ -305,5 +304,107 @@ describe('seating a tournament twice must not build a second set of tables', () 
     const src = code(BASE);
     const fn = src.slice(src.indexOf('createTablesAndSeatPlayers(tournament: any)'));
     expect(fn).toMatch(/while\s*\(taken\.has\(seatNumber\)\)/);
+  });
+});
+
+/**
+ * ───────────────────────────────────────────────────────────────────────────
+ * THE OCCUPIED TABLE IS THE REAL TABLE (2026-08-24)
+ *
+ * Dan registered during late registration and got no seat, no chips, and a
+ * tournament that never started. One defect produced all three.
+ *
+ * A seat-first game's field size is read off ONE chosen table, and that
+ * choice had been made two different ways, both of which pick a corpse:
+ * 20260823330000 took the oldest table ever created, 20260824050000 took the
+ * newest non-closed one. These games are created with two `waiting` tables
+ * about 0.6s apart; the players sit on the FIRST and the empty one is NEWER.
+ *
+ * Measured in production before the fix: 126 live tournaments, 39 with
+ * current_players below their real field, every one of them startable, one
+ * stuck 471 minutes. Of 31 past-start games 28 were blocked and in 12 an
+ * empty table had outranked a sibling holding the whole game. Per hour, games
+ * with a duplicate live table equalled stuck games exactly: 2/2, 2/2, 9/9.
+ *
+ * The rule is occupancy first, oldest to break the tie - which is what
+ * fn_seat_late_registrant already did. These guards keep the engine agreeing
+ * with it, because a third definition is how this happened twice already.
+ * ───────────────────────────────────────────────────────────────────────────
+ */
+const GAMESERVER = read('src/GameServer.ts');
+const RECURRING = read('src/services/TournamentRecurringService.ts');
+const OCCUPIED_MIGRATION = read(
+  '../supabase/migrations/20260824070000_the_occupied_table_is_the_real_table.sql'
+);
+
+describe('the paid-seat gate reads the table the game is actually on', () => {
+  it('does not choose the newest live table', () => {
+    // `newestTable` is the identifier the broken selection used. Its absence
+    // is the cheapest durable signal that the rule has not been reinstated.
+    expect(code(GAMESERVER)).not.toContain('newestTable');
+  });
+
+  it('chooses by occupancy, with the oldest table breaking the tie', () => {
+    const src = code(GAMESERVER);
+    expect(src).toContain('primaryTable');
+    // seats win outright; equal seats fall back to the EARLIER created_at
+    expect(src).toContain('seats > seen.seats');
+    expect(src).toContain('createdAt < seen.createdAt');
+  });
+
+  it('counts seats for every live table, not for one guessed table', () => {
+    // Choosing by occupancy is only possible if the seats of all candidates
+    // were read. The old code read seats for the single table it had already
+    // picked, which is what made the wrong pick undetectable.
+    expect(code(GAMESERVER)).toContain('const liveTableIds = (liveTables || [])');
+  });
+});
+
+describe('a seat-first top-up is measured in seats, not registrations', () => {
+  it('asks the database which table is the game', () => {
+    expect(code(RECURRING)).toContain('fn_tournament_primary_table');
+  });
+
+  it('never computes the shortfall from the bare registration count', () => {
+    // registrations 3/3 with seats 1/3 computed a shortfall of zero, so the
+    // missing horse was never seated and the start gate never opened. Five
+    // Spins were deadlocked that way, the oldest for 486 minutes.
+    expect(code(RECURRING)).not.toContain('const shortfall = targetPlayers - (liveCount || 0);');
+    expect(code(RECURRING)).toContain('const shortfall = targetPlayers - liveCount;');
+  });
+
+  it('reconciles the counter even when there is nothing to add', () => {
+    // The old `if (shortfall <= 0) return 0;` returned BEFORE the
+    // reconciliation at the foot of the function, so a full field whose count
+    // had drifted could never repair itself. That loop held 39 tournaments.
+    expect(code(RECURRING)).not.toContain('if (shortfall <= 0) return 0;');
+    expect(code(RECURRING)).toContain('if (shortfall <= 0) {');
+  });
+});
+
+describe('the database agrees with the engine about which table is the game', () => {
+  it('defines one shared primary-table function, ordered by occupancy', () => {
+    const sql = OCCUPIED_MIGRATION;
+    expect(sql).toContain('CREATE OR REPLACE FUNCTION public.fn_tournament_primary_table');
+    expect(sql).toContain('tb.created_at ASC');
+  });
+
+  it('ships the late-registration sweep that the client comments promise', () => {
+    // fn_seat_late_registrant had NO caller anywhere outside
+    // fn_register_for_tournament, yet useTournamentRegistration.ts and
+    // TablePage.tsx both tell the reader "the engine's 5s sweep seats him".
+    // A paid, seatless player waited forever.
+    expect(OCCUPIED_MIGRATION).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_sweep_seatless_late_registrants'
+    );
+    expect(OCCUPIED_MIGRATION).toContain('public.fn_seat_late_registrant(');
+  });
+
+  it('repairs the counter that gates every tournament start', () => {
+    // fn_reconcile_tournament_denormals ran every minute and fixed roster
+    // seats and table stakes, but never current_players - the one denormal
+    // the start gate actually reads.
+    expect(OCCUPIED_MIGRATION).toContain('player_counts_fixed');
+    expect(OCCUPIED_MIGRATION).toContain('empty_dupes_closed');
   });
 });

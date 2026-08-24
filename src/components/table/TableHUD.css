@@ -45,8 +45,14 @@
   padding: 6px 4px;
   /* Dan 2026-08-22 item 3: the clock + previous-hand card sit LOW — resting
      just on top of the action panel, where the background meets the black
-     action box. 112px clears the collapsed 3-button action bar. */
-  padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px));
+     action box.
+     Dan 2026-08-23: it was a flat 112px, and the comment here used to end
+     "clears the collapsed 3-button action bar" - which is the bug stated as a
+     feature. Open the raise slider and the panel is taller than that, so the
+     previous-hand card was covered by it. Reported as the buttons being
+     missing; they were never removed. --sp-action-h is the panel's real
+     measured height, published by TablePage. */
+  padding-bottom: calc(var(--sp-action-h, 112px) + 8px + env(safe-area-inset-bottom, 0px));
   gap: 8px;
 }
 
@@ -81,7 +87,9 @@
     padding: 4px 2px;
     /* Dan 2026-08-22 item 3: both widgets are stacked in one flex column now
        (no more fixed-position overlap), so the whole stack can drop to just
-       above the action bar. */
-    padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px));
+       above the action bar.
+       Measured, not hardcoded - see the base rule. A flat 112px here would put
+       the previous-hand card back under an opened raise slider on phones. */
+    padding-bottom: calc(var(--sp-action-h, 112px) + 8px + env(safe-area-inset-bottom, 0px));
   }
 }

@@ -589,6 +589,37 @@
   white-space: nowrap;
   font-size: 0.85rem;
   font-weight: 700;
+  /* Holds the name and its reason tag on one line. The name still ellipsises;
+     the tag never shrinks, because a truncated "Favourite" is worse than a
+     truncated table name. */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* WHY this row is where it is. Dan 2026-08-23 asked for Quick Join to lead with
+   favourites and similar games; a list that is silently ranked just reads as a
+   list in a random order, so each row says what earned it its place. */
+.multi-table-page__quickjoin-tag {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.5625rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9fb4cc;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* A favourite is the one tier the player chose themselves, so it is the one
+   that earns colour. Everything else stays neutral - if every tag is
+   highlighted, none of them is. */
+.multi-table-page__quickjoin-tag--fav {
+  color: #ffd76a;
+  background: rgba(255, 199, 60, 0.14);
+  border-color: rgba(255, 199, 60, 0.4);
 }
 
 .multi-table-page__quickjoin-meta {

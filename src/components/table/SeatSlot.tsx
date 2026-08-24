@@ -30,6 +30,7 @@ import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSp
 import RiveAvatar from './RiveAvatar';
 import { startMotionBudget } from '../../utils/motionBudget';
 import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
+import { sortCardsByRank } from '../../lib/tableCardDisplay';
 import './avatarChoreography.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -551,6 +552,28 @@ export const SeatSlot = memo(
      */
     const hasFolded = !!player && (lastAction === 'fold' || player.status === 'folded');
     const isActingNow = isActive && !hasFolded;
+
+    /**
+     * Dan 2026-08-23: "when the cards get shown down they need to be straight
+     * and IN ORDER."
+     *
+     * The engine hands cards over in deal order, which is arbitrary to look at -
+     * a PLO4 hand arrives as something like 6h As 9c Ad and the player has to
+     * pair it up themselves at the exact moment they are trying to read a
+     * showdown. Sorted high to low, the same way the hero's own hand is already
+     * sorted by the cards_pre_sort setting.
+     *
+     * ONLY when every card is present. `null` in this array is not a missing
+     * card, it is the per-card show picker saying "this one stays face down"
+     * (2026-08-18) - so a slot's POSITION carries meaning there, and sorting
+     * would move a face-down card away from the card it belongs beside.
+     */
+    const displayHoleCards = useMemo(() => {
+      const cards = player?.holeCards;
+      if (!cards || cards.length === 0) return cards ?? [];
+      if (cards.some((c) => c == null)) return cards;
+      return sortCardsByRank(cards as Card[]);
+    }, [player?.holeCards]);
 
     // Animated stack change — flash green/red when stack changes
     const [stackDelta, setStackDelta] = useState<number>(0);
@@ -1302,7 +1325,7 @@ export const SeatSlot = memo(
               className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
             >
               {player.holeCards && player.holeCards.length > 0
-                ? player.holeCards.map((card, i) => (
+                ? displayHoleCards.map((card, i) => (
                     <HoleCard
                       key={i}
                       card={card}

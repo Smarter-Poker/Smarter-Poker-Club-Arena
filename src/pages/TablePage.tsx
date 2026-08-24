@@ -2038,6 +2038,50 @@ export default function TablePage({
     return () => ro.disconnect();
   }, []);
 
+  /**
+   * Dan 2026-08-23: "the bottom bar is covering the hero's box so they cant see
+   * how many chips they have", and "the previous hand buttons are missing."
+   *
+   * One cause. The action panel is `position: fixed; bottom: 0`, so it is out of
+   * flow and nothing below it reserves space automatically. Two places therefore
+   * reserved space for it BY HAND, and disagreed about how much:
+   *
+   *     .table-container   padding-bottom: 104px
+   *     .table-hud__lower  padding-bottom: 112px   "clears the COLLAPSED bar"
+   *
+   * Two different numbers for one bar is what a guess looks like. Worse, that
+   * second comment states the constraint it fails: the panel is only ~112px
+   * while COLLAPSED. Open the raise slider and it grows well past both figures,
+   * so the previous-hand card goes under it - it was never removed, it was
+   * covered - and the hero's name plate, which hangs below the scaler because
+   * the hero avatar's CENTRE sits on the scaler's bottom edge, goes with it.
+   *
+   * Measure it instead. The panel publishes its own height and both reserves
+   * read that, so the table and the HUD get out of the way of whatever the
+   * panel actually is right now, at any breakpoint, in any state.
+   */
+  const actionPanelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = actionPanelRef.current;
+    const root = document.querySelector('.table-page') as HTMLElement | null;
+    if (!el || !root || typeof ResizeObserver === 'undefined') return;
+    const publish = (h: number) => {
+      // Sub-pixel noise would thrash a layout-affecting variable, and this one
+      // feeds padding that moves the very seats the panel sits under.
+      const next = Math.round(h);
+      if (root.dataset.spActionH === String(next)) return;
+      root.dataset.spActionH = String(next);
+      root.style.setProperty('--sp-action-h', next + 'px');
+    };
+    publish(el.getBoundingClientRect().height);
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      if (r && r.height > 0) publish(r.height);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Actual club_id from the table record (NOT the tableId)
   const actualClubIdRef = useRef<string>('');
   /**
@@ -10985,7 +11029,7 @@ export default function TablePage({
       {/* ═══════════════════════════════════════════════════════════════════════
           BOTTOM CONTROLS + ACTION PANEL
           ═══════════════════════════════════════════════════════════════════════ */}
-      <div className="action-panel-wrapper">
+      <div className="action-panel-wrapper" ref={actionPanelRef}>
         {/* POKERBROS-spec: persistent footer bar — NEVER empty. Dan rule
             2026-04-17: action bar fixed to footer at all times, every state. */}
         {!tableState.players.some((p) => p?.isHero) && tableState.heroSeat <= 0 ? (

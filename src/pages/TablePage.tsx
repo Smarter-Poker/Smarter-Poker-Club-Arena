@@ -2264,13 +2264,28 @@ export default function TablePage({
           setCanChatAsObserver(false);
           return;
         }
-        // Check club membership role
-        const { data: membership } = await supabase
-          .from('club_members')
-          .select('role')
-          .eq('club_id', clubId)
-          .eq('user_id', userId)
-          .maybeSingle();
+        // PERF 2026-08-24: these three lookups - the club role, the club's
+        // union_id, and the global admin flag - do not depend on one another,
+        // but they used to be awaited one after the next. The short-circuits
+        // below mean STAFF exit after the first, so the cost fell entirely on
+        // ordinary players: a regular player paid club_members -> clubs ->
+        // (unions + union_admins) -> profiles, four sequential round-trips, on
+        // every table entry AND again on every sit/stand (heroSeat is in the
+        // dep array). Fired together they cost one.
+        //
+        // Precedence is unchanged and still short-circuits in the same order:
+        // club staff, then union staff, then platform admin. Only the union
+        // pair stays lazy, because it needs club.union_id.
+        const [{ data: membership }, { data: club }, { data: profile }] = await Promise.all([
+          supabase
+            .from('club_members')
+            .select('role')
+            .eq('club_id', clubId)
+            .eq('user_id', userId)
+            .maybeSingle(),
+          supabase.from('clubs').select('union_id').eq('id', clubId).maybeSingle(),
+          supabase.from('profiles').select('is_admin').eq('id', userId).maybeSingle(),
+        ]);
 
         if (membership) {
           const role = membership.role?.toLowerCase() || '';
@@ -2281,13 +2296,8 @@ export default function TablePage({
           }
         }
 
-        // Check union-level role (union_owners, union_admins)
-        const { data: club } = await supabase
-          .from('clubs')
-          .select('union_id')
-          .eq('id', clubId)
-          .maybeSingle();
-
+        // Check union-level role (union_owners, union_admins) - `club` was
+        // fetched in the parallel batch above.
         if (club?.union_id) {
           // Union owner lives on unions.owner_id; union staff live in union_admins.
           const [{ data: unionRow }, { data: unionAdmin }] = await Promise.all([
@@ -2307,13 +2317,8 @@ export default function TablePage({
           }
         }
 
-        // Check smarter.poker admin status
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('is_admin')
-          .eq('id', userId)
-          .maybeSingle();
-
+        // Check smarter.poker admin status - `profile` came from the parallel
+        // batch above.
         if (profile?.is_admin) {
           setCanChatAsObserver(true);
           return;
@@ -6865,11 +6870,39 @@ export default function TablePage({
   // ═══════════════════════════════════════════════════════════════════════════
   // WAITLIST → HORSE YIELD — When a real player is waiting & table full, remove a horse
   // ═══════════════════════════════════════════════════════════════════════════
+  // Seated-only gate for the waitlist yield below. A spectator has no seat to
+  // give up and no stake in table liquidity; only players actually sitting at
+  // the table should be running this.
+  const heroIsSeatedForWaitlist = tableState.heroSeat > 0;
   useEffect(() => {
     if (!tableId || !tableState.blinds || tableState.blinds === '?/?') return;
     if (tableState.isTournament) return; // No horse cap in tournaments
+    if (!heroIsSeatedForWaitlist) return;
 
-    // Poll waitlist every 10s — if real players are waiting, yield a horse
+    // Poll the waitlist — if real players are waiting, yield a horse seat.
+    //
+    // PERF 2026-08-24. Two problems, one fixed here and one recorded.
+    //
+    // FIXED: this ran for EVERY client with the table open, including
+    // spectators and railbirds, who have no business performing table
+    // maintenance. A popular table can carry far more watchers than seats, and
+    // every one of them was issuing a waitlist read every 10 seconds plus a
+    // liquidity check. Restricted to SEATED players below.
+    //
+    // NOT FIXED, deliberately: the remaining seated players still duplicate
+    // this work N ways, and the yield is a MUTATION, so N clients race to
+    // perform the same one. The correct home for it is the engine - CLAUDE.md
+    // already records horse fleet management as server-authoritative, and
+    // HorseFleetManager seeds tables and populates `table_waitlist`. What it
+    // does NOT do is give a seat back when a human queues behind a full table
+    // of horses; HydraService.checkWaitlistAndYield is the only implementation
+    // of that anywhere, which is why it is left running rather than deleted as
+    // the old client-side AutoRebuyService was. Moving it server-side needs an
+    // engine change, not a client one.
+    //
+    // Interval also raised 10s -> 15s and jittered, so seated clients at the
+    // same table stop hitting the database in lockstep.
+    const JITTER_MS = Math.floor(Math.random() * 4000);
     const interval = setInterval(async () => {
       try {
         const entries = await waitlistService.getTableWaitlist(tableId);
@@ -6882,10 +6915,10 @@ export default function TablePage({
       } catch (err) {
         // Non-critical — silently ignore
       }
-    }, 10000);
+    }, 15000 + JITTER_MS);
 
     return () => clearInterval(interval);
-  }, [tableId, tableState.blinds, tableState.isTournament]);
+  }, [tableId, tableState.blinds, tableState.isTournament, heroIsSeatedForWaitlist]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   //HandController removed — server is authoritative

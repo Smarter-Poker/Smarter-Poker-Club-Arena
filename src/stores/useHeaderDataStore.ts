@@ -107,6 +107,20 @@ function persistAvatar(userId: string | null, url: string | null): void {
   }
 }
 
+// PERF 2026-08-24: coalesce badge count refetches.
+// The realtime handlers below each ran an exact COUNT per delivered row. This
+// collapses a burst into a single trailing query per kind.
+const COUNT_DEBOUNCE_MS = 1200;
+const countTimers: Record<string, ReturnType<typeof setTimeout> | undefined> = {};
+function scheduleCount(kind: string, run: () => void | Promise<void>): void {
+  const existing = countTimers[kind];
+  if (existing) clearTimeout(existing);
+  countTimers[kind] = setTimeout(() => {
+    countTimers[kind] = undefined;
+    void run();
+  }, COUNT_DEBOUNCE_MS);
+}
+
 export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
   avatarUrl: null,
   notificationCount: hydrateCount('ca-notif-count'),
@@ -252,7 +266,8 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
             ]);
             if (get()._userId !== userId) return;
             if (pR.error) reportError(pR.error, 'useHeaderDataStore.avatar_fetch_retry');
-            if (nR.error) reportError(nR.error, 'useHeaderDataStore.notification_count_fetch_retry');
+            if (nR.error)
+              reportError(nR.error, 'useHeaderDataStore.notification_count_fetch_retry');
             if (mR.error) reportError(mR.error, 'useHeaderDataStore.message_count_fetch_retry');
             if (!pR.error) {
               const retriedAvatar = pR.data?.avatar_url || null;
@@ -291,18 +306,27 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
           table: 'notifications',
           filter: `user_id=eq.${userId}`,
         },
-        async () => {
-          try {
-            const { count } = await supabase
-              .from('notifications')
-              .select('*', { count: 'exact', head: true })
-              .eq('user_id', userId)
-              .eq('read', false);
-            get().setNotificationCount(count || 0);
-          } catch (e) {
-            reportError(e, 'useHeaderDataStore.async');
-            /* silent */
-          }
+        () => {
+          // PERF 2026-08-24: this used to run a `count: 'exact'` query
+          // SYNCHRONOUSLY ON EVERY EVENT. This channel lives on the global
+          // header, so it is mounted for every user for the whole session, and
+          // notifications arrive in bursts (a tournament finishing, a club
+          // announcement, a settlement run). Ten notifications meant ten exact
+          // counts. Coalesced: a burst now costs one query. A badge does not
+          // need sub-second precision.
+          scheduleCount('notifications', async () => {
+            try {
+              const { count } = await supabase
+                .from('notifications')
+                .select('*', { count: 'exact', head: true })
+                .eq('user_id', userId)
+                .eq('read', false);
+              get().setNotificationCount(count || 0);
+            } catch (e) {
+              reportError(e, 'useHeaderDataStore.async');
+              /* silent */
+            }
+          });
         }
       )
       .on(
@@ -323,17 +347,22 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
             );
             return;
           }
-          try {
-            const { count } = await supabase
-              .from('messages')
-              .select('*', { count: 'exact', head: true })
-              .eq('receiver_id', userId)
-              .eq('is_read', false);
-            get().setUnreadMessages(count || 0);
-          } catch (e) {
-            reportError(e, 'useHeaderDataStore.async');
-            /* silent */
-          }
+          // Coalesced for the same reason as the notifications handler above -
+          // an active conversation delivers many rows in quick succession and
+          // each one used to trigger its own exact count.
+          scheduleCount('messages', async () => {
+            try {
+              const { count } = await supabase
+                .from('messages')
+                .select('*', { count: 'exact', head: true })
+                .eq('receiver_id', userId)
+                .eq('is_read', false);
+              get().setUnreadMessages(count || 0);
+            } catch (e) {
+              reportError(e, 'useHeaderDataStore.async');
+              /* silent */
+            }
+          });
         }
       )
       .subscribe((status: string, err?: Error) => {

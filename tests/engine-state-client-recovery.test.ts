@@ -66,6 +66,27 @@ beforeEach(async () => {
   FakeWebSocket.instances = [];
   vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
   vi.useFakeTimers({ shouldAdvanceTime: true });
+  // 2026-08-24: RESET THE MODULE GRAPH BETWEEN TESTS.
+  //
+  // `engineSocketMux` is a module-level singleton, and the mux deliberately
+  // LINGERS its physical socket after the last table is released so a player
+  // switching tables reuses a warm connection instead of paying a fresh TLS
+  // handshake. That linger is correct in production and poison across tests:
+  // the socket survived into the next test, `ensureSocket()` saw an already-OPEN
+  // connection and created nothing, and `live()` - which reads the most recent
+  // FakeWebSocket, an array this hook has just emptied - returned undefined.
+  //
+  // It surfaced when the linger went from 5s to 60s: tests here advance the
+  // clock 40s, which used to be long enough to expire the old socket by
+  // accident. That made the isolation bug invisible rather than absent, and it
+  // failed in CI while passing locally because `shouldAdvanceTime: true` lets
+  // real elapsed time move the fake clock too, so the outcome depended on how
+  // fast the machine was.
+  //
+  // resetModules gives each test its own EngineStateClient AND its own mux.
+  // Both imports below happen after it, so they still share one module graph
+  // and CLOSE_MUX_SUPERSEDED remains the identity the client actually compares.
+  vi.resetModules();
   const mod = await import('../src/services/EngineStateClient');
   EngineStateClient = mod.EngineStateClient;
   EngineChannelClient = mod.EngineChannelClient;

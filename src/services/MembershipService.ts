@@ -406,27 +406,35 @@ export const MembershipService = {
   ): Promise<{ total: number; active: number; pending: number; online: number }> {
     try {
       const resolvedId = await resolveClubUUID(clubId);
-      const { count: total, error: totalErr } = await supabase
-        .from('club_members')
-        .select('*', { count: 'exact', head: true })
-        .eq('club_id', resolvedId);
+      // PERF 2026-08-24: three `count: 'exact'` scans of the SAME club_members
+      // partition, awaited one after another. Exact counts are not free - each
+      // one scans the club's rows (588-1,200 on a busy club) - and none of the
+      // three depends on the other two, so this paid three sequential
+      // round-trips plus three scans on the club-home path. Fired together they
+      // cost one round-trip.
+      const [
+        { count: total, error: totalErr },
+        { count: active, error: activeErr },
+        { count: pending, error: pendingErr },
+      ] = await Promise.all([
+        supabase
+          .from('club_members')
+          .select('*', { count: 'exact', head: true })
+          .eq('club_id', resolvedId),
+        supabase
+          .from('club_members')
+          .select('*', { count: 'exact', head: true })
+          .eq('club_id', resolvedId)
+          .in('status', ['active', 'approved']),
+        supabase
+          .from('club_members')
+          .select('*', { count: 'exact', head: true })
+          .eq('club_id', resolvedId)
+          .eq('status', 'pending'),
+      ]);
 
       if (totalErr) reportError(totalErr, 'MembershipService.getMemberCounts_total_error');
-
-      const { count: active, error: activeErr } = await supabase
-        .from('club_members')
-        .select('*', { count: 'exact', head: true })
-        .eq('club_id', resolvedId)
-        .in('status', ['active', 'approved']);
-
       if (activeErr) reportError(activeErr, 'MembershipService.getMemberCounts_active_error');
-
-      const { count: pending, error: pendingErr } = await supabase
-        .from('club_members')
-        .select('*', { count: 'exact', head: true })
-        .eq('club_id', resolvedId)
-        .eq('status', 'pending');
-
       if (pendingErr) reportError(pendingErr, 'MembershipService.getMemberCounts_pending_error');
       // Estimate online count — creating a channel just to check presenceState()
       // on an unsubscribed channel always returned 0 and caused side-effect churn.

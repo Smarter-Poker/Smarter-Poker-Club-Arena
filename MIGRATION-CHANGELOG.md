@@ -7,6 +7,109 @@
 
 ---
 
+## Cowork session 2026-08-24 (part 2) — THE DATABASE WAS SATURATED
+
+Dan: "find any and all other ways to fully improve and optimize... globally."
+
+### The finding that reframed everything
+
+An `EXPLAIN (ANALYZE, BUFFERS)` of a single-row primary-key lookup on
+`hand_history` reported **9 buffer hits, all cache, zero disk reads — and
+5,536.799 ms of execution time**. A query doing essentially no work taking five
+and a half seconds is not a slow query; it is a CPU-starved instance. Postgres
+logs for one 3-hour window confirmed it: **3,742 "canceling statement due to
+statement timeout"** (~20 per minute), plus pg_cron jobs failing at "job startup
+timeout" because no worker slot was free.
+
+So the global slowness was not the network, not Vercel, and not mainly the
+client. The database had no headroom, and everything queued behind it.
+
+After the fixes below, **the identical probe query returns in 0.172 ms.**
+
+### Outright broken features found in the logs (not slow — broken)
+
+- **MESSENGER**: 286 x `permission denied for function fn_get_user_conversations`.
+  The function is SECURITY DEFINER, carries its own `auth.uid() IS DISTINCT FROM
+p_user_id` guard, and its comment says an end-user JWT is an expected caller —
+  but it was granted to `service_role` only. Every inbox load from the browser
+  failed. Fixed by GRANT (migration in the World Hub repo, PR #713).
+- **125 x `log_wallet_transaction` + 124 x `chip_ledger` INSERT denials.** These
+  are NOT granted, deliberately: doing so would let any logged-in user forge
+  financial ledger rows for any user with an arbitrary amount. The denial is the
+  control working. The client call was removed instead — see below.
+
+### Client (Club Arena)
+
+- `WalletService.logTransaction` no longer writes from the browser. It never
+  could (100% failure rate for as long as it has existed), but it was wrapped in
+  `retryAsync(..., 3)`, so every call retried a PERMANENT authorization error
+  three times, attempted a `chip_ledger` insert that also failed, and then
+  awaited `FinancialAlertService.logCritical()` — itself another database write.
+  One doomed audit log cost ~6 round trips and raised a false "audit trail gap"
+  CRITICAL, which also meant the real critical channel was full of noise.
+  THE AUDIT TRAIL IS NOT LOST: every real money movement is written to
+  `wallet_transactions` server-side, in the same transaction as the movement, by
+  the atomic\_\* RPC that performs it. Pinned by
+  `tests/wallet-audit-is-server-authoritative.test.ts`.
+  Remaining gap, deliberately not papered over: a few call sites log non-monetary
+  audit NOTES (agent promotion at amount 0, same-person union->club allocation,
+  horse seating) that no atomic RPC writes. Those need a service-role route.
+
+### Database (all APPLIED to production via Supabase MCP, assertions green)
+
+- `20260824_position_stats_no_row_reread.sql` — the position-stats trigger was
+  re-SELECTing from `hand_history` **the row it had just been handed in NEW**: a
+  PK lookup plus TOAST detoast of three large jsonb columns against the 10GB
+  table, per hand. It also re-expanded the whole `actions` array once per seated
+  player. Both fixed; provably output-identical. Verified live (174
+  `player_position_stats` rows updated in the first 3 minutes on the new path).
+- `20260824_drop_unused_indexes_on_hot_write_tables.sql` — five indexes never
+  scanned in the seven months since the project was created (stats_reset is
+  NULL, so the counters are lifetime), not backing constraints, on tables with
+  > 100k writes. Includes a **319 MB** index on `hand_state_snapshots`, which was
+  > also dragging the pruning job: that job scans `created_at` and DELETEs, and
+  > every delete had to maintain the 319 MB index too.
+
+### World Hub + Club Commander (shipped separately, PR #713)
+
+- `get-header-stats` unread scan was UNBOUNDED and runs on **every page load**
+  plus every 30s globally — `earliestRead` is the EARLIEST read timestamp across
+  all threads, so one stale thread made it "since forever". Bounded newest-first
+  (badge caps at 99+, so it is visually identical).
+- Messenger `get-conversations` pulled every message the user ever received to
+  find rows carrying club-identity metadata; the consuming loop already skipped
+  rows without it, so that filter moved server-side and the scan is bounded.
+- Messenger fired the SAME inbox request 3-4x concurrently on open; added
+  in-flight de-duplication keyed on (user, identity context).
+- Commander home-games had a **self-sustaining realtime resubscribe loop** — the
+  channel effect depended on the `events` ARRAY, and the channel's own callback
+  refetched it, producing a new array identity every time. Plus five serial
+  review fetches re-running on every RSVP. Both fixed.
+- Commander `my-status` ran a raw channel on the same two tables
+  `useTournamentRealtime` already covers, so every entry change refetched TWICE
+  per watching player, undebounced. Duplicate removed.
+- Commander player home subscribed to EVERY `commander_games` UPDATE
+  platform-wide with no filter; now coalesced.
+
+### Still open (evidence gathered, not yet fixed)
+
+- `hand_history` still carries three synchronous per-row triggers. The worst
+  waste is gone, but the aggregation is still inline on the insert path.
+- Maintenance RPCs remain heavy and run every 60s: `fn_reconcile_tournament_denormals`
+  (11.4s mean / 105s max), `ca_refresh_hand_player_index` (73.9s),
+  `fn_credit_agent_commissions_batch` (27s). Left alone deliberately — the
+  reconciler keeps `tournament_players.table_id/seat_number` in sync with the
+  authoritative `table_seats`, and the UI reads it, so running it less often
+  risks showing a player the wrong table. It needs to be made cheaper, not rarer.
+- ~1,336 further unused indexes remain; only the five on high-write tables were
+  dropped in this pass.
+- Auth is capped at 10 DB connections (dashboard setting, percentage-based
+  allocation recommended by the advisor).
+- ~2,400 duplicate-key violations per 3h across several constraints indicate
+  retry storms worth tracing to their callers.
+
+---
+
 ## Cowork session 2026-08-24 — Global connectivity + load-time pass (Dan directive)
 
 Dan: load times, persistent connectivity and failed connections "PLAGUING US

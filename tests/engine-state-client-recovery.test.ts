@@ -291,6 +291,35 @@ describe('EngineChannelClient — resubscribe on reconnect (2026-08-24)', () => 
   });
 });
 
+describe('EngineChannelClient — periodic subscription re-assert (2026-08-24)', () => {
+  it('re-sends desired JOINs on a live socket every REASSERT interval', async () => {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    void c.connect();
+    await flush();
+    const ws = live();
+    ws._open();
+    await flush();
+    c.send({ type: 'JOIN_LOBBY' });
+    c.send({ type: 'JOIN_TOURNAMENT', tournamentId: 'tt' });
+    const countJoins = () =>
+      ws.sent.map((s) => JSON.parse(s) as { type: string }).filter((m) => m.type === 'JOIN_LOBBY')
+        .length;
+    expect(countJoins()).toBe(1);
+
+    // Keep the link "alive" so the watchdog never tears it down, and advance
+    // past the re-assert interval: the JOIN must be sent again, unprompted.
+    for (let i = 0; i < 20; i++) {
+      ws._frame({ type: 'PING', ts: i });
+      await vi.advanceTimersByTimeAsync(10_000);
+    }
+    expect(countJoins()).toBeGreaterThanOrEqual(2);
+    c.disconnect();
+  });
+});
+
 describe('EngineChannelClient — waking a backgrounded tab', () => {
   it('forgives a bounded debt on wake, not the whole clock', async () => {
     const c = new EngineChannelClient({

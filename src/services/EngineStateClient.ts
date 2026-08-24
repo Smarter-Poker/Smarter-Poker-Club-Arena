@@ -925,6 +925,19 @@ export class EngineChannelClient {
   private static readonly WATCHDOG_TICK_MS = 10_000;
   private static readonly STALE_HARD_MS = 60_000;
   /**
+   * 2026-08-24: periodic subscription RE-ASSERT. Two ways a subscription can
+   * silently die on a healthy socket: (a) the server's JOIN_CLUB membership
+   * check fails CLOSED on a transient DB error — the join is simply dropped,
+   * no error frame, and the client believes it is subscribed; (b) any future
+   * server-side state loss that does not close the socket. JOINs are
+   * idempotent server-side (Set adds + alreadyJoined guard), so re-sending
+   * the desired state every few minutes costs a handful of tiny frames and
+   * guarantees a lost subscription heals within one interval instead of
+   * never.
+   */
+  private static readonly REASSERT_INTERVAL_MS = 180_000;
+  private lastReassertAt = 0;
+  /**
    * How much of the staleness budget a backgrounded tab is forgiven on wake.
    *
    * The watchdog skips its check while the tab is hidden but did NOT reset the
@@ -1161,6 +1174,8 @@ export class EngineChannelClient {
         this.replayDesiredState(ws);
       }
       this.hasConnectedBefore = true;
+      // Fresh socket just (re)played its state — start the re-assert clock now.
+      this.lastReassertAt = Date.now();
       this.setStatus('connected');
       this.startWatchdog();
       // Flush any queued messages
@@ -1285,6 +1300,17 @@ export class EngineChannelClient {
     this.watchdogTimer = window.setInterval(() => {
       if (this.intentionalClose || this.status !== 'connected') return;
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      // 2026-08-24: re-assert desired subscriptions on a live socket — see
+      // REASSERT_INTERVAL_MS. Runs before the staleness check on purpose:
+      // the replay frames also serve as outbound traffic on a quiet link.
+      if (
+        this.ws !== null &&
+        this.ws.readyState === 1 &&
+        Date.now() - this.lastReassertAt >= EngineChannelClient.REASSERT_INTERVAL_MS
+      ) {
+        this.lastReassertAt = Date.now();
+        this.replayDesiredState(this.ws);
+      }
       if (Date.now() - this.lastInboundAt < EngineChannelClient.STALE_HARD_MS) return;
       this.lastInboundAt = Date.now();
       this.setStatus('reconnecting');

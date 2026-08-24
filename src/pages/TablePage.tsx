@@ -2264,13 +2264,28 @@ export default function TablePage({
           setCanChatAsObserver(false);
           return;
         }
-        // Check club membership role
-        const { data: membership } = await supabase
-          .from('club_members')
-          .select('role')
-          .eq('club_id', clubId)
-          .eq('user_id', userId)
-          .maybeSingle();
+        // PERF 2026-08-24: these three lookups - the club role, the club's
+        // union_id, and the global admin flag - do not depend on one another,
+        // but they used to be awaited one after the next. The short-circuits
+        // below mean STAFF exit after the first, so the cost fell entirely on
+        // ordinary players: a regular player paid club_members -> clubs ->
+        // (unions + union_admins) -> profiles, four sequential round-trips, on
+        // every table entry AND again on every sit/stand (heroSeat is in the
+        // dep array). Fired together they cost one.
+        //
+        // Precedence is unchanged and still short-circuits in the same order:
+        // club staff, then union staff, then platform admin. Only the union
+        // pair stays lazy, because it needs club.union_id.
+        const [{ data: membership }, { data: club }, { data: profile }] = await Promise.all([
+          supabase
+            .from('club_members')
+            .select('role')
+            .eq('club_id', clubId)
+            .eq('user_id', userId)
+            .maybeSingle(),
+          supabase.from('clubs').select('union_id').eq('id', clubId).maybeSingle(),
+          supabase.from('profiles').select('is_admin').eq('id', userId).maybeSingle(),
+        ]);
 
         if (membership) {
           const role = membership.role?.toLowerCase() || '';
@@ -2281,13 +2296,8 @@ export default function TablePage({
           }
         }
 
-        // Check union-level role (union_owners, union_admins)
-        const { data: club } = await supabase
-          .from('clubs')
-          .select('union_id')
-          .eq('id', clubId)
-          .maybeSingle();
-
+        // Check union-level role (union_owners, union_admins) - `club` was
+        // fetched in the parallel batch above.
         if (club?.union_id) {
           // Union owner lives on unions.owner_id; union staff live in union_admins.
           const [{ data: unionRow }, { data: unionAdmin }] = await Promise.all([
@@ -2307,13 +2317,8 @@ export default function TablePage({
           }
         }
 
-        // Check smarter.poker admin status
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('is_admin')
-          .eq('id', userId)
-          .maybeSingle();
-
+        // Check smarter.poker admin status - `profile` came from the parallel
+        // batch above.
         if (profile?.is_admin) {
           setCanChatAsObserver(true);
           return;

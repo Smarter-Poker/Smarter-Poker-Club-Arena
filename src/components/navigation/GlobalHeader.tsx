@@ -250,7 +250,7 @@ export default function GlobalHeader() {
             <img
               src={`${BASE}images/btn-back.png`}
               alt="Back"
-              style={{ height: '100%', width: '100%', objectFit: 'contain' }}
+              style={{ height: '100%', width: 'auto', objectFit: 'contain' }}
             />
           </button>
           <button
@@ -262,7 +262,7 @@ export default function GlobalHeader() {
             <img
               src={`${BASE}images/btn-hub-v4.png`}
               alt="Hub"
-              style={{ height: '100%', width: '100%', objectFit: 'contain' }}
+              style={{ height: '100%', width: 'auto', objectFit: 'contain' }}
             />
           </button>
         </div>

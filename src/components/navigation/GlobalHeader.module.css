@@ -46,7 +46,7 @@
 
      env() resolves to 0 on hardware without an inset, so desktop and older
      phones are untouched. */
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: calc(env(safe-area-inset-top, 0px) + 6px);
   gap: 8px;
   flex-wrap: nowrap;
   width: 100%;
@@ -297,7 +297,7 @@
   }
 
   .headerRight > * {
-    height: 30px;
+    height: 32px;
   }
 
   .brandTextImg {
@@ -308,22 +308,24 @@
      TO BE THE SAME SIZE AS THE ICONS TO THE RIGHT." One size — 30px — for
      every control in the bar, left and right. */
   .headerImgBtn {
-    height: 30px;
-    width: 30px;
-    padding: 2px;
+    height: 32px;
+    width: 32px;
+    padding: 0;
   }
 
+  /* Nav pills are wide art, so height is the shared dimension — width follows
+     the aspect. A max-width would letterbox them short again. */
   .headerNavBtn {
-    height: 30px;
+    height: 32px;
     width: auto;
-    max-width: 64px;
-    padding: 3px;
+    max-width: none;
+    padding: 0;
   }
 
   .hamburgerBtn {
-    width: 30px;
-    height: 30px;
-    padding: 3px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
   }
 
   .hideMobile {
@@ -333,8 +335,8 @@
   .orbBtn,
   .orbLink,
   .profileOrb {
-    width: 30px;
-    height: 30px;
+    width: 32px;
+    height: 32px;
     font-size: 12px;
   }
 
@@ -379,19 +381,20 @@
     gap: 2px;
   }
   .headerNavBtn {
-    max-width: 46px;
-    height: 24px;
+    max-width: none;
+    height: 26px;
+    width: auto;
   }
   .orbBtn,
   .orbLink,
   .profileOrb {
-    width: 24px;
-    height: 24px;
+    width: 26px;
+    height: 26px;
   }
   .headerImgBtn,
   .hamburgerBtn {
-    width: 24px;
-    height: 24px;
+    width: 26px;
+    height: 26px;
   }
 }
 
@@ -411,6 +414,6 @@
    touches .header's padding. */
 @media (display-mode: standalone), (display-mode: fullscreen) {
   .header {
-    padding-top: max(env(safe-area-inset-top, 0px), 24px);
+    padding-top: calc(max(env(safe-area-inset-top, 0px), 24px) + 6px);
   }
 }

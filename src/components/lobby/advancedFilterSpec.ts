@@ -175,10 +175,16 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
     features: OMAHA_FEATURES,
   },
   LIMIT: {
-    // No "Games:" row - like Omaha, the Limit tab already IS the variant
-    // selection (cashKind routes FLH and every fixed/mixed-limit variant
-    // here), and inventing sub-variant chips without a reference screen
-    // risks hiding real tables behind keys variantKey has not learnt.
+    // 2026-08-24: this row was withheld because "inventing sub-variant chips
+    // risks hiding real tables behind keys variantKey has not learnt". That
+    // precondition is now met: variantKey learnt `flh` and `flo8` (and the
+    // legacy `limit_holdem` / `limit_omaha` spellings, which fold into the same
+    // two keys) when the limit games shipped. There are exactly two limit
+    // variants, both creatable, so the tab has something to sub-divide.
+    games: [
+      { key: 'flh', label: 'FLH' },
+      { key: 'flo8', label: 'FLO8' },
+    ],
     range: BLIND_RANGE,
     statuses: CASH_STATUSES,
     seats: { min: 2, max: 9 },

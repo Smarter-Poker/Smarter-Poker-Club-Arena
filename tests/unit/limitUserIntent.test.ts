@@ -98,3 +98,70 @@ describe('HALF 2 — a table created from those cards lands in the LIMIT tab', (
     expect((FILTER_SPECS.HOLDEM.games ?? []).map((g) => g.key)).not.toContain('flh');
   });
 });
+
+describe('HALF 2b — the LIMIT tab can be sub-divided now that the keys exist', () => {
+  it('offers exactly the two limit variants as chips', () => {
+    // The row was withheld originally because "inventing sub-variant chips
+    // risks hiding real tables behind keys variantKey has not learnt". Both
+    // keys are learnt now, which is what makes the chips safe.
+    expect((FILTER_SPECS.LIMIT.games ?? []).map((g) => g.key)).toEqual(['flh', 'flo8']);
+  });
+
+  it('shows a table when its own chip is ticked', () => {
+    const spec = FILTER_SPECS.LIMIT;
+    const pick = (games: string[]) => ({ ...emptyFilterValue(spec), games });
+    const rowFor = (variant: string) =>
+      ({ variant, price: 2, seatsTaken: 2, seats: 6, settings: {} }) as never;
+    expect(rowPassesFilter(spec, pick(['flh']), rowFor('flh'))).toBe(true);
+    expect(rowPassesFilter(spec, pick(['flo8']), rowFor('flo8'))).toBe(true);
+  });
+
+  it('hides the other limit variant when only one chip is ticked', () => {
+    const spec = FILTER_SPECS.LIMIT;
+    const pick = (games: string[]) => ({ ...emptyFilterValue(spec), games });
+    const rowFor = (variant: string) =>
+      ({ variant, price: 2, seatsTaken: 2, seats: 6, settings: {} }) as never;
+    expect(rowPassesFilter(spec, pick(['flh']), rowFor('flo8'))).toBe(false);
+    expect(rowPassesFilter(spec, pick(['flo8']), rowFor('flh'))).toBe(false);
+  });
+
+  it('does not hide the legacy spellings behind the new chips', () => {
+    // Rows written before the variant union existed spell it limit_holdem /
+    // limit_omaha. variantKey folds both into the same two keys, so a chip must
+    // still match them — otherwise adding the chips HIDES real tables, which is
+    // exactly what the original comment was afraid of.
+    const spec = FILTER_SPECS.LIMIT;
+    const pick = (games: string[]) => ({ ...emptyFilterValue(spec), games });
+    const rowFor = (variant: string) =>
+      ({ variant, price: 2, seatsTaken: 2, seats: 6, settings: {} }) as never;
+    expect(rowPassesFilter(spec, pick(['flh']), rowFor('limit_holdem'))).toBe(true);
+    expect(rowPassesFilter(spec, pick(['flo8']), rowFor('limit_omaha'))).toBe(true);
+  });
+
+  it('shows both when no chip is ticked', () => {
+    const spec = FILTER_SPECS.LIMIT;
+    const empty = emptyFilterValue(spec);
+    for (const v of ['flh', 'flo8', 'limit_holdem', 'limit_omaha']) {
+      expect(rowPassesFilter(spec, empty, { variant: v, price: 2, seatsTaken: 2, seats: 6, settings: {} } as never)).toBe(true);
+    }
+  });
+});
+
+describe('a control that promised a different game is gone', () => {
+  it('no longer offers a Pineapple toggle on the config screen', () => {
+    // Nothing in server/src has ever read `pineapple_holdem`, so the toggle
+    // promised "3 hole cards, discard 1" and delivered ordinary Hold'em. Crazy
+    // Pineapple works properly as its own variant card, which deals three and
+    // runs a real discard street.
+    const cfg = read('src/pages/TableConfigPage.tsx');
+    // Assert on the CONTROL, not on the words: the commit note in that file
+    // legitimately quotes the old label to explain why it went.
+    expect(cfg).not.toMatch(/label="Pineapple Hold'em"/);
+    expect(cfg).not.toMatch(/value=\{config\.pineappleHoldem\}/);
+    expect(cfg).not.toMatch(/updateConfig\('pineappleHoldem'/);
+  });
+
+  it('still offers Pineapple where it actually works — the variant card', () => {
+    expect(createPage).toMatch(/id:\s*'pineapple'/);
+  });
+});

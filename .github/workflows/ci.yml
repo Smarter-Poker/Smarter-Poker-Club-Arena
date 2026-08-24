@@ -387,6 +387,27 @@ jobs:
             exit 1
           fi
 
+      # BLOCKING: the client's stakes ladder must equal the server's. The
+      # server file is what charges the BBJ fee, caps the rake and decides the
+      # payout percent handed to bbj_atomic_payout_v2; the client file is what
+      # TELLS the player those numbers. On 2026-08-23 they disagreed on four of
+      # six tiers — a 0.2/0.4 game was Nano to the client and Micro to the
+      # server, and Micro's fee was published as 0.25bb while 0.60bb was
+      # charged. A comment cannot hold two files together; this can.
+      - name: Rake Config Parity — client vs server
+        run: |
+          set -o pipefail
+          echo "## Rake Config Parity" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-rakeconfig-parity.mjs 2>&1 | tee /tmp/rakeparity.log; then
+            echo "OK — src/config/RakeConfig.ts matches server/src/config/RakeConfig.ts." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Client and server rake config have diverged — see log. The server" >> $GITHUB_STEP_SUMMARY
+            echo "file is the authority; change the client to match, and update" >> $GITHUB_STEP_SUMMARY
+            echo "bbj_stakes_tiers in the same PR so the published mirror keeps up." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       # BLOCKING: a client-read table with NO writer anywhere (client
       # .from().insert/update, server/src, or an RPC/migration body) means the UI
       # reads a table nothing populates -> silent empty/stale values. Detection is

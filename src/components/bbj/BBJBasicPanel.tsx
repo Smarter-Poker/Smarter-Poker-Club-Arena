@@ -7,9 +7,25 @@
  * paragraph, then one row per stakes tier showing what the hand is charged and
  * how a hit is split.
  *
- * THE TIERS COME FROM THE DATABASE. Specifically `bbj_stakes_tiers`, which is
- * the table fn_bbj_payout actually pays from — so what a player is told here
- * and what the engine does are the same rows.
+ * THE TIERS COME FROM THE DATABASE — `bbj_stakes_tiers`.
+ *
+ * CORRECTION 2026-08-23 (same day, later): an earlier version of this note
+ * said that table is "what fn_bbj_payout actually pays from." It is not, and
+ * saying so was the same mistake this file already made once. No database
+ * function reads bbj_stakes_tiers and neither does server/src: the engine gets
+ * the fee, the cap and the payout percent from STAKES_TIERS in
+ * server/src/config/RakeConfig.ts and passes the percent into
+ * bbj_atomic_payout_v2 as p_payout_total_percent.
+ *
+ * bbj_stakes_tiers is the PUBLISHED MIRROR of that config — the copy a client
+ * can read without shipping server code. Reading it here is still the right
+ * call (one published schedule, changeable without a deploy), but it is only
+ * as true as the mirror. Two things keep it true:
+ *   - migration 20260823_bbj_stakes_tiers_mirror_server_rakeconfig rewrote all
+ *     six rows from the server config; five of them were wrong, including a
+ *     Micro fee published as 0.40bb while 0.60bb was charged.
+ *   - scripts/ci/check-rakeconfig-parity.mjs fails the build when the client
+ *     and server configs diverge.
  *
  * ── WHY THIS CHANGED, 2026-08-23 ────────────────────────────────────────────
  * This file used to derive every figure from RAKE_SCHEDULE and STAKES_TIERS in

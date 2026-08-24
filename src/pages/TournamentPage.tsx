@@ -65,7 +65,11 @@ function isLateRegOpen(t: {
 }): boolean {
   if (t.status !== 'RUNNING') return false;
   const levels = Number(t.late_reg_levels ?? 0);
-  if (levels > 0) return Number(t.current_level ?? 0) <= levels;
+  // 0-BASED (2026-08-23): current_level indexes blind_structure directly, so
+  // "through level N" is indices 0..N-1 and N is the cutoff. `<=` here left
+  // the Register button live for a level after the engine had closed late reg
+  // and finalized the pool. Matches TournamentManagerBase.isLateRegClosed.
+  if (levels > 0) return Number(t.current_level ?? 0) < levels;
   const mins = Number(t.late_reg_mins ?? 0);
   if (mins > 0 && t.started_at) {
     return Date.now() - new Date(t.started_at).getTime() <= mins * 60_000;

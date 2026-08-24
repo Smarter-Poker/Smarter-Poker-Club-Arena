@@ -43,6 +43,7 @@ import {
   resolveTargetClub,
   readLastClubId,
   rememberLastClub,
+  primeUnionFlags,
 } from '../utils/clubQuickLink';
 import CarouselSection from '../components/home/CarouselSection';
 import { getClubLevelFromMembers } from '../utils/clubLevels';
@@ -371,6 +372,24 @@ function HomePageInner() {
           } catch {
             /* quota */
           }
+          /**
+           * UNION LAW (2026-08-24). These rows came straight from `clubs` with
+           * an authoritative `is_union`, so hand them to the union-flag memo
+           * while we have them. Two reasons, and the second is the real one:
+           *
+           *  - it saves a `clubs.is_union` round trip per candidate the first
+           *    time UnionSkinGuard or resolveLobbyClubId asks about a club;
+           *  - it seeds that memo from the NETWORK rather than from
+           *    localStorage. A legacy cache row carries no union signal at
+           *    all, which is what let a stale cache hand back the union hub as
+           *    a lobby destination (see cachedUnionFlag). Priming here means
+           *    the fresh answer is already in memory before any stale row can
+           *    be consulted.
+           *
+           * Deliberately AFTER the write above: if setItem throws on quota the
+           * priming is still valid, and the flags are the half that matters.
+           */
+          primeUnionFlags(lawFilteredClubs);
 
           // ── Batch: card color sync ──
           const [colorResult] = await Promise.allSettled([colorPrefPromise]);

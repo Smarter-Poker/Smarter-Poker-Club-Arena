@@ -1808,7 +1808,9 @@
 
 @media (max-width: 700px) {
   .mainContent {
-    padding: 0 8px 16px 8px;
+    /* Dan 2026-08-24 (screenshot): the action bar sat flush against the
+       header. 14px of top air shifts the whole column down. */
+    padding: 14px 8px 16px 8px;
     max-width: 100%;
   }
 
@@ -1847,7 +1849,7 @@
 
 @media (max-width: 480px) {
   .mainContent {
-    padding: 0 6px 16px 6px;
+    padding: 14px 6px 16px 6px;
   }
 
   .featuredCard {
@@ -2744,4 +2746,24 @@
 .cashierSwitchItemActive {
   color: #00d4ff;
   background: rgba(0, 212, 255, 0.1);
+}
+
+/* Dan 2026-08-24 (screenshot): on phones the five bottom tiles rendered near-
+   uniform — the desktop hierarchy (STATS card largest in the centre, inner
+   pair medium, edge pair smallest) had collapsed under equal flex. Restore it
+   scaled down. Selectors target .bottomRow's CHILDREN (positions), because
+   tiles 4-5 are wrapped in .cashierTileWrap divs and .tileCard:nth-child
+   cannot see row position through the wrapper. */
+@media (max-width: 768px) {
+  .bottomRow > :nth-child(1),
+  .bottomRow > :nth-child(5) {
+    flex: 0.82 1 0;
+  }
+  .bottomRow > :nth-child(2),
+  .bottomRow > :nth-child(4) {
+    flex: 1 1 0;
+  }
+  .bottomRow > :nth-child(3) {
+    flex: 1.34 1 0;
+  }
 }

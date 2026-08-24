@@ -404,6 +404,21 @@
     justify-self: center;
     width: 100%;
     max-width: 320px;
+    /* Dan 2026-08-24 (screenshot): the Buy-In Min/Max figures and the seat
+       count sat left-justified inside the centered panel — they now center
+       over the Join Table button like the rest of the column. */
+    align-items: center;
+    text-align: center;
+  }
+  .cplaque__join-figures {
+    justify-content: center;
+  }
+  .cplaque__seats {
+    align-items: center;
+  }
+  .cplaque {
+    /* less dead air above the identity row on phones */
+    padding: 8px 14px 14px;
   }
   .cplaque__medallion {
     width: 64px;

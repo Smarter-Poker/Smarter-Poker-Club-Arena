@@ -2379,7 +2379,7 @@
      One number in, everything downstream follows: villain slot, hero slot
      (x1.3333), both seat widths, and the bust anchoring. */
   .seat {
-    --seat-avatar-base: 75px;
+    --seat-avatar-base: 66px; /* Dan 2026-08-24: avatars were too large on phones */
     width: 88px; /* was 72px -- 1.5x avatars */
   }
 
@@ -2461,7 +2461,7 @@
 
 @media (max-width: 480px) {
   .seat {
-    --seat-avatar-base: 66px; /* see the note in the 640px block */
+    --seat-avatar-base: 58px; /* see the note in the 640px block */
     width: 80px; /* was 66px -- 1.5x avatars */
   }
 
@@ -2544,7 +2544,7 @@
 
 @media (max-width: 380px) {
   .seat {
-    --seat-avatar-base: 57px; /* see the note in the 640px block */
+    --seat-avatar-base: 52px; /* see the note in the 640px block */
     width: 72px; /* was 58px -- 1.5x avatars */
   }
 

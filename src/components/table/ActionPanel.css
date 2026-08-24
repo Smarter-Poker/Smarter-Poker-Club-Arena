@@ -917,8 +917,8 @@
 
 @media (max-width: 640px) {
   .action-panel {
-    padding: 10px 12px;
-    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0));
+    padding: 8px 10px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0));
   }
 
   .action-row {
@@ -926,13 +926,21 @@
   }
 
   .action-btn {
-    height: 68px;
+    height: 56px;
     border-radius: 12px;
   }
 
+  /* Dan 2026-08-24: the buttons ballooned to 84px on a phone whenever it was
+     the hero's turn (the --active desktop enlargement was never re-scoped for
+     mobile). Your-turn emphasis stays, at phone scale. */
+  .action-panel--active .action-btn {
+    height: 62px;
+    min-height: 56px;
+  }
+
   .action-btn__label {
-    font-size: 1.0625rem;
-    letter-spacing: 0.8px;
+    font-size: 0.9375rem;
+    letter-spacing: 0.6px;
   }
 
   .action-btn__amount {

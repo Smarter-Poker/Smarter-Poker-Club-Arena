@@ -10133,6 +10133,10 @@ export default function TablePage({
          Embedded instances now fill their slot instead of the viewport; the
          route case is untouched. */
       className={`table-page${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress ? ' table-page--hero-turn' : ''}${winnerInfo.playerIds.length > 0 ? ' table-page--winner-flash' : ''}`}
+      /* Dan 2026-08-24: a spectator has no hero plate hanging below the
+         scaler, so the --sp-hero-clear bottom reserve is dead space for them.
+         CSS collapses it via [data-hero='false'] (see TablePage.css). */
+      data-hero={tableState.players.some((p) => p?.isHero) ? 'true' : 'false'}
       /* Dan 2026-08-18 — the page never shows the skin composite's scene:
          the table is .table-art inside the aspect-locked scaler, and the
          page behind it is a standalone designed background (style below). */

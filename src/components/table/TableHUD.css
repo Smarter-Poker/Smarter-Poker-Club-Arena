@@ -93,3 +93,15 @@
     padding-bottom: calc(var(--sp-action-h, 112px) + 8px + env(safe-area-inset-bottom, 0px));
   }
 }
+
+/* Dan 2026-08-24: "the STATS button is supposed to be ON the table screen,
+   not in the header." On phones the upper-right HUD corner (MiniStatsCard)
+   drops out of the header band onto the felt's upper right, under the tab
+   bar + BBJ strip. Desktop keeps the corner where it was. */
+@media (max-width: 768px) {
+  .table-hud__corner--ur {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 104px);
+    right: 8px;
+  }
+}

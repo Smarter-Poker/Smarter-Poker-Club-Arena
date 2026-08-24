@@ -1199,12 +1199,56 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             supabase
               .from('club_members')
               .select('user_id', { count: 'exact', head: true })
-              .eq('club_id', resolvedId) // Will be updated below if union has multiple clubs
+              .eq('club_id', resolvedId) // A CLUB's own count. Unions re-query below.
               .in('status', ['active', 'approved']),
           ]);
 
           if (allUcResult.data && allUcResult.data.length > 0) {
             unionClubIds = allUcResult.data.map((r) => r.club_id);
+          }
+
+          /**
+           * ...AND A UNION'S MEMBER COUNT IS EVERY CLUB'S, ADDED UP.
+           *
+           * Dan 2026-08-24: "how can the union only have 328 players but 551
+           * players currently playing. The union total is the total of all
+           * members in all clubs = total members in the union, even if the
+           * same player is in multiple clubs they get counted twice, 3x etc."
+           *
+           * This page renders unions as well as clubs — `clubs` carries a row
+           * with is_union true whose id IS the union id (Midway Union, club_id
+           * 55555). The 2026-08-23 fix above made every page count
+           * `resolvedId`'s own members, which is right for a club and wrong
+           * for a union: it counted the union's own house-club roster, 328,
+           * and published it as the whole union. Less than the 551 people
+           * playing in it at the time, which is how Dan spotted it.
+           *
+           * Summed WITHOUT de-duplication, exactly as specified: a player in
+           * two clubs is two memberships. That is also what unions.member_count
+           * holds (1,172 here = 584 Club JAQK + 588 Shark), so the header and
+           * the union record now agree instead of contradicting each other.
+           *
+           * The union's own house-club row is not in union_clubs and is
+           * therefore not counted — it is the union, not a club inside it, and
+           * 327 of its 328 members already hold a membership in one of the two
+           * real clubs.
+           *
+           * Fired as its own await AFTER unionClubIds is known, deliberately
+           * not blocking the tables/tournaments queries below.
+           */
+          if (clubData.is_union && unionClubIds.length > 0) {
+            const { count: unionMembers } = await supabase
+              .from('club_members')
+              .select('user_id', { count: 'exact', head: true })
+              .in('club_id', unionClubIds)
+              .in('status', ['active', 'approved']);
+            if (getIsMounted && !getIsMounted()) return;
+            if (unionMembers != null) {
+              setClub((prev) => (prev ? { ...prev, member_count: unionMembers } : prev));
+              // The level badge is derived from clubData further down; keep the
+              // two from disagreeing the way the header and the record did.
+              clubData.member_count = unionMembers;
+            }
           }
 
           /**
@@ -1225,7 +1269,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
            * SERIES, ahead of the tables and tournaments queries, so the games
            * waited on a number nobody wanted.
            */
-          if (memberCountResult.count != null) {
+          if (memberCountResult.count != null && !clubData.is_union) {
             if (getIsMounted && !getIsMounted()) return;
             setClub((prev) =>
               prev ? { ...prev, member_count: memberCountResult.count as number } : prev

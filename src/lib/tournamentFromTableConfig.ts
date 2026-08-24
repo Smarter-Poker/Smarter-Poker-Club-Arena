@@ -13,17 +13,44 @@ import { BLIND_STRUCTURES, SPIN_BLIND_STRUCTURE } from '../config/blindStructure
 import type { TournamentConfig } from '../services/TournamentService';
 import { payoutEngine } from '../services/PayoutEngine';
 import { splitBuyIn } from '../utils/buyIn';
+import { maxSeatsTheDeckAllows } from '../config/tableSeating';
+
 
 /**
  * The route's :gameType -> the tournament engine's variant vocabulary.
- * Anything not listed cannot be run as a tournament: HandController defaults an
- * unknown variant to 2 cards and a full deck, so 'flh' or 'mixed' would quietly
- * deal plain Hold'em. Those game types hide the SNG/MTT tabs instead.
+ * Anything not listed cannot be run as a tournament, and hides the SNG/MTT tabs.
+ *
+ * 2026-08-24: THE KEYS WERE WRONG AND HAD ALWAYS BEEN WRONG. This map was keyed
+ * `plo` and `shortdeck`; the create-table screen has only ever emitted `plo4`
+ * and `short_deck`. Neither matched, so `canRunAsTournament` answered false for
+ * every game except Hold'em and the SNG/MTT tabs were hidden on all of them —
+ * while production was already running 3,100 PLO4, 1,548 PLO5, 945 PLO6, 41
+ * PLO8 and a Short Deck tournament, created through the recurring service. The
+ * platform ran the games; only this screen could not make one. (The identical
+ * stale-key bug was in TableConfigPage's GAME_TYPE_LABELS, fixed in #594.)
+ *
+ * The value is written to `tournaments.game_type`, which
+ * TournamentManagerBase lowercases into the table's `game_variant`, so each
+ * entry must be a variant the engine genuinely deals — verified against
+ * server/src/engine/VariantRules.ts and against the live rows above.
+ *
+ * Still absent, deliberately:
+ *  • `pineapple` — its discard street has no tournament timing path, and no
+ *    PINEAPPLE tournament has ever existed.
+ *  • `flh` / `flo8` — a limit tournament raises stakes on a bet-size ladder,
+ *    and every blind structure here is a no-limit/pot-limit blind ladder.
+ *    Offering them would deal limit and escalate it like no-limit.
  */
-const TOURNAMENT_GAME_VARIANTS: Record<string, 'NLH' | 'PLO4' | 'SHORT_DECK'> = {
+const TOURNAMENT_GAME_VARIANTS: Record<
+  string,
+  'NLH' | 'PLO4' | 'PLO5' | 'PLO6' | 'PLO8' | 'SHORT_DECK'
+> = {
   nlh: 'NLH',
-  plo: 'PLO4',
-  shortdeck: 'SHORT_DECK',
+  plo4: 'PLO4',
+  plo5: 'PLO5',
+  plo6: 'PLO6',
+  plo8: 'PLO8',
+  short_deck: 'SHORT_DECK',
 };
 
 
@@ -250,9 +277,28 @@ export function buildTournamentConfig(
     actionTimeSeconds: clampInt(config.actionTimeSeconds ?? 15, 5, 60),
     // For an SNG the field IS the table (or a fixed multiple of 9), so the
     // table can never seat more than the field itself.
-    tableSize: isSng
-      ? Math.min(clampInt(config.tableSize ?? 9, 2, 10), maxPlayers)
-      : clampInt(config.tableSize ?? 9, 2, 10),
+    // 2026-08-24: clamped by what the DECK can physically deal, and by NOTHING
+    // ELSE. tableSeating's cash cap is deliberately NOT used here: its header
+    // is explicit that "TOURNAMENTS ARE NOT BOUND BY THIS", because the cash
+    // cap is kept tight so Run It Twice has three boards to come out of, and a
+    // tournament cannot run it twice at all. Applying it would shrink 9-handed
+    // MTT tables and turn 3-max Spin & Gos into 8-max — a structural change,
+    // not a seat cap. (I tried it that way first; the seat-law parity guard and
+    // that header are what caught it.)
+    //
+    // Physics still applies. PLO6 deals six cards a seat, so a ten-handed PLO6
+    // table wants 60 hole cards plus a board out of one 52-card deck, and
+    // PokerEngine.deal() THROWS rather than dealing short — the tournament
+    // would start and then sit there. This forbids only the undealable:
+    // Hold'em stays 10, PLO4 and PLO8 stay 10, and only PLO5 (9) and PLO6 (7)
+    // are actually reduced.
+    tableSize: Math.min(
+      isSng
+        ? Math.min(clampInt(config.tableSize ?? 9, 2, 10), maxPlayers)
+        : clampInt(config.tableSize ?? 9, 2, 10),
+      maxSeatsTheDeckAllows(gameType)
+    ),
+
     bigBlindAnte: config.bigBlindAnte ?? false,
     authorizedToRegister: config.authorizedToRegister ?? false,
     synchronizedBreaks: config.synchronizedBreaks ?? true,

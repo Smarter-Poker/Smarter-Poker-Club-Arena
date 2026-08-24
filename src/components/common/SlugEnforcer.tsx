@@ -12,11 +12,12 @@ export default function SlugEnforcer() {
       /^\/(clubs|club|unions)\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:\/|$)/
     );
     if (match) {
+      const type = match[1];
       const uuid = match[2];
 
       Promise.all([
         supabase.from('clubs').select('slug').eq('id', uuid).maybeSingle(),
-        supabase.from('unions').select('slug').eq('id', uuid).maybeSingle(),
+        supabase.from('unions').select('id').eq('id', uuid).maybeSingle(),
       ]).then(([clubRes, unionRes]) => {
         let newPath = location.pathname;
         let redirected = false;
@@ -25,11 +26,12 @@ export default function SlugEnforcer() {
           newPath = newPath.replace(uuid, clubRes.data.slug);
           newPath = newPath.replace(/^\/club\//, '/clubs/');
           redirected = true;
-        } else if (unionRes.data?.slug) {
-          newPath = newPath.replace(uuid, unionRes.data.slug);
-          newPath = newPath.replace(/^\/club\//, '/unions/');
-          newPath = newPath.replace(/^\/clubs\//, '/unions/');
-          redirected = true;
+        } else if (unionRes.data?.id) {
+          if (type === 'club' || type === 'clubs') {
+            newPath = newPath.replace(/^\/club\//, '/unions/');
+            newPath = newPath.replace(/^\/clubs\//, '/unions/');
+            redirected = true;
+          }
         }
 
         if (redirected) {

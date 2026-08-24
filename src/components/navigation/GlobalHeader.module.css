@@ -297,7 +297,7 @@
   }
 
   .headerRight > * {
-    height: 22px;
+    height: 30px;
   }
 
   /* Guard rail: the ten controls must fit the narrowest common phone. If a
@@ -316,15 +316,19 @@
      TO BE THE SAME SIZE AS THE ICONS TO THE RIGHT." One size — 30px — for
      every control in the bar, left and right. */
   .headerImgBtn {
-    height: 20px;
+    height: 15px;
     width: auto;
     padding: 0;
   }
 
   /* Nav pills are wide art, so height is the shared dimension — width follows
      the aspect. A max-width would letterbox them short again. */
+  /* Dan 2026-08-24: BACK and HUB 25% smaller (20 -> 15px), everything round
+     bigger (22 -> 30px). The row still has to fit: 22*1.35 + 15*4.25 +
+     15*3.99 (left art) + 6*30 (round icons) + gaps = 372px inside a 390px
+     iPhone. */
   .headerNavBtn {
-    height: 20px;
+    height: 15px;
     width: auto;
     max-width: none;
     padding: 0;
@@ -332,7 +336,7 @@
 
   .hamburgerBtn {
     width: auto;
-    height: 20px;
+    height: 22px;
     aspect-ratio: 1.35;
     padding: 0;
   }
@@ -352,9 +356,9 @@
   .orbBtn,
   .orbLink,
   .profileOrb {
-    width: 22px;
-    height: 22px;
-    font-size: 10px;
+    width: 30px;
+    height: 30px;
+    font-size: 13px;
     flex-shrink: 0;
   }
 
@@ -400,18 +404,18 @@
   }
   .headerNavBtn {
     max-width: none;
-    height: 18px;
+    height: 12px;
     width: auto;
   }
   .orbBtn,
   .orbLink,
   .profileOrb {
-    width: 18px;
-    height: 18px;
+    width: 24px;
+    height: 24px;
   }
   .headerImgBtn {
     width: auto;
-    height: 18px;
+    height: 12px;
   }
   .hamburgerBtn {
     width: auto;

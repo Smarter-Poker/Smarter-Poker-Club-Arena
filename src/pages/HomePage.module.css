@@ -1763,10 +1763,18 @@
        y=21 with the header ending at y=41 — 20px of overlap. Cropping 42px
        less of the dead art drops the console clear of the bar. */
     --action-bar-dead-top: 30px;
-    /* The bottom crop pulled the carousel 88px up INTO the console art, so
-       the cards overlapped it. 10px leaves the region starting at the visible
-       console edge, which is what the centring above measures from. */
-    --action-bar-dead-bottom: 10px;
+    /* MEASURED, not guessed (2026-08-24): the console art is 1024x682 with
+       the console band in the middle. At 378px wide it renders 252px tall and
+       carries ~55px of empty canvas below the console — which is why the gap
+       above the club cards read 53px while the gap below read 37px, and why
+       the mismatch grew on a bigger phone (68 vs 43 at 430px).
+
+       A percentage margin resolves against the container's WIDTH, so 14.6%
+       is the same fraction of the artwork at every screen size — the crop
+       now scales with the art instead of drifting from it. (14.6% of 378 =
+       55px; the original 88px constant was tuned at 600px wide, which is the
+       same 14.7%.) */
+    --action-bar-dead-bottom: 14.6%;
   }
 
   .featuredCard {
@@ -1813,8 +1821,8 @@
        an auto margin here too would steal a third share and break the equal
        spacing above. */
     max-width: 100%;
-    gap: 5px;
-    padding: 0 4px max(16px, env(safe-area-inset-bottom)) 4px;
+    gap: 4px;
+    padding: 0 2px max(16px, env(safe-area-inset-bottom)) 2px;
     /* Dan 2026-08-24: "PLAYER STATS ... NEEDS TO BE LOWERED SO IT'S EVENLY
        SPACED BETWEEN THE CARDS ON THE LEFT AND RIGHT." Bottom-aligning made
        the taller card grow only upward; centring splits its extra height
@@ -1854,12 +1862,12 @@
   }
 
   .clubCarousel {
-    /* 12px, not 20: the carousel centres its track between the console and
-       the footer, so its own bottom padding is the only thing that makes the
-       two gaps unequal. Measured live at 20px: 36px above the cards, 44px
-       below. Trimming 8 moves the midpoint 4px down and both land at 40.
-       (The ≤700 block's value never applies on a phone — this rule wins.) */
-    padding: 8px 8px 12px 8px;
+    /* The pagination dots sit INSIDE this box, under the cards: measured
+       24px of dots + gap, plus 12px of padding = 36px below the cards but
+       only 8px above them, so centring the box left the cards sitting high.
+       Matching the top padding to what the dots occupy below puts the CARDS
+       — not the box — in the middle. */
+    padding: 36px 8px 12px 8px;
   }
 
   .ctaCard {
@@ -2713,8 +2721,17 @@
   .bottomRow > :nth-child(5) {
     flex: 1 1 0;
   }
+  /* Dan's reference layout, measured off the image he sent: the five cards
+     are near-equal in WIDTH (165-195 of 974 = 17-20% each) and the stats
+     card stands out by being TALLER, because its art is a phone — a 0.53
+     frame, not the 2:3 the other four use. Widening it instead (flex 1.2)
+     made it fat rather than tall, which is what looked wrong. */
   .bottomRow > :nth-child(3) {
-    flex: 1.2 1 0;
+    flex: 1.06 1 0;
+  }
+
+  .bottomRow > :nth-child(3) .tileImageWrapper {
+    aspect-ratio: 0.53;
   }
   .tileCard {
     max-width: none;

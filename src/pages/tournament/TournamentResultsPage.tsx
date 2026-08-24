@@ -250,6 +250,14 @@ export default function TournamentResultsPage() {
           event: 'UPDATE',
           schema: 'public',
           table: 'tournaments',
+          // 2026-08-24: was unfiltered, so EVERY tournament UPDATE on the
+          // platform reloaded this list - and a running tournament updates
+          // constantly (level, prize pool, player count). This page only ever
+          // renders COMPLETED tournaments (loadTournaments filters on exactly
+          // that), so a row that is not completed can never change what is on
+          // screen. Realtime filters match the NEW row, so a tournament
+          // FINISHING still arrives, which is the event that matters.
+          filter: 'status=eq.COMPLETED',
         },
         (payload) => {
           // When tournament is updated (status change, prize pool finalized, etc.)
@@ -262,6 +270,14 @@ export default function TournamentResultsPage() {
           event: '*',
           schema: 'public',
           table: 'tournament_players',
+          // 2026-08-24: this was the worse of the two. Unfiltered, it received
+          // EVERY tournament_players row change on the platform - and chip
+          // counts are rewritten on essentially every hand of every running
+          // tournament - only to discard almost all of them in the client-side
+          // `selectedTournament?.id === ...` check below. The filter moves that
+          // same test to the server. This effect already re-runs on
+          // [selectedTournament?.id], so the filter follows the selection.
+          filter: `tournament_id=eq.${selectedTournament?.id ?? '00000000-0000-0000-0000-000000000000'}`,
         },
         (payload) => {
           // When player results are updated (position, prize finalized, etc.)

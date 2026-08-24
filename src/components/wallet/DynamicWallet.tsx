@@ -134,6 +134,7 @@ interface DynamicWalletProps {
   onOpenClubBank?: () => void;
   onOpenPromoWallet?: () => void;
   onOpenAgentWallet?: () => void;
+  onOpenPlayerWallet?: () => void;
   onOpenBBJ?: () => void;
 }
 
@@ -267,6 +268,7 @@ export default function DynamicWallet({
   onOpenClubBank,
   onOpenPromoWallet,
   onOpenAgentWallet,
+  onOpenPlayerWallet,
   onOpenBBJ,
 }: DynamicWalletProps) {
   const [data, setData] = useState<WalletData>({
@@ -876,6 +878,9 @@ export default function DynamicWallet({
       label: 'Player Wallet',
       icon: 'chip',
       value: animPlayerWallet,
+      // Dan 2026-08-24: "PLAYER WALLET NEEDS TO BE FULLY CLICKABLE AND OPEN TO
+      // SEE ALL TRANSACTIONS AND OTHER AVAILABLE DATA WHEN CLICKED."
+      onOpen: onOpenPlayerWallet,
     },
     agent_wallet: {
       key: 'agent_wallet',
@@ -1059,8 +1064,9 @@ export default function DynamicWallet({
 
         {/* Role-specific wallet rows.
             The Club Bank row is a button: "if they click on Club Bank, that
-            should open the Club Bank Cashier" (Dan 2026-08-23). Every other
-            row is inert — a balance, not a control. */}
+            should open the Club Bank Cashier" (Dan 2026-08-23). The Player
+            Wallet row is a button too: it opens the member's own statement
+            (Dan 2026-08-24). The rest are balances, not controls. */}
         {rows.map((row, idx) => (
           <div
             key={row.key}
@@ -1082,7 +1088,7 @@ export default function DynamicWallet({
             }
             role={row.onOpen ? 'button' : undefined}
             tabIndex={row.onOpen ? 0 : undefined}
-            aria-label={row.onOpen ? `${row.label}: open the Club Bank Cashier` : undefined}
+            aria-label={row.onOpen ? `Open ${row.label}` : undefined}
           >
             <span className="dw__row-icon" aria-hidden="true">
               <WalletIcon name={row.icon} />

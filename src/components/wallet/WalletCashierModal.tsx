@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- *  CLUB BANK CASHIER (Dan 2026-08-23, BINDING)
+ *  CLUB BANK CASHIER (Dan 2026-08-23, BINDING; Claim Back + Promo Send 2026-08-24)
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * "INSIDE THE CLUB ARENA FOR CLUB OWNERS, IF THEY CLICK ON CLUB BANK, THAT
@@ -9,6 +9,16 @@
  *  WALLETS. THERE MUST BE A FULL TRANSACTION LEDGER FOR EVERY SINGLE CHIP
  *  MOVEMENT. ONLY THOSE ROLES HAVE ACCESS TO THE CLUB BANK OR SHOULD EVEN SEE
  *  THE CLUB BANK."
+ *
+ * Dan 2026-08-24, three additions, all law:
+ *  - "CLUB BANK NEEDS THE ABILITY TO CLAIM BACK, NOT JUST SEND OUT." The
+ *    Claim Back tab pulls chips FROM an agent, promo or player wallet back
+ *    INTO the bank, through fn_club_bank_claim_back — which refuses to take
+ *    any wallet negative.
+ *  - "PROMO WALLET NEEDS THE ABILITY TO SEND TO PLAYER WALLETS OR AGENT
+ *    WALLETS." To a player it is JUST AS GOOD AS CASH (credits chip_balance);
+ *    to an agent it lands in THEIR promo wallet. fn_promo_wallet_send.
+ *  - The mode rules live in cashierModes.ts so a unit test can pin them.
  *
  * The Club Bank is `clubs.chip_treasury` — the same figure DynamicWallet has
  * always shown as "Club Bank", so this cashier spends the money on screen
@@ -22,6 +32,8 @@
  *   fn_club_bank_send     — re-checks the role, locks the club row, refuses an
  *                           overdraft, and writes the ledger row in the SAME
  *                           transaction as the two balance updates;
+ *   fn_club_bank_claim_back — the same, in the other direction;
+ *   fn_promo_wallet_send  — spends only the CALLER's own promo float;
  *   fn_club_bank_reverse  — puts the chips back and writes a MATCHING ROW;
  *   fn_mint_chips_from_diamonds — refuses any club that is in a union.
  * Closing this modal with devtools buys nothing.
@@ -42,7 +54,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import callClubArenaApi from '../../services/clubArenaApi';
 import { ChipFlowService } from '../../services/ChipFlowService';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -55,30 +66,34 @@ import { fuzzyMatch } from '../../utils/fuzzyMatch';
 import { reportError } from '../../utils/errorReporter';
 import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
 import { roleLabel, normaliseRole, roleRank } from '../../types/clubRoles';
-import { canSeeClubBank, canMintInClubBank, canHoldAgentWallet } from './walletRows';
+import { canMintInClubBank, canHoldAgentWallet } from './walletRows';
+import {
+  cashierTabs,
+  cashierDestinations,
+  canUseCashier,
+  destinationBlurb,
+  claimNeedsConfirm,
+  type CashierTab,
+  type CashierDestination,
+  type CashierWalletType,
+} from './cashierModes';
 import ChipMintModal from './ChipMintModal';
 import './WalletCashierModal.css';
 
-type DestinationWallet = 'agent_wallet' | 'promo_wallet' | 'player_wallet';
-type Tab = 'send' | 'claim' | 'ledger';
+type DestinationWallet = CashierDestination;
+type Tab = CashierTab;
 
-const DESTINATIONS: Array<{ key: DestinationWallet; label: string; blurb: string }> = [
-  {
-    key: 'agent_wallet',
-    label: 'Agent Wallet',
-    blurb: 'The Float An Agent Carries For Their Own Players. This Is The Funding Route.',
-  },
-  {
-    key: 'promo_wallet',
-    label: 'Promo Wallet',
-    blurb: 'Promotional Chips An Agent Hands Out. Held Apart From Their Working Float.',
-  },
-  {
-    key: 'player_wallet',
-    label: 'Player Wallet',
-    blurb: 'Straight To A Member. The Wallet Buy Ins Come Out Of.',
-  },
-];
+const DESTINATION_LABELS: Record<DestinationWallet, string> = {
+  agent_wallet: 'Agent Wallet',
+  promo_wallet: 'Promo Wallet',
+  player_wallet: 'Player Wallet',
+};
+
+const TAB_LABELS: Record<Tab, string> = {
+  send: 'Send Chips',
+  claim: 'Claim Back',
+  ledger: 'Transaction Ledger',
+};
 
 /** Wallets only an agent-shaped member can hold. See canHoldAgentWallet. */
 const AGENT_ONLY: DestinationWallet[] = ['agent_wallet', 'promo_wallet'];
@@ -141,7 +156,7 @@ interface WalletCashierModalProps {
   clubId: string;
   /** The viewer's role in this club. Presentation only; the server re-checks. */
   role: string;
-  walletType?: 'club_bank' | 'promo_wallet' | 'agent_wallet';
+  walletType?: CashierWalletType;
 }
 
 const fmt = (n: number) =>
@@ -209,6 +224,15 @@ export default function WalletCashierModal({
   const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
+  /**
+   * What the CLAIM source wallet actually holds, fetched when a holder is
+   * chosen on the Claim Back tab. A claim is capped by THIS figure, never by
+   * the bank — the bank grows on a claim. Null while unknown, and the button
+   * stays disabled until it is known, because "take an amount we could not
+   * read" is not a button this cashier offers.
+   */
+  const [holderHeld, setHolderHeld] = useState<number | null>(null);
+
   const [ledger, setLedger] = useState<LedgerRow[]>([]);
   const [ledgerTotal, setLedgerTotal] = useState(0);
   const [ledgerTotals, setLedgerTotals] = useState<LedgerTotals | null>(null);
@@ -230,8 +254,15 @@ export default function WalletCashierModal({
   const busyRef = useRef(false);
 
   const viewerRole = normaliseRole(role);
-  const allowed = canSeeClubBank(viewerRole);
-  const mayMint = canMintInClubBank(viewerRole, { standalone: inUnion === false });
+  // Who may stand at THIS cashier. The Club Bank keeps its four roles; the
+  // promo and agent wallet cashiers admit the people who HOLD those wallets.
+  // cashierModes.ts is the pinned law; the server re-checks either way.
+  const allowed = canUseCashier(walletType, viewerRole);
+  const mayMint =
+    walletType === 'club_bank' && canMintInClubBank(viewerRole, { standalone: inUnion === false });
+
+  const tabs = cashierTabs(walletType);
+  const destinations = cashierDestinations(walletType);
 
   // ── Club + bank balance ───────────────────────────────────────────────────
   const loadClub = useCallback(async () => {
@@ -389,7 +420,7 @@ export default function WalletCashierModal({
     opIdRef.current = newOpId();
     busyRef.current = false;
     loadClub();
-  }, [isOpen, user?.id, loadClub]);
+  }, [isOpen, user?.id, loadClub, walletType]);
 
   // Escape closes, and the page behind stops scrolling. Both are what a person
   // expects of a modal and neither was here.
@@ -421,6 +452,40 @@ export default function WalletCashierModal({
     // filter chip.
   }, [isOpen, clubUuid, allowed, tab, typeFilter, loadLedger]);
 
+  // ── Claim Back: what does the chosen wallet actually hold? ────────────────
+  // The player wallet figure already rides on the member row; the agent and
+  // promo floats live on the agents table and are fetched when the holder is
+  // chosen. The claim button stays disabled until the figure is known.
+  useEffect(() => {
+    if (tab !== 'claim' || !recipient || !clubUuid) {
+      setHolderHeld(null);
+      return;
+    }
+    if (destination === 'player_wallet') {
+      setHolderHeld(recipient.chip_balance);
+      return;
+    }
+    let cancelled = false;
+    setHolderHeld(null);
+    (async () => {
+      const { data } = await supabase
+        .from('agents')
+        .select('agent_wallet_balance, promo_wallet_balance')
+        .eq('club_id', clubUuid)
+        .eq('user_id', recipient.user_id)
+        .maybeSingle();
+      if (cancelled || !isMounted.current) return;
+      setHolderHeld(
+        destination === 'promo_wallet'
+          ? Number(data?.promo_wallet_balance) || 0
+          : Number(data?.agent_wallet_balance) || 0
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, destination, recipient, clubUuid, isMounted]);
+
   // ── Realtime: the bank balance is live while the cashier is open ──────────
   // Two people funding agents at once is the normal case in a busy club, and a
   // balance that is only correct at open time is how one of them authorises a
@@ -433,7 +498,7 @@ export default function WalletCashierModal({
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'clubs', filter: `id=eq.${clubUuid}` },
         (p) => {
-          if (!isMounted.current) return;
+          if (!isMounted.current || walletType !== 'club_bank') return;
           if (p.new?.chip_treasury !== undefined) setBank(Number(p.new.chip_treasury) || 0);
         }
       )
@@ -452,9 +517,9 @@ export default function WalletCashierModal({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isOpen, clubUuid, allowed, isMounted]);
+  }, [isOpen, clubUuid, allowed, isMounted, walletType, user?.id]);
 
-  // A send that lands, a reversal, or a mint changes the bank and the
+  // A send that lands, a claim, a reversal, or a mint changes the bank and the
   // recipient. Refetch rather than patching state by hand — a hand-patched
   // balance that drifts from the database is the exact class of bug this
   // cashier exists to end.
@@ -506,9 +571,17 @@ export default function WalletCashierModal({
   }, [destination, recipient]);
 
   const amt = Number(amount) || 0;
-  const overBank = bank !== null && amt > bank;
-  const canSend = Boolean(recipient) && amt > 0 && bank !== null && !overBank && !sending;
-  const needsConfirm = bank !== null && bank > 0 && amt >= bank * CONFIRM_SHARE_OF_BANK;
+  // A send is capped by the wallet being SPENT (the bank, or the caller's own
+  // float). A claim is capped by the wallet being CLAIMED FROM. The two caps
+  // are different accounts, and mixing them up is how a claim gets refused for
+  // "insufficient bank" while the bank is the thing being paid.
+  const cap = tab === 'claim' ? holderHeld : bank;
+  const overCap = cap !== null && amt > cap;
+  const canSend = Boolean(recipient) && amt > 0 && cap !== null && !overCap && !sending;
+  const needsConfirm =
+    tab === 'claim'
+      ? claimNeedsConfirm(amt)
+      : bank !== null && bank > 0 && amt >= bank * CONFIRM_SHARE_OF_BANK;
 
   // Any change to what is being sent is a NEW operation, so it gets a new key.
   // Without this, correcting a typo after a failed attempt would replay the
@@ -516,22 +589,43 @@ export default function WalletCashierModal({
   useEffect(() => {
     opIdRef.current = newOpId();
     setConfirming(false);
-  }, [recipient?.user_id, amount, destination]);
+  }, [recipient?.user_id, amount, destination, tab]);
 
   const doSend = async () => {
     if (!canSend || !clubUuid || !recipient || busyRef.current) return;
     busyRef.current = true;
     setSending(true);
     try {
-      let res: any = null;
-      if (walletType === 'promo_wallet') {
-        const apiRes = await callClubArenaApi('distribute-promo', {
-          action: 'send',
-          clubId: clubUuid,
-          targetUserId: recipient.user_id,
-          amount: amt,
+      let res: {
+        success?: boolean;
+        error?: string;
+        replayed?: boolean;
+      } | null = null;
+      if (tab === 'claim') {
+        // CLAIM BACK. Chips come OUT of the chosen wallet INTO the Club Bank.
+        const { data, error } = await supabase.rpc('fn_club_bank_claim_back', {
+          p_club_id: clubUuid,
+          p_from_user_id: recipient.user_id,
+          p_amount: amt,
+          p_source: destination,
+          p_reason: reason.trim() || null,
+          p_op_id: opIdRef.current,
         });
-        res = { success: true, replayed: false };
+        if (error) throw error;
+        res = Array.isArray(data) ? data[0] : data;
+      } else if (walletType === 'promo_wallet') {
+        // Dan 2026-08-24: the promo wallet sends to a player wallet (as cash)
+        // or to another agent's promo wallet. One RPC, one ledger row, keyed.
+        const { data, error } = await supabase.rpc('fn_promo_wallet_send', {
+          p_club_id: clubUuid,
+          p_to_user_id: recipient.user_id,
+          p_amount: amt,
+          p_destination: destination,
+          p_reason: reason.trim() || null,
+          p_op_id: opIdRef.current,
+        });
+        if (error) throw error;
+        res = Array.isArray(data) ? data[0] : data;
       } else if (walletType === 'agent_wallet') {
         await ChipFlowService.agentToPlayer(
           user?.id || '',
@@ -554,11 +648,21 @@ export default function WalletCashierModal({
         if (error) throw error;
         res = Array.isArray(data) ? data[0] : data;
       }
-      const destLabel = DESTINATIONS.find((d) => d.key === destination)?.label || 'Wallet';
+      // The RPCs return refusals as { success: false, error } rather than
+      // throwing. Toasting success over a refusal is how a cashier lies.
+      if (!res?.success) {
+        throw new Error(res?.error || 'The Cashier Refused That Movement');
+      }
+
+      const destLabel = DESTINATION_LABELS[destination] || 'Wallet';
       toast?.success?.(
-        res.replayed
-          ? `That Send Had Already Gone Through. ${fmtWhole(amt)} Chips Are With ${recipient.name}`
-          : `Sent ${fmtWhole(amt)} Chips To ${recipient.name} ${destLabel}`
+        tab === 'claim'
+          ? res.replayed
+            ? `That Claim Had Already Gone Through. ${fmtWhole(amt)} Chips Are Back In The Club Bank`
+            : `Claimed ${fmtWhole(amt)} Chips Back From ${recipient.name} Into The Club Bank`
+          : res.replayed
+            ? `That Send Had Already Gone Through. ${fmtWhole(amt)} Chips Are With ${recipient.name}`
+            : `Sent ${fmtWhole(amt)} Chips To ${recipient.name} ${destLabel}`
       );
       masterBus.emit('CHIPS_DISTRIBUTED', {
         clubId: clubUuid,
@@ -643,7 +747,7 @@ export default function WalletCashierModal({
         r.amount,
         r.from_name ?? '',
         r.to_name ?? '',
-        (r.metadata?.destination as string) ?? '',
+        ((r.metadata?.destination || r.metadata?.source) as string) ?? '',
         r.balance_after ?? '',
         r.is_reversed ? 'yes' : 'no',
         r.notes ?? '',
@@ -669,14 +773,22 @@ export default function WalletCashierModal({
 
   if (!isOpen) return null;
 
+  const cashierTitle =
+    walletType === 'promo_wallet'
+      ? 'PROMO WALLET'
+      : walletType === 'agent_wallet'
+        ? 'AGENT WALLET'
+        : 'CLUB BANK';
+
   // Belt and braces: this modal is only mounted behind a role check, and the
-  // row that opens it only renders for the four bank roles. If it is somehow
-  // reached anyway, say so plainly rather than rendering an empty cashier.
+  // row that opens it only renders for roles that hold the wallet. If it is
+  // somehow reached anyway, say so plainly rather than rendering an empty
+  // cashier.
   if (!allowed) {
     return (
       <div className="cbc-overlay" role="dialog" aria-label="Club Bank Cashier" onClick={onClose}>
         <div className="cbc-panel cbc-panel--denied" onClick={(e) => e.stopPropagation()}>
-          <div className="cbc-title">CLUB BANK</div>
+          <div className="cbc-title">{cashierTitle}</div>
           {/* "Co Owners" cannot appear in JSX text here: check-title-case
               treats a bare `co` as the poker position (cutoff) and rewrites it
               to "CO". Co-owners are covered by "Owners" in plain speech, and
@@ -684,7 +796,9 @@ export default function WalletCashierModal({
               which reaches the screen through an expression rather than page
               copy and so keeps its casing. */}
           <p className="cbc-denied">
-            The Club Bank Is Restricted To Owners, Admins And Super Agents.
+            {walletType === 'club_bank'
+              ? 'The Club Bank Is Restricted To Owners, Admins And Super Agents.'
+              : 'This Wallet Belongs To Agents And Club Staff.'}
           </p>
           <div className="cbc-actions">
             <button onClick={onClose}>Close</button>
@@ -707,7 +821,7 @@ export default function WalletCashierModal({
           {/* ── Header ───────────────────────────────────────────────────── */}
           <div className="cbc-head">
             <div>
-              <div className="cbc-title">CLUB BANK</div>
+              <div className="cbc-title">{cashierTitle}</div>
             </div>
             <button className="cbc-x" onClick={onClose} aria-label="Close">
               &times;
@@ -741,58 +855,45 @@ export default function WalletCashierModal({
 
           {/* ── Tabs ─────────────────────────────────────────────────────── */}
           <div className="cbc-tabs" role="tablist">
-            <button
-              role="tab"
-              aria-selected={tab === 'send'}
-              className={tab === 'send' ? 'cbc-tab cbc-tab--on' : 'cbc-tab'}
-              onClick={() => setTab('send')}
-            >
-              Send Chips
-            </button>
-            {walletType === 'club_bank' && (
+            {tabs.map((t) => (
               <button
+                key={t}
                 role="tab"
-                aria-selected={tab === 'ledger'}
-                className={tab === 'ledger' ? 'cbc-tab cbc-tab--on' : 'cbc-tab'}
-                onClick={() => setTab('ledger')}
+                aria-selected={tab === t}
+                className={tab === t ? 'cbc-tab cbc-tab--on' : 'cbc-tab'}
+                onClick={() => setTab(t)}
               >
-                Transaction Ledger
+                {TAB_LABELS[t]}
               </button>
-            )}
+            ))}
           </div>
 
           <div className="cbc-body">
             {tab === 'send' || tab === 'claim' ? (
               <>
-                {/* Destination */}
+                {/* Destination (send) or source (claim) */}
                 <div className="cbc-field">
                   <label className="cbc-label">
                     {tab === 'claim' ? 'Claim From' : 'Send Into'}
                   </label>
                   <div className="cbc-seg">
-                    {DESTINATIONS.map((d) => {
-                      if (walletType !== 'club_bank' && d.key !== 'player_wallet') return null;
-
-                      return (
-                        <button
-                          key={d.key}
-                          className={destination === d.key ? 'cbc-seg-on' : ''}
-                          onClick={() => setDestination(d.key)}
-                        >
-                          {d.label}
-                        </button>
-                      );
-                    })}
+                    {destinations.map((key) => (
+                      <button
+                        key={key}
+                        className={destination === key ? 'cbc-seg-on' : ''}
+                        onClick={() => setDestination(key)}
+                      >
+                        {DESTINATION_LABELS[key]}
+                      </button>
+                    ))}
                   </div>
-                  <div className="cbc-blurb">
-                    {DESTINATIONS.find((d) => d.key === destination)?.blurb}
-                  </div>
+                  <div className="cbc-blurb">{destinationBlurb(walletType, destination, tab)}</div>
                 </div>
 
-                {/* Recipient */}
+                {/* Recipient (send) or holder (claim) */}
                 <div className="cbc-field">
                   <label className="cbc-label" htmlFor="cbc-search">
-                    Recipient
+                    {tab === 'claim' ? 'Claim From Member' : 'Recipient'}
                   </label>
                   <input
                     id="cbc-search"
@@ -856,15 +957,26 @@ export default function WalletCashierModal({
                     aria-label=""
                   />
 
-                  {amt > 0 && !overBank && (
+                  {tab === 'claim' && recipient && (
+                    <div className="cbc-blurb">
+                      {holderHeld === null
+                        ? 'Reading That Wallet...'
+                        : `${recipient.name} Holds ${fmt(holderHeld)} In That Wallet.`}
+                    </div>
+                  )}
+                  {amt > 0 && !overCap && (
                     <div className="cbc-blurb">
                       {tab === 'claim'
-                        ? `Claiming ${fmt(amt)}. The Wallet Would Hold ${fmt((bank ?? 0) + amt)} Afterwards.`
+                        ? `Claiming ${fmt(amt)}. The Club Bank Would Hold ${fmt((bank ?? 0) + amt)} Afterwards.`
                         : `Sending ${fmt(amt)}. The Wallet Would Hold ${fmt((bank ?? 0) - amt)} Afterwards.`}
                     </div>
                   )}
-                  {overBank && (
-                    <div className="cbc-warn">The Wallet Only Holds {fmt(bank ?? 0)} Chips.</div>
+                  {overCap && (
+                    <div className="cbc-warn">
+                      {tab === 'claim'
+                        ? `That Wallet Only Holds ${fmt(cap ?? 0)} Chips.`
+                        : `The Wallet Only Holds ${fmt(cap ?? 0)} Chips.`}
+                    </div>
                   )}
                 </div>
 
@@ -887,7 +999,7 @@ export default function WalletCashierModal({
                 {confirming && recipient && (
                   <div className="cbc-confirmbox" role="alert">
                     {tab === 'claim'
-                      ? `Claim ${fmt(amt)} Chips From ${recipient.name}?`
+                      ? `Claim ${fmt(amt)} Chips From ${recipient.name} Back Into The Club Bank?`
                       : `That Is ${Math.round((amt / (bank || 1)) * 100)} Percent Of The Club Bank. Send ${fmt(amt)} Chips To ${recipient.name}?`}
                   </div>
                 )}
@@ -974,6 +1086,7 @@ export default function WalletCashierModal({
                 {!ledgerError &&
                   ledger.map((row) => {
                     const dest = row.metadata?.destination as string | undefined;
+                    const src = row.metadata?.source as string | undefined;
                     return (
                       <div
                         key={row.id}
@@ -987,7 +1100,9 @@ export default function WalletCashierModal({
                           <span>
                             {row.from_name || 'Club Bank'}
                             {' → '}
-                            {row.to_name || (dest ? titleCase(dest) : 'Club Bank')}
+                            {row.transaction_type === 'club_bank_claim'
+                              ? 'Club Bank'
+                              : row.to_name || (dest ? titleCase(dest) : 'Club Bank')}
                           </span>
                           <span className="cbc-tx-when">
                             {new Date(row.created_at).toLocaleString('en-US', {
@@ -1001,6 +1116,9 @@ export default function WalletCashierModal({
                         <div className="cbc-tx-foot">
                           {row.notes && <span>{row.notes}</span>}
                           {dest && <span>Into {titleCase(dest)}</span>}
+                          {src && row.transaction_type === 'club_bank_claim' && (
+                            <span>From {titleCase(src)}</span>
+                          )}
                           {row.balance_after !== null && (
                             <span>Bank After {fmt(Number(row.balance_after))}</span>
                           )}

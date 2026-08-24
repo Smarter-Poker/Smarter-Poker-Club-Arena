@@ -24,6 +24,13 @@
 
 import type { Card } from '../types.js';
 import { SUITS, RANKS, RANK_VALUES } from './PokerEngine.js';
+import {
+  holeCardCount,
+  isOmahaVariant,
+  isHiLoVariant,
+  isShortDeckVariant,
+} from './VariantRules.js';
+import { isPotLimitVariant } from './BettingStructure.js';
 
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 
@@ -114,15 +121,21 @@ export type VariantInfo = {
 
 export function variantInfo(gameVariant: string): VariantInfo {
   const v = (gameVariant || 'nlh').toLowerCase();
-  const isOmaha = v.startsWith('plo');
-  const holeCount = v === 'plo5' ? 5 : v === 'plo6' ? 6 : isOmaha ? 4 : v === 'pineapple' ? 3 : 2;
+  // 2026-08-23: every field here was its own substring test, and `flo8` failed
+  // all of them — the horses would have read Fixed Limit Omaha Hi-Lo as a
+  // two-card Hold'em board and priced every decision off the wrong hand.
+  // `isPotLimit` was `isOmaha`, which is now doubly wrong: flo8 is an Omaha
+  // game that is NOT pot-limit, so ask BettingStructure rather than inferring.
+  const isOmaha = isOmahaVariant(v);
+  const holeCount = holeCardCount(v);
   return {
     holeCount,
     isOmaha,
-    isHiLo: v === 'plo8',
-    isShortDeck: v === 'short_deck',
-    isPotLimit: isOmaha,
-    iterations: v === 'plo6' ? 120 : v === 'plo5' ? 170 : v === 'plo8' ? 140 : isOmaha ? 220 : 450,
+    isHiLo: isHiLoVariant(v),
+    isShortDeck: isShortDeckVariant(v),
+    isPotLimit: isPotLimitVariant(v),
+    iterations:
+      v === 'plo6' ? 120 : v === 'plo5' ? 170 : isHiLoVariant(v) ? 140 : isOmaha ? 220 : 450,
   };
 }
 

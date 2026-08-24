@@ -22,6 +22,11 @@ describe('holeCardCountFor', () => {
     expect(holeCardCountFor('plo5')).toBe(5);
     expect(holeCardCountFor('plo6')).toBe(6);
     expect(holeCardCountFor('plo8')).toBe(4);
+    // 2026-08-23: Fixed Limit Omaha Hi-Lo. Four cards like every other Omaha —
+    // the LIMIT in the name is the betting, not the deal. Its spelling contains
+    // no "plo", which is how it slipped past five substring tests in the engine
+    // and got dealt two cards; see server/src/engine/VariantRules.ts.
+    expect(holeCardCountFor('flo8')).toBe(4);
     expect(holeCardCountFor('pineapple')).toBe(3);
   });
 
@@ -29,6 +34,8 @@ describe('holeCardCountFor', () => {
     // The engine's own fallback. Short Deck changes the DECK, not the hand.
     expect(holeCardCountFor('nlh')).toBe(DEFAULT_HOLE_CARDS);
     expect(holeCardCountFor('short_deck')).toBe(DEFAULT_HOLE_CARDS);
+    // Fixed Limit Hold'em is Hold'em: two cards, fixed betting.
+    expect(holeCardCountFor('flh')).toBe(DEFAULT_HOLE_CARDS);
     expect(holeCardCountFor('a_variant_invented_next_year')).toBe(DEFAULT_HOLE_CARDS);
   });
 

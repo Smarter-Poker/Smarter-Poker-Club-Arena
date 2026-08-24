@@ -57,6 +57,8 @@ import { supabase, getAuthUser } from '../lib/supabase';
 // it, so flipping the flag is a pure rollout switch.
 import { useEngineTableState } from '../hooks/useEngineTableState';
 import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
+import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
+
 import { gameCode } from '../utils/gameCode';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { masterBus } from '../core/MasterBus';
@@ -454,6 +456,19 @@ interface TableState {
   // Bible V8 §2.4: Server-authoritative hand state fields
   minRaise?: number;
   lastRaise?: number;
+  /**
+   * 2026-08-23: the engine's own answer for which betting structure this table
+   * plays, plus the fixed-limit bounds. The action panel used to work the
+   * structure out itself with `gameType.startsWith('plo')` — which silently
+   * calls every non-PLO variant no-limit, so a fixed-limit table would have
+   * rendered a no-limit slider and had every drag rejected. `wagersCapped`
+   * cannot be derived on the client at all: the cap counts FULL raises, and
+   * the broadcast strips `isFullRaise` from action_history.
+   */
+  bettingStructure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  fixedBetSize?: number;
+  wagersCapped?: boolean;
+
   currentBet?: number;
   actionHistory?: {
     seat: number;
@@ -1133,6 +1148,12 @@ export default function TablePage({
         currentBet: mapped.currentBet,
         minRaise: mapped.minRaise,
         lastRaise: mapped.lastRaise,
+        // 2026-08-23: the engine's betting structure, carried straight through
+        // rather than re-derived from the variant string down in the panel.
+        bettingStructure: mapped.bettingStructure,
+        fixedBetSize: mapped.fixedBetSize,
+        wagersCapped: mapped.wagersCapped,
+
         sidePots: mapped.sidePots.map((sp, i) => ({
           id: `sp_${i}`,
           amount: sp.amount,
@@ -11158,15 +11179,22 @@ export default function TablePage({
                   // to raise-TO here.
                   const raiseIncrement =
                     tableState.minRaise && tableState.minRaise > 0 ? tableState.minRaise : bb;
-                  // Raise-TO floor. When currentBet===0 (first bet of a street)
-                  // this is the min bet (= one increment = BB).
-                  const minRaise = serverCurrentBet + raiseIncrement;
 
                   // Bible V8 §4.14: raise-TO ceiling. All-in-to = stack + own
                   // current bet (engine: maxRaiseTo = player.stack + player.bet).
                   const allInTo = heroStack + heroBet;
                   const gameVariant = tableState.gameType?.toLowerCase() || '';
-                  const isPotLimit = gameVariant.startsWith('plo'); // FIX 116: 'flo' dead variant removed
+                  // 2026-08-23: prefer the engine's published structure; fall
+                  // back to deriving it locally only for a snapshot from an
+                  // older build. The old test here was
+                  // `gameVariant.startsWith('plo')`, which calls EVERY non-PLO
+                  // variant no-limit — so a fixed-limit table drew a full
+                  // no-limit slider and the server rejected every position on
+                  // it except one.
+                  const structure = tableState.bettingStructure ?? bettingStructureFor(gameVariant);
+                  const isPotLimit = structure === 'pot_limit';
+                  const isFixedLimit = structure === 'fixed_limit';
+
                   // Pot-limit raise-TO cap = currentBet + (pot + toCall). Matches
                   // engine FIX 142 (never over-offer past the server's clamp).
                   const potLimitRaiseTo = potSizedRaiseTo(
@@ -11174,7 +11202,23 @@ export default function TablePage({
                     tableState.pot,
                     callAmount
                   );
-                  const maxRaise = isPotLimit ? Math.min(allInTo, potLimitRaiseTo) : allInTo;
+
+                  // Fixed limit: one legal wager, so the floor and the ceiling
+                  // are the same number and there is no range to drag through.
+                  // A short stack clamps to its all-in.
+                  const flBetSize =
+                    tableState.fixedBetSize ?? fixedLimitBetSize(bb, tableState.boardStage);
+                  const flWagerTo = Math.min(allInTo, serverCurrentBet + flBetSize);
+                  const wagersCapped = isFixedLimit && tableState.wagersCapped === true;
+
+                  // Raise-TO floor. When currentBet===0 (first bet of a street)
+                  // this is the min bet (= one increment = BB).
+                  const minRaise = isFixedLimit ? flWagerTo : serverCurrentBet + raiseIncrement;
+                  const maxRaise = isFixedLimit
+                    ? flWagerTo
+                    : isPotLimit
+                      ? Math.min(allInTo, potLimitRaiseTo)
+                      : allInTo;
 
                   return (
                     <>
@@ -11189,11 +11233,22 @@ export default function TablePage({
                         canFold={true}
                         canCheck={callAmount === 0}
                         canCall={callAmount > 0}
-                        canRaise={heroStack > callAmount && allInTo >= minRaise}
+                        /* 2026-08-23: a capped fixed-limit round (bet + three
+                           raises) takes no further wager — fold or call only.
+                           The engine refuses a raise there; the button must not
+                           offer one. */
+                        canRaise={heroStack > callAmount && allInTo >= minRaise && !wagersCapped}
                         /* Dan 2026-08-21, BINDING: "IN PLO YOU CAN NEVER GO
                            ALL IN IF THE POT IS LESS THAN THE CHIPS YOU HAVE."
-                           The engine refuses it; the button must not offer it. */
-                        canAllIn={heroStack > 0 && (!isPotLimit || allInTo <= maxRaise + 0.005)}
+                           The engine refuses it; the button must not offer it.
+                           Fixed limit is stricter still: a shove is legal only
+                           when the whole stack fits inside the street's bet,
+                           and not at all once the round is capped. */
+                        canAllIn={
+                          heroStack > 0 &&
+                          (!isPotLimit || allInTo <= maxRaise + 0.005) &&
+                          (!isFixedLimit || (!wagersCapped && allInTo <= maxRaise + 0.005))
+                        }
                         callAmount={callAmount}
                         minRaise={minRaise}
                         maxRaise={maxRaise}
@@ -11219,6 +11274,10 @@ export default function TablePage({
                         /* Dan 2026-08-19 item 4b: PLO must always offer
                            RAISE POT - preflop had no POT button at all. */
                         isPotLimit={isPotLimit}
+                        /* 2026-08-23: fixed limit has one legal wager per
+                           street, so the panel skips the sizing step entirely
+                           and prints the amount on the button instead. */
+                        isFixedLimit={isFixedLimit}
                         showPotOdds={userSettings.showPotOdds}
                         confirmAllIn={userSettings.confirmAllIn}
                       />

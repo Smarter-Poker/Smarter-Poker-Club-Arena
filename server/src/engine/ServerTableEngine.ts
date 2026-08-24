@@ -25,6 +25,8 @@
 
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { ServerTableEngineHandEvents } from './ServerTableEngineHandEvents.js';
+import { bettingStructureFor, fixedLimitBetSize, isFixedLimitCapped } from './BettingStructure.js';
+import type { GameState } from '../types.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVER TABLE ENGINE
@@ -71,6 +73,35 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
   }
 
   /**
+   * The betting-structure fields every broadcast carries (2026-08-23).
+   *
+   * The client used to decide this for itself with
+   * `gameType.startsWith('plo')`, which treats everything that is not PLO as
+   * no-limit — so a fixed-limit table would have rendered a no-limit bet slider
+   * and had every drag rejected by the server. And `wagers_capped` is not
+   * derivable client-side at all: the cap counts FULL raises, and
+   * `action_history` is broadcast with its `isFullRaise` flag stripped.
+   *
+   * No-limit and pot-limit tables carry `fixed_bet_size`/`wagers_capped` as
+   * undefined, which JSON drops.
+   */
+  private bettingStructureFields(state: GameState): {
+    betting_structure: 'no_limit' | 'pot_limit' | 'fixed_limit';
+    fixed_bet_size?: number;
+    wagers_capped?: boolean;
+  } {
+    const variant = this.tableInfo?.game_variant;
+    const structure = bettingStructureFor(variant);
+    if (structure !== 'fixed_limit') return { betting_structure: structure };
+    const stage = state.stage ?? 'preflop';
+    return {
+      betting_structure: structure,
+      fixed_bet_size: fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, stage),
+      wagers_capped: isFixedLimitCapped(state.actionHistory ?? [], stage),
+    };
+  }
+
+  /**
    * GET /state/:tableId — Bible V8 §2.4: Get current hand state (scrubbed for requesting player)
    */
   public getTableState(requestingUserId: string): Record<string, any> | null {
@@ -95,6 +126,11 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       stage: state.stage ?? 'preflop',
       min_raise: state.minRaise ?? 0,
       last_raise: state.lastRaise ?? 0,
+      // 2026-08-23: publish the betting structure rather than leaving the
+      // client to guess it from the variant string. `wagers_capped` in
+      // particular is NOT derivable client-side — the cap counts full raises,
+      // and action_history is broadcast without its isFullRaise flag.
+      ...this.bettingStructureFields(state),
       // Bible V8 §2.4: Timer fields required for client-side countdown
       turn_start_time_ms: this.playerTurnStartTime,
       turn_duration_ms: this.playerTurnDuration * 1000, // Convert seconds → milliseconds
@@ -229,6 +265,11 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // Bible V8 §2.4: Required betting state fields
       min_raise: state.minRaise ?? 0,
       last_raise: state.lastRaise ?? 0,
+      // 2026-08-23: publish the betting structure rather than leaving the
+      // client to guess it from the variant string. `wagers_capped` in
+      // particular is NOT derivable client-side — the cap counts full raises,
+      // and action_history is broadcast without its isFullRaise flag.
+      ...this.bettingStructureFields(state),
       turn_start_time_ms: this.playerTurnStartTime,
       turn_duration_ms: this.playerTurnDuration * 1000, // Convert seconds → milliseconds
       // ── Dan 2026-08-18: "make sure the yellow countdown actually takes 15

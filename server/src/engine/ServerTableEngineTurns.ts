@@ -9,6 +9,15 @@
  */
 
 import { HandController } from './HandController.js';
+import {
+  bettingStructureFor,
+  isPotLimitVariant,
+  isFixedLimitVariant,
+  fixedLimitBetSize,
+  type BettingStructure,
+} from './BettingStructure.js';
+import type { HandStage } from '../types.js';
+
 import { HorseLogic, resolveHorseStyle } from './HorseLogic.js';
 import { getTournamentBrainContext } from '../services/TournamentBrainContext.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
@@ -1140,8 +1149,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     if (normalizedAction === 'raise' && state.currentBet === 0) normalizedAction = 'bet';
     if (normalizedAction === 'bet' && state.currentBet > 0) normalizedAction = 'raise';
 
-    // Bible V8 §4.14: Pot-limit max raise for PLO variants
-    const isPotLimit = this.tableInfo?.game_variant?.startsWith('plo');
+    // Bible V8 §4.14: PLO variants are pot-limit; flh/flo8 are fixed-limit
+    // (2026-08-23). BettingStructure decides — this used to be an inline
+    // `startsWith('plo')`, which silently made every non-PLO variant no-limit.
+    const variant = this.tableInfo?.game_variant;
+    const isPotLimit = isPotLimitVariant(variant);
+    const isFixedLimit = isFixedLimitVariant(variant);
     let potLimitMaxBet = Infinity;
     if (isPotLimit) {
       // FIX 142: Pot-limit max raise SIZE = pot + toCall (the pot after you call).
@@ -1151,10 +1164,19 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       potLimitMaxBet = state.pot + toCall;
     }
 
+    // Fixed limit has exactly one legal wager size per street, so a client that
+    // sends any other number is SNAPPED to it rather than rejected — a limit
+    // client has no slider to be wrong with, and an old client sending a
+    // no-limit sizing should still make a legal bet. Small bet preflop and
+    // flop, big bet turn and river.
+    const flBetSize = isFixedLimit
+      ? fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage)
+      : 0;
+
     // Clamp amounts
     if (normalizedAction === 'call') amount = toCall;
     if (normalizedAction === 'bet' && amount !== undefined) {
-      amount = Math.max(state.minRaise, amount);
+      amount = isFixedLimit ? flBetSize : Math.max(state.minRaise, amount);
       // Bible V8 §4.14: Cap at pot-limit max for PLO
       if (isPotLimit) {
         amount = Math.min(amount, potLimitMaxBet);
@@ -1165,7 +1187,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       }
     } else if (normalizedAction === 'raise' && amount !== undefined) {
       const minRaiseTo = state.currentBet + state.minRaise;
-      amount = Math.max(minRaiseTo, amount);
+      amount = isFixedLimit ? state.currentBet + flBetSize : Math.max(minRaiseTo, amount);
+
       // Bible V8 §4.14: Cap at pot-limit max for PLO (raise TO = currentBet + potLimitMaxBet)
       if (isPotLimit) {
         const potLimitRaiseTo = state.currentBet + potLimitMaxBet;
@@ -1317,6 +1340,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     minRaise: number;
     maxRaise: number;
     pot: number;
+    /**
+     * 2026-08-23: which betting structure the client should render. Without
+     * this the client had to re-derive it from the variant string, which is
+     * how `flh` would have drawn a no-limit slider on a fixed-limit table.
+     */
+    structure?: BettingStructure;
+    /** Fixed limit only: the street's one legal wager size. */
+    betSize?: number;
   } {
     const defaultResult = {
       canAct: false,
@@ -1348,18 +1379,29 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
     actions.push('all_in');
 
-    const minRaiseTo = state.currentBet > 0 ? state.currentBet + state.minRaise : state.minRaise;
+    let minRaiseTo = state.currentBet > 0 ? state.currentBet + state.minRaise : state.minRaise;
     let maxRaiseTo = player.stack + player.bet;
 
     // FIX 176: Bible V8 §4.14: Cap maxRaise for pot-limit games (PLO variants)
     // Pot-limit max raise SIZE = pot + toCall (the pot after you call).
     // Raise TO = currentBet + (pot + toCall). The old formula had an extra toCall
     // which allowed raises ~toCall higher than legal pot-limit max.
-    const isPotLimit = this.tableInfo?.game_variant?.startsWith('plo');
-    if (isPotLimit) {
+    const variant = this.tableInfo?.game_variant;
+    const structure = bettingStructureFor(variant);
+    let betSize: number | undefined;
+    if (structure === 'pot_limit') {
       const potLimitMaxBet = state.pot + toCall;
       const potLimitRaiseTo = state.currentBet + potLimitMaxBet;
       maxRaiseTo = Math.min(maxRaiseTo, potLimitRaiseTo);
+    } else if (structure === 'fixed_limit') {
+      // 2026-08-23: min and max collapse onto the same number — the client has
+      // no slider to draw, only a "Bet 4" / "Raise to 8" button. Reporting the
+      // stack as maxRaise here is what would have let a limit table render a
+      // no-limit slider and then have every drag rejected.
+      betSize = fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage);
+      const wagerTo = state.currentBet + betSize;
+      minRaiseTo = Math.min(wagerTo, maxRaiseTo);
+      maxRaiseTo = minRaiseTo;
     }
 
     return {
@@ -1369,6 +1411,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       minRaise: minRaiseTo,
       maxRaise: maxRaiseTo,
       pot: state.pot,
+      structure,
+      betSize,
     };
   }
 
@@ -1755,15 +1799,28 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       if (action === 'bet' && state.currentBet > 0) action = 'raise';
 
       // Clamp amounts
+      //
+      // 2026-08-23: the horses size their bets no-limit style (HorseLogic reads
+      // only `isPotLimit`). On a fixed-limit table every one of those sizings is
+      // illegal, so without this snap each horse decision would be rejected and
+      // fall through to the check/fold degradation below — a limit table full of
+      // bots that never bet. Snap to the street's legal wager instead, exactly
+      // as the human path does.
+      const horseFlBetSize = isFixedLimitVariant(this.tableInfo?.game_variant)
+        ? // The horse snapshot types `stage` as a bare string; the values are
+          // the same HandStage literals the controller emits.
+          fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage as HandStage)
+        : 0;
       if (action === 'bet' && amount !== undefined) {
-        amount = Math.max(state.minRaise, amount);
+        amount = horseFlBetSize > 0 ? horseFlBetSize : Math.max(state.minRaise, amount);
         if (amount >= enginePlayer.stack) {
           action = 'all_in';
           amount = undefined;
         }
       } else if (action === 'raise' && amount !== undefined) {
         const minRaiseTo = state.currentBet + state.minRaise;
-        amount = Math.max(minRaiseTo, amount);
+        amount =
+          horseFlBetSize > 0 ? state.currentBet + horseFlBetSize : Math.max(minRaiseTo, amount);
         const maxRaiseTo = enginePlayer.stack + enginePlayer.bet;
         if (amount >= maxRaiseTo) {
           action = 'all_in';

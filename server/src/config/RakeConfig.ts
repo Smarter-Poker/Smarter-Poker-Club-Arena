@@ -283,7 +283,23 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     handRank: 'four_of_a_kind',
     minRankValue: 'KKKK',
   },
-  // FIX 116: plo_hilo dead variant removed — plo8 is the only hi-lo variant
+  // 2026-08-23: flo8 (Fixed Limit Omaha Hi-Lo) is the same GAME as plo8 — same
+  // four cards, same exactly-two rule, same 8-or-better low. Only the betting
+  // differs, and the betting has nothing to do with which hand qualifies for
+  // the jackpot. Same entry, exactly as `flh` aliases `nlh` above.
+  flo8: {
+    label: 'FLO8 (Hi-Lo 8 or Better)',
+    minLosingHand: 'KKKK2',
+    description: 'Four of a Kind (Kings) or better must LOSE — evaluated on HIGH hand only',
+    rules: [
+      'Must use exactly 2 cards from hand',
+      'Both players must use two cards from their hole cards',
+      'BBJ evaluated on HIGH hand only (low hand does not qualify)',
+    ],
+    handRank: 'four_of_a_kind',
+    minRankValue: 'KKKK',
+  },
+  // FIX 116: plo_hilo dead variant removed — plo8 and flo8 are the hi-lo variants
   plo5: {
     label: 'PLO5 / FLO5',
     minLosingHand: '87654',

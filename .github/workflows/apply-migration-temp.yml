@@ -11,12 +11,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Apply SQL using psql
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+          
+      - name: Apply SQL using supabase cli
         env:
-          PGPASSWORD: "215SlalomCt!!"
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
-          psql -h db.kuklfnapbkmacvwxktbh.supabase.co -U postgres -d postgres -p 5432 -f supabase/migrations/20260823250000_wallet_claim_back.sql
-          psql -h db.kuklfnapbkmacvwxktbh.supabase.co -U postgres -d postgres -p 5432 -f supabase/migrations/20260823390000_stats_perf.sql
+          supabase link --project-ref kuklfnapbkmacvwxktbh
+          supabase db push
 
       - uses: actions/setup-node@v4
         with:
@@ -33,7 +37,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add scripts/ci/
-          # Only commit if there are changes
           if ! git diff --cached --quiet; then
             git commit -m "chore: regenerate manifest"
             git push

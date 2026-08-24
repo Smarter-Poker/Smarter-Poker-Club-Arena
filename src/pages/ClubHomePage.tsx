@@ -57,6 +57,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
@@ -363,6 +364,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [activeCashier, setActiveCashier] = useState<
     'club_bank' | 'promo_wallet' | 'agent_wallet' | null
   >(null);
+  // Dan 2026-08-24: "PLAYER WALLET NEEDS TO BE FULLY CLICKABLE AND OPEN TO SEE
+  // ALL TRANSACTIONS AND OTHER AVAILABLE DATA WHEN CLICKED." The row opens the
+  // member's own statement - a read-only view, so it is not an activeCashier.
+  const [showPlayerWallet, setShowPlayerWallet] = useState(false);
   /* LOBBY V2 follow-up (Dan's QA, 2026-08-22): the lobby landed on the MTT
      tab, a leftover from before All Games was a real tab. A club with no open
      MTTs therefore opened onto an empty screen blaming "filters" - every
@@ -2465,6 +2470,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 // refuses everyone else server-side. The Chip Mint moved
                 // INSIDE that cashier - there is no mint button out here any
                 // more, and no mint at all once the club is in a union.
+                onOpenPlayerWallet={() => setShowPlayerWallet(true)}
                 onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
                 onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
                 onOpenClubBank={() => setActiveCashier('club_bank')}
@@ -2539,6 +2545,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         clubId={resolvedClubId || clubId || ''}
         role={isOwner ? 'owner' : userRole}
         walletType={activeCashier || 'club_bank'}
+      />
+      <PlayerWalletModal
+        isOpen={showPlayerWallet}
+        onClose={() => setShowPlayerWallet(false)}
+        clubId={resolvedClubId || clubId || ''}
       />
       <BBJInfoModal
         isOpen={showBBJInfo}

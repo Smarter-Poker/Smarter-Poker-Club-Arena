@@ -7,6 +7,47 @@
 
 ---
 
+## Cowork session 2026-08-24 — Claim Back, Promo Wallet destinations, Player Wallet statement
+
+Dan: "CLUB BANK NEEDS THE ABILITY TO CLAIM BACK, NOT JUST SEND OUT. PROMO
+WALLET NEEDS THE ABILITY TO SEND TO PLAYER WALLETS OR AGENT WALLETS. IF ITS
+SENT TO AN AGENT WALLET, IT LANDS IN THEIR PROMO WALLET. IF IT LANDS IN A
+PLAYER WALLET, ITS JUST AS GOOD AS CASH. PLAYER WALLET NEEDS TO BE FULLY
+CLICKABLE AND OPEN TO SEE ALL TRANSACTIONS AND OTHER AVAILABLE DATA."
+
+### Server (migration `20260824100000_claim_back_promo_send_wallet_ledger.sql`, applied to production via Supabase MCP)
+
+- `fn_club_bank_claim_back` — pulls chips from an agent / promo / player
+  wallet back into `clubs.chip_treasury`. Same four bank roles as the send,
+  row locks on both sides, refuses to take any wallet negative, writes one
+  `club_bank_claim` ledger row, idempotent via op_id.
+- `fn_promo_wallet_send` — debits the CALLER's `agents.promo_wallet_balance`;
+  to a player it credits `club_members.chip_balance` (cash-equivalent, per
+  Dan), to an agent it credits their `promo_wallet_balance`. Ledger row
+  `promo_wallet_send`, idempotent via op_id.
+- `fn_my_wallet_ledger` — auth.uid()-scoped member statement: balances,
+  received / sent / net totals and every transaction the caller is a party to.
+- `fn_club_bank_ledger` totals now count `club_bank_claim` as into-the-bank.
+- New partial unique index `chip_transactions_wallet_ops_op_id_uidx` enforces
+  idempotency for the two new movement types.
+
+### Client
+
+- `cashierModes.ts` — the mode law (tabs, destinations, who may stand at each
+  cashier, blurbs), pinned by `tests/unit/cashierModes.test.ts`.
+- `WalletCashierModal` — Claim Back tab on the Club Bank (source wallet
+  picker, holder balance readout, always-confirm, capped by what the wallet
+  holds); Promo Wallet cashier now offers Player Wallet AND Agent Wallet and
+  sends through `fn_promo_wallet_send`; the promo/agent cashiers no longer
+  bounce agents off the club-bank role gate; RPC refusals
+  (`success:false`) now surface as errors instead of success toasts.
+- `PlayerWalletModal` — the Player Wallet row on DynamicWallet is now a
+  button on every surface (lobby, cashier page, financials) and opens the
+  member's own statement through `fn_my_wallet_ledger`.
+
+Verified: `npx tsc --noEmit` clean, full vitest suite 324 files / 3,988 tests
+green, migration assertions passed in production and re-verified by query.
+
 ## Cowork session 2026-08-23 (4) — multi-table was blocked by a 34px strip (PRs #493, #517)
 
 Dan: "multi table functionality isn't working, when you click the + button to

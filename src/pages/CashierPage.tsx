@@ -52,6 +52,7 @@ import AgentPromoPanel from '../components/agent/AgentPromoPanel';
 import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './CashierPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -271,6 +272,10 @@ export default function CashierPage() {
   const [activeCashier, setActiveCashier] = useState<
     'club_bank' | 'promo_wallet' | 'agent_wallet' | null
   >(null);
+  // Dan 2026-08-24: "PLAYER WALLET NEEDS TO BE FULLY CLICKABLE AND OPEN TO SEE
+  // ALL TRANSACTIONS AND OTHER AVAILABLE DATA WHEN CLICKED." The row opens the
+  // member's own statement - a read-only view, so it is not an activeCashier.
+  const [showPlayerWallet, setShowPlayerWallet] = useState(false);
   const [isInUnion, setIsInUnion] = useState(false);
   const [isUnionOwner, setIsUnionOwner] = useState(false);
   const [clubName, setClubName] = useState('');
@@ -1696,6 +1701,7 @@ export default function CashierPage() {
             // version routed to this page's own distribute tab, which meant the
             // row's own hint ("Tap For The Club Bank Cashier") described
             // something that did not happen.
+            onOpenPlayerWallet={() => setShowPlayerWallet(true)}
             onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
             onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
             onOpenClubBank={() => setActiveCashier('club_bank')}
@@ -1721,6 +1727,11 @@ export default function CashierPage() {
             clubId={clubId}
             role={userRole}
             walletType={activeCashier || 'club_bank'}
+          />
+          <PlayerWalletModal
+            isOpen={showPlayerWallet}
+            onClose={() => setShowPlayerWallet(false)}
+            clubId={clubId}
           />
         </>
       )}

@@ -19,6 +19,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { FinancialExportService } from '../services/FinancialExportService';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import './ClubFinancialsPage.css';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -62,6 +63,10 @@ export default function ClubFinancialsPage() {
   const [activeCashier, setActiveCashier] = useState<
     'club_bank' | 'promo_wallet' | 'agent_wallet' | null
   >(null);
+  // Dan 2026-08-24: "PLAYER WALLET NEEDS TO BE FULLY CLICKABLE AND OPEN TO SEE
+  // ALL TRANSACTIONS AND OTHER AVAILABLE DATA WHEN CLICKED." The row opens the
+  // member's own statement - a read-only view, so it is not an activeCashier.
+  const [showPlayerWallet, setShowPlayerWallet] = useState(false);
   const toast = useToast();
   useVisibilityRefresh(() => loadFinancials());
   const [visibleTransactions, setVisibleTransactions] = useState<Set<string>>(new Set());
@@ -396,6 +401,7 @@ export default function ClubFinancialsPage() {
           // behind it, are owner / co-owner / admin / super agent only.
           role={userRole}
           onBuyDiamonds={() => navigate('/vip')}
+          onOpenPlayerWallet={() => setShowPlayerWallet(true)}
           onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
           onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
           onOpenClubBank={() => setActiveCashier('club_bank')}
@@ -410,6 +416,11 @@ export default function ClubFinancialsPage() {
             clubId={clubId}
             role={userRole}
             walletType={activeCashier || 'club_bank'}
+          />
+          <PlayerWalletModal
+            isOpen={showPlayerWallet}
+            onClose={() => setShowPlayerWallet(false)}
+            clubId={clubId}
           />
         </>
       )}

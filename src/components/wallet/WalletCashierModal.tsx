@@ -60,7 +60,7 @@ import ChipMintModal from './ChipMintModal';
 import './WalletCashierModal.css';
 
 type DestinationWallet = 'agent_wallet' | 'promo_wallet' | 'player_wallet';
-type Tab = 'send' | 'ledger';
+type Tab = 'send' | 'claim' | 'ledger';
 
 const DESTINATIONS: Array<{ key: DestinationWallet; label: string; blurb: string }> = [
   {
@@ -106,6 +106,7 @@ const EXPORT_MAX = 200;
 
 interface Member {
   user_id: string;
+  username?: string;
   role: string;
   name: string;
   avatar_url?: string;
@@ -289,7 +290,7 @@ export default function WalletCashierModal({
         const { data: page, error } = await supabase
           .from('club_members')
           .select(
-            'user_id, role, display_name, nickname, chip_balance, profiles!inner ( player_number, arena_avatar_url )'
+            'user_id, role, display_name, nickname, chip_balance, profiles!inner ( player_number, arena_avatar_url, username )'
           )
           .eq('club_id', uuid)
           .in('status', MEMBER_IN_CLUB)
@@ -311,6 +312,7 @@ export default function WalletCashierModal({
             `Member ${String(m.user_id).slice(0, 8)}`,
           chip_balance: Number(m.chip_balance) || 0,
           avatar_url: ((m.profiles as Record<string, unknown>)?.arena_avatar_url as string) || '',
+          username: ((m.profiles as Record<string, unknown>)?.username as string) || '',
           short_id: String(
             ((m.profiles as Record<string, unknown>)?.player_number as number) || '----'
           ),
@@ -470,7 +472,7 @@ export default function WalletCashierModal({
     }
 
     return destinationMembers
-      .filter((m) => fuzzyMatch(q, m.name))
+      .filter((m) => fuzzyMatch(q, m.name) || (m.username && fuzzyMatch(q, m.username)))
       .sort((a, b) => roleRank(b.role) - roleRank(a.role) || a.name.localeCompare(b.name))
       .slice(0, 60);
   }, [members, destination, search, user?.id, recentIds]);
@@ -740,21 +742,26 @@ export default function WalletCashierModal({
           </div>
 
           <div className="cbc-body">
-            {tab === 'send' ? (
+            {tab === 'send' || tab === 'claim' ? (
               <>
                 {/* Destination */}
                 <div className="cbc-field">
-                  <label className="cbc-label">Send Into</label>
+                  <label className="cbc-label">
+                    {tab === 'claim' ? 'Claim From' : 'Send Into'}
+                  </label>
                   <div className="cbc-seg">
-                    {DESTINATIONS.map((d) => (
-                      <button
-                        key={d.key}
-                        className={destination === d.key ? 'cbc-seg-on' : ''}
-                        onClick={() => setDestination(d.key)}
-                      >
-                        {d.label}
-                      </button>
-                    ))}
+                    {DESTINATIONS.map((d) => {
+                      if (walletType !== 'club_bank' && d.key !== 'player_wallet') return null;
+                      return (
+                        <button
+                          key={d.key}
+                          className={destination === d.key ? 'cbc-seg-on' : ''}
+                          onClick={() => setDestination(d.key)}
+                        >
+                          {d.label}
+                        </button>
+                      );
+                    })}
                   </div>
                   <div className="cbc-blurb">
                     {DESTINATIONS.find((d) => d.key === destination)?.blurb}
@@ -830,7 +837,9 @@ export default function WalletCashierModal({
 
                   {amt > 0 && !overBank && (
                     <div className="cbc-blurb">
-                      Sending {fmt(amt)}. The Wallet Would Hold {fmt((bank ?? 0) - amt)} Afterwards.
+                      {tab === 'claim'
+                        ? `Claiming ${fmt(amt)}. The Wallet Would Hold ${fmt((bank ?? 0) + amt)} Afterwards.`
+                        : `Sending ${fmt(amt)}. The Wallet Would Hold ${fmt((bank ?? 0) - amt)} Afterwards.`}
                     </div>
                   )}
                   {overBank && (
@@ -856,8 +865,9 @@ export default function WalletCashierModal({
 
                 {confirming && recipient && (
                   <div className="cbc-confirmbox" role="alert">
-                    That Is {Math.round((amt / (bank || 1)) * 100)} Percent Of The Club Bank. Send{' '}
-                    {fmt(amt)} Chips To {recipient.name}?
+                    {tab === 'claim'
+                      ? `Claim ${fmt(amt)} Chips From ${recipient.name}?`
+                      : `That Is ${Math.round((amt / (bank || 1)) * 100)} Percent Of The Club Bank. Send ${fmt(amt)} Chips To ${recipient.name}?`}
                   </div>
                 )}
 
@@ -869,7 +879,17 @@ export default function WalletCashierModal({
                     {confirming ? 'Go Back' : 'Cancel'}
                   </button>
                   <button className="cbc-confirm" disabled={!canSend} onClick={onSendPressed}>
-                    {sending ? 'Sending...' : confirming ? 'Yes, Send It' : 'Send Chips'}
+                    {sending
+                      ? tab === 'claim'
+                        ? 'Claiming...'
+                        : 'Sending...'
+                      : confirming
+                        ? tab === 'claim'
+                          ? 'Yes, Claim It'
+                          : 'Yes, Send It'
+                        : tab === 'claim'
+                          ? 'Claim Chips'
+                          : 'Send Chips'}
                   </button>
                 </div>
               </>

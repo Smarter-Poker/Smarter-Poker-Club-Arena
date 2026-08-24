@@ -51,7 +51,6 @@ import { checkSettlementLock } from '../utils/settlementLock';
 import AgentPromoPanel from '../components/agent/AgentPromoPanel';
 import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
 import DynamicWallet from '../components/wallet/DynamicWallet';
-import { PromoWalletCashierModal } from '../components/wallet';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './CashierPage.module.css';
@@ -269,8 +268,9 @@ export default function CashierPage() {
   const [userRole, setUserRole] = useState<string>('member');
   // Dan 2026-08-23: the Club Bank row opens the Club Bank Cashier here too, so
   // the control means the same thing on every surface it appears on.
-  const [showClubBank, setShowClubBank] = useState(false);
-  const [showPromoWallet, setShowPromoWallet] = useState(false);
+  const [activeCashier, setActiveCashier] = useState<
+    'club_bank' | 'promo_wallet' | 'agent_wallet' | null
+  >(null);
   const [isInUnion, setIsInUnion] = useState(false);
   const [isUnionOwner, setIsUnionOwner] = useState(false);
   const [clubName, setClubName] = useState('');
@@ -1696,8 +1696,9 @@ export default function CashierPage() {
             // version routed to this page's own distribute tab, which meant the
             // row's own hint ("Tap For The Club Bank Cashier") described
             // something that did not happen.
-            onOpenPromoWallet={() => setShowPromoWallet(true)}
-            onOpenClubBank={() => setShowClubBank(true)}
+            onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
+            onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
+            onOpenClubBank={() => setActiveCashier('club_bank')}
             onOpenBBJ={() => clubId && navigate(`/clubs/${clubId}/jackpot`)}
           />
           {/* "Get Chips" (diamonds -> chips) REMOVED 2026-08-19.
@@ -1714,16 +1715,12 @@ export default function CashierPage() {
           and gated again by fn_can_use_club_bank on every read and write. */}
       {clubId && (
         <>
-          <PromoWalletCashierModal
-            isOpen={showPromoWallet}
-            onClose={() => setShowPromoWallet(false)}
-            clubId={clubId}
-          />
           <WalletCashierModal
-            isOpen={showClubBank}
-            onClose={() => setShowClubBank(false)}
+            isOpen={!!activeCashier}
+            onClose={() => setActiveCashier(null)}
             clubId={clubId}
             role={userRole}
+            walletType={activeCashier || 'club_bank'}
           />
         </>
       )}
@@ -1734,7 +1731,7 @@ export default function CashierPage() {
         <div className={styles.connectionBanner} role="status" aria-live="polite">
           {realtimeStatus === 'reconnecting' ? (
             <>
-              <span className={styles.connectionDot} style={{ background: '#ffb800' }} />{' '}
+              <span className={styles.connectionDot} style={{ background: '#6fdcff' }} />{' '}
               Reconnecting To Live Updates…
             </>
           ) : (

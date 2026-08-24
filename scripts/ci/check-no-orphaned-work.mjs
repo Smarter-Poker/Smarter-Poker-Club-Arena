@@ -107,6 +107,77 @@ function recentPatchIds() {
   return _recent;
 }
 
+/**
+ * THE SQUASH-MERGE BLIND SPOT (2026-08-23).
+ *
+ * The patch-id fallback above catches a commit that was cherry-picked or
+ * re-landed whole. It cannot catch a SQUASH merge, which is how pull requests
+ * land in this repo: squashing rewrites several commits into one, so the
+ * squashed commit's patch-id matches none of its parts. The pinned SHA is the
+ * pre-merge local commit, so it can never be an ancestor of main either.
+ *
+ * Result: every pinned commit that lands through a PR eventually fails this
+ * guard, permanently, for every agent. Measured 2026-08-23 — 38ee27b3d
+ * ("16 open Spins were advertising 0/3 while holding 32 paid seats") blocked
+ * every push from every tree while all 75 of its added lines were sitting on
+ * main and its own guard test passed there. A guard that cries wolf gets
+ * switched off, which is how the work gets lost for real.
+ *
+ * So: as a LAST resort, ask whether the WORK survived rather than the commit.
+ *
+ * WHY CODE LINES ONLY. The failure this file exists to catch is a merge that
+ * "resolved by taking a stale side", and the note pinned to 38ee27b3d records
+ * exactly what that looks like: the change "merged as an explanatory COMMENT
+ * while the code under it was flattened away". A survival check that counted
+ * comments would be satisfied by precisely the disaster it is meant to detect.
+ * Comments, braces and blank lines are therefore stripped, and EVERY remaining
+ * code line must still be present. One missing line fails hard, as before.
+ */
+const COMMENT_OR_PUNCTUATION = /^(?:\/\/|\/\*|\*\/|\*(?!\/)|[{}()[\];,]+$)/;
+
+/**
+ * The code lines a commit ADDED that are no longer anywhere in the tree at
+ * HEAD. An empty array means the work survived; a non-empty one names what did
+ * not. Returns null when the question cannot be asked at all, which is
+ * "unverifiable", never "lost".
+ */
+function missingAddedCodeLines(sha) {
+  let diff;
+  try {
+    diff = execSync(`git show --format= --unified=0 ${sha}`, {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      maxBuffer: 64 * 1024 * 1024,
+    }).toString();
+  } catch {
+    return null;
+  }
+
+  const added = new Set();
+  for (const raw of diff.split('\n')) {
+    if (!raw.startsWith('+') || raw.startsWith('+++')) continue;
+    const line = raw.slice(1).trim();
+    if (!line) continue;
+    if (COMMENT_OR_PUNCTUATION.test(line)) continue;
+    added.add(line);
+  }
+  if (added.size === 0) return null; // comment-only or empty commit: cannot judge
+
+  // One read of the whole tree at HEAD beats one `git show` per file, and it
+  // also credits a line that survived by MOVING to another file — which a
+  // refactor does routinely and which is not a loss.
+  let tree;
+  try {
+    tree = execSync('git grep -h --no-color -I "" HEAD', {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      maxBuffer: 512 * 1024 * 1024,
+    }).toString();
+  } catch {
+    return null;
+  }
+  const present = new Set(tree.split('\n').map((l) => l.trim()));
+  return [...added].filter((l) => !present.has(l));
+}
+
 /** A shallow clone cannot answer ancestry questions past its boundary. */
 function isShallow() {
   try {
@@ -180,6 +251,17 @@ for (const entry of pinned) {
     moved.push(entry);
     continue;
   }
+  // Last resort: a SQUASH merge re-writes the patch, so neither the SHA nor
+  // the patch-id can prove survival even though every line landed. Ask the
+  // code itself. See missingAddedCodeLines for why comments do not count.
+  const orphanedLines = missingAddedCodeLines(sha);
+  if (orphanedLines && orphanedLines.length === 0) {
+    moved.push(entry);
+    continue;
+  }
+  if (orphanedLines && orphanedLines.length > 0) {
+    entry._lostLines = orphanedLines;
+  }
   missing.push(entry);
 }
 
@@ -203,6 +285,17 @@ if (missing.length) {
   console.error('\n✗ PROTECTED WORK HAS BEEN ORPHANED FROM main\n');
   for (const e of missing) {
     console.error(`  ${String(e.sha).slice(0, 8)}  ${e.note ?? '(no note)'}`);
+    // Name what is actually gone. "A commit is missing" sends the reader to
+    // git archaeology; "these four lines are gone" sends them to the file.
+    if (e._lostLines?.length) {
+      const shown = e._lostLines.slice(0, 5);
+      console.error(
+        `      ${e._lostLines.length} added code line(s) no longer anywhere in the tree, e.g.:`
+      );
+      for (const l of shown) {
+        console.error(`        ${l.length > 100 ? `${l.slice(0, 100)}…` : l}`);
+      }
+    }
   }
   console.error(
     '\n  These commits are no longer ancestors of HEAD. That is not a revert —\n' +

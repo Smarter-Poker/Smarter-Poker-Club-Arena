@@ -103,8 +103,19 @@ export function isInLateRegistration(t: FilterableTournament, now: number): bool
     if (Number.isFinite(begun) && now - begun <= lateMins * 60000) return true;
   }
 
+  /**
+   * `current_level` is a 0-BASED index into blind_structure (the engine's
+   * TournamentManagerBase.currentLevel starts at 0), so "late reg through
+   * level N" is indices 0..N-1 and the cutoff is index N. This read `<=`,
+   * which kept the lobby advertising late registration for one whole level
+   * after the engine had closed it, finalized the prize pool, and told every
+   * client so — the badge stayed lit and the Register button stayed live on a
+   * tournament whose RPC now answers `registration_closed`.
+   *
+   * Matches TournamentManagerBase.isLateRegClosed: `currentLevel >= cap`.
+   */
   const lateLevels = Number(t.late_reg_levels) || 0;
-  if (lateLevels > 0 && Number(t.current_level || 0) <= lateLevels) return true;
+  if (lateLevels > 0 && Number(t.current_level || 0) < lateLevels) return true;
 
   return false;
 }

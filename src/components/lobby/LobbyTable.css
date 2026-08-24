@@ -52,6 +52,9 @@
   white-space: nowrap;
   user-select: none;
 }
+.lobby-table thead th.lt-col-num {
+  text-align: center;
+}
 .lobby-table thead th.is-sortable {
   cursor: pointer;
 }
@@ -121,6 +124,7 @@
 }
 .lt-col-num {
   width: 110px;
+  text-align: center;
 }
 .lt-col-players {
   width: 108px;

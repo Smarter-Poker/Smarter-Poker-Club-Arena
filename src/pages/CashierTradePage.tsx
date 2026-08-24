@@ -33,7 +33,6 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
-import { PromoWalletCashierModal } from '../components/wallet';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
 import { canSeeClubBank } from '../components/wallet/walletRows';
 import ClubBottomNav from '../components/club/ClubBottomNav';
@@ -166,8 +165,9 @@ export default function CashierTradePage() {
   // cashier, then opened the Chip Mint directly.
   // Dan 2026-08-23: it opens the CLUB BANK CASHIER now. The mint lives inside
   // that, for standalone clubs only - a club in a union has no mint at all.
-  const [showClubBank, setShowClubBank] = useState(false);
-  const [showPromoWallet, setShowPromoWallet] = useState(false);
+  const [activeCashier, setActiveCashier] = useState<
+    'club_bank' | 'promo_wallet' | 'agent_wallet' | null
+  >(null);
   // Guards a double-submit that beats the re-render `busy` depends on.
   const busyRef = useRef(false);
   const isMounted = useRef(true);
@@ -899,7 +899,7 @@ export default function CashierTradePage() {
                     className={styles.plusBtn}
                     aria-label="Open the Club Bank Cashier"
                     title="Club Bank Cashier - fund agent wallets, ledger, chip mint"
-                    onClick={() => setShowClubBank(true)}
+                    onClick={() => setActiveCashier('club_bank')}
                   >
                     +
                   </button>
@@ -1209,13 +1209,14 @@ export default function CashierTradePage() {
       {/* Club Bank Cashier — fund agent wallets, the full chip ledger, and
           (standalone clubs only) the Chip Mint. */}
       <WalletCashierModal
-        isOpen={showClubBank}
+        isOpen={!!activeCashier}
         onClose={() => {
-          setShowClubBank(false);
+          setActiveCashier(null);
           loadClub();
         }}
         clubId={clubUuid || clubParam || ''}
         role={myRole}
+        walletType={activeCashier || 'club_bank'}
       />
 
       {/* Amount modal */}

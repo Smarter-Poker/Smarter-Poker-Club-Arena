@@ -32,6 +32,7 @@ type Tab = 'discover' | 'my-clubs' | 'create';
 
 interface Club {
   id: string;
+  slug?: string;
   club_id: number;
   name: string;
   member_count: number;
@@ -324,7 +325,7 @@ export default function ClubsPage() {
       // ClubsService.create() emits CLUB_JOINED via joinClub() internally — no need to emit again
 
       // Navigate to the new club
-      navigate(`/clubs/${club.id}`);
+      navigate(`/clubs/${club.slug || club.id}`);
     } catch (err: any) {
       reportError(err, 'ClubsPage.Create_failed');
       toast.error(err.message || 'Failed to create club');
@@ -436,7 +437,7 @@ export default function ClubsPage() {
                     toast.error(err.message || 'Failed to join club');
                   }
                 }}
-                onViewClub={(club) => navigate(`/clubs/${club.id}`)}
+                onViewClub={(club) => navigate(`/clubs/${club.slug || club.id}`)}
               />
             </div>
           )}
@@ -534,7 +535,7 @@ export default function ClubsPage() {
                             className={styles.btnPrimary}
                             onClick={() => {
                               haptic.success();
-                              navigate(`/clubs/${membership.club.id}`);
+                              navigate(`/clubs/${membership.club.slug || membership.club.id}`);
                             }}
                           >
                             ENTER CLUB

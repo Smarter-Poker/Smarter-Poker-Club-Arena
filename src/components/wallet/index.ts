@@ -5,4 +5,3 @@
  */
 
 export { TransactionHistory } from './TransactionHistory';
-export * from './PromoWalletCashierModal';

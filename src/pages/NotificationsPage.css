@@ -618,3 +618,19 @@
   font-weight: 700;
   padding: 0 4px;
 }
+
+.swipe-actions-left {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: 20px;
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.4) 0%, rgba(16, 185, 129, 0) 100%);
+  font-size: 1.5rem;
+  cursor: pointer;
+  border-radius: 12px;
+}

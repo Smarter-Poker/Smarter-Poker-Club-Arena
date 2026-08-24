@@ -59,7 +59,7 @@ import { supabase } from '../../lib/supabase';
 import { resolveClubUUID, resolveClubUUIDSync } from '../../utils/clubIdResolver';
 import {
   walletCacheKey,
-  readWalletCache,
+  readWalletCacheEntry,
   writeWalletCacheDebounced,
   dedupedFetch,
 } from '../../lib/walletCache';
@@ -85,6 +85,14 @@ const WALLET_BUS_EVENTS = [
 
 // Reconnect backoff delays (ms)
 const BACKOFF_DELAYS = [2000, 4000, 8000, 16000, 30000];
+
+/**
+ * A cached panel younger than this is trusted as-is on mount: no immediate
+ * refetch. Realtime channels re-bind instantly, bus events still force a
+ * refresh, and the visibility hook refetches after 30s+ hidden — so the only
+ * thing this window skips is the redundant full resync on every page hop.
+ */
+const FRESH_WINDOW_MS = 15_000;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -316,25 +324,64 @@ export default function DynamicWallet({
   onOpenPlayerWallet,
   onOpenBBJ,
 }: DynamicWalletProps) {
-  const [data, setData] = useState<WalletData>(INITIAL_WALLET_DATA);
-  const [loading, setLoading] = useState(true);
+  // ── SYNCHRONOUS BOOT (Dan 2026-08-24: "the wallet should always be loaded
+  // and displayed... it should just stay in some sort of persistent state") ──
+  // The cache read used to live in a useEffect, which runs AFTER the first
+  // paint — so every mount showed at least one skeleton frame even on a
+  // memory-cache hit, and leaving a table for the lobby "reloaded" a wallet
+  // whose numbers were seconds old. The read now happens DURING the first
+  // render: a remount paints the last-known panel in its very first frame.
+  //
+  // `fresh` additionally records whether the entry is younger than the fresh
+  // window — if so, the immediate refetch is skipped entirely (the realtime
+  // channels, bus events and the visibility refresh own keeping it true),
+  // which is what stops a Table -> Lobby hop from resyncing everything.
+  const bootRef = useRef<{
+    key: string | null;
+    entry: CachedPanel | null;
+    fresh: boolean;
+  } | null>(null);
+  if (bootRef.current === null) {
+    const key = userId && clubId ? walletCacheKey(userId, clubId, variant) : null;
+    const hit = key ? readWalletCacheEntry<CachedPanel>(key) : null;
+    bootRef.current = {
+      key,
+      entry: hit?.data && hit.data.data ? hit.data : null,
+      fresh: hit ? Date.now() - hit.at < FRESH_WINDOW_MS : false,
+    };
+  }
+  const boot = bootRef.current;
+
+  const [data, setData] = useState<WalletData>(() =>
+    boot.entry ? { ...INITIAL_WALLET_DATA, ...boot.entry.data } : INITIAL_WALLET_DATA
+  );
+  const [loading, setLoading] = useState(() => !boot.entry);
   const [fetchError, setFetchError] = useState(false);
-  const [isClubInUnion, setIsClubInUnion] = useState(false);
+  const [isClubInUnion, setIsClubInUnion] = useState(() => boot.entry?.isClubInUnion ?? false);
   const isMounted = useIsMounted();
 
-  // Resolved UUID — DynamicWallet now handles resolution internally
-  const [resolvedId, setResolvedId] = useState<string | null>(null);
+  // Resolved UUID — DynamicWallet now handles resolution internally.
+  // Synchronous from the persisted map on first render whenever the mapping
+  // is already on the device, so the realtime channels bind immediately.
+  const [resolvedId, setResolvedId] = useState<string | null>(() =>
+    clubId ? resolveClubUUIDSync(clubId) : null
+  );
   // Fetch version counter to discard stale responses on rapid club switching
   const fetchVersionRef = useRef(0);
   // Tracked union_id for union_wallets RT channel
-  const currentUnionIdRef = useRef<string | null>(null);
+  const currentUnionIdRef = useRef<string | null>(boot.entry?.unionId ?? null);
+  // Consume the fresh window exactly once (see the fetch effect).
+  const skipNextFetchRef = useRef(boot.fresh);
+  // The clubId effect's first run must not redo (and briefly undo) the work
+  // the synchronous boot above already did.
+  const bootConsumedRef = useRef(false);
   // Mirrored into state because the realtime effect below binds its BBJ and
   // union_wallets filters to this value. A ref cannot be a dependency, so the
   // effect previously keyed on the `isClubInUnion` BOOLEAN — which does not
   // change when moving from one union club to ANOTHER union club, leaving both
   // channels subscribed to the PREVIOUS union. The panel then showed a live
   // Bad Beat Jackpot and Union Bank belonging to the club you just left.
-  const [currentUnionId, setCurrentUnionId] = useState<string | null>(null);
+  const [currentUnionId, setCurrentUnionId] = useState<string | null>(boot.entry?.unionId ?? null);
   // Reconnect tracking
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
@@ -361,13 +408,38 @@ export default function DynamicWallet({
   // switch where `cacheKey` already points at the new club while `data` still
   // holds the old one — writing in that window would poison the new club's
   // cache with the old club's money.
-  const paintedKeyRef = useRef<string | null>(null);
+  const paintedKeyRef = useRef<string | null>(boot.entry ? boot.key : null);
   // Last-known viewer role from the device cache. Bridges the roleReady gap:
   // the row SET paints from this until the caller's live role hydrates, then
   // the live role wins. Never used for any permission decision.
-  const [cachedRole, setCachedRole] = useState<ClubRole | null>(null);
+  const [cachedRole, setCachedRole] = useState<ClubRole | null>(() =>
+    boot.entry?.role ? normaliseRole(boot.entry.role) : null
+  );
 
   useEffect(() => {
+    // FIRST RUN: the synchronous boot above already painted this exact key
+    // during the first render — redoing it here would churn every state hook
+    // for no reason. All that may still be owed is the ASYNC UUID resolution
+    // (when the persisted map could not answer synchronously).
+    if (!bootConsumedRef.current) {
+      bootConsumedRef.current = true;
+      if (paintedKeyRef.current === cacheKey || !clubId) {
+        if (clubId && !resolveClubUUIDSync(clubId)) {
+          resolveClubUUID(clubId)
+            .then((uuid) => {
+              if (isMounted.current) setResolvedId(uuid);
+            })
+            .catch((err) => {
+              console.warn('[DynamicWallet] Failed to resolve clubId:', err);
+              if (isMounted.current) setResolvedId(clubId);
+            });
+        }
+        return;
+      }
+      // Boot could not paint (e.g. userId arrived after mount): fall through
+      // to the full path below.
+    }
+
     // Reset before resolving. Without this, `resolvedId` kept pointing at the
     // OLD club while resolveClubUUID was in flight, `loading` stayed false
     // (it is only ever set false after the first fetch) and `data` was never
@@ -378,6 +450,7 @@ export default function DynamicWallet({
     setFetchError(false);
     setCachedRole(null);
     paintedKeyRef.current = null;
+    skipNextFetchRef.current = false;
     if (!clubId) {
       setLoading(true);
       return;
@@ -389,7 +462,8 @@ export default function DynamicWallet({
     //    MERGED over the zero-state so a payload written by an older build
     //    (missing fields added since) heals to safe defaults instead of
     //    feeding `undefined` into the animated counters.
-    const cached = cacheKey ? readWalletCache<CachedPanel>(cacheKey) : null;
+    const hit = cacheKey ? readWalletCacheEntry<CachedPanel>(cacheKey) : null;
+    const cached = hit?.data;
     if (cached && cached.data) {
       setData({ ...INITIAL_WALLET_DATA, ...cached.data });
       setIsClubInUnion(cached.isClubInUnion);
@@ -397,6 +471,9 @@ export default function DynamicWallet({
       setCurrentUnionId(cached.unionId ?? null);
       if (cached.role) setCachedRole(normaliseRole(cached.role));
       paintedKeyRef.current = cacheKey;
+      // Same fresh-window rule as the synchronous boot: seconds-old data
+      // needs no immediate resync when hopping between surfaces.
+      skipNextFetchRef.current = hit !== null && Date.now() - hit.at < FRESH_WINDOW_MS;
       setLoading(false);
     } else {
       setLoading(true);
@@ -589,7 +666,17 @@ export default function DynamicWallet({
   }, [userId, resolvedId, variant, cacheKey]);
 
   useEffect(() => {
-    if (resolvedId) fetchData();
+    if (!resolvedId) return;
+    // FRESH WINDOW: the panel just painted from data written seconds ago
+    // (typically by this same widget on the page the user just left). An
+    // immediate refetch would be a full resync for numbers that cannot
+    // meaningfully have moved — and every later trigger (bus event, realtime
+    // delta, visibility return, club switch) still fetches as before.
+    if (skipNextFetchRef.current) {
+      skipNextFetchRef.current = false;
+      return;
+    }
+    fetchData();
   }, [fetchData, resolvedId]);
 
   // ── Realtime write-through ────────────────────────────────────────────────

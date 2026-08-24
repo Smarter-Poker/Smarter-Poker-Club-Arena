@@ -32,10 +32,17 @@ import { spinActivationApi, type SpinOwnerState } from '../services/SpinActivati
 import { useUserStore } from '../stores/useUserStore';
 import {
   walletCacheKey,
-  readWalletCache,
+  readWalletCacheEntry,
   writeWalletCache,
   dedupedFetch,
 } from '../lib/walletCache';
+
+/**
+ * A cached spins state younger than this is trusted as-is on mount — no
+ * immediate refetch. Mirrors DynamicWallet's fresh window: page hops stop
+ * re-asking a question answered seconds ago. reload() always bypasses it.
+ */
+const FRESH_WINDOW_MS = 15_000;
 
 export interface SpinsWallet {
   state: SpinOwnerState | null;
@@ -80,10 +87,16 @@ export function useSpinsWallet(ownerKey: string | null | undefined, enabled = tr
     // loading state it was built to avoid. (Old bare-shape entries fail the
     // `'s' in` guard and count as misses — harmless, they refill once.)
     const cacheKey = userId ? walletCacheKey(userId, 'spins', ownerKey) : null;
-    const raw = cacheKey ? readWalletCache<{ s: SpinOwnerState | null }>(cacheKey) : null;
+    const entry = cacheKey ? readWalletCacheEntry<{ s: SpinOwnerState | null }>(cacheKey) : null;
+    const raw = entry?.data ?? null;
     const hit = raw !== null && typeof raw === 'object' && 's' in raw;
     if (hit) {
       setState(raw.s);
+      // FRESH WINDOW: seconds-old answer, nothing to re-ask on a page hop.
+      // An explicit reload() bumps `nonce`, which always fetches.
+      if (nonce === 0 && entry && Date.now() - entry.at < FRESH_WINDOW_MS) {
+        return;
+      }
     } else {
       setLoading(true);
     }

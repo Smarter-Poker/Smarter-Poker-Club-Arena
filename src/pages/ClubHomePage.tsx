@@ -52,7 +52,7 @@ import './ClubHomePage.css';
 import { isFixedLimitVariant } from '../lib/bettingStructure';
 
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
+import { resolveClubIdFilter, resolveClubUUID, resolveClubUUIDSync } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
@@ -412,7 +412,16 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [unionIdForCreate, setUnionIdForCreate] = useState<string | undefined>(undefined);
   const [showCreateTournament, setShowCreateTournament] = useState(false);
   const [clubLevel, setClubLevel] = useState<ClubLevelInfo | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  // Synchronous from the user store (Dan 2026-08-24: "when you leave a game
+  // and go back to the lobby, the wallet is never there and has to load
+  // again"). This used to start null and hydrate from an ASYNC auth call —
+  // so on every navigation the wallet mounted with no userId, its device
+  // cache was unreachable (keys embed the user id), and the panel sat on a
+  // skeleton for a full roundtrip it did not need. The store survives route
+  // changes; the async path below still confirms it.
+  const [currentUserId, setCurrentUserId] = useState<string | null>(
+    () => useUserStore.getState().user?.id ?? null
+  );
   const toast = useToast();
   const hasDataRef = useRef(false);
   const loadingRef = useRef(false);
@@ -703,7 +712,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   }, [clubId]);
 
   // ── Realtime subscription: club member count updates ──
-  const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
+  // Synchronous when the club-code -> UUID mapping is already persisted on
+  // the device (clubIdResolver) — the wallet and every realtime filter that
+  // keys on this can bind in the first render instead of one roundtrip later.
+  const [resolvedClubId, setResolvedClubId] = useState<string | null>(() =>
+    clubId ? resolveClubUUIDSync(clubId) : null
+  );
 
   // ── SPIN QUICK-JOIN (Dan 2026-08-20: "there is 'no lobby' for a spin, you
   // just start on a table") ──────────────────────────────────────────────────

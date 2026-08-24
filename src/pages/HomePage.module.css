@@ -1781,7 +1781,10 @@
     /* gap / scroll-padding-inline are dead here: the strip is neither a flex
        row nor a scroll container any more. Removed rather than left to read
        like live layout. */
-    padding: 8px 12px 24px 12px;
+    /* Measured live at 24px bottom: 36px above the cards, 44px below. The
+       carousel centres its track, so trimming 8px off the bottom padding
+       moves the midpoint 4px down and the two gaps meet at 40px. */
+    padding: 8px 12px 16px 12px;
     /* Dan 2026-08-24 round 3: "THERE SHOULD BE THE EXACT SAME AMOUNT OF
        SPACING BETWEEN THE ACTION BAR AND THE 5 BOTTOM CARDS. THE CARDS SHOULD
        BE PERFECTLY SPACED BETWEEN THEM." Auto margins on both sides of the

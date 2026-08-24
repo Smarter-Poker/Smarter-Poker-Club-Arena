@@ -65,13 +65,25 @@ describe('horses take seats, not just places on a list', () => {
   });
 
   it('never takes a horse out of a game it is already in', () => {
+    /* 2026-08-23: the busy-set reads moved from pickFreeHorses into the shared
+       horseLoadMap() helper (capacity is now 4 concurrent games, and three
+       callers need the same map). The guarantee is unchanged — a horse's
+       current tournaments AND cash seats are both consulted before it can be
+       picked — so the slice now starts at the helper that owns those reads. */
     const pick = recurring.slice(
-      recurring.indexOf('private async pickFreeHorses'),
+      recurring.indexOf('private async horseLoadMap'),
       recurring.indexOf('private async createSpin')
     );
     expect(pick).toMatch(/tournament_players/);
     expect(pick).toMatch(/table_seats/);
     expect(pick).toMatch(/is_horse/);
+    // pickFreeHorses itself must consult the load map, not requery per horse.
+    const pickFn = recurring.slice(
+      recurring.indexOf('private async pickFreeHorses'),
+      recurring.indexOf('private async createSpin')
+    );
+    expect(pickFn).toMatch(/horseLoadMap\(\)/);
+    expect(pickFn).toMatch(/atCapacity/);
   });
 
   it('reads the busy set ONCE per call, not once per horse', () => {
@@ -89,10 +101,10 @@ describe('horses take seats, not just places on a list', () => {
     expect(recurring).not.toMatch(/pickFreeHorse\(\)/);
 
     const pick = recurring.slice(
-      recurring.indexOf('private async pickFreeHorses'),
+      recurring.indexOf('private async horseLoadMap'),
       recurring.indexOf('private async createSpin')
     );
-    // Exactly one read of each source inside the function.
+    // Exactly one read of each source across horseLoadMap + pickFreeHorses.
     expect((pick.match(/from\('tournament_players'\)/g) || []).length).toBe(1);
     expect((pick.match(/from\('table_seats'\)/g) || []).length).toBe(1);
     expect((pick.match(/from\('profiles'\)/g) || []).length).toBe(1);

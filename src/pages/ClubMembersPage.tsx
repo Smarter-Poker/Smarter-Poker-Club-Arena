@@ -52,6 +52,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
@@ -482,7 +483,11 @@ function MemberRow({ member, onOpen }: { member: RosterMember; onOpen: (userId: 
       <div className="member-avatar">
         {member.avatar_url ? (
           <img
-            src={member.avatar_url}
+            /* Storage objects go through the image-transform endpoint: the
+               raw object URL was observed intermittently failing (HTTP 544)
+               while /render/image/ stayed up, and a 44px box does not need a
+               1MB original. Non-storage URLs pass through unchanged. */
+            src={sizedStorageUrl(member.avatar_url, 44)}
             alt=""
             loading="lazy"
             /* A dead avatar URL (revoked storage object, offline fetch) left a

@@ -1449,7 +1449,20 @@ export const SeatSlot = memo(
             {showAvatar && !avatarBroken && !rigActive ? (
               <img
                 src={avatarUrl}
-                srcSet={`${avatarUrl} 1x, ${avatarUrl.replace(/\.webp$/, '@2x.webp')} 2x`}
+                /* RETINA 2026-08-23 (root cause of "avatars don't show on
+                   mobile"): 193 profiles stored their library art as
+                   /avatars/table/X@2x.webp. The old unconditional replace
+                   built X@2x@2x.webp as the 2x candidate — a 404 — and every
+                   phone (DPR>=2) SELECTS the 2x candidate, so the img errored
+                   and the seat fell back to an initial. Desktop (DPR 1) used
+                   the 1x URL and looked fine, which is why this only ever hurt
+                   phones. Only offer a 2x twin when the URL is base table art
+                   that is not already @2x. */
+                srcSet={
+                  /^https?:\/\/[^\s]+\/avatars\/table\/[^@\s]+\.webp$/.test(avatarUrl)
+                    ? `${avatarUrl} 1x, ${avatarUrl.replace(/\.webp$/, '@2x.webp')} 2x`
+                    : undefined
+                }
                 alt=""
                 className="seat__avatar-img"
                 /* Per-avatar size correction (--sp-bust-gain) is NOT set here.

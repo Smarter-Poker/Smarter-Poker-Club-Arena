@@ -13,7 +13,7 @@ import React, { useState, useMemo, memo, useRef, useEffect } from 'react';
 import { type ClubRole, isClubPrincipal, normaliseRole, roleRank } from '../../types/clubRoles';
 import { useNavigate } from 'react-router-dom';
 import './MemberList.css';
-import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { generateDefaultAvatar, sizedStorageUrl } from '../../utils/avatarGenerator';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -163,7 +163,7 @@ function MemberListInner({
                       <img
                         loading="lazy"
                         decoding="async"
-                        src={member.avatar}
+                        src={sizedStorageUrl(member.avatar, 44)}
                         alt=""
                         onError={(e) => {
                           (e.target as HTMLImageElement).src = generateDefaultAvatar();

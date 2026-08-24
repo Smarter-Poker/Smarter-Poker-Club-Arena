@@ -594,11 +594,12 @@
 .table-tab-bar__tab-label {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   min-width: 0;
   flex: 1;
   line-height: 1.1;
+  text-align: center;
 }
 
 .table-tab-bar__tab-sub {

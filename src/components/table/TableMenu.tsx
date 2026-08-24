@@ -172,7 +172,7 @@ export function createDefaultMenuSections(handlers: {
           : []),
         {
           id: 'settings',
-          label: 'Settings',
+          label: 'Table Settings',
           icon: <SettingsIcon />,
           onClick: handlers.onSettings || (() => {}),
         },

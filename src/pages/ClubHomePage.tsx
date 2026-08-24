@@ -1,3 +1,4 @@
+import { isFixedLimitVariant } from '../lib/bettingStructure';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * CLUB HOME PAGE — Premium-Style Club Dashboard
@@ -18,7 +19,6 @@ import { isClubStaff } from '../types/clubRoles';
 import { MEDIA_BASE } from '../utils/mediaBase';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
-import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import haptic from '../services/HapticService';
@@ -49,8 +49,6 @@ import ConfirmModal from '../components/common/ConfirmModal';
 import confirmDialog from '../components/common/confirmDialog';
 import { retryFetch } from '../utils/retryFetch';
 import './ClubHomePage.css';
-import { isFixedLimitVariant } from '../lib/bettingStructure';
-
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter, resolveClubUUID, resolveClubUUIDSync } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -152,7 +150,6 @@ interface ClubData {
   id: string;
   club_id: number;
   name: string;
-  slug?: string;
   description: string;
   avatar_url: string;
   logo_url?: string;
@@ -283,17 +280,7 @@ function cashKind(t: { game_variant?: string }): 'HOLDEM' | 'OMAHA' | 'LIMIT' | 
   const v = (t.game_variant || '').toLowerCase();
   // 'short' is Short Deck, which is a Hold'em variant — it belongs with NLH,
   // not in the Mixed bucket where an unlisted string falls.
-  //
-  // 2026-08-23: ask BettingStructure FIRST. The substring tests below catch
-  // `flh` and anything spelled `limit_*`, but not `flo8` — that string contains
-  // no "flh", no "limit", and no "plo" either, so Fixed Limit Omaha fell all
-  // the way through to MIXED and would have been missing from the very tab it
-  // belongs in. The substring tests stay underneath as the fallback for legacy
-  // `limit_holdem` / `limit_omaha` rows, which are not in the variant union and
-  // so are invisible to bettingStructureFor().
   if (isFixedLimitVariant(v)) return 'LIMIT';
-  if (v.includes('flh') || (v.includes('limit') && !v.includes('no') && !v.includes('pot')))
-    return 'LIMIT';
   if (v.includes('nlh') || v.includes('holdem') || v.includes("hold'em") || v.includes('short'))
     return 'HOLDEM';
   if (v.includes('plo') || v.includes('omaha')) return 'OMAHA';
@@ -407,9 +394,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null);
   const [isInUnion, setIsInUnion] = useState(false);
-  /** Live seat count from get_club_home. Null until it answers; see the note
-      where it is set - the stale clubs.online_count is never used. */
-  const [playersPlaying, setPlayersPlaying] = useState<number | null>(null);
   const [unionIdForCreate, setUnionIdForCreate] = useState<string | undefined>(undefined);
   const [showCreateTournament, setShowCreateTournament] = useState(false);
   const [clubLevel, setClubLevel] = useState<ClubLevelInfo | null>(null);
@@ -866,6 +850,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     const unsubs = [
       masterBus.subscribeDebounced('CLUB_JOINED', reload, 300),
       masterBus.subscribeDebounced('CLUB_LEFT', reload, 300),
+      masterBus.subscribeDebounced('BALANCE_UPDATED', reload, 300),
+      masterBus.subscribeDebounced('DIAMOND_BALANCE_CHANGED', reload, 300),
       masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', reload, 300),
       // Phase 11: Only reload for OUR club's updates (not every club in the platform)
       masterBus.subscribeDebounced(
@@ -889,11 +875,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       masterBus.subscribeDebounced('WAITLIST_PROMOTED', reload, 300),
     ];
 
-    // 90-second fallback interval to ensure the page data doesn't get completely stale
+    // 1-minute fallback interval to ensure the page data doesn't get completely stale
     // when real-time events are missed.
     const fallbackInterval = setInterval(() => {
       reload();
-    }, 90_000);
+    }, 60_000);
 
     return () => {
       isMounted = false;
@@ -920,7 +906,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, slug, description, avatar_url, logo_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at, is_union, union_id'
+              'id, club_id, name, description, avatar_url, logo_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at, is_union, union_id'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -978,29 +964,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       Promise.resolve(supabase.rpc('get_club_home', { p_club_key: clubId }))
         .then(({ data: home, error: homeErr }) => {
           if (homeErr || !home || home.found !== true) return;
-
-          /**
-           * PLAYERS CURRENTLY PLAYING (Dan, 2026-08-23): "the 0 players
-           * currently playing is a bug... every horse needs to be considered a
-           * current player, this an accumulation of all active players in all
-           * clubs total."
-           *
-           * clubs.online_count is a denormalised column nothing keeps current
-           * - it read 12 for JAQK and 0 for Shark and Midway while 579 seats
-           * were occupied. get_club_home counts the live seats themselves,
-           * horses included, across the whole platform.
-           *
-           * SET BEFORE THE lobbyPainted GUARD, deliberately. That guard exists
-           * to stop a stale SNAPSHOT OF THE LISTS painting over fresher rows;
-           * this number is not in the lists and has no fresher writer. Behind
-           * the guard it was skipped on every warm load where the chain won
-           * the race, and the header fell back to the stale 12 - which is
-           * precisely the flapping being fixed here.
-           */
-          if (typeof home.players_playing === 'number') {
-            setPlayersPlaying(home.players_playing);
-          }
-
           if (lobbyPainted) return; // the real chain already answered
           if (getIsMounted && !getIsMounted()) return;
           lobbyPainted = true;
@@ -1187,21 +1150,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         if (!ucErr && !ucRow) {
           // A clean answer of "no row" is still only half the story: the club
           // row itself may name a union (they are written by different paths).
-          /**
-           * ...AND THE CACHE, which this branch used to ignore.
-           *
-           * The error branch above falls back to `clubs.union_id` and then to
-           * the last good answer. This one stopped at the club row, so a
-           * union_clubs read that came back 200 WITH ZERO ROWS demoted a union
-           * club to standalone even though the browser was holding the right
-           * answer from a minute ago. A clean answer of "no row" is not an
-           * error, so nothing else treats it as one.
-           *
-           * Same rule in both branches now: conclude standalone only on
-           * positive evidence from every source, not on the first silent one.
-           */
-          const fromClubRow =
-            (clubData as { union_id?: string | null } | null)?.union_id || readCachedUnion();
+          const fromClubRow = (clubData as { union_id?: string | null } | null)?.union_id || null;
           if (fromClubRow) {
             unionId = fromClubRow;
             if (getIsMounted && !getIsMounted()) return;
@@ -1226,81 +1175,41 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             supabase
               .from('club_members')
               .select('user_id', { count: 'exact', head: true })
-              .eq('club_id', resolvedId) // A CLUB's own count. Unions re-query below.
+              .eq('club_id', resolvedId) // Will be updated below if union has multiple clubs
               .in('status', ['active', 'approved']),
           ]);
 
           if (allUcResult.data && allUcResult.data.length > 0) {
             unionClubIds = allUcResult.data.map((r) => r.club_id);
-          }
 
-          /**
-           * ...AND A UNION'S MEMBER COUNT IS EVERY CLUB'S, ADDED UP.
-           *
-           * Dan 2026-08-24: "how can the union only have 328 players but 551
-           * players currently playing. The union total is the total of all
-           * members in all clubs = total members in the union, even if the
-           * same player is in multiple clubs they get counted twice, 3x etc."
-           *
-           * This page renders unions as well as clubs — `clubs` carries a row
-           * with is_union true whose id IS the union id (Midway Union, club_id
-           * 55555). The 2026-08-23 fix above made every page count
-           * `resolvedId`'s own members, which is right for a club and wrong
-           * for a union: it counted the union's own house-club roster, 328,
-           * and published it as the whole union. Less than the 551 people
-           * playing in it at the time, which is how Dan spotted it.
-           *
-           * Summed WITHOUT de-duplication, exactly as specified: a player in
-           * two clubs is two memberships. That is also what unions.member_count
-           * holds (1,172 here = 584 Club JAQK + 588 Shark), so the header and
-           * the union record now agree instead of contradicting each other.
-           *
-           * The union's own house-club row is not in union_clubs and is
-           * therefore not counted — it is the union, not a club inside it, and
-           * 327 of its 328 members already hold a membership in one of the two
-           * real clubs.
-           *
-           * Fired as its own await AFTER unionClubIds is known, deliberately
-           * not blocking the tables/tournaments queries below.
-           */
-          if (clubData.is_union && unionClubIds.length > 0) {
-            const { count: unionMembers } = await supabase
-              .from('club_members')
-              .select('user_id', { count: 'exact', head: true })
-              .in('club_id', unionClubIds)
-              .in('status', ['active', 'approved']);
-            if (getIsMounted && !getIsMounted()) return;
-            if (unionMembers != null) {
-              setClub((prev) => (prev ? { ...prev, member_count: unionMembers } : prev));
-              // The level badge is derived from clubData further down; keep the
-              // two from disagreeing the way the header and the record did.
-              clubData.member_count = unionMembers;
+            // If union has multiple clubs, re-query with all club IDs
+            if (unionClubIds.length > 1) {
+              try {
+                const { count: totalMembers } = await supabase
+                  .from('club_members')
+                  .select('user_id', { count: 'exact', head: true })
+                  .in('club_id', unionClubIds)
+                  .in('status', ['active', 'approved']);
+
+                if (getIsMounted && !getIsMounted()) return;
+                setClub((prev) =>
+                  prev ? { ...prev, member_count: totalMembers || prev.member_count || 0 } : prev
+                );
+              } catch (e) {
+                reportError(e, 'ClubHomePage.setClub');
+                // Fall back to club-level counts
+              }
+            } else {
+              // Single club — use the result from the parallel batch
+              if (memberCountResult.count != null) {
+                if (getIsMounted && !getIsMounted()) return;
+                setClub((prev) =>
+                  prev
+                    ? { ...prev, member_count: memberCountResult.count || prev.member_count || 0 }
+                    : prev
+                );
+              }
             }
-          }
-
-          /**
-           * A CLUB'S MEMBER COUNT IS ITS OWN (Dan, 2026-08-23).
-           *
-           * "club jaqk doesn't have 1172 players" - and it does not: it has
-           * 584. 1,172 was Club JAQK plus Shark Club, because a union club
-           * used to be shown the whole union's membership. Shark then read
-           * 1,172 as well, and the two clubs were indistinguishable.
-           *
-           * It also FLIPPED. Dan: "bounces back and forth from 1172 players to
-           * 588." get_club_home answered with one number and this block with
-           * the other, and whichever landed last won - the same two-writers,
-           * one-rule shape as the lobby scope bug earlier today. There is one
-           * rule now, stated in both places: count this club's members.
-           *
-           * The union-wide re-query that used to sit here was also AWAITED IN
-           * SERIES, ahead of the tables and tournaments queries, so the games
-           * waited on a number nobody wanted.
-           */
-          if (memberCountResult.count != null && !clubData.is_union) {
-            if (getIsMounted && !getIsMounted()) return;
-            setClub((prev) =>
-              prev ? { ...prev, member_count: memberCountResult.count as number } : prev
-            );
           }
         }
       } catch (e) {
@@ -1353,15 +1262,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
            by realtime - the two lists disagreeing, which is precisely what
            that rule exists to prevent. No such row exists today; this keeps
            it that way. */
-        /* THE VALUE IS A POSTGREST GROUP, NOT A JS ARRAY (Dan 2026-08-23).
-           `.not(col, 'in', value)` interpolates the value straight into
-           `not.in.<value>`, so an array stringifies to `not.in.closed,deleted`
-           and PostgREST answers PGRST100 -- "failed to parse filter". A 400
-           here is total: the whole cash list comes back null, so EVERY club
-           lobby, union or standalone, shows zero tables while dozens are
-           running. Measured on production 2026-08-23 from Club JAQK: 400 with
-           the array, 200 with 44 tables the moment the filter was rewritten.
-           The group form below is what `.in()` builds for itself. */
         .not('status', 'in', '("closed","deleted")')
         .is('tournament_id', null)
         .order('created_at', { ascending: false })
@@ -1443,15 +1343,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       lobbyPainted = true;
 
       const tableData = tableResult.data;
-      /* Keep the last good list when the query fails rather than blanking the
-         lobby -- but SAY SO. The malformed filter above 400'd on every load
-         for hours and nothing anywhere reported it, because a swallowed error
-         and an empty club look identical on screen. */
-      if (tableResult.error) {
-        reportError(tableResult.error, 'ClubHomePage.tablesQueryFailed');
-      } else if (tableData) {
-        setTables(tableData);
-      }
+      if (tableData) setTables(tableData);
       const tableCapped = (tableData?.length ?? 0) >= QUERY_LIMITS.LIST;
 
       // SWR: cache club + tables for instant display on revisit
@@ -1461,56 +1353,18 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       hasDataRef.current = true;
 
       // Merge club tournaments + XMTT tournaments
-      const tournamentError =
-        clubTournamentResult.error || (xmttResults.length > 0 && xmttResults[0].error);
-      if (!tournamentError) {
-        const allTournaments: TournamentData[] = clubTournamentResult.data
-          ? [...clubTournamentResult.data]
-          : [];
-        if (xmttResults.length > 0 && xmttResults[0]?.data) {
-          const existingIds = new Set(allTournaments.map((t) => t.id));
-          for (const xmtt of xmttResults[0].data) {
-            if (!existingIds.has(xmtt.id)) {
-              allTournaments.push(xmtt);
-            }
+      const allTournaments: TournamentData[] = clubTournamentResult.data
+        ? [...clubTournamentResult.data]
+        : [];
+      if (xmttResults.length > 0 && xmttResults[0]?.data) {
+        const existingIds = new Set(allTournaments.map((t) => t.id));
+        for (const xmtt of xmttResults[0].data) {
+          if (!existingIds.has(xmtt.id)) {
+            allTournaments.push(xmtt);
           }
         }
-        /**
-         * AN EMPTY ANSWER NEVER ERASES A FULL ONE.
-         *
-         * Two writers fill this list: the get_club_home fast path, which is
-         * union-scoped in SQL and cannot get the scope wrong, and this chain,
-         * whose scope depends on `unionId` resolving from a separate read.
-         * When that read comes back empty the chain narrows to the club's own
-         * PRIVATE tournaments -- of which a union club has none -- and then
-         * overwrites a good list with zero.
-         *
-         * Measured live 2026-08-24: get_club_home returned 161 tournaments and
-         * the lobby showed none, with "44 Games Are Open In This Club"
-         * underneath, 44 being the table count on its own.
-         *
-         * So the chain may replace this list with anything it actually found,
-         * and may not replace it with nothing. A genuinely empty club paints
-         * empty from the fast path, which had the same answer; the only case
-         * this changes is where the two disagree and one is a degraded read.
-         */
-        if (allTournaments.length > 0) {
-          setTournaments(allTournaments);
-        } else {
-          setTournaments((prev) => {
-            if (prev.length > 0) {
-              reportError(
-                new Error(
-                  `[ClubHomePage] chain found 0 tournaments while ${prev.length} were painted - keeping them (unionId=${unionId ?? 'null'})`
-                ),
-                'ClubHomePage.emptyTournamentOverwrite'
-              );
-              return prev;
-            }
-            return allTournaments;
-          });
-        }
       }
+      setTournaments(allTournaments);
       setCountsCapped(
         tableCapped ||
           (clubTournamentResult.data?.length ?? 0) >= QUERY_LIMITS.LIST ||
@@ -1750,16 +1604,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
     const stillEnterable = (t: TournamentData) => {
       const status = String(t.status).toUpperCase();
-      if (['REGISTERING', 'LATE_REG', 'LATE_REGISTRATION', 'STARTING_SOON'].includes(status))
-        return true;
+      if (status === 'REGISTERING') return true;
       if (status === 'RUNNING') {
         const levels = Number(t.late_reg_levels ?? 0);
-        // 0-BASED (2026-08-23): current_level indexes blind_structure, so
-        // "through level N" is indices 0..N-1 and N is the cutoff. `<=` kept
-        // a closed tournament listed as enterable for one whole level after
-        // the engine finalized its prize pool, so the lobby offered a seat the
-        // RPC would refuse. Matches TournamentManagerBase.isLateRegClosed.
-        if (levels > 0) return Number(t.current_level ?? 0) < levels;
+        if (levels > 0) return Number(t.current_level ?? 0) <= levels;
         const mins = Number(t.late_reg_mins ?? 0);
         if (mins > 0 && t.started_at) {
           return Date.now() - new Date(t.started_at).getTime() <= mins * 60_000;
@@ -1781,10 +1629,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             variant: t.game_type,
             price: total,
             seats: Number(t.max_players) || 0,
-            // The "Table Size" slider filters on seats at a TABLE, not on the
-            // size of the field. Null when the row does not carry it, which
-            // skips the range rather than measuring an MTT against 2-9.
-            tableSeats: (t as unknown as { table_size?: number | null }).table_size ?? null,
             seatsTaken: Number(t.current_players) || 0,
             status: t.status,
             name: t.name,
@@ -2222,7 +2066,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               height: 56,
               borderRadius: '50%',
               background: 'rgba(255,255,255,0.08)',
-              animation: 'animationsPulse 1.5s ease-in-out infinite',
+              animation: 'pulse 1.5s ease-in-out infinite',
             }}
           />
           <div style={{ flex: 1 }}>
@@ -2233,7 +2077,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 borderRadius: 6,
                 background: 'rgba(255,255,255,0.08)',
                 marginBottom: 8,
-                animation: 'animationsPulse 1.5s ease-in-out infinite',
+                animation: 'pulse 1.5s ease-in-out infinite',
               }}
             />
             <div
@@ -2242,7 +2086,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 height: 14,
                 borderRadius: 4,
                 background: 'rgba(255,255,255,0.06)',
-                animation: 'animationsPulse 1.5s ease-in-out infinite',
+                animation: 'pulse 1.5s ease-in-out infinite',
               }}
             />
           </div>
@@ -2257,7 +2101,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 height: 60,
                 borderRadius: 10,
                 background: 'rgba(255,255,255,0.05)',
-                animation: 'animationsPulse 1.5s ease-in-out infinite',
+                animation: 'pulse 1.5s ease-in-out infinite',
               }}
             />
           ))}
@@ -2271,7 +2115,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               borderRadius: 12,
               background: 'rgba(255,255,255,0.04)',
               marginBottom: 12,
-              animation: 'animationsPulse 1.5s ease-in-out infinite',
+              animation: 'pulse 1.5s ease-in-out infinite',
             }}
           />
         ))}
@@ -2376,11 +2220,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           <div className="lobby-club">
             <div className="lobby-club__avatar">
               {club.logo_url || club.avatar_url ? (
-                <img
-                  src={sizedStorageUrl(club.logo_url || club.avatar_url, 192)}
-                  alt={club.name}
-                  loading="lazy"
-                />
+                <img src={club.logo_url || club.avatar_url} alt={club.name} loading="lazy" />
               ) : Number(club.club_id) === SHARK_CLUB_ID ? (
                 <img src={SHARK_CLUB_FALLBACK_LOGO} alt="Shark Club" loading="lazy" />
               ) : (
@@ -2424,9 +2264,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 <div
                   style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}
                 >
-                  {playersPlaying !== null && (
+                  {club.online_count >= 0 && (
                     <div style={{ fontSize: '0.8rem', color: '#9aa5b6' }}>
-                      {playersPlaying.toLocaleString()} Players Currently Playing
+                      {club.online_count.toLocaleString()} Players Currently Playing
                     </div>
                   )}
 
@@ -2436,7 +2276,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                     title="Share"
                     onClick={async () => {
                       haptic.medium();
-                      const shareUrl = `${window.location.origin}/clubs/${club.slug || clubId}`;
+                      const shareUrl = `${window.location.origin}/clubs/${clubId}`;
                       try {
                         if (navigator.share) {
                           await navigator.share({
@@ -2510,7 +2350,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 onOpenPlayerWallet={() => setShowPlayerWallet(true)}
                 onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
                 onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
-                onOpenClubBank={() => setActiveCashier('club_bank')}
+                onOpenClubBank={() => {
+                  haptic.medium();
+                  setActiveCashier('club_bank');
+                }}
                 onOpenBBJ={() => {
                   haptic.medium();
                   setShowBBJInfo(true);
@@ -2833,11 +2676,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       ═══════════════════════════════════════════════════════════════════ */}
       <div className="club-home__games club-home__games--v2">
         <div className="lobby-actionsrow">
-          {/* CREATE NEW GAME - owners/admins of STANDALONE clubs and UNIONS.
+          {/* CREATE NEW GAME - owners/admins of STANDALONE clubs only.
               Same branch main shipped on the old create tile: a tournament
               tab opens CreateTournamentModal, a cash tab goes to the
               create-table page. */}
-          {(isOwner || userRole === 'admin') && (!isInUnion || club?.is_union) && (
+          {(isOwner || userRole === 'admin') && !isInUnion && (
             <button
               type="button"
               className="lobby-createbtn"

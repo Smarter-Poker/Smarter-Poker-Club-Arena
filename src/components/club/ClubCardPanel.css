@@ -229,6 +229,9 @@
    ZONE 4 — Stats Bar (bottom section)
    ═══════════════════════════════════════════════════════════════════════════════ */
 .club-card-stats-bar {
+  /* Container for cqw font scaling below — 1cqw = 1% of this bar's width,
+     which IS the card's width. */
+  container-type: inline-size;
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
@@ -272,10 +275,32 @@
   text-transform: uppercase;
   white-space: nowrap;
   line-height: 1.3;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
+  /* Dan 2026-08-24: "THE FONTS... NEED TO SCALE DOWN CORRECTLY WITH THE CARD
+     IMAGES, THEY SHOULD NEVER BE CUT OFF OR MEM... FUNCTIONALITY USED."
+     No ellipsis — the cqw sizing below guarantees MEMBERS fits its third of
+     any card the carousel can produce, so there is nothing left to truncate. */
+  overflow: visible;
+  max-width: none;
   animation: statLabelReveal 0.4s ease-out both;
+}
+
+/* Fonts scale WITH the card. A side card at ~110px and the centre card at
+   ~230px get proportionally sized text instead of one fixed 8px/18px pair
+   that overflowed the small card and truncated to "MEM...". Clamps keep the
+   extremes sane. (Browsers without container queries keep the fixed sizes
+   above — those still fit the centre card, which is the one that matters
+   for reading.) */
+@supports (font-size: 1cqw) {
+  .club-card-stat-label {
+    font-size: clamp(6px, 5.5cqw, 11px);
+    letter-spacing: 0.2px;
+  }
+  .club-card-stat-value {
+    font-size: clamp(11px, 8cqw, 18px);
+  }
+  .club-card-stat-value--level {
+    font-size: clamp(12px, 9cqw, 20px);
+  }
 }
 
 /* Staggered label reveal */

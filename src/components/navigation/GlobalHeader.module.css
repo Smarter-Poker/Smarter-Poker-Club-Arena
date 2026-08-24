@@ -278,6 +278,19 @@
   }
 }
 
+/* PWA GUARANTEE (Dan 2026-08-24, from a phone screenshot: the hamburger sat
+   level with the clock). In an installed app (standalone/fullscreen) the page
+   draws under the status bar, and on some devices/stale shells
+   env(safe-area-inset-top) resolves to 0 — so the env() padding above
+   silently vanishes. In app mode, enforce a floor: the header ALWAYS starts
+   below the phone's top bar. Browser tabs are untouched (status bar lives
+   outside the viewport there). */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .header {
+    padding-top: max(env(safe-area-inset-top, 0px), 24px);
+  }
+}
+
 @media (max-width: 640px) {
   .header {
     padding: 4px 6px;
@@ -297,30 +310,33 @@
   }
 
   .headerRight > * {
-    height: 24px;
+    height: 30px;
   }
 
   .brandTextImg {
     display: none;
   }
 
+  /* Dan 2026-08-24: "INCREASE THE HAMBURGER MENU ICON, BACK AND HUB BUTTONS
+     TO BE THE SAME SIZE AS THE ICONS TO THE RIGHT." One size — 30px — for
+     every control in the bar, left and right. */
   .headerImgBtn {
-    height: 24px;
-    width: 24px;
+    height: 30px;
+    width: 30px;
     padding: 2px;
   }
 
   .headerNavBtn {
-    height: 24px;
+    height: 30px;
     width: auto;
-    max-width: 50px;
-    padding: 4px;
+    max-width: 64px;
+    padding: 3px;
   }
 
   .hamburgerBtn {
-    width: 24px;
-    height: 24px;
-    padding: 4px;
+    width: 30px;
+    height: 30px;
+    padding: 3px;
   }
 
   .hideMobile {
@@ -330,9 +346,9 @@
   .orbBtn,
   .orbLink,
   .profileOrb {
-    width: 24px;
-    height: 24px;
-    font-size: 10px;
+    width: 30px;
+    height: 30px;
+    font-size: 12px;
   }
 
   .badge {
@@ -376,17 +392,18 @@
     gap: 2px;
   }
   .headerNavBtn {
-    max-width: 40px;
+    max-width: 46px;
+    height: 24px;
   }
   .orbBtn,
   .orbLink,
   .profileOrb {
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
   }
   .headerImgBtn,
   .hamburgerBtn {
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
   }
 }

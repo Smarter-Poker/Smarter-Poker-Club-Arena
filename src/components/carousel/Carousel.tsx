@@ -295,12 +295,19 @@ export function Carousel<T>({
     ? Math.max(1, (effectiveVisible - 1) * spacingRatio + edgeScale)
     : 0;
 
+  /* Dan 2026-08-24 (lobby round 2, from a phone screenshot): "THE CLUB CARDS
+     MUST BE LOWERED AND NEED TO BE SMALLER." On a narrow track the span
+     formula hands the centre card ~84% of the track — a 294px monolith on a
+     390px phone that shoved the tile row off screen. Cap it at 66% of the
+     track on narrow viewports; desktop keeps the pure span solution. */
+  const narrowCap =
+    trackWidth > 0 && trackWidth < NARROW_TRACK_PX ? trackWidth * 0.66 : Number.POSITIVE_INFINITY;
   const resolvedItemWidth =
     itemWidth ??
     (trackWidth > 0
       ? effectiveVisible
-        ? Math.min(420, Math.max(190, trackWidth / spanDivisor))
-        : Math.min(300, Math.max(200, trackWidth * 0.55))
+        ? Math.min(420, narrowCap, Math.max(190, trackWidth / spanDivisor))
+        : Math.min(300, narrowCap, Math.max(200, trackWidth * 0.55))
       : 300);
   /* Adjacent centres sit `spacingRatio` of a card apart. Anything below
      (1 + edgeScale) / 2 makes a neighbour physically overlap the centre card,

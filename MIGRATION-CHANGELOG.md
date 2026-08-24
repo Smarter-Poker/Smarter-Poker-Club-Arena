@@ -13976,3 +13976,25 @@ The real fix is hand_history partitioning/archival - Tier 3, needs a plan.
 
 4 files, tests updated in the same commit (health.test.ts 4/4, hub 8/8, tsc
 clean).
+
+## Cowork session 2026-08-24 (20b) — THE ENGINE WAS RESTARTING ITSELF TO FIX A SLOW DATABASE
+
+Caught LIVE during the session-20 sweep (05:15-05:35 UTC): /health reported
+liveness 'dead' while 123 tables dealt a hand every second, because ONE
+discovery cycle sat blocked ~87s inside a slow database call and
+discoveryLoopStalledMs stamps attempts, not successes-in-progress. sp-autoheal
+restarted the healthy engine in a loop (uptime observed 804s -> 448s) — a
+self-inflicted mass disconnect, the exact complaint this whole workstream
+exists to kill.
+
+Fix (#660): a discovery stall flips 'dead' only when NO table has made
+observable progress in 2 minutes; capped at 15 minutes of zero discovery
+attempts, which is dead regardless (a wedged loop must still restart).
+Landed via workflow_dispatch force (the new coalescing gate would have
+deferred its own cure while autoheal kept resetting the uptime clock).
+Verified: production serves f7cb273e containing the fix, liveness 'ok'.
+
+Also this session: shared-worktree collision — a scheduled agent's `git add
+-A` swept this fix into its lobby commit (#652, failing on a phantom
+ClubBankCashierModal import). Extracted cleanly to #660; #652 annotated for
+its owner. This session now works from its own worktree (cowork-claude-conn).

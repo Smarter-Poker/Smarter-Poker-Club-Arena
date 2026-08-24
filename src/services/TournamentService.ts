@@ -1346,10 +1346,30 @@ class TournamentService {
     if (!rebuyChips || rebuyChips <= 0)
       return { allowed: false, reason: 'Rebuy chips not configured' };
 
-    // Rebuy cutoff = late reg cutoff (always the same)
+    /**
+     * REBUYS STAY OPEN THROUGH THE ADD-ON WINDOW (Dan 2026-08-23, binding).
+     *
+     * "rebuys are open until level 8... but there is an add on period... rebuys
+     * and add on's stay open for that last minute. If there is no add ons and
+     * rebuys stop after level 8, the second level 9 starts, registration is
+     * closed and prizepool is finalized."
+     *
+     * This closed rebuys at the cutoff while canAddOn opened the add-on window
+     * at that same instant, so the add-on period — the one moment a short stack
+     * most wants to reload — was exactly when rebuys became unavailable. It
+     * also disagreed with the engine, which defers prize-pool finalization
+     * until after the add-on window precisely because money is still arriving.
+     *
+     * `levelIndex` is 0-based, so "through level N" is indices 0..N-1 and N is
+     * the cutoff — the same instant TournamentManagerBase.isLateRegClosed uses.
+     * With no add-on configured the window is unchanged.
+     */
     const levelState = this.getCurrentLevelState(tournament);
     const rebuyLevelCap = tournament.late_reg_levels ?? tournament.rebuy_levels ?? 8;
-    if (rebuyLevelCap <= 0 || levelState.levelIndex >= rebuyLevelCap) {
+    const rebuyCloseLevel = tournament.add_on_available
+      ? rebuyLevelCap + (tournament.addon_levels ?? 1)
+      : rebuyLevelCap;
+    if (rebuyLevelCap <= 0 || levelState.levelIndex >= rebuyCloseLevel) {
       return { allowed: false, reason: 'Rebuy/re-entry period has ended' };
     }
 

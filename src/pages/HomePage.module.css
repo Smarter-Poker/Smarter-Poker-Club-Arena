@@ -451,6 +451,20 @@
   animation: carouselEntrance 0.6s ease-out 200ms both;
 }
 
+/* CLS FIX (2026-08-24, measured live): the carousel's height is solved from
+   its absolutely-positioned cards, which only exist after club data loads —
+   so the section grew from ~0 to ~394px (at 390vw) and shoved the bottom tile
+   row down, scoring CLS 0.14 on the lobby (threshold for "good" is 0.10).
+   Reserve the final height up front. The curve below was fitted from live
+   measurements: 394px @390vw, 364px @360vw, 343px @320vw → h ≈ 73vw + 109px.
+   A few px of over-reserve at mid sizes is invisible; under-reserving brings
+   the shift back. Mobile-only: desktop's layout never exhibited the shift. */
+@media (max-width: 768px) {
+  .clubCarousel {
+    min-height: calc(73vw + 109px);
+  }
+}
+
 @keyframes carouselEntrance {
   from {
     opacity: 0;

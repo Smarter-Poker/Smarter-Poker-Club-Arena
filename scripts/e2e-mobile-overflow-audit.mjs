@@ -2,9 +2,11 @@ import { chromium } from 'playwright-core';
 import fs from 'fs';
 
 const SUPABASE_URL = 'https://kuklfnapbkmacvwxktbh.supabase.co';
-const ANON = process.env.SB_ANON;
-const EMAIL = 'daniel@bekavactrading.com';
-const PASS = process.env.TEST_PASS;
+// The anon key is the PUBLISHABLE client key (already shipped in every
+// browser bundle) — a default here lets CI run without repo secrets.
+const ANON = process.env.SB_ANON || 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
+const EMAIL = process.env.SP_EMAIL || 'daniel@bekavactrading.com';
+const PASS = process.env.TEST_PASS || process.env.SP_PASS;
 const BASE = 'https://smarter.poker/hub/club-arena';
 const CLUB = 'a0000000-0000-0000-0000-000000000001';
 const TOUR = 'b9b7c003-d874-48f7-8749-ed2e9f832951';
@@ -50,7 +52,10 @@ const audit = async (page) => page.evaluate(() => {
       }
       const st0 = getComputedStyle(el);
       const decorative = st0.pointerEvents === 'none' && !(el.innerText || '').trim();
-      if (!inScroller && !decorative) offenders.push({ sel: sel(el), left: Math.round(r.left), right: Math.round(r.right), w: Math.round(r.width) });
+      // Marquees scroll their own content by transform on purpose — the
+      // STARTING SOON strip's track is wider than any viewport by design.
+      const inMarquee = !!el.closest('.mtt-ticker');
+      if (!inScroller && !decorative && !inMarquee) offenders.push({ sel: sel(el), left: Math.round(r.left), right: Math.round(r.right), w: Math.round(r.width) });
     }
   }
   // dedupe by selector, keep widest
@@ -91,7 +96,7 @@ async function getSession() {
   const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' });
   await ctx.addInitScript(([key, val]) => { try { localStorage.setItem(key, val); } catch (e) {} }, ['smarter-poker-auth', JSON.stringify(session)]);
   const page = await ctx.newPage();
-  const uniq = [...new Set(routes)];
+  const uniq = process.env.ROUTES ? JSON.parse(process.env.ROUTES) : [...new Set(routes)];
   for (const route of uniq.slice(START, START + COUNT)) {
     if (results.some(r => r.route === route && !r.error)) continue;
     const entry = { route, checks: {} };
@@ -115,5 +120,22 @@ async function getSession() {
   }
   await b.close();
   console.log('DONE');
+  if (process.env.FAIL_ON_FINDINGS === '1') {
+    const bad = [];
+    for (const r of results) {
+      if (r.error) bad.push(`${r.route}: ${r.error}`);
+      for (const w of ['390', '360']) {
+        const c = (r.checks || {})[w] || {};
+        if (c.overflow) bad.push(`${r.route}@${w}: page scrolls sideways (scrollW ${c.scrollW})`);
+        for (const o of c.offenders || []) bad.push(`${r.route}@${w}: clipped ${o.sel} (right ${o.right})`);
+      }
+    }
+    if (bad.length) {
+      console.error('MOBILE AUDIT FAILURES:');
+      for (const m of bad) console.error(' -', m);
+      process.exit(1);
+    }
+    console.log('FAIL_ON_FINDINGS: clean.');
+  }
 })().catch(e => { console.error('FATAL', e); process.exit(1); });
 

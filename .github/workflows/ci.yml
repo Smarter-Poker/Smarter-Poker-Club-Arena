@@ -853,6 +853,33 @@ jobs:
           SP_PASS: ${{ secrets.SP_PASS }}
         continue-on-error: false
 
+      # ── MOBILE FIT + AVATAR WATCHDOG (2026-08-24) ─────────────────────────
+      # The August mobile sweep ended with two live guarantees: no Club Arena
+      # page scrolls sideways on a phone, and no avatar renders broken. These
+      # are exactly the regressions a CSS/asset PR can silently reintroduce,
+      # so the scheduled production run re-proves both on every cycle using
+      # the same instrumented harnesses the sweep itself used. A representative
+      # route subset keeps this under ~3 minutes; the full 101-route sweep can
+      # be run locally with no ROUTES env. Signed-out runs still measure — the
+      # harness logs in with the same optional secrets as the E2E step and
+      # falls back to public pages without them.
+      - name: Mobile Fit Audit (no sideways scroll, production)
+        if: always()
+        run: node scripts/e2e-mobile-overflow-audit.mjs
+        env:
+          SP_EMAIL: ${{ secrets.SP_EMAIL }}
+          SP_PASS: ${{ secrets.SP_PASS }}
+          FAIL_ON_FINDINGS: '1'
+          ROUTES: '["/","/auth","/clubs/a0000000-0000-0000-0000-000000000001","/clubs/a0000000-0000-0000-0000-000000000001/members","/clubs/a0000000-0000-0000-0000-000000000001/cashier","/clubs/a0000000-0000-0000-0000-000000000001/tournaments","/clubs/a0000000-0000-0000-0000-000000000001/settings","/clubs/a0000000-0000-0000-0000-000000000001/promotions","/profile","/friends","/cashier","/transactions","/vip","/marketplace","/settlement-dashboard","/analytics","/dev/bus","/leaderboard"]'
+
+      - name: Avatar Audit (no broken avatars, production)
+        if: always()
+        run: node scripts/e2e-avatar-audit.mjs
+        env:
+          SP_EMAIL: ${{ secrets.SP_EMAIL }}
+          SP_PASS: ${{ secrets.SP_PASS }}
+          FAIL_ON_FINDINGS: '1'
+
       - name: Upload Playwright Report
         if: always()
         uses: actions/upload-artifact@v4

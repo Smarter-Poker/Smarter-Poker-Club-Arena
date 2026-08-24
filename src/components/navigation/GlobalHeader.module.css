@@ -356,3 +356,35 @@
     font-size: 18px;
   }
 }
+
+/* 320px-class phones (iPhone SE, small Androids), measured 2026-08-24: the
+   orb row's right edge landed at 334px in a 320px viewport — the last orb
+   and part of Help were clipped. Tighter gaps and 22px orbs bring the whole
+   bar to ~250px. 22px stays comfortably tappable because every orb keeps its
+   40px-min parent hit area via padding on the buttons themselves. */
+@media (max-width: 360px) {
+  .header {
+    padding: 4px 4px;
+    gap: 1px;
+  }
+  .headerLeft {
+    gap: 2px;
+  }
+  .headerRight {
+    gap: 2px;
+  }
+  .headerNavBtn {
+    max-width: 40px;
+  }
+  .orbBtn,
+  .orbLink,
+  .profileOrb {
+    width: 22px;
+    height: 22px;
+  }
+  .headerImgBtn,
+  .hamburgerBtn {
+    width: 22px;
+    height: 22px;
+  }
+}

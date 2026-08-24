@@ -2,8 +2,8 @@ import { chromium } from 'playwright-core';
 import fs from 'fs';
 
 const SUPABASE_URL = 'https://kuklfnapbkmacvwxktbh.supabase.co';
-const ANON = process.env.SB_ANON;
-const PASS = process.env.TEST_PASS;
+const ANON = process.env.SB_ANON || 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
+const PASS = process.env.TEST_PASS || process.env.SP_PASS;
 const BASE = 'https://smarter.poker/hub/club-arena';
 const CLUB = 'a0000000-0000-0000-0000-000000000001';
 const TABLE = process.env.TABLE_ID || '6e0e34c2-f51a-4fe2-aa4d-31fbc0384901';
@@ -22,7 +22,7 @@ async function login() {
     const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: ANON },
-      body: JSON.stringify({ email: 'daniel@bekavactrading.com', password: PASS }),
+      body: JSON.stringify({ email: process.env.SP_EMAIL || 'daniel@bekavactrading.com', password: PASS }),
     });
     if (r.ok) { const s = await r.json(); fs.writeFileSync('/tmp/sb-session.json', JSON.stringify(s)); return s; }
     await new Promise(res => setTimeout(res, 3000));
@@ -85,4 +85,20 @@ async function login() {
   }
   await b.close();
   console.log('DONE');
+  if (process.env.FAIL_ON_FINDINGS === '1') {
+    const bad = [];
+    for (const r of report) {
+      for (const av of r.avatars || []) {
+        if (av.src !== undefined && av.complete && av.naturalWidth === 0 && av.display !== 'none' && av.onscreen) {
+          bad.push(`${r.route}: broken avatar ${av.src.slice(-80)}`);
+        }
+      }
+    }
+    if (bad.length) {
+      console.error('AVATAR AUDIT FAILURES:');
+      for (const m of bad) console.error(' -', m);
+      process.exit(1);
+    }
+    console.log('FAIL_ON_FINDINGS: clean.');
+  }
 })().catch(e => { console.error('FATAL', e); process.exit(1); });

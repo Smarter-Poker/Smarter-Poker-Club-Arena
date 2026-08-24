@@ -4641,13 +4641,51 @@ export default function TablePage({
     async function loadTableInfo() {
       if (!tableId) return;
 
-      const { data: table, error } = await supabase
-        .from('tables')
-        .select(
-          'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings'
-        )
-        .eq('id', tableId)
-        .maybeSingle();
+      /* BOOTSTRAP RETRY (2026-08-24). This is the ONE query everything on the
+         felt is scaffolded from — blinds, seat count, club, settings. It used
+         to run exactly once: a network blip, a Supabase flake, or the
+         auth-hydration race on a cold deep link (observed live as a 401 on
+         first paint) left the masthead reading "?/?" over empty SIT seats
+         with no recovery except a manual reload. The engine feed has its own
+         reconnect ladder (EngineStateClient); this bootstrap now gets the
+         same courtesy: up to five attempts, 1s/2s/4s/8s backoff, stopping
+         the moment the component unmounts or data lands. */
+      type TableBootstrapRow = {
+        id: string;
+        name: string | null;
+        game_variant: string | null;
+        game_type: string | null;
+        tournament_id: string | null;
+        stakes: string | null;
+        small_blind: number | null;
+        big_blind: number | null;
+        max_players: number | null;
+        club_id: string | null;
+        settings: unknown;
+      };
+      let table: TableBootstrapRow | null = null;
+      let error: unknown = null;
+      for (let attempt = 0; attempt < 5 && isMounted; attempt++) {
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, 1000 * 2 ** (attempt - 1)));
+          if (!isMounted) return;
+        }
+        const res = await supabase
+          .from('tables')
+          .select(
+            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings'
+          )
+          .eq('id', tableId)
+          .maybeSingle();
+        table = res.data as TableBootstrapRow | null;
+        error = res.error;
+        if (table && !res.error) break;
+        // A clean "no such table" answer is final — retrying cannot invent a row.
+        if (!res.error && !table) break;
+      }
+      if (!table && error) {
+        reportError(error, 'TablePage.loadTableInfo_exhausted_retries');
+      }
 
       if (table && !error) {
         setTableState((prev) => ({
@@ -4694,8 +4732,8 @@ export default function TablePage({
                 : table.small_blind != null && table.big_blind != null
                   ? formatBlindPair(table.small_blind, table.big_blind)
                   : '?/?',
-          maxPlayers: table.max_players || 6,
-          players: createEmptySeats(table.max_players || 6),
+          maxPlayers: (table.max_players || 6) as 6 | 9,
+          players: createEmptySeats((table.max_players || 6) as 6 | 9),
           positions: Array(table.max_players || 6).fill(null),
           lastActions: Array(table.max_players || 6).fill(null),
           lastBetAmounts: Array(table.max_players || 6).fill(0),

@@ -30,6 +30,7 @@ export default function SlugEnforcer() {
           if (type === 'club' || type === 'clubs') {
             newPath = newPath.replace(/^\/club\//, '/unions/');
             newPath = newPath.replace(/^\/clubs\//, '/unions/');
+            newPath = newPath.replace(/\/financials$/, '/settlement');
             redirected = true;
           }
         }

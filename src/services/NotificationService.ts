@@ -364,7 +364,12 @@ class NotificationServiceClass {
       case 'bonus':
         return '/bonus';
       case 'settlement':
-        return metadata.clubId ? `/clubs/${metadata.clubId}/financials` : '/wallet';
+        if (metadata.unionId) return `/unions/${metadata.unionId}/settlement`;
+        return metadata.clubSlug
+          ? `/clubs/${metadata.clubSlug}/financials`
+          : metadata.clubId
+            ? `/clubs/${metadata.clubId}/financials`
+            : '/wallet';
       case 'your_turn':
       case 'your_turn_reminder':
       case 'time_bank_active':

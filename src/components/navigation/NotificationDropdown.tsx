@@ -12,6 +12,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { formatRelativeShort as formatTime } from '@/lib/date';
+import { notificationService } from '../../services/NotificationService';
 import styles from './NotificationDropdown.module.css';
 
 interface Notification {
@@ -149,8 +150,13 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
     markAsRead(notification.id);
 
     // Navigate based on notification type
-    if (notification.data?.path && onNavigate) {
-      onNavigate(notification.data.path);
+    const url =
+      notification.data?.action_url ||
+      notification.data?.path ||
+      notificationService.getDeepLinkUrl(notification.type as any, notification.data);
+
+    if (url && onNavigate) {
+      onNavigate(url);
     }
     setIsOpen(false);
   };

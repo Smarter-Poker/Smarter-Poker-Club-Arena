@@ -280,7 +280,7 @@
 
 @media (max-width: 640px) {
   .header {
-    padding: 4px 6px;
+    padding: 4px 4px;
     gap: 2px;
   }
 
@@ -297,7 +297,7 @@
   }
 
   .headerRight > * {
-    height: 32px;
+    height: 22px;
   }
 
   .brandTextImg {
@@ -308,23 +308,24 @@
      TO BE THE SAME SIZE AS THE ICONS TO THE RIGHT." One size — 30px — for
      every control in the bar, left and right. */
   .headerImgBtn {
-    height: 32px;
-    width: 32px;
+    height: 22px;
+    width: auto;
     padding: 0;
   }
 
   /* Nav pills are wide art, so height is the shared dimension — width follows
      the aspect. A max-width would letterbox them short again. */
   .headerNavBtn {
-    height: 32px;
+    height: 22px;
     width: auto;
     max-width: none;
     padding: 0;
   }
 
   .hamburgerBtn {
-    width: 32px;
-    height: 32px;
+    width: auto;
+    height: 22px;
+    aspect-ratio: 1.35;
     padding: 0;
   }
 
@@ -332,12 +333,20 @@
     display: none !important;
   }
 
+  /* ONE HEIGHT FOR EVERY CONTROL (Dan 2026-08-24: "MAKE THE HAMBURGER MENU
+     ICON, THE BACK BUTTON AND THE HUB BUTTON THE SAME SIZES AS THE REST OF
+     THE ICONS"). The number is not a taste call, it is the only one that
+     fits: BACK and HUB are 4.25:1 and 3.99:1 pill art, the hamburger 1.35:1,
+     so the ten controls span 9.59h (left art) + 7h (round icons) + gaps. At
+     h=22 that is 380px inside a 390px iPhone; at h=24 it is 424px and the
+     Help orb gets clipped off the right edge — which is what was happening
+     at h=32. */
   .orbBtn,
   .orbLink,
   .profileOrb {
-    width: 32px;
-    height: 32px;
-    font-size: 12px;
+    width: 22px;
+    height: 22px;
+    font-size: 10px;
   }
 
   .badge {
@@ -382,19 +391,23 @@
   }
   .headerNavBtn {
     max-width: none;
-    height: 26px;
+    height: 18px;
     width: auto;
   }
   .orbBtn,
   .orbLink,
   .profileOrb {
-    width: 26px;
-    height: 26px;
+    width: 18px;
+    height: 18px;
   }
-  .headerImgBtn,
+  .headerImgBtn {
+    width: auto;
+    height: 18px;
+  }
   .hamburgerBtn {
-    width: 26px;
-    height: 26px;
+    width: auto;
+    height: 18px;
+    aspect-ratio: 1.35;
   }
 }
 

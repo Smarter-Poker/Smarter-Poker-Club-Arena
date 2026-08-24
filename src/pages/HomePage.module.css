@@ -1763,6 +1763,10 @@
        y=21 with the header ending at y=41 — 20px of overlap. Cropping 42px
        less of the dead art drops the console clear of the bar. */
     --action-bar-dead-top: 30px;
+    /* The bottom crop pulled the carousel 88px up INTO the console art, so
+       the cards overlapped it. 10px leaves the region starting at the visible
+       console edge, which is what the centring above measures from. */
+    --action-bar-dead-bottom: 10px;
   }
 
   .featuredCard {
@@ -1784,8 +1788,17 @@
        carousel split the column's free space into two equal shares — one
        above the cards, one below — so the carousel sits exactly centred
        between the console and the footer at any viewport height. */
-    margin-top: auto;
-    margin-bottom: auto;
+    /* Take every pixel between the console and the footer and centre the
+       cards inside it. Auto margins did this too, but only until a negative
+       crop margin moved the region's top edge — measured live: 38px of
+       overlap above, 44px of gap below. Growing into the gap and centring
+       makes the two gaps equal by construction at any viewport height. */
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    margin-top: 0;
+    margin-bottom: 0;
   }
 
   /* Dan 2026-08-24 round 2: "THE B CARDS ON THE BOTTOM... ARE THE FOOTER."
@@ -1797,8 +1810,8 @@
        an auto margin here too would steal a third share and break the equal
        spacing above. */
     max-width: 100%;
-    gap: 6px;
-    padding: 0 6px max(18px, env(safe-area-inset-bottom)) 6px;
+    gap: 5px;
+    padding: 0 4px max(16px, env(safe-area-inset-bottom)) 4px;
     /* Bottom-aligned so the taller PLAYER STATS card rises ABOVE the row,
        exactly as in the reference layout. */
     align-items: flex-end;

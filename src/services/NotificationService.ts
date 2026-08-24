@@ -352,7 +352,11 @@ class NotificationServiceClass {
       case 'table_invite':
         return metadata.tableId ? `/table/${metadata.tableId}` : '/';
       case 'club_announcement':
-        return metadata.clubId ? `/clubs/${metadata.clubId}` : '/clubs';
+        return metadata.clubSlug
+          ? `/clubs/${metadata.clubSlug}`
+          : metadata.clubId
+            ? `/clubs/${metadata.clubId}`
+            : '/clubs';
       case 'message':
         return metadata.conversationId
           ? `/messages/${metadata.conversationId}`
@@ -378,9 +382,11 @@ class NotificationServiceClass {
       case 'tournament_starting':
         return metadata.tournamentId
           ? `/tournament/${metadata.tournamentId}`
-          : metadata.clubId
-            ? `/clubs/${metadata.clubId}/tournaments`
-            : '/tournaments';
+          : metadata.clubSlug
+            ? `/clubs/${metadata.clubSlug}/tournaments`
+            : metadata.clubId
+              ? `/clubs/${metadata.clubId}/tournaments`
+              : '/tournaments';
       case 'system':
       default:
         return undefined;

@@ -10267,13 +10267,15 @@ export default function TablePage({
   // boardStageKey is gone with the key itself (see the state declaration).
   // CommunityCards owns all per-street animation and sound.
 
-  // Clear pre-action if game state changes significantly (new hand, someone raises after preaction set, etc)
+  // Clear pre-action if game state changes significantly (new hand, new street, or hero acts)
+  // Dan 2026-08-24: "THE CHECK FOLD BUTTON SHOULD ONLY APPLY FOR ONE ACTION AND ONE STREET"
+  const heroLastAction =
+    tableState.heroSeat > 0 ? tableState.lastActions?.[tableState.heroSeat - 1] : null;
   useEffect(() => {
-    // Reset pre-actions when a new hand starts or board changes
-    if (!tableState.isHandInProgress) {
-      setPreAction(null);
-    }
-  }, [tableState.boardStage, tableState.isHandInProgress]);
+    // If the hand ended, the street advanced, or the hero successfully acted (meaning the pre-action
+    // executed or they manually acted), clear the armed pre-action.
+    setPreAction(null);
+  }, [tableState.boardStage, tableState.isHandInProgress, heroLastAction]);
 
   // Timer warning sound — tick when hero's time is running low.
   //

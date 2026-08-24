@@ -152,89 +152,17 @@ export function SitOutModal({
           transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
         }}
       >
-        {/* Header */}
-        <div className="sitout-modal__header">
-          <h2 className="sitout-modal__title">You're Sitting Out</h2>
-          {tableName && <span className="sitout-modal__table">{tableName}</span>}
-        </div>
+        <span className="sitout-modal__status-label">Sitting Out</span>
 
-        {/* Elapsed sit-out time. The ring is a full, static ring now: there is
-            no deadline for it to deplete towards. */}
-        <div className="sitout-modal__timer">
-          <svg className="sitout-modal__progress" viewBox="0 0 100 100">
-            <circle className="sitout-modal__progress-bg" cx="50" cy="50" r="45" />
-            <circle
-              className="sitout-modal__progress-fill"
-              cx="50"
-              cy="50"
-              r="45"
-              strokeDasharray="283 283"
-            />
-          </svg>
-          <div className="sitout-modal__timer-content">
-            <span className="sitout-modal__time">{formatTime(elapsed)}</span>
-            <span className="sitout-modal__time-label">Sitting Out</span>
-          </div>
-        </div>
-
-        {/* What is actually true: the seat and the stack are held. */}
-        <div className="sitout-modal__note">
-          Your Seat And Chips Are Held While You Are Sitting Out. Return Whenever You Are Ready.
-        </div>
-
-        {/* Auto-Post Toggle */}
-        {onAutoPostChange && (
-          <label className="sitout-modal__toggle">
-            <input
-              type="checkbox"
-              checked={autoPostBlinds}
-              onChange={(e) => onAutoPostChange(e.target.checked)}
-            />
-            <span className="sitout-modal__toggle-slider" />
-            <span className="sitout-modal__toggle-label">Post Blinds When Returning</span>
-          </label>
-        )}
-
-        {/* Actions */}
-        <div className="sitout-modal__actions">
-          {!showLeaveConfirm ? (
-            <>
-              <button
-                className="sitout-modal__return-btn"
-                onClick={() => {
-                  haptic.light();
-                  handleReturn();
-                }}
-              >
-                Return To Game
-              </button>
-              <button
-                type="button"
-                className="sitout-modal__leave-btn"
-                onClick={() => setShowLeaveConfirm(true)}
-              >
-                Leave Table
-              </button>
-            </>
-          ) : (
-            <div className="sitout-modal__confirm">
-              <span>Leave And Cash Out Your Chips?</span>
-              <div className="sitout-modal__confirm-actions">
-                <button
-                  type="button"
-                  className="sitout-modal__confirm-no"
-                  onClick={() => setShowLeaveConfirm(false)}
-                  autoFocus
-                >
-                  Cancel
-                </button>
-                <button type="button" className="sitout-modal__confirm-yes" onClick={handleLeave}>
-                  Leave
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        <button
+          className="sitout-modal__im-back-btn"
+          onClick={() => {
+            haptic.light();
+            handleReturn();
+          }}
+        >
+          I'm Back
+        </button>
       </div>
     </div>
   );

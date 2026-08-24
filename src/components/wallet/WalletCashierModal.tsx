@@ -296,7 +296,7 @@ export default function WalletCashierModal({
         const { data: page, error } = await supabase
           .from('club_members')
           .select(
-            'user_id, role, display_name, nickname, chip_balance, profiles!inner ( player_number, arena_avatar_url, username )'
+            'user_id, role, nickname, chip_balance, profiles!inner ( player_number, avatar_url, username, display_name )'
           )
           .eq('club_id', uuid)
           .in('status', MEMBER_IN_CLUB)
@@ -309,20 +309,22 @@ export default function WalletCashierModal({
       }
       if (!isMounted.current) return;
       setMembers(
-        collected.map((m) => ({
-          user_id: String(m.user_id),
-          role: String(m.role || 'player'),
-          name:
-            (m.display_name as string) ||
-            (m.nickname as string) ||
-            `Member ${String(m.user_id).slice(0, 8)}`,
-          chip_balance: Number(m.chip_balance) || 0,
-          avatar_url: ((m.profiles as Record<string, unknown>)?.arena_avatar_url as string) || '',
-          username: ((m.profiles as Record<string, unknown>)?.username as string) || '',
-          short_id: String(
-            ((m.profiles as Record<string, unknown>)?.player_number as number) || '----'
-          ),
-        }))
+        collected.map((m) => {
+          const profile = m.profiles as Record<string, unknown>;
+          return {
+            user_id: String(m.user_id),
+            role: String(m.role || 'player'),
+            name:
+              (profile?.display_name as string) ||
+              (m.nickname as string) ||
+              (profile?.username as string) ||
+              `Member ${String(m.user_id).slice(0, 8)}`,
+            chip_balance: Number(m.chip_balance) || 0,
+            avatar_url: (profile?.avatar_url as string) || '',
+            username: (profile?.username as string) || '',
+            short_id: String((profile?.player_number as number) || '----'),
+          };
+        })
       );
       setMembersLoading(false);
     },
@@ -374,6 +376,9 @@ export default function WalletCashierModal({
   useEffect(() => {
     if (!isOpen || !user?.id) return;
     setTab('send');
+    if (walletType === 'club_bank') setDestination('agent_wallet');
+    else setDestination('player_wallet');
+
     setRecipient(null);
     setAmount('');
     setReason('');
@@ -472,9 +477,18 @@ export default function WalletCashierModal({
       .filter((m) => (needsAgent ? canHoldAgentWallet(m.role) : true));
 
     if (q.length < 2) {
-      return destinationMembers
+      let recent = destinationMembers
         .filter((m) => recentIds.includes(m.user_id))
         .sort((a, b) => recentIds.indexOf(a.user_id) - recentIds.indexOf(b.user_id));
+
+      if (recent.length < 5) {
+        const fallback = destinationMembers
+          .filter((m) => !recentIds.includes(m.user_id))
+          .sort((a, b) => roleRank(b.role) - roleRank(a.role) || a.name.localeCompare(b.name))
+          .slice(0, 5 - recent.length);
+        recent = [...recent, ...fallback];
+      }
+      return recent;
     }
 
     return destinationMembers
@@ -758,6 +772,7 @@ export default function WalletCashierModal({
                   <div className="cbc-seg">
                     {DESTINATIONS.map((d) => {
                       if (walletType !== 'club_bank' && d.key !== 'player_wallet') return null;
+
                       return (
                         <button
                           key={d.key}

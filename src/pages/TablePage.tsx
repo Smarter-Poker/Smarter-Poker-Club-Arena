@@ -713,6 +713,29 @@ function MastheadLevelClock({
  */
 const ASK_TO_SHOW_ON_UNCONTESTED_WIN = false;
 
+/**
+ * "384000.00/768000.00" IS NOT A BLIND LEVEL (2026-08-24).
+ *
+ * tables.small_blind / big_blind are numeric(_,2), and PostgREST serialises
+ * numeric as a STRING with its scale intact - "384000.00", never 384000.
+ * Interpolating them straight into a blinds string printed two decimal places
+ * the felt has never shown, on every tournament table, and disagreed with the
+ * `${smallBlind}/${bigBlind}` the engine writes into tables.stakes from a JS
+ * number - two writers, two formats, one column.
+ *
+ * Number() drops the trailing zeros a numeric carries while leaving a genuine
+ * fraction alone (0.50 -> 0.5, 2.25 -> 2.25). A value that will not parse
+ * falls back to its raw text rather than rendering "NaN": an odd-looking blind
+ * is cosmetic, "NaN/NaN" reads as a broken table.
+ */
+function formatBlindPair(small: unknown, big: unknown): string {
+  const one = (v: unknown): string => {
+    const n = Number(v);
+    return Number.isFinite(n) ? String(n) : String(v ?? '?');
+  };
+  return `${one(small)}/${one(big)}`;
+}
+
 export default function TablePage({
   embeddedTableId,
   onTableInfoUpdate,
@@ -3927,7 +3950,7 @@ export default function TablePage({
         gameType: updatedTable.game_variant as any,
         blinds:
           updatedTable.small_blind != null && updatedTable.big_blind != null
-            ? `${updatedTable.small_blind}/${updatedTable.big_blind}`
+            ? formatBlindPair(updatedTable.small_blind, updatedTable.big_blind)
             : prev.blinds,
       }));
     });
@@ -4660,14 +4683,14 @@ export default function TablePage({
             (table.game_type === 'tournament' || !!table.tournament_id) &&
             table.small_blind != null &&
             table.big_blind != null
-              ? `${table.small_blind}/${table.big_blind}`
+              ? formatBlindPair(table.small_blind, table.big_blind)
               : table.stakes &&
                   table.stakes !== 'undefined/undefined' &&
                   !table.stakes.includes('undefined') &&
                   table.stakes.includes('/')
                 ? table.stakes
                 : table.small_blind != null && table.big_blind != null
-                  ? `${table.small_blind}/${table.big_blind}`
+                  ? formatBlindPair(table.small_blind, table.big_blind)
                   : '?/?',
           maxPlayers: table.max_players || 6,
           players: createEmptySeats(table.max_players || 6),
@@ -4899,9 +4922,9 @@ export default function TablePage({
               ...prev,
               currentLevel,
               blinds: tableHasLiveBlinds
-                ? `${table.small_blind}/${table.big_blind}`
+                ? formatBlindPair(table.small_blind, table.big_blind)
                 : sb > 0 && bbl > 0
-                  ? `${sb}/${bbl}`
+                  ? formatBlindPair(sb, bbl)
                   : prev.blinds,
             }));
 
@@ -4923,7 +4946,23 @@ export default function TablePage({
                 .eq('user_id', userId)
                 .maybeSingle();
               const live = myEntry?.status === 'registered' || myEntry?.status === 'playing';
-              if (isMounted) setAwaitingTournamentSeat(Boolean(live && !myEntry?.table_id));
+              // "Seated" is table_seats, NEVER tournament_players.table_id.
+              // createTablesAndSeatPlayers historically wrote the seat row and
+              // left that column NULL, so it was null for 166 of 297 live
+              // entrants who were all demonstrably sitting down. Trusting it
+              // told more than half a tournament their seat was still coming
+              // while they were sitting in it.
+              let seatedSomewhere = false;
+              if (live) {
+                const { count } = await supabase
+                  .from('table_seats')
+                  .select('id, tables!inner(tournament_id)', { count: 'exact', head: true })
+                  .eq('user_id', userId)
+                  .eq('tables.tournament_id', table.tournament_id)
+                  .is('left_at', null);
+                seatedSomewhere = (count ?? 0) > 0;
+              }
+              if (isMounted) setAwaitingTournamentSeat(Boolean(live && !seatedSomewhere));
             }
           } else {
             /**
@@ -5765,7 +5804,15 @@ export default function TablePage({
                 setTableState((prev) => ({
                   ...prev,
                   currentLevel: lvlIdx + 1,
-                  blinds: levelData.blinds,
+                  // Falling back rather than assigning `levelData.blinds`
+                  // blind: assigning an absent field would BLANK the masthead
+                  // at the exact moment the blinds went up.
+                  blinds:
+                    typeof levelData.blinds === 'string' && levelData.blinds.includes('/')
+                      ? levelData.blinds
+                      : levelData.smallBlind != null && levelData.bigBlind != null
+                        ? formatBlindPair(levelData.smallBlind, levelData.bigBlind)
+                        : prev.blinds,
                 }));
                 // Restart the masthead level clock. The broadcast names the
                 // new level but not its duration, so that comes from the

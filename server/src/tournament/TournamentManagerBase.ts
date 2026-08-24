@@ -1764,6 +1764,36 @@ export abstract class TournamentManagerBase {
           ),
           'TournamentthistournamentIdslic.Failed_to_seat_playersiuser_id'
         );
+        continue;
+      }
+
+      /**
+       * THE ROSTER MUST KNOW WHERE THE PLAYER IS SITTING (2026-08-24).
+       *
+       * This wrote the table_seats row and stopped, leaving
+       * tournament_players.table_id NULL for the entire start-seated field.
+       * Only ensureLateRegSeated and the table-move path ever set it, so the
+       * column was a lie for anyone who entered before the cards were in the
+       * air: measured in production, 166 of 297 live entrants, every one of
+       * them genuinely seated. Everything that navigates by that column was
+       * broken for more than half the field, including TournamentDetails'
+       * "go to my table" links, which resolved to /table/undefined.
+       *
+       * Written after the seat and skipped when the seat insert failed, so the
+       * roster can never claim a seat the player does not hold.
+       */
+      const { error: rosterErr } = await supabase
+        .from('tournament_players')
+        .update({ table_id: tableId, seat_number: seatNumber })
+        .eq('tournament_id', this.tournamentId)
+        .eq('user_id', toSeat[i].user_id);
+      if (rosterErr) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] seated ${toSeat[i].user_id.slice(0, 8)} but could not record the table on the roster: ${rosterErr.message}`
+          ),
+          'Tournament.roster_table_id_write_failed'
+        );
       }
     }
 

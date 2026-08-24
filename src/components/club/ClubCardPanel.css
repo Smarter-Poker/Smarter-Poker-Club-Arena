@@ -284,31 +284,6 @@
   animation: statLabelReveal 0.4s ease-out both;
 }
 
-/* Fonts scale WITH the card. A side card at ~110px and the centre card at
-   ~230px get proportionally sized text instead of one fixed 8px/18px pair
-   that overflowed the small card and truncated to "MEM...". Clamps keep the
-   extremes sane. (Browsers without container queries keep the fixed sizes
-   above — those still fit the centre card, which is the one that matters
-   for reading.) */
-@supports (font-size: 1cqw) {
-  .club-card-stat-label {
-    font-size: clamp(5.5px, 4.2cqw, 9px);
-    letter-spacing: 0.2px;
-  }
-  /* Dan 2026-08-24 round 3: "THE NUMBER FONTS DON'T MATCH THE REST OF THE
-     SCALE REGRESSION." The values were capped at 18px, so on a shrunken card
-     they stayed near full size while the art, name plate and labels all came
-     down — the numbers ended up dominating the card. Re-tied to the card's
-     own width with a much lower ceiling, and a low floor so the side cards
-     shrink with the centre one instead of pinning at the minimum. */
-  .club-card-stat-value {
-    font-size: clamp(8px, 6cqw, 15px);
-  }
-  .club-card-stat-value--level {
-    font-size: clamp(9px, 6.6cqw, 16px);
-  }
-}
-
 /* Staggered label reveal */
 .club-card-stat:nth-child(1) .club-card-stat-label {
   animation-delay: 0.1s;
@@ -452,4 +427,32 @@
 .club-card-panel--union .club-card-name-plate,
 .club-card-panel--union .club-card-stats-bar {
   border-top: 2px solid rgba(240, 208, 112, 0.75);
+}
+
+/* ── Stat type scales WITH the card ────────────────────────────────────────
+   Dan 2026-08-24: "THE NUMBER FONTS DON'T MATCH THE REST OF THE SCALE
+   REGRESSION." The values were a flat 18px, so as the card shrank the art,
+   the name plate and the labels all came down while the numbers stayed put
+   and took over the card.
+
+   1cqw = 1% of the stats bar's width, which is the card's width, so the type
+   is now a fixed proportion of whatever the carousel solved for that card.
+
+   LAST IN THE FILE ON PURPOSE. @supports adds no specificity, so this block
+   only wins over the fixed .club-card-stat-value / --level sizes above by
+   source order. Measured live when it sat higher up: the LABEL scaled (its
+   base rule came earlier) and the VALUE did not (its base rule came later),
+   which is exactly the half-applied result Dan photographed. */
+@supports (font-size: 1cqw) {
+  .club-card-stat-label {
+    font-size: clamp(7px, 5cqw, 10px);
+    letter-spacing: 0.2px;
+  }
+  .club-card-stat-value {
+    font-size: clamp(11px, 7.5cqw, 15px);
+  }
+  .club-card-stat-value--level {
+    font-size: clamp(12px, 8cqw, 16px);
+    line-height: 1;
+  }
 }

@@ -352,7 +352,7 @@ class NotificationServiceClass {
       case 'table_invite':
         return metadata.tableId ? `/table/${metadata.tableId}` : '/';
       case 'club_announcement':
-        return metadata.clubId ? `/club/${metadata.clubId}` : '/clubs';
+        return metadata.clubId ? `/clubs/${metadata.clubId}` : '/clubs';
       case 'message':
         return metadata.conversationId
           ? `/messages/${metadata.conversationId}`
@@ -364,7 +364,7 @@ class NotificationServiceClass {
       case 'bonus':
         return '/bonus';
       case 'settlement':
-        return metadata.clubId ? `/club/${metadata.clubId}/financials` : '/wallet';
+        return metadata.clubId ? `/clubs/${metadata.clubId}/financials` : '/wallet';
       case 'your_turn':
       case 'your_turn_reminder':
       case 'time_bank_active':
@@ -374,7 +374,7 @@ class NotificationServiceClass {
         return metadata.tournamentId
           ? `/tournament/${metadata.tournamentId}`
           : metadata.clubId
-            ? `/club/${metadata.clubId}/tournaments`
+            ? `/clubs/${metadata.clubId}/tournaments`
             : '/tournaments';
       case 'system':
       default:

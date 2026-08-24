@@ -7,23 +7,35 @@ export default function SlugEnforcer() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Only intercept paths that match /clubs/<uuid>
+    // Intercept paths that match /clubs/<uuid> or /club/<uuid> or /unions/<uuid>
     const match = location.pathname.match(
-      /^\/clubs\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:\/|$)/
+      /^\/(clubs|club|unions)\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:\/|$)/
     );
     if (match) {
-      const uuid = match[1];
-      supabase
-        .from('clubs')
-        .select('slug')
-        .eq('id', uuid)
-        .maybeSingle()
-        .then(({ data }) => {
-          if (data?.slug) {
-            const newPath = location.pathname.replace(uuid, data.slug);
-            navigate(newPath + location.search + location.hash, { replace: true });
-          }
-        });
+      const uuid = match[2];
+
+      Promise.all([
+        supabase.from('clubs').select('slug').eq('id', uuid).maybeSingle(),
+        supabase.from('unions').select('slug').eq('id', uuid).maybeSingle(),
+      ]).then(([clubRes, unionRes]) => {
+        let newPath = location.pathname;
+        let redirected = false;
+
+        if (clubRes.data?.slug) {
+          newPath = newPath.replace(uuid, clubRes.data.slug);
+          newPath = newPath.replace(/^\/club\//, '/clubs/');
+          redirected = true;
+        } else if (unionRes.data?.slug) {
+          newPath = newPath.replace(uuid, unionRes.data.slug);
+          newPath = newPath.replace(/^\/club\//, '/unions/');
+          newPath = newPath.replace(/^\/clubs\//, '/unions/');
+          redirected = true;
+        }
+
+        if (redirected) {
+          navigate(newPath + location.search + location.hash, { replace: true });
+        }
+      });
     }
   }, [location.pathname, location.search, location.hash, navigate]);
 

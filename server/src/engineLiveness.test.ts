@@ -32,12 +32,14 @@ function isDead(o: {
   discoveryLoopStalledMs: number;
   dbConfirmedDead: boolean;
   stillBooting?: boolean;
+  /** 2026-08-24: any table made observable progress in the last 2 minutes. */
+  anyTableProgressedRecently?: boolean;
 }): boolean {
-  return (
-    o.deadStalledCount > 0 ||
-    (!o.stillBooting && o.discoveryLoopStalledMs > 60_000) ||
-    o.dbConfirmedDead
-  );
+  const discoveryLoopDead =
+    !o.stillBooting &&
+    (o.discoveryLoopStalledMs > 900_000 ||
+      (o.discoveryLoopStalledMs > 60_000 && !o.anyTableProgressedRecently));
+  return o.deadStalledCount > 0 || discoveryLoopDead || o.dbConfirmedDead;
 }
 
 describe('engine liveness', () => {
@@ -49,11 +51,38 @@ describe('engine liveness', () => {
     ).toBe(false);
   });
 
-  it('DOES die when the discovery loop itself stops running', () => {
-    // Nothing has attempted discovery for two minutes: the loop is gone, and a
-    // restart is the correct answer.
+  it('DOES die when the discovery loop stops running AND nothing is progressing', () => {
+    // Nothing has attempted discovery for two minutes and no table has made
+    // progress either: the process is gone, and a restart is the correct answer.
     expect(
       isDead({ deadStalledCount: 0, discoveryLoopStalledMs: 120_000, dbConfirmedDead: false })
+    ).toBe(true);
+  });
+
+  it('does NOT die on a discovery stall while tables are demonstrably dealing (2026-08-24)', () => {
+    // OBSERVED LIVE: one discovery cycle blocked 87s inside a slow database
+    // call while 123 tables played on and hand_history grew every second.
+    // Restarting that engine would have voided every table to fix nothing.
+    expect(
+      isDead({
+        deadStalledCount: 0,
+        discoveryLoopStalledMs: 120_000,
+        dbConfirmedDead: false,
+        anyTableProgressedRecently: true,
+      })
+    ).toBe(false);
+  });
+
+  it('table progress cannot veto forever — 15 minutes without a discovery attempt is dead', () => {
+    // A discovery loop wedged on a hung await must still be restarted even
+    // while horses keep tables busy, or new tables never adopt again.
+    expect(
+      isDead({
+        deadStalledCount: 0,
+        discoveryLoopStalledMs: 901_000,
+        dbConfirmedDead: false,
+        anyTableProgressedRecently: true,
+      })
     ).toBe(true);
   });
 
@@ -123,13 +152,21 @@ describe('the rule in the source matches the rule tested here', () => {
     const i = src.indexOf('liveness:');
     expect(i, 'liveness field missing from getStatus').toBeGreaterThan(-1);
     const expr = src.slice(i, i + 260);
-    expect(expr).toMatch(/discoveryLoopStalledMs > 60_000/);
-    // The boot grace must be part of the same expression, or a slow start
-    // gets the container killed at the worst possible moment.
-    expect(expr).toMatch(/stillBooting/);
+    // 2026-08-24: the discovery clause moved into `discoveryLoopDead`, which
+    // is vetoed by recent table progress and capped at 15 minutes. The
+    // liveness expression must use it, and its definition must keep the boot
+    // grace, the 60s stall floor, the progress veto, and the hard cap.
+    expect(expr).toMatch(/discoveryLoopDead/);
+    const d = src.indexOf('const discoveryLoopDead');
+    expect(d, 'discoveryLoopDead definition missing').toBeGreaterThan(-1);
+    const def = src.slice(d, d + 300);
+    expect(def).toMatch(/stillBooting/);
+    expect(def).toMatch(/discoveryLoopStalledMs > 60_000/);
+    expect(def).toMatch(/anyTableProgressedRecently/);
+    expect(def).toMatch(/discoveryLoopStalledMs > 900_000/);
     // The regression this guards: reinstating the ok-based signal would make a
     // slow database restart the container again.
-    expect(expr).not.toMatch(/discoveryStaleMs > 60_000/);
+    expect(src.slice(i, i + 260)).not.toMatch(/discoveryStaleMs > 60_000/);
   });
 
   it('the prometheus gauge agrees with getStatus', async () => {

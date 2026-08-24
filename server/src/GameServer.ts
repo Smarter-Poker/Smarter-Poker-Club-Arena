@@ -833,15 +833,36 @@ export class GameServer {
       `[GameServer] Synchronized break scheduled in ${Math.round(msUntilNextBreak / 60000)} minutes (:${GameServer.BREAK_START_MINUTE} of the hour, ${GameServer.BREAK_DURATION_MS / 60000} min long)`
     );
 
+    /**
+     * BREAKS STAY ON :55, THEY DO NOT DRIFT OFF IT (2026-08-23).
+     *
+     * This used to fire once at :55 and then hand the cadence to
+     * `setInterval(..., 60 * 60 * 1000)`. A setInterval is not a clock: it
+     * measures an hour from the moment the previous tick was DISPATCHED, and a
+     * tick the event loop could not run on time is simply late — the lateness
+     * is never given back. Every long GC pause, every synchronous Supabase
+     * burst, every second the loop spent settling a hand pushed the next break
+     * further past :55 than the last one, permanently, and the error
+     * accumulated for as long as the process stayed up. On a box that had been
+     * up for days the "synchronized" break was landing well off the mark for
+     * every tournament at once — which is the whole complaint, because :55 is
+     * the entire point of the rule.
+     *
+     * The break is a WALL-CLOCK event, so it is re-armed against the wall
+     * clock after every firing: the next :55 is recomputed from Date.now()
+     * each time. Drift cannot accumulate because nothing is measured relative
+     * to the previous tick, and it self-corrects across a system clock change,
+     * which an interval cannot do.
+     *
+     * triggerSynchronizedBreak is deliberately not awaited — it runs for the
+     * length of the break (last-hand wait, then five minutes) and the next
+     * arming must not wait on it.
+     */
     this.breakTimer = setTimeout(() => {
-      this.triggerSynchronizedBreak();
-      // Schedule recurring hourly breaks
-      this.breakTimer = setInterval(
-        () => {
-          this.triggerSynchronizedBreak();
-        },
-        60 * 60 * 1000
-      ); // Every hour
+      if (!this.running) return;
+      void this.triggerSynchronizedBreak();
+      // Re-arm from the wall clock, never from this moment.
+      this.scheduleSynchronizedBreaks();
     }, msUntilNextBreak);
   }
 
@@ -972,6 +993,16 @@ export class GameServer {
       }
     }
 
+    // Never leave two resume timers pending. If a previous break's last-hand
+    // wait overran far enough to overlap this one, the older timer would still
+    // fire and resume tournaments a second time — harmless for the engines
+    // (resumeFromBreak no-ops when !onBreak) but it would clear on_break in
+    // the database out from under a live break, showing players a break that
+    // the lobby says has already ended.
+    if (this.breakResumeTimer) {
+      clearTimeout(this.breakResumeTimer);
+      this.breakResumeTimer = null;
+    }
     this.breakResumeTimer = setTimeout(async () => {
       console.log(
         `[GameServer] ═══ BREAK ENDED ═══ Resuming ${mttEngines.length} MTT/XMTT tournaments`

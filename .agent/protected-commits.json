@@ -35,7 +35,7 @@
     },
     {
       "sha": "f4f889e08",
-      "note": "spins: seat-first current_players derived from SEAT rows, in BOTH topUpWithHorses and createOpenSeatTable. Pinned because half of it has already been lost once - the topUpWithHorses branch exists on five branches under five SHAs and was an ancestor of main on none of them, having merged as an explanatory comment while the code under it was flattened away. 16 live Spins advertised 0/3 while holding 32 paid seats as a result. seatFirstCountSync.test.ts guards the shape; this guards the commit."
+      "note": "spins: seat-first current_players derived from SEAT rows, in BOTH topUpWithHorses and createOpenSeatTable. Pinned because half of it has already been lost once - the topUpWithHorses branch exists on five branches under five SHAs and was an ancestor of main on none of them, having merged as an explanatory comment while the code under it was flattened away. 16 live Spins advertised 0/3 while holding 32 paid seats as a result. seatFirstCountSync.test.ts guards the shape; this guards the commit. NOTE: pin the SQUASH-MERGE sha from main, not the branch sha - this entry was first written as 38ee27b3d, the pre-merge commit, which is an ancestor of nothing and made this very guard red on the next push."
     },
     {
       "sha": "ee3c41dd3",

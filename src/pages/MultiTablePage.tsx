@@ -20,6 +20,8 @@ import LiveTablesBar from '../components/table/LiveTablesBar';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { rankQuickJoinTables, bigBlindFromStakesLabel } from '../lib/quickJoinRanking';
+import { fetchFavoriteTableIds } from '../components/quickactions/favoriteTables';
 import { useUserTableSettings } from '../hooks/useUserTableSettings';
 import { useToast } from '../components/common/Toast';
 import { supabase } from '../lib/supabase';
@@ -1155,6 +1157,14 @@ export default function MultiTablePage() {
     max: number;
     /** Short game code, shown on the row and carried onto the new tab. */
     code: string;
+    /**
+     * Why this row is where it is ("Favourite", "Similar Game" ...). Rendered on
+     * the row so the ORDER explains itself - a ranked list whose reasoning is
+     * invisible just looks like a random list.
+     */
+    reason?: string;
+    /** Ranking tier, used to flag favourites in the UI. */
+    tier?: string;
   }
   const [quickJoin, setQuickJoin] = useState<{
     open: boolean;
@@ -1304,20 +1314,33 @@ export default function MultiTablePage() {
     try {
       const openIds = new Set(tablesRef.current.map((t) => t.id));
       const activeStakes = tablesRef.current[activeIndexRef.current]?.stakes || '';
-      const res = await withTimeout(
-        supabase
-          .from('tables')
-          .select(
-            'id, name, game_variant, game_type, small_blind, big_blind, max_players, current_players, status'
-          )
-          .eq('club_id', club)
-          .is('tournament_id', null)
-          .neq('status', 'closed')
-          // Audit round 3: soft-deleted tables kept their status and listed as
-          // joinable. NULL must count as not-deleted, hence NOT IS TRUE.
-          .not('is_deleted', 'is', true)
-          .limit(30)
-      );
+      const activeTableId = tablesRef.current[activeIndexRef.current]?.id || null;
+      /* Dan 2026-08-23: "quick join should be users favorite games, or similar
+         games to the one they are playing."
+
+         The favourites read runs ALONGSIDE the table list, not before it, and
+         through the same withTimeout. Ordering these would put a second network
+         round trip in front of the sheet, and a favourites table that is slow or
+         empty must only cost you the ORDER - never leave you looking at
+         "Finding Games..." forever, which is the failure this sheet already had
+         once (#526). A null here degrades to an unfavourited ranking. */
+      const [res, favIds] = await Promise.all([
+        withTimeout(
+          supabase
+            .from('tables')
+            .select(
+              'id, name, game_variant, game_type, small_blind, big_blind, max_players, current_players, status'
+            )
+            .eq('club_id', club)
+            .is('tournament_id', null)
+            .neq('status', 'closed')
+            // Audit round 3: soft-deleted tables kept their status and listed as
+            // joinable. NULL must count as not-deleted, hence NOT IS TRUE.
+            .not('is_deleted', 'is', true)
+            .limit(30)
+        ),
+        withTimeout(fetchFavoriteTableIds(user?.id)).catch(() => null),
+      ]);
       if (res === null) {
         // Stalled, not empty. "No Open Seats Right Now" would be a lie and a
         // spinner would be worse: take the same exit as a failed query.
@@ -1325,39 +1348,67 @@ export default function MultiTablePage() {
         masterBus.emit('OPEN_LOBBY_TAB', {});
         return;
       }
-      const rows: QuickJoinRow[] = (res.data ?? [])
-        .filter(
-          (r) =>
-            !openIds.has(r.id as string) &&
-            (Number(r.current_players) || 0) < (Number(r.max_players) || 0)
-        )
-        .map((r) => ({
-          id: r.id as string,
-          name: (r.name as string) || 'Table',
-          stakes:
-            r.small_blind != null && r.big_blind != null ? `${r.small_blind}/${r.big_blind}` : '',
-          players: Number(r.current_players) || 0,
-          max: Number(r.max_players) || 0,
+      const all = res.data ?? [];
+      /* The table you are AT, read from this same result set rather than from
+         the open tab. TableInstance carries only a stakes label, so the variant -
+         the thing that decides whether another game is "similar" - is not on it.
+         Guessing it from the label is how a PLO player got offered Hold'em. */
+      const activeRow = activeTableId ? all.find((r) => r.id === activeTableId) : undefined;
+      const currentTable = {
+        id: activeTableId,
+        variant: (activeRow?.game_variant as string | undefined) ?? null,
+        bigBlind:
+          activeRow?.big_blind != null
+            ? Number(activeRow.big_blind)
+            : bigBlindFromStakesLabel(activeStakes),
+      };
+
+      const ranked = rankQuickJoinTables(
+        all
+          .filter((r) => (Number(r.current_players) || 0) < (Number(r.max_players) || 0))
+          .map((r) => ({
+            id: r.id as string,
+            name: (r.name as string) || 'Table',
+            variant: (r.game_variant as string | undefined) ?? null,
+            smallBlind: r.small_blind != null ? Number(r.small_blind) : null,
+            bigBlind: r.big_blind != null ? Number(r.big_blind) : null,
+            players: Number(r.current_players) || 0,
+            maxPlayers: Number(r.max_players) || 0,
+          })),
+        {
+          favoriteTableIds: favIds ?? [],
+          currentTable,
+          // Tables already open in a tab are not an offer to open a tab.
+          excludeIds: Array.from(openIds),
+          limit: 5,
+        }
+      );
+
+      const byId = new Map(all.map((r) => [r.id as string, r]));
+      const rows: QuickJoinRow[] = ranked.map((t) => {
+        const r = byId.get(t.id);
+        return {
+          id: t.id,
+          name: t.name,
+          stakes: t.smallBlind != null && t.bigBlind != null ? `${t.smallBlind}/${t.bigBlind}` : '',
+          players: Number(t.players) || 0,
+          max: Number(t.maxPlayers) || 0,
           code: gameCode({
-            variant: r.game_variant as string | undefined,
-            isTournament: r.game_type === 'tournament',
-            maxPlayers: Number(r.max_players) || undefined,
+            variant: (r?.game_variant as string | undefined) ?? undefined,
+            isTournament: r?.game_type === 'tournament',
+            maxPlayers: Number(t.maxPlayers) || undefined,
           }),
-        }))
-        .sort((a, b) => {
-          const sameA = a.stakes === activeStakes ? 0 : 1;
-          const sameB = b.stakes === activeStakes ? 0 : 1;
-          if (sameA !== sameB) return sameA - sameB;
-          return b.players - a.players; // fullest first - games, not ghost towns
-        })
-        .slice(0, 5);
+          reason: t.reason,
+          tier: t.tier,
+        };
+      });
       setQuickJoin((q) => (q.open ? { open: true, loading: false, rows } : q));
     } catch {
       // Query failed - fall back to the lobby tab rather than a dead sheet.
       setQuickJoin({ open: false, loading: false, rows: [] });
       masterBus.emit('OPEN_LOBBY_TAB', {});
     }
-  }, [tables.length, notifyCapReached, withTimeout, commitHomeClub]);
+  }, [tables.length, notifyCapReached, withTimeout, commitHomeClub, user?.id]);
 
   const handleQuickJoinPick = useCallback(
     (row: QuickJoinRow) => {
@@ -2057,7 +2108,18 @@ export default function MultiTablePage() {
                     className="multi-table-page__quickjoin-row"
                     onClick={() => handleQuickJoinPick(row)}
                   >
-                    <span className="multi-table-page__quickjoin-name">{row.name}</span>
+                    <span className="multi-table-page__quickjoin-name">
+                      {row.name}
+                      {row.reason && (
+                        <span
+                          className={`multi-table-page__quickjoin-tag${
+                            row.tier === 'favorite' ? ' multi-table-page__quickjoin-tag--fav' : ''
+                          }`}
+                        >
+                          {row.reason}
+                        </span>
+                      )}
+                    </span>
                     <span className="multi-table-page__quickjoin-meta">
                       {row.code && <span>{row.code}</span>}
                       {row.stakes && <span>{row.stakes}</span>}

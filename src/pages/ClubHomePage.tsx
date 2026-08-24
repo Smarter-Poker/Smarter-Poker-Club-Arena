@@ -48,6 +48,8 @@ import ConfirmModal from '../components/common/ConfirmModal';
 import confirmDialog from '../components/common/confirmDialog';
 import { retryFetch } from '../utils/retryFetch';
 import './ClubHomePage.css';
+import { isFixedLimitVariant } from '../lib/bettingStructure';
+
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -272,6 +274,15 @@ function cashKind(t: { game_variant?: string }): 'HOLDEM' | 'OMAHA' | 'LIMIT' | 
   const v = (t.game_variant || '').toLowerCase();
   // 'short' is Short Deck, which is a Hold'em variant — it belongs with NLH,
   // not in the Mixed bucket where an unlisted string falls.
+  //
+  // 2026-08-23: ask BettingStructure FIRST. The substring tests below catch
+  // `flh` and anything spelled `limit_*`, but not `flo8` — that string contains
+  // no "flh", no "limit", and no "plo" either, so Fixed Limit Omaha fell all
+  // the way through to MIXED and would have been missing from the very tab it
+  // belongs in. The substring tests stay underneath as the fallback for legacy
+  // `limit_holdem` / `limit_omaha` rows, which are not in the variant union and
+  // so are invisible to bettingStructureFor().
+  if (isFixedLimitVariant(v)) return 'LIMIT';
   if (v.includes('flh') || (v.includes('limit') && !v.includes('no') && !v.includes('pot')))
     return 'LIMIT';
   if (v.includes('nlh') || v.includes('holdem') || v.includes("hold'em") || v.includes('short'))

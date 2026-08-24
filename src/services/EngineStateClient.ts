@@ -705,6 +705,17 @@ export interface ChannelPingMessage {
   type: 'PING';
   ts: number;
 }
+/**
+ * 2026-08-24: the server's documented heartbeat frame. The server sweep sent
+ * CHANNEL_PING and only accepted CHANNEL_PONG, while this client only answered
+ * PING with PONG — so every /ws/channel connection was declared dead and
+ * force-closed by the server 60s after it opened, forever. Both sides now
+ * speak both dialects so either can deploy first.
+ */
+export interface ChannelChannelPingMessage {
+  type: 'CHANNEL_PING';
+  ts?: number;
+}
 export interface ClubPresenceUpdateMessage {
   type: 'CLUB_PRESENCE_UPDATE';
   clubId: string;
@@ -748,6 +759,7 @@ export interface FinancialUpdateMessage {
 
 export type ChannelServerMessage =
   | ChannelPingMessage
+  | ChannelChannelPingMessage
   | ClubPresenceUpdateMessage
   | ClubEventMessage
   | TournamentEventMessage
@@ -772,7 +784,8 @@ export type ChannelClientMessage =
   | { type: 'JOIN_LOBBY' }
   | { type: 'LEAVE_LOBBY' }
   | { type: 'REQUEST_HAND_REPLAY'; handId: string }
-  | { type: 'PONG'; ts: number };
+  | { type: 'PONG'; ts: number }
+  | { type: 'CHANNEL_PONG' };
 
 // ─── Listener registrations ───────────────────────────────────────────────────
 
@@ -828,6 +841,76 @@ export class EngineChannelClient {
   /** 2026-08-22: bound the offline queue — an hour offline must not flush a
    *  thousand stale messages into the server's rate limiter on reconnect. */
   private static readonly MAX_QUEUE = 100;
+
+  // ── 2026-08-24: DESIRED SUBSCRIPTION STATE — survives reconnects ─────────
+  //
+  // Server-side subscriptions (ChannelHub clubSubs / tournamentSubs /
+  // lobbySubscribers) live on the CONNECTION and die with it. The old client
+  // sent each JOIN exactly once at subscribe time and never again, so ANY
+  // reconnect — engine deploy, network blip, heartbeat teardown — left the
+  // new connection subscribed to NOTHING. Tournament events, club events,
+  // presence and lobby updates went silent until a full page reload, with no
+  // error anywhere. (Supabase Realtime re-subscribed channels automatically;
+  // this behaviour was lost in the migration to the engine WS.)
+  //
+  // send() records the net desired state below; every onopen replays it.
+  // Server JOINs are idempotent (Set adds + alreadyJoined guard), so a replay
+  // that races a queued duplicate is harmless.
+  private desiredClubs = new Set<string>();
+  private desiredTournaments = new Set<string>();
+  private desiredLobby = false;
+  /** Latest UPDATE_PRESENCE per club, replayed after JOIN_CLUB on reconnect. */
+  private lastPresence = new Map<string, ChannelClientMessage>();
+  /** True once any socket has reached OPEN — gates the replay to reconnects. */
+  private hasConnectedBefore = false;
+
+  /** @internal Track the net effect of a client → server message. */
+  private recordDesiredState(msg: ChannelClientMessage): void {
+    switch (msg.type) {
+      case 'JOIN_CLUB':
+        this.desiredClubs.add(msg.clubId);
+        return;
+      case 'LEAVE_CLUB':
+        this.desiredClubs.delete(msg.clubId);
+        this.lastPresence.delete(msg.clubId);
+        return;
+      case 'UPDATE_PRESENCE':
+        this.desiredClubs.add(msg.clubId);
+        this.lastPresence.set(msg.clubId, msg);
+        return;
+      case 'JOIN_TOURNAMENT':
+        this.desiredTournaments.add(msg.tournamentId);
+        return;
+      case 'LEAVE_TOURNAMENT':
+        this.desiredTournaments.delete(msg.tournamentId);
+        return;
+      case 'JOIN_LOBBY':
+        this.desiredLobby = true;
+        return;
+      case 'LEAVE_LOBBY':
+        this.desiredLobby = false;
+        return;
+      default:
+        return; // PONG / CHANNEL_PONG / REQUEST_HAND_REPLAY carry no state
+    }
+  }
+
+  /** @internal Re-send the desired subscription state on a fresh socket. */
+  private replayDesiredState(ws: WebSocket): void {
+    const replay: ChannelClientMessage[] = [];
+    for (const clubId of this.desiredClubs) replay.push({ type: 'JOIN_CLUB', clubId });
+    for (const msg of this.lastPresence.values()) replay.push(msg);
+    for (const tournamentId of this.desiredTournaments)
+      replay.push({ type: 'JOIN_TOURNAMENT', tournamentId });
+    if (this.desiredLobby) replay.push({ type: 'JOIN_LOBBY' });
+    for (const msg of replay) {
+      try {
+        ws.send(JSON.stringify(msg));
+      } catch {
+        /* onclose will drive the next reconnect */
+      }
+    }
+  }
 
   // 2026-08-22: staleness watchdog + online-event recovery, mirroring
   // EngineStateClient. This client previously had NEITHER — plus a reconnect
@@ -934,6 +1017,9 @@ export class EngineChannelClient {
    * If the socket isn't open yet, the message is queued and sent on connect.
    */
   send(msg: ChannelClientMessage): void {
+    // 2026-08-24: record the net desired subscription state FIRST, whether or
+    // not the socket is currently open — this is what reconnect replays.
+    this.recordDesiredState(msg);
     const data = JSON.stringify(msg);
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
@@ -1002,6 +1088,20 @@ export class EngineChannelClient {
     return () => this.listeners.onFinancialUpdate.delete(listener);
   }
 
+  /**
+   * 2026-08-24: status listeners. The constructor's onStatus option is owned
+   * by whoever built the singleton; surfaces that need to react to a
+   * reconnect (e.g. the wallet refetching balances it may have missed while
+   * the socket was down) register here instead. Does NOT auto-connect: a
+   * status observer is not a reason to open a network connection.
+   */
+  private statusListeners = new Set<(status: EngineConnectionStatus) => void>();
+
+  onStatusChange(listener: (status: EngineConnectionStatus) => void): () => void {
+    this.statusListeners.add(listener);
+    return () => this.statusListeners.delete(listener);
+  }
+
   // ─── Internal ─────────────────────────────────────────────────────────────
 
   private opening = false;
@@ -1052,6 +1152,15 @@ export class EngineChannelClient {
     ws.onopen = () => {
       if (this.ws !== ws) return;
       this.retryCount = 0;
+      // 2026-08-24: on a RECONNECT, replay the desired subscription state
+      // BEFORE flushing the queue — the fresh connection has no server-side
+      // subscriptions, and the queue only holds messages sent while offline.
+      // (First connect skips this: the original JOINs are in the queue or
+      // will be sent by their callers; replaying would only duplicate them.)
+      if (this.hasConnectedBefore) {
+        this.replayDesiredState(ws);
+      }
+      this.hasConnectedBefore = true;
       this.setStatus('connected');
       this.startWatchdog();
       // Flush any queued messages
@@ -1100,6 +1209,17 @@ export class EngineChannelClient {
       case 'PING': {
         try {
           this.ws?.send(JSON.stringify({ type: 'PONG', ts: msg.ts }));
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+      case 'CHANNEL_PING': {
+        // 2026-08-24: the server's heartbeat dialect. Not answering this is
+        // what got every channel connection killed at the 60s mark — the
+        // server sweep only counted CHANNEL_PONG as proof of life.
+        try {
+          this.ws?.send(JSON.stringify({ type: 'CHANNEL_PONG' }));
         } catch {
           /* ignore */
         }
@@ -1237,6 +1357,13 @@ export class EngineChannelClient {
     if (this.status === status) return;
     this.status = status;
     this.opts.onStatus(status);
+    for (const listener of this.statusListeners) {
+      try {
+        listener(status);
+      } catch (err) {
+        console.error('[EngineChannelClient] status listener threw:', err);
+      }
+    }
   }
 }
 

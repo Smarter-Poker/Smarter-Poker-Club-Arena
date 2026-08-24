@@ -76,7 +76,18 @@ export interface EnginePublishedState {
   winners?: Array<{ user_id: string; amount: number }>;
   min_raise: number;
   last_raise: number;
+  /**
+   * 2026-08-23: the betting structure, published by the engine rather than
+   * guessed from the variant string. See server/src/engine/BettingStructure.ts.
+   * Optional so a snapshot from an older engine build still maps cleanly.
+   */
+  betting_structure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  /** Fixed limit only: the street's one legal wager (small bet or big bet). */
+  fixed_bet_size?: number;
+  /** Fixed limit only: bet and three raises are in — fold or call only. */
+  wagers_capped?: boolean;
   turn_start_time_ms?: number;
+
   turn_duration_ms?: number;
   /** Phase 1.2 PR-F: absolute wall-clock deadline for the current turn. */
   turn_deadline_ms?: number;
@@ -126,6 +137,18 @@ export interface MappedTableStatePatch {
   currentBet: number;
   minRaise: number;
   lastRaise: number;
+  /**
+   * 2026-08-23: which betting structure the action panel should draw — a
+   * slider for no-limit and pot-limit, a single fixed-size button for limit.
+   * Undefined on snapshots from an engine build that predates this field; the
+   * panel then falls back to deriving it from the variant string.
+   */
+  bettingStructure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  /** Fixed limit only: the street's one legal wager. */
+  fixedBetSize?: number;
+  /** Fixed limit only: the round is capped — fold or call only. */
+  wagersCapped?: boolean;
+
   /** For action timer. */
   actionTimerDeadline?: number;
   /** Server-authoritative turn start wall-clock (for CSS ring animation). */
@@ -332,6 +355,14 @@ export function mapEngineSnapshot(
     players,
     currentBet: s.current_bet ?? 0,
     minRaise: s.min_raise ?? 0,
+    // 2026-08-23: pass the engine's betting structure straight through. The
+    // action panel used to re-derive it from the variant string, which made
+    // everything that was not PLO no-limit — a fixed-limit table would have
+    // drawn a no-limit slider and had every drag rejected.
+    bettingStructure: s.betting_structure,
+    fixedBetSize: s.fixed_bet_size,
+    wagersCapped: s.wagers_capped,
+
     lastRaise: s.last_raise ?? 0,
     actionTimerDeadline,
     actionTimerStartTime: s.turn_start_time_ms,

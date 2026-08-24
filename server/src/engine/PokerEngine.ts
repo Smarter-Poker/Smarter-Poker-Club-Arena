@@ -21,6 +21,7 @@ import type {
 } from '../types.js';
 
 import { secureShuffle } from './CryptoRandom.js';
+import { isOmahaVariant, isHiLoVariant, isShortDeckVariant } from './VariantRules.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -566,9 +567,34 @@ export function calculateBettingState(
   playerBet: number,
   bigBlind: number,
   lastRaise: number = 0,
-  isPotLimit: boolean = false
+  isPotLimit: boolean = false,
+  /**
+   * 2026-08-23: fixed-limit bounds, supplied only by fixed-limit tables (flh,
+   * flo8). `betSize` is the street's wager — the small bet preflop and on the
+   * flop, the big bet on turn and river (BettingStructure.fixedLimitBetSize).
+   * `capped` is true once the street has taken a bet and three raises.
+   *
+   * When present it overrides both bounds: min and max are BOTH `betSize`, so
+   * the only legal wager is exactly that size. That is the whole of fixed
+   * limit — there is no sizing decision to make, which is why this reuses the
+   * pot-limit ceiling machinery rather than adding a parallel one.
+   */
+  fixedLimit?: { betSize: number; capped: boolean }
 ): BettingState {
   const toCall = currentBet - playerBet;
+
+  if (fixedLimit) {
+    return {
+      currentBet,
+      minRaise: fixedLimit.betSize,
+      pot,
+      toCall,
+      maxRaise: fixedLimit.betSize,
+      wagersCapped: fixedLimit.capped,
+      structure: 'fixed_limit',
+    };
+  }
+
   // FIX 121: Bible V8 §4.14 — pot-limit max raise = pot after calling
   // Pot-limit formula: max raise SIZE = pot + toCall (the pot after you call)
   // Previous code had pot + toCall + toCall which was too permissive.
@@ -579,6 +605,7 @@ export function calculateBettingState(
     pot,
     toCall,
     maxRaise,
+    structure: isPotLimit ? 'pot_limit' : 'no_limit',
   };
 }
 
@@ -598,6 +625,12 @@ export function validateAction(
   bettingState: BettingState
 ): { valid: boolean; error?: string } {
   const { currentBet, minRaise, toCall } = bettingState;
+  // 2026-08-23: "Pot-limit max ..." was hardcoded into every ceiling message,
+  // which would have read as a lie on a fixed-limit table. Name the structure
+  // that actually produced the bound.
+  const ceilingLabel = bettingState.structure === 'fixed_limit' ? 'Fixed-limit' : 'Pot-limit';
+  const isFixedLimit = bettingState.structure === 'fixed_limit';
+
   // ══════════════════════════════════════════════════════════════════════════
   // 2026-08-20: THE MIN-RAISE BUTTON WAS REJECTED ~45% OF THE TIME.
   //
@@ -632,31 +665,53 @@ export function validateAction(
     case 'bet':
       if (currentBet > 0)
         return { valid: false, error: 'Cannot bet when there is already a bet (use raise)' };
+      // Fixed limit: a capped street takes no further wager. Reachable only
+      // postflop with a bet already in, so `bet` here is a contradiction, but
+      // the guard is cheap and keeps every wager path capped by one rule.
+      if (bettingState.wagersCapped)
+        return { valid: false, error: 'Betting is capped for this round' };
       if (!amount || amount < minRaise - CENT_EPS)
         return { valid: false, error: `Minimum bet is ${minRaise}` };
       if (amount > playerStack + CENT_EPS) return { valid: false, error: 'Insufficient chips' };
-      // Bible V8 §4.14: Pot-limit max bet
+      // Bible V8 §4.14: pot-limit max bet — and, since 2026-08-23, the
+      // fixed-limit bet size, where maxRaise === minRaise so this pins the bet
+      // to exactly one legal amount.
       if (bettingState.maxRaise !== undefined && amount > bettingState.maxRaise + CENT_EPS) {
-        return { valid: false, error: `Pot-limit max bet is ${bettingState.maxRaise}` };
+        return { valid: false, error: `${ceilingLabel} max bet is ${bettingState.maxRaise}` };
       }
       return { valid: true };
     case 'raise': {
       if (currentBet === 0)
         return { valid: false, error: 'Cannot raise when there is no bet (use bet)' };
       if (!amount) return { valid: false, error: 'Raise amount required' };
+      // Fixed limit: one bet and three raises per street, then the round is
+      // capped and the only actions left are fold and call.
+      if (bettingState.wagersCapped)
+        return { valid: false, error: 'Betting is capped for this round' };
       const playerBet = currentBet - toCall;
       const maxRaiseTo = playerBet + playerStack;
       const raiseAmount = amount - currentBet;
+      // The `amount < maxRaiseTo` escape lets a short stack raise all-in for
+      // less than a full increment. That is correct in no-limit and pot-limit;
+      // in fixed limit an under-sized wager must arrive as `all_in`, never as
+      // a `raise`, or the client could shave the fixed bet.
       if (raiseAmount < minRaise - CENT_EPS && amount < maxRaiseTo - CENT_EPS) {
-        return { valid: false, error: `Minimum raise is ${minRaise}` };
+        return {
+          valid: false,
+          error: isFixedLimit
+            ? `Fixed-limit raise must be exactly ${minRaise}`
+            : `Minimum raise is ${minRaise}`,
+        };
       }
       if (amount > maxRaiseTo + CENT_EPS) return { valid: false, error: 'Insufficient chips' };
-      // FIX 121: Bible V8 §4.14: Pot-limit max raise = pot after calling
+      // FIX 121: Bible V8 §4.14: Pot-limit max raise = pot after calling.
+      // Fixed limit reuses the same ceiling with maxRaise === the bet size.
       if (bettingState.maxRaise !== undefined && raiseAmount > bettingState.maxRaise + CENT_EPS) {
-        return { valid: false, error: `Pot-limit max raise is ${bettingState.maxRaise}` };
+        return { valid: false, error: `${ceilingLabel} max raise is ${bettingState.maxRaise}` };
       }
       return { valid: true };
     }
+
     case 'all_in': {
       // ── Dan 2026-08-21, BINDING: "IN PLO YOU CAN NEVER GO ALL IN IF THE POT
       //    IS LESS THAN THE CHIPS YOU HAVE. THE MOST YOU CAN EVER BET IS POT."
@@ -668,6 +723,21 @@ export function validateAction(
       // An all-in is legal when the whole stack fits under the cap, and when
       // it cannot even cover the call. It is illegal only when the stack
       // EXCEEDS what pot-limit allows.
+      //
+      // 2026-08-23: fixed limit needs the identical treatment for the identical
+      // reason. A shove is legal there only when the stack lands at or under
+      // the street's fixed bet — a deep stack cannot jam a limit game, and on a
+      // capped street it cannot put in more than the call.
+      if (bettingState.wagersCapped) {
+        const playerBet = currentBet - toCall;
+        const allInTo = playerBet + playerStack;
+        if (allInTo > currentBet + CENT_EPS) {
+          return {
+            valid: false,
+            error: 'Betting is capped for this round — you may only call',
+          };
+        }
+      }
       if (bettingState.maxRaise !== undefined) {
         const playerBet = currentBet - toCall;
         const allInTo = playerBet + playerStack;
@@ -675,7 +745,9 @@ export function validateAction(
         if (raiseSize > bettingState.maxRaise + CENT_EPS) {
           return {
             valid: false,
-            error: `Pot-limit max is ${currentBet + bettingState.maxRaise} — you cannot go all in for more than the pot`,
+            error: isFixedLimit
+              ? `Fixed-limit max is ${currentBet + bettingState.maxRaise} — you cannot go all in for more than the bet`
+              : `Pot-limit max is ${currentBet + bettingState.maxRaise} — you cannot go all in for more than the pot`,
           };
         }
       }
@@ -737,11 +809,16 @@ export function determineWinners(
     return [{ userId: activePlayers[0].user_id, amount: totalPot, potIndex: 0 }];
   }
 
-  const isOmaha = gameVariant.startsWith('plo');
-  // Bible V8 §7.6: plo8 = Omaha Hi-Lo (FIX 116: plo_hilo dead variant removed)
-  const isHiLo = isOmaha && gameVariant === 'plo8';
+  // 2026-08-23: all three of these were substring tests on the variant string,
+  // and this function AWARDS THE POT. `flo8` matches none of them: it would
+  // have been evaluated as Hold'em and paid out with no low split, so the
+  // wrong player wins. VariantRules answers all three from one table.
+  const isOmaha = isOmahaVariant(gameVariant);
+  // Bible V8 §7.6: plo8 and flo8 are the hi-lo variants (FIX 116: plo_hilo removed)
+  const isHiLo = isHiLoVariant(gameVariant);
   // FIX 119: Short Deck variant-aware evaluation
-  const isShortDeck = gameVariant === 'short_deck';
+  const isShortDeck = isShortDeckVariant(gameVariant);
+
   const evaluator = isOmaha
     ? evaluateOmahaHand
     : (h: Card[], c: Card[]) => evaluateHand(h, c, isShortDeck);

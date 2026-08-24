@@ -356,10 +356,11 @@
 .itemPrice {
   font-weight: 800;
   font-size: 15px;
-  color: #f7c52a;
+  color: #00d4ff;
   display: flex;
   align-items: center;
   gap: 3px;
+  text-shadow: 0 0 12px rgba(0, 212, 255, 0.35);
 }
 .soldCount {
   font-size: 11px;
@@ -992,21 +993,28 @@
 }
 
 .walletPill {
-  color: #f7c52a;
-  background: rgba(247, 197, 42, 0.1);
-  border: 1px solid rgba(247, 197, 42, 0.25);
+  color: #00d4ff;
+  background: rgba(0, 212, 255, 0.1);
+  border: 1px solid rgba(0, 212, 255, 0.25);
 }
 
 .walletPillDiamond {
-  color: #4599ff;
-  background: rgba(69, 153, 255, 0.1);
-  border: 1px solid rgba(69, 153, 255, 0.25);
+  color: #00d4ff;
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.16) 0%, rgba(29, 78, 216, 0.1) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 0 14px rgba(0, 212, 255, 0.18);
+  text-shadow: 0 0 10px rgba(0, 212, 255, 0.4);
 }
 
 .vipPill {
-  color: #18191a;
-  background: linear-gradient(135deg, #ffd700, #b8860b);
-  border: 1px solid rgba(255, 215, 0, 0.6);
+  color: #041423;
+  background: linear-gradient(135deg, #00d4ff, #1d4ed8);
+  border: 1px solid rgba(0, 212, 255, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 12px rgba(0, 212, 255, 0.3);
 }
 
 .inlineLink {
@@ -1087,8 +1095,11 @@
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.6px;
-  color: #18191a;
-  background: linear-gradient(135deg, #ffd700, #f7931a);
+  color: #041423;
+  background: linear-gradient(135deg, #00d4ff, #4599ff);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 2px 8px rgba(0, 212, 255, 0.35);
   white-space: nowrap;
 }
 
@@ -1184,9 +1195,10 @@
 }
 
 .vipStatusActive {
-  color: #ffd700;
-  background: rgba(255, 215, 0, 0.07);
-  border: 1px solid rgba(255, 215, 0, 0.3);
+  color: #00d4ff;
+  background: rgba(0, 212, 255, 0.07);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .vipStatusInactive {
@@ -1201,8 +1213,11 @@
   font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.8px;
-  color: #18191a;
-  background: linear-gradient(135deg, #ffd700, #b8860b);
+  color: #041423;
+  background: linear-gradient(135deg, #00d4ff, #1d4ed8);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 12px rgba(0, 212, 255, 0.3);
 }
 
 .planGrid {
@@ -1246,7 +1261,8 @@
 }
 
 .planCardFeatured .planPrice {
-  color: #ffd700;
+  color: #00d4ff;
+  text-shadow: 0 0 14px rgba(0, 212, 255, 0.45);
 }
 
 .planPeriod {
@@ -1556,8 +1572,9 @@
 }
 
 .stockTag {
-  color: #18191a;
-  background: rgba(247, 197, 42, 0.9);
+  color: #041423;
+  background: rgba(0, 212, 255, 0.92);
+  box-shadow: 0 2px 8px rgba(0, 212, 255, 0.35);
 }
 
 /* ─── Sale / promo badges ─── */
@@ -1649,4 +1666,102 @@
 
 .chartBar:hover {
   background: linear-gradient(180deg, #6fb1ff, rgba(69, 153, 255, 0.5));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   2026-08-23 REBUILD — procedural HD item art (3D depth), diamond funding
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Card artwork fills the image panel; an admin image layers over it. */
+.itemArt {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.itemCover {
+  position: relative;
+  z-index: 1;
+}
+
+/* Slow parallax float gives the scene physical depth on hover. */
+.itemCard:hover .itemArt {
+  transform: scale(1.05) translateY(-2px);
+}
+
+.itemArt {
+  transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Large hero art in empty states */
+.emptyArt {
+  width: 200px;
+  height: 150px;
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: 18px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+    0 16px 40px rgba(0, 0, 0, 0.55),
+    0 0 28px rgba(0, 212, 255, 0.12);
+}
+
+/* Diamond package gem art */
+.pkgArt {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 6px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+    0 10px 24px rgba(0, 0, 0, 0.5);
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.pkgCard:hover .pkgArt {
+  transform: translateY(-3px) scale(1.03);
+}
+
+/* VIP plan shield art */
+.planArt {
+  width: 100%;
+  aspect-ratio: 16 / 7;
+  border-radius: 12px;
+  overflow: hidden;
+  margin: 8px 0 12px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+    0 10px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* Inline thumbnails in inventory/history tables */
+.rowWithArt {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rowArt {
+  width: 44px;
+  height: 33px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 3px 10px rgba(0, 0, 0, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .itemArt,
+  .pkgArt {
+    transition: none !important;
+  }
+
+  .itemCard:hover .itemArt,
+  .pkgCard:hover .pkgArt {
+    transform: none;
+  }
 }

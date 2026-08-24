@@ -14,7 +14,7 @@ import { callClubArenaApi } from '../../services/clubArenaApi';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../components/common/Toast';
 import { confirmDialog } from '../../components/common/confirmDialog';
-import { fmtChips } from '../../utils/format';
+import { fmt } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
 import ShopAnalytics from './ShopAnalytics';
 import PurchaseLedger from './PurchaseLedger';
@@ -138,15 +138,15 @@ export default function ManageTab({
   const validate = (n: string, p: string): number | null => {
     const numPrice = Math.floor(Number(p));
     if (!n.trim()) {
-      toast.error('Item name required');
+      toast.error('Item Name Required');
       return null;
     }
     if (!numPrice || !Number.isFinite(numPrice) || numPrice <= 0) {
-      toast.error('Price must be a positive number');
+      toast.error('Price Must Be A Positive Number');
       return null;
     }
     if (numPrice > 1_000_000_000) {
-      toast.error('Price exceeds maximum allowed value');
+      toast.error('Price Exceeds Maximum Allowed Value');
       return null;
     }
     return numPrice;
@@ -183,7 +183,7 @@ export default function ManageTab({
         availableFrom: localInputToIso(availableFrom),
         sortOrder: sortOrder.trim() === '' ? undefined : Math.floor(Number(sortOrder) || 0),
       });
-      toast.success('Item created');
+      toast.success('Item Created');
       setName('');
       setPrice('');
       setDesc('');
@@ -243,7 +243,7 @@ export default function ManageTab({
       const sale = Math.floor(Number(draft.salePrice) || 0);
       if (sale > numPrice) {
         toast.error(
-          `Sale price cannot exceed the price (${numPrice}). Lower the sale price first.`
+          `Sale Price Cannot Exceed The Price (${numPrice}). Lower The Sale Price First.`
         );
         return;
       }
@@ -286,7 +286,7 @@ export default function ManageTab({
         sortOrder: draft.sortOrder.trim() === '' ? 0 : Math.floor(Number(draft.sortOrder) || 0),
         stackable: draft.stackable,
       });
-      toast.success('Item updated');
+      toast.success('Item Updated');
       setEditingId(null);
       setDraft(null);
       loadItems();
@@ -303,7 +303,7 @@ export default function ManageTab({
     setProcessing(true);
     try {
       await callClubArenaApi('manage-shop', { action: 'toggle', clubId, itemId: item.id });
-      toast.success(item.is_active ? 'Item hidden' : 'Item activated');
+      toast.success(item.is_active ? 'Item Hidden' : 'Item Activated');
       loadItems();
       onShopChanged();
     } catch (err: unknown) {
@@ -317,14 +317,14 @@ export default function ManageTab({
     if (processing) return;
     if ((item.purchase_count || 0) > 0) {
       toast.error(
-        'This item has sales. Deleting it would erase its purchase history - hide it instead.'
+        'This Item Has Sales. Deleting It Would Erase Its Purchase History - Hide It Instead.'
       );
       return;
     }
     if (
       !(await confirmDialog({
-        title: 'Delete item',
-        message: `Delete "${item.name}"? This cannot be undone.`,
+        title: 'Delete Item',
+        message: `Delete "${item.name}"? This Cannot Be Undone.`,
         confirmText: 'Delete',
         variant: 'danger',
       }))
@@ -334,7 +334,7 @@ export default function ManageTab({
     setProcessing(true);
     try {
       await callClubArenaApi('manage-shop', { action: 'delete', clubId, itemId: item.id });
-      toast.success('Item deleted');
+      toast.success('Item Deleted');
       loadItems();
       onShopChanged();
     } catch (err: unknown) {
@@ -361,8 +361,8 @@ export default function ManageTab({
           <span className={styles.statLabel}>Total Sold</span>
         </div>
         <div className={styles.statCard}>
-          <span className={styles.statValue}>{fmtChips(stats.totalRevenue)}</span>
-          <span className={styles.statLabel}>Revenue</span>
+          <span className={styles.statValue}>{fmt(stats.totalRevenue)}</span>
+          <span className={styles.statLabel}>Diamond Revenue</span>
         </div>
       </div>
 
@@ -377,7 +377,7 @@ export default function ManageTab({
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Item name"
+            placeholder="Item Name"
             aria-label="Item name"
             className={styles.formInput}
             maxLength={100}
@@ -386,8 +386,8 @@ export default function ManageTab({
             type="number"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
-            placeholder="Price (chips)"
-            aria-label="Item price in chips"
+            placeholder="Price (Diamonds)"
+            aria-label="Item price in diamonds"
             min="1"
             step="1"
             className={styles.formInput}
@@ -396,7 +396,7 @@ export default function ManageTab({
         <input
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
-          placeholder="Description (optional)"
+          placeholder="Description (Optional)"
           className={styles.formInput}
           maxLength={500}
         />
@@ -416,7 +416,7 @@ export default function ManageTab({
           <input
             value={imageUrl}
             onChange={(e) => setImageUrl(e.target.value)}
-            placeholder="Image URL (https only, optional)"
+            placeholder="Image URL (Https Only, Optional)"
             aria-label="Item image URL"
             className={styles.formInput}
           />
@@ -428,7 +428,7 @@ export default function ManageTab({
             step="1"
             value={stock}
             onChange={(e) => setStock(e.target.value)}
-            placeholder="Stock (blank = unlimited)"
+            placeholder="Stock (Blank = Unlimited)"
             aria-label="Stock quantity, blank for unlimited"
             className={styles.formInput}
           />
@@ -438,7 +438,7 @@ export default function ManageTab({
             step="1"
             value={perUserLimit}
             onChange={(e) => setPerUserLimit(e.target.value)}
-            placeholder="Max per member (blank = no cap)"
+            placeholder="Max Per Member (Blank = No Cap)"
             aria-label="Maximum purchases per member"
             className={styles.formInput}
           />
@@ -450,7 +450,7 @@ export default function ManageTab({
             step="1"
             value={salePrice}
             onChange={(e) => setSalePrice(e.target.value)}
-            placeholder="Sale price (blank = none)"
+            placeholder="Sale Price (Blank = None)"
             aria-label="Discounted sale price"
             className={styles.formInput}
           />
@@ -475,7 +475,7 @@ export default function ManageTab({
             step="1"
             value={sortOrder}
             onChange={(e) => setSortOrder(e.target.value)}
-            placeholder="Sort order (lower shows first)"
+            placeholder="Sort Order (Lower Shows First)"
             aria-label="Storefront sort order"
             className={styles.formInput}
           />
@@ -498,8 +498,8 @@ export default function ManageTab({
             />
             <span className={styles.grantHint}>
               {grantInfo.grantType === 'time_bank'
-                ? `= ${(Number(grantQty) || 1) * (grantInfo.secondsPerUse || 20)}s of table time`
-                : `${Number(grantQty) || 1} free ${grantInfo.grantUnit}`}
+                ? `= ${(Number(grantQty) || 1) * (grantInfo.secondsPerUse || 20)}s Of Table Time`
+                : `${Number(grantQty) || 1} Free ${grantInfo.grantUnit === 'throws' ? 'Throws' : 'Uses'}`}
             </span>
           </div>
         )}
@@ -510,8 +510,8 @@ export default function ManageTab({
               onChange={(e) => setGrantRef(e.target.value)}
               placeholder={
                 grantInfo?.grantType === 'avatar'
-                  ? 'Avatar id (e.g. shark)'
-                  : 'Theme id (e.g. royal_gold)'
+                  ? 'Avatar Id (E.g. shark)'
+                  : 'Theme Id (E.g. royal_gold)'
               }
               aria-label={grantInfo?.grantType === 'avatar' ? 'Avatar id' : 'Theme id'}
               className={styles.formInput}
@@ -525,8 +525,8 @@ export default function ManageTab({
         {grantInfo && !grantInfo.grantUnit && (
           <div className={styles.grantHint}>
             {grantInfo.grantType === 'none'
-              ? 'Exclusive items grant nothing automatically - your club fulfils them.'
-              : 'Redeeming unlocks this permanently for the member.'}
+              ? 'Exclusive Items Grant Nothing Automatically - Your Club Fulfils Them.'
+              : 'Redeeming Unlocks This Permanently For The Member.'}
           </div>
         )}
         <button
@@ -571,19 +571,19 @@ export default function ManageTab({
                     {item.name}
                   </div>
                   <div style={{ fontSize: 12, color: '#8b8d91', marginTop: 2 }}>
-                    {fmtChips(item.price)} Chips {' - '}
+                    {fmt(item.price)} Diamonds {' - '}
                     <span className={styles.categorySmall}>{item.category || 'Time Banks'}</span>
                     {' - '}
                     {item.purchase_count || 0} Sold
-                    {item.revenue ? ` - ${fmtChips(item.revenue)} earned` : ''}
-                    {item.stock !== null && item.stock !== undefined ? ` - ${item.stock} left` : ''}
+                    {item.revenue ? ` - ${fmt(item.revenue)} Earned` : ''}
+                    {item.stock !== null && item.stock !== undefined ? ` - ${item.stock} Left` : ''}
                     {item.sale_price !== null && item.sale_price !== undefined
-                      ? ` - on sale at ${fmtChips(item.sale_price)}`
+                      ? ` - On Sale At ${fmt(item.sale_price)}`
                       : ''}
-                    {item.per_user_limit ? ` - max ${item.per_user_limit}/member` : ''}
-                    {item.stackable ? ' - stackable' : ''}
+                    {item.per_user_limit ? ` - Max ${item.per_user_limit}/Member` : ''}
+                    {item.stackable ? ' - Stackable' : ''}
                     {item.available_until
-                      ? ` - ends ${new Date(item.available_until).toLocaleDateString()}`
+                      ? ` - Ends ${new Date(item.available_until).toLocaleDateString()}`
                       : ''}
                   </div>
                   {describeGrant(item.grant_spec, secondsPerUse) && (
@@ -620,8 +620,8 @@ export default function ManageTab({
                     disabled={processing || (item.purchase_count || 0) > 0}
                     title={
                       (item.purchase_count || 0) > 0
-                        ? 'Items with sales cannot be deleted - hide them instead'
-                        : 'Delete this item'
+                        ? 'Items With Sales Cannot Be Deleted - Hide Them Instead'
+                        : 'Delete This Item'
                     }
                   >
                     Delete
@@ -636,7 +636,7 @@ export default function ManageTab({
                     <input
                       value={draft.name}
                       onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                      placeholder="Item name"
+                      placeholder="Item Name"
                       className={styles.formInput}
                       maxLength={100}
                     />
@@ -644,7 +644,7 @@ export default function ManageTab({
                       type="number"
                       value={draft.price}
                       onChange={(e) => setDraft({ ...draft, price: e.target.value })}
-                      placeholder="Price (chips)"
+                      placeholder="Price (Diamonds)"
                       min="1"
                       className={styles.formInput}
                     />
@@ -653,6 +653,7 @@ export default function ManageTab({
                     value={draft.description}
                     onChange={(e) => setDraft({ ...draft, description: e.target.value })}
                     placeholder="Description"
+                    aria-label="Item description"
                     className={styles.formInput}
                     maxLength={500}
                   />
@@ -675,7 +676,7 @@ export default function ManageTab({
                     <input
                       value={draft.imageUrl}
                       onChange={(e) => setDraft({ ...draft, imageUrl: e.target.value })}
-                      placeholder="Image URL (optional)"
+                      placeholder="Image URL (Optional)"
                       className={styles.formInput}
                     />
                   </div>
@@ -686,7 +687,7 @@ export default function ManageTab({
                       step="1"
                       value={draft.stock}
                       onChange={(e) => setDraft({ ...draft, stock: e.target.value })}
-                      placeholder="Stock (blank = unlimited)"
+                      placeholder="Stock (Blank = Unlimited)"
                       aria-label="Stock quantity, blank for unlimited"
                       className={styles.formInput}
                     />
@@ -696,12 +697,12 @@ export default function ManageTab({
                       step="1"
                       value={draft.salePrice}
                       onChange={(e) => setDraft({ ...draft, salePrice: e.target.value })}
-                      placeholder="Sale price (blank ends the sale)"
+                      placeholder="Sale Price (Blank Ends The Sale)"
                       aria-label="Sale price, blank to end the sale"
                       className={styles.formInput}
                     />
                     <span className={styles.grantHint}>
-                      {draft.stock.trim() === '' ? 'Unlimited' : `${draft.stock} available`}
+                      {draft.stock.trim() === '' ? 'Unlimited' : `${draft.stock} Available`}
                     </span>
                   </div>
                   <div className={styles.formRow}>
@@ -711,7 +712,7 @@ export default function ManageTab({
                       step="1"
                       value={draft.perUserLimit}
                       onChange={(e) => setDraft({ ...draft, perUserLimit: e.target.value })}
-                      placeholder="Max per member (blank = no cap)"
+                      placeholder="Max Per Member (Blank = No Cap)"
                       aria-label="Maximum purchases per member"
                       className={styles.formInput}
                     />
@@ -720,7 +721,7 @@ export default function ManageTab({
                       step="1"
                       value={draft.sortOrder}
                       onChange={(e) => setDraft({ ...draft, sortOrder: e.target.value })}
-                      placeholder="Sort order"
+                      placeholder="Sort Order"
                       aria-label="Storefront sort order"
                       className={styles.formInput}
                     />
@@ -773,7 +774,7 @@ export default function ManageTab({
                           <input
                             value={draft.grantRef}
                             onChange={(e) => setDraft({ ...draft, grantRef: e.target.value })}
-                            placeholder={g.grantType === 'avatar' ? 'Avatar id' : 'Theme id'}
+                            placeholder={g.grantType === 'avatar' ? 'Avatar Id' : 'Theme Id'}
                             aria-label={g.grantType === 'avatar' ? 'Avatar id' : 'Theme id'}
                             className={styles.formInput}
                             maxLength={64}

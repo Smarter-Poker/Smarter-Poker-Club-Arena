@@ -117,15 +117,15 @@ export function describeGrant(
   const qty = Math.max(1, Math.floor(Number(spec.qty) || 1));
   switch (spec.type) {
     case 'time_bank':
-      return `+${qty * secondsPerUse}s table time (${qty} ${qty === 1 ? 'use' : 'uses'})`;
+      return `+${qty * secondsPerUse}s Table Time (${qty} ${qty === 1 ? 'Use' : 'Uses'})`;
     case 'throwable':
-      return `${qty} free ${qty === 1 ? 'throw' : 'throws'}`;
+      return `${qty} Free ${qty === 1 ? 'Throw' : 'Throws'}`;
     case 'emote_pack':
-      return 'Unlocks the emote pack';
+      return 'Unlocks The Emote Pack';
     case 'table_skin':
-      return 'Unlocks the table theme';
+      return 'Unlocks The Table Theme';
     case 'avatar':
-      return 'Unlocks the avatar';
+      return 'Unlocks The Avatar';
     default:
       return null;
   }
@@ -135,6 +135,8 @@ export interface ShopPurchase {
   id: string;
   item_id: string;
   price_paid: number;
+  /** 'diamonds' for every purchase since 2026-08-23; 'chips' = legacy rows */
+  currency?: 'chips' | 'diamonds';
   created_at: string;
   item_name?: string | null;
   item_category?: string | null;
@@ -150,6 +152,8 @@ export interface ShopPurchase {
 export interface InventoryRow {
   id: string;
   item_id?: string | null;
+  /** links back to club_shop_purchases so the row can inherit its currency */
+  purchase_id?: string | null;
   item_name: string | null;
   category: string | null;
   price_paid: number;
@@ -298,13 +302,13 @@ const FALLBACK_VIP_PLANS: VipPlan[] = [
     planKey: null,
     checkoutPlan: null,
     name: 'Daily Pass',
-    period: '24 hours',
+    period: '24 Hours',
     priceUsd: null,
     priceDiamonds: 150,
     features: [
-      'All VIP table features for 24h',
-      'Rabbit hunt + stack in BB',
-      'Great for trying VIP',
+      'All VIP Table Features For 24h',
+      'Rabbit Hunt + Stack In BB',
+      'Great For Trying VIP',
     ],
   },
   {
@@ -312,14 +316,14 @@ const FALLBACK_VIP_PLANS: VipPlan[] = [
     planKey: 'monthly',
     checkoutPlan: 'vip-monthly',
     name: 'Monthly VIP',
-    period: 'per month',
+    period: 'Per Month',
     priceUsd: 19.99,
     priceDiamonds: 1999,
     features: [
-      'All VIP features, all month',
-      'Daily + monthly diamond bonuses',
-      'Time bank, offline protection, throwables',
-      'VIP badge across Smarter.Poker',
+      'All VIP Features, All Month',
+      'Daily + Monthly Diamond Bonuses',
+      'Time Bank, Offline Protection, Throwables',
+      'VIP Badge Across Smarter.Poker',
     ],
     featured: true,
   },
@@ -328,10 +332,10 @@ const FALLBACK_VIP_PLANS: VipPlan[] = [
     planKey: 'annual',
     checkoutPlan: 'vip-annual',
     name: 'Annual VIP',
-    period: 'per year',
+    period: 'Per Year',
     priceUsd: 199.99,
     priceDiamonds: 19999,
-    features: ['Everything in Monthly', 'Two months free vs monthly', 'Best long-run value'],
+    features: ['Everything In Monthly', 'Two Months Free Vs Monthly', 'Best Long-Run Value'],
   },
 ];
 

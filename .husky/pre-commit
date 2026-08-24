@@ -25,6 +25,11 @@ bash "$(git rev-parse --show-toplevel)/scripts/guard-shared-clone.sh"
 # with no logs at all. Catch it here, not in CI after the deploy was refused.
 bash "$(git rev-parse --show-toplevel)/scripts/guard-commit-identity.sh"
 
+# The three guards above all PASSED a commit that deleted 3,708 of 3,710
+# tracked files, and each was right to - none of them asks whether the tree is
+# being emptied. See the script for what did that and how it got through.
+bash "$(git rev-parse --show-toplevel)/scripts/guard-mass-deletion.sh"
+
 # FORMATTING IS BEST EFFORT; THE GUARDS ABOVE ARE NOT.
 #
 # Until 2026-08-23 this was a bare `npx lint-staged`. Agent worktrees have no

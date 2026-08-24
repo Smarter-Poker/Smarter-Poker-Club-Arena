@@ -291,7 +291,7 @@
 
 .am-countdown-fill {
   height: 100%;
-  background: linear-gradient(90deg, #eab308, #f59e0b);
+  background: linear-gradient(90deg, #eab308, #0a5dc2);
   border-radius: 2px;
   transition: width 1s linear;
 }

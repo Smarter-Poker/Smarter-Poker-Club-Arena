@@ -897,11 +897,11 @@ export default function TournamentDetails({
             </p>
           )}
           {(tournament as any).is_xmtt && (
-            <p style={{ color: '#a78bfa' }}>UNION TOURNAMENT (XMTT)</p>
+            <p style={{ color: '#00b4e6' }}>UNION TOURNAMENT (XMTT)</p>
           )}
           {((tournament as any).variant === 'spin' ||
             (tournament as any).tournament_type === 'SPIN') && (
-            <p style={{ color: '#fbbf24', fontWeight: 700 }}>
+            <p style={{ color: '#6fdcff', fontWeight: 700 }}>
               SPIN & GO{' '}
               {spinMultiplierLabel(tournament as any)
                 ? `- ${spinMultiplierLabel(tournament as any)} MULTIPLIER`
@@ -914,13 +914,13 @@ export default function TournamentDetails({
           {(() => {
             const t = tournament as any;
             const tags: Array<{ label: string; color: string }> = [];
-            if (t.is_vip_only) tags.push({ label: 'VIP ONLY', color: '#a78bfa' });
+            if (t.is_vip_only) tags.push({ label: 'VIP ONLY', color: '#00b4e6' });
             if (t.all_in_or_fold) tags.push({ label: 'ALL-IN OR FOLD', color: '#ef4444' });
             if (t.big_blind_ante) tags.push({ label: 'BB ANTE', color: '#38bdf8' });
-            if (t.accelerated_mtt) tags.push({ label: 'ACCELERATED', color: '#f97316' });
-            if (t.bubble_protection) tags.push({ label: 'BUBBLE PROTECTION', color: '#34d399' });
+            if (t.accelerated_mtt) tags.push({ label: 'ACCELERATED', color: '#1877f2' });
+            if (t.bubble_protection) tags.push({ label: 'BUBBLE PROTECTION', color: '#00b4e6' });
             if (t.final_table_deal_enabled)
-              tags.push({ label: 'FINAL TABLE DEAL', color: '#fbbf24' });
+              tags.push({ label: 'FINAL TABLE DEAL', color: '#6fdcff' });
             if (t.ban_chat) tags.push({ label: 'NO CHAT', color: '#9ca3af' });
             if (tags.length === 0) return null;
             return (
@@ -948,7 +948,7 @@ export default function TournamentDetails({
           {/* Early bird: bonus chips for registering before the start. */}
           {(tournament as any).early_bird_enabled &&
             Number((tournament as any).early_bird_chips) > 0 && (
-              <p style={{ color: '#34d399', fontWeight: 600 }}>
+              <p style={{ color: '#00b4e6', fontWeight: 600 }}>
                 EARLY BIRD: +{Number((tournament as any).early_bird_chips).toLocaleString()} CHIPS
                 FOR REGISTERING BEFORE THE START
               </p>
@@ -1179,17 +1179,17 @@ export default function TournamentDetails({
               return (
                 <div
                   className="game-info-section"
-                  style={{ border: '1px solid rgba(251,191,36,0.4)', borderRadius: 8 }}
+                  style={{ border: '1px solid rgba(111,220,255,0.4)', borderRadius: 8 }}
                 >
                   <div className="info-row">
                     <span className="info-label">Final Table Deal:</span>
-                    <span className="info-value" style={{ color: '#fbbf24', fontWeight: 700 }}>
+                    <span className="info-value" style={{ color: '#6fdcff', fontWeight: 700 }}>
                       {dealVoteCount.toLocaleString()}/{remaining.toLocaleString()} Votes
                     </span>
                   </div>
                   {amSeated &&
                     (hasVotedDeal ? (
-                      <p style={{ color: '#34d399', fontSize: 13, margin: '6px 0 0' }}>
+                      <p style={{ color: '#00b4e6', fontSize: 13, margin: '6px 0 0' }}>
                         Your Vote Is In. A Deal Happens When Every Remaining Player Votes.
                       </p>
                     ) : (
@@ -1357,7 +1357,7 @@ export default function TournamentDetails({
                 (tournament as any).tournament_type === 'SPIN') && (
                 <div className="info-row">
                   <span className="info-label">Spin Multiplier:</span>
-                  <span className="info-value" style={{ color: '#fbbf24', fontWeight: 700 }}>
+                  <span className="info-value" style={{ color: '#6fdcff', fontWeight: 700 }}>
                     {spinMultiplierLabel(tournament as any) ?? 'Revealed at game start'}
                   </span>
                 </div>
@@ -1436,7 +1436,7 @@ export default function TournamentDetails({
                   <div
                     style={{
                       background: 'rgba(245,158,11,0.15)',
-                      color: '#f59e0b',
+                      color: '#0a5dc2',
                       padding: '8px 12px',
                       fontSize: 13,
                       textAlign: 'center',
@@ -1471,7 +1471,7 @@ export default function TournamentDetails({
                           className="entry-rank"
                           style={
                             isPlaying && idx === 0
-                              ? { color: '#fbbf24', fontWeight: 700 }
+                              ? { color: '#6fdcff', fontWeight: 700 }
                               : undefined
                           }
                         >
@@ -1858,7 +1858,7 @@ export default function TournamentDetails({
                 return (
                   <span
                     className="tournament-status-badge running"
-                    style={{ color: '#fbbf24', borderColor: '#fbbf24' }}
+                    style={{ color: '#6fdcff', borderColor: '#6fdcff' }}
                   >
                     WAITING FOR SEAT...
                   </span>

@@ -28,7 +28,7 @@
 .back {
   background: none;
   border: none;
-  color: #ffb800;
+  color: #6fdcff;
   font-size: 1.5rem;
   line-height: 1;
   cursor: pointer;
@@ -166,8 +166,12 @@
 }
 
 .tabActive {
-  background: linear-gradient(180deg, #f8d264 0%, #eab308 100%);
-  color: #1a1a1a;
+  background: linear-gradient(180deg, rgba(24, 119, 242, 0.2) 0%, rgba(10, 93, 194, 0.1) 100%);
+  border: 1px solid #1877f2;
+  box-shadow:
+    0 0 12px rgba(24, 119, 242, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  color: #6fdcff;
 }
 
 /* ── Balance strip ── */
@@ -195,7 +199,7 @@
 .stripLabel {
   font-size: 0.62rem;
   font-weight: 700;
-  color: #ffb800;
+  color: #6fdcff;
   line-height: 1.2;
 }
 
@@ -213,7 +217,7 @@
   height: 18px;
   border-radius: 50%;
   border: none;
-  background: #ffb800;
+  background: #6fdcff;
   color: #1a1a1a;
   font-weight: 900;
   font-size: 0.8rem;
@@ -256,7 +260,7 @@
   justify-content: space-between;
   margin: 8px 14px 0;
   font-size: 0.78rem;
-  color: #ffb800;
+  color: #6fdcff;
 }
 
 .groupToggle {
@@ -269,7 +273,7 @@
 .sortBtn {
   background: none;
   border: none;
-  color: #ffb800;
+  color: #6fdcff;
   font-size: 0.78rem;
   cursor: pointer;
 }
@@ -291,7 +295,7 @@
 }
 
 .rowSelected {
-  background: rgba(255, 184, 0, 0.07);
+  background: rgba(111, 220, 255, 0.1);
 }
 
 .avatar {
@@ -364,8 +368,8 @@
 }
 
 .checkboxOn {
-  background: #ffb800;
-  border-color: #ffb800;
+  background: #6fdcff;
+  border-color: #6fdcff;
   position: relative;
 }
 
@@ -422,8 +426,13 @@
   padding: 12px 0;
   border: none;
   border-radius: 999px;
-  background: linear-gradient(180deg, #f8d264 0%, #eab308 100%);
-  color: #1a1a1a;
+  background: linear-gradient(180deg, #1877f2 0%, #0a5dc2 100%);
+  box-shadow:
+    0 4px 12px rgba(24, 119, 242, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  border: 1px solid #6fdcff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  color: #fff;
   font-weight: 800;
   font-size: 0.9rem;
   cursor: pointer;
@@ -494,8 +503,13 @@
 }
 
 .modalConfirm {
-  background: linear-gradient(180deg, #f8d264 0%, #eab308 100%) !important;
-  color: #1a1a1a !important;
+  background: linear-gradient(180deg, #1877f2 0%, #0a5dc2 100%) !important;
+  box-shadow:
+    0 4px 12px rgba(24, 119, 242, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  border: 1px solid #6fdcff !important;
+  color: #fff !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5) !important;
   border: none !important;
 }
 
@@ -517,9 +531,13 @@
 }
 
 .reqBtnGo {
-  background: linear-gradient(180deg, #f8d264 0%, #eab308 100%);
+  background: linear-gradient(180deg, #1877f2 0%, #0a5dc2 100%);
+  box-shadow:
+    0 4px 12px rgba(24, 119, 242, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
   border: none;
-  color: #1a1a1a;
+  color: #fff;
+  border: 1px solid #6fdcff;
 }
 
 /* Count beside the downline search. aria-hidden, because the input's own

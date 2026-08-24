@@ -523,12 +523,13 @@ function MemberRow({ member, onOpen }: { member: RosterMember; onOpen: (userId: 
           {member.home_club_name && <span className="member-club">{member.home_club_name}</span>}
         </span>
 
-        {/* Requirement 3, in the order Dan asked for it. */}
+        {/* Requirement 3, plus user's requested two columns for fees */}
         <span className="member-metrics">
           <Metric label="Downlines" value={member.downline_total.toLocaleString()} />
           <Metric label="Agent Wallet" value={chips(member.agent_wallet)} />
           <Metric label="Player Wallet" value={chips(member.player_wallet)} />
-          <Metric label="Fees" value={chips(member.total_fees)} accent />
+          <Metric label="Indiv. Fees" value={chips(member.total_fees)} accent />
+          <Metric label="Total Fees" value={chips(member.downline_fees)} accent />
         </span>
       </div>
 

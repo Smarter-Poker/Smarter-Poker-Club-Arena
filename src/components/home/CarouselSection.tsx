@@ -28,6 +28,7 @@ const ClubCardPanel = lazyWithRetry(() => import('../club/ClubCardPanel'));
 // ── Types ─────────────────────────────────────────
 export interface UserClub {
   id: string;
+  slug?: string;
   name?: string;
   club_id?: number | string;
   logo_url?: string;
@@ -210,7 +211,7 @@ export default function CarouselSection({
       } catch {
         /* quota / private mode - navigation still works */
       }
-      navigate(`/clubs/${club.id}`);
+      navigate(`/clubs/${club.slug || club.id}`);
     },
     [navigate]
   );

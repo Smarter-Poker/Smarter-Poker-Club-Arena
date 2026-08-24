@@ -63,6 +63,23 @@ describe('the lobby showed zero cash tables in every club', () => {
   });
 });
 
+describe('a degraded read must not erase a good lobby', () => {
+  it('never replaces a painted tournament list with an empty one', () => {
+    // get_club_home returned 161 tournaments and the lobby showed none, with
+    // "44 Games Are Open In This Club" underneath - 44 being the tables alone.
+    // The chain had narrowed to the club's own private tournaments because
+    // unionId did not resolve, and then overwrote the good list with zero.
+    expect(clubHome).toMatch(/ClubHomePage\.emptyTournamentOverwrite/);
+    expect(clubHome).toMatch(/if \(allTournaments\.length > 0\)/);
+  });
+
+  it('treats a clean "no union row" as inconclusive, not as standalone', () => {
+    // A 200 with zero rows is not an error, so no branch treated it as one -
+    // and this one ignored the cached answer the browser already held.
+    expect(clubHome).toMatch(/union_id \|\| readCachedUnion\(\)/);
+  });
+});
+
 describe('the club header counted the wrong things and flipped between them', () => {
   it('counts THIS club members, never the union total', () => {
     // JAQK (584) and Shark (588) both read 1,172, and the header flipped

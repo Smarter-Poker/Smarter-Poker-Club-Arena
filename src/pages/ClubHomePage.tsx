@@ -53,8 +53,7 @@ import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
-import { PromoWalletCashierModal } from '../components/wallet';
-import ClubBankCashierModal from '../components/wallet/ClubBankCashierModal';
+import WalletCashierModal from '../components/wallet/WalletCashierModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
@@ -343,8 +342,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // Dan 2026-08-23: the Club Bank row opens the Club Bank Cashier - send outs
   // to agent wallets, the full chip ledger, and (standalone clubs only) the
   // Chip Mint, which used to be a "+" on the wallet panel itself.
-  const [showClubBank, setShowClubBank] = useState(false);
-  const [showPromoWallet, setShowPromoWallet] = useState(false);
+  const [activeCashier, setActiveCashier] = useState<
+    'club_bank' | 'promo_wallet' | 'agent_wallet' | null
+  >(null);
   /* LOBBY V2 follow-up (Dan's QA, 2026-08-22): the lobby landed on the MTT
      tab, a leftover from before All Games was a real tab. A club with no open
      MTTs therefore opened onto an empty screen blaming "filters" - every
@@ -1151,7 +1151,21 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         if (!ucErr && !ucRow) {
           // A clean answer of "no row" is still only half the story: the club
           // row itself may name a union (they are written by different paths).
-          const fromClubRow = (clubData as { union_id?: string | null } | null)?.union_id || null;
+          /**
+           * ...AND THE CACHE, which this branch used to ignore.
+           *
+           * The error branch above falls back to `clubs.union_id` and then to
+           * the last good answer. This one stopped at the club row, so a
+           * union_clubs read that came back 200 WITH ZERO ROWS demoted a union
+           * club to standalone even though the browser was holding the right
+           * answer from a minute ago. A clean answer of "no row" is not an
+           * error, so nothing else treats it as one.
+           *
+           * Same rule in both branches now: conclude standalone only on
+           * positive evidence from every source, not on the first silent one.
+           */
+          const fromClubRow =
+            (clubData as { union_id?: string | null } | null)?.union_id || readCachedUnion();
           if (fromClubRow) {
             unionId = fromClubRow;
             if (getIsMounted && !getIsMounted()) return;
@@ -1381,7 +1395,41 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             }
           }
         }
-        setTournaments(allTournaments);
+        /**
+         * AN EMPTY ANSWER NEVER ERASES A FULL ONE.
+         *
+         * Two writers fill this list: the get_club_home fast path, which is
+         * union-scoped in SQL and cannot get the scope wrong, and this chain,
+         * whose scope depends on `unionId` resolving from a separate read.
+         * When that read comes back empty the chain narrows to the club's own
+         * PRIVATE tournaments -- of which a union club has none -- and then
+         * overwrites a good list with zero.
+         *
+         * Measured live 2026-08-24: get_club_home returned 161 tournaments and
+         * the lobby showed none, with "44 Games Are Open In This Club"
+         * underneath, 44 being the table count on its own.
+         *
+         * So the chain may replace this list with anything it actually found,
+         * and may not replace it with nothing. A genuinely empty club paints
+         * empty from the fast path, which had the same answer; the only case
+         * this changes is where the two disagree and one is a degraded read.
+         */
+        if (allTournaments.length > 0) {
+          setTournaments(allTournaments);
+        } else {
+          setTournaments((prev) => {
+            if (prev.length > 0) {
+              reportError(
+                new Error(
+                  `[ClubHomePage] chain found 0 tournaments while ${prev.length} were painted - keeping them (unionId=${unionId ?? 'null'})`
+                ),
+                'ClubHomePage.emptyTournamentOverwrite'
+              );
+              return prev;
+            }
+            return allTournaments;
+          });
+        }
       }
       setCountsCapped(
         tableCapped ||
@@ -2348,11 +2396,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 // refuses everyone else server-side. The Chip Mint moved
                 // INSIDE that cashier - there is no mint button out here any
                 // more, and no mint at all once the club is in a union.
-                onOpenPromoWallet={() => setShowPromoWallet(true)}
-                onOpenClubBank={() => {
-                  haptic.medium();
-                  setShowClubBank(true);
-                }}
+                onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
+                onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
+                onOpenClubBank={() => setActiveCashier('club_bank')}
                 onOpenBBJ={() => {
                   haptic.medium();
                   setShowBBJInfo(true);
@@ -2418,17 +2464,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         )}
       </header>
 
-      <PromoWalletCashierModal
-        isOpen={showPromoWallet}
-        onClose={() => setShowPromoWallet(false)}
-        clubId={resolvedClubId || clubId || ''}
-      />
-
-      <ClubBankCashierModal
-        isOpen={showClubBank}
-        onClose={() => setShowClubBank(false)}
+      <WalletCashierModal
+        isOpen={!!activeCashier}
+        onClose={() => setActiveCashier(null)}
         clubId={resolvedClubId || clubId || ''}
         role={isOwner ? 'owner' : userRole}
+        walletType={activeCashier || 'club_bank'}
       />
       <BBJInfoModal
         isOpen={showBBJInfo}

@@ -28,6 +28,23 @@ interface ActionPanelProps {
   allInTo?: number;
   pot: number;
   bigBlind: number;
+  /**
+   * The table's SMALL blind. Dan 2026-08-23 (item 9): "the bet slider should go
+   * up in smaller increments, it snap goes to the next BB amount instead of
+   * allowing the user to choose an amount inbetween the blinds."
+   *
+   * The slider used to step by a whole big blind, so on a 1/2 table it could
+   * only ever produce 12, 14, 16 - every amount between the blinds was
+   * unreachable by drag. The step is now the table's own chip unit, and the
+   * small blind IS that unit by definition: it is the smallest amount this
+   * table ever forces onto the felt, so every multiple of it is an amount a
+   * player can actually make.
+   *
+   * Optional because the panel can derive it: for every standard structure the
+   * small blind is half the big blind, which is the fallback. Pass it when the
+   * structure is not half (2/5, 3/6) so the grid is exact rather than close.
+   */
+  smallBlind?: number;
   onAction: (action: 'fold' | 'check' | 'call' | 'raise' | 'allin', amount?: number) => void;
   isMyTurn?: boolean;
   showPotOdds?: boolean;
@@ -95,6 +112,72 @@ function roundToChip(amount: number, smallestChip: number, min: number, max: num
   const rounded = Math.round(amount / smallestChip) * smallestChip;
   const clean = Math.round(rounded * 100) / 100;
   return Math.max(min, Math.min(max, clean));
+}
+
+/**
+ * A slider position budget. Beyond this the step is doubled: a range of a
+ * million chips at 1-chip resolution is not finer control, it is a control
+ * whose every pixel spans forty values, and it makes the arrow keys useless.
+ * Two thousand is already far more positions than a phone has pixels, so this
+ * only ever engages on tournament-sized ranges.
+ */
+export const MAX_SLIDER_POSITIONS = 2000;
+
+/**
+ * The drag increment for the bet slider.
+ *
+ * WHY THIS EXISTS (Dan 2026-08-23, item 9). The slider was
+ * `step={bigBlind || 1}`, anchored at `min={minRaise}`, so `<input
+ * type="range">` could only ever emit `minRaise + n * bigBlind`. On a 1/2
+ * table with min-raise 12 that is 12, 14, 16, 18 - 13 and 15 did not exist as
+ * far as the drag was concerned, which is exactly what Dan saw as "it snap
+ * goes to the next BB amount". At 0.25/0.50 stakes it was worse: a 0.50 step
+ * across a 60-chip range gave 120 positions where the table's own chips allow
+ * four times that.
+ *
+ * The step is the table's chip unit (the small blind), doubled while the range
+ * would otherwise blow past MAX_SLIDER_POSITIONS. Doubling rather than
+ * arbitrary scaling keeps every step a whole number of chips, so a coarsened
+ * step still lands on amounts the table can make.
+ *
+ * LEGALITY: the engine imposes NO granularity rule. `validateAction` in
+ * server/src/engine/PokerEngine.ts checks only `raiseAmount >= minRaise` and
+ * `amount <= maxRaiseTo` (plus the pot-limit ceiling), each with a half-cent
+ * tolerance. So any cent-resolution value inside [minRaise, maxRaise] is
+ * accepted - the step is a usability choice, not a legality one, and the
+ * type-in field is what covers the amounts between two steps.
+ */
+export function betSliderStep(minRaise: number, maxRaise: number, smallestChip: number): number {
+  const chip = smallestChip > 0 ? smallestChip : 0.01;
+  const range = maxRaise - minRaise;
+  if (!(range > 0)) return chip;
+  let step = chip;
+  while (range / step > MAX_SLIDER_POSITIONS) step *= 2;
+  return Math.round(step * 100) / 100;
+}
+
+/**
+ * Keep a typed bet amount to something that can be a bet.
+ *
+ * Dan 2026-08-23: "there should also be an area to click and type if a user
+ * wants a very specific amount." A raw text input accepts "12e5", "--3" and
+ * "1.2.3", and `Number('12e5')` is 1,200,000 - a silent shove. Filtering as
+ * the user types means the field can never HOLD a value that would surprise
+ * them on commit, rather than swallowing it afterwards.
+ *
+ * Comma is accepted and normalised to a point (EU keypads emit it). At most
+ * two decimals, because the engine's chips are whole cents.
+ */
+export function sanitizeAmountDraft(raw: string): string {
+  const stripped = raw.replace(/[^0-9.,]/g, '').replace(/,/g, '.');
+  const firstDot = stripped.indexOf('.');
+  if (firstDot === -1) return stripped;
+  const whole = stripped.slice(0, firstDot);
+  const frac = stripped
+    .slice(firstDot + 1)
+    .replace(/\./g, '')
+    .slice(0, 2);
+  return `${whole}.${frac}`;
 }
 
 export interface RaisePreset {
@@ -267,7 +350,10 @@ export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
   if (isPreflop) {
     // The bet being faced. Unopened pot -> the big blind.
     const base = Math.max(currentBet, bigBlind) || bigBlind || 1;
-    const multiples = isPotLimit ? [2, 3, 4] : [2, 3, 4, 5];
+    // Dan 2026-08-23 (item 9): "2.5X should be an option." It sits between 2X
+    // and 3X because the row is read left to right as ascending sizes, and a
+    // 2.5X open is the modern default the row had no button for at all.
+    const multiples = isPotLimit ? [2, 2.5, 3, 4] : [2, 2.5, 3, 4, 5];
     const presets = multiples.map((n) => finalizeExact(`${n}X`, base * n));
     if (isPotLimit) {
       presets.push(finalize('POT', potSizedRaiseTo(currentBet, pot, callAmount)));
@@ -285,7 +371,7 @@ export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
   // higher multiple clamps onto that same number and you get a row of buttons
   // that all do the same thing.
   if (currentBet > 0) {
-    const multiples = isPotLimit ? [2, 3] : [2, 3, 4, 5];
+    const multiples = isPotLimit ? [2, 2.5, 3] : [2, 2.5, 3, 4, 5];
     const presets = multiples.map((n) => finalizeExact(`${n}X`, currentBet * n));
     presets.push(finalize('POT', potSizedRaiseTo(currentBet, pot, callAmount)));
     return presets;
@@ -318,6 +404,7 @@ export default function ActionPanel({
   allInTo,
   pot,
   bigBlind,
+  smallBlind,
   onAction,
   isMyTurn = true,
   showPotOdds = false,
@@ -329,11 +416,65 @@ export default function ActionPanel({
   raiseIntent,
   verticalSlider = true,
 }: ActionPanelProps) {
-  const smallestChip = Math.max(bigBlind / 2, 0.01);
+  /**
+   * The table's chip unit. The small blind when the parent knows it, otherwise
+   * half the big blind, which is the small blind for every standard structure.
+   * Never below a cent: the engine's chips are whole cents (see the CENT_EPS
+   * note in server/src/engine/PokerEngine.ts), so a finer grid would invent
+   * amounts that do not exist.
+   */
+  const smallestChip = useMemo(() => {
+    const sb = smallBlind && smallBlind > 0 ? smallBlind : bigBlind / 2;
+    return Math.max(Math.round(sb * 100) / 100, 0.01);
+  }, [smallBlind, bigBlind]);
   const minRaise = roundToChip(rawMinRaise, smallestChip, rawMinRaise, rawMaxRaise);
   const maxRaise = rawMaxRaise;
   // Only an amount that reaches the REAL all-in threshold is an all-in.
   const allInThreshold = allInTo ?? rawMaxRaise;
+
+  /**
+   * Dan 2026-08-23 (item 9). Was `bigBlind || 1`, which is what made the drag
+   * "snap to the next BB amount". See betSliderStep for the full account.
+   */
+  const sliderStep = useMemo(
+    () => betSliderStep(minRaise, maxRaise, smallestChip),
+    [minRaise, maxRaise, smallestChip]
+  );
+
+  /** Chips are whole cents; kill binary dust before it reaches a button. */
+  const cleanChips = useCallback((n: number) => Math.round(n * 100) / 100, []);
+
+  /**
+   * Clamp into the legal range WITHOUT snapping. Used for typed amounts and
+   * for preset values, both of which are exact on purpose: a button labelled
+   * 2.5X that raises 2.6X is the defect Dan reported on the NX row in August,
+   * and a typed 13.37 that commits 13 is the same defect on the keypad.
+   */
+  const clampAmount = useCallback(
+    (n: number) => cleanChips(Math.min(Math.max(n, minRaise), maxRaise)),
+    [cleanChips, minRaise, maxRaise]
+  );
+
+  /**
+   * Round onto the slider's OWN value grid (minRaise + n * sliderStep), so the
+   * number under the thumb is always a number the thumb can be at. Used by the
+   * drag and by the +/- nudges; deliberately NOT used by the keypad.
+   */
+  const snapToSliderGrid = useCallback(
+    (n: number) => {
+      const bounded = Math.min(Math.max(n, minRaise), maxRaise);
+      // The ceiling is never rounded away from. maxRaise is the all-in (or the
+      // pot cap), and it is only on the step grid by coincidence - snapping it
+      // to the nearest step is how the panel used to offer 186 when hero's
+      // stack was 187.50 and call it a shove.
+      if (bounded >= maxRaise) return cleanChips(maxRaise);
+      if (!(sliderStep > 0)) return cleanChips(bounded);
+      const steps = Math.round((bounded - minRaise) / sliderStep);
+      return clampAmount(minRaise + steps * sliderStep);
+    },
+    [sliderStep, minRaise, maxRaise, cleanChips, clampAmount]
+  );
+
   const [isRaiseMode, setIsRaiseMode] = useState(false);
   const [raiseAmount, setRaiseAmount] = useState(minRaise);
   const [turnPulse, setTurnPulse] = useState(false);
@@ -422,7 +563,7 @@ export default function ActionPanel({
         : Math.min(Math.max(raiseIntentAmount, minRaise), maxRaise);
     haptic.light();
     setIsRaiseMode(true);
-    setRaiseAmount(roundToChip(target, smallestChip, minRaise, maxRaise));
+    setRaiseAmount(snapToSliderGrid(target));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raiseIntentNonce]);
 
@@ -501,7 +642,6 @@ export default function ActionPanel({
    * treat the LAST grid position as maxRaise. Nothing else moves: every lower
    * position is still exactly where it was.
    */
-  const sliderStep = bigBlind || 1;
   const sliderGridMax = useMemo(() => {
     if (!(maxRaise > minRaise)) return maxRaise;
     const steps = Math.floor((maxRaise - minRaise) / sliderStep);
@@ -544,20 +684,33 @@ export default function ActionPanel({
     setIsRaiseMode(false);
   }, [allInThreshold, onAction]);
 
+  /**
+   * The +/- nudges move by ONE slider step, not by one big blind.
+   *
+   * Dan 2026-08-23 (item 9) reported the slider, but the nudges had the same
+   * defect and it was worse: from 13 on a 1/2 table, `+` added the big blind
+   * and then re-rounded, so the amount went 13 -> 15 and 14 was unreachable by
+   * any control on the panel. Stepping by the grid also guarantees the number
+   * and the thumb agree after a nudge.
+   */
   const adjustRaise = useCallback(
     (delta: number) => {
       haptic.light();
-      setRaiseAmount((prev) => roundToChip(prev + delta, smallestChip, minRaise, maxRaise));
+      setRaiseAmount((prev) => snapToSliderGrid(prev + delta));
     },
-    [minRaise, maxRaise, smallestChip]
+    [snapToSliderGrid]
   );
 
   const setPreset = useCallback(
     (value: number) => {
       haptic.medium();
-      setRaiseAmount(roundToChip(value, smallestChip, minRaise, maxRaise));
+      // Clamp only. A preset value is already exact by construction (2.5X of
+      // the bet faced, or a pot fraction already snapped to the chip grid in
+      // computeRaisePresets); re-snapping it here to the chip unit is what made
+      // an exact 2.5X of 15 commit 40 instead of 37.50 on a 5/10 table.
+      setRaiseAmount(clampAmount(value));
     },
-    [minRaise, maxRaise, smallestChip]
+    [clampAmount]
   );
 
   // Phase 2 T1-03: tap-the-amount → numeric keyboard.
@@ -570,24 +723,29 @@ export default function ActionPanel({
       amountInputRef.current?.focus();
       amountInputRef.current?.select();
     });
-  }, [raiseAmount]);
+  }, [raiseAmount, cleanChips]);
 
   const commitAmountEdit = useCallback(() => {
     setAmountTyping(false);
     if (!amountDraft) return; // empty input — keep prior amount
-    // Allow comma decimals (some EU locales) and strip $ / spaces.
-    const cleaned = amountDraft.replace(/[,\s$]/g, '');
-    const parsed = Number(cleaned);
+    // The draft is already filtered to digits and one separator by
+    // sanitizeAmountDraft, so this only has to catch the half-typed states a
+    // filter cannot reject: "", ".", "0".
+    const parsed = Number(amountDraft);
     if (!Number.isFinite(parsed) || parsed <= 0) return; // garbage — keep prior
     // Spec §5.2:
     //   - exceeds stack → AUTO-CAPS to all-in (= maxRaise)
     //   - below minimum → snaps to min legal
-    // roundToChip already clamps into [minRaise, maxRaise]; the all-in cap is
-    // therefore implicit (maxRaise IS the all-in amount per the engine).
-    const next = roundToChip(parsed, smallestChip, minRaise, maxRaise);
-    setRaiseAmount(next);
+    //
+    // Clamp ONLY. Dan 2026-08-23 (item 9): "there should also be an area to
+    // click and type if a user wants a very specific amount." Snapping the
+    // typed number to the slider's step would defeat the entire feature - the
+    // whole reason to type is to reach an amount between two steps. Any cent
+    // value inside [minRaise, maxRaise] is legal: PokerEngine.validateAction
+    // enforces the two bounds and nothing else.
+    setRaiseAmount(clampAmount(parsed));
     haptic.medium();
-  }, [amountDraft, smallestChip, minRaise, maxRaise]);
+  }, [amountDraft, clampAmount]);
 
   const cancelAmountEdit = useCallback(() => {
     setAmountTyping(false);
@@ -599,8 +757,10 @@ export default function ActionPanel({
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const raw = Number(e.target.value);
       // Top of the grid means "all the way" — see sliderGridMax above.
-      const val =
-        raw >= sliderGridMax ? maxRaise : roundToChip(raw, smallestChip, minRaise, maxRaise);
+      // Below that, `raw` is already on the grid when the drag produced it;
+      // snapping is what puts a value back on the grid after the keypad has
+      // left it between two steps.
+      const val = raw >= sliderGridMax ? maxRaise : snapToSliderGrid(raw);
       setRaiseAmount(val);
 
       // Snap feedback — trigger haptic when crossing a BB boundary
@@ -623,10 +783,10 @@ export default function ActionPanel({
         }
       }
     },
-    // minRaise / maxRaise / smallestChip / sliderGridMax are all read above;
-    // they were missing here and only stayed correct by accident, because
-    // `presets` happens to change whenever they do.
-    [bigBlind, presets, smallestChip, minRaise, maxRaise, sliderGridMax]
+    // maxRaise / sliderGridMax / snapToSliderGrid are all read above; they were
+    // missing here once and only stayed correct by accident, because `presets`
+    // happens to change whenever they do.
+    [bigBlind, presets, maxRaise, sliderGridMax, snapToSliderGrid]
   );
 
   const sliderProgress =
@@ -661,7 +821,8 @@ export default function ActionPanel({
         className="raise-slider"
         min={minRaise}
         max={maxRaise}
-        step={bigBlind || 1}
+        /* One chip, not one big blind. See betSliderStep. */
+        step={sliderStep}
         value={raiseAmount}
         onChange={handleSliderChange}
         style={{ '--slider-progress': `${sliderProgress}%` } as React.CSSProperties}
@@ -690,8 +851,9 @@ export default function ActionPanel({
             <div className="raise-header">
               <button
                 className="raise-adjust raise-adjust--minus"
-                onClick={() => adjustRaise(-bigBlind)}
+                onClick={() => adjustRaise(-sliderStep)}
                 disabled={raiseAmount <= minRaise}
+                aria-label={`Decrease By ${formatChips(sliderStep)}`}
               >
                 −
               </button>
@@ -706,7 +868,10 @@ export default function ActionPanel({
                     pattern="[0-9]*[.,]?[0-9]*"
                     className="raise-value__input"
                     value={amountDraft}
-                    onChange={(e) => setAmountDraft(e.target.value)}
+                    /* Filter as they type. A raw text field accepts "12e5",
+                       and Number("12e5") is 1,200,000 - a silent shove on a
+                       control the player thinks is a bet box. */
+                    onChange={(e) => setAmountDraft(sanitizeAmountDraft(e.target.value))}
                     onBlur={commitAmountEdit}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
@@ -738,8 +903,9 @@ export default function ActionPanel({
               </div>
               <button
                 className="raise-adjust raise-adjust--plus"
-                onClick={() => adjustRaise(bigBlind)}
+                onClick={() => adjustRaise(sliderStep)}
                 disabled={raiseAmount >= maxRaise}
+                aria-label={`Increase By ${formatChips(sliderStep)}`}
               >
                 +
               </button>
@@ -840,7 +1006,12 @@ export default function ActionPanel({
                   {[100, 75, 50, 25].map((pct) => {
                     // Evenly spaced across the LEGAL range, which already ends
                     // at the hero's stack - so the top tick is the all-in.
-                    const val = minRaise + (maxRaise - minRaise) * (pct / 100);
+                    // Snapped onto the slider's own grid: a tick that names an
+                    // amount the thumb cannot land on is a target you cannot
+                    // hit. `Math.round` used to do this job, which also erased
+                    // the label entirely at 0.25/0.50 stakes, where four ticks
+                    // across a 10-chip range all rounded to the same integer.
+                    const val = snapToSliderGrid(minRaise + (maxRaise - minRaise) * (pct / 100));
                     const isTop = pct === 100;
                     return (
                       <div
@@ -851,7 +1022,7 @@ export default function ActionPanel({
                         style={{ bottom: `${pct}%` }}
                       >
                         <span className="raise-slider-vertical__tick-label">
-                          {isTop ? 'ALL IN' : formatChips(Math.round(val))}
+                          {isTop ? 'ALL IN' : formatChips(val)}
                         </span>
                       </div>
                     );

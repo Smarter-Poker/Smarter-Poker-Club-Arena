@@ -200,7 +200,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
       case 'registering':
         return '#10b981'; // Green
       case 'running':
-        return '#f59e0b'; // Amber
+        return '#0a5dc2'; // Amber
       case 'finished':
         return '#6b7280'; // Gray
       case 'cancelled':
@@ -257,7 +257,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
     if (blindDuration <= 3) {
       return { tier: 'Hyper', color: '#ef4444' }; // red
     } else if (blindDuration <= 5) {
-      return { tier: 'Turbo', color: '#f97316' }; // orange
+      return { tier: 'Turbo', color: '#1877f2' }; // orange
     } else if (blindDuration <= 10) {
       return null; // Regular - no badge needed
     } else {

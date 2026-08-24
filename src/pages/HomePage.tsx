@@ -162,7 +162,15 @@ function HomePageInner() {
       const isFresh = cacheTs && Date.now() - Number(cacheTs) < SWR_CACHE_TTL;
       if (cached && isFresh) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          if (
+            parsed.some(
+              (c: any) => c.slug === undefined && c.id !== 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'
+            )
+          )
+            return [];
+          return parsed;
+        }
       }
     } catch {
       /* ignore corrupt cache */
@@ -177,7 +185,15 @@ function HomePageInner() {
       const isFresh = cacheTs && Date.now() - Number(cacheTs) < SWR_CACHE_TTL;
       if (cached && isFresh) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return false;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          if (
+            parsed.some(
+              (c: any) => c.slug === undefined && c.id !== 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'
+            )
+          )
+            return true;
+          return false;
+        }
       }
     } catch {
       /* */
@@ -607,7 +623,7 @@ function HomePageInner() {
           haptic.light();
           PremiumSFX.navigate();
           const target = resolveTargetClub(userClubs);
-          if (target) navigate(`/clubs/${target.id}/cashier`);
+          if (target) navigate(`/clubs/${target.slug || target.id}/cashier`);
           else toast.info('Join a club first to access the cashier');
           break;
         }
@@ -1130,7 +1146,7 @@ function HomePageInner() {
       setQuickLinkClubId(club.id);
       haptic.light();
       PremiumSFX.navigate();
-      navigate(`/clubs/${club.id}/cashier`);
+      navigate(`/clubs/${club.slug || club.id}/cashier`);
     },
     [navigate]
   );

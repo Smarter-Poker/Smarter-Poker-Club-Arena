@@ -127,6 +127,7 @@ interface DynamicWalletProps {
   /** Opens the Club Bank Cashier. Only ever wired on the four bank roles. */
   onOpenClubBank?: () => void;
   onOpenPromoWallet?: () => void;
+  onOpenAgentWallet?: () => void;
   onOpenBBJ?: () => void;
 }
 
@@ -245,6 +246,7 @@ export default function DynamicWallet({
   onBuyDiamonds,
   onOpenClubBank,
   onOpenPromoWallet,
+  onOpenAgentWallet,
   onOpenBBJ,
 }: DynamicWalletProps) {
   const [data, setData] = useState<WalletData>({
@@ -763,7 +765,13 @@ export default function DynamicWallet({
       icon: 'chip',
       value: animPlayerWallet,
     },
-    agent_wallet: { key: 'agent_wallet', label: 'Agent Wallet', icon: 'agent', value: animAgent },
+    agent_wallet: {
+      key: 'agent_wallet',
+      label: 'Agent Wallet',
+      icon: 'agent',
+      value: animAgent,
+      onOpen: onOpenAgentWallet,
+    },
     promo_wallet: {
       key: 'promo_wallet',
       label: 'Promo Wallet',

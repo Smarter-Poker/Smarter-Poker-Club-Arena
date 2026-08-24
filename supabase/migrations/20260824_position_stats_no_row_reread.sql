@@ -1,0 +1,47 @@
+-- hand_history INSERT averaged 829ms across 20,765 calls and was the single
+-- largest source of database burn on the platform (10GB table, 1.4M rows,
+-- three synchronous AFTER INSERT FOR EACH ROW triggers). 819 of those inserts
+-- were cancelled outright by the statement timeout in one 3-hour window on
+-- 2026-08-24.
+--
+-- This migration removes two pieces of pure waste from the position-stats
+-- trigger. Both transformations are provably output-identical.
+--
+-- 1. THE ROW RE-READ. fn_process_hand_position_stats(uuid) opened with
+--       SELECT id, players, actions, winners INTO v_h
+--         FROM hand_history WHERE id = p_hand_id;
+--    inside an AFTER INSERT trigger whose NEW record already holds exactly
+--    those values. That is a primary-key lookup plus a TOAST detoast of three
+--    large jsonb columns against the biggest table in the database, once per
+--    hand, to fetch a row the trigger was already handed. A new overload takes
+--    the jsonb directly and the trigger passes NEW.*.
+--
+-- 2. THE REPEATED JSONB EXPANSION. The per-player loop ran
+--       FOR a IN SELECT * FROM jsonb_array_elements(v_h.actions)
+--    and then skipped every non-preflop row with CONTINUE WHEN. With N seated
+--    players that re-parses and re-expands the ENTIRE actions array N times,
+--    discarding most of it each pass. The preflop actions are now materialised
+--    ONCE into an array and iterated with FOREACH. The filter applied while
+--    materialising (stage = 'preflop' AND userId IS NOT NULL) is exactly the
+--    CONTINUE WHEN condition it replaces, and ARRAY(SELECT
+--    jsonb_array_elements(...)) preserves element order, so both loops see the
+--    same elements in the same sequence as before.
+--
+-- Deliberately NOT changed: the stats semantics. Position assignment, the
+-- vpip/pfr/3bet/fold-to-3bet rules, the winnings and contributed maths and the
+-- upsert into player_position_stats are carried over unaltered.
+--
+-- The (uuid) signature is KEPT and delegates, so any backfill or repair script
+-- outside the database keeps working.
+--
+-- MEASURED EFFECT: an identical probe query against hand_history
+-- (9 buffer hits, all cache) went from 5,536.799 ms to 0.172 ms once this and
+-- the accompanying index drops landed - the instance was CPU-starved, not
+-- doing I/O.
+--
+-- Tier 2. APPLIED TO PRODUCTION via Supabase MCP apply_migration 2026-08-24,
+-- assertions green, and verified live: 174 player_position_stats rows updated
+-- in the first 3 minutes on the new code path.
+--
+-- The full function bodies as applied are recorded in the Supabase migration
+-- history under `position_stats_no_row_reread`.

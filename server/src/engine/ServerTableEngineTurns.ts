@@ -1147,7 +1147,6 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     if (normalizedAction === 'allin' || normalizedAction === 'all-in') normalizedAction = 'all_in';
     if (normalizedAction === 'check' && toCall > 0) normalizedAction = 'call';
     if (normalizedAction === 'call' && toCall === 0) normalizedAction = 'check';
-    if (normalizedAction === 'fold' && toCall === 0) normalizedAction = 'check';
     if (normalizedAction === 'raise' && state.currentBet === 0) normalizedAction = 'bet';
     if (normalizedAction === 'bet' && state.currentBet > 0) normalizedAction = 'raise';
 

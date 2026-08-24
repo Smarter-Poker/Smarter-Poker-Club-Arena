@@ -10,7 +10,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { unionApi } from '../services/UnionApiService';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -21,6 +20,9 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { fmt, timeAgo } from '../utils/format';
 import { SettlementService } from '../services/SettlementService';
 import UnionWalletModal, { type UnionWalletKey } from '../components/union/UnionWalletModal';
+import UnionTreasuryDetailModal, {
+  type TreasuryDetailMode,
+} from '../components/union/UnionTreasuryDetailModal';
 import SpinActivationPanel from '../components/club/SpinActivationPanel';
 import { useSpinsWallet } from '../hooks/useSpinsWallet';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
@@ -30,7 +32,6 @@ import UnionOpsPanel from '../components/union/UnionOpsPanel';
 import UnionClubGovernance from '../components/union/UnionClubGovernance';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
-import { walletCacheKey, readWalletCache, writeWalletCache } from '../lib/walletCache';
 // ── Helpers ─────────────────────────────────────────────────
 const pct = (n: number | null | undefined) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
 
@@ -154,6 +155,18 @@ export default function UnionDashboardPage() {
     label: string;
     balance: number;
   } | null>(null);
+  /**
+   * Dan 2026-08-24: "rake treasury should open up to see all the data for all
+   * rake accumulated" and "back up BBJ needs to be clickable as well and expand
+   * to see data and transaction history and stats".
+   *
+   * Separate state from walletModal because they answer different questions.
+   * walletModal asks "who do I pay from this wallet"; this asks "where did this
+   * money come from and what has moved". The detail panel carries a Send From
+   * This Wallet button that hands off to walletModal, so nothing that used to
+   * be one click away is now two.
+   */
+  const [treasuryModal, setTreasuryModal] = useState<TreasuryDetailMode | null>(null);
   const [roster, setRoster] = useState<
     {
       user_id: string;
@@ -317,8 +330,7 @@ export default function UnionDashboardPage() {
         if (mountedRef.current) setError(safeErrorMessage(err));
         // Clear stale SWR cache on error to prevent ghost data
         try {
-          if (user?.id) writeWalletCache(walletCacheKey(user.id, 'union_dashboard'), null);
-          sessionStorage.removeItem(`union_dashboard_swr_${user?.id}`); // legacy key
+          sessionStorage.removeItem(`union_dashboard_swr_${user?.id}`);
         } catch {
           /* ignore */
         }
@@ -331,77 +343,21 @@ export default function UnionDashboardPage() {
   );
 
   const loadUnionData = async (uid: string) => {
-    // PERFORMANCE (Dan 2026-08-23, wallet load times): these reads used to run
-    // as a strictly SERIAL waterfall — union, clubs, agents, admins, wallets,
-    // BBJ pool, periods, P&L — eight roundtrips end to end, which is most of
-    // why the union wallet tiles took so long to appear. Only two things here
-    // actually depend on another read (agents and settlement periods need the
-    // club id list); everything else is independent and now goes out in ONE
-    // parallel burst, with the dependent pair in a second burst.
-    const [
-      { data: unionRow },
-      { data: unionClubs },
-      { data: adminRows },
-      { data: walletRow },
-      { data: poolRow },
-      { data: pnlRows },
-    ] = await Promise.all([
-      supabase
-        .from('unions')
-        .select(
-          'id, name, description, owner_id, created_at, member_count, settings, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
-        )
-        .eq('id', uid)
-        .maybeSingle(),
-      supabase.from('union_clubs').select('*, clubs:club_id(*)').eq('union_id', uid),
-      supabase
-        .from('union_admins')
-        .select('*, profile:user_id(display_name, username, avatar_url:arena_avatar_url)')
-        .eq('union_id', uid),
-      supabase
-        .from('union_wallets')
-        // union_wallets schema: chip_balance, rake_wallet, bbj_wallet, promo_wallet,
-        // insurance_wallet, spin_reserve_wallet, total_rake_collected, total_settlements.
-        // spin_reserve_wallet holds the capital that seeds every Spin bonus pool this
-        // union owns. It existed unread since 2026-08-22 - the pools were being seeded
-        // out of promo_wallet because nothing surfaced the wallet meant to fund them.
-        .select(
-          'id, union_id, chip_balance, rake_wallet, bbj_wallet, promo_wallet, insurance_wallet, spin_reserve_wallet, total_rake_collected, total_settlements, created_at'
-        )
-        .eq('union_id', uid)
-        .maybeSingle(),
-      // BBJ UNIFICATION 2026-07-21: the shared jackpot lives in the union's
-      // bbj_pools row (engine-fed contributions + manual funding + payouts) —
-      // NOT in union_wallets.bbj_wallet. Load it for the BBJ tiles.
-      supabase
-        .from('bbj_pools')
-        .select(
-          'id, main_balance, backup_balance, promo_balance, total_contributed, total_paid_out, hit_count, last_hit_at, last_hit_amount'
-        )
-        .eq('union_id', uid)
-        .eq('status', 'active')
-        .maybeSingle(),
-      // ── Weekly union<->club player P&L settlements (added 2026-08-19) ──
-      // Until now the weekly square-up had NO readable surface anywhere in the
-      // app: a union admin could not see what was collected, what was paid, or
-      // why a period was parked for review. A money process nobody can inspect
-      // is a money process nobody trusts.
-      supabase
-        .from('union_pnl_settlements')
-        .select(
-          'id, period_start, period_end, status, total_collected, total_paid, total_unpaid, club_results, settled_at'
-        )
-        .eq('union_id', uid)
-        .order('period_start', { ascending: false })
-        .limit(12),
-    ]);
-
+    // Load union info
+    const { data: unionRow } = await supabase
+      .from('unions')
+      .select(
+        'id, name, description, owner_id, created_at, member_count, settings, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+      )
+      .eq('id', uid)
+      .maybeSingle();
     if (mountedRef.current) setUnion(unionRow);
-    if (mountedRef.current) setAdmins(adminRows || []);
-    if (mountedRef.current) setWallets(walletRow);
-    if (mountedRef.current) setBbjPool(poolRow);
-    if (mountedRef.current) setPnlSettlements(pnlRows || []);
 
+    // Load clubs in union
+    const { data: unionClubs } = await supabase
+      .from('union_clubs')
+      .select('*, clubs:club_id(*)')
+      .eq('union_id', uid);
     const enrichedClubs = (unionClubs || []).map((uc: UnionClubRow) => ({
       id: uc.club_id,
       ...uc.clubs,
@@ -411,40 +367,15 @@ export default function UnionDashboardPage() {
     }));
     if (mountedRef.current) setClubs(enrichedClubs);
 
-    // ── Phase 2: the only reads that genuinely depend on the club list ──────
-    const clubIds = enrichedClubs.map((c) => c.id).filter(Boolean);
-
-    // 2026-08-19: the comment here claimed "settlement_periods is a global
-    // table (no club_id column)". That is wrong — it has club_id, and both
-    // union_id and club_id are used by the settlement pipeline. The result was
-    // an unscoped list (every club RLS allowed, from any union) whose Club
-    // column always rendered "Unknown" because club_id was never selected.
-    let periodQuery = supabase
-      .from('settlement_periods')
-      .select(
-        'id, club_id, union_id, period_number, year, start_at, end_at, status, total_rake_collected, total_player_winnings, total_player_losses, total_hands_dealt, settled_at, created_at'
-      )
-      .order('created_at', { ascending: false })
-      .limit(30);
-    periodQuery = clubIds.length
-      ? periodQuery.in('club_id', clubIds)
-      : periodQuery.eq('union_id', uid);
-
+    // Load agents across clubs
     let loadedAgents: UnionAgent[] = []; // Hoisted for SWR cache write
-    const [agentsRes, periodsRes] = await Promise.all([
-      clubIds.length > 0
-        ? supabase
-            .from('club_members')
-            .select('*')
-            .in('club_id', clubIds)
-            .in('role', ['agent', 'sub_agent', 'super_agent'])
-        : Promise.resolve({ data: [] as any[] }),
-      periodQuery,
-    ]);
-    if (mountedRef.current) setRecentPeriods(periodsRes.data || []);
-
-    {
-      const agentRows = agentsRes.data;
+    const clubIds = enrichedClubs.map((c) => c.id).filter(Boolean);
+    if (clubIds.length > 0) {
+      const { data: agentRows } = await supabase
+        .from('club_members')
+        .select('*')
+        .in('club_id', clubIds)
+        .in('role', ['agent', 'sub_agent', 'super_agent']);
 
       // Batch-fetch profiles (no FK between club_members and profiles)
       if (agentRows && agentRows.length > 0) {
@@ -469,28 +400,90 @@ export default function UnionDashboardPage() {
       }
     }
 
-    // SWR: cache successful load for instant display on revisit. Moved from
-    // sessionStorage (died with the tab) to the shared walletCache layer
-    // (localStorage + memory), so a reload or a next-day visit paints the
-    // wallet tiles instantly too. Purged on sign-out with the rest of the
-    // wallet caches.
-    if (mountedRef.current && user?.id) {
+    // Load admins
+    const { data: adminRows } = await supabase
+      .from('union_admins')
+      .select('*, profile:user_id(display_name, username, avatar_url:arena_avatar_url)')
+      .eq('union_id', uid);
+    if (mountedRef.current) setAdmins(adminRows || []);
+
+    // Load wallets
+    const { data: walletRow } = await supabase
+      .from('union_wallets')
+      // union_wallets schema: chip_balance, rake_wallet, bbj_wallet, promo_wallet,
+      // insurance_wallet, spin_reserve_wallet, total_rake_collected, total_settlements.
+      // spin_reserve_wallet holds the capital that seeds every Spin bonus pool this
+      // union owns. It existed unread since 2026-08-22 - the pools were being seeded
+      // out of promo_wallet because nothing surfaced the wallet meant to fund them.
+      .select(
+        'id, union_id, chip_balance, rake_wallet, bbj_wallet, promo_wallet, insurance_wallet, spin_reserve_wallet, total_rake_collected, total_settlements, created_at'
+      )
+      .eq('union_id', uid)
+      .maybeSingle();
+    if (mountedRef.current) setWallets(walletRow);
+
+    // BBJ UNIFICATION 2026-07-21: the shared jackpot lives in the union's
+    // bbj_pools row (engine-fed contributions + manual funding + payouts) —
+    // NOT in union_wallets.bbj_wallet. Load it for the BBJ tiles.
+    const { data: poolRow } = await supabase
+      .from('bbj_pools')
+      .select(
+        'id, main_balance, backup_balance, promo_balance, total_contributed, total_paid_out, hit_count, last_hit_at, last_hit_amount'
+      )
+      .eq('union_id', uid)
+      .eq('status', 'active')
+      .maybeSingle();
+    if (mountedRef.current) setBbjPool(poolRow);
+
+    // 2026-08-19: the comment here claimed "settlement_periods is a global
+    // table (no club_id column)". That is wrong — it has club_id, and both
+    // union_id and club_id are used by the settlement pipeline. The result was
+    // an unscoped list (every club RLS allowed, from any union) whose Club
+    // column always rendered "Unknown" because club_id was never selected.
+    const unionClubIds = clubIds;
+    let periodQuery = supabase
+      .from('settlement_periods')
+      .select(
+        'id, club_id, union_id, period_number, year, start_at, end_at, status, total_rake_collected, total_player_winnings, total_player_losses, total_hands_dealt, settled_at, created_at'
+      )
+      .order('created_at', { ascending: false })
+      .limit(30);
+    periodQuery = unionClubIds.length
+      ? periodQuery.in('club_id', unionClubIds)
+      : periodQuery.eq('union_id', uid);
+    const { data: periods } = await periodQuery;
+    if (mountedRef.current) setRecentPeriods(periods || []);
+
+    // ── Weekly union<->club player P&L settlements (added 2026-08-19) ──
+    // Until now the weekly square-up had NO readable surface anywhere in the
+    // app: a union admin could not see what was collected, what was paid, or
+    // why a period was parked for review. A money process nobody can inspect
+    // is a money process nobody trusts.
+    const { data: pnlRows } = await supabase
+      .from('union_pnl_settlements')
+      .select(
+        'id, period_start, period_end, status, total_collected, total_paid, total_unpaid, club_results, settled_at'
+      )
+      .eq('union_id', uid)
+      .order('period_start', { ascending: false })
+      .limit(12);
+    if (mountedRef.current) setPnlSettlements(pnlRows || []);
+
+    // SWR: cache successful load for instant display on revisit
+    if (mountedRef.current) {
       try {
-        writeWalletCache(walletCacheKey(user.id, 'union_dashboard'), {
-          union: unionRow,
-          unionId: uid,
-          adminRole,
-          clubs: enrichedClubs.slice(0, 30),
-          agents: loadedAgents.slice(0, 30),
-          wallets: walletRow,
-          // The money tiles below the wallets: BBJ pool, settlement periods
-          // and weekly P&L. Without these a revisit painted the wallets
-          // instantly and left the jackpot/settlement tiles on skeletons —
-          // half an instant paint reads as "something is broken".
-          bbjPool: poolRow,
-          recentPeriods: (periodsRes.data || []).slice(0, 30),
-          pnlSettlements: (pnlRows || []).slice(0, 12),
-        });
+        sessionStorage.setItem(
+          `union_dashboard_swr_${user?.id}`,
+          JSON.stringify({
+            union: unionRow,
+            unionId: uid,
+            adminRole,
+            clubs: enrichedClubs.slice(0, 30),
+            agents: loadedAgents.slice(0, 30),
+            wallets: walletRow,
+            cachedAt: Date.now(),
+          })
+        );
       } catch (e) {
         reportError(e, 'UnionDashboardPage');
         /* storage full */
@@ -501,34 +494,21 @@ export default function UnionDashboardPage() {
   // ── Initial Load + SWR Cache ──────────────────────────────
   useEffect(() => {
     if (!user?.id) return;
-    // SWR: show cached data instantly while fresh data loads. The persistent
-    // walletCache layer survives reloads; loadDashboard below ALWAYS runs and
-    // overwrites whatever painted here.
+    // SWR: show cached data instantly while fresh data loads
     try {
-      const parsed = readWalletCache<{
-        union: UnionRow | null;
-        unionId?: string;
-        adminRole?: string;
-        clubs?: EnrichedClub[];
-        agents?: UnionAgent[];
-        wallets?: any;
-        bbjPool?: any;
-        recentPeriods?: SettlementPeriod[];
-        pnlSettlements?: any[];
-      }>(walletCacheKey(user.id, 'union_dashboard'), SWR_TTL_MS);
-      if (parsed?.union) {
-        setUnion(parsed.union);
-        if (parsed.unionId) setUnionId(parsed.unionId);
-        if (parsed.adminRole) setAdminRole(parsed.adminRole as any);
-        if (parsed.clubs) setClubs(parsed.clubs);
-        if (parsed.agents) setAgents(parsed.agents);
-        if (parsed.wallets) setWallets(parsed.wallets);
-        // Money tiles beyond the wallets — cached with the same envelope so
-        // the whole dashboard paints as one, not wallets-first-tiles-later.
-        if (parsed.bbjPool) setBbjPool(parsed.bbjPool);
-        if (parsed.recentPeriods) setRecentPeriods(parsed.recentPeriods);
-        if (parsed.pnlSettlements) setPnlSettlements(parsed.pnlSettlements);
-        setLoading(false); // Show cached data instantly
+      const cached = sessionStorage.getItem(`union_dashboard_swr_${user.id}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
+        if (age < SWR_TTL_MS && parsed.union) {
+          setUnion(parsed.union);
+          if (parsed.unionId) setUnionId(parsed.unionId);
+          if (parsed.adminRole) setAdminRole(parsed.adminRole);
+          if (parsed.clubs) setClubs(parsed.clubs);
+          if (parsed.agents) setAgents(parsed.agents);
+          if (parsed.wallets) setWallets(parsed.wallets);
+          setLoading(false); // Show cached data instantly
+        }
       }
     } catch (e) {
       reportError(e, 'UnionDashboardPage.useEffect');
@@ -909,12 +889,7 @@ export default function UnionDashboardPage() {
           >
             <div
               className="admin-card"
-              style={{
-                maxWidth: '380px',
-                width: 'calc(100vw - 24px)',
-                margin: '60px auto',
-                padding: '20px',
-              }}
+              style={{ maxWidth: '380px', margin: '60px auto', padding: '20px' }}
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="admin-card-title">Edit Commission - {editCommClub.name}</h3>
@@ -1110,15 +1085,17 @@ export default function UnionDashboardPage() {
                     },
                     {
                       key: 'rake',
-                      label: 'Rake Wallet',
+                      label: 'Rake Treasury',
                       color: '#31A24C',
                       value: wallets.rake_wallet,
+                      detail: 'rake',
                     },
                     {
                       key: 'bbj',
                       label: `BBJ Pool${bbjPool ? ` (${bbjPool.hit_count} hits)` : ''}`,
                       color: '#F7C52A',
                       value: bbjPool?.main_balance ?? 0,
+                      detail: 'bbj',
                     },
                     {
                       key: 'promo',
@@ -1126,7 +1103,19 @@ export default function UnionDashboardPage() {
                       color: '#C084FC',
                       value: wallets.promo_wallet,
                     },
-                  ] as { key: UnionWalletKey; label: string; color: string; value: number }[]
+                  ] as {
+                    key: UnionWalletKey;
+                    label: string;
+                    color: string;
+                    value: number;
+                    /**
+                     * Tiles WITH a detail mode open the data panel; tiles
+                     * without open the send-to-member flow directly. Rake and
+                     * BBJ are the two the operator reads before spending, so
+                     * they lead with the numbers and offer Send inside.
+                     */
+                    detail?: TreasuryDetailMode;
+                  }[]
                 ).map((w) => (
                   <button
                     key={w.key}
@@ -1134,7 +1123,9 @@ export default function UnionDashboardPage() {
                     style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
                     aria-label={`Open ${w.label}`}
                     onClick={() =>
-                      setWalletModal({ key: w.key, label: w.label, balance: w.value || 0 })
+                      w.detail
+                        ? setTreasuryModal(w.detail)
+                        : setWalletModal({ key: w.key, label: w.label, balance: w.value || 0 })
                     }
                   >
                     <div className="admin-stat-value" style={{ color: w.color }}>
@@ -1143,6 +1134,23 @@ export default function UnionDashboardPage() {
                     <div className="admin-stat-label">{w.label} ›</div>
                   </button>
                 ))}
+                {/* BACKUP JACKPOT (Dan 2026-08-24). bbj_pools.backup_balance is
+                    a real bank holding money — 12,055.65 at the time this was
+                    added — and it had no tile anywhere in the product, so there
+                    was no way to see it and no way to move it. Distinct from
+                    union_wallets.bbj_wallet on the Wallet tab: that is a wallet
+                    column, this is the pool's backup bank, different money. */}
+                <button
+                  className="admin-stat-card"
+                  style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                  aria-label="Open Backup Jackpot"
+                  onClick={() => setTreasuryModal('backup')}
+                >
+                  <div className="admin-stat-value" style={{ color: '#4599FF' }}>
+                    {fmt(bbjPool?.backup_balance ?? 0)}
+                  </div>
+                  <div className="admin-stat-label">Backup Jackpot ›</div>
+                </button>
                 {/* Spin reserve. It is NOT a send source - the pool is priced on
                     being net-neutral over volume, and a manual withdrawal would
                     break that silently - but it was the only tile on the page
@@ -1184,6 +1192,33 @@ export default function UnionDashboardPage() {
                     {fmt(wallets.spin_reserve_wallet)}
                   </div>
                   <div className="admin-stat-label">Spin Reserve ›</div>
+                </button>
+                {/* SPINS TREASURY (Dan 2026-08-24: "the wallet is still missing
+                    the spins treasury"). The two tiles above are the halves:
+                    Spin Reserve is capital earmarked but NOT in play, Spins
+                    Wallet is the deployed pool float every multiplier is paid
+                    from. They are disjoint by construction and never double
+                    count, so the treasury is their sum — and until now the
+                    union could see both halves and never the whole. Opens the
+                    reserve ledger, the only one of the two with a history. */}
+                <button
+                  className="admin-stat-card"
+                  style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                  aria-label="Open Spins Treasury"
+                  onClick={() =>
+                    setWalletModal({
+                      key: 'spin_reserve',
+                      label: 'Spin Reserve',
+                      balance: wallets.spin_reserve_wallet || 0,
+                    })
+                  }
+                >
+                  <div className="admin-stat-value" style={{ color: '#39d17a' }}>
+                    {unionSpins.state === null
+                      ? '-'
+                      : fmt((wallets.spin_reserve_wallet || 0) + unionSpins.balance)}
+                  </div>
+                  <div className="admin-stat-label">Spins Treasury ›</div>
                 </button>
               </div>
             )}
@@ -1453,8 +1488,8 @@ export default function UnionDashboardPage() {
                 <span>{rosterSearch ? 'No players match' : 'No players found'}</span>
               </div>
             ) : (
-              <div className="admin-table-scroll">
-                <table className="admin-data-table">
+              <div className="admin-table-wrap">
+                <table className="admin-table">
                   <thead>
                     <tr>
                       <th>Player</th>
@@ -1520,8 +1555,14 @@ export default function UnionDashboardPage() {
                       value: wallets.rake_wallet,
                     },
                     {
+                      // union_wallets.bbj_wallet, NOT bbj_pools.backup_balance.
+                      // This tile read "Backup BBJ Wallet", which is the same
+                      // words as the Backup Jackpot tile on the Overview tab
+                      // and a different balance — two numbers under one name is
+                      // how an operator moves the wrong money. Renamed to the
+                      // column it actually shows.
                       key: 'bbj',
-                      label: 'Backup BBJ Wallet',
+                      label: 'BBJ Reserve Wallet',
                       color: '#F7C52A',
                       value: wallets.bbj_wallet,
                     },
@@ -2726,7 +2767,7 @@ export default function UnionDashboardPage() {
                         <td style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           {admin.profile?.avatar_url && (
                             <img
-                              src={sizedStorageUrl(admin.profile.avatar_url, 28)}
+                              src={admin.profile.avatar_url}
                               alt=""
                               style={{ width: 28, height: 28, borderRadius: '50%' }}
                             />
@@ -2893,6 +2934,35 @@ export default function UnionDashboardPage() {
           walletLabel={walletModal.label}
           balance={walletModal.balance}
           onSent={() => void loadDashboard(unionId)}
+        />
+      )}
+
+      {treasuryModal && unionId && (
+        <UnionTreasuryDetailModal
+          isOpen
+          onClose={() => setTreasuryModal(null)}
+          unionId={unionId}
+          mode={treasuryModal}
+          // A backup-to-main or backup-to-promo move changes the pool row the
+          // tiles read, so the dashboard must refetch or the numbers behind the
+          // panel are stale the moment it closes.
+          onMoved={() => void loadDashboard(unionId)}
+          // Backup is jackpot liability owed to players. It has no
+          // send-to-member flow, deliberately: the only ways out are the two
+          // in-union destinations offered inside the panel.
+          onSendFrom={
+            treasuryModal === 'backup'
+              ? undefined
+              : () => {
+                  const isRake = treasuryModal === 'rake';
+                  setTreasuryModal(null);
+                  setWalletModal({
+                    key: isRake ? 'rake' : 'bbj',
+                    label: isRake ? 'Rake Treasury' : 'BBJ Pool',
+                    balance: isRake ? wallets?.rake_wallet || 0 : (bbjPool?.main_balance ?? 0),
+                  });
+                }
+          }
         />
       )}
     </div>

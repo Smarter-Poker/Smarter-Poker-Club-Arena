@@ -33,6 +33,11 @@ export default function TournamentStandings({
 }: TournamentStandingsProps) {
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [players, setPlayers] = useState<StandingsPlayer[]>([]);
+  // Whether anything has ever been rendered. A ref, not `players`, because
+  // loadPlayers runs from a setInterval whose closure captures `players` at the
+  // time the effect was created - it would report empty forever and the
+  // skeleton would come back on every tick anyway.
+  const hasLoadedOnceRef = useRef(false);
   const isMounted = useIsMounted();
   const [loading, setLoading] = useState(true);
   const [visibleActive, setVisibleActive] = useState<Set<number>>(new Set());
@@ -106,7 +111,12 @@ export default function TournamentStandings({
   }, [tournamentId]);
 
   const loadPlayers = async () => {
-    setLoading(true);
+    // PERF/UX 2026-08-24: only show the loading state when there is nothing on
+    // screen yet. This runs from the backup poll as well as on mount, so
+    // raising it unconditionally made a standings list that was already
+    // rendered drop back into its skeleton on every single tick - a visible
+    // flicker every poll interval, for data that had not gone anywhere.
+    if (!hasLoadedOnceRef.current) setLoading(true);
     try {
       const { data, error } = await supabase
         .from('tournament_players')
@@ -120,6 +130,7 @@ export default function TournamentStandings({
         return;
       }
 
+      hasLoadedOnceRef.current = true;
       const mapped: StandingsPlayer[] = (data || []).map((p: any) => ({
         userId: p.user_id,
         displayName: p.username || 'Unknown',

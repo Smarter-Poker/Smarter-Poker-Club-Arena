@@ -136,10 +136,14 @@ export default function GlobalHeader() {
     loadDiamonds(authUser.id);
   }, [authUser?.id, loadOnce, loadBalances, loadDiamonds]);
 
+  // force: an EVENT says the balance moved, so the freshness window in
+  // useWalletStore (which exists to make MOUNTS free) must not swallow it.
+  // Without this a real change could be up to BALANCE_FRESH_MS stale on screen,
+  // which is worse than the skeleton flash the window removed.
   useMasterBusSubscription(
     'WALLET_REFRESHED',
     () => {
-      if (authUser?.id) loadBalances(authUser.id);
+      if (authUser?.id) loadBalances(authUser.id, { force: true });
     },
     { debounce: 300 }
   );
@@ -151,7 +155,7 @@ export default function GlobalHeader() {
         if (payload?.newBalance !== undefined) {
           useWalletStore.setState({ diamonds: payload.newBalance });
         } else {
-          loadDiamonds(authUser.id);
+          loadDiamonds(authUser.id, { force: true });
         }
       }
     },
@@ -161,7 +165,7 @@ export default function GlobalHeader() {
   useMasterBusSubscription(
     'BALANCE_UPDATED',
     () => {
-      if (authUser?.id) loadDiamonds(authUser.id);
+      if (authUser?.id) loadDiamonds(authUser.id, { force: true });
     },
     { debounce: 500 }
   );

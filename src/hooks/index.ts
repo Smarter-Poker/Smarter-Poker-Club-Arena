@@ -227,10 +227,14 @@ export function useWallet() {
     // GameServerAPI.removeChips -> atomic_table_withdraw; see WalletService.
     internalTransfer,
     mintChips,
+    // force: this is the EXPLICIT "give me fresh numbers" entry point. A caller
+    // reaching for refresh() is stating that what is on screen may be wrong, so
+    // the store's freshness window (which exists to make mounts free) must not
+    // turn it into a no-op.
     refresh: () => {
       if (user?.id) {
-        loadBalances(user.id);
-        loadDiamonds(user.id);
+        loadBalances(user.id, { force: true });
+        loadDiamonds(user.id, { force: true });
       }
     },
   };

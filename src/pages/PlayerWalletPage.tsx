@@ -224,44 +224,26 @@ export default function PlayerWalletPage() {
     }
   }, [user?.id, loadBalances, loadDiamonds]);
 
-  // ── Realtime subscription: live wallet balance updates ──
-  useEffect(() => {
-    if (!user?.id) return;
-    const channelKey = `user-wallet-${user.id}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'wallets',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
-            loadBalances(user.id);
-            loadDiamonds(user.id);
-          }
-        }
-      )
-      // wallet_transactions subscription removed (Phase 2 cost cut): the
-      // canonical balance lives on public.wallets and every write path that
-      // inserts a transaction also updates wallets — the `wallets` listener
-      // above already covers balance changes. The bus 'BALANCE_UPDATED'
-      // listener below backstops admin-side adjustments.
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'PlayerWalletPage._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[PlayerWalletPage] Realtime channel timed out');
-        }
-      });
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-  }, [user?.id, loadBalances, loadDiamonds]);
+  // ── Realtime wallet updates: now GLOBAL, not page-scoped ──────────────────
+  //
+  // A `user-wallet-<uid>` channel used to live here, subscribing to `wallets`
+  // filtered by user_id and calling loadBalances/loadDiamonds. It was removed on
+  // 2026-08-24 for two reasons, which are the same bug seen from two sides:
+  //
+  //  1. It was PAGE-SCOPED. Its cleanup called removeRegisteredChannel, so
+  //     leaving /wallet tore the subscription down and returning re-negotiated
+  //     it - precisely the "re-sync every time you change pages" behaviour this
+  //     pass exists to remove.
+  //  2. It was the ONLY live `wallets` listener in the app. Sitting anywhere
+  //     else - Home, the lobby, a table - a balance changed server-side reached
+  //     the player not at all.
+  //
+  // The identical, user-filtered listener now lives in PostgresSyncHooks'
+  // `global_db_sync:<userId>` channel, created once at sign-in and never torn
+  // down by navigation. It emits BALANCE_UPDATED, which useGlobalBalanceSync
+  // (mounted in App.tsx) already consumes debounced and turns into a single
+  // authoritative refetch. So this page keeps live updates, gets them without
+  // re-subscribing, and every OTHER page gains them too.
 
   // ── Bus Listeners ──
   useEffect(() => {

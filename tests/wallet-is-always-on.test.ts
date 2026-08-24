@@ -113,6 +113,43 @@ describe('balance changes reach the player on every page', () => {
   });
 });
 
+describe('the wallets listener is global, not page-scoped', () => {
+  const WALLET_PAGE = read('src/pages/PlayerWalletPage.tsx');
+
+  it('PlayerWalletPage no longer owns a user-wallet channel', () => {
+    // Page-scoped, so leaving /wallet tore it down and returning re-negotiated
+    // it - and because it was the ONLY wallets listener, every other page had
+    // no live balance at all. It now lives in PostgresSyncHooks.
+    expect(codeOnly(WALLET_PAGE)).not.toMatch(/getOrCreateChannel\(\s*`user-wallet-/);
+    expect(codeOnly(WALLET_PAGE)).not.toMatch(/removeRegisteredChannel\(\s*`user-wallet-/);
+  });
+
+  it('PlayerWalletPage does not subscribe to the wallets table itself', () => {
+    expect(codeOnly(WALLET_PAGE)).not.toMatch(/table:\s*'wallets'/);
+  });
+});
+
+describe('the club lobby paints from cache with no skeleton frame', () => {
+  it('seeds club and tables during render, not in an effect', () => {
+    // An effect runs AFTER paint, so restoring the cache there guaranteed one
+    // frame of skeleton on every club entry - the flicker that reads as "the
+    // lobby reloads every time".
+    expect(CLUB_HOME).toMatch(/const bootCache = useState\(\(\) =>/);
+    expect(CLUB_HOME).toMatch(/useState<ClubData \| null>\(bootCache\?\.club \?\? null\)/);
+  });
+
+  it('does not start in the loading state when cached data exists', () => {
+    expect(codeOnly(CLUB_HOME)).not.toMatch(/const \[loading, setLoading\] = useState\(true\)/);
+    expect(CLUB_HOME).toMatch(/useState\(!bootCache\?\.club\)/);
+  });
+
+  it('seeds hasDataRef to agree with what is painted', () => {
+    // Otherwise the stall watchdog can declare a stall over a lobby the player
+    // is actually looking at.
+    expect(CLUB_HOME).toMatch(/useRef\(Boolean\(bootCache\?\.club\)\)/);
+  });
+});
+
 describe('entering a club does not wipe the wallet', () => {
   it('resets per-club state only on a real club change', () => {
     // useEffect(..., [clubId]) also fires on FIRST MOUNT, so the reset ran on

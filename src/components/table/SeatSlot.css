@@ -1207,10 +1207,31 @@
    so the children overlap - the same device the hero row already uses. A back
    carries no information beyond "this player has a hand", so overlapping them
    costs nothing and the count stays countable. */
+/* ── Dan 2026-08-24: UNDER THE PLAYER, NOT OFF TO ONE SIDE ────────────────
+   "the players on the left side of the table should have their cards under
+   them, not on the right."
+
+   Every seat used to anchor its row at `left: calc(100% - 22px)` - the right
+   edge of the seat - whichever side of the table the seat was on. That is one
+   rule producing two different pictures, because a seat's own edge means
+   something different depending on where the seat sits:
+
+     - a LEFT-rail seat (x = 10.5%) threw its cards INWARD, so they detached
+       from the player and drifted toward the middle of the felt;
+     - a RIGHT-rail seat (x = 89.5%) threw the same row OUTWARD, into the
+       darkest felt at the rail, half of it hanging off the table.
+
+   Anchoring on the seat's CENTRE removes the dependence on which side the seat
+   is on: the row is now centred under the name/stack box for every villain, so
+   it reads as that player's hand from any chair. `top: 100%` is the bottom of
+   `.seat`, and `.seat__info` is that column's last child, so this lands
+   directly beneath the plate without needing to know the box's height. */
 .seat__cards--opponent {
   position: absolute;
-  top: 2px;
-  left: calc(100% - 22px);
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 3px;
   display: flex;
   z-index: 6;
   /* Drop shadow on the ROW, so the fan reads as one object against the felt
@@ -1244,12 +1265,20 @@
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
 
-/* When opponent cards are revealed at showdown, they pop out larger */
-.seat__cards--revealed {
-  left: calc(100% - 8px);
-  top: -4px;
-  z-index: 10;
-}
+/* When opponent cards are revealed at showdown, they pop out larger.
+
+   Dan 2026-08-24: this used to re-anchor the row to `left: calc(100% - 8px)`
+   and `top: -4px`, i.e. it moved a revealed hand back OUT to the seat's right
+   edge and up over the avatar - undoing the centring above at the one moment
+   the hand matters most, and putting a right-rail seat's shown cards off the
+   felt. It now keeps the same centred anchor and only lifts the z-index so the
+   shown hand paints above neighbouring seats.
+
+   The revealed row's own anchor is owned by the showdown rule further down
+   this file (search `bottom: calc(100% - 10px)`), which already centres it on
+   the seat and lifts it over the avatar. Nothing to declare here - two rules
+   of equal specificity fighting over the same anchor is what produced the
+   crooked showdown row in the first place. */
 
 /* Hero cards — PokerBros signature: cards sit to the RIGHT of the avatar,
  * 2026-04-17 Dan rewrite: landscape-racetrack layout puts hero at bottom

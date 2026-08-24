@@ -121,8 +121,136 @@ export const CHIP_RAIL_DEALER_EXTRA_PX = 20;
  */
 export const CHIP_RAIL_BOTTOM_EXTRA_PX = 46;
 
-/** Where a chip finishes when it is collected, as a fraction of seat-to-centre. */
-export const CHIP_COLLECT_FRACTION = 0.66;
+/**
+ * The rail's scale factor.
+ *
+ * Dan 2026-08-24: "chips from players on the left and right sides need to be
+ * put on the table farther. they are too close to the rail."
+ *
+ * They were, and this number is why it was invisible from inside this module.
+ * Every inset computed here was multiplied by 1.82 again in CSS
+ * (`.table-page .seat__bet-chips` in TableVisualHotfix.css), and that same CSS
+ * rule ALSO clamped the horizontal component to +/-52px (44 and 38 at the two
+ * mobile breakpoints). So the module said "one rail, equal for every seat", the
+ * stylesheet agreed for the top and bottom seats, and quietly cut the left and
+ * right seats to less than half the distance - which is exactly the picture
+ * Dan is describing, and exactly the property tests/table-geometry-chips.test.ts
+ * asserts and could never have caught, because the clamp was not in the maths
+ * it tests.
+ *
+ * The scale now lives here, with the rest of the geometry, and the stylesheet
+ * consumes --bet-offset-x/y unmodified. Same numbers for the seats that were
+ * already right; the side seats get the rail they were always supposed to have.
+ */
+export const CHIP_RAIL_SCALE = 1.82;
+
+/**
+ * The rail a seat gets when it is LEVEL WITH THE COMMUNITY BOARD.
+ *
+ * The board holds the middle 68% of the felt (TablePage.css,
+ * `.table-surface .community-cards` width: 68%), so a side seat at x=10.5%
+ * has only about 5% of the table's width between its own centre and the
+ * board's edge. A seat sitting at the board's height therefore cannot be given
+ * the full rail: at 1.82 its bets land on the cards, which is what happened in
+ * production before the clamp this replaces (a chip covering the 9d).
+ *
+ * It is a smaller SCALE rather than a clamped x-axis. Truncating one axis
+ * turns the offset from "step along the line to the middle" into "step
+ * somewhere else", and on a phone-width table the board leaves so little room
+ * that the x term clamps to zero - the chips stop travelling toward the felt
+ * at all and end up behind the dealer button. Shrinking the scale keeps the
+ * direction exactly right and only shortens the walk.
+ */
+export const CHIP_RAIL_SCALE_BOARD_LEVEL = 1.15;
+
+/**
+ * A board-level seat's rail may never fall behind that seat's own button.
+ *
+ * The two are scaled by different things and they cross over. The button steps
+ * a FRACTION of the way to the middle (DEALER_BUTTON_FACTOR, 0.28), so its
+ * travel grows without limit as the table gets wider. The rail is a pixel inset
+ * that is CLAMPED at 64px (chipRailInset), so it stops growing. On a desktop
+ * table the button therefore overtakes the shortened board-level rail and ends
+ * up standing in front of the chips it is supposed to stand behind - which is
+ * the exact regression tests/table-geometry-chips.test.ts was written for, and
+ * it caught it.
+ *
+ * So the board reduction is a preference and this is the rule: shorten the rail
+ * for the board, but never past the button, plus enough clear air that the two
+ * do not touch.
+ */
+export const CHIP_RAIL_MIN_CLEARANCE_PX = 16;
+
+/**
+ * A seat this close to the table's mid-height is LEVEL WITH THE BOARD.
+ *
+ * The clamp being deleted above was not paranoia - it was a live fix. On
+ * 4-max and 5-max, side seats sit at y=45 and y=55, i.e. at the board's own
+ * height, and an unclamped rail put their bets on top of the community cards
+ * (seen in production: a chip covering the 9d). 8-max and 9-max have the same
+ * problem at y=52 and y=58.
+ *
+ * But it applied that clamp to EVERY side seat, including the ones nowhere
+ * near the board - 6-max sits its side seats at y=33 and y=66, a sixth of the
+ * table clear of it. One flat horizontal limit cannot tell those apart. This
+ * can: only a seat inside the band gives up any of its rail, and it gives up
+ * only as much as the board actually needs.
+ */
+export const BOARD_BAND_PCT = 10;
+
+/**
+ * The HERO's chair: bottom rail, dead centre.
+ *
+ * `isBottomSeat` is true for the two bottom-CAP seats as well (9-max seats 2
+ * and 9, at x=19 and x=81), and CHIP_RAIL_BOTTOM_EXTRA_PX was never about them.
+ * Read its docstring: every word is about an avatar a third larger than
+ * everyone else's, sitting at x=50 where the rail can only travel on one axis.
+ * A bottom-cap seat has an ordinary avatar and travels diagonally like any
+ * other side seat.
+ *
+ * Handing them the hero's 46px extra on top of CHIP_RAIL_SCALE pushed them
+ * into the `len * 0.8` ceiling on a phone-width table, where they SATURATED:
+ * the seat holding the button and the same seat without it came out at exactly
+ * the same distance, so the button no longer stood in front of its own chips.
+ *
+ * Deliberately NOT folded into isBottomSeat, which the dealer button also
+ * uses. The button's hero exception has its own reason (DEALER_BUTTON_FACTOR_
+ * HERO) and its own tuning, and narrowing it here would move the button on two
+ * seats nobody asked about.
+ */
+export function isHeroRailSeat(seat: Pos): boolean {
+  return isBottomSeat(seat) && Math.abs(seat.x - 50) < 10;
+}
+
+/** True for a seat on the left or right rail rather than the top or bottom. */
+export function isSideSeat(seat: Pos): boolean {
+  return Math.abs(seat.x - 50) > 25;
+}
+
+/** True for a seat sitting at the community board's own height. */
+export function isBoardLevelSeat(seat: Pos): boolean {
+  return isSideSeat(seat) && Math.abs(seat.y - 50) <= BOARD_BAND_PCT;
+}
+
+/**
+ * Where a chip finishes when it is collected, as a fraction of seat-to-centre.
+ *
+ * Raised from 0.66 to 0.9 on 2026-08-24, together with CHIP_RAIL_SCALE.
+ *
+ * 0.66 was chosen when the rail this module returned was the FINAL resting
+ * place. It was not: the stylesheet multiplied it by 1.82 before painting it,
+ * and did not touch --collect-dx/dy, so the two halves of the sweep were
+ * measured on different scales and the chips never actually landed on the 0.66
+ * mark they were aimed at. With the scale folded in here, a seat's rail can
+ * reach 0.8 of the way to the middle by itself (see the `len * 0.8` cap), so an
+ * endpoint at 0.66 would sit BEHIND where the chips already are and the sweep
+ * would run backwards - furthest for the dealer, who starts furthest out.
+ *
+ * 0.9 is in front of every seat's rail, converges every seat on one point, and
+ * is a truer description of what the animation is for: the chips are going to
+ * the pot, which is in the middle.
+ */
+export const CHIP_COLLECT_FRACTION = 0.9;
 
 export interface Size {
   w: number;
@@ -158,8 +286,22 @@ export function betChipOffsetPx(seat: Pos, size: Size, isDealer: boolean): Pos {
 
   // Never step more than most of the way to the middle, however small the
   // table gets - the chips belong to a player, not to the pot.
-  const bottomExtra = isBottomSeat(seat) ? CHIP_RAIL_BOTTOM_EXTRA_PX : 0;
-  const inset = Math.min(chipRailInset(size, isDealer) + bottomExtra, len * 0.8);
+  const bottomExtra = isHeroRailSeat(seat) ? CHIP_RAIL_BOTTOM_EXTRA_PX : 0;
+  // A seat level with the board is the one seat that cannot have the common
+  // rail - see CHIP_RAIL_SCALE_BOARD_LEVEL. Every other seat gets the same one.
+  const scale = isBoardLevelSeat(seat) ? CHIP_RAIL_SCALE_BOARD_LEVEL : CHIP_RAIL_SCALE;
+  let inset = (chipRailInset(size, isDealer) + bottomExtra) * scale;
+
+  // Never behind the button - see CHIP_RAIL_MIN_CLEARANCE_PX. Only the
+  // shortened board-level rail can fall foul of this; the full rail clears the
+  // button at every table size the app renders.
+  if (isBoardLevelSeat(seat)) {
+    const btn = dealerButtonPosition(seat);
+    const btnPx = Math.hypot(((btn.x - seat.x) * size.w) / 100, ((btn.y - seat.y) * size.h) / 100);
+    inset = Math.max(inset, btnPx + CHIP_RAIL_MIN_CLEARANCE_PX);
+  }
+
+  inset = Math.min(inset, len * 0.8);
   return {
     x: Math.round((dxPx / len) * inset),
     y: Math.round((dyPx / len) * inset),

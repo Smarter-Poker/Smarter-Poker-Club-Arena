@@ -44,8 +44,15 @@ import './ChipPhysics.css';
  * VALUE drawn — a clamped stack reports `truncated` and prints its real count
  * beside itself, which is exactly what the old local breakdown failed to do.
  */
-const COMPACT_LAYOUT = { maxStacks: 4, maxPerStack: 6 };
-const FULL_LAYOUT = { maxStacks: 5, maxPerStack: 10 };
+/*
+ * maxTotal is the height of the TOWER, in discs. Dan 2026-08-24 asked for one
+ * offset stack rather than a row of columns, and a single tower needs a single
+ * height budget - six groups of ten would be sixty discs tall. See maxTotal in
+ * chipDenominations.ts for how the budget is spent (bottom-up, largest chips
+ * first) and why it never changes the value drawn.
+ */
+const COMPACT_LAYOUT = { maxStacks: 4, maxPerStack: 6, maxTotal: 6 };
+const FULL_LAYOUT = { maxStacks: 5, maxPerStack: 10, maxTotal: 10 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES

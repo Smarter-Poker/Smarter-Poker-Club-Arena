@@ -24,8 +24,12 @@ import {
   chipCollectOffsetPx,
   chipRailInset,
   isBottomSeat,
+  isBoardLevelSeat,
+  isSideSeat,
   dealerButtonPosition,
   CHIP_COLLECT_FRACTION,
+  CHIP_RAIL_SCALE,
+  CHIP_RAIL_SCALE_BOARD_LEVEL,
   type Pos,
   type Size,
 } from '../src/components/table/tableGeometry';
@@ -127,8 +131,34 @@ describe('every ring: chips sit in front of the player, at one distance', () => 
              already accepts exactly this shape of exception for the button holder
              (CHIP_RAIL_DEALER_EXTRA_PX), and like that one this is a CONSTANT, not
              a per-seat fraction - asserted directly below. */
+        /* AMENDED AGAIN 2026-08-24, and for the same reason as the hero.
+
+             Dan: "chips from players on the left and right sides need to be put
+             on the table farther. they are too close to the rail."
+
+             They were - but not because of anything in this module. The rail
+             computed here was multiplied by 1.82 in TableVisualHotfix.css and
+             then CLAMPED to +/-52px on the x axis, which cut the side seats to
+             less than half of what every other seat got. This suite could not
+             see any of it: the clamp was in a stylesheet, and the maths it
+             tests was equal all along. That scale now lives in this module
+             (CHIP_RAIL_SCALE) so a test CAN see it, and the clamp is gone.
+
+             The clamp was not groundless, though. A side seat sitting at the
+             board's own height - 4-max y=45, 5-max y=55, 8-max y=52, 9-max
+             y=58 - genuinely cannot take the full rail: the board holds the
+             middle 68% of the felt, so there is about 5% of table width between
+             that seat and the cards, and at 1.82 its bet lands on them. That
+             seat, and only that seat, walks a shorter rail
+             (CHIP_RAIL_SCALE_BOARD_LEVEL), so it is excluded here and asserted
+             on its own terms in the block below.
+
+             This is the third exception, and all three have the same shape: the
+             property worth having is "equally clear of the things around the
+             player", and "equal distance" is a proxy for it that holds for most
+             seats and not for the ones with something in the way. */
         const d = ring
-          .filter((seat) => !isBottomSeat(seat))
+          .filter((seat) => !isBottomSeat(seat) && !isBoardLevelSeat(seat))
           .map((seat) => mag(betChipOffsetPx(seat, TABLE, false)));
         expect(Math.max(...d) - Math.min(...d)).toBeLessThanOrEqual(1.5);
       });
@@ -158,7 +188,11 @@ describe('CONTROL: the old maths really did vary by seat', () => {
   it('a flat 0.22 factor put a top-centre seat and a side seat at different distances', () => {
     // The 9-max ring: bottom-centre hero vs a left-side seat.
     const top = { x: 50, y: 6 };
-    const side = { x: 10.5, y: 58 };
+    // 2026-08-24: was { x: 10.5, y: 58 }, the 9-max left-low seat - which is
+    // level with the community board and now deliberately walks a shorter
+    // rail, so it can no longer stand for "an ordinary side seat". The 9-max
+    // left-HIGH seat is the same ring, the same rail, and clear of the board.
+    const side = { x: 10.5, y: 36 };
     const oldOffset = (seat: Pos) => ({
       x: ((50 - seat.x) * TABLE.w * 0.22) / 100,
       y: ((50 - seat.y) * TABLE.h * 0.22) / 100,
@@ -230,5 +264,68 @@ describe('the rail inset itself', () => {
     const a = chipRailInset({ w: 300, h: 462 }, true) - chipRailInset({ w: 300, h: 462 }, false);
     const b = chipRailInset({ w: 900, h: 700 }, true) - chipRailInset({ w: 900, h: 700 }, false);
     expect(a).toBe(b);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE SIDE SEATS, AND THE ONE THAT CANNOT HAVE THE FULL RAIL
+   ═══════════════════════════════════════════════════════════════════════════
+   Dan 2026-08-24: "chips from players on the left and right sides need to be
+   put on the table farther. they are too close to the rail."
+
+   The regression these pin is not a wrong formula, it is a SECOND formula: the
+   stylesheet used to re-scale and then clamp what this module returned, so the
+   module and the screen disagreed and only the screen was right. Everything
+   below is asserted against the module because the module is now the only
+   place the answer is computed. */
+describe('the side seats get the rail everyone else gets', () => {
+  const wide: Size = { w: 900, h: 700 };
+
+  it('a side seat clear of the board walks exactly as far as a top seat', () => {
+    const top = { x: 50, y: 6 };
+    const side = { x: 10.5, y: 33 };
+    expect(isSideSeat(side)).toBe(true);
+    expect(isBoardLevelSeat(side)).toBe(false);
+    expect(mag(betChipOffsetPx(side, wide, false))).toBeCloseTo(
+      mag(betChipOffsetPx(top, wide, false)),
+      0
+    );
+  });
+
+  it('and it is a long way further out than the old 52px clamp allowed', () => {
+    // The clamp deleted from TableVisualHotfix.css. A side seat's rail is
+    // almost all x, so the clamp was very nearly the whole offset.
+    const side = { x: 10.5, y: 33 };
+    expect(Math.abs(betChipOffsetPx(side, wide, false).x)).toBeGreaterThan(52);
+  });
+
+  it('the seat level with the board stops short, but still moves toward the felt', () => {
+    const level = { x: 10.5, y: 52 }; // 8-max left-low
+    expect(isBoardLevelSeat(level)).toBe(true);
+
+    const short = betChipOffsetPx(level, wide, false);
+    const full = betChipOffsetPx({ x: 10.5, y: 28 }, wide, false); // 8-max left-high
+    expect(mag(short)).toBeLessThan(mag(full));
+    // Toward the middle, not backwards into the rail, and never nothing.
+    expect(short.x).toBeGreaterThan(0);
+    expect(CHIP_RAIL_SCALE_BOARD_LEVEL).toBeLessThan(CHIP_RAIL_SCALE);
+  });
+
+  it('every board-level seat still puts its chips in front of its own button', () => {
+    for (const seat of [
+      { x: 10.5, y: 45 },
+      { x: 89.5, y: 45 },
+      { x: 10.5, y: 55 },
+      { x: 89.5, y: 52 },
+      { x: 10.5, y: 58 },
+    ]) {
+      for (const table of [TABLE, wide]) {
+        const btn = mag({
+          x: ((dealerButtonPosition(seat).x - seat.x) * table.w) / 100,
+          y: ((dealerButtonPosition(seat).y - seat.y) * table.h) / 100,
+        });
+        expect(mag(betChipOffsetPx(seat, table, true))).toBeGreaterThan(btn);
+      }
+    }
   });
 });

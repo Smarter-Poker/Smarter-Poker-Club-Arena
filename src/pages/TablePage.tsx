@@ -6467,8 +6467,27 @@ export default function TablePage({
   //   1. FOREGROUND    — `isActive` is true only for the table currently on
   //                      screen (MultiTablePage passes `idx === activeIndex
   //                      && !hidden`), so background tables never speak.
-  //   2. MONEY AT RISK — hero is actually seated. A railbird watching a table
-  //                      loses nothing to a dropped socket.
+  //   2. FOREGROUND    — (see 1). This gate USED to be "money at risk: hero is
+  //                      actually seated", on the reasoning that a railbird
+  //                      loses nothing to a dropped socket. True about money,
+  //                      wrong about the screen.
+  //
+  //                      Dan 2026-08-24: "when you are spectating or watching
+  //                      a table it should have the same animations and
+  //                      graphics and game flow as if you're playing it."
+  //
+  //                      A dead socket is EXACTLY what that looks like from
+  //                      the rail: no timers, no chips moving, no cards - a
+  //                      still photograph of a poker table. And the engine has
+  //                      two ways to refuse a spectator's connection outright
+  //                      (IP conflict and club blacklist, both a 403 at the WS
+  //                      upgrade), which the client retries forever. Silencing
+  //                      the only signal for the one class of user most likely
+  //                      to hit it turned a diagnosable outage into "watching
+  //                      is broken". The spectator now gets the same warning,
+  //                      worded for someone with nothing on the table, and no
+  //                      sound - the alarm tone is for a player who is about
+  //                      to be auto-folded.
   //   3. PERSISTENT    — 15s of continuous failure, which is past several
   //                      rungs of the backoff ladder AND past the watchdog's
   //                      35s soft / 3-unanswered-RESYNC escalation having had
@@ -6489,18 +6508,23 @@ export default function TablePage({
       return;
     }
     if (!st.everConnected) return; // initial mount noise
-    if (!isActive || !heroIsSeated) return; // gates 1 and 2
+    if (!isActive) return; // gate 1
     const t = window.setTimeout(() => {
       if (st.lossToastShown) return;
       // Re-check at fire time, not just at schedule time: 15s is long enough
       // for the player to have switched tables or stood up, and a toast for a
       // table they walked away from is the same noise in a new costume.
-      if (!isActive || !heroIsSeated) return;
+      if (!isActive) return;
       st.lossToastShown = true;
       heartbeatToastRef.current?.warning?.(
-        'Still reconnecting. Your seat and chips are safe on the server.'
+        heroIsSeated
+          ? 'Still reconnecting. Your seat and chips are safe on the server.'
+          : 'Still reconnecting. The table will resume when the connection returns.'
       );
-      if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playDisconnect();
+      // Seated only: the disconnect tone is a warning that the server may
+      // start acting for you. It means nothing from the rail.
+      if (heroIsSeated && soundService.isEnabled() && ambientSoundsAllowed)
+        soundService.playDisconnect();
     }, ENGINE_LOSS_TOAST_DELAY_MS);
     return () => window.clearTimeout(t);
   }, [engineWsStatus, isActive, heroIsSeated, ambientSoundsAllowed]);

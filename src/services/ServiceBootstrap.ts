@@ -8,6 +8,7 @@
  */
 
 import { masterBus } from '../core/MasterBus';
+import { soundService } from './SoundService';
 import { OfflineQueueService } from './OfflineQueueService';
 import { SettlementCronService } from './SettlementCronService';
 import { FinancialCronService } from './FinancialCronService';
@@ -48,6 +49,32 @@ export async function bootServices(options?: {
     timestamp: new Date().toISOString(),
   };
 
+  // 0. Sound — FIRST, and for one reason: its constructor installs the
+  //    autoplay-unlock listeners, and those have to exist BEFORE the user's
+  //    next click, not after it.
+  //
+  //    Dan 2026-08-24: "when you are spectating or watching a table it should
+  //    have the same animations and graphics and game flow as if you're
+  //    playing it... sound effects, everything."
+  //
+  //    Nothing in the sound path was ever gated on being seated - checked all
+  //    of it. The gap was the AudioContext. SoundService was imported only by
+  //    the lazily-loaded table chunk, so the context was constructed AFTER the
+  //    click that opened the table had already been dispatched, and browsers
+  //    only let a suspended context resume inside a gesture. A player who SITS
+  //    clicks again within seconds (buy-in, fold, call) and unlocks it without
+  //    noticing. A railbird clicks nothing, ever - so on iOS Safari and mobile
+  //    Chrome the table stayed silent for the whole session.
+  //
+  //    Importing it here puts the listeners in place during boot, so the very
+  //    first tap anywhere in the app unlocks audio for everyone.
+  try {
+    soundService.primeAudioUnlock();
+    console.debug('[ServiceBootstrap] ✓ SoundService unlock listeners armed');
+  } catch (err: unknown) {
+    console.debug('[ServiceBootstrap] ✗ SoundService unlock failed:', err);
+  }
+
   // 1. Offline Queue — must init before any financial operations
   try {
     await OfflineQueueService.init();
@@ -79,7 +106,9 @@ export async function bootServices(options?: {
   //    and rebought with NO stop-loss). It has been removed so the server is the
   //    single source of truth. Nothing to start client-side.
   result.autoRebuy = true;
-  console.debug('[ServiceBootstrap] ✓ Horse auto-rebuy is server-authoritative (no client monitor)');
+  console.debug(
+    '[ServiceBootstrap] ✓ Horse auto-rebuy is server-authoritative (no client monitor)'
+  );
 
   // 4. Financial Cron — reconciliation, suspension checks, audit trail
   try {

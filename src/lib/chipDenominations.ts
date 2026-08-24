@@ -320,6 +320,25 @@ export interface VisualChipOptions {
   maxStacks?: number;
   /** Discs to draw per group before switching to an "xN" multiplier. */
   maxPerStack?: number;
+  /**
+   * Discs to draw across ALL groups combined, before switching to "xN".
+   *
+   * Dan 2026-08-24: "chips entering the pot should be stacked and slightly
+   * offset so you can see them all, highest denomination on the bottom, but
+   * not right next to each other."
+   *
+   * That is ONE tower, not a row of towers - and a single tower has a single
+   * height. `maxPerStack` alone cannot bound it: six groups of ten is sixty
+   * discs, which at any offset legible enough to count is taller than the
+   * felt. This caps the tower itself, spending the budget from the BOTTOM of
+   * the tower upward (largest denomination first), because the big chips are
+   * the ones carrying the value a player is trying to read.
+   *
+   * Like every other cap in this module it clamps the DISCS DRAWN and never
+   * the value: a group it shortens reports `truncated` and keeps its true
+   * `count`, so the pile still adds up to the amount.
+   */
+  maxTotal?: number;
 }
 
 /**
@@ -333,7 +352,7 @@ export interface VisualChipOptions {
  */
 export function visualChipStacks(
   amount: number,
-  { maxStacks = 5, maxPerStack = 8 }: VisualChipOptions = {}
+  { maxStacks = 5, maxPerStack = 8, maxTotal = Infinity }: VisualChipOptions = {}
 ): ChipStackVisual[] {
   const { chips, remainder } = breakChips(amount);
 
@@ -348,11 +367,31 @@ export function visualChipStacks(
   // A sub-1 residue riding along with real chips (7.5 -> red + 2 white + 0.5)
   // is carried by the numeric label, not by another disc. A sliver here would
   // put a fourth chip in front of a player Dan said should have three.
-  return chips.slice(0, Math.max(1, maxStacks)).map(({ denom, count }) => ({
+  const groups = chips.slice(0, Math.max(1, maxStacks)).map(({ denom, count }) => ({
     denom,
     count,
     drawn: Math.max(1, Math.min(count, maxPerStack)),
     truncated: count > maxPerStack,
     partial: false,
   }));
+
+  // Tower budget, spent bottom-up. `chips` is already highest-denomination
+  // first, so walking it in order hands the budget to the big chips and lets
+  // the small ones fall back to an "xN" tag - the same trade a dealer makes
+  // when they colour up. Every group keeps at least one disc: a denomination
+  // that is in the pot but drawn nowhere is a chip the player cannot see.
+  if (Number.isFinite(maxTotal) && groups.length > 0) {
+    const budget = Math.max(groups.length, Math.floor(maxTotal));
+    let spent = groups.reduce((n, g) => n + g.drawn, 0);
+    for (let i = groups.length - 1; i >= 0 && spent > budget; i--) {
+      const g = groups[i];
+      const give = Math.min(g.drawn - 1, spent - budget);
+      if (give <= 0) continue;
+      g.drawn -= give;
+      g.truncated = g.count > g.drawn;
+      spent -= give;
+    }
+  }
+
+  return groups;
 }

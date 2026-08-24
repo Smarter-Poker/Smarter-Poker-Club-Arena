@@ -66,74 +66,41 @@
    has to stay welded to the --sp-bust-clip that compensates for it, and that
    lives in SeatSlot.css. Nothing to do here; do not re-add a scoped copy. */
 
-/* ── 3. Bet chips rest ON the felt, ~40% of the way to the pot ────────────
-   LIVE E2E FIX 2026-08-15: the 1.82 multiplier alone pushed the SIDE seats'
-   chips ~109px inward — right/left-middle seats sit at the board's own
-   height, so their bets landed ON the community cards (seen live: a bet
-   chip covering the 9♦). Clamp the HORIZONTAL excursion so side seats stop
-   short of the board edge; hero/top seats have small x offsets and are
-   unaffected. Clamp scales with the breakpoints the chip sizes already use. */
-.table-page .seat__bet-chips {
-  transform: translate(
-    calc(-50% + clamp(-52px, var(--bet-offset-x, 0px) * 1.82, 52px)),
-    calc(-50% + var(--bet-offset-y, 0px) * 1.82)
-  ) !important;
-}
-@media (max-width: 1023px) {
-  .table-page .seat__bet-chips {
-    transform: translate(
-      calc(-50% + clamp(-44px, var(--bet-offset-x, 0px) * 1.82, 44px)),
-      calc(-50% + var(--bet-offset-y, 0px) * 1.82)
-    ) !important;
-  }
-}
-@media (max-width: 640px) {
-  .table-page .seat__bet-chips {
-    /* Dan 2026-08-17 (audit round 3): 26px parked side-seat chips ON the
-       name text. 38px clears the plate onto its corner; the 68%-wide board
-       (round 2) leaves ~66px of felt margin, so 38px cannot reach the
-       cards. */
-    transform: translate(
-      calc(-50% + clamp(-38px, var(--bet-offset-x, 0px) * 1.82, 38px)),
-      calc(-50% + var(--bet-offset-y, 0px) * 1.82)
-    ) !important;
-  }
-}
+/* ── 3. Bet chips: the rail lives in tableGeometry.ts now ────────────────
+   Dan 2026-08-24: "chips from players on the left and right sides need to be
+   put on the table farther. they are too close to the rail."
 
-/* ── 4. Chips doubled ───────────────────────────────────────────────────── */
-:root:root {
-  --cp-chip-size: 32px;
-  --cp-inner-ring-size: 18px;
-  --cp-notch-width: 8px;
-  --cp-chip-overlap: -4px;
-}
-@media (max-width: 640px) {
-  :root:root {
-    --cp-chip-size: 28px;
-    --cp-inner-ring-size: 16px;
-  }
-}
-@media (max-width: 480px) {
-  :root:root {
-    --cp-chip-size: 26px;
-    --cp-inner-ring-size: 14px;
-    --cp-chip-overlap: -3px;
-  }
-}
-@media (max-width: 380px) {
-  :root:root {
-    --cp-chip-size: 24px;
-    --cp-inner-ring-size: 12px;
-  }
-}
-.table-page .cp--compact .cp-chip {
-  width: 26px !important;
-  height: 26px !important;
-}
-.table-page .cp--compact .cp-chip::after {
-  width: 14px !important;
-  height: 14px !important;
-}
+   This section used to re-scale --bet-offset-x/y by 1.82 and then CLAMP the x
+   term to +/-52px (44 at <=1023, 38 at <=640). Between them those two lines
+   were the whole bug:
+
+     - the SCALE meant the real resting place of a chip was not the number
+       tableGeometry.ts computed, so tests/table-geometry-chips.test.ts could
+       assert "one rail, equal for every seat", pass, and be describing a
+       screen that did not exist;
+     - the CLAMP then cut the left and right seats to less than half the run
+       every other seat got, because a side seat's offset is almost entirely x.
+       That is what Dan is looking at: their chips barely leave the plate.
+
+   Both are now in tableGeometry.ts - CHIP_RAIL_SCALE, and a shorter rail for
+   the one case the clamp was actually protecting, the side seat that sits at
+   the community board's own height (CHIP_RAIL_SCALE_BOARD_LEVEL). A seat clear
+   of the board keeps the full rail. SeatSlot.css consumes --bet-offset-x/y as
+   given; nothing overrides it here any more. */
+
+/* ── 4. Chip sizing lives with the chips ─────────────────────────────────
+   Dan 2026-08-24: "all chips should be the same size."
+
+   This section used to redefine --cp-chip-size at `:root:root` (a specificity
+   trick, 0-2-0, so nothing in ChipPhysics.css could ever win it back) AND
+   force `.table-page .cp--compact .cp-chip` to 26px !important. The result was
+   two chip sizes on one felt: 32px in the pot, 26px in front of a seat - plus
+   a third, 16px, in PotDisplay.css's pile. Three renderers, three answers.
+
+   The size now lives once, in ChipPhysics.css, as --cp-chip-size, and
+   PotDisplay.css reads the same token. Nothing here overrides it. Only the
+   TEXT sizes stay, because those are about the table page's own scale rather
+   than about the chips. */
 .table-page .cp-amount {
   font-size: 0.9rem !important;
 }
@@ -266,12 +233,31 @@
 
    Keeping !important is still correct: it is what stops lower-specificity
    felt styling from washing the backs out. It just no longer overrides the
-   player's own choice. */
+   player's own choice.
+
+   Dan 2026-08-24 ROUND TWO: "card backs are not displaying for villains'
+   cards." They were not, and this rule was why. CardBack (CardImage.tsx) sets
+   `--cb-image: url(<MEDIA_BASE>cards/backs/table/<id>.webp)` INLINE and the
+   base rule in CardImage.css paints two layers, `var(--cb-image), gradient`.
+   This rule is a `background:` SHORTHAND with !important, so it beat that base
+   rule outright and painted the gradient ALONE - the artwork layer was thrown
+   away on the table page, which is the only page that matters. Every villain
+   therefore drew a flat navy rectangle with a blue border: on dark felt, an
+   empty outline. The 2026-08-23 fix that moved the URL into JS was correct and
+   was silently discarded here.
+
+   The image layer is now first in the shorthand, and `background-size` is
+   restated: a `background:` shorthand RESETS background-size to `auto`, and
+   because the shorthand carries !important that reset is !important too, so
+   CardImage.css's plain `background-size: cover` cannot win it back and the
+   artwork would tile at natural size instead of filling the card. */
 .table-page .seat .card-image--back .card-back {
-  background: var(
-    --cb-gradient,
-    var(--card-back-gradient, linear-gradient(135deg, #35598f 0%, #1c3560 100%))
-  ) !important;
+  background:
+    var(--cb-image, none),
+    var(--cb-gradient, var(--card-back-gradient, linear-gradient(135deg, #35598f 0%, #1c3560 100%))) !important;
+  background-size: cover !important;
+  background-position: center center !important;
+  background-repeat: no-repeat !important;
   border: 2px solid var(--cb-border, var(--card-accent, #7aa7dd)) !important;
   box-shadow:
     inset 0 0 0 2.5px rgba(255, 255, 255, 0.18),

@@ -789,37 +789,26 @@ export default function DynamicWallet({
 
     const channel = supabase
       .channel(`dynamic-wallet-${resolvedId}-${userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'profiles',
-          filter: `id=eq.${userId}`,
-        },
-        (p) => {
-          if (isMounted.current && p.new?.diamonds !== undefined) {
-            setData((prev) => ({ ...prev, diamonds: Number(p.new.diamonds) || 0 }));
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'club_members',
-          filter: `user_id=eq.${userId}`,
-        },
-        (p) => {
-          if (isMounted.current && p.new?.club_id === resolvedId) {
-            setData((prev) => ({
-              ...prev,
-              chipBalance: Number(p.new.chip_balance) || 0,
-            }));
-          }
-        }
-      )
+      // 2026-08-24: the `profiles` (id=eq.userId) and `club_members`
+      // (user_id=eq.userId) listeners that used to sit here are gone.
+      //
+      // Both were byte-identical duplicates of listeners already carried by
+      // PostgresSyncHooks' `global_db_sync:<userId>` channel - one channel per
+      // signed-in user, created at sign-in and never torn down - and this widget
+      // is mounted on ClubHomePage, CashierPage and ClubFinancialsPage, so it
+      // was opening a second and third copy of them on the hottest screens.
+      //
+      // Nothing is lost, because the refresh they raced was already happening.
+      // The global listeners emit DIAMOND_BALANCE_CHANGED (profiles.diamonds)
+      // and CLUB_UPDATED (club_members), both of which are in WALLET_BUS_EVENTS
+      // above, and useMasterBusSubscriptions already calls fetchData() on any of
+      // them. So this widget refreshed TWICE per change: once by applying the
+      // payload locally, once by the debounced bus refetch. Only the duplicate
+      // subscription is removed; the authoritative refresh path is untouched.
+      //
+      // The bbj_pools listener below STAYS - it is genuinely specific to this
+      // widget (it watches the pool the widget actually reads) and has no
+      // equivalent in the global channel.
       .on(
         'postgres_changes',
         {

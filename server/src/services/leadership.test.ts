@@ -319,3 +319,45 @@ describe('a restarting standby hands the lease back on its way out', () => {
     expect(body).toMatch(/setTimeout\(\(\) => process\.exit\(0\), 5000\)/);
   });
 });
+
+
+/**
+ * The promotion restart must fire once, not once per renewal (2026-08-24).
+ *
+ * renewLeadership() runs on an interval, and the hard-exit backstop keeps the
+ * process alive for up to 5 seconds after the first promotion — long enough for
+ * an in-flight renewal to re-enter restartIntoLeaderBoot, release the lease a
+ * second time and arm a second pair of exit timers.
+ */
+describe('restartIntoLeaderBoot is idempotent', () => {
+  const SRC = readFileSync(join(process.cwd(), 'src/services/leadership.ts'), 'utf8');
+  const code = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+  const fn = code.slice(
+    code.indexOf('function restartIntoLeaderBoot'),
+    code.indexOf('export function isLeader')
+  );
+
+  it('returns early once a restart is already scheduled', () => {
+    expect(fn).toMatch(/if \(restartScheduled\) return;/);
+  });
+
+  it('sets the guard before doing anything that can be repeated', () => {
+    const set = fn.indexOf('restartScheduled = true');
+    expect(set).toBeGreaterThan(-1);
+    // Must precede both the release and the exit, or the guard is decorative.
+    expect(set).toBeLessThan(fn.indexOf('releaseLeadership()'));
+    expect(set).toBeLessThan(fn.indexOf('process.exit'));
+  });
+
+  it('still checks bootedAsStandby first', () => {
+    // A process that booted as a leader must never take this path at all.
+    expect(fn.indexOf('if (!bootedAsStandby) return;')).toBeLessThan(
+      fn.indexOf('if (restartScheduled) return;')
+    );
+  });
+
+  it('clears the guard on reset', () => {
+    const reset = code.slice(code.indexOf('export function __resetLeadership'));
+    expect(reset.slice(0, 300)).toMatch(/restartScheduled = false/);
+  });
+});

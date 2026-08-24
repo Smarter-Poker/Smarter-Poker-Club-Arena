@@ -17,7 +17,6 @@ import { lazyWithRetry as lazy } from './utils/lazyWithRetry';
 import { supabase } from './lib/supabase';
 import { realtimeChannelService } from './services/RealtimeChannelService';
 import { OfflineQueueService } from './services/OfflineQueueService';
-import { busEventLogger } from './services/BusEventLogger';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
 import UnionSkinGuard from './components/common/UnionSkinGuard';
 import { ChallengeToastListener } from './components/notifications/ChallengeToastListener';
@@ -43,10 +42,7 @@ import PersistentTableLayer from './components/table/PersistentTableLayer';
 import BusToastBridge from './components/common/BusToastBridge';
 import { ConfirmHost } from './components/common/confirmDialog';
 import MilestoneToast from './components/common/MilestoneToast';
-import { bootServices, shutdownServices } from './services/ServiceBootstrap';
-import { preloadCriticalChunks } from './utils/ChunkPreloader';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
-import { supabaseConnectionWatchdog } from './utils/supabaseConnectionWatchdog';
 
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
@@ -260,45 +256,111 @@ export default function App() {
 
   // ── Start BusEventLogger, Connection Watchdog & register Service Worker ──
   useEffect(() => {
-    busEventLogger.start();
+    let disposed = false;
 
-    // Start Supabase connection watchdog (monitors connectivity, emits bus events,
-    // auto-reconnects realtime channels on recovery)
-    supabaseConnectionWatchdog.start();
+    // PERF 2026-08-24. Every module started below runs AFTER first paint, and
+    // every one of them was a STATIC import at the top of this file — so its
+    // whole dependency tree was welded into the entry chunk and had to be
+    // downloaded, parsed and evaluated BEFORE the lobby could paint. That is
+    // how SettlementCronService and FinancialCronService, neither of which the
+    // lobby has any use for, ended up on the critical path of every boot.
+    //
+    // Importing them here instead is behaviour-neutral (they already only ran
+    // from this effect) and takes them out of the first paint entirely.
+    const deferred = Promise.all([
+      import('./services/BusEventLogger'),
+      import('./utils/supabaseConnectionWatchdog'),
+      import('./services/ServiceBootstrap'),
+      import('./utils/ChunkPreloader'),
+    ])
+      .then(([logger, watchdog, bootstrap, preloader]) => {
+        // Unmounted while the chunks were in flight: start nothing, so the
+        // cleanup below has nothing to tear down.
+        if (disposed) return null;
 
-    // Register SW for background notifications
-    // FIX: Use base-relative path so the SW is found under /hub/club-arena/
-    // HARDENED: Force update check every time to bust stale SW caches after re-deploy
+        logger.busEventLogger.start();
+
+        // Start Supabase connection watchdog (monitors connectivity, emits bus
+        // events, auto-reconnects realtime channels on recovery)
+        watchdog.supabaseConnectionWatchdog.start();
+
+        // Boot all engine services
+        bootstrap.bootServices().catch((err) => {
+          reportError(err, 'App.Service_bootstrap_failed');
+        });
+
+        // Preload critical page chunks during idle time so they're cached
+        // for instant re-entry when navigating back from the World Hub
+        preloader.preloadCriticalChunks();
+
+        return { logger, watchdog, bootstrap };
+      })
+      .catch((err) => {
+        reportError(err, 'App.Deferred_service_start_failed');
+        return null;
+      });
+
+    // ── Register the service worker ────────────────────────────────────────
+    //
+    // SCOPE, 2026-08-24. This registered `/hub/club-arena/sw-bus.js` with no
+    // scope option, so it took the default: the script's own directory,
+    // `/hub/club-arena/` — WITH the trailing slash. Scope matching is a plain
+    // string prefix, and `/hub/club-arena/` is not a prefix of
+    // `/hub/club-arena`. That bare URL is exactly what the World Hub tile
+    // links to and what the SPA fallback rewrite serves, so the single most
+    // common way into this app produced an UNCONTROLLED page: no precached
+    // shell, no cache-first chunks, no media cache. Every one of those
+    // optimisations was live in the file and reached nobody who arrived by
+    // the front door. Deep links (/hub/club-arena/clubs/x) were in scope,
+    // which is why it looked like it worked when tested.
+    //
+    // Asking for `/hub/club-arena` covers the bare URL and everything under
+    // it. That is wider than the script's directory, so the server must say
+    // `Service-Worker-Allowed: /hub/club-arena` (World Hub vercel.json). If
+    // that header is ever absent the registration rejects with a SecurityError
+    // — we fall back to the default scope so behaviour is never worse than it
+    // was, rather than ending up with no service worker at all.
     if ('serviceWorker' in navigator) {
-      const swPath =
+      const base =
         import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
-          ? `${import.meta.env.BASE_URL}sw-bus.js`
-          : '/sw-bus.js';
+          ? import.meta.env.BASE_URL
+          : '/';
+      const swPath = `${base}sw-bus.js`;
+      // BASE_URL carries a trailing slash; the scope must not, or we are back
+      // to the bug above.
+      const wideScope = base.length > 1 ? base.replace(/\/$/, '') : '/';
+
+      const afterRegister = (reg: ServiceWorkerRegistration) => {
+        // Force the browser to check for a new version of the SW immediately.
+        // If sw-bus.js has changed (e.g., DEPLOY_TS updated), the browser will
+        // install the new SW, which triggers activate → clears old caches.
+        reg.update().catch(() => {});
+      };
+
       navigator.serviceWorker
-        .register(swPath)
-        .then((reg) => {
-          // Force the browser to check for a new version of the SW immediately.
-          // If sw-bus.js has changed (e.g., DEPLOY_TS updated), the browser will
-          // install the new SW, which triggers activate → clears old caches.
-          reg.update().catch(() => {});
-        })
-        .catch((err) => console.warn('[App] Service worker registration failed:', err));
+        .register(swPath, { scope: wideScope })
+        .then(afterRegister)
+        .catch(() =>
+          navigator.serviceWorker
+            .register(swPath)
+            .then(afterRegister)
+            .catch((err) => console.warn('[App] Service worker registration failed:', err))
+        );
     }
 
-    // Boot all engine services
-    bootServices().catch((err) => {
-      reportError(err, 'App.Service_bootstrap_failed');
-    });
-
-    // Preload critical page chunks during idle time so they're cached
-    // for instant re-entry when navigating back from the World Hub
-    preloadCriticalChunks();
-
     return () => {
-      busEventLogger.stop();
-      supabaseConnectionWatchdog.stop();
-      // Tear down engine services (online listener, cron timer, IndexedDB)
-      shutdownServices();
+      disposed = true;
+      // Tear down whatever actually started. If the chunks never resolved, or
+      // resolved after unmount, `deferred` is null and there is nothing to do.
+      deferred
+        .then((mods) => {
+          if (!mods) return;
+          mods.logger.busEventLogger.stop();
+          mods.watchdog.supabaseConnectionWatchdog.stop();
+          // Tear down engine services (online listener, cron timer, IndexedDB)
+          mods.bootstrap.shutdownServices();
+        })
+        .catch(() => {});
     };
   }, []);
 

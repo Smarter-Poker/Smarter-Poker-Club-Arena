@@ -86,6 +86,7 @@ import {
 } from '../components/icons/LobbyIcons';
 import { CLUB_HOME_CACHE_PREFIX } from '../utils/clearUserCaches';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
+import { preloadRoute } from '../utils/ChunkPreloader';
 
 // Shark Club fallback logo — used when DB logo_url is null
 /* Dan 2026-08-20: "replace the old logo image with the new one". v25 was a
@@ -2055,6 +2056,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       }
       setSelectedId(entry.id);
       setPanelOpen(true);
+      // Perf pass 2026-08-24: opening the game lobby panel is the strongest
+      // join signal there is — start downloading the TablePage chunk NOW so
+      // the actual "Join" tap resolves from the module cache instead of
+      // stalling on a network fetch. No-op when idle preload already ran.
+      preloadRoute(`/table/${entry.id}`);
     },
     [navigate]
   );

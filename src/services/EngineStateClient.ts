@@ -311,10 +311,11 @@ export class EngineStateClient {
     const wsUrl = this.opts.baseUrl.replace(/^http/, 'ws') + '/ws/table/' + this.opts.tableId;
     // Subprotocol carries auth. Two entries: the literal "bearer", then the JWT.
     //
-    // Roadmap batch 6 (2026-08-21), DEFAULT OFF: with localStorage
-    // ca_ws_mux='1', all tables share ONE physical socket to /ws/multi via a
-    // WebSocket-shaped facade (see EngineSocketMux). Everything below —
-    // seq/RESYNC, watchdog, reconnect backoff — runs unchanged on top of it.
+    // Roadmap batch 6 (2026-08-21), DEFAULT ON since 2026-08-24: all tables
+    // share ONE physical socket to /ws/multi via a WebSocket-shaped facade
+    // (see EngineSocketMux; kill switch localStorage ca_ws_mux='0').
+    // Everything below — seq/RESYNC, watchdog, reconnect backoff — runs
+    // unchanged on top of it.
     let ws: WebSocket;
     if (isMuxEnabled()) {
       ws = engineSocketMux.acquire(
@@ -1419,17 +1420,19 @@ function readTokenFromStorage(): string | null {
 
 export const engineChannelClient = new EngineChannelClient({
   baseUrl: ENGINE_BASE_URL,
-  // 2026-08-22: read via supabase.auth.getSession(), which REFRESHES an
-  // expired token. The raw localStorage read never refreshed, so a device
-  // that suspended past token expiry 4401-looped and then died permanently.
-  // localStorage stays as the fallback for any getSession failure. Dynamic
-  // import keeps this module free of an eager supabase dependency (it is
-  // unit-tested under jsdom without the app's env).
+  // 2026-08-24: routed through the in-memory auth token cache
+  // (src/lib/authToken.ts). Fast path is synchronous — no auth-js microtask
+  // chain on the connect path. Slow path (cache empty / near expiry) still
+  // calls supabase.auth.getSession(), which REFRESHES an expired token
+  // (2026-08-22 fix preserved: the raw localStorage read never refreshed, so
+  // a device that suspended past token expiry 4401-looped and died).
+  // localStorage stays as the last-resort fallback. Dynamic import keeps this
+  // module free of an eager supabase dependency (it is unit-tested under
+  // jsdom without the app's env).
   getToken: async () => {
     try {
-      const { supabase } = await import('../lib/supabase');
-      const { data } = await supabase.auth.getSession();
-      const t = data.session?.access_token ?? null;
+      const { getFreshAccessToken } = await import('../lib/authToken');
+      const t = await getFreshAccessToken();
       if (t) return t;
     } catch {
       /* fall back to storage */

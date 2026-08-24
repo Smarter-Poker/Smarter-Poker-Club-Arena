@@ -173,7 +173,12 @@ describe('EngineSocketMux', () => {
     const unsub = ws.sent.map((s) => JSON.parse(s)).find((m) => m.type === 'UNSUBSCRIBE');
     expect(unsub).toEqual({ type: 'UNSUBSCRIBE', tableId: T1 });
     expect(ws.readyState).toBe(1); // lingering
-    vi.advanceTimersByTime(5_100);
+    // 2026-08-24: linger raised 5s -> 60s. With the mux default-ON this socket
+    // is the lobby connection; a player browsing between tables inside a
+    // minute reuses it instead of paying a fresh TLS handshake.
+    vi.advanceTimersByTime(59_000);
+    expect(ws.readyState).toBe(1); // still lingering inside the window
+    vi.advanceTimersByTime(1_100);
     expect(ws.readyState).toBe(3); // closed after the linger window
   });
 });

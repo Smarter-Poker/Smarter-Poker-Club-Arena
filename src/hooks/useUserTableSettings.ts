@@ -88,29 +88,26 @@ export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
   table_alias: '',
   multi_auto_switch: true,
   multi_action_queue: true,
-  // ── THESE TWO MUST MATCH THE DATABASE (2026-08-23) ──
+  // ── THESE TWO MUST MATCH THE DATABASE ──
   //
-  // `user_table_settings` declares both of these NOT NULL DEFAULT false. This
-  // object declared them true, and TableSettingsPanel renders every toggle
-  // straight from it — so a user with no settings row was shown "Desktop Turn
-  // Alerts" and "Shared Connection (Beta)" switched ON while both were, in
-  // fact, OFF:
+  // TableSettingsPanel renders every toggle straight from this object until
+  // the user's row loads, and the save path is a per-key upsert — so a client
+  // default that disagrees with the column default both lies to the user AND
+  // silently flips their other settings on first save (full history in
+  // tests/user-table-settings-defaults.test.ts). The database is the source
+  // of truth; change it in a migration FIRST, then here.
   //
-  //   * the `ca_ws_mux` mirror is only written inside `if (data)`, so with no
-  //     row EngineStateClient never sees the flag and opens per-table sockets
-  //     exactly as before;
-  //   * Notification permission is only ever requested by the toggle tap, so
-  //     an alerts switch that starts ON has no permission behind it.
-  //
-  // The toggle therefore displayed the opposite of reality, and the first tap
-  // "turned off" something that had never been on. For the mux that is worse
-  // than cosmetic: it makes the beta unsoakable, because you cannot tell who
-  // is actually running it.
-  //
-  // The database is the source of truth — these follow it. Pinned by
-  // tests/user-table-settings-defaults.test.ts so they cannot drift again.
+  // multi_desktop_alerts stays false: Notification permission is only ever
+  // requested by the toggle tap, so an alerts switch must never start ON.
   multi_desktop_alerts: false,
-  multi_shared_socket: false,
+  // 2026-08-24 (Dan, binding): shared socket promoted from opt-in beta to the
+  // DEFAULT transport. Per-join TLS handshakes (300-600ms) were plaguing
+  // every table join globally; the /ws/multi server path shipped 2026-08-21
+  // with unit coverage on both sides. DB default flipped to true in migration
+  // 20260824_shared_socket_default_on.sql (applied to production the same
+  // day). The toggle remains the kill switch: turning it OFF writes
+  // ca_ws_mux='0' and EngineStateClient falls back to per-table sockets.
+  multi_shared_socket: true,
 };
 
 // Metadata for rendering toggles
@@ -215,8 +212,9 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
   },
   {
     key: 'multi_shared_socket',
-    label: 'Shared Connection (Beta)',
-    description: 'All tables share one game connection - fewer reconnects, better battery',
+    label: 'Shared Connection',
+    description:
+      'All tables share one game connection - instant table joins, fewer reconnects, better battery',
   },
 ];
 

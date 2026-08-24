@@ -61,7 +61,10 @@ const DB_COLUMN_DEFAULTS = {
   multi_action_queue: true,
   multi_auto_switch: true,
   multi_desktop_alerts: false,
-  multi_shared_socket: false,
+  // 2026-08-24: flipped to true by 20260824_shared_socket_default_on.sql —
+  // the shared socket left beta and became the default transport (Dan's
+  // global-connectivity directive). Applied to production before merge.
+  multi_shared_socket: true,
   show_avatars: true,
   show_badges: false,
   show_stack_in_bb: false,
@@ -78,10 +81,11 @@ describe('DEFAULT_USER_TABLE_SETTINGS agrees with the database', () => {
     });
   }
 
-  it('keeps the shared-socket beta OFF until somebody opts in', () => {
-    // The whole point of a beta flag. A default of true would enrol every user
-    // with no settings row into an unsoaked transport change.
-    expect(DEFAULT_USER_TABLE_SETTINGS.multi_shared_socket).toBe(false);
+  it('shared socket defaults ON — it is the transport now, not a beta', () => {
+    // 2026-08-24 (Dan, binding): per-join TLS handshakes were costing every
+    // table join 300-600ms globally. The mux is the default transport; the
+    // settings toggle remains the per-user kill switch (writes ca_ws_mux='0').
+    expect(DEFAULT_USER_TABLE_SETTINGS.multi_shared_socket).toBe(true);
   });
 
   it('never starts desktop alerts ON, because permission is only asked on tap', () => {

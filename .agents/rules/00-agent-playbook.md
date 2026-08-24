@@ -1,12 +1,6 @@
-If your PR fails CI, has a merge conflict, or gets blocked from deploying, **YOU MUST FIX IT YOURSELF IMMEDIATELY.**
-Do not abandon the PR. Do not wait for another agent to fix it. Do not wait for a human to fix it.
-Check the failing logs, resolve the issue, force-push the fix, and restart your `schedule` timer to verify it goes green.
-
 ---
-
 description: The one and only way agents ship code in this repo. Binding on Claude, Antigravity, Cowork and every other agent.
 trigger: always_on
-
 ---
 
 # RULE 1 — VERIFICATION PASS. Do not take your own word for it.

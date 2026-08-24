@@ -11,12 +11,14 @@
  * dedupe, and a sign-out purge that leaves nothing behind (memory included).
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   WALLET_CACHE_PREFIX,
   walletCacheKey,
   readWalletCache,
   writeWalletCache,
+  writeWalletCacheDebounced,
+  flushWalletCacheWrites,
   dedupedFetch,
   clearWalletMemoryCache,
 } from '@/lib/walletCache';
@@ -97,6 +99,54 @@ describe('walletCache', () => {
     const failing = vi.fn().mockRejectedValueOnce(new Error('down')).mockResolvedValue('ok');
     await expect(dedupedFetch('k2', failing)).rejects.toThrow('down');
     await expect(dedupedFetch('k2', failing)).resolves.toBe('ok');
+  });
+
+  describe('debounced storage writes', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('memory is written synchronously; localStorage settles after the debounce', () => {
+      const key = walletCacheKey(USER, '25450', 'club');
+      writeWalletCacheDebounced(key, { chipBalance: 1 }, 800);
+      // In-session readers see the new value immediately (memory layer)...
+      expect(readWalletCache(key)).toEqual({ chipBalance: 1 });
+      // ...but storage has not been touched yet.
+      expect(localStorage.getItem(key)).toBeNull();
+      vi.advanceTimersByTime(800);
+      expect(JSON.parse(localStorage.getItem(key)!).data).toEqual({ chipBalance: 1 });
+    });
+
+    it('a burst of writes stays out of storage until the burst settles, then lands the LAST value', () => {
+      const key = walletCacheKey(USER, '25450', 'club');
+      for (let i = 1; i <= 20; i++) {
+        writeWalletCacheDebounced(key, { chipBalance: i }, 800);
+        vi.advanceTimersByTime(100); // 100ms apart — every write inside the window
+        // Trailing debounce: while the burst is live, storage is untouched.
+        expect(localStorage.getItem(key)).toBeNull();
+      }
+      vi.advanceTimersByTime(800); // burst over — the one deferred write fires
+      expect(JSON.parse(localStorage.getItem(key)!).data).toEqual({ chipBalance: 20 });
+    });
+
+    it('flushWalletCacheWrites lands pending values immediately (pagehide path)', () => {
+      const key = walletCacheKey(USER, '25450', 'club');
+      writeWalletCacheDebounced(key, { chipBalance: 777 }, 800);
+      expect(localStorage.getItem(key)).toBeNull();
+      flushWalletCacheWrites(); // what the pagehide/hidden listener calls
+      expect(JSON.parse(localStorage.getItem(key)!).data).toEqual({ chipBalance: 777 });
+    });
+
+    it('a memory purge cancels pending flushes — sign-out cannot resurrect a balance', () => {
+      const key = walletCacheKey(USER, '25450', 'club');
+      writeWalletCacheDebounced(key, { chipBalance: 999 }, 800);
+      clearWalletMemoryCache(); // what clearUserCaches calls
+      vi.advanceTimersByTime(800);
+      expect(localStorage.getItem(key)).toBeNull();
+    });
   });
 
   it('sign-out purges every wallet cache entry, the uuid map, and the memory layer', () => {

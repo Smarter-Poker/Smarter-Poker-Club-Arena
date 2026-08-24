@@ -52,9 +52,26 @@ export function useRealtimeFinancials() {
       }
     });
 
+    // 2026-08-24: FINANCIAL_UPDATE is push-only — any balance change that
+    // happens while the channel socket is down (engine deploy, network blip)
+    // was silently missed and the UI showed a stale balance until something
+    // else refreshed it. On every reconnect, force a refetch of whatever this
+    // surface displays. 'idle' → 'connected' is the FIRST connect (nothing
+    // was missed); any other prior status means a gap we cannot account for.
+    let prevStatus = engineChannelClient.getStatus();
+    const unsubStatus = engineChannelClient.onStatusChange((status) => {
+      const cameFrom = prevStatus;
+      prevStatus = status;
+      if (status !== 'connected') return;
+      if (cameFrom === 'idle' || cameFrom === 'connecting') return; // first connect
+      console.info('[RealtimeFinancials] Channel reconnected - refetching balances');
+      masterBus.emit('BALANCE_UPDATED', { source: 'engine_ws_reconnect_refetch' });
+    });
+
     return () => {
       console.info(`[RealtimeFinancials] Removing engine WS listener for user ${userId}`);
       unsubscribe();
+      unsubStatus();
     };
   }, [userId]);
 }

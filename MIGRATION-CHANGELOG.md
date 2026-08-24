@@ -13893,3 +13893,31 @@ conflict resolution that drops one fails with the reason rather than a regex
 mismatch in an unrelated file. It strips comments before asserting absence —
 this repo quotes the code it replaced, and a comment must not be able to report
 its own bug as present.
+
+## Cowork session 2026-08-24 (18) — THE SERVER KILLED EVERY WALLET/TOURNAMENT SOCKET EVERY 60 SECONDS
+
+Dan: "THE SERVER DISCONNECTS HAVE GOT TO STOP!!" Full audit in
+`.agent/audits/2026-08-24-always-connected-three-root-causes.md`. Three fixes:
+
+1. **Heartbeat dialect mismatch.** The channel server sent CHANNEL_PING and
+   accepted only CHANNEL_PONG; the client only answers PING with PONG. Every
+   /ws/channel connection (wallets, tournament events, club events, lobby) was
+   force-closed at the 60s mark, forever. Server now sends both dialects and
+   counts ANY well-formed inbound frame as liveness; client answers both.
+
+2. **No resubscribe after reconnect.** JOIN_CLUB/JOIN_TOURNAMENT/JOIN_LOBBY
+   were sent exactly once per page life while the server's subscription state
+   dies with the connection — one reconnect and tournaments/lobby went silent
+   until reload. EngineChannelClient now replays desired subscription state on
+   every reconnect, exposes onStatusChange(), and useRealtimeFinancials
+   refetches balances on reconnect (FINANCIAL_UPDATEs missed while down were
+   previously lost forever).
+
+3. **Deploys stopped kicking seated players.** ~25 engine restarts/day (263
+   server commits/wk); the drain gate proceeded after 8 min even with humans
+   seated. It now defers instead (job succeeds, nothing restarts), bounded by
+   a 6h engine-uptime staleness cap, with an hourly catch-up schedule + dedupe
+   step so deferred code lands in the first empty window.
+
+16 tests (6 server heartbeat + 5 new client + 5 existing green), tsc clean
+both sides.

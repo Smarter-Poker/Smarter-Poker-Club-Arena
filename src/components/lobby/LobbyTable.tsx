@@ -14,6 +14,7 @@
 import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import type { LobbyEntry, LobbyStatusKey } from './lobbyEntries';
 import { mttPhaseText, mttTitleLine } from './lobbyEntries';
+import { prefetchIntent } from '../../utils/ChunkPreloader';
 import './LobbyTable.css';
 
 type SortDir = 'asc' | 'desc';
@@ -743,6 +744,17 @@ export default function LobbyTable({
                 data-id={entry.id}
                 className={`lt-row lt-row--${entry.status}${selected ? ' is-selected' : ''}`}
                 aria-selected={selected}
+                // Hover / touch / keyboard-focus on a lobby row is the earliest
+                // honest signal that this table is where the player is going, so
+                // start pulling the TablePage chunk now. TablePage is the single
+                // heaviest chunk in the app; fetching it while the player is
+                // still reading the row means the click resolves from the module
+                // cache instead of stalling on the network.
+                //
+                // Spread FIRST so the row's own onClick/onDoubleClick below win,
+                // and idempotent - repeat hovers over the same row are a no-op
+                // (see ChunkPreloader.preloadRoute).
+                {...prefetchIntent(`/table/${entry.id}`)}
                 onClick={() => onSelect(entry)}
                 onDoubleClick={() => onActivate(entry)}
               >

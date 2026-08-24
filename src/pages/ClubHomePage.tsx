@@ -343,8 +343,26 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // Refs to avoid stale closures in realtime subscriptions
   const clubIdRef = useRef(clubId);
 
-  const [club, setClub] = useState<ClubData | null>(null);
-  const [tables, setTables] = useState<TableData[]>([]);
+  /**
+   * ALWAYS-ON (Dan, 2026-08-24): seed from the device cache DURING the first
+   * render, not in an effect afterwards.
+   *
+   * The SWR restore further down does exactly this - reads getClubHomeCache and
+   * calls setClub/setTables/setLoading(false) - but it lives in a useEffect, and
+   * effects run AFTER paint. So entering a club ALWAYS rendered one frame of
+   * skeleton first, even when the full club and its table list were sitting in
+   * localStorage the whole time. That single frame is the flicker that reads as
+   * "the lobby reloads every time".
+   *
+   * A lazy useState initialiser runs during render, so the first painted frame
+   * already has the club. The effect below is kept: it re-seeds on a genuine
+   * clubId CHANGE (React keeps this component mounted across /clubs/a ->
+   * /clubs/b), where a lazy initialiser cannot help because it only ever runs
+   * once per mount.
+   */
+  const bootCache = useState(() => (clubId ? getClubHomeCache(clubId) : null))[0];
+  const [club, setClub] = useState<ClubData | null>(bootCache?.club ?? null);
+  const [tables, setTables] = useState<TableData[]>(bootCache?.tables ?? []);
   const [tournaments, setTournaments] = useState<TournamentData[]>([]);
   const [wallet, setWallet] = useState<WalletBalances>({ gold: 0, diamonds: 0 });
   const [jackpotAmount, setJackpotAmount] = useState(0);
@@ -403,7 +421,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
      the state sat permanently on its default while the filter code below still
      branched on it. One mechanism, no dead state. */
   const [isOwner, setIsOwner] = useState(false);
-  const [loading, setLoading] = useState(true);
+  // Only start in the loading state when there is genuinely nothing to show.
+  // Starting at `true` unconditionally guaranteed a skeleton frame on every
+  // entry, including the very common case of returning to a club whose data is
+  // already cached (see the bootCache note above). hasDataRef is seeded to
+  // match so the watchdog and the reset guard agree with what is on screen.
+  const [loading, setLoading] = useState(!bootCache?.club);
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null);
   const [isInUnion, setIsInUnion] = useState(false);
@@ -424,7 +447,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     () => useUserStore.getState().user?.id ?? null
   );
   const toast = useToast();
-  const hasDataRef = useRef(false);
+  // Seeded from the boot cache: if the first painted frame already shows a club
+  // (see bootCache above), then data IS on screen, and the stall watchdog and
+  // the per-club reset guard must both agree with that. Leaving it false while
+  // a cached club renders would let the watchdog declare a stall over a lobby
+  // the player is looking at.
+  const hasDataRef = useRef(Boolean(bootCache?.club));
   const loadingRef = useRef(false);
   const [wsConnected, setWsConnected] = useState(true);
 

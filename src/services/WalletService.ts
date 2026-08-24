@@ -523,8 +523,47 @@ export const WalletService = {
   // exactly as its 'buyin' branch already did for the same reason.
 
   /**
-   * Log a wallet transaction for audit trail
-   * All chip movements are recorded as currency-grade transactions
+   * Log a wallet transaction for audit trail.
+   *
+   * ── 2026-08-24: THIS NO LONGER WRITES FROM THE BROWSER. ──────────────────
+   *
+   * It never could. `log_wallet_transaction` is not SECURITY DEFINER and is
+   * granted to service_role only, and `chip_ledger` grants `authenticated`
+   * SELECT but not INSERT. Production logs for a single 3-hour window on
+   * 2026-08-24 show 125 "permission denied for function log_wallet_transaction"
+   * and 124 "permission denied for table chip_ledger" - a 100% failure rate for
+   * as long as both have existed. `CashoutService` already carries the note:
+   * "log_wallet_transaction is service_role-only and would silently no-op."
+   *
+   * What made it expensive rather than merely useless: the RPC was wrapped in
+   * retryAsync(..., 3), so each call retried a PERMANENT authorization error
+   * three times; the chip_ledger insert failed alongside it; and every failure
+   * then awaited FinancialAlertService.logCritical(), which is itself another
+   * database write. One doomed audit log therefore cost roughly six round trips
+   * and raised a false "audit trail gap" CRITICAL alert - on a database already
+   * saturated enough to be cancelling ~20 statements a minute. It also meant
+   * the genuine critical-alert channel was full of noise.
+   *
+   * THE AUDIT TRAIL IS NOT LOST, because the browser was never the one keeping
+   * it. Every real movement of money is written to `wallet_transactions`
+   * server-side, inside the same transaction as the movement itself, by the
+   * SECURITY DEFINER RPC that performs it: atomic_table_buyin,
+   * atomic_table_cashout, atomic_table_rebuy, atomic_table_withdraw,
+   * atomic_credit_wallet_and_log, atomic_distribute_rake, atomic_seat_horse and
+   * atomic_table_addon. That is strictly better bookkeeping than a best-effort
+   * client write, which could succeed while the money move failed, or vice
+   * versa.
+   *
+   * These are deliberately NOT granted to `authenticated` to make the client
+   * write work: doing so would let any logged-in user forge ledger rows for any
+   * user with arbitrary amounts. The denial is the control working.
+   *
+   * Remaining gap, tracked and intentionally not papered over here: a few call
+   * sites log non-monetary AUDIT NOTES that no atomic RPC writes - an agent
+   * promotion (amount 0), a same-person union->club allocation note, a horse
+   * seating note. Those need a service-role API route to land anywhere real.
+   * Until that route exists they are reported once, locally, instead of
+   * pretending to persist. See MIGRATION-CHANGELOG 2026-08-24.
    */
   async logTransaction(
     userId: string,
@@ -537,87 +576,28 @@ export const WalletService = {
     handId?: string,
     relatedEntityId?: string
   ): Promise<void> {
-    try {
-      // Use SECURITY DEFINER RPC to bypass RLS on wallet_transactions
-      const { error } = await retryAsync(
-        () =>
-          supabase.rpc('log_wallet_transaction', {
-            p_user_id: userId,
-            p_wallet_type: walletType,
-            p_amount: amount,
-            p_type: type,
-            p_category: category,
-            p_description: description,
-            p_table_id: tableId || null,
-            p_hand_id: handId || null,
-            p_related_entity_id: relatedEntityId || null,
-          }),
-        3
-      );
-      // Also write to chip_ledger (immutable append-only audit trail)
-      // Guard: chip_ledger has amount > 0 CHECK constraint — skip zero-amount entries
-      const ledgerAmount = Math.abs(amount);
-      if (ledgerAmount > 0) {
-        supabase
-          .from('chip_ledger')
-          .insert({
-            performed_by: userId,
-            from_type:
-              type === 'debit'
-                ? 'player_wallet'
-                : relatedEntityId
-                  ? 'player_wallet'
-                  : 'system_mint',
-            from_entity_id: type === 'debit' ? userId : relatedEntityId,
-            to_type:
-              type === 'credit'
-                ? 'player_wallet'
-                : relatedEntityId
-                  ? 'player_wallet'
-                  : 'system_burn',
-            to_entity_id: type === 'credit' ? userId : relatedEntityId,
-            amount: ledgerAmount,
-            category,
-            description,
-            table_id: tableId || undefined,
-            hand_id: handId || undefined,
-          })
-          .then(({ error: ledgerErr }) => {
-            if (ledgerErr) reportError(ledgerErr, 'WalletService.chip_ledger_write_failed');
-          });
-      }
-
-      if (error) {
-        reportError(error, 'WalletService.logTransaction', {
-          userId,
-          walletType,
-          amount,
-          type,
-          category,
-        });
-        // PARTIAL FAILURE RECOVERY: financial op succeeded but audit trail failed
-        // Fire a critical alert so ops can manually reconcile
-        // FIX: await the async logCritical call to prevent unhandled rejections
-        await FinancialAlertService.logCritical(
-          'WalletService.logTransaction',
-          'Transaction log failed after successful financial operation - audit trail gap',
-          { userId, walletType, amount, type, category, description, rpcError: error.message }
-        );
-      }
-    } catch (err: unknown) {
-      reportError(err, 'WalletService.logTransaction.catch', {
+    // No network call. See the block comment above: both writes this used to
+    // attempt are refused by the database for `authenticated`, deliberately, and
+    // the authoritative row is written server-side by the atomic_* RPC that
+    // moved the money. Retrying a permanent authorization error three times and
+    // then raising a false CRITICAL alert cost ~6 database round trips per call
+    // and produced nothing.
+    //
+    // Kept as a no-op rather than deleted at ~11 call sites so the intent stays
+    // visible and the service-role route that will carry the non-monetary audit
+    // notes has an obvious seam to land on.
+    if (import.meta.env?.DEV) {
+      console.debug('[WalletService.logTransaction] no-op (server-authoritative audit)', {
         userId,
         walletType,
         amount,
         type,
         category,
+        description,
+        tableId,
+        handId,
+        relatedEntityId,
       });
-      // FIX: await the async logCritical call to prevent unhandled rejections
-      await FinancialAlertService.logCritical(
-        'WalletService.logTransaction',
-        'Transaction log threw exception - audit trail gap',
-        { userId, walletType, amount, type, category, error: String(err) }
-      );
     }
   },
 

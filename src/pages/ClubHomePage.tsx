@@ -839,8 +839,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     const unsubs = [
       masterBus.subscribeDebounced('CLUB_JOINED', reload, 300),
       masterBus.subscribeDebounced('CLUB_LEFT', reload, 300),
-      masterBus.subscribeDebounced('BALANCE_UPDATED', reload, 300),
-      masterBus.subscribeDebounced('DIAMOND_BALANCE_CHANGED', reload, 300),
       masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', reload, 300),
       // Phase 11: Only reload for OUR club's updates (not every club in the platform)
       masterBus.subscribeDebounced(
@@ -864,11 +862,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       masterBus.subscribeDebounced('WAITLIST_PROMOTED', reload, 300),
     ];
 
-    // 1-minute fallback interval to ensure the page data doesn't get completely stale
+    // 90-second fallback interval to ensure the page data doesn't get completely stale
     // when real-time events are missed.
     const fallbackInterval = setInterval(() => {
       reload();
-    }, 60_000);
+    }, 90_000);
 
     return () => {
       isMounted = false;

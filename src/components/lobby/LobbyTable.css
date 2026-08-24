@@ -154,6 +154,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 500;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  letter-spacing: 0.01em;
 }
 .lt-live {
   flex: none;

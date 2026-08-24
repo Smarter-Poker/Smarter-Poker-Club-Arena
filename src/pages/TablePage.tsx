@@ -9392,6 +9392,35 @@ export default function TablePage({
     if (!isHeroTurnContext) setTimeBankArmed(false);
   }, [isHeroTurnContext]);
 
+  /* THE COUNTER WENT STALE, and it gates the button.
+     `mapEngineSnapshot` DECLARES `time_bank_uses_remaining` on its input type
+     and never maps it out, so the only writers of `timeBanksRemaining` were a
+     mount-time DB read, the TIME_BANK_ACTIVATED handler and the purchase RPC.
+     The engine publishes the number on EVERY snapshot, in three separate
+     places, and all of it was dropped on the floor.
+     That matters because `handleActivateTimeBank` early-returns on
+     `timeBanksRemaining <= 0`. Miss one activation event — the armed-redemption
+     path broadcasts on the supabase channel only — and the count drifts: the
+     player is either shown banks they have already spent, or refused a press
+     for banks they still hold, with no way to correct it short of rejoining.
+     Read straight off the snapshot rather than through the mapper, so this
+     cannot be dropped again by a mapping that forgets a field. `undefined`
+     means "this snapshot says nothing", not "you have none" — the same lesson
+     the hole-card merge above is a monument to. */
+  useEffect(() => {
+    if (!engineSnapshot || !userId) return;
+    /* Narrowed to the two fields this reads. The hook's snapshot type is wider
+       and looser than mapEngineSnapshot's input, so a blanket `any` here would
+       hide a renamed column instead of surfacing it. */
+    const roster = (
+      engineSnapshot as { players?: Array<{ user_id?: string; time_bank_uses_remaining?: number }> }
+    ).players;
+    const uses = (roster || []).find((p) => p?.user_id === userId)?.time_bank_uses_remaining;
+    if (typeof uses === 'number' && Number.isFinite(uses)) {
+      setTimeBanksRemaining((prev) => (prev === uses ? prev : uses));
+    }
+  }, [engineSnapshot, userId]);
+
   /**
    * Buy one time-bank extension with diamonds.
    *

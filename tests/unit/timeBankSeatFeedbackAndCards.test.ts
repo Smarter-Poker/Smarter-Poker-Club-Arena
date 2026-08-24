@@ -21,9 +21,8 @@ import { resolve } from 'node:path';
  *
  * Reaching any of them behaviourally needs a live engine, a websocket sequence
  * gap and a twenty-second wait.
- */
-/**
- * COMMENTS ARE NOT CODE, and a source-level test that forgets it lies twice.
+ *
+ * ── COMMENTS ARE NOT CODE ──
  *
  * Every fix below carries a comment quoting the broken line it replaced — that
  * is house style, and it is what makes the next reader understand why the code
@@ -150,6 +149,34 @@ describe('an already-granted bank must not be auto-folded away', () => {
     // If the engine reworded this, the client guard above stops matching and
     // the auto-fold bug returns silently. Fail here instead.
     expect(TURNS).toContain("'Your Time Bank Is Already Running'");
+  });
+});
+
+describe('the time bank counter tracks the engine instead of drifting', () => {
+  /* `mapEngineSnapshot` DECLARES `time_bank_uses_remaining` on its input type
+     and never maps it out, so the only writers of `timeBanksRemaining` were a
+     mount-time DB read, the TIME_BANK_ACTIVATED handler and the purchase RPC —
+     while the engine published the number on every snapshot. Miss one event
+     and the count drifts, which matters because the press is gated on it. */
+  const MAPPER = readCode('src/utils/mapEngineSnapshot.ts');
+
+  it('reads the count straight off the snapshot', () => {
+    expect(TABLE_PAGE).toMatch(/time_bank_uses_remaining/);
+    expect(TABLE_PAGE).toMatch(
+      /setTimeBanksRemaining\(\(prev\) => \(prev === uses \? prev : uses\)\)/
+    );
+  });
+
+  it('treats a snapshot with no figure as no news, not as zero', () => {
+    // Writing 0 on `undefined` would refuse a press for banks the player holds.
+    expect(TABLE_PAGE).toMatch(/typeof uses === 'number' && Number\.isFinite\(uses\)/);
+  });
+
+  it('still explains why it bypasses the mapper', () => {
+    // If the mapper ever starts emitting the field, this bypass becomes
+    // redundant rather than wrong — but the input declaration must still exist
+    // or the engine has renamed the column underneath both of them.
+    expect(MAPPER).toContain('time_bank_uses_remaining');
   });
 });
 

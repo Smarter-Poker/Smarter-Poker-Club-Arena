@@ -203,7 +203,19 @@ function HomePageInner() {
   });
 
   // Per-club stats for featured card rendering
-  const [clubStats, setClubStats] = useState<Record<string, ClubStats>>({});
+  const [clubStats, setClubStats] = useState<Record<string, ClubStats>>(() => {
+    try {
+      const cached = localStorage.getItem(STORAGE_KEYS.CLUB_STATS_CACHE);
+      const cacheTs = localStorage.getItem(STORAGE_KEYS.CLUB_STATS_CACHE_TS);
+      const isFresh = cacheTs && Date.now() - Number(cacheTs) < SWR_CACHE_TTL;
+      if (cached && isFresh) {
+        return JSON.parse(cached);
+      }
+    } catch {
+      /* ignore corrupt cache */
+    }
+    return {};
+  });
   // Guard: prevent welcome toast from firing before first server fetch completes
   const hasFetchedOnceRef = useRef(false);
 
@@ -1121,6 +1133,8 @@ function HomePageInner() {
 
         if (isMounted) {
           setClubStats(statsMap);
+          localStorage.setItem(STORAGE_KEYS.CLUB_STATS_CACHE, JSON.stringify(statsMap));
+          localStorage.setItem(STORAGE_KEYS.CLUB_STATS_CACHE_TS, String(Date.now()));
 
           // Lazy-backfill baked card images for clubs missing card_image_url
           const backfillTargets = displayClubs

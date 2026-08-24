@@ -2065,9 +2065,26 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       setPanelOpen(false);
       // Execute navigate in the next tick to ensure the panel unmounts safely
       // without interrupting React Router transition internals
-      setTimeout(() => navigate(`/table/${tableId}`), 0);
+      setTimeout(() => {
+        const entry = tables.find((t) => t.id === tableId);
+        navigate(`/table/${tableId}`, {
+          state: {
+            initialTableState: entry
+              ? {
+                  tableId: entry.id,
+                  tableName: entry.name || 'Loading...',
+                  gameType: entry.game_variant || 'NLH',
+                  maxPlayers: entry.max_players || 6,
+                  currentPlayers: entry.current_players || 0,
+                  buyInAmount: entry.small_blind,
+                  buyInFee: entry.big_blind,
+                }
+              : undefined,
+          },
+        });
+      }, 0);
     },
-    [navigate]
+    [navigate, tables]
   );
 
   const handleRegister = useCallback(
@@ -2465,7 +2482,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                   and no popup anywhere in the lobby. */}
               <DynamicWallet
                 userId={currentUserId}
-                clubId={resolvedClubId}
+                clubId={clubId || ''}
                 // WHOSE books. A union's own lobby shows union books; every
                 // club lobby shows club books, whoever is standing in it.
                 variant={club?.is_union ? 'union' : 'club'}

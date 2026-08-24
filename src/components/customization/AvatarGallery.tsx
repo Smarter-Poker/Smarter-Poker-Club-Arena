@@ -33,6 +33,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { avatarService, type Avatar } from '../../services/AvatarService';
 import { masterBus } from '../../core/MasterBus';
 import { haptic } from '../../services/SoundService';
@@ -189,7 +190,7 @@ export function AvatarGallery({
 
   const unchanged = selectedAvatar === currentAvatarUrl;
 
-  return (
+  const content = (
     <div className="avatar-gallery-overlay" onClick={onClose}>
       <div
         className="avatar-gallery"
@@ -349,6 +350,8 @@ export function AvatarGallery({
       </div>
     </div>
   );
+
+  return createPortal(content, document.body);
 }
 
 export default AvatarGallery;

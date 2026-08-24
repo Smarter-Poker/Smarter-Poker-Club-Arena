@@ -20,7 +20,9 @@ import {
   chipCollectOffsetPx,
   chipRailInset,
   isBottomSeat,
+  isBoardLevelSeat,
   CHIP_RAIL_BOTTOM_EXTRA_PX,
+  CHIP_RAIL_SCALE,
   CHIP_COLLECT_FRACTION,
   type Pos,
   type Size,
@@ -64,7 +66,25 @@ describe('the chip rail', () => {
          already accepts exactly this shape of exception for the button holder
          (CHIP_RAIL_DEALER_EXTRA_PX), and like that one this is a CONSTANT, not
          a per-seat fraction - asserted directly below. */
-    const distances = SEATS.filter((s) => !isBottomSeat(s)).map((s) =>
+
+    /* AMENDED AGAIN 2026-08-24. Two things moved, both of them INTO this module
+   from a stylesheet, and both of them change the numbers these tests assert.
+
+   1. CHIP_RAIL_SCALE. TableVisualHotfix.css multiplied every offset computed
+      here by 1.82 before painting it, so the "rail" this file was measuring
+      was never the rail on the screen. Folded in, so a test can finally see
+      the real distance. Every constant asserted below is therefore scaled.
+
+   2. The board-level exception. That same stylesheet ALSO clamped the x term
+      to +/-52px, which cut the left and right seats to under half the run
+      everyone else got - Dan 2026-08-24: "chips from players on the left and
+      right sides need to be put on the table farther, they are too close to
+      the rail." The clamp is gone, but the reason it existed is not: a side
+      seat at the community board's own height really does have about 5% of the
+      table's width before it reaches the cards. That seat, and only that seat,
+      walks a shorter rail (isBoardLevelSeat), so it is excluded from the
+      equal-distance rule for the same reason the hero already is. */
+    const distances = SEATS.filter((s) => !isBottomSeat(s) && !isBoardLevelSeat(s)).map((s) =>
       dist(betChipOffsetPx(s, TABLE, false))
     );
     const min = Math.min(...distances);
@@ -82,7 +102,7 @@ describe('the chip rail', () => {
       { w: 380, h: 380 },
       { w: 240, h: 520 },
     ] as Size[]) {
-      const d = SEATS.filter((s) => !isBottomSeat(s)).map((s) =>
+      const d = SEATS.filter((s) => !isBottomSeat(s) && !isBoardLevelSeat(s)).map((s) =>
         dist(betChipOffsetPx(s, size, false))
       );
       expect(Math.max(...d) - Math.min(...d), `${size.w}x${size.h}`).toBeLessThanOrEqual(1.5);
@@ -91,17 +111,24 @@ describe('the chip rail', () => {
 
   it('gives the bottom rail a constant extra step, for its taller avatar', () => {
     const bottom = { x: 50, y: 100 };
-    const side = { x: 94, y: 55 };
+    // 2026-08-24: was { x: 94, y: 55 }, which is level with the community
+    // board and now walks a deliberately shorter rail - it cannot stand for
+    // "an ordinary seat" any more. { x: 88, y: 30 } is the same ring, clear of
+    // the board, on the same side of the table.
+    const side = { x: 88, y: 30 };
+    // The extra is a constant in this module's own units, and this module now
+    // owns the 1.82 that the stylesheet used to apply on top of it.
+    const expected = CHIP_RAIL_BOTTOM_EXTRA_PX * CHIP_RAIL_SCALE;
     const extraBottom =
       dist(betChipOffsetPx(bottom, TABLE, false)) - dist(betChipOffsetPx(side, TABLE, false));
     expect(extraBottom).toBeGreaterThan(0);
-    expect(Math.abs(extraBottom - CHIP_RAIL_BOTTOM_EXTRA_PX)).toBeLessThanOrEqual(1.5);
+    expect(Math.abs(extraBottom - expected)).toBeLessThanOrEqual(1.5);
 
     // Constant, not a fraction: the same extra on a much bigger table.
     const big: Size = { w: 1200, h: 700 };
     const extraBig =
       dist(betChipOffsetPx(bottom, big, false)) - dist(betChipOffsetPx(side, big, false));
-    expect(Math.abs(extraBig - CHIP_RAIL_BOTTOM_EXTRA_PX)).toBeLessThanOrEqual(1.5);
+    expect(Math.abs(extraBig - expected)).toBeLessThanOrEqual(1.5);
   });
 
   it('steps the dealer further out, by the same amount whoever they are', () => {
@@ -113,7 +140,27 @@ describe('the chip rail', () => {
       // is rounded on each axis independently, so the magnitude of the vector
       // can land up to ~0.71px either side - hence a stated 1.5px window
       // rather than pretending the arithmetic is exact.
-      const extra = chipRailInset(TABLE, true) - chipRailInset(TABLE, false);
+      // Scaled, because CHIP_RAIL_SCALE is applied to the whole inset - see
+      // the banner above. A board-level seat is excluded from the exact figure:
+      // it walks a different scale AND is floored at its own button's distance
+      // (CHIP_RAIL_MIN_CLEARANCE_PX), so its dealer step is bounded but not
+      // constant. It still has to step further out, which is asserted above.
+      if (isBoardLevelSeat(seat)) continue;
+
+      // The other exception is the ceiling. betChipOffsetPx never carries a
+      // chip more than 80% of the way to the middle - they belong to a player,
+      // not to the pot - and on a tall narrow table the HERO reaches it: it
+      // already has the bottom-rail extra, and 1.82 on top of that puts the
+      // button-holder's rail past the limit, so its dealer step is trimmed.
+      //
+      // That trim is the fix working, not a bug to assert around. Before the
+      // scale moved into this module the ceiling was applied to the UNSCALED
+      // inset and could never bind, so the hero-with-the-button's chips really
+      // did sit 93% of the way to the centre - which is to say, in the pot.
+      const run = Math.hypot(((50 - seat.x) * TABLE.w) / 100, ((50 - seat.y) * TABLE.h) / 100);
+      if (dealer >= run * 0.8 - 1.5) continue;
+
+      const extra = (chipRailInset(TABLE, true) - chipRailInset(TABLE, false)) * CHIP_RAIL_SCALE;
       expect(Math.abs(dealer - plain - extra)).toBeLessThanOrEqual(1.5);
     }
   });

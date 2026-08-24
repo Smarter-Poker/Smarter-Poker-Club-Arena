@@ -421,6 +421,7 @@
    Sits below the POT pill while a street is being bet: tiny chip stack icon
    + the street's accumulating total. Disappears when the chips sweep in. */
 .pot-display__street {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -453,11 +454,31 @@
    a checked-in pre-fix stylesheet at four viewport widths, and it only stays
    that way while this pile is out of flow. */
 
+/* ── ONE TOWER, HIGHEST DENOMINATION ON THE BOTTOM ────────────────────────
+   Dan 2026-08-24: "chips entering the pot should be stacked and slightly
+   offset so you can see them all, (highest denomination on the bottom) but not
+   right next to each other. And all chips should be the same size."
+
+   Was a horizontal row of per-denomination columns, at its own 16px chip size
+   while the seat chips arriving from ChipPhysics were 26px. A bet therefore
+   visibly CHANGED SIZE as it swept into the pot it was joining. Both now read
+   --cp-chip-size from ChipPhysics.css, which is the single source for it.
+
+   column-reverse puts the first DOM child at the bottom, and visualChipStacks
+   returns groups highest-denomination first, so the ladder comes out of DOM
+   order for free. */
 .pot-display__pile {
   display: flex;
-  align-items: flex-end;
-  gap: 4px;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 0;
   pointer-events: none;
+}
+
+/* Groups butt into each other with the same slice as the chips inside them, so
+   two denominations meet with no seam and the pile reads as one tower. */
+.pot-display__pile-stack + .pot-display__pile-stack {
+  margin-top: calc(var(--cp-chip-slice, 6px) - var(--cp-chip-size, 24px));
 }
 
 /* The collected pot: floats just above the POT pill, centred on it, and out of
@@ -471,9 +492,16 @@
 }
 
 /* The live-bets pill: inline, one pill-height of room, so smaller chips. */
+/* The street tower stands BESIDE the pill rather than inside it. A pill is one
+   line tall and a tower of full-size chips is not, so leaving it in flow would
+   stretch the pill into a box. Out of flow it keeps the pill's shape and still
+   shows the street's chips at the one size every other chip on the felt uses.
+   It rises from the pill's left end, clear of the collected pot's own pile,
+   which is centred ABOVE the POT pill. */
 .pot-display__pile--street {
-  position: relative;
-  gap: 3px;
+  position: absolute;
+  right: calc(100% + 6px);
+  bottom: -1px;
 }
 
 .pot-display__pile-stack {
@@ -496,9 +524,12 @@
 }
 
 .pot-display__pile-chip {
-  width: 16px;
-  height: 16px;
-  margin-top: -11px;
+  /* Same token the seat chips use - see ChipPhysics.css. The slice is what
+     stays visible of each disc under the one above it, so the overlap is
+     derived and the two can never drift apart. */
+  width: var(--cp-chip-size, 24px);
+  height: var(--cp-chip-size, 24px);
+  margin-top: calc(var(--cp-chip-slice, 6px) - var(--cp-chip-size, 24px));
   border-radius: 50%;
   box-sizing: border-box;
   border: 1.5px solid rgba(255, 255, 255, 0.4);
@@ -535,10 +566,9 @@
 /* True count for a stack clamped to fit. The pile is clamped; the value is not. */
 .pot-display__pile-multi {
   position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  margin-bottom: 2px;
+  bottom: 2px;
+  left: 100%;
+  margin-left: 3px;
   font-size: 0.55rem;
   font-weight: 800;
   line-height: 1;
@@ -548,16 +578,9 @@
   white-space: nowrap;
 }
 
-.pot-display__pile--street .pot-display__pile-chip {
-  width: 12px;
-  height: 12px;
-  margin-top: -8px;
-  border-width: 1px;
-}
-
-.pot-display__pile--street .pot-display__pile-chip--partial {
-  height: 7px;
-}
+/* No per-place chip size any more. Dan 2026-08-24: "all chips should be the
+   same size" - the street chips, the collected pot's chips and the chips in
+   front of every seat all read --cp-chip-size. */
 
 .pot-display__pile--street .pot-display__pile-multi {
   font-size: 0.45rem;

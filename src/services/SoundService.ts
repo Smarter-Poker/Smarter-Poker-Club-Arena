@@ -298,10 +298,39 @@ class SoundService {
     });
   }
 
+  /**
+   * Arm the autoplay-unlock listeners as early as possible.
+   *
+   * The listeners are installed by the constructor, so all this really does is
+   * force the module to be evaluated - but that is the entire point, and a
+   * named method says so where a bare `import './SoundService'` would look
+   * like a stray import somebody could tidy away. Called by ServiceBootstrap
+   * at app boot; see the comment there for the spectator-silence bug.
+   *
+   * Idempotent: installUnlockListeners() guards on unlockInstalled.
+   */
+  primeAudioUnlock(): void {
+    this.installUnlockListeners();
+    // A context that is already allowed to run should just run, rather than
+    // waiting for a gesture that may never come (desktop, or a tab restored
+    // with an existing audio permission).
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {
+        /* expected before the first gesture - the listeners handle it */
+      });
+    }
+  }
+
   private ensureContext(): boolean {
     if (!this.ctx || !this.masterGain) return false;
     if (this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      // Kick it, then let this sound through anyway. Returning false here
+      // would be more honest about the one tone that gets dropped while
+      // resume() settles, and much worse in practice: on a context that never
+      // resumes it silences the app permanently instead of degrading.
+      this.ctx.resume().catch(() => {
+        /* only a real gesture can do it - installUnlockListeners is waiting */
+      });
     }
     return true;
   }

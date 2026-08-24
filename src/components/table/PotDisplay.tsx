@@ -148,11 +148,18 @@ function SidePotBadge({
 function PotChipPile({ amount, size }: { amount: number; size: 'pot' | 'street' }) {
   // The pot can hold far more denominations than a single bet, and it has the
   // middle of the felt to spread across, so it gets more room than a seat.
+  // Dan 2026-08-24: one tower, highest denomination on the bottom, chips
+  // slightly offset so every one of them is visible. `maxTotal` is the tower's
+  // height in discs - see chipDenominations.ts. The collected pot floats over
+  // the middle of the felt and can afford ten; the street pill has one line of
+  // pill height, so it gets four.
   const stacks = useMemo(
     () =>
       visualChipStacks(
         amount,
-        size === 'pot' ? { maxStacks: 6, maxPerStack: 10 } : { maxStacks: 3, maxPerStack: 4 }
+        size === 'pot'
+          ? { maxStacks: 6, maxPerStack: 10, maxTotal: 10 }
+          : { maxStacks: 3, maxPerStack: 4, maxTotal: 4 }
       ),
     [amount, size]
   );

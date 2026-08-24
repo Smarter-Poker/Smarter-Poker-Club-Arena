@@ -457,18 +457,76 @@ abbr.lt-variant[title] {
    the status cell keeps its text badge. Never a card, never a sideways
    scroll. */
 @media (max-width: 640px) {
-  /* Dan 2026-08-24: "this needs CSS to always fit to screen without scrolling
-     right." The column rules below make the table fit by construction; this
-     clip is the hard guarantee — if any future cell misbehaves it loses a few
-     pixels instead of giving every phone a sideways scroll. */
+  /* ═══════════════════════════════════════════════════════════════════════
+     PHONE LAYOUT — the row stops being a table row (Dan 2026-08-24)
+     ───────────────────────────────────────────────────────────────────────
+     Shedding columns was not enough and could not have been: measured live
+     at 390px, the four surviving columns still solved to 197 + 66 + 71 + 82
+     = 416px of content inside a 332px table, because a table cell will not
+     go narrower than the widest unbreakable thing inside it — a game name is
+     exactly that. The overflow-x clip then HID the difference by cutting the
+     status column off the right edge, which is what Dan photographed.
+
+     So on a phone each row becomes a small card: the game name owns its own
+     full-width line, and stakes / seats / status wrap underneath as chips.
+     Nothing has a fixed width any more, so nothing can overflow — the row is
+     a flex container that wraps, which is a guarantee rather than a budget.
+     ═══════════════════════════════════════════════════════════════════════ */
   .lobby-table-wrap {
     overflow-x: hidden;
   }
 
-  .lobby-table {
-    min-width: 0;
+  .lobby-table,
+  .lobby-table tbody {
+    display: block;
     width: 100%;
-    table-layout: fixed;
+    min-width: 0;
+  }
+
+  .lobby-table thead {
+    display: none;
+  }
+
+  .lobby-table tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px 10px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border-subtle, rgba(65, 105, 225, 0.14));
+  }
+
+  .lobby-table td {
+    display: block;
+    max-width: 100%;
+    min-width: 0;
+    padding: 0;
+    border: none;
+  }
+
+  /* The name owns line one. Everything else is a chip on line two, with the
+     status pushed to the right edge so the eye can scan one column of them. */
+  .lt-col-name {
+    flex: 1 1 100%;
+  }
+  .lt-col-num,
+  .lt-col-players,
+  .lt-col-status {
+    flex: 0 0 auto;
+  }
+  .lt-col-status {
+    margin-left: auto;
+  }
+
+  /* A long game name now wraps instead of forcing the row wider. */
+  .lt-name,
+  .lt-name__line1,
+  .lt-name__meta {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .lobby-table {
     font-size: 0.75rem;
   }
   .lobby-table thead th {
@@ -494,18 +552,8 @@ abbr.lt-variant[title] {
   .lt-name__clockpart:first-child + .lt-name__metapart .lt-name__sep {
     display: none;
   }
-  .lt-col-name {
-    min-width: 0;
-  }
-  .lt-col-num {
-    width: 74px;
-  }
-  .lt-col-players {
-    width: 58px;
-  }
-  .lt-col-status {
-    width: 92px;
-  }
+  /* No widths here on purpose: the row is a flex container now, and a width
+     on a flex item is the one thing that can bring the overflow back. */
   /* The bar is decoration; the numbers are the information. */
   .lt-seats__bar {
     display: none;
@@ -531,11 +579,12 @@ abbr.lt-variant[title] {
 /* Very narrow phones (320-360px): the buy-in column is the next to go, since
    the panel shows the full range the moment a row is opened. */
 @media (max-width: 380px) {
-  .lt-col-num {
-    width: 64px;
+  .lobby-table tr {
+    padding: 7px 8px;
+    gap: 2px 8px;
   }
-  .lt-col-status {
-    width: 84px;
+  .lobby-table {
+    font-size: 0.71875rem;
   }
 }
 

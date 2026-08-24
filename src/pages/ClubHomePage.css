@@ -1773,8 +1773,12 @@
    Smaller art on small screens; the info column gets the width back. Plus a
    litte top air: the card sat flush against the header. ─────────────────── */
 @media (max-width: 768px) {
+  /* Dan 2026-08-24: "THE CLUB LOGO AND WALLET SHOULD BE RAISED UP SO IT IS
+     ONE PIXEL UNDER THE TICKER." The 14px of air added on 2026-08-23 was for
+     a header that has since gained its own safe-area padding, so it now reads
+     as a gap. */
   .lobby-top {
-    padding-top: 14px;
+    padding-top: 1px;
   }
 
   .lobby-club__avatar {

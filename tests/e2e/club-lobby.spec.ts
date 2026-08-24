@@ -66,7 +66,11 @@ test.describe('Club lobby', () => {
       return;
     }
 
-    await expect(count).toBeVisible();
+    // 2026-08-24: the bare "N Games" line was removed at Dan's request. The
+    // count now renders ONLY while a filter or search is hiding games, where
+    // it explains a short list rather than restating its length. So its
+    // absence is correct here; when it IS present it must still be honest.
+    if ((await count.count()) === 0) return;
     const shown = Number(
       (await count.locator('strong').first().innerText()).replace(/[^0-9]/g, '')
     );
@@ -89,7 +93,8 @@ test.describe('Club lobby', () => {
       const count = page.locator('.lobby-count__text');
       if (rows === 0) {
         await expect(count).toHaveCount(0);
-      } else {
+      } else if ((await count.count()) > 0) {
+        // Present only while something is narrowing the list — see above.
         const shown = Number(
           (await count.locator('strong').first().innerText()).replace(/[^0-9]/g, '')
         );

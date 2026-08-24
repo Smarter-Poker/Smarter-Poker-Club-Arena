@@ -88,8 +88,12 @@ interface WalletState {
   _operationInFlight: boolean;
 
   // Actions
-  loadBalances: (userId: string) => Promise<void>;
-  loadDiamonds: (userId: string) => Promise<void>;
+  loadBalances: (userId: string, opts?: { force?: boolean }) => Promise<void>;
+  loadDiamonds: (userId: string, opts?: { force?: boolean }) => Promise<void>;
+  /** Whose balances these are. Guards cross-user bleed on a shared device. */
+  _balancesUserId: string | null;
+  /** When the balances were last successfully loaded (ms epoch). */
+  _balancesAt: number;
   loadTransactions: (userId: string, limit?: number) => Promise<void>;
   refreshAll: (userId: string) => Promise<void>;
 
@@ -135,7 +139,26 @@ const initialState = {
   pendingBuyIn: null as number | null,
   pendingTableId: null as string | null,
   _operationInFlight: false,
+  _balancesUserId: null as string | null,
+  _balancesAt: 0,
 };
+
+/**
+ * ALWAYS-ON WALLET (Dan 2026-08-24, top priority): "I NEVER WANT ANY WALLETS,
+ * TABLES, OR ANYTHING TO HAVE TO RELOAD OR RE-SYNC ANY TIME YOU CHANGE PAGES."
+ *
+ * A balance that was correct 20 seconds ago is still correct now, and every
+ * real change already arrives by other means: the atomic_* RPCs emit
+ * BALANCE_UPDATED on the MasterBus, PostgresSyncHooks pushes wallet row changes,
+ * and useGlobalBalanceSync (mounted in App.tsx) refetches on both. So a mount is
+ * NOT evidence that the number is stale - it is just a component appearing.
+ *
+ * Within this window a mount-time load is a no-op and the store serves what it
+ * already has, so navigating between Home, Cashier and Wallet never re-fetches
+ * and never shows a skeleton. `force: true` is available for the paths that
+ * genuinely need to re-read (an explicit refresh, a completed transfer).
+ */
+const BALANCE_FRESH_MS = 30_000;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 🏪 STORE IMPLEMENTATION
@@ -146,8 +169,21 @@ export const useWalletStore = create<WalletState>()(
     (set, get) => ({
       ...initialState,
 
-      loadBalances: async (userId: string) => {
-        set({ isLoadingWallet: true });
+      loadBalances: async (userId: string, opts?: { force?: boolean }) => {
+        const st = get();
+        // Serve what we already have. See BALANCE_FRESH_MS above.
+        if (
+          !opts?.force &&
+          st._balancesUserId === userId &&
+          Date.now() - st._balancesAt < BALANCE_FRESH_MS
+        ) {
+          return;
+        }
+        // Only show the loading state when there is NOTHING to show. Flipping
+        // this on while a good balance is already on screen is what made the
+        // wallet flash a skeleton on every navigation.
+        const haveBalancesForThisUser = st._balancesUserId === userId && st._balancesAt > 0;
+        if (!haveBalancesForThisUser) set({ isLoadingWallet: true });
         try {
           const walletBalances = await WalletService.getBalances(userId);
           const balances = {
@@ -169,19 +205,31 @@ export const useWalletStore = create<WalletState>()(
             }
           }
 
-          set({ balances });
+          set({ balances, _balancesUserId: userId, _balancesAt: Date.now() });
         } catch (error) {
           if (!_balanceBreaker.isOpen()) {
             _balanceBreaker.trip();
             reportError(error, 'useWalletStore.Load_balances_failed');
           }
+          // Deliberately NOT clearing `balances` here. A transient network
+          // failure must not replace a good number with zeros on screen.
         } finally {
           set({ isLoadingWallet: false });
         }
       },
 
-      loadDiamonds: async (userId: string) => {
-        set({ isLoadingDiamonds: true });
+      loadDiamonds: async (userId: string, opts?: { force?: boolean }) => {
+        const st = get();
+        if (
+          !opts?.force &&
+          st._balancesUserId === userId &&
+          Date.now() - st._balancesAt < BALANCE_FRESH_MS
+        ) {
+          return;
+        }
+        if (!(st._balancesUserId === userId && st._balancesAt > 0)) {
+          set({ isLoadingDiamonds: true });
+        }
         try {
           // Load diamonds via centralized DiamondService (profiles.diamonds source-of-truth)
           const wallet = await DiamondService.getBalance(userId);
@@ -191,7 +239,11 @@ export const useWalletStore = create<WalletState>()(
             _diamondBreaker.trip();
             reportError(error, 'useWalletStore.Load_diamonds_failed');
           }
-          set({ diamonds: 0 });
+          // 2026-08-24: this used to `set({ diamonds: 0 })`. A failed fetch is
+          // not evidence the player has no diamonds - it wiped a perfectly good
+          // cached value and showed zero, which reads as "your diamonds are
+          // gone". Keep the last known value; the next successful load or a
+          // BALANCE_UPDATED will correct it.
         } finally {
           set({ isLoadingDiamonds: false });
         }
@@ -364,7 +416,33 @@ export const useWalletStore = create<WalletState>()(
     }),
     {
       name: 'wallet-store',
-      partialize: () => ({}), // Don't persist wallet data for security
+      /**
+       * ALWAYS-ON (Dan, 2026-08-24). This was `() => ({})` - nothing at all was
+       * persisted - so every hard reload, PWA cold start and iOS tab reclaim put
+       * the wallet back to 0 and made the player watch it re-populate.
+       *
+       * This DOES reverse the previous note ("Don't persist wallet data for
+       * security"), so the reasoning is spelled out rather than assumed:
+       *
+       *   - What is stored is the player's OWN balance, which is rendered to
+       *     them on the next frame anyway, and the Supabase session JWT already
+       *     lives in this same localStorage under `smarter-poker-auth`. The
+       *     integer is strictly less sensitive than the token beside it.
+       *   - The real risk is CROSS-USER BLEED on a shared device, and that is
+       *     handled rather than avoided: `_balancesUserId` is persisted with the
+       *     numbers and every read path treats a mismatch as stale and refetches,
+       *     `_balancesAt` bounds how long a rehydrated value is trusted, and
+       *     `reset()` runs on sign-out via MasterBus and clears all of it.
+       *
+       * `transactions` stays UNPERSISTED on purpose: a ledger is genuinely
+       * sensitive, it is large, and no surface needs it instantly on boot.
+       */
+      partialize: (state) => ({
+        balances: state.balances,
+        diamonds: state.diamonds,
+        _balancesUserId: state._balancesUserId,
+        _balancesAt: state._balancesAt,
+      }),
     }
   )
 );

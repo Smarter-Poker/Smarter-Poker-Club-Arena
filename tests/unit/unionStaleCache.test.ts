@@ -71,3 +71,62 @@ describe('a stale CLUBS_CACHE cannot smuggle a union through', () => {
     expect(maybeSingleMock).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * THE BOOKMARK MATRIX (Rule 8, "hostile environment testing").
+ *
+ * UnionSkinGuard ejects a player from /clubs/<union-hub>/* when
+ * isConfirmedUnionClubId says true. A six-month-old bookmark is just that URL
+ * arriving with whatever localStorage the browser still holds, so the guard's
+ * answer has to survive every cache state a browser can present — not only
+ * the pristine one.
+ *
+ * The last case is a deliberate asymmetry, recorded here so it can never be
+ * mistaken for an oversight: on a dead network the guard does NOT eject.
+ * Ejecting would throw real players out of their own club lobby on every
+ * transient blip, so this direction fails OPEN. Destination PICKING fails the
+ * other way — see the isUnionClubId cases in lobbyClubNeverUnion.test.ts — so
+ * an unverifiable club is still never navigated TO.
+ */
+describe('an old bookmark to /clubs/<union-hub> survives every cache state', () => {
+  const cases: Array<{ name: string; cache: unknown[] | null }> = [
+    { name: 'no cache at all (fresh browser)', cache: null },
+    {
+      name: 'modern cache, union correctly flagged',
+      cache: [{ id: UNION_HUB, name: 'Midway Union', club_id: 90001, is_union: true }],
+    },
+    {
+      name: 'LEGACY cache row carrying no union signal',
+      cache: [staleRow(UNION_HUB, 'Midway Union')],
+    },
+    {
+      name: 'cache naming only a DIFFERENT club',
+      cache: [{ id: SHARK, name: 'SHARK CLUB', club_id: 90002, is_union: false }],
+    },
+  ];
+
+  for (const c of cases) {
+    it(`ejects with ${c.name}`, async () => {
+      if (c.cache) localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify(c.cache));
+      await expect(isConfirmedUnionClubId(UNION_HUB)).resolves.toBe(true);
+    });
+  }
+
+  it('ejects even when the cache blob is corrupt, without throwing', async () => {
+    localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, '{not json at all');
+    await expect(isConfirmedUnionClubId(UNION_HUB)).resolves.toBe(true);
+  });
+
+  it('MID-FLIGHT DROP: will not eject on an unverifiable club, and still will not route to it', async () => {
+    maybeSingleMock.mockImplementation(async () => ({
+      data: null,
+      error: { message: 'network' },
+    }));
+    // Fails OPEN: a blip must not evict a player from their own club lobby.
+    await expect(isConfirmedUnionClubId(UNION_HUB)).resolves.toBe(false);
+    // ...while the same blip still refuses to send anyone TO that club.
+    await expect(
+      resolveLobbyClubId({ viewerClubId: UNION_HUB, tableClubId: UNION_HUB })
+    ).resolves.toBeNull();
+  });
+});

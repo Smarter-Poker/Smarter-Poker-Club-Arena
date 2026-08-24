@@ -3060,3 +3060,18 @@
     opacity: 0.55;
   }
 }
+
+/* ── Dan 2026-08-24: "PLAYER AT THE TOP NEEDS TO HAVE HIS CARDS TO THE RIGHT
+   OF HIM, NOT UNDER HIM" and the bottom-centre seat (hero slot) "AT THE
+   BOTTOM OF THE TABLE WITH CARDS TO THE RIGHT OF THEM." The under-the-player
+   rule stays for the left/right rail seats (his 2026-08-24 morning directive);
+   the two centre seats — top cap and bottom cap — hang their face-down row to
+   the RIGHT of the avatar instead, where there is open felt. Showdown reveals
+   keep their own placement (the revealed row draws above the plate). */
+.seat-wrapper--top .seat__cards--opponent:not(.seat__cards--revealed),
+.seat-wrapper--hero .seat__cards--opponent:not(.seat__cards--revealed) {
+  top: 22%;
+  left: calc(100% + 4px);
+  transform: none;
+  margin-top: 0;
+}

@@ -111,15 +111,14 @@ describe('a bet in front of a seat', () => {
 // ============================================================================
 
 describe('the pot', () => {
-  it('shows four red and one white for a 21 pot', () => {
-    // Dan's own example: three players in for 7. The pot colours up to the
-    // fewest chips that equal 21, which is five, not fifteen.
+  it('shows ONE chip, coloured by the dominant denomination, for a 21 pot', () => {
+    // Dan 2026-08-24: "REMOVE THE MULTI CHIP IN POT FUNCTIONALITY, JUST USE
+    // THE ONE CHIP PLUS COLOR SCHEMA." The amount is printed on the pill;
+    // the chip is a colour cue, not an abacus. 21 is dominated by red 5s.
     const { container } = render(<PotDisplay mainPot={21} />);
     const colors = chipColors(container, POT_CHIP, '--pile-chip-color');
 
-    expect(colors).toHaveLength(5);
-    expect(colors.filter((c) => c === byValue(5).color)).toHaveLength(4);
-    expect(colors.filter((c) => c === byValue(1).color)).toHaveLength(1);
+    expect(colors).toEqual([byValue(5).color]);
   });
 
   it('still reads the amount', () => {
@@ -134,15 +133,11 @@ describe('the pot', () => {
     expect(chipColors(container, POT_CHIP, '--pile-chip-color')).toEqual([byValue(1000000).color]);
   });
 
-  it('draws the live street bets as their own chips', () => {
-    // The street pill used to show three identical teal circles no matter
-    // what was actually out in front of the players.
+  it('draws the live street bets as one dominant-denomination chip', () => {
+    // Same single-chip rule as the pot (Dan 2026-08-24). 7 is dominated by
+    // a red 5.
     const { container } = render(<PotDisplay mainPot={30} streetBets={7} />);
-    expect(chipColors(container, STREET_CHIP, '--pile-chip-color')).toEqual([
-      byValue(5).color,
-      byValue(1).color,
-      byValue(1).color,
-    ]);
+    expect(chipColors(container, STREET_CHIP, '--pile-chip-color')).toEqual([byValue(5).color]);
   });
 
   it('keeps the chips out of the POT pill itself', () => {
@@ -166,17 +161,16 @@ describe('the pot', () => {
 // ============================================================================
 
 describe('the felt is internally consistent', () => {
-  it('paints a bet and that same amount in the pot the same colours', () => {
-    // Three ladders used to exist and they disagreed: 1,000 was gold in
-    // ChipStack, orange in ChipPhysics and gold in ChipAnimation. A chip that
-    // changes colour between the seat and the middle is not a chip.
+  it('paints the pot chip in the same ladder colour a seat bet would lead with', () => {
+    // One ladder everywhere: the pot's single chip must be the same colour as
+    // the highest-denomination chip a seat bet of that amount leads with.
     const bet = render(<ChipPhysics amount={175} compact />);
     const seatColors = chipColors(bet.container, '.cp-chip', '--chip-color');
 
     const pot = render(<PotDisplay mainPot={175} />);
     const potColors = chipColors(pot.container, POT_CHIP, '--pile-chip-color');
 
-    expect(seatColors).toEqual(potColors);
-    expect(seatColors.length).toBeGreaterThan(0);
+    expect(potColors).toHaveLength(1);
+    expect(seatColors[0]).toEqual(potColors[0]);
   });
 });

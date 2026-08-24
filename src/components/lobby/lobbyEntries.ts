@@ -17,7 +17,6 @@
 import { isInLateRegistration } from '../../utils/tournamentFilters';
 import { stakesLabel as stakesLabelFor } from '../../lib/bettingStructure';
 
-
 // ─── Raw row shapes (subset the lobby queries actually select) ─────────────
 export interface LobbyTableRow {
   id: string;

@@ -114,74 +114,6 @@
 }
 
 /* Enhancement #1: Neuron lights — traveling cyan pulses along grid lines */
-.neuronLights {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 50vh;
-  z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.neuronLights::before,
-.neuronLights::after {
-  content: '';
-  position: absolute;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: rgba(0, 212, 255, 0.8);
-  box-shadow:
-    0 0 12px rgba(0, 212, 255, 0.6),
-    0 0 24px rgba(0, 212, 255, 0.3);
-  filter: blur(1px);
-}
-
-.neuronLights::before {
-  animation: neuronTravelH 8s linear infinite;
-  top: 30%;
-}
-
-.neuronLights::after {
-  animation: neuronTravelV 10s linear infinite 3s;
-  left: 60%;
-}
-
-@keyframes neuronTravelH {
-  0% {
-    left: -10px;
-    opacity: 0;
-  }
-  5% {
-    opacity: 1;
-  }
-  95% {
-    opacity: 1;
-  }
-  100% {
-    left: 100%;
-    opacity: 0;
-  }
-}
-
-@keyframes neuronTravelV {
-  0% {
-    top: 100%;
-    opacity: 0;
-  }
-  5% {
-    opacity: 0.8;
-  }
-  95% {
-    opacity: 0.8;
-  }
-  100% {
-    top: -10px;
-    opacity: 0;
-  }
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    MAIN CONTENT - All scrollable content
@@ -2416,60 +2348,6 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 /* P4-1: Floating Dust Particles — subtle atmospheric dots drifting upward */
-.dustParticles {
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.dustParticles::before,
-.dustParticles::after {
-  content: '';
-  position: absolute;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: rgba(0, 212, 255, 0.35);
-  box-shadow: 0 0 6px rgba(0, 212, 255, 0.2);
-}
-
-.dustParticles::before {
-  left: 20%;
-  animation: dustFloat 12s linear infinite;
-}
-
-.dustParticles::after {
-  left: 65%;
-  animation: dustFloat 16s linear infinite 5s;
-  width: 2px;
-  height: 2px;
-  background: rgba(0, 255, 180, 0.3);
-  box-shadow: 0 0 4px rgba(0, 255, 180, 0.15);
-}
-
-@keyframes dustFloat {
-  0% {
-    bottom: -10px;
-    opacity: 0;
-    transform: translateX(0) scale(1);
-  }
-  10% {
-    opacity: 0.6;
-  }
-  50% {
-    transform: translateX(30px) scale(0.8);
-  }
-  90% {
-    opacity: 0.4;
-  }
-  100% {
-    bottom: 100%;
-    opacity: 0;
-    transform: translateX(-20px) scale(0.5);
-  }
-}
 
 /* P4-2: Presence section REMOVED from JSX — CSS cleaned up */
 /* P4-4: Section separator REMOVED from JSX — CSS cleaned up */

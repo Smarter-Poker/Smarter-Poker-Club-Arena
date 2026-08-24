@@ -45,6 +45,17 @@ export function useGlobalBalanceSync() {
     // NOTE (2026-04-19): Direct wallets postgres_changes channel REMOVED — duplicate of
     // PostgresSyncHooks which already subscribes to wallets with user_id filter and emits
     // BALANCE_UPDATED on MasterBus. The subscribeDebounced listener above handles this.
+    //
+    // 2026-08-24: that note was WRONG when written, and is true only now.
+    // PostgresSyncHooks did NOT carry a `wallets` listener — it had been moved
+    // out to useRealtimeFinancials on the very same day, and that hook mounts on
+    // exactly two pages (PlayerWalletPage, CashierPage). So this channel was
+    // removed as a "duplicate" of something that did not exist, and on every
+    // other page a server-initiated balance change produced no update at all.
+    // The filtered listener now genuinely lives in PostgresSyncHooks
+    // (`global_db_sync:<userId>`), so the sentence above finally describes
+    // reality and this hook's debounced BALANCE_UPDATED subscriber is fed
+    // everywhere rather than on two pages.
 
     // Initial fetch on mount to guarantee parity
     fetchTrueBalance();

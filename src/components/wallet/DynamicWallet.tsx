@@ -171,6 +171,20 @@ interface WalletData {
    * not readable", and renders as "-" rather than as 0.00.
    */
   clubRakeTreasury: number | null;
+  /**
+   * UNION SPIN TREASURY (Dan 2026-08-24: "the wallet is still missing the
+   * spins treasury"). The capital every Spin multiplier is paid out of.
+   *
+   * TWO HALVES, because either alone lies: `unionSpinIdle` is what sits in
+   * union_wallets.spin_reserve_wallet waiting to be seeded, and
+   * `unionSpinDeployed` is what is live inside spin_bonus_pools. Reporting
+   * only the column showed 0.00 while ~25,800 was in the pool — the seed was
+   * debited straight from promo_wallet into the pool row and never touched the
+   * column. The row shows the SUM; the breakdown is the hint.
+   */
+  unionSpinTreasury: number;
+  unionSpinIdle: number;
+  unionSpinDeployed: number;
   /** Sum of member clubs' operational banks — the real union-level figure. */
   clubsWallet: number;
   /** What Monday's close hands back to THIS club / to all clubs. */
@@ -268,6 +282,9 @@ export default function DynamicWallet({
     unionRake: 0,
     unionPromo: 0,
     clubRakeTreasury: null,
+    unionSpinTreasury: 0,
+    unionSpinIdle: 0,
+    unionSpinDeployed: 0,
     clubsWallet: 0,
     clubProjectedRakeback: 0,
     projectedClubsShare: 0,
@@ -415,6 +432,7 @@ export default function DynamicWallet({
     effectiveVariant === 'union' ? data.unionPromo : data.promoBalance
   );
   const animBackupBBJ = useAnimatedCounter(data.backupBBJ);
+  const animUnionSpins = useAnimatedCounter(data.unionSpinTreasury);
   // Dan 2026-08-21: "even club owners need a player wallet, that's the only
   // wallet they can play out of." Every club stack leads with the viewer's own
   // per-club chip balance — the money that actually buys into games.
@@ -514,6 +532,9 @@ export default function DynamicWallet({
         unionBank: unionScoped ? num(panel.union_bank) : 0,
         unionRake: unionScoped ? num(panel.rake_treasury) : 0,
         unionPromo: unionScoped ? num(panel.union_promo) : 0,
+        unionSpinTreasury: unionScoped ? num(panel.union_spin_treasury) : 0,
+        unionSpinIdle: unionScoped ? num(panel.union_spin_idle) : 0,
+        unionSpinDeployed: unionScoped ? num(panel.union_spin_deployed) : 0,
         clubsWallet: unionScoped ? num(panel.clubs_wallet) : 0,
         clubProjectedRakeback: num(panel.club_projected_rakeback),
         projectedClubsShare: unionScoped ? num(panel.projected_clubs_share) : 0,
@@ -930,6 +951,20 @@ export default function DynamicWallet({
       // to this wallet every ~5 minutes, so it steps rather than streams.
       // Saying so stops it reading as "not being funded".
       hint: unionFiguresKnown ? '25% BBJ Slice · Swept Every 5 Min' : undefined,
+    },
+    {
+      key: 'union_spins',
+      label: 'Spins Treasury',
+      icon: 'treasury',
+      value: animUnionSpins,
+      known: unionFiguresKnown,
+      // Say WHERE it is, not just how much. An owner reading a single number
+      // cannot tell seeded capital from idle capital, and the two behave
+      // completely differently: deployed money is already at risk in a pool,
+      // idle money is not.
+      hint: unionFiguresKnown
+        ? `${formatBalance(data.unionSpinDeployed)} Deployed · ${formatBalance(data.unionSpinIdle)} Idle`
+        : undefined,
     },
   ];
 

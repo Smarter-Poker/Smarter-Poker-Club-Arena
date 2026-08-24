@@ -392,11 +392,25 @@
   white-space: nowrap;
 }
 
+/* Gross chips taken from the pot, sitting beside the net. Both are labelled:
+   an unlabelled 24 next to an unlabelled +12 is how one hand came to look like
+   two different hands across the two history surfaces. */
+.hdm-collected {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.76rem;
+  color: var(--success-green, #00d26a);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .hdm-net {
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   font-size: 0.85rem;
   color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .hdm-net--win {

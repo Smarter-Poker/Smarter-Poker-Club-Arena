@@ -273,9 +273,26 @@
   flex-shrink: 0;
 }
 
-.hh-entry__won {
+/* The two money figures ride together at the right end of the row. The auto
+   margin lives on the wrapper, not on the chips: it used to sit on
+   .hh-entry__won, and with a second chip beside it the free space would split
+   between the two and strand the pair in the middle of the row. */
+.hh-entry__tail {
   margin-left: auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.hh-entry__won {
   color: var(--success-green, #00d26a);
+  font-weight: 700;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  flex-shrink: 0;
+}
+
+.hh-entry__net {
   font-weight: 700;
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
   flex-shrink: 0;

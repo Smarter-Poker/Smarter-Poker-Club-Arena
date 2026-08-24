@@ -654,6 +654,16 @@ export class EngineWebSocketServer {
       send(data: string) {
         ws.send(data);
       },
+      // 2026-08-24: hub hard-drop → close the socket so the client's
+      // onclose fires NOW and it reconnects on the slow ladder (4429),
+      // instead of holding an open socket that will never speak again.
+      evict() {
+        try {
+          ws.close(CLOSE_RATE_LIMITED, 'backpressure evict - reconnect');
+        } catch {
+          /* ignore */
+        }
+      },
     };
     (ws as unknown as { __sub: HubSubscriber }).__sub = subscriber;
     this.hub.subscribe(tableId, subscriber);
@@ -773,6 +783,7 @@ export class EngineWebSocketServer {
       if (!this.connections.has(conn.ws) || conn.subs.get(tableId) !== 'pending') return;
       this.logConnectionAudit(conn.userId, tableId, conn.clientIp);
       const ws = conn.ws;
+      const self = this;
       const subscriber: HubSubscriber = {
         id: `${conn.id}:${tableId}`,
         get readyState() {
@@ -783,6 +794,14 @@ export class EngineWebSocketServer {
         },
         send(data: string) {
           ws.send(data);
+        },
+        // 2026-08-24: on a mux socket, closing the whole connection would
+        // punish the user's OTHER tables for one table's backpressure.
+        // Drop just this table's subscription and say so; the client's
+        // per-table facade sees the close and reconnects that table alone.
+        evict() {
+          conn.subs?.delete(tableId);
+          self.sendMuxError(conn, tableId, 'EVICTED', 'backpressure evict - resubscribe');
         },
       };
       conn.subs.set(tableId, subscriber);

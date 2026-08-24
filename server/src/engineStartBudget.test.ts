@@ -31,6 +31,8 @@
  * that nothing calls would still have let this incident happen.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   nextEngineStartBudget,
   ENGINE_START_BUDGET_MAX,
@@ -105,5 +107,53 @@ describe('C20 engine adoption budget', () => {
     // against the 5s TABLE_DISCOVERY_INTERVAL.
     const sweeps = Math.ceil(FLEET / ENGINE_START_BUDGET_MAX);
     expect(sweeps * 5).toBeLessThanOrEqual(45);
+  });
+});
+
+/**
+ * WIRING GUARD (2026-08-24). The law above being correct is not enough - the
+ * first shipped version of C20 had a correct law and still starved the fleet,
+ * because the call that applies it was reachable only on the happy path.
+ *
+ * Source guards rather than a live harness because discoverCashTables() talks
+ * to Supabase on every line; these assert the exact structural properties
+ * whose absence caused the defect.
+ */
+describe('C20 wiring — the verdict is unskippable', () => {
+  const SRC = readFileSync(join(process.cwd(), 'src/GameServer.ts'), 'utf8');
+  const sweep = SRC.slice(
+    SRC.indexOf('private async discoverCashTables'),
+    SRC.indexOf('private async discoverTournaments')
+  );
+  const code = sweep.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+
+  it('applies the budget exactly once per sweep', () => {
+    // Two call sites means two verdicts in one sweep, which double-halves.
+    const calls = code.match(/this\.adjustEngineStartBudget\(/g) || [];
+    expect(calls.length).toBe(1);
+  });
+
+  it('applies it from a finally, so a throw cannot deny recovery', () => {
+    // THE DEFECT: the verdict sat in the try, after heartbeatTables(),
+    // claimTable() and the adoption loop. Any throw in those skipped it while
+    // the RPC-error path still halved - so the budget only ever went down.
+    const fin = code.slice(code.lastIndexOf('} finally {'));
+    expect(code).toContain('} finally {');
+    expect(fin).toMatch(/this\.adjustEngineStartBudget\(/);
+  });
+
+  it('captures the failure count before the try, where no throw can skip it', () => {
+    const beforeTry = code.slice(0, code.indexOf('try {'));
+    expect(beforeTry).toMatch(/this\.engineStartFailures/);
+    expect(beforeTry).toMatch(/sweepDistressed/);
+  });
+
+  it('treats a mid-sweep throw as distress, not as a clean sweep', () => {
+    const cat = code.slice(code.lastIndexOf('} catch (err)'), code.lastIndexOf('} finally {'));
+    expect(cat).toMatch(/sweepDistressed\s*=\s*true/);
+  });
+
+  it('still bounds the adoption loop', () => {
+    expect(code).toMatch(/startedThisSweep\s*>=\s*budgetThisSweep/);
   });
 });

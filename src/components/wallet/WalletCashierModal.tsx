@@ -192,6 +192,7 @@ export default function WalletCashierModal({
   const toast = useToast();
   const isMounted = useIsMounted();
 
+  const [clubLoading, setClubLoading] = useState(true);
   const [clubUuid, setClubUuid] = useState<string | null>(null);
   const [clubName, setClubName] = useState('');
   const [inUnion, setInUnion] = useState<boolean | null>(null);
@@ -235,6 +236,8 @@ export default function WalletCashierModal({
   // ── Club + bank balance ───────────────────────────────────────────────────
   const loadClub = useCallback(async () => {
     if (!clubId) return;
+    setClubLoading(true);
+    setBank(null);
     // resolveClubUUID NEVER returns null - on a failed lookup it hands back
     // whatever it was given, so `|| clubId` catches nothing. A 6-digit club
     // CODE reaching a uuid RPC argument is a raw postgres error at the worst
@@ -244,8 +247,10 @@ export default function WalletCashierModal({
     if (!isUUID(uuid)) {
       setClubUuid(null);
       setBank(null);
+      setClubLoading(false);
       return;
     }
+    setClubUuid(uuid);
     const { data: club } = await supabase
       .from('clubs')
       .select('id, name, union_id, chip_treasury')
@@ -275,7 +280,8 @@ export default function WalletCashierModal({
     } else {
       setBank(Number(club?.chip_treasury) || 0);
     }
-  }, [clubId, isMounted]);
+    setClubLoading(false);
+  }, [clubId, walletType, user?.id, isMounted]);
 
   // ── Members who can receive ───────────────────────────────────────────────
   const loadMembers = useCallback(
@@ -705,7 +711,7 @@ export default function WalletCashierModal({
             <strong aria-live="polite">{bank === null ? '...' : fmt(bank)}</strong>
           </div>
 
-          {clubUuid === null && (
+          {clubUuid === null && !clubLoading && (
             <div className="cbc-note cbc-note--bad">
               That Club Could Not Be Resolved, So Nothing Can Be Sent From Here.
             </div>

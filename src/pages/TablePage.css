@@ -415,8 +415,19 @@
   /* Dan 2026-08-22 mobile audit item 1: top padding must clear the notch
      (safe-area-inset-top) so nothing is cut off, and the bottom reserve was
      too deep — trimmed so the table sits lower on the screen. */
+  /* Dan 2026-08-23: the bottom reserve is MEASURED now, not guessed. It was a
+     flat 104px, while the HUD reserved 112px for the same bar - and the bar is
+     only that short when collapsed. --sp-action-h is published by the panel
+     itself (see TablePage.tsx), so this follows it open or closed.
+
+     --sp-hero-clear is on top of it because the hero's plate is not inside the
+     scaler: the hero avatar's CENTRE sits on the scaler's bottom edge, so half
+     the avatar plus the whole name-and-stack box hangs below it. Reserving only
+     the panel's height would still slide that box under the bar, which is
+     exactly what Dan reported. The 104px fallback is the old value, so a
+     browser without ResizeObserver is no worse off than before. */
   padding: calc(76px + env(safe-area-inset-top, 0px)) 12px
-    calc(104px + env(safe-area-inset-bottom, 0));
+    calc(var(--sp-action-h, 104px) + var(--sp-hero-clear, 34px) + env(safe-area-inset-bottom, 0));
   overflow: visible;
   max-height: calc(100dvh - 60px);
 }
@@ -958,26 +969,55 @@
  * Total duration 1.4s (150ms in + 850ms hold + 400ms out) so the label is
  * readable without being in the way of the next hand.
  */
+/* THE WINNING HAND, ACROSS THE MIDDLE OF THE TABLE.
+   ─────────────────────────────────────────────────────────────────────────────
+   Dan 2026-08-23: "it should also so in the middle of the table in BOLD LETTERS
+   the winning hand", with a reference screenshot showing large gold type spanning
+   the felt.
+
+   This existed, but as a 0.95rem pill tucked 32px above the pot - the size of a
+   status chip, competing with the pot total right beside it. At showdown the
+   made hand is the single thing every player at the table is looking for, and it
+   was the smallest label in the middle of the screen.
+
+   Now: type scaled with the table via clamp() so it spans the felt on a phone
+   and does not become a billboard on desktop, and the pill is replaced by a
+   translucent BAND that fades out at both ends. A boxed pill reads as a control;
+   a band reads as an announcement, and it does not chop a long hand name
+   ("Straight Flush To The King") into an awkward rounded rectangle.
+
+   Deliberately still anchored to `.pot-area` rather than the scaler: the pot is
+   the middle of the TABLE, and the board sits directly above it, so the banner
+   lands between the community cards and the pot - which is where the reference
+   client puts it, and where the eye already is. */
 .pot-hand-strength {
   position: absolute;
-  top: -32px;
+  top: -44px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 6px 16px;
-  border-radius: 14px;
-  background: linear-gradient(180deg, rgba(20, 20, 24, 0.95), rgba(32, 32, 40, 0.95));
-  border: 1.5px solid rgba(255, 222, 92, 0.5);
+  padding: 8px 44px;
+  /* No border, no radius: this is a band across the felt, not a chip. */
+  background: linear-gradient(
+    90deg,
+    rgba(10, 10, 14, 0) 0%,
+    rgba(10, 10, 14, 0.82) 18%,
+    rgba(10, 10, 14, 0.88) 50%,
+    rgba(10, 10, 14, 0.82) 82%,
+    rgba(10, 10, 14, 0) 100%
+  );
   color: #ffde5c;
-  font-size: 0.95rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  /* Spans the felt on a 375px phone, capped so a 1440px desktop is not shouted
+     at. The middle term is the one that tracks the table. */
+  font-size: clamp(1.25rem, 6.5vw, 2.1rem);
+  font-weight: 900;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   white-space: nowrap;
   z-index: 25;
   pointer-events: none;
-  box-shadow:
-    0 6px 18px rgba(0, 0, 0, 0.55),
-    0 0 16px rgba(255, 222, 92, 0.25);
+  text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.85),
+    0 0 18px rgba(255, 222, 92, 0.55);
   animation: pot-hand-strength-show 1400ms cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
 }
 
@@ -1872,8 +1912,11 @@
   .table-container {
     /* Phase A (Dan 2026-04-17): narrow-phone landscape racetrack. Tighter side
        gutters keep the table wide; top/bottom padding still covers chrome. */
+    /* Same measured reserve as the base rule. A hardcoded 104px here would
+       silently undo the fix on exactly the narrowest screens, which is where
+       the hero plate has least room to begin with. */
     padding: calc(48px + env(safe-area-inset-top, 0px)) 6px
-      calc(104px + env(safe-area-inset-bottom, 0));
+      calc(var(--sp-action-h, 104px) + var(--sp-hero-clear, 34px) + env(safe-area-inset-bottom, 0));
   }
 
   .table-header {

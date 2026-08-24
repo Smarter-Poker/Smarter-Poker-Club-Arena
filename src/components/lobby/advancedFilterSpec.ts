@@ -151,7 +151,12 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
   HOLDEM: {
     games: [
       { key: 'nlh', label: 'NLH' },
-      { key: 'flh', label: 'FLH' },
+      // 2026-08-23: the FLH chip used to live here and could never match a
+      // single row. ClubHomePage.cashKind() routes every fixed-limit variant to
+      // the LIMIT tab, so an FLH table is by construction absent from the
+      // HOLDEM list — ticking the chip narrowed HOLDEM to nothing and read as
+      // "there are no Hold'em games". Limit games are filtered on the LIMIT
+      // tab, which deliberately carries no sub-variant chips.
       { key: 'short_deck', label: '6+' },
     ],
     range: BLIND_RANGE,
@@ -353,12 +358,19 @@ export interface FilterableRow {
 function variantKey(raw: string | null | undefined): string {
   const v = String(raw ?? '').toLowerCase();
   if (!v) return '';
+  // Fixed-limit Omaha Hi-Lo first: `flo8` contains neither "plo8" nor "hilo",
+  // and every other hi-lo test below would otherwise fold it into plo8 or drop
+  // it through unrecognised. Legacy rows spell it `limit_omaha` (2026-08-23).
+  if (v === 'flo8' || v.includes('flo8') || v.includes('limit_omaha') || v.includes('limit omaha'))
+    return 'flo8';
   if (v.includes('plo8') || v.includes('hi/lo') || v.includes('hilo')) return 'plo8';
+
   if (v.includes('plo6')) return 'plo6';
   if (v.includes('plo5')) return 'plo5';
   if (v.includes('plo4') || v === 'plo') return 'plo4';
   if (v.includes('short') || v === '6+') return 'short_deck';
-  if (v.includes('flh') || v.includes('limit holdem')) return 'flh';
+  if (v.includes('flh') || v.includes('limit holdem') || v.includes('limit_holdem')) return 'flh';
+
   if (v.includes('nlh') || v.includes('holdem') || v.includes("hold'em")) return 'nlh';
   return v;
 }

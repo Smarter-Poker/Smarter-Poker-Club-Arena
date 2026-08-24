@@ -26,8 +26,25 @@ export interface Card {
 export type HandStage = 'preflop' | 'flop' | 'pineapple_discard' | 'turn' | 'river' | 'showdown';
 // FIX 120: Added 'discard' action for Crazy Pineapple
 export type ActionType = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | 'discard';
-// FIX 116: Dead variants removed (flh, plo, plo_hilo, mixed) — Dan's 9 approved variants only
-export type GameVariant = 'nlh' | 'plo4' | 'plo5' | 'plo6' | 'plo8' | 'pineapple' | 'short_deck';
+// FIX 116: Dead variants removed (plo, plo_hilo, mixed) — Dan's approved variants only.
+//
+// 2026-08-23: `flh` comes BACK, and `flo8` joins it. FIX 116 removed them as
+// "dead" because nothing could create one — but the lobby's LIMIT tab and
+// ClubHomePage.cashKind() never stopped classifying on them, so the tab was
+// permanently empty and there was no way to fill it. They are dead no longer:
+// the engine now plays them fixed-limit (see engine/BettingStructure.ts) rather
+// than dealing a limit game and betting it no-limit.
+export type GameVariant =
+  | 'nlh'
+  | 'plo4'
+  | 'plo5'
+  | 'plo6'
+  | 'plo8'
+  | 'pineapple'
+  | 'short_deck'
+  | 'flh' // Fixed Limit Hold'em
+  | 'flo8'; // Fixed Limit Omaha Hi-Lo
+
 /** Bible V8 §3.1: Full table state machine states */
 export type TableStatus =
   | 'empty'
@@ -286,6 +303,22 @@ export interface HandStateBroadcast {
   stage: HandStage;
   min_raise: number;
   last_raise: number;
+  /**
+   * 2026-08-23: which betting structure this table plays, published rather than
+   * re-derived. The client used to ask `gameType.startsWith('plo')` for itself
+   * (TablePage), which silently makes every non-PLO variant no-limit — so a
+   * fixed-limit table would have drawn a no-limit bet slider.
+   */
+  betting_structure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  /** Fixed limit only: the street's one legal wager (small bet or big bet). */
+  fixed_bet_size?: number;
+  /**
+   * Fixed limit only: the street has taken its bet and three raises, so only
+   * fold and call remain. The client cannot work this out for itself —
+   * `action_history` is broadcast but `isFullRaise` is not, and the cap counts
+   * full raises.
+   */
+  wagers_capped?: boolean;
   /** Bible V8 §6.1: Absolute timestamp (ms) when the current turn started */
   turn_start_time_ms: number;
   /** Bible V8 §6.1: Total turn duration in ms (action_time_seconds × 1000) */
@@ -393,8 +426,20 @@ export interface BettingState {
   minRaise: number;
   pot: number;
   toCall: number;
-  /** Bible V8 §4.14: Max raise — Infinity for NL, pot+call for PL */
+  /**
+   * Bible V8 §4.14: Max raise SIZE — undefined for NL, pot+call for PL, and
+   * the street's fixed bet for FL (where it equals minRaise, so the only legal
+   * wager is exactly that size).
+   */
   maxRaise?: number;
+  /**
+   * Fixed-limit only. True once the street has taken its bet and three raises
+   * (BettingStructure.FIXED_LIMIT_MAX_WAGERS): no further bet or raise is
+   * legal, only fold and call.
+   */
+  wagersCapped?: boolean;
+  /** Which structure produced these bounds. Drives the rejection messages. */
+  structure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
 }
 
 export interface RakeConfig {

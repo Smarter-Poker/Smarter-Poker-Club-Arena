@@ -1220,9 +1220,23 @@
 
 /* Overlap every card after the first. -13px on a 30px card leaves a 17px
    sliver of each - wide enough to count, narrow enough that six fit in the
-   space two used to take. */
-.seat__cards--opponent > * + * {
+   space two used to take.
+
+   Dan 2026-08-23: NOT when the hand is revealed. ":not(.seat__cards--revealed)"
+   is the whole point of this selector. A face-down back carries one bit - this
+   player has a hand - so overlapping backs loses nothing. A shown hand is the
+   most important thing on the table for those few seconds, and stacking the
+   cards on top of each other hides the very ranks the player is trying to read.
+   That is "crooked and mis alligned". */
+.seat__cards--opponent:not(.seat__cards--revealed) > * + * {
   margin-left: -13px;
+}
+
+/* A shown hand lies flat and evenly spaced, in rank order (see SeatSlot.tsx).
+   Small positive gap rather than a negative margin: every card fully visible,
+   nothing rotated, nothing overlapping. */
+.seat__cards--opponent.seat__cards--revealed {
+  gap: 2px;
 }
 
 /* The backs need an edge, or a dark card back on a dark felt is a smudge. */

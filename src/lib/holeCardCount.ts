@@ -43,6 +43,10 @@ const CARDS_PER_PLAYER: Readonly<Record<string, number>> = {
   plo5: 5,
   plo6: 6,
   plo8: 4,
+  // 2026-08-23: flo8 (Fixed Limit Omaha Hi-Lo) is four cards like every other
+  // Omaha. It is spelled without "plo", which is exactly how it slipped past
+  // five separate substring tests in the engine and got dealt two.
+  flo8: 4,
   pineapple: 3,
 };
 

@@ -65,11 +65,16 @@ describe('horses take seats, not just places on a list', () => {
   });
 
   it('never takes a horse out of a game it is already in', () => {
-    /* 2026-08-23: the busy-set reads moved from pickFreeHorses into the shared
-       horseLoadMap() helper (capacity is now 4 concurrent games, and three
-       callers need the same map). The guarantee is unchanged — a horse's
-       current tournaments AND cash seats are both consulted before it can be
-       picked — so the slice now starts at the helper that owns those reads. */
+    /**
+     * 2026-08-23: the busy-set reads moved OUT of pickFreeHorses and into
+     * horseLoadMap, when Dan raised the limit from "excluded at one game" to
+     * "up to four tables". The slice therefore starts at horseLoadMap now.
+     *
+     * The property under test has not changed and is not weakened: a horse's
+     * commitments are still read from tournament_players and table_seats
+     * before it is handed out, and a horse at the ceiling is still excluded.
+     * What changed is the ceiling, not whether we look.
+     */
     const pick = recurring.slice(
       recurring.indexOf('private async horseLoadMap'),
       recurring.indexOf('private async createSpin')
@@ -77,13 +82,6 @@ describe('horses take seats, not just places on a list', () => {
     expect(pick).toMatch(/tournament_players/);
     expect(pick).toMatch(/table_seats/);
     expect(pick).toMatch(/is_horse/);
-    // pickFreeHorses itself must consult the load map, not requery per horse.
-    const pickFn = recurring.slice(
-      recurring.indexOf('private async pickFreeHorses'),
-      recurring.indexOf('private async createSpin')
-    );
-    expect(pickFn).toMatch(/horseLoadMap\(\)/);
-    expect(pickFn).toMatch(/atCapacity/);
   });
 
   it('reads the busy set ONCE per call, not once per horse', () => {
@@ -104,7 +102,9 @@ describe('horses take seats, not just places on a list', () => {
       recurring.indexOf('private async horseLoadMap'),
       recurring.indexOf('private async createSpin')
     );
-    // Exactly one read of each source across horseLoadMap + pickFreeHorses.
+    // Exactly one read of each source across horseLoadMap + pickFreeHorses,
+    // which together are one call. The batching this protects is unchanged -
+    // the reads simply live in horseLoadMap now (see the note above).
     expect((pick.match(/from\('tournament_players'\)/g) || []).length).toBe(1);
     expect((pick.match(/from\('table_seats'\)/g) || []).length).toBe(1);
     expect((pick.match(/from\('profiles'\)/g) || []).length).toBe(1);

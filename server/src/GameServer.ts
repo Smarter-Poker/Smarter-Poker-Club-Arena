@@ -57,6 +57,7 @@ import { tableStateHub } from './transport/TableStateHub.js';
 // this file cancels a tournament any more — it fills, resumes or settles.
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
 import { TournamentManager } from './tournament/TournamentManager.js';
+import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
 // services/tableLease.ts for the dual-container incident that motivated them.
 import {
@@ -113,6 +114,44 @@ export class GameServer {
    * when the loop was in fact running perfectly and being told "no" each time.
    */
   private lastDiscoveryAttemptAt: number = Date.now();
+
+  /**
+   * C20 FIX (2026-08-23): bound how many engines may be adopted per sweep, and
+   * back off when the database says it is struggling.
+   *
+   * C19 staggered engine starts by 40ms, which spread the initiation of each
+   * start but capped nothing: on a restart every table in the discovery result
+   * still had its start() issued inside one sweep, and because those starts are
+   * fired and not awaited, ~180 engines were loading seats and table config
+   * concurrently against a database already absorbing the reconnect storm.
+   *
+   * Measured nine minutes after a restart: 686 statement timeouts in three
+   * minutes, 35 hand-history insert failures, 21 lost table leases, discovery
+   * stalled 108 seconds, and health reporting liveness dead while the process
+   * was in fact fine. Hand throughput fell from ~250/min to 24/min. Zero lock
+   * waits throughout - this was never contention, it was concurrency.
+   *
+   * The amplifier is that failure was free to repeat. A start that times out
+   * deletes itself from tableEngines (see the .catch below), so the very next
+   * sweep retried the same volume into the same overloaded database. Load
+   * caused failure, failure recreated the load.
+   *
+   * The control law lives in engineStartBudget.ts, pure and tested there.
+   */
+  private engineStartBudget: number = ENGINE_START_BUDGET_MAX;
+  /**
+   * Set by the async .catch on engine.start(), read and cleared once per sweep.
+   * A start failure is the earliest honest signal that adoption is outrunning
+   * what the database can serve - earlier than the discovery RPC failing,
+   * because that RPC is one cheap indexed read and a start is many.
+   */
+  private engineStartFailures: number = 0;
+
+  /** Applies the C20 control law to this instance. Returns the new budget. */
+  private adjustEngineStartBudget(distressed: boolean): number {
+    this.engineStartBudget = nextEngineStartBudget(this.engineStartBudget, distressed);
+    return this.engineStartBudget;
+  }
   /**
    * When this process started. Used to keep boot from looking like death --
    * see the startup grace in getStatus().
@@ -166,6 +205,22 @@ export class GameServer {
    */
   private feeReconcileTimer: NodeJS.Timeout | null = null;
   private breakResumeTimer: NodeJS.Timeout | null = null;
+  /**
+   * When the platform-wide break is expected to end, as epoch ms; 0 when no
+   * break is running.
+   *
+   * A TOURNAMENT THAT STARTS DURING A BREAK USED TO DEAL STRAIGHT THROUGH IT
+   * (2026-08-23). triggerSynchronizedBreak snapshots the running MTTs at :55
+   * and pauses that list. A tournament that reached its start time at :56 was
+   * not in the snapshot, so nothing paused it and nothing resumed it: it ran
+   * its opening levels alone while every other event on the platform sat on
+   * the break screen. MTTs start on a schedule, so this is not a rare corner —
+   * any event scheduled in the last five minutes of an hour hit it every time.
+   *
+   * Kept as a deadline rather than a boolean so a late joiner is paused for
+   * exactly the remainder rather than for a fresh five minutes.
+   */
+  private breakEndsAt = 0;
   private static readonly BREAK_DURATION_MS = 5 * 60 * 1000; // 5 minutes
   /**
    * Dan 2026-08-19: breaks start at the :55 mark of every hour and last five
@@ -651,6 +706,13 @@ export class GameServer {
        * engine. `discoveryLoopStalledMs` can.
        */
       discoveryLoopStalledMs,
+      /**
+       * C20 adoption budget. At ENGINE_START_BUDGET_MAX the database is coping;
+       * lower means engine starts have been failing and the loop has throttled
+       * itself. Pinned at the floor across several polls is the signal that the
+       * database tier, not the engine, is the constraint.
+       */
+      engineStartBudget: this.engineStartBudget,
       tournamentLease: tournamentLeaseDiagnostics(),
       leadership: leadershipDiagnostics(),
       stalledTableCount: stalledTables.length,
@@ -962,6 +1024,15 @@ export class GameServer {
       `[GameServer] ═══ LAST HAND ═══ Announcing final hand on ${mttEngines.length} MTT/XMTT tournament(s) — break starts when every table finishes`
     );
 
+    /**
+     * The break window opens NOW, at :55, not when the countdown starts. A
+     * tournament that begins during the last-hand wait must be held too, so
+     * claim the window immediately using the worst case (grace + break) and
+     * tighten it below once the real countdown begins.
+     */
+    this.breakEndsAt =
+      Date.now() + TournamentManager.LAST_HAND_GRACE_MS + GameServer.BREAK_DURATION_MS;
+
     for (const tm of mttEngines) {
       try {
         await tm.pauseForBreak(GameServer.BREAK_DURATION_MS);
@@ -984,7 +1055,11 @@ export class GameServer {
       );
     }
 
-    // The countdown players see begins NOW, not at :55.
+    // The countdown players see begins NOW, not at :55. Tighten the window
+    // claimed above to the real end time, so a tournament starting during the
+    // break is held for exactly as long as everyone else.
+    this.breakEndsAt = Date.now() + GameServer.BREAK_DURATION_MS;
+
     for (const tm of mttEngines) {
       try {
         await tm.beginBreakCountdown(GameServer.BREAK_DURATION_MS);
@@ -1004,10 +1079,18 @@ export class GameServer {
       this.breakResumeTimer = null;
     }
     this.breakResumeTimer = setTimeout(async () => {
+      // Close the window FIRST. Anything starting from here on is not in a
+      // break and must not be held.
+      this.breakEndsAt = 0;
       console.log(
         `[GameServer] ═══ BREAK ENDED ═══ Resuming ${mttEngines.length} MTT/XMTT tournaments`
       );
-      for (const tm of mttEngines) {
+      // Resume everything on break, not just the :55 snapshot — a tournament
+      // that started during the break was held by holdIfBreakIsRunning and is
+      // not in mttEngines. resumeFromBreak no-ops on anything not on break.
+      const toResume = new Set<TournamentManager>(mttEngines);
+      for (const tm of this.tournamentEngines.values()) toResume.add(tm);
+      for (const tm of toResume) {
         try {
           await tm.resumeFromBreak();
         } catch (err: any) {
@@ -1015,6 +1098,39 @@ export class GameServer {
         }
       }
     }, GameServer.BREAK_DURATION_MS);
+  }
+
+  /**
+   * How much of the platform-wide break is left, or 0 when none is running.
+   * See the `breakEndsAt` field for why a tournament starting mid-break needs
+   * to know this.
+   */
+  remainingBreakMs(): number {
+    return this.breakEndsAt > 0 ? Math.max(0, this.breakEndsAt - Date.now()) : 0;
+  }
+
+  /**
+   * Hold a tournament that has just started inside a live break, for whatever
+   * is left of it. Without this it deals its opening levels alone while every
+   * other event on the platform sits on the break screen.
+   *
+   * The resume is driven by the shared breakResumeTimer above, which now walks
+   * every registered engine rather than the :55 snapshot, so nothing needs to
+   * be scheduled here.
+   */
+  private async holdIfBreakIsRunning(tm: TournamentManager): Promise<void> {
+    const remaining = this.remainingBreakMs();
+    if (remaining <= 1000) return;
+    if (!tm.isRunning() || !tm.isMttOrXmtt() || !tm.synchronizedBreaksEnabled()) return;
+    try {
+      console.log(
+        `[GameServer] Tournament started during the break — holding it for the remaining ${Math.round(remaining / 1000)}s`
+      );
+      await tm.pauseForBreak(remaining);
+      await tm.beginBreakCountdown(remaining);
+    } catch (err: any) {
+      reportError(err, 'GameServer.hold_new_tournament_for_break');
+    }
   }
 
   /**
@@ -1645,6 +1761,13 @@ export class GameServer {
           const errMsg =
             error?.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
           reportError(new Error(errMsg), 'GameServer.Cash_table_discovery_error');
+          /**
+           * C20: this continue skips the end-of-sweep verdict, so back off here
+           * too. If the one cheap indexed read that drives discovery is failing,
+           * adopting 25 more tables the moment it recovers is the worst possible
+           * next move.
+           */
+          this.adjustEngineStartBudget(true);
           await this.sleep(TABLE_DISCOVERY_INTERVAL);
           continue;
         }
@@ -1724,11 +1847,26 @@ export class GameServer {
          */
         const ENGINE_START_STAGGER_MS = 40;
         let startedThisSweep = 0;
+        /**
+         * Read and clear BEFORE the loop, not after. The .catch that increments
+         * it is asynchronous, so failures from starts issued in this sweep may
+         * land after the loop has finished - they belong to the next sweep's
+         * verdict, and clearing here is what makes that happen instead of them
+         * being double-counted or lost.
+         */
+        const failuresSinceLastSweep = this.engineStartFailures;
+        this.engineStartFailures = 0;
+        const budgetThisSweep = this.engineStartBudget;
         for (const row of (ready || []) as Array<{
           table_id: string;
           player_count: number;
           human_count?: number;
         }>) {
+          // C20: adoption budget spent. The remaining tables are picked up by
+          // the next sweep in TABLE_DISCOVERY_INTERVAL - nothing is dropped, and
+          // a table with no engine is by definition one nobody is dealing at.
+          if (startedThisSweep >= budgetThisSweep) break;
+
           // Skip if already running
           if (this.tableEngines.has(row.table_id)) continue;
 
@@ -1751,11 +1889,30 @@ export class GameServer {
           engine.setHub(tableStateHub); // Phase 1.1 PR-2: authoritative WS publisher
           this.tableEngines.set(row.table_id, engine);
           engine.start().catch((err) => {
+            /**
+             * C20: counted for the adoption budget. This delete is what makes
+             * the table eligible again on the very next sweep, so without the
+             * budget backing off, a database too busy to serve starts got the
+             * same volume retried into it every 5 seconds indefinitely.
+             */
+            this.engineStartFailures++;
             reportError(err, 'GameServer.Engine_start_failed_for_tablei');
             this.tableEngines.delete(row.table_id);
             tableStateHub.dropTable(row.table_id);
           });
         }
+
+        /**
+         * C20: the sweep's verdict on whether the database is coping.
+         *
+         * failuresSinceLastSweep is the signal that matters. The discovery RPC
+         * failing is handled earlier with a continue, so by the time control
+         * reaches here that query has already succeeded - which is exactly why
+         * the RPC alone is too weak a signal to steer by: it is one cheap
+         * indexed read and it comes back fine long after the many reads an
+         * engine start performs have begun timing out.
+         */
+        this.adjustEngineStartBudget(failuresSinceLastSweep > 0);
 
         // Clean up engines for tables that stopped — AND engines that are
         // lying about being alive.
@@ -2033,10 +2190,14 @@ export class GameServer {
             console.log(`[GameServer] Starting tournament: ${tournament.name} (${reason})`);
             const tm = new TournamentManager(tournament.id, this);
             this.tournamentEngines.set(tournament.id, tm);
-            tm.start().catch((err) => {
-              reportError(err, 'GameServer.Tournament_start_failed_for_to');
-              this.tournamentEngines.delete(tournament.id);
-            });
+            tm.start()
+              // A tournament reaching its start time between :55 and the hour
+              // is not in the break snapshot, so nothing else will pause it.
+              .then(() => this.holdIfBreakIsRunning(tm))
+              .catch((err) => {
+                reportError(err, 'GameServer.Tournament_start_failed_for_to');
+                this.tournamentEngines.delete(tournament.id);
+              });
           }
         }
 

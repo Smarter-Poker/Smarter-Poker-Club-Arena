@@ -57,6 +57,8 @@ import { supabase, getAuthUser } from '../lib/supabase';
 // it, so flipping the flag is a pure rollout switch.
 import { useEngineTableState } from '../hooks/useEngineTableState';
 import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
+import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
+
 import { gameCode } from '../utils/gameCode';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { masterBus } from '../core/MasterBus';
@@ -454,6 +456,19 @@ interface TableState {
   // Bible V8 §2.4: Server-authoritative hand state fields
   minRaise?: number;
   lastRaise?: number;
+  /**
+   * 2026-08-23: the engine's own answer for which betting structure this table
+   * plays, plus the fixed-limit bounds. The action panel used to work the
+   * structure out itself with `gameType.startsWith('plo')` — which silently
+   * calls every non-PLO variant no-limit, so a fixed-limit table would have
+   * rendered a no-limit slider and had every drag rejected. `wagersCapped`
+   * cannot be derived on the client at all: the cap counts FULL raises, and
+   * the broadcast strips `isFullRaise` from action_history.
+   */
+  bettingStructure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  fixedBetSize?: number;
+  wagersCapped?: boolean;
+
   currentBet?: number;
   actionHistory?: {
     seat: number;
@@ -1133,6 +1148,12 @@ export default function TablePage({
         currentBet: mapped.currentBet,
         minRaise: mapped.minRaise,
         lastRaise: mapped.lastRaise,
+        // 2026-08-23: the engine's betting structure, carried straight through
+        // rather than re-derived from the variant string down in the panel.
+        bettingStructure: mapped.bettingStructure,
+        fixedBetSize: mapped.fixedBetSize,
+        wagersCapped: mapped.wagersCapped,
+
         sidePots: mapped.sidePots.map((sp, i) => ({
           id: `sp_${i}`,
           amount: sp.amount,
@@ -2012,6 +2033,50 @@ export default function TablePage({
           ? prev
           : { w: r.width, h: r.height }
       );
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  /**
+   * Dan 2026-08-23: "the bottom bar is covering the hero's box so they cant see
+   * how many chips they have", and "the previous hand buttons are missing."
+   *
+   * One cause. The action panel is `position: fixed; bottom: 0`, so it is out of
+   * flow and nothing below it reserves space automatically. Two places therefore
+   * reserved space for it BY HAND, and disagreed about how much:
+   *
+   *     .table-container   padding-bottom: 104px
+   *     .table-hud__lower  padding-bottom: 112px   "clears the COLLAPSED bar"
+   *
+   * Two different numbers for one bar is what a guess looks like. Worse, that
+   * second comment states the constraint it fails: the panel is only ~112px
+   * while COLLAPSED. Open the raise slider and it grows well past both figures,
+   * so the previous-hand card goes under it - it was never removed, it was
+   * covered - and the hero's name plate, which hangs below the scaler because
+   * the hero avatar's CENTRE sits on the scaler's bottom edge, goes with it.
+   *
+   * Measure it instead. The panel publishes its own height and both reserves
+   * read that, so the table and the HUD get out of the way of whatever the
+   * panel actually is right now, at any breakpoint, in any state.
+   */
+  const actionPanelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = actionPanelRef.current;
+    const root = document.querySelector('.table-page') as HTMLElement | null;
+    if (!el || !root || typeof ResizeObserver === 'undefined') return;
+    const publish = (h: number) => {
+      // Sub-pixel noise would thrash a layout-affecting variable, and this one
+      // feeds padding that moves the very seats the panel sits under.
+      const next = Math.round(h);
+      if (root.dataset.spActionH === String(next)) return;
+      root.dataset.spActionH = String(next);
+      root.style.setProperty('--sp-action-h', next + 'px');
+    };
+    publish(el.getBoundingClientRect().height);
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      if (r && r.height > 0) publish(r.height);
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -10964,7 +11029,7 @@ export default function TablePage({
       {/* ═══════════════════════════════════════════════════════════════════════
           BOTTOM CONTROLS + ACTION PANEL
           ═══════════════════════════════════════════════════════════════════════ */}
-      <div className="action-panel-wrapper">
+      <div className="action-panel-wrapper" ref={actionPanelRef}>
         {/* POKERBROS-spec: persistent footer bar — NEVER empty. Dan rule
             2026-04-17: action bar fixed to footer at all times, every state. */}
         {!tableState.players.some((p) => p?.isHero) && tableState.heroSeat <= 0 ? (
@@ -11158,15 +11223,22 @@ export default function TablePage({
                   // to raise-TO here.
                   const raiseIncrement =
                     tableState.minRaise && tableState.minRaise > 0 ? tableState.minRaise : bb;
-                  // Raise-TO floor. When currentBet===0 (first bet of a street)
-                  // this is the min bet (= one increment = BB).
-                  const minRaise = serverCurrentBet + raiseIncrement;
 
                   // Bible V8 §4.14: raise-TO ceiling. All-in-to = stack + own
                   // current bet (engine: maxRaiseTo = player.stack + player.bet).
                   const allInTo = heroStack + heroBet;
                   const gameVariant = tableState.gameType?.toLowerCase() || '';
-                  const isPotLimit = gameVariant.startsWith('plo'); // FIX 116: 'flo' dead variant removed
+                  // 2026-08-23: prefer the engine's published structure; fall
+                  // back to deriving it locally only for a snapshot from an
+                  // older build. The old test here was
+                  // `gameVariant.startsWith('plo')`, which calls EVERY non-PLO
+                  // variant no-limit — so a fixed-limit table drew a full
+                  // no-limit slider and the server rejected every position on
+                  // it except one.
+                  const structure = tableState.bettingStructure ?? bettingStructureFor(gameVariant);
+                  const isPotLimit = structure === 'pot_limit';
+                  const isFixedLimit = structure === 'fixed_limit';
+
                   // Pot-limit raise-TO cap = currentBet + (pot + toCall). Matches
                   // engine FIX 142 (never over-offer past the server's clamp).
                   const potLimitRaiseTo = potSizedRaiseTo(
@@ -11174,7 +11246,23 @@ export default function TablePage({
                     tableState.pot,
                     callAmount
                   );
-                  const maxRaise = isPotLimit ? Math.min(allInTo, potLimitRaiseTo) : allInTo;
+
+                  // Fixed limit: one legal wager, so the floor and the ceiling
+                  // are the same number and there is no range to drag through.
+                  // A short stack clamps to its all-in.
+                  const flBetSize =
+                    tableState.fixedBetSize ?? fixedLimitBetSize(bb, tableState.boardStage);
+                  const flWagerTo = Math.min(allInTo, serverCurrentBet + flBetSize);
+                  const wagersCapped = isFixedLimit && tableState.wagersCapped === true;
+
+                  // Raise-TO floor. When currentBet===0 (first bet of a street)
+                  // this is the min bet (= one increment = BB).
+                  const minRaise = isFixedLimit ? flWagerTo : serverCurrentBet + raiseIncrement;
+                  const maxRaise = isFixedLimit
+                    ? flWagerTo
+                    : isPotLimit
+                      ? Math.min(allInTo, potLimitRaiseTo)
+                      : allInTo;
 
                   return (
                     <>
@@ -11189,11 +11277,22 @@ export default function TablePage({
                         canFold={true}
                         canCheck={callAmount === 0}
                         canCall={callAmount > 0}
-                        canRaise={heroStack > callAmount && allInTo >= minRaise}
+                        /* 2026-08-23: a capped fixed-limit round (bet + three
+                           raises) takes no further wager — fold or call only.
+                           The engine refuses a raise there; the button must not
+                           offer one. */
+                        canRaise={heroStack > callAmount && allInTo >= minRaise && !wagersCapped}
                         /* Dan 2026-08-21, BINDING: "IN PLO YOU CAN NEVER GO
                            ALL IN IF THE POT IS LESS THAN THE CHIPS YOU HAVE."
-                           The engine refuses it; the button must not offer it. */
-                        canAllIn={heroStack > 0 && (!isPotLimit || allInTo <= maxRaise + 0.005)}
+                           The engine refuses it; the button must not offer it.
+                           Fixed limit is stricter still: a shove is legal only
+                           when the whole stack fits inside the street's bet,
+                           and not at all once the round is capped. */
+                        canAllIn={
+                          heroStack > 0 &&
+                          (!isPotLimit || allInTo <= maxRaise + 0.005) &&
+                          (!isFixedLimit || (!wagersCapped && allInTo <= maxRaise + 0.005))
+                        }
                         callAmount={callAmount}
                         minRaise={minRaise}
                         maxRaise={maxRaise}
@@ -11219,6 +11318,10 @@ export default function TablePage({
                         /* Dan 2026-08-19 item 4b: PLO must always offer
                            RAISE POT - preflop had no POT button at all. */
                         isPotLimit={isPotLimit}
+                        /* 2026-08-23: fixed limit has one legal wager per
+                           street, so the panel skips the sizing step entirely
+                           and prints the amount on the button instead. */
+                        isFixedLimit={isFixedLimit}
                         showPotOdds={userSettings.showPotOdds}
                         confirmAllIn={userSettings.confirmAllIn}
                       />

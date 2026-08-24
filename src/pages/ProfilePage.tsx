@@ -392,7 +392,7 @@ export default function ProfilePage() {
             supabase
               .from('profiles')
               .select(
-                'id, username, display_name, player_number, avatar_url:arena_avatar_url, tier, created_at, diamonds, is_vip, login_streak'
+                'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak'
               )
               .eq('id', authUser.id)
               .maybeSingle()
@@ -527,7 +527,7 @@ export default function ProfilePage() {
               supabase
                 .from('profiles')
                 .select(
-                  'id, username, display_name, player_number, avatar_url:arena_avatar_url, tier, created_at, diamonds, is_vip, login_streak'
+                  'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak'
                 )
                 .eq('id', authUser.id)
                 .maybeSingle()
@@ -735,7 +735,7 @@ export default function ProfilePage() {
               const { data: updatedProfile } = await supabase
                 .from('profiles')
                 .select(
-                  'id, username, display_name, player_number, avatar_url:arena_avatar_url, tier, created_at, diamonds, is_vip, login_streak'
+                  'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak'
                 )
                 .eq('id', authUser.id)
                 .maybeSingle();
@@ -811,7 +811,10 @@ export default function ProfilePage() {
   if (!user) {
     return (
       <StandardContentLayout className={styles.page}>
-        <div className={styles.emptyProfile}><p>Profile Not Found</p></div></StandardContentLayout>
+        <div className={styles.emptyProfile}>
+          <p>Profile Not Found</p>
+        </div>
+      </StandardContentLayout>
     );
   }
 

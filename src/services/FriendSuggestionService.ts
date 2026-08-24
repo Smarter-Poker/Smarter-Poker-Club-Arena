@@ -204,7 +204,7 @@ class FriendSuggestionServiceClass {
         try {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, username, display_name, avatar_url:arena_avatar_url, is_online')
+            .select('id, username, display_name, avatar_url, is_online')
             .in('id', [...new Set(userIds)]);
           if (profiles) {
             for (const p of profiles) profileMap[p.id] = p as ProfileRow;
@@ -270,7 +270,7 @@ class FriendSuggestionServiceClass {
         .select(
           `
           user_id,
-          profiles:user_id!inner(username, display_name, avatar_url:arena_avatar_url, is_online, is_horse)
+          profiles:user_id!inner(username, display_name, avatar_url, is_online, is_horse)
         `
         )
         .in('table_id', tableIds)
@@ -349,7 +349,7 @@ class FriendSuggestionServiceClass {
       // Fetch profiles
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, username, avatar_url:arena_avatar_url')
+        .select('id, username, avatar_url')
         .in('id', mutualIds);
 
       return (profiles || []).map((p: any) => ({

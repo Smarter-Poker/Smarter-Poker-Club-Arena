@@ -123,6 +123,31 @@ export async function bootServices(options?: {
     console.debug('[ServiceBootstrap] ✗ FinancialCronService failed:', err);
   }
 
+  // 5. Global lobby connection (2026-08-24). Warm the auth token cache, then
+  //    open the shared /ws/multi engine socket BEFORE any table is joined, so
+  //    the first join is a SUBSCRIBE frame (~30ms) instead of a TCP + TLS +
+  //    WS-upgrade handshake (~300-600ms). Fire-and-forget: failure here costs
+  //    nothing — the first acquire() simply opens the socket itself, which is
+  //    exactly the old cold path.
+  void (async () => {
+    try {
+      const { initAuthTokenCache, getFreshAccessToken } = await import('../lib/authToken');
+      initAuthTokenCache();
+      const { isMuxEnabled, engineSocketMux } = await import('./EngineSocketMux');
+      if (!isMuxEnabled()) return;
+      const token = await getFreshAccessToken();
+      if (!token) return; // not logged in yet — first acquire covers it
+      const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env;
+      const engineUrl =
+        env?.VITE_GAME_SERVER_URL ||
+        (env?.PROD ? 'https://engine.smarter.poker' : 'http://localhost:8080');
+      engineSocketMux.prewarm(engineUrl, token);
+      console.debug('[ServiceBootstrap] ✓ Engine lobby socket pre-warmed');
+    } catch (err: unknown) {
+      console.debug('[ServiceBootstrap] ✗ Engine socket pre-warm skipped:', err);
+    }
+  })();
+
   booted = true;
 
   // Emit ready event so UI can react

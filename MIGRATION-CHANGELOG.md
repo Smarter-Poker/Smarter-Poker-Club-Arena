@@ -7,6 +7,76 @@
 
 ---
 
+## Cowork session 2026-08-24 — Global connectivity + load-time pass (Dan directive)
+
+Dan: load times, persistent connectivity and failed connections "PLAGUING US
+GLOBALLY" — implement the deep-dive items on every page/subpage, plus audit
+Supabase for slow responses.
+
+### Client (Club Arena)
+
+- SHARED SOCKET IS NOW THE DEFAULT TRANSPORT. `isMuxEnabled()` defaults ON
+  (kill switch `ca_ws_mux='0'`); `multi_shared_socket` client default true;
+  settings toggle relabeled "Shared Connection" and remains the per-user
+  opt-out. Linger after last table released raised 5s -> 60s so a player
+  browsing between tables reuses the warm socket. Mux linger test updated in
+  the same commit.
+- LOBBY PRE-WARM: `engineSocketMux.prewarm()` opens the physical `/ws/multi`
+  socket at boot (ServiceBootstrap step 5), so the FIRST table join is a
+  SUBSCRIBE frame (~30ms), not a TCP+TLS+upgrade handshake (~300-600ms).
+- SYNC TOKEN CACHE: new `src/lib/authToken.ts` keeps the JWT in module memory
+  via onAuthStateChange; `useEngineTableState` and `engineChannelClient` no
+  longer await auth-js on the connect path (getSession still runs when a
+  refresh is due — 2026-08-22 refresh fix preserved).
+- INTENT PREFETCH: `preloadRoute()` now longest-prefix matches (parameterised
+  routes like `/table/:id` previously NEVER matched), covers 24 route
+  prefixes, and exports `prefetchIntent()` spread props. ClubHomePage warms
+  the TablePage chunk the moment a game lobby panel opens.
+- PERSISTENT SWR CACHE: `useSessionCache` backing store moved
+  sessionStorage -> localStorage (returning players paint instantly);
+  logout sweep clears both stores.
+- Headless wallet sync: verified already global (GlobalBalanceSync +
+  PostgresSyncHooks mounted in App) — no change needed.
+
+### Database (both migrations APPLIED to production via Supabase MCP, assertions green)
+
+- `20260824_shared_socket_default_on.sql` — `user_table_settings.
+multi_shared_socket` default true + existing rows flipped (beta shipped
+  default-false only 3 days ago; stored false = never-touched).
+- `20260824_rls_initplan_and_duplicate_indexes.sql` — 17 advisor-flagged
+  policies rewritten to `(select auth.uid())` (per-row re-evaluation ->
+  InitPlan) on hot tables incl. message_reactions, push_subscriptions,
+  tournament_tickets, chip_requests; 5 exact-duplicate non-constraint
+  indexes dropped (message_reactions x2, memory_leaderboards,
+  spin_bonus_pools, vip_feature_usage).
+
+### Supabase slowness audit — root causes found (follow-up work)
+
+- `hand_history` INSERT mean 829ms x 20.7k calls/day (10GB table, 1.4M rows):
+  THREE synchronous AFTER INSERT FOR EACH ROW stats triggers
+  (club_member_stats, fold_stats, position_stats). Biggest single DB burn;
+  should become cheap queued/batch aggregation.
+- Maintenance RPCs saturate the instance: `ca_refresh_hand_player_index`
+  73.9s mean, `fn_credit_agent_commissions_batch` 27s,
+  `fn_reconcile_tournament_denormals` 11.4s, `fn_refresh_member_fee_rollup`
+  12.1s. Max exec times cluster at the ~8s statement timeout = lock
+  contention with live gameplay.
+- Realtime WAL poller: 363ms mean x 35k calls (max 53s) — stressed by the
+  trigger write amplification above.
+- Advisors: 1,341 UNUSED indexes (write tax on every insert/update — needs a
+  supervised drop pass), 58 tables with multiple permissive RLS policies,
+  Auth fixed at 10 DB connections (dashboard setting: switch to
+  percentage-based allocation), 11 idle-in-transaction connections at audit
+  time.
+
+### World Hub
+
+- Already carries SWRConfig with localStorage provider + cache middleware.
+  The RLS/index fixes above apply to WH surfaces too (messenger's
+  message_reactions was the worst-flagged table). No WH code change this pass.
+
+---
+
 ## Cowork session 2026-08-24 — Claim Back, Promo Wallet destinations, Player Wallet statement
 
 Dan: "CLUB BANK NEEDS THE ABILITY TO CLAIM BACK, NOT JUST SEND OUT. PROMO

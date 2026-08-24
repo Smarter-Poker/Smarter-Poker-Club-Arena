@@ -93,33 +93,78 @@ export function preloadCriticalChunks(): void {
 }
 
 /**
+ * Route-prefix -> chunk map for intent-driven warming.
+ *
+ * 2026-08-24 (perf pass): was an exact-match lookup, so every parameterised
+ * route — '/table/:id', '/clubs/:id/...', '/profile/:userId' — could NEVER
+ * match and hovering a table row warmed nothing. Now longest-prefix matched.
+ * Each import is the same dynamic import App.tsx hands to lazyWithRetry, so
+ * Vite emits no extra chunks and the browser module cache is shared; warming
+ * an already-loaded chunk resolves instantly from cache.
+ */
+const ROUTE_CHUNKS: Record<string, () => Promise<any>> = {
+  '/': () => import('../pages/HomePage'),
+  '/profile': () => import('../pages/ProfilePage'),
+  '/challenges': () => import('../pages/DailyChallengesPage'),
+  '/settings': () => import('../pages/SettingsPage'),
+  '/wallet': () => import('../pages/PlayerWalletPage'),
+  '/hand-history': () => import('../pages/HandHistoryPage'),
+  '/history': () => import('../pages/HandHistoryPage'),
+  '/cashier': () => import('../pages/CashierPage'),
+  '/marketplace': () => import('../pages/MarketplacePage'),
+  '/notifications': () => import('../pages/NotificationsPage'),
+  '/messages': () => import('../pages/NavigateToMessenger'),
+  '/leaderboard': () => import('../pages/LeaderboardPage'),
+  '/tournaments': () => import('../pages/TournamentPage'),
+  '/tournament-lobby': () => import('../pages/tournament/TournamentLobbyPage'),
+  '/tournament-results': () => import('../pages/tournament/TournamentResultsPage'),
+  '/stats': () => import('../pages/PlayerStatsPage'),
+  '/players': () => import('../pages/PlayerStatsPage'),
+  '/table/': () => import('../pages/TablePage'),
+  '/clubs/': () => import('../pages/ClubHomePage'),
+  '/unions': () => import('../pages/UnionsPage'),
+  '/achievements': () => import('../pages/AchievementsPage'),
+  '/friends': () => import('../pages/FriendsPage'),
+  '/search': () => import('../pages/SearchPage'),
+  '/help': () => import('../pages/HelpPage'),
+};
+
+/**
  * Manually warm the cache for a specific path.
  * Call this when the user is likely to navigate to a specific page soon
- * (e.g., hovering over a navigation link).
+ * (e.g., hovering over a navigation link, touching a table row).
+ * Longest matching prefix wins: '/clubs/123/tournaments' warms via its
+ * longest matching entry rather than the bare '/clubs/' one. Root ('/')
+ * only matches exactly, never as a prefix.
  */
 export function preloadRoute(path: string): void {
-  const routeMap: Record<string, () => Promise<any>> = {
-    '/': () => import('../pages/HomePage'),
-    '/profile': () => import('../pages/ProfilePage'),
-    '/challenges': () => import('../pages/DailyChallengesPage'),
-    '/settings': () => import('../pages/SettingsPage'),
-    '/wallet': () => import('../pages/PlayerWalletPage'),
-    '/hand-history': () => import('../pages/HandHistoryPage'),
-    '/cashier': () => import('../pages/CashierPage'),
-    '/marketplace': () => import('../pages/MarketplacePage'),
-    '/notifications': () => import('../pages/NotificationsPage'),
-    '/messages': () => import('../pages/NavigateToMessenger'),
-    '/leaderboard': () => import('../pages/LeaderboardPage'),
-    '/tournaments': () => import('../pages/tournament/TournamentLobbyPage'),
-    '/stats': () => import('../pages/PlayerStatsPage'),
-  };
-
-  const importFn = routeMap[path];
-  if (importFn) {
-    importFn().catch(() => {
-      // Silently ignore preload failures
-    });
+  if (!path) return;
+  let bestKey: string | null = null;
+  for (const key of Object.keys(ROUTE_CHUNKS)) {
+    if (key === '/' ? path === '/' : path.startsWith(key)) {
+      if (bestKey === null || key.length > bestKey.length) bestKey = key;
+    }
   }
+  if (!bestKey) return;
+  ROUTE_CHUNKS[bestKey]().catch(() => {
+    // Silently ignore preload failures — real navigation retries via lazyWithRetry
+  });
+}
+
+/**
+ * Spread-ready intent props for links, rows and buttons:
+ *   <div {...prefetchIntent('/table/' + t.id)} onClick={...}>
+ * Covers mouse (hover), touch (touchstart fires ~100ms before click) and
+ * keyboard focus. Spread FIRST so a component's own handlers win when it also
+ * needs the event.
+ */
+export function prefetchIntent(path: string): {
+  onMouseEnter: () => void;
+  onTouchStart: () => void;
+  onFocus: () => void;
+} {
+  const fire = () => preloadRoute(path);
+  return { onMouseEnter: fire, onTouchStart: fire, onFocus: fire };
 }
 
 /**

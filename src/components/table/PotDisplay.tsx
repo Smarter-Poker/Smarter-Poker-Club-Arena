@@ -166,38 +166,26 @@ function PotChipPile({ amount, size }: { amount: number; size: 'pot' | 'street' 
 
   if (stacks.length === 0) return null;
 
+  /* Dan 2026-08-24: "REMOVE THE MULTI CHIP IN POT FUNCTIONALITY, JUST USE THE
+     ONE CHIP PLUS COLOR SCHEMA." One chip, colored by the pot's dominant
+     (highest) denomination on the ladder — the amount itself is printed on
+     the pill right next to it, so the tower of discs was noise. */
+  const dominant = stacks[0];
+
   return (
-    /* aria-hidden: the amount is already announced by the pill's aria-label,
-       and reading out "four red chips, one white chip" adds nothing a screen
-       reader user can act on. */
+    /* aria-hidden: the amount is already announced by the pill's aria-label. */
     <div className={`pot-display__pile pot-display__pile--${size}`} aria-hidden="true">
-      {stacks.map((stack, groupIdx) => (
-        <div
-          key={stack.denom.value}
-          className="pot-display__pile-stack"
-          style={{ '--pile-group': groupIdx } as React.CSSProperties}
-        >
-          {/* A stack clamped for layout prints its true count, so the pile
-              never claims a value it is not showing. Dan's ladder has nothing
-              between 5,000 and 100,000, so a 60,000 pot really is twelve
-              orange chips. */}
-          {stack.truncated && (
-            <span className="pot-display__pile-multi">×{stack.count.toLocaleString()}</span>
-          )}
-          {Array.from({ length: stack.drawn }, (_, chipIdx) => (
-            <span
-              key={chipIdx}
-              className={`pot-display__pile-chip${stack.partial ? ' pot-display__pile-chip--partial' : ''}`}
-              style={
-                {
-                  '--pile-chip-color': stack.denom.color,
-                  '--pile-chip-accent': stack.denom.accent,
-                } as React.CSSProperties
-              }
-            />
-          ))}
-        </div>
-      ))}
+      <div className="pot-display__pile-stack" style={{ '--pile-group': 0 } as React.CSSProperties}>
+        <span
+          className="pot-display__pile-chip"
+          style={
+            {
+              '--pile-chip-color': dominant.denom.color,
+              '--pile-chip-accent': dominant.denom.accent,
+            } as React.CSSProperties
+          }
+        />
+      </div>
     </div>
   );
 }

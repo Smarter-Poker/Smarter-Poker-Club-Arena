@@ -317,10 +317,12 @@ function HomePageInner() {
     async (skipLoading = false, getIsMounted?: () => boolean) => {
       if (!skipLoading) setIsLoading(true);
 
-      // Safety timeout: never show loading spinner for more than 12 seconds
+      // Safety timeout: never show loading spinner for more than 6 seconds.
+      // Was 12 — on a saturated database that is 12 seconds of dimmed screen;
+      // the SWR cache + retry UI handle the rest.
       const loadingTimeout = setTimeout(() => {
         if (!getIsMounted || getIsMounted()) setIsLoading(false);
-      }, 12_000);
+      }, 6_000);
 
       try {
         if (getIsMounted && !getIsMounted()) {

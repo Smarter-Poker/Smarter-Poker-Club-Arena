@@ -1286,6 +1286,13 @@
   justify-content: center;
   gap: 16px;
   z-index: 100;
+  /* Dan 2026-08-24 (live, DB under IO saturation): this overlay sat over the
+     WHOLE screen while the club list loaded, and on a slow database that
+     meant up to 12 seconds where NOT ONE header button or the hamburger
+     answered a tap — measured on production: every header button's tap
+     landed on this element. The overlay is purely visual (skeletons and a
+     spinner); it must never eat input. */
+  pointer-events: none;
 }
 
 .spinner {

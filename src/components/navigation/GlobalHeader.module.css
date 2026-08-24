@@ -33,7 +33,9 @@
   border-bottom: 3px solid rgba(200, 200, 200, 0.8);
   position: sticky;
   top: 0;
-  z-index: 100;
+  /* 2026-08-24: above HomePage's loading dim layer (z 100) — during a slow
+     club load the header used to sit dimmed underneath it and read as dead. */
+  z-index: 130;
   /* NOTCH (Dan 2026-08-23, from a phone: "ZERO PADDING AT THE TOP, THE TOP
      ACTION BAR IS CUT OFF"). index.html declares `viewport-fit=cover`, which
      deliberately extends the page under the status bar and home indicator —

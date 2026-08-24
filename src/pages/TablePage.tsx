@@ -10832,12 +10832,16 @@ export default function TablePage({
                             : tournamentFormat === 'sng'
                               ? 'Poker Heads Up'
                               : 'Poker Tournament';
+                        /* Dan 2026-08-24: "THE DESCRIPTION ON THE TABLE IS
+                           BLEEDING OVER THE TABLE AND NEEDS TO BE TWO LINES.
+                           FIRST LINE, DATE, CLUB + UNION, SECOND LINE, GAME
+                           AND STAKES AND HAND NUMBER." Level + clock ride the
+                           stakes on line 2; each line ellipsizes instead of
+                           bleeding past the rail. */
                         return (
                           <>
                             <span className="table-brand__line">
                               {dateLabel}
-                              {' \u00B7 '}
-                              {gameShort} {formatWord}
                               {tableState.clubName && (
                                 <span className="table-brand__club">
                                   {' \u00B7 '}
@@ -10852,6 +10856,8 @@ export default function TablePage({
                               )}
                             </span>
                             <span className="table-brand__line table-brand__line--level">
+                              {gameShort} {formatWord}
+                              {' \u00B7 '}
                               Level {tableState.currentLevel || 1}
                               {' \u00B7 '}
                               {tableState.blinds || '10/20'}
@@ -10864,17 +10870,20 @@ export default function TablePage({
                                   />
                                 </>
                               )}
+                              {(tableState.handNumber ?? 0) > 0 && (
+                                <>
+                                  {' '}
+                                  {' \u00B7 '}Hand #{tableState.handNumber}
+                                </>
+                              )}
                             </span>
-                            {(tableState.handNumber ?? 0) > 0 && (
-                              <span className="table-brand__line table-brand__line--hand">
-                                Hand #{tableState.handNumber}
-                              </span>
-                            )}
                           </>
                         );
                       }
 
                       // Cash tables keep the two-line masthead.
+                      /* Dan 2026-08-24 two-line spec: line 1 date + club +
+                         union, line 2 game + stakes + hand number. */
                       return (
                         <>
                           <span className="table-brand__line">
@@ -10884,9 +10893,6 @@ export default function TablePage({
                                 {' \u00B7 '}
                                 <span className="table-brand__club">
                                   {tableState.clubName}
-                                  {/* Union beside club (Dan 2026-08-18); club
-                                      omitted when it would duplicate the
-                                      union (Dan 2026-08-20). */}
                                   {tableState.unionName && (
                                     <span className="table-brand__union">
                                       {tableState.clubName ? ' \u2022 ' : ''}
@@ -10896,14 +10902,16 @@ export default function TablePage({
                                 </span>
                               </>
                             )}
-                            {' \u00B7 '}
-                            {gameShort} {tableState.blinds || '1/2'}
                           </span>
-                          {(tableState.handNumber ?? 0) > 0 && (
-                            <span className="table-brand__line table-brand__line--hand">
-                              Hand #{tableState.handNumber}
-                            </span>
-                          )}
+                          <span className="table-brand__line table-brand__line--level">
+                            {gameShort} {tableState.blinds || '1/2'}
+                            {(tableState.handNumber ?? 0) > 0 && (
+                              <>
+                                {' '}
+                                {' \u00B7 '}Hand #{tableState.handNumber}
+                              </>
+                            )}
+                          </span>
                         </>
                       );
                     })()}

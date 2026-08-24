@@ -23,6 +23,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { rankQuickJoinTables, bigBlindFromStakesLabel } from '../lib/quickJoinRanking';
 import { fetchFavoriteTableIds } from '../components/quickactions/favoriteTables';
 import { useUserTableSettings } from '../hooks/useUserTableSettings';
+import { formatGameTitle } from '../utils/formatGameTitle';
 import { useToast } from '../components/common/Toast';
 import { supabase } from '../lib/supabase';
 import { gameCode, gameCodeFromName } from '../utils/gameCode';
@@ -296,7 +297,7 @@ export default function MultiTablePage() {
       return [
         {
           id: routeTableId,
-          name: searchParams.get('name') || 'Table 1',
+          name: formatGameTitle(searchParams.get('name')) || 'Table 1',
           stakes: searchParams.get('stakes') || '',
           isMyTurn: false,
           pot: 0,
@@ -422,7 +423,7 @@ export default function MultiTablePage() {
               : '';
           return {
             id,
-            name: (row?.name as string) || `Table ${prev.length + i + 1}`,
+            name: formatGameTitle(row?.name as string) || `Table ${prev.length + i + 1}`,
             stakes,
             gameCode: gameCode({
               variant: row?.game_variant as string | undefined,
@@ -503,7 +504,7 @@ export default function MultiTablePage() {
 
       const seatedTab: TableInstance = {
         id: e.tableId,
-        name: e.tableName || `Table ${prev.length + 1}`,
+        name: formatGameTitle(e.tableName) || `Table ${prev.length + 1}`,
         stakes: '',
         isMyTurn: false,
         pot: 0,
@@ -1368,7 +1369,7 @@ export default function MultiTablePage() {
           .filter((r) => (Number(r.current_players) || 0) < (Number(r.max_players) || 0))
           .map((r) => ({
             id: r.id as string,
-            name: (r.name as string) || 'Table',
+            name: formatGameTitle(r.name as string) || 'Table',
             variant: (r.game_variant as string | undefined) ?? null,
             smallBlind: r.small_blind != null ? Number(r.small_blind) : null,
             bigBlind: r.big_blind != null ? Number(r.big_blind) : null,

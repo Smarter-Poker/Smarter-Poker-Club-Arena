@@ -39,6 +39,7 @@ async function login() {
     hasTouch: true, isMobile: true, deviceScaleFactor: 3,
   });
   await ctx.addInitScript(([key, val]) => { try { localStorage.setItem(key, val); } catch (e) {} }, ['smarter-poker-auth', JSON.stringify(session)]);
+  await ctx.addInitScript(() => { try { localStorage.setItem('club_arena_welcome_accepted', 'true'); } catch (e) {} });
   const page = await ctx.newPage();
   const report = [];
   for (const route of routes) {

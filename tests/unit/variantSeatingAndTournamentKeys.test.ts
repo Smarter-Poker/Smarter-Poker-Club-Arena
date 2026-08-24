@@ -26,6 +26,7 @@ import {
   maxSeatsForVariant,
   remainderAfterDeal,
   canRunItNTimes,
+  maxSeatsTheDeckAllows,
   DEFAULT_MAX_SEATS,
 } from '../../src/config/tableSeating';
 import { canRunAsTournament, buildTournamentConfig } from '../../src/lib/tournamentFromTableConfig';
@@ -114,7 +115,7 @@ describe('2. the tournament map is keyed on what the screen actually emits', () 
   });
 });
 
-describe('2b. a tournament table can never be built bigger than the deck', () => {
+describe('2b. a tournament is bound by the DECK, never by the cash seat cap', () => {
   const form = (over: Record<string, unknown> = {}) =>
     ({
       name: 'T', gameMode: 'mtt', buyIn: 10, startingChips: 5000,
@@ -124,15 +125,23 @@ describe('2b. a tournament table can never be built bigger than the deck', () =>
       ...over,
     }) as never;
 
-  it('clamps a ten-handed PLO6 request down to what six cards a seat allows', () => {
+  it('clamps a ten-handed PLO6 request to what six cards a seat physically allow', () => {
     const cfg = buildTournamentConfig(form(), 'plo6');
-    expect(cfg.tableSize).toBeLessThanOrEqual(maxSeatsForVariant('plo6'));
-    expect(cfg.tableSize).toBe(6);
+    expect(cfg.tableSize).toBe(maxSeatsTheDeckAllows('plo6'));
+    expect(cfg.tableSize).toBe(7);
   });
 
-  it('clamps PLO5 and leaves Hold\'em alone', () => {
-    expect(buildTournamentConfig(form(), 'plo5').tableSize).toBe(7);
-    expect(buildTournamentConfig(form(), 'nlh').tableSize).toBe(9);
+  it('does NOT apply the cash seat cap — tournaments are exempt from it', () => {
+    // tableSeating's header: applying the cash law here "would shrink 9-handed
+    // MTT tables and turn 3-max Spin & Gos into 8-max". plo4 is 8-max for cash
+    // and may still seat 10 in a tournament; Hold'em keeps its full 10.
+    expect(maxSeatsForVariant('plo4')).toBe(8);
+    expect(buildTournamentConfig(form(), 'plo4').tableSize).toBe(10);
+    expect(buildTournamentConfig(form(), 'nlh').tableSize).toBe(10);
+  });
+
+  it('leaves a 3-max Spin at 3 rather than inflating it', () => {
+    expect(buildTournamentConfig(form({ tableSize: 3 }), 'nlh').tableSize).toBe(3);
   });
 
   it('never returns a table size the deck cannot deal', () => {

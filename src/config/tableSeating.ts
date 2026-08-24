@@ -112,7 +112,29 @@ export function maxSeatsForVariant(variant: SeatCappedVariant | null | undefined
   return MAX_SEATS_BY_VARIANT[key] ?? DEFAULT_MAX_SEATS;
 }
 
+/**
+ * The most seats the DECK can physically serve: every hole card, plus a board.
+ *
+ * This is PHYSICS, not the house law above, and the two are different numbers
+ * on purpose. `maxSeatsForVariant` is Dan's CASH cap, kept tight so Run It
+ * Twice has three boards to come out of. Tournaments are explicitly exempt from
+ * that — see the header — because they cannot run it twice, they size their
+ * tables from their own structure, and capping them would shrink 9-handed MTTs
+ * and turn 3-max Spin & Gos into 8-max.
+ *
+ * They are NOT exempt from the deck. `PokerEngine.deal()` throws rather than
+ * dealing short, so an over-seated table does not degrade — it fails mid-hand.
+ * This is the only ceiling a tournament needs, and the only one it gets.
+ *
+ *   nlh / flh 23   short_deck 15   pineapple 15
+ *   plo4 / plo8 / flo8 11   plo5 9   plo6 7
+ */
+export function maxSeatsTheDeckAllows(variant: SeatCappedVariant | null | undefined): number {
+  return Math.floor((deckSizeForVariant(variant) - BOARD_CARDS) / holeCardsForVariant(variant));
+}
+
 /** Cards left in the deck once a full table has been dealt in. */
+
 export function remainderAfterDeal(variant: SeatCappedVariant, seats: number): number {
   return deckSizeForVariant(variant) - holeCardsForVariant(variant) * seats;
 }

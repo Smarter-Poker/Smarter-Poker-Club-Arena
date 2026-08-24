@@ -254,24 +254,27 @@ describe('parity fields (2026-08-22)', () => {
       'nlh'
     );
     expect(c.actionTimeSeconds).toBe(60);
-    // 2026-08-24: was 10. The ceiling is now ALSO the variant's seat cap, so
-    // the tournament path and the cash path agree about what fits — Hold'em is
-    // a nine-handed ring by house rule (tableSeating.DEFAULT_MAX_SEATS), and
-    // every one of the 55,436 tournament tables in production is nine or
-    // fewer. Ten was reachable here and nowhere else.
-    expect(c.tableSize).toBe(9);
+    // Still 10. The tournament path is bound by the DECK, not by the cash seat
+    // cap — tableSeating's header is explicit that tournaments are exempt from
+    // that law, because it is kept tight for Run It Twice and a tournament
+    // cannot run it twice. Hold'em deals two cards, so ten seats fit easily.
+    expect(c.tableSize).toBe(10);
+
     const low = buildTournamentConfig({ ...base, actionTimeSeconds: 1, tableSize: 1 }, 'nlh');
     expect(low.actionTimeSeconds).toBe(5);
     expect(low.tableSize).toBe(2);
   });
 
   it('never builds a table the deck cannot deal', () => {
-    // The reason the cap moved: PLO6 deals six cards a seat, so a ten-handed
-    // table needs 65 cards and the engine's capacity guard refuses it. The
-    // tournament would start and then sit there.
-    expect(buildTournamentConfig({ ...base, tableSize: 99 }, 'plo6').tableSize).toBe(6);
-    expect(buildTournamentConfig({ ...base, tableSize: 99 }, 'plo5').tableSize).toBe(7);
-    expect(buildTournamentConfig({ ...base, tableSize: 99 }, 'plo4').tableSize).toBe(8);
+    // PLO6 deals six cards a seat, so a ten-handed table wants 60 hole cards
+    // plus a board out of 52 and PokerEngine.deal() throws rather than dealing
+    // short. These are the PHYSICAL limits, not the cash seat caps: plo4 is
+    // 8-max for cash but a tournament may seat 10 of them, because the cash cap
+    // exists to leave room for Run It Twice and a tournament cannot run twice.
+    expect(buildTournamentConfig({ ...base, tableSize: 99 }, 'plo6').tableSize).toBe(7);
+    expect(buildTournamentConfig({ ...base, tableSize: 99 }, 'plo5').tableSize).toBe(9);
+    expect(buildTournamentConfig({ ...base, tableSize: 99 }, 'plo4').tableSize).toBe(10);
+    expect(buildTournamentConfig({ ...base, tableSize: 99 }, 'short_deck').tableSize).toBe(10);
   });
 
 

@@ -13,7 +13,8 @@ import { BLIND_STRUCTURES, SPIN_BLIND_STRUCTURE } from '../config/blindStructure
 import type { TournamentConfig } from '../services/TournamentService';
 import { payoutEngine } from '../services/PayoutEngine';
 import { splitBuyIn } from '../utils/buyIn';
-import { maxSeatsForVariant } from '../config/tableSeating';
+import { maxSeatsTheDeckAllows } from '../config/tableSeating';
+
 
 /**
  * The route's :gameType -> the tournament engine's variant vocabulary.
@@ -276,18 +277,28 @@ export function buildTournamentConfig(
     actionTimeSeconds: clampInt(config.actionTimeSeconds ?? 15, 5, 60),
     // For an SNG the field IS the table (or a fixed multiple of 9), so the
     // table can never seat more than the field itself.
-    // 2026-08-24: clamp to what the DECK can physically deal, not just to 10.
-    // Re-enabling PLO tournaments above made this reachable: PLO6 deals six
-    // cards a seat, so a ten-handed PLO6 table needs 65 cards and the engine's
-    // capacity guard refuses to deal it — the tournament would start and then
-    // sit there. maxSeatsForVariant is the same table the cash create path
-    // uses, so the two cannot disagree about what fits.
+    // 2026-08-24: clamped by what the DECK can physically deal, and by NOTHING
+    // ELSE. tableSeating's cash cap is deliberately NOT used here: its header
+    // is explicit that "TOURNAMENTS ARE NOT BOUND BY THIS", because the cash
+    // cap is kept tight so Run It Twice has three boards to come out of, and a
+    // tournament cannot run it twice at all. Applying it would shrink 9-handed
+    // MTT tables and turn 3-max Spin & Gos into 8-max — a structural change,
+    // not a seat cap. (I tried it that way first; the seat-law parity guard and
+    // that header are what caught it.)
+    //
+    // Physics still applies. PLO6 deals six cards a seat, so a ten-handed PLO6
+    // table wants 60 hole cards plus a board out of one 52-card deck, and
+    // PokerEngine.deal() THROWS rather than dealing short — the tournament
+    // would start and then sit there. This forbids only the undealable:
+    // Hold'em stays 10, PLO4 and PLO8 stay 10, and only PLO5 (9) and PLO6 (7)
+    // are actually reduced.
     tableSize: Math.min(
       isSng
         ? Math.min(clampInt(config.tableSize ?? 9, 2, 10), maxPlayers)
         : clampInt(config.tableSize ?? 9, 2, 10),
-      maxSeatsForVariant(gameType)
+      maxSeatsTheDeckAllows(gameType)
     ),
+
     bigBlindAnte: config.bigBlindAnte ?? false,
     authorizedToRegister: config.authorizedToRegister ?? false,
     synchronizedBreaks: config.synchronizedBreaks ?? true,

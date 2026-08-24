@@ -35,7 +35,7 @@ const CRITICAL_CHUNKS: Array<() => Promise<any>> = [
   () => import('../pages/HandHistoryPage'),
   () => import('../pages/CashierPage'),
   () => import('../pages/NotificationsPage'),
-  () => import('../pages/MessagesPage'),
+  () => import('../pages/NavigateToMessenger'),
   // PERF PASS 3 (2026-08-22): TablePage is the single heaviest chunk
   // (~413KB JS + ~383KB CSS) and the most common heavy destination — every
   // player who sits down needs it. Warming it last (after the light pages)
@@ -108,7 +108,7 @@ export function preloadRoute(path: string): void {
     '/cashier': () => import('../pages/CashierPage'),
     '/marketplace': () => import('../pages/MarketplacePage'),
     '/notifications': () => import('../pages/NotificationsPage'),
-    '/messages': () => import('../pages/MessagesPage'),
+    '/messages': () => import('../pages/NavigateToMessenger'),
     '/leaderboard': () => import('../pages/LeaderboardPage'),
     '/tournaments': () => import('../pages/tournament/TournamentLobbyPage'),
     '/stats': () => import('../pages/PlayerStatsPage'),

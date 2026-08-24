@@ -209,10 +209,10 @@ export default function GlobalHeader() {
   const prefetchMessenger = useCallback(() => {
     if (prefetchedMessenger) return;
     setPrefetchedMessenger(true);
-    import('../../pages/MessagesPage').catch(() => {});
+    import('../../pages/NavigateToMessenger').catch(() => {});
     const link = document.createElement('link');
     link.rel = 'prefetch';
-    link.href = '/hub/messenger?hideHeader=true';
+    link.href = '/hub/messenger';
     document.head.appendChild(link);
   }, [prefetchedMessenger]);
 

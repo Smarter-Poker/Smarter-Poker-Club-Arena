@@ -203,6 +203,12 @@ interface TournamentData {
   late_reg_levels?: number | null;
   started_at?: string | null;
   current_level?: number | null;
+  /**
+   * Dan 2026-08-24: the MTT title's late-reg countdown needs the level
+   * window's real end, which only the blind structure can give.
+   */
+  blind_structure?: string | null;
+  level_started_at?: string | null;
 }
 
 interface WalletBalances {
@@ -1348,7 +1354,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       const clubTournamentQuery = supabase
         .from('tournaments')
         .select(
-          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, started_at, current_level'
+          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at'
         )
         // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
         // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
@@ -1396,7 +1402,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               supabase
                 .from('tournaments')
                 .select(
-                  'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, union_id, variant, table_size, is_xmtt, late_reg_mins, late_reg_levels, started_at, current_level'
+                  'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, union_id, variant, table_size, is_xmtt, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at'
                 )
                 // Union governance (2026-08-19): ALL union-owned tournaments
                 // (XMTT and union-stamped recurring games), not just XMTT.

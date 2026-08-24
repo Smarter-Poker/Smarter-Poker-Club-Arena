@@ -50,6 +50,9 @@ export interface LobbyTournamentRow {
   late_reg_levels?: number | null;
   started_at?: string | null;
   current_level?: number | null;
+  /** JSON text: [{level, smallBlind, bigBlind, ante, durationMinutes}, ...] */
+  blind_structure?: string | null;
+  level_started_at?: string | null;
 }
 
 // ─── View model ────────────────────────────────────────────────────────────
@@ -504,6 +507,102 @@ export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 's
  * ROW what it is, and only guessing from the name when the column is absent.
  * See tournamentVariant in src/utils/tournamentFilters.ts for why.
  */
+// ─── MTT title helpers (pure — LobbyTable renders them, tests pin them) ────
+
+/** "17:33" under an hour, "1:02:33" above it. Never negative. */
+export function formatClock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+interface BlindLevel {
+  level?: number;
+  durationMinutes?: number;
+}
+
+/**
+ * When does late registration CLOSE, in ms epoch — or null when the row does
+ * not carry enough to know. Mirrors isInLateRegistration's OR: minutes and
+ * levels each keep the door open, so the close is the LATER of the two
+ * windows the row can prove.
+ *
+ * The level window is exact when the row carries blind_structure and
+ * level_started_at: the remainder of the current level plus every remaining
+ * late-reg level's configured duration. (Dan 2026-08-24: the late reg closing
+ * needs a countdown timer, not a static "Thru Level N".)
+ */
+export function lateRegEndMs(t: LobbyTournamentRow): number | null {
+  const candidates: number[] = [];
+
+  const begun = new Date(t.started_at || t.start_time || '').getTime();
+  const lateMins = Number(t.late_reg_mins) || 0;
+  if (lateMins > 0 && Number.isFinite(begun)) candidates.push(begun + lateMins * 60000);
+
+  const lateLevels = Number(t.late_reg_levels) || 0;
+  if (lateLevels > 0 && t.blind_structure) {
+    try {
+      const structure = JSON.parse(t.blind_structure) as BlindLevel[];
+      if (Array.isArray(structure)) {
+        const durationOf = (lvl: number): number => {
+          const row = structure.find((b) => Number(b.level) === lvl) || structure[lvl - 1];
+          const mins = Number(row?.durationMinutes);
+          return Number.isFinite(mins) && mins > 0 ? mins : 0;
+        };
+        const cur = Math.max(1, Number(t.current_level) || 1);
+        const levelBegun = new Date(t.level_started_at || t.started_at || '').getTime();
+        if (Number.isFinite(levelBegun) && cur <= lateLevels) {
+          // Rest of the current level, then every configured level through the
+          // last late-reg level. A level with no configured duration adds 0 —
+          // the estimate degrades toward "sooner", never invents time.
+          let end = levelBegun + durationOf(cur) * 60000;
+          for (let lvl = cur + 1; lvl <= lateLevels; lvl++) end += durationOf(lvl) * 60000;
+          candidates.push(end);
+        }
+      }
+    } catch {
+      /* malformed structure - the minutes window still stands */
+    }
+  }
+
+  return candidates.length > 0 ? Math.max(...candidates) : null;
+}
+
+/**
+ * The live phrase on line 2 of an MTT title: "Starting In 17:33...",
+ * "Late Reg 12:45 Left", "Running", or the terminal status label.
+ */
+export function mttPhaseText(entry: LobbyEntry, now: number): string | null {
+  if (entry.status === 'registering' || entry.status === 'starting_soon') {
+    const startMs = entry.startTime ? new Date(entry.startTime).getTime() : NaN;
+    return Number.isFinite(startMs) && startMs > now
+      ? `Starting In ${formatClock(startMs - now)}...`
+      : 'Starting Soon';
+  }
+  if (entry.status === 'late_reg') {
+    const end = lateRegEndMs(entry.raw as LobbyTournamentRow);
+    if (end != null && end > now) return `Late Reg ${formatClock(end - now)} Left`;
+    if (end != null) return 'Late Reg Closing';
+    return 'Late Reg Open';
+  }
+  if (entry.status === 'running') return 'Running';
+  if (entry.status === 'completed' || entry.status === 'closed') return entry.statusLabel;
+  return null;
+}
+
+/** MTT names carry their variation; make sure it is there even when the
+    creator left it out of the name text. */
+export function mttTitleLine(entry: LobbyEntry): string {
+  const name = entry.name || '';
+  return name.toUpperCase().includes(entry.gameLabel.toUpperCase())
+    ? name
+    : `${name} (${entry.gameLabel})`;
+}
+
 export function classifyTournament(t: LobbyTournamentRow): 'mtt' | 'spin' | 'sng' {
   const v = String((t as { variant?: unknown }).variant ?? '').toLowerCase();
   if (v === 'spin') return 'spin';

@@ -188,8 +188,11 @@
   margin: 0 5px;
   opacity: 0.6;
 }
+/* Dan 2026-08-24: no yellow — smarter.poker schema only. The guarantee gets
+   its emphasis from the Club Arena blue, same accent as sorted headers and
+   the Registering badge. */
 .lt-name__gtd {
-  color: var(--warning-gold, #ffd700);
+  color: var(--club-blue-light, #5b83e8);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -471,6 +474,16 @@ abbr.lt-variant[title] {
   .lt-col-starts,
   .lt-col-kind,
   .lt-col-fav {
+    display: none;
+  }
+  /* The MTT title's meta line sheds the wall-clock start time on phones —
+     the countdown is the information. If the clock was the first part
+     (no guarantee), the next part's separator goes with it so the line
+     never opens with a stray dot. */
+  .lt-name__clockpart {
+    display: none;
+  }
+  .lt-name__clockpart:first-child + .lt-name__metapart .lt-name__sep {
     display: none;
   }
   .lt-col-name {

@@ -3101,6 +3101,12 @@ body.ca-raising .bankroll-widget {
 @media (max-width: 768px) {
   .table-container {
     padding-top: calc(46px + env(safe-area-inset-top, 0px));
+    /* Measured on production after #685: the 12px side gutters held the
+       scaler at 360px, so the 374px cap never engaged. 4px gutters give the
+       oval its full 374px — ~23px longer at the same 605/1000 aspect, so
+       every seat stays on the painted rail. */
+    padding-left: 4px;
+    padding-right: 4px;
   }
 
   .table-scaler {

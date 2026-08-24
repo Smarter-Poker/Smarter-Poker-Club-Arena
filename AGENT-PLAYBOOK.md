@@ -15,23 +15,15 @@ git log -1 --format='%an <%ae>' # must be Smarter-Poker # <254329056+...@users.n
 git log --oneline origin/main..HEAD | wc -l
 State plainly whether you used --no-verify at any point. If you did, say where and why.
 
-PART C — IS THE CODE ACTUALLY DONE?
-Re-read your own diff before answering: `git diff origin/main...HEAD`
+PART C — IS THE CODE ACTUALLY DONE? (THE INTERROGATION)
+You must re-read your own diff before answering: `git diff origin/main...HEAD`
 
-1. STUBS — any TODO, FIXME, `throw new Error('not implemented')`,
-   empty catch, hardcoded placeholder, mock left in a real path?
-   Search for them; do not rely on memory.
-2. WIRING — is every new function actually CALLED? Every new component
-   rendered? Every new route reachable? Every emitted event listened
-   for? Name the caller for each thing you added.
-3. DATABASE — did you add a migration? Was it APPLIED to production
-   via the Supabase MCP? A migration file that never ran is a feature
-   the code believes in and the database has never heard of.
-4. REGRESSIONS — what existing behaviour does this change? Which tests
-   covered it? Did you update them in the SAME commit, or leave them
-   asserting the old rule?
-5. ERROR PATHS — what happens when the network fails, the row is
-   missing, the user is logged out? Show me where each is handled.
+1. STUBS & MOCKS — Are there any TODO, FIXME, `throw new Error('not implemented')`, empty catch blocks, or hardcoded placeholders left behind? Run a search. Do not rely on memory.
+2. WIRING & EXECUTION — Is every new function actually CALLED? Is every new component actually rendered? Is every route reachable? Name the exact caller for every single addition. Dead code is unacceptable.
+3. DATABASE STATE — Did you write a migration? Was it actually APPLIED to production via the Supabase MCP? A migration file that hasn't run is a feature the database doesn't know exists.
+4. COLLATERAL DAMAGE — What existing behavior did this change alter? Did you update the tests in the SAME commit, or did you leave them asserting the old rules?
+5. HOSTILE STATE & CACHE — What happens if the user's localStorage is stale? What happens if they enter via a 6-month-old bookmark? Show exactly where the fallback or transition is handled in your code.
+6. USER INTENT VERIFICATION — Did you actually solve the specific complaint the user raised? Explain step-by-step how your code definitively prevents the user's exact reported error sequence from ever happening again.
 
 PART D — DOES IT RUN?
 npx tsc --noEmit # paste the result
@@ -49,6 +41,16 @@ ANSWER FORMAT: for each of A–E, either the command output showing it is
 satisfied, or a plain statement of what is not done and what you are
 doing about it. If something is incomplete, say so — an honest gap is
 worth more than a confident claim I have to discover is wrong.
+
+---
+
+## RULE 8 — THE ZERO-ASSUMPTION DOCTRINE (PROOF OF RESOLUTION)
+
+A green CI pipeline and a merged PR only prove your code does not crash. It **DOES NOT** prove you fixed the user's problem. You are forbidden from claiming success until you have verified the resolution in production.
+
+- **NO SURFACE-LEVEL PATCHES:** You must track the bug to its absolute root cause. Fixing a symptom without checking for structural contagion (e.g., stale cache, inherited state, nested URL parameters) is a failure of your duty.
+- **HOSTILE ENVIRONMENT TESTING:** You must assume the user's browser is a hostile environment: old `localStorage` data, expired tokens, stale bookmarks, and mid-flight network drops. If your fix relies on a pristine, freshly-cleared browser state to work, your fix is invalid.
+- **BURDEN OF PROOF:** You may not tell the user "I fixed it." You must explicitly explain exactly _how_ you proved their exact edge case is eradicated.
 
 ---
 

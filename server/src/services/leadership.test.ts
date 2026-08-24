@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 /**
  * ONE LEADER, AND NEVER ZERO.
  *
@@ -232,5 +234,58 @@ describe('losing leadership while holding it', () => {
     vi.advanceTimersByTime(500);
     expect(exitSpy).toHaveBeenCalledWith(0);
     vi.useRealTimers();
+  });
+});
+
+
+/**
+ * A LEADER THAT DOES NOTHING (2026-08-24).
+ *
+ * GameServer.start() returns early for a standby: no discovery loop, no horse
+ * fleet, no stale-data cleanup. Every promotion path in leadership.ts flipped
+ * `role` in memory, which turned that inert process into a leader by name only.
+ * It then held the lease so no healthy instance could take over, while its
+ * discoveryLoopStalledMs climbed in lockstep with uptime until liveness read
+ * 'dead' and Docker killed it — a restart loop that never deals a hand.
+ *
+ * Production signature, 2026-08-24:
+ *   up=188s activeTables=0 liveness=dead discStall=188115ms
+ * discStall equal to uptime is the tell: the loop never ran once.
+ *
+ * These are source guards. The promotion paths call process.exit, which cannot
+ * be exercised in-process without killing the runner.
+ */
+describe('a promoted standby restarts instead of leading in name only', () => {
+  const SRC = readFileSync(join(process.cwd(), 'src/services/leadership.ts'), 'utf8');
+  const code = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+
+  it('exposes markBootedAsStandby so the early-return can be recorded', () => {
+    expect(code).toMatch(/export function markBootedAsStandby\(\)/);
+  });
+
+  it('guards the restart on having actually booted as a standby', () => {
+    // Without this, a process that booted as leader and merely re-won its
+    // lease would restart itself on every renewal.
+    const fn = code.slice(code.indexOf('function restartIntoLeaderBoot'));
+    expect(fn).toMatch(/if \(!bootedAsStandby\) return;/);
+  });
+
+  it('restarts on EVERY promotion path, not just the exotic ones', () => {
+    // Four sites flip role to leader: unanswerable claim, row resolved to
+    // nobody, an ordinary granted lease, and a thrown claim. The ordinary
+    // grant is the common one and was the easiest to miss.
+    const calls = code.match(/restartIntoLeaderBoot\(/g) || [];
+    expect(calls.length).toBe(5); // 4 call sites + the declaration
+  });
+
+  it('covers the ordinary granted-lease promotion specifically', () => {
+    const granted = code.slice(code.indexOf('if (row.granted)'));
+    expect(granted).toMatch(/wasStandby/);
+    expect(granted.slice(0, granted.indexOf('return role;'))).toMatch(/restartIntoLeaderBoot\(/);
+  });
+
+  it('clears the flag on reset so tests cannot leak state into each other', () => {
+    const reset = code.slice(code.indexOf('export function __resetLeadership'));
+    expect(reset.slice(0, 200)).toMatch(/bootedAsStandby = false/);
   });
 });

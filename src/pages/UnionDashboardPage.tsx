@@ -29,6 +29,7 @@ import UnionOpsPanel from '../components/union/UnionOpsPanel';
 import UnionClubGovernance from '../components/union/UnionClubGovernance';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { walletCacheKey, readWalletCache, writeWalletCache } from '../lib/walletCache';
 // ── Helpers ─────────────────────────────────────────────────
 const pct = (n: number | null | undefined) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
 
@@ -315,7 +316,8 @@ export default function UnionDashboardPage() {
         if (mountedRef.current) setError(safeErrorMessage(err));
         // Clear stale SWR cache on error to prevent ghost data
         try {
-          sessionStorage.removeItem(`union_dashboard_swr_${user?.id}`);
+          if (user?.id) writeWalletCache(walletCacheKey(user.id, 'union_dashboard'), null);
+          sessionStorage.removeItem(`union_dashboard_swr_${user?.id}`); // legacy key
         } catch {
           /* ignore */
         }
@@ -328,21 +330,77 @@ export default function UnionDashboardPage() {
   );
 
   const loadUnionData = async (uid: string) => {
-    // Load union info
-    const { data: unionRow } = await supabase
-      .from('unions')
-      .select(
-        'id, name, description, owner_id, created_at, member_count, settings, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
-      )
-      .eq('id', uid)
-      .maybeSingle();
-    if (mountedRef.current) setUnion(unionRow);
+    // PERFORMANCE (Dan 2026-08-23, wallet load times): these reads used to run
+    // as a strictly SERIAL waterfall — union, clubs, agents, admins, wallets,
+    // BBJ pool, periods, P&L — eight roundtrips end to end, which is most of
+    // why the union wallet tiles took so long to appear. Only two things here
+    // actually depend on another read (agents and settlement periods need the
+    // club id list); everything else is independent and now goes out in ONE
+    // parallel burst, with the dependent pair in a second burst.
+    const [
+      { data: unionRow },
+      { data: unionClubs },
+      { data: adminRows },
+      { data: walletRow },
+      { data: poolRow },
+      { data: pnlRows },
+    ] = await Promise.all([
+      supabase
+        .from('unions')
+        .select(
+          'id, name, description, owner_id, created_at, member_count, settings, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+        )
+        .eq('id', uid)
+        .maybeSingle(),
+      supabase.from('union_clubs').select('*, clubs:club_id(*)').eq('union_id', uid),
+      supabase
+        .from('union_admins')
+        .select('*, profile:user_id(display_name, username, avatar_url:arena_avatar_url)')
+        .eq('union_id', uid),
+      supabase
+        .from('union_wallets')
+        // union_wallets schema: chip_balance, rake_wallet, bbj_wallet, promo_wallet,
+        // insurance_wallet, spin_reserve_wallet, total_rake_collected, total_settlements.
+        // spin_reserve_wallet holds the capital that seeds every Spin bonus pool this
+        // union owns. It existed unread since 2026-08-22 - the pools were being seeded
+        // out of promo_wallet because nothing surfaced the wallet meant to fund them.
+        .select(
+          'id, union_id, chip_balance, rake_wallet, bbj_wallet, promo_wallet, insurance_wallet, spin_reserve_wallet, total_rake_collected, total_settlements, created_at'
+        )
+        .eq('union_id', uid)
+        .maybeSingle(),
+      // BBJ UNIFICATION 2026-07-21: the shared jackpot lives in the union's
+      // bbj_pools row (engine-fed contributions + manual funding + payouts) —
+      // NOT in union_wallets.bbj_wallet. Load it for the BBJ tiles.
+      supabase
+        .from('bbj_pools')
+        .select(
+          'id, main_balance, backup_balance, promo_balance, total_contributed, total_paid_out, hit_count, last_hit_at, last_hit_amount'
+        )
+        .eq('union_id', uid)
+        .eq('status', 'active')
+        .maybeSingle(),
+      // ── Weekly union<->club player P&L settlements (added 2026-08-19) ──
+      // Until now the weekly square-up had NO readable surface anywhere in the
+      // app: a union admin could not see what was collected, what was paid, or
+      // why a period was parked for review. A money process nobody can inspect
+      // is a money process nobody trusts.
+      supabase
+        .from('union_pnl_settlements')
+        .select(
+          'id, period_start, period_end, status, total_collected, total_paid, total_unpaid, club_results, settled_at'
+        )
+        .eq('union_id', uid)
+        .order('period_start', { ascending: false })
+        .limit(12),
+    ]);
 
-    // Load clubs in union
-    const { data: unionClubs } = await supabase
-      .from('union_clubs')
-      .select('*, clubs:club_id(*)')
-      .eq('union_id', uid);
+    if (mountedRef.current) setUnion(unionRow);
+    if (mountedRef.current) setAdmins(adminRows || []);
+    if (mountedRef.current) setWallets(walletRow);
+    if (mountedRef.current) setBbjPool(poolRow);
+    if (mountedRef.current) setPnlSettlements(pnlRows || []);
+
     const enrichedClubs = (unionClubs || []).map((uc: UnionClubRow) => ({
       id: uc.club_id,
       ...uc.clubs,
@@ -352,15 +410,40 @@ export default function UnionDashboardPage() {
     }));
     if (mountedRef.current) setClubs(enrichedClubs);
 
-    // Load agents across clubs
-    let loadedAgents: UnionAgent[] = []; // Hoisted for SWR cache write
+    // ── Phase 2: the only reads that genuinely depend on the club list ──────
     const clubIds = enrichedClubs.map((c) => c.id).filter(Boolean);
-    if (clubIds.length > 0) {
-      const { data: agentRows } = await supabase
-        .from('club_members')
-        .select('*')
-        .in('club_id', clubIds)
-        .in('role', ['agent', 'sub_agent', 'super_agent']);
+
+    // 2026-08-19: the comment here claimed "settlement_periods is a global
+    // table (no club_id column)". That is wrong — it has club_id, and both
+    // union_id and club_id are used by the settlement pipeline. The result was
+    // an unscoped list (every club RLS allowed, from any union) whose Club
+    // column always rendered "Unknown" because club_id was never selected.
+    let periodQuery = supabase
+      .from('settlement_periods')
+      .select(
+        'id, club_id, union_id, period_number, year, start_at, end_at, status, total_rake_collected, total_player_winnings, total_player_losses, total_hands_dealt, settled_at, created_at'
+      )
+      .order('created_at', { ascending: false })
+      .limit(30);
+    periodQuery = clubIds.length
+      ? periodQuery.in('club_id', clubIds)
+      : periodQuery.eq('union_id', uid);
+
+    let loadedAgents: UnionAgent[] = []; // Hoisted for SWR cache write
+    const [agentsRes, periodsRes] = await Promise.all([
+      clubIds.length > 0
+        ? supabase
+            .from('club_members')
+            .select('*')
+            .in('club_id', clubIds)
+            .in('role', ['agent', 'sub_agent', 'super_agent'])
+        : Promise.resolve({ data: [] as any[] }),
+      periodQuery,
+    ]);
+    if (mountedRef.current) setRecentPeriods(periodsRes.data || []);
+
+    {
+      const agentRows = agentsRes.data;
 
       // Batch-fetch profiles (no FK between club_members and profiles)
       if (agentRows && agentRows.length > 0) {
@@ -385,90 +468,21 @@ export default function UnionDashboardPage() {
       }
     }
 
-    // Load admins
-    const { data: adminRows } = await supabase
-      .from('union_admins')
-      .select('*, profile:user_id(display_name, username, avatar_url:arena_avatar_url)')
-      .eq('union_id', uid);
-    if (mountedRef.current) setAdmins(adminRows || []);
-
-    // Load wallets
-    const { data: walletRow } = await supabase
-      .from('union_wallets')
-      // union_wallets schema: chip_balance, rake_wallet, bbj_wallet, promo_wallet,
-      // insurance_wallet, spin_reserve_wallet, total_rake_collected, total_settlements.
-      // spin_reserve_wallet holds the capital that seeds every Spin bonus pool this
-      // union owns. It existed unread since 2026-08-22 - the pools were being seeded
-      // out of promo_wallet because nothing surfaced the wallet meant to fund them.
-      .select(
-        'id, union_id, chip_balance, rake_wallet, bbj_wallet, promo_wallet, insurance_wallet, spin_reserve_wallet, total_rake_collected, total_settlements, created_at'
-      )
-      .eq('union_id', uid)
-      .maybeSingle();
-    if (mountedRef.current) setWallets(walletRow);
-
-    // BBJ UNIFICATION 2026-07-21: the shared jackpot lives in the union's
-    // bbj_pools row (engine-fed contributions + manual funding + payouts) —
-    // NOT in union_wallets.bbj_wallet. Load it for the BBJ tiles.
-    const { data: poolRow } = await supabase
-      .from('bbj_pools')
-      .select(
-        'id, main_balance, backup_balance, promo_balance, total_contributed, total_paid_out, hit_count, last_hit_at, last_hit_amount'
-      )
-      .eq('union_id', uid)
-      .eq('status', 'active')
-      .maybeSingle();
-    if (mountedRef.current) setBbjPool(poolRow);
-
-    // 2026-08-19: the comment here claimed "settlement_periods is a global
-    // table (no club_id column)". That is wrong — it has club_id, and both
-    // union_id and club_id are used by the settlement pipeline. The result was
-    // an unscoped list (every club RLS allowed, from any union) whose Club
-    // column always rendered "Unknown" because club_id was never selected.
-    const unionClubIds = clubIds;
-    let periodQuery = supabase
-      .from('settlement_periods')
-      .select(
-        'id, club_id, union_id, period_number, year, start_at, end_at, status, total_rake_collected, total_player_winnings, total_player_losses, total_hands_dealt, settled_at, created_at'
-      )
-      .order('created_at', { ascending: false })
-      .limit(30);
-    periodQuery = unionClubIds.length
-      ? periodQuery.in('club_id', unionClubIds)
-      : periodQuery.eq('union_id', uid);
-    const { data: periods } = await periodQuery;
-    if (mountedRef.current) setRecentPeriods(periods || []);
-
-    // ── Weekly union<->club player P&L settlements (added 2026-08-19) ──
-    // Until now the weekly square-up had NO readable surface anywhere in the
-    // app: a union admin could not see what was collected, what was paid, or
-    // why a period was parked for review. A money process nobody can inspect
-    // is a money process nobody trusts.
-    const { data: pnlRows } = await supabase
-      .from('union_pnl_settlements')
-      .select(
-        'id, period_start, period_end, status, total_collected, total_paid, total_unpaid, club_results, settled_at'
-      )
-      .eq('union_id', uid)
-      .order('period_start', { ascending: false })
-      .limit(12);
-    if (mountedRef.current) setPnlSettlements(pnlRows || []);
-
-    // SWR: cache successful load for instant display on revisit
-    if (mountedRef.current) {
+    // SWR: cache successful load for instant display on revisit. Moved from
+    // sessionStorage (died with the tab) to the shared walletCache layer
+    // (localStorage + memory), so a reload or a next-day visit paints the
+    // wallet tiles instantly too. Purged on sign-out with the rest of the
+    // wallet caches.
+    if (mountedRef.current && user?.id) {
       try {
-        sessionStorage.setItem(
-          `union_dashboard_swr_${user?.id}`,
-          JSON.stringify({
-            union: unionRow,
-            unionId: uid,
-            adminRole,
-            clubs: enrichedClubs.slice(0, 30),
-            agents: loadedAgents.slice(0, 30),
-            wallets: walletRow,
-            cachedAt: Date.now(),
-          })
-        );
+        writeWalletCache(walletCacheKey(user.id, 'union_dashboard'), {
+          union: unionRow,
+          unionId: uid,
+          adminRole,
+          clubs: enrichedClubs.slice(0, 30),
+          agents: loadedAgents.slice(0, 30),
+          wallets: walletRow,
+        });
       } catch (e) {
         reportError(e, 'UnionDashboardPage');
         /* storage full */
@@ -479,21 +493,26 @@ export default function UnionDashboardPage() {
   // ── Initial Load + SWR Cache ──────────────────────────────
   useEffect(() => {
     if (!user?.id) return;
-    // SWR: show cached data instantly while fresh data loads
+    // SWR: show cached data instantly while fresh data loads. The persistent
+    // walletCache layer survives reloads; loadDashboard below ALWAYS runs and
+    // overwrites whatever painted here.
     try {
-      const cached = sessionStorage.getItem(`union_dashboard_swr_${user.id}`);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
-        if (age < SWR_TTL_MS && parsed.union) {
-          setUnion(parsed.union);
-          if (parsed.unionId) setUnionId(parsed.unionId);
-          if (parsed.adminRole) setAdminRole(parsed.adminRole);
-          if (parsed.clubs) setClubs(parsed.clubs);
-          if (parsed.agents) setAgents(parsed.agents);
-          if (parsed.wallets) setWallets(parsed.wallets);
-          setLoading(false); // Show cached data instantly
-        }
+      const parsed = readWalletCache<{
+        union: UnionRow | null;
+        unionId?: string;
+        adminRole?: string;
+        clubs?: EnrichedClub[];
+        agents?: UnionAgent[];
+        wallets?: any;
+      }>(walletCacheKey(user.id, 'union_dashboard'), SWR_TTL_MS);
+      if (parsed?.union) {
+        setUnion(parsed.union);
+        if (parsed.unionId) setUnionId(parsed.unionId);
+        if (parsed.adminRole) setAdminRole(parsed.adminRole as any);
+        if (parsed.clubs) setClubs(parsed.clubs);
+        if (parsed.agents) setAgents(parsed.agents);
+        if (parsed.wallets) setWallets(parsed.wallets);
+        setLoading(false); // Show cached data instantly
       }
     } catch (e) {
       reportError(e, 'UnionDashboardPage.useEffect');

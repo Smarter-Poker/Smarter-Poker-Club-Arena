@@ -29,6 +29,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { spinActivationApi, type SpinOwnerState } from '../services/SpinActivationService';
+import { useUserStore } from '../stores/useUserStore';
+import {
+  walletCacheKey,
+  readWalletCache,
+  writeWalletCache,
+  dedupedFetch,
+} from '../lib/walletCache';
 
 export interface SpinsWallet {
   state: SpinOwnerState | null;
@@ -50,6 +57,7 @@ export function useSpinsWallet(ownerKey: string | null | undefined, enabled = tr
   const [state, setState] = useState<SpinOwnerState | null>(null);
   const [loading, setLoading] = useState(false);
   const [nonce, setNonce] = useState(0);
+  const userId = useUserStore((s: any) => s.user?.id) as string | undefined;
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
@@ -59,16 +67,37 @@ export function useSpinsWallet(ownerKey: string | null | undefined, enabled = tr
       return;
     }
     let cancelled = false;
-    setLoading(true);
+
+    // Instant paint from the device cache (stale-while-revalidate — the
+    // request below ALWAYS runs and overwrites). Keyed per viewing user so a
+    // sign-out purge isolates accounts; skipped entirely when no user id is
+    // known yet.
+    const cacheKey = userId ? walletCacheKey(userId, 'spins', ownerKey) : null;
+    const cached = cacheKey ? readWalletCache<SpinOwnerState | null>(cacheKey) : null;
+    if (cached !== null) {
+      setState(cached);
+    } else {
+      setLoading(true);
+    }
+
     void (async () => {
       try {
-        const res = await spinActivationApi.getState(ownerKey);
-        if (!cancelled) setState(res.state ?? null);
+        // Deduped: DynamicWallet and a dashboard tile asking for the same
+        // owner in the same window share one request.
+        const res = await dedupedFetch(cacheKey ?? `spins_anon_${ownerKey}`, () =>
+          spinActivationApi.getState(ownerKey)
+        );
+        if (!cancelled) {
+          const next = res.state ?? null;
+          setState(next);
+          if (cacheKey) writeWalletCache(cacheKey, next);
+        }
       } catch {
         // A viewer with no permission, or a club that has never touched Spins,
         // is a normal outcome. The row simply does not appear — it must never
-        // render a made-up zero next to real balances.
-        if (!cancelled) setState(null);
+        // render a made-up zero next to real balances. On error, only fall
+        // back to null when nothing cached painted above.
+        if (!cancelled && cached === null) setState(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -76,7 +105,7 @@ export function useSpinsWallet(ownerKey: string | null | undefined, enabled = tr
     return () => {
       cancelled = true;
     };
-  }, [ownerKey, enabled, nonce]);
+  }, [ownerKey, enabled, nonce, userId]);
 
   return {
     state,

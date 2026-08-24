@@ -56,7 +56,13 @@ import { WalletIcon, type WalletIconName } from '../icons/LobbyIcons';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
-import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { resolveClubUUID, resolveClubUUIDSync } from '../../utils/clubIdResolver';
+import {
+  walletCacheKey,
+  readWalletCache,
+  writeWalletCache,
+  dedupedFetch,
+} from '../../lib/walletCache';
 import { normaliseRole, type ClubRole } from '../../types/clubRoles';
 import { clubWalletRows, type WalletRowKey } from './walletRows';
 import { useSpinsWallet } from '../../hooks/useSpinsWallet';
@@ -299,6 +305,21 @@ export default function DynamicWallet({
   // once the backoff never escalated past its first entry.
   const [channelEpoch, setChannelEpoch] = useState(0);
 
+  // ── Instant-paint cache (Dan 2026-08-23: "wallets need to cache much
+  // better") ────────────────────────────────────────────────────────────────
+  // Keyed on the RAW clubId prop (not the resolved UUID) so a cache hit can
+  // paint before — and without — the UUID-resolution roundtrip. The cached
+  // payload is only ever a PAINT: fetchData always runs and overwrites it,
+  // and every realtime delta is written back through, so the cache converges
+  // on the live panel. See walletCache.ts for the full contract.
+  const cacheKey = userId && clubId ? walletCacheKey(userId, clubId, variant) : null;
+  // Which cache key the CURRENT `data` state legitimately belongs to. Guards
+  // the write-through effect against the one-render window after a club
+  // switch where `cacheKey` already points at the new club while `data` still
+  // holds the old one — writing in that window would poison the new club's
+  // cache with the old club's money.
+  const paintedKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
     // Reset before resolving. Without this, `resolvedId` kept pointing at the
     // OLD club while resolveClubUUID was in flight, `loading` stayed false
@@ -308,8 +329,39 @@ export default function DynamicWallet({
     setResolvedId(null);
     setCurrentUnionId(null);
     setFetchError(false);
-    setLoading(true);
+    paintedKeyRef.current = null;
     if (!clubId) {
+      setLoading(true);
+      return;
+    }
+
+    // 1. INSTANT PAINT: last-known panel for this (user, club, variant) from
+    //    the device cache. No skeleton on a revisit — the numbers appear in
+    //    the same frame and the network refresh corrects them if stale.
+    const cached = cacheKey
+      ? readWalletCache<{
+          data: WalletData;
+          isClubInUnion: boolean;
+          unionId: string | null;
+        }>(cacheKey)
+      : null;
+    if (cached && cached.data) {
+      setData(cached.data);
+      setIsClubInUnion(cached.isClubInUnion);
+      currentUnionIdRef.current = cached.unionId;
+      setCurrentUnionId(cached.unionId);
+      paintedKeyRef.current = cacheKey;
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
+    // 2. UUID resolution: synchronous when the mapping is already on the
+    //    device (persisted by clubIdResolver), which lets the data fetch
+    //    start this tick instead of one roundtrip later.
+    const syncUuid = resolveClubUUIDSync(clubId);
+    if (syncUuid) {
+      setResolvedId(syncUuid);
       return;
     }
     resolveClubUUID(clubId)
@@ -321,7 +373,7 @@ export default function DynamicWallet({
         // Fallback: use raw clubId (it might already be a UUID)
         if (isMounted.current) setResolvedId(clubId);
       });
-  }, [clubId]);
+  }, [clubId, cacheKey]);
 
   // Effective variant — the caller's choice, full stop.
   //
@@ -394,22 +446,30 @@ export default function DynamicWallet({
       // `scope` saying which figures the caller may actually see — so the
       // panel can render "—" for what it is not allowed to read instead of a
       // fabricated 0.00. It also removes the second, serial round trip.
-      const [profileRes, memberRes, agentRes, panelRes] = await Promise.all([
-        supabase.from('profiles').select('diamonds').eq('id', userId).maybeSingle(),
-        supabase
-          .from('club_members')
-          .select('chip_balance')
-          .eq('club_id', resolvedId)
-          .eq('user_id', userId)
-          .maybeSingle(),
-        supabase
-          .from('agents')
-          .select('agent_wallet_balance, promo_wallet_balance')
-          .eq('club_id', resolvedId)
-          .eq('user_id', userId)
-          .maybeSingle(),
-        supabase.rpc('fn_club_money_panel', { p_club_id: resolvedId }),
-      ]);
+      //
+      // dedupedFetch: two wallet surfaces mounting in the same window (e.g.
+      // the Cashier's panel plus a modal's) share ONE set of queries instead
+      // of racing duplicates.
+      const [profileRes, memberRes, agentRes, panelRes] = await dedupedFetch(
+        `dw_fetch_${userId}_${resolvedId}`,
+        () =>
+          Promise.all([
+            supabase.from('profiles').select('diamonds').eq('id', userId).maybeSingle(),
+            supabase
+              .from('club_members')
+              .select('chip_balance')
+              .eq('club_id', resolvedId)
+              .eq('user_id', userId)
+              .maybeSingle(),
+            supabase
+              .from('agents')
+              .select('agent_wallet_balance, promo_wallet_balance')
+              .eq('club_id', resolvedId)
+              .eq('user_id', userId)
+              .maybeSingle(),
+            supabase.rpc('fn_club_money_panel', { p_club_id: resolvedId }),
+          ])
+      );
 
       // Discard stale response if a newer fetch has started
       if (thisVersion !== fetchVersionRef.current || !isMounted.current) return;
@@ -435,7 +495,7 @@ export default function DynamicWallet({
       // to leak.
       const unionScoped = variant === 'union';
 
-      setData({
+      const nextData: WalletData = {
         diamonds: Number(profileRes.data?.diamonds) || 0,
         chipBalance: Number(memberRes.data?.chip_balance) || 0,
         promoBalance: Number(agentRes.data?.promo_wallet_balance) || 0,
@@ -459,10 +519,24 @@ export default function DynamicWallet({
         projectedClubsShare: unionScoped ? num(panel.projected_clubs_share) : 0,
         nextCloseAt: (panel.next_close_at as string | null) ?? null,
         scope: (panel.scope as WalletData['scope']) ?? null,
-      });
+      };
+      setData(nextData);
       setIsClubInUnion(Boolean(panel.in_union));
       setFetchError(false);
       setLoading(false);
+
+      // 3. WRITE-THROUGH: persist the fresh panel so the NEXT mount of this
+      //    (user, club, variant) paints instantly. paintedKeyRef marks `data`
+      //    as belonging to this key so the realtime write-through effect may
+      //    keep it current.
+      if (cacheKey) {
+        paintedKeyRef.current = cacheKey;
+        writeWalletCache(cacheKey, {
+          data: nextData,
+          isClubInUnion: Boolean(panel.in_union),
+          unionId,
+        });
+      }
     } catch (err) {
       reportError(err, 'DynamicWallet.Fetch_error');
       if (thisVersion === fetchVersionRef.current && isMounted.current) {
@@ -470,11 +544,28 @@ export default function DynamicWallet({
         setLoading(false);
       }
     }
-  }, [userId, resolvedId, variant]);
+  }, [userId, resolvedId, variant, cacheKey]);
 
   useEffect(() => {
     if (resolvedId) fetchData();
   }, [fetchData, resolvedId]);
+
+  // ── Realtime write-through ────────────────────────────────────────────────
+  // The realtime channels below patch `data` directly (diamonds, chip
+  // balance, club bank, union ledgers). Mirror every such change into the
+  // device cache so the next instant paint shows the LAST number this panel
+  // displayed, not the one from the last full fetch. paintedKeyRef gates the
+  // one-render window after a club switch where `data` still belongs to the
+  // previous key.
+  useEffect(() => {
+    if (loading || fetchError) return;
+    if (!cacheKey || paintedKeyRef.current !== cacheKey) return;
+    writeWalletCache(cacheKey, {
+      data,
+      isClubInUnion,
+      unionId: currentUnionId,
+    });
+  }, [data, isClubInUnion, currentUnionId, loading, fetchError, cacheKey]);
 
   // ── MasterBus: Refresh on ALL balance-related events (debounced 500ms) ─────
   useMasterBusSubscriptions(

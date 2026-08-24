@@ -17,8 +17,8 @@ import { lazyWithRetry as lazy } from './utils/lazyWithRetry';
 import { supabase } from './lib/supabase';
 import { realtimeChannelService } from './services/RealtimeChannelService';
 import { OfflineQueueService } from './services/OfflineQueueService';
-import { busEventLogger } from './services/BusEventLogger';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
+import UnionSkinGuard from './components/common/UnionSkinGuard';
 import { ChallengeToastListener } from './components/notifications/ChallengeToastListener';
 import LastClubTracker from './components/common/LastClubTracker';
 import WaitlistBanner from './components/common/WaitlistBanner';
@@ -42,10 +42,7 @@ import PersistentTableLayer from './components/table/PersistentTableLayer';
 import BusToastBridge from './components/common/BusToastBridge';
 import { ConfirmHost } from './components/common/confirmDialog';
 import MilestoneToast from './components/common/MilestoneToast';
-import { bootServices, shutdownServices } from './services/ServiceBootstrap';
-import { preloadCriticalChunks } from './utils/ChunkPreloader';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
-import { supabaseConnectionWatchdog } from './utils/supabaseConnectionWatchdog';
 
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
@@ -187,6 +184,7 @@ function TableRouteSurface() {
 // Imported from centralized storage keys
 import { STORAGE_KEYS } from './lib/storage';
 import { reportError } from './utils/errorReporter';
+import SlugEnforcer from './components/common/SlugEnforcer';
 
 export default function App() {
   // Check if intro video has been shown this session
@@ -258,11 +256,49 @@ export default function App() {
 
   // ── Start BusEventLogger, Connection Watchdog & register Service Worker ──
   useEffect(() => {
-    busEventLogger.start();
+    let disposed = false;
 
-    // Start Supabase connection watchdog (monitors connectivity, emits bus events,
-    // auto-reconnects realtime channels on recovery)
-    supabaseConnectionWatchdog.start();
+    // PERF 2026-08-24. Every module started below runs AFTER first paint, and
+    // every one of them was a STATIC import at the top of this file — so its
+    // whole dependency tree was welded into the entry chunk and had to be
+    // downloaded, parsed and evaluated BEFORE the lobby could paint. That is
+    // how SettlementCronService and FinancialCronService, neither of which the
+    // lobby has any use for, ended up on the critical path of every boot.
+    //
+    // Importing them here instead is behaviour-neutral (they already only ran
+    // from this effect) and takes them out of the first paint entirely.
+    const deferred = Promise.all([
+      import('./services/BusEventLogger'),
+      import('./utils/supabaseConnectionWatchdog'),
+      import('./services/ServiceBootstrap'),
+      import('./utils/ChunkPreloader'),
+    ])
+      .then(([logger, watchdog, bootstrap, preloader]) => {
+        // Unmounted while the chunks were in flight: start nothing, so the
+        // cleanup below has nothing to tear down.
+        if (disposed) return null;
+
+        logger.busEventLogger.start();
+
+        // Start Supabase connection watchdog (monitors connectivity, emits bus
+        // events, auto-reconnects realtime channels on recovery)
+        watchdog.supabaseConnectionWatchdog.start();
+
+        // Boot all engine services
+        bootstrap.bootServices().catch((err) => {
+          reportError(err, 'App.Service_bootstrap_failed');
+        });
+
+        // Preload critical page chunks during idle time so they're cached
+        // for instant re-entry when navigating back from the World Hub
+        preloader.preloadCriticalChunks();
+
+        return { logger, watchdog, bootstrap };
+      })
+      .catch((err) => {
+        reportError(err, 'App.Deferred_service_start_failed');
+        return null;
+      });
 
     // ── Register the service worker ────────────────────────────────────────
     //
@@ -312,20 +348,19 @@ export default function App() {
         );
     }
 
-    // Boot all engine services
-    bootServices().catch((err) => {
-      reportError(err, 'App.Service_bootstrap_failed');
-    });
-
-    // Preload critical page chunks during idle time so they're cached
-    // for instant re-entry when navigating back from the World Hub
-    preloadCriticalChunks();
-
     return () => {
-      busEventLogger.stop();
-      supabaseConnectionWatchdog.stop();
-      // Tear down engine services (online listener, cron timer, IndexedDB)
-      shutdownServices();
+      disposed = true;
+      // Tear down whatever actually started. If the chunks never resolved, or
+      // resolved after unmount, `deferred` is null and there is nothing to do.
+      deferred
+        .then((mods) => {
+          if (!mods) return;
+          mods.logger.busEventLogger.stop();
+          mods.watchdog.supabaseConnectionWatchdog.stop();
+          // Tear down engine services (online listener, cron timer, IndexedDB)
+          mods.bootstrap.shutdownServices();
+        })
+        .catch(() => {});
     };
   }, []);
 
@@ -335,6 +370,13 @@ export default function App() {
         <ChallengeToastListener />
         <GlobalBalanceSync />
         <LastClubTracker />
+        {/* Dan 2026-08-23, binding: "players, agents, super agents, nobody
+          should ever see the union skins." A union is a `clubs` row, so every
+          /clubs/:clubId/* route will render it through the club chrome. The
+          links that did so are fixed at source; this is the backstop for a
+          bookmark, a shared URL, or the next feature to make the same mistake.
+          Owner and union admins pass through. */}
+        <UnionSkinGuard />
         <BusToastBridge />
         <ConfirmHost />
         {/* Dan 2026-08-18: Session Complete now pops in the LOBBY, so its host
@@ -405,6 +447,7 @@ export default function App() {
               </>
             }
           >
+            <SlugEnforcer />
             <Routes>
               {/* ═══════════════════════════════════════════════════════════════
                         PUBLIC ROUTES (No Auth Required)

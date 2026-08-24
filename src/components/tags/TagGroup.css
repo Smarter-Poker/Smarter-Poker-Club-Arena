@@ -1,8 +1,0 @@
-.tag-group {
-    display: flex;
-    gap: 6px;
-}
-
-.tag-group.wrap {
-    flex-wrap: wrap;
-}

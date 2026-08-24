@@ -307,8 +307,66 @@ export class GameServer {
     await this.cleanupStaleData(testTableId);
 
     if (!maintenanceMode && !testTableId) {
-      // Step 2: Start horse fleet manager (creates tables, seats horses)
-      await this.horseFleet.start();
+      /**
+       * DISCOVERY GOES FIRST (2026-08-24). It used to be Step 6, behind
+       * `await this.horseFleet.start()`.
+       *
+       * The discovery loops are the only thing that attaches an engine to a
+       * table, which is to say they are the only reason the platform deals a
+       * hand. Everything they used to sit behind is housekeeping: seeding the
+       * horse fleet, scheduling recurring tournaments, lifecycle sweeps, rebuy
+       * funding, rakeback settlement.
+       *
+       * ensureAllTablesExist() inside the fleet bootstrap reads the whole table
+       * list, and under load that read times out and retries. While it did,
+       * `await` held the boot at Step 2 and Step 6 was simply never reached, so
+       * the process ran as a leader with no discovery loop at all:
+       *
+       *   [HorseFleet.table_lookup_failed] Error: supabase_timeout
+       *     at HorseFleetManager.ensureAllTablesExist
+       *     at HorseFleetManager.start
+       *     at GameServer.start
+       *
+       * The observable signature is discoveryLoopStalledMs climbing in exact
+       * lockstep with uptime, activeTables pinned at 0, and liveness flipping to
+       * 'dead' once past the startup grace - at which point the healthcheck kills
+       * a container that was, by its own lights, booting normally. That is the
+       * restart loop that kept the fleet at zero tables on 2026-08-24, and it is
+       * why neither the adoption budget nor the leadership fixes cured it: they
+       * govern a loop that was never running.
+       *
+       * cleanupStaleData() above stays awaited and stays first. That one IS a
+       * prerequisite - it deletes stale seats and resets table state, and
+       * adopting a table before it runs would hand an engine a half-torn-down
+       * table. Nothing from here on is a prerequisite for dealing.
+       *
+       * These are infinite while-loops: fire-and-forget with error handling.
+       */
+      this.discoverCashTables().catch((err) =>
+        reportError(err, 'GameServer.Cash_table_discovery_fatal_err')
+      );
+      this.discoverTournaments().catch((err) =>
+        reportError(err, 'GameServer.Tournament_discovery_fatal_err')
+      );
+
+      /**
+       * The fleet bootstrap is no longer awaited, for the same reason it no
+       * longer runs first: a housekeeping step that can retry a timing-out
+       * query must not be able to hold up the rest of the boot. Everything
+       * below is a `.start()` that returns immediately, so awaiting this was
+       * the single point at which a slow database could stop the whole boot
+       * sequence.
+       *
+       * Nothing below needs the fleet to be seeded already. The recurring
+       * tournament service and the lifecycle sweeps are pollers; they pick the
+       * fleet up on their next tick. Discovery likewise re-runs every
+       * TABLE_DISCOVERY_INTERVAL, so tables the fleet creates late are adopted
+       * on the next sweep rather than missed.
+       */
+      void this.horseFleet
+        .start()
+        .catch((err) => reportError(err, 'GameServer.horse_fleet_start_failed'));
+
 
       // Step 3: Start tournament recurring service (creates MTTs, SNGs, Spins)
       this.tournamentRecurring.start();
@@ -330,15 +388,6 @@ export class GameServer {
       // Reads rake_records → upserts rakeback_periods so players see accumulated
       // rakeback in the UI and weekly settlement has rows to pay out.
       this.rakebackSettler.start();
-
-      // Step 6: Start discovery loops (finds tables with players, starts engines)
-      // These are infinite while-loops — fire-and-forget with error handling
-      this.discoverCashTables().catch((err) =>
-        reportError(err, 'GameServer.Cash_table_discovery_fatal_err')
-      );
-      this.discoverTournaments().catch((err) =>
-        reportError(err, 'GameServer.Tournament_discovery_fatal_err')
-      );
 
       // Step 7: Start synchronized break timer (last hand at :55, then 5 min break)
       this.scheduleSynchronizedBreaks();

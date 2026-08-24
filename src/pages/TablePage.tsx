@@ -6865,11 +6865,39 @@ export default function TablePage({
   // ═══════════════════════════════════════════════════════════════════════════
   // WAITLIST → HORSE YIELD — When a real player is waiting & table full, remove a horse
   // ═══════════════════════════════════════════════════════════════════════════
+  // Seated-only gate for the waitlist yield below. A spectator has no seat to
+  // give up and no stake in table liquidity; only players actually sitting at
+  // the table should be running this.
+  const heroIsSeatedForWaitlist = tableState.heroSeat > 0;
   useEffect(() => {
     if (!tableId || !tableState.blinds || tableState.blinds === '?/?') return;
     if (tableState.isTournament) return; // No horse cap in tournaments
+    if (!heroIsSeatedForWaitlist) return;
 
-    // Poll waitlist every 10s — if real players are waiting, yield a horse
+    // Poll the waitlist — if real players are waiting, yield a horse seat.
+    //
+    // PERF 2026-08-24. Two problems, one fixed here and one recorded.
+    //
+    // FIXED: this ran for EVERY client with the table open, including
+    // spectators and railbirds, who have no business performing table
+    // maintenance. A popular table can carry far more watchers than seats, and
+    // every one of them was issuing a waitlist read every 10 seconds plus a
+    // liquidity check. Restricted to SEATED players below.
+    //
+    // NOT FIXED, deliberately: the remaining seated players still duplicate
+    // this work N ways, and the yield is a MUTATION, so N clients race to
+    // perform the same one. The correct home for it is the engine - CLAUDE.md
+    // already records horse fleet management as server-authoritative, and
+    // HorseFleetManager seeds tables and populates `table_waitlist`. What it
+    // does NOT do is give a seat back when a human queues behind a full table
+    // of horses; HydraService.checkWaitlistAndYield is the only implementation
+    // of that anywhere, which is why it is left running rather than deleted as
+    // the old client-side AutoRebuyService was. Moving it server-side needs an
+    // engine change, not a client one.
+    //
+    // Interval also raised 10s -> 15s and jittered, so seated clients at the
+    // same table stop hitting the database in lockstep.
+    const JITTER_MS = Math.floor(Math.random() * 4000);
     const interval = setInterval(async () => {
       try {
         const entries = await waitlistService.getTableWaitlist(tableId);
@@ -6882,10 +6910,10 @@ export default function TablePage({
       } catch (err) {
         // Non-critical — silently ignore
       }
-    }, 10000);
+    }, 15000 + JITTER_MS);
 
     return () => clearInterval(interval);
-  }, [tableId, tableState.blinds, tableState.isTournament]);
+  }, [tableId, tableState.blinds, tableState.isTournament, heroIsSeatedForWaitlist]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   //HandController removed — server is authoritative

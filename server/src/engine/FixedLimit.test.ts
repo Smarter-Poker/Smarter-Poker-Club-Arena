@@ -31,6 +31,7 @@ import {
   isFixedLimitCapped,
   fixedLimitWagerCount,
   stakesLabel,
+  substituteOnCappedStreet,
   FIXED_LIMIT_MAX_WAGERS,
 } from './BettingStructure.js';
 import type { HandConfig, SeatPlayer, ActionRecord } from '../types.js';
@@ -465,5 +466,67 @@ describe('HandController on a 2/4 limit table', () => {
     h.act('call');
     h.act('call');
     expect(h.chips()).toBeCloseTo(before, 2);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// A capped street must never turn a horse's raise into a fold
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('substituteOnCappedStreet', () => {
+  it('turns a wager into a call when money is owed', () => {
+    // The bug it exists for: the horses decide independently of
+    // getAvailableActions, and a REJECTED horse action degrades to
+    // `check() || fold()`. On a capped street facing a bet, check is illegal
+    // too — so a horse that wanted to RAISE folded the hand it had just
+    // decided to put money in with.
+    expect(substituteOnCappedStreet('raise', 4)).toBe('call');
+    expect(substituteOnCappedStreet('bet', 4)).toBe('call');
+  });
+
+  it('turns a wager into a check when nothing is owed', () => {
+    expect(substituteOnCappedStreet('raise', 0)).toBe('check');
+    expect(substituteOnCappedStreet('bet', 0)).toBe('check');
+  });
+
+  it('never substitutes anything that was already legal', () => {
+    for (const a of ['fold', 'check', 'call', 'all_in', 'discard'] as const) {
+      expect(substituteOnCappedStreet(a, 4)).toBe(a);
+      expect(substituteOnCappedStreet(a, 0)).toBe(a);
+    }
+  });
+
+  it('produces an action a capped street actually accepts', () => {
+    // Cross-check against validateAction rather than trusting the mapping: on a
+    // capped street the only two survivors are fold and call.
+    const capped = calculateBettingState(20, 16, 4, 2, 0, false, { betSize: 4, capped: true });
+    expect(validateAction(substituteOnCappedStreet('raise', 12), undefined, 100, capped).valid).toBe(
+      true
+    );
+    // and the thing it replaced would NOT have been accepted
+    expect(validateAction('raise', 20, 100, capped).valid).toBe(false);
+  });
+
+  it('treats a sub-cent owed amount as nothing owed', () => {
+    // toCall arrives as a float; 0.004 is drift, not a debt.
+    expect(substituteOnCappedStreet('raise', 0.004)).toBe('check');
+  });
+});
+
+describe('a capped street ends by calling, not by folding', () => {
+  it('leaves every seat with a legal action after the cap is reached', () => {
+    const h = harness(mkConfig(), [200, 200, 200]);
+    h.act('raise', 4);
+    h.act('raise', 6);
+    h.act('raise', 8);
+    expect(isFixedLimitCapped(h.st().actionHistory, 'preflop')).toBe(true);
+
+    // Whatever a bot wanted to do, the substitute must be accepted by the
+    // engine — never rejected into the check/fold path.
+    const menu = h.menu();
+    expect(menu).toContain('call');
+    const toCall = h.st().currentBet - h.seat(h.cur()).bet;
+    const sub = substituteOnCappedStreet('raise', toCall);
+    expect(h.act(sub as never)).toBe(true);
   });
 });

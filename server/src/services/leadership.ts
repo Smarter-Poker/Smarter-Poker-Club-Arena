@@ -117,6 +117,8 @@ let unknownStreak = 0;
  * process has NO discovery loop, NO fleet manager and NO stale-data cleanup.
  */
 let bootedAsStandby = false;
+/** Guards restartIntoLeaderBoot against a second renewal re-entering it. */
+let restartScheduled = false;
 let holder: string | null = null;
 let holderAgeSeconds: number | null = null;
 let becameLeaderAt: number | null = null;
@@ -157,6 +159,17 @@ export function markBootedAsStandby(): void {
  */
 function restartIntoLeaderBoot(reason: string): void {
   if (!bootedAsStandby) return;
+  /**
+   * ONCE ONLY. renewLeadership() runs on an interval and the hard-exit backstop
+   * below keeps this process alive for up to 5 seconds, so a renewal already in
+   * flight when the first promotion landed can re-enter here and schedule a
+   * second release plus a second pair of exit timers. Harmless today because
+   * the process is leaving either way, but it double-releases the lease and
+   * doubles the log, and the next reader of this function should not have to
+   * work out whether that matters.
+   */
+  if (restartScheduled) return;
+  restartScheduled = true;
   console.error(
     `[leadership] ${INSTANCE_ID} promoted (${reason}) but booted as a standby, so it has ` +
       'no discovery loop or fleet — exiting so the supervisor restarts it as a real leader.'
@@ -354,6 +367,7 @@ export async function releaseLeadership(): Promise<void> {
 
 /** Test seam. */
 export function __resetLeadership(): void {
+  restartScheduled = false;
   bootedAsStandby = false;
   role = 'standby';
   unknownStreak = 0;

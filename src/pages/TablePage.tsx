@@ -9556,7 +9556,7 @@ export default function TablePage({
     ).players;
     const uses = (roster || []).find((p) => p?.user_id === userId)?.time_bank_uses_remaining;
     if (typeof uses === 'number' && Number.isFinite(uses)) {
-      setTimeBanksRemaining((prev) => (prev === uses ? prev : uses));
+      setTimeBanksRemaining((prev) => Math.max(prev, uses));
     }
   }, [engineSnapshot, userId]);
 

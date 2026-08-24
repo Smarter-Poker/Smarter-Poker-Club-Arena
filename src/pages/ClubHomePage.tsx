@@ -430,7 +430,26 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   // React Router reuses the component when only the clubId param changes.
+  //
+  // ALWAYS-ON (Dan, 2026-08-24): this must fire on an actual club CHANGE and
+  // nowhere else. A `useEffect(..., [clubId])` also runs on FIRST MOUNT, so
+  // every entry into a club - including re-entering the club you were already
+  // looking at - zeroed the wallet to {gold:0, diamonds:0}, dropped clubLevel
+  // to null and cleared hasDataRef, which re-armed the loading skeleton. That
+  // is the "wallet reloads when I change pages" behaviour, and it was
+  // self-inflicted: the data was correct and got thrown away before the refetch
+  // that would replace it.
+  //
+  // Comparing against a ref makes it a true transition guard: on first mount
+  // the ref is seeded and nothing is cleared, so a cached wallet stays on
+  // screen; on a genuine club switch the stale club's values still get wiped,
+  // which is the case this reset exists for.
+  const prevClubIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
+    const previous = prevClubIdRef.current;
+    prevClubIdRef.current = clubId;
+    if (previous === undefined || previous === clubId) return;
+
     setIsOwner(false);
     setUserRole('player');
     setIsInUnion(false);

@@ -10,9 +10,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
       - name: Apply SQL using psql
         env:
           PGPASSWORD: "215SlalomCt!!"
         run: |
           psql -h db.kuklfnapbkmacvwxktbh.supabase.co -U postgres -d postgres -p 5432 -f supabase/migrations/20260823250000_wallet_claim_back.sql
           psql -h db.kuklfnapbkmacvwxktbh.supabase.co -U postgres -d postgres -p 5432 -f supabase/migrations/20260823390000_stats_perf.sql
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          
+      - name: Regenerate Manifest
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/gen-schema-manifest.mjs
+
+      - name: Commit back
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add scripts/ci/
+          # Only commit if there are changes
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: regenerate manifest"
+            git push
+          fi

@@ -300,6 +300,14 @@
     height: 22px;
   }
 
+  /* Guard rail: the ten controls must fit the narrowest common phone. If a
+     future icon is added here, this is the line that keeps the last orb on
+     screen instead of clipping it — the row shrinks before it overflows. */
+  .headerLeft,
+  .headerRight {
+    min-width: 0;
+  }
+
   .brandTextImg {
     display: none;
   }
@@ -308,7 +316,7 @@
      TO BE THE SAME SIZE AS THE ICONS TO THE RIGHT." One size — 30px — for
      every control in the bar, left and right. */
   .headerImgBtn {
-    height: 22px;
+    height: 20px;
     width: auto;
     padding: 0;
   }
@@ -316,7 +324,7 @@
   /* Nav pills are wide art, so height is the shared dimension — width follows
      the aspect. A max-width would letterbox them short again. */
   .headerNavBtn {
-    height: 22px;
+    height: 20px;
     width: auto;
     max-width: none;
     padding: 0;
@@ -324,7 +332,7 @@
 
   .hamburgerBtn {
     width: auto;
-    height: 22px;
+    height: 20px;
     aspect-ratio: 1.35;
     padding: 0;
   }
@@ -347,6 +355,7 @@
     width: 22px;
     height: 22px;
     font-size: 10px;
+    flex-shrink: 0;
   }
 
   .badge {

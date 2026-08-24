@@ -526,6 +526,12 @@ export default function UnionDetailPage() {
           event: '*',
           schema: 'public',
           table: 'tournaments',
+          /* DB LOAD PASS 2026-08-24: unfiltered, every tournament write on the
+             platform woke this page, which then threw almost all of them away
+             with the clubIds check below. `tournaments.union_id` is the exact
+             scope this page cares about and it is evaluated server-side. The
+             clubIds check stays as a second, narrower gate. */
+          filter: `union_id=eq.${unionId}`,
         },
         (payload) => {
           // Reload tournaments on INSERT/UPDATE events

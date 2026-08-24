@@ -9,8 +9,36 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
-import { soundService, haptic } from '../../services/SoundService';
 import './MilestoneToast.css';
+
+/**
+ * BUNDLE PASS 2026-08-24: SoundService was a STATIC import here. This component
+ * is mounted app-wide in App.tsx and renders nothing until a milestone unlocks,
+ * yet that one import welded ~87KB of source (the whole audio engine and its
+ * sample map) into the entry chunk that every single boot must download and
+ * parse. Loading it inside the handler moves that cost to the first unlock —
+ * an event that is already celebratory and already tolerates a few hundred ms.
+ *
+ * The import is cached by the module registry, so unlock #2 onward is free.
+ */
+async function playMilestoneFeedback(): Promise<void> {
+  try {
+    const { soundService, haptic } = await import('../../services/SoundService');
+    // ANIMATION/SOUND AUDIT 2026-08-20: this played playTimeBankActivated —
+    // the URGENT chime that means "your clock ran out and your time bank just
+    // started burning". Hearing your own stress cue at the moment you unlock an
+    // achievement is not a small mismatch; it is the wrong emotion entirely,
+    // and at a table it reads as a time-bank alarm for a hand you are not even
+    // in. playAchievement is the bright celebratory sparkle written for this.
+    //
+    // The haptic stays, but the gate coalesces it with playAchievement's own,
+    // so this is one buzz rather than two (see src/utils/vibrationGate.ts).
+    soundService.playAchievement();
+    haptic.medium();
+  } catch {
+    // Audio is decoration. A failed chunk fetch must never stop the toast.
+  }
+}
 
 interface MilestoneNotification {
   id: string;
@@ -46,17 +74,8 @@ export const MilestoneToast: React.FC = () => {
 
     setNotifications((prev) => [...prev.slice(-4), notification]); // Max 5 at a time
 
-    // ANIMATION/SOUND AUDIT 2026-08-20: this played playTimeBankActivated —
-    // the URGENT chime that means "your clock ran out and your time bank just
-    // started burning". Hearing your own stress cue at the moment you unlock an
-    // achievement is not a small mismatch; it is the wrong emotion entirely,
-    // and at a table it reads as a time-bank alarm for a hand you are not even
-    // in. playAchievement is the bright celebratory sparkle written for this.
-    //
-    // The haptic stays, but the gate coalesces it with playAchievement's own,
-    // so this is one buzz rather than two (see src/utils/vibrationGate.ts).
-    soundService.playAchievement();
-    haptic.medium();
+    // Sound + haptic load on demand — see playMilestoneFeedback above.
+    void playMilestoneFeedback();
 
     // Auto-dismiss after 5 seconds
     const timerId = setTimeout(() => {

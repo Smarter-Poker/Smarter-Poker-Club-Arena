@@ -107,31 +107,47 @@ export default function PromotionsPage() {
     // Real-time promotions updates (INSERT + UPDATE + DELETE)
     const channelKey = clubId ? `promotions-live-${clubId}` : 'promotions-live';
 
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'promotions',
-        },
-        (payload) => {
-          if (!isMounted) return;
-          if (payload.eventType === 'INSERT') {
-            toast.info(' New promotion available!');
+    /* DB LOAD PASS 2026-08-24: this subscription had no filter, so every
+       promotion write for every club on the platform was delivered here and
+       re-ran the page's own club-scoped query — and could even toast "New
+       promotion available!" for another club's promotion.
+
+       The route param may be a slug, so the club UUID has to be resolved
+       before the filter can be built; hence the async setup. Without a clubId
+       this is the global promotions surface and there is no narrower scope to
+       apply. Do not remove the filter on the club route. */
+    const setupRealtime = async () => {
+      const resolvedClubId = clubId ? await resolveClubUUID(clubId) : null;
+      if (!isMounted) return;
+
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'promotions',
+            ...(resolvedClubId ? { filter: `club_id=eq.${resolvedClubId}` } : {}),
+          },
+          (payload) => {
+            if (!isMounted) return;
+            if (payload.eventType === 'INSERT') {
+              toast.info(' New promotion available!');
+            }
+            loadPromotionsRef.current();
           }
-          loadPromotionsRef.current();
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'PromotionsPage._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[PromotionsPage] Realtime channel timed out');
-        }
-      });
+        )
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            if (err) reportError(err?.message || err, 'PromotionsPage._Realtime_channel_error');
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[PromotionsPage] Realtime channel timed out');
+          }
+        });
+    };
+    void setupRealtime();
 
     return () => {
       isMounted = false;

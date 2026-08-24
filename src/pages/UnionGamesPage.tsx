@@ -267,13 +267,10 @@ export default function UnionGamesPage() {
           event: '*',
           schema: 'public',
           table: 'tournaments',
-          // 2026-08-24: this had NO filter, so "live tournament updates for
-          // this union" was in fact every tournament change on the entire
-          // platform, delivered to every client with this page open, each one
-          // triggering a full loadUnionData(). Scoped to the union the page
-          // actually renders - loadUnionData itself reads
-          // .eq('union_id', targetUnion), so this now matches the data on
-          // screen instead of the whole table.
+          /* DB LOAD PASS 2026-08-24: unfiltered, this reloaded the whole union
+             games list on every tournament write anywhere on the platform.
+             `union_id` is the page's own scope — the effect already returns
+             early without it. Do not widen this. */
           filter: `union_id=eq.${unionId}`,
         },
         () => refresh()

@@ -243,63 +243,55 @@ export default function TournamentResultsPage() {
     const channelKey = 'tournament-results-updates';
 
     const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'tournaments',
-          // 2026-08-24: was unfiltered, so EVERY tournament UPDATE on the
-          // platform reloaded this list - and a running tournament updates
-          // constantly (level, prize pool, player count). This page only ever
-          // renders COMPLETED tournaments (loadTournaments filters on exactly
-          // that), so a row that is not completed can never change what is on
-          // screen. Realtime filters match the NEW row, so a tournament
-          // FINISHING still arrives, which is the event that matters.
-          filter: 'status=eq.COMPLETED',
-        },
-        (payload) => {
-          // When tournament is updated (status change, prize pool finalized, etc.)
-          loadTournamentsRef.current();
-        }
-      )
-      .on(
+    channel.on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'tournaments',
+        /* DB LOAD PASS 2026-08-24: unfiltered, this delivered every update to
+           every tournament on the platform — blind-level ticks, player-count
+           changes, prize-pool movement, across thousands of live events — to a
+           page that lists COMPLETED tournaments only. `status=eq.COMPLETED` is
+           the list's own query predicate, so it is the correct scope. */
+        filter: 'status=eq.COMPLETED',
+      },
+      () => {
+        // When tournament is updated (status change, prize pool finalized, etc.)
+        loadTournamentsRef.current();
+      }
+    );
+
+    /* Player results are only ever rendered for the SELECTED tournament, so
+       there is nothing to listen for until one is selected — and when one is,
+       `tournament_id` scopes it exactly. This used to be an unfiltered
+       subscription to the whole tournament_players table (every registration,
+       elimination and chip update, platform-wide) discarded by a client-side
+       id comparison after delivery. */
+    if (selectedTournament?.id) {
+      channel.on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'tournament_players',
-          // 2026-08-24: this was the worse of the two. Unfiltered, it received
-          // EVERY tournament_players row change on the platform - and chip
-          // counts are rewritten on essentially every hand of every running
-          // tournament - only to discard almost all of them in the client-side
-          // `selectedTournament?.id === ...` check below. The filter moves that
-          // same test to the server. This effect already re-runs on
-          // [selectedTournament?.id], so the filter follows the selection.
-          filter: `tournament_id=eq.${selectedTournament?.id ?? '00000000-0000-0000-0000-000000000000'}`,
+          filter: `tournament_id=eq.${selectedTournament.id}`,
         },
-        (payload) => {
+        () => {
           // When player results are updated (position, prize finalized, etc.)
-          const newTournamentId = (payload.new as any)?.tournament_id;
-          const oldTournamentId = (payload.old as any)?.tournament_id;
-          if (
-            selectedTournament?.id === newTournamentId ||
-            selectedTournament?.id === oldTournamentId
-          ) {
-            loadResultsRef.current();
-          }
+          loadResultsRef.current();
         }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err)
-            reportError(err?.message || err, 'TournamentResultsPage._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[TournamentResultsPage] Realtime channel timed out');
-        }
-      });
+      );
+    }
+
+    channel.subscribe((status: string, err?: Error) => {
+      if (status === 'CHANNEL_ERROR') {
+        if (err) reportError(err?.message || err, 'TournamentResultsPage._Realtime_channel_error');
+      }
+      if (status === 'TIMED_OUT') {
+        console.warn('[TournamentResultsPage] Realtime channel timed out');
+      }
+    });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

@@ -414,15 +414,43 @@ export default function SettlementPage() {
 
   // Real-time settlement period updates
   useEffect(() => {
-    const channelKey = `settlement-live-${unionId || 'global'}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
+    const channelKey = `settlement-live-${unionId || clubId || 'global'}`;
+    let cancelled = false;
+
+    /* DB LOAD PASS 2026-08-24: all three listeners below were unfiltered, so
+       every settlement period, invoice and per-hand agent commission written
+       anywhere on the platform was decoded and delivered to every open
+       settlement page. agent_commissions in particular is a per-hand INSERT
+       stream — the highest-volume table in this group.
+
+       The club route's id may be a slug, so the UUID has to be resolved before
+       a filter can be built; hence the async setup. Scopes applied:
+         settlement_periods   -> union_id, or club_id on the club route
+         settlement_invoices  -> club_id on the club route; on the union route
+                                 the wire runs BOTH ways (club->union and
+                                 union->club), so it takes two equally narrow
+                                 listeners on from_entity_id / to_entity_id
+         agent_commissions    -> club_id on the club route. It has no union
+                                 column, so the union route is left unscoped
+                                 rather than guessed at. */
+    const setupRealtime = async () => {
+      const resolvedClubId = clubId ? await resolveClubUUID(clubId) : null;
+      if (cancelled) return;
+
+      const periodScope = unionId
+        ? { filter: `union_id=eq.${unionId}` }
+        : resolvedClubId
+          ? { filter: `club_id=eq.${resolvedClubId}` }
+          : {};
+
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel.on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'settlement_periods',
+          ...periodScope,
         },
         () => {
           // Reload — inline since loadSettlementData is scoped to another useEffect
@@ -446,34 +474,47 @@ export default function SettlementPage() {
               console.warn('[SettlementPage] Failed to get current settlement period:', e)
             );
         }
-      )
-      .on(
-        'postgres_changes',
-        {
-          // SWEEP #3 (2026-07-23): club_settlements never existed — the real
-          // club settlement record is settlement_invoices (union<->club wires).
-          event: '*',
-          schema: 'public',
-          table: 'settlement_invoices',
-        },
-        (payload) => {
-          // Update club wires state directly for faster UI updates
-          if (payload.eventType === 'UPDATE' && payload.new && isMounted.current) {
-            setClubWires((prev) =>
-              prev.map((wire) =>
-                wire.clubId === (payload.new as any).club_id
-                  ? {
-                      ...wire,
-                      status: (payload.new as any).status === 'paid' ? 'processed' : 'pending',
-                      finalWire: (payload.new as any).net_amount || wire.finalWire,
-                    }
-                  : wire
-              )
-            );
-          }
+      );
+
+      // SWEEP #3 (2026-07-23): club_settlements never existed — the real club
+      // settlement record is settlement_invoices (union<->club wires).
+      const onInvoiceChange = (payload: any) => {
+        // Update club wires state directly for faster UI updates
+        if (payload.eventType === 'UPDATE' && payload.new && isMounted.current) {
+          setClubWires((prev) =>
+            prev.map((wire) =>
+              wire.clubId === (payload.new as any).club_id
+                ? {
+                    ...wire,
+                    status: (payload.new as any).status === 'paid' ? 'processed' : 'pending',
+                    finalWire: (payload.new as any).net_amount || wire.finalWire,
+                  }
+                : wire
+            )
+          );
         }
-      )
-      .on(
+      };
+
+      const invoiceScopes: Array<Record<string, string>> = resolvedClubId
+        ? [{ filter: `club_id=eq.${resolvedClubId}` }]
+        : unionId
+          ? [{ filter: `from_entity_id=eq.${unionId}` }, { filter: `to_entity_id=eq.${unionId}` }]
+          : [{}];
+
+      for (const scope of invoiceScopes) {
+        channel.on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'settlement_invoices',
+            ...scope,
+          },
+          onInvoiceChange
+        );
+      }
+
+      channel.on(
         'postgres_changes',
         {
           // SWEEP #3 (2026-07-23): agent_settlements never existed — the live
@@ -483,14 +524,16 @@ export default function SettlementPage() {
           event: 'INSERT',
           schema: 'public',
           table: 'agent_commissions',
+          ...(resolvedClubId ? { filter: `club_id=eq.${resolvedClubId}` } : {}),
         },
         () => {
           if (isMounted.current) {
             masterBus.emit('BALANCE_UPDATED', { source: 'agent_commissions_rt' });
           }
         }
-      )
-      .subscribe((status: string, err?: Error) => {
+      );
+
+      channel.subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
           if (err) reportError(err?.message || err, 'SettlementPage._Realtime_channel_error');
         }
@@ -498,11 +541,15 @@ export default function SettlementPage() {
           console.warn('[SettlementPage] Realtime channel timed out');
         }
       });
+    };
+
+    void setupRealtime();
 
     return () => {
+      cancelled = true;
       masterBus.removeRegisteredChannel(channelKey);
     };
-  }, [unionId]);
+  }, [unionId, clubId]);
 
   // Bus listeners: refresh settlement data when wallet balance changes or settlement cycles complete
   useEffect(() => {

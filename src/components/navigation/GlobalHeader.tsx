@@ -388,18 +388,10 @@ export default function GlobalHeader() {
             />
           </button>
 
-          {/* Live Help */}
-          <button
-            className={styles.orbBtn}
-            onClick={() => navigate('/help')}
-            aria-label="Live Help"
-          >
-            <img
-              src={`${BASE}images/header-help-v4.png`}
-              alt="Live Help"
-              className={styles.orbImg}
-            />
-          </button>
+          {/* Live Help removed 2026-08-24 at Dan's request ("REMOVE THE ?
+              MARK ICON IN THE TOP GLOBAL HEADER"). /help is still routed and
+              reachable from the hamburger menu — only the header orb is gone,
+              which also buys the row 24px of width on a phone. */}
         </div>
       </header>
     </>

@@ -1815,9 +1815,11 @@
     max-width: 100%;
     gap: 5px;
     padding: 0 4px max(16px, env(safe-area-inset-bottom)) 4px;
-    /* Bottom-aligned so the taller PLAYER STATS card rises ABOVE the row,
-       exactly as in the reference layout. */
-    align-items: flex-end;
+    /* Dan 2026-08-24: "PLAYER STATS ... NEEDS TO BE LOWERED SO IT'S EVENLY
+       SPACED BETWEEN THE CARDS ON THE LEFT AND RIGHT." Bottom-aligning made
+       the taller card grow only upward; centring splits its extra height
+       evenly above and below its neighbours, matching the reference. */
+    align-items: center;
   }
 
   .ctaCard {

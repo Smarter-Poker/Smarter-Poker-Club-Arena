@@ -1725,6 +1725,7 @@ export default function TablePage({
     if (engineWsStatus !== 'failed') return;
     const t = window.setTimeout(() => {
       if (document.visibilityState !== 'visible') return;
+      if (!isActive) return; // Do not forcefully reload the app for a backgrounded table
       // A repeatedly-404ing table is closed, not wedged — a reload cannot
       // help and used to loop the browser every 2 minutes indefinitely.
       if (notFoundCountRef.current >= 3) return;
@@ -1739,7 +1740,7 @@ export default function TablePage({
       window.location.reload();
     }, 20_000);
     return () => window.clearTimeout(t);
-  }, [engineWsStatus]);
+  }, [engineWsStatus, isActive]);
 
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);

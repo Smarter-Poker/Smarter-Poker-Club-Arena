@@ -1417,7 +1417,10 @@ class MasterBusCore {
     this.subscribe('DIAMOND_BALANCE_CHANGED', () => {
       const user = useUserStore.getState().user;
       if (user) {
-        useWalletStore.getState().loadDiamonds(user.id);
+        // force: this fires BECAUSE the balance changed. The store's freshness
+        // window is there to make component mounts free, not to suppress an
+        // event that exists to report a change.
+        useWalletStore.getState().loadDiamonds(user.id, { force: true });
       }
     });
 
@@ -1425,7 +1428,9 @@ class MasterBusCore {
     this.subscribe('DIAMOND_SPENT', () => {
       const user = useUserStore.getState().user;
       if (user) {
-        useWalletStore.getState().loadDiamonds(user.id);
+        // force: the player just spent diamonds - the number on screen is known
+        // to be wrong at this instant.
+        useWalletStore.getState().loadDiamonds(user.id, { force: true });
       }
     });
 

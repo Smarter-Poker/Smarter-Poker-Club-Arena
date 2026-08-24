@@ -179,10 +179,13 @@ export default function PlayerWalletPage() {
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const { balances, diamonds, loadBalances, loadDiamonds, internalTransfer } = useWalletStore();
+  // force: the tab has been hidden and is now back. The freshness window exists
+  // to make navigation free, not to serve a number that may be minutes old to
+  // somebody who just returned and is looking straight at it.
   useVisibilityRefresh(() => {
     if (user?.id) {
-      loadBalances(user.id);
-      loadDiamonds(user.id);
+      loadBalances(user.id, { force: true });
+      loadDiamonds(user.id, { force: true });
     }
   });
 
@@ -252,30 +255,30 @@ export default function PlayerWalletPage() {
       masterBus.subscribeDebounced(
         'BALANCE_UPDATED',
         () => {
-          loadBalances(user.id);
-          loadDiamonds(user.id);
+          loadBalances(user.id, { force: true });
+          loadDiamonds(user.id, { force: true });
         },
         500
       ),
       masterBus.subscribeDebounced(
         'WALLET_REFRESHED',
         () => {
-          loadBalances(user.id);
-          loadDiamonds(user.id);
+          loadBalances(user.id, { force: true });
+          loadDiamonds(user.id, { force: true });
         },
         500
       ),
       masterBus.subscribeDebounced(
         'CHIPS_ADDED',
         () => {
-          loadBalances(user.id);
+          loadBalances(user.id, { force: true });
         },
         500
       ),
       masterBus.subscribeDebounced(
         'CHIPS_WITHDRAWN',
         () => {
-          loadBalances(user.id);
+          loadBalances(user.id, { force: true });
         },
         500
       ),
@@ -283,8 +286,8 @@ export default function PlayerWalletPage() {
       masterBus.subscribeDebounced(
         'TRANSACTION_LOGGED' as any,
         () => {
-          loadBalances(user.id);
-          loadDiamonds(user.id);
+          loadBalances(user.id, { force: true });
+          loadDiamonds(user.id, { force: true });
         },
         1000
       ),

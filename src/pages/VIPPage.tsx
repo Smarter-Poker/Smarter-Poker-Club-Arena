@@ -26,7 +26,6 @@ import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import './VIPPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import { reportError } from '../utils/errorReporter';
 
 export default function VIPPage() {
   const { user } = useAuthUser();
@@ -67,42 +66,20 @@ export default function VIPPage() {
     let isMounted = true;
     loadVIPStatus(() => isMounted);
 
-    // Real-time profile updates (diamonds, VIP status)
-    if (user?.id) {
-      const channelKey = 'vip-status';
-
-      const channel = masterBus.getOrCreateChannel(channelKey);
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'profiles',
-            filter: `id=eq.${user.id}`,
-          },
-          (payload) => {
-            if (!isMounted) return;
-            const newData = payload.new as any;
-            if (newData.diamonds !== undefined) {
-              setDiamonds(newData.diamonds);
-            }
-          }
-        )
-        .subscribe((status: string, err?: Error) => {
-          if (status === 'CHANNEL_ERROR') {
-            if (err) reportError(err?.message || err, 'VIPPage._Realtime_channel_error');
-          }
-          if (status === 'TIMED_OUT') {
-            console.warn('[VIPPage] Realtime channel timed out');
-          }
-        });
-
-      return () => {
-        isMounted = false;
-        masterBus.removeRegisteredChannel(channelKey);
-      };
-    }
+    // Real-time profile updates (diamonds, VIP status): NOT subscribed here.
+    //
+    // 2026-08-24: a `vip-status` channel used to live here carrying a single
+    // `profiles` (id=eq.<uid>) listener that did setDiamonds(payload.new.diamonds).
+    // PostgresSyncHooks' `global_db_sync:<userId>` channel already carries that
+    // exact listener - same table, same filter - created once at sign-in and
+    // never torn down by navigation. When profiles.diamonds changes it emits
+    // DIAMOND_BALANCE_CHANGED carrying { newBalance }, and the bus subscriber
+    // further down this file already does setDiamonds(newBalance) from exactly
+    // that payload.
+    //
+    // The whole channel is removed rather than just the listener: it had no
+    // other `.on()`, so keeping it would have left a Realtime subscription that
+    // listens to nothing, reconnects on error, and reports status for no reason.
     return () => {
       isMounted = false;
     };

@@ -704,105 +704,22 @@ export default function ProfilePage() {
     };
   }, []);
 
-  // #1+#2: Setup Supabase Realtime via Channel Registry (fixed cleanup leak)
-  useEffect(() => {
-    let isMounted = true;
-    let activeChannelKey: string | null = null;
-
-    async function setupRealtimeSubscription() {
-      try {
-        const {
-          data: { user: authUser },
-        } = await getAuthUser();
-        if (!authUser || !isMounted) return;
-
-        activeChannelKey = `profile-${authUser.id}`;
-
-        // #1: Use Channel Registry for deduplication
-        const channel = masterBus.getOrCreateChannel(activeChannelKey);
-
-        // Subscribe to profile changes
-        channel
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'profiles',
-              filter: `id=eq.${authUser.id}`,
-            },
-            async (payload) => {
-              const { data: updatedProfile } = await supabase
-                .from('profiles')
-                .select(
-                  'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak'
-                )
-                .eq('id', authUser.id)
-                .maybeSingle();
-
-              if (updatedProfile) {
-                setUser({
-                  id: updatedProfile.id,
-                  username: updatedProfile.username || 'Player',
-                  displayName: updatedProfile.display_name || updatedProfile.username || 'Player',
-                  playerNumber: updatedProfile.player_number || 0,
-                  avatarUrl: updatedProfile.avatar_url || '',
-                  vipLevel: updatedProfile.tier || 'bronze',
-                  memberSince: updatedProfile.created_at,
-                });
-
-                setDiamonds(updatedProfile.diamonds || 0);
-                setIsVIP(updatedProfile.is_vip || false);
-
-                // Stats loaded separately — not in profiles table
-              }
-            }
-          )
-          // Subscribe to wallet changes for diamonds
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'wallets',
-              filter: `user_id=eq.${authUser.id}`,
-            },
-            async (payload) => {
-              const { data: updatedProfile } = await supabase
-                .from('profiles')
-                .select('diamonds, is_vip')
-                .eq('id', authUser.id)
-                .maybeSingle();
-
-              if (updatedProfile) {
-                setDiamonds(updatedProfile.diamonds || 0);
-                setIsVIP(updatedProfile.is_vip || false);
-              }
-            }
-          )
-          .subscribe((status: string, err?: Error) => {
-            if (status === 'CHANNEL_ERROR') {
-              if (err) reportError(err?.message || err, 'ProfilePage._Realtime_channel_error');
-            }
-            if (status === 'TIMED_OUT') {
-              console.warn('[ProfilePage] Realtime channel timed out');
-            }
-          });
-      } catch (err) {
-        reportError(err, 'ProfilePage.Realtime_subscription_failed');
-      }
-    }
-
-    setupRealtimeSubscription();
-
-    // #2: FIX — cleanup is now robust against async race conditions
-    return () => {
-      isMounted = false;
-      if (activeChannelKey) {
-        masterBus.removeRegisteredChannel(activeChannelKey);
-      }
-    };
-  }, []);
+  // Realtime profile/wallet updates: handled GLOBALLY, not by this page.
+  //
+  // 2026-08-24: a `profile-<uid>` channel used to be created here carrying two
+  // listeners - `profiles` (id=eq.<uid>) and `wallets` (user_id=eq.<uid>) - each
+  // of which responded by RE-QUERYING profiles. Both were byte-identical
+  // duplicates of listeners PostgresSyncHooks already carries on
+  // `global_db_sync:<userId>`, created once at sign-in and never torn down by
+  // navigation, and that channel emits PROFILE_UPDATED, BALANCE_UPDATED and
+  // DIAMOND_BALANCE_CHANGED. This page already subscribes to all three on the
+  // bus (see the listeners further up this file), so the refresh path is
+  // unchanged - only the duplicate socket subscription, and the whole effect
+  // that existed to create it, are gone.
+  //
+  // Nothing here drove a connection-status indicator. CashierPage's wallets
+  // channel does (its onSubscriptionError feeds the degraded-connection
+  // banner), which is why that one is deliberately left in place.
 
   if (isLoading) {
     return <LoadingState message="Loading profile..." />;

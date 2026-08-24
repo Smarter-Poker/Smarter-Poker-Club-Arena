@@ -936,15 +936,29 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       masterBus.subscribeDebounced('WAITLIST_PROMOTED', reload, 300),
     ];
 
-    // 90-second fallback interval to ensure the page data doesn't get completely stale
-    // when real-time events are missed.
-    const fallbackInterval = setInterval(() => {
+    // 90-second fallback interval to ensure the page data doesn't get completely
+    // stale when real-time events are missed.
+    //
+    // PERF 2026-08-24: gated on visibility. This is the club lobby - the most
+    // visited screen in the app - and `reload()` is a full loadClubData(), so an
+    // ungated timer kept re-running the whole lobby query set forever in every
+    // backgrounded tab. It refreshes once on return instead, which is also more
+    // correct: a player coming back wants current data immediately, not up to
+    // 90 seconds later.
+    const runFallback = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       reload();
-    }, 90_000);
+    };
+    const fallbackInterval = setInterval(runFallback, 90_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') reload();
+    };
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       isMounted = false;
       clearInterval(fallbackInterval);
+      document.removeEventListener('visibilitychange', onVisible);
       unsubs.forEach((u) => u());
     };
   }, []);

@@ -7313,7 +7313,12 @@ export default function TablePage({
             // Pot from snapshot is more accurate than locally summing — pot
             // updates arrive in the next snapshot. If client already has it,
             // keep prev.pot; otherwise leave untouched.
-            return { ...prev, lastActions: newActions, lastBetAmounts: newBets };
+            return {
+              ...prev,
+              lastActions: newActions,
+              lastBetAmounts: newBets,
+              ...(prev.currentPlayerSeat === actionSeat ? { currentPlayerSeat: 0 } : {}),
+            };
           });
         }
 
@@ -8369,7 +8374,13 @@ export default function TablePage({
             (tableStateRef.current.lastBetAmounts || []).some((a) => (a || 0) > 0) ||
             streetBetsRef.current.some((a) => (a || 0) > 0) ||
             collectingChipSeatsRef.current.some(Boolean);
-          const shipDelayMs = betsStillOnFelt ? 700 * getAnimationSpeed() : 0;
+          let shipDelayMs = betsStillOnFelt ? 700 * getAnimationSpeed() : 0;
+          if (
+            handShowdownRef.current.wentToShowdown ||
+            tableStateRef.current.boardStage === 'showdown'
+          ) {
+            shipDelayMs += 1500 * getAnimationSpeed();
+          }
           // Pot center in screen px (mirrors the constant 50,45 used by
           // chip-to-pot animations elsewhere).
           // 2026-08-04 FIX: scaler-relative percentages, not viewport. The old
@@ -9322,6 +9333,7 @@ export default function TablePage({
           lastActions: newActions,
           lastBetAmounts: newBets,
           players,
+          ...(prev.currentPlayerSeat === heroSeat ? { currentPlayerSeat: 0 } : {}),
         };
       });
 

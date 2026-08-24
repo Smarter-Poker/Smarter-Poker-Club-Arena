@@ -36,6 +36,8 @@ const VARIANT_TOKENS = new Set([
   'plo6',
   'plo8',
   'flh',
+  'flo8',
+
   'flo',
   'sng',
   'mtt',

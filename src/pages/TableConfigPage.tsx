@@ -22,6 +22,8 @@ import './TableConfigPage.css';
 import { reportError } from '../utils/errorReporter';
 import { formatCurrency } from '../lib/utils';
 import { RAKE_INHERIT } from '../config/RakeConfig';
+import { stakesLabel, isFixedLimitVariant } from '../lib/bettingStructure';
+
 import { tournamentService } from '../services/TournamentService';
 import {
   buildTournamentConfig,
@@ -194,13 +196,23 @@ interface TableConfig {
   ipRestriction: boolean;
 }
 
+// 2026-08-23: these keys are the route's :gameType, which is the same string as
+// the variant id in CreateTablePage.GAME_TYPES. Four entries here keyed ids that
+// screen has never emitted — `shortdeck` (it sends `short_deck`), `plo`, `flo`,
+// `mixed` — so every PLO, Pineapple and Short Deck config page fell through to
+// the nlh default at `gameInfo` and titled itself "NLH". Keyed correctly now,
+// with the two limit games added. Anything genuinely unknown still falls back.
 const GAME_TYPE_LABELS: Record<string, { name: string; color: string }> = {
   nlh: { name: 'NLH', color: '#dc2626' },
-  flh: { name: 'FLH', color: '#b45309' },
-  shortdeck: { name: '6+', color: '#0d9488' },
-  plo: { name: 'OMAHA', color: '#7c3aed' },
-  flo: { name: 'FLO', color: '#eab308' },
-  mixed: { name: 'MIXED', color: '#db2777' },
+  plo4: { name: 'PLO4', color: '#7c3aed' },
+  plo5: { name: 'PLO5', color: '#7c3aed' },
+  plo6: { name: 'PLO6', color: '#7c3aed' },
+  plo8: { name: 'PLO8', color: '#7c3aed' },
+  pineapple: { name: 'PINEAPPLE', color: '#f59e0b' },
+  short_deck: { name: '6+', color: '#0d9488' },
+  // Green, matching the limit cards on the create-table screen.
+  flh: { name: 'FLH', color: '#059669' },
+  flo8: { name: 'FLO8', color: '#0d9488' },
 };
 
 const BLINDS_PRESETS = [
@@ -683,7 +695,11 @@ export default function TableConfigPage() {
 
   // Generate default table name
   useEffect(() => {
-    const blindsLabel = `${config.smallBlind}/${config.bigBlind}`;
+    // 2026-08-23: limit games are named by BET size, not blind size — blinds
+    // 1/2 is a "2/4" limit game. stakesLabel() is the one place that decides,
+    // so the table name, the stakes column and the lobby row all agree.
+    const blindsLabel = stakesLabel(config.smallBlind, config.bigBlind, gameType);
+
     setConfig((prev) => ({
       ...prev,
       name: prev.name || `${gameInfo.name} ${blindsLabel}`,
@@ -793,7 +809,8 @@ export default function TableConfigPage() {
     // Stakes
     small_blind: config.smallBlind,
     big_blind: config.bigBlind,
-    stakes: `${config.smallBlind}/${config.bigBlind}`,
+    // Bet sizes on a limit table ("2/4"), blinds everywhere else ("1/2").
+    stakes: stakesLabel(config.smallBlind, config.bigBlind, gameType),
 
     // Basic settings — union clubs build private club games ONLY (the
     // trg_tables_union_ownership DB trigger enforces this server-side too)
@@ -1332,7 +1349,18 @@ export default function TableConfigPage() {
             <div className="config-slider">
               <div className="slider-header">
                 <span className="slider-label">
-                  Blinds: {config.smallBlind}/{config.bigBlind}
+                  {isFixedLimitVariant(gameType) ? (
+                    <>
+                      {/* A limit player thinks in bet sizes, but still needs to
+                          know what they are posting — show both. */}
+                      Limits: {stakesLabel(config.smallBlind, config.bigBlind, gameType)} (Blinds{' '}
+                      {config.smallBlind}/{config.bigBlind})
+                    </>
+                  ) : (
+                    <>
+                      Blinds: {config.smallBlind}/{config.bigBlind}
+                    </>
+                  )}
                 </span>
               </div>
               <div className="slider-track-container">

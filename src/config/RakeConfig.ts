@@ -254,6 +254,22 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     handRank: 'four_of_a_kind',
     minRankValue: 'KKKK',
   },
+  // 2026-08-23: flo8 is the same GAME as plo8 — four cards, exactly-two rule,
+  // 8-or-better low. Only the betting differs, and betting has nothing to do
+  // with which hand qualifies for the jackpot. Mirrors the server copy.
+  flo8: {
+    label: 'FLO8 (Hi-Lo 8 or Better)',
+    minLosingHand: 'KKKK2',
+    description: 'Four of a Kind (Kings) or better must LOSE - evaluated on HIGH hand only',
+    rules: [
+      'Must use exactly 2 cards from hand',
+      'Both players must use two cards from their hole cards',
+      'BBJ evaluated on HIGH hand only (low hand does not qualify)',
+    ],
+    handRank: 'four_of_a_kind',
+    minRankValue: 'KKKK',
+  },
+
   plo_hilo: {
     label: 'PLO8 (Hi-Lo 8 or Better)',
     minLosingHand: 'KKKK2',

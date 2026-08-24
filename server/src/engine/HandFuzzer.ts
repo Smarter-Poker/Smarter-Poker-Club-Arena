@@ -48,6 +48,13 @@
 
 import { HandController } from './HandController.js';
 import { calculatePots, cardsToString } from './PokerEngine.js';
+import {
+  isPotLimitVariant,
+  isFixedLimitVariant,
+  isFixedLimitCapped,
+  fixedLimitBetSize,
+} from './BettingStructure.js';
+
 import type { ActionType, GameVariant, HandConfig, SeatPlayer } from '../types.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -105,6 +112,14 @@ const VARIANT_CARDS: Record<
   plo8: { perPlayer: 4, deckSize: 52, maxSeats: 9 },
   pineapple: { perPlayer: 3, deckSize: 52, maxSeats: 9 },
   short_deck: { perPlayer: 2, deckSize: 36, maxSeats: 9 },
+  // 2026-08-23: fixed-limit variants deal exactly like their no-limit and
+  // pot-limit counterparts — only the BETTING differs — so the card maths is
+  // nlh's and plo4's. Including them here is deliberate: the fuzzer is the only
+  // thing that will ever drive a capped street into the chip-conservation
+  // invariant, and a capped street is where a wrong clamp would silently
+  // create or destroy chips.
+  flh: { perPlayer: 2, deckSize: 52, maxSeats: 9 },
+  flo8: { perPlayer: 4, deckSize: 52, maxSeats: 9 },
 };
 
 export const VARIANTS = Object.keys(VARIANT_CARDS) as GameVariant[];
@@ -336,9 +351,7 @@ function fail(ctx: Ctx, invariant: string, detail: string): never {
  *     joins the main pot
  * and asserts the engine agrees on both the amounts and the eligible sets.
  */
-function expectedPots(
-  players: SeatPlayer[]
-): { amount: number; eligiblePlayers: string[] }[] {
+function expectedPots(players: SeatPlayer[]): { amount: number; eligiblePlayers: string[] }[] {
   const r = (n: number) => Math.round(n * 100) / 100;
   const live = (p: SeatPlayer) => Math.max(0, r((p.totalInvested ?? 0) - (p.deadInvested ?? 0)));
   const active = players.filter((p) => !p.is_folded);
@@ -362,7 +375,10 @@ function expectedPots(
     const reached = contributors.filter((p) => live(p) >= level).length;
     const eligible = active.filter((p) => live(p) >= level);
     if (reached > 0 && eligible.length > 0) {
-      pots.push({ amount: contribution * reached, eligiblePlayers: eligible.map((p) => p.user_id) });
+      pots.push({
+        amount: contribution * reached,
+        eligiblePlayers: eligible.map((p) => p.user_id),
+      });
     } else if (reached > 0) {
       orphaned = r(orphaned + contribution * reached);
     }
@@ -477,9 +493,7 @@ function checkMidHand(ctx: Ctx, where: string): void {
     // A folded player among the eligible is the single most dangerous shape,
     // so name it explicitly when that is what differs.
     const foldedIds = new Set(players.filter((p) => p.is_folded).map((p) => p.user_id));
-    const foldedEligible = pots
-      .flatMap((p) => p.eligiblePlayers)
-      .filter((id) => foldedIds.has(id));
+    const foldedEligible = pots.flatMap((p) => p.eligiblePlayers).filter((id) => foldedIds.has(id));
     fail(
       ctx,
       'INV-10',
@@ -502,10 +516,25 @@ function amountFor(
 ): number | null {
   const st = (hc as any).state;
   const cfg = (hc as any).config as HandConfig;
-  const isPotLimit = cfg.gameVariant.startsWith('plo');
+  const isPotLimit = isPotLimitVariant(cfg.gameVariant);
   const toCall = st.currentBet - player.bet;
   const minRaise = Math.max(cfg.bigBlind, st.lastRaise || cfg.bigBlind);
   const plCap = isPotLimit ? st.pot + toCall : Infinity;
+
+  // 2026-08-23: fixed limit has no range to sample — there is exactly one legal
+  // wager per street. Returning a random size here would make the fuzzer report
+  // its own illegal amounts as engine failures. Null when the stack cannot
+  // cover the fixed bet; the caller then picks a different action, which is the
+  // same escape it already uses for a pot-limit cap below a full raise.
+  if (isFixedLimitVariant(cfg.gameVariant)) {
+    if (isFixedLimitCapped(st.actionHistory, st.stage)) return null;
+    const betSize = fixedLimitBetSize(cfg.bigBlind, st.stage);
+    if (action === 'bet') {
+      return player.stack + EPS < betSize ? null : cents(betSize);
+    }
+    const raiseTo = cents(st.currentBet + betSize);
+    return player.bet + player.stack + EPS < raiseTo ? null : raiseTo;
+  }
 
   if (action === 'bet') {
     const lo = minRaise;

@@ -23,6 +23,8 @@ import {
 } from '../services/supabase.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
+
 import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { handCompletionHoldMs, boardClearMs } from '../config/handCompletionSpec.js';
@@ -637,17 +639,15 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // watchdog progress — so a table that cannot physically be dealt looped
     // "deal -> throw -> sleep 2s -> deal" forever with a perfectly green
     // watchdog. Refuse the deal instead, loudly and slowly.
-    const CARDS_PER_PLAYER: Record<string, number> = {
-      plo4: 4,
-      plo5: 5,
-      plo6: 6,
-      plo8: 4,
-      pineapple: 3,
-    };
+    // 2026-08-23: this was a local map, unexported and invisible to the only
+    // other copy of the same fact in HandController.getCardsPerPlayer(). Both
+    // fell back to 2, so `flo8` would have passed a capacity check computed for
+    // a two-card game and then been dealt four. One table now: VariantRules.
     const variantKey = (this.tableInfo?.game_variant || 'nlh').toLowerCase();
-    const cardsPerPlayer = CARDS_PER_PLAYER[variantKey] ?? 2;
-    const deckSize = variantKey.includes('short') ? 36 : 52;
-    const maxSeatable = Math.floor((deckSize - 5) / cardsPerPlayer);
+    const cardsPerPlayer = holeCardCount(variantKey);
+    const deckSize = deckSizeFor(variantKey);
+    const maxSeatable = maxSeatsFor(variantKey);
+
     if (players.length > maxSeatable) {
       reportError(
         new Error(

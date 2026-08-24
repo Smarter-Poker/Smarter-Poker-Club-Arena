@@ -43,7 +43,15 @@ interface ActionPanelProps {
   /** True for PLO4/5/6, so the preset row always offers RAISE POT. */
   isPotLimit?: boolean;
   /**
+   * True for the fixed-limit games (FLH, FLO8), where the street has exactly
+   * one legal wager and `minRaise === maxRaise`. The sizing panel is skipped
+   * entirely — there is nothing to size — and the button shows the amount.
+   * 2026-08-23.
+   */
+  isFixedLimit?: boolean;
+  /**
    * Highest bet on the CURRENT street (server-authoritative `currentBet`), as a
+
    * raise-TO absolute. Required for the multiplier presets to mean anything
    * when hero is facing a bet: "3X" against an open to 15 is a raise to 45, not
    * to 3 big blinds. Defaults to 0 (unopened pot) -> multipliers fall back to
@@ -325,7 +333,9 @@ export default function ActionPanel({
   showBetSizePresets = true,
   isPreflop = false,
   isPotLimit = false,
+  isFixedLimit = false,
   currentBet = 0,
+
   raiseIntent,
   verticalSlider = true,
 }: ActionPanelProps) {
@@ -514,10 +524,21 @@ export default function ActionPanel({
   const handleRaiseClick = useCallback(() => {
     if (!canRaise && !canAllIn) return;
     haptic.light();
+    // 2026-08-23 (fixed limit): there is exactly ONE legal wager on this street
+    // — TablePage collapses minRaise and maxRaise onto it — so there is nothing
+    // to size and no panel to open. Opening the sizing panel here would draw a
+    // slider with a zero-length track and a preset row where every button reads
+    // the same number. The tap IS the bet.
+    if (isFixedLimit) {
+      haptic.medium();
+      if (minRaise >= allInThreshold) onAction('allin', allInThreshold);
+      else onAction('raise', minRaise);
+      return;
+    }
     setIsRaiseMode(true);
     setRaiseAmount(minRaise);
     lastSnapRef.current = minRaise;
-  }, [canRaise, canAllIn, minRaise]);
+  }, [canRaise, canAllIn, minRaise, isFixedLimit, allInThreshold, onAction]);
 
   const handleConfirmRaise = useCallback(() => {
     haptic.medium(); // FIX 196: Bible V8 §5.4 — raise = medium haptic (was strong/heavy, reserved for all_in)
@@ -969,6 +990,11 @@ export default function ActionPanel({
                 when this button is tapped. We removed the prior "{N} BB"
                 sub-label which the user explicitly flagged as wrong. */}
             <span className="action-btn__label">{wagerVerb}</span>
+            {/* 2026-08-23: in fixed limit the amount is NOT a choice the player
+                is about to make in a sizing panel — it is the only legal wager
+                on this street. Hiding it (correct for no-limit, per the spec
+                note above) would mean tapping blind, so print it. */}
+            {isFixedLimit && <span className="action-btn__amount">{formatChips(minRaise)}</span>}
             {isDesktop && <span className="action-btn__shortcut">R</span>}
           </button>
         )}

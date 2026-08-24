@@ -306,7 +306,6 @@ export default function CashierTradePage() {
             .select('user_id, role, chip_balance, display_name, nickname, agent_id')
             .eq('club_id', clubUuid)
             .in('status', MEMBER_IN_CLUB)
-            .neq('user_id', user.id)
             .order('joined_at', { ascending: true })
             .order('user_id', { ascending: true })
             .range(from, from + PAGE - 1);

@@ -16,7 +16,7 @@
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { setShownCards } from '../services/ShowCardsService';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { formatGameTitle } from '../utils/formatGameTitle';
 import {
   SeatSlot,
@@ -747,6 +747,7 @@ export default function TablePage({
   const { tableId: routeTableId } = useParams<{ tableId: string }>();
   const tableId = embeddedTableId || routeTableId;
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
 
   // ─── MULTI-TABLE SOUND GATE ───
@@ -1049,32 +1050,74 @@ export default function TablePage({
   const [foldProtectOpen, setFoldProtectOpen] = useState(false);
 
   // State - initialize with empty data (no demo data!)
-  const [tableState, setTableState] = useState<TableState>({
-    tableId: tableId || '',
-    tableName: 'Loading...',
-    gameType: 'NLH',
-    blinds: '?/?',
-    maxPlayers: 6,
-    pot: 0,
-    sidePots: [],
-    communityCards: [],
-    communityCards2: [],
-    bombPotIn: null,
-    boardStage: 'preflop',
-    engineStage: 'preflop',
-    dealerSeat: 0,
-    currentPlayerSeat: 0,
-    heroSeat: 0,
-    players: createEmptySeats(6),
-    jackpotAmount: 0,
-    isHandInProgress: false,
-    positions: [null, null, null, null, null, null],
-    lastActions: [null, null, null, null, null, null],
-    lastBetAmounts: [0, 0, 0, 0, 0, 0],
-    isTournament: false,
-    bountyMap: {},
-    isBountyTournament: false,
+  const [tableState, setTableState] = useState<TableState>(() => {
+    const init = location.state?.initialTableState;
+    const maxP = init?.maxPlayers || 6;
+    let b = '?/?';
+    if (init?.buyInAmount) {
+      b = `${init.buyInAmount}/${init.buyInFee || 0}`;
+    }
+    return {
+      tableId: tableId || '',
+      tableName: init?.tableName || 'Loading...',
+      gameType: init?.gameType || 'NLH',
+      blinds: b,
+      maxPlayers: maxP,
+      pot: 0,
+      sidePots: [],
+      communityCards: [],
+      communityCards2: [],
+      bombPotIn: null,
+      boardStage: 'preflop',
+      engineStage: 'preflop',
+      dealerSeat: 0,
+      currentPlayerSeat: 0,
+      heroSeat: 0,
+      players: createEmptySeats(maxP),
+      jackpotAmount: 0,
+      isHandInProgress: false,
+      positions: Array(maxP).fill(null),
+      lastActions: Array(maxP).fill(null),
+      lastBetAmounts: Array(maxP).fill(0),
+      isTournament: false,
+      bountyMap: {},
+      isBountyTournament: false,
+    };
   });
+
+  // REST fetch for initial seats while WS connects (3-5s speedup)
+  useEffect(() => {
+    if (!tableId || engineSnapshot) return;
+    let active = true;
+    tableService
+      .getSeatedPlayers(tableId)
+      .then((seats) => {
+        if (!active || engineSnapshot) return;
+        setTableState((prev) => {
+          const p = [...prev.players];
+          seats.forEach((seat: any) => {
+            const idx = seat.seat_number - 1;
+            if (idx >= 0 && idx < p.length) {
+              p[idx] = {
+                id: seat.user_id,
+                name: seat.profiles?.display_name || seat.profiles?.username || 'Player',
+                stack: seat.stack || 0,
+                avatar: seat.profiles?.avatar_url || undefined,
+                isHero: seat.user_id === userId,
+                status: 'active',
+                holeCards: [],
+                showCards: false,
+              };
+            }
+          });
+          return { ...prev, players: p };
+        });
+      })
+      .catch(console.warn);
+    return () => {
+      active = false;
+    };
+  }, [tableId, userId]);
 
   // Phase 1.1 PR-3: apply authoritative engine snapshot to tableState when
   // the feature flag is on. This one effect replaces the entire Supabase-

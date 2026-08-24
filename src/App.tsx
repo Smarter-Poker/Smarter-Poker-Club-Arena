@@ -82,8 +82,7 @@ const LeaderboardPage = lazyWithRetry(() => import('./pages/LeaderboardPage'));
 const HandHistoryPage = lazyWithRetry(() => import('./pages/HandHistoryPage'));
 const PlayerWalletPage = lazyWithRetry(() => import('./pages/PlayerWalletPage'));
 const NotificationsPage = lazyWithRetry(() => import('./pages/NotificationsPage'));
-const MessagesPage = lazyWithRetry(() => import('./pages/MessagesPage'));
-const ClubMessagesPage = lazyWithRetry(() => import('./pages/ClubMessagesPage'));
+const NavigateToMessenger = lazyWithRetry(() => import('./pages/NavigateToMessenger'));
 const SearchPage = lazyWithRetry(() => import('./pages/SearchPage'));
 const HelpPage = lazyWithRetry(() => import('./pages/HelpPage'));
 const CashierPage = lazyWithRetry(() => import('./pages/CashierPage'));
@@ -635,7 +634,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Messages">
-                        <MessagesPage />
+                        <NavigateToMessenger />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -858,7 +857,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Messages">
-                        <MessagesPage />
+                        <NavigateToMessenger />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -868,7 +867,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="New Message">
-                        <MessagesPage />
+                        <NavigateToMessenger />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -878,7 +877,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Messages">
-                        <MessagesPage />
+                        <NavigateToMessenger />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -888,7 +887,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Club Messages">
-                        <ClubMessagesPage />
+                        <NavigateToMessenger />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -898,7 +897,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Club Messages">
-                        <ClubMessagesPage />
+                        <NavigateToMessenger />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

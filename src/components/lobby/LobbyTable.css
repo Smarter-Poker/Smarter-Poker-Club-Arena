@@ -47,7 +47,7 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  text-align: left;
+  text-align: center;
   padding: 8px 10px;
   white-space: nowrap;
   user-select: none;
@@ -68,6 +68,8 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  width: 100%;
+  justify-content: center;
 }
 .lt-sortmark {
   font-size: 0.5625rem;
@@ -91,6 +93,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   vertical-align: middle;
+  text-align: center;
 }
 .lt-row:hover {
   background: rgba(65, 105, 225, 0.07);

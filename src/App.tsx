@@ -19,7 +19,6 @@ import { realtimeChannelService } from './services/RealtimeChannelService';
 import { OfflineQueueService } from './services/OfflineQueueService';
 import { busEventLogger } from './services/BusEventLogger';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
-import UnionSkinGuard from './components/common/UnionSkinGuard';
 import { ChallengeToastListener } from './components/notifications/ChallengeToastListener';
 import LastClubTracker from './components/common/LastClubTracker';
 import WaitlistBanner from './components/common/WaitlistBanner';
@@ -188,7 +187,6 @@ function TableRouteSurface() {
 // Imported from centralized storage keys
 import { STORAGE_KEYS } from './lib/storage';
 import { reportError } from './utils/errorReporter';
-import SlugEnforcer from './components/common/SlugEnforcer';
 
 export default function App() {
   // Check if intro video has been shown this session
@@ -266,23 +264,52 @@ export default function App() {
     // auto-reconnects realtime channels on recovery)
     supabaseConnectionWatchdog.start();
 
-    // Register SW for background notifications
-    // FIX: Use base-relative path so the SW is found under /hub/club-arena/
-    // HARDENED: Force update check every time to bust stale SW caches after re-deploy
+    // ── Register the service worker ────────────────────────────────────────
+    //
+    // SCOPE, 2026-08-24. This registered `/hub/club-arena/sw-bus.js` with no
+    // scope option, so it took the default: the script's own directory,
+    // `/hub/club-arena/` — WITH the trailing slash. Scope matching is a plain
+    // string prefix, and `/hub/club-arena/` is not a prefix of
+    // `/hub/club-arena`. That bare URL is exactly what the World Hub tile
+    // links to and what the SPA fallback rewrite serves, so the single most
+    // common way into this app produced an UNCONTROLLED page: no precached
+    // shell, no cache-first chunks, no media cache. Every one of those
+    // optimisations was live in the file and reached nobody who arrived by
+    // the front door. Deep links (/hub/club-arena/clubs/x) were in scope,
+    // which is why it looked like it worked when tested.
+    //
+    // Asking for `/hub/club-arena` covers the bare URL and everything under
+    // it. That is wider than the script's directory, so the server must say
+    // `Service-Worker-Allowed: /hub/club-arena` (World Hub vercel.json). If
+    // that header is ever absent the registration rejects with a SecurityError
+    // — we fall back to the default scope so behaviour is never worse than it
+    // was, rather than ending up with no service worker at all.
     if ('serviceWorker' in navigator) {
-      const swPath =
+      const base =
         import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
-          ? `${import.meta.env.BASE_URL}sw-bus.js`
-          : '/sw-bus.js';
+          ? import.meta.env.BASE_URL
+          : '/';
+      const swPath = `${base}sw-bus.js`;
+      // BASE_URL carries a trailing slash; the scope must not, or we are back
+      // to the bug above.
+      const wideScope = base.length > 1 ? base.replace(/\/$/, '') : '/';
+
+      const afterRegister = (reg: ServiceWorkerRegistration) => {
+        // Force the browser to check for a new version of the SW immediately.
+        // If sw-bus.js has changed (e.g., DEPLOY_TS updated), the browser will
+        // install the new SW, which triggers activate → clears old caches.
+        reg.update().catch(() => {});
+      };
+
       navigator.serviceWorker
-        .register(swPath)
-        .then((reg) => {
-          // Force the browser to check for a new version of the SW immediately.
-          // If sw-bus.js has changed (e.g., DEPLOY_TS updated), the browser will
-          // install the new SW, which triggers activate → clears old caches.
-          reg.update().catch(() => {});
-        })
-        .catch((err) => console.warn('[App] Service worker registration failed:', err));
+        .register(swPath, { scope: wideScope })
+        .then(afterRegister)
+        .catch(() =>
+          navigator.serviceWorker
+            .register(swPath)
+            .then(afterRegister)
+            .catch((err) => console.warn('[App] Service worker registration failed:', err))
+        );
     }
 
     // Boot all engine services
@@ -308,13 +335,6 @@ export default function App() {
         <ChallengeToastListener />
         <GlobalBalanceSync />
         <LastClubTracker />
-        {/* Dan 2026-08-23, binding: "players, agents, super agents, nobody
-          should ever see the union skins." A union is a `clubs` row, so every
-          /clubs/:clubId/* route will render it through the club chrome. The
-          links that did so are fixed at source; this is the backstop for a
-          bookmark, a shared URL, or the next feature to make the same mistake.
-          Owner and union admins pass through. */}
-        <UnionSkinGuard />
         <BusToastBridge />
         <ConfirmHost />
         {/* Dan 2026-08-18: Session Complete now pops in the LOBBY, so its host
@@ -385,7 +405,6 @@ export default function App() {
               </>
             }
           >
-            <SlugEnforcer />
             <Routes>
               {/* ═══════════════════════════════════════════════════════════════
                         PUBLIC ROUTES (No Auth Required)

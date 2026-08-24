@@ -727,6 +727,42 @@ export const MTT_PRESTART_MAX_STEP = 6;
  * mean "we declined to ramp something we could have", never "we ramped
  * something that breaks".
  */
+/**
+ * Dan 2026-08-23: "each horse can play up to 4 tables".
+ *
+ * The ceiling on how many live games one horse identity may be committed to
+ * at once. Below it a horse is pickable; at it, it is not.
+ */
+export const HORSE_MAX_CONCURRENT_TABLES = 4;
+
+export function horseAtCapacity(load: number): boolean {
+  return (Number(load) || 0) >= HORSE_MAX_CONCURRENT_TABLES;
+}
+
+/**
+ * Games-per-horse, from the two things that constitute a commitment: a live
+ * seat, and a registration in a tournament that has not started yet.
+ *
+ * Pure so the double-counting rule is testable without a database, because
+ * that is the part with a real bug in it. A RUNNING tournament's entrants
+ * hold SEATS, so they arrive through the seat list; if the caller also passed
+ * them as registrations every tournament regular would read as 2 and the
+ * effective ceiling would silently halve.
+ */
+export function buildHorseLoadMap(
+  seatedUserIds: Array<string | null | undefined>,
+  pendingRegistrationUserIds: Array<string | null | undefined>
+): Map<string, number> {
+  const load = new Map<string, number>();
+  const bump = (id: string | null | undefined) => {
+    if (!id) return;
+    load.set(id, (load.get(id) ?? 0) + 1);
+  };
+  for (const id of seatedUserIds) bump(id);
+  for (const id of pendingRegistrationUserIds) bump(id);
+  return load;
+}
+
 export function startsOnBoughtSeats(variant: string, maxPlayers: number): boolean {
   const v = String(variant ?? '').toLowerCase();
   return v === 'sng' || v === 'spin' || (Number(maxPlayers) || 0) <= 2;
@@ -2116,9 +2152,26 @@ export class TournamentRecurringService {
       }
       const prizePool = config.buyIn * registered;
 
+      /**
+       * Dan 2026-08-23: same trap as createSpin, one branch narrower.
+       *
+       * A seat-first SNG goes down the createOpenSeatTable path above, which
+       * seats its horse without registering anybody, so `registered` is still
+       * 0 here - and writing that zero erased the seat-derived count the
+       * trigger had just set. A field SNG (6-max, 9-max) really does keep the
+       * registration model, and for those the count is correct and must still
+       * be written.
+       */
+      const seatFirstSng = isSeatFirstFormat('sng', config.maxPlayers);
+      const sngStateUpdate: Record<string, unknown> = {
+        prize_pool: prizePool,
+        status: 'REGISTERING',
+      };
+      if (!seatFirstSng) sngStateUpdate.current_players = registered;
+
       const { error: sngUpdateErr } = await supabase
         .from('tournaments')
-        .update({ current_players: registered, prize_pool: prizePool, status: 'REGISTERING' })
+        .update(sngStateUpdate)
         .eq('id', sng.id);
       if (sngUpdateErr)
         reportError(
@@ -2322,28 +2375,82 @@ export class TournamentRecurringService {
     }
   }
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * HORSE CONCURRENCY — Dan 2026-08-23: "each horse can play up to 4 tables"
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * How many live games each horse is currently committed to. Anything at or
+   * above HORSE_MAX_CONCURRENT_TABLES is unavailable; everything below it is
+   * fair game.
+   *
+   * WHAT THIS REPLACES, AND WHY THE OLD RULE WAS TOO BLUNT.
+   * Both callers used to treat a horse as unavailable the moment it held ONE
+   * seat or ONE registration. That is a concurrency limit of 1 on a fleet the
+   * engine has always been able to multi-table. Measured live while writing
+   * this: 584 horses exist and only 37 were pickable, because 554 were seated
+   * at cash tables and every one of them was invisible to every tournament.
+   * Tournament fields and cash tables were competing for the same horse rather
+   * than sharing it.
+   *
+   * WHAT IT DELIBERATELY KEEPS. The prohibition that mattered was never "a
+   * horse plays two games" - it was a horse being booked into the SAME game
+   * twice, and a horse being yanked out of a hand it is mid-way through.
+   * Neither changes here: registerHorses still skips anybody already in the
+   * target tournament, fn_register_horse_for_tournament is still the only way
+   * in, and a seat a horse already holds is never taken away from it. A horse
+   * gains a table; it never loses one.
+   *
+   * COUNTING, WITHOUT DOUBLE COUNTING. A live seat is one game. A registration
+   * is one game only while the tournament has not started - once it is RUNNING
+   * the horse has a seat at its table and the seat side already counts it.
+   * Counting both would put every tournament regular at an instant 2.
+   */
+  private async horseLoadMap(): Promise<Map<string, number>> {
+    // One live seat = one game. Cash and tournament tables alike.
+    const { data: seatRows } = await supabase
+      .from('table_seats')
+      .select('user_id')
+      .is('left_at', null)
+      // A TRUNCATED SET UNDERSTATES LOAD, which hands out a horse that is
+      // already at four tables - so this ceiling sits far above any plausible
+      // live count, not just above today's.
+      .limit(20000);
+
+    // A registration is a game only until the tournament STARTS. Once it is
+    // RUNNING the horse holds a seat at its table and the seat query above
+    // has already counted it; counting both would put every tournament
+    // regular at an instant 2. That is why RUNNING is absent from this list
+    // and must stay absent.
+    const { data: regRows } = await supabase
+      .from('tournament_players')
+      .select('user_id, tournaments!inner(status)')
+      .in('status', ['registered', 'playing'])
+      .in('tournaments.status', ['ANNOUNCED', 'REGISTERING'])
+      .limit(20000);
+
+    return buildHorseLoadMap(
+      (seatRows ?? []).map((r) => (r as { user_id?: string }).user_id),
+      (regRows ?? []).map((r) => (r as { user_id?: string }).user_id)
+    );
+  }
+
+  /** Horses already at the concurrency ceiling. */
+  private static atCapacity(load: Map<string, number>, id: string): boolean {
+    return horseAtCapacity(load.get(id) ?? 0);
+  }
+
   private async pickFreeHorses(count: number): Promise<string[]> {
     if (count <= 0) return [];
     try {
-      const { data: busyRows } = await supabase
-        .from('tournament_players')
-        .select('user_id, tournaments!inner(status)')
-        .in('status', ['registered', 'playing'])
-        .in('tournaments.status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
-        // A TRUNCATED BUSY SET MARKS BUSY HORSES FREE, which is the
-        // double-booking bug in its worst form - so this ceiling has to sit
-        // far above any plausible live count, not just above today's.
-        .limit(20000);
-      const busy = new Set((busyRows ?? []).map((r: any) => r.user_id));
-
-      const { data: seatRows } = await supabase
-        .from('table_seats')
-        .select('user_id')
-        .is('left_at', null)
-        .limit(20000);
-      for (const r of seatRows ?? []) {
-        if ((r as { user_id?: string }).user_id) busy.add((r as { user_id: string }).user_id);
-      }
+      // Dan 2026-08-23: a horse is unavailable at FOUR concurrent games, not
+      // at one. See horseLoadMap for what that replaced and what it keeps.
+      const load = await this.horseLoadMap();
+      const busy = new Set(
+        [...load.entries()]
+          .filter(([id]) => TournamentRecurringService.atCapacity(load, id))
+          .map(([id]) => id)
+      );
 
       /**
        * TWO BUGS FIXED HERE (2026-08-23).
@@ -2582,10 +2689,28 @@ export class TournamentRecurringService {
       // above — the pool amount IS the multiplier, just divided by the
       // buy-in. Start computes and writes the real pool in the same breath
       // as the draw and the reserve settlement.
+      /**
+       * Dan 2026-08-23: DO NOT WRITE current_players HERE.
+       *
+       * This update used to carry `current_players: registered`, and
+       * `registered` is the hardcoded 0 above - a leftover from when a Spin
+       * pre-registered nobody. createOpenSeatTable has just seated two horses
+       * in REAL SEATS one line earlier, so this wrote a zero straight over the
+       * truth, every single time a Spin was created.
+       *
+       * That is the whole reason 16 open Spins were advertising "0/3" while
+       * holding 32 paid seats between them. It also defeated both attempted
+       * fixes: the sync added inside createOpenSeatTable and the trigger on
+       * table_seats each set the number correctly, and this statement
+       * overwrote it microseconds later.
+       *
+       * A seat-first game's count is derived from its seat rows, by
+       * fn_sync_seat_first_player_count and now by the trigger that calls it.
+       * The application's job here is the status and nothing else.
+       */
       const { error: spinUpdateErr } = await supabase
         .from('tournaments')
         .update({
-          current_players: registered,
           status: 'REGISTERING',
         })
         .eq('id', spin.id);
@@ -2719,34 +2844,43 @@ export class TournamentRecurringService {
       // (never flipped by tournament play), so the overlapping MTT/SNG/Spin
       // scheduler intervals double-booked the same horses into several
       // simultaneous events.
-      const { data: busyRows } = await supabase
+      // Dan 2026-08-23: FOUR concurrent games per horse, not one. The old
+      // rule excluded any horse holding a single seat or registration, which
+      // made 554 of 584 horses invisible to every tournament while they dealt
+      // cash. See horseLoadMap.
+      const load = await this.horseLoadMap();
+      const busyIds = new Set(
+        [...load.keys()].filter((id) => TournamentRecurringService.atCapacity(load, id))
+      );
+
+      // Still never twice into the SAME tournament. This is the booking bug
+      // the concurrency limit was standing in for, and it is the one that
+      // actually matters - it survives the change intact.
+      const { data: alreadyIn } = await supabase
         .from('tournament_players')
-        .select('user_id, tournaments!inner(status)')
+        .select('user_id')
+        .eq('tournament_id', tournamentId)
         .in('status', ['registered', 'playing'])
-        .in('tournaments.status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
-        .limit(2000);
-      const busyIds = new Set((busyRows ?? []).map((r: any) => r.user_id));
+        .limit(20000);
+      for (const r of alreadyIn ?? []) {
+        const id = (r as { user_id?: string }).user_id;
+        if (id) busyIds.add(id);
+      }
 
       /**
-       * Dan 2026-08-19: ALSO exclude horses currently sitting at an open table.
+       * Dan 2026-08-19's cash-seat exclusion lived here and is now folded into
+       * horseLoadMap, which counts a live seat as one of the four games rather
+       * than as a disqualification.
        *
-       * The tournament-busy check above was the only guard, and `horse_status`
-       * is never flipped when a horse takes a CASH seat — live proof: 574
-       * horses exist, 329 of them are seated at open tables, and all 574 still
-       * read horse_status='available'. Registering those would yank a horse out
-       * of a hand it is already playing. That was survivable while tournaments
-       * only seeded a dozen horses; now that they fill every seat it would
-       * strip live cash tables, so the seat check is mandatory.
+       * The reasoning it was written on still holds and is still honoured:
+       * `horse_status` is never flipped when a horse takes a cash seat, so the
+       * seat rows are the only truth about where a horse actually is, and
+       * registering a horse must never YANK IT OUT of a hand it is playing.
+       * It does not: registration adds a future game, it does not vacate a
+       * seat. What has changed is only the ceiling - a horse dealing one cash
+       * table can now also enter a tournament, where before it could not enter
+       * anything at all. At four it is excluded exactly as before.
        */
-      const { data: seatedRows } = await supabase
-        .from('table_seats')
-        .select('user_id, tables!inner(status)')
-        .is('left_at', null)
-        .in('tables.status', ['waiting', 'running'])
-        .limit(5000);
-      for (const r of seatedRows ?? []) {
-        if ((r as any).user_id) busyIds.add((r as any).user_id);
-      }
 
       const { data: horsePool } = await supabase
         .from('profiles')

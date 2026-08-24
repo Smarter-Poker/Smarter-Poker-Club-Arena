@@ -65,8 +65,18 @@ describe('horses take seats, not just places on a list', () => {
   });
 
   it('never takes a horse out of a game it is already in', () => {
+    /**
+     * 2026-08-23: the busy-set reads moved OUT of pickFreeHorses and into
+     * horseLoadMap, when Dan raised the limit from "excluded at one game" to
+     * "up to four tables". The slice therefore starts at horseLoadMap now.
+     *
+     * The property under test has not changed and is not weakened: a horse's
+     * commitments are still read from tournament_players and table_seats
+     * before it is handed out, and a horse at the ceiling is still excluded.
+     * What changed is the ceiling, not whether we look.
+     */
     const pick = recurring.slice(
-      recurring.indexOf('private async pickFreeHorses'),
+      recurring.indexOf('private async horseLoadMap'),
       recurring.indexOf('private async createSpin')
     );
     expect(pick).toMatch(/tournament_players/);
@@ -89,10 +99,12 @@ describe('horses take seats, not just places on a list', () => {
     expect(recurring).not.toMatch(/pickFreeHorse\(\)/);
 
     const pick = recurring.slice(
-      recurring.indexOf('private async pickFreeHorses'),
+      recurring.indexOf('private async horseLoadMap'),
       recurring.indexOf('private async createSpin')
     );
-    // Exactly one read of each source inside the function.
+    // Exactly one read of each source across horseLoadMap + pickFreeHorses,
+    // which together are one call. The batching this protects is unchanged -
+    // the reads simply live in horseLoadMap now (see the note above).
     expect((pick.match(/from\('tournament_players'\)/g) || []).length).toBe(1);
     expect((pick.match(/from\('table_seats'\)/g) || []).length).toBe(1);
     expect((pick.match(/from\('profiles'\)/g) || []).length).toBe(1);

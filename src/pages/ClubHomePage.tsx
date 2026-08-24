@@ -1675,7 +1675,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         return true;
       if (status === 'RUNNING') {
         const levels = Number(t.late_reg_levels ?? 0);
-        if (levels > 0) return Number(t.current_level ?? 0) <= levels;
+        // 0-BASED (2026-08-23): current_level indexes blind_structure, so
+        // "through level N" is indices 0..N-1 and N is the cutoff. `<=` kept
+        // a closed tournament listed as enterable for one whole level after
+        // the engine finalized its prize pool, so the lobby offered a seat the
+        // RPC would refuse. Matches TournamentManagerBase.isLateRegClosed.
+        if (levels > 0) return Number(t.current_level ?? 0) < levels;
         const mins = Number(t.late_reg_mins ?? 0);
         if (mins > 0 && t.started_at) {
           return Date.now() - new Date(t.started_at).getTime() <= mins * 60_000;

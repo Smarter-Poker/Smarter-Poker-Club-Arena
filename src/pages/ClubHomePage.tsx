@@ -702,13 +702,18 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // out of the WAIT (the registration stands — the game still starts).
   const [spinJoin, setSpinJoin] = useState<{ name: string; stage: string } | null>(null);
   const spinJoinCancelRef = useRef(false);
+  /* `spinJoin` is state, so two taps landing in the same tick both read the
+     stale null and both proceed. A ref flips synchronously, which is what
+     "one join at a time" actually requires. */
+  const spinJoinBusyRef = useRef(false);
 
   const spinQuickJoin = useCallback(
     async (
       t: { id: string; name: string; buy_in_amount: number },
       variant: 'spin' | 'sng' = 'spin'
     ) => {
-      if (spinJoin) return; // one join at a time
+      if (spinJoin || spinJoinBusyRef.current) return; // one join at a time
+      spinJoinBusyRef.current = true;
       spinJoinCancelRef.current = false;
       setSpinJoin({ name: t.name, stage: 'Opening The Table' });
       const fail = (msg: string) => {
@@ -726,71 +731,65 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         // the TABLE, where the seats are visible and one tap buys the seat
         // the player chose. Registering here instead would put them in the
         // game without a seat — the MTT shape Dan is replacing.
-        const { data: tbls } = await supabase
-          .from('tables')
-          .select('id, status')
-          .eq('tournament_id', t.id)
-          .neq('status', 'closed')
-          .limit(3);
-        const tableId = (tbls || [])[0]?.id;
+        //
+        // Dan 2026-08-23, verbatim: "it needs to take you to the table showing
+        // the 3 seats, the user should then select which seat they want ... (it
+        // currently now only gives you this generic 'dealing you in' pop up)".
+        // That pop-up was this function's legacy fallback: when no open table
+        // was found it called fn_register_for_tournament, which TAKES THE
+        // BUY-IN before the player has picked a seat, then polled for a seat
+        // the engine might never hand out. It is gone. A tile now either opens
+        // a live table or fails loudly — it never charges anyone.
+        //
+        // Spin tables are recycled continuously (the lobby churns roughly ten
+        // tables a minute), so a tile's table can be mid-swap on the exact
+        // tick the player taps. Re-read a few times before giving up rather
+        // than punting them into a registration they never asked for.
+        let tableId: string | null = null;
+        for (let attempt = 0; attempt < 4 && !tableId; attempt++) {
+          if (spinJoinCancelRef.current) return;
+          if (attempt > 0) await new Promise((r) => setTimeout(r, 700));
+          const { data: tbls } = await supabase
+            .from('tables')
+            .select('id, status, created_at')
+            .eq('tournament_id', t.id)
+            .neq('status', 'closed')
+            // Newest first: the recycler leaves the freshest table live, and
+            // an older sibling not yet stamped closed is a corpse whose seats
+            // are already full — landing there is the "That Seat Was Just
+            // Taken" dead end on a seat that looks empty.
+            .order('created_at', { ascending: false })
+            .limit(3);
+          /* Cancel is checked AFTER the await as well as before it. Checking
+             only at the top of the iteration meant a Cancel pressed while a
+             lookup was in flight closed the overlay and then navigated anyway
+             — the player was dropped at a table they had just backed out of. */
+          if (spinJoinCancelRef.current) return;
+          tableId = (tbls || [])[0]?.id ?? null;
+        }
+
         if (tableId) {
+          if (spinJoinCancelRef.current) return;
           setSpinJoin(null);
           navigate(`/table/${tableId}`);
           return;
         }
 
-        // No table yet: a game created before seat-first shipped, or one
-        // whose table has closed. Fall back to the old registration path so
-        // those legacy rows stay playable, then land on their table.
-        setSpinJoin({ name: t.name, stage: 'Reserving Your Seat' });
-        const { data: regData, error: regErr } = await supabase.rpc('fn_register_for_tournament', {
-          p_tournament_id: t.id,
-        });
-        const reg = regData as { ok?: boolean; reason?: string } | null;
-        const reason = regErr?.message || (reg?.ok === false ? reg.reason : null);
-        if (reason && reason !== 'already_registered') {
-          return fail(
-            /insufficient/i.test(reason)
-              ? 'Not Enough Chips For This Buy In'
-              : variant === 'sng'
-                ? 'Could Not Join The Sit N Go, Please Try Again'
-                : 'Could Not Join The Spin, Please Try Again'
-          );
-        }
-        setSpinJoin((prev) => (prev ? { ...prev, stage: 'Dealing You In' } : prev));
-        const deadline = Date.now() + 45_000;
-        while (Date.now() < deadline) {
-          if (spinJoinCancelRef.current) return;
-          const { data: t2 } = await supabase
-            .from('tables')
-            .select('id')
-            .eq('tournament_id', t.id)
-            .neq('status', 'closed')
-            .limit(3);
-          const ids = (t2 || []).map((x) => x.id);
-          if (ids.length > 0) {
-            const { data: seat } = await supabase
-              .from('table_seats')
-              .select('table_id')
-              .in('table_id', ids)
-              .eq('user_id', uid)
-              .is('left_at', null)
-              .limit(1)
-              .maybeSingle();
-            if (seat?.table_id) {
-              setSpinJoin(null);
-              navigate(`/table/${seat.table_id}`);
-              return;
-            }
-          }
-          await new Promise((r) => setTimeout(r, 1500));
-        }
-        setSpinJoin(null);
-        toast?.info?.('Your Game Is Filling, It Will Start Momentarily');
-        navigate(`/tournaments/${t.id}`);
+        // Still nothing open: this game has finished or is being rebuilt. Say
+        // so plainly instead of sending the player at a table that is not there.
+        return fail(
+          variant === 'sng'
+            ? 'That Sit N Go Is No Longer Open, Pick Another'
+            : 'That Spin Is No Longer Open, Pick Another'
+        );
       } catch (err: unknown) {
         reportError?.(err as Error, 'ClubHomePage.spinQuickJoin');
         fail('Could Not Open That Game, Please Try Again');
+      } finally {
+        /* Every path above returns early — cancel, success, four flavours of
+           failure. Releasing the guard anywhere but here leaves a tile that
+           can never be tapped again after one unlucky exit. */
+        spinJoinBusyRef.current = false;
       }
     },
     [spinJoin, navigate, toast]

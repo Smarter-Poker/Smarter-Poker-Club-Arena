@@ -258,8 +258,8 @@ export function BBJBasicPanel({ poolAmount = 0, highlightBB = null }: BBJBasicPa
   return (
     <div className="bbj-basic">
       <p className="bbj-basic__rules">
-        The Pot Must Be At Least {BBJ_RULES.minPotBB} Big Blinds And{' '}
-        {BBJ_RULES.minPlayersDealt} Players Must Be Dealt In Preflop.
+        The Pot Must Be At Least {BBJ_RULES.minPotBB} Big Blinds And {BBJ_RULES.minPlayersDealt}{' '}
+        Players Must Be Dealt In Preflop.
         {BBJ_RULES.requireBothHoleCards
           ? ' Both Hole Cards Must Play, For The Losing Hand And The Winning Hand.'
           : ''}
@@ -298,8 +298,8 @@ export function BBJBasicPanel({ poolAmount = 0, highlightBB = null }: BBJBasicPa
                   <td className="bbj-basic__fee">{t.fee}</td>
                   <td className="bbj-basic__pay">
                     <span className="bbj-basic__pcts">
-                      {trimNum(t.loserPct)}% / {trimNum(t.winnerPct)}% /{' '}
-                      {trimNum(t.tablePct)}% / {trimNum(t.pct)}%
+                      {trimNum(t.loserPct)}% / {trimNum(t.winnerPct)}% / {trimNum(t.tablePct)}% /{' '}
+                      {trimNum(t.pct)}%
                     </span>
                     {poolAmount > 0 && (
                       /* Dan 2026-08-23: "the totals displayed under Today aren't

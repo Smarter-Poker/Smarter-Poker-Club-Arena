@@ -70,6 +70,65 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           .eq('status', 'playing')
           .lte('chips', 0);
 
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  A ZERO-CHIP FIELD IS NEVER A RESULT (2026-08-23)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * Two guards, because the absence of them cost 276 Spins in one day.
+         *
+         * GUARD 1 — the credit is still pending. A Spin seats its field as
+         * reservations at zero chips and writes the real stacks only once the
+         * wheel stops. `bustingArmedAt` is the instant that credit is due; a
+         * sweep before it is reading placeholders, not a poker result.
+         *
+         * GUARD 2 — the whole field reads zero. Chips are conserved: every
+         * chip one player loses another player gains, so the sum of live
+         * stacks is a constant and cannot be zero while anybody is still
+         * playing. "every remaining player has <= 0" is therefore not a state
+         * poker can produce. It means the stacks were never written, or the
+         * seat sync failed, and the only correct response is to bust NOBODY
+         * and let the next sweep read real numbers.
+         *
+         * What the old code did instead: spare the arbitrary largest of the
+         * zeroes, eliminate the rest, and hand that player first prize. Buy-ins
+         * collected, prize paid, not one card dealt.
+         *
+         * GUARD 2 is deliberately independent of GUARD 1 rather than folded
+         * into it — a process restart inside the reveal window rearms nothing,
+         * and a broken seat sync is not on a timer at all.
+         */
+        if (busted && busted.length > 0 && Date.now() < this.bustingArmedAt) {
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Bust sweep held — stacks not credited yet (${Math.ceil(
+              (this.bustingArmedAt - Date.now()) / 1000
+            )}s)`
+          );
+          return; // the finally block clears isProcessingEliminations
+        }
+
+        if (busted && busted.length > 0) {
+          const { count: liveCount, error: liveErr } = await supabase
+            .from('tournament_players')
+            .select('*', { count: 'exact', head: true })
+            .eq('tournament_id', this.tournamentId)
+            .eq('status', 'playing');
+          if (
+            !liveErr &&
+            typeof liveCount === 'number' &&
+            liveCount > 0 &&
+            busted.length >= liveCount
+          ) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] all ${liveCount} live player(s) read 0 chips — uncredited stacks, not a bust. Eliminating nobody this sweep.`
+              ),
+              'Tournament.zero_chip_field_refused'
+            );
+            return; // the finally block clears isProcessingEliminations
+          }
+        }
+
         if (busted && busted.length > 0) {
           // Get current remaining count BEFORE processing any eliminations
           const { count: playingCount, error: playingErr } = await supabase
@@ -338,7 +397,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       } finally {
         this.isProcessingEliminations = false;
       }
-    }, 5000);
+    }, TournamentManagerBase.ELIMINATION_SWEEP_MS);
   }
 
   /**
@@ -465,6 +524,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         console.error(
           `[Tournament:${this.tournamentId.slice(0, 8)}] seat release FAILED for ${userId.slice(0, 8)} — ${seatErr.message}`
         );
+      }
+
+      /**
+       * Dan 2026-08-23: "when a player busts, they must be removed as soon as
+       * they are out." The seat above is released immediately, but the player
+       * COUNT was not: tournaments.current_players is a registration counter
+       * that only ever climbs. A busted player therefore still occupied a seat
+       * as far as the lobby tile and the seat-first start gate were concerned,
+       * which is how live spins ended up advertising 3/3 with seats standing
+       * empty and refusing every attempt to buy one.
+       *
+       * Re-derive both counters from the seat rows that are actually live.
+       * Best-effort: a counter that fails to refresh must never abort a
+       * bust-out mid-payout.
+       */
+      const { error: syncErr } = await supabase.rpc('fn_sync_seat_first_player_count', {
+        p_tournament_id: this.tournamentId,
+      });
+      if (syncErr) {
+        reportError(syncErr, 'TournamentManagerEliminations.seat_count_resync_failed');
       }
     } catch (err) {
       reportError(err, 'Tournament.release_tournament_seat_threw');

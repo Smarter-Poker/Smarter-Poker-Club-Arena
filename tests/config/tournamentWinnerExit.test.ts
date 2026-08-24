@@ -264,7 +264,16 @@ describe('One card, one carrier', () => {
     // It said SPIN unconditionally, so a 128-runner MTT finished under a Spin
     // badge. Resolved from the tournament row, never from the event name.
     const card = tsCode(read('src/components/tournament/TournamentRankingCard.tsx'));
-    expect(card).toMatch(/result\.isSpin \? 'SPIN' : 'TOURNAMENT'/);
+    /**
+     * Dan 2026-08-23: "remove the 'spin' after SmarterPoker". The badge used
+     * to read `result.isSpin ? 'SPIN' : 'TOURNAMENT'`; on a Spin it repeated
+     * what the event line directly beneath it already said. A Spin now carries
+     * NO badge, and only a real tournament is badged — a stricter version of
+     * what this test has always guarded: the card must never label a game as
+     * something it is not.
+     */
+    expect(card).not.toMatch(/'SPIN'/);
+    expect(card).toMatch(/!result\.isSpin && <span className="trc2__brand-mark">TOURNAMENT/);
     expect(tablePage).toMatch(/isSpin: isSpinTournament\(/);
     // isSpinTournament reads both columns; both must be selected or it is
     // always false.

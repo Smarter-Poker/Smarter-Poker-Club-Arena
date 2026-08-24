@@ -108,6 +108,23 @@ describe('horses take seats, not just places on a list', () => {
     expect((pick.match(/from\('tournament_players'\)/g) || []).length).toBe(1);
     expect((pick.match(/from\('table_seats'\)/g) || []).length).toBe(1);
     expect((pick.match(/from\('profiles'\)/g) || []).length).toBe(1);
+
+    /**
+     * ...AND ONCE PER CALL, which the widened window alone no longer proves.
+     *
+     * Counting reads across horseLoadMap + pickFreeHorses keeps the "one read
+     * of each source" property, but it stops being a statement about how OFTEN
+     * they run: the load map now lives behind a call, and a caller that awaits
+     * it once per horse inside a loop would still count exactly one of each and
+     * pass. That is precisely the per-horse shape the case above exists to
+     * forbid, so it has to be pinned where it now actually lives.
+     */
+    const picker = recurring.slice(
+      recurring.indexOf('private async pickFreeHorses'),
+      recurring.indexOf('private async createSpin')
+    );
+    expect((picker.match(/this\.horseLoadMap\(\)/g) || []).length).toBe(1);
+    expect(picker).not.toMatch(/for\s*\([^)]*\)\s*\{[^}]*horseLoadMap/);
   });
 
   it('both callers batch, so neither loops a query', () => {

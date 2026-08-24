@@ -946,7 +946,12 @@ export const SPIN_CONFIGS: SpinConfig[] = SPIN_BOARD_VARIANTS.flatMap((v) =>
     buyIn,
     // Spins are rake-free by product rule; the edge lives in the multipliers.
     rake: 0,
-    startingStack: 500,
+    /* The seed value only. The real stack is set the moment the multiplier is
+       drawn, from SPIN_TIERS (TournamentManagerBase writes tier.startingStack
+       into starting_chips). 300 is the floor of the new band table (Dan
+       2026-08-23), so a table waiting on its draw advertises the shallowest
+       thing it could be rather than a number no tier uses. */
+    startingStack: 300,
     maxPlayers: SPIN_SEATS,
     minPlayers: SPIN_SEATS,
     /* Seat all but ONE chair with horses.
@@ -2794,21 +2799,39 @@ export class TournamentRecurringService {
       }
 
       /**
-       * RESTORED 2026-08-23. This branch was written, reviewed and lost.
+       * Dan 2026-08-23: "spins can never ever start until 3 players have sat
+       * down, and paid for there seat."
        *
-       * The comment above still describes it exactly - "Derive it from the
-       * seat rows for seat-first, and keep the registration count for MTTs" -
-       * but the code under it had been flattened to the MTT half alone, so
-       * every seat-first game had its REGISTRATION count written into
-       * current_players. Horses seated by fn_seat_horse_in_seat_first_game
-       * hold seats, not registrations, so that number is zero: 16 open Spins
-       * were advertising "0/3" while holding 32 paid seats between them, two
-       * of three sold and one seat from dealing.
+       * A seat-first game counts SEATS, not rows in tournament_players. Those
+       * two disagree constantly — a registration is never removed when a
+       * player leaves or busts, so writing the registration count back into
+       * current_players re-introduced the drift that had live spins reading
+       * 3/3 with two seats sold (which then refuses every further sit-down
+       * with 'tournament_full') and 0/3 with three sold (which never starts).
+       * Derive it from the seat rows for seat-first, and keep the registration
+       * count for MTTs, where a registration IS the entry.
+       *
+       * ── RESTORED 2026-08-23. This branch was written, reviewed and lost. ──
+       *
+       * The paragraph above still described it exactly, but the code under it
+       * had been flattened to the MTT half alone, so every seat-first game had
+       * its REGISTRATION count written into current_players. Horses seated by
+       * fn_seat_horse_in_seat_first_game hold seats, not registrations, so that
+       * number is zero: 16 open Spins were advertising "0/3" while holding 32
+       * paid seats between them, two of three sold and one seat from dealing.
        *
        * The original lives on five branches under five different SHAs and on
        * none of them is it an ancestor of main - it merged as prose and not as
        * code, which is the "merge resolved by taking a stale side" failure
        * .agent/protected-commits.json exists to catch. It is pinned there now.
+       *
+       * 2026-08-23, THIS MERGE: main (#582) and the spins branch had both
+       * arrived at this same fix independently, so git conflicted on the two
+       * write-ups while auto-merging identical code underneath. Both are kept.
+       * The quote is the requirement; the restoration note is why it went
+       * missing twice. Six duplicate PRs (#566, #570, #572, #575, #581, #583)
+       * were opened against a stale base and every one sat DIRTY on this one
+       * comment — nothing else across 27 files conflicted at all.
        */
       if (seatFirst) {
         await supabase.rpc('fn_sync_seat_first_player_count', {

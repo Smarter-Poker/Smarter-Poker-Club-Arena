@@ -135,16 +135,24 @@ export abstract class TournamentManagerBase {
     }
   }
 
-  /** Synchronized break: pause blind timer and broadcast break event */
-  async pauseForBreak(breakDurationMs: number): Promise<void> {
-    if (!this.running || this.onBreak) return;
-    this.onBreak = true;
-
-    // Save remaining blind timer time
-    // TOURNEY-AUDIT 2026-07-24 (sweep 4): the empty-structure guard used to
-    // `return` AFTER setting onBreak=true but BEFORE clearing the timer —
-    // leaving the level clock running through the "break" with onBreak stuck
-    // true. The timer is now always cleared once the break begins.
+  /**
+   * Stop the level clock and remember how much of the level was left, so
+   * resumeFromBreak can give back exactly that much and no more.
+   *
+   * Shared by BOTH ways a tournament enters a break, because they used to
+   * disagree:
+   *
+   *   - pauseForBreak, the :55 path, measured and cleared the timer here;
+   *   - resume(), restarting INTO a live break, set onBreak = true and paused
+   *     the tables but left the blind timer it had armed seconds earlier
+   *     running. The level clock therefore ticked through the whole break, and
+   *     when resumeFromBreak fired it found savedBlindTimerRemaining at 0 and
+   *     handed out a FRESH FULL LEVEL. One restart during a break both burned
+   *     a level's worth of clock and then reset it.
+   *
+   * Every entry into a break now goes through this.
+   */
+  protected suspendLevelClock(): void {
     /**
      * DEAD LEVEL CLOCK (2026-08-23). This measurement used to live entirely
      * inside `if (this.blindTimer)`, so a break that landed while no timer was
@@ -180,6 +188,36 @@ export abstract class TournamentManagerBase {
       // from the break with no clock at all.
       this.savedBlindTimerRemaining = pausedLevelTotalMs;
     }
+  }
+
+  /** Synchronized break: pause blind timer and broadcast break event */
+  async pauseForBreak(breakDurationMs: number): Promise<void> {
+    if (!this.running || this.onBreak) return;
+    this.onBreak = true;
+
+    // Save remaining blind timer time
+    // TOURNEY-AUDIT 2026-07-24 (sweep 4): the empty-structure guard used to
+    // `return` AFTER setting onBreak=true but BEFORE clearing the timer —
+    // leaving the level clock running through the "break" with onBreak stuck
+    // true. The timer is now always cleared once the break begins.
+    /**
+     * DEAD LEVEL CLOCK (2026-08-23). This measurement used to live entirely
+     * inside `if (this.blindTimer)`, so a break that landed while no timer was
+     * armed left `savedBlindTimerRemaining` at whatever it happened to hold —
+     * 0 on the first break of a tournament. resumeFromBreak read that 0 as
+     * "arm nothing", and the tournament played out the rest of its life at one
+     * blind level.
+     *
+     * blindTimer is legitimately null for seconds at a time: advanceBlindLevel
+     * consumes it on fire and does not re-arm until it has awaited a blind
+     * write per table, the current_level persist, the level_up broadcast and
+     * possibly a prize-pool finalization. A :55 break inside that window is
+     * exactly the case that killed the clock.
+     *
+     * Every path now leaves a usable remaining time, and resumeFromBreak arms
+     * unconditionally.
+     */
+    this.suspendLevelClock();
 
     console.log(
       `[Tournament:${this.tournamentId.slice(0, 8)}] SYNCHRONIZED BREAK — ${Math.round(breakDurationMs / 60000)} minutes`
@@ -1270,6 +1308,11 @@ export abstract class TournamentManagerBase {
         const remainingMs = new Date(tournament.break_ends_at).getTime() - Date.now();
         if (remainingMs > 1000) {
           this.onBreak = true;
+          // The level clock was armed moments ago, a few lines above. Suspend
+          // it for the rest of the break exactly as the :55 path does —
+          // without this it ran straight through the break and resumeFromBreak
+          // then granted a fresh full level on top. See suspendLevelClock.
+          this.suspendLevelClock();
           console.log(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed DURING a break — re-pausing for the remaining ${Math.round(remainingMs / 1000)}s`
           );

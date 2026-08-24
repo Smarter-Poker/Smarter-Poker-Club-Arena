@@ -89,12 +89,29 @@ describe('the blind clock survives a synchronized break', () => {
     expect(resume).toMatch(/this\.savedBlindTimerRemaining\s*=\s*0/);
   });
 
-  it('DEFECT 1 (cause) — pauseForBreak records a remaining time on every path', () => {
-    // Every path out of pauseForBreak must leave savedBlindTimerRemaining
-    // meaningful. The old else-branch set it to 0, which resumeFromBreak read
-    // as "arm nothing".
-    expect(pause).not.toMatch(/else\s*\{\s*this\.savedBlindTimerRemaining\s*=\s*0;\s*\}/);
-    expect(pause).toMatch(/savedBlindTimerRemaining/);
+  it('DEFECT 1 (cause) — every entry into a break suspends the clock the same way', () => {
+    // The measurement now lives in suspendLevelClock, shared by BOTH ways a
+    // tournament enters a break: pauseForBreak (the :55 path) and resume()
+    // restarting into a live break. They used to disagree — resume() left the
+    // blind timer it had just armed running straight through the break, and
+    // resumeFromBreak then handed out a fresh full level on top of that.
+    expect(pause).toMatch(/this\.suspendLevelClock\(\)/);
+    const suspend = methodBody(BASE, 'protected suspendLevelClock()');
+    // Every path out of it must leave savedBlindTimerRemaining meaningful. The
+    // old else-branch set it to 0, which resumeFromBreak read as "arm nothing".
+    expect(suspend).not.toMatch(/else\s*\{\s*this\.savedBlindTimerRemaining\s*=\s*0;\s*\}/);
+    expect(suspend).toMatch(/if\s*\(this\.blindTimer\)/);
+    expect(suspend).toMatch(/else\s*\{/);
+    expect(suspend).toMatch(/savedBlindTimerRemaining/);
+  });
+
+  it('DEFECT 6 — a restart INTO a live break suspends the level clock too', () => {
+    // resume() arms the level timer, then discovers the tournament is on a
+    // break. Without suspending, that timer ran for the whole break and
+    // resumeFromBreak then granted a fresh full level on top.
+    const at = BASE.indexOf('if (tournament.on_break && tournament.break_ends_at)');
+    expect(at).toBeGreaterThan(-1);
+    expect(BASE.slice(at, at + 900)).toMatch(/this\.suspendLevelClock\(\)/);
   });
 });
 

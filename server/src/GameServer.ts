@@ -166,6 +166,22 @@ export class GameServer {
    */
   private feeReconcileTimer: NodeJS.Timeout | null = null;
   private breakResumeTimer: NodeJS.Timeout | null = null;
+  /**
+   * When the platform-wide break is expected to end, as epoch ms; 0 when no
+   * break is running.
+   *
+   * A TOURNAMENT THAT STARTS DURING A BREAK USED TO DEAL STRAIGHT THROUGH IT
+   * (2026-08-23). triggerSynchronizedBreak snapshots the running MTTs at :55
+   * and pauses that list. A tournament that reached its start time at :56 was
+   * not in the snapshot, so nothing paused it and nothing resumed it: it ran
+   * its opening levels alone while every other event on the platform sat on
+   * the break screen. MTTs start on a schedule, so this is not a rare corner —
+   * any event scheduled in the last five minutes of an hour hit it every time.
+   *
+   * Kept as a deadline rather than a boolean so a late joiner is paused for
+   * exactly the remainder rather than for a fresh five minutes.
+   */
+  private breakEndsAt = 0;
   private static readonly BREAK_DURATION_MS = 5 * 60 * 1000; // 5 minutes
   /**
    * Dan 2026-08-19: breaks start at the :55 mark of every hour and last five
@@ -962,6 +978,15 @@ export class GameServer {
       `[GameServer] ═══ LAST HAND ═══ Announcing final hand on ${mttEngines.length} MTT/XMTT tournament(s) — break starts when every table finishes`
     );
 
+    /**
+     * The break window opens NOW, at :55, not when the countdown starts. A
+     * tournament that begins during the last-hand wait must be held too, so
+     * claim the window immediately using the worst case (grace + break) and
+     * tighten it below once the real countdown begins.
+     */
+    this.breakEndsAt =
+      Date.now() + TournamentManager.LAST_HAND_GRACE_MS + GameServer.BREAK_DURATION_MS;
+
     for (const tm of mttEngines) {
       try {
         await tm.pauseForBreak(GameServer.BREAK_DURATION_MS);
@@ -984,7 +1009,11 @@ export class GameServer {
       );
     }
 
-    // The countdown players see begins NOW, not at :55.
+    // The countdown players see begins NOW, not at :55. Tighten the window
+    // claimed above to the real end time, so a tournament starting during the
+    // break is held for exactly as long as everyone else.
+    this.breakEndsAt = Date.now() + GameServer.BREAK_DURATION_MS;
+
     for (const tm of mttEngines) {
       try {
         await tm.beginBreakCountdown(GameServer.BREAK_DURATION_MS);
@@ -1004,10 +1033,18 @@ export class GameServer {
       this.breakResumeTimer = null;
     }
     this.breakResumeTimer = setTimeout(async () => {
+      // Close the window FIRST. Anything starting from here on is not in a
+      // break and must not be held.
+      this.breakEndsAt = 0;
       console.log(
         `[GameServer] ═══ BREAK ENDED ═══ Resuming ${mttEngines.length} MTT/XMTT tournaments`
       );
-      for (const tm of mttEngines) {
+      // Resume everything on break, not just the :55 snapshot — a tournament
+      // that started during the break was held by holdIfBreakIsRunning and is
+      // not in mttEngines. resumeFromBreak no-ops on anything not on break.
+      const toResume = new Set<TournamentManager>(mttEngines);
+      for (const tm of this.tournamentEngines.values()) toResume.add(tm);
+      for (const tm of toResume) {
         try {
           await tm.resumeFromBreak();
         } catch (err: any) {
@@ -1015,6 +1052,39 @@ export class GameServer {
         }
       }
     }, GameServer.BREAK_DURATION_MS);
+  }
+
+  /**
+   * How much of the platform-wide break is left, or 0 when none is running.
+   * See the `breakEndsAt` field for why a tournament starting mid-break needs
+   * to know this.
+   */
+  remainingBreakMs(): number {
+    return this.breakEndsAt > 0 ? Math.max(0, this.breakEndsAt - Date.now()) : 0;
+  }
+
+  /**
+   * Hold a tournament that has just started inside a live break, for whatever
+   * is left of it. Without this it deals its opening levels alone while every
+   * other event on the platform sits on the break screen.
+   *
+   * The resume is driven by the shared breakResumeTimer above, which now walks
+   * every registered engine rather than the :55 snapshot, so nothing needs to
+   * be scheduled here.
+   */
+  private async holdIfBreakIsRunning(tm: TournamentManager): Promise<void> {
+    const remaining = this.remainingBreakMs();
+    if (remaining <= 1000) return;
+    if (!tm.isRunning() || !tm.isMttOrXmtt() || !tm.synchronizedBreaksEnabled()) return;
+    try {
+      console.log(
+        `[GameServer] Tournament started during the break — holding it for the remaining ${Math.round(remaining / 1000)}s`
+      );
+      await tm.pauseForBreak(remaining);
+      await tm.beginBreakCountdown(remaining);
+    } catch (err: any) {
+      reportError(err, 'GameServer.hold_new_tournament_for_break');
+    }
   }
 
   /**
@@ -2033,10 +2103,14 @@ export class GameServer {
             console.log(`[GameServer] Starting tournament: ${tournament.name} (${reason})`);
             const tm = new TournamentManager(tournament.id, this);
             this.tournamentEngines.set(tournament.id, tm);
-            tm.start().catch((err) => {
-              reportError(err, 'GameServer.Tournament_start_failed_for_to');
-              this.tournamentEngines.delete(tournament.id);
-            });
+            tm.start()
+              // A tournament reaching its start time between :55 and the hour
+              // is not in the break snapshot, so nothing else will pause it.
+              .then(() => this.holdIfBreakIsRunning(tm))
+              .catch((err) => {
+                reportError(err, 'GameServer.Tournament_start_failed_for_to');
+                this.tournamentEngines.delete(tournament.id);
+              });
           }
         }
 

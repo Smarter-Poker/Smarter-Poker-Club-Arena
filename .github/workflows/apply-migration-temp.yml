@@ -1,0 +1,18 @@
+name: Apply Migration Temp
+
+on:
+  push:
+    branches:
+      - feat/wallet-cashier-claim-back
+
+jobs:
+  apply_sql:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply SQL using psql
+        env:
+          PGPASSWORD: "215SlalomCt!!"
+        run: |
+          psql -h db.kuklfnapbkmacvwxktbh.supabase.co -U postgres -d postgres -p 5432 -f supabase/migrations/20260823250000_wallet_claim_back.sql
+          psql -h db.kuklfnapbkmacvwxktbh.supabase.co -U postgres -d postgres -p 5432 -f supabase/migrations/20260823390000_stats_perf.sql

@@ -33,6 +33,7 @@ import {
   releaseLeadership,
   isLeader,
   leadershipDiagnostics,
+  markBootedAsStandby,
 } from './services/leadership.js';
 import {
   claimTournament,
@@ -285,6 +286,12 @@ export class GameServer {
     const role = await renewLeadership();
     startLeadershipRenewal();
     if (role === 'standby') {
+      /**
+       * Tell leadership.ts that this process never started the fleet, so that
+       * if it is later promoted it restarts into the full leader boot instead
+       * of becoming a leader that does nothing. See markBootedAsStandby().
+       */
+      markBootedAsStandby();
       const d = leadershipDiagnostics();
       console.log(
         `[GameServer] STANDBY — ${d.holder} holds leadership. Claiming nothing, ` +

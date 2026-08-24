@@ -112,6 +112,11 @@ let role: EngineRole = 'standby';
  */
 const PROMOTE_AFTER_UNKNOWN = 3;
 let unknownStreak = 0;
+/**
+ * True when GameServer.start() took the standby early-return, meaning this
+ * process has NO discovery loop, NO fleet manager and NO stale-data cleanup.
+ */
+let bootedAsStandby = false;
 let holder: string | null = null;
 let holderAgeSeconds: number | null = null;
 let becameLeaderAt: number | null = null;
@@ -119,6 +124,46 @@ let errors = 0;
 let timer: ReturnType<typeof setInterval> | null = null;
 
 /** True unless we positively know another instance holds leadership. */
+/**
+ * Called by GameServer.start() when it takes the standby early-return.
+ *
+ * That return is the whole point of a standby - it claims nothing, cleans
+ * nothing and hydrates nothing - but it also means the process never started
+ * the discovery loops, the horse fleet, or lifecycle monitoring. Every promotion
+ * path below flips `role` in memory, and before this existed that produced a
+ * LEADER THAT DOES NOTHING: it holds the lease so no healthy instance can take
+ * over, reports role 'leader' on /health, and because it has no discovery loop
+ * its discoveryLoopStalledMs climbs in lockstep with uptime until liveness goes
+ * 'dead' and Docker kills it. Observed in production on 2026-08-24 as
+ * up=188s activeTables=0 liveness=dead discStall=188115ms - discStall equal to
+ * uptime is the signature: the loop never ran once.
+ *
+ * The standby branch's own comment already promised "will take the fleet if
+ * that lease goes stale". This is the part that makes that true.
+ */
+export function markBootedAsStandby(): void {
+  bootedAsStandby = true;
+}
+
+/**
+ * A standby cannot become a working leader in place, so it restarts into one.
+ *
+ * Re-running the boot sequence live is the alternative and it is worse: start()
+ * is not idempotent, and the standby contract is specifically that it must not
+ * mutate shared state while another instance is live - cleanupStaleData() cashes
+ * out seats and resets table counts. Exiting reuses the proven path this file
+ * already takes when leadership is LOST, and the supervisor brings the process
+ * straight back through the full leader boot.
+ */
+function restartIntoLeaderBoot(reason: string): void {
+  if (!bootedAsStandby) return;
+  console.error(
+    `[leadership] ${INSTANCE_ID} promoted (${reason}) but booted as a standby, so it has ` +
+      'no discovery loop or fleet — exiting so the supervisor restarts it as a real leader.'
+  );
+  setTimeout(() => process.exit(0), 250).unref?.();
+}
+
 export function isLeader(): boolean {
   return role === 'leader';
 }
@@ -172,6 +217,7 @@ export async function renewLeadership(): Promise<EngineRole> {
         role = 'leader';
         holder = INSTANCE_ID;
         holderAgeSeconds = 0;
+        restartIntoLeaderBoot('claims unanswerable');
       }
       return role;
     }
@@ -199,13 +245,15 @@ export async function renewLeadership(): Promise<EngineRole> {
         role = 'leader';
         holder = INSTANCE_ID;
         holderAgeSeconds = 0;
+        restartIntoLeaderBoot('claims resolved to nobody');
       }
       return role;
     }
     unknownStreak = 0;
 
     if (row.granted) {
-      if (role !== 'leader') {
+      const wasStandby = role !== 'leader';
+      if (wasStandby) {
         console.log(`[leadership] ${INSTANCE_ID} is now the LEADER — taking the fleet`);
         becameLeaderAt = Date.now();
       } else if (becameLeaderAt === null) {
@@ -214,6 +262,11 @@ export async function renewLeadership(): Promise<EngineRole> {
       role = 'leader';
       holder = INSTANCE_ID;
       holderAgeSeconds = 0;
+      /**
+       * The ordinary route into the bug, and the most common: a standby simply
+       * outlives the previous leader's lease and its next renewal is granted.
+       */
+      if (wasStandby) restartIntoLeaderBoot('lease granted');
       return role;
     }
     holder = row.holder;
@@ -254,6 +307,7 @@ export async function renewLeadership(): Promise<EngineRole> {
       role = 'leader';
       holder = INSTANCE_ID;
       holderAgeSeconds = 0;
+      restartIntoLeaderBoot('claims threw');
     }
     return role;
   }
@@ -282,6 +336,7 @@ export async function releaseLeadership(): Promise<void> {
 
 /** Test seam. */
 export function __resetLeadership(): void {
+  bootedAsStandby = false;
   role = 'standby';
   unknownStreak = 0;
   holder = null;

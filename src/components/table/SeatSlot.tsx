@@ -303,6 +303,22 @@ export interface SeatSlotProps {
   /** Wall-clock time the current turn started (server-authoritative). */
   turnStartTimeMs?: number;
   /**
+   * Hero has PRESSED time bank but the engine has not spent it yet.
+   *
+   * Dan 2026-08-24: "when you use a time bank, it gives you this generic pop
+   * up, instead of resetting the countdown clock on the hero's box." Pressing
+   * with ordinary clock left ARMS the bank rather than spending it (deliberate
+   * — Dan 2026-08-23, "it should not take a time bank or add more time until
+   * you have truly used your entire 15 seconds"), so there is genuinely no new
+   * time to draw yet and the ring must NOT restart. The feedback belonged on
+   * the seat all the same; a toast was the whole of it.
+   *
+   * This paints the pending state on the hero's own box. When the engine
+   * redeems the bank at expiry it re-stamps `turnStartTimeMs`, which remounts
+   * this node and restarts the ring for real.
+   */
+  timeBankArmed?: boolean;
+  /**
    * Dan 2026-08-18: "a user should be able to click on any card in their hand,
    * and when clicked that card or cards always get shown after the hand is
    * over." Indexes of the hero's own hole cards currently marked to be shown.
@@ -521,6 +537,7 @@ export const SeatSlot = memo(
       playSounds = true,
       turnDeadlineMs,
       turnStartTimeMs,
+      timeBankArmed,
       showPickedCardIndexes,
       onToggleShowCard,
     } = props;
@@ -993,6 +1010,10 @@ export const SeatSlot = memo(
           cls.push(`seat--${player.status}`);
         }
         if (player.isHero) cls.push('seat--hero');
+        /* Armed-but-unspent time bank, hero only. Deliberately NOT gated on
+           isActingNow alone: the arm is only meaningful during hero's turn,
+           and TablePage clears it when the turn ends. */
+        if (player.isHero && timeBankArmed) cls.push('seat--tb-armed');
         // isActingNow, not isActive: a seat that has just folded must lose the
         // acting chrome (and its countdown ring) immediately, without waiting
         // for the snapshot that moves currentPlayerSeat along. See hasFolded.
@@ -1033,6 +1054,7 @@ export const SeatSlot = memo(
       winnerPop,
       allinShake,
       stackGlow,
+      timeBankArmed,
     ]);
 
     // ─── EMPTY SEAT ────────────────────────────────────────────────────────
@@ -1554,6 +1576,15 @@ export const SeatSlot = memo(
             {showStackInBB ? formatStackAsBB(player.stack, bigBlind) : formatStack(player.stack)}
           </span>
 
+          {/* Armed time bank — the seat-level replacement for the toast that
+              used to be the ONLY feedback for a press that spends nothing yet.
+              Lives inside .seat__info so it sits with the ring it describes. */}
+          {player.isHero && timeBankArmed && (
+            <span className="seat__tb-armed" aria-live="polite">
+              Time Bank Ready
+            </span>
+          )}
+
           {/* Stack Change Delta */}
           {stackDelta !== 0 && (
             <span
@@ -1889,6 +1920,10 @@ export const SeatSlot = memo(
     // 2026-04-15 §6.1: re-render on new turn so CSS ring restarts.
     if (prev.turnDeadlineMs !== next.turnDeadlineMs) return false;
     if (prev.turnStartTimeMs !== next.turnStartTimeMs) return false;
+    /* Without this the memo swallows the arm and the seat never repaints —
+       which is how it would silently regress back to "the toast is the only
+       feedback". */
+    if (prev.timeBankArmed !== next.timeBankArmed) return false;
 
     const pp = prev.player;
     const np = next.player;

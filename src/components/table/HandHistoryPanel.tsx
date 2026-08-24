@@ -40,16 +40,25 @@ export interface HandRecord {
     stack: number;
     position: string; // 'D', 'SB', 'BB', 'UTG', etc.
     holeCards?: string[]; // Only for hero or showdown
+    /** This player's NET for the hand: collected minus invested, as stored.
+        Optional only because a record cached in localStorage by a build older
+        than 2026-08-23 predates the field; every record the adapter produces
+        carries it. */
+    result?: number;
   }>;
   streets: HandHistoryStreet[];
   winners: Array<{
     playerId: string;
     playerName: string;
+    /** GROSS chips pushed from the pot to this winner, NOT their net result.
+        This field held the net until 2026-08-23, which is what let Hand Detail
+        subtract the same investment twice and print a different figure from
+        Hand History for one hand. Net lives in `players[].result`. */
     amount: number;
     hand?: string; // "Full House, Aces over Kings"
   }>;
   heroId: string;
-  heroResult: number; // +/- amount
+  heroResult: number; // +/- amount, the hero's `players[].result`
   potTotal: number;
 }
 
@@ -181,10 +190,22 @@ function handToText(hand: HandRecord): string {
   // Winners
   lines.push('*** SUMMARY ***');
   lines.push(`Total pot: ${formatAmount(hand.potTotal)}`);
+  /* "collected N from pot" is the PokerStars wording for the GROSS the pot paid
+     out, which is what `winners[].amount` holds. This line used to read "won"
+     over a figure that was the player's NET, so a tracker importing the file
+     booked the winner's own bets as chips that had never been in the pot. The
+     net is printed on its own line rather than folded into this one, so the
+     two numbers on screen each have a line here that matches them. */
   hand.winners.forEach((w) => {
     const handStr = w.hand ? ` with ${w.hand}` : '';
-    lines.push(`${w.playerName} won ${formatAmount(w.amount)}${handStr}`);
+    lines.push(`${w.playerName} collected ${formatAmount(w.amount)} from pot${handStr}`);
   });
+  const heroName = hand.players.find((p) => p.id === hand.heroId)?.name;
+  if (heroName) {
+    lines.push(
+      `${heroName} net result: ${hand.heroResult > 0 ? '+' : ''}${formatAmount(hand.heroResult)}`
+    );
+  }
 
   return lines.join('\n');
 }
@@ -214,7 +235,13 @@ function HandEntry({
         id: p.id,
         name: p.name,
         cards: p.holeCards || [],
-        won: winnerById.get(p.id)?.amount,
+        /* `collected` is the gross the pot paid this seat; `net` is what they
+           are up or down on the hand. Both are shown, and labelled, because
+           showing only one of them beside the other surface's choice of the
+           other is precisely how Hand History and Hand Detail came to print
+           two different numbers for the same hand. */
+        collected: winnerById.get(p.id)?.amount,
+        net: p.result,
         handName: winnerById.get(p.id)?.hand,
       }));
   }, [hand]);
@@ -283,7 +310,9 @@ function HandEntry({
                 {showdownRows.map((r) => (
                   <div
                     key={r.id}
-                    className={`hh-entry__shown${r.won != null ? ' hh-entry__shown--won' : ''}`}
+                    className={`hh-entry__shown${
+                      r.collected != null ? ' hh-entry__shown--won' : ''
+                    }`}
                   >
                     <span className="hh-entry__player-name">{r.name}</span>
                     {r.cards.length > 0 ? (
@@ -295,9 +324,22 @@ function HandEntry({
                       <span className="hh-entry__notshown">Not Shown</span>
                     )}
                     {r.handName && <span className="hh-entry__hand">{r.handName}</span>}
-                    {r.won != null && (
-                      <span className="hh-entry__won">Won {formatAmount(r.won)}</span>
-                    )}
+                    <span className="hh-entry__tail">
+                      {r.collected != null && (
+                        <span className="hh-entry__won">Collected {formatAmount(r.collected)}</span>
+                      )}
+                      {r.net != null && (
+                        <span
+                          className="hh-entry__net"
+                          style={{
+                            color: r.net > 0 ? '#22c55e' : r.net < 0 ? '#ef4444' : '#9ca3af',
+                          }}
+                        >
+                          Net {r.net > 0 ? '+' : ''}
+                          {formatAmount(r.net)}
+                        </span>
+                      )}
+                    </span>
                   </div>
                 ))}
               </div>

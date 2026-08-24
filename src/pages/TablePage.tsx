@@ -2014,7 +2014,7 @@ export default function TablePage({
         setShowSessionStats(true);
         break;
       case 'SETTINGS':
-        masterBus.emit('TABLE_SETTINGS_OPEN', { tableId: tableId || '' });
+        setShowSettings(true);
         break;
       case 'HAND_HISTORY':
         setShowHandReplay(true);

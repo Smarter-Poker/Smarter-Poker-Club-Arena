@@ -33,7 +33,8 @@
  *    HandController.canReopenBetting).
  */
 
-import type { HandStage, ActionRecord } from '../types.js';
+import type { HandStage, ActionRecord, ActionType } from '../types.js';
+
 
 export type BettingStructure = 'no_limit' | 'pot_limit' | 'fixed_limit';
 
@@ -111,6 +112,33 @@ export function fixedLimitWagerCount(actions: ActionRecord[], stage: HandStage):
 /** True once the street has taken a bet and three raises. */
 export function isFixedLimitCapped(actions: ActionRecord[], stage: HandStage): boolean {
   return fixedLimitWagerCount(actions, stage) >= FIXED_LIMIT_MAX_WAGERS;
+}
+
+/**
+ * What an automated seat should do instead, when it wants to wager on a street
+ * that is already capped.
+ *
+ * 2026-08-24. The horses decide independently of `getAvailableActions` — the
+ * menu is only for the client — and a rejected horse action degrades to
+ * `check() || fold()` (Bible V8 §1.7.4 preferCheckOverFold, added by the
+ * 2026-08-15 freeze fix so a seat is never left unacted). On a CAPPED
+ * fixed-limit street facing a bet, `check` is illegal because toCall > 0. So a
+ * horse that wanted to RAISE had its raise refused and then FOLDED a hand it
+ * had just decided to put money in with — the worst possible substitution, and
+ * invisible because the seat did act.
+ *
+ * A capped street offers exactly two moves. If money is owed, the intent
+ * closest to "raise" is `call`; if nothing is owed, it is `check`. Neither can
+ * be refused, so the fold path is never reached for this reason again.
+ *
+ * Deliberately NOT applied to the human path: a person's rejected raise should
+ * be refused, not silently converted into chips they did not agree to commit.
+ * The client already hides Raise on a capped street, so a human only reaches
+ * this by hand-crafting a request.
+ */
+export function substituteOnCappedStreet(action: ActionType, toCall: number): ActionType {
+  if (action !== 'bet' && action !== 'raise') return action;
+  return toCall > 0.005 ? 'call' : 'check';
 }
 
 /**

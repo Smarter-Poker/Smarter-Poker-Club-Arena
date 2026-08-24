@@ -14,9 +14,11 @@ import {
   isPotLimitVariant,
   isFixedLimitVariant,
   fixedLimitBetSize,
+  isFixedLimitCapped,
+  substituteOnCappedStreet,
   type BettingStructure,
 } from './BettingStructure.js';
-import type { HandStage } from '../types.js';
+import type { HandStage, ActionType } from '../types.js';
 
 import { HorseLogic, resolveHorseStyle } from './HorseLogic.js';
 import { getTournamentBrainContext } from '../services/TournamentBrainContext.js';
@@ -1825,6 +1827,27 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         if (amount >= maxRaiseTo) {
           action = 'all_in';
           amount = undefined;
+        }
+      }
+
+      // 2026-08-24: a capped fixed-limit street takes no further wager, and
+      // validateAction refuses one whatever the amount. The degradation below is
+      // `check() || fold()`, and on a capped street facing a bet `check` is
+      // illegal too — so a horse that wanted to RAISE folded the hand it had
+      // just decided to raise with. Substitute the closest legal intent instead
+      // (call when money is owed, check when none is), which cannot be refused.
+      // The horse snapshot is a reduced shape with no actionHistory, so the cap
+      // is read from the controller's own state — the same list validateAction
+      // will be judged against a few lines below.
+      const liveState = handControllerRef.getState();
+      if (
+        horseFlBetSize > 0 &&
+        isFixedLimitCapped(liveState.actionHistory ?? [], liveState.stage)
+      ) {
+        const substituted = substituteOnCappedStreet(action as ActionType, toCall);
+        if (substituted !== action) {
+          action = substituted as typeof action;
+          amount = substituted === 'call' ? toCall : undefined;
         }
       }
 

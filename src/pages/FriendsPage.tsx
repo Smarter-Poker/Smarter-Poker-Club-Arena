@@ -256,7 +256,7 @@ export default function FriendsPage() {
         try {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, username, avatar_url:arena_avatar_url')
+            .select('id, username, avatar_url')
             .in('id', allProfileIds);
           if (profiles) {
             for (const p of profiles)

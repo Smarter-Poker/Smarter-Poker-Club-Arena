@@ -121,7 +121,7 @@ function FriendListPanelInner({
         try {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, username, display_name, avatar_url:arena_avatar_url, level, tier')
+            .select('id, username, display_name, avatar_url, level, tier')
             .in('id', allFriendIds);
           if (profiles) {
             for (const p of profiles) profileMap[p.id] = p;

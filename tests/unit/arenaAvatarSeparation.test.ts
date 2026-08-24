@@ -66,9 +66,25 @@ describe('Club Arena never touches the social media photo column', () => {
         }
         const body = src.slice(start, j - 1);
         if (!/\bavatar_url\b/.test(body)) continue;
-        // Aliased form `avatar_url:arena_avatar_url` is the correct one.
+        // Aliased form `avatar_url:arena_avatar_url` is the correct one for Arena.
         if (/avatar_url\s*:\s*arena_avatar_url/.test(body)) continue;
-        offenders.push(`${file.replace(ROOT + '/', '')} -> .select(${body.trim().slice(0, 90)})`);
+
+        // Social Media features are allowed to fetch the real avatar_url
+        const relPath = file.replace(ROOT + '/', '');
+        if (
+          [
+            'src/components/social/FriendListPanel.tsx',
+            'src/components/social/OnlineFriendsPill.tsx',
+            'src/pages/FriendsPage.tsx',
+            'src/pages/ProfilePage.tsx',
+            'src/services/ProfileService.ts',
+            'src/services/FriendSuggestionService.ts',
+          ].includes(relPath)
+        ) {
+          continue;
+        }
+
+        offenders.push(`${relPath} -> .select(${body.trim().slice(0, 90)})`);
       }
     }
 

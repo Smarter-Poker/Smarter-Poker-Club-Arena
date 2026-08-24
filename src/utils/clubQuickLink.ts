@@ -279,15 +279,47 @@ export function clearUnionFlagCache(): void {
  * callers below want OPPOSITE things from an unverifiable id, and collapsing
  * that into one boolean would be a bug in one of them either way.
  */
+/**
+ * What a CACHED club row proves about union-ness — true, false, or null for
+ * "this row does not say".
+ *
+ * HOSTILE STATE (Dan 2026-08-24, Rule 8). `CLUBS_CACHE` is written by HomePage
+ * and read here with NO freshness check, so a row can be arbitrarily old. Rows
+ * written before `is_union` was selected carry neither `is_union` nor
+ * `entity_type`, and `isUnionEntity` answers FALSE for those — it asks "does
+ * this object say union", which is the right question when filtering a list
+ * and the wrong one when deciding whether a union may be a destination.
+ *
+ * The consequence was measured, not theorised: with one legacy row for the
+ * union hub in localStorage, isConfirmedUnionClubId returned false (so
+ * UnionSkinGuard did not eject an old bookmark) and resolveLobbyClubId handed
+ * back the union's own id as a lobby. The answer was then memoised in
+ * unionFlagCache for the rest of the session. A stale cache alone reopened the
+ * whole bug.
+ *
+ * So absence is now UNKNOWN, not "no", and an unknown falls through to the
+ * database. A modern row still answers from cache with no network call.
+ */
+function cachedUnionFlag(club: QuickLinkClub): boolean | null {
+  if (club.is_union === true || club.entity_type === 'union') return true;
+  // Only an EXPLICIT negative counts as proof that it is an ordinary club.
+  if (club.is_union === false) return false;
+  if (typeof club.entity_type === 'string') return false; // 'club'
+  return null; // legacy row — carries no union signal at all
+}
+
 async function lookupUnionFlag(clubId: string): Promise<boolean | null> {
   const cached = unionFlagCache.get(clubId);
   if (cached !== undefined) return cached;
 
   const fromCache = readCachedClubsRaw().find((c) => c.id === clubId);
   if (fromCache) {
-    const flag = isUnionEntity(fromCache);
-    unionFlagCache.set(clubId, flag);
-    return flag;
+    const flag = cachedUnionFlag(fromCache);
+    if (flag !== null) {
+      unionFlagCache.set(clubId, flag);
+      return flag;
+    }
+    // Old-shape row: it says nothing either way. Fall through and ask.
   }
 
   try {
@@ -381,7 +413,11 @@ export function resolveLobbyClubIdSync(opts: {
     let flag = unionFlagCache.get(candidate);
     if (flag === undefined) {
       const row = cachedClubs.find((c) => c.id === candidate);
-      if (row) flag = isUnionEntity(row);
+      // cachedUnionFlag, not isUnionEntity: a legacy row carries no union
+      // signal, and reading its silence as "not a union" is exactly how a
+      // stale cache used to hand the union hub back as a lobby. Unknown stays
+      // unknown here and the async pass settles it.
+      if (row) flag = cachedUnionFlag(row) ?? undefined;
     }
     if (flag === undefined) continue; // unknown — the async pass decides
     if (flag) continue; // known union — never

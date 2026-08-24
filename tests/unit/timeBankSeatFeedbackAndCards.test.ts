@@ -162,9 +162,7 @@ describe('the time bank counter tracks the engine instead of drifting', () => {
 
   it('reads the count straight off the snapshot', () => {
     expect(TABLE_PAGE).toMatch(/time_bank_uses_remaining/);
-    expect(TABLE_PAGE).toMatch(
-      /setTimeBanksRemaining\(\(prev\) => \(prev === uses \? prev : uses\)\)/
-    );
+    expect(TABLE_PAGE).toMatch(/setTimeBanksRemaining\(\(prev\) => Math\.max\(prev, uses\)\)/);
   });
 
   it('treats a snapshot with no figure as no news, not as zero', () => {

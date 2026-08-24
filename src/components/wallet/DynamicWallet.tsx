@@ -60,9 +60,10 @@ import { resolveClubUUID, resolveClubUUIDSync } from '../../utils/clubIdResolver
 import {
   walletCacheKey,
   readWalletCache,
-  writeWalletCache,
+  writeWalletCacheDebounced,
   dedupedFetch,
 } from '../../lib/walletCache';
+import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
 import { normaliseRole, type ClubRole } from '../../types/clubRoles';
 import { clubWalletRows, type WalletRowKey } from './walletRows';
 import { useSpinsWallet } from '../../hooks/useSpinsWallet';
@@ -256,6 +257,50 @@ function formatBalance(num: number): string {
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * The zero-state panel. Extracted so a cache-hit paint can MERGE the cached
+ * payload over these defaults: a payload written before a field existed (the
+ * Spins Treasury trio arrived after the cache shipped) would otherwise hand
+ * `undefined` to the animated counters. Shape drift heals here instead of
+ * requiring a version bump that throws away every valid cached number.
+ */
+const INITIAL_WALLET_DATA: WalletData = {
+  diamonds: 0,
+  bbjPool: 0,
+  chipBalance: 0,
+  clubBank: 0,
+  agentBalance: 0,
+  promoBalance: 0,
+  unionBank: 0,
+  backupBBJ: 0,
+  clubTreasury: 0,
+  unionRake: 0,
+  unionPromo: 0,
+  clubRakeTreasury: null,
+  unionSpinTreasury: 0,
+  unionSpinIdle: 0,
+  unionSpinDeployed: 0,
+  clubsWallet: 0,
+  clubProjectedRakeback: 0,
+  projectedClubsShare: 0,
+  nextCloseAt: null,
+  scope: null,
+};
+
+/** What one (user, club, variant) stores on the device. */
+interface CachedPanel {
+  data: WalletData;
+  isClubInUnion: boolean;
+  unionId: string | null;
+  /**
+   * The viewer's role at the time the panel was last shown with roleReady.
+   * Lets a revisit choose the correct ROW SET immediately instead of holding
+   * the skeleton while the page re-derives a role that almost never changes.
+   * Presentation only — every permission check still runs on the live role.
+   */
+  role?: ClubRole;
+}
+
 export default function DynamicWallet({
   userId,
   clubId,
@@ -269,28 +314,7 @@ export default function DynamicWallet({
   onOpenAgentWallet,
   onOpenBBJ,
 }: DynamicWalletProps) {
-  const [data, setData] = useState<WalletData>({
-    diamonds: 0,
-    bbjPool: 0,
-    chipBalance: 0,
-    clubBank: 0,
-    agentBalance: 0,
-    promoBalance: 0,
-    unionBank: 0,
-    backupBBJ: 0,
-    clubTreasury: 0,
-    unionRake: 0,
-    unionPromo: 0,
-    clubRakeTreasury: null,
-    unionSpinTreasury: 0,
-    unionSpinIdle: 0,
-    unionSpinDeployed: 0,
-    clubsWallet: 0,
-    clubProjectedRakeback: 0,
-    projectedClubsShare: 0,
-    nextCloseAt: null,
-    scope: null,
-  });
+  const [data, setData] = useState<WalletData>(INITIAL_WALLET_DATA);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
   const [isClubInUnion, setIsClubInUnion] = useState(false);
@@ -336,6 +360,10 @@ export default function DynamicWallet({
   // holds the old one — writing in that window would poison the new club's
   // cache with the old club's money.
   const paintedKeyRef = useRef<string | null>(null);
+  // Last-known viewer role from the device cache. Bridges the roleReady gap:
+  // the row SET paints from this until the caller's live role hydrates, then
+  // the live role wins. Never used for any permission decision.
+  const [cachedRole, setCachedRole] = useState<ClubRole | null>(null);
 
   useEffect(() => {
     // Reset before resolving. Without this, `resolvedId` kept pointing at the
@@ -346,6 +374,7 @@ export default function DynamicWallet({
     setResolvedId(null);
     setCurrentUnionId(null);
     setFetchError(false);
+    setCachedRole(null);
     paintedKeyRef.current = null;
     if (!clubId) {
       setLoading(true);
@@ -355,18 +384,16 @@ export default function DynamicWallet({
     // 1. INSTANT PAINT: last-known panel for this (user, club, variant) from
     //    the device cache. No skeleton on a revisit — the numbers appear in
     //    the same frame and the network refresh corrects them if stale.
-    const cached = cacheKey
-      ? readWalletCache<{
-          data: WalletData;
-          isClubInUnion: boolean;
-          unionId: string | null;
-        }>(cacheKey)
-      : null;
+    //    MERGED over the zero-state so a payload written by an older build
+    //    (missing fields added since) heals to safe defaults instead of
+    //    feeding `undefined` into the animated counters.
+    const cached = cacheKey ? readWalletCache<CachedPanel>(cacheKey) : null;
     if (cached && cached.data) {
-      setData(cached.data);
+      setData({ ...INITIAL_WALLET_DATA, ...cached.data });
       setIsClubInUnion(cached.isClubInUnion);
-      currentUnionIdRef.current = cached.unionId;
-      setCurrentUnionId(cached.unionId);
+      currentUnionIdRef.current = cached.unionId ?? null;
+      setCurrentUnionId(cached.unionId ?? null);
+      if (cached.role) setCachedRole(normaliseRole(cached.role));
       paintedKeyRef.current = cacheKey;
       setLoading(false);
     } else {
@@ -546,18 +573,10 @@ export default function DynamicWallet({
       setFetchError(false);
       setLoading(false);
 
-      // 3. WRITE-THROUGH: persist the fresh panel so the NEXT mount of this
-      //    (user, club, variant) paints instantly. paintedKeyRef marks `data`
-      //    as belonging to this key so the realtime write-through effect may
-      //    keep it current.
-      if (cacheKey) {
-        paintedKeyRef.current = cacheKey;
-        writeWalletCache(cacheKey, {
-          data: nextData,
-          isClubInUnion: Boolean(panel.in_union),
-          unionId,
-        });
-      }
+      // 3. Mark `data` as belonging to this cache key. The write-through
+      //    effect below owns ALL persistence (fetches and realtime deltas
+      //    alike) — one write path, debounced, flushed on pagehide.
+      if (cacheKey) paintedKeyRef.current = cacheKey;
     } catch (err) {
       reportError(err, 'DynamicWallet.Fetch_error');
       if (thisVersion === fetchVersionRef.current && isMounted.current) {
@@ -581,12 +600,31 @@ export default function DynamicWallet({
   useEffect(() => {
     if (loading || fetchError) return;
     if (!cacheKey || paintedKeyRef.current !== cacheKey) return;
-    writeWalletCache(cacheKey, {
+    const payload: CachedPanel = {
       data,
       isClubInUnion,
       unionId: currentUnionId,
-    });
-  }, [data, isClubInUnion, currentUnionId, loading, fetchError, cacheKey]);
+    };
+    // Persist the viewer's role only when the caller has actually resolved it
+    // (roleReady) — caching the hydration default would freeze 'player' in
+    // and defeat the very gap this bridges. Union panels have a fixed row
+    // set, so role is meaningless there.
+    if (variant === 'club' && roleReady) payload.role = viewerRole;
+    // Debounced: realtime patches arrive several times a second during play;
+    // memory updates instantly, storage settles when the burst does (and is
+    // force-flushed on pagehide/hidden so the final number is never lost).
+    writeWalletCacheDebounced(cacheKey, payload);
+  }, [
+    data,
+    isClubInUnion,
+    currentUnionId,
+    loading,
+    fetchError,
+    cacheKey,
+    variant,
+    roleReady,
+    viewerRole,
+  ]);
 
   // ── MasterBus: Refresh on ALL balance-related events (debounced 500ms) ─────
   useMasterBusSubscriptions(
@@ -596,6 +634,13 @@ export default function DynamicWallet({
     },
     { debounce: 500 }
   );
+
+  // ── Tab-visible refresh ────────────────────────────────────────────────────
+  // A phone unlocked after minutes away paints the cached panel instantly and
+  // the realtime channels take a moment to re-establish; this closes the gap
+  // by refetching whenever the tab becomes visible after 30s+ hidden. Same
+  // hook the union dashboard already uses.
+  useVisibilityRefresh(fetchData);
 
   // ── Channel reconnect helper ──────────────────────────────────────────────
   const scheduleReconnect = useCallback(() => {
@@ -968,10 +1013,17 @@ export default function DynamicWallet({
     },
   ];
 
+  // Which role picks the row set: the live role once the caller has resolved
+  // it; the device-cached last-known role while it is still hydrating. The
+  // cached role was only ever written from a roleReady render, so it is a
+  // last HONEST answer, not the 'player' hydration default the visibility
+  // law was written against. Live role always wins the moment it arrives.
+  const rowRole: ClubRole = roleReady ? viewerRole : (cachedRole ?? viewerRole);
+
   const rows: WalletRow[] =
     effectiveVariant === 'union'
       ? UNION_ROWS
-      : clubWalletRows(viewerRole, {
+      : clubWalletRows(rowRole, {
           standalone: !isClubInUnion,
           spinsActive: spins.active,
         }).map((k) => CLUB_ROW_BY_KEY[k]);
@@ -987,8 +1039,11 @@ export default function DynamicWallet({
   // ── Loading skeleton ───────────────────────────────────────────────────────
   // `!roleReady` counts as loading: which ROWS exist is as much a part of this
   // panel's answer as the numbers in them, and showing the wrong set first is
-  // worse than showing none for another beat.
-  if (loading || (effectiveVariant === 'club' && !roleReady)) {
+  // worse than showing none for another beat. Exception: a device-cached
+  // last-known role (written only from a roleReady render) answers the row
+  // question honestly enough to paint now — the live role corrects it on the
+  // rare occasion it actually changed.
+  if (loading || (effectiveVariant === 'club' && !roleReady && cachedRole === null)) {
     return (
       <div className="dw dw--loading" aria-busy="true" aria-label="Loading wallet">
         <div className="dw__shimmer dw__shimmer--bbj" />

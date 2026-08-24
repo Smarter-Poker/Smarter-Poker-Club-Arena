@@ -483,6 +483,13 @@ export default function UnionDashboardPage() {
           clubs: enrichedClubs.slice(0, 30),
           agents: loadedAgents.slice(0, 30),
           wallets: walletRow,
+          // The money tiles below the wallets: BBJ pool, settlement periods
+          // and weekly P&L. Without these a revisit painted the wallets
+          // instantly and left the jackpot/settlement tiles on skeletons —
+          // half an instant paint reads as "something is broken".
+          bbjPool: poolRow,
+          recentPeriods: (periodsRes.data || []).slice(0, 30),
+          pnlSettlements: (pnlRows || []).slice(0, 12),
         });
       } catch (e) {
         reportError(e, 'UnionDashboardPage');
@@ -505,6 +512,9 @@ export default function UnionDashboardPage() {
         clubs?: EnrichedClub[];
         agents?: UnionAgent[];
         wallets?: any;
+        bbjPool?: any;
+        recentPeriods?: SettlementPeriod[];
+        pnlSettlements?: any[];
       }>(walletCacheKey(user.id, 'union_dashboard'), SWR_TTL_MS);
       if (parsed?.union) {
         setUnion(parsed.union);
@@ -513,6 +523,11 @@ export default function UnionDashboardPage() {
         if (parsed.clubs) setClubs(parsed.clubs);
         if (parsed.agents) setAgents(parsed.agents);
         if (parsed.wallets) setWallets(parsed.wallets);
+        // Money tiles beyond the wallets — cached with the same envelope so
+        // the whole dashboard paints as one, not wallets-first-tiles-later.
+        if (parsed.bbjPool) setBbjPool(parsed.bbjPool);
+        if (parsed.recentPeriods) setRecentPeriods(parsed.recentPeriods);
+        if (parsed.pnlSettlements) setPnlSettlements(parsed.pnlSettlements);
         setLoading(false); // Show cached data instantly
       }
     } catch (e) {

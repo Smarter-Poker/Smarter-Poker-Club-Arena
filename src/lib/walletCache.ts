@@ -112,6 +112,65 @@ export function writeWalletCache<T>(key: string, data: T): void {
   }
 }
 
+// ── Debounced storage writes ─────────────────────────────────────────────────
+// During live play the realtime channels patch a wallet several times a
+// second (a chip balance every hand, the BBJ every pot). Each patch must land
+// in the MEMORY layer immediately — that is what a same-session remount
+// paints — but serialising + writing localStorage at that rate is pure waste:
+// only the LAST value before the page goes away matters for the next visit.
+const pendingFlush = new Map<string, ReturnType<typeof setTimeout>>();
+const DEFAULT_FLUSH_MS = 800;
+
+/**
+ * Like writeWalletCache, but the localStorage write is deferred by a trailing
+ * per-key debounce. Memory is written synchronously, so nothing in-session
+ * ever observes a stale value. A pagehide/hidden listener (below) flushes
+ * anything still pending, so closing the tab inside the window cannot lose
+ * the final number.
+ */
+export function writeWalletCacheDebounced<T>(
+  key: string,
+  data: T,
+  flushMs: number = DEFAULT_FLUSH_MS
+): void {
+  memory.set(key, { at: Date.now(), data });
+  const existing = pendingFlush.get(key);
+  if (existing) clearTimeout(existing);
+  pendingFlush.set(
+    key,
+    setTimeout(() => {
+      pendingFlush.delete(key);
+      const env = memory.get(key);
+      if (env) writeWalletCache(key, env.data as T);
+    }, flushMs)
+  );
+}
+
+/** Flush every pending debounced write to localStorage right now. */
+export function flushWalletCacheWrites(): void {
+  for (const [key, timer] of pendingFlush) {
+    clearTimeout(timer);
+    const env = memory.get(key);
+    if (env) writeWalletCache(key, env.data);
+  }
+  pendingFlush.clear();
+}
+
+// The page going away is the one moment a pending write MUST land: the next
+// visit paints from localStorage. pagehide covers navigation/close; the
+// visibilitychange->hidden case covers mobile app-switching, where pagehide
+// may never fire before the process is frozen.
+if (typeof window !== 'undefined') {
+  try {
+    window.addEventListener('pagehide', flushWalletCacheWrites);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flushWalletCacheWrites();
+    });
+  } catch {
+    /* non-browser environment — tests flush explicitly */
+  }
+}
+
 /**
  * Share one in-flight fetch per key. A second caller arriving while the first
  * request is still on the wire gets the SAME promise instead of issuing a
@@ -134,6 +193,10 @@ export function dedupedFetch<T>(key: string, fetcher: () => Promise<T>): Promise
  * memory must not outlive the account either.
  */
 export function clearWalletMemoryCache(): void {
+  // Cancel pending debounced flushes FIRST — a timer firing after the purge
+  // would re-write the signed-out account's last balance to localStorage.
+  for (const timer of pendingFlush.values()) clearTimeout(timer);
+  pendingFlush.clear();
   memory.clear();
   inflight.clear();
 }

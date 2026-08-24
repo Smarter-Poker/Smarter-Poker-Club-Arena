@@ -72,10 +72,18 @@ export function useSpinsWallet(ownerKey: string | null | undefined, enabled = tr
     // request below ALWAYS runs and overwrites). Keyed per viewing user so a
     // sign-out purge isolates accounts; skipped entirely when no user id is
     // known yet.
+    //
+    // SENTINEL ENVELOPE: the cached value is `{ s: state }`, never the bare
+    // state. A club with no Spins state caches `{ s: null }`, which is
+    // DISTINGUISHABLE from a cache miss — before this, "cached: no spins"
+    // read as "never asked", so every visit to a no-spins club flashed the
+    // loading state it was built to avoid. (Old bare-shape entries fail the
+    // `'s' in` guard and count as misses — harmless, they refill once.)
     const cacheKey = userId ? walletCacheKey(userId, 'spins', ownerKey) : null;
-    const cached = cacheKey ? readWalletCache<SpinOwnerState | null>(cacheKey) : null;
-    if (cached !== null) {
-      setState(cached);
+    const raw = cacheKey ? readWalletCache<{ s: SpinOwnerState | null }>(cacheKey) : null;
+    const hit = raw !== null && typeof raw === 'object' && 's' in raw;
+    if (hit) {
+      setState(raw.s);
     } else {
       setLoading(true);
     }
@@ -90,14 +98,14 @@ export function useSpinsWallet(ownerKey: string | null | undefined, enabled = tr
         if (!cancelled) {
           const next = res.state ?? null;
           setState(next);
-          if (cacheKey) writeWalletCache(cacheKey, next);
+          if (cacheKey) writeWalletCache(cacheKey, { s: next });
         }
       } catch {
         // A viewer with no permission, or a club that has never touched Spins,
         // is a normal outcome. The row simply does not appear — it must never
         // render a made-up zero next to real balances. On error, only fall
         // back to null when nothing cached painted above.
-        if (!cancelled && cached === null) setState(null);
+        if (!cancelled && !hit) setState(null);
       } finally {
         if (!cancelled) setLoading(false);
       }

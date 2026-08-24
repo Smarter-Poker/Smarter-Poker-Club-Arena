@@ -254,11 +254,26 @@ describe('parity fields (2026-08-22)', () => {
       'nlh'
     );
     expect(c.actionTimeSeconds).toBe(60);
-    expect(c.tableSize).toBe(10);
+    // 2026-08-24: was 10. The ceiling is now ALSO the variant's seat cap, so
+    // the tournament path and the cash path agree about what fits — Hold'em is
+    // a nine-handed ring by house rule (tableSeating.DEFAULT_MAX_SEATS), and
+    // every one of the 55,436 tournament tables in production is nine or
+    // fewer. Ten was reachable here and nowhere else.
+    expect(c.tableSize).toBe(9);
     const low = buildTournamentConfig({ ...base, actionTimeSeconds: 1, tableSize: 1 }, 'nlh');
     expect(low.actionTimeSeconds).toBe(5);
     expect(low.tableSize).toBe(2);
   });
+
+  it('never builds a table the deck cannot deal', () => {
+    // The reason the cap moved: PLO6 deals six cards a seat, so a ten-handed
+    // table needs 65 cards and the engine's capacity guard refuses it. The
+    // tournament would start and then sit there.
+    expect(buildTournamentConfig({ ...base, tableSize: 99 }, 'plo6').tableSize).toBe(6);
+    expect(buildTournamentConfig({ ...base, tableSize: 99 }, 'plo5').tableSize).toBe(7);
+    expect(buildTournamentConfig({ ...base, tableSize: 99 }, 'plo4').tableSize).toBe(8);
+  });
+
 
   it('MTT-only fields never leave an SNG', () => {
     const c = buildTournamentConfig(
@@ -368,18 +383,35 @@ describe('parity fields (2026-08-22)', () => {
 });
 
 describe('game variant', () => {
+  /**
+   * 2026-08-24: these two used to assert `canRunAsTournament('plo')` and
+   * `('shortdeck')`. Those are the keys the MAP was written with — they are not
+   * ids the create-table screen has ever emitted, which sends `plo4` and
+   * `short_deck`. So the test agreed with the map, the map disagreed with the
+   * screen, and neither knew: the SNG/MTT tabs were hidden on every game except
+   * Hold'em while production ran 5,634 PLO and Short Deck tournaments made by
+   * the recurring service. A test keyed to the implementation instead of to the
+   * caller cannot catch that. These are now keyed to what the screen emits.
+   */
   it('only offers tournaments for variants the engine can deal', () => {
-    expect(canRunAsTournament('nlh')).toBe(true);
-    expect(canRunAsTournament('plo')).toBe(true);
-    expect(canRunAsTournament('shortdeck')).toBe(true);
-    // HandController maps an unknown variant to 2 cards and a full deck, so
-    // these would silently run Hold'em.
-    for (const v of ['flh', 'flo', 'mixed', 'ofc']) expect(canRunAsTournament(v)).toBe(false);
+    for (const v of ['nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'short_deck']) {
+      expect(canRunAsTournament(v)).toBe(true);
+    }
+    // Pineapple has no tournament path for its discard street; limit escalates
+    // on a bet-size ladder and every blind structure here is a blind ladder.
+    for (const v of ['flh', 'flo8', 'pineapple', 'mixed', 'ofc']) {
+      expect(canRunAsTournament(v)).toBe(false);
+    }
+    // And the dead keys must not answer true, or the bug returns quietly.
+    for (const v of ['plo', 'shortdeck', 'flo']) expect(canRunAsTournament(v)).toBe(false);
   });
 
   it('maps to the engine vocabulary', () => {
-    expect(buildTournamentConfig(base, 'plo').gameVariant).toBe('PLO4');
-    expect(buildTournamentConfig(base, 'shortdeck').gameVariant).toBe('SHORT_DECK');
+    expect(buildTournamentConfig(base, 'plo4').gameVariant).toBe('PLO4');
+    expect(buildTournamentConfig(base, 'plo5').gameVariant).toBe('PLO5');
+    expect(buildTournamentConfig(base, 'plo6').gameVariant).toBe('PLO6');
+    expect(buildTournamentConfig(base, 'plo8').gameVariant).toBe('PLO8');
+    expect(buildTournamentConfig(base, 'short_deck').gameVariant).toBe('SHORT_DECK');
     expect(buildTournamentConfig(base, undefined).gameVariant).toBe('NLH');
   });
 });

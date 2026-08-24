@@ -64,16 +64,37 @@ const MAX_SEATS_BY_VARIANT: Record<string, number> = {
   plo5: 7,
   plo4: 8,
   plo8: 8, // four-card hi-lo — same deal as plo4
+  // 2026-08-24: flo8 is Fixed Limit Omaha Hi-Lo — the SAME four-card deal as
+  // plo8. Only the betting differs, and betting does not change how many cards
+  // leave the deck. Without this line it fell to DEFAULT_MAX_SEATS and a
+  // nine-seat FLO8 table was creatable where a nine-seat PLO8 was not.
+  flo8: 8,
 };
 
 /** Hole cards dealt to each player. */
+const HOLE_CARDS_BY_VARIANT: Record<string, number> = {
+  nlh: 2,
+  flh: 2,
+  short_deck: 2,
+  pineapple: 3,
+  plo4: 4,
+  plo5: 5,
+  plo6: 6,
+  plo8: 4,
+  flo8: 4,
+};
+
 export function holeCardsForVariant(variant: SeatCappedVariant | null | undefined): number {
+  // 2026-08-24: this was four `startsWith` tests with `return 2` underneath.
+  // `flo8` — Fixed Limit Omaha Hi-Lo — starts with none of them, so a four-card
+  // game reported TWO hole cards and `remainderAfterDeal` overstated the deck
+  // by 18 cards at a full table. That is the sixth copy of this same guess to
+  // be found (the other five were in the engine; see
+  // server/src/engine/VariantRules.ts, which is the authority this mirrors).
+  // A table beats a prefix test: a variant is either listed or it is Hold'em,
+  // and adding one cannot silently mean "two cards" any more.
   const v = String(variant ?? '').toLowerCase();
-  if (v.startsWith('plo6')) return 6;
-  if (v.startsWith('plo5')) return 5;
-  if (v.startsWith('plo')) return 4; // plo4, plo8
-  if (v.startsWith('pineapple')) return 3;
-  return 2;
+  return HOLE_CARDS_BY_VARIANT[v] ?? 2;
 }
 
 /** Cards in the deck this variant is dealt from. */

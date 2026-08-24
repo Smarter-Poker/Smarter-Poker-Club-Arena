@@ -142,6 +142,28 @@ export function useTableTimer({
   const heroFiredRef = useRef<number | null>(null);
   const isHeroTurnRef = useRef(isHeroTurn);
   isHeroTurnRef.current = isHeroTurn;
+  /**
+   * The RAF loop below subscribes ONCE (empty dep array) and must therefore read
+   * every changing value through a ref. `turnDeadlineMs` was read as a prop from
+   * inside that closure, which froze it at its MOUNT value - and the initial
+   * table state has no `actionTimerDeadline`, so the frozen value is `undefined`.
+   *
+   * That broke the fired-once latch in a way that looks fine until you follow the
+   * types: the guard compared `heroFiredRef.current !== undefined` while the
+   * assignment stored `undefined ?? 0`, i.e. `0`. `0 !== undefined` is always
+   * true, so the latch never latched and `onTimeout` fired on EVERY FRAME once
+   * the clock hit zero - roughly sixty times a second, each one opening the
+   * time-bank sheet and firing a fresh activateTimeBank request at the engine.
+   *
+   * It was survivable only by accident: TablePage passed
+   * `isHeroTurn: isHeroTurnContext && !timeBankActive`, so the first timeout set
+   * timeBankActive and the next frame found isHeroTurnRef false. That `&&` was
+   * removed on 2026-08-23 because it also blinded the hook for the whole of a
+   * running bank (no second bank, no auto-fold fallback) - which took the brake
+   * off this. Fixing the latch is the right half of that change.
+   */
+  const turnDeadlineRef = useRef(turnDeadlineMs);
+  turnDeadlineRef.current = turnDeadlineMs;
 
   useEffect(() => {
     // Reset the hero-timeout-fired guard when the deadline changes (new turn).
@@ -167,8 +189,12 @@ export function useTableTimer({
       timeRef.current = Math.max(0, timeRef.current - delta);
 
       if (timeRef.current <= 0) {
-        if (isHeroTurnRef.current && heroFiredRef.current !== turnDeadlineMs) {
-          heroFiredRef.current = turnDeadlineMs ?? 0;
+        // Read through the ref, not the frozen prop. `?? 0` on BOTH sides so the
+        // value compared is the value stored - the old code compared against
+        // `undefined` and stored `0`, which can never be equal.
+        const deadlineNow = turnDeadlineRef.current ?? 0;
+        if (isHeroTurnRef.current && heroFiredRef.current !== deadlineNow) {
+          heroFiredRef.current = deadlineNow;
           onTimeoutRef.current();
         }
         // Hold at zero until the next reset — do NOT tear down the loop,

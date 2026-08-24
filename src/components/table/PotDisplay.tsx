@@ -68,6 +68,12 @@ export interface PotDisplayProps {
    */
   streetBets?: number;
   /**
+   * The hand this pot belongs to. Used ONLY to expire the carried-over amount
+   * below - see lastNonZeroPotRef. Without it the component has no idea a hand
+   * ended, because it stays mounted for the life of the table.
+   */
+  handNumber?: number;
+  /**
    * Dan 2026-08-19, bug list item 6: "pot-push animation to the winner after
    * every hand showing chip amounts, not auto-advancing."
    *
@@ -202,6 +208,7 @@ function PotDisplayComponent({
   onToggleDisplayMode,
   streetBets = 0,
   collectTo = null,
+  handNumber = 0,
 }: PotDisplayProps) {
   // Chips only belong to the pot once swept to the middle: the top pill shows
   // the collected portion, the lower pill shows what's still in front of seats.
@@ -232,7 +239,27 @@ function PotDisplayComponent({
   // ANIMATION AUDIT 2026-08-19: during the pot-push (collectTo set) a
   // snapshot may already have zeroed the pot. Show the last real amount for
   // the slide so the pot travels to the winner still reading its value.
+  //
+  // Dan 2026-08-23: that carried amount must EXPIRE WITH ITS HAND. The ref was
+  // only ever assigned, never cleared, and this component stays mounted for the
+  // life of the table - so it held the last non-zero pot indefinitely.
+  //
+  // The failing shape is the commonest hand in poker. Hand N takes a 5,000 pot,
+  // so the ref holds 5000. Hand N+1 folds around preflop: the blinds are still
+  // in FRONT of the seats, so mainPot === streetBets on every snapshot and
+  // collectedPot is 0 for the entire hand. collectTo is set for the push, which
+  // is exactly the branch that reads the ref - so the pill, the chip pile and
+  // the aria-live label all announced 5,000 sliding to a player who won 15.
   const lastNonZeroPotRef = useRef(collectedPot);
+  const carriedHandRef = useRef(handNumber);
+  if (carriedHandRef.current !== handNumber) {
+    // Reset during render rather than in an effect: the push for the NEW hand
+    // can be painted in the same commit as the hand-number change, and an
+    // effect would clear the stale value one frame too late - after it had
+    // already been shown.
+    carriedHandRef.current = handNumber;
+    lastNonZeroPotRef.current = 0;
+  }
   const displayPot = collectedPot > 0 ? collectedPot : collectTo ? lastNonZeroPotRef.current : 0;
   useEffect(() => {
     if (collectedPot > 0) lastNonZeroPotRef.current = collectedPot;

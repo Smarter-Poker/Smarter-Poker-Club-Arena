@@ -15,6 +15,7 @@
  */
 
 import { isInLateRegistration } from '../../utils/tournamentFilters';
+import { stakesLabel as stakesLabelFor } from '../../lib/bettingStructure';
 
 // ─── Raw row shapes (subset the lobby queries actually select) ─────────────
 export interface LobbyTableRow {
@@ -387,6 +388,28 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
     return { key: 'running', label: 'Running' };
   }
   if (status === 'REGISTERING' || status === 'ANNOUNCED') {
+    /**
+     * SEAT-FIRST GAMES DO NOT HAVE A START TIME (Dan 2026-08-23: "THE STATUS
+     * IS BROKEN SAYS 'STARTING SOON' EVEN FOR GAMES THAT ARE FULL").
+     *
+     * A Spin or Heads-Up starts when its last seat is bought, not at a clock
+     * time. The recycler still stamps a start_time on the row, and it is
+     * always in the past, so the branch below matched unconditionally and
+     * every Spin on the board — empty, half full, or sold out — carried the
+     * identical "Starting Soon". The one column meant to tell the games apart
+     * told the player nothing.
+     *
+     * Report what is actually true: how the seats are going.
+     */
+    const seatFirst = classifyTournament(t) !== 'mtt';
+    if (seatFirst) {
+      const cap = t.max_players || 0;
+      const taken = t.current_players || 0;
+      if (cap > 0 && taken >= cap) return { key: 'full', label: 'Starting' };
+      if (taken > 0) return { key: 'registering', label: `Filling ${taken}/${cap}` };
+      return { key: 'registering', label: 'Open Seats' };
+    }
+
     // House rule (tournamentFilters): overdue-but-still-registering is the
     // most "starting soon" thing in the lobby, so no lower bound here.
     const startMs = t.start_time ? new Date(t.start_time).getTime() : NaN;
@@ -415,7 +438,14 @@ export function cashEntry(t: LobbyTableRow): LobbyEntry {
     name: t.name,
     gameLabel: v.short,
     variantLabel: v.long,
-    stakesLabel: `${(t.small_blind || 0).toLocaleString()} / ${(t.big_blind || 0).toLocaleString()}`,
+    // 2026-08-24: a fixed-limit table is posted by BET size, not blind size —
+    // blinds 1/2 IS a "2/4" game. TableConfigPage already names the table and
+    // writes `tables.stakes` that way, so building this row from the raw blinds
+    // made the lobby list disagree with the table it links to: the row read
+    // "1 / 2" and the table called itself "FLH 2/4". Same helper as the create
+    // screen, so the two cannot drift again. No-limit and pot-limit rows are
+    // unchanged — stakesLabelFor returns the blinds for them.
+    stakesLabel: stakesLabelFor(t.small_blind || 0, t.big_blind || 0, t.game_variant),
     stakesValue: Number(t.big_blind) || 0,
     buyInLabel: `${minBuy.toLocaleString()} - ${maxBuy.toLocaleString()}`,
     buyInValue: minBuy,

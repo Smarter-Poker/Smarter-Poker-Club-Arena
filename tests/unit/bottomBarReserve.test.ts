@@ -71,4 +71,14 @@ describe('the fixed action bar cannot cover the hero plate or the HUD', () => {
     // only the panel's height still slides that box under the bar.
     expect(TABLE_CSS).toContain('var(--sp-hero-clear');
   });
+
+  it('actually DECLARES --sp-hero-clear, rather than relying on a fallback', () => {
+    // Asserting only that `var(--sp-hero-clear` appears is a test that passes on
+    // a variable nothing assigns: an unassigned custom property silently
+    // resolves to its fallback, so the layout looks right while the value lives
+    // in three separate fallback slots and cannot be changed in one place.
+    // Match a real declaration, not a read.
+    const declared = TABLE_CSS.split('\n').filter((l) => /^\s*--sp-hero-clear\s*:/.test(l));
+    expect(declared.length, '--sp-hero-clear is read but never declared').toBeGreaterThan(0);
+  });
 });

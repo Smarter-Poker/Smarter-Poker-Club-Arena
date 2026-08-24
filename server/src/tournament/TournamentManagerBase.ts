@@ -78,6 +78,37 @@ export abstract class TournamentManagerBase {
   protected handForHandRePauseTimer: NodeJS.Timeout | null = null;
   // Late reg finalization
   protected prizePoolFinalized: boolean = false;
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  NOBODY BUSTS BEFORE THE CHIPS ARRIVE (2026-08-23)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * Wall-clock instant before which the elimination sweep must not bust
+   * anybody, because their stacks have not been written yet.
+   *
+   * A Spin seats its field as RESERVATIONS at zero chips and defers the credit
+   * until the wheel stops — `spinRevealToDealMs()` later, about eighteen
+   * seconds. The elimination checker, however, starts immediately and fires
+   * every five. So at t+5s it synced `table_seats.stack` (still 0) into
+   * `tournament_players.chips`, saw the ENTIRE field at `chips <= 0`, busted
+   * everyone but an arbitrary "top" stack, and paid that player first prize —
+   * before a single card had been dealt.
+   *
+   * Measured in production 2026-08-23: 276 of the last 278 completed Spins
+   * finished with ZERO rows in hand_history. Every one collected buy-ins and
+   * paid a prize for a game that was never played.
+   *
+   * This is the cause fix — no sweep may bust while a credit is still pending.
+   * TournamentManagerEliminations carries the independent invariant as well:
+   * a whole field at zero chips is never a result, because chips are conserved
+   * in poker, so it can only ever mean an uncredited table.
+   */
+  protected bustingArmedAt: number = 0;
+  /**
+   * How often the elimination sweep runs. Named because `bustingArmedAt` is
+   * sized in terms of it — a literal in two files is how the two drift apart.
+   */
+  static readonly ELIMINATION_SWEEP_MS = 5000;
   // Tournament metadata cache
   protected tournamentCache: any = null;
   // FIX 151: ChipRaceEngine for denomination removal on level-up
@@ -942,6 +973,16 @@ export abstract class TournamentManagerBase {
        */
       if (!(await this.deferStacksForSpinReveal(tournament))) {
         await this.creditSeatStacks(tournament);
+      } else {
+        /**
+         * The credit is now in the future, so the bust sweep must be too.
+         * Armed to the same instant the engine is allowed to deal, plus one
+         * sweep interval of slack, so the first sweep that can ever bust
+         * anybody runs against stacks that exist. Without this the sweep at
+         * t+5s reads the reservation zeroes and ends the game.
+         */
+        this.bustingArmedAt =
+          Date.now() + spinRevealToDealMs() + TournamentManagerBase.ELIMINATION_SWEEP_MS;
       }
 
       // Create tables and seat players
@@ -1255,6 +1296,21 @@ export abstract class TournamentManagerBase {
             .catch((err) => reportError(err, 'TournamentthistournamentIdslic.Resume_table_error'));
         }
       }
+
+      /**
+       * A RESTART MUST NOT LEAVE THE FIELD ON ZERO CHIPS (2026-08-23).
+       *
+       * start() defers the Spin credit to a timer roughly eighteen seconds
+       * out. A process restart inside that window threw the timer away, and
+       * resume() never credited anything — so both `table_seats.stack` and
+       * `tournament_players.chips` stayed at zero with no code path left that
+       * would ever raise them. The table could not deal (no stacks) and, until
+       * the guards added alongside this, the bust sweep ended the game.
+       *
+       * creditSeatStacks is idempotent and strictly raises, so calling it here
+       * costs one query on a healthy resume and rescues the stranded case.
+       */
+      await this.creditSeatStacks(tournament);
 
       // Restore blind level
       this.currentLevel = tournament.current_level || 0;
@@ -1999,6 +2055,20 @@ export abstract class TournamentManagerBase {
               small_blind: safeSmallBlind,
               big_blind: safeBigBlind,
               ante: safeAnte,
+              /**
+               * KEEP `stakes` HONEST (2026-08-23).
+               *
+               * createTablesAndSeatPlayers writes `stakes` once, as the level-1
+               * blinds, and this update never touched it — so the denormalised
+               * string stayed frozen at the opening level for the life of the
+               * tournament while the numeric columns advanced beside it.
+               * Measured on "Prime Time Main Event (NLH) - Table 4": stakes
+               * '25/50' against small_blind 750 / big_blind 1500. Every reader
+               * that trusts `stakes` (the table masthead, the lobby rows, and
+               * therefore every seat's BB depth badge) was reporting the wrong
+               * level's blinds, and stack depths thirty times too deep.
+               */
+              stakes: `${safeSmallBlind}/${safeBigBlind}`,
             })
             .eq('id', tableId);
           if (blindErr) {

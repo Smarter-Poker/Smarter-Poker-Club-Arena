@@ -79,6 +79,16 @@ export interface HubSubscriber {
    */
   readonly bufferedAmount?: number;
   send(data: string): void;
+  /**
+   * 2026-08-24: optional transport-supplied eviction. When the hub hard-drops
+   * a hopeless subscriber (bufferedAmount past HARD), it used to only remove
+   * it from the room — the SOCKET STAYED OPEN, receiving nothing, and the
+   * client sat blind until its own staleness watchdog fired up to 60s later.
+   * The transport knows how to end its connection cleanly (close the single
+   * socket / unsubscribe the mux table), which routes the client into its
+   * reconnect ladder IMMEDIATELY and gets a fresh snapshot in seconds.
+   */
+  evict?(): void;
 }
 
 /**
@@ -342,9 +352,16 @@ export class TableStateHub {
       }
       const buffered = sub.bufferedAmount ?? 0;
       if (buffered > HUB_HARD_BACKPRESSURE_BYTES) {
-        // Beyond saving — evict rather than keep buffering for it.
+        // Beyond saving — evict rather than keep buffering for it, and TELL
+        // the transport so the client reconnects now instead of sitting on an
+        // open-but-silent socket until its watchdog gives up (2026-08-24).
         this.hardDropped++;
         dead.push(sub);
+        try {
+          sub.evict?.();
+        } catch {
+          /* eviction is best-effort; removal from the room is the point */
+        }
         continue;
       }
       if (droppable && buffered > HUB_SOFT_BACKPRESSURE_BYTES) {

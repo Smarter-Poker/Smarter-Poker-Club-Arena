@@ -12,7 +12,7 @@
  */
 
 import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
-import type { LobbyEntry, LobbyStatusKey } from './lobbyEntries';
+import type { LobbyEntry, LobbyStatusKey, LobbyTournamentRow } from './lobbyEntries';
 import './LobbyTable.css';
 
 type SortDir = 'asc' | 'desc';
@@ -41,6 +41,21 @@ function readSort(
   } catch {
     return null;
   }
+}
+
+/**
+ * The order a tab opens in when the player has never sorted it themselves.
+ *
+ * Dan 2026-08-23: "SPINS NEED TO BE ORGANIZED BY BUY IN AMOUNT BY DEFAULT, LOW
+ * TO HIGH." Spins arrive from the recycler in creation order, which is
+ * effectively random — 25, then 1, then 100 — so the cheapest game, the one a
+ * new player is looking for, could be anywhere in a list of thirty. Buy-in
+ * ascending is the only order that means anything on a tab where every row is
+ * the same game at a different price.
+ */
+function defaultSortFor(category: string): { key: string; dir: SortDir } | null {
+  if (category === 'SPIN' || category === 'SNG') return { key: 'buyin', dir: 'asc' };
+  return null;
 }
 
 function writeSort(
@@ -150,6 +165,100 @@ function LiveCountdown({ time }: { time: string | number | Date }) {
   );
 }
 
+/** "17:33" under an hour, "1:02:33" above it. Never negative. */
+function formatClock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+/**
+ * Second line of an MTT title (Dan 2026-08-23): Guarantee, the scheduled
+ * start clock time, and a live seconds countdown — "Starting In 17:33..."
+ * before the cards are in the air, or how long LATE REGISTRATION has left
+ * once they are. Ticks every second; the interval dies with the row.
+ */
+function MttTitleMeta({ entry }: { entry: LobbyEntry }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const raw = entry.raw as LobbyTournamentRow;
+  const startMs = entry.startTime ? new Date(entry.startTime).getTime() : NaN;
+  const startClock = Number.isFinite(startMs)
+    ? new Date(startMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    : null;
+
+  let phase: string | null = null;
+  if (entry.status === 'registering' || entry.status === 'starting_soon') {
+    phase =
+      Number.isFinite(startMs) && startMs > now
+        ? `Starting In ${formatClock(startMs - now)}...`
+        : 'Starting Soon';
+  } else if (entry.status === 'late_reg') {
+    const lateMins = Number(raw.late_reg_mins) || 0;
+    const begun = new Date(raw.started_at || raw.start_time || '').getTime();
+    if (lateMins > 0 && Number.isFinite(begun)) {
+      const left = begun + lateMins * 60000 - now;
+      phase = left > 0 ? `Late Reg ${formatClock(left)} Left` : 'Late Reg Closing';
+    } else if ((Number(raw.late_reg_levels) || 0) > 0) {
+      phase = `Late Reg Thru Level ${Number(raw.late_reg_levels)}`;
+    } else {
+      phase = 'Late Reg Open';
+    }
+  } else if (entry.status === 'running') {
+    phase = 'Running';
+  } else if (entry.status === 'completed' || entry.status === 'closed') {
+    phase = entry.statusLabel;
+  }
+
+  const parts: React.ReactNode[] = [];
+  if (entry.guaranteeLabel)
+    parts.push(
+      <span key="gtd" className="lt-name__gtd">
+        {entry.guaranteeLabel}
+      </span>
+    );
+  if (startClock) parts.push(<span key="clk">{startClock}</span>);
+  if (phase)
+    parts.push(
+      <span key="phase" className="lt-name__phase">
+        {phase}
+      </span>
+    );
+  if (parts.length === 0) return null;
+
+  return (
+    <span className="lt-name__meta">
+      {parts.map((p, i) => (
+        <span key={i} className="lt-name__metapart">
+          {i > 0 && (
+            <span className="lt-name__sep" aria-hidden="true">
+              {'·'}
+            </span>
+          )}
+          {p}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** MTT names carry their variation; make sure it is there even when the
+    creator left it out of the name text. */
+function mttTitleLine(entry: LobbyEntry): string {
+  const name = entry.name || '';
+  return name.toUpperCase().includes(entry.gameLabel.toUpperCase())
+    ? name
+    : `${name} (${entry.gameLabel})`;
+}
+
 export function LobbyStatusBadge({ status, label }: { status: LobbyStatusKey; label: string }) {
   return <span className={`lt-status lt-status--${status}`}>{label}</span>;
 }
@@ -236,12 +345,25 @@ const COL_NAME: ColumnDef = {
   className: 'lt-col-name',
   sortable: true,
   sortValue: (e) => (e.name || '').toLowerCase(),
-  render: (e) => (
-    <span className="lt-name" title={e.name}>
-      {e.live && <i className="lt-live" aria-hidden="true" title="Live" />}
-      {e.name}
-    </span>
-  ),
+  render: (e) =>
+    e.kind === 'mtt' ? (
+      /* Dan 2026-08-23: MTT titles are two lines — name + variation on top,
+         guarantee / start clock / live countdown (or late-reg time left)
+         underneath. The guarantee lives in the title now, not only in its
+         own column. */
+      <span className="lt-name lt-name--mtt" title={mttTitleLine(e)}>
+        <span className="lt-name__line1">
+          {e.live && <i className="lt-live" aria-hidden="true" title="Live" />}
+          {mttTitleLine(e)}
+        </span>
+        <MttTitleMeta entry={e} />
+      </span>
+    ) : (
+      <span className="lt-name" title={e.name}>
+        {e.live && <i className="lt-live" aria-hidden="true" title="Live" />}
+        {e.name}
+      </span>
+    ),
 };
 const COL_TNAME: ColumnDef = { ...COL_NAME, label: 'Tournament Name' };
 const COL_STAKES: ColumnDef = {
@@ -336,9 +458,12 @@ const COL_STATUS: ColumnDef = {
   sortValue: (e) => STATUS_RANK[e.status] ?? 9,
   render: (e, ctx) => (
     <span className="lt-statuscell">
-      {e.kind !== 'cash' && ['registering', 'starting_soon'].includes(e.status) && e.startTime && (
-        <LiveCountdown time={e.startTime} />
-      )}
+      {/* MTTs carry a live seconds countdown in their two-line title now;
+          repeating a coarser minutes one here would just disagree with it. */}
+      {e.kind !== 'cash' &&
+        e.kind !== 'mtt' &&
+        ['registering', 'starting_soon'].includes(e.status) &&
+        e.startTime && <LiveCountdown time={e.startTime} />}
       <LobbyStatusBadge status={e.status} label={e.statusLabel} />
       <PlayerStateChip entry={e} ctx={ctx} />
     </span>
@@ -364,7 +489,7 @@ const COL_KIND: ColumnDef = {
 };
 const COL_COST: ColumnDef = {
   key: 'cost',
-  label: 'Stakes',
+  label: 'Stakes / Buy-In',
   className: 'lt-col-num',
   sortable: true,
   sortValue: (e) => (e.kind === 'cash' ? e.stakesValue : e.buyInValue),
@@ -401,7 +526,12 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_STATUS,
       ];
     case 'SPIN':
-      return [COL_NAME, COL_VARIANT, COL_BUYIN, COL_PLAYERS, COL_SPEED, COL_STATUS];
+      /* Dan 2026-08-23: "SPEED SHOULDN'T CHANGE, ONLY THE STARTING STACK.
+         BLIND LEVELS WILL ALWAYS BE THE SAME." Every Spin runs the one blind
+         structure, so a Speed column is a whole column of the same word — and
+         a sortable one at that, inviting a sort that can never reorder
+         anything. What actually varies is the buy-in, which is already here. */
+      return [COL_NAME, COL_VARIANT, COL_BUYIN, COL_PLAYERS, COL_STATUS];
     case 'SNG':
       return [COL_NAME, COL_VARIANT, COL_BUYIN, COL_PLAYERS, COL_STATUS];
     case 'ALL':
@@ -445,8 +575,8 @@ export default function LobbyTable({
   clubId,
 }: LobbyTableProps) {
   const columns = useMemo(() => columnsFor(category), [category]);
-  const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(() =>
-    readSort(clubId, category)
+  const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(
+    () => readSort(clubId, category) ?? defaultSortFor(category)
   );
   const bodyRef = useRef<HTMLTableSectionElement>(null);
 
@@ -454,7 +584,10 @@ export default function LobbyTable({
      it is restored from what this player last chose on THIS tab instead. A
      remembered key that the new column set does not define is dropped by the
      sort itself (columns.find returns undefined -> original order). */
-  useEffect(() => setSort(readSort(clubId, category)), [category, clubId]);
+  useEffect(
+    () => setSort(readSort(clubId, category) ?? defaultSortFor(category)),
+    [category, clubId]
+  );
 
   const sorted = useMemo(() => {
     if (!sort) return entries;
@@ -483,12 +616,22 @@ export default function LobbyTable({
   const handleHeaderClick = (col: ColumnDef) => {
     if (!col.sortable) return;
     setSort((prev) => {
-      const next: { key: string; dir: SortDir } | null =
+      /**
+       * TWO STATES, NOT THREE (Dan 2026-08-23: "CLICK A 3RD TIME AND ITS
+       * RANDOM. REMOVE THE RANDOM ONLY HIGH AND LOW. SAME BROKEN
+       * FUNCTIONALITY WHEN YOU SELECT PLAYERS.")
+       *
+       * The third click used to clear the sort and fall back to the page-level
+       * order, which on the Spins tab is creation order — indistinguishable
+       * from random. From the player's side a header they had just used twice
+       * appeared to scramble the list on the third tap. A header now only ever
+       * flips between ascending and descending; the way back to the unsorted
+       * order is to leave the tab, not to overshoot a column.
+       */
+      const next: { key: string; dir: SortDir } =
         !prev || prev.key !== col.key
           ? { key: col.key, dir: 'asc' }
-          : prev.dir === 'asc'
-            ? { key: col.key, dir: 'desc' }
-            : null; // third click clears back to the page-level order
+          : { key: col.key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
       writeSort(clubId, category, next);
       return next;
     });

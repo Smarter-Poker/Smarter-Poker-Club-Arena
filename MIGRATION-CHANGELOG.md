@@ -13921,3 +13921,28 @@ Dan: "THE SERVER DISCONNECTS HAVE GOT TO STOP!!" Full audit in
 
 16 tests (6 server heartbeat + 5 new client + 5 existing green), tsc clean
 both sides.
+
+## Cowork session 2026-08-24 (19) — PHASE 2: TWO TABS EVICTED EACH OTHER FOREVER
+
+Dan: "FIND ANY AND ALL OTHER REASONS THIS MAY HAPPEN AND FIX THEM NOW." Full
+audit in `.agent/audits/2026-08-24-always-connected-phase2.md`. Three fixes:
+
+1. **Multi-tab eviction ping-pong.** ChannelHub enforced one socket per user
+   by closing the existing one on every new connection — two tabs (or phone +
+   desktop) evicted each other in an endless reconnect loop, flapping wallet/
+   tournament/lobby feeds. Users now hold a set of sockets (cap 8); sends fan
+   out to all tabs; subscriptions die only with the LAST socket.
+
+2. **Hard-evicted table subscribers sat blind for 60s.** Backpressure
+   hard-drop removed the hub subscriber but left the socket open and silent.
+   The transports now close/unsubscribe on evict so the client reconnects in
+   seconds (4429 slow ladder) instead of waiting out its watchdog mid-hand.
+
+3. **A JOIN dropped by a DB blip stayed dropped.** The club-membership gate
+   fails closed with no error frame. The channel client now re-asserts its
+   desired subscriptions every 180s on the live socket — idempotent
+   server-side, heals any silent loss within one interval.
+
+Verified clean: liveness/autoheal grace, deploy twin-guard + public-hostname
+check, Caddyfile, GameServerAPI circuit breaker. 12 new/rewritten tests
+(8 ChannelHub + 3 evict + 1 re-assert), tsc clean both sides.

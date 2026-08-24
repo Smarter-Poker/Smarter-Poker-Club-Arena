@@ -42,8 +42,62 @@ export function resolveClubIdFilter(clubIdParam: string): {
   return { column: 'slug', value: clubIdParam };
 }
 
-// ─── In-memory cache for resolved UUIDs ────────────────────────────────────
+// ─── Resolved-UUID cache: memory + localStorage ────────────────────────────
+//
+// The club_id -> UUID mapping is immutable (both columns are set at club
+// creation and never change), so it is safe to persist across sessions. This
+// removes an entire serial network roundtrip from the front of EVERY wallet
+// and lobby mount that arrives with an integer club code in the URL.
+//
+// The persisted map lives under ONE localStorage key (not one key per club)
+// and is purged on sign-out by clearUserCaches — the set of clubs a person
+// has visited is their data.
+export const CLUB_UUID_MAP_KEY = 'club_arena_uuid_map_v1';
+const MAX_PERSISTED_MAPPINGS = 200;
+
 const uuidCache = new Map<string, string>();
+let persistedLoaded = false;
+
+function loadPersistedMap(): void {
+  if (persistedLoaded) return;
+  persistedLoaded = true;
+  try {
+    const raw = localStorage.getItem(CLUB_UUID_MAP_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    if (parsed && typeof parsed === 'object') {
+      for (const [k, v] of Object.entries(parsed)) {
+        if (typeof v === 'string' && UUID_REGEX.test(v) && !uuidCache.has(k)) {
+          uuidCache.set(k, v);
+        }
+      }
+    }
+  } catch {
+    /* corrupt or unavailable — memory cache still works */
+  }
+}
+
+function persistMap(): void {
+  try {
+    const entries = Array.from(uuidCache.entries()).slice(-MAX_PERSISTED_MAPPINGS);
+    localStorage.setItem(CLUB_UUID_MAP_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
+ * Synchronous resolution attempt: returns the UUID immediately when the input
+ * already is one, or when the mapping is cached (memory or localStorage).
+ * Returns null when a network lookup is required — callers then fall back to
+ * resolveClubUUID. This lets wallet surfaces start their data fetch in the
+ * same tick they mount instead of waiting a roundtrip.
+ */
+export function resolveClubUUIDSync(clubIdParam: string): string | null {
+  if (isUUID(clubIdParam)) return clubIdParam;
+  loadPersistedMap();
+  return uuidCache.get(clubIdParam) ?? null;
+}
 
 /**
  * Resolves any club ID (UUID or integer) to its actual UUID.
@@ -60,8 +114,8 @@ export async function resolveClubUUID(clubIdParam: string): Promise<string> {
   // Already a UUID — return as-is
   if (isUUID(clubIdParam)) return clubIdParam;
 
-  // Check cache
-  const cached = uuidCache.get(clubIdParam);
+  // Check cache (memory, hydrated from localStorage on first call)
+  const cached = resolveClubUUIDSync(clubIdParam);
   if (cached) return cached;
 
   const filter = resolveClubIdFilter(clubIdParam);
@@ -75,6 +129,7 @@ export async function resolveClubUUID(clubIdParam: string): Promise<string> {
 
   if (data?.id) {
     uuidCache.set(clubIdParam, data.id);
+    persistMap();
     return data.id;
   }
 

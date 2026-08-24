@@ -41,6 +41,8 @@
 import { STORAGE_KEYS } from '../lib/storage';
 import { SWR_CACHE_PREFIXES } from './staleCacheReaper';
 import { clearMembershipsWarmCache } from '../services/ClubsService';
+import { WALLET_CACHE_PREFIX, clearWalletMemoryCache } from '../lib/walletCache';
+import { CLUB_UUID_MAP_KEY } from './clubIdResolver';
 
 /** Written by ClubHomePage; imported there so writer and purger cannot drift. */
 export const CLUB_HOME_CACHE_PREFIX = 'club_home_cache_';
@@ -85,15 +87,22 @@ const USER_SCOPED_KEYS: StorageKey[] = [
  */
 const USER_SCOPED_PREFIXES: string[] = [
   CLUB_HOME_CACHE_PREFIX, // ClubHomePage instant-paint cache
+  WALLET_CACHE_PREFIX, // walletCache.ts instant-paint money panels (per-user keys)
   'hand_history_', // TablePage per-table hand log
   'ca_saved_start_time_', // per-club session timer
   'dismissed_announcements_', // per-club dismissals
   'referral_', // per-club referral attribution
 ];
 
+/**
+ * Exact keys that are not in STORAGE_KEYS but are still about the person:
+ * the club-code -> UUID map records which clubs this device has visited.
+ */
+const EXTRA_USER_SCOPED_KEYS: string[] = [CLUB_UUID_MAP_KEY];
+
 function purgeLocal(): number {
   let removed = 0;
-  for (const key of USER_SCOPED_KEYS) {
+  for (const key of [...USER_SCOPED_KEYS, ...EXTRA_USER_SCOPED_KEYS]) {
     if (localStorage.getItem(key) !== null) {
       localStorage.removeItem(key);
       removed++;
@@ -137,6 +146,13 @@ export function clearUserCaches(): void {
   // should not leave the previous account's request resolvable at all.
   try {
     clearMembershipsWarmCache();
+  } catch {
+    /* never let a cache purge break sign-out */
+  }
+  // Wallet panels cache in memory as well as localStorage; both must die
+  // with the account.
+  try {
+    clearWalletMemoryCache();
   } catch {
     /* never let a cache purge break sign-out */
   }

@@ -1721,6 +1721,28 @@ export class GameServer {
 
   private async discoverCashTables(): Promise<void> {
     while (this.running) {
+      /**
+       * C20 FIX-UP (2026-08-24): the sweep verdict must be reached on EVERY
+       * exit path, so it is captured here and applied in a finally.
+       *
+       * Shipped first with the verdict as an ordinary statement near the end
+       * of the try. That is only reached when the sweep runs to completion,
+       * and the sweep contains heartbeatTables(), claimTable() and the whole
+       * adoption loop before it - any of which can throw when the database is
+       * struggling, which is exactly when this control loop matters. Meanwhile
+       * the discovery-RPC error path still halved the budget. So distress
+       * lowered the budget and a throw denied it the clean sweep needed to
+       * climb back: the budget ratcheted to the floor and stayed there.
+       *
+       * Observed in production at 6f994dce with budget pinned at 6 and only
+       * 16 tables adopted after 472s, while Engine_start_failed was 0 - the
+       * budget was starving adoption on its own, with nothing failing.
+       *
+       * A finally cannot be skipped by a throw, a continue or a return.
+       */
+      const failuresSinceLastSweep = this.engineStartFailures;
+      this.engineStartFailures = 0;
+      let sweepDistressed = failuresSinceLastSweep > 0;
       try {
         // Proof the loop is EXECUTING, independent of what the database says.
         this.lastDiscoveryAttemptAt = Date.now();
@@ -1762,12 +1784,12 @@ export class GameServer {
             error?.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
           reportError(new Error(errMsg), 'GameServer.Cash_table_discovery_error');
           /**
-           * C20: this continue skips the end-of-sweep verdict, so back off here
-           * too. If the one cheap indexed read that drives discovery is failing,
-           * adopting 25 more tables the moment it recovers is the worst possible
-           * next move.
+           * C20: the one cheap indexed read that drives discovery is failing,
+           * so adopting a full budget the moment it recovers is the worst
+           * possible next move. The finally below applies the retreat - this
+           * only records that the sweep was distressed.
            */
-          this.adjustEngineStartBudget(true);
+          sweepDistressed = true;
           await this.sleep(TABLE_DISCOVERY_INTERVAL);
           continue;
         }
@@ -1902,17 +1924,8 @@ export class GameServer {
           });
         }
 
-        /**
-         * C20: the sweep's verdict on whether the database is coping.
-         *
-         * failuresSinceLastSweep is the signal that matters. The discovery RPC
-         * failing is handled earlier with a continue, so by the time control
-         * reaches here that query has already succeeded - which is exactly why
-         * the RPC alone is too weak a signal to steer by: it is one cheap
-         * indexed read and it comes back fine long after the many reads an
-         * engine start performs have begun timing out.
-         */
-        this.adjustEngineStartBudget(failuresSinceLastSweep > 0);
+        // C20: the verdict is applied in the finally below, so that a throw
+        // anywhere above cannot deny the loop its recovery.
 
         // Clean up engines for tables that stopped — AND engines that are
         // lying about being alive.
@@ -2036,6 +2049,19 @@ export class GameServer {
             : (err as any)?.message ||
               (typeof err === 'object' ? JSON.stringify(err) : String(err));
         reportError(new Error(errMsg), 'GameServer.Cash_table_discovery_error');
+        /**
+         * A throw mid-sweep is a distress signal in its own right - it is what
+         * a timeout inside heartbeatTables() or claimTable() looks like from
+         * out here - and it must not be mistaken for a clean sweep.
+         */
+        sweepDistressed = true;
+      } finally {
+        /**
+         * Exactly one verdict per sweep, on every path: clean, RPC error, or
+         * throw. This is the whole reason the flag exists rather than the
+         * adjust being called at each site.
+         */
+        this.adjustEngineStartBudget(sweepDistressed);
       }
 
       await this.sleep(TABLE_DISCOVERY_INTERVAL);
@@ -2056,6 +2082,65 @@ export class GameServer {
             'id, name, start_time, current_players, min_players, max_players, variant, tournament_type, buy_in_amount, buy_in_fee, guaranteed_prize'
           )
           .eq('status', 'REGISTERING');
+
+        /**
+         * PAID SEATS FOR EVERY SEAT-FIRST GAME, IN TWO QUERIES (2026-08-23).
+         *
+         * A Spin starts when its seats are BOUGHT, so the start gate below has
+         * to know the live seat count. Asking per tournament meant two round
+         * trips each, and with ~33 Spins on the board and this loop running
+         * every 5 seconds that is ~13 extra queries a second, forever, just to
+         * decide that nothing has changed. Batched here instead: one read for
+         * the live tables, one for their seats.
+         */
+        const seatFirstRows = (registering || []).filter(
+          (t) => t.variant === 'sng' || t.variant === 'spin'
+        );
+        const paidSeatsByTournament = new Map<string, number>();
+        if (seatFirstRows.length > 0) {
+          const { data: liveTables } = await supabase
+            .from('tables')
+            .select('id, tournament_id, created_at')
+            .in(
+              'tournament_id',
+              seatFirstRows.map((t) => t.id)
+            )
+            .neq('status', 'closed');
+
+          /* Newest live table per tournament. The recycler leaves the freshest
+             one open; an older sibling not yet stamped closed is a corpse, and
+             counting its seats would start a game on a dead table. */
+          const newestTable = new Map<string, { id: string; createdAt: number }>();
+          for (const row of liveTables || []) {
+            const tid = String((row as { tournament_id?: string }).tournament_id ?? '');
+            if (!tid) continue;
+            const createdAt = new Date(
+              String((row as { created_at?: string }).created_at ?? 0)
+            ).getTime();
+            const seen = newestTable.get(tid);
+            if (!seen || createdAt > seen.createdAt) {
+              newestTable.set(tid, { id: String((row as { id: string }).id), createdAt });
+            }
+          }
+
+          const liveTableIds = [...newestTable.values()].map((v) => v.id);
+          if (liveTableIds.length > 0) {
+            const { data: seatRows } = await supabase
+              .from('table_seats')
+              .select('table_id')
+              .in('table_id', liveTableIds)
+              .is('left_at', null);
+
+            const seatsByTable = new Map<string, number>();
+            for (const s of seatRows || []) {
+              const tbl = String((s as { table_id: string }).table_id);
+              seatsByTable.set(tbl, (seatsByTable.get(tbl) ?? 0) + 1);
+            }
+            for (const [tid, tbl] of newestTable) {
+              paidSeatsByTournament.set(tid, seatsByTable.get(tbl.id) ?? 0);
+            }
+          }
+        }
 
         for (const tournament of registering || []) {
           if (this.tournamentEngines.has(tournament.id)) continue;
@@ -2172,21 +2257,48 @@ export class GameServer {
             continue;
           }
 
-          // SNG / Spin: start ONLY when max_players reached (not time-based)
+          // SNG / Spin: start ONLY when every seat is bought (not time-based)
           // MTT / Bounty / PKO / Mystery: start at scheduled time if min_players met
           const isSngOrSpin = tournament.variant === 'sng' || tournament.variant === 'spin';
+
+          /**
+           * PAID SEATS, NOT REGISTRATIONS (Dan 2026-08-23, verbatim: "spins can
+           * never ever start until 3 players have sat down, and paid for there
+           * seat, only then does the spin feature start.")
+           *
+           * `current_players` is the registration counter. It is incremented by
+           * fn_register_for_tournament and never decremented when somebody
+           * leaves or busts, so it drifts badly: the live lobby was carrying
+           * spins reading 3/3 with two seats actually sold, and others reading
+           * 0/3 with three sold. Starting a spin off that number deals a game
+           * to seats nobody bought.
+           *
+           * A seat-first game's truth is the seat rows on its live table.
+           * Count those. Registrations do not open the door — money in a seat
+           * does.
+           */
+          const paidSeats = paidSeatsByTournament.get(tournament.id) ?? 0;
+          const seatFirstReady =
+            isSngOrSpin && tournament.max_players > 0 && paidSeats >= tournament.max_players;
+
           const maxReached =
             tournament.max_players > 0 && tournament.current_players >= tournament.max_players;
           const timeReached = startTime <= now && tournament.current_players >= minPlayers;
 
-          // SNG/Spin: only start when full (maxReached)
-          // MTT variants: start at scheduled time with minimum players
-          const shouldStart = isSngOrSpin ? maxReached : maxReached || timeReached;
+          // SNG/Spin: only start when every seat has been bought and paid for.
+          // MTT variants: start at scheduled time with minimum players.
+          const shouldStart = isSngOrSpin ? seatFirstReady : maxReached || timeReached;
 
           if (shouldStart) {
-            const reason = maxReached
-              ? `full (${tournament.current_players}/${tournament.max_players})`
-              : `${tournament.current_players} players`;
+            /* Report the number the decision was actually made on. A Spin is
+               gated on SEATS, and current_players can disagree with those —
+               logging it here is how a drifted counter reads as a healthy
+               start in the logs. */
+            const reason = isSngOrSpin
+              ? `seats sold (${paidSeats}/${tournament.max_players})`
+              : maxReached
+                ? `full (${tournament.current_players}/${tournament.max_players})`
+                : `${tournament.current_players} players`;
             console.log(`[GameServer] Starting tournament: ${tournament.name} (${reason})`);
             const tm = new TournamentManager(tournament.id, this);
             this.tournamentEngines.set(tournament.id, tm);

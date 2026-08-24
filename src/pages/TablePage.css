@@ -404,6 +404,16 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .table-container {
+  /* How much of the hero's seat lives OUTSIDE the scaler.
+     The hero avatar's centre sits on the scaler's bottom edge, so half the
+     avatar plus the whole name-and-stack box hangs below it and has to be
+     reserved for on top of the action panel's own height.
+
+     Declared here rather than left to a var() fallback: an unassigned custom
+     property still resolves to its fallback, so the layout was correct but the
+     number was invisible - it read as tunable while living in three separate
+     fallback slots. One declaration, one place to change it. */
+  --sp-hero-clear: 34px;
   flex: 1;
   position: relative;
   display: flex;
@@ -2963,4 +2973,115 @@ body.ca-raising .bankroll-widget {
 .spectator-footer-bar__cta--leave:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SEAT-FIRST BUY-IN CONFIRMATION (Dan 2026-08-23)
+   "you should sit down, then confirm 'buy in amount'. once the user confirms,
+   chips taken from player [wallet] and seat access granted."
+   A tap on an open Spin / Heads-Up seat used to spend money on the spot. This
+   sheet is the gate between the tap and the debit, and it names the price.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.seat-buyin-confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.seat-buyin-confirm__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(3px);
+}
+.seat-buyin-confirm__card {
+  position: relative;
+  width: min(340px, 100%);
+  padding: 26px 22px 20px;
+  border-radius: 18px;
+  text-align: center;
+  background: linear-gradient(180deg, #1b1e24 0%, #121419 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  animation: seatBuyInConfirmIn 0.18s ease-out;
+}
+@keyframes seatBuyInConfirmIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.seat-buyin-confirm__eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+.seat-buyin-confirm__title {
+  margin-top: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.82);
+}
+.seat-buyin-confirm__amount {
+  margin-top: 2px;
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #ffd479;
+  text-shadow: 0 2px 14px rgba(255, 190, 80, 0.28);
+}
+.seat-buyin-confirm__meta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.62);
+}
+.seat-buyin-confirm__note {
+  margin-top: 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.45);
+}
+.seat-buyin-confirm__actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+}
+.seat-buyin-confirm__btn {
+  flex: 1;
+  min-height: 46px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition:
+    transform 0.08s ease,
+    opacity 0.12s ease;
+}
+.seat-buyin-confirm__btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.seat-buyin-confirm__btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.seat-buyin-confirm__btn--ghost {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.85);
+}
+.seat-buyin-confirm__btn--go {
+  flex: 1.4;
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
 }

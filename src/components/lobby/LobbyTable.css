@@ -52,9 +52,6 @@
   white-space: nowrap;
   user-select: none;
 }
-.lobby-table thead th.lt-col-num {
-  text-align: center;
-}
 .lobby-table thead th.is-sortable {
   cursor: pointer;
 }
@@ -124,7 +121,6 @@
 }
 .lt-col-num {
   width: 110px;
-  text-align: center;
 }
 .lt-col-players {
   width: 108px;
@@ -152,6 +148,62 @@
   text-overflow: ellipsis;
   font-weight: 500;
 }
+/* ── MTT two-line title (Dan 2026-08-23) ──
+   Line 1: name + variation. Line 2: guarantee, scheduled start clock, and a
+   live countdown — "Starting In 17:33..." — or, once running, how long late
+   registration has left. */
+.lt-name--mtt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  line-height: 1.25;
+}
+.lt-name__line1 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.lt-name__meta {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-tertiary, #8b8f98);
+}
+.lt-name__metapart {
+  display: inline-flex;
+  align-items: center;
+}
+.lt-name__sep {
+  margin: 0 5px;
+  opacity: 0.6;
+}
+.lt-name__gtd {
+  color: var(--warning-gold, #ffd700);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.lt-name__phase {
+  color: var(--text-secondary, #c8ccd4);
+  font-weight: 600;
+}
+/* The fixed 36px row height would clip line 2; let MTT rows breathe. */
+.lt-row td:has(.lt-name--mtt) {
+  height: auto;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
 .lt-live {
   flex: none;
   width: 6px;
@@ -170,8 +222,11 @@
     opacity: 0.45;
   }
 }
+/* Dan 2026-08-23: one typeface everywhere. Every cell — numbers included —
+   uses the same font as the Tournament Name column (the table's
+   --font-primary), on every tab. The mono face is retired from the lobby. */
 .lt-mono {
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-family: inherit;
   font-size: 0.75rem;
   letter-spacing: 0.01em;
 }
@@ -207,7 +262,7 @@ abbr.lt-variant[title] {
   gap: 7px;
 }
 .lt-seats__num {
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-family: inherit;
   font-size: 0.75rem;
   min-width: 34px;
 }

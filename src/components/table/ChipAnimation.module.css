@@ -60,6 +60,21 @@
     inset 0 -2px 3px rgba(0, 0, 0, 0.25);
 }
 
+/* Denomination chip (Dan 2026-08-23) — the default.
+   Painted from --chip-face / --chip-edge, set inline from the real chip on
+   Dan's ladder (src/lib/chipDenominations.ts), so a chip in flight is the same
+   colour as the chip that was sitting in front of the player a moment earlier.
+   The five named classes below are kept for callers that ask for a specific
+   look; nothing in the table currently does. */
+.denomChip {
+  background: linear-gradient(135deg, var(--chip-face, #fbbf24) 0%, var(--chip-edge, #b45309) 100%);
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.35),
+    inset 0 2px 4px rgba(255, 255, 255, 0.22),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.25);
+}
+
 /* Chip colors */
 .red {
   background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);

@@ -537,7 +537,7 @@ import {
   TABLE_BACKGROUND_POSITION,
   TABLE_BACKGROUND_REPEAT,
 } from '../lib/tableTheme';
-import { adaptServiceHandToPanel } from '../lib/handHistoryAdapter';
+import { adaptServiceHandToPanel, panelHandToShareable } from '../lib/handHistoryAdapter';
 import { useUserStore } from '../stores/useUserStore';
 import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
@@ -1389,6 +1389,12 @@ export default function TablePage({
   // Time Bank State
   const [showTimeBank, setShowTimeBank] = useState(false);
   const [timeBankActive, setTimeBankActive] = useState(false);
+  /* Bank PRESSED but not yet spent. The engine arms rather than spends while
+     ordinary clock remains (Dan 2026-08-23), and until now the only sign of
+     that anywhere in the product was a toast — which is exactly what Dan
+     reported as "a generic pop up, instead of resetting the countdown clock on
+     the hero's box". This drives the indicator on the hero's own seat. */
+  const [timeBankArmed, setTimeBankArmed] = useState(false);
   const [timeBanksRemaining, setTimeBanksRemaining] = useState(4);
   /**
    * Dan 2026-08-19, bug list item 6: "pot-push animation to the winner after
@@ -6265,6 +6271,10 @@ export default function TablePage({
 
     // Update the Hero's specific localized UI if they are the one activating it
     if (evtPlayerId === userId) {
+      /* The arm has just been REDEEMED — the engine spent the bank and
+         re-stamped the turn, so the ring is restarting for real and the
+         "pending" indicator on the seat must go with it. */
+      setTimeBankArmed(false);
       setTimeBankActive(true);
       setTimeBankTimeRemaining(seconds);
       setTimeBankGrantedSeconds(seconds);
@@ -7000,10 +7010,39 @@ export default function TablePage({
                 name: sp.username || existing?.name || `Seat ${sp.seat}`,
                 stack: sp.stack,
                 bet: sp.bet || 0,
+                /* AN EMPTY ARRAY IS TRUTHY, and that one fact wiped the hero's
+                   hand. This read `sp.cards || existing?.holeCards || []`, but
+                   the engine scrubs the hero's own cards out of every
+                   non-showdown snapshot on purpose (ServerTableEngine:
+                   `cardsOut = showCards ? (p.cards ?? []) : ... : []`), so
+                   `sp.cards` is `[]` here for the whole hand — and
+                   `[] || existing` evaluates to `[]`, never `existing`. The
+                   fallback could not fire.
+
+                   GAME_START is the full-state resync, dispatched by
+                   `requestResync()` on any websocket sequence gap, so this ran
+                   mid-hand and the hero's cards vanished. They did not come
+                   back either: the snapshot merge guard restores only from a
+                   NON-empty previous holding, and the bounded recovery poll has
+                   already torn itself down by then — it re-arms at
+                   HAND_STARTED, which is why the cards stayed missing "for a
+                   couple of hands" rather than a couple of seconds.
+
+                   Hero cards are authoritative from `table_hole_cards` (RLS),
+                   never from this snapshot, so a snapshot carrying no cards
+                   means "no news", not "you have no cards". Length is what is
+                   tested now, not truthiness. Safe across hands because
+                   HAND_STARTED clears the hero's holeCards explicitly and
+                   re-fetches. Villains are unchanged: shown only when the
+                   server actually revealed them and they have not folded. */
                 holeCards:
-                  sp.user_id === userId || (sp.cards && sp.cards.length > 0 && !sp.is_folded)
-                    ? sp.cards || existing?.holeCards || []
-                    : [],
+                  sp.user_id === userId
+                    ? sp.cards?.length
+                      ? sp.cards
+                      : existing?.holeCards || []
+                    : sp.cards?.length && !sp.is_folded
+                      ? sp.cards
+                      : [],
                 // SIT-OUT REVIEW FIX 2026-08-21: the hand-state flag is
                 // always false by design (sat-out players are dealt in and
                 // blinded off). The seat-row truth lives in sittingOutIdsRef;
@@ -9257,11 +9296,28 @@ export default function TablePage({
         // showing borrowed time it did not have, and the auto-fold the code
         // intended never happened. Check the result.
         void GameServerAPI.activateTimeBank(tableId, userId).then((result) => {
-          if (!result?.success) {
-            setTimeBankActive(false);
-            setShowTimeBank(false);
-            handleTimerAutoFold();
+          if (result?.success) return;
+          /* NOT every refusal means "no time left" — and folding on the wrong
+             one throws away a live hand.
+
+             When hero ARMED a bank earlier in the turn, the engine redeems it
+             the instant the primary clock expires. Our RAF hits zero at the
+             same moment and POSTs again, so the engine answers
+             'Your Time Bank Is Already Running' — a refusal that means the
+             opposite of what this branch assumes: the bank was granted and
+             there are ~20 fresh seconds on the clock. Folding there burned a
+             hand the player had just paid to keep. Only the 6-second failsafe
+             grace hid how often it happened.
+
+             Treat that one answer as success and let the engine's new deadline
+             drive the ring; every other refusal still auto-folds. */
+          if (/already running/i.test(result?.error || '')) {
+            setTimeBankArmed(false);
+            return;
           }
+          setTimeBankActive(false);
+          setShowTimeBank(false);
+          handleTimerAutoFold();
         });
       } else {
         handleTimerAutoFold();
@@ -9308,14 +9364,33 @@ export default function TablePage({
        is what made that unavoidable - it committed to "a bank is running" before
        the server had said which of the two happened. */
     if ((result as { armed?: boolean }).armed) {
-      toast?.info?.('Time Bank Armed. It Starts When Your Clock Runs Out');
+      /* Dan 2026-08-24: "it gives you this generic pop up, instead of resetting
+         the countdown clock on the hero's box." The toast that used to be the
+         whole of this branch is gone. The ring genuinely cannot restart yet —
+         nothing has been spent, and drawing new time would be a lie — so the
+         seat shows a PENDING state instead, and the ring restarts by itself
+         when the engine redeems the bank and re-stamps the turn start. */
+      setTimeBankArmed(true);
+      soundService.playTimeBankActivated();
       return;
     }
+    setTimeBankArmed(false);
     setTimeBankActive(true);
     // ANIMATION/SOUND AUDIT 2026-08-19: was playChips (a wager sound) — the
     // dedicated time-bank cue existed and was only wired to the REMOTE event.
     soundService.playTimeBankActivated();
   }, [tableId, userId, timeBanksRemaining, toast]);
+
+  /* An arm belongs to ONE turn. Hero acts, folds, times out or the hand moves
+     on, and a leftover `true` would keep the pending indicator lit on a seat
+     that is no longer deciding anything — and light it again on hero's NEXT
+     turn before they had pressed a thing. `timeBankActive` latching across
+     hands in exactly this way is on record as half of the original
+     cards-disappear report, so this one is cleared explicitly rather than
+     left to whichever event happens to arrive. */
+  useEffect(() => {
+    if (!isHeroTurnContext) setTimeBankArmed(false);
+  }, [isHeroTurnContext]);
 
   /**
    * Buy one time-bank extension with diamonds.
@@ -10497,10 +10572,18 @@ export default function TablePage({
                 count={timeBanksRemaining}
                 low={timeBanksRemaining <= 1}
                 /* Dan 2026-08-21, item 3: out of banks → the buy sheet, not
-                   the (empty) time-bank panel. */
-                onClick={() =>
-                  timeBanksRemaining > 0 ? setShowTimeBank(true) : setShowTimeBankStore(true)
-                }
+                   the (empty) time-bank panel.
+
+                   2026-08-24: the OTHER half of that ternary was a dead tap.
+                   It called `setShowTimeBank(true)`, and `showTimeBank` is
+                   written in four places and READ IN NONE — the floating panel
+                   it used to open was deleted (see the tombstone above the
+                   control strip) and the state outlived it. So a player WITH
+                   banks left tapped the counter and nothing happened at all,
+                   which is worse than being sent somewhere. Both arms now open
+                   the store, where the balance is shown and more can be
+                   bought. */
+                onClick={() => setShowTimeBankStore(true)}
               />
             )}
             <PreviousHandCard
@@ -11178,6 +11261,12 @@ export default function TablePage({
                     seatNumber === tableState.currentPlayerSeat
                       ? tableState.actionTimerStartTime
                       : undefined
+                  }
+                  /* Only meaningful on the seat that is actually acting; a
+                     stale arm must never light up a seat whose turn has
+                     already passed. */
+                  timeBankArmed={
+                    seatNumber === tableState.currentPlayerSeat ? timeBankArmed : false
                   }
                   timerProgress={
                     seatNumber === tableState.currentPlayerSeat ? actionTimerProgress : undefined
@@ -12169,17 +12258,35 @@ export default function TablePage({
         onClose={() => setShowHandDetail(false)}
         hands={handHistory}
         heroId={userId || ''}
-        onReplay={() => {
+        /* Take the hand you are LOOKING AT. This was `onReplay={() => {...}}`
+           — no parameter — and the replay modal resolves its own subject from
+           `lastHandId`, which is filled by `getPlayerHands(userId, 1)`: the
+           NEWEST hand. So paging back to hand 3 of 7 and pressing REPLAY
+           replayed hand 7, silently and every time. TypeScript cannot catch
+           this, because a zero-argument function is assignable to a
+           one-argument prop type. Pinned by handHistoryMoneyAgreement. */
+        onReplay={(hand) => {
+          setLastHandId(hand.id);
           setShowHandDetail(false);
           setShowHandReplay(true);
         }}
-        onShare={() => {
-          if (!sharedHandData) {
-            toast?.info?.('Play a hand to the end, then share it.');
-            return;
+        /* Share THE HAND YOU ARE LOOKING AT, built from the record on screen.
+           This used to share `sharedHandData` — a snapshot taken once, at the
+           end of the last LIVE hand — so paging back and pressing SHARE shared
+           the wrong hand. Worse, if you had not played a hand to completion
+           this session there was no snapshot at all, and the button answered
+           "Play a hand to the end, then share it" while you were looking
+           directly at a completed hand. Every field a share link needs is on
+           the record, so it is converted rather than looked up. */
+        onShare={(hand) => {
+          try {
+            setSharedHandData(panelHandToShareable(hand, tableState.tableName || 'Club Arena'));
+            setShowHandDetail(false);
+            setShowShareHand(true);
+          } catch (e) {
+            reportError(e, 'TablePage.shareHandFromDetail');
+            toast?.error?.('Could Not Build A Share Link For That Hand');
           }
-          setShowHandDetail(false);
-          setShowShareHand(true);
         }}
       />
       <TableModalsLayer

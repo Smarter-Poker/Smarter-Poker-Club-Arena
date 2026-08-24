@@ -309,7 +309,14 @@
 }
 
 .analyze-btn {
-  background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%);
+  /* Dan, verbatim: "REMOVE THE YELLOW AND PURPLE." This was
+     `linear-gradient(135deg, #a855f7 0%, #7e22ce 100%)` — the last live purple
+     left in the hand-history surfaces after the 2026-08-23 sweep, which
+     corrected the panel and the detail modal but never reached this page.
+     Replaced with the house blue the rest of the platform uses (--fb-blue
+     #1877f2 -> #0d5dc7), kept as a gradient so the button still reads as the
+     primary action beside the plain REPLAY button next to it. */
+  background: linear-gradient(135deg, #1877f2 0%, #0d5dc7 100%);
   box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
 }
 

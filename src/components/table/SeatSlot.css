@@ -2973,3 +2973,61 @@
 .seat-wrapper--showing {
   z-index: 30;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ARMED TIME BANK — the seat-level replacement for a toast
+   ═══════════════════════════════════════════════════════════════════════════
+   Dan 2026-08-24: "when you use a time bank, it gives you this generic pop up,
+   instead of resetting the countdown clock on the hero's box."
+
+   The ring deliberately does NOT restart here. Pressing with ordinary clock
+   still on the board ARMS the bank rather than spending it (Dan 2026-08-23,
+   "it should not take a time bank or add more time until you have truly used
+   your entire 15 seconds"), so there are no extra seconds yet and painting
+   them would be a lie. What was missing was any sign ON THE SEAT that the
+   press had registered at all. This is that sign; when the engine redeems the
+   bank it re-stamps the turn start, .seat__info remounts, and the ring
+   restarts for real.
+
+   House blue (--fb-blue #1877f2), per "REMOVE THE YELLOW AND PURPLE". */
+.seat__tb-armed {
+  display: block;
+  margin-top: 1px;
+  font-size: clamp(0.5rem, 1.1vw, 0.625rem);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  color: #a8c8ff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* A steady blue rim on the hero's plate while the bank is pending. Kept low
+   contrast on purpose: the countdown ring is still the urgent thing on screen,
+   and this must not compete with it. */
+.seat--tb-armed .seat__info {
+  box-shadow:
+    0 0 0 1px rgba(24, 119, 242, 0.85),
+    0 0 10px rgba(24, 119, 242, 0.45);
+}
+
+/* Respect reduced motion by never animating this at all — it is a static
+   state marker, so there is nothing to disable, but the pulse below is opt-in
+   for everyone else. */
+@media (prefers-reduced-motion: no-preference) {
+  .seat--tb-armed .seat__tb-armed {
+    animation: seat-tb-armed-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes seat-tb-armed-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}

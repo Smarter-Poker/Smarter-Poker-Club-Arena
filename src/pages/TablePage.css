@@ -404,6 +404,16 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .table-container {
+  /* How much of the hero's seat lives OUTSIDE the scaler.
+     The hero avatar's centre sits on the scaler's bottom edge, so half the
+     avatar plus the whole name-and-stack box hangs below it and has to be
+     reserved for on top of the action panel's own height.
+
+     Declared here rather than left to a var() fallback: an unassigned custom
+     property still resolves to its fallback, so the layout was correct but the
+     number was invisible - it read as tunable while living in three separate
+     fallback slots. One declaration, one place to change it. */
+  --sp-hero-clear: 34px;
   flex: 1;
   position: relative;
   display: flex;

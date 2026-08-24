@@ -9610,6 +9610,27 @@ export default function TablePage({
       const heroSeat = live.heroSeat;
       const hero = live.players[heroSeat - 1] ?? null;
       const heroStack = hero?.stack || 0;
+      /**
+       * Chips hero already has in front THIS STREET, and the raise-TO ceiling
+       * built from it.
+       *
+       * `raise` carries an absolute raise-TO, not a delta - the engine does
+       * `player.bet = actualAmount; chipsAdded = actualAmount - player.bet`
+       * (HandController). So the ceiling is stack PLUS what is already out
+       * there, exactly as the render path computes it for the panel
+       * (`allInTo = heroStack + heroBet`, citing the engine's maxRaiseTo).
+       *
+       * The submit path clamped with `Math.min(amount, heroStack)` instead -
+       * a raise-TO against chips BEHIND, two different quantities that both
+       * happen to be `number`. Hero bets 50 with 200 behind, drags the slider
+       * to a legal 230: the button reads "Raise 230" and 200 goes to the
+       * server. Worse when hero is nearly committed - bet 100 with 100 behind
+       * facing a raise to 150, pick 180, and the clamp sends 100, which is
+       * BELOW the min-raise, so the engine rejects it outright and the clock
+       * keeps running on a player who thinks they have acted.
+       */
+      const heroBet = live.lastBetAmounts?.[heroSeat - 1] || 0;
+      const heroAllInTo = heroStack + heroBet;
 
       // Track VPIP: voluntary preflop action (call/raise/allin, NOT fold/check)
       if (
@@ -9694,7 +9715,8 @@ export default function TablePage({
           break;
         case 'raise':
           if (amount) {
-            const clamped = Math.min(amount, heroStack);
+            // Ceiling is the raise-TO all-in, not chips behind. See heroAllInTo.
+            const clamped = Math.min(amount, heroAllInTo);
             if (clamped <= 0) return;
             if (!validateAndExecuteAction('raise', clamped)) return;
             // SOUND AUDIT 2026-08-19: pass amount + BB so the Bible V8 §5.3
@@ -10856,6 +10878,10 @@ export default function TablePage({
                  a second thin pill under the POT pill; they merge into the pot
                  total when the street's chips sweep to the middle. */
               streetBets={(tableState.lastBetAmounts || []).reduce((s, a) => s + (a || 0), 0)}
+              /* Expires the carried pot amount when the hand changes. Without it
+                 a folded-around blind hand shows the PREVIOUS hand's pot sliding
+                 to the winner - see lastNonZeroPotRef in PotDisplay. */
+              handNumber={tableState.handNumber ?? 0}
             />
             {/* AUDIT FIX 2026-07-19: removed the duplicate PremiumPot —
                 it rendered the SAME pot total in the same .pot-area as

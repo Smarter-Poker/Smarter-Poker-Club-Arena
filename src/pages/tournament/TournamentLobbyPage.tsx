@@ -10,7 +10,6 @@ import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { tournamentService } from '../../services/TournamentService';
 import TournamentLobbyCard from '../../components/tournament/TournamentLobbyCard';
 import { CardSkeleton } from '../../components/skeletons/CardSkeleton';
@@ -124,36 +123,15 @@ export default function TournamentLobbyPage() {
     loadTournaments();
   }, [clubId, statusFilter]);
 
-  // Callback for tournament updates
-  const handleTournamentUpdate = useCallback((payload: any) => {
-    if (payload.eventType === 'UPDATE' && payload.new) {
-      // Update tournament in list
-      setTournaments((prev) =>
-        prev.map((t) =>
-          t.id === payload.new.id
-            ? {
-                ...t,
-                currentPlayers: payload.new.current_players,
-                prizePool: Math.round(Number(payload.new.prize_pool) || 0),
-                status: payload.new.status,
-              }
-            : t
-        )
-      );
-    } else if (payload.eventType === 'INSERT') {
-      // Reload to get new tournament with club name (uses ref to get current filter)
-      loadTournamentsRef.current();
-    }
-  }, []);
-
-  useMasterBusChannel({
-    channelName: 'tournament-lobby-updates',
-    table: 'tournaments',
-    filter: null,
-    event: '*',
-    onPayload: handleTournamentUpdate,
-    enabled: true,
-  });
+  // 2026-08-24: a useMasterBusChannel({ table: 'tournaments', filter: null })
+  // used to sit here and NEVER SUBSCRIBED - the hook early-returns on a null
+  // filter (useMasterBusChannel.ts:93), so it was silently inert while reading
+  // as live coverage. The bus subscriptions and the poll below are what have
+  // actually been keeping this page current.
+  //
+  // Not repaired, for the same reason as LeaderboardPage: the repair is an
+  // unfiltered subscription to `tournaments`, i.e. every tournament row change
+  // platform-wide pushed to every client sitting in the lobby.
 
   // Subscribe to realtime tournament updates
   useEffect(() => {

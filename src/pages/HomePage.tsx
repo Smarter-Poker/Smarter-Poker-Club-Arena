@@ -1158,11 +1158,34 @@ function HomePageInner() {
 
     fetchAllClubStats();
     // BUGFIX 2026-07-24: near-real-time active counts for every visible club card
-    // via a 20s poll (the table_seats realtime listener was removed for write volume).
-    const allStatsPoll = setInterval(fetchAllClubStats, 20000);
+    // via a poll (the table_seats realtime listener was removed for write volume).
+    //
+    // PERF 2026-08-24: this is the Home page - it is mounted for EVERY user, and
+    // each tick runs a multi-query club-stats fetch plus fn_union_active_player_counts
+    // plus a unions select. At 20s with NO visibility gate it kept firing in
+    // background tabs forever, so a player who left Home open in another tab was
+    // billing the database three queries every 20 seconds indefinitely.
+    //
+    // Two changes:
+    //   * 20s -> 45s. These are "players seated" counts on lobby cards, not
+    //     anything the player acts on; 45s is still near-real-time to the eye.
+    //   * skip the tick entirely while the tab is hidden, and fetch once on the
+    //     way back so a returning player never reads a stale card. This is the
+    //     pattern club/ClubDashboard.tsx:238 already uses correctly.
+    const POLL_MS = 45000;
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      fetchAllClubStats();
+    };
+    const allStatsPoll = setInterval(tick, POLL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') fetchAllClubStats();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       isMounted = false;
       clearInterval(allStatsPoll);
+      document.removeEventListener('visibilitychange', onVisible);
     };
     // Stats re-fetch naturally when displayClubIdsKey changes (membership changes)
   }, [displayClubs.length, displayClubIdsKey]);

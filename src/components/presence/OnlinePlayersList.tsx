@@ -67,12 +67,25 @@ export const OnlinePlayersList: React.FC<OnlinePlayersListProps> = ({
         }
       });
 
-    // Refresh every 30 seconds
-    const interval = setInterval(loadOnlinePlayers, 30000);
+    // Refresh every 30 seconds.
+    // PERF 2026-08-24: gated on visibility. This runs a full club-roster fetch
+    // plus a fan-out over profiles; in a hidden background tab it was doing all
+    // of that forever for a list nobody was looking at. Refreshes once on
+    // return so the list is never stale when it becomes visible again.
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      loadOnlinePlayers();
+    };
+    const interval = setInterval(tick, 30000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadOnlinePlayers();
+    };
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
       clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [clubId]);
 
@@ -104,16 +117,31 @@ export const OnlinePlayersList: React.FC<OnlinePlayersListProps> = ({
         }
 
         const memberIds = members.map((m) => m.user_id);
-        // Chunk to avoid URI length issues
+        // Chunk to avoid URI length issues.
+        //
+        // PERF 2026-08-24: these chunks were awaited ONE AT A TIME inside a for
+        // loop, so a 1,200-member club paid EIGHT sequential round-trips every
+        // 30 seconds to render roughly ten names. The chunks are completely
+        // independent of one another - each is a disjoint set of ids - so
+        // running them together costs the slowest one instead of the sum.
+        // Promise.all preserves input order, and the results are sorted by
+        // last_seen immediately below regardless, so the output is identical.
         const chunkSize = 150;
-        let allProfiles: any[] = [];
+        const chunks: string[][] = [];
         for (let i = 0; i < memberIds.length; i += chunkSize) {
-          const chunk = memberIds.slice(i, i + chunkSize);
-          const { data: profiles } = await supabase
-            .from('profiles')
-            .select('id, username, full_name, avatar_url:arena_avatar_url, is_online, last_seen')
-            .in('id', chunk)
-            .eq('is_online', true);
+          chunks.push(memberIds.slice(i, i + chunkSize));
+        }
+        const chunkResults = await Promise.all(
+          chunks.map((chunk) =>
+            supabase
+              .from('profiles')
+              .select('id, username, full_name, avatar_url:arena_avatar_url, is_online, last_seen')
+              .in('id', chunk)
+              .eq('is_online', true)
+          )
+        );
+        let allProfiles: any[] = [];
+        for (const { data: profiles } of chunkResults) {
           if (profiles) allProfiles.push(...profiles);
         }
 

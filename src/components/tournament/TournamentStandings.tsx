@@ -67,12 +67,40 @@ export default function TournamentStandings({
         }
       });
 
-    // Also poll every 15s as backup
-    const pollInterval = setInterval(loadPlayers, 15000);
+    // Also poll as a BACKUP to the realtime channel above.
+    //
+    // PERF 2026-08-24: was every 15s, ungated. loadPlayers() selects every
+    // tournament_players row for the tournament with no limit, so a 1,000-entry
+    // MTT pulled 1,000 rows every 15 seconds PER VIEWER - and kept doing it in
+    // hidden background tabs. This was the heaviest sustained query on the
+    // tournament path.
+    //
+    // Two changes, neither of which alters what a watching player sees:
+    //   * 15s -> 30s. This is a backup for a realtime channel that is already
+    //     delivering chip and elimination changes; the poll only has to catch a
+    //     dropped subscription, which 30s does just as well.
+    //   * skip while the tab is hidden, and refresh once on return, so a
+    //     backgrounded standings panel costs nothing and is never stale when
+    //     the player comes back.
+    //
+    // NOT changed here: the query is still unbounded. Bounding it means
+    // deciding which of a 1,000-player field to stop showing, which is a
+    // product call rather than a performance one - the panel currently renders
+    // every active AND eliminated player. Flagged in MIGRATION-CHANGELOG.
+    const POLL_MS = 30000;
+    const pollInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      loadPlayers();
+    }, POLL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadPlayers();
+    };
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
       clearInterval(pollInterval);
+      document.removeEventListener('visibilitychange', onVisible);
       staggerTimersRef.current.forEach(clearTimeout);
     };
   }, [tournamentId]);

@@ -12,7 +12,8 @@
  */
 
 import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
-import type { LobbyEntry, LobbyStatusKey, LobbyTournamentRow } from './lobbyEntries';
+import type { LobbyEntry, LobbyStatusKey } from './lobbyEntries';
+import { mttPhaseText, mttTitleLine } from './lobbyEntries';
 import './LobbyTable.css';
 
 type SortDir = 'asc' | 'desc';
@@ -165,98 +166,78 @@ function LiveCountdown({ time }: { time: string | number | Date }) {
   );
 }
 
-/** "17:33" under an hour, "1:02:33" above it. Never negative. */
-function formatClock(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
-  const ss = String(s).padStart(2, '0');
-  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+/**
+ * ONE interval for every countdown in the table (Dan 2026-08-24: 30+ MTT
+ * rows each ran their own setInterval — 30 timers ticking a second apart,
+ * so adjacent countdowns visibly disagreed). All subscribers now fire from
+ * the same tick: one timer, all clocks in step. The interval starts with
+ * the first subscriber and dies with the last.
+ */
+const tickSubscribers = new Set<() => void>();
+let tickInterval: ReturnType<typeof setInterval> | null = null;
+function useSharedSecondTick(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const cb = () => setNow(Date.now());
+    tickSubscribers.add(cb);
+    if (tickInterval == null)
+      tickInterval = setInterval(() => {
+        tickSubscribers.forEach((f) => f());
+      }, 1000);
+    return () => {
+      tickSubscribers.delete(cb);
+      if (tickSubscribers.size === 0 && tickInterval != null) {
+        clearInterval(tickInterval);
+        tickInterval = null;
+      }
+    };
+  }, []);
+  return now;
 }
 
 /**
  * Second line of an MTT title (Dan 2026-08-23): Guarantee, the scheduled
  * start clock time, and a live seconds countdown — "Starting In 17:33..."
  * before the cards are in the air, or how long LATE REGISTRATION has left
- * once they are. Ticks every second; the interval dies with the row.
+ * once they are (level-based windows tick too, computed from the blind
+ * structure). The phrase itself is mttPhaseText in lobbyEntries — pure and
+ * pinned by tests.
  */
 function MttTitleMeta({ entry }: { entry: LobbyEntry }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
+  const now = useSharedSecondTick();
 
-  const raw = entry.raw as LobbyTournamentRow;
   const startMs = entry.startTime ? new Date(entry.startTime).getTime() : NaN;
   const startClock = Number.isFinite(startMs)
     ? new Date(startMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
     : null;
+  const phase = mttPhaseText(entry, now);
 
-  let phase: string | null = null;
-  if (entry.status === 'registering' || entry.status === 'starting_soon') {
-    phase =
-      Number.isFinite(startMs) && startMs > now
-        ? `Starting In ${formatClock(startMs - now)}...`
-        : 'Starting Soon';
-  } else if (entry.status === 'late_reg') {
-    const lateMins = Number(raw.late_reg_mins) || 0;
-    const begun = new Date(raw.started_at || raw.start_time || '').getTime();
-    if (lateMins > 0 && Number.isFinite(begun)) {
-      const left = begun + lateMins * 60000 - now;
-      phase = left > 0 ? `Late Reg ${formatClock(left)} Left` : 'Late Reg Closing';
-    } else if ((Number(raw.late_reg_levels) || 0) > 0) {
-      phase = `Late Reg Thru Level ${Number(raw.late_reg_levels)}`;
-    } else {
-      phase = 'Late Reg Open';
-    }
-  } else if (entry.status === 'running') {
-    phase = 'Running';
-  } else if (entry.status === 'completed' || entry.status === 'closed') {
-    phase = entry.statusLabel;
-  }
-
-  const parts: React.ReactNode[] = [];
+  const parts: { node: React.ReactNode; cls?: string }[] = [];
   if (entry.guaranteeLabel)
-    parts.push(
-      <span key="gtd" className="lt-name__gtd">
-        {entry.guaranteeLabel}
-      </span>
-    );
-  if (startClock) parts.push(<span key="clk">{startClock}</span>);
-  if (phase)
-    parts.push(
-      <span key="phase" className="lt-name__phase">
-        {phase}
-      </span>
-    );
+    parts.push({
+      node: <span className="lt-name__gtd">{entry.guaranteeLabel}</span>,
+    });
+  /* The clock part carries its own class: on phones it is the piece the
+     meta line sheds (the countdown is the information; the wall-clock time
+     is recoverable from the panel once the row is opened). */
+  if (startClock) parts.push({ node: startClock, cls: 'lt-name__clockpart' });
+  if (phase) parts.push({ node: <span className="lt-name__phase">{phase}</span> });
   if (parts.length === 0) return null;
 
   return (
     <span className="lt-name__meta">
       {parts.map((p, i) => (
-        <span key={i} className="lt-name__metapart">
+        <span key={i} className={`lt-name__metapart${p.cls ? ` ${p.cls}` : ''}`}>
           {i > 0 && (
             <span className="lt-name__sep" aria-hidden="true">
               {'·'}
             </span>
           )}
-          {p}
+          {p.node}
         </span>
       ))}
     </span>
   );
-}
-
-/** MTT names carry their variation; make sure it is there even when the
-    creator left it out of the name text. */
-function mttTitleLine(entry: LobbyEntry): string {
-  const name = entry.name || '';
-  return name.toUpperCase().includes(entry.gameLabel.toUpperCase())
-    ? name
-    : `${name} (${entry.gameLabel})`;
 }
 
 export function LobbyStatusBadge({ status, label }: { status: LobbyStatusKey; label: string }) {
@@ -489,7 +470,8 @@ const COL_KIND: ColumnDef = {
 };
 const COL_COST: ColumnDef = {
   key: 'cost',
-  label: 'Stakes / Buy-In',
+  /* Dan 2026-08-24: the ALL tab's cost column is titled just "Stakes". */
+  label: 'Stakes',
   className: 'lt-col-num',
   sortable: true,
   sortValue: (e) => (e.kind === 'cash' ? e.stakesValue : e.buyInValue),

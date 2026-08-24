@@ -155,13 +155,38 @@ export function markBootedAsStandby(): void {
  * already takes when leadership is LOST, and the supervisor brings the process
  * straight back through the full leader boot.
  */
+/**
+ * HAND THE LEASE BACK BEFORE DYING, OR THE SUCCESSOR INHERITS A LOCKED DOOR.
+ *
+ * The promotion that lands a standby here has just written OUR instance id
+ * into the lease. Exit without releasing it and the supervisor's replacement
+ * boots ~3s later into a lease held by a dead process aged three seconds,
+ * far under the 30s staleness window, so its boot-time claim is refused and
+ * it takes the standby early-return. It then waits out the window, is
+ * promoted, lands back here, and exits again, leaving a NEW instance id for
+ * the next boot to wait on. Observed live on 2026-08-24, the first deploy
+ * after this function shipped: five consecutive standby -> promote -> exit
+ * cycles, one every ~35 seconds, zero hands dealt.
+ *
+ * Releasing first means the successor's boot-time claim is granted and it
+ * comes up through the FULL leader boot, which is the entire point of the
+ * restart. If the release cannot reach the database (the unanswerable-claims
+ * path), the 5s cap below exits anyway and the successor falls back to the
+ * staleness window, which is no worse than before this existed.
+ */
 function restartIntoLeaderBoot(reason: string): void {
   if (!bootedAsStandby) return;
   console.error(
     `[leadership] ${INSTANCE_ID} promoted (${reason}) but booted as a standby, so it has ` +
       'no discovery loop or fleet — exiting so the supervisor restarts it as a real leader.'
   );
-  setTimeout(() => process.exit(0), 250).unref?.();
+  const exit = () => process.exit(0);
+  const cap = setTimeout(exit, 5_000);
+  (cap as { unref?: () => void }).unref?.();
+  void releaseLeadership().finally(() => {
+    const t = setTimeout(exit, 250);
+    (t as { unref?: () => void }).unref?.();
+  });
 }
 
 export function isLeader(): boolean {

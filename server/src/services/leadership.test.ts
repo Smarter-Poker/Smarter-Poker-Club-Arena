@@ -284,6 +284,16 @@ describe('a promoted standby restarts instead of leading in name only', () => {
     expect(granted.slice(0, granted.indexOf('return role;'))).toMatch(/restartIntoLeaderBoot\(/);
   });
 
+  it('hands the lease back before exiting so the successor boots straight into leader', () => {
+    // Without the release, the replacement process boots into a fresh lease
+    // held by this dead instance, waits out the 30s staleness window, is
+    // promoted, and exits here again: a ~35s restart loop that never deals a
+    // hand. Observed in production 2026-08-24, five consecutive cycles.
+    const fn = code.slice(code.indexOf('function restartIntoLeaderBoot'));
+    const body = fn.slice(0, fn.indexOf('\nexport function isLeader'));
+    expect(body).toMatch(/releaseLeadership\(\)/);
+  });
+
   it('clears the flag on reset so tests cannot leak state into each other', () => {
     const reset = code.slice(code.indexOf('export function __resetLeadership'));
     expect(reset.slice(0, 200)).toMatch(/bootedAsStandby = false/);

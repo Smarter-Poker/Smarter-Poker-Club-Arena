@@ -44,6 +44,7 @@ const codeOnly = (src: string) =>
 const STORE = read('src/stores/useWalletStore.ts');
 const SYNC_HOOKS = read('src/services/PostgresSyncHooks.ts');
 const CLUB_HOME = read('src/pages/ClubHomePage.tsx');
+const HEADER_STORE = read('src/stores/useHeaderDataStore.ts');
 
 describe('wallet store serves cached balances instead of refetching', () => {
   it('has a freshness window', () => {
@@ -129,6 +130,31 @@ describe('the wallets listener is global, not page-scoped', () => {
   });
 });
 
+describe('club membership changes are handled globally, not per page', () => {
+  const HOME = read('src/pages/HomePage.tsx');
+
+  it('HomePage no longer owns a home-clubs channel', () => {
+    // Duplicate of the club_members listener already in PostgresSyncHooks'
+    // global channel, AND torn down on every navigation away from Home.
+    expect(codeOnly(HOME)).not.toMatch(/getOrCreateChannel\(\s*channelKey\s*\)/);
+    expect(codeOnly(HOME)).not.toMatch(/home-clubs-/);
+  });
+
+  it('HomePage still reacts to the bus events the global listener emits', () => {
+    // This is what makes removing the channel safe: the refresh path is
+    // unchanged, only the duplicate socket subscription is gone.
+    expect(HOME).toMatch(/'CLUB_JOINED'/);
+    expect(HOME).toMatch(/'CLUB_LEFT'/);
+    expect(HOME).toMatch(/'CLUB_UPDATED'/);
+  });
+
+  it('the global listener still emits those events', () => {
+    expect(SYNC_HOOKS).toMatch(/table:\s*'club_members'/);
+    expect(SYNC_HOOKS).toMatch(/'CLUB_UPDATED'/);
+    expect(SYNC_HOOKS).toMatch(/'CLUB_LEFT'/);
+  });
+});
+
 describe('the club lobby paints from cache with no skeleton frame', () => {
   it('seeds club and tables during render, not in an effect', () => {
     // An effect runs AFTER paint, so restoring the cache there guaranteed one
@@ -147,6 +173,54 @@ describe('the club lobby paints from cache with no skeleton frame', () => {
     // Otherwise the stall watchdog can declare a stall over a lobby the player
     // is actually looking at.
     expect(CLUB_HOME).toMatch(/useRef\(Boolean\(bootCache\?\.club\)\)/);
+  });
+});
+
+/**
+ * WHY THIS BLOCK EXISTS, AND WHY GlobalHeader WAS NOT RESTRUCTURED.
+ *
+ * HomePage renders its own <GlobalHeader /> and sits OUTSIDE
+ * `<Route element={<AppLayout />}>`, which renders a second one. So navigating
+ * Home <-> a club unmounts one header instance and mounts the other.
+ *
+ * The obvious "always-on" fix is to hoist the header above <Routes> so one
+ * instance survives every navigation. That was assessed and deliberately NOT
+ * done, because the benefit is now nil and the risk is real:
+ *
+ *   BENEFIT - a remount performs ZERO network requests. Every mount effect in
+ *   GlobalHeader is a local listener (keyboard, edge-swipe, postMessage, a bus
+ *   emit, a state reset) except one, which calls loadOnce + loadBalances +
+ *   loadDiamonds - and all three are guarded, which is what this block pins.
+ *   The only state lost is `menuOpen`, which should reset on navigation anyway.
+ *
+ *   RISK - the header is `position: sticky; top: 0` with `z-index: 130` tuned
+ *   against HomePage's loading dim layer, and it carries the notch/safe-area
+ *   padding. Its own CSS documents supporting TWO different parents
+ *   (`align-self: stretch` for HomePage's centring flex column, `width: 100%`
+ *   for AppLayout's block). Sticky resolves against the nearest scrolling
+ *   ancestor, so hoisting it out of both changes its behaviour on every one of
+ *   70+ routes. Moving HomePage under AppLayout instead would wrap a
+ *   deliberately full-bleed page in `.main` and give it a second offline banner.
+ *
+ * That is a purely visual change across the whole app, and it cannot be proven
+ * by a unit test - which is exactly why it was declined rather than shipped on
+ * a "it compiles" basis.
+ *
+ * So the guards below are load-bearing: they are the reason the restructure is
+ * unnecessary. If one is removed, the remount stops being free and the
+ * trade-off has to be revisited.
+ */
+describe('a GlobalHeader remount costs no network (why the hoist is unnecessary)', () => {
+  it('loadOnce is a no-op for a userId already loaded', () => {
+    expect(HEADER_STORE).toMatch(/Subsequent calls with the same userId are no-ops/);
+    expect(HEADER_STORE).toMatch(/loadOnce:\s*\(userId: string\)/);
+  });
+
+  it('loadBalances and loadDiamonds short-circuit on a fresh cached balance', () => {
+    // Already asserted above, restated here because THIS is the property that
+    // makes a header remount free. Losing it silently re-opens the question.
+    expect(STORE).toMatch(/BALANCE_FRESH_MS/);
+    expect(STORE).toMatch(/_balancesUserId === userId/);
   });
 });
 

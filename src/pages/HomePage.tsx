@@ -32,7 +32,6 @@ import FloatingOrbs from '../components/home/FloatingOrbs';
 import haptic from '../services/HapticService';
 
 import PremiumSFX from '../services/PremiumSFX';
-import { masterBus } from '../core/MasterBus';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 
 import ClubContextMenu from '../components/home/ClubContextMenu';
@@ -469,41 +468,24 @@ function HomePageInner() {
     const hasCachedClubs = userClubs.length > 0;
     fetchUserData(hasCachedClubs, () => isMounted);
 
-    let channel: ReturnType<typeof masterBus.getOrCreateChannel> | null = null;
-    let cachedAuthUserId: string | null = null; // Cache for cleanup — avoids async getAuthUser() in teardown
-    const setupRealtimeSubscription = async () => {
-      const {
-        data: { user: authUser },
-      } = await getAuthUser();
-      if (!authUser?.id) return;
-      cachedAuthUserId = authUser.id; // Cache for cleanup
-
-      const channelKey = `home-clubs-${authUser.id}`;
-      channel = masterBus.getOrCreateChannel(channelKey);
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'club_members',
-            filter: `user_id=eq.${authUser.id}`,
-          },
-          () => {
-            if (isMounted) fetchUserData(true, () => isMounted);
-          }
-        )
-        .subscribe((status: string, err?: Error) => {
-          if (status === 'CHANNEL_ERROR') {
-            if (err) reportError(err?.message || err, 'HomePage._Realtime_channel_error');
-          }
-          if (status === 'TIMED_OUT') {
-            console.warn('[HomePage] Realtime channel timed out');
-          }
-        });
-    };
-
-    setupRealtimeSubscription();
+    // ── Club membership changes: handled GLOBALLY, not by this page ──────────
+    //
+    // A `home-clubs-<uid>` channel used to be created here, subscribing to
+    // `club_members` filtered by `user_id=eq.<uid>` and calling fetchUserData on
+    // any event. Removed 2026-08-24: it was a duplicate subscription AND it was
+    // torn down on every navigation away from Home, so returning re-negotiated
+    // it.
+    //
+    // PostgresSyncHooks' `global_db_sync:<userId>` channel already carries the
+    // IDENTICAL subscription - same table, same user_id filter - created once at
+    // sign-in and never torn down by routing. It emits CLUB_UPDATED (debounced,
+    // per club) on INSERT/UPDATE and CLUB_LEFT on DELETE, and this page ALREADY
+    // subscribes to CLUB_JOINED, CLUB_LEFT and CLUB_UPDATED on the bus further
+    // down. So the refresh path is unchanged; only the second, page-scoped
+    // socket subscription is gone.
+    //
+    // Net effect: one fewer realtime subscription per user sitting on Home, and
+    // no re-subscribe when they come back to it.
 
     // ═══════════════════════════════════════════════════════════════════════
     // MASTER BUS LISTENERS — cross-page state sync
@@ -511,14 +493,9 @@ function HomePageInner() {
 
     return () => {
       isMounted = false;
-      if (channel) {
-        channel.unsubscribe();
-      }
-      // Use cached userId from setup — avoids async getAuthUser() call in cleanup
-      // which was fire-and-forget and could leak channels if auth state changed
-      if (cachedAuthUserId) {
-        masterBus.removeRegisteredChannel(`home-clubs-${cachedAuthUserId}`);
-      }
+      // Nothing to unsubscribe here any more: the club_members listener this
+      // effect used to own now lives in PostgresSyncHooks' global channel (see
+      // the note above). `isMounted` still guards the in-flight fetchUserData.
     };
   }, [fetchUserData]);
 

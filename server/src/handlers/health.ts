@@ -23,7 +23,12 @@ export interface HealthDeps {
 }
 
 export interface WsMetricsDeps {
-  tableStateHub: { totalSubscribers(): number };
+  tableStateHub: {
+    totalSubscribers(): number;
+    /** Optional — B12 backpressure counters. Climbing softDropped = clients
+     *  cannot keep up; any hardDropped = a socket was evicted mid-session. */
+    backpressureStats?(): { softDropped: number; hardDropped: number };
+  };
   engineWs: {
     connectionCount(): number;
     /** Optional so the structural typing above stays minimal, per this file's
@@ -34,6 +39,20 @@ export interface WsMetricsDeps {
       muxSubscriptions: number;
       maxSubsOnOneSocket: number;
     };
+  };
+  /**
+   * 2026-08-24: the /ws/channel side — wallet FINANCIAL_UPDATEs, tournament
+   * events, club events, lobby updates. This transport was completely
+   * invisible in metrics, which is how "the server kills every channel
+   * socket at 60s" (see ChannelWebSocketServer heartbeat fix) ran in
+   * production with nothing measuring it. channelSockets counts live
+   * sockets (a user with 2 tabs counts 2); channelUsers counts distinct
+   * users; a healthy platform shows sockets >= users.
+   */
+  channelHub?: {
+    connectionCount(): number;
+    userCount(): number;
+    lobbySubscriberCount(): number;
   };
 }
 
@@ -75,10 +94,19 @@ export function handleWsMetrics(res: ServerResponse, deps: WsMetricsDeps): void 
     muxSubscriptions: 0,
     maxSubsOnOneSocket: 0,
   };
+  const backpressure = deps.tableStateHub.backpressureStats?.() ?? {
+    softDropped: 0,
+    hardDropped: 0,
+  };
   sendJSON(res, 200, {
     totalSubscribers: deps.tableStateHub.totalSubscribers(),
     activeConnections: deps.engineWs.connectionCount(),
     ...mux,
+    ...backpressure,
+    // 2026-08-24: channel transport visibility — see WsMetricsDeps.channelHub.
+    channelSockets: deps.channelHub?.connectionCount() ?? 0,
+    channelUsers: deps.channelHub?.userCount() ?? 0,
+    lobbySubscribers: deps.channelHub?.lobbySubscriberCount() ?? 0,
   });
 }
 

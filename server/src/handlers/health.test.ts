@@ -34,7 +34,18 @@ describe('handleWsMetrics', () => {
         maxSubsOnOneSocket: 4,
       }),
     };
-    handleWsMetrics(res, { tableStateHub, engineWs });
+    // 2026-08-24: channel transport + backpressure counters are new — the
+    // wallet/tournament/club/lobby socket had zero metrics visibility, which
+    // is how the 60s heartbeat kill loop ran unmeasured in production.
+    (tableStateHub as Record<string, unknown>).backpressureStats = vi
+      .fn()
+      .mockReturnValue({ softDropped: 9, hardDropped: 1 });
+    const channelHub = {
+      connectionCount: vi.fn().mockReturnValue(3),
+      userCount: vi.fn().mockReturnValue(2),
+      lobbySubscriberCount: vi.fn().mockReturnValue(1),
+    };
+    handleWsMetrics(res, { tableStateHub, engineWs, channelHub });
     expect(captured.statusCode).toBe(200);
     // 2026-08-23: the mux fields are new. The two original counters cannot
     // tell a client holding four per-table sockets from one holding a single
@@ -47,6 +58,11 @@ describe('handleWsMetrics', () => {
       singleSockets: 5,
       muxSubscriptions: 6,
       maxSubsOnOneSocket: 4,
+      softDropped: 9,
+      hardDropped: 1,
+      channelSockets: 3,
+      channelUsers: 2,
+      lobbySubscribers: 1,
     });
   });
 
@@ -66,6 +82,11 @@ describe('handleWsMetrics', () => {
       singleSockets: 0,
       muxSubscriptions: 0,
       maxSubsOnOneSocket: 0,
+      softDropped: 0,
+      hardDropped: 0,
+      channelSockets: 0,
+      channelUsers: 0,
+      lobbySubscribers: 0,
     });
   });
 });

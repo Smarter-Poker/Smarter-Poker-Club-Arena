@@ -162,7 +162,9 @@ export function createRouter(
     // ─────────────────────────────────────────────────────────────────────────
     if (url === '/health' || url === '/') return handleHealth(res, { gameServer });
     if (url === '/ws-metrics' && method === 'GET')
-      return handleWsMetrics(res, { tableStateHub, engineWs });
+      // 2026-08-24: channelHub added — the wallet/tournament/club/lobby
+      // transport had zero metrics visibility before this.
+      return handleWsMetrics(res, { tableStateHub, engineWs, channelHub });
     if (url === '/metrics' && method === 'GET') return handleMetrics(res, { gameServer });
 
     // ─────────────────────────────────────────────────────────────────────────

@@ -62,10 +62,15 @@ function commit(message: string): string {
 /** Pin one commit and run the guard. Returns its exit code and combined output. */
 function runGuard(sha: string, note: string): { code: number; out: string } {
   write('.agent/protected-commits.json', JSON.stringify({ commits: [{ sha, note }] }, null, 2));
+  const env = { ...process.env };
+  for (const k of Object.keys(env)) {
+    if (k.startsWith('GIT_')) delete env[k];
+  }
   try {
     const out = execFileSync('node', [GUARD], {
       cwd: repo,
       encoding: 'utf8',
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     return { code: 0, out };

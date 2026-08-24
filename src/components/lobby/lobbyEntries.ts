@@ -15,6 +15,8 @@
  */
 
 import { isInLateRegistration } from '../../utils/tournamentFilters';
+import { stakesLabel as stakesLabelFor } from '../../lib/bettingStructure';
+
 
 // ─── Raw row shapes (subset the lobby queries actually select) ─────────────
 export interface LobbyTableRow {
@@ -437,7 +439,14 @@ export function cashEntry(t: LobbyTableRow): LobbyEntry {
     name: t.name,
     gameLabel: v.short,
     variantLabel: v.long,
-    stakesLabel: `${(t.small_blind || 0).toLocaleString()} / ${(t.big_blind || 0).toLocaleString()}`,
+    // 2026-08-24: a fixed-limit table is posted by BET size, not blind size —
+    // blinds 1/2 IS a "2/4" game. TableConfigPage already names the table and
+    // writes `tables.stakes` that way, so building this row from the raw blinds
+    // made the lobby list disagree with the table it links to: the row read
+    // "1 / 2" and the table called itself "FLH 2/4". Same helper as the create
+    // screen, so the two cannot drift again. No-limit and pot-limit rows are
+    // unchanged — stakesLabelFor returns the blinds for them.
+    stakesLabel: stakesLabelFor(t.small_blind || 0, t.big_blind || 0, t.game_variant),
     stakesValue: Number(t.big_blind) || 0,
     buyInLabel: `${minBuy.toLocaleString()} - ${maxBuy.toLocaleString()}`,
     buyInValue: minBuy,

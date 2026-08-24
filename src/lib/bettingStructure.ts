@@ -9,6 +9,15 @@
  * no-limit and pot-limit, a single fixed-size button for limit — instead of
  * offering a range the server will then reject.
  *
+ * This is a PARTIAL mirror on purpose: it carries only what the browser calls.
+ * The first version also exported FIXED_LIMIT_MAX_WAGERS, isPotLimitVariant and
+ * a structureBadge() helper for symmetry with the server module, and nothing
+ * imported any of them — three dead exports shipped in the name of parity. The
+ * cap count and the pot-limit test are enforced server-side, where the rule
+ * actually lives; a client copy of a rule the client never asks is not parity,
+ * it is a second place for the rule to go stale. Add a function here when a
+ * component needs it, not before.
+ *
  * Any change here must be made in the server module too.
  *
  * ── STAKES CONVENTION ────────────────────────────────────────────────────────
@@ -24,9 +33,6 @@ export type BettingStructure = 'no_limit' | 'pot_limit' | 'fixed_limit';
 const POT_LIMIT_VARIANTS = new Set(['plo4', 'plo5', 'plo6', 'plo8']);
 const FIXED_LIMIT_VARIANTS = new Set(['flh', 'flo8']);
 
-/** One bet plus three raises per street. Preflop the blind is the bet. */
-export const FIXED_LIMIT_MAX_WAGERS = 4;
-
 export function bettingStructureFor(variant?: string | null): BettingStructure {
   const v = (variant || '').toLowerCase();
   if (FIXED_LIMIT_VARIANTS.has(v)) return 'fixed_limit';
@@ -36,10 +42,6 @@ export function bettingStructureFor(variant?: string | null): BettingStructure {
 
 export function isFixedLimitVariant(variant?: string | null): boolean {
   return bettingStructureFor(variant) === 'fixed_limit';
-}
-
-export function isPotLimitVariant(variant?: string | null): boolean {
-  return bettingStructureFor(variant) === 'pot_limit';
 }
 
 /**
@@ -57,16 +59,4 @@ export function stakesLabel(smallBlind: number, bigBlind: number, variant?: stri
   const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
   if (isFixedLimitVariant(variant)) return `${fmt(bigBlind)}/${fmt(bigBlind * 2)}`;
   return `${fmt(smallBlind)}/${fmt(bigBlind)}`;
-}
-
-/** Short badge shown next to a game name, e.g. "FL" on a limit table. */
-export function structureBadge(variant?: string | null): 'NL' | 'PL' | 'FL' {
-  switch (bettingStructureFor(variant)) {
-    case 'fixed_limit':
-      return 'FL';
-    case 'pot_limit':
-      return 'PL';
-    default:
-      return 'NL';
-  }
 }

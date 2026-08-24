@@ -5,7 +5,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { sizedStorageUrl } from '../utils/avatarGenerator';
+import { sizedStorageUrl, generateAvatarSvg } from '../utils/avatarGenerator';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
@@ -649,7 +649,18 @@ export default function FriendsPage() {
               >
                 <div className="request-avatar">
                   {request.avatar_url ? (
-                    <img src={sizedStorageUrl(request.avatar_url!, 44)} alt="" loading="lazy" />
+                    <img
+                      src={sizedStorageUrl(request.avatar_url!, 44)}
+                      alt=""
+                      loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = generateAvatarSvg(
+                          request.user_id || request.username,
+                          request.username
+                        );
+                      }}
+                    />
                   ) : (
                     <span>{request.username[0]?.toUpperCase()}</span>
                   )}
@@ -769,7 +780,18 @@ function SwipeableFriendRow({
       >
         <div className="friend-avatar">
           {friend.avatar_url ? (
-            <img src={sizedStorageUrl(friend.avatar_url!, 44)} alt="" loading="lazy" />
+            <img
+              src={sizedStorageUrl(friend.avatar_url!, 44)}
+              alt=""
+              loading="lazy"
+              onError={(e) => {
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = generateAvatarSvg(
+                  friend.user_id || friend.username,
+                  friend.username
+                );
+              }}
+            />
           ) : (
             <span>{friend.username[0]?.toUpperCase()}</span>
           )}

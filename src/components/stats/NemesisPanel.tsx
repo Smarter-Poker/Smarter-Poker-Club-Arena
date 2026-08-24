@@ -32,6 +32,7 @@ import StatsFactsService, {
   type OpponentFlow,
 } from '../../services/StatsFactsService';
 import './NemesisPanel.css';
+import { sizedStorageUrl } from '../../utils/avatarGenerator';
 
 interface Props {
   userId?: string;
@@ -52,7 +53,14 @@ function chips(n: number): string {
 
 function Avatar({ flow }: { flow: OpponentFlow }) {
   if (flow.avatar_url) {
-    return <img className="nemesis-avatar" src={flow.avatar_url} alt="" loading="lazy" />;
+    return (
+      <img
+        className="nemesis-avatar"
+        src={sizedStorageUrl(flow.avatar_url, 40)}
+        alt=""
+        loading="lazy"
+      />
+    );
   }
   return (
     <span className="nemesis-avatar nemesis-avatar-fallback" aria-hidden="true">

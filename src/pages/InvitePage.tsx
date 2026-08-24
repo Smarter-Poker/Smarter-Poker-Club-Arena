@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { MembershipService } from '../services/MembershipService';
 import { ClubsService } from '../services/ClubsService';
@@ -273,7 +274,7 @@ export default function InvitePage() {
       <div className="invite-card" style={inviteStepAnimationStyle}>
         <div className="club-avatar">
           {club.avatar_url ? (
-            <img src={club.avatar_url} alt={club.name} loading="lazy" />
+            <img src={sizedStorageUrl(club.avatar_url, 96)} alt={club.name} loading="lazy" />
           ) : (
             <span>{club.name[0]?.toUpperCase()}</span>
           )}

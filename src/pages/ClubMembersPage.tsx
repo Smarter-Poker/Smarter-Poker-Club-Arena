@@ -53,6 +53,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { sizedStorageUrl } from '../utils/avatarGenerator';
+import { generateAvatarSvg } from '../utils/avatarGenerator';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
@@ -491,15 +492,12 @@ function MemberRow({ member, onOpen }: { member: RosterMember; onOpen: (userId: 
             alt=""
             loading="lazy"
             /* A dead avatar URL (revoked storage object, offline fetch) left a
-               blank circle on mobile. Fall back to the initial instead. */
+               blank circle on mobile. Swap to the deterministic monogram —
+               a data URI cannot fail, and no DOM surgery under React. */
             onError={(e) => {
               const img = e.currentTarget;
-              img.style.display = 'none';
-              if (img.parentElement && !img.parentElement.querySelector('span')) {
-                const span = document.createElement('span');
-                span.textContent = initial;
-                img.parentElement.appendChild(span);
-              }
+              img.onerror = null;
+              img.src = generateAvatarSvg(member.user_id, member.alias || '?');
             }}
           />
         ) : (

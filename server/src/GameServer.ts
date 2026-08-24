@@ -2604,6 +2604,87 @@ export class GameServer {
             .eq('status', 'RUNNING');
           await recoverStuckCompletingTournaments('stalled-running-decided', t.id);
         }
+
+        // ── STARTED-BUT-NEVER-DEALT RECOVERY (2026-08-24) ──
+        //
+        // Measured live during the 03:31-05:1x UTC deploy-churn window: 92
+        // RUNNING seat-first games, every seat funded, 2+ players seated,
+        // tables at 'waiting' - and not one hand ever dealt. 91 of 92 held no
+        // engine lease, and the population did not drain while the engine was
+        // healthy and dealing everything else: whatever incarnation started
+        // them died before the first deal, and no later incarnation picked
+        // them up (or a resumed manager wedged before dealing, which the
+        // cleanup above cannot see because isRunning() is still true).
+        //
+        // No existing sweep covers this state. The played-but-registering
+        // sweep demands finished player rows - a never-dealt game has none.
+        // The decided-but-running sweep demands playingCount <= 1 - a
+        // never-dealt game has a full field. So the paid players sit at a
+        // dead felt forever, buy-ins committed.
+        //
+        // Recovery: hand the game back to the start gate. Stop any idle
+        // manager holding the map entry, flip RUNNING -> REGISTERING (CAS),
+        // and the discovery pass above re-adopts it - registrations and seats
+        // are intact, a drawn spin multiplier is kept, settlement is
+        // idempotent, createTablesAndSeatPlayers adopts the existing table.
+        //
+        // Budgeted to 15 candidates a pass so a pathological backlog cannot
+        // turn this sweep into its own outage; in steady state it is empty.
+        const neverDealtCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        const { data: maybeNeverDealt } = await supabase
+          .from('tournaments')
+          .select('id, name, started_at')
+          .eq('status', 'RUNNING')
+          .in('variant', ['sng', 'spin'])
+          .lt('started_at', neverDealtCutoff);
+        for (const t of (maybeNeverDealt || []).slice(0, 15)) {
+          const { data: tRows, error: tErr } = await supabase
+            .from('tables')
+            .select('id, status')
+            .eq('tournament_id', t.id);
+          if (tErr) continue; // unreadable is UNKNOWN, never "it never dealt"
+          const tableIds = (tRows || []).map((r) => String((r as { id: string }).id));
+          if (tableIds.length === 0) continue; // no table at all - creation path owns it
+
+          const { count: dealt, error: dealtErr } = await supabase
+            .from('hand_history')
+            .select('id', { count: 'exact', head: true })
+            .in('table_id', tableIds);
+          if (dealtErr || dealt === null || dealt === undefined) continue;
+          if (dealt > 0) continue; // it played; the sweeps above own it
+
+          // Only a game that can actually deal goes back in the queue: 2+
+          // live seats on a non-closed table.
+          const openTableIds = (tRows || [])
+            .filter((r) => String((r as { status?: string }).status) !== 'closed')
+            .map((r) => String((r as { id: string }).id));
+          if (openTableIds.length === 0) continue;
+          const { count: liveSeats, error: seatErr } = await supabase
+            .from('table_seats')
+            .select('id', { count: 'exact', head: true })
+            .in('table_id', openTableIds)
+            .is('left_at', null);
+          if (seatErr || !liveSeats || liveSeats < 2) continue;
+
+          console.warn(
+            `[GameServer] RUNNING ${t.name} (${t.id.slice(0, 8)}) has dealt nothing since ${t.started_at} - requeueing for a fresh start`
+          );
+          const idleNeverDealtTm = this.tournamentEngines.get(t.id);
+          if (idleNeverDealtTm) {
+            try {
+              idleNeverDealtTm.stop();
+            } catch (err) {
+              reportError(err, 'GameServer.never_dealt_stop_engine');
+            }
+            this.tournamentEngines.delete(t.id);
+          }
+          // CAS so a game that just dealt or finished is never clobbered.
+          await supabase
+            .from('tournaments')
+            .update({ status: 'REGISTERING' })
+            .eq('id', t.id)
+            .eq('status', 'RUNNING');
+        }
       } catch (err) {
         reportError(err, 'GameServer.Tournament_discovery_error');
       }

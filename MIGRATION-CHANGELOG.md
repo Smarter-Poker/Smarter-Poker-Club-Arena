@@ -13946,3 +13946,33 @@ audit in `.agent/audits/2026-08-24-always-connected-phase2.md`. Three fixes:
 Verified clean: liveness/autoheal grace, deploy twin-guard + public-hostname
 check, Caddyfile, GameServerAPI circuit breaker. 12 new/rewritten tests
 (8 ChannelHub + 3 evict + 1 re-assert), tsc clean both sides.
+
+## Cowork session 2026-08-24 (20) — LINE-BY-LINE SWEEP: METRICS FOR THE INVISIBLE TRANSPORT, AND RESTART COALESCING
+
+Dan: "finish up everything... check for any bugs, stubs, gaps... enhance to the
+max." Full-pass re-review of every merged connectivity file, plus production
+query evidence. Two enhancements shipped:
+
+1. **/ws-metrics finally sees the channel transport.** The socket carrying
+   wallet FINANCIAL_UPDATEs, tournament/club events and lobby updates had ZERO
+   metrics — which is exactly how the 60s heartbeat kill loop ran unmeasured.
+   Now: channelSockets, channelUsers, lobbySubscribers, plus the hub's
+   softDropped/hardDropped backpressure counters. ChannelHub.userCount() is
+   thereby wired to a real caller (flagged as test-only in the compliance
+   pass).
+
+2. **Restart coalescing in the deploy gate.** The engine restarted 5x in ONE
+   HOUR tonight as a merge train landed — each restart voids in-flight hands
+   and costs ~2min of 4404 rehydration, humans seated or not. The dedupe step
+   now defers any restart while the running engine is under 20 minutes old
+   (workflow_dispatch/force bypasses); the next push or the hourly catch-up
+   lands a newer HEAD containing the deferred commit.
+
+DB pressure findings (no blind changes): hand_history INSERT is the top cost
+(513ms mean x 18k calls); its GIN players index CANNOT be dropped (19 scans
+but my-hands.js .contains() depends on it); fee-rollup backfill verified
+advancing (watermark 08-18, runs every ~8s, will reach steady state alone).
+The real fix is hand_history partitioning/archival - Tier 3, needs a plan.
+
+4 files, tests updated in the same commit (health.test.ts 4/4, hub 8/8, tsc
+clean).

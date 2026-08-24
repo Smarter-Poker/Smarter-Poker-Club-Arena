@@ -122,10 +122,26 @@ jobs:
           if [ -n "$VER" ] && [ "$VER" = "$SHORT" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
             echo "Production already serves $SHORT — nothing to deploy."
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-            echo "Production serves '${VER:-unreadable}', deploying $SHORT."
+            exit 0
           fi
+          # 2026-08-24: RESTART COALESCING. On the night this was added the
+          # engine restarted 5 times in one hour as a merge train landed —
+          # each restart voids in-flight hands and costs ~2 minutes of table
+          # rehydration (4404s), even with nobody human seated. A restart is
+          # only allowed once the running engine is at least 20 minutes old;
+          # a younger engine defers, and the NEXT push or the hourly catch-up
+          # lands a newer HEAD that contains this commit anyway. Manual
+          # workflow_dispatch (the force path) bypasses the spacing gate.
+          MIN_RESTART_SPACING_SEC=1200
+          UPTIME=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("uptime"); print("ERR" if v is None else int(float(v)))' 2>/dev/null || echo ERR)
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ] \
+             && [ "$UPTIME" != "ERR" ] && [ "$UPTIME" -lt "$MIN_RESTART_SPACING_SEC" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "::notice::Engine restarted only ${UPTIME}s ago (< ${MIN_RESTART_SPACING_SEC}s) — coalescing. A later push or the hourly catch-up lands $SHORT."
+            exit 0
+          fi
+          echo "skip=false" >> $GITHUB_OUTPUT
+          echo "Production serves '${VER:-unreadable}' (uptime ${UPTIME}s), deploying $SHORT."
 
       # See design note 7. Cheap (~1 min) and it is the only thing standing
       # between a failing engine test and production.

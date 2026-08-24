@@ -1721,6 +1721,28 @@ export class GameServer {
 
   private async discoverCashTables(): Promise<void> {
     while (this.running) {
+      /**
+       * C20 FIX-UP (2026-08-24): the sweep verdict must be reached on EVERY
+       * exit path, so it is captured here and applied in a finally.
+       *
+       * Shipped first with the verdict as an ordinary statement near the end
+       * of the try. That is only reached when the sweep runs to completion,
+       * and the sweep contains heartbeatTables(), claimTable() and the whole
+       * adoption loop before it - any of which can throw when the database is
+       * struggling, which is exactly when this control loop matters. Meanwhile
+       * the discovery-RPC error path still halved the budget. So distress
+       * lowered the budget and a throw denied it the clean sweep needed to
+       * climb back: the budget ratcheted to the floor and stayed there.
+       *
+       * Observed in production at 6f994dce with budget pinned at 6 and only
+       * 16 tables adopted after 472s, while Engine_start_failed was 0 - the
+       * budget was starving adoption on its own, with nothing failing.
+       *
+       * A finally cannot be skipped by a throw, a continue or a return.
+       */
+      const failuresSinceLastSweep = this.engineStartFailures;
+      this.engineStartFailures = 0;
+      let sweepDistressed = failuresSinceLastSweep > 0;
       try {
         // Proof the loop is EXECUTING, independent of what the database says.
         this.lastDiscoveryAttemptAt = Date.now();
@@ -1762,12 +1784,12 @@ export class GameServer {
             error?.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
           reportError(new Error(errMsg), 'GameServer.Cash_table_discovery_error');
           /**
-           * C20: this continue skips the end-of-sweep verdict, so back off here
-           * too. If the one cheap indexed read that drives discovery is failing,
-           * adopting 25 more tables the moment it recovers is the worst possible
-           * next move.
+           * C20: the one cheap indexed read that drives discovery is failing,
+           * so adopting a full budget the moment it recovers is the worst
+           * possible next move. The finally below applies the retreat - this
+           * only records that the sweep was distressed.
            */
-          this.adjustEngineStartBudget(true);
+          sweepDistressed = true;
           await this.sleep(TABLE_DISCOVERY_INTERVAL);
           continue;
         }
@@ -1902,17 +1924,8 @@ export class GameServer {
           });
         }
 
-        /**
-         * C20: the sweep's verdict on whether the database is coping.
-         *
-         * failuresSinceLastSweep is the signal that matters. The discovery RPC
-         * failing is handled earlier with a continue, so by the time control
-         * reaches here that query has already succeeded - which is exactly why
-         * the RPC alone is too weak a signal to steer by: it is one cheap
-         * indexed read and it comes back fine long after the many reads an
-         * engine start performs have begun timing out.
-         */
-        this.adjustEngineStartBudget(failuresSinceLastSweep > 0);
+        // C20: the verdict is applied in the finally below, so that a throw
+        // anywhere above cannot deny the loop its recovery.
 
         // Clean up engines for tables that stopped — AND engines that are
         // lying about being alive.
@@ -2036,6 +2049,19 @@ export class GameServer {
             : (err as any)?.message ||
               (typeof err === 'object' ? JSON.stringify(err) : String(err));
         reportError(new Error(errMsg), 'GameServer.Cash_table_discovery_error');
+        /**
+         * A throw mid-sweep is a distress signal in its own right - it is what
+         * a timeout inside heartbeatTables() or claimTable() looks like from
+         * out here - and it must not be mistaken for a clean sweep.
+         */
+        sweepDistressed = true;
+      } finally {
+        /**
+         * Exactly one verdict per sweep, on every path: clean, RPC error, or
+         * throw. This is the whole reason the flag exists rather than the
+         * adjust being called at each site.
+         */
+        this.adjustEngineStartBudget(sweepDistressed);
       }
 
       await this.sleep(TABLE_DISCOVERY_INTERVAL);

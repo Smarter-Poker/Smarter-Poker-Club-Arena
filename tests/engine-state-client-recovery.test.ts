@@ -173,6 +173,124 @@ describe('EngineStateClient — a token that will not load', () => {
   });
 });
 
+describe('EngineChannelClient — heartbeat dialects (2026-08-24)', () => {
+  it('answers CHANNEL_PING with CHANNEL_PONG (the server sweep only counted that)', async () => {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    void c.connect();
+    await flush();
+    const ws = live();
+    ws._open();
+    await flush();
+    ws._frame({ type: 'CHANNEL_PING', ts: 1 });
+    const pongs = ws.sent
+      .map((s) => JSON.parse(s) as { type: string })
+      .filter((m) => m.type === 'CHANNEL_PONG');
+    expect(pongs).toHaveLength(1);
+    c.disconnect();
+  });
+
+  it('still answers plain PING with PONG', async () => {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    void c.connect();
+    await flush();
+    const ws = live();
+    ws._open();
+    await flush();
+    ws._frame({ type: 'PING', ts: 7 });
+    const pongs = ws.sent
+      .map((s) => JSON.parse(s) as { type: string; ts?: number })
+      .filter((m) => m.type === 'PONG');
+    expect(pongs).toHaveLength(1);
+    expect(pongs[0]?.ts).toBe(7);
+    c.disconnect();
+  });
+});
+
+describe('EngineChannelClient — resubscribe on reconnect (2026-08-24)', () => {
+  it('replays JOIN_CLUB / UPDATE_PRESENCE / JOIN_TOURNAMENT / JOIN_LOBBY on the new socket', async () => {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    void c.connect();
+    await flush();
+    const first = live();
+    first._open();
+    await flush();
+
+    c.send({ type: 'JOIN_CLUB', clubId: 'club-1' });
+    c.send({ type: 'UPDATE_PRESENCE', clubId: 'club-1', status: 'at_table', currentTableId: 't1' });
+    c.send({ type: 'JOIN_TOURNAMENT', tournamentId: 'tourney-1' });
+    c.send({ type: 'JOIN_LOBBY' });
+    // A club joined and then left must NOT be replayed.
+    c.send({ type: 'JOIN_CLUB', clubId: 'club-2' });
+    c.send({ type: 'LEAVE_CLUB', clubId: 'club-2' });
+
+    // Server restarts: the socket dies, the client reconnects on backoff.
+    first._serverClose(1001);
+    await vi.advanceTimersByTimeAsync(5_000);
+    const second = live();
+    expect(second).not.toBe(first);
+    second._open();
+    await flush();
+
+    const replayed = second.sent.map((s) => JSON.parse(s) as { type: string; clubId?: string });
+    const types = replayed.map((m) => `${m.type}${m.clubId ? ':' + m.clubId : ''}`);
+    expect(types).toContain('JOIN_CLUB:club-1');
+    expect(types).toContain('UPDATE_PRESENCE:club-1');
+    expect(types).toContain('JOIN_TOURNAMENT');
+    expect(types).toContain('JOIN_LOBBY');
+    expect(types).not.toContain('JOIN_CLUB:club-2');
+    c.disconnect();
+  });
+
+  it('does NOT replay on the FIRST connect (the original JOINs are queued already)', async () => {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    // Queued while offline — flushed on open. A replay on first connect would
+    // send each JOIN twice.
+    c.send({ type: 'JOIN_LOBBY' });
+    await flush();
+    const ws = live();
+    ws._open();
+    await flush();
+    const joins = ws.sent
+      .map((s) => JSON.parse(s) as { type: string })
+      .filter((m) => m.type === 'JOIN_LOBBY');
+    expect(joins).toHaveLength(1);
+    c.disconnect();
+  });
+
+  it('onStatusChange reports the reconnect so surfaces can refetch missed state', async () => {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    const seen: string[] = [];
+    const unsub = c.onStatusChange((s) => seen.push(s));
+    void c.connect();
+    await flush();
+    live()._open();
+    await flush();
+    live()._serverClose(1001);
+    await vi.advanceTimersByTimeAsync(5_000);
+    live()._open();
+    await flush();
+    expect(seen).toContain('reconnecting');
+    expect(seen.filter((s) => s === 'connected').length).toBeGreaterThanOrEqual(2);
+    unsub();
+    c.disconnect();
+  });
+});
+
 describe('EngineChannelClient — waking a backgrounded tab', () => {
   it('forgives a bounded debt on wake, not the whole clock', async () => {
     const c = new EngineChannelClient({

@@ -705,6 +705,17 @@
       "promo_portion",
       "hand_id"
     ],
+    "bbj_daily_user": [
+      "club_id",
+      "day",
+      "user_id",
+      "bbj_amount",
+      "main_amount",
+      "backup_amount",
+      "promo_amount",
+      "hands",
+      "computed_at"
+    ],
     "bbj_payout_recipients": [
       "id",
       "payout_id",
@@ -1502,7 +1513,8 @@
       "price_paid",
       "created_at",
       "refunded_at",
-      "stock_claimed"
+      "stock_claimed",
+      "currency"
     ],
     "club_stats_rebuild_log": [
       "table_id",

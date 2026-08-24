@@ -2197,23 +2197,33 @@ export class GameServer {
             );
           }
 
-          /* Newest live table per tournament. The recycler leaves the freshest
-             one open; an older sibling not yet stamped closed is a corpse, and
-             counting its seats would start a game on a dead table. */
-          const newestTable = new Map<string, { id: string; createdAt: number }>();
-          for (const row of liveTables || []) {
-            const tid = String((row as { tournament_id?: string }).tournament_id ?? '');
-            if (!tid) continue;
-            const createdAt = new Date(
-              String((row as { created_at?: string }).created_at ?? 0)
-            ).getTime();
-            const seen = newestTable.get(tid);
-            if (!seen || createdAt > seen.createdAt) {
-              newestTable.set(tid, { id: String((row as { id: string }).id), createdAt });
-            }
-          }
-
-          const liveTableIds = [...newestTable.values()].map((v) => v.id);
+          /**
+           * THE TABLE THE GAME IS ON, WHICH IS NOT ALWAYS THE NEWEST ONE.
+           *
+           * This used to take the freshest non-closed table, on the reasoning
+           * that the recycler leaves the newest open and an older sibling not
+           * yet stamped closed is a corpse. That is true of a RECYCLED table
+           * and false of a DUPLICATE one, and these games are created with two
+           * `waiting` tables about 0.6s apart: the players sit on the FIRST,
+           * and the empty one is NEWER.
+           *
+           * Measured 2026-08-24: of 31 seat-first games past their start time,
+           * 28 were blocked this way and in 12 an empty table had outranked a
+           * sibling holding every player in the game. Grouped by hour the
+           * count of games with a duplicate live table equalled the count of
+           * stuck games exactly - 2/2, 2/2, 9/9, 1/1, 1/1. One game had been
+           * waiting 486 minutes to deal.
+           *
+           * Occupancy first, oldest to break the tie. Identical to
+           * fn_tournament_primary_table in the database and to the ordering
+           * fn_seat_late_registrant already used, so the engine, the counter
+           * and the seating path cannot disagree about which table is the
+           * game. Seats are read for every live table rather than for one
+           * guessed table, which is what makes the choice possible at all.
+           */
+          const liveTableIds = (liveTables || [])
+            .map((row) => String((row as { id?: string }).id ?? ''))
+            .filter((id) => id.length > 0);
           if (liveTableIds.length > 0) {
             const { data: seatRows, error: seatRowsErr } = await supabase
               .from('table_seats')
@@ -2232,8 +2242,33 @@ export class GameServer {
               const tbl = String((s as { table_id: string }).table_id);
               seatsByTable.set(tbl, (seatsByTable.get(tbl) ?? 0) + 1);
             }
-            for (const [tid, tbl] of newestTable) {
-              paidSeatsByTournament.set(tid, seatsByTable.get(tbl.id) ?? 0);
+            /* Most live seats wins; the oldest table breaks a tie so the
+               ORIGINAL survives a duplicate and the answer is stable between
+               passes. */
+            const primaryTable = new Map<
+              string,
+              { id: string; seats: number; createdAt: number }
+            >();
+            for (const row of liveTables || []) {
+              const tid = String((row as { tournament_id?: string }).tournament_id ?? '');
+              if (!tid) continue;
+              const id = String((row as { id?: string }).id ?? '');
+              if (!id) continue;
+              const createdAt = new Date(
+                String((row as { created_at?: string }).created_at ?? 0)
+              ).getTime();
+              const seats = seatsByTable.get(id) ?? 0;
+              const seen = primaryTable.get(tid);
+              if (
+                !seen ||
+                seats > seen.seats ||
+                (seats === seen.seats && createdAt < seen.createdAt)
+              ) {
+                primaryTable.set(tid, { id, seats, createdAt });
+              }
+            }
+            for (const [tid, tbl] of primaryTable) {
+              paidSeatsByTournament.set(tid, tbl.seats);
             }
           }
         }

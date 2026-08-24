@@ -714,7 +714,6 @@ export default function PlayerStatsPage() {
   const pendingRefreshRef = useRef(false);
   // The index refresh is a WRITE. Un-throttled it fired on every bus refresh and
   // every tab-visibility change, i.e. repeatedly during active play.
-  const lastIndexRefreshRef = useRef(0);
 
   // ── Single RPC pulls everything from hand_history server-side ──
   const loadAllData = useCallback(async (): Promise<void> => {
@@ -747,20 +746,29 @@ export default function PlayerStatsPage() {
         // rehydrated on the next visit and read as all-time.
         if (windowDays === null) setCachedFull(targetUserId, resolved);
 
-        // Fire-and-forget: advance the player->hand index past the hands played
-        // since the last refresh, so the live window the RPC has to scan stays
-        // short. Never blocks or fails the render — the RPC is correct with or
-        // without it, this only keeps it fast.
-        // Batch is sized to finish inside the 8s statement_timeout on the
-        // `authenticated` role; concurrent callers no-op via an advisory lock.
-        const nowMs = Date.now();
-        if (nowMs - lastIndexRefreshRef.current > 5 * 60 * 1000) {
-          lastIndexRefreshRef.current = nowMs;
-          void supabase.rpc('ca_refresh_hand_player_index', { p_max_hands: 3000 }).then(
-            () => undefined,
-            () => undefined
-          );
-        }
+        // A PAGE VIEW MUST NOT TRIGGER A MAINTENANCE JOB. (removed 2026-08-24)
+        //
+        // This used to fire ca_refresh_hand_player_index({ p_max_hands: 3000 })
+        // whenever a player opened their stats page. The comment claimed the
+        // batch was "sized to finish inside the 8s statement_timeout".
+        // Production disagreed: pg_stat_statements put that RPC at a 73,901 ms
+        // MEAN and a 173,487 ms max, and it was caught live in pg_stat_activity
+        // at 26.9s waiting on IO/DataFileRead - i.e. dragging the 10GB
+        // hand_history table off disk and evicting everyone else's working set
+        // from shared_buffers. That is why unrelated queries all over the
+        // platform went slow at once; a trivial PostgREST health probe was
+        // taking 14.4 SECONDS while raw Postgres answered the same shape in
+        // 0.17ms.
+        //
+        // The 5-minute guard below did not bound it either: lastIndexRefreshRef
+        // is per component instance, so it throttled one tab, not the platform.
+        //
+        // It is already done properly server-side:
+        // pages/api/cron/club-stats-maintenance.js runs the same RPC every 15
+        // minutes with p_max_hands: 60000, under service_role, off the request
+        // path. That route's own comment records the decision to own it there.
+        // So this call was redundant as well as harmful, and the index it
+        // maintains stays just as fresh without it.
       } else {
         // Legacy fallback (aggregates per-club rows; never .maybeSingle())
         const legacy = await loadLegacyStats(targetUserId);
@@ -1225,193 +1233,20 @@ export default function PlayerStatsPage() {
           transition={reduceMotion ? instant : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
           {...statsSwipeHandlers}
         >
-        {/* EMPTY STATE — shown on EVERY tab. Previously only Overview had one,
+          {/* EMPTY STATE — shown on EVERY tab. Previously only Overview had one,
             so a player with no hands saw a wall of 0.0% rows and empty charts.
             Rake opts out: an agent who has played no hands themselves still has
             a downline generating rake, and that is the whole point of the tab. */}
-        {!hasData && category !== 'rake' && emptyState}
+          {!hasData && category !== 'rake' && emptyState}
 
-        {/* ── RAKE TAB — live downline earnings, agents only ── */}
-        {showTab('rake') && agentRoles && agentRoles.length > 0 && (
-          <DownlineRakePanel roles={agentRoles} />
-        )}
+          {/* ── RAKE TAB — live downline earnings, agents only ── */}
+          {showTab('rake') && agentRoles && agentRoles.length > 0 && (
+            <DownlineRakePanel roles={agentRoles} />
+          )}
 
-        {/* ── OVERVIEW TAB ── */}
-        {showTab('overview') && hasData && (
-          <>
-            <div className="stats-grid">
-              <StatRow label="VPIP" value={`${(overall.vpip * 100).toFixed(1)}%`} color="#00d4ff" />
-              <StatRow label="PFR" value={`${(overall.pfr * 100).toFixed(1)}%`} color="#8b5cf6" />
-              <StatRow
-                label="Aggression Factor"
-                value={overall.aggression_factor.toFixed(2)}
-                color="#f59e0b"
-              />
-              <StatRow
-                label="Hours Played"
-                value={`${overall.hours_played.toFixed(1)}h`}
-                color="#06b6d4"
-              />
-              <StatRow label="Showdown Win %" value={`${showdownWinRate}%`} color="#22c55e" />
-              <StatRow
-                label="BB/100"
-                value={overall.bb_per_100.toFixed(2)}
-                color="#4169E1"
-                highlight
-              />
-              <StatRow
-                label="Cash Hands"
-                value={overall.cash_hands.toLocaleString()}
-                color="#00d4ff"
-              />
-              <StatRow
-                label="Tournament Hands"
-                value={overall.tourney_hands.toLocaleString()}
-                color="#8b5cf6"
-              />
-            </div>
-
-            {/* Per-variant breakdown */}
-            {(full?.variants?.length ?? 0) > 0 && (
-              <div className="variant-table">
-                <div className="variant-row variant-head">
-                  <span>Game</span>
-                  <span>Hands</span>
-                  <span>Won</span>
-                  <span>Profit</span>
-                  <span>BB/100</span>
-                </div>
-                {(full?.variants || []).map((v) => (
-                  <div className="variant-row" key={v.variant}>
-                    <span className="variant-name">{String(v.variant).toUpperCase()}</span>
-                    <span>{v.hands.toLocaleString()}</span>
-                    <span>{v.hands_won.toLocaleString()}</span>
-                    <span className={v.profit >= 0 ? 'positive' : 'negative'}>
-                      {v.profit >= 0 ? '+' : ''}
-                      {v.profit.toLocaleString()}
-                    </span>
-                    <span className={v.bb100 >= 0 ? 'positive' : 'negative'}>
-                      {v.bb100.toFixed(1)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Per-stake breakdown: which game size is actually carrying (or
-                bleeding) the results, instead of one blended number. */}
-            {(full?.stakes?.length ?? 0) > 1 && (
-              <div className="variant-table">
-                <div className="variant-row variant-head">
-                  <span>Stake</span>
-                  <span>Hands</span>
-                  <span>Won</span>
-                  <span>Profit</span>
-                  <span>BB/100</span>
-                </div>
-                {(full?.stakes || []).map((st) => (
-                  <div className="variant-row" key={`stake-${st.big_blind}`}>
-                    <span className="variant-name">{st.big_blind} BB</span>
-                    <span>{st.hands.toLocaleString()}</span>
-                    <span>{st.hands_won.toLocaleString()}</span>
-                    <span className={st.profit >= 0 ? 'positive' : 'negative'}>
-                      {st.profit >= 0 ? '+' : ''}
-                      {st.profit.toLocaleString()}
-                    </span>
-                    <span className={st.bb100 >= 0 ? 'positive' : 'negative'}>
-                      {st.bb100.toFixed(1)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Leak analysis deliberately does NOT live here. Dan, 2026-08-21:
-                it belongs in the Personal Assistant, which already owns
-                coaching and has the leak detector endpoint. This page reports
-                what the numbers ARE; the assistant says what to do about them.
-                findLeaks() and LeakPanel remain in components/stats/ for the
-                assistant to use - see the "Send To Personal Assistant" button
-                below. */}
-
-            {/* Rivals: the most socially engaging stat on the page, so it sits
-                where a player looks first. Owner only — head-to-head chip flow
-                is private, and ca_player_nemesis refuses a cross-user read. */}
-            {isOwnProfile && <PanelBoundary name="Rivals"><NemesisPanel userId={targetUserId} days={windowDays} /></PanelBoundary>}
-
-            {/* Where the player stands against the field. Rates arrive from the
-                RPC as FRACTIONS and the distribution is stored in PERCENT, so
-                they are converted exactly once, here, at the boundary. */}
-            <BenchmarkPanel
-              handsPlayed={overall.total_hands}
-              days={windowDays}
-              values={{
-                bb100: overall.bb_per_100,
-                // Computed from the counts rather than reusing `handsWonPct`,
-                // which is a pre-formatted STRING for the gauge. Matches the
-                // field definition: hands won over hands dealt.
-                win_rate:
-                  overall.total_hands > 0
-                    ? (overall.hands_won / overall.total_hands) * 100
-                    : undefined,
-                vpip: overall.vpip * 100,
-                pfr: overall.pfr * 100,
-                three_bet: overall.three_bet_percent * 100,
-              }}
-            />
-
-            {/* The export people actually use: a card for the club chat after
-                a good session, built on canvas so it costs no bundle weight. */}
-            {isOwnProfile && (
-              <StatsShareCard
-                displayName={user?.display_name || user?.username || 'Player'}
-                styleLabel={shareStyle?.label ?? null}
-                styleColor={shareStyle?.color ?? null}
-                stats={{
-                  hands: overall.total_hands,
-                  bb100: overall.bb_per_100,
-                  profit: overall.total_profit,
-                  vpip: overall.vpip * 100,
-                  pfr: overall.pfr * 100,
-                  hoursPlayed: overall.hours_played,
-                }}
-              />
-            )}
-
-            <div className="stats-action-row">
-              <button className="view-hands-btn" onClick={() => navigate('/player-sessions')}>
-                View Hand Histories
-              </button>
-              <button className="view-hands-btn" onClick={printDossier} disabled={printing}>
-                {printing ? 'Preparing Dossier...' : 'Print Or Save Dossier'}
-              </button>
-              <button
-                className="assistant-export-btn"
-                onClick={sendToAssistant}
-                disabled={exporting}
-              >
-                {exporting ? 'Exporting...' : 'Send to Personal Assistant'}
-              </button>
-            </div>
-          </>
-        )}
-
-        {/* ── PERFORMANCE TAB ── */}
-        {showTab('performance') && hasData && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            {/* Luck first. Every number below it is a rate the player can act
-                on; this is the one that tells them whether the results they are
-                staring at were earned or dealt. Owner only: it is derived from
-                their own per-hand records. */}
-            {isOwnProfile && (
-              <EVLuckChart userId={targetUserId} days={windowDays} still={printing} />
-            )}
-
-            {/* Preflop */}
-            <div>
-              <div className="stats-section-header">
-                <h3 style={{ color: '#00d4ff' }}>Preflop</h3>
-              </div>
+          {/* ── OVERVIEW TAB ── */}
+          {showTab('overview') && hasData && (
+            <>
               <div className="stats-grid">
                 <StatRow
                   label="VPIP"
@@ -1420,156 +1255,26 @@ export default function PlayerStatsPage() {
                 />
                 <StatRow label="PFR" value={`${(overall.pfr * 100).toFixed(1)}%`} color="#8b5cf6" />
                 <StatRow
-                  label="3-Bet %"
-                  value={`${(overall.three_bet_percent * 100).toFixed(1)}%`}
-                  color="#f59e0b"
-                />
-                <StatRow
-                  label="Fold to 3-Bet"
-                  value={`${(overall.fold_to_three_bet * 100).toFixed(1)}%`}
-                  color="#ef4444"
-                />
-              </div>
-            </div>
-            {/* Postflop */}
-            <div>
-              <div className="stats-section-header">
-                <h3 style={{ color: '#8b5cf6' }}>Postflop</h3>
-              </div>
-              <div className="stats-grid">
-                <StatRow
-                  label="C-Bet Flop"
-                  value={`${(overall.cbet_flop * 100).toFixed(1)}%`}
-                  color="#8b5cf6"
-                />
-                <StatRow
-                  label="WTSD"
-                  value={`${(overall.wtsd * 100).toFixed(1)}%`}
-                  color="#6366f1"
-                />
-                <StatRow
                   label="Aggression Factor"
                   value={overall.aggression_factor.toFixed(2)}
                   color="#f59e0b"
                 />
+                <StatRow
+                  label="Hours Played"
+                  value={`${overall.hours_played.toFixed(1)}h`}
+                  color="#06b6d4"
+                />
                 <StatRow label="Showdown Win %" value={`${showdownWinRate}%`} color="#22c55e" />
-              </div>
-            </div>
-            {/* Results */}
-            <div>
-              <div className="stats-section-header">
-                <h3 style={{ color: '#22c55e' }}>Results</h3>
-              </div>
-              <div className="stats-grid">
                 <StatRow
-                  label="Cash Profit"
-                  value={overall.total_profit.toLocaleString()}
-                  color="#22c55e"
-                  highlight
-                />
-                <StatRow label="BB/100" value={overall.bb_per_100.toFixed(2)} color="#4169E1" />
-                <StatRow
-                  label="Total Won"
-                  value={overall.total_winnings.toLocaleString()}
-                  color="#10b981"
-                />
-                <StatRow
-                  label="Total Invested"
-                  value={overall.total_invested.toLocaleString()}
-                  color="#06b6d4"
-                />
-                <StatRow
-                  label="Biggest Pot Won"
-                  value={overall.biggest_pot_won.toLocaleString()}
-                  color="#10b981"
-                />
-                <StatRow
-                  label="Biggest Hand Loss"
-                  value={overall.biggest_hand_loss.toLocaleString()}
-                  color="#ef4444"
-                />
-                <StatRow
-                  label="Hands Won"
-                  value={overall.hands_won.toLocaleString()}
-                  color="#22c55e"
-                />
-                <StatRow
-                  label="Hands Lost"
-                  value={overall.hands_lost.toLocaleString()}
-                  color="#ef4444"
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── POSITIONS TAB ── */}
-        {showTab('positions') && hasData && (
-          <div>
-            {/* Positional shape first: a player reads the SHAPE of their game
-                before they read any individual number, and a web that pinches
-                at the button is a leak no table of rates makes obvious. Pure
-                presentation over full.positions, which is already loaded. */}
-            <PanelBoundary name="Positional Shape"><PositionalRadar positions={full?.positions} /></PanelBoundary>
-            <PanelBoundary name="Position Win Rates"><PositionWinRates userId={targetUserId} initialPositions={full?.positions} /></PanelBoundary>
-          </div>
-        )}
-
-        {/* ── HANDS TAB — owner only, see the PRIVACY note on BASE_TABS ── */}
-        {showTab('hands') && isOwnProfile && hasData && (
-          <div>
-            <PanelBoundary name="Starting Hands"><HoleCardHeatmap userId={targetUserId} days={windowDays} /></PanelBoundary>
-          </div>
-        )}
-
-        {/* ── TROPHIES TAB — owner only ── */}
-        {showTab('trophies') && isOwnProfile && hasData && (
-          <div>
-            <PanelBoundary name="Trophy Room"><TrophyRoom overall={full?.overall} tournaments={full?.tournaments} /></PanelBoundary>
-          </div>
-        )}
-
-        {/* ── TOURNAMENTS TAB ── */}
-        {showTab('tournaments') && hasData && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div>
-              <div className="stats-section-header">
-                <h3 style={{ color: '#f59e0b' }}>Tournament Results</h3>
-              </div>
-              <div className="stats-grid">
-                <StatRow label="Entries" value={tourn.entries.toLocaleString()} color="#00d4ff" />
-                <StatRow label="Cashes" value={tourn.cashes.toLocaleString()} color="#22c55e" />
-                <StatRow
-                  label="ITM %"
-                  value={`${(tourn.itm_percent * 100).toFixed(1)}%`}
-                  color="#10b981"
-                />
-                <StatRow label="Wins" value={tourn.wins.toLocaleString()} color="#f59e0b" />
-                <StatRow
-                  label="Best Finish"
-                  value={tourn.best_finish ? `#${tourn.best_finish}` : '-'}
-                  color="#8b5cf6"
-                />
-                <StatRow
-                  label="Total Buy-ins"
-                  value={tourn.total_buyins.toLocaleString()}
-                  color="#06b6d4"
-                />
-                <StatRow
-                  label="Total Winnings"
-                  value={tourn.total_winnings.toLocaleString()}
-                  color="#10b981"
-                />
-                <StatRow
-                  label="Net Profit"
-                  value={`${tourn.net_profit >= 0 ? '+' : ''}${tourn.net_profit.toLocaleString()}`}
-                  color={tourn.net_profit >= 0 ? '#22c55e' : '#ef4444'}
+                  label="BB/100"
+                  value={overall.bb_per_100.toFixed(2)}
+                  color="#4169E1"
                   highlight
                 />
                 <StatRow
-                  label="ROI"
-                  value={`${(tourn.roi * 100).toFixed(1)}%`}
-                  color={tourn.roi >= 0 ? '#22c55e' : '#ef4444'}
+                  label="Cash Hands"
+                  value={overall.cash_hands.toLocaleString()}
+                  color="#00d4ff"
                 />
                 <StatRow
                   label="Tournament Hands"
@@ -1577,80 +1282,124 @@ export default function PlayerStatsPage() {
                   color="#8b5cf6"
                 />
               </div>
-            </div>
 
-            {(full?.recent_tournaments?.length ?? 0) > 0 ? (
-              <div>
-                <div className="stats-section-header">
-                  <h3 style={{ color: '#3b82f6' }}>Recent Tournaments</h3>
-                </div>
-                <div className="tournament-list">
-                  {(full?.recent_tournaments || []).map((t, i) => (
-                    <div className="tournament-item" key={i}>
-                      <div className="tournament-item-main">
-                        <span className="tournament-item-name">{t.name}</span>
-                        <span className="tournament-item-date">
-                          {t.start_time
-                            ? new Date(t.start_time).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric',
-                              })
-                            : '-'}
-                          {t.variant ? ` · ${t.variant.toUpperCase()}` : ''}
-                        </span>
-                      </div>
-                      <div className="tournament-item-result">
-                        <span className="tournament-item-rank">
-                          {t.finish_rank ? `#${t.finish_rank}` : t.status || '-'}
-                        </span>
-                        <span
-                          className={`tournament-item-net ${num(t.prize) - num(t.buyin) >= 0 ? 'positive' : 'negative'}`}
-                        >
-                          {num(t.prize) - num(t.buyin) >= 0 ? '+' : ''}
-                          {(num(t.prize) - num(t.buyin)).toLocaleString()}
-                        </span>
-                      </div>
+              {/* Per-variant breakdown */}
+              {(full?.variants?.length ?? 0) > 0 && (
+                <div className="variant-table">
+                  <div className="variant-row variant-head">
+                    <span>Game</span>
+                    <span>Hands</span>
+                    <span>Won</span>
+                    <span>Profit</span>
+                    <span>BB/100</span>
+                  </div>
+                  {(full?.variants || []).map((v) => (
+                    <div className="variant-row" key={v.variant}>
+                      <span className="variant-name">{String(v.variant).toUpperCase()}</span>
+                      <span>{v.hands.toLocaleString()}</span>
+                      <span>{v.hands_won.toLocaleString()}</span>
+                      <span className={v.profit >= 0 ? 'positive' : 'negative'}>
+                        {v.profit >= 0 ? '+' : ''}
+                        {v.profit.toLocaleString()}
+                      </span>
+                      <span className={v.bb100 >= 0 ? 'positive' : 'negative'}>
+                        {v.bb100.toFixed(1)}
+                      </span>
                     </div>
                   ))}
                 </div>
-              </div>
-            ) : (
-              <div className="stats-empty-state">
-                <span className="empty-title">No Tournaments Yet</span>
-                <span className="empty-description">
-                  Register For A Tournament In The Lobby And Your Results Will Show Up Here.
-                </span>
-              </div>
-            )}
-          </div>
-        )}
+              )}
 
-        {/* ── ANALYSIS TAB ── */}
-        {showTab('analysis') && hasData && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            {/* Advanced Stats */}
-            <div>
-              <div className="stats-section-header">
-                <h3 style={{ color: '#f59e0b' }}>Advanced Stats</h3>
-              </div>
-              <AdvancedStatsSummary userId={targetUserId} initialData={advancedInitialData} />
-            </div>
+              {/* Per-stake breakdown: which game size is actually carrying (or
+                bleeding) the results, instead of one blended number. */}
+              {(full?.stakes?.length ?? 0) > 1 && (
+                <div className="variant-table">
+                  <div className="variant-row variant-head">
+                    <span>Stake</span>
+                    <span>Hands</span>
+                    <span>Won</span>
+                    <span>Profit</span>
+                    <span>BB/100</span>
+                  </div>
+                  {(full?.stakes || []).map((st) => (
+                    <div className="variant-row" key={`stake-${st.big_blind}`}>
+                      <span className="variant-name">{st.big_blind} BB</span>
+                      <span>{st.hands.toLocaleString()}</span>
+                      <span>{st.hands_won.toLocaleString()}</span>
+                      <span className={st.profit >= 0 ? 'positive' : 'negative'}>
+                        {st.profit >= 0 ? '+' : ''}
+                        {st.profit.toLocaleString()}
+                      </span>
+                      <span className={st.bb100 >= 0 ? 'positive' : 'negative'}>
+                        {st.bb100.toFixed(1)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
-            {/* Charts */}
-            <div className="charts-section">
-              <div className="stats-section-header">
-                <h3 style={{ color: '#00d4ff' }}>Charts</h3>
-              </div>
+              {/* Leak analysis deliberately does NOT live here. Dan, 2026-08-21:
+                it belongs in the Personal Assistant, which already owns
+                coaching and has the leak detector endpoint. This page reports
+                what the numbers ARE; the assistant says what to do about them.
+                findLeaks() and LeakPanel remain in components/stats/ for the
+                assistant to use - see the "Send To Personal Assistant" button
+                below. */}
+
+              {/* Rivals: the most socially engaging stat on the page, so it sits
+                where a player looks first. Owner only — head-to-head chip flow
+                is private, and ca_player_nemesis refuses a cross-user read. */}
+              {isOwnProfile && (
+                <PanelBoundary name="Rivals">
+                  <NemesisPanel userId={targetUserId} days={windowDays} />
+                </PanelBoundary>
+              )}
+
+              {/* Where the player stands against the field. Rates arrive from the
+                RPC as FRACTIONS and the distribution is stored in PERCENT, so
+                they are converted exactly once, here, at the boundary. */}
+              <BenchmarkPanel
+                handsPlayed={overall.total_hands}
+                days={windowDays}
+                values={{
+                  bb100: overall.bb_per_100,
+                  // Computed from the counts rather than reusing `handsWonPct`,
+                  // which is a pre-formatted STRING for the gauge. Matches the
+                  // field definition: hands won over hands dealt.
+                  win_rate:
+                    overall.total_hands > 0
+                      ? (overall.hands_won / overall.total_hands) * 100
+                      : undefined,
+                  vpip: overall.vpip * 100,
+                  pfr: overall.pfr * 100,
+                  three_bet: overall.three_bet_percent * 100,
+                }}
+              />
+
+              {/* The export people actually use: a card for the club chat after
+                a good session, built on canvas so it costs no bundle weight. */}
+              {isOwnProfile && (
+                <StatsShareCard
+                  displayName={user?.display_name || user?.username || 'Player'}
+                  styleLabel={shareStyle?.label ?? null}
+                  styleColor={shareStyle?.color ?? null}
+                  stats={{
+                    hands: overall.total_hands,
+                    bb100: overall.bb_per_100,
+                    profit: overall.total_profit,
+                    vpip: overall.vpip * 100,
+                    pfr: overall.pfr * 100,
+                    hoursPlayed: overall.hours_played,
+                  }}
+                />
+              )}
 
               <div className="stats-action-row">
-                {sessionRows.length > 0 && (
-                  <button className="export-btn" onClick={exportSessionsCSV}>
-                    Export Sessions CSV
-                  </button>
-                )}
-                <button className="export-btn" onClick={exportOverviewCSV}>
-                  Export Stats CSV
+                <button className="view-hands-btn" onClick={() => navigate('/player-sessions')}>
+                  View Hand Histories
+                </button>
+                <button className="view-hands-btn" onClick={printDossier} disabled={printing}>
+                  {printing ? 'Preparing Dossier...' : 'Print Or Save Dossier'}
                 </button>
                 <button
                   className="assistant-export-btn"
@@ -1660,107 +1409,303 @@ export default function PlayerStatsPage() {
                   {exporting ? 'Exporting...' : 'Send to Personal Assistant'}
                 </button>
               </div>
+            </>
+          )}
 
-              {/* Profit Over Time Chart */}
-              <div className="chart-card">
-                <div className="chart-card-header">
-                  <h3>Profit Over Time (90 Days)</h3>
+          {/* ── PERFORMANCE TAB ── */}
+          {showTab('performance') && hasData && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              {/* Luck first. Every number below it is a rate the player can act
+                on; this is the one that tells them whether the results they are
+                staring at were earned or dealt. Owner only: it is derived from
+                their own per-hand records. */}
+              {isOwnProfile && (
+                <EVLuckChart userId={targetUserId} days={windowDays} still={printing} />
+              )}
+
+              {/* Preflop */}
+              <div>
+                <div className="stats-section-header">
+                  <h3 style={{ color: '#00d4ff' }}>Preflop</h3>
                 </div>
-                <div className="chart-container">
-                  <ResponsiveContainer width="100%" height={250}>
-                    <AreaChart data={dailySeries}>
-                      <defs>
-                        <linearGradient id="profitGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#4169E1" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#4169E1" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                      <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" fontSize={11} />
-                      <YAxis stroke="rgba(255,255,255,0.4)" fontSize={11} />
-                      <Tooltip
-                        contentStyle={{
-                          background: 'rgba(14, 14, 28, 0.95)',
-                          border: '1px solid rgba(0, 212, 255, 0.2)',
-                          borderRadius: '10px',
-                          backdropFilter: 'blur(16px)',
-                        }}
-                        labelStyle={{ color: '#fff' }}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="cumulative"
-                        stroke="#4169E1"
-                        fill="url(#profitGradient)"
-                        strokeWidth={2}
-                        name="Cumulative Profit"
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                <div className="stats-grid">
+                  <StatRow
+                    label="VPIP"
+                    value={`${(overall.vpip * 100).toFixed(1)}%`}
+                    color="#00d4ff"
+                  />
+                  <StatRow
+                    label="PFR"
+                    value={`${(overall.pfr * 100).toFixed(1)}%`}
+                    color="#8b5cf6"
+                  />
+                  <StatRow
+                    label="3-Bet %"
+                    value={`${(overall.three_bet_percent * 100).toFixed(1)}%`}
+                    color="#f59e0b"
+                  />
+                  <StatRow
+                    label="Fold to 3-Bet"
+                    value={`${(overall.fold_to_three_bet * 100).toFixed(1)}%`}
+                    color="#ef4444"
+                  />
+                </div>
+              </div>
+              {/* Postflop */}
+              <div>
+                <div className="stats-section-header">
+                  <h3 style={{ color: '#8b5cf6' }}>Postflop</h3>
+                </div>
+                <div className="stats-grid">
+                  <StatRow
+                    label="C-Bet Flop"
+                    value={`${(overall.cbet_flop * 100).toFixed(1)}%`}
+                    color="#8b5cf6"
+                  />
+                  <StatRow
+                    label="WTSD"
+                    value={`${(overall.wtsd * 100).toFixed(1)}%`}
+                    color="#6366f1"
+                  />
+                  <StatRow
+                    label="Aggression Factor"
+                    value={overall.aggression_factor.toFixed(2)}
+                    color="#f59e0b"
+                  />
+                  <StatRow label="Showdown Win %" value={`${showdownWinRate}%`} color="#22c55e" />
+                </div>
+              </div>
+              {/* Results */}
+              <div>
+                <div className="stats-section-header">
+                  <h3 style={{ color: '#22c55e' }}>Results</h3>
+                </div>
+                <div className="stats-grid">
+                  <StatRow
+                    label="Cash Profit"
+                    value={overall.total_profit.toLocaleString()}
+                    color="#22c55e"
+                    highlight
+                  />
+                  <StatRow label="BB/100" value={overall.bb_per_100.toFixed(2)} color="#4169E1" />
+                  <StatRow
+                    label="Total Won"
+                    value={overall.total_winnings.toLocaleString()}
+                    color="#10b981"
+                  />
+                  <StatRow
+                    label="Total Invested"
+                    value={overall.total_invested.toLocaleString()}
+                    color="#06b6d4"
+                  />
+                  <StatRow
+                    label="Biggest Pot Won"
+                    value={overall.biggest_pot_won.toLocaleString()}
+                    color="#10b981"
+                  />
+                  <StatRow
+                    label="Biggest Hand Loss"
+                    value={overall.biggest_hand_loss.toLocaleString()}
+                    color="#ef4444"
+                  />
+                  <StatRow
+                    label="Hands Won"
+                    value={overall.hands_won.toLocaleString()}
+                    color="#22c55e"
+                  />
+                  <StatRow
+                    label="Hands Lost"
+                    value={overall.hands_lost.toLocaleString()}
+                    color="#ef4444"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── POSITIONS TAB ── */}
+          {showTab('positions') && hasData && (
+            <div>
+              {/* Positional shape first: a player reads the SHAPE of their game
+                before they read any individual number, and a web that pinches
+                at the button is a leak no table of rates makes obvious. Pure
+                presentation over full.positions, which is already loaded. */}
+              <PanelBoundary name="Positional Shape">
+                <PositionalRadar positions={full?.positions} />
+              </PanelBoundary>
+              <PanelBoundary name="Position Win Rates">
+                <PositionWinRates userId={targetUserId} initialPositions={full?.positions} />
+              </PanelBoundary>
+            </div>
+          )}
+
+          {/* ── HANDS TAB — owner only, see the PRIVACY note on BASE_TABS ── */}
+          {showTab('hands') && isOwnProfile && hasData && (
+            <div>
+              <PanelBoundary name="Starting Hands">
+                <HoleCardHeatmap userId={targetUserId} days={windowDays} />
+              </PanelBoundary>
+            </div>
+          )}
+
+          {/* ── TROPHIES TAB — owner only ── */}
+          {showTab('trophies') && isOwnProfile && hasData && (
+            <div>
+              <PanelBoundary name="Trophy Room">
+                <TrophyRoom overall={full?.overall} tournaments={full?.tournaments} />
+              </PanelBoundary>
+            </div>
+          )}
+
+          {/* ── TOURNAMENTS TAB ── */}
+          {showTab('tournaments') && hasData && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              <div>
+                <div className="stats-section-header">
+                  <h3 style={{ color: '#f59e0b' }}>Tournament Results</h3>
+                </div>
+                <div className="stats-grid">
+                  <StatRow label="Entries" value={tourn.entries.toLocaleString()} color="#00d4ff" />
+                  <StatRow label="Cashes" value={tourn.cashes.toLocaleString()} color="#22c55e" />
+                  <StatRow
+                    label="ITM %"
+                    value={`${(tourn.itm_percent * 100).toFixed(1)}%`}
+                    color="#10b981"
+                  />
+                  <StatRow label="Wins" value={tourn.wins.toLocaleString()} color="#f59e0b" />
+                  <StatRow
+                    label="Best Finish"
+                    value={tourn.best_finish ? `#${tourn.best_finish}` : '-'}
+                    color="#8b5cf6"
+                  />
+                  <StatRow
+                    label="Total Buy-ins"
+                    value={tourn.total_buyins.toLocaleString()}
+                    color="#06b6d4"
+                  />
+                  <StatRow
+                    label="Total Winnings"
+                    value={tourn.total_winnings.toLocaleString()}
+                    color="#10b981"
+                  />
+                  <StatRow
+                    label="Net Profit"
+                    value={`${tourn.net_profit >= 0 ? '+' : ''}${tourn.net_profit.toLocaleString()}`}
+                    color={tourn.net_profit >= 0 ? '#22c55e' : '#ef4444'}
+                    highlight
+                  />
+                  <StatRow
+                    label="ROI"
+                    value={`${(tourn.roi * 100).toFixed(1)}%`}
+                    color={tourn.roi >= 0 ? '#22c55e' : '#ef4444'}
+                  />
+                  <StatRow
+                    label="Tournament Hands"
+                    value={overall.tourney_hands.toLocaleString()}
+                    color="#8b5cf6"
+                  />
                 </div>
               </div>
 
-              {/* Session Results Bar Chart */}
-              <div className="chart-card">
-                <div className="chart-card-header">
-                  <h3>Daily Results</h3>
+              {(full?.recent_tournaments?.length ?? 0) > 0 ? (
+                <div>
+                  <div className="stats-section-header">
+                    <h3 style={{ color: '#3b82f6' }}>Recent Tournaments</h3>
+                  </div>
+                  <div className="tournament-list">
+                    {(full?.recent_tournaments || []).map((t, i) => (
+                      <div className="tournament-item" key={i}>
+                        <div className="tournament-item-main">
+                          <span className="tournament-item-name">{t.name}</span>
+                          <span className="tournament-item-date">
+                            {t.start_time
+                              ? new Date(t.start_time).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                })
+                              : '-'}
+                            {t.variant ? ` · ${t.variant.toUpperCase()}` : ''}
+                          </span>
+                        </div>
+                        <div className="tournament-item-result">
+                          <span className="tournament-item-rank">
+                            {t.finish_rank ? `#${t.finish_rank}` : t.status || '-'}
+                          </span>
+                          <span
+                            className={`tournament-item-net ${num(t.prize) - num(t.buyin) >= 0 ? 'positive' : 'negative'}`}
+                          >
+                            {num(t.prize) - num(t.buyin) >= 0 ? '+' : ''}
+                            {(num(t.prize) - num(t.buyin)).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="chart-container">
-                  <ResponsiveContainer width="100%" height={200}>
-                    <BarChart data={dailySeries}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                      <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" fontSize={11} />
-                      <YAxis stroke="rgba(255,255,255,0.4)" fontSize={11} />
-                      <Tooltip
-                        contentStyle={{
-                          background: 'rgba(14, 14, 28, 0.95)',
-                          border: '1px solid rgba(0, 212, 255, 0.2)',
-                          borderRadius: '10px',
-                          backdropFilter: 'blur(16px)',
-                        }}
-                        labelStyle={{ color: '#fff' }}
-                      />
-                      <Bar dataKey="profit" name="Profit" radius={[4, 4, 0, 0]}>
-                        {dailySeries.map((entry, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={entry.profit >= 0 ? '#22c55e' : '#ef4444'}
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+              ) : (
+                <div className="stats-empty-state">
+                  <span className="empty-title">No Tournaments Yet</span>
+                  <span className="empty-description">
+                    Register For A Tournament In The Lobby And Your Results Will Show Up Here.
+                  </span>
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* ── ANALYSIS TAB ── */}
+          {showTab('analysis') && hasData && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              {/* Advanced Stats */}
+              <div>
+                <div className="stats-section-header">
+                  <h3 style={{ color: '#f59e0b' }}>Advanced Stats</h3>
+                </div>
+                <AdvancedStatsSummary userId={targetUserId} initialData={advancedInitialData} />
               </div>
 
-              {/* Position Breakdown Pie Chart */}
-              {positionPie.length > 0 && (
+              {/* Charts */}
+              <div className="charts-section">
+                <div className="stats-section-header">
+                  <h3 style={{ color: '#00d4ff' }}>Charts</h3>
+                </div>
+
+                <div className="stats-action-row">
+                  {sessionRows.length > 0 && (
+                    <button className="export-btn" onClick={exportSessionsCSV}>
+                      Export Sessions CSV
+                    </button>
+                  )}
+                  <button className="export-btn" onClick={exportOverviewCSV}>
+                    Export Stats CSV
+                  </button>
+                  <button
+                    className="assistant-export-btn"
+                    onClick={sendToAssistant}
+                    disabled={exporting}
+                  >
+                    {exporting ? 'Exporting...' : 'Send to Personal Assistant'}
+                  </button>
+                </div>
+
+                {/* Profit Over Time Chart */}
                 <div className="chart-card">
                   <div className="chart-card-header">
-                    <h3>Hands Won By Position</h3>
+                    <h3>Profit Over Time (90 Days)</h3>
                   </div>
-                  <div className="chart-container pie-chart">
+                  <div className="chart-container">
                     <ResponsiveContainer width="100%" height={250}>
-                      <PieChart>
-                        <Pie
-                          data={positionPie}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={90}
-                          paddingAngle={2}
-                          dataKey="value"
-                          nameKey="name"
-                          label={({ name, value }) => `${name}: ${value}`}
-                          labelLine={{ stroke: 'rgba(255,255,255,0.3)' }}
-                        >
-                          {positionPie.map((_entry, index) => (
-                            <Cell
-                              key={`cell-${index}`}
-                              fill={CHART_COLORS[index % CHART_COLORS.length]}
-                            />
-                          ))}
-                        </Pie>
+                      <AreaChart data={dailySeries}>
+                        <defs>
+                          <linearGradient id="profitGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#4169E1" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#4169E1" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                        <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" fontSize={11} />
+                        <YAxis stroke="rgba(255,255,255,0.4)" fontSize={11} />
                         <Tooltip
                           contentStyle={{
                             background: 'rgba(14, 14, 28, 0.95)',
@@ -1768,103 +1713,186 @@ export default function PlayerStatsPage() {
                             borderRadius: '10px',
                             backdropFilter: 'blur(16px)',
                           }}
+                          labelStyle={{ color: '#fff' }}
                         />
-                      </PieChart>
+                        <Area
+                          type="monotone"
+                          dataKey="cumulative"
+                          stroke="#4169E1"
+                          fill="url(#profitGradient)"
+                          strokeWidth={2}
+                          name="Cumulative Profit"
+                        />
+                      </AreaChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
-              )}
-            </div>
 
-            {/* Notable hands — every stat above used to be a dead end. */}
-            <div>
-              <div className="stats-section-header">
-                <h3 style={{ color: '#f59e0b' }}>Notable Hands</h3>
-              </div>
-              <div className="hand-mode-row">
-                {(
-                  [
-                    ['biggest_won', 'Biggest Wins'],
-                    ['biggest_lost', 'Worst Losses'],
-                    ['recent', 'Most Recent'],
-                  ] as [HandMode, string][]
-                ).map(([mode, label]) => (
-                  <button
-                    key={mode}
-                    className={handMode === mode ? 'active' : ''}
-                    onClick={() => setHandMode(mode)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              {handsLoading && <div className="hand-empty">Loading Hands...</div>}
-              {!handsLoading && hands && hands.length === 0 && (
-                <div className="hand-empty">No Hands In This Range Yet.</div>
-              )}
-              {!handsLoading && hands && hands.length > 0 && (
-                <div className="hand-list">
-                  {hands.map((h) => (
-                    <div className="hand-row" key={h.id}>
-                      <div className="hand-row-main">
-                        <span className="hand-row-meta">
-                          {new Date(h.played_at).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                          {' · '}
-                          {String(h.variant || '').toUpperCase()}
-                          {h.position ? ` · ${h.position}` : ''}
-                          {h.is_tournament ? ' · MTT' : ` · ${h.big_blind} BB`}
-                          {` · ${h.players} players`}
-                        </span>
-                        {Array.isArray(h.board) && h.board.length > 0 && (
-                          <span className="hand-row-board">
-                            {h.board.map((c) => formatCard(String(c))).join('  ')}
-                          </span>
-                        )}
-                      </div>
-                      <div className="hand-row-result">
-                        <span
-                          className={`hand-row-profit ${h.profit >= 0 ? 'positive' : 'negative'}`}
-                        >
-                          {h.profit >= 0 ? '+' : ''}
-                          {h.profit.toLocaleString()}
-                        </span>
-                        <span className="hand-row-pot">Pot {h.pot_size.toLocaleString()}</span>
-                      </div>
+                {/* Session Results Bar Chart */}
+                <div className="chart-card">
+                  <div className="chart-card-header">
+                    <h3>Daily Results</h3>
+                  </div>
+                  <div className="chart-container">
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={dailySeries}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                        <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" fontSize={11} />
+                        <YAxis stroke="rgba(255,255,255,0.4)" fontSize={11} />
+                        <Tooltip
+                          contentStyle={{
+                            background: 'rgba(14, 14, 28, 0.95)',
+                            border: '1px solid rgba(0, 212, 255, 0.2)',
+                            borderRadius: '10px',
+                            backdropFilter: 'blur(16px)',
+                          }}
+                          labelStyle={{ color: '#fff' }}
+                        />
+                        <Bar dataKey="profit" name="Profit" radius={[4, 4, 0, 0]}>
+                          {dailySeries.map((entry, index) => (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={entry.profit >= 0 ? '#22c55e' : '#ef4444'}
+                            />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Position Breakdown Pie Chart */}
+                {positionPie.length > 0 && (
+                  <div className="chart-card">
+                    <div className="chart-card-header">
+                      <h3>Hands Won By Position</h3>
                     </div>
+                    <div className="chart-container pie-chart">
+                      <ResponsiveContainer width="100%" height={250}>
+                        <PieChart>
+                          <Pie
+                            data={positionPie}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={60}
+                            outerRadius={90}
+                            paddingAngle={2}
+                            dataKey="value"
+                            nameKey="name"
+                            label={({ name, value }) => `${name}: ${value}`}
+                            labelLine={{ stroke: 'rgba(255,255,255,0.3)' }}
+                          >
+                            {positionPie.map((_entry, index) => (
+                              <Cell
+                                key={`cell-${index}`}
+                                fill={CHART_COLORS[index % CHART_COLORS.length]}
+                              />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            contentStyle={{
+                              background: 'rgba(14, 14, 28, 0.95)',
+                              border: '1px solid rgba(0, 212, 255, 0.2)',
+                              borderRadius: '10px',
+                              backdropFilter: 'blur(16px)',
+                            }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Notable hands — every stat above used to be a dead end. */}
+              <div>
+                <div className="stats-section-header">
+                  <h3 style={{ color: '#f59e0b' }}>Notable Hands</h3>
+                </div>
+                <div className="hand-mode-row">
+                  {(
+                    [
+                      ['biggest_won', 'Biggest Wins'],
+                      ['biggest_lost', 'Worst Losses'],
+                      ['recent', 'Most Recent'],
+                    ] as [HandMode, string][]
+                  ).map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      className={handMode === mode ? 'active' : ''}
+                      onClick={() => setHandMode(mode)}
+                    >
+                      {label}
+                    </button>
                   ))}
-                  <button className="view-hands-btn" onClick={() => navigate('/player-sessions')}>
-                    Open Full Hand History
-                  </button>
                 </div>
-              )}
-            </div>
-
-            {/* Sessions */}
-            <div>
-              <div className="stats-section-header">
-                <h3 style={{ color: '#3b82f6' }}>Cash Sessions</h3>
+                {handsLoading && <div className="hand-empty">Loading Hands...</div>}
+                {!handsLoading && hands && hands.length === 0 && (
+                  <div className="hand-empty">No Hands In This Range Yet.</div>
+                )}
+                {!handsLoading && hands && hands.length > 0 && (
+                  <div className="hand-list">
+                    {hands.map((h) => (
+                      <div className="hand-row" key={h.id}>
+                        <div className="hand-row-main">
+                          <span className="hand-row-meta">
+                            {new Date(h.played_at).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                            {' · '}
+                            {String(h.variant || '').toUpperCase()}
+                            {h.position ? ` · ${h.position}` : ''}
+                            {h.is_tournament ? ' · MTT' : ` · ${h.big_blind} BB`}
+                            {` · ${h.players} players`}
+                          </span>
+                          {Array.isArray(h.board) && h.board.length > 0 && (
+                            <span className="hand-row-board">
+                              {h.board.map((c) => formatCard(String(c))).join('  ')}
+                            </span>
+                          )}
+                        </div>
+                        <div className="hand-row-result">
+                          <span
+                            className={`hand-row-profit ${h.profit >= 0 ? 'positive' : 'negative'}`}
+                          >
+                            {h.profit >= 0 ? '+' : ''}
+                            {h.profit.toLocaleString()}
+                          </span>
+                          <span className="hand-row-pot">Pot {h.pot_size.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    ))}
+                    <button className="view-hands-btn" onClick={() => navigate('/player-sessions')}>
+                      Open Full Hand History
+                    </button>
+                  </div>
+                )}
               </div>
-              <SessionHistory userId={targetUserId} initialSessions={sessionRows} />
-              {overall.tourney_hands > 0 && (
-                <div className="stats-notice">
-                  Cash Tables Only - Tournament Results Are In The Tournaments Tab, Because A
-                  Tournament Result Is A Prize, Not Chips Won At A Table.
+
+              {/* Sessions */}
+              <div>
+                <div className="stats-section-header">
+                  <h3 style={{ color: '#3b82f6' }}>Cash Sessions</h3>
                 </div>
-              )}
-            </div>
-
-            {/* Bankroll */}
-            <div>
-              <div className="stats-section-header">
-                <h3 style={{ color: '#10b981' }}>Cash Bankroll</h3>
+                <SessionHistory userId={targetUserId} initialSessions={sessionRows} />
+                {overall.tourney_hands > 0 && (
+                  <div className="stats-notice">
+                    Cash Tables Only - Tournament Results Are In The Tournaments Tab, Because A
+                    Tournament Result Is A Prize, Not Chips Won At A Table.
+                  </div>
+                )}
               </div>
-              <BankrollTracker userId={targetUserId} initialSessions={sessionRows} />
+
+              {/* Bankroll */}
+              <div>
+                <div className="stats-section-header">
+                  <h3 style={{ color: '#10b981' }}>Cash Bankroll</h3>
+                </div>
+                <BankrollTracker userId={targetUserId} initialSessions={sessionRows} />
+              </div>
             </div>
-          </div>
-        )}
+          )}
         </motion.div>
       </AnimatePresence>
     </div>

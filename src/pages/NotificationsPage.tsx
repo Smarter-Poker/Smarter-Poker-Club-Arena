@@ -45,12 +45,14 @@ function categorizeNotification(notif: Notification): NotifCategory {
 
 interface Notification {
   id: string;
-  type: 'info' | 'success' | 'warning' | 'error';
+  type: string;
   title: string;
   message: string;
   read: boolean;
   created_at: string;
   action_url?: string;
+  metadata?: Record<string, unknown>;
+  groupIds?: string[];
 }
 
 // ── SWR Cache helpers ──
@@ -219,7 +221,7 @@ export default function NotificationsPage() {
         () =>
           supabase
             .from('notifications')
-            .select('id, type, title, message, read, created_at, action_url')
+            .select('id, type, title, message, read, created_at, action_url, metadata')
             .eq('user_id', user?.id)
             .order('created_at', { ascending: false })
             .limit(50)
@@ -246,16 +248,20 @@ export default function NotificationsPage() {
     }
   };
 
-  const markAsRead = async (id: string) => {
+  const markAsRead = async (id: string, groupIds?: string[]) => {
     try {
+      const idsToMark = groupIds && groupIds.length > 0 ? groupIds : [id];
+
       const { error } = await supabase
         .from('notifications')
         .update({ read: true })
-        .eq('id', id)
+        .in('id', idsToMark)
         .eq('user_id', user?.id);
       if (error) throw error;
 
-      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+      setNotifications((prev) =>
+        prev.map((n) => (idsToMark.includes(n.id) ? { ...n, read: true } : n))
+      );
       masterBus.emit('NOTIFICATION_READ', { notifId: id, allRead: false });
     } catch (err) {
       reportError(err, 'NotificationsPage.markAsRead_error');
@@ -495,9 +501,13 @@ export default function NotificationsPage() {
                       icon={getRichIcon(notif)}
                       timeStr={timeAgo(notif.created_at)}
                       onRead={() => {
-                        markAsRead(notif.id);
-                        if (notif.action_url) navigate(notif.action_url);
+                        markAsRead(notif.id, notif.groupIds);
+                        const url =
+                          notif.action_url ||
+                          notificationService.getDeepLinkUrl(notif.type as any, notif.metadata);
+                        if (url) navigate(url);
                       }}
+                      onMarkAsRead={() => markAsRead(notif.id, notif.groupIds)}
                       onDelete={() => deleteNotification(notif.id)}
                     />
                   );
@@ -528,13 +538,20 @@ function SwipeableNotificationItem({
   icon,
   timeStr,
   onRead,
+  onMarkAsRead,
   onDelete,
 }: any) {
   const { handlers, rowStyle, offset, reset } = useSwipeAction({
     actionWidth: 80,
     threshold: 40,
-    onSwipeLeft: () => {
-      // Swipe left reveals right action (Delete)
+    onSwipeLeft: () => {},
+    onSwipeRight: () => {
+      if (!notif.read && onMarkAsRead) {
+        onMarkAsRead();
+        setTimeout(reset, 300); // snap back after short delay for visual feedback
+      } else {
+        reset(); // snap back if already read
+      }
     },
   });
 
@@ -547,6 +564,18 @@ function SwipeableNotificationItem({
         transition: 'opacity 0.3s, transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
       }}
     >
+      {!notif.read && (
+        <div
+          className="swipe-actions-left"
+          onClick={(e) => {
+            e.stopPropagation();
+            reset();
+            if (onMarkAsRead) onMarkAsRead();
+          }}
+        >
+          ✓
+        </div>
+      )}
       <div
         className="swipe-actions-right"
         onClick={(e) => {

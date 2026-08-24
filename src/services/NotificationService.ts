@@ -249,10 +249,7 @@ class NotificationServiceClass {
     notification: Omit<Notification, 'id' | 'createdAt' | 'isRead'>
   ): Promise<Notification | null> {
     // Q3: Auto-generate action_url from metadata
-    const actionUrl = NotificationServiceClass.getDeepLinkUrl(
-      notification.type,
-      notification.metadata
-    );
+    const actionUrl = this.getDeepLinkUrl(notification.type, notification.metadata);
 
     const { data, error } = await supabase
       .from('notifications')
@@ -343,7 +340,7 @@ class NotificationServiceClass {
   /**
    * Generate the appropriate deep-link URL based on notification type + metadata
    */
-  static getDeepLinkUrl(
+  public getDeepLinkUrl(
     type: Notification['type'],
     metadata?: Record<string, unknown>
   ): string | undefined {

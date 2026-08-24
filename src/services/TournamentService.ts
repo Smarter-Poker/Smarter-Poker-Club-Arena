@@ -1105,28 +1105,44 @@ class TournamentService {
     const numTables = Math.ceil(players.length / playersPerTable);
     const createdTables: any[] = [];
 
-    for (let i = 0; i < numTables; i++) {
-      const { data: table } = await supabase
-        .from('tables')
-        .insert({
-          club_id: tournament.club_id,
-          tournament_id: tournament.id,
-          name: `${tournament.name} - Table ${i + 1}`,
-          game_type: 'tournament',
-          game_variant: 'nlh',
-          stakes: 'Tournament',
-          small_blind: parsedBlinds[0].smallBlind,
-          big_blind: parsedBlinds[0].bigBlind,
-          min_buy_in: 0,
-          max_buy_in: 0,
-          max_players: 9,
-          status: 'RUNNING',
-          settings: { auto_muck: true },
-        })
-        .select()
-        .maybeSingle();
+    // PERF 2026-08-24: this was one INSERT per table, awaited in sequence. A
+    // 300-entry MTT is 34 tables, so 34 serial round-trips - and that was only
+    // the first of three such loops in this function (seats and the
+    // current_players update below were the same shape), roughly 368
+    // round-trips in total while every registered player stared at a spinner.
+    // One bulk insert instead.
+    const tablePayload = Array.from({ length: numTables }, (_, i) => ({
+      club_id: tournament.club_id,
+      tournament_id: tournament.id,
+      name: `${tournament.name} - Table ${i + 1}`,
+      game_type: 'tournament',
+      game_variant: 'nlh',
+      stakes: 'Tournament',
+      small_blind: parsedBlinds[0].smallBlind,
+      big_blind: parsedBlinds[0].bigBlind,
+      min_buy_in: 0,
+      max_buy_in: 0,
+      max_players: 9,
+      status: 'RUNNING',
+      settings: { auto_muck: true },
+    }));
 
-      if (table) createdTables.push(table);
+    const { data: insertedTables, error: tablesErr } = await supabase
+      .from('tables')
+      .insert(tablePayload)
+      .select();
+    if (tablesErr) throw tablesErr;
+
+    // Re-order the returned rows to match the payload EXACTLY. Seat assignment
+    // below is `i % numTables`, so table order decides who sits where; relying
+    // on the driver returning rows in insertion order would make seating depend
+    // on an unguaranteed detail. Matching on the name we just generated is
+    // deterministic. (A plain string sort would not be - "Table 10" sorts
+    // before "Table 2".)
+    const byName = new Map((insertedTables || []).map((t: any) => [t.name, t]));
+    for (const payload of tablePayload) {
+      const row = byName.get(payload.name);
+      if (row) createdTables.push(row);
     }
 
     // 3. Seat Players — Fisher-Yates shuffle for unbiased randomization
@@ -1137,11 +1153,19 @@ class TournamentService {
     }
     const tableSeats = createdTables.map((t) => ({ tableId: t.id, nextSeat: 1 }));
 
-    for (let i = 0; i < shuffled.length; i++) {
-      const player = shuffled[i];
+    // PERF 2026-08-24: was one INSERT per player, awaited in sequence - 300
+    // serial round-trips for a 300-entry MTT. The seat assignment arithmetic is
+    // unchanged; only the write is batched.
+    //
+    // This is now atomic rather than best-effort. Previously a failed seat was
+    // logged and the loop carried on, which produces a tournament that has
+    // started with a player missing from the felt - a worse outcome than not
+    // starting. Double-start is already prevented by the CAS claim at the top
+    // of this function, so a conflict here means something is genuinely wrong
+    // and should surface.
+    const seatPayload = shuffled.map((player, i) => {
       const tableAssign = tableSeats[i % numTables];
-
-      const { error: seatErr } = await supabase.from('table_seats').insert({
+      const seat = {
         table_id: tableAssign.tableId,
         seat_number: tableAssign.nextSeat,
         user_id: player.user_id,
@@ -1149,20 +1173,33 @@ class TournamentService {
         // engine reads table_seats.stack, so client-started tournaments seated
         // everyone with a null stack.
         stack: tournament.starting_chips,
-      });
-      if (seatErr) reportError(seatErr, 'TournamentService.Failed_to_seat_player_playeruser_id');
+      };
       tableAssign.nextSeat++;
+      return seat;
+    });
+
+    if (seatPayload.length > 0) {
+      const { error: seatErr } = await supabase.from('table_seats').insert(seatPayload);
+      if (seatErr) {
+        reportError(seatErr, 'TournamentService.Failed_to_seat_players');
+        throw seatErr;
+      }
     }
 
     // TOURNEY-AUDIT 2026-07-24: record each table's seated count — the seat
     // loop never bumped tables.current_players, so every tournament table
     // reported 0 players (breaking balance/merge checks and the Tables tab).
-    for (const ts of tableSeats) {
-      await supabase
-        .from('tables')
-        .update({ current_players: ts.nextSeat - 1 })
-        .eq('id', ts.tableId);
-    }
+    // PERF 2026-08-24: was awaited one table at a time. Each update targets a
+    // different row and carries a different value, so they are independent -
+    // running them together costs the slowest one instead of the sum.
+    await Promise.all(
+      tableSeats.map((ts) =>
+        supabase
+          .from('tables')
+          .update({ current_players: ts.nextSeat - 1 })
+          .eq('id', ts.tableId)
+      )
+    );
 
     // 4. Refresh tournament row (status/started_at were already CAS-claimed above)
     const { data, error } = await supabase

@@ -67,6 +67,22 @@ export interface UseMasterBusChannelOptions {
  * });
  * ```
  */
+/**
+ * Dev-only, once per channel name: a channel asked to subscribe with a null
+ * filter did nothing. See the call site in the effect below.
+ */
+const warnedNullFilter = new Set<string>();
+function warnNullFilterOnce(channelName: string): void {
+  if (warnedNullFilter.has(channelName)) return;
+  warnedNullFilter.add(channelName);
+  console.warn(
+    `[useMasterBusChannel] "${channelName}" was enabled but its filter is null, ` +
+      'so NO subscription was created. If the filter is still loading this is ' +
+      'expected and will resolve; if it is a literal null, this channel is dead ' +
+      'code and the surface has no realtime coverage.'
+  );
+}
+
 export function useMasterBusChannel({
   channelName,
   table,
@@ -91,6 +107,19 @@ export function useMasterBusChannel({
   useEffect(() => {
     // Null-safety: skip if no channel name or filter (common during data loading)
     if (!enabled || !channelName || !filter) {
+      // 2026-08-24: this silent skip was a trap. Two pages
+      // (LeaderboardPage, tournament/TournamentLobbyPage) passed a LITERAL
+      // `filter: null` and therefore never subscribed at all, for their whole
+      // lifetime - while the call site read as working realtime coverage. Both
+      // quietly fell back to polling and nobody knew the channel was inert.
+      //
+      // A transient null during data loading is legitimate and must stay quiet,
+      // so this warns in DEV ONLY and only once per channel name: enough to
+      // catch a permanently-null filter in review, silent for the loading case
+      // in production.
+      if (import.meta.env?.DEV && enabled && channelName && !filter) {
+        warnNullFilterOnce(channelName);
+      }
       return;
     }
 

@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import './TableMenu.css';
 import { haptic, soundService } from '../../services/SoundService';
 import {
@@ -111,23 +112,6 @@ export function createDefaultMenuSections(handlers: {
   aliasLabel?: string;
 }): MenuSection[] {
   return [
-    {
-      title: 'Identity',
-      actions: [
-        {
-          id: 'avatar',
-          label: 'Change Avatar',
-          icon: <AvatarIcon />,
-          onClick: handlers.onChangeAvatar || (() => {}),
-        },
-        {
-          id: 'display-name',
-          label: handlers.aliasLabel || 'Display Name',
-          icon: <NameTagIcon />,
-          onClick: handlers.onToggleAlias || (() => {}),
-        },
-      ],
-    },
     {
       title: 'Quick Actions',
       actions: [
@@ -274,7 +258,7 @@ export function TableMenu({
   // Inject Identity section dynamically into the passed sections
   const sections: MenuSection[] = [
     {
-      title: 'Identity Component',
+      title: 'Identity',
       actions: [
         {
           id: 'avatar',
@@ -328,10 +312,17 @@ export function TableMenu({
     return () => timeouts.forEach((t) => clearTimeout(t));
   }, [isOpen, sections.length]);
 
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   // Close on click outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(target) &&
+        (!dropdownRef.current || !dropdownRef.current.contains(target))
+      ) {
         onClose();
       }
     };
@@ -387,101 +378,108 @@ export function TableMenu({
       </button>
 
       {/* Backdrop overlay for mobile focus */}
-      {isOpen && <div className="table-menu__backdrop" onClick={onClose} aria-hidden="true" />}
-
-      {/* Dropdown */}
-      {isOpen && (
-        <div className="table-menu__dropdown" role="menu" aria-label={tableName || 'Table menu'}>
-          {/* Header */}
-          {/* Header with table name, connection, and hand info */}
-          {(tableName || connectionStatus) && (
-            <div className="table-menu__header">
-              <div className="table-menu__header-row">
-                {tableName && <span className="table-menu__table-name">{tableName}</span>}
-                {connectionStatus && (
-                  <span className={`table-menu__conn table-menu__conn--${connectionStatus}`}>
-                    <span className="table-menu__conn-dot" />
-                    {connectionStatus === 'connected'
-                      ? 'Live'
-                      : connectionStatus === 'reconnecting'
-                        ? 'Reconnecting…'
-                        : 'Offline'}
-                  </span>
-                )}
-              </div>
-              {(handNumber != null || sessionDuration) && (
-                <div className="table-menu__header-meta">
-                  {handNumber != null && <span>Hand #{handNumber}</span>}
-                  {handNumber != null && sessionDuration && (
-                    <span className="table-menu__meta-sep">·</span>
+      {isOpen &&
+        createPortal(
+          <>
+            <div className="table-menu__backdrop" onClick={onClose} aria-hidden="true" />
+            <div
+              ref={dropdownRef}
+              className="table-menu__dropdown"
+              role="menu"
+              aria-label={tableName || 'Table menu'}
+            >
+              {/* Header */}
+              {/* Header with table name, connection, and hand info */}
+              {(tableName || connectionStatus) && (
+                <div className="table-menu__header">
+                  <div className="table-menu__header-row">
+                    {tableName && <span className="table-menu__table-name">{tableName}</span>}
+                    {connectionStatus && (
+                      <span className={`table-menu__conn table-menu__conn--${connectionStatus}`}>
+                        <span className="table-menu__conn-dot" />
+                        {connectionStatus === 'connected'
+                          ? 'Live'
+                          : connectionStatus === 'reconnecting'
+                            ? 'Reconnecting…'
+                            : 'Offline'}
+                      </span>
+                    )}
+                  </div>
+                  {(handNumber != null || sessionDuration) && (
+                    <div className="table-menu__header-meta">
+                      {handNumber != null && <span>Hand #{handNumber}</span>}
+                      {handNumber != null && sessionDuration && (
+                        <span className="table-menu__meta-sep">·</span>
+                      )}
+                      {sessionDuration && <span>{sessionDuration}</span>}
+                    </div>
                   )}
-                  {sessionDuration && <span>{sessionDuration}</span>}
+                </div>
+              )}
+
+              {/* Sections */}
+              <div className="table-menu__body">
+                {sections.map((section, sIdx) => (
+                  <div
+                    key={sIdx}
+                    className="table-menu__section"
+                    role="group"
+                    aria-label={section.title}
+                  >
+                    {section.title && (
+                      <span className="table-menu__section-title">{section.title}</span>
+                    )}
+                    {section.actions.map((action, i) => {
+                      const actionIndex =
+                        sections.slice(0, sections.indexOf(section)).flatMap((s) => s.actions)
+                          .length + i;
+                      return (
+                        <button
+                          key={action.id}
+                          role="menuitem"
+                          className={`table-menu__action ${action.danger ? 'table-menu__action--danger' : ''} ${action.disabled ? 'table-menu__action--disabled' : ''}`}
+                          onClick={() => handleActionClick(action)}
+                          disabled={action.disabled}
+                          style={{
+                            opacity: visibleItems.has(actionIndex) ? 1 : 0,
+                            transform: visibleItems.has(actionIndex)
+                              ? 'translateY(0)'
+                              : 'translateY(8px)',
+                            transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                          }}
+                        >
+                          <span className="table-menu__action-icon">{action.icon}</span>
+                          <span className="table-menu__action-label">{action.label}</span>
+                          {action.badge != null && (
+                            <span className="table-menu__action-badge">{action.badge}</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+
+              {/* Observers Section */}
+              {observers.length > 0 && (
+                <div className="table-menu__observers">
+                  <span className="table-menu__observers-title">
+                    <span className="table-menu__observers-icon">◉</span>
+                    {observers.length} Watching
+                  </span>
+                  <div className="table-menu__observers-list">
+                    {observers.map((obs) => (
+                      <span key={obs.id} className="table-menu__observer-name">
+                        {obs.name}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
-          )}
-
-          {/* Sections */}
-          <div className="table-menu__body">
-            {sections.map((section, sIdx) => (
-              <div
-                key={sIdx}
-                className="table-menu__section"
-                role="group"
-                aria-label={section.title}
-              >
-                {section.title && (
-                  <span className="table-menu__section-title">{section.title}</span>
-                )}
-                {section.actions.map((action, i) => {
-                  const actionIndex =
-                    sections.slice(0, sections.indexOf(section)).flatMap((s) => s.actions).length +
-                    i;
-                  return (
-                    <button
-                      key={action.id}
-                      role="menuitem"
-                      className={`table-menu__action ${action.danger ? 'table-menu__action--danger' : ''} ${action.disabled ? 'table-menu__action--disabled' : ''}`}
-                      onClick={() => handleActionClick(action)}
-                      disabled={action.disabled}
-                      style={{
-                        opacity: visibleItems.has(actionIndex) ? 1 : 0,
-                        transform: visibleItems.has(actionIndex)
-                          ? 'translateY(0)'
-                          : 'translateY(8px)',
-                        transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                      }}
-                    >
-                      <span className="table-menu__action-icon">{action.icon}</span>
-                      <span className="table-menu__action-label">{action.label}</span>
-                      {action.badge != null && (
-                        <span className="table-menu__action-badge">{action.badge}</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-
-          {/* Observers Section */}
-          {observers.length > 0 && (
-            <div className="table-menu__observers">
-              <span className="table-menu__observers-title">
-                <span className="table-menu__observers-icon">◉</span>
-                {observers.length} Watching
-              </span>
-              <div className="table-menu__observers-list">
-                {observers.map((obs) => (
-                  <span key={obs.id} className="table-menu__observer-name">
-                    {obs.name}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+          </>,
+          document.body
+        )}
 
       {/* Avatar Gallery Modal */}
       {user && (

@@ -1758,7 +1758,11 @@
        The bar's vertical position is the negative crop of its artwork's dead
        band — cropping 20px LESS lowers the whole console by 20px and the
        carousel follows. */
-    --action-bar-dead-top: 72px;
+    /* Dan 2026-08-24 round 3: "IT'S CURRENTLY TOUCHING THE TOP OF THE GLOBAL
+       HEADER." Measured live at 72: the FIND A PLAYER zone's top landed at
+       y=21 with the header ending at y=41 — 20px of overlap. Cropping 42px
+       less of the dead art drops the console clear of the bar. */
+    --action-bar-dead-top: 30px;
   }
 
   .featuredCard {
@@ -1774,8 +1778,14 @@
        row nor a scroll container any more. Removed rather than left to read
        like live layout. */
     padding: 8px 12px 24px 12px;
-    /* Dan 2026-08-24 round 2: "THE CLUB CARDS MUST BE LOWERED." */
-    margin-top: 12px;
+    /* Dan 2026-08-24 round 3: "THERE SHOULD BE THE EXACT SAME AMOUNT OF
+       SPACING BETWEEN THE ACTION BAR AND THE 5 BOTTOM CARDS. THE CARDS SHOULD
+       BE PERFECTLY SPACED BETWEEN THEM." Auto margins on both sides of the
+       carousel split the column's free space into two equal shares — one
+       above the cards, one below — so the carousel sits exactly centred
+       between the console and the footer at any viewport height. */
+    margin-top: auto;
+    margin-bottom: auto;
   }
 
   /* Dan 2026-08-24 round 2: "THE B CARDS ON THE BOTTOM... ARE THE FOOTER."
@@ -1783,8 +1793,15 @@
      height to the space ABOVE the tile row, pinning it to the bottom of the
      viewport whenever the content is shorter than the screen. */
   .bottomRow {
-    margin-top: auto;
-    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    /* The carousel's auto bottom margin already pins this row to the bottom;
+       an auto margin here too would steal a third share and break the equal
+       spacing above. */
+    max-width: 100%;
+    gap: 6px;
+    padding: 0 6px max(18px, env(safe-area-inset-bottom)) 6px;
+    /* Bottom-aligned so the taller PLAYER STATS card rises ABOVE the row,
+       exactly as in the reference layout. */
+    align-items: flex-end;
   }
 
   .ctaCard {
@@ -2658,21 +2675,25 @@
    scaled down. Selectors target .bottomRow's CHILDREN (positions), because
    tiles 4-5 are wrapped in .cashierTileWrap divs and .tileCard:nth-child
    cannot see row position through the wrapper. */
+/* Dan 2026-08-24 round 3 (reference image): the five footer cards fill the
+   width edge to edge, near-equal, with PLAYER STATS slightly wider AND taller
+   so it rises above its neighbours. The old 160px/200px caps were what kept
+   them tiny — five 2:3 cards across a 390px phone want ~70px each, and the
+   caps had nothing to do with it; removing them lets flex do the work. */
 @media (max-width: 768px) {
+  .bottomRow > * {
+    max-width: none;
+  }
   .bottomRow > :nth-child(1),
-  .bottomRow > :nth-child(5) {
-    flex: 0.72 1 0;
-  }
   .bottomRow > :nth-child(2),
-  .bottomRow > :nth-child(4) {
-    flex: 0.94 1 0;
+  .bottomRow > :nth-child(4),
+  .bottomRow > :nth-child(5) {
+    flex: 1 1 0;
   }
-  /* Dan 2026-08-24 round 2 (reference image): "THE PLAYER STATS SHOULD BE
-     LARGER THAN THE LEADERBOARDS, DAILY CHALLENGES, CASHIER AND MARKETPLACE."
-     1.5 flex vs 0.72 edges makes the centre card read as the hero of the
-     row, matching the desktop hierarchy. */
   .bottomRow > :nth-child(3) {
-    flex: 1.5 1 0;
-    max-width: 200px;
+    flex: 1.2 1 0;
+  }
+  .tileCard {
+    max-width: none;
   }
 }

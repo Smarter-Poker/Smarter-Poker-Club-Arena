@@ -292,14 +292,20 @@
    for reading.) */
 @supports (font-size: 1cqw) {
   .club-card-stat-label {
-    font-size: clamp(6px, 5.5cqw, 11px);
+    font-size: clamp(5.5px, 4.2cqw, 9px);
     letter-spacing: 0.2px;
   }
+  /* Dan 2026-08-24 round 3: "THE NUMBER FONTS DON'T MATCH THE REST OF THE
+     SCALE REGRESSION." The values were capped at 18px, so on a shrunken card
+     they stayed near full size while the art, name plate and labels all came
+     down — the numbers ended up dominating the card. Re-tied to the card's
+     own width with a much lower ceiling, and a low floor so the side cards
+     shrink with the centre one instead of pinning at the minimum. */
   .club-card-stat-value {
-    font-size: clamp(11px, 8cqw, 18px);
+    font-size: clamp(8px, 6cqw, 15px);
   }
   .club-card-stat-value--level {
-    font-size: clamp(12px, 9cqw, 20px);
+    font-size: clamp(9px, 6.6cqw, 16px);
   }
 }
 

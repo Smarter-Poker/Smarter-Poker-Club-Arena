@@ -433,7 +433,6 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_VARIANT,
         COL_COST,
         COL_PLAYERS,
-        COL_STARTS,
         COL_RULES,
         COL_STATUS,
       ];

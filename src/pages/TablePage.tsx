@@ -17,6 +17,7 @@ import { useState, useEffect, useCallback, useRef, startTransition, useMemo } fr
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate } from 'react-router-dom';
+import { formatGameTitle } from '../utils/formatGameTitle';
 import {
   SeatSlot,
   PotDisplay,
@@ -3946,7 +3947,7 @@ export default function TablePage({
       // Update local state from table updates
       setTableState((prev) => ({
         ...prev,
-        tableName: updatedTable.name,
+        tableName: formatGameTitle(updatedTable.name),
         gameType: updatedTable.game_variant as any,
         blinds:
           updatedTable.small_blind != null && updatedTable.big_blind != null
@@ -4651,7 +4652,7 @@ export default function TablePage({
         setTableState((prev) => ({
           ...prev,
           tableId: table.id,
-          tableName: table.name || 'Poker Table',
+          tableName: formatGameTitle(table.name) || 'Poker Table',
           gameType: (table.game_variant || table.game_type || 'NLH') as any,
           isTournament: table.game_type === 'tournament' || !!table.tournament_id,
           tournamentId: table.tournament_id || undefined,

@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import styles from './TournamentLobbyCard.module.css';
 import { reportError } from '../../utils/errorReporter';
+import { formatGameTitle } from '../../utils/formatGameTitle';
 // Whole-number tournament money (Dan 2026-08-20).
 import { money } from '../../utils/buyIn';
 import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
@@ -315,7 +316,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
       </div>
 
       {/* Title */}
-      <h3 className={styles.title}>{tournament.name}</h3>
+      <h3 className={styles.title}>{formatGameTitle(tournament.name)}</h3>
 
       {/* Info Grid */}
       <div className={styles.info}>

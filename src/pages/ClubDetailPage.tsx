@@ -9,6 +9,7 @@ import { useState, useEffect, useRef, Component, type ReactNode, type ErrorInfo 
 import { isClubStaff, type ClubRole } from '../types/clubRoles';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import styles from './ClubDetailPage.module.css';
+import { formatGameTitle } from '../utils/formatGameTitle';
 import { getLocalStorage, setLocalStorage } from '../lib/storage';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import ActivityHeatmap from '../components/common/ActivityHeatmap';
@@ -866,7 +867,7 @@ export default function ClubDetailPage() {
       if (tableData) {
         const mappedTablesResult: ClubTable[] = tableData.map((t: any) => ({
           id: t.id,
-          name: t.name || 'Table',
+          name: formatGameTitle(t.name) || 'Table',
           gameVariant: t.game_variant || 'NLH',
           stakes: t.stakes || '1/2',
           currentPlayers: t.current_players || 0,
@@ -2000,7 +2001,7 @@ export default function ClubDetailPage() {
                   setTables(
                     data.map((t: any) => ({
                       id: t.id,
-                      name: t.name || 'Table',
+                      name: formatGameTitle(t.name) || 'Table',
                       gameVariant: t.game_variant || 'NLH',
                       stakes: t.stakes || '1/2',
                       currentPlayers: t.current_players || 0,

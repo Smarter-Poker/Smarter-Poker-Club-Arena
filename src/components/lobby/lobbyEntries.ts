@@ -14,6 +14,7 @@
  * platform behavior, not new inference.
  */
 
+import { formatGameTitle } from '../../utils/formatGameTitle';
 import { isInLateRegistration } from '../../utils/tournamentFilters';
 import { stakesLabel as stakesLabelFor } from '../../lib/bettingStructure';
 
@@ -372,7 +373,7 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
     if (
       isInLateRegistration(
         {
-          name: t.name,
+          name: formatGameTitle(t.name),
           status: t.status,
           start_time: t.start_time,
           max_players: t.max_players,
@@ -435,7 +436,7 @@ export function cashEntry(t: LobbyTableRow): LobbyEntry {
   return {
     id: t.id,
     kind: 'cash',
-    name: t.name,
+    name: formatGameTitle(t.name),
     gameLabel: v.short,
     variantLabel: v.long,
     // 2026-08-24: a fixed-limit table is posted by BET size, not blind size —
@@ -472,7 +473,7 @@ export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 's
   return {
     id: t.id,
     kind,
-    name: t.name,
+    name: formatGameTitle(t.name),
     gameLabel: v.short,
     variantLabel: v.long,
     stakesLabel: null,

@@ -28,6 +28,7 @@ import { ClubsService } from '../services/ClubsService';
 import { backfillClubCards } from '../services/ClubCardBackfill';
 import { useToast } from '../components/common/Toast';
 import GlobalHeader from '../components/navigation/GlobalHeader';
+import FloatingOrbs from '../components/home/FloatingOrbs';
 import haptic from '../services/HapticService';
 
 import PremiumSFX from '../services/PremiumSFX';
@@ -1229,10 +1230,8 @@ function HomePageInner() {
 
       {/* Enhancement #6: Circuit brain background overlay */}
       <div className={styles.circuitOverlay}></div>
-      {/* Enhancement #1: Neuron lights — traveling cyan pulses */}
-      <div className={styles.neuronLights}></div>
-      {/* P4-1: Floating dust particles */}
-      <div className={styles.dustParticles}></div>
+      {/* Enhancement #1 & P4-1: 100% Random Floating Orbs replacing static dust/neurons */}
+      <FloatingOrbs count={20} color="rgba(0, 212, 255, 0.8)" />
 
       {/* GLOBAL HEADER */}
       <GlobalHeader />

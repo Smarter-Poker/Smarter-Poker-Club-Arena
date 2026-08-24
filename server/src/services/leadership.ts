@@ -117,6 +117,8 @@ let unknownStreak = 0;
  * process has NO discovery loop, NO fleet manager and NO stale-data cleanup.
  */
 let bootedAsStandby = false;
+/** Guards against a second renewal scheduling a second exit. */
+let restartScheduled = false;
 let holder: string | null = null;
 let holderAgeSeconds: number | null = null;
 let becameLeaderAt: number | null = null;
@@ -157,11 +159,47 @@ export function markBootedAsStandby(): void {
  */
 function restartIntoLeaderBoot(reason: string): void {
   if (!bootedAsStandby) return;
+  /**
+   * Once is enough. renewLeadership() runs on an interval, so without this the
+   * 250ms before exit is long enough for a second renewal to land and schedule
+   * a second exit.
+   */
+  if (restartScheduled) return;
+  restartScheduled = true;
+
   console.error(
     `[leadership] ${INSTANCE_ID} promoted (${reason}) but booted as a standby, so it has ` +
-      'no discovery loop or fleet — exiting so the supervisor restarts it as a real leader.'
+      'no discovery loop or fleet — releasing the lease and exiting so the supervisor ' +
+      'restarts it as a real leader.'
   );
-  setTimeout(() => process.exit(0), 250).unref?.();
+
+  /**
+   * RELEASE BEFORE EXITING. This is the difference between a cutover and a
+   * restart loop, and it was learned the hard way in production on 2026-08-24.
+   *
+   * Being promoted means this instance is now the recorded holder. Exiting
+   * while still holding leaves a lease that is only seconds old, so the
+   * replacement process boots INSIDE the LEADERSHIP_STALE_SECONDS window, sees
+   * a live holder, and starts as a standby - which is promoted moments later
+   * when the row goes stale, exits, and does it all again. RestartCount climbed
+   * to 4 in twenty minutes with the fleet at zero tables the whole time:
+   *
+   *   STANDBY — 1-fc708d24 holds leadership
+   *   1-fc708d24 is now the LEADER — taking the fleet
+   *   1-fc708d24 promoted (lease granted) ... exiting
+   *   (repeat, new id, forever)
+   *
+   * Releasing first means the replacement finds no holder and boots straight
+   * into the leader path. The gap is the same one every ordinary cutover has.
+   *
+   * The exit is chained off the release rather than racing it on a timer, and
+   * releaseLeadership() swallows its own errors, so a failed release still
+   * exits - it just costs the replacement one staleness window instead of
+   * looping.
+   */
+  void releaseLeadership().finally(() => {
+    setTimeout(() => process.exit(0), 100).unref?.();
+  });
 }
 
 export function isLeader(): boolean {
@@ -337,6 +375,7 @@ export async function releaseLeadership(): Promise<void> {
 /** Test seam. */
 export function __resetLeadership(): void {
   bootedAsStandby = false;
+  restartScheduled = false;
   role = 'standby';
   unknownStreak = 0;
   holder = null;

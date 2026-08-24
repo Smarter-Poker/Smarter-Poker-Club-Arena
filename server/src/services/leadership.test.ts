@@ -289,3 +289,50 @@ describe('a promoted standby restarts instead of leading in name only', () => {
     expect(reset.slice(0, 200)).toMatch(/bootedAsStandby = false/);
   });
 });
+
+/**
+ * THE RESTART LOOP (2026-08-24). The promotion-restart fix above, shipped
+ * without releasing the lease, put production into a loop within minutes:
+ *
+ *   STANDBY — 1-fc708d24 holds leadership
+ *   1-fc708d24 is now the LEADER — taking the fleet
+ *   1-fc708d24 promoted (lease granted) ... exiting
+ *   (repeat with a new id, RestartCount 4 in 20 minutes, 0 tables throughout)
+ *
+ * Being promoted makes this instance the recorded holder. Exiting while still
+ * holding leaves a lease only seconds old, so the replacement boots INSIDE the
+ * LEADERSHIP_STALE_SECONDS window, sees a live holder, and starts as a standby
+ * — which is promoted moments later, and does the same thing again.
+ */
+describe('the promotion restart releases the lease first', () => {
+  const SRC = readFileSync(join(process.cwd(), 'src/services/leadership.ts'), 'utf8');
+  const code = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+  const fn = code.slice(
+    code.indexOf('function restartIntoLeaderBoot'),
+    code.indexOf('export function isLeader')
+  );
+
+  it('calls releaseLeadership before exiting', () => {
+    expect(fn).toMatch(/releaseLeadership\(\)/);
+  });
+
+  it('chains the exit off the release rather than racing it on a timer', () => {
+    // A bare setTimeout alongside an un-awaited release can exit first, which
+    // leaves the fresh lease behind and re-creates the loop.
+    const rel = fn.indexOf('releaseLeadership()');
+    const exit = fn.indexOf('process.exit');
+    expect(rel).toBeGreaterThan(-1);
+    expect(exit).toBeGreaterThan(rel);
+    expect(fn.slice(rel, exit)).toMatch(/\.finally\(/);
+  });
+
+  it('schedules the restart only once, however many renewals land', () => {
+    expect(fn).toMatch(/if \(restartScheduled\) return;/);
+    expect(fn).toMatch(/restartScheduled = true/);
+  });
+
+  it('clears the once-guard on reset', () => {
+    const reset = code.slice(code.indexOf('export function __resetLeadership'));
+    expect(reset.slice(0, 260)).toMatch(/restartScheduled = false/);
+  });
+});

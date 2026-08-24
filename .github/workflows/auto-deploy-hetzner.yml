@@ -134,10 +134,40 @@ jobs:
           # workflow_dispatch (the force path) bypasses the spacing gate.
           MIN_RESTART_SPACING_SEC=1200
           UPTIME=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("uptime"); print("ERR" if v is None else int(float(v)))' 2>/dev/null || echo ERR)
+
+          # 2026-08-24: COALESCING MUST NOT PROTECT A BROKEN ENGINE.
+          #
+          # The spacing gate exists to stop a merge train voiding in-flight
+          # hands. That reasoning only holds while the running engine is
+          # actually dealing. It restarts for reasons other than deploys —
+          # a healthcheck kill, a promoted standby, a crash — and when it
+          # does, its uptime is permanently under the threshold, so EVERY
+          # deploy coalesces, including the hourly catch-up. The commit that
+          # would stop the restarting is then the one commit that can never
+          # land. That deadlock held four engine fixes off production for an
+          # hour on the night this was written, while every run reported
+          # success having deployed nothing.
+          #
+          # So: an engine that is not dealing has no in-flight hands to
+          # protect, and deferring for its sake is pure downside. liveness
+          # and activeTables both come from the health body already fetched
+          # above, so this costs nothing.
+          LIVENESS=$(echo "$BODY" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("liveness",""))' 2>/dev/null || echo "")
+          TABLES=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("activeTables"); print("ERR" if v is None else int(v))' 2>/dev/null || echo ERR)
+          UNHEALTHY=false
+          if [ -z "$BODY" ] || [ "$LIVENESS" != "ok" ]; then
+            UNHEALTHY=true
+            echo "::notice::Engine health is '${LIVENESS:-unreadable}' — spacing gate bypassed."
+          elif [ "$TABLES" != "ERR" ] && [ "$TABLES" -eq 0 ]; then
+            UNHEALTHY=true
+            echo "::notice::Engine reports 0 active tables — nothing to protect, spacing gate bypassed."
+          fi
+
           if [ "${{ github.event_name }}" != "workflow_dispatch" ] \
+             && [ "$UNHEALTHY" = "false" ] \
              && [ "$UPTIME" != "ERR" ] && [ "$UPTIME" -lt "$MIN_RESTART_SPACING_SEC" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
-            echo "::notice::Engine restarted only ${UPTIME}s ago (< ${MIN_RESTART_SPACING_SEC}s) — coalescing. A later push or the hourly catch-up lands $SHORT."
+            echo "::notice::Engine restarted only ${UPTIME}s ago (< ${MIN_RESTART_SPACING_SEC}s) and is healthy with ${TABLES} tables — coalescing. A later push or the hourly catch-up lands $SHORT."
             exit 0
           fi
           echo "skip=false" >> $GITHUB_OUTPUT

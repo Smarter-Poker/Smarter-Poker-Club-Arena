@@ -57,6 +57,7 @@ import { tableStateHub } from './transport/TableStateHub.js';
 // this file cancels a tournament any more — it fills, resumes or settles.
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
 import { TournamentManager } from './tournament/TournamentManager.js';
+import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
 // services/tableLease.ts for the dual-container incident that motivated them.
 import {
@@ -113,6 +114,44 @@ export class GameServer {
    * when the loop was in fact running perfectly and being told "no" each time.
    */
   private lastDiscoveryAttemptAt: number = Date.now();
+
+  /**
+   * C20 FIX (2026-08-23): bound how many engines may be adopted per sweep, and
+   * back off when the database says it is struggling.
+   *
+   * C19 staggered engine starts by 40ms, which spread the initiation of each
+   * start but capped nothing: on a restart every table in the discovery result
+   * still had its start() issued inside one sweep, and because those starts are
+   * fired and not awaited, ~180 engines were loading seats and table config
+   * concurrently against a database already absorbing the reconnect storm.
+   *
+   * Measured nine minutes after a restart: 686 statement timeouts in three
+   * minutes, 35 hand-history insert failures, 21 lost table leases, discovery
+   * stalled 108 seconds, and health reporting liveness dead while the process
+   * was in fact fine. Hand throughput fell from ~250/min to 24/min. Zero lock
+   * waits throughout - this was never contention, it was concurrency.
+   *
+   * The amplifier is that failure was free to repeat. A start that times out
+   * deletes itself from tableEngines (see the .catch below), so the very next
+   * sweep retried the same volume into the same overloaded database. Load
+   * caused failure, failure recreated the load.
+   *
+   * The control law lives in engineStartBudget.ts, pure and tested there.
+   */
+  private engineStartBudget: number = ENGINE_START_BUDGET_MAX;
+  /**
+   * Set by the async .catch on engine.start(), read and cleared once per sweep.
+   * A start failure is the earliest honest signal that adoption is outrunning
+   * what the database can serve - earlier than the discovery RPC failing,
+   * because that RPC is one cheap indexed read and a start is many.
+   */
+  private engineStartFailures: number = 0;
+
+  /** Applies the C20 control law to this instance. Returns the new budget. */
+  private adjustEngineStartBudget(distressed: boolean): number {
+    this.engineStartBudget = nextEngineStartBudget(this.engineStartBudget, distressed);
+    return this.engineStartBudget;
+  }
   /**
    * When this process started. Used to keep boot from looking like death --
    * see the startup grace in getStatus().
@@ -667,6 +706,13 @@ export class GameServer {
        * engine. `discoveryLoopStalledMs` can.
        */
       discoveryLoopStalledMs,
+      /**
+       * C20 adoption budget. At ENGINE_START_BUDGET_MAX the database is coping;
+       * lower means engine starts have been failing and the loop has throttled
+       * itself. Pinned at the floor across several polls is the signal that the
+       * database tier, not the engine, is the constraint.
+       */
+      engineStartBudget: this.engineStartBudget,
       tournamentLease: tournamentLeaseDiagnostics(),
       leadership: leadershipDiagnostics(),
       stalledTableCount: stalledTables.length,
@@ -1715,6 +1761,13 @@ export class GameServer {
           const errMsg =
             error?.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
           reportError(new Error(errMsg), 'GameServer.Cash_table_discovery_error');
+          /**
+           * C20: this continue skips the end-of-sweep verdict, so back off here
+           * too. If the one cheap indexed read that drives discovery is failing,
+           * adopting 25 more tables the moment it recovers is the worst possible
+           * next move.
+           */
+          this.adjustEngineStartBudget(true);
           await this.sleep(TABLE_DISCOVERY_INTERVAL);
           continue;
         }
@@ -1794,11 +1847,26 @@ export class GameServer {
          */
         const ENGINE_START_STAGGER_MS = 40;
         let startedThisSweep = 0;
+        /**
+         * Read and clear BEFORE the loop, not after. The .catch that increments
+         * it is asynchronous, so failures from starts issued in this sweep may
+         * land after the loop has finished - they belong to the next sweep's
+         * verdict, and clearing here is what makes that happen instead of them
+         * being double-counted or lost.
+         */
+        const failuresSinceLastSweep = this.engineStartFailures;
+        this.engineStartFailures = 0;
+        const budgetThisSweep = this.engineStartBudget;
         for (const row of (ready || []) as Array<{
           table_id: string;
           player_count: number;
           human_count?: number;
         }>) {
+          // C20: adoption budget spent. The remaining tables are picked up by
+          // the next sweep in TABLE_DISCOVERY_INTERVAL - nothing is dropped, and
+          // a table with no engine is by definition one nobody is dealing at.
+          if (startedThisSweep >= budgetThisSweep) break;
+
           // Skip if already running
           if (this.tableEngines.has(row.table_id)) continue;
 
@@ -1821,11 +1889,30 @@ export class GameServer {
           engine.setHub(tableStateHub); // Phase 1.1 PR-2: authoritative WS publisher
           this.tableEngines.set(row.table_id, engine);
           engine.start().catch((err) => {
+            /**
+             * C20: counted for the adoption budget. This delete is what makes
+             * the table eligible again on the very next sweep, so without the
+             * budget backing off, a database too busy to serve starts got the
+             * same volume retried into it every 5 seconds indefinitely.
+             */
+            this.engineStartFailures++;
             reportError(err, 'GameServer.Engine_start_failed_for_tablei');
             this.tableEngines.delete(row.table_id);
             tableStateHub.dropTable(row.table_id);
           });
         }
+
+        /**
+         * C20: the sweep's verdict on whether the database is coping.
+         *
+         * failuresSinceLastSweep is the signal that matters. The discovery RPC
+         * failing is handled earlier with a continue, so by the time control
+         * reaches here that query has already succeeded - which is exactly why
+         * the RPC alone is too weak a signal to steer by: it is one cheap
+         * indexed read and it comes back fine long after the many reads an
+         * engine start performs have begun timing out.
+         */
+        this.adjustEngineStartBudget(failuresSinceLastSweep > 0);
 
         // Clean up engines for tables that stopped — AND engines that are
         // lying about being alive.

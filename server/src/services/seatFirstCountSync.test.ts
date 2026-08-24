@@ -89,3 +89,46 @@ describe('seat-first lobby counts', () => {
     expect(src).not.toMatch(/current_players:\s*seated\b/);
   });
 });
+
+describe('nothing writes a seat-first count the application invented', () => {
+  /**
+   * THE ROOT CAUSE, and the reason two earlier fixes did not take.
+   *
+   * createSpin seats two horses in real seats, then its very next statement
+   * used to write `current_players: registered` where `registered` is a
+   * hardcoded 0 - a leftover from when a Spin pre-registered nobody. Both the
+   * sync inside createOpenSeatTable and the trigger on table_seats set the
+   * number correctly, and this overwrote it microseconds later. 16 open Spins
+   * advertised "0/3" on 32 paid seats because of one stale constant.
+   */
+  /**
+   * Comments are stripped first, and that is not incidental: the comment
+   * explaining this bug necessarily QUOTES the line it forbids, so an
+   * assertion against raw source fails on its own documentation. Match code.
+   */
+  const stripComments = (s: string): string =>
+    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  function bodyOf(fnName: string, endMarker: string): string {
+    const start = src.indexOf(fnName);
+    expect(start).toBeGreaterThan(-1);
+    const end = src.indexOf(endMarker, start);
+    return stripComments(src.slice(start, end > -1 ? end : undefined));
+  }
+
+  it('createSpin sets status only, never the player count', () => {
+    const body = bodyOf('async createSpin', 'return { tournamentId: spin.id');
+    expect(body).toContain('createOpenSeatTable');
+    // The clobber, in any spacing.
+    expect(body).not.toMatch(/current_players:\s*registered/);
+  });
+
+  it('createSNG writes the count only for FIELD sngs, never seat-first ones', () => {
+    const body = bodyOf('async createSNG', 'return { tournamentId: sng.id');
+    // Guarded by the seat-first test rather than written unconditionally.
+    expect(body).toMatch(/isSeatFirstFormat\('sng'/);
+    expect(body).toMatch(/if\s*\(!seatFirstSng\)/);
+    // The unconditional form must not come back.
+    expect(body).not.toMatch(/\.update\(\{\s*current_players:\s*registered,/);
+  });
+});

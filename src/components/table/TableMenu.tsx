@@ -297,20 +297,7 @@ export function TableMenu({
     }
     prevOpenRef.current = isOpen;
   }, [isOpen]);
-  const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
-
-  useEffect(() => {
-    if (!isOpen) {
-      // Reset animation state when menu closes so items animate in on next open
-      setVisibleItems(new Set());
-      return;
-    }
-    const allActions = sections.flatMap((s) => s.actions);
-    const timeouts = allActions.map((_, i) =>
-      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 40)
-    );
-    return () => timeouts.forEach((t) => clearTimeout(t));
-  }, [isOpen, sections.length]);
+  // CSS handles the animation now
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -440,13 +427,7 @@ export function TableMenu({
                           className={`table-menu__action ${action.danger ? 'table-menu__action--danger' : ''} ${action.disabled ? 'table-menu__action--disabled' : ''}`}
                           onClick={() => handleActionClick(action)}
                           disabled={action.disabled}
-                          style={{
-                            opacity: visibleItems.has(actionIndex) ? 1 : 0,
-                            transform: visibleItems.has(actionIndex)
-                              ? 'translateY(0)'
-                              : 'translateY(8px)',
-                            transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                          }}
+                          style={{ '--stagger-idx': actionIndex } as React.CSSProperties}
                         >
                           <span className="table-menu__action-icon">{action.icon}</span>
                           <span className="table-menu__action-label">{action.label}</span>

@@ -16,6 +16,7 @@ import {
   WALLET_CACHE_PREFIX,
   walletCacheKey,
   readWalletCache,
+  readWalletCacheEntry,
   writeWalletCache,
   writeWalletCacheDebounced,
   flushWalletCacheWrites,
@@ -99,6 +100,25 @@ describe('walletCache', () => {
     const failing = vi.fn().mockRejectedValueOnce(new Error('down')).mockResolvedValue('ok');
     await expect(dedupedFetch('k2', failing)).rejects.toThrow('down');
     await expect(dedupedFetch('k2', failing)).resolves.toBe('ok');
+  });
+
+  it('readWalletCacheEntry exposes the entry age so callers can honor a fresh window', () => {
+    const key = walletCacheKey(USER, '25450', 'club');
+    const before = Date.now();
+    writeWalletCache(key, { chipBalance: 42 });
+    const entry = readWalletCacheEntry<{ chipBalance: number }>(key);
+    expect(entry).not.toBeNull();
+    expect(entry!.data).toEqual({ chipBalance: 42 });
+    // `at` is the write moment — a mount seconds later can tell "just
+    // written on the page I left" from "written an hour ago".
+    expect(entry!.at).toBeGreaterThanOrEqual(before);
+    expect(entry!.at).toBeLessThanOrEqual(Date.now());
+    // The plain reader stays a thin wrapper over the same entry.
+    expect(readWalletCache(key)).toEqual({ chipBalance: 42 });
+    // And after a reload (memory purge), the age survives via localStorage.
+    clearWalletMemoryCache();
+    const rehydrated = readWalletCacheEntry<{ chipBalance: number }>(key);
+    expect(rehydrated!.at).toBe(entry!.at);
   });
 
   describe('debounced storage writes', () => {

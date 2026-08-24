@@ -63,13 +63,24 @@ export function walletCacheKey(userId: string, ...parts: (string | number)[]): s
 }
 
 /**
- * Synchronous read: memory first, then localStorage (which hydrates memory).
- * Returns null when absent, expired, or unparseable. Never throws.
+ * Synchronous read WITH the entry's age: memory first, then localStorage
+ * (which hydrates memory). Returns null when absent, expired, or
+ * unparseable. Never throws.
+ *
+ * The `at` timestamp lets a consumer distinguish "painted from seconds-old
+ * data" from "painted from an hour ago": a FRESH entry (navigated away and
+ * straight back) does not need an immediate network revalidation at all —
+ * the realtime channels, bus events and the visibility refresh already own
+ * keeping it true. That distinction is what stops every page hop from
+ * becoming a full resync.
  */
-export function readWalletCache<T>(key: string, ttlMs: number = DEFAULT_TTL_MS): T | null {
+export function readWalletCacheEntry<T>(
+  key: string,
+  ttlMs: number = DEFAULT_TTL_MS
+): { data: T; at: number } | null {
   const mem = memory.get(key);
   if (mem) {
-    if (Date.now() - mem.at <= ttlMs) return mem.data as T;
+    if (Date.now() - mem.at <= ttlMs) return { data: mem.data as T, at: mem.at };
     memory.delete(key);
   }
   try {
@@ -82,10 +93,15 @@ export function readWalletCache<T>(key: string, ttlMs: number = DEFAULT_TTL_MS):
       return null;
     }
     memory.set(key, parsed);
-    return parsed.data;
+    return { data: parsed.data, at: parsed.at };
   } catch {
     return null;
   }
+}
+
+/** Synchronous read of just the payload. See readWalletCacheEntry. */
+export function readWalletCache<T>(key: string, ttlMs: number = DEFAULT_TTL_MS): T | null {
+  return readWalletCacheEntry<T>(key, ttlMs)?.data ?? null;
 }
 
 /**

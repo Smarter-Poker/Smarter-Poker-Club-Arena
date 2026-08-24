@@ -461,7 +461,10 @@
    the shift back. Mobile-only: desktop's layout never exhibited the shift. */
 @media (max-width: 768px) {
   .clubCarousel {
-    min-height: calc(73vw + 109px);
+    /* Re-fitted 2026-08-24 after the narrow-track card cap dropped from
+       ~84% to 66% of the track ("THE CLUB CARDS... NEED TO BE SMALLER"):
+       reserve scales by the same 0.85 factor. Verified live post-deploy. */
+    min-height: calc(62vw + 93px);
   }
 }
 
@@ -1819,6 +1822,11 @@
        header. 14px of top air shifts the whole column down. */
     padding: 14px 8px 16px 8px;
     max-width: 100%;
+    /* Dan 2026-08-24 round 2: "THE ACTION BAR NEEDS TO BE MOVED DOWN."
+       The bar's vertical position is the negative crop of its artwork's dead
+       band — cropping 20px LESS lowers the whole console by 20px and the
+       carousel follows. */
+    --action-bar-dead-top: 72px;
   }
 
   .featuredCard {
@@ -1834,6 +1842,17 @@
        row nor a scroll container any more. Removed rather than left to read
        like live layout. */
     padding: 8px 12px 24px 12px;
+    /* Dan 2026-08-24 round 2: "THE CLUB CARDS MUST BE LOWERED." */
+    margin-top: 12px;
+  }
+
+  /* Dan 2026-08-24 round 2: "THE B CARDS ON THE BOTTOM... ARE THE FOOTER."
+     .mainContent is a flex column scroller; auto top margin hands any slack
+     height to the space ABOVE the tile row, pinning it to the bottom of the
+     viewport whenever the content is shorter than the screen. */
+  .bottomRow {
+    margin-top: auto;
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
   }
 
   .ctaCard {
@@ -2764,13 +2783,18 @@
 @media (max-width: 768px) {
   .bottomRow > :nth-child(1),
   .bottomRow > :nth-child(5) {
-    flex: 0.82 1 0;
+    flex: 0.72 1 0;
   }
   .bottomRow > :nth-child(2),
   .bottomRow > :nth-child(4) {
-    flex: 1 1 0;
+    flex: 0.94 1 0;
   }
+  /* Dan 2026-08-24 round 2 (reference image): "THE PLAYER STATS SHOULD BE
+     LARGER THAN THE LEADERBOARDS, DAILY CHALLENGES, CASHIER AND MARKETPLACE."
+     1.5 flex vs 0.72 edges makes the centre card read as the hero of the
+     row, matching the desktop hierarchy. */
   .bottomRow > :nth-child(3) {
-    flex: 1.34 1 0;
+    flex: 1.5 1 0;
+    max-width: 200px;
   }
 }

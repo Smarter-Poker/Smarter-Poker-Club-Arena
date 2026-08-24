@@ -22,6 +22,7 @@ import { supabase, getAuthUser } from '../../lib/supabase';
 import haptic from '../../services/HapticService';
 import styles from './FindPlayerModal.module.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { sizedStorageUrl } from '../../utils/avatarGenerator';
 import { sanitizeInput } from '../../utils/sanitizeInput';
 import { reportError } from '../../utils/errorReporter';
 
@@ -698,7 +699,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                           <img
                             loading="lazy"
                             decoding="async"
-                            src={s.avatar_url}
+                            src={sizedStorageUrl(s.avatar_url, 44)}
                             alt=""
                             onError={(e) => {
                               (e.target as HTMLImageElement).src = generateDefaultAvatar();
@@ -791,7 +792,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                           <img
                             loading="lazy"
                             decoding="async"
-                            src={player.avatar_url}
+                            src={sizedStorageUrl(player.avatar_url, 44)}
                             alt=""
                             onError={(e) => {
                               (e.target as HTMLImageElement).src = generateDefaultAvatar();

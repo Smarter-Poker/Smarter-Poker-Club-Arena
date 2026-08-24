@@ -847,3 +847,14 @@ textarea:focus-visible {
   outline: 2px solid #ffd700;
   outline-offset: 2px;
 }
+
+/* ═══ Mobile polish (2026-08-24) ═══
+   text-size-adjust: stops iOS Safari inflating fonts on orientation change,
+   which pushed carefully sized mobile layouts out of their boxes.
+   tap-highlight: kills the translucent gray flash iOS/Android paint over
+   every tap target — the app supplies its own :active states. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}

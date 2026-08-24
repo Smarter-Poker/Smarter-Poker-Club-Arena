@@ -32,6 +32,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { sizedStorageUrl, generateAvatarSvg } from '../../utils/avatarGenerator';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
 import { isAuthzError } from '../../utils/clubDashboard';
@@ -972,7 +973,16 @@ export default function ClubDataPage() {
 
                   <div className={styles.avatarWrap}>
                     {pl.avatar_url ? (
-                      <img className={styles.avatar} src={pl.avatar_url} alt="" loading="lazy" />
+                      <img
+                        className={styles.avatar}
+                        src={sizedStorageUrl(pl.avatar_url, 40)}
+                        alt=""
+                        loading="lazy"
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = generateAvatarSvg(pl.user_id, pl.username || '?');
+                        }}
+                      />
                     ) : (
                       <div className={styles.avatarFallback} aria-hidden="true">
                         {(pl.username || '?').slice(0, 1).toUpperCase()}

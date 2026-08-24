@@ -18,6 +18,7 @@ import { isClubStaff } from '../types/clubRoles';
 import { MEDIA_BASE } from '../utils/mediaBase';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
+import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import haptic from '../services/HapticService';
@@ -2327,7 +2328,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           <div className="lobby-club">
             <div className="lobby-club__avatar">
               {club.logo_url || club.avatar_url ? (
-                <img src={club.logo_url || club.avatar_url} alt={club.name} loading="lazy" />
+                <img
+                  src={sizedStorageUrl(club.logo_url || club.avatar_url, 192)}
+                  alt={club.name}
+                  loading="lazy"
+                />
               ) : Number(club.club_id) === SHARK_CLUB_ID ? (
                 <img src={SHARK_CLUB_FALLBACK_LOGO} alt="Shark Club" loading="lazy" />
               ) : (

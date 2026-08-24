@@ -51,7 +51,7 @@ const DIR_RULES = [
   // The PWA/apple-touch icon. manifest.json declares it "sizes": "512x512"
   // and the file was 1024x1024, so this makes the asset match its own
   // declaration as well as shrinking it. It is fetched on every iOS
-  // add-to-home-screen and by the SW precache list in public/sw.ts.
+  // add-to-home-screen and by the SW precache list in public/sw-bus.js.
   { prefix: 'poker-chip-logo.png', maxDim: 512 },
   // CATCH-ALL, and it must stay last. Before 2026-08-23 ruleFor() returned
   // null for anything outside the prefixes above, so every image sitting at

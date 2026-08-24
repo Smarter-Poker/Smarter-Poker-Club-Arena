@@ -18,6 +18,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { tableService } from '../../services/TableService';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { sizedStorageUrl } from '../../utils/avatarGenerator';
 import { reportError } from '../../utils/errorReporter';
 import { useToast } from '../common/Toast';
 
@@ -676,7 +677,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
                               <img
                                 loading="lazy"
                                 decoding="async"
-                                src={profile.avatar_url}
+                                src={sizedStorageUrl(profile.avatar_url, 44)}
                                 alt=""
                                 style={{ width: '100%', height: '100%', borderRadius: '50%' }}
                                 onError={(e) => {

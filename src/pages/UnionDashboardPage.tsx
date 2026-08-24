@@ -10,6 +10,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { unionApi } from '../services/UnionApiService';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -2710,7 +2711,7 @@ export default function UnionDashboardPage() {
                         <td style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           {admin.profile?.avatar_url && (
                             <img
-                              src={admin.profile.avatar_url}
+                              src={sizedStorageUrl(admin.profile.avatar_url, 28)}
                               alt=""
                               style={{ width: 28, height: 28, borderRadius: '50%' }}
                             />

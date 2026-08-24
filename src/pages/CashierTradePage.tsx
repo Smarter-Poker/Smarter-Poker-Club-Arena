@@ -170,6 +170,13 @@ export default function CashierTradePage() {
   >(null);
   // Guards a double-submit that beats the re-render `busy` depends on.
   const busyRef = useRef(false);
+  /**
+   * Identifies ONE claim submission across retries, so a request that already
+   * committed cannot be charged twice by the retry that follows a lost
+   * response. Held across failures on purpose and cleared only on full
+   * success - see runTransfers.
+   */
+  const submissionIdRef = useRef<string | null>(null);
   const isMounted = useRef(true);
   useEffect(() => {
     isMounted.current = true;
@@ -706,6 +713,28 @@ export default function CashierTradePage() {
     if (busyRef.current) return; // a fast double-tap must not send twice
     busyRef.current = true;
     setBusy(true);
+    /**
+     * IDEMPOTENCY (2026-08-24). busyRef stops a double-TAP, but it cannot stop
+     * a double-CHARGE. The dangerous shape is a claim that COMMITTED on the
+     * server and then failed on the way back - a dropped connection, a proxy
+     * timeout. To this code that is indistinguishable from a claim that never
+     * ran: it reports an error, and the natural next step, retrying, takes the
+     * chips a second time.
+     *
+     * So the retry has to be recognisable as the SAME intent. This id is minted
+     * once per submission and deliberately SURVIVES a failure - it is cleared
+     * only when the batch fully succeeds. Retry the failed batch and the server
+     * matches the key, replays the original outcome and moves nothing; change
+     * the amount or the selection and a fresh id is minted, because that is a
+     * genuinely new claim and must be allowed through.
+     */
+    if (!submissionIdRef.current) {
+      submissionIdRef.current =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+    const submissionId = submissionIdRef.current;
     let ok = 0;
     let skipped = 0;
     try {
@@ -753,6 +782,10 @@ export default function CashierTradePage() {
               p_from_user_id: t.userId,
               p_amount: claim,
               p_reason: 'Cashier claim back',
+              // Per target AND per amount: retrying this batch replays, while
+              // claiming a different amount from the same player is a new
+              // intent and must go through. See submissionIdRef above.
+              p_idempotency_key: `claim:${submissionId}:${t.userId}:${claim}`,
             });
             if (error) throw error;
             const res = data as { success?: boolean; error?: string } | null;
@@ -769,6 +802,11 @@ export default function CashierTradePage() {
       // and both Confirm and Cancel are disabled on it - the modal became a
       // trap that only a page reload could escape.
       busyRef.current = false;
+      // Retire the submission id ONLY when every target went through. If any
+      // one of them failed, keeping it is the whole point: the retry carries
+      // the same key, so whichever targets already committed replay instead of
+      // being charged a second time.
+      if (skipped + ok === targets.length) submissionIdRef.current = null;
       if (isMounted.current) {
         setBusy(false);
         setAmountModal(null);

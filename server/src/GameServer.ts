@@ -2100,12 +2100,17 @@ export class GameServer {
          * decide that nothing has changed. Batched here instead: one read for
          * the live tables, one for their seats.
          */
+        // SEAT-FIRST DEFINITION (2026-08-24 audit): spin, or a 2-seat SNG
+        // (heads-up). This must match fn_take_seat_and_buy_in and
+        // isSeatFirstFormat exactly. The old \`any sng\` reading made every
+        // 3+ seat SNG a structural deadlock: the RPC refused its seat sales
+        // (not_a_seat_first_game) while this gate waited for seats forever.
         const seatFirstRows = (registering || []).filter(
-          (t) => t.variant === 'sng' || t.variant === 'spin'
+          (t) => t.variant === 'spin' || (t.variant === 'sng' && Number(t.max_players) <= 2)
         );
         const paidSeatsByTournament = new Map<string, number>();
         if (seatFirstRows.length > 0) {
-          const { data: liveTables } = await supabase
+          const { data: liveTables, error: liveTablesErr } = await supabase
             .from('tables')
             .select('id, tournament_id, created_at')
             .in(
@@ -2113,6 +2118,14 @@ export class GameServer {
               seatFirstRows.map((t) => t.id)
             )
             .neq('status', 'closed');
+          if (liveTablesErr) {
+            // A silent failure here read as paidSeats=0 fleet-wide and no
+            // seat-first game could start, with zero telemetry (2026-08-24).
+            reportError(
+              new Error(`[GameServer] seat-first live-table read failed: ${liveTablesErr.message}`),
+              'GameServer.seat_first_table_read_failed'
+            );
+          }
 
           /* Newest live table per tournament. The recycler leaves the freshest
              one open; an older sibling not yet stamped closed is a corpse, and
@@ -2132,11 +2145,17 @@ export class GameServer {
 
           const liveTableIds = [...newestTable.values()].map((v) => v.id);
           if (liveTableIds.length > 0) {
-            const { data: seatRows } = await supabase
+            const { data: seatRows, error: seatRowsErr } = await supabase
               .from('table_seats')
               .select('table_id')
               .in('table_id', liveTableIds)
               .is('left_at', null);
+            if (seatRowsErr) {
+              reportError(
+                new Error(`[GameServer] seat-first seat-count read failed: ${seatRowsErr.message}`),
+                'GameServer.seat_first_seat_read_failed'
+              );
+            }
 
             const seatsByTable = new Map<string, number>();
             for (const s of seatRows || []) {
@@ -2266,7 +2285,11 @@ export class GameServer {
 
           // SNG / Spin: start ONLY when every seat is bought (not time-based)
           // MTT / Bounty / PKO / Mystery: start at scheduled time if min_players met
-          const isSngOrSpin = tournament.variant === 'sng' || tournament.variant === 'spin';
+          // Seat-first = spin or heads-up (2-seat SNG). Must agree with
+          // fn_take_seat_and_buy_in / isSeatFirstFormat — see 2026-08-24 audit.
+          const isSngOrSpin =
+            tournament.variant === 'spin' ||
+            (tournament.variant === 'sng' && Number(tournament.max_players) <= 2);
 
           /**
            * PAID SEATS, NOT REGISTRATIONS (Dan 2026-08-23, verbatim: "spins can

@@ -2792,7 +2792,10 @@ export class TournamentRecurringService {
             p_user_id: horse,
           });
           if ((res as { ok?: boolean } | null)?.ok === true) added++;
-          else break;
+          // 2026-08-24 audit: do NOT break on one refusal. A single horse
+          // rejected — the four-table hard limit (23514), a race on the seat,
+          // an already_registered anomaly — used to halt the whole fill even
+          // when free horses remained in the candidate list.
         }
       } else {
         added = await this.registerHorses(tournamentId, shortfall);

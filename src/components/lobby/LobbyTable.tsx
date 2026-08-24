@@ -379,7 +379,7 @@ const COL_KIND: ColumnDef = {
 };
 const COL_COST: ColumnDef = {
   key: 'cost',
-  label: 'Stakes / Buy-In',
+  label: 'Stakes',
   className: 'lt-col-num',
   sortable: true,
   sortValue: (e) => (e.kind === 'cash' ? e.stakesValue : e.buyInValue),

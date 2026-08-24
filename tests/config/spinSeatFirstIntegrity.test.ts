@@ -64,31 +64,21 @@ describe('horses take seats, not just places on a list', () => {
     expect(topUp).toMatch(/registerHorses\(tournamentId, shortfall\)/);
   });
 
-  /**
-   * SLICE WIDENED 2026-08-23. Both cases below used to slice
-   * pickFreeHorses -> createSpin, because that is where the three reads lived.
-   *
-   * #588 ("a horse is unavailable at FOUR concurrent games, not at one")
-   * lifted the table_seats and tournament_players reads out into a new
-   * horseLoadMap() helper, which sits directly ABOVE pickFreeHorses - so the
-   * old window no longer contained them and both cases went red on main the
-   * moment it merged. Nothing regressed: the reads are still there, still
-   * batched, still one apiece, just one function up. The test was pinning the
-   * ADDRESS of the reads rather than the property it cared about.
-   *
-   * The window now starts at horseLoadMap and still ends at createSpin, which
-   * spans horseLoadMap + atCapacity + pickFreeHorses - the whole "work out who
-   * is busy, then pick" unit. That is what these cases were always about, and
-   * it stays honest if the reads move again inside it.
-   */
-  const busySetRegion = () =>
-    recurring.slice(
+  it('never takes a horse out of a game it is already in', () => {
+    /**
+     * 2026-08-23: the busy-set reads moved OUT of pickFreeHorses and into
+     * horseLoadMap, when Dan raised the limit from "excluded at one game" to
+     * "up to four tables". The slice therefore starts at horseLoadMap now.
+     *
+     * The property under test has not changed and is not weakened: a horse's
+     * commitments are still read from tournament_players and table_seats
+     * before it is handed out, and a horse at the ceiling is still excluded.
+     * What changed is the ceiling, not whether we look.
+     */
+    const pick = recurring.slice(
       recurring.indexOf('private async horseLoadMap'),
       recurring.indexOf('private async createSpin')
     );
-
-  it('never takes a horse out of a game it is already in', () => {
-    const pick = busySetRegion();
     expect(pick).toMatch(/tournament_players/);
     expect(pick).toMatch(/table_seats/);
     expect(pick).toMatch(/is_horse/);
@@ -108,17 +98,26 @@ describe('horses take seats, not just places on a list', () => {
     // per-horse shape.
     expect(recurring).not.toMatch(/pickFreeHorse\(\)/);
 
-    const pick = busySetRegion();
-    // Exactly one read of each source across the whole busy-set region.
+    const pick = recurring.slice(
+      recurring.indexOf('private async horseLoadMap'),
+      recurring.indexOf('private async createSpin')
+    );
+    // Exactly one read of each source across horseLoadMap + pickFreeHorses,
+    // which together are one call. The batching this protects is unchanged -
+    // the reads simply live in horseLoadMap now (see the note above).
     expect((pick.match(/from\('tournament_players'\)/g) || []).length).toBe(1);
     expect((pick.match(/from\('table_seats'\)/g) || []).length).toBe(1);
     expect((pick.match(/from\('profiles'\)/g) || []).length).toBe(1);
 
     /**
-     * And they must still be read ONCE PER CALL. A wider window would
-     * otherwise allow the load map to be rebuilt per horse inside a loop and
-     * still count one read each - pickFreeHorses has to await it exactly once,
-     * up front, the way it does now.
+     * ...AND ONCE PER CALL, which the widened window alone no longer proves.
+     *
+     * Counting reads across horseLoadMap + pickFreeHorses keeps the "one read
+     * of each source" property, but it stops being a statement about how OFTEN
+     * they run: the load map now lives behind a call, and a caller that awaits
+     * it once per horse inside a loop would still count exactly one of each and
+     * pass. That is precisely the per-horse shape the case above exists to
+     * forbid, so it has to be pinned where it now actually lives.
      */
     const picker = recurring.slice(
       recurring.indexOf('private async pickFreeHorses'),

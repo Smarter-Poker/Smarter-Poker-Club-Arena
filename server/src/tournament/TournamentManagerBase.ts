@@ -166,6 +166,61 @@ export abstract class TournamentManagerBase {
     }
   }
 
+  /**
+   * Stop the level clock and remember how much of the level was left, so
+   * resumeFromBreak can give back exactly that much and no more.
+   *
+   * Shared by BOTH ways a tournament enters a break, because they used to
+   * disagree:
+   *
+   *   - pauseForBreak, the :55 path, measured and cleared the timer here;
+   *   - resume(), restarting INTO a live break, set onBreak = true and paused
+   *     the tables but left the blind timer it had armed seconds earlier
+   *     running. The level clock therefore ticked through the whole break, and
+   *     when resumeFromBreak fired it found savedBlindTimerRemaining at 0 and
+   *     handed out a FRESH FULL LEVEL. One restart during a break both burned
+   *     a level's worth of clock and then reset it.
+   *
+   * Every entry into a break now goes through this.
+   */
+  protected suspendLevelClock(): void {
+    /**
+     * DEAD LEVEL CLOCK (2026-08-23). This measurement used to live entirely
+     * inside `if (this.blindTimer)`, so a break that landed while no timer was
+     * armed left `savedBlindTimerRemaining` at whatever it happened to hold —
+     * 0 on the first break of a tournament. resumeFromBreak read that 0 as
+     * "arm nothing", and the tournament played out the rest of its life at one
+     * blind level.
+     *
+     * blindTimer is legitimately null for seconds at a time: advanceBlindLevel
+     * consumes it on fire and does not re-arm until it has awaited a blind
+     * write per table, the current_level persist, the level_up broadcast and
+     * possibly a prize-pool finalization. A :55 break inside that window is
+     * exactly the case that killed the clock.
+     *
+     * Every path now leaves a usable remaining time, and resumeFromBreak arms
+     * unconditionally.
+     */
+    const structureAtPause = this.tournamentCache?.blind_structure || [];
+    const pausedLevelData =
+      structureAtPause.length > 0
+        ? structureAtPause[Math.min(this.currentLevel, structureAtPause.length - 1)]
+        : null;
+    const pausedLevelTotalMs = pausedLevelData ? this.levelDurationMs(pausedLevelData) : 0;
+    if (this.blindTimer) {
+      const elapsed = Date.now() - this.blindTimerStartedAt;
+      clearTimeout(this.blindTimer);
+      this.blindTimer = null;
+      this.savedBlindTimerRemaining =
+        pausedLevelTotalMs > 0 ? Math.max(pausedLevelTotalMs - elapsed, 1000) : 0;
+    } else {
+      // No armed clock to measure — a level transition is most likely still in
+      // flight. Hand resumeFromBreak a full level so it can never come back
+      // from the break with no clock at all.
+      this.savedBlindTimerRemaining = pausedLevelTotalMs;
+    }
+  }
+
   /** Synchronized break: pause blind timer and broadcast break event */
   async pauseForBreak(breakDurationMs: number): Promise<void> {
     if (!this.running || this.onBreak) return;
@@ -176,20 +231,24 @@ export abstract class TournamentManagerBase {
     // `return` AFTER setting onBreak=true but BEFORE clearing the timer —
     // leaving the level clock running through the "break" with onBreak stuck
     // true. The timer is now always cleared once the break begins.
-    if (this.blindTimer) {
-      const elapsed = Date.now() - this.blindTimerStartedAt;
-      clearTimeout(this.blindTimer);
-      this.blindTimer = null;
-      const blindStructure = this.tournamentCache?.blind_structure || [];
-      if (blindStructure && blindStructure.length > 0) {
-        const currentLevelData =
-          blindStructure[Math.min(this.currentLevel, blindStructure.length - 1)];
-        const totalMs = this.levelDurationMs(currentLevelData);
-        this.savedBlindTimerRemaining = Math.max(totalMs - elapsed, 1000);
-      } else {
-        this.savedBlindTimerRemaining = 0;
-      }
-    }
+    /**
+     * DEAD LEVEL CLOCK (2026-08-23). This measurement used to live entirely
+     * inside `if (this.blindTimer)`, so a break that landed while no timer was
+     * armed left `savedBlindTimerRemaining` at whatever it happened to hold —
+     * 0 on the first break of a tournament. resumeFromBreak read that 0 as
+     * "arm nothing", and the tournament played out the rest of its life at one
+     * blind level.
+     *
+     * blindTimer is legitimately null for seconds at a time: advanceBlindLevel
+     * consumes it on fire and does not re-arm until it has awaited a blind
+     * write per table, the current_level persist, the level_up broadcast and
+     * possibly a prize-pool finalization. A :55 break inside that window is
+     * exactly the case that killed the clock.
+     *
+     * Every path now leaves a usable remaining time, and resumeFromBreak arms
+     * unconditionally.
+     */
+    this.suspendLevelClock();
 
     console.log(
       `[Tournament:${this.tournamentId.slice(0, 8)}] SYNCHRONIZED BREAK — ${Math.round(breakDurationMs / 60000)} minutes`
@@ -339,12 +398,33 @@ export abstract class TournamentManagerBase {
     // blinds to tables, emits level_up, chip race, late-reg/add-on) instead of
     // a bare currentLevel++ that left table blinds unchanged and could freeze
     // escalation.
-    if (this.savedBlindTimerRemaining > 0) {
+    /**
+     * DRIFTING LEVEL CLOCK (2026-08-23). This used to hand-roll its own
+     * setTimeout and set `blindTimerStartedAt = Date.now()` while the level's
+     * nominal duration stayed the FULL level. pauseForBreak measures remaining
+     * as `fullDuration - (now - blindTimerStartedAt)`, so a SECOND break in
+     * the same level gave the level back every minute it had already played —
+     * a level with one minute left returned from the break with ten. Across an
+     * hourly break cadence that is how a level stops going up.
+     *
+     * startBlindTimer already solves this: it clamps the override to the level
+     * duration and BACK-DATES blindTimerStartedAt by the difference, so the
+     * next pause measures the true remaining time. Routing through it also
+     * re-persists level_started_at, so a restart mid-level resumes correctly,
+     * and wraps advanceBlindLevel in the catch that keeps a throw from
+     * silently ending escalation.
+     *
+     * Arming is unconditional. A zero here used to mean "no clock at all"
+     * (see pauseForBreak); startBlindTimer with no override grants a fresh
+     * full level, which is the safe direction to be wrong in.
+     */
+    {
       const blindStructure = this.tournamentCache?.blind_structure || [];
-      this.blindTimerStartedAt = Date.now();
-      this.blindTimer = setTimeout(() => {
-        void this.advanceBlindLevel(blindStructure);
-      }, this.savedBlindTimerRemaining);
+      const remaining = this.savedBlindTimerRemaining;
+      // Cleared before arming: a stale value from a previous level must never
+      // be readable by a later break that cannot measure the clock.
+      this.savedBlindTimerRemaining = 0;
+      this.startBlindTimer(blindStructure, remaining > 0 ? remaining : undefined);
     }
 
     // If add-on period was deferred due to break, trigger it now
@@ -1284,6 +1364,11 @@ export abstract class TournamentManagerBase {
         const remainingMs = new Date(tournament.break_ends_at).getTime() - Date.now();
         if (remainingMs > 1000) {
           this.onBreak = true;
+          // The level clock was armed moments ago, a few lines above. Suspend
+          // it for the rest of the break exactly as the :55 path does —
+          // without this it ran straight through the break and resumeFromBreak
+          // then granted a fresh full level on top. See suspendLevelClock.
+          this.suspendLevelClock();
           console.log(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed DURING a break — re-pausing for the remaining ${Math.round(remainingMs / 1000)}s`
           );
@@ -1828,6 +1913,15 @@ export abstract class TournamentManagerBase {
 
   protected startBlindTimer(blindStructure: any[], remainingOverrideMs?: number): void {
     if (blindStructure.length === 0) return;
+    // Never leave two level clocks running for the same tournament. Callers
+    // normally arrive with blindTimer already null (it has just fired, or
+    // pauseForBreak cleared it), but a double-arm doubles the escalation rate
+    // for the rest of the tournament and is invisible until the blinds run
+    // away, so it is worth one clearTimeout to make it impossible.
+    if (this.blindTimer) {
+      clearTimeout(this.blindTimer);
+      this.blindTimer = null;
+    }
     const currentLevelData = blindStructure[this.currentLevel] || blindStructure[0];
     const durationMs = this.levelDurationMs(currentLevelData);
     const armMs =
@@ -1884,11 +1978,50 @@ export abstract class TournamentManagerBase {
         const prevLevel = this.currentLevel;
         this.currentLevel++;
 
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  STRUCTURE BREAK ROWS ARE STEPPED OVER, NOT SAT ON (2026-08-23)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * Dan: breaks are the :55 of the hour and nothing else.
+         *
+         * Every default structure nonetheless carries isBreak rows — hyperTurbo
+         * at indices 7, 13, 19 and 25, turbo and the rest on the same cadence —
+         * and this used to be handled further down as:
+         *
+         *     if (level.isBreak) { this.startBlindTimer(blindStructure); return; }
+         *
+         * which was the worst of both worlds. It armed a timer for the break
+         * row's five minutes and returned, so for those five minutes: no table
+         * was paused and no break screen was shown (players simply kept
+         * playing), the blinds stayed at the PREVIOUS level, `current_level`
+         * was never persisted — so the SQL late-registration gate read a stale
+         * level for the whole window — and the late-reg close and add-on
+         * trigger below were skipped entirely. A break row sitting on the
+         * cutoff level could swallow the add-on window for good.
+         *
+         * Break rows are now consumed with no time cost: step past them to the
+         * next playable level and run one complete transition. This runs
+         * BEFORE the auto-escalation check so that walking off the end through
+         * trailing break rows escalates normally instead of clamping.
+         */
+        while (
+          this.currentLevel < blindStructure.length &&
+          blindStructure[this.currentLevel]?.isBreak
+        ) {
+          this.currentLevel++;
+        }
+
         if (this.currentLevel >= blindStructure.length) {
           // Auto-escalate: double the last level's blinds
           // FIX: Cap at 10M to prevent numeric field overflow in DECIMAL(10,2) columns
           const MAX_BLIND_VALUE = 10_000_000;
-          const lastLevel = blindStructure[blindStructure.length - 1];
+          // Escalate from the last PLAYABLE level. A structure whose final row
+          // is a break row (smallBlind 0) would otherwise double zero forever
+          // and freeze the blinds at nothing.
+          let lastIdx = blindStructure.length - 1;
+          while (lastIdx > 0 && blindStructure[lastIdx]?.isBreak) lastIdx--;
+          const lastLevel = blindStructure[lastIdx];
           const escalationFactor = Math.pow(2, this.currentLevel - blindStructure.length + 1);
           const autoLevel = {
             level: this.currentLevel + 1,
@@ -1905,12 +2038,6 @@ export abstract class TournamentManagerBase {
         }
 
         const level = blindStructure[Math.min(this.currentLevel, blindStructure.length - 1)];
-
-        // Skip any break entries that might still be in old blind structures
-        if (level.isBreak) {
-          this.startBlindTimer(blindStructure);
-          return;
-        }
 
         console.log(
           `[Tournament:${this.tournamentId.slice(0, 8)}] Level ${this.currentLevel}: ${level.smallBlind}/${level.bigBlind} ante ${level.ante || 0}`
@@ -2105,7 +2232,25 @@ export abstract class TournamentManagerBase {
         if (this.tournamentCache?.add_on_available && !this.addOnPeriodTriggered) {
           const rebuyLevelCap =
             this.tournamentCache.late_reg_levels ?? this.tournamentCache.rebuy_levels ?? 8;
-          if (prevLevel < rebuyLevelCap && this.currentLevel >= rebuyLevelCap) {
+          /**
+           * LEVEL-BASED, NOT EDGE-BASED (2026-08-23). This was
+           * `prevLevel < cap && this.currentLevel >= cap` — an edge, and an
+           * edge is a single instant that is easy to miss and impossible to
+           * recover:
+           *
+           *   - resume() restores currentLevel straight from the database. A
+           *     redeploy while the tournament was already past the cutoff put
+           *     prevLevel past it too, so the edge never came again and the
+           *     add-on window never opened for the life of the tournament.
+           *   - the old isBreak early-return skipped this check entirely, so a
+           *     break row on the cutoff level consumed the only crossing.
+           *
+           * The late-reg finalization block directly above has always been
+           * level-based (`>= cap`) for the same reason. Idempotency does not
+           * depend on the edge: addOnPeriodTriggered guards the outer `if`,
+           * and triggerAddOnPeriod re-checks and persists it.
+           */
+          if (this.currentLevel >= rebuyLevelCap) {
             // Broadcast late_reg_closed first
             await this.broadcast('late_reg_closed', {});
             // If currently on break, defer the add-on trigger until break resumes

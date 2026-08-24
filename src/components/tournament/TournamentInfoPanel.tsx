@@ -163,7 +163,32 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
 
   const blinds = useMemo(() => asArray(t?.blind_structure), [t]);
   const payouts = useMemo(() => asArray(t?.payout_structure), [t]);
-  const level = num(t?.current_level) || 1;
+  /**
+   * LEVEL DISPLAY IS 1-BASED, THE COLUMN IS NOT (2026-08-23).
+   *
+   * tournaments.current_level is a 0-BASED index into blind_structure — the
+   * engine's TournamentManagerBase.currentLevel starts at 0 and indexes the
+   * array directly, so blind_structure[current_level].level === current_level
+   * + 1. TablePage already documents and honours this.
+   *
+   * This panel rendered the raw index as the level number, and `|| 1` on top
+   * of it. So index 0 showed "Level 1" and index 1 ALSO showed "Level 1" —
+   * the number visibly failed to go up when the blinds did — and from there on
+   * the panel was permanently one behind the blinds actually being posted.
+   * Part of "levels don't go up as they should" was this line: on a healthy
+   * engine the masthead still lied.
+   */
+  const level = num(t?.current_level) + 1;
+  /**
+   * Late reg is closed once the level index REACHES the cap (indices 0..N-1
+   * are the N advertised levels), the same instant
+   * TournamentManagerBase.isLateRegClosed uses. This stat used to print the
+   * configured cap forever, and only ever said "Closed" for a tournament that
+   * had no late registration at all — so it never reported the thing it exists
+   * to report.
+   */
+  const lateRegCap = num(t?.late_reg_levels);
+  const lateRegClosed = lateRegCap <= 0 || num(t?.current_level) >= lateRegCap;
 
   const tables = useMemo(() => {
     const byTable = new Map<string, number>();
@@ -214,10 +239,7 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
               : money(num(t?.buy_in_amount) + num(t?.buy_in_fee))
           )}
           {stat('Level', String(level))}
-          {stat(
-            'Late Reg',
-            num(t?.late_reg_levels) > 0 ? `Level ${num(t?.late_reg_levels)}` : 'Closed'
-          )}
+          {stat('Late Reg', lateRegClosed ? 'Closed' : `Through Level ${lateRegCap}`)}
           {stat('Avg Stack', stats.avg.toLocaleString())}
           {stat('Largest', stats.largest.toLocaleString())}
           {stat('Smallest', stats.smallest.toLocaleString())}

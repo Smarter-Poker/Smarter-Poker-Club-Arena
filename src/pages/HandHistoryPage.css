@@ -317,7 +317,11 @@
      #1877f2 -> #0d5dc7), kept as a gradient so the button still reads as the
      primary action beside the plain REPLAY button next to it. */
   background: linear-gradient(135deg, #1877f2 0%, #0d5dc7 100%);
-  box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+  /* The GLOW was purple too — rgba(168, 85, 247) is #a855f7 written the other
+     way, which is why a hex sweep for the colour missed it and left the button
+     ringed in the exact shade the background had just stopped being. Any
+     future colour sweep has to read rgb()/rgba() as well as hex. */
+  box-shadow: 0 0 10px rgba(24, 119, 242, 0.5);
 }
 
 .share-btn {

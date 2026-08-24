@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { useToast } from '../../components/common/Toast';
 import { fmt } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
+import { DiamondArt } from './ItemArt';
 import { startCheckout, type DiamondPackage, type WalletInfo } from './marketplaceShared';
 
 interface DiamondsTabProps {
@@ -42,7 +43,7 @@ export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabPro
       <div className={styles.sectionIntro}>
         <h2 className={styles.sectionTitle}>Buy Diamonds</h2>
         <p className={styles.sectionSub}>
-          Diamonds Power Everything: Chips, VIP Passes, Throwables, And Premium Features.{' '}
+          Diamonds Power Everything: Club Shop Items, VIP Passes, Throwables, And Premium Features.{' '}
           {wallet.loaded ? (
             <>
               Current Balance: <strong>{fmt(wallet.diamonds)}</strong>.
@@ -55,13 +56,16 @@ export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabPro
       </div>
 
       <div className={styles.pkgGrid}>
-        {packages.map((pkg) => (
+        {packages.map((pkg, idx) => (
           <div
             key={pkg.id}
             className={`${styles.pkgCard} ${pkg.popular ? styles.pkgCardPopular : ''}`}
           >
             {pkg.popular && <span className={styles.pkgRibbon}>POPULAR</span>}
             {pkg.bonus > 0 && <span className={styles.pkgBonus}>+{fmt(pkg.bonus)} Bonus</span>}
+            <div className={styles.pkgArt}>
+              <DiamondArt tier={idx} />
+            </div>
             <div className={styles.pkgAmount}>{fmt(pkg.diamonds)}</div>
             <div className={styles.pkgLabel}>Diamonds</div>
             <button
@@ -69,7 +73,7 @@ export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabPro
               disabled={redirecting !== null}
               onClick={() => handleBuy(pkg.id)}
             >
-              {redirecting === pkg.id ? 'Opening checkout...' : `$${pkg.priceUsd.toFixed(2)}`}
+              {redirecting === pkg.id ? 'Opening Checkout...' : `$${pkg.priceUsd.toFixed(2)}`}
             </button>
           </div>
         ))}

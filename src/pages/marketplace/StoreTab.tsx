@@ -1,5 +1,6 @@
 /**
- * MARKETPLACE — Store tab: club shop items bought with club chips.
+ * MARKETPLACE — Store tab: club shop items bought with DIAMONDS from the
+ * player's global wallet (never chips — product rule, Dan 2026-08-23).
  * Purchases go through /api/club-arena/marketplace-purchase (server-authoritative).
  */
 
@@ -7,8 +8,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { callClubArenaApi } from '../../services/clubArenaApi';
 import { useToast } from '../../components/common/Toast';
 import { masterBus } from '../../core/MasterBus';
-import { fmt, fmtChips } from '../../utils/format';
+import { fmt } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
+import ItemArt from './ItemArt';
 import {
   CATEGORIES,
   describeGrant,
@@ -25,7 +27,10 @@ interface StoreTabProps {
   clubId: string;
   items: MarketplaceItem[];
   ownedItemIds: Set<string>;
+  /** the buyer's DIAMOND balance (global wallet) — all prices are in diamonds */
   balance: number;
+  /** jump to the Diamonds tab to top up */
+  onGoDiamonds: () => void;
   isAdmin: boolean;
   /** true while the shop is still loading — do NOT claim the shop is empty */
   loading: boolean;
@@ -40,6 +45,7 @@ export default function StoreTab({
   items,
   ownedItemIds,
   balance,
+  onGoDiamonds,
   isAdmin,
   loading,
   categories,
@@ -162,11 +168,13 @@ export default function StoreTab({
   if (items.length === 0) {
     return (
       <div className={styles.emptyState}>
-        <span className={styles.emptyIcon}>◇</span>
+        <div className={styles.emptyArt}>
+          <ItemArt category="Exclusive" seed="empty-shop" />
+        </div>
         <span className={styles.emptyText}>The Club Shop Is Currently Empty.</span>
         <span className={styles.emptySubText}>
           Club Owners Can Add In-Game Items Like Time Banks, Table Skins, Throwables, And Emotes For
-          Members To Purchase With Chips.
+          Members To Purchase With Diamonds.
         </span>
         {isAdmin && (
           <button className={styles.emptyButton} onClick={onGoManage}>
@@ -203,7 +211,7 @@ export default function StoreTab({
                     loading="lazy"
                   />
                 ) : (
-                  <div className={styles.itemPlaceholder}>◇</div>
+                  <ItemArt category={buyTarget.category} seed={buyTarget.id} />
                 )}
               </div>
               <div>
@@ -221,20 +229,28 @@ export default function StoreTab({
                   {isOnSale(buyTarget) && (
                     <span className={styles.strikePrice}>{fmt(buyTarget.price)}</span>
                   )}
-                  {fmt(effectivePrice(buyTarget))}
+                  {fmt(effectivePrice(buyTarget))} Diamonds
                 </span>
               </div>
               <div className={styles.priceItem}>
-                <span className={styles.priceLabel}>Your Balance</span>
+                <span className={styles.priceLabel}>Your Diamonds</span>
                 <span className={styles.priceValueGreen}>{fmt(balance)}</span>
               </div>
             </div>
             {balance < effectivePrice(buyTarget) && (
               <div className={styles.insufficientFunds}>
-                {/* The "Get Chips" upsell pointed at the diamonds -> chips
-                    conversion, which is forbidden (product rule, Dan
-                    2026-08-19). Chips are won and transferred, never bought. */}
-                Insufficient Chips. You Need {fmt(effectivePrice(buyTarget) - balance)} More.
+                <span>
+                  Insufficient Diamonds. You Need {fmt(effectivePrice(buyTarget) - balance)} More.
+                </span>
+                <button
+                  className={styles.inlineLink}
+                  onClick={() => {
+                    setBuyTarget(null);
+                    onGoDiamonds();
+                  }}
+                >
+                  Get Diamonds
+                </button>
               </div>
             )}
             <div className={styles.modalActions}>
@@ -281,7 +297,7 @@ export default function StoreTab({
       <div className={styles.toolbar}>
         <input
           type="text"
-          placeholder="Search items..."
+          placeholder="Search Items..."
           aria-label="Search shop items"
           value={searchFilter}
           onChange={(e) => setSearchFilter(e.target.value)}
@@ -329,20 +345,24 @@ export default function StoreTab({
               blocked === 'owned'
                 ? 'Owned'
                 : blocked === 'sold_out'
-                  ? 'Sold out'
+                  ? 'Sold Out'
                   : blocked === 'not_yet'
-                    ? 'Coming soon'
+                    ? 'Coming Soon'
                     : blocked === 'ended'
                       ? 'Ended'
                       : blocked === 'limit_reached'
-                        ? 'Limit reached'
+                        ? 'Limit Reached'
                         : stackable && alreadyOwned
-                          ? 'Buy again'
+                          ? 'Buy Again'
                           : 'Buy';
             return (
               <div key={item.id} className={styles.itemCard}>
                 <div className={styles.itemImageArea}>
-                  {img ? (
+                  {/* Custom dynamic HD art always renders underneath; an
+                      admin-supplied image simply layers over it, so a broken
+                      URL degrades to the 3D scene instead of a blank panel. */}
+                  <ItemArt category={item.category} seed={item.id} className={styles.itemArt} />
+                  {img && (
                     <img
                       src={img}
                       alt={item.name}
@@ -353,8 +373,6 @@ export default function StoreTab({
                         (e.currentTarget as HTMLImageElement).style.display = 'none';
                       }}
                     />
-                  ) : (
-                    <div className={styles.itemPlaceholderLg}>◇</div>
                   )}
                   <span className={styles.categoryTag}>{item.category || 'Time Banks'}</span>
                   {soldOut && <span className={styles.soldOutTag}>SOLD OUT</span>}
@@ -372,16 +390,14 @@ export default function StoreTab({
                 <div className={styles.itemBody}>
                   <div className={styles.itemName}>{item.name}</div>
                   <div className={styles.itemDesc}>
-                    {item.description || 'No description available.'}
+                    {item.description || 'No Description Available.'}
                   </div>
                   {grantText(item) && <div className={styles.grantBadge}>{grantText(item)}</div>}
                   <div className={styles.itemFooter}>
                     <div>
                       <span className={styles.itemPrice}>
-                        {onSale && (
-                          <span className={styles.strikePrice}>{fmtChips(item.price)}</span>
-                        )}
-                        {fmtChips(effectivePrice(item))} Chips
+                        {onSale && <span className={styles.strikePrice}>{fmt(item.price)}</span>}
+                        {fmt(effectivePrice(item))} Diamonds
                       </span>
                       {(item.purchase_count || 0) > 0 && (
                         <div className={styles.soldCount}>{item.purchase_count} Sold</div>

@@ -3,7 +3,9 @@
  *  CLUB ARENA — MARKETPLACE / CASHIER STOREFRONT (2026-08-19 full rebuild)
  *
  *  Tabs:
- *    Store       — club shop items bought with club chips (server-authoritative)
+ *    Store       — club shop items bought with DIAMONDS from the player's
+ *                  global wallet (server-authoritative). The marketplace is
+ *                  fully funded by diamonds, never chips (Dan, 2026-08-23).
  *    (Get Chips was removed 2026-08-19: chips are won and transferred,
  *     never bought. The diamonds -> chips conversion no longer exists.)
  *    Diamonds    — real-money diamond packages via Stripe Checkout (/api/store)
@@ -230,7 +232,7 @@ export default function MarketplacePage() {
         // "you own nothing" and invited the user to re-buy what they already had.
         const { data, error } = await supabase
           .from('club_shop_inventory')
-          .select('id, item_id, item_name, category, price_paid, status, acquired_at')
+          .select('id, item_id, purchase_id, item_name, category, price_paid, status, acquired_at')
           .eq('club_id', target)
           .eq('user_id', user.id)
           .order('acquired_at', { ascending: false });
@@ -458,9 +460,10 @@ export default function MarketplacePage() {
         <div className={styles.headerLeft}>
           <h1 className={styles.title}>Marketplace</h1>
           <div className={styles.walletBar}>
-            <span className={styles.walletPill}>{fmt(balance)} Chips</span>
+            {/* One wallet, one currency: diamonds. The shop API and the VIP
+                status API both report the same profiles.diamonds balance. */}
             <span className={styles.walletPillDiamond} aria-live="polite">
-              {wallet.loaded ? `${fmt(wallet.diamonds)} diamonds` : 'diamonds -'}
+              {wallet.loaded ? `${fmt(wallet.diamonds)} Diamonds` : `${fmt(balance)} Diamonds`}
             </span>
             {wallet.isVip && <span className={styles.vipPill}>VIP</span>}
           </div>
@@ -519,15 +522,21 @@ export default function MarketplacePage() {
             clubId={clubId}
             items={items}
             ownedItemIds={ownedItemIds}
-            balance={balance}
+            balance={wallet.loaded ? wallet.diamonds : balance}
+            onGoDiamonds={() => switchTab('diamonds')}
             isAdmin={isAdmin}
             loading={loading}
             categories={catalog.shopCategories}
             onGoManage={() => switchTab('manage')}
             onPurchased={(newBalance) => {
               // The BALANCE_UPDATED bus subscription reloads the shop + wallet;
-              // only the optimistic balance and the inventory are needed here.
-              if (typeof newBalance === 'number') setBalance(newBalance);
+              // only the optimistic diamond balance and the inventory are
+              // needed here. Both balance mirrors must move together or the
+              // header pill and the buy modal disagree until the reload lands.
+              if (typeof newBalance === 'number') {
+                setBalance(newBalance);
+                setWallet((prev) => (prev.loaded ? { ...prev, diamonds: newBalance } : prev));
+              }
               loadInventory(clubId);
             }}
           />
@@ -579,7 +588,7 @@ export default function MarketplacePage() {
         {tab === 'manage' && (!isAdmin || !clubId) && (
           <div className={styles.emptyState}>
             <span className={styles.emptyText}>
-              {clubId ? 'The Manage tab is for club owners and admins.' : 'Join a club first.'}
+              {clubId ? 'The Manage Tab Is For Club Owners And Admins.' : 'Join A Club First.'}
             </span>
             <button className={styles.emptyButton} onClick={() => switchTab('store')}>
               Back To Store

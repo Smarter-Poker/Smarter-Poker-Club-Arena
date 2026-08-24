@@ -2862,10 +2862,15 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           is actually narrowing, so it never implies a filter that is not set,
           and it carries the same one-tap clear the empty state uses.
       ═══════════════════════════════════════════════════════════════════ */}
-      {shownCount > 0 && (
+      {/* Dan 2026-08-24: "REMOVE THE 30 GAMES, WE DON'T NEED THAT." The bare
+          count is gone. What remains is the line that only renders when a
+          filter or a search is actively hiding games — that one is not a
+          statistic, it is the explanation for why the list looks short, and
+          it carries the one-tap clear. */}
+      {shownCount > 0 && narrowing.any && totalGameCount > shownCount && (
         <div className="lobby-count">
           <span className="lobby-count__text">
-            {narrowing.any && totalGameCount > shownCount ? (
+            {
               <>
                 {/* countsCapped: a list query came back exactly full, so the
                     total is a floor, not a fact. Say "200+" rather than a
@@ -2874,12 +2879,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 {totalGameCount.toLocaleString()}
                 {countsCapped ? '+' : ''} Games
               </>
-            ) : (
-              <>
-                <strong>{shownCount.toLocaleString()}</strong> Game
-                {shownCount === 1 ? '' : 's'}
-              </>
-            )}
+            }
           </span>
         </div>
       )}

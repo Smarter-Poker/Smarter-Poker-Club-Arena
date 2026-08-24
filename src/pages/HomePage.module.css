@@ -2737,3 +2737,16 @@
     max-width: none;
   }
 }
+
+/* Dan 2026-08-24: "THE CASHIER CARD AND MARKETPLACE CARD NEED TO BE THE SAME
+   SIZE AS THE DAILY CHALLENGES AND LEADERBOARD CARDS." Their boxes already
+   matched to the pixel — what did not match was their CONTENT: tiles 4 and 5
+   carry a club-name caption under the art that the other three do not, so
+   their cards ran ~12px taller and, in a centre-aligned row, read as a
+   different size. The caption is desktop affordance (which club the cashier
+   will open); on a phone the row is five icons wide and it is noise. */
+@media (max-width: 768px) {
+  .tileClubName {
+    display: none;
+  }
+}

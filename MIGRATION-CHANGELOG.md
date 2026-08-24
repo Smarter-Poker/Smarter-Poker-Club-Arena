@@ -7,6 +7,120 @@
 
 ---
 
+## Cowork session 2026-08-24 (part 3) — CLUB ARENA DEEP PASS
+
+Dan: "CLUB ARENA IS THE MOST IMPORTANT, FOCUS ALL YOUR TIME AND ATTENTION HERE."
+
+### A deploy break I caused, and fixed
+
+Dan: "ALL YOUR PREVIOUS FIXES NEVER DEPLOYED SMH" — he was right, and it was my
+fault. The Vercel region change (PR #714) added a `_regions_note` key to
+`vercel.json` for documentation. **`vercel.json` validates against a strict
+schema and rejects unknown top-level properties**, so Vercel refused the config
+BEFORE building: the deployment went to ERROR with _zero build log events_, and
+because Club Arena publishes through the World Hub sync, every Club Arena fix
+was stuck behind it too.
+
+- PR #715 restored `vercel.json` byte-for-byte to the last config that deployed
+  READY. Production deploys resumed.
+- The cause was then PROVEN rather than guessed: branch `test/pdx1-region-probe`
+  pushed the region change ALONE (same `pdx1`, no custom key) and its Vercel
+  commit status came back `success`. So `pdx1` is valid; the comment key was the
+  whole problem.
+- Retried with a one-token diff, reasoning moved to
+  `docs/perf/2026-08-24-vercel-region-colocation.md`.
+
+Lesson recorded: **never put commentary keys in `vercel.json`.** Also worth
+knowing — the Vercel check is NOT a required status here, so Autopilot merged
+the broken commit to main anyway. A red preview deploy will not stop a merge.
+
+### Also caught before it shipped
+
+The follow-up branch had been cut before PR #704 (FloatingOrbs) merged, so its
+diff against current main would have **deleted `FloatingOrbs.tsx` and
+`FloatingOrbs.module.css` and reverted `HomePage.module.css`** — silently
+undoing another agent's shipped feature. Caught by diffing two-dot
+(`origin/main..HEAD`) instead of three-dot; the three-dot diff hides this
+because it measures from the merge base. PR #706 was closed and the work
+re-cut from current main as #707.
+
+### Client fixes (PRs #705, #707)
+
+- **App-shell channel churn.** `ChallengeToastListener` is mounted in `App.tsx`
+  and its Realtime effect depended on `[user, toast]` — `user` being the whole
+  object from the store, so ANY store write (profile load, balance tick, avatar
+  change) gave it a fresh identity and tore the channel down and re-subscribed.
+  That churn ran for every user for the whole session. Now keyed on `user?.id`
+  with `toast` in a ref.
+- **Two channels that never subscribed at all.** `LeaderboardPage` and
+  `tournament/TournamentLobbyPage` passed a literal `filter: null`, and
+  `useMasterBusChannel` early-returns on a null filter — so both read as live
+  realtime coverage while being completely inert, which is why both also poll.
+  Deleted rather than "repaired": repairing them means subscribing to
+  `tournament_players` / `tournaments` with NO filter, i.e. every row change
+  platform-wide pushed to every viewer. The hook now warns in DEV (once per
+  channel) so a null filter can never be silent again.
+- **Unfiltered subscription.** `SuperAgentDashboard` subscribed to
+  `chip_transactions` with no filter while its sibling listener was correctly
+  scoped to the club — so every chip movement anywhere woke it. Scoped to the
+  club (the column exists; the filter was simply omitted).
+- **Background polls gated on visibility** (the pattern `club/ClubDashboard`
+  already used correctly): HomePage club stats 20s -> 45s, TournamentStandings
+  15s -> 30s, OnlinePlayersList 30s. All previously ran forever in hidden tabs.
+- **Header badge counts coalesced.** The global header ran a `count: 'exact'`
+  query per delivered row for notifications AND messages; a burst meant a burst
+  of exact counts. Now one trailing query per burst.
+- **Tournament start: ~368 serial round-trips -> 3.** `TournamentService` created
+  tables one INSERT at a time, seated players one INSERT at a time, then updated
+  each table's count one at a time. A 300-entry MTT paid all of it while every
+  registrant watched a spinner. Now two bulk inserts and one parallel update.
+  Seating is also atomic now rather than best-effort — a half-seated tournament
+  is worse than one that refuses to start, and double-start is already blocked
+  by the CAS claim above it.
+- **OnlinePlayersList** fetched the whole roster then issued 8 SERIAL chunked
+  profile queries every 30s to render ~10 names. Chunks now run together
+  (disjoint id sets, order preserved, result identical).
+- **Table entry permission chain 4 round-trips -> 2.** The observer-chat check
+  short-circuits for staff, so ordinary players paid club_members -> clubs ->
+  unions -> profiles sequentially on every table entry and every sit/stand. The
+  first three are independent; fired together. Precedence unchanged.
+- **Spectators no longer run table maintenance.** The waitlist -> horse-yield
+  poll ran for EVERY client with the table open, watchers included, every 10s.
+  Restricted to seated players, raised to 15s, and jittered so clients at one
+  table stop hitting the database in lockstep.
+- `MembershipService.getMemberCounts` ran three exact counts over the same
+  `club_members` partition sequentially. Parallelized.
+
+### Verified, NOT changed (worth recording so nobody "fixes" them)
+
+- **The 5s table heartbeat is seat liveness.** Gating it on visibility would let
+  a player who tabs away be marked disconnected and auto-folded. Left alone.
+- **The client waitlist->yield is the ONLY implementation** of giving a seat back
+  when a human queues behind a table full of horses. `HorseFleetManager` seeds
+  tables and populates `table_waitlist` but does not yield. So it was scoped
+  down, not deleted like the old client-side AutoRebuyService. Moving it
+  server-side needs an engine change.
+- `ClubHomePage` does **not** subscribe to `BALANCE_UPDATED` (an audit claimed
+  it did). Its bus listeners are all debounced and the club-scoped ones filtered.
+- `FindPlayerModal`'s per-player presence lookups are already inside a
+  `Promise.all` — 40 queries but concurrent, ~2 round-trips, not 40 serial.
+  Still worth collapsing to two `.in()` queries eventually; on-demand, so lower
+  priority than always-on cost.
+
+### Still open
+
+- `TablePage` has ~6 genuinely independent awaits before the felt paints. Not
+  reordered: it is a 9,000-line file on the hottest surface and the win is
+  RTT-bound, which the region co-location addresses more directly and far more
+  safely.
+- `TournamentStandings` still selects every `tournament_players` row for the
+  tournament. Bounding it means deciding which of a 1,000-player field to stop
+  showing — a product call, not a performance one.
+- The remaining seated players still duplicate the waitlist yield N ways, and
+  it is a mutation, so N clients race. Belongs in the engine.
+
+---
+
 ## Cowork session 2026-08-24 (part 2) — THE DATABASE WAS SATURATED
 
 Dan: "find any and all other ways to fully improve and optimize... globally."

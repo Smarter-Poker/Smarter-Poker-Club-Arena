@@ -7,6 +7,92 @@
 
 ---
 
+## Cowork session 2026-08-24 (part 4) — REALTIME FIREHOSES AND A REGRESSION I CAUSED
+
+### A bug I introduced, found by auditing my own work
+
+The 30s freshness window added to `useWalletStore.loadBalances/loadDiamonds` in
+part 3 makes MOUNTING free — that is what stopped the wallet re-fetching and
+flashing a skeleton on every navigation. But it applied to EVERY caller,
+including the handlers that fire _because_ the balance just moved:
+`BALANCE_UPDATED`, `WALLET_REFRESHED`, `DIAMOND_BALANCE_CHANGED`,
+`DIAMOND_SPENT`, `useVisibilityRefresh`, and `useWallet().refresh()`.
+
+Those all called `loadBalances()` and were silently turned into no-ops, so a
+real balance change could sit unshown for up to 30 seconds. **That is strictly
+worse than the flicker the window removed** — a flicker is cosmetic, a stale
+number on a money surface is not. Every event-driven and explicit-refresh path
+now passes `{ force: true }`; mount paths deliberately do not. Both halves are
+pinned by `tests/balance-events-force-a-refetch.test.ts`, including a test that
+the mount path must NOT force, so the always-on work cannot be undone by
+"fixing" it in the wrong direction.
+
+### Unfiltered realtime listeners (the worst finding of the day)
+
+`GlobalWaitlistListener` is mounted in `App.tsx` for EVERY authenticated user
+and subscribed to `table_seats` DELETE **with no filter at all**. Every seat
+vacated anywhere on the platform — and the horse fleet manager cycles seats
+continuously — was delivered to every connected client, each delivery then
+running a `table_waitlist` query. Same shape as the unfiltered listeners removed
+in April for billing (~80% of 86M realtime messages); it survived that cleanup.
+Now scoped to the tables the user is actually queuing for, and subscribing to
+nothing at all when they queue for none.
+
+Also unfiltered, also fixed: `TournamentResultsPage` (two listeners — the
+`tournament_players` one received every chip update of every running tournament
+only to discard it in a client-side id check) and `UnionGamesPage` (whose
+comment claimed "for this union" while listening to every tournament).
+
+`tests/no-unfiltered-realtime-firehose.test.ts` now walks every `.ts`/`.tsx`
+under `src/` and fails if a `postgres_changes` listener on any of ten high-churn
+tables lacks a filter. Writing it found three offenders the audit had missed —
+and three false positives, which is why it accepts the conditional
+`filter: cond ? ... : null` form while still rejecting a bare `filter: null`.
+
+### Duplicate page-scoped subscriptions removed
+
+All were byte-identical to listeners `PostgresSyncHooks` already carries on
+`global_db_sync:<userId>` (created once at sign-in, never torn down by
+navigation), and every page already refetched on the bus event that channel
+emits: `DynamicWallet` (profiles + club_members, on three hot pages),
+`ProfilePage` (profiles + wallets — whole effect deleted, it had no other
+listener), `RakebackPage` (wallets), `VIPPage` (profiles — whole channel
+deleted), `AgentCommissionDashboard` (wallets).
+
+**`CashierPage`'s was deliberately KEPT.** Its `onSubscriptionError` feeds the
+degraded-connection banner, which the global channel does not do — so it has a
+second, legitimate purpose beyond the duplicated refetch.
+
+### Dead code with a firehose in it
+
+`OnlinePlayersList` was never rendered anywhere: its only JSX reference was its
+own declaration, and the barrel exporting it is imported by nothing. It carried
+an UNFILTERED `profiles` listener, a serial N+1 over 150-id roster chunks, and a
+30s poll. Deleted rather than optimised — note that an earlier pass in this
+session had "optimised" it, which was wasted effort on code that never ran.
+`PresenceIndicator` in the same folder has 9 call sites and stays.
+
+### Polls
+
+`ClubHomePage`'s 90s full-lobby `reload()` and `TournamentStandings`' backup
+poll are now visibility-gated with a refresh on return. `TournamentStandings`
+also stopped re-entering its loading state on every tick — it raised
+`setLoading(true)` unconditionally inside the polled loader, so an
+already-rendered list dropped back to its skeleton every interval. The guard is
+ref-based, not `players.length`, because the interval's closure captures a stale
+`players`.
+
+### Process note
+
+Three times today a branch of mine, cut before other agents merged, would have
+silently reverted their work — a mobile lobby fix, then two performance
+migrations plus my own #718. **A three-dot diff (`origin/main...HEAD`) hides
+this**, because it measures from the merge base. Two dots (`origin/main..HEAD`)
+shows what a branch would actually do to main. Every branch here should be
+checked that way before merge.
+
+---
+
 ## Cowork session 2026-08-24 (part 3) — CLUB ARENA DEEP PASS
 
 Dan: "CLUB ARENA IS THE MOST IMPORTANT, FOCUS ALL YOUR TIME AND ATTENTION HERE."

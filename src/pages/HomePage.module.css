@@ -1854,7 +1854,12 @@
   }
 
   .clubCarousel {
-    padding: 8px 8px 20px 8px;
+    /* 12px, not 20: the carousel centres its track between the console and
+       the footer, so its own bottom padding is the only thing that makes the
+       two gaps unequal. Measured live at 20px: 36px above the cards, 44px
+       below. Trimming 8 moves the midpoint 4px down and both land at 40.
+       (The ≤700 block's value never applies on a phone — this rule wins.) */
+    padding: 8px 8px 12px 8px;
   }
 
   .ctaCard {

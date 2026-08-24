@@ -109,13 +109,13 @@ export default function CarouselSection({
      only applies under 480px. */
   const [phoneItemWidth, setPhoneItemWidth] = useState<number | undefined>(() =>
     typeof window !== 'undefined' && window.innerWidth <= 480
-      ? Math.min(210, Math.round(window.innerWidth * 0.52))
+      ? Math.min(175, Math.round(window.innerWidth * 0.42))
       : undefined
   );
   useEffect(() => {
     const recompute = () =>
       setPhoneItemWidth(
-        window.innerWidth <= 480 ? Math.min(210, Math.round(window.innerWidth * 0.52)) : undefined
+        window.innerWidth <= 480 ? Math.min(175, Math.round(window.innerWidth * 0.42)) : undefined
       );
     window.addEventListener('resize', recompute);
     window.addEventListener('orientationchange', recompute);

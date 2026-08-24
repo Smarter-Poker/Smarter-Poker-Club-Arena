@@ -513,3 +513,25 @@
     animation: none;
   }
 }
+
+/* Dan 2026-08-24 (iPhone screenshots): the plaque floated mid-air over the
+   felt and read enormous on a phone. Docked tight under the tab bar and cut
+   to roughly half its visual weight — the desktop plaque is untouched. */
+@media (max-width: 768px) {
+  .bbj-widget {
+    top: calc(2px + env(safe-area-inset-top, 0px));
+    border-width: 3px;
+    padding: 2px 10px;
+    border-radius: 8px;
+    max-width: calc(100% - 150px);
+  }
+
+  .bbj-widget__label {
+    font-size: 0.5rem;
+    letter-spacing: 0.12em;
+  }
+
+  .bbj-widget__amount {
+    font-size: 0.8125rem;
+  }
+}

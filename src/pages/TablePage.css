@@ -3085,3 +3085,39 @@ body.ca-raising .bankroll-widget {
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: #fff;
 }
+
+/* ── Dan 2026-08-24 (iPhone screenshots), table proportions on phones ──────
+   1. The 76px top reserve assumed the old full-size BBJ plaque; it is a slim
+      strip now, so the felt starts higher and runs longer.
+   2. The scaler cap rises 360 → 374: the oval gets genuinely longer (and
+      wider) on a 390px phone while keeping the sacred 605/1000 aspect, so
+      every seat stays on the painted rail.
+   3. The spectator footer was a 64px slab with 12px pads — nearly a third of
+      the "way too much padding on the bottom" he pointed at. Slimmed.
+   4. --sp-hero-clear reserves room for the hero plate that hangs below the
+      scaler — but a SPECTATOR has no hero plate, and the reserve was applied
+      anyway. TablePage now stamps data-hero on the page root; without a hero
+      the clear collapses and the felt takes the space back. */
+@media (max-width: 768px) {
+  .table-container {
+    padding-top: calc(46px + env(safe-area-inset-top, 0px));
+  }
+
+  .table-scaler {
+    max-width: min(calc(100% - 8px), 374px);
+  }
+
+  .spectator-footer-bar {
+    min-height: 46px;
+    padding: 8px 12px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0));
+  }
+
+  .spectator-footer-bar__label {
+    font-size: 0.8125rem;
+  }
+}
+
+.table-page[data-hero='false'] {
+  --sp-hero-clear: 6px;
+}

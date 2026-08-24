@@ -1766,3 +1766,34 @@
     white-space: normal;
   }
 }
+
+/* ── Dan 2026-08-24 (iPhone screenshots): the 192px club art left the info
+   column ~150px on a phone — the name truncated to two letters, the level
+   chip clipped off the right edge, and the whole card read as smushed.
+   Smaller art on small screens; the info column gets the width back. Plus a
+   litte top air: the card sat flush against the header. ─────────────────── */
+@media (max-width: 768px) {
+  .lobby-top {
+    padding-top: 14px;
+  }
+
+  .lobby-club__avatar {
+    width: 112px;
+    height: 112px;
+  }
+
+  .lobby-club__avatar-fallback {
+    font-size: 2.6rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .lobby-club__avatar {
+    width: 92px;
+    height: 92px;
+  }
+
+  .lobby-club__name {
+    font-size: 0.95rem;
+  }
+}

@@ -492,12 +492,24 @@
   }
 
   .table-tab-bar__tab {
-    min-width: 80px;
-    max-width: 130px;
+    /* Dan 2026-08-24: the bar must hold FOUR table slots plus the hamburger,
+       add and the offline chip on a 390px phone: 4x64 + chrome fits, 4x80
+       did not. Cards inside shrink with the pill (rule below). */
+    min-width: 64px;
+    max-width: 112px;
     height: 32px;
-    padding: 0 10px;
-    font-size: 0.75rem;
+    padding: 0 8px;
+    font-size: 0.71875rem;
     border-radius: 16px;
+  }
+
+  .table-tab-bar__mini-card {
+    width: 14px;
+    height: 20px;
+  }
+
+  .table-tab-bar__mini-cards--wide .table-tab-bar__mini-card {
+    width: 12px;
   }
 
   .table-tab-bar__add {

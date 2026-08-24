@@ -115,16 +115,10 @@
    its own "xN" badge and its own stagger delay. */
 .cp-stacks {
   display: flex;
-  flex-direction: column-reverse;
-  align-items: center;
-  gap: 0;
-}
-
-/* Groups butt into each other with the same slice as the chips inside them, so
-   the seam between two denominations is invisible and the whole thing reads as
-   a single tower rather than as stacked sub-piles. */
-.cp-stack + .cp-stack {
-  margin-top: var(--cp-chip-overlap);
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 4px;
 }
 
 .cp-stack {
@@ -197,9 +191,9 @@
 .cp-chip {
   width: var(--cp-chip-size);
   height: var(--cp-chip-size);
-  margin-top: var(--cp-chip-overlap);
   position: relative;
   border-radius: 50%;
+
   /* Dan 2026-08-23: the rim reads as a DIFFERENT shade of the same colour on a
      real clay chip, which is most of what makes a 13px disc legible as a chip
      at all. --chip-accent was already being set by the component and was never
@@ -229,12 +223,8 @@
   transition: transform 0.15s var(--cp-ease-spring);
 }
 
-/* :first-of-type / :last-of-type, NOT :first-child / :last-child.
-   The stack can now carry a non-chip <span class="cp-stack__multi"> sibling,
-   and with :first-child the bottom chip lost its margin reset the moment that
-   badge appeared, so a truncated stack sat 2px lower than its neighbours. */
-.cp-chip:first-of-type {
-  margin-top: 0;
+.cp-chip + .cp-chip {
+  margin-bottom: var(--cp-chip-overlap);
 }
 
 /* ---- Partial sliver: a sub-1 amount no chip on the ladder can represent ----

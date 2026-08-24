@@ -217,7 +217,21 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
                     <span className={styles.title}>{n.title}</span>
                     <span className={styles.message}>{n.message}</span>
                   </div>
-                  <span className={styles.time}>{formatTime(n.createdAt)}</span>
+                  <div className={styles.meta}>
+                    <span className={styles.time}>{formatTime(n.createdAt)}</span>
+                    {!n.isRead && (
+                      <button
+                        className={styles.markReadBtn}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          markAsRead(n.id);
+                        }}
+                        title="Mark as read"
+                      >
+                        ●
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))
             )}

@@ -836,6 +836,13 @@ export default function TableConfigPage() {
     bomb_pot_double_board: config.bombPotEnabled && config.doubleBoard,
     double_board: config.doubleBoard,
     triple_board: config.tripleBoard,
+    // 2026-08-24: the "Pineapple Hold'em — 3 hole cards, discard 1" toggle that
+    // set this is GONE. Nothing in server/src has ever read the column, so the
+    // control promised a different game and delivered ordinary Hold'em; zero
+    // rows in production ever had it true, so nothing depended on it. Crazy
+    // Pineapple already works properly as its own variant card on the
+    // create-table screen, which deals three and runs a real discard street.
+    // The field stays only to keep writing the column a defined value.
     pineapple_holdem: config.pineappleHoldem,
     seven_deuce_enabled: config.sevenDeuceEnabled,
     // 7-2 bounty size in big blinds each other dealt-in player pays a post-flop
@@ -1254,12 +1261,6 @@ export default function TableConfigPage() {
               label="Triple Board"
               value={config.tripleBoard}
               onChange={(v) => updateConfig('tripleBoard', v)}
-            />
-            <Toggle
-              label="Pineapple Hold'em"
-              value={config.pineappleHoldem}
-              onChange={(v) => updateConfig('pineappleHoldem', v)}
-              tooltip="3 hole cards, discard 1"
             />
             <Toggle
               label="Seven-Deuce"

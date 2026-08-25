@@ -262,3 +262,16 @@
     inset 0 0 0 2.5px rgba(255, 255, 255, 0.18),
     0 1px 4px rgba(0, 0, 0, 0.5) !important;
 }
+
+/* Guaranteed fallback: if the card back image fails to render (Safari variable dropping, etc),
+   paint the entire outline box solid blue so they are never transparent outlines. */
+.table-page .seat__cards--opponent .seat__card--back {
+  background-color: #35598f !important;
+}
+
+/* Fix inline-block baseline shift clipping .card-image out of the overflow box */
+.table-page .seat__cards--opponent .seat__card--back {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}

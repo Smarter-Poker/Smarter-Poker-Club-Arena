@@ -35,6 +35,7 @@ import { MEDIA_BASE } from '../../utils/mediaBase';
 import { normalizeCardBack } from '../table/CardImage';
 import { masterBus } from '../../core/MasterBus';
 import { haptic } from '../../services/SoundService';
+import { useToast } from '../common/Toast';
 import './CardBackSelector.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -200,6 +201,7 @@ export const CardBackSelector: React.FC<CardBackSelectorProps> = ({
   onPurchase,
 }) => {
   const [selected, setSelected] = useState(currentCardBack);
+  const toast = useToast();
   const [confirmPurchase, setConfirmPurchase] = useState<CardBack | null>(null);
   // Designs whose artwork failed to load — rendered as styled placeholders.
   const [brokenPreviews, setBrokenPreviews] = useState<Record<string, boolean>>({});
@@ -217,6 +219,7 @@ export const CardBackSelector: React.FC<CardBackSelectorProps> = ({
         haptic.light();
         setSelected(cardBack.id);
         onChange?.(cardBack.id);
+        toast.success(`Equipped ${cardBack.name} card back`);
         masterBus.emit('SETTINGS_CHANGED', { setting: 'cardBack', value: cardBack.id });
       } else if (cardBack.price) {
         haptic.medium();

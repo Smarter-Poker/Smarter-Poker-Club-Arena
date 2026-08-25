@@ -1825,6 +1825,28 @@
   box-shadow: 0 2px 8px rgba(255, 215, 0, 0.15);
 }
 
+/* SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the engine ruled this hand
+   muckable — cards stay private, the seat says MUCKED. Deliberately muted
+   next to the gold winner label: the mucked seat is the hand's footnote. */
+.seat__mucked-label {
+  position: relative;
+  text-align: center;
+  padding: 2px 12px;
+  margin-top: 2px;
+  background: rgba(30, 34, 44, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.55);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  z-index: 25;
+  animation: handNameAppear 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
 .seat__hand-name::before {
   content: '';
   position: absolute;

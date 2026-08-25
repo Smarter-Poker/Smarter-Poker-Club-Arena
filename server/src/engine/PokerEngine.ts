@@ -348,6 +348,87 @@ export function compareHands(a: EvaluatedHand, b: EvaluatedHand): number {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// HAND DESCRIPTION — secondary display line for the showdown result
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const RANK_WORDS: Record<number, string> = {
+  2: 'Two',
+  3: 'Three',
+  4: 'Four',
+  5: 'Five',
+  6: 'Six',
+  7: 'Seven',
+  8: 'Eight',
+  9: 'Nine',
+  10: 'Ten',
+  11: 'Jack',
+  12: 'Queen',
+  13: 'King',
+  14: 'Ace',
+};
+
+const RANK_PLURALS: Record<number, string> = {
+  2: 'Twos',
+  3: 'Threes',
+  4: 'Fours',
+  5: 'Fives',
+  6: 'Sixes',
+  7: 'Sevens',
+  8: 'Eights',
+  9: 'Nines',
+  10: 'Tens',
+  11: 'Jacks',
+  12: 'Queens',
+  13: 'Kings',
+  14: 'Aces',
+};
+
+/**
+ * SHOWDOWN SYSTEM 2026-08-25 (Dan spec section 14): a descriptive secondary
+ * line for the winning hand, generated from the ACTUAL evaluated hand — never
+ * hard-coded by the presentation layer. Examples:
+ *   Full House      -> "Kings Full Of Nines"
+ *   Flush           -> "Ace High"
+ *   Straight        -> "Nine High"  (wheel -> "Five High")
+ *   Four of a Kind  -> "Queens"
+ *   Two Pair        -> "Aces And Kings"
+ *   Pair            -> "Queens"
+ *   High Card       -> "Ace High"
+ * The kicker layout is exactly what getKickers() produces: grouped by count
+ * descending, then rank descending — so kickers[0] is always the defining
+ * rank, full house pair sits at index 3, second pair of two pair at index 2.
+ * Low hands (ranking 0, name "Low: ...") reuse their existing name.
+ */
+export function describeHand(hand: EvaluatedHand): string {
+  const k = hand.kickers;
+  const word = (r: number | undefined) => (r !== undefined && RANK_WORDS[r]) || '';
+  const plural = (r: number | undefined) => (r !== undefined && RANK_PLURALS[r]) || '';
+  switch (hand.name) {
+    case 'Royal Flush':
+      return 'Ace High';
+    case 'Straight Flush':
+    case 'Straight':
+    case 'Flush':
+    case 'High Card':
+      return k.length > 0 ? `${word(k[0])} High` : '';
+    case 'Four of a Kind':
+      return plural(k[0]);
+    case 'Full House':
+      return k.length >= 4 ? `${plural(k[0])} Full Of ${plural(k[3])}` : plural(k[0]);
+    case 'Three of a Kind':
+      return plural(k[0]);
+    case 'Two Pair':
+      return k.length >= 3 ? `${plural(k[0])} And ${plural(k[2])}` : plural(k[0]);
+    case 'Pair':
+      return plural(k[0]);
+    default:
+      // Omaha lows ("Low: 8-6-4-3-2") and any future variant-specific names
+      // are already self-describing.
+      return hand.name.startsWith('Low:') ? hand.name : '';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // OMAHA HAND EVALUATOR
 // ═══════════════════════════════════════════════════════════════════════════════
 

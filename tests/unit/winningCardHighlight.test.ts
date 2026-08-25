@@ -22,16 +22,14 @@
  */
 /**
  * ─────────────────────────────────────────────────────────────────────────────
- * UNSKIPPED 2026-08-25. The wire is now joined at both ends.
- *
- * These five were added ahead of the implementation and skipped so they could
- * not hold the World Hub bundle hostage. The engine half landed afterwards
- * (winningBoardIndices + card_indices on pot_win) but ONE line still narrowed
- * `cards` off the stored winner, so `used.size === 0` on every hand and the
- * derivation returned [] forever — the feature looked built and lit nothing.
- *
- * That mapping now carries `cards`, so the specification these five describe is
- * real and they run as written.
+ * SHOWDOWN SYSTEM 2026-08-25: the wire is CONNECTED and the five engine specs
+ * below run un-skipped. The last missing link was the winner-capture in
+ * ServerTableEngineHandEvents narrowing `hand` down to {name, ranking} and
+ * dropping `cards` — the derivation read `w.hand?.cards` and always saw
+ * undefined, so card_indices went out empty on every hand. The capture now
+ * keeps `cards`, pot_win carries real indices, and the seats additionally
+ * receive per-winner `hole_card_indices` for the hole-card half of the
+ * highlight.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 import { describe, it, expect } from 'vitest';

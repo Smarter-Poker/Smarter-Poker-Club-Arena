@@ -70,6 +70,14 @@ export const HAND_COMPLETION = {
   /** A big multiway showdown must still not stall the table forever. */
   SHOWDOWN_READ_MAX_MS: 4400,
   /**
+   * SHOWDOWN SYSTEM 2026-08-25 (Dan spec section 3): per-seat stagger on the
+   * showdown card flip, in reveal order — the final-street last aggressor
+   * flips first, then clockwise, the way a live table hands in turn. Small
+   * enough that a 4-way showdown finishes flipping well inside the
+   * SHOWDOWN_READ window it must never outrun.
+   */
+  SHOWDOWN_REVEAL_STAGGER_MS: 300,
+  /**
    * A Bad Beat Jackpot is real money and plays a ~9s full-screen celebration.
    * Nothing about a jackpot is rushed: the table waits for the whole thing.
    */

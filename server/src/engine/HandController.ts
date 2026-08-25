@@ -10,11 +10,14 @@ import {
   Deck,
   evaluateHand,
   evaluateOmahaHand,
+  evaluateOmahaLowHand,
   calculatePots,
   calculateBettingState,
   validateAction,
   calculateRake,
   determineWinners,
+  describeHand,
+  compareHands,
 } from './PokerEngine.js';
 import {
   isFixedLimitVariant,
@@ -22,7 +25,12 @@ import {
   fixedLimitBetSize,
   isFixedLimitCapped,
 } from './BettingStructure.js';
-import { holeCardCount, isOmahaVariant, isShortDeckVariant } from './VariantRules.js';
+import {
+  holeCardCount,
+  isHiLoVariant,
+  isOmahaVariant,
+  isShortDeckVariant,
+} from './VariantRules.js';
 
 import type {
   Card,
@@ -136,6 +144,14 @@ export class HandController {
   private pendingWinnersByBoard:
     | Array<{ board: 1 | 2; userId: string; amount: number; handName?: string }>
     | undefined;
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25 (Dan spec section 8): set the moment an all-in
+   * ends all possible betting with cards to come. At such a showdown every
+   * live hand is exposed and nobody may muck — cash, tournament, heads-up,
+   * multiway, main pots and side pots alike. Per-hand: a HandController lives
+   * for exactly one hand, so no reset is needed.
+   */
+  private allInShowdownLocked = false;
   /** FIX-225: Bible V8 §1.6/§3.2 — Formal Hand State Machine */
   private handFSM = createHandStateMachine('idle');
 
@@ -932,6 +948,10 @@ export class HandController {
       const canStillAct = this.getActivePlayers().filter((p) => !p.is_all_in);
       if (canStillAct.length < 2) {
         this.state.currentPlayerSeat = -1;
+        // SHOWDOWN SYSTEM 2026-08-25 (Dan spec section 8): an all-in ended all
+        // possible betting with cards still to come. Every live hand must be
+        // exposed at showdown — no muck option. completeHandInner reads this.
+        this.allInShowdownLocked = true;
         this.emit({
           type: 'ALL_IN_RUNOUT',
           board: [...this.state.communityCards],
@@ -1010,6 +1030,19 @@ export class HandController {
     // parity fix comment there. Reaching this point means at least two
     // players can still act on the newly dealt street. The 2026-08-15
     // parked-turn-pointer fix lives on in the pre-deal block.
+    //
+    // SHOWDOWN SYSTEM 2026-08-25 (Dan spec sections 3 + 6, TDA): the player
+    // who shows first is the last aggressor ON THE FINAL BETTING ROUND — not
+    // the last aggressor anywhere in the hand. lastAggressorSeat used to be
+    // set once and never cleared, so a preflop raiser who check-called the
+    // whole way down was still forced to show first. A new betting round is
+    // beginning here, so the previous street's aggression no longer counts
+    // toward showdown order. If this street checks through (or every later
+    // street does), the fallback in completeHandInner — first live player in
+    // normal river action order — takes over. An all-in runout parks ABOVE
+    // this line, deliberately preserving the aggressor of the final betting
+    // round that actually completed.
+    this.state.lastAggressorSeat = -1;
     this.state.currentPlayerSeat = this.getFirstPostflopPlayer();
     this.emitTurnChange();
   }
@@ -1396,12 +1429,17 @@ export class HandController {
         hand2: showBoard2 ? evaluator(p.cards, this.state.communityCards2) : undefined,
       }));
 
-      // Bible V8 §4.21: Sort showdown results — last aggressor shows first,
-      // then clockwise. If no aggressor, first player left of dealer shows first.
+      // Bible V8 §4.21 + Dan spec sections 3/6/7: sort showdown results — the
+      // FINAL betting round's last aggressor shows first, then clockwise. If
+      // that street checked through (no aggressor), the first LIVE player in
+      // normal river action order shows first — heads-up that is the Big
+      // Blind, since the BB acts first postflop. getFirstShowdownSeat differs
+      // from getFirstPostflopPlayer in that an all-in player is still a live
+      // hand at showdown and must not be skipped over.
       const firstToShow =
         this.state.lastAggressorSeat >= 0
           ? this.state.lastAggressorSeat
-          : this.getFirstPostflopPlayer();
+          : this.getFirstShowdownSeat();
       if (firstToShow >= 0) {
         // FIX 165: Use max physical seat + 1 for modular distance, not player count.
         // Players may have non-contiguous seats (e.g., seats 1,3,5,7 at a 9-seat table).
@@ -1413,6 +1451,8 @@ export class HandController {
           return aDist - bDist;
         });
       }
+
+      this.applyShowdownRevealRules(showdownResults, pots);
 
       this.emit({ type: 'SHOWDOWN', results: showdownResults });
     }
@@ -1598,6 +1638,118 @@ export class HandController {
     this.handFSM.transition('idle');
   }
 
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25 (Dan spec sections 3-11): annotate the sorted
+   * showdown results with reveal order, muck eligibility, and the descriptive
+   * hand line. The ENGINE decides who may muck — never the client.
+   *
+   * The rules, walking the results in reveal order (last final-street
+   * aggressor first, else first player in normal river action order):
+   *
+   *   - The first player to show always tables their hand.
+   *   - Each later player must show if, in ANY pot they are eligible for,
+   *     their hand beats OR TIES the best hand already required to show for
+   *     that pot — on either board of a double-board hand, and on either the
+   *     high or the qualifying low half of a hi-lo hand. This is also the
+   *     accidental-muck protection: a hand that wins or ties any available
+   *     pot is automatically tabled and can never be mucked (spec section 5).
+   *   - A player whose hand cannot win or tie anything may muck: their hole
+   *     cards stay private and the seat renders MUCKED (spec section 4).
+   *   - When an all-in ended all possible betting (allInShowdownLocked),
+   *     EVERY live hand is exposed and nobody may muck (spec section 8) —
+   *     cash and tournament, heads-up and multiway, main and side pots.
+   *
+   * Because a mucked hand strictly loses to a shown, pot-eligible hand in
+   * every pot it could contest, determineWinners can never award a mucked
+   * hand anything — the muck decision and the payout stay consistent by
+   * construction.
+   */
+  private applyShowdownRevealRules(results: ShowdownResult[], pots: Pot[]): void {
+    results.forEach((r, i) => {
+      r.revealOrder = i;
+      r.handDescription = describeHand(r.hand);
+      r.mucked = false;
+    });
+
+    // Spec section 8: all-in with no further betting possible — expose all.
+    if (this.allInShowdownLocked) return;
+
+    const isHiLo = isHiLoVariant(this.config.gameVariant);
+    const lowByUser = new Map<string, number[] | null>();
+    if (isHiLo) {
+      for (const r of results) {
+        const low = evaluateOmahaLowHand(r.cards, this.state.communityCards);
+        lowByUser.set(r.userId, low ? low.kickers : null);
+      }
+    }
+    // Lower is better for lows; lexicographic on the sorted-desc rank arrays.
+    const compareLowKickers = (a: number[], b: number[]): number => {
+      for (let i = 0; i < 5; i++) {
+        if (a[i] !== b[i]) return a[i] - b[i];
+      }
+      return 0;
+    };
+
+    // Per pot index: the best hand among players already required to show.
+    const bestShownHi: (EvaluatedHand | null)[] = pots.map(() => null);
+    const bestShownLo: (number[] | null)[] = pots.map(() => null);
+    const bestShownHi2: (EvaluatedHand | null)[] = pots.map(() => null);
+
+    for (const r of results) {
+      let eligibleAnywhere = false;
+      let mustShow = false;
+      for (let potIdx = 0; potIdx < pots.length; potIdx++) {
+        if (!pots[potIdx].eligiblePlayers.includes(r.userId)) continue;
+        eligibleAnywhere = true;
+        const hi = bestShownHi[potIdx];
+        if (hi === null || compareHands(r.hand, hi) >= 0) {
+          mustShow = true;
+          break;
+        }
+        if (r.hand2) {
+          const hi2 = bestShownHi2[potIdx];
+          if (hi2 === null || compareHands(r.hand2, hi2) >= 0) {
+            mustShow = true;
+            break;
+          }
+        }
+        if (isHiLo) {
+          const myLow = lowByUser.get(r.userId) ?? null;
+          if (myLow) {
+            const lo = bestShownLo[potIdx];
+            if (lo === null || compareLowKickers(myLow, lo) <= 0) {
+              mustShow = true;
+              break;
+            }
+          }
+        }
+      }
+      // Defensive: a live hand that somehow appears in no pot still shows.
+      if (!eligibleAnywhere) mustShow = true;
+
+      if (!mustShow) {
+        r.mucked = true;
+        continue;
+      }
+      for (let potIdx = 0; potIdx < pots.length; potIdx++) {
+        if (!pots[potIdx].eligiblePlayers.includes(r.userId)) continue;
+        const hi = bestShownHi[potIdx];
+        if (hi === null || compareHands(r.hand, hi) > 0) bestShownHi[potIdx] = r.hand;
+        if (r.hand2) {
+          const hi2 = bestShownHi2[potIdx];
+          if (hi2 === null || compareHands(r.hand2, hi2) > 0) bestShownHi2[potIdx] = r.hand2;
+        }
+        if (isHiLo) {
+          const myLow = lowByUser.get(r.userId) ?? null;
+          if (myLow) {
+            const lo = bestShownLo[potIdx];
+            if (lo === null || compareLowKickers(myLow, lo) < 0) bestShownLo[potIdx] = myLow;
+          }
+        }
+      }
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // Helper Methods
   // ─────────────────────────────────────────────────────────────────────────
@@ -1644,6 +1796,25 @@ export class HandController {
       iterations++;
     }
     return activePlayers[0]?.seat ?? -1;
+  }
+
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25: first LIVE hand in normal river action order
+   * — the seat that tables first when the final street checked through.
+   * Unlike getFirstPostflopPlayer this does NOT skip all-in players: an
+   * all-in hand cannot act in a betting round but is very much live at
+   * showdown and holds its place in the reveal order.
+   */
+  private getFirstShowdownSeat(): number {
+    const live = this.getActivePlayers();
+    if (live.length === 0) return -1;
+    let seat = this.getNextActiveSeat(this.state.dealerSeat);
+    for (let i = 0; i < this.state.players.length; i++) {
+      const p = this.state.players.find((pp) => pp.seat === seat);
+      if (p && !p.is_folded && !p.is_sitting_out) return seat;
+      seat = this.getNextActiveSeat(seat);
+    }
+    return live[0]?.seat ?? -1;
   }
 
   /** Is this seat currently able to act (not folded, all-in, or sitting out)? */

@@ -907,8 +907,15 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // losing holdings in one hour) stays closed - those players never
         // enter the array to begin with.
         const winnerIds = new Set(this.currentHandWinners.map((w) => w.userId));
+        // SHOWDOWN SYSTEM 2026-08-25: the module's rule is "a holding may be
+        // exposed only if the table already showed it" — and a hand the engine
+        // ruled muckable was never shown. Filter mucked hands here (voluntary
+        // shows override via isMuckedAtShowdown) so the participant-readable
+        // hand_history matches what the table displayed. The full dealt-card
+        // record for audit/integrity still rides the separate holeCardsAll
+        // capture, exactly as before.
         const revealedShowdownResults = selectRevealedShowdownResults(
-          this.currentHandShowdownResults,
+          this.currentHandShowdownResults.filter((r) => !this.isMuckedAtShowdown(r.userId)),
           winnerIds,
           this.showHandPlayers,
           false

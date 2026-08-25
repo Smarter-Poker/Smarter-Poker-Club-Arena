@@ -284,6 +284,7 @@ export default function ClubDataPage() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [showInvoiceDetail, setShowInvoiceDetail] = useState(false);
+  const [showInvoiceHistory, setShowInvoiceHistory] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [invoicesError, setInvoicesError] = useState<string | null>(null);
@@ -639,6 +640,20 @@ export default function ClubDataPage() {
       )[0] || null,
     [invoices]
   );
+  /**
+   * The RPC is asked for EIGHT statements and rendered one. An owner disputing
+   * a square-up ("was I charged this last week too?") had no history anywhere
+   * in the app, while seven rows of already-paid-for data were discarded on
+   * every load. Same sort as latestInvoice, so the two cannot disagree.
+   */
+  const olderInvoices = useMemo(
+    () =>
+      [...invoices]
+        .sort((a, b) => String(b.issued_at || '').localeCompare(String(a.issued_at || '')))
+        .slice(1),
+    [invoices]
+  );
+
   const summary = snapshot?.summary;
   const filtersActive = game !== 'ALL' || stakes !== 'ALL' || search.trim() !== '';
   const unionOwesClub = latestInvoice?.direction === 'union owes club';
@@ -760,13 +775,16 @@ export default function ClubDataPage() {
         </button>
       </div>
 
-      <div className={styles.presets} role="tablist" aria-label="Date range">
+      {/* role="group" + aria-pressed, not a tablist. These control no tabpanel,
+          and the stakes row is a TOGGLE - tapping the active chip clears it,
+          which is impossible for a tab and leaves a tablist with nothing
+          selected. A screen reader was told "tab 3 of 6" for a filter. */}
+      <div className={styles.presets} role="group" aria-label="Date Range">
         {([1, 7, 14] as PresetId[]).map((p) => (
           <button
             key={p}
             type="button"
-            role="tab"
-            aria-selected={preset === p}
+            aria-pressed={preset === p}
             className={`${styles.preset} ${preset === p ? styles.active : ''}`}
             onClick={() => setPreset(p)}
           >
@@ -828,6 +846,18 @@ export default function ClubDataPage() {
         <div className={styles.tile}>
           <div className={styles.tileValue}>{summary ? money(summary.fee) : NO_VALUE}</div>
           <div className={styles.tileLabel}>Fee</div>
+          {/* cash_fee and mtt_fee are already in the payload and rendered
+              nowhere. Cash rake is a percentage of pots; MTT fee is a fixed cut
+              of buy-ins. Blending them into one number meant an owner deciding
+              "more tournaments or more cash tables" could not answer it from
+              the page that exists to answer it. Dan 2026-08-25. */}
+          {summary &&
+            Number.isFinite(Number(summary.cash_fee)) &&
+            Number.isFinite(Number(summary.mtt_fee)) && (
+              <div className={styles.tileSub}>
+                {money(summary.cash_fee)} Cash - {money(summary.mtt_fee)} MTT
+              </div>
+            )}
           {summary && pctNote(delta?.fee_pct)}
         </div>
       </div>
@@ -848,6 +878,36 @@ export default function ClubDataPage() {
       {!latestInvoice && invoicesError && (
         <div className={`${styles.state} ${styles.error}`} role="alert">
           {invoicesError}
+        </div>
+      )}
+
+      {olderInvoices.length > 0 && latestInvoice && (
+        <div className={styles.invoiceHistory}>
+          <button
+            type="button"
+            className={styles.linkBtn}
+            onClick={() => setShowInvoiceHistory((v) => !v)}
+          >
+            {showInvoiceHistory
+              ? 'Hide Earlier Statements'
+              : `Earlier Statements (${olderInvoices.length})`}
+          </button>
+          {showInvoiceHistory &&
+            olderInvoices.map((inv) => (
+              <div className={styles.invoiceLine} key={inv.invoice_id}>
+                <span>
+                  {String(inv.period_start || '').slice(0, 10)} To{' '}
+                  {String(inv.period_end || '').slice(0, 10)}
+                </span>
+                <span>
+                  {inv.direction === 'union owes club' ? '+' : '-'}
+                  {Number.isFinite(Number(inv.amount))
+                    ? money(Math.abs(Number(inv.amount)))
+                    : NO_VALUE}
+                  {inv.status ? ` - ${invoiceStatusLabel(inv.status)}` : ''}
+                </span>
+              </div>
+            ))}
         </div>
       )}
 
@@ -932,7 +992,7 @@ export default function ClubDataPage() {
       )}
 
       {tab === 'games' && (
-        <>
+        <div role="tabpanel" id="club-data-panel-games" aria-labelledby="club-data-tab-games">
           <div className={styles.searchRow}>
             <input
               className={styles.searchInput}
@@ -943,13 +1003,12 @@ export default function ClubDataPage() {
             />
           </div>
 
-          <div className={styles.filterRow} role="tablist" aria-label="Game type">
+          <div className={styles.filterRow} role="group" aria-label="Game Type">
             {GAME_FILTERS.map((f) => (
               <button
                 key={f.id}
                 type="button"
-                role="tab"
-                aria-selected={game === f.id}
+                aria-pressed={game === f.id}
                 className={`${styles.chip} ${game === f.id ? styles.active : ''}`}
                 onClick={() => setGame(f.id)}
               >
@@ -960,15 +1019,14 @@ export default function ClubDataPage() {
 
           <div
             className={`${styles.filterRow} ${styles.stakesRow}`}
-            role="tablist"
+            role="group"
             aria-label="Stakes"
           >
             {STAKES_FILTERS.map((f) => (
               <button
                 key={f.id}
                 type="button"
-                role="tab"
-                aria-selected={stakes === f.id}
+                aria-pressed={stakes === f.id}
                 className={`${styles.chip} ${stakes === f.id ? styles.active : ''}`}
                 onClick={() => setStakes((cur) => (cur === f.id ? 'ALL' : f.id))}
               >
@@ -1089,18 +1147,23 @@ export default function ClubDataPage() {
                 );
               })}
           </div>
-        </>
+        </div>
       )}
 
       {tab === 'players' && (
-        <div className={styles.playersPanel} aria-busy={playersLoading}>
-          <div className={styles.filterRow} role="tablist" aria-label="Sort players">
+        <div
+          className={styles.playersPanel}
+          role="tabpanel"
+          id="club-data-panel-players"
+          aria-labelledby="club-data-tab-players"
+          aria-busy={playersLoading}
+        >
+          <div className={styles.filterRow} role="group" aria-label="Sort Players">
             {PLAYER_SORTS.map((o) => (
               <button
                 key={o.id}
                 type="button"
-                role="tab"
-                aria-selected={playerSort === o.id}
+                aria-pressed={playerSort === o.id}
                 className={`${styles.chip} ${playerSort === o.id ? styles.active : ''}`}
                 onClick={() => setPlayerSort(o.id)}
               >

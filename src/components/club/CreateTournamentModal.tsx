@@ -17,6 +17,10 @@ import WeeklyScheduleEditor, {
   validateWeeklySchedule,
   type WeeklyScheduleValue,
 } from '../tournament/WeeklyScheduleEditor';
+import { BlindStructureBuilder } from '../tournament/BlindStructureBuilder';
+import PayoutStructureEditor from '../tournament/PayoutStructureEditor';
+import type { BlindLevel } from '../../config/blindStructures';
+import type { PayoutEntry, PayoutTemplate } from '../../services/PayoutEngine';
 
 interface Props {
   clubId: string;
@@ -73,7 +77,14 @@ export default function CreateTournamentModal({
   const [buyIn, setBuyIn] = useState('10');
   const [startingChips, setStartingChips] = useState('1500');
   const [maxPlayers, setMaxPlayers] = useState('50');
-  const [blindSpeed, setBlindSpeed] = useState<'turbo' | 'regular' | 'deepStack'>('turbo');
+  const [blindSpeed, setBlindSpeed] = useState<'turbo' | 'regular' | 'deepStack' | 'custom'>(
+    'turbo'
+  );
+  /* Only read when blindSpeed === 'custom'. Seeded from the Regular preset by
+     the builder itself, so it is never empty when it is used. */
+  const [customBlinds, setCustomBlinds] = useState<BlindLevel[]>([]);
+  const [customPayoutsOn, setCustomPayoutsOn] = useState(false);
+  const [customPayouts, setCustomPayouts] = useState<PayoutEntry[]>([]);
   const [guaranteedPrize, setGuaranteedPrize] = useState('0');
 
   // ── Satellite target (the tournament winners earn a seat into) ──
@@ -178,7 +189,46 @@ export default function CreateTournamentModal({
     return PAYOUT_STRUCTURES.mtt50;
   }, [maxPlayers, format]);
 
+  /* What actually gets sent. A custom ladder or a custom payout table is only
+     consulted when its own control is on, so turning the control off restores
+     the preset rather than leaving a half-edited structure behind. */
+  const effectiveBlinds = useMemo(
+    () => (blindSpeed === 'custom' ? customBlinds : BLIND_STRUCTURES[blindSpeed]),
+    [blindSpeed, customBlinds]
+  );
+  const effectivePayouts = useMemo(
+    () =>
+      customPayoutsOn
+        ? customPayouts.map((pp) => ({ place: pp.place, percentage: pp.percentage }))
+        : payoutStructure,
+    [customPayoutsOn, customPayouts, payoutStructure]
+  );
+
+  /* TournamentService rejects a payout table that does not total 100%, and a
+     rejection AFTER the operator has clicked Create reads as a failure they
+     cannot see the cause of. Same rule, checked here, so the button is simply
+     disabled with the reason printed beside it. */
+  const payoutsTotal = useMemo(
+    () => effectivePayouts.reduce((sum, pp) => sum + (Number(pp.percentage) || 0), 0),
+    [effectivePayouts]
+  );
+  const payoutsValid = Math.abs(payoutsTotal - 100) < 0.5;
+  const blindsValid = Array.isArray(effectiveBlinds) && effectiveBlinds.length > 0;
+
   const isSngOrSpin = format === 'sng' || format === 'spin';
+
+  /* The payout editor prices places against a pool that does not exist yet.
+     For an SNG or a Spin the field size is exact - the game starts when the
+     last seat sells - so the amounts are real. An MTT has no cap, so the
+     projection is stated at an assumed field rather than implied as fact. */
+  const projectedField = isSngOrSpin ? parseInt(maxPlayers) || 0 : 50;
+  const projectedPrizePool = split.prize * projectedField;
+
+  /* Open the editor on the SAME shape the preset would have used. Without
+     this it opened on Top 15%, which for a 6 max sit-and-go silently turned
+     65/35 into winner-take-all the instant the box was ticked. */
+  const payoutSeedTemplate: PayoutTemplate =
+    format === 'sng' ? (projectedField <= 6 ? 'sng6' : 'sng9') : 'top15';
   const isSatellite = format === 'satellite';
   const isXmtt = format === 'xmtt';
 
@@ -422,8 +472,8 @@ export default function CreateTournamentModal({
         startingStack: parseInt(startingChips),
         maxPlayers: isSngOrSpin ? parseInt(maxPlayers) : 0, // 0 = unlimited for MTT/Bounty/PKO/Mystery/Satellite
         minPlayers: 3,
-        blindStructure: BLIND_STRUCTURES[blindSpeed],
-        payoutStructure,
+        blindStructure: effectiveBlinds,
+        payoutStructure: effectivePayouts,
         lateRegistrationLevels: parseInt(lateRegLevels) || 0,
         startTime,
         isRebuy,
@@ -660,7 +710,7 @@ export default function CreateTournamentModal({
     return true;
   })();
 
-  const canSubmit = coreValid && bountyValid && !isSubmitting;
+  const canSubmit = coreValid && bountyValid && payoutsValid && blindsValid && !isSubmitting;
 
   return (
     /* THE BACKDROP DOES NOT DISCARD A CONFIGURED TOURNAMENT.
@@ -818,10 +868,24 @@ export default function CreateTournamentModal({
                   <option value="turbo">Turbo (3M)</option>
                   <option value="regular">Regular (8M)</option>
                   <option value="deepStack">Deep Stack (15M)</option>
+                  <option value="custom">Custom Structure</option>
                 </select>
               </div>
             </div>
           </div>
+
+          {blindSpeed === 'custom' && (
+            <div className={styles.formGroup}>
+              <span className={styles.sectionLabel}>Blind Structure</span>
+              <span className={styles.helperText}>
+                Levels Are Sent Exactly As Shown, Breaks Included.
+              </span>
+              <BlindStructureBuilder
+                onChange={setCustomBlinds}
+                startingChips={parseInt(startingChips) || 10000}
+              />
+            </div>
+          )}
 
           <div className={styles.row}>
             <div className={styles.col}>
@@ -1570,26 +1634,73 @@ export default function CreateTournamentModal({
             </div>
           )}
 
-          {/* ── Payout Info ── */}
+          {/* ── Payout Info ──
+              Spin prizes are drawn from the wheel, not from a places table -
+              the structure is always 100% to first - so the editor is not
+              offered there. Everywhere else the preset stays the default and
+              the editor is opt-in. */}
           <div className={styles.payoutPreview}>
             <span className={styles.sectionLabel}>
-              Payout Structure ({payoutStructure.length} Places Paid)
+              Payout Structure ({effectivePayouts.length} Places Paid)
             </span>
-            <div className={styles.payoutList}>
-              {payoutStructure.map((p, i) => (
-                <span key={i} className={styles.payoutItem}>
-                  {p.place}
-                  {p.place === 1 ? 'st' : p.place === 2 ? 'nd' : p.place === 3 ? 'rd' : 'th'}:{' '}
-                  {p.percentage}%
+            {format !== 'spin' && (
+              <label className={styles.toggleLabel}>
+                <input
+                  type="checkbox"
+                  className={styles.checkbox}
+                  checked={customPayoutsOn}
+                  onChange={(e) => {
+                    setCustomPayoutsOn(e.target.checked);
+                    if (!e.target.checked) setCustomPayouts([]);
+                  }}
+                />
+                Customize Payouts
+              </label>
+            )}
+
+            {customPayoutsOn && format !== 'spin' ? (
+              <>
+                <span className={styles.helperText}>
+                  {isSngOrSpin
+                    ? `Amounts Shown For A Full ${projectedField.toLocaleString()} Seat Field.`
+                    : `Amounts Are A Projection At ${projectedField.toLocaleString()} Entries. The Real Prize Pool Depends On The Final Field.`}
                 </span>
-              ))}
-            </div>
+                <PayoutStructureEditor
+                  key={payoutSeedTemplate}
+                  playerCount={projectedField}
+                  prizePool={projectedPrizePool}
+                  initialTemplate={payoutSeedTemplate}
+                  onChange={setCustomPayouts}
+                />
+              </>
+            ) : (
+              <div className={styles.payoutList}>
+                {effectivePayouts.map((p, i) => (
+                  <span key={i} className={styles.payoutItem}>
+                    {p.place}
+                    {p.place === 1
+                      ? 'st'
+                      : p.place === 2
+                        ? 'nd'
+                        : p.place === 3
+                          ? 'rd'
+                          : 'th'}: {p.percentage}%
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* ── Validation Summary ── */}
           {!canSubmit && !isSubmitting && (
             <div style={{ color: '#ef4444', fontSize: '0.75rem', padding: '4px 0' }}>
               {!name.trim() && <p>Tournament Name Is Required</p>}
+              {!blindsValid && <p>Blind Structure Must Have At Least One Level</p>}
+              {!payoutsValid && (
+                <p>
+                  Payouts Must Total 100 Percent. They Currently Total {payoutsTotal.toFixed(1)}
+                </p>
+              )}
               {!isWholeBuyIn(buyIn) && <p>Buy-In Must Be A Whole Number Of Chips Greater Than 0</p>}
               {/* `NaN <= 0` is FALSE, so clearing the field disabled Create with
                   no explanation at all - the one field most likely to be

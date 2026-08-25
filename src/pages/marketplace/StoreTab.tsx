@@ -123,6 +123,15 @@ export default function StoreTab({
         result.sort((a, b) => (b.purchase_count || 0) - (a.purchase_count || 0));
         break;
       default:
+        /* "Featured", not "Newest" (Dan 2026-08-25). This case was
+           `default: break` - the select's DEFAULT option was inert, so a member
+           who picked "Price: Low To High" and then tried to undo it got whatever
+           arbitrary order the API returned. MarketplaceItem has no created_at,
+           so a truthful "Newest" is impossible without an API change and
+           faking it would be worse. It DOES have sort_order, which admins set
+           in ManageTab under the hint "Lower Shows First" and which the
+           storefront never honoured. */
+        result.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
         break;
     }
     result.sort((a, b) => soldOutRank(a) - soldOutRank(b));
@@ -376,7 +385,7 @@ export default function StoreTab({
           className={styles.sortSelect}
           aria-label="Sort shop items"
         >
-          <option value="newest">Newest First</option>
+          <option value="newest">Featured</option>
           <option value="price-low">Price: Low To High</option>
           <option value="price-high">Price: High To Low</option>
           <option value="popular">Most Popular</option>

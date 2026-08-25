@@ -16,6 +16,7 @@ import type { LobbyEntry, LobbyStatusKey, LobbyTournamentRow } from './lobbyEntr
 import { tournamentBlinds, tournamentLevel } from './tournamentFigures';
 import { mttPhaseText, mttTitleLine } from './lobbyEntries';
 import { prefetchIntent } from '../../utils/ChunkPreloader';
+import { useSpinTierAvailability } from '../../hooks/useSpinTierAvailability';
 import './LobbyTable.css';
 
 type SortDir = 'asc' | 'desc';
@@ -86,6 +87,11 @@ export interface LobbyRowContext {
   onJoinTable?: (e: LobbyEntry) => void;
   onViewTable?: (e: LobbyEntry) => void;
   onToggleFavorite?: (tableId: string, next: boolean) => void;
+  /* True only when the Reserve Pool can actually pay the top Spin multiplier
+     at this club right now. Undefined means "not known yet", which renders as
+     no badge - an absent boast rather than a wrong one. Filled in by
+     LobbyTable itself from `v_spin_tier_availability`; callers do not pass it. */
+  spinTopTierLive?: boolean;
 }
 
 interface ColumnDef {
@@ -304,13 +310,38 @@ const COL_FAV: ColumnDef = {
   className: 'lt-col-fav',
   render: (e, ctx) => <FavCell entry={e} ctx={ctx} />,
 };
+/**
+ * "The top multiplier is live right now."
+ *
+ * A Spin's headline prize is the top tier on the wheel, and that tier is NOT
+ * eligible to be drawn unless the Reserve Pool can already pay it - the draw
+ * gates on it server-side (`eligibleSpinTiers` in config/spinSpec), so a
+ * player looking at a Spin row has no way to tell whether the number that
+ * sells the game is actually reachable in the next hand or locked away.
+ *
+ * `v_spin_tier_availability` answers exactly that one question with the same
+ * arithmetic the draw uses (balance >= highest_stake * 100 * 1.5), which is
+ * the whole reason the badge is allowed to make a claim at all. Unknown
+ * renders as nothing: an absent boast, never a wrong one.
+ */
+const SPIN_TOP_MULTIPLIER = 100;
+
+function SpinTopTierBadge() {
+  const label = `${SPIN_TOP_MULTIPLIER.toLocaleString()}x Live`;
+  return (
+    <span className="lt-spintop" title="The Top Multiplier Is Currently Payable On This Club">
+      {label}
+    </span>
+  );
+}
+
 const COL_NAME: ColumnDef = {
   key: 'name',
   label: 'Game',
   className: 'lt-col-name',
   sortable: true,
   sortValue: (e) => (e.name || '').toLowerCase(),
-  render: (e) =>
+  render: (e, ctx) =>
     e.kind === 'mtt' ? (
       /* Dan 2026-08-23: MTT titles are two lines — name + variation on top,
          guarantee / start clock / live countdown (or late-reg time left)
@@ -327,6 +358,7 @@ const COL_NAME: ColumnDef = {
       <span className="lt-name" title={e.name}>
         {e.live && <i className="lt-live" aria-hidden="true" title="Live" />}
         {e.name}
+        {e.kind === 'spin' && ctx.spinTopTierLive && <SpinTopTierBadge />}
       </span>
     ),
 };
@@ -789,6 +821,16 @@ export default function LobbyTable({
   clubId,
 }: LobbyTableProps) {
   const columns = useMemo(() => columnsFor(category), [category]);
+
+  /* One fetch per lobby, shared by every Spin row (the hook is module-cached
+     with a 60s TTL). `clubId` here is the resolved club UUID; when the page
+     has only the slug the lookup simply misses and no row is badged. */
+  const spinTiers = useSpinTierAvailability(clubId);
+  const rowCtx = useMemo<LobbyRowContext>(
+    () => ({ ...ctx, spinTopTierLive: spinTiers?.can_draw_100x === true }),
+    [ctx, spinTiers]
+  );
+
   const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(
     () => readSort(clubId, category) ?? defaultSortFor(category)
   );
@@ -995,7 +1037,7 @@ export default function LobbyTable({
               key={entry.id}
               entry={entry}
               columns={columns}
-              ctx={ctx}
+              ctx={rowCtx}
               selected={entry.id === selectedId}
               onSelect={onSelect}
               onActivate={onActivate}

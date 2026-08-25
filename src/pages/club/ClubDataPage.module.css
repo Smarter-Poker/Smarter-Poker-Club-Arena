@@ -350,6 +350,21 @@
   min-height: 44px;
 }
 
+/* Cash vs MTT split under the Fee tile. */
+.tileSub {
+  margin-top: 0.125rem;
+  font-size: 0.625rem;
+  color: #98a1bb;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The seven earlier union statements, collapsed by default. */
+.invoiceHistory {
+  margin: 0.5rem 1rem 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
 /* ---- rows ---- */
 .list {
   margin-top: 0.75rem;

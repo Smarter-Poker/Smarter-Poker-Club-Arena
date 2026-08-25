@@ -569,3 +569,65 @@
     transition: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ROW DETAIL — data the roster already fetched and never showed
+   (upline, seated state, dormancy). Dan 2026-08-25.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.member-upline {
+  color: var(--ca-text-faint, rgba(255, 255, 255, 0.45));
+  border-left: 1px solid var(--ca-border, rgba(255, 255, 255, 0.12));
+  padding-left: 0.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 14ch;
+}
+
+/* SEATED, not merely online. --ca-gold was declared at the top of this file and
+   never used, so this introduces no new colour. */
+.member-seated {
+  color: var(--ca-gold, #ffc93c);
+  font-weight: 600;
+}
+
+.member-row--seated .member-avatar {
+  border-color: var(--ca-gold, #ffc93c);
+  box-shadow:
+    0 0 0 2px rgba(255, 201, 60, 0.25),
+    0 0 12px rgba(255, 201, 60, 0.5);
+}
+
+.member-seen {
+  color: var(--ca-text-faint, rgba(255, 255, 255, 0.4));
+  font-variant-numeric: tabular-nums;
+}
+
+/* Refresh. The page deliberately does not auto-refresh on wallet events, which
+   only works if there is a way to ask. */
+.members-refresh {
+  min-height: 44px;
+  padding: 0 1rem;
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  border-radius: 10px;
+  background: rgba(0, 212, 255, 0.08);
+  color: var(--ca-cyan, #00d4ff);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.members-refresh:hover:not(:disabled) {
+  background: rgba(0, 212, 255, 0.16);
+}
+
+.members-refresh:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.members-refresh:focus-visible {
+  outline: 2px solid var(--ca-cyan, #00d4ff);
+  outline-offset: 2px;
+}

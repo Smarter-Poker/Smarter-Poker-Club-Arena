@@ -156,6 +156,7 @@ import {
 import LeaveTableConfirm from '../components/table/LeaveTableConfirm';
 import PresenceIndicator from '../components/social/PresenceIndicator';
 import { useToast } from '../components/common/Toast';
+import { isVibrationAllowed, setVibrationAllowed } from '../utils/vibrationGate';
 import TournamentBreakScreen from '../components/table/TournamentBreakScreen';
 import TournamentAnnouncementOverlay from '../components/table/TournamentAnnouncementOverlay';
 import KnockoutAnimation, { type KnockoutData } from '../components/tournament/KnockoutAnimation';
@@ -4668,6 +4669,30 @@ export default function TablePage({
   );
 
   // Sync settings when changed from other components (like TableMenu)
+  useMasterBusSubscription('TABLE_MENU_ACTION', (event: any) => {
+    if (event.tableId && event.tableId !== tableId) return;
+    if (event.action === 'STAND_UP_BB') {
+      setStandUpNextBB((prev) => !prev);
+    } else if (event.action === 'AUTO_TOP_UP') {
+      setIsAutoRebuyEnabled((prev) => !prev);
+    } else if (event.action === 'TOGGLE_SOUNDS') {
+      // Toggle sound
+      const muted = localStorage.getItem('table_sound_muted') === 'true';
+      localStorage.setItem('table_sound_muted', muted ? 'false' : 'true');
+      // trigger re-render by emitting settings change or forcing state update
+      masterBus.emit('SETTINGS_CHANGED', { setting: 'sound_muted', value: !muted });
+    } else if (event.action === 'TOGGLE_VIBRATIONS') {
+      const enabled = isVibrationAllowed();
+      if (enabled) {
+        setVibrationAllowed(false);
+      } else {
+        setVibrationAllowed(true);
+      }
+      // Force update by triggering something or just relying on onTableInfoUpdate
+      masterBus.emit('SETTINGS_CHANGED', { setting: 'vibrations', value: !enabled });
+    }
+  });
+
   useMasterBusSubscription('SETTINGS_CHANGED', (event: any) => {
     if (event.setting === 'useRealName') {
       setUseRealName(event.value);

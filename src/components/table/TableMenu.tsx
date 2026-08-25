@@ -97,20 +97,32 @@ export interface TableMenuProps {
 // DEFAULT MENU SECTIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function createDefaultMenuSections(handlers: {
-  onSitOut?: () => void;
-  onRebuy?: () => void;
-  onAddOn?: () => void;
-  onSessionStats?: () => void;
-  onSettings?: () => void;
-  onHandHistory?: () => void;
-  onLeaderboard?: () => void;
-  onHelp?: () => void;
-  onLeaveTable?: () => void;
-  onChangeAvatar?: () => void;
-  onToggleAlias?: () => void;
-  aliasLabel?: string;
-}): MenuSection[] {
+export function createDefaultMenuSections(
+  handlers: {
+    onSitOut?: () => void;
+    onStandUpBB?: () => void;
+    onRebuy?: () => void;
+    onAutoTopUp?: () => void;
+    onAddOn?: () => void;
+    onSessionStats?: () => void;
+    onSettings?: () => void;
+    onToggleSounds?: () => void;
+    onToggleVibrations?: () => void;
+    onHandHistory?: () => void;
+    onLeaderboard?: () => void;
+    onHelp?: () => void;
+    onLeaveTable?: () => void;
+    onChangeAvatar?: () => void;
+    onToggleAlias?: () => void;
+    aliasLabel?: string;
+  },
+  state?: {
+    standUpBBBadge?: string;
+    autoTopUpBadge?: string;
+    soundsBadge?: string;
+    vibrationsBadge?: string;
+  }
+): MenuSection[] {
   return [
     {
       title: 'Quick Actions',
@@ -122,10 +134,24 @@ export function createDefaultMenuSections(handlers: {
           onClick: handlers.onSitOut || (() => {}),
         },
         {
+          id: 'standup-bb',
+          label: 'Stand Up Next Big Blind',
+          icon: <SitOutIcon />,
+          badge: state?.standUpBBBadge,
+          onClick: handlers.onStandUpBB || (() => {}),
+        },
+        {
           id: 'rebuy',
           label: 'Add Chips',
           icon: <RebuyIcon />,
           onClick: handlers.onRebuy || (() => {}),
+        },
+        {
+          id: 'auto-top-up',
+          label: 'Auto Top Up',
+          icon: <RebuyIcon />,
+          badge: state?.autoTopUpBadge,
+          onClick: handlers.onAutoTopUp || (() => {}),
         },
       ],
     },
@@ -159,6 +185,20 @@ export function createDefaultMenuSections(handlers: {
           label: 'Table Settings',
           icon: <SettingsIcon />,
           onClick: handlers.onSettings || (() => {}),
+        },
+        {
+          id: 'sounds',
+          label: 'Sounds',
+          icon: <SettingsIcon />,
+          badge: state?.soundsBadge,
+          onClick: handlers.onToggleSounds || (() => {}),
+        },
+        {
+          id: 'vibrations',
+          label: 'Vibrations',
+          icon: <SettingsIcon />,
+          badge: state?.vibrationsBadge,
+          onClick: handlers.onToggleVibrations || (() => {}),
         },
       ],
     },

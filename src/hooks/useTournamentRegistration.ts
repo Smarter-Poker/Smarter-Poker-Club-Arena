@@ -72,7 +72,7 @@ export function useTournamentRegistration() {
 
       setIsRegistering(true);
       try {
-        await tournamentService.registerPlayer(t.id, currentUserId, username);
+        const registration = await tournamentService.registerPlayer(t.id, currentUserId, username);
         toast.success(`You Are Registered For ${t.name}`);
 
         if (onSuccess) {
@@ -103,39 +103,92 @@ export function useTournamentRegistration() {
          * on its next sweep.
          *
          * If there is still no seat we send them to THEIR TOURNAMENT, never to
-         * a stranger's felt. "You are in, your seat is coming" on the right
-         * page beats being stranded on the wrong one.
+         * a stranger's felt. Landing on the right page beats being stranded on
+         * the wrong one.
+         *
+         * ───────────────────────────────────────────────────────────────────
+         *  DEFECT D6a — A LOOKUP THAT FOUND NOTHING REPORTED SUCCESS
+         * ───────────────────────────────────────────────────────────────────
+         *
+         * The old fallback fired `toast.success('You Are Registered - Your
+         * Seat Is Being Assigned')` for EVERY path that did not produce a
+         * table id, and the lookup below dropped its `{ error }` on the floor.
+         * So a PostgREST failure, an RLS denial and a genuinely-pending seat
+         * all rendered as the same green tick. A player told "your seat is
+         * being assigned" by a query that never completed has been told
+         * something nobody checked.
+         *
+         * The seat lookup now reports WHICH of three things it learned:
+         *
+         *   'seated'   the roster row carries a table id. Verified. Go there.
+         *   'pending'  the roster row EXISTS and its table_id is null. This is
+         *              a real state the engine resolves: before start, seating
+         *              happens in start(); during a running event,
+         *              fn_seat_late_registrant ran but every table was full,
+         *              so the next seating sweep places him.
+         *   'unknown'  the query errored, or returned no roster row at all.
+         *              Nothing about the seat was confirmed, so nothing about
+         *              the seat is claimed.
+         *
+         * Only 'pending' may say the seat is coming, and it says it as
+         * information rather than as a success. 'unknown' says plainly that we
+         * could not confirm it. The registration itself is still reported as
+         * succeeded above, because that one WAS verified:
+         * `registerPlayer` throws unless the server RPC returned ok and the
+         * created roster row was read back.
          */
-        const findMySeat = async (): Promise<string | null> => {
+        type SeatLookup =
+          | { state: 'seated'; tableId: string }
+          | { state: 'pending' }
+          | { state: 'unknown' };
+
+        const findMySeat = async (): Promise<SeatLookup> => {
           const { data: tp, error } = await supabase
             .from('tournament_players')
             .select('table_id')
             .eq('tournament_id', t.id)
             .eq('user_id', currentUserId)
             .maybeSingle();
-          /* A read that FAILED is not "no seat yet". Discarding the error made
-             an RLS refusal or a dropped connection burn all three retries and
-             then route a correctly seated player to the tournament page
-             instead of to their table. */
-          if (error)
+          /* A read that FAILED is not "no seat yet" - and it is not a pending
+             seat either. Three distinct outcomes, three distinct things said
+             to the player (#795). */
+          if (error) {
             reportError(error, 'useTournamentRegistration.findMySeat', { tournamentId: t.id });
-          return (tp?.table_id as string | undefined) || null;
+            return { state: 'unknown' };
+          }
+          if (!tp) return { state: 'unknown' };
+          const tableId = (tp.table_id as string | undefined) || null;
+          return tableId ? { state: 'seated', tableId } : { state: 'pending' };
         };
 
-        let seatTableId = await findMySeat();
-        for (let attempt = 0; !seatTableId && attempt < SEAT_LOOKUP_RETRIES; attempt++) {
+        // The registration read-back is itself an authoritative roster read, so
+        // start from it rather than paying for a round trip that asks the same
+        // question a millisecond later.
+        let lookup: SeatLookup = registration?.table_id
+          ? { state: 'seated', tableId: registration.table_id }
+          : await findMySeat();
+
+        for (
+          let attempt = 0;
+          lookup.state !== 'seated' && attempt < SEAT_LOOKUP_RETRIES;
+          attempt++
+        ) {
           await new Promise((r) => setTimeout(r, SEAT_LOOKUP_RETRY_MS));
-          seatTableId = await findMySeat();
+          lookup = await findMySeat();
         }
 
-        /* The seat lookup can take 3.6s of retries. If the player left the
-           lobby in that window, navigating would yank them out of whatever
-           page they had moved on to. */
+        /* The retries can take 3.6s. If the player left the lobby in that
+           window, navigating would yank them out of whatever page they had
+           moved on to, and setIsRegistering would fire on a dead component. */
         if (aliveRef.current) {
-          if (seatTableId) {
+          if (lookup.state === 'seated') {
+            const seatTableId = lookup.tableId;
             navigate(`/table/${seatTableId}`);
+          } else if (lookup.state === 'pending') {
+            toast.info('You Are Registered. Your Seat Is Being Assigned.');
+            navigate(`/tournaments/${t.id}`);
           } else {
-            toast.success('You Are Registered - Your Seat Is Being Assigned');
+            toast.warning('You Are Registered. We Could Not Confirm Your Seat Yet.');
             navigate(`/tournaments/${t.id}`);
           }
         }

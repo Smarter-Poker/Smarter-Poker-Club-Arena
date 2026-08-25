@@ -64,12 +64,19 @@ import ClubBottomNav from '../components/club/ClubBottomNav';
 import RoleBadge, { roleColor } from '../components/club/RoleBadge';
 import { exportToCSV } from '../lib/export';
 import './ClubMembersPage.css';
-import { resolveClubUUID } from '../utils/clubIdResolver';
+import { resolveClubUUID, isUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { titleCase } from '../utils/titleCase';
-import { normaliseRole, roleLabel, type ClubRole } from '../types/clubRoles';
-import ClubRosterService, { type RosterMember } from '../services/ClubRosterService';
+import {
+  normaliseRole,
+  roleLabel,
+  isClubStaff,
+  AGENT_ROLES,
+  STAFF_ROLES,
+  type ClubRole,
+} from '../types/clubRoles';
+import ClubRosterService, { mapRosterRow, type RosterMember } from '../services/ClubRosterService';
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    FILTERS AND SORTS
@@ -99,8 +106,11 @@ const SORT_LABEL: Record<SortKey, string> = {
   fees: 'Fees',
 };
 
-const AGENT_ROLE_SET: ClubRole[] = ['super_agent', 'agent', 'sub_agent'];
-const STAFF_ROLE_SET: ClubRole[] = ['owner', 'co_owner', 'admin'];
+/* AGENT_ROLES / STAFF_ROLES come from types/clubRoles, which exists because
+   there were once three MemberRole types and no two agreed. These were a
+   fourth copy: add an eighth role and the Agents/Admins filters miss it. */
+const AGENT_ROLE_SET: readonly ClubRole[] = AGENT_ROLES;
+const STAFF_ROLE_SET: readonly ClubRole[] = STAFF_ROLES;
 
 /** Chips, fees and balances all read the same way. Never padStart. */
 function chips(value: number): string {
@@ -129,14 +139,19 @@ export default function ClubMembersPage() {
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
 
+  const canExport = isClubStaff(userRole);
+
   const loadingRef = useRef(false);
+  const [loadError, setLoadError] = useState(false);
+  const [notFound, setNotFound] = useState(false);
 
   // Safety net: never leave a skeleton on screen forever if auth or the network
   // hangs. The empty state is a better answer than a spinner that never stops.
   useEffect(() => {
     const timeout = setTimeout(() => setLoading(false), 8000);
     return () => clearTimeout(timeout);
-  }, []);
+    // Per club: with [] this protected only the FIRST club viewed in a session.
+  }, [clubId]);
 
   // Navigating between clubs must not show the previous club's filters.
   useEffect(() => {
@@ -145,6 +160,11 @@ export default function ClubMembersPage() {
     setSortKey('hierarchy');
     setSearchQuery('');
     setIsRefreshing(false);
+    setLoadError(false);
+    setNotFound(false);
+    // Was NOT reset, so navigating A -> B left A's UUID in state for the whole
+    // resolve and useMasterBusChannel subscribed with channel B / filter A.
+    setResolvedClubId(null);
     loadingRef.current = false;
   }, [clubId]);
 
@@ -153,29 +173,54 @@ export default function ClubMembersPage() {
       if (!clubId) return;
       const live = () => (getIsMounted ? getIsMounted() : true) && isMountedRef.current;
 
+      // READ the re-entrancy flag. Four independent triggers call this (three
+      // bus events, two realtime handlers, the mount effect), and two in-flight
+      // getRoster calls resolve in completion order, not request order - so an
+      // older response could win and overwrite a newer roster.
+      if (loadingRef.current) return;
       loadingRef.current = true;
-      if (live()) setLoading(true);
+      if (live()) {
+        setLoading(true);
+        setLoadError(false);
+      }
       try {
         const resolvedId = await resolveClubUUID(clubId);
         if (!live()) return;
-        if (!resolvedId) {
+        // resolveClubUUID returns the INPUT unchanged when it cannot resolve,
+        // so `!resolvedId` was a branch that could never be taken. What actually
+        // happened on a bad slug was getRoster('some-slug') -> a uuid cast
+        // error -> the generic "Failed To Load Members" toast, with no hint
+        // that the club does not exist.
+        if (!isUUID(resolvedId)) {
           setMembers([]);
+          setNotFound(true);
           return;
         }
+        setNotFound(false);
         setResolvedClubId(resolvedId);
 
         // SWR: paint the previous roster instantly, then replace it. The cache
         // holds the whole row now rather than a trimmed copy, because the row IS
         // the screen - wallets, downlines and fees included.
-        const swrKey = `roster_cache_${resolvedId}`;
+        // v2: the key is versioned and every cached row goes through
+        // mapRosterRow, the same defaulting the network path uses. This was a
+        // raw `as RosterMember[]` cast of untrusted JSON - a blob from an older
+        // build reached `member.downline_total.toLocaleString()` and threw.
+        const swrKey = `roster_cache_v2_${resolvedId}`;
         try {
           const cached = sessionStorage.getItem(swrKey);
           if (cached) {
             const parsed = JSON.parse(cached);
             if (Array.isArray(parsed) && parsed.length > 0) {
-              setMembers(parsed as RosterMember[]);
+              const rows = parsed
+                .filter((r: unknown): r is Record<string, unknown> => !!r && typeof r === 'object')
+                .map(mapRosterRow);
+              // Liveness BEFORE the write, not after it.
               if (!live()) return;
-              setLoading(false);
+              if (rows.length > 0) {
+                setMembers(rows);
+                setLoading(false);
+              }
             }
           }
         } catch (e) {
@@ -217,7 +262,13 @@ export default function ClubMembersPage() {
         ClubRosterService.touchFeeRollup();
       } catch (error) {
         reportError(error, 'ClubMembersPage.loadMembers');
-        if (live()) toast.error('Failed To Load Members');
+        if (live()) {
+          // Without this the page said "No Members Found / Invite Players To
+          // Grow Your Club" - it stated the club was empty when the request
+          // failed, and the toast was gone in four seconds.
+          setLoadError(true);
+          toast.error('Failed To Load Members');
+        }
       } finally {
         loadingRef.current = false;
         if (live()) setLoading(false);
@@ -241,8 +292,13 @@ export default function ClubMembersPage() {
 
   const refresh = useCallback(() => {
     setIsRefreshing(true);
-    loadMembers(() => true).finally(() => setIsRefreshing(false));
-  }, [loadMembers]);
+    // `() => true` was a getIsMounted that is never false, and the .finally had
+    // no guard at all - so an unmount mid-refresh warned and leaked. The
+    // optional parameter defaults to isMountedRef, which is the correct one.
+    loadMembers().finally(() => {
+      if (isMountedRef.current) setIsRefreshing(false);
+    });
+  }, [loadMembers, isMountedRef]);
 
   /**
    * STRUCTURAL EVENTS ONLY - who is in the club and what rank they hold.
@@ -269,7 +325,10 @@ export default function ClubMembersPage() {
    * live on club_members - so a change simply re-asks the server.
    */
   useMasterBusChannel({
-    channelName: resolvedClubId ? `club-members-sync-${clubId}` : null,
+    // Keyed on the UUID, not the raw route param: /clubs/25450/members and
+    // /clubs/<uuid>/members are the same club and used to open two differently
+    // named channels that nothing else on the platform would match.
+    channelName: resolvedClubId ? `club-members-sync-${resolvedClubId}` : null,
     table: 'club_members',
     filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
     event: '*',
@@ -289,6 +348,11 @@ export default function ClubMembersPage() {
       const status = p?.new?.status;
       if (kind === 'UPDATE' && (status === 'banned' || status === 'suspended')) refresh();
     },
+    // A dead socket used to leave the roster frozen with no indication and,
+    // since there is no polling fallback here by design, no way back short of
+    // a page reload. One recovery fetch on a channel error is the cheapest
+    // possible answer to that.
+    onSubscriptionError: () => refresh(),
     enabled: !!resolvedClubId,
   });
 
@@ -352,21 +416,29 @@ export default function ClubMembersPage() {
 
   const handleExport = useCallback(() => {
     try {
-      exportToCSV(filteredMembers, 'club_members.csv', [
-        { key: 'player_number', label: 'Player Number' },
-        { key: 'alias', label: 'Club Arena Name' },
-        { key: 'username', label: 'Username' },
-        { key: 'role', label: 'Role' },
-        { key: 'downline_total', label: 'Downlines' },
-        { key: 'agent_wallet', label: 'Agent Wallet' },
-        { key: 'player_wallet', label: 'Player Wallet' },
-        { key: 'total_fees', label: 'Fees' },
-        { key: 'chip_balance', label: 'Club Chips' },
-        { key: 'is_online', label: 'Online' },
-        { key: 'home_club_name', label: 'Club' },
-        { key: 'joined_at', label: 'Joined' },
-        { key: 'user_id', label: 'User ID' },
-      ]);
+      // roleLabel first: exportToCSV stringifies the value as-is, so the Role
+      // column read `super_agent` / `sub_agent` while every on-screen surface
+      // shows the formatted label.
+      exportToCSV(
+        filteredMembers.map((m) => ({ ...m, role: roleLabel(m.role) })),
+        'club_members.csv',
+        [
+          { key: 'player_number', label: 'Player Number' },
+          { key: 'alias', label: 'Club Arena Name' },
+          { key: 'username', label: 'Username' },
+          { key: 'role', label: 'Role' },
+          { key: 'downline_total', label: 'Downlines' },
+          { key: 'agent_wallet', label: 'Agent Wallet' },
+          { key: 'player_wallet', label: 'Player Wallet' },
+          { key: 'total_fees', label: 'Fees' },
+          { key: 'chip_balance', label: 'Club Chips' },
+          { key: 'is_online', label: 'Online' },
+          { key: 'home_club_name', label: 'Club' },
+          { key: 'joined_at', label: 'Joined' },
+          { key: 'user_id', label: 'User ID' },
+        ]
+      );
+      toast.success('Roster Exported');
     } catch (e) {
       reportError(e, 'ClubMembersPage.export');
       toast.error('Could Not Export The Roster');
@@ -397,7 +469,7 @@ export default function ClubMembersPage() {
       <div className="members-search">
         <input
           type="text"
-          placeholder={titleCase('search by name, username or player number')}
+          placeholder={titleCase('search name or number')}
           aria-label="Search Club Members"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -431,8 +503,20 @@ export default function ClubMembersPage() {
             </select>
           </label>
 
-          {filteredMembers.length > 0 && (
-            <button type="button" className="members-export" onClick={handleExport}>
+          {/* Export is a CSV of every member's wallets, chip balance and fee
+              totals. `userRole` was resolved on every load - including an extra
+              club_members round trip in the critical path - and then read
+              nowhere at all, so this was offered to ordinary players. */}
+          {filteredMembers.length > 0 && canExport && (
+            <button
+              type="button"
+              className="members-export"
+              // The SWR cache is a 300-row slice. Exporting while it is still
+              // on screen handed someone 300 rows of a 34,000-member union
+              // believing it was the whole roster.
+              disabled={loading || isRefreshing}
+              onClick={handleExport}
+            >
               Export CSV
             </button>
           )}
@@ -441,9 +525,28 @@ export default function ClubMembersPage() {
 
       {isRefreshing && <div className="members-refreshing">Refreshing...</div>}
 
-      <div className="members-list" ref={virtualScroll.containerRef}>
+      {/* NO containerRef here (Dan 2026-08-25). .members-list has no overflow and
+          no height - it is not a scroll container - so passing it as the
+          IntersectionObserver `root` made the sentinel intersect on the first
+          frame and never change. The observer fired exactly once, 30 -> 50, and
+          its effect deps do not include visibleCount so it was never rebuilt:
+          a 34,000-member union was permanently capped at 50 rows with
+          "Showing 50 Of 34,138" glued underneath. Leaving containerRef null
+          roots the observer on the viewport, which is what actually scrolls. */}
+      <div className="members-list">
         {loading && members.length === 0 ? (
           <PageSkeleton variant="list" />
+        ) : notFound ? (
+          <div className="members-error" role="alert">
+            <span>We Could Not Find That Club.</span>
+          </div>
+        ) : loadError && members.length === 0 ? (
+          <div className="members-error" role="alert">
+            <span>Could Not Load The Roster.</span>
+            <button type="button" className="members-export" onClick={refresh}>
+              Try Again
+            </button>
+          </div>
         ) : filteredMembers.length === 0 ? (
           <EmptyRoster filter={filter} searchQuery={searchQuery} />
         ) : (
@@ -479,9 +582,12 @@ function MemberRow({ member, onOpen }: { member: RosterMember; onOpen: (userId: 
       type="button"
       className={`member-row${member.is_online ? ' member-row--online' : ''}`}
       onClick={() => onOpen(member.user_id)}
-      aria-label={`Open Member Management For ${member.alias}`}
+      /* aria-label on a button overrides its whole subtree, so the role badge,
+         player number, club and all five metrics were unreachable by screen
+         reader - a list of names and nothing else. Fold the essentials in. */
+      aria-label={`${member.alias}, ${roleLabel(member.role)}, ${chips(member.downline_total)} Downlines. Open Member Management`}
     >
-      <div className="member-avatar">
+      <span className="member-avatar">
         {member.avatar_url ? (
           <img
             /* Storage objects go through the image-transform endpoint: the
@@ -503,9 +609,9 @@ function MemberRow({ member, onOpen }: { member: RosterMember; onOpen: (userId: 
         ) : (
           <span>{initial}</span>
         )}
-      </div>
+      </span>
 
-      <div className="member-main">
+      <span className="member-main">
         <span className="member-identity">
           <RoleBadge role={member.role} size="sm" />
           {/* The Club Arena name leads; the account username follows it. */}
@@ -528,13 +634,15 @@ function MemberRow({ member, onOpen }: { member: RosterMember; onOpen: (userId: 
 
         {/* Requirement 3, plus user's requested two columns for fees */}
         <span className="member-metrics">
-          <Metric label="Downlines" value={member.downline_total.toLocaleString()} />
+          {/* chips(), like its four siblings: this direct dereference was the
+              first thing to throw on a stale cached row. */}
+          <Metric label="Downlines" value={chips(member.downline_total)} />
           <Metric label="Agent Wallet" value={chips(member.agent_wallet)} />
           <Metric label="Player Wallet" value={chips(member.player_wallet)} />
           <Metric label="Indiv. Fees" value={chips(member.total_fees)} accent />
           <Metric label="Total Fees" value={chips(member.downline_fees)} accent />
         </span>
-      </div>
+      </span>
 
       <span className="member-chevron" aria-hidden="true">
         &rsaquo;
@@ -565,8 +673,16 @@ function Metric({
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 function EmptyRoster({ filter, searchQuery }: { filter: MemberFilter; searchQuery: string }) {
-  const heading =
-    filter === 'agents'
+  /**
+   * The search test comes FIRST. Only the `all` branch used to mention the
+   * query, so with the Agents filter active and "zzz" typed, a club full of
+   * agents reported "Promote A Member To Agent To Get Started."
+   */
+  const searching = searchQuery.trim().length > 0;
+
+  const heading = searching
+    ? 'No Results Found'
+    : filter === 'agents'
       ? 'No Agents Yet'
       : filter === 'admins'
         ? 'No Admins Found'
@@ -574,16 +690,15 @@ function EmptyRoster({ filter, searchQuery }: { filter: MemberFilter; searchQuer
           ? 'No Members Online'
           : 'No Members Found';
 
-  const body =
-    filter === 'agents'
+  const body = searching
+    ? `No Results For "${searchQuery}".`
+    : filter === 'agents'
       ? 'Promote A Member To Agent To Get Started.'
       : filter === 'admins'
         ? 'No One Has Admin Privileges In This Club Yet.'
         : filter === 'online'
           ? 'No Club Members Are Currently At A Table.'
-          : searchQuery
-            ? `No Results For "${searchQuery}".`
-            : 'Invite Players To Grow Your Club.';
+          : 'Invite Players To Grow Your Club.';
 
   return (
     <div className="members-empty">

@@ -72,8 +72,33 @@ export abstract class TournamentManagerBase {
    * wedged in a pause is still rebuilt instead of freezing forever.
    */
   static readonly MAX_HEALTHY_PAUSE_MS = 10 * 60 * 1000;
+  /**
+   * The platform-wide break, MIRRORED from GameServer.BREAK_DURATION_MS.
+   *
+   * It cannot be imported: GameServer imports TournamentManager, so a value
+   * import here would close a module cycle (the existing GameServer import in
+   * this file is deliberately `import type`). TournamentFixes.guard.test.ts
+   * asserts the two literals still agree, so the mirror cannot drift.
+   *
+   * Used by resume() to reconstruct how much of a break is left when the row
+   * carries no end time yet -- see the break-recovery block there.
+   */
+  static readonly BREAK_DURATION_MS = 5 * 60 * 1000;
   protected savedBlindTimerRemaining: number = 0;
   protected blindTimerStartedAt: number = 0;
+  /**
+   * True once beginBreakCountdown has stamped an end time on THIS break.
+   *
+   * GameServer calls beginBreakCountdown from two places -- once per break in
+   * triggerSynchronizedBreak, and again from holdIfBreakIsRunning for any
+   * tournament that starts while a break is live. pauseForBreak already
+   * no-ops for a tournament that is on break; this did not, so the second call
+   * re-stamped break_ends_at further into the future and EXTENDED a break the
+   * lobby had already told players would end. A countdown, once started, is
+   * never restarted. Cleared by pauseForBreak (a new break) and by
+   * resumeFromBreak (this one is over).
+   */
+  protected breakCountdownStarted: boolean = false;
   // Hand-for-hand sync
   protected handForHandSyncInterval: NodeJS.Timeout | null = null;
   protected handForHandRePauseTimer: NodeJS.Timeout | null = null;
@@ -226,6 +251,9 @@ export abstract class TournamentManagerBase {
   async pauseForBreak(breakDurationMs: number): Promise<void> {
     if (!this.running || this.onBreak) return;
     this.onBreak = true;
+    // A NEW break: its countdown has not started yet, so beginBreakCountdown
+    // is allowed to stamp an end time exactly once. See breakCountdownStarted.
+    this.breakCountdownStarted = false;
 
     // Save remaining blind timer time
     // TOURNEY-AUDIT 2026-07-24 (sweep 4): the empty-structure guard used to
@@ -345,6 +373,21 @@ export abstract class TournamentManagerBase {
    */
   async beginBreakCountdown(breakDurationMs: number): Promise<void> {
     if (!this.onBreak) return;
+    /**
+     * ONCE STARTED, A COUNTDOWN IS NOT RESTARTED (2026-08-25).
+     *
+     * GameServer calls this twice for the same break whenever a tournament
+     * starts while one is live: triggerSynchronizedBreak stamps every engine,
+     * and holdIfBreakIsRunning then calls pauseForBreak + beginBreakCountdown
+     * on the newcomer -- but its `toResume` sweep and the shared resume timer
+     * mean an already-parked tournament can reach this a second time too.
+     * pauseForBreak defends itself with `if (this.onBreak) return`; this had
+     * no such guard, so the second call re-stamped break_ends_at further into
+     * the future and quietly EXTENDED a break whose end time players had
+     * already been shown.
+     */
+    if (this.breakCountdownStarted) return;
+    this.breakCountdownStarted = true;
     const endsAt = new Date(Date.now() + breakDurationMs).toISOString();
     try {
       await supabase
@@ -361,14 +404,12 @@ export abstract class TournamentManagerBase {
     });
   }
 
-  /** Resume from synchronized break: restart blind timer with remaining time */
-  async resumeFromBreak(): Promise<void> {
-    if (!this.running || !this.onBreak) return;
-    this.onBreak = false;
-
-    console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED — resuming play`);
-
-    // Clear the persisted break state (see pauseForBreak).
+  /**
+   * Clear the persisted break flags. Split out of resumeFromBreak because a
+   * tournament that ENDS on a break has to come off it too, and that path does
+   * not resume anything.
+   */
+  protected async clearPersistedBreak(): Promise<void> {
     try {
       await supabase
         .from('tournaments')
@@ -377,6 +418,33 @@ export abstract class TournamentManagerBase {
     } catch (err) {
       reportError(err, 'TournamentManagerBase.resumeFromBreak_persist');
     }
+  }
+
+  /** Resume from synchronized break: restart blind timer with remaining time */
+  async resumeFromBreak(): Promise<void> {
+    if (!this.onBreak) return;
+    this.onBreak = false;
+    this.breakCountdownStarted = false;
+
+    /**
+     * A TOURNAMENT THAT ENDS ON A BREAK STILL HAS TO COME OFF IT (2026-08-25).
+     *
+     * The guard here was `if (!this.running || !this.onBreak) return` — a
+     * single early return that fired BEFORE the persisted flags were cleared.
+     * stop() sets running = false, so a tournament whose final hand landed
+     * during a break (or one torn down by a redeploy) left `on_break = true`
+     * on its row with nothing left alive that would ever clear it. Measured
+     * 2026-08-25: 7 tournaments carry on_break = true against no live break,
+     * the oldest stamped 2026-08-22 09:55 and still true 70 hours later.
+     *
+     * The database is cleared unconditionally now; only the RESUMING half —
+     * broadcasting, un-pausing engines, re-arming the level clock — is skipped
+     * when the tournament is no longer running.
+     */
+    await this.clearPersistedBreak();
+    if (!this.running) return;
+
+    console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED — resuming play`);
 
     await this.broadcast('break_ended', { level: this.currentLevel });
 
@@ -1364,7 +1432,26 @@ export abstract class TournamentManagerBase {
           console.warn(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Resuming with NO open tables — rebuilding for ${liveEntrants} entrant(s) instead of abandoning the tournament`
           );
-          await this.createTablesAndSeatPlayers(tournament);
+          /**
+           * NON-FATAL (2026-08-25). createTablesAndSeatPlayers throws
+           * `No players` when nothing is in status 'playing' — which is exactly
+           * the state a tournament is in when its whole roster is still
+           * 'registered' (start() does that migration; resume() does not). The
+           * throw escaped to resume()'s outer catch, so the level clock, the
+           * elimination checker and the table-liveness sweep were ALL skipped
+           * and `running` was set back to false. A tournament that merely could
+           * not be re-seated was left RUNNING in the database with nothing
+           * ticking above it, and no path back.
+           *
+           * The rebuild is best-effort now: it is reported and the rest of
+           * resume() proceeds, so the every-5s sweeps get their chance to seat
+           * the field and finish the event.
+           */
+          try {
+            await this.createTablesAndSeatPlayers(tournament);
+          } catch (rebuildErr) {
+            reportError(rebuildErr, 'Tournament.resume_table_rebuild_failed');
+          }
         }
       } else {
         for (const table of tables) {
@@ -1441,10 +1528,56 @@ export abstract class TournamentManagerBase {
        * Re-pause for whatever is left of the break and re-arm the resume, so
        * the break survives a deploy the same way its persisted state does.
        */
-      if (tournament.on_break && tournament.break_ends_at) {
-        const remainingMs = new Date(tournament.break_ends_at).getTime() - Date.now();
+      /**
+       * A BREAK WHOSE COUNTDOWN NEVER STARTED IS STILL A BREAK (2026-08-25).
+       *
+       * This block used to be gated on `tournament.on_break && break_ends_at`,
+       * and pauseForBreak deliberately writes break_ends_at as NULL: at :55
+       * only the LAST HAND is announced, and beginBreakCountdown fills the end
+       * time in once every table on the platform has parked — up to
+       * LAST_HAND_GRACE_MS (two minutes) later. So a restart anywhere inside
+       * that window skipped the whole recovery:
+       *
+       *   - `this.onBreak` stayed FALSE while the row said true, so the brand
+       *     new engines were never re-paused and the tournament dealt straight
+       *     through the remainder of its own break. That is exactly the defect
+       *     this block was added to prevent, on the two minutes it did not
+       *     cover;
+       *   - reviveDeadTableEngines lost its `onBreak` skip, so it was free to
+       *     tear down and REPLACE paused tables mid-break — and a fresh engine
+       *     is not paused;
+       *   - resumeFromBreak() early-returns on `!this.onBreak`, so nothing
+       *     ever cleared `on_break` again.
+       *
+       * Measured 2026-08-25: 7 tournaments carry `on_break = true` with no
+       * live break; 5 of them have `break_ends_at` NULL — Daily Freeroll,
+       * Sunday Freeroll Special, Sunday Kickoff and Blitz Bounty all stamped
+       * within 2026-08-23 14:55:00–14:56:39 and still true 41 hours later.
+       *
+       * A NULL end time is now read for what it means — the countdown had not
+       * started yet — and the outside edge of the break is reconstructed from
+       * break_started_at: the last-hand grace plus the break itself, i.e. the
+       * same worst case GameServer.triggerSynchronizedBreak claims at :55. A
+       * row with neither timestamp yields a negative remainder and falls to
+       * the clear branch below, which is how the stale flags above heal.
+       */
+      if (tournament.on_break) {
+        const breakStartedAt = tournament.break_started_at
+          ? new Date(tournament.break_started_at).getTime()
+          : 0;
+        const breakEndsAt = tournament.break_ends_at
+          ? new Date(tournament.break_ends_at).getTime()
+          : breakStartedAt > 0
+            ? breakStartedAt +
+              TournamentManagerBase.LAST_HAND_GRACE_MS +
+              TournamentManagerBase.BREAK_DURATION_MS
+            : 0;
+        const remainingMs = breakEndsAt - Date.now();
         if (remainingMs > 1000) {
           this.onBreak = true;
+          // The end time is already fixed for this break — whether it came off
+          // the row or was reconstructed above — so nothing may re-stamp it.
+          this.breakCountdownStarted = true;
           // The level clock was armed moments ago, a few lines above. Suspend
           // it for the rest of the break exactly as the :55 path does —
           // without this it ran straight through the break and resumeFromBreak
@@ -1460,21 +1593,21 @@ export abstract class TournamentManagerBase {
               reportError(err, 'TournamentManagerBase.resume_rebreak_pause');
             }
           }
-          setTimeout(() => {
+          const rebreakTimer = setTimeout(() => {
             void this.resumeFromBreak();
           }, remainingMs);
+          // Never hold the process open for the tail of a break, the same rule
+          // every other timer in this file follows.
+          if (typeof (rebreakTimer as any)?.unref === 'function') {
+            (rebreakTimer as any).unref();
+          }
         } else {
           // The break already expired while we were down — clear the flag so
-          // the lobby does not show a phantom break.
+          // the lobby does not show a phantom break. This is also what heals
+          // a row stranded by the two defects described above.
           this.onBreak = false;
-          try {
-            await supabase
-              .from('tournaments')
-              .update({ on_break: false, break_ends_at: null })
-              .eq('id', this.tournamentId);
-          } catch (err) {
-            reportError(err, 'TournamentManagerBase.resume_clear_stale_break');
-          }
+          this.breakCountdownStarted = false;
+          await this.clearPersistedBreak();
         }
       }
 
@@ -1812,9 +1945,14 @@ export abstract class TournamentManagerBase {
     if (!players || players.length === 0) throw new Error('No players');
 
     // What this tournament ALREADY has.
+    // max_players is read too: an ADOPTED table keeps the capacity it was
+    // built with, which need not match the maxPerTable computed below (the
+    // config may have changed, or the deck clamp may have lowered it). The
+    // seating loop honours each table's own ceiling — see the capacity note
+    // there.
     const { data: existingTables } = await supabase
       .from('tables')
-      .select('id')
+      .select('id, max_players')
       .eq('tournament_id', this.tournamentId)
       .in('status', ['running', 'waiting'])
       .order('created_at', { ascending: true });
@@ -1895,9 +2033,43 @@ export abstract class TournamentManagerBase {
       maxPerTable = deckSafe;
     }
 
-    const numTables = Math.ceil(players.length / maxPerTable);
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A TABLE COUNT THAT IGNORES HOW FULL THE TABLES ARE (2026-08-25)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * This was `ceil(players.length / maxPerTable) - existingTables.length`,
+     * which assumes every adopted table is EMPTY. Adoption exists precisely
+     * because they are not.
+     *
+     * Worked example, and it is the live one: a tournament with one adopted
+     * table already holding 9 of its 9 seats and 10 entrants asks for
+     * ceil(10 / 9) = 2 tables, already has 1, and creates 1. Two table ids.
+     * The round-robin below then hands entrant #10 to index 0 — the FULL
+     * table — and the old seat scan, `while (taken.has(n)) n++` with no
+     * ceiling at all, dutifully returned seat 10.
+     *
+     * Measured live 2026-08-25 07:41-07:42: "Turbo Tuesday Graveyard" tables
+     * 44 through 56 each carry a live seat at seat_number 10 on max_players 9,
+     * one of them with 10 live seats; 54 such seats across 53 tournament
+     * tables platform-wide. A seat past the table's own ceiling is not
+     * cosmetic — it is the deck-exhaustion deadlock (#782) reopened through a
+     * different door, because clampSeatsForVariant clamps `max_players` and
+     * this loop then walked straight past it.
+     *
+     * The shortfall is now measured in SEATS, against the real free capacity
+     * of the tables the tournament already has.
+     */
     const alreadyHave = (existingTables ?? []).length;
-    const tablesToCreate = Math.max(0, numTables - alreadyHave);
+    const toSeatCount = players.filter((p: any) => !alreadySeated.has(p.user_id)).length;
+    let freeSeatsNow = 0;
+    for (const t of existingTables ?? []) {
+      const cap = Math.max(0, Number((t as any).max_players) || maxPerTable);
+      const used = occupiedSeats.get(t.id)?.size ?? 0;
+      freeSeatsNow += Math.max(0, cap - used);
+    }
+    const seatShortfall = Math.max(0, toSeatCount - freeSeatsNow);
+    const tablesToCreate = Math.ceil(seatShortfall / maxPerTable);
 
     for (let i = alreadyHave; i < alreadyHave + tablesToCreate; i++) {
       const blindStructure = tournament.blind_structure || [];
@@ -1950,13 +2122,63 @@ export abstract class TournamentManagerBase {
         `[Tournament:${this.tournamentId.slice(0, 8)}] ${players.length - toSeat.length} player(s) already seated — seating the remaining ${toSeat.length}`
       );
     }
+    /**
+     * Every table's own ceiling. An adopted table keeps the max_players it was
+     * built with; a table created moments ago holds maxPerTable. Nothing below
+     * may write a seat number above the value here — that is the whole point
+     * (see the table-count note above for the 54 live seats that proves it).
+     */
+    const capacityOf = new Map<string, number>();
+    for (const t of existingTables ?? []) {
+      capacityOf.set(t.id, Math.max(1, Number((t as any).max_players) || maxPerTable));
+    }
+    for (const id of tableIds) {
+      if (!capacityOf.has(id)) capacityOf.set(id, maxPerTable);
+    }
+
+    // Round-robin CURSOR rather than `i % tableIds.length`: the modulo hands a
+    // player to a fixed table whether or not that table has a seat left, which
+    // is how a full adopted table was handed an eleventh player.
+    let cursor = 0;
     for (let i = 0; i < toSeat.length; i++) {
-      const tableId = tableIds[i % tableIds.length];
-      // Lowest free seat on that table, so a new seat can never collide with
-      // one an adopted table is already using.
+      // Next table, from the cursor, that has a genuinely free seat number
+      // within its own capacity.
+      let tableId: string | null = null;
+      let seatNumber = 0;
+      for (let probe = 0; probe < tableIds.length; probe++) {
+        const candidate = tableIds[(cursor + probe) % tableIds.length];
+        const cap = capacityOf.get(candidate) ?? maxPerTable;
+        const taken = occupiedSeats.get(candidate) ?? new Set<number>();
+        let n = 1;
+        while (n <= cap && taken.has(n)) n++;
+        if (n <= cap) {
+          tableId = candidate;
+          seatNumber = n;
+          cursor = (cursor + probe + 1) % tableIds.length;
+          break;
+        }
+      }
+
+      if (!tableId) {
+        /**
+         * Every table is genuinely full. The seat sizing above is meant to make
+         * this unreachable, so it means a table INSERT failed and was skipped
+         * (see the `continue` in the creation loop). LEAVING THE PLAYER
+         * UNSEATED IS DELIBERATE: the alternative is the seat past the table's
+         * ceiling that this whole block exists to stop. ensureLateRegSeated
+         * runs every five seconds and seats them the moment a seat exists, and
+         * checkDynamicTableExpansion builds one; both respect the ceiling.
+         */
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] No seat within capacity for ${toSeat.length - i} player(s) across ${tableIds.length} table(s) — leaving them unseated for the 5s seat sweep rather than writing a seat past a table's max_players`
+          ),
+          'Tournament.seating_capacity_exhausted'
+        );
+        break;
+      }
+
       const taken = occupiedSeats.get(tableId) ?? new Set<number>();
-      let seatNumber = 1;
-      while (taken.has(seatNumber)) seatNumber++;
       taken.add(seatNumber);
       occupiedSeats.set(tableId, taken);
 
@@ -2215,6 +2437,54 @@ export abstract class TournamentManagerBase {
     {
       {
         if (!this.running) return;
+
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  NO LEVEL ADVANCES DURING A BREAK (2026-08-25)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * A break is supposed to stop the level clock, and the only mechanism
+         * that did so was pauseForBreak clearing `blindTimer`. That covers a
+         * timer already armed. It does NOT cover a timer armed AFTER the break
+         * began — and the tail of this very method arms one unconditionally.
+         *
+         * suspendLevelClock already documents the window: `blindTimer is
+         * legitimately null for seconds at a time: advanceBlindLevel consumes
+         * it on fire and does not re-arm until it has awaited a blind write per
+         * table, the current_level persist, the level_up broadcast and possibly
+         * a prize-pool finalization. A :55 break inside that window is exactly
+         * the case that killed the clock.` That fix taught suspendLevelClock to
+         * save a full level rather than 0. It left the other half open: the
+         * in-flight transition then went on to arm a LIVE full-length timer,
+         * which ran through the entire break.
+         *
+         * A break is five minutes plus up to two minutes of last-hand grace.
+         * Every turbo, hyper-turbo and Spin level is shorter than that, so the
+         * armed timer FIRES mid-break: the blinds jump while the field is
+         * behind the break overlay, this method arms yet another timer, and the
+         * level can advance TWICE inside one break. resumeFromBreak then hands
+         * the level that just advanced the full duration saved at :55, so the
+         * clock is reset on top of it.
+         *
+         * Two guards, one at each end:
+         *
+         *   HERE — a level that comes due during a break is not advanced. It is
+         *   owed, so 1 s is handed to resumeFromBreak (startBlindTimer clamps
+         *   the override to at least 1000 ms) and the level goes up the instant
+         *   play resumes, rather than during the break or not at all.
+         *
+         *   AT THE TAIL — if a break began while this transition was in flight,
+         *   the next level's full duration is handed to resumeFromBreak instead
+         *   of being armed as a live timer.
+         */
+        if (this.onBreak) {
+          this.savedBlindTimerRemaining = 1000;
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Level was due during a break — holding it until play resumes`
+          );
+          return;
+        }
+
         const prevLevel = this.currentLevel;
         this.currentLevel++;
 
@@ -2513,8 +2783,16 @@ export abstract class TournamentManagerBase {
           }
         }
 
-        // Schedule the next level (waits the new level's duration, then advances)
-        this.startBlindTimer(blindStructure);
+        // Schedule the next level (waits the new level's duration, then
+        // advances) — unless a break began while this transition was in flight,
+        // in which case the clock belongs to resumeFromBreak. Arming a live
+        // timer here is what let a level advance during a break; see the guard
+        // at the top of this method for the full defect.
+        if (this.onBreak) {
+          this.savedBlindTimerRemaining = this.levelDurationMs(level);
+        } else {
+          this.startBlindTimer(blindStructure);
+        }
       }
     }
   }

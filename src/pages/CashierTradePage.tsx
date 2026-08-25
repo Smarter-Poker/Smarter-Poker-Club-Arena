@@ -115,6 +115,18 @@ const fmt = (n: number) =>
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
+/**
+ * Raw Postgres enums were rendered straight at the user: "peer_transfer",
+ * "awaiting_payment". Title Case them, the way ROLE_LABEL does for roles.
+ */
+function txLabel(value: string | null | undefined): string {
+  return String(value || '')
+    .split('_')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 export default function CashierTradePage() {
   const { clubId: clubParam } = useParams<{ clubId: string }>();
   const navigate = useNavigate();
@@ -151,14 +163,31 @@ export default function CashierTradePage() {
   // real features now (chip_requests + tournament_tickets, migration 20260821).
   const [requests, setRequests] = useState<ChipRequestRow[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
+  const [requestsError, setRequestsError] = useState<string | null>(null);
+  /** Which request row is mid-RPC. Approving one MOVES CHIPS. */
+  const [respondingId, setRespondingId] = useState<string | null>(null);
+  const respondingRef = useRef(false);
+  const [asking, setAsking] = useState(false);
+  const askingRef = useRef(false);
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const [invoicesError, setInvoicesError] = useState<string | null>(null);
   const [askOpen, setAskOpen] = useState(false);
   const [askAmount, setAskAmount] = useState('');
   const [askNote, setAskNote] = useState('');
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [recordsError, setRecordsError] = useState<string | null>(null);
   const [amountModal, setAmountModal] = useState<'send' | 'claim' | 'ticket' | null>(null);
+  /**
+   * Per-target failures from the last batch, rendered IN the modal. The toast
+   * layer sanitises money errors (it strips the player's name off an
+   * insufficient-funds refusal) and drops whole error categories, so on a
+   * partial failure the user could not tell which recipients missed out.
+   * JSX bypasses that sanitiser.
+   */
+  const [transferFailures, setTransferFailures] = useState<
+    Array<{ name: string; message: string }>
+  >([]);
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
   // AUDIT 2026-08-21: the "+" on Available Chips used to punt to the classic
@@ -290,12 +319,35 @@ export default function CashierTradePage() {
 
       let downlineIds: string[] | null = null;
       if (isAgent && !isStaff) {
-        const { data: scopeRow } = await supabase.rpc('ca_club_my_downline', {
+        /**
+         * TWO SHAPES, ONE FUNCTION (Dan 2026-08-25).
+         *
+         * ca_club_my_downline exists in the repo twice: a jsonb variant
+         * returning {scoped, user_ids}, and a later TABLE variant returning one
+         * row per downline agent. The TABLE one is what is deployed, so
+         * supabase-js hands back an ARRAY - `scope.scoped` was undefined,
+         * `scope.user_ids` was undefined, and downlineIds collapsed to [].
+         * An agent then queried `.in('user_id', [self])` and saw a cashier
+         * containing only themselves; a super_agent saw the club's unassigned
+         * members, which is not their downline in either direction.
+         *
+         * The dropped error made a genuine RPC failure indistinguishable from
+         * "you have nobody", which is why it read as a data problem for so long.
+         */
+        const { data: scopeRow, error: scopeErr } = await supabase.rpc('ca_club_my_downline', {
           p_club_id: clubUuid,
         });
         if (stale()) return;
-        const scope = scopeRow as { scoped?: boolean; user_ids?: string[] | null } | null;
-        downlineIds = scope?.scoped === false ? null : (scope?.user_ids ?? []);
+        if (scopeErr) throw scopeErr;
+        if (Array.isArray(scopeRow)) {
+          const ids = scopeRow
+            .map((r: Record<string, unknown>) => r?.agent_id ?? r?.user_id)
+            .filter((v: unknown): v is string => typeof v === 'string' && v.length > 0);
+          downlineIds = ids;
+        } else {
+          const scope = scopeRow as { scoped?: boolean; user_ids?: string[] | null } | null;
+          downlineIds = scope?.scoped === false ? null : (scope?.user_ids ?? []);
+        }
       }
 
       const dl: Array<Record<string, unknown>> = [];
@@ -390,9 +442,6 @@ export default function CashierTradePage() {
 
       if (!isMounted.current || stale()) return;
       setMyRole(role);
-      if (role === 'player' && tab === 'trade') {
-        setTab('record');
-      }
       setMyBalance(bal);
       // "Available Chips": for owners the club bank (mintable/distributable
       // pool); for agents their own sendable balance is the constraint, so
@@ -430,9 +479,30 @@ export default function CashierTradePage() {
       'CASHIER_BALANCE_CHANGED',
       'SETTLEMENT_COMPLETED',
     ] as const;
-    const unsubs = events.map((e) => masterBus.subscribe(e as never, () => loadClub()));
+    // Only OUR club. CHIPS_DISTRIBUTED and CASHIER_BALANCE_CHANGED both carry a
+    // clubId that was thrown away, so a chip event anywhere on the platform
+    // triggered a full reload here - up to ten paged queries on a large club,
+    // and each one wiped the selection out from under an open amount modal.
+    const unsubs = events.map((e) =>
+      masterBus.subscribe(e as never, (payload: unknown) => {
+        const pid = (payload as { clubId?: string } | null)?.clubId;
+        if (pid && clubUuid && pid !== clubUuid) return;
+        loadClub();
+      })
+    );
     return () => unsubs.forEach((u) => u());
-  }, [loadClub]);
+  }, [loadClub, clubUuid]);
+
+  /**
+   * Players have no Trade tab. This lived inside loadClub, which is recreated
+   * only on user/club change and therefore captured whatever `tab` was THEN -
+   * 'trade' for a player who had since moved to Chip Request. Every one of the
+   * six bus events re-ran it, saw the stale value and snatched them back out
+   * of the tab they were typing in.
+   */
+  useEffect(() => {
+    if (myRole === 'player' && tab === 'trade') setTab('record');
+  }, [myRole, tab]);
 
   // ── Trade record tab data ──────────────────────────────────────────────────
   // Cleared on every club change: the previous club's trades used to stay on
@@ -440,6 +510,14 @@ export default function CashierTradePage() {
   useEffect(() => {
     setRecords([]);
     setRecordsError(null);
+    // Chips are PER CLUB. These were left at the previous club's values for the
+    // whole load, so club B's header sat above club A's totals with A's members
+    // still in the list - on the screen that moves the chips.
+    setMyBalance(0);
+    setAvailableChips(0);
+    setDownline([]);
+    setSelected(new Set());
+    setTransferFailures([]);
   }, [clubUuid]);
 
   useEffect(() => {
@@ -506,6 +584,7 @@ export default function CashierTradePage() {
     if (!user?.id || !clubUuid) return;
     const seq = ++reqSeqRef.current;
     setRequestsLoading(true);
+    setRequestsError(null);
     try {
       const { data, error } = await supabase
         .from('chip_requests')
@@ -543,6 +622,10 @@ export default function CashierTradePage() {
       );
     } catch (e) {
       reportError(e, 'CashierTradePage.loadRequests');
+      // Silent before: a pending request the user has to answer was invisible
+      // behind "No Open Chip Requests."
+      if (isMounted.current && seq === reqSeqRef.current)
+        setRequestsError('Could Not Load Chip Requests.');
     } finally {
       if (isMounted.current && seq === reqSeqRef.current) setRequestsLoading(false);
     }
@@ -553,6 +636,13 @@ export default function CashierTradePage() {
   }, [tab, loadRequests]);
 
   const respondToRequest = async (id: string, action: 'approve' | 'decline' | 'cancel') => {
+    // Approving a chip request performs the same conserved ledger move as a
+    // Send Out. The row's three buttons were never disabled and there was no
+    // busy state, so a double-tap fired two RPCs and the second's refusal
+    // surfaced as a sanitised toast - or was dropped entirely.
+    if (respondingRef.current) return;
+    respondingRef.current = true;
+    setRespondingId(id);
     try {
       const { data, error } = await supabase.rpc('fn_respond_chip_request', {
         p_request_id: id,
@@ -574,15 +664,26 @@ export default function CashierTradePage() {
     } catch (e) {
       reportError(e, 'CashierTradePage.respondToRequest');
       toast?.error?.((e as Error).message || 'Could Not Answer That Request');
+    } finally {
+      respondingRef.current = false;
+      if (isMounted.current) setRespondingId(null);
     }
   };
 
   const askForChips = async () => {
-    const v = Number(askAmount);
-    if (!Number.isFinite(v) || v <= 0) {
+    const raw = Number(askAmount);
+    if (!Number.isFinite(raw) || raw <= 0) {
       toast?.error?.('Enter A Positive Amount');
       return;
     }
+    const v = Math.round(raw * 100) / 100;
+    if (v !== raw) {
+      toast?.error?.('Chips Go To Two Decimal Places');
+      return;
+    }
+    if (askingRef.current) return;
+    askingRef.current = true;
+    setAsking(true);
     try {
       const { data, error } = await supabase.rpc('fn_request_chips', {
         p_club_id: clubUuid,
@@ -600,6 +701,9 @@ export default function CashierTradePage() {
     } catch (e) {
       reportError(e, 'CashierTradePage.askForChips');
       toast?.error?.((e as Error).message || 'Could Not Send That Request');
+    } finally {
+      askingRef.current = false;
+      if (isMounted.current) setAsking(false);
     }
   };
 
@@ -608,6 +712,7 @@ export default function CashierTradePage() {
     if (tab !== 'leaderboard' || !clubUuid) return;
     let live = true;
     setInvoicesLoading(true);
+    setInvoicesError(null);
     (async () => {
       const { data, error } = await supabase
         .from('settlement_invoices')
@@ -618,8 +723,13 @@ export default function CashierTradePage() {
       if (!live) return;
       if (error) {
         reportError(error, 'CashierTradePage.loadInvoices');
+        // "No Settlement Records Yet" is a different statement from "we could
+        // not read them", and this page already makes that distinction on the
+        // trades tab. Make it here too.
+        setInvoicesError('Could Not Load Settlement Records.');
         setInvoices([]);
       } else {
+        setInvoicesError(null);
         setInvoices(
           (data || []).map((r) => ({
             id: r.id as string,
@@ -699,19 +809,46 @@ export default function CashierTradePage() {
   // ── Money actions ──────────────────────────────────────────────────────────
   const runTransfers = async (kind: 'send' | 'claim' | 'ticket') => {
     if (!user?.id || !clubUuid) return;
-    const value = Number(amount);
-    if (!Number.isFinite(value) || value <= 0) {
+    const raw = Number(amount);
+    if (!Number.isFinite(raw) || raw <= 0) {
       toast?.error?.('Enter A Positive Amount');
+      return;
+    }
+    // QUANTIZE. NaN, negative and zero were covered; 10.005 was not. It passed
+    // straight through to club_members.chip_balance while fmt() rendered it as
+    // "10.01" in the modal total AND in the receipt, and `value * targets`
+    // compounded the drift across a batch. Chips go to two decimals: refuse
+    // anything finer rather than silently rounding the user's money.
+    const value = Math.round(raw * 100) / 100;
+    if (value !== raw) {
+      toast?.error?.('Chips Go To Two Decimal Places');
+      return;
+    }
+    if (value > 1e9) {
+      toast?.error?.('That Amount Is Too Large');
       return;
     }
     // `list`, not `downline`: the visible, filtered set. The pruning effect
     // above already keeps these in step; reading the same source the user was
     // looking at means a race can never widen the blast radius of a transfer.
     const targets = list.filter((r) => selected.has(r.userId));
-    if (targets.length === 0) return;
-    if ((kind === 'send' || kind === 'ticket') && value * targets.length > availableChips) {
+    if (targets.length === 0) {
+      // loadClub() clears `selected` unconditionally and six bus events fire
+      // it, so a balance event landing while this modal was open emptied the
+      // selection without closing it. Confirm then did NOTHING - no toast, no
+      // close, no error - on a modal still titled "Send Out".
+      toast?.error?.('Selection Changed. Pick The Players Again');
+      setAmountModal(null);
+      return;
+    }
+    // GUARD AGAINST THE POT THIS ACTUALLY SPENDS. fn_cashier_send_chips debits
+    // club_members.chip_balance of auth.uid() for EVERY role - it never touches
+    // clubs.chip_treasury. `availableChips` is the club bank for staff, so an
+    // owner with a large treasury and a small personal balance sailed past this
+    // check and collected N server refusals instead.
+    if ((kind === 'send' || kind === 'ticket') && value * targets.length > myBalance) {
       toast?.error?.(
-        `Insufficient Chips: Sending ${fmt(value * targets.length)} Needs More Than ${fmt(availableChips)}`
+        `Insufficient Chips: Sending ${fmt(value * targets.length)} Needs More Than ${fmt(myBalance)}`
       );
       return;
     }
@@ -742,6 +879,7 @@ export default function CashierTradePage() {
     const submissionId = submissionIdRef.current;
     let ok = 0;
     let skipped = 0;
+    const failed: Array<{ name: string; message: string }> = [];
     try {
       for (const t of targets) {
         try {
@@ -766,7 +904,7 @@ export default function CashierTradePage() {
               p_club_id: clubUuid,
               p_holder_id: t.userId,
               p_value: value,
-              p_note: `Ticket from cashier`,
+              p_note: `Cashier ticket for ${t.name}`,
             });
             if (error) throw error;
             const res = data as { success?: boolean; error?: string } | null;
@@ -799,7 +937,13 @@ export default function CashierTradePage() {
           ok++;
         } catch (e) {
           reportError(e, 'CashierTradePage.' + kind);
-          toast?.error?.(`${t.name}: ${(e as Error).message || 'Transfer Failed'}`);
+          // Collected, not just toasted. showToast drops the network/timeout/
+          // rateLimit/server categories entirely, and rewrites a funds refusal
+          // to a generic sentence that loses the player's NAME - so on a
+          // dropped connection every per-target toast vanished and the summary
+          // below had no branch for "nothing succeeded and nothing skipped".
+          // The user was left not knowing whether ten transfers had happened.
+          failed.push({ name: t.name, message: (e as Error)?.message || 'Transfer Failed' });
         }
       }
     } finally {
@@ -814,25 +958,44 @@ export default function CashierTradePage() {
       if (skipped + ok === targets.length) submissionIdRef.current = null;
       if (isMounted.current) {
         setBusy(false);
-        setAmountModal(null);
-        setAmount('');
+        setTransferFailures(failed);
+        // Only close on a clean batch. Closing on failure wiped the amount and
+        // the selection, which is the worst possible moment to lose them.
+        if (failed.length === 0) {
+          setAmountModal(null);
+          setAmount('');
+        }
       }
     }
 
     if (ok > 0) {
+      // Name the counterparty on a single-target move. The Toast layer bars an
+      // identical type+text for 60s, so "Sent 100.00 To 1 Player" twice in a
+      // minute confirmed only the FIRST real chip movement - a receipt must
+      // never be the thing that dedupes.
+      const who = targets.length === 1 ? targets[0].name : `${ok} Player${ok === 1 ? '' : 's'}`;
       toast?.success?.(
         kind === 'send'
-          ? `Sent ${fmt(value)} To ${ok} Player${ok === 1 ? '' : 's'}`
+          ? `Sent ${fmt(value)} To ${who}`
           : kind === 'ticket'
-            ? `Issued ${ok} Ticket${ok === 1 ? '' : 's'} Worth ${fmt(value)} Each`
-            : `Claimed Back From ${ok} Player${ok === 1 ? '' : 's'}`
+            ? `Issued ${ok} Ticket${ok === 1 ? '' : 's'} Worth ${fmt(value)} Each To ${who}`
+            : `Claimed ${fmt(value)} Back From ${who}`
       );
       // The bus event is already wired to reload this page, so calling
       // loadClub() as well fired two identical loads at once.
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade', userId: user.id });
-    } else if (skipped > 0) {
+    } else if (skipped > 0 && failed.length === 0) {
       toast?.info?.(
         `Nothing To Claim Back: ${skipped} Player${skipped === 1 ? ' Has' : 's Have'} No Chips`
+      );
+    }
+    if (failed.length > 0) {
+      // The one branch that did not exist. A batch where every target failed
+      // produced no summary at all.
+      toast?.error?.(
+        ok > 0
+          ? `${failed.length} Of ${targets.length} Did Not Go Through`
+          : `Nothing Was Sent. ${failed.length} Failed`
       );
     }
   };
@@ -992,8 +1155,11 @@ export default function CashierTradePage() {
 
           {/* Downline list */}
           <div className={styles.list}>
-            {loading && <div className={styles.empty}>Loading Members...</div>}
-            {!loading && loadError && (
+            {/* isHydrating too: before it was read, a hard refresh briefly ran
+                the whole not-found / empty-club branch below while auth was
+                still settling and `user` was null. */}
+            {(loading || isHydrating) && <div className={styles.empty}>Loading Members...</div>}
+            {!loading && !isHydrating && loadError && (
               <div className={styles.empty} role="alert">
                 {loadError}{' '}
                 <button type="button" className={styles.retryBtn} onClick={() => void loadClub()}>
@@ -1001,7 +1167,23 @@ export default function CashierTradePage() {
                 </button>
               </div>
             )}
-            {!loading && !loadError && list.length === 0 && (
+            {/* A club id that resolves to nothing is NOT an empty club. This
+                flag was set in two places and read in none, so a bad slug or a
+                deleted club rendered "No members in your downline yet." - the
+                exact confusion the flag was added to end. */}
+            {!loading && !isHydrating && clubResolveFailed && (
+              <div className={styles.empty} role="alert">
+                We Could Not Find That Club.{' '}
+                <button
+                  type="button"
+                  className={styles.retryBtn}
+                  onClick={() => navigate('/clubs')}
+                >
+                  Back To Clubs
+                </button>
+              </div>
+            )}
+            {!loading && !isHydrating && !loadError && !clubResolveFailed && list.length === 0 && (
               <div className={styles.empty}>
                 {mineOnly
                   ? 'No players are assigned to you in this club.'
@@ -1113,7 +1295,7 @@ export default function CashierTradePage() {
                   {r.counterparty}
                 </span>
                 <span className={styles.rowSub}>
-                  {r.type.replace(/_/g, ' ')} &middot;{' '}
+                  {txLabel(r.type)} &middot;{' '}
                   {new Date(r.createdAt).toLocaleString([], {
                     month: 'short',
                     day: 'numeric',
@@ -1136,7 +1318,19 @@ export default function CashierTradePage() {
       {tab === 'leaderboard' && (
         <div className={styles.list}>
           {invoicesLoading && <div className={styles.empty}>Loading Settlement Records...</div>}
-          {!invoicesLoading && invoices.length === 0 && (
+          {!invoicesLoading && invoicesError && (
+            <div className={styles.empty} role="alert">
+              {invoicesError}{' '}
+              <button
+                type="button"
+                className={styles.retryBtn}
+                onClick={() => setTab('leaderboard')}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+          {!invoicesLoading && !invoicesError && invoices.length === 0 && (
             <div className={styles.empty}>
               No Settlement Records Yet. They Appear Here After The First Weekly Close.
             </div>
@@ -1144,14 +1338,14 @@ export default function CashierTradePage() {
           {invoices.map((iv) => (
             <div key={iv.id} className={styles.row}>
               <div className={styles.rowInfo}>
-                <span className={styles.rowName}>{iv.type.replace(/_/g, ' ')}</span>
+                <span className={styles.rowName}>{txLabel(iv.type)}</span>
                 <span className={styles.rowSub}>
                   {new Date(iv.createdAt).toLocaleDateString([], {
                     month: 'short',
                     day: 'numeric',
                     year: 'numeric',
                   })}{' '}
-                  &middot; {iv.status}
+                  &middot; {txLabel(iv.status)}
                 </span>
               </div>
               <span className={styles.rowSub}>Gross {fmt(iv.gross)}</span>
@@ -1172,7 +1366,15 @@ export default function CashierTradePage() {
             Request Chips From Your Agent
           </button>
           {requestsLoading && <div className={styles.empty}>Loading Requests...</div>}
-          {!requestsLoading && requests.length === 0 && (
+          {!requestsLoading && requestsError && (
+            <div className={styles.empty} role="alert">
+              {requestsError}{' '}
+              <button type="button" className={styles.retryBtn} onClick={() => void loadRequests()}>
+                Retry
+              </button>
+            </div>
+          )}
+          {!requestsLoading && !requestsError && requests.length === 0 && (
             <div className={styles.empty}>No Open Chip Requests.</div>
           )}
           {requests.map((r) => (
@@ -1191,22 +1393,28 @@ export default function CashierTradePage() {
               </div>
               <span className={styles.rowBalance}>{fmt(r.amount)}</span>
               {r.mine ? (
-                <button className={styles.reqBtn} onClick={() => respondToRequest(r.id, 'cancel')}>
-                  Cancel
+                <button
+                  className={styles.reqBtn}
+                  disabled={respondingId !== null}
+                  onClick={() => respondToRequest(r.id, 'cancel')}
+                >
+                  {respondingId === r.id ? 'Working...' : 'Cancel'}
                 </button>
               ) : (
                 <>
                   <button
                     className={styles.reqBtn}
+                    disabled={respondingId !== null}
                     onClick={() => respondToRequest(r.id, 'decline')}
                   >
-                    Decline
+                    {respondingId === r.id ? 'Working...' : 'Decline'}
                   </button>
                   <button
                     className={`${styles.reqBtn} ${styles.reqBtnGo}`}
+                    disabled={respondingId !== null}
                     onClick={() => respondToRequest(r.id, 'approve')}
                   >
-                    Approve
+                    {respondingId === r.id ? 'Working...' : 'Approve'}
                   </button>
                 </>
               )}
@@ -1225,6 +1433,8 @@ export default function CashierTradePage() {
               inputMode="decimal"
               min={0}
               value={askAmount}
+              step="0.01"
+              aria-label="Chips Requested"
               onChange={(e) => setAskAmount(e.target.value)}
               placeholder="How many chips?"
               autoFocus
@@ -1232,6 +1442,7 @@ export default function CashierTradePage() {
             <input
               type="text"
               value={askNote}
+              aria-label="Note"
               onChange={(e) => setAskNote(e.target.value)}
               placeholder="Note (optional)"
               maxLength={120}
@@ -1240,9 +1451,11 @@ export default function CashierTradePage() {
               Goes To Your Agent, Or The Club Owner If You Have None.
             </div>
             <div className={styles.modalActions}>
-              <button onClick={() => setAskOpen(false)}>Cancel</button>
-              <button className={styles.modalConfirm} onClick={askForChips}>
-                Send Request
+              <button disabled={asking} onClick={() => setAskOpen(false)}>
+                Cancel
+              </button>
+              <button className={styles.modalConfirm} disabled={asking} onClick={askForChips}>
+                {asking ? 'Sending...' : 'Send Request'}
               </button>
             </div>
           </div>
@@ -1264,7 +1477,14 @@ export default function CashierTradePage() {
 
       {/* Amount modal */}
       {amountModal && (
-        <div className={styles.modalOverlay} onClick={() => !busy && setAmountModal(null)}>
+        <div
+          className={styles.modalOverlay}
+          onClick={() => {
+            if (busy) return;
+            setAmountModal(null);
+            setTransferFailures([]);
+          }}
+        >
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalTitle}>
               {amountModal === 'send'
@@ -1279,8 +1499,13 @@ export default function CashierTradePage() {
               type="number"
               inputMode="decimal"
               min={0}
+              step="0.01"
+              aria-label="Amount Per Player"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => {
+                setAmount(e.target.value);
+                if (transferFailures.length) setTransferFailures([]);
+              }}
               placeholder={
                 amountModal === 'claim'
                   ? 'Amount per player (max = balance)'
@@ -1300,16 +1525,39 @@ export default function CashierTradePage() {
               <div className={styles.modalHint}>
                 Total:{' '}
                 {fmt((Number(amount) || 0) * list.filter((r) => selected.has(r.userId)).length)}{' '}
-                &middot; Available: {fmt(availableChips)}
+                {/* YOUR balance, not the club bank. Send Out debits
+                    club_members.chip_balance of the caller for every role, so
+                    quoting the treasury here told an owner they could spend
+                    money this action cannot reach. */}
+                &middot; Your Chips: {fmt(myBalance)}
+              </div>
+            )}
+            {transferFailures.length > 0 && (
+              <div className={styles.modalFailures} role="alert">
+                <div className={styles.modalFailuresTitle}>
+                  {transferFailures.length} Did Not Go Through
+                </div>
+                {transferFailures.map((f) => (
+                  <div className={styles.modalFailureRow} key={f.name}>
+                    <span>{f.name}</span>
+                    <span>{f.message}</span>
+                  </div>
+                ))}
               </div>
             )}
             <div className={styles.modalActions}>
-              <button disabled={busy} onClick={() => setAmountModal(null)}>
+              <button
+                disabled={busy}
+                onClick={() => {
+                  setAmountModal(null);
+                  setTransferFailures([]);
+                }}
+              >
                 Cancel
               </button>
               <button
                 className={styles.modalConfirm}
-                disabled={busy}
+                disabled={busy || list.filter((r) => selected.has(r.userId)).length === 0}
                 onClick={() => runTransfers(amountModal)}
               >
                 {busy ? 'Working...' : 'Confirm'}

@@ -61,6 +61,10 @@ import DiamondsTab from './marketplace/DiamondsTab';
 import MembershipTab from './marketplace/MembershipTab';
 import MyItemsTab from './marketplace/MyItemsTab';
 import ManageTab from './marketplace/ManageTab';
+// Banners are not toasts, so they never went through the Toast layer's Title
+// Case / em-dash transform. They are the only user-facing strings on this page
+// that render raw server text.
+import { formatPopupText } from '../utils/popupStyle';
 
 type TabKey = 'store' | 'diamonds' | 'membership' | 'my_items' | 'manage';
 const VALID_TABS: TabKey[] = ['store', 'diamonds', 'membership', 'my_items', 'manage'];
@@ -259,9 +263,12 @@ export default function MarketplacePage() {
       let targetClub: string | null = null;
       if (qClubParam) {
         // Accept both UUIDs and legacy 6-digit club codes
+        // resolveClubUUID never throws - it swallows the miss, warns, and
+        // returns the raw param, which is exactly what the catch did. Optional
+        // catch binding so the belt costs no unused variable.
         try {
           targetClub = await resolveClubUUID(qClubParam);
-        } catch (_e) {
+        } catch {
           targetClub = qClubParam;
         }
       }
@@ -291,6 +298,9 @@ export default function MarketplacePage() {
         setClubId((prev) => (prev === targetClub ? prev : targetClub));
         if (clubIdRef.current && clubIdRef.current !== targetClub) resetClubState();
         clubIdRef.current = targetClub;
+        // targetClub passed EXPLICITLY: the closed-over clubId is a render
+        // behind here, and this effect's dep array deliberately omits it. Do
+        // not drop the argument.
         loadShop(targetClub);
         loadInventory(targetClub);
       } else {
@@ -429,18 +439,26 @@ export default function MarketplacePage() {
   useEffect(() => {
     // Browser build has no NodeJS namespace -- infer the platform's timer type.
     let timer: ReturnType<typeof setTimeout> | undefined;
-    if (loading) {
+    // GATED on a fetch actually being in flight (Dan 2026-08-25). `loading`
+    // starts true and the init effect returns immediately when there is no
+    // user, so a slow auth hydration produced "Could Not Load The Shop:
+    // Failed to load shop (timeout)" while clubId was still null - and that
+    // banner's Retry called loadShop(undefined), which returns instantly,
+    // so the banner could never be cleared.
+    //
+    // 12s, not 5: loadShop retries twice with 500ms + 1000ms backoff, so a
+    // slow-but-succeeding request routinely crossed the old window and
+    // flashed a failure over a request that then worked.
+    if (loading && clubId && user) {
       timer = setTimeout(() => {
         if (mountedRef.current) {
           setLoading(false);
-          // If we hit this failsafe, we didn't receive items in time.
-          // Don't overwrite a shop error if one exists.
-          setShopError((prev) => prev || 'Failed to load shop (timeout)');
+          setShopError((prev) => prev || 'The Shop Took Too Long To Answer.');
         }
-      }, 5000);
+      }, 12000);
     }
     return () => clearTimeout(timer);
-  }, [loading, mountedRef]);
+  }, [loading, mountedRef, clubId, user]);
 
   if (loading && items.length === 0 && !shopError) {
     return <PageSkeleton variant="dashboard" />;
@@ -463,8 +481,16 @@ export default function MarketplacePage() {
           <div className={styles.walletBar}>
             {/* One wallet, one currency: diamonds. The shop API and the VIP
                 status API both report the same profiles.diamonds balance. */}
+            {/* Never assert a balance we do not have. `balance` initialises to 0
+                and resetClubState puts it back to 0, so with no club - or with
+                both the wallet and the shop failing - this pill confidently
+                read "0 Diamonds", which is the one thing it must never say. */}
             <span className={styles.walletPillDiamond} aria-live="polite">
-              {wallet.loaded ? `${fmt(wallet.diamonds)} Diamonds` : `${fmt(balance)} Diamonds`}
+              {wallet.loaded
+                ? `${fmt(wallet.diamonds)} Diamonds`
+                : !wallet.error && clubId && !shopError
+                  ? `${fmt(balance)} Diamonds`
+                  : 'Diamonds Unavailable'}
             </span>
             {wallet.isVip && <span className={styles.vipPill}>VIP</span>}
           </div>
@@ -502,7 +528,7 @@ export default function MarketplacePage() {
       {/* Failure banners — these used to be silent on every refresh path */}
       {shopError && (
         <div className={styles.errorBanner} role="alert">
-          <span>Could Not Load The Shop: {shopError}</span>
+          <span>Could Not Load The Shop: {formatPopupText(shopError)}</span>
           <button className={styles.inlineLink} onClick={refreshAll} disabled={refreshing}>
             Retry
           </button>
@@ -510,7 +536,7 @@ export default function MarketplacePage() {
       )}
       {wallet.error && (
         <div className={styles.errorBanner} role="alert">
-          <span>{wallet.error}</span>
+          <span>{formatPopupText(wallet.error)}</span>
           <button className={styles.inlineLink} onClick={() => loadWallet()}>
             Retry
           </button>
@@ -527,6 +553,7 @@ export default function MarketplacePage() {
             onGoDiamonds={() => switchTab('diamonds')}
             isAdmin={isAdmin}
             loading={loading}
+            error={shopError}
             categories={catalog.shopCategories}
             onGoManage={() => switchTab('manage')}
             onPurchased={(newBalance) => {

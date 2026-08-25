@@ -160,6 +160,38 @@ const PLAYER_SORTS: Array<{ id: PlayerSort; label: string }> = [
 
 const REFRESH_MS = 60_000;
 
+/** What a money tile shows when there is no figure to show. Never "0.00". */
+const NO_VALUE = '-';
+
+/**
+ * Every other timestamp on this page is UTC and the range chip is badged UTC.
+ * This one was the browser's local zone with no marker, so "updated 19:42"
+ * could look like it preceded a range ending "today". No isNaN guard either -
+ * a malformed value rendered "Invalid Date".
+ */
+function utcTime(iso: string): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return 'unknown';
+  return `${d.toLocaleTimeString('en-GB', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' })} UTC`;
+}
+
+/** settlement_invoices.status reached the owner raw: "awaiting_payment". */
+function invoiceStatusLabel(status: string): string {
+  return String(status)
+    .split('_')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+/** " (90%)" when both figures are real, empty string otherwise. */
+function splitPct(part: unknown, whole: unknown): string {
+  const p = Number(part);
+  const w = Number(whole);
+  if (!Number.isFinite(p) || !Number.isFinite(w) || w === 0) return '';
+  return ` (${Math.round((p / w) * 100)}%)`;
+}
+
 function toISODate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
@@ -254,8 +286,14 @@ export default function ClubDataPage() {
   const [showInvoiceDetail, setShowInvoiceDetail] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [invoicesError, setInvoicesError] = useState<string | null>(null);
   const [exportNote, setExportNote] = useState<string | null>(null);
   const [tab, setTab] = useState<'games' | 'players'>('games');
+  /** Read by the poll/visibility handlers, which must not re-register per tab. */
+  const tabRef = useRef<'games' | 'players'>('games');
+  useEffect(() => {
+    tabRef.current = tab;
+  }, [tab]);
   const [players, setPlayers] = useState<PlayerBreakdown | null>(null);
   const [playersLoading, setPlayersLoading] = useState(false);
   const [playersError, setPlayersError] = useState<string | null>(null);
@@ -462,33 +500,64 @@ export default function ClubDataPage() {
   // near-real-time: re-poll on an interval and whenever the tab regains focus
   useEffect(() => {
     if (!clubUuid) return;
+    // Roll `endDate` forward across UTC midnight. It was set once at mount, so
+    // a page left open overnight polled YESTERDAY's window forever: the owner
+    // watched live rake stop growing and the forward arrow silently arm itself.
+    // Only for someone still pinned to today - a deliberate step back stays.
+    const pinToToday = () => {
+      const today = toISODate(new Date());
+      setEndDate((cur) => (cur >= today ? today : cur));
+    };
     const id = setInterval(() => {
+      pinToToday();
       void load(false);
+      if (tabRef.current === 'players') void loadPlayers();
     }, REFRESH_MS);
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void load(false);
+      if (document.visibilityState !== 'visible') return;
+      pinToToday();
+      void load(false);
+      // The Players tab was never refreshed by either trigger, so the tiles
+      // ticked over every minute above a list frozen at whenever it was opened.
+      if (tabRef.current === 'players') void loadPlayers();
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       clearInterval(id);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [clubUuid, load]);
+  }, [clubUuid, load, loadPlayers]);
 
   useEffect(() => {
     if (!clubUuid) return;
     let cancelled = false;
-    supabase
-      .rpc('ca_club_union_invoices', { p_club_id: clubUuid, p_limit: 8 })
-      .then(({ data, error: invErr }) => {
+    supabase.rpc('ca_club_union_invoices', { p_club_id: clubUuid, p_limit: 8 }).then(
+      ({ data, error: invErr }) => {
         if (cancelled) return;
         if (invErr) {
           if (!isAuthzError(invErr)) reportError(invErr, 'ClubDataPage.invoices_rpc');
+          // An empty list hides the whole square-up banner, which an owner
+          // reads as "nothing outstanding". A failed read has to say so.
+          setInvoicesError(
+            isAuthzError(invErr)
+              ? 'You Do Not Have Access To This Club\u2019s Union Statements.'
+              : 'Could Not Load Your Union Statement.'
+          );
           setInvoices([]);
         } else {
+          setInvoicesError(null);
           setInvoices((data as InvoiceRow[]) || []);
         }
-      });
+      },
+      (err: unknown) => {
+        // No rejection handler at all previously: an unhandled promise
+        // rejection, and still a silent banner.
+        if (cancelled) return;
+        reportError(err, 'ClubDataPage.invoices_rpc');
+        setInvoicesError('Could Not Load Your Union Statement.');
+        setInvoices([]);
+      }
+    );
     return () => {
       cancelled = true;
     };
@@ -557,8 +626,22 @@ export default function ClubDataPage() {
     }
   }, [clubUuid, snapshot, startDate, endDate, game, stakes, search, tab, players, sortedPlayers]);
 
-  const latestInvoice = invoices[0] || null;
+  /**
+   * The RPC is asked for 8 statements and nothing orders the result, so
+   * `invoices[0]` was "whatever came back first" - if it ever returns
+   * ascending, the headline square-up figure is the OLDEST of eight. Sort
+   * here rather than trusting the row order of a function we do not own.
+   */
+  const latestInvoice = useMemo(
+    () =>
+      [...invoices].sort((a, b) =>
+        String(b.issued_at || '').localeCompare(String(a.issued_at || ''))
+      )[0] || null,
+    [invoices]
+  );
   const summary = snapshot?.summary;
+  const filtersActive = game !== 'ALL' || stakes !== 'ALL' || search.trim() !== '';
+  const unionOwesClub = latestInvoice?.direction === 'union owes club';
   const delta = snapshot?.delta;
   const prevRange = snapshot?.previous_range;
 
@@ -576,7 +659,10 @@ export default function ClubDataPage() {
         title={prevRange ? `previous period ${prevRange.start} to ${prevRange.end}` : undefined}
       >
         {v > 0 ? '+' : ''}
-        {v}% Vs Prev {preset}d
+        {/* prevRange, not `preset`: the preset flips the instant the button is
+            tapped while the snapshot is still the old window, so this read
+            "Vs Prev 1d" over a 14-day comparison for the whole fetch. */}
+        {v}% Vs Prev {prevRange?.days ?? preset}d
       </div>
     );
   };
@@ -591,7 +677,7 @@ export default function ClubDataPage() {
         title={prevRange ? `previous period ${prevRange.start} to ${prevRange.end}` : undefined}
       >
         {v > 0 ? '+' : ''}
-        {money(v)} Vs Prev {preset}d
+        {money(v)} Vs Prev {prevRange?.days ?? preset}d
       </div>
     );
   };
@@ -710,44 +796,75 @@ export default function ClubDataPage() {
         </button>
       </div>
 
-      <div className={styles.summary}>
+      {/* ZEROS ARE A LIE ON THIS PAGE (Dan 2026-08-25).
+          money(undefined) is "0.00", so any failed RPC - an authz refusal, a
+          timeout, a shapeless payload - painted "Games 0, Total Winnings 0.00,
+          Fee 0.00" in confident green with the real message buried in the list
+          below. On the screen that answers "what do I owe the union", a zero
+          has to mean zero. Dashes while there is no snapshot to read. */}
+      <div className={styles.summary} aria-busy={loading}>
         <div className={styles.tile}>
-          <div className={styles.tileValue}>{compactInt(summary?.games)}</div>
+          <div className={styles.tileValue}>{summary ? compactInt(summary.games) : NO_VALUE}</div>
           <div className={styles.tileLabel}>Games</div>
-          {pctNote(delta?.games_pct)}
+          {summary && pctNote(delta?.games_pct)}
         </div>
         <div className={styles.tile}>
           <div
-            className={`${styles.tileValue} ${Number(summary?.total_winnings || 0) < 0 ? styles.neg : styles.pos}`}
+            className={`${styles.tileValue} ${summary && Number(summary.total_winnings) < 0 ? styles.neg : styles.pos}`}
           >
-            {money(summary?.total_winnings)}
+            {summary ? money(summary.total_winnings) : NO_VALUE}
           </div>
           <div className={styles.tileLabel}>Total Winnings</div>
-          {absNote(delta?.winnings_abs)}
+          {summary && absNote(delta?.winnings_abs)}
         </div>
         <div className={styles.tile}>
           <div
-            className={`${styles.tileValue} ${Number(summary?.mtt_winnings || 0) < 0 ? styles.neg : styles.pos}`}
+            className={`${styles.tileValue} ${summary && Number(summary.mtt_winnings) < 0 ? styles.neg : styles.pos}`}
           >
-            {money(summary?.mtt_winnings)}
+            {summary ? money(summary.mtt_winnings) : NO_VALUE}
           </div>
           <div className={styles.tileLabel}>MTT Winnings</div>
         </div>
         <div className={styles.tile}>
-          <div className={styles.tileValue}>{money(summary?.fee)}</div>
+          <div className={styles.tileValue}>{summary ? money(summary.fee) : NO_VALUE}</div>
           <div className={styles.tileLabel}>Fee</div>
-          {pctNote(delta?.fee_pct)}
+          {summary && pctNote(delta?.fee_pct)}
         </div>
       </div>
 
+      {/* The tiles are filtered by the game/stakes/search chips, which are only
+          RENDERED on the Games tab. Switching to Players left Omaha-only totals
+          sitting above a whole-club per-player breakdown with nothing saying
+          so. Say so. */}
+      {summary && filtersActive && (
+        <div className={styles.footNote} role="status">
+          These Totals Are Filtered{game !== 'ALL' ? ` - ${game}` : ''}
+          {stakes !== 'ALL' ? ` - ${stakes}` : ''}
+          {search ? ` - "${search}"` : ''}.
+          {tab === 'players' ? ' The Player Breakdown Below Is Not.' : ''}
+        </div>
+      )}
+
+      {!latestInvoice && invoicesError && (
+        <div className={`${styles.state} ${styles.error}`} role="alert">
+          {invoicesError}
+        </div>
+      )}
+
       {latestInvoice && (
         <div
+          /* `direction` was read for the LABEL and ignored by the styling, so
+             an invoice where the union owes the club rendered in the red that
+             means "you owe", above a bare unsigned figure. Direction decides
+             the colour and the sign; status only decides whether it is settled. */
           className={`${styles.invoice} ${
             latestInvoice.status === 'paid'
               ? styles.invoicePaid
-              : Number(latestInvoice.amount) > 0
-                ? styles.invoiceOwed
-                : ''
+              : unionOwesClub
+                ? styles.invoiceCredit
+                : Number(latestInvoice.amount) > 0
+                  ? styles.invoiceOwed
+                  : ''
           }`}
         >
           <div className={styles.invoiceTop}>
@@ -756,21 +873,33 @@ export default function ClubDataPage() {
                 ? 'Union owes you'
                 : 'Weekly square-up'}
             </span>
-            <span className={styles.invoiceAmount}>{money(latestInvoice.amount)}</span>
+            <span className={styles.invoiceAmount}>
+              {unionOwesClub ? '+' : Number(latestInvoice.amount) > 0 ? '-' : ''}
+              {money(Math.abs(Number(latestInvoice.amount) || 0))}
+            </span>
           </div>
           <div className={styles.invoiceMeta}>
             {String(latestInvoice.period_start || '').slice(0, 10)} To{' '}
             {String(latestInvoice.period_end || '').slice(0, 10)}
             {latestInvoice.due_at ? ` - due ${String(latestInvoice.due_at).slice(0, 10)}` : ''}
-            {latestInvoice.status ? ` - ${latestInvoice.status}` : ''}
+            {latestInvoice.status ? ` - ${invoiceStatusLabel(latestInvoice.status)}` : ''}
           </div>
 
           {showInvoiceDetail && latestInvoice.breakdown && (
             <div className={styles.invoiceLines}>
               {[
+                // The figures come from the invoice; the percentages used to be
+                // literals, so any club on a non-standard deal got a label that
+                // contradicted its own numbers. Derive them or omit them.
                 ['Rake generated', latestInvoice.breakdown.rake_generated],
-                ['Your rakeback (90%)', latestInvoice.breakdown.rakeback_due],
-                ['Union fee kept (10%)', latestInvoice.breakdown.union_fee_kept],
+                [
+                  `Your rakeback${splitPct(latestInvoice.breakdown.rakeback_due, latestInvoice.breakdown.rake_generated)}`,
+                  latestInvoice.breakdown.rakeback_due,
+                ],
+                [
+                  `Union fee kept${splitPct(latestInvoice.breakdown.union_fee_kept, latestInvoice.breakdown.rake_generated)}`,
+                  latestInvoice.breakdown.union_fee_kept,
+                ],
                 ['Player win/loss', latestInvoice.breakdown.players_won],
                 ['Settled in chips', latestInvoice.breakdown.settled_in_chips],
                 ['ECO adjustment', latestInvoice.breakdown.eco_amount],
@@ -778,7 +907,9 @@ export default function ClubDataPage() {
               ].map(([label, value]) => (
                 <div className={styles.invoiceLine} key={String(label)}>
                   <span>{String(label)}</span>
-                  <span>{money(Number(value || 0))}</span>
+                  {/* money(Number('n/a')) is NaN, and NaN is falsy, so a corrupt
+                      line item printed as a real 0.00. Show that it is missing. */}
+                  <span>{Number.isFinite(Number(value)) ? money(Number(value)) : NO_VALUE}</span>
                 </div>
               ))}
             </div>
@@ -788,8 +919,14 @@ export default function ClubDataPage() {
             type="button"
             className={styles.linkBtn}
             onClick={() => setShowInvoiceDetail((v) => !v)}
+            disabled={!latestInvoice.breakdown}
+            title={latestInvoice.breakdown ? undefined : 'No Line Detail On This Statement'}
           >
-            {showInvoiceDetail ? 'Hide statement' : 'View statement'}
+            {!latestInvoice.breakdown
+              ? 'No Statement Detail'
+              : showInvoiceDetail
+                ? 'Hide statement'
+                : 'View statement'}
           </button>
         </div>
       )}
@@ -849,7 +986,11 @@ export default function ClubDataPage() {
               </>
             )}
 
-            {error && <div className={`${styles.state} ${styles.error}`}>{error}</div>}
+            {error && (
+              <div className={`${styles.state} ${styles.error}`} role="alert">
+                {error}
+              </div>
+            )}
 
             {!loading && !error && snapshot && snapshot.rows.length === 0 && (
               <div className={styles.state}>No Games In This Period.</div>
@@ -857,12 +998,25 @@ export default function ClubDataPage() {
 
             {!error &&
               snapshot?.rows.map((row) => {
+                // Intl, not padStart (CLAUDE.md §5.5) - and padStart could not
+                // see an Invalid Date, so a malformed started_at rendered
+                // "NaN:NaN". en-GB + timeZone UTC gives the same 24h HH:MM and
+                // DD/MM this was hand-rolling, with the guard for free.
                 const started = row.started_at ? new Date(row.started_at) : null;
-                const hhmm = started
-                  ? `${String(started.getUTCHours()).padStart(2, '0')}:${String(started.getUTCMinutes()).padStart(2, '0')}`
+                const validStart = started && Number.isFinite(started.getTime()) ? started : null;
+                const hhmm = validStart
+                  ? validStart.toLocaleTimeString('en-GB', {
+                      timeZone: 'UTC',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
                   : '--:--';
-                const ddmm = started
-                  ? `${String(started.getUTCDate()).padStart(2, '0')}/${String(started.getUTCMonth() + 1).padStart(2, '0')}`
+                const ddmm = validStart
+                  ? validStart.toLocaleDateString('en-GB', {
+                      timeZone: 'UTC',
+                      day: '2-digit',
+                      month: '2-digit',
+                    })
                   : '';
                 const idLabel =
                   row.creator_name ||
@@ -876,12 +1030,23 @@ export default function ClubDataPage() {
                     </div>
 
                     <div className={styles.avatarWrap}>
+                      {/* Sized and error-guarded, matching the player rows below.
+                          This rendered the raw URL with no onError, so a dead
+                          storage object showed the browser's broken-image glyph
+                          and pulled a full-size asset into a 40px box. */}
                       {row.creator_avatar ? (
                         <img
                           className={styles.avatar}
-                          src={row.creator_avatar}
+                          src={sizedStorageUrl(row.creator_avatar, 40)}
                           alt=""
                           loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = generateAvatarSvg(
+                              row.creator_id || row.id,
+                              row.creator_name || row.name || '?'
+                            );
+                          }}
                         />
                       ) : (
                         <div className={styles.avatarFallback} aria-hidden="true">
@@ -928,7 +1093,7 @@ export default function ClubDataPage() {
       )}
 
       {tab === 'players' && (
-        <div className={styles.playersPanel}>
+        <div className={styles.playersPanel} aria-busy={playersLoading}>
           <div className={styles.filterRow} role="tablist" aria-label="Sort players">
             {PLAYER_SORTS.map((o) => (
               <button
@@ -964,7 +1129,9 @@ export default function ClubDataPage() {
             )}
 
             {playersError && (
-              <div className={`${styles.state} ${styles.error}`}>{playersError}</div>
+              <div className={`${styles.state} ${styles.error}`} role="alert">
+                {playersError}
+              </div>
             )}
 
             {!playersLoading && !playersError && players && sortedPlayers.length === 0 && (
@@ -1031,7 +1198,7 @@ export default function ClubDataPage() {
                   : '';
               })()}
               {players.player_count > sortedPlayers.length
-                ? ` Showing ${sortedPlayers.length} of ${compactInt(players.player_count)} players, taken from the top by net.`
+                ? ` Showing ${compactInt(sortedPlayers.length)} of ${compactInt(players.player_count)} players, taken from the top by net.`
                 : ''}
             </div>
           )}
@@ -1047,9 +1214,9 @@ export default function ClubDataPage() {
       {tab === 'games' && snapshot && (
         <div className={styles.footNote}>
           {clubName ? `${clubName} - ` : ''}
-          Showing {snapshot.rows.length} Of {compactInt(snapshot.row_count)} Games
+          Showing {compactInt(snapshot.rows.length)} Of {compactInt(snapshot.row_count)} Games
           {snapshot.data_updated_at
-            ? ` - cash data updated ${new Date(snapshot.data_updated_at).toLocaleTimeString()}`
+            ? ` - cash data updated ${utcTime(snapshot.data_updated_at)}`
             : ''}
         </div>
       )}

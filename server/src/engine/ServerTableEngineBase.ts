@@ -159,8 +159,11 @@ export abstract class ServerTableEngineBase {
 
   // Bible V8 §4.2: Track every userId we've ever seen seated at this table.
   // Used by the dealing loop to detect new joiners after the engine has started
-  // dealing hands — new joiners must wait for the BB to reach their seat
-  // (or opt to post the BB immediately via POST /post-bb).
+  // dealing hands. Since 2026-08-25 a new joiner does NOT wait and does not
+  // post: they are released free on the same loop tick. The registration exists
+  // so the two positional hold-outs can inspect the seat first — a cash player
+  // is never dealt into the small blind, and never gets the button on their
+  // first hand.
   protected knownPlayerIds: Set<string> = new Set();
 
   // Dan 2026-08-25, BINDING: "NEW PLAYERS NEVER GET THE BUTTON WHEN SITTING
@@ -455,8 +458,14 @@ export abstract class ServerTableEngineBase {
   protected currentHandInsuranceSettlements: InsuranceSettlement[] = [];
   protected currentHandBBJHit: BBJDetectionResult | null = null;
   protected currentHandBBJPayoutConfig: ServerRakeConfigResult | null = null;
-  /** Remaining deck cards at hand completion — used for Rabbit Hunt reveal */
-  protected currentHandRabbitCards: import('../types.js').Card[] = [];
+  /**
+   * Rabbit hunt purchases currently mid-flight, by userId. Two taps that race
+   * the RPC both pass the `revealed` check (that set is written only after the
+   * charge returns), so without this they would both succeed and bill twice.
+   */
+  protected rabbitHuntInFlight: Set<string> = new Set();
+  /** Diamond price of a rabbit hunt, read once from `feature_pricing`. */
+  protected rabbitHuntCostCache: number | null = null;
   /**
    * Rabbit hunt offers, keyed by hand number. Dan 2026-08-25.
    *

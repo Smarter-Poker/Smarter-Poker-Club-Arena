@@ -274,6 +274,8 @@ export interface TableModalsLayerProps {
    * claimed five cards regardless of the street the hand actually ended on.
    */
   rabbitCardsAvailable: number;
+  /** Live diamond price from feature_pricing, delivered with the offer. */
+  rabbitDiamondCost?: number | null;
   // One contract, declared once, in the component that consumes it. This shape
   // was written out inline here AND in TablePage AND in RabbitHunt — three
   // copies of the same object, which is three chances for them to drift.
@@ -526,6 +528,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     // Rabbit Hunt
     isRabbitAvailable,
     rabbitCardsAvailable,
+    rabbitDiamondCost,
     onRabbitReveal,
     // Leaderboard
     showLeaderboard,
@@ -1069,6 +1072,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         <RabbitHunt
           isAvailable={isRabbitAvailable}
           cardsAvailable={rabbitCardsAvailable}
+          rabbitDiamondCost={rabbitDiamondCost}
           onReveal={onRabbitReveal}
         />
       )}

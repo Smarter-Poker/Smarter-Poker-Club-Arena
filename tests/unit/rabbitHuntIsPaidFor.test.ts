@@ -210,6 +210,68 @@ describe('who is offered a hunt, and for how many cards', () => {
     expect(SETTLEMENT).toMatch(/offer\?\.boardLength \?\? 5/);
   });
 
+  it('the price shown is the LIVE price, not a client constant', () => {
+    // The migration promises the price "can be repriced without a deploy", and
+    // the client broke that promise: it rendered a hardcoded 5 from
+    // FEATURE_PRICING while the charge came from the feature_pricing row.
+    expect(SETTLEMENT).toMatch(/getRabbitHuntCost/);
+    expect(SETTLEMENT).toMatch(/diamond_cost: diamondCost/);
+    expect(TABLE_PAGE).toMatch(/setRabbitDiamondCost/);
+    expect(COMPONENT).toMatch(/rabbitDiamondCost/);
+  });
+
+  it('only players who were dealt in are offered the button', () => {
+    // The event is a room-wide broadcast, so it has to name who may act on it.
+    // Without that a spectator saw a live button whose only outcome was refusal.
+    expect(SETTLEMENT).toMatch(/eligible_user_ids: Array\.from\(offer\.eligible\)/);
+    expect(TABLE_PAGE).toMatch(/eligible_user_ids/);
+    expect(TABLE_PAGE).toMatch(/heroMayHunt/);
+  });
+
+  it('an offer goes stale instead of staying buyable forever', () => {
+    // "The map holds the last two hands" stops bounding anything the moment a
+    // table stops dealing, leaving an hours-old hand purchasable.
+    expect(SETTLEMENT).toMatch(/RABBIT_HUNT_OFFER_TTL_MS/);
+    expect(SETTLEMENT).toMatch(/offer\.offeredAt > RABBIT_HUNT_OFFER_TTL_MS/);
+  });
+
+  it('two taps racing the RPC cannot both be billed', () => {
+    // `revealed` is written only AFTER the charge returns, so both taps pass it.
+    expect(SETTLEMENT).toMatch(/rabbitHuntInFlight/);
+    const at = SETTLEMENT.indexOf('rabbitHuntInFlight.add');
+    const charge = SETTLEMENT.indexOf('fn_consume_rabbit_hunt');
+    expect(at).toBeGreaterThan(-1);
+    expect(at).toBeLessThan(charge);
+    // Released on every path, or the player is locked out for the engine's life.
+    expect(SETTLEMENT).toMatch(/finally \{[\s\S]{0,220}rabbitHuntInFlight\.delete\(userId\)/);
+  });
+
+  it('a purchased-pack reveal is acknowledged, not silent', () => {
+    // It spends neither diamonds nor a VIP use, so it fell through both toast
+    // branches and the player burned a pack use with no feedback at all.
+    expect(SETTLEMENT).toMatch(/uses_remaining/);
+    expect(TABLE_PAGE).toMatch(/usesRemaining: result\.uses_remaining/);
+    expect(COMPONENT).toMatch(/usesRemaining/);
+  });
+
+  it('the staggered reveal does not flicker', () => {
+    // Inline animationDelay with no fill mode paints each card in its DEFAULT
+    // state during the delay, so all five appear at once, blink out, and
+    // re-animate.
+    const css = read('src/components/table/RabbitHunt.css');
+    expect(css).toMatch(/animation: cardReveal 0\.5s ease backwards/);
+  });
+
+  it('the reveal panel positions itself instead of falling out of the layout', () => {
+    // It renders into a `position: fixed; height: 100dvh; overflow: hidden`
+    // flex column as an unpositioned flex item, so it could sit out of view
+    // entirely — the player pays and sees nothing.
+    const css = read('src/components/table/RabbitHunt.css');
+    const at = css.indexOf('.rabbit-hunt {');
+    expect(at).toBeGreaterThan(-1);
+    expect(css.slice(at, at + 260)).toMatch(/position: fixed/);
+  });
+
   it('a VIP is told how many free hunts are left', () => {
     // vip_remaining is counted by the server on every reveal and was returned
     // all the way to TablePage, then dropped one line from the UI — so the
@@ -218,6 +280,12 @@ describe('who is offered a hunt, and for how many cards', () => {
     expect(COMPONENT).toMatch(/vipRemaining/);
     // And the label must stop claiming FREE once the pool is spent.
     expect(COMPONENT).toMatch(/vipRemaining === 0/);
+    // That only works if the count is known BEFORE the press. The first attempt
+    // set it from the reveal response — which arrives after the press, and the
+    // button is unmounted the moment it has been pressed — so the state was
+    // never non-null while the label was on screen and the 101st hunt still
+    // read FREE. checkVIPStatus already returns monthlyLimits; read it there.
+    expect(COMPONENT).toMatch(/monthlyLimits\?\.rabbitHunts/);
   });
 
   it('the reveal cannot be torn down mid-animation', () => {

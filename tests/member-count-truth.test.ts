@@ -41,6 +41,16 @@ const MIGRATION = read(
 const DIRECT_CLUB_COUNT =
   /from\(\s*['"]club_members['"]\s*\)[\s\S]{0,200}?count:\s*['"]exact['"][\s\S]{0,200}?eq\(\s*['"]club_id['"]/;
 
+/**
+ * The same defect via `.in('club_id', [...])` - the UNION total. The first
+ * version of this guard only matched `.eq(`, and missed this one, which was
+ * still live in the shipped bundle. RLS does not drop a CLUB from that sum, it
+ * drops ROWS, so the union total quietly becomes "members of this union I may
+ * personally enumerate": measured at 593 against a true 1,172.
+ */
+const DIRECT_UNION_COUNT =
+  /from\(\s*['"]club_members['"]\s*\)[\s\S]{0,200}?count:\s*['"]exact['"][\s\S]{0,200}?\.in\(\s*['"]club_id['"]/;
+
 describe('ClubHomePage asks the database the right question', () => {
   it('takes both member counts from the SECURITY DEFINER RPC', () => {
     const uses = HOME.match(/supabase\s*\.?\s*\n?\s*\.rpc\(\s*'fn_get_club_member_count'/g) || [];
@@ -49,6 +59,18 @@ describe('ClubHomePage asks the database the right question', () => {
 
   it('never counts club_members directly by club_id', () => {
     expect(HOME).not.toMatch(DIRECT_CLUB_COUNT);
+  });
+
+  it('takes the UNION total from the batch RPC, not from a filtered scan', () => {
+    expect(HOME).not.toMatch(DIRECT_UNION_COUNT);
+    expect(HOME).toMatch(/rpc\('fn_batch_club_member_counts'/);
+  });
+
+  it('still sums the union without de-duplicating, as specified', () => {
+    // A player in two clubs is two memberships - that is what unions.member_count
+    // holds, and the header must not start disagreeing with the record again.
+    expect(HOME).toMatch(/reduce\(/);
+    expect(HOME).toMatch(/Number\(row\.member_count \?\? 0\)/);
   });
 
   it('coerces the bigint the RPC returns', () => {

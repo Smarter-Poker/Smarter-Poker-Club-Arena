@@ -403,6 +403,15 @@
   color: var(--text-muted);
 }
 
+/* A stalled feed must not look like an empty one. */
+.lcc-error {
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.1);
+  padding: var(--space-4, 0.75rem);
+}
+
 /* ═════════════════════════════════════════════════════════════════ RESPONSIVE ═════ */
 
 @media (max-width: 768px) {

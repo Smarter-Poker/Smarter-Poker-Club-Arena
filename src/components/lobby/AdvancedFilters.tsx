@@ -61,20 +61,54 @@ export function loadFilters(clubId: string): FilterStore {
 
     const clean: FilterStore = {};
     for (const [type, value] of Object.entries(parsed)) {
-      const spec = FILTER_SPECS[type as Exclude<FilterGameType, 'ALL'>];
-      if (!spec || !value) continue;
-      const known = new Set(spec.features.map((f) => f.key));
-      const gameKeys = new Set((spec.games ?? []).map((g) => g.key));
-      const statusKeys = new Set(spec.statuses.map((s) => s.key));
-      clean[type as FilterGameType] = {
-        ...emptyFilterValue(spec),
-        ...value,
-        // Drop keys a previous build wrote that this one no longer defines.
-        games: (value.games ?? []).filter((g) => gameKeys.has(g)),
-        statuses: (value.statuses ?? []).filter((s) => statusKeys.has(s)),
-        mustHave: (value.mustHave ?? []).filter((k) => known.has(k)),
-        hide: (value.hide ?? []).filter((k) => known.has(k)),
-      };
+      /* PER TAB. This loop used to sit inside the outer try alone, so one
+         malformed tab - a `games` saved as a string, say, which throws on
+         `.filter` - discarded the user's OTHER, perfectly valid tabs. */
+      try {
+        const spec = FILTER_SPECS[type as Exclude<FilterGameType, 'ALL'>];
+        if (!spec || !value || typeof value !== 'object') continue;
+        const known = new Set(spec.features.map((f) => f.key));
+        const gameKeys = new Set((spec.games ?? []).map((g) => g.key));
+        const statusKeys = new Set(spec.statuses.map((s) => s.key));
+        const presetKeys = new Set(spec.range.presets.map((pr) => pr.key));
+        const list = (x: unknown) => (Array.isArray(x) ? (x as string[]) : []);
+        const empty = emptyFilterValue(spec);
+        /* NUMBERS ARE UNTRUSTED TOO. `...value` used to overwrite the
+           defaults with whatever was on disk, and nothing checked it.
+           JSON.stringify writes NaN as `null`, so an older build could leave
+           `rangeMin: null` - and the very next thing to touch it is
+           `fmt(value.rangeMin)`, which calls `.toFixed(2)` on it and throws
+           inside render, unmounting the whole lobby. Clamping also repairs a
+           value saved against an older, narrower spec, which otherwise
+           persisted verbatim and silently hid rows. */
+        const clampTo = (x: unknown, lo: number, hi: number, fallback: number) => {
+          const n = Number(x);
+          return Number.isFinite(n) ? Math.min(Math.max(n, lo), hi) : fallback;
+        };
+        clean[type as FilterGameType] = {
+          ...empty,
+          ...value,
+          // Drop keys a previous build wrote that this one no longer defines.
+          games: list(value.games).filter((g) => gameKeys.has(g)),
+          statuses: list(value.statuses).filter((st) => statusKeys.has(st)),
+          mustHave: list(value.mustHave).filter((k) => known.has(k)),
+          hide: list(value.hide).filter((k) => known.has(k)),
+          /* Left unvalidated, one preset key this build no longer defines
+             made matchesPreset false for EVERY row: an empty lobby, no
+             explanation, and no way back except Reset. */
+          selectedRanges: list(value.selectedRanges).filter((k) => presetKeys.has(k)),
+          rangeMin: clampTo(value.rangeMin, spec.range.min, spec.range.max, empty.rangeMin),
+          rangeMax: clampTo(value.rangeMax, spec.range.min, spec.range.max, empty.rangeMax),
+          seatMin: spec.seats
+            ? clampTo(value.seatMin, spec.seats.min, spec.seats.max, empty.seatMin)
+            : empty.seatMin,
+          seatMax: spec.seats
+            ? clampTo(value.seatMax, spec.seats.min, spec.seats.max, empty.seatMax)
+            : empty.seatMax,
+        };
+      } catch (perTab) {
+        reportError(perTab, 'AdvancedFilters.loadFilters.tab', { type });
+      }
     }
     return clean;
   } catch (e) {
@@ -166,6 +200,9 @@ export default function AdvancedFilters({
     [store, activeType, spec]
   );
 
+  /* One step for this spec, shared by both thumbs and both clamps. */
+  const rangeStep = spec ? (spec.range.min < 1 ? 0.01 : 1) : 1;
+
   const patch = useCallback(
     (next: Partial<GameFilterValue>) => {
       setStore((prev) => ({ ...prev, [activeType]: { ...value, ...next } }));
@@ -243,12 +280,12 @@ export default function AdvancedFilters({
         </header>
 
         {!sortOnly && (
-          <div className="afx-tabs" role="tablist" aria-label="Game type">
+          <div className="afx-tabs" role="group" aria-label="Game Type">
             {TABS.filter((t) => t.key !== 'ALL').map((t) => (
               <button
                 key={t.key}
-                role="tab"
-                aria-selected={activeType === t.key}
+                type="button"
+                aria-pressed={activeType === t.key}
                 className={`afx-tab ${activeType === t.key ? 'is-active' : ''}`}
                 onClick={() => setActiveType(t.key)}
               >
@@ -260,7 +297,11 @@ export default function AdvancedFilters({
 
         <div className="afx-body">
           {sortOptions && onSortChange && (
-            <details className="afx-section">
+            /* Open by default in sortOnly mode: it is the ONLY content there,
+               and a sheet titled Sort that shows one collapsed accordion row
+               looks empty on arrival. In full mode there are six sections and
+               collapsed is right. */
+            <details className="afx-section" open={sortOnly}>
               <summary>
                 <h3>Sort By</h3>
               </summary>
@@ -321,16 +362,34 @@ export default function AdvancedFilters({
                       right: `${100 - ((value.rangeMax - spec.range.min) / (spec.range.max - spec.range.min)) * 100}%`,
                     }}
                   />
+                  {/* STEP COMES FROM THE MIN, NOT THE MAX.
+                      `spec.range.max > 100 ? 1 : 0.01` chose whole numbers for
+                      the blinds slider because its max is 5000 - but the
+                      precision is needed at the BOTTOM. A step of 1 based at
+                      min 0.02 makes the only reachable values 0.02, 1.02,
+                      2.02..., so the Micro (0.02-0.2) and Small (0.2-3) tiers
+                      the spec itself defines could not be selected at all.
+                      5000 is not step-valid from that base either, so the max
+                      thumb was silently sanitised to 4999.02 by the browser -
+                      which then read as a permanently active filter that hid
+                      every 5000-blind table.
+
+                      And the thumbs keep a one-step gap. Both inputs sit at
+                      the same coordinates and the max one is later in the DOM,
+                      so it wins the pointer; dragging the min all the way up
+                      buried it underneath, where neither could move and the
+                      range was frozen to a single point with an empty lobby
+                      and no way back but Reset. */}
                   <input
                     type="range"
                     aria-label={`Minimum ${spec.range.label}`}
                     min={spec.range.min}
                     max={spec.range.max}
-                    step={spec.range.max > 100 ? 1 : 0.01}
+                    step={rangeStep}
                     value={value.rangeMin}
                     onChange={(e) =>
                       patch({
-                        rangeMin: Math.min(Number(e.target.value), value.rangeMax),
+                        rangeMin: Math.min(Number(e.target.value), value.rangeMax - rangeStep),
                         selectedRanges: [],
                       })
                     }
@@ -340,11 +399,11 @@ export default function AdvancedFilters({
                     aria-label={`Maximum ${spec.range.label}`}
                     min={spec.range.min}
                     max={spec.range.max}
-                    step={spec.range.max > 100 ? 1 : 0.01}
+                    step={rangeStep}
                     value={value.rangeMax}
                     onChange={(e) =>
                       patch({
-                        rangeMax: Math.max(Number(e.target.value), value.rangeMin),
+                        rangeMax: Math.max(Number(e.target.value), value.rangeMin + rangeStep),
                         selectedRanges: [],
                       })
                     }
@@ -399,7 +458,7 @@ export default function AdvancedFilters({
                       max={spec.seats.max}
                       value={value.seatMin}
                       onChange={(e) =>
-                        patch({ seatMin: Math.min(Number(e.target.value), value.seatMax) })
+                        patch({ seatMin: Math.min(Number(e.target.value), value.seatMax - 1) })
                       }
                     />
                     <input
@@ -409,7 +468,7 @@ export default function AdvancedFilters({
                       max={spec.seats.max}
                       value={value.seatMax}
                       onChange={(e) =>
-                        patch({ seatMax: Math.max(Number(e.target.value), value.seatMin) })
+                        patch({ seatMax: Math.max(Number(e.target.value), value.seatMin + 1) })
                       }
                     />
                   </div>

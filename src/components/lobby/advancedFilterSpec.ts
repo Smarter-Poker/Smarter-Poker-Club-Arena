@@ -199,7 +199,13 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
       { key: 'plo6', label: 'OMAHA 6c' },
       { key: 'short_deck', label: '6+' },
       { key: 'plo8', label: 'OMAHA Hi/Lo' },
-      { key: 'plo_high', label: 'OMAHA High' },
+      /* 'OMAHA High' removed 2026-08-25. `variantKey` can only ever return
+         `plo_high` for an input that is literally that string, and no variant
+         in the database is: game_type across 23,116 tournaments is NLH, PLO4,
+         PLO5, PLO6, PLO8, SHORT_DECK and OFC_PINEAPPLE. Selecting the chip
+         therefore matched zero rows and emptied the MTT tab - the same defect
+         already removed once for the FLH chip above. Plain PLO is covered by
+         the plo4/5/6 chips. */
     ],
     range: BUYIN_RANGE,
     statuses: [
@@ -415,8 +421,12 @@ export function rowPassesFilter(
   }
 
   // ── Price range (blinds for cash, total buy-in for tournaments) ──────────
-  const price = Number(r.price);
-  if (Number.isFinite(price) && price > 0) {
+  /* `> 0` used to be part of this guard, which exempted every FREEROLL from
+     the buy-in filter: a 0 buy-in passed even with only the High tier
+     selected. Zero is a real price here - BUYIN_RANGE's micro preset starts
+     at 0 - so only an absent or unparseable price counts as unknown. */
+  const price = r.price == null ? NaN : Number(r.price);
+  if (Number.isFinite(price)) {
     if (v.selectedRanges && v.selectedRanges.length > 0) {
       const matchesPreset = spec.range.presets.some((p) => {
         if (!v.selectedRanges!.includes(p.key)) return false;

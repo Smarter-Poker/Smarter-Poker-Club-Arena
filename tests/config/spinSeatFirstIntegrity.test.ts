@@ -98,9 +98,24 @@ describe('horses take seats, not just places on a list', () => {
     // per-horse shape.
     expect(recurring).not.toMatch(/pickFreeHorse\(\)/);
 
+    /**
+     * SLICE TO THE TWO METHODS THIS TEST IS ABOUT (2026-08-25).
+     *
+     * The end marker was `private async createSpin`, which is four methods
+     * further down the file, so the count silently covered everything in
+     * between. #805 landed `unseatedRegistrantHorses` in that gap - a read
+     * that runs ONCE PER GAME to fill a seat-first game from its own roster,
+     * not once per horse - and this assertion went red on `main` for a query
+     * it was never written to police. A guard that fails on unrelated code is
+     * a guard nobody can ship past.
+     *
+     * `unseatedRegistrantHorses` is the method immediately after
+     * `pickFreeHorses`, so ending there scopes the count to exactly the pair
+     * named in the comment below, which is what it always claimed to measure.
+     */
     const pick = recurring.slice(
       recurring.indexOf('private async horseLoadMap'),
-      recurring.indexOf('private async createSpin')
+      recurring.indexOf('private async unseatedRegistrantHorses')
     );
     // Exactly one read of each source across horseLoadMap + pickFreeHorses,
     // which together are one call. The batching this protects is unchanged -
@@ -108,6 +123,28 @@ describe('horses take seats, not just places on a list', () => {
     expect((pick.match(/from\('tournament_players'\)/g) || []).length).toBe(1);
     expect((pick.match(/from\('table_seats'\)/g) || []).length).toBe(1);
     expect((pick.match(/from\('profiles'\)/g) || []).length).toBe(1);
+
+    /* #805's roster-full path reads the same three tables to find registrants
+       who hold no seat. Same rule: one batched read each, and no query inside
+       a loop - a per-registrant scan here would be the same saturation by
+       another door, on the same five-second discovery pass. */
+    const unseated = recurring.slice(
+      recurring.indexOf('private async unseatedRegistrantHorses'),
+      recurring.indexOf('private async createSpin')
+    );
+    expect(unseated.length, 'unseatedRegistrantHorses has moved or been renamed').toBeGreaterThan(
+      0
+    );
+    for (const table of ['tournament_players', 'table_seats', 'profiles']) {
+      expect(
+        (unseated.match(new RegExp(`from\\('${table}'\\)`, 'g')) || []).length,
+        `${table} must be read exactly once in unseatedRegistrantHorses`
+      ).toBe(1);
+    }
+    expect(
+      /(for|while)\s*\([\s\S]{0,400}?\.from\(/.test(unseated),
+      'a query inside a loop in unseatedRegistrantHorses is the per-horse shape again'
+    ).toBe(false);
 
     /**
      * ...AND ONCE PER CALL, which the widened window alone no longer proves.

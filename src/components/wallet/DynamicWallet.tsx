@@ -261,10 +261,13 @@ function useAnimatedCounter(target: number, duration = 400): number {
      rendering is a side effect: React 19 may start a render and throw it
      away, leaving the ref holding a number that was never on screen, and the
      next animation would then start from it and visibly jump. */
+  /* Seeded here, then written only by the two places that KNOW the committed
+     value: the settle path and each animation frame. A `useEffect(..., [value])`
+     mirror was tried and removed - passive effects flush on their own schedule,
+     so under load the effect for frame N could land after frame N+1 had already
+     written the ref, moving it BACKWARDS and starting the next animation a
+     frame behind. */
   const currentValueRef = useRef(safeTarget);
-  useEffect(() => {
-    currentValueRef.current = value;
-  }, [value]);
 
   useEffect(() => {
     const start = currentValueRef.current;
@@ -436,6 +439,17 @@ export default function DynamicWallet({
   if (!instanceIdRef.current) {
     instanceIdRef.current = Math.random().toString(36).slice(2, 10);
   }
+  /* AND WITH THE EPOCH. `RealtimeClient.channel(topic)` RETURNS THE EXISTING
+     CHANNEL when one with that topic is still registered, and
+     `removeChannel()` only deregisters when the server acknowledges the leave
+     - a network round trip. React runs an effect's cleanup and its next setup
+     back to back in one synchronous pass, so a reconnect asked for a topic the
+     old channel still held and got that object back, in state 'leaving'.
+     `RealtimeChannel.subscribe()` does all of its work inside
+     `if (this.state === 'closed')`, so it registered no status callback,
+     never joined, and returned silently: no SUBSCRIBED, no CHANNEL_ERROR, no
+     CLOSED, nothing to reconnect it. One epoch-scoped topic per attempt makes
+     a collision impossible. */
 
   // Resolved UUID — DynamicWallet now handles resolution internally.
   // Synchronous from the persisted map on first render whenever the mapping
@@ -471,6 +485,8 @@ export default function DynamicWallet({
   // dead channel left dead, no re-arm, and because retryCountRef only advanced
   // once the backoff never escalated past its first entry.
   const [channelEpoch, setChannelEpoch] = useState(0);
+  /** Topic discriminator: per mounted panel AND per reconnect attempt. */
+  const channelTopicSuffix = `${instanceIdRef.current}-${channelEpoch}`;
 
   // ── Instant-paint cache (Dan 2026-08-23: "wallets need to cache much
   // better") ────────────────────────────────────────────────────────────────
@@ -524,6 +540,9 @@ export default function DynamicWallet({
     // rendered under the new club's header with no skeleton.
     setResolvedId(null);
     setCurrentUnionId(null);
+    /* The union flag belongs to the club being left. Left behind, it decides
+       which ROWS the next club shows before its own panel has answered. */
+    setIsClubInUnion(false);
     setFetchError(false);
     setCachedRole(null);
     paintedKeyRef.current = null;
@@ -634,7 +653,7 @@ export default function DynamicWallet({
      its device cache on whatever it is handed, so a surface passing the slug
      and one passing the UUID kept two divergent cached answers for one club.
      Which OWNER the id resolves to is still the API's decision, untouched. */
-  const spins = useSpinsWallet(resolvedId ?? clubId, variant !== 'union' && !isClubInUnion);
+  const spins = useSpinsWallet(resolvedId, variant !== 'union' && !isClubInUnion);
   const animSpins = useAnimatedCounter(spins.balance);
   const animUnionRake = useAnimatedCounter(data.unionRake);
 
@@ -706,6 +725,17 @@ export default function DynamicWallet({
       // was exactly how Backup BBJ came to render 0.00 once before.
       const panel = ((Array.isArray(panelRes.data) ? panelRes.data[0] : panelRes.data) ??
         {}) as Record<string, unknown>;
+      /* AND `authorized: false` IS NOT A SUCCESS EITHER. fn_club_money_panel
+         answers `{authorized:false, reason}` for no_auth, club_not_found and
+         not_a_member, and that is a RESOLVED rpc with no `error` - so the
+         error check above cannot see it. Every key below is then absent,
+         `num()` returns 0, and the panel used to commit Club Bank 0.00, Bad
+         Beat Jackpot 0.00 and no error badge, then persist those invented
+         zeros to the device cache for the next visit to paint instantly.
+         Raising sends it to the catch, which keeps whatever was on screen. */
+      if (panel.authorized === false) {
+        throw new Error(`fn_club_money_panel refused: ${String(panel.reason ?? 'unknown')}`);
+      }
       const bbj = (panel.bbj ?? {}) as Record<string, unknown>;
       const num = (v: unknown) => Number(v) || 0;
       const unionId = (panel.union_id as string | null) ?? null;
@@ -751,12 +781,16 @@ export default function DynamicWallet({
         scope: (panel.scope as WalletData['scope']) ?? null,
       };
       setData(nextData);
-      /* Only when the RPC actually said so. `Boolean(undefined)` is false, so
-         a panel that answered with nothing used to declare a union club
-         STANDALONE - which adds the Rake Treasury and Spins Wallet rows it
-         does not own, and un-gates the Backup BBJ row holding the union's
-         reserve. Absent means unknown; unknown keeps the last known answer. */
-      if (panel.in_union !== undefined) setIsClubInUnion(Boolean(panel.in_union));
+      /* `in_union` is only present on an authorized panel, which the throw
+         above now guarantees we have - so this is a plain assignment again.
+         The earlier `if (panel.in_union !== undefined)` guard was worse than
+         the unconditional write it replaced: it could never fire on the path
+         it was written for (the refusal branches carry neither `in_union` nor
+         `union_id`), and it PINNED a stale `true` across a club switch, which
+         silently removed a standalone club's Rake Treasury and Spins Wallet
+         rows and stopped useSpinsWallet fetching at all. `union_id` is the
+         same fact from the same object and is the fallback. */
+      setIsClubInUnion(panel.in_union !== undefined ? Boolean(panel.in_union) : unionId !== null);
       setFetchError(false);
       setLoading(false);
 
@@ -919,7 +953,7 @@ export default function DynamicWallet({
     };
 
     const channel = supabase
-      .channel(`dynamic-wallet-${resolvedId}-${userId}-${instanceIdRef.current}`)
+      .channel(`dynamic-wallet-${resolvedId}-${userId}-${channelTopicSuffix}`)
       // 2026-08-24: the `profiles` (id=eq.userId) and `club_members`
       // (user_id=eq.userId) listeners that used to sit here are gone.
       //
@@ -1003,7 +1037,7 @@ export default function DynamicWallet({
 
     // ── Clubs RT channel: chip_treasury + union_id changes ──
     const clubChannel = supabase
-      .channel(`dynamic-wallet-club-${resolvedId}-${instanceIdRef.current}`)
+      .channel(`dynamic-wallet-club-${resolvedId}-${channelTopicSuffix}`)
       .on(
         'postgres_changes',
         {
@@ -1056,7 +1090,7 @@ export default function DynamicWallet({
     // deliberately zeroed.
     if (unionId && variant === 'union') {
       unionWalletChannel = supabase
-        .channel(`dynamic-wallet-union-${unionId}-${instanceIdRef.current}`)
+        .channel(`dynamic-wallet-union-${unionId}-${channelTopicSuffix}`)
         .on(
           'postgres_changes',
           {

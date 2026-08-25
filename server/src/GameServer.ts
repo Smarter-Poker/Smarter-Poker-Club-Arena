@@ -21,6 +21,8 @@ import {
   TournamentRecurringService,
   mttPrestartHorseTarget,
   MTT_PRESTART_RAMP_MS,
+  seatFirstStartStalled,
+  SEAT_FIRST_START_STALL_MS,
 } from './services/TournamentRecurringService.js';
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
@@ -169,6 +171,15 @@ export class GameServer {
    * is polling on its own clock anyway.
    */
   private lastMttRampAt: Map<string, number> = new Map();
+  /**
+   * When each seat-first game was FIRST seen holding every seat it sells.
+   *
+   * The clock for the fully-paid-but-never-started watchdog (2026-08-24 audit
+   * P2-7). Held in memory on purpose: a restart re-arms it, so a fresh process
+   * spends one stall window observing the board before it force-starts
+   * anything on it.
+   */
+  private seatFirstFullSince: Map<string, number> = new Map();
   private running: boolean = false;
   private startTime: number = Date.now();
 
@@ -2153,12 +2164,25 @@ export class GameServer {
     while (this.running) {
       try {
         // Find REGISTERING tournaments ready to start
-        const { data: registering } = await supabase
+        const { data: registering, error: registeringErr } = await supabase
           .from('tournaments')
           .select(
             'id, name, start_time, current_players, min_players, max_players, variant, tournament_type, buy_in_amount, buy_in_fee, guaranteed_prize'
           )
           .eq('status', 'REGISTERING');
+        if (registeringErr) {
+          /* An unreadable board is not an EMPTY board. Discarding this error
+             let a failed read fall through as "nothing is registering", so
+             every start, every ramp and every top-up on the platform stopped
+             for as long as the failure lasted, and the logs said nothing at
+             all. Skip the pass loudly and try again in five seconds. */
+          reportError(
+            new Error(`[GameServer] REGISTERING board read failed: ${registeringErr.message}`),
+            'GameServer.registering_board_read_failed'
+          );
+          await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
+          continue;
+        }
 
         /**
          * PAID SEATS FOR EVERY SEAT-FIRST GAME, IN TWO QUERIES (2026-08-23).
@@ -2448,11 +2472,104 @@ export class GameServer {
           }
         }
 
+        /**
+         * ── FULLY PAID BUT NEVER STARTED (2026-08-24 audit, P2-7) ──
+         *
+         * Every other watchdog on the platform proves a game is broken by
+         * finding evidence it PLAYED: the played-but-REGISTERING sweep below
+         * needs an eliminated/winner/finished row, the decided-but-RUNNING
+         * sweep needs an elimination. A game that never dealt a card cannot
+         * produce either, so a heads-up that sold both its seats and then sat
+         * there was invisible to all of them — measured at 85 minutes on
+         * 2026-08-24, with the money already taken.
+         *
+         * The evidence THIS one runs on is the only evidence such a game has:
+         * every seat it sells is sold, and it is still REGISTERING. The
+         * failure it catches is specifically a tournamentEngines slot held by
+         * a manager that is no longer running — the top of this loop skips
+         * every id in that map, so such a game is never looked at again by
+         * anything.
+         */
+        {
+          const stallNow = Date.now();
+          const stillSeatFirst = new Set(seatFirstRows.map((t) => String(t.id)));
+          for (const id of this.seatFirstFullSince.keys()) {
+            if (!stillSeatFirst.has(id)) this.seatFirstFullSince.delete(id);
+          }
+
+          for (const t of seatFirstRows) {
+            const id = String(t.id);
+            const seats = Number(t.max_players) || 0;
+            const paid = paidSeatsByTournament.get(id) ?? 0;
+
+            if (seats <= 0 || paid < seats) {
+              // Still filling, or a seat opened up again. Not a stall.
+              this.seatFirstFullSince.delete(id);
+              continue;
+            }
+            const fullSince = this.seatFirstFullSince.get(id) ?? null;
+            if (fullSince === null) {
+              // First pass that saw it full — start the clock, judge nothing.
+              this.seatFirstFullSince.set(id, stallNow);
+              continue;
+            }
+            if (
+              !seatFirstStartStalled({
+                paidSeats: paid,
+                maxPlayers: seats,
+                fullSinceMs: fullSince,
+                now: stallNow,
+                stallMs: SEAT_FIRST_START_STALL_MS,
+              })
+            ) {
+              continue;
+            }
+
+            const held = this.tournamentEngines.get(id);
+            if (held && !held.isRunning()) {
+              // A finished or dead manager still owning the map slot IS the
+              // bug: the start gate at the top of this loop skips it forever.
+              this.tournamentEngines.delete(id);
+            }
+            if (this.tournamentEngines.has(id)) continue;
+
+            reportError(
+              new Error(
+                `[GameServer] ${t.name} (${id.slice(0, 8)}) fully paid ${paid}/${seats} and ` +
+                  `still REGISTERING after ${Math.round((stallNow - fullSince) / 60000)}m — force-starting`
+              ),
+              'GameServer.seat_first_fully_paid_never_started'
+            );
+
+            const stalledTm = new TournamentManager(id, this);
+            this.tournamentEngines.set(id, stalledTm);
+            stalledTm
+              .start()
+              .then(() => this.holdIfBreakIsRunning(stalledTm))
+              .catch((err) => {
+                reportError(err, 'GameServer.seat_first_stall_start_failed');
+                this.tournamentEngines.delete(id);
+              });
+            // Re-arm the clock rather than clearing it: if this start does not
+            // take either, the next attempt is one stall window away and not
+            // one five-second pass away.
+            this.seatFirstFullSince.set(id, stallNow);
+          }
+        }
+
         // Find RUNNING tournaments that need resuming
-        const { data: running } = await supabase
+        const { data: running, error: runningErr } = await supabase
           .from('tournaments')
           .select('id, name')
           .eq('status', 'RUNNING');
+        if (runningErr) {
+          // Same rule as the REGISTERING read: unreadable is UNKNOWN. Reading
+          // it as "nothing is running" silently stops every re-adoption.
+          reportError(
+            new Error(`[GameServer] RUNNING board read failed: ${runningErr.message}`),
+            'GameServer.running_board_read_failed'
+          );
+        }
 
         for (const tournament of running || []) {
           if (this.tournamentEngines.has(tournament.id)) continue;

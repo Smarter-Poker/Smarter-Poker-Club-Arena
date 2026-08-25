@@ -40,6 +40,17 @@ export default function TournamentStandings({
   const hasLoadedOnceRef = useRef(false);
   const isMounted = useIsMounted();
   const [loading, setLoading] = useState(true);
+  /**
+   * A FAILED QUERY IS NOT A FIELD OF ZERO (2026-08-25).
+   *
+   * The error branch below called `setPlayers([])` and dropped out of the
+   * loading state, so a refused or dropped standings query rendered the whole
+   * board as a legitimate result: "Remaining 0", "Eliminated 0", "Still In (0)".
+   * That is a sentence about the tournament, and it was not true - the client
+   * simply never got an answer. Failure now has its own state and its own copy,
+   * and a failing REFRESH keeps the last good board instead of wiping it.
+   */
+  const [loadFailed, setLoadFailed] = useState(false);
   const [visibleActive, setVisibleActive] = useState<Set<number>>(new Set());
   const [visibleEliminated, setVisibleEliminated] = useState<Set<number>>(new Set());
 
@@ -125,12 +136,15 @@ export default function TournamentStandings({
 
       if (error) {
         reportError(error, 'TournamentStandings.Failed_to_load_players');
-        setPlayers([]);
-        if (isMounted.current) setLoading(false);
+        if (isMounted.current) {
+          setLoadFailed(true);
+          setLoading(false);
+        }
         return;
       }
 
       hasLoadedOnceRef.current = true;
+      if (isMounted.current) setLoadFailed(false);
       const mapped: StandingsPlayer[] = (data || []).map((p: any) => ({
         userId: p.user_id,
         displayName: p.username || 'Unknown',
@@ -171,12 +185,17 @@ export default function TournamentStandings({
       staggerTimersRef.current.push(...elimTimers);
     } catch (error) {
       reportError(error, 'TournamentStandings.Failed_to_load_standings');
+      if (isMounted.current) setLoadFailed(true);
     }
     if (isMounted.current) setLoading(false);
   };
 
+  /**
+   * Tournament chips are whole chips. This printed "10,000.00" for a stack that
+   * cannot hold a fraction, which reads as currency and is not.
+   */
   const formatChips = (chips: number): string => {
-    return chips.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return Math.round(chips).toLocaleString('en-US');
   };
 
   const getPositionBadge = (pos?: number): string => {
@@ -198,6 +217,17 @@ export default function TournamentStandings({
     );
   }
 
+  // We could not ask. Do not draw a board of zeros and call it the standings.
+  if (loadFailed && players.length === 0) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.error} role="status">
+          Standings Are Unavailable Right Now. Retrying.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.container}>
       {/* Header */}
@@ -214,6 +244,13 @@ export default function TournamentStandings({
           </span>
         </div>
       </div>
+
+      {/* Last good board is still on screen, but it has stopped updating. */}
+      {loadFailed && (
+        <div className={styles.stale} role="status">
+          Standings Have Stopped Updating. Retrying.
+        </div>
+      )}
 
       {/* Active Players */}
       <div className={styles.section}>

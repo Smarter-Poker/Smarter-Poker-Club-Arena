@@ -63,6 +63,28 @@
   color: #8892a4;
 }
 
+/* "We could not ask" - never styled to pass for an empty result. */
+.error {
+  margin: 12px;
+  padding: 12px 14px;
+  text-align: center;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  font-size: 13px;
+}
+
+.stale {
+  margin: 0 12px 8px;
+  padding: 6px 10px;
+  text-align: center;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  font-size: 12px;
+}
+
 /* Section */
 .section {
   padding: 20px 24px;

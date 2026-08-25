@@ -743,6 +743,25 @@ export async function notifyServerLeave(tableId: string): Promise<ActionResult> 
 }
 
 /**
+ * POST /reject_rebuy — Notify the game server that a player rejected the rebuy modal.
+ */
+export async function notifyServerRejectRebuy(tableId: string): Promise<ActionResult> {
+  try {
+    const headers = await getAuthHeaders();
+    const resp = await fetch(`${GAME_SERVER_URL}/reject_rebuy`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId }),
+    });
+    if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
+    return (await resp.json()) as ActionResult;
+  } catch (err: unknown) {
+    console.warn('[GameServerAPI] notifyServerRejectRebuy failed:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
+/**
  * POST /post-bb — Bible V8 §4.2: Post the BB to enter the next hand
  * immediately, skipping the normal "wait for BB to rotate to your seat" delay.
  *
@@ -798,4 +817,5 @@ export default {
   previewInsurance,
   showHand,
   submitDiscard, // FIX 120: Crazy Pineapple
+  notifyServerRejectRebuy,
 };

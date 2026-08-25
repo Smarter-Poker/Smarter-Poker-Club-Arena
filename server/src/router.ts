@@ -32,6 +32,7 @@ import { handlePreaction } from './handlers/preaction.js';
 import { handleAddchips } from './handlers/addchips.js';
 import { handleWithdrawchips } from './handlers/withdrawchips.js';
 import { handleLeave } from './handlers/leave.js';
+import { handleRejectRebuy } from './handlers/reject_rebuy.js';
 import { handleSitout } from './handlers/sitout.js';
 import { handleStraddle } from './handlers/straddle.js';
 import { handleRit } from './handlers/rit.js';

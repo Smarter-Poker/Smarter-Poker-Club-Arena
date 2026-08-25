@@ -213,6 +213,7 @@ function PotDisplayComponent({
   streetBets = 0,
   collectTo = null,
   handNumber = 0,
+  showChipAnimation = true,
 }: PotDisplayProps) {
   // Chips only belong to the pot once swept to the middle: the top pill shows
   // the collected portion, the lower pill shows what's still in front of seats.
@@ -299,11 +300,6 @@ function PotDisplayComponent({
       aria-live="polite"
       aria-label={`Pot: ${formatAmount(displayPot, currency)}${streetBets > 0 ? `, ${formatAmount(streetBets, currency)} in front of players` : ''}${sidePots && sidePots.length > 0 ? ` plus ${sidePots.length} side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}
     >
-      {/* The collected pot as real chips, floating just above the pill.
-          Absolutely positioned, so adding it does not move the pill — see the
-          file header for why that matters. */}
-      <PotChipPile amount={displayPot} size="pot" />
-
       {/* Main Pot pill — click to toggle chips/BB display */}
       <div
         className={`pot-display__main ${onToggleDisplayMode ? 'pot-display__main--clickable' : ''}`}
@@ -315,6 +311,9 @@ function PotDisplayComponent({
           <AnimatedNumber value={displayPot} duration={350} format={fmt} />
         </span>
       </div>
+
+      {/* ── CHIP PILE ── */}
+      {showChipAnimation && displayPot > 0 && <PotChipPile amount={displayPot} size="pot" />}
 
       {/* Current street's bets — thin pill below the pot; folds into the pot
           total when the street completes and the chips sweep in. */}

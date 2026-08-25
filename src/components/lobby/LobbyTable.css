@@ -646,7 +646,8 @@ abbr.lt-variant[title] {
      confusing" part. data-label comes from the column definition itself, so
      Stakes and Buy-In are never mixed up even though they share a class. */
   .lobby-table td.lt-col-num::before,
-  .lobby-table td.lt-col-players::before {
+  .lobby-table td.lt-col-players::before,
+  .lobby-table td.lt-col-starts::before {
     content: attr(data-label);
     display: block;
     font-size: 0.5625rem;
@@ -660,7 +661,11 @@ abbr.lt-variant[title] {
   /* Values sit in their own recessed well — the counter-depth to the card's
      raised surface. */
   .lobby-table td.lt-col-num,
-  .lobby-table td.lt-col-players {
+  .lobby-table td.lt-col-players,
+  .lobby-table td.lt-col-starts {
+    /* Dan 2026-08-24: "ALL FIELDS SHOULD BE CENTERED UNDER THEIR TITLE, NOT
+       LEFT JUSTIFIED." */
+    text-align: center;
     padding: 3px 7px 4px;
     border-radius: 7px;
     background: rgba(0, 0, 0, 0.32);
@@ -671,6 +676,8 @@ abbr.lt-variant[title] {
   }
 
   .lobby-table td.lt-col-num .lt-mono,
+  .lobby-table td.lt-col-starts .lt-countdown,
+  .lobby-table td.lt-col-starts .lt-dim,
   .lobby-table td.lt-col-players .lt-seats__num {
     font-size: 0.8125rem;
     font-weight: 700;
@@ -713,6 +720,65 @@ abbr.lt-variant[title] {
       inset 0 1px 0 rgba(255, 255, 255, 0.12);
   }
 
+  /* ── ACTIONS ────────────────────────────────────────────────────────────
+     A full-width row along the bottom of the card. Full width because a
+     44px-tall target is the one thing a phone layout must not negotiate, and
+     because the button is the point of the card — everything above it is the
+     reason to press it. */
+  .lobby-table td.lt-col-actions {
+    display: block;
+    flex: 1 1 100%;
+    margin-top: 2px;
+  }
+
+  .lt-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .lt-act {
+    flex: 1 1 0;
+    min-height: 38px;
+    border-radius: 9px;
+    font-size: 0.8125rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      transform 0.08s ease,
+      filter 0.15s ease;
+  }
+  .lt-act:active {
+    transform: translateY(1px);
+    filter: brightness(1.12);
+  }
+
+  .lt-act--primary {
+    color: #04121f;
+    border: 1px solid rgba(120, 205, 255, 0.75);
+    background: linear-gradient(180deg, #7fd8ff 0%, #2b9ee6 55%, #1c7ec0 100%);
+    box-shadow:
+      0 2px 0 rgba(0, 0, 0, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  }
+
+  .lt-act--ghost {
+    color: #cfe0ff;
+    border: 1px solid rgba(120, 160, 240, 0.35);
+    background: linear-gradient(180deg, rgba(46, 58, 84, 0.9), rgba(22, 28, 42, 0.9));
+    box-shadow:
+      0 2px 0 rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  }
+
+  .lt-act--done {
+    color: #9ff0c0;
+    border: 1px solid rgba(46, 213, 115, 0.4);
+    background: linear-gradient(180deg, rgba(26, 66, 44, 0.9), rgba(16, 40, 28, 0.9));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  }
+
   /* Type and variant come back as small chips — they are the "what game is
      this" line, and hiding them is what left the card reading as two numbers
      and a badge. */
@@ -750,11 +816,28 @@ abbr.lt-variant[title] {
      panel shows all four the moment a card is opened, and they are what push
      the card past two lines. Type and variant are NOT in this list any more
      — see the chip styling below. */
-  .lobby-table td.lt-col-starts,
+  /* Rules, speed and the favourite star stay off the card — the panel shows
+     them the moment a card is opened, and they are what push it past its
+     lines. Starting Time is NOT one of them any more: Dan 2026-08-24, "it
+     should have starting time and countdown clocks for when it starts, or how
+     long until late reg is over." That is the single most time-critical fact
+     on a tournament card, so it gets a well of its own beside the buy-in. */
   .lobby-table td.lt-col-fav,
   .lobby-table td.lt-col-rules,
   .lobby-table td.lt-col-speed {
     display: none;
+  }
+
+  .lobby-table td.lt-col-starts {
+    display: block;
+    flex: 0 0 auto;
+  }
+
+  /* The wall-clock start time stays in the headline meta too — it was hidden
+     on phones when the row had no room for it. The card has room, and "starts
+     at 8:00 PM" and "starts in 41 minutes" answer different questions. */
+  .lt-name__clockpart {
+    display: inline;
   }
   /* The MTT title's meta line sheds the wall-clock start time on phones —
      the countdown is the information. If the clock was the first part
@@ -878,5 +961,14 @@ abbr.lt-variant[title] {
 @media (max-width: 768px) {
   .hide-on-mobile {
     display: none !important;
+  }
+}
+
+/* The action buttons are a phone-card affordance. On the desktop board the
+   game-lobby panel is one click away and already carries every commit action,
+   so a ninth column would only make the dense table denser. */
+@media (min-width: 641px) {
+  .lobby-table .lt-col-actions {
+    display: none;
   }
 }

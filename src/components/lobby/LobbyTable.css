@@ -175,11 +175,23 @@
   width: 92px;
 }
 
-/* The Spin headline prize and the measured format read as values, not prose. */
+/* The Spin headline prize is two lines: the multiplier a player shops by, and
+   what it comes to in chips at this buy-in. */
 .lt-payout {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+.lt-payout__x {
   font-weight: 700;
   color: var(--club-blue-light, #5b83e8);
-  font-variant-numeric: tabular-nums;
+}
+.lt-payout__cash {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-tertiary, #8b8f98);
 }
 .lt-format {
   font-weight: 600;
@@ -962,7 +974,7 @@ abbr.lt-variant[title] {
   .lobby-table td.lt-col-starts .lt-countdown,
   .lobby-table td.lt-col-starts .lt-dim,
   .lobby-table td.lt-col-players .lt-seats__num,
-  .lobby-table td.lt-col-payout .lt-payout,
+  .lobby-table td.lt-col-payout .lt-payout__x,
   .lobby-table td.lt-col-leveltime,
   .lobby-table td.lt-col-format .lt-format {
     font-size: 0.8125rem;
@@ -972,8 +984,13 @@ abbr.lt-variant[title] {
   /* ...except the prize ceiling, which keeps the Club Arena blue it carries on
      the desktop board. It is the one number on a Spin card a player is
      actually shopping for. */
-  .lobby-table td.lt-col-payout .lt-payout {
+  .lobby-table td.lt-col-payout .lt-payout__x {
     color: var(--club-blue-light, #7fb0ff);
+  }
+  .lobby-table td.lt-col-payout .lt-payout__cash {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: #eef2f8;
   }
   .lobby-table td.lt-col-leveltime {
     font-size: 0.75rem;
@@ -1003,6 +1020,17 @@ abbr.lt-variant[title] {
     line-height: 1.25;
     white-space: normal;
     overflow-wrap: anywhere;
+  }
+
+  /* ...and the line is RESERVED whether or not there is a name to put in it.
+     Dan 2026-08-25: "the spacing needs to be there even if there isn't a table
+     name." Without this a nameless table's chips and value wells sit a line
+     higher than its neighbour's, so a column of cards has no shared baseline
+     and the eye re-finds every value on every card. A min-height on the title
+     costs one line on the tables that do not need it and buys a straight edge
+     down the whole board. */
+  .lobby-table tr[data-kind='cash'] td.lt-col-name {
+    min-height: 38px;
   }
   .lt-name__line1 {
     white-space: normal;

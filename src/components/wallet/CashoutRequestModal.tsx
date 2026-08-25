@@ -28,7 +28,20 @@ const triggerHaptic = (pattern: number | number[] = 10) => {
   }
 };
 
-const REVERSAL_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+/**
+ * THE TEN MINUTE COUNTDOWN THAT USED TO BE HERE WAS THE WRONG WINDOW.
+ *
+ * This modal rendered "Cancel Window: 9m 41s Remaining" against a pending
+ * cashout, on the same screen as its own footer promising "You Can Cancel
+ * Anytime Before Approval." Both cannot be true, and the footer is the one that
+ * matches the server: fn_cashout_release accepts a player's cancel for as long
+ * as the request is pending, with no clock on it at all.
+ *
+ * The ten minute window is a different rule about different money: an AGENT may
+ * undo a send THEY made for ten minutes (fn_agent_wallet_claim_back). Borrowing
+ * its constant to decorate a cashout told players their chips were about to
+ * become unrecoverable, which was never true.
+ */
 
 // ═══════════════════════════════════════════════════════════════════
 // CASHOUT STEP PROGRESS TRACKER — Shows cashout lifecycle stage
@@ -42,7 +55,7 @@ const CASHOUT_STEPS = [
   { key: 'complete', label: 'Complete', icon: '✅' },
 ];
 
-function CashoutStepTracker({ status, createdAt }: { status: string; createdAt?: string }) {
+function CashoutStepTracker({ status }: { status: string }) {
   // Map CashoutRequest.status → step index
   const stepMap: Record<string, number> = {
     pending: 1, // escrowed/waiting
@@ -52,23 +65,6 @@ function CashoutStepTracker({ status, createdAt }: { status: string; createdAt?:
   };
   const currentStep = stepMap[status] ?? 0;
   const isRejected = status === 'rejected';
-
-  // 10-minute reversal countdown
-  const [remainingMs, setRemainingMs] = useState<number | null>(null);
-  useEffect(() => {
-    if (status !== 'pending' || !createdAt) {
-      setRemainingMs(null);
-      return;
-    }
-    const tick = () => {
-      const elapsed = Date.now() - new Date(createdAt).getTime();
-      const remaining = REVERSAL_WINDOW_MS - elapsed;
-      setRemainingMs(remaining > 0 ? remaining : null);
-    };
-    tick();
-    const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
-  }, [status, createdAt]);
 
   return (
     <>
@@ -95,21 +91,6 @@ function CashoutStepTracker({ status, createdAt }: { status: string; createdAt?:
           );
         })}
       </div>
-      {remainingMs !== null && remainingMs > 0 && (
-        <div
-          style={{
-            textAlign: 'center',
-            fontSize: '0.7rem',
-            color: '#ffa726',
-            padding: '4px 0 2px',
-            fontWeight: 600,
-            letterSpacing: '0.3px',
-          }}
-        >
-          ⏱ Cancel Window: {Math.floor(remainingMs / 60000)}m{' '}
-          {Math.floor((remainingMs % 60000) / 1000)}s Remaining
-        </div>
-      )}
     </>
   );
 }
@@ -411,7 +392,7 @@ export default function CashoutRequestModal({
                       </span>
                       <span className="pending-time">{formatTime(cashout.createdAt)}</span>
                     </div>
-                    <CashoutStepTracker status={cashout.status} createdAt={cashout.createdAt} />
+                    <CashoutStepTracker status={cashout.status} />
                     <button
                       type="button"
                       className="cancel-btn"

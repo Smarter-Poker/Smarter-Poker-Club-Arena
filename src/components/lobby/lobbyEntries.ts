@@ -23,7 +23,10 @@ import { spinMultiplierLabel } from '../../utils/spinReveal';
 import { SPIN_TIERS } from '../../config/spinSpec';
 
 // ─── Raw row shapes (subset the lobby queries actually select) ─────────────
-export interface LobbyTableRow {
+/* Extends CashFeatureSource so the medallion columns travel on the same row
+   the lobby already fetches. Interfaces hoist, so the declaration below is in
+   scope here. */
+export interface LobbyTableRow extends CashFeatureSource {
   id: string;
   name: string;
   game_variant: string;
@@ -67,6 +70,12 @@ export interface LobbyTournamentRow {
    * ladder ceiling until the wheel has actually turned.
    */
   spin_multiplier?: number | null;
+  /**
+   * For a Spin this is `buy_in_amount x spin_multiplier`, written at start
+   * beside the multiplier — so it is exactly as secret as the multiplier is,
+   * and it goes through the same reveal gate. Before the draw it is 0.
+   */
+  prize_pool?: number | null;
 }
 
 // ─── View model ────────────────────────────────────────────────────────────
@@ -189,57 +198,160 @@ const num = (s: Record<string, unknown>, ...keys: string[]): number | null => {
 };
 
 // ─── Cash rule medallions — driven by the REAL table configuration ─────────
-export function cashRuleMedallions(rawSettings: unknown, name: string): RuleMedallion[] {
-  const s = parseTableSettings(rawSettings);
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WHY THIS READS COLUMNS AND NOT `settings` (Dan 2026-08-25)
+ * ───────────────────────────────────────────────────────────────────────────
+ * "you need to add any table specifics and attributes tags next to the buy in
+ *  ... Not one NLH table has this currently." Not one PLO table either.
+ *
+ * The medallions were already being rendered. They were reading the wrong
+ * place. Every one of the 46 live cash tables carries `settings = {}` — an
+ * empty object — because TableConfigPage writes the host's choices to
+ * top-level COLUMNS on `tables`, and only CreateTableModal ever wrote the JSON
+ * blob. So `parseTableSettings` returned {} and every medallion was false, on
+ * every table, forever. Measured on production 2026-08-25: 43 of 46 tables run
+ * it twice, 3 offer insurance, 1 runs bomb pots — and the lobby showed none of
+ * it.
+ *
+ * The columns are also TRIPLICATED (`run_it_twice` / `run_it_twice_enabled` /
+ * `allow_run_it_twice`; `straddle_enabled` / `allow_straddle` /
+ * `enable_straddle`; `bomb_pot_enabled` / `bomb_pots`) and they DISAGREE on
+ * live rows. So a card cannot pick a spelling and hope. Each predicate below
+ * is the one the game server itself evaluates, cited to the line, because the
+ * only defensible thing for a lobby to print is what the engine will actually
+ * do when you sit down.
+ *
+ * Settings-blob keys are still read as a fallback, so a table created through
+ * CreateTableModal (which does write JSON) keeps working.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export interface CashFeatureSource {
+  /* The engine's own select list — server/src/services/supabase/tables.ts. */
+  run_it_twice?: boolean | null;
+  run_it_twice_enabled?: boolean | null;
+  allow_run_it_twice?: boolean | null;
+  insurance_enabled?: boolean | null;
+  straddle_enabled?: boolean | null;
+  straddle_type?: string | null;
+  auto_utg_straddle?: boolean | null;
+  bomb_pot_enabled?: boolean | null;
+  bomb_pot_frequency?: number | null;
+  bomb_pot_double_board?: boolean | null;
+  ante_enabled?: boolean | null;
+  ante?: number | null;
+  seven_deuce_enabled?: boolean | null;
+  seven_deuce_amount?: number | null;
+  time_bank_enabled?: boolean | null;
+  all_in_or_fold?: boolean | null;
+  settings?: unknown;
+}
+
+/** A tri-state column: true / false / absent. Absent is NOT false. */
+const col = (v: unknown): boolean | undefined =>
+  v === true ? true : v === false ? false : undefined;
+
+export function cashRuleMedallions(row: CashFeatureSource, name: string): RuleMedallion[] {
+  const s = parseTableSettings(row.settings);
   const n = (name || '').toLowerCase();
   const rules: RuleMedallion[] = [];
 
-  if (on(s, 'run_it_twice', 'runItTwice') || n.includes('rit')) {
-    rules.push({
-      key: 'rit',
-      label: 'RUN IT TWICE',
-      detail: s.run_it_twice_mandatory === true ? 'ALWAYS' : undefined,
-      tip:
-        s.run_it_twice_mandatory === true
-          ? 'All-in pots always run the remaining cards twice'
-          : 'Players may agree to run the remaining cards twice when all in',
-    });
-  }
-  if (on(s, 'insurance_enabled', 'allInInsurance') || n.includes('insurance')) {
+  /* ServerTableEngineBase: `(run_it_twice ?? true) && (allow_run_it_twice ??
+     true) || run_it_twice_enabled`, and then `&& !insurance_enabled` —
+     insurance takes priority and silently switches RIT off. A card that
+     printed both would be promising something the table will refuse. */
+  const insurance = col(row.insurance_enabled) ?? on(s, 'insurance_enabled', 'allInInsurance');
+  const ritConfigured =
+    ((col(row.run_it_twice) ?? true) && (col(row.allow_run_it_twice) ?? true)) ||
+    (col(row.run_it_twice_enabled) ?? false) ||
+    on(s, 'run_it_twice', 'runItTwice');
+
+  if (insurance) {
     rules.push({
       key: 'insurance',
       label: 'INSURANCE',
-      tip: 'All-in insurance is available at this table',
+      tip: 'All-in insurance is offered here. Insurance and run it twice cannot both be on, so this table does not run it twice',
+    });
+  } else if (ritConfigured) {
+    rules.push({
+      key: 'rit',
+      label: 'RUN IT TWICE',
+      /* No ALWAYS variant. `run_it_mode` has the values 'mandatory_twice' and
+         'mandatory_three', but nothing in the engine reads that column — the
+         runout always asks and always needs every all-in player to agree. A
+         MANDATORY badge would describe a feature the platform does not have. */
+      tip: 'All-in players may agree to run the remaining cards more than once',
     });
   }
-  if (on(s, 'straddle_enabled', 'straddle') || n.includes('straddle')) {
-    const type = String(s.straddle_type || s.straddleType || '').toUpperCase();
+
+  /* ServerTableEngineDealing / ServerTableEngineSeating both gate on
+     `straddle_enabled` alone, and refuse a straddle when it is false. On every
+     live row today that column is false while `allow_straddle` and
+     `enable_straddle` are true — the club-level and legacy spellings, which
+     the engine never loads. Reading those would put a STRADDLE chip on 46
+     tables that reject a straddle. */
+  if (col(row.straddle_enabled) ?? on(s, 'straddle_enabled', 'straddle')) {
+    const auto = col(row.auto_utg_straddle) === true;
     rules.push({
       key: 'straddle',
-      label: 'STRADDLE',
-      detail: type ? type.slice(0, 3) : undefined,
-      tip: type ? `${type} straddle is enabled` : 'Straddling is enabled at this table',
+      label: auto ? 'AUTO STRADDLE' : 'STRADDLE',
+      tip: auto
+        ? 'Under the gun posts a straddle every hand'
+        : 'Players may straddle from under the gun',
     });
   }
-  if (on(s, 'bomb_pot_enabled', 'bombPot') || n.includes('bomb')) {
-    const freq = num(s, 'bomb_pot_frequency', 'bombPotFrequency');
-    const dbl = s.bomb_pot_double_board === true;
+
+  /* `bomb_pot_enabled` with a frequency of 0 deals no bomb pots — the engine
+     requires both (`bomb_pot_enabled && bomb_pot_frequency > 0`). */
+  const bombOn = col(row.bomb_pot_enabled) ?? on(s, 'bomb_pot_enabled', 'bombPot');
+  const bombFreq =
+    Number(row.bomb_pot_frequency) || num(s, 'bomb_pot_frequency', 'bombPotFrequency') || 0;
+  if (bombOn && bombFreq > 0) {
+    const dbl = col(row.bomb_pot_double_board) === true || s.bomb_pot_double_board === true;
     rules.push({
       key: 'bomb',
       label: 'BOMB POTS',
-      detail: freq ? `${freq}%` : undefined,
-      tip: `Bomb pots${freq ? ` on ${freq}% of hands` : ''}${dbl ? ', dealt double board' : ''}`,
+      detail: `1 IN ${bombFreq}`,
+      tip: `A bomb pot every ${bombFreq} hands${dbl ? ', dealt on two boards' : ''}`,
     });
   }
-  if (on(s, 'ante_enabled')) {
-    const amt = num(s, 'ante_amount');
+
+  if (col(row.ante_enabled) ?? on(s, 'ante_enabled')) {
+    const amt = Number(row.ante) || num(s, 'ante_amount') || 0;
     rules.push({
       key: 'ante',
       label: 'ANTE',
-      detail: amt ? amt.toLocaleString() : undefined,
-      tip: amt ? `Every player antes ${amt.toLocaleString()} each hand` : 'Antes are in play',
+      detail: amt > 0 ? amt.toLocaleString() : undefined,
+      tip: amt > 0 ? `Every player antes ${amt.toLocaleString()} a hand` : 'Antes are in play',
     });
   }
+
+  if (col(row.seven_deuce_enabled) ?? on(s, 'seven_deuce_enabled')) {
+    const amt = Number(row.seven_deuce_amount) || num(s, 'seven_deuce_amount') || 0;
+    rules.push({
+      key: 'seven_deuce',
+      label: 'SEVEN DEUCE',
+      detail: amt > 0 ? amt.toLocaleString() : undefined,
+      tip: 'Win with seven-deuce and every player pays you a bonus',
+    });
+  }
+
+  if (col(row.time_bank_enabled) ?? on(s, 'time_bank_enabled')) {
+    rules.push({
+      key: 'time_bank',
+      label: 'TIME BANK',
+      tip: 'Extra time is available for a big decision',
+    });
+  }
+
+  if (col(row.all_in_or_fold) === true) {
+    rules.push({
+      key: 'all_in_or_fold',
+      label: 'ALL IN OR FOLD',
+      tip: 'The only actions are all in and fold',
+    });
+  }
+
   if (on(s, 'double_board', 'doubleBoard')) {
     rules.push({
       key: 'double_board',
@@ -247,39 +359,28 @@ export function cashRuleMedallions(rawSettings: unknown, name: string): RuleMeda
       tip: 'Every hand is dealt with two boards',
     });
   }
-  if (on(s, 'seven_deuce_enabled')) {
-    const amt = num(s, 'seven_deuce_amount');
-    rules.push({
-      key: 'seven_deuce',
-      label: 'SEVEN DEUCE',
-      detail: amt ? amt.toLocaleString() : undefined,
-      tip: 'Win with seven-deuce and every player pays you a bonus',
-    });
-  }
-  if (on(s, 'time_bank_enabled')) {
-    rules.push({
-      key: 'time_bank',
-      label: 'TIME BANK',
-      tip: 'Players have a time bank for big decisions',
-    });
-  }
-  if (on(s, 'vpip_display', 'vpipDisplay') || n.includes('vpip')) {
-    rules.push({
-      key: 'vpip',
-      label: 'VPIP',
-      tip: 'Player VPIP statistics are displayed at the table',
-    });
-  }
-  if (on(s, 'call_time_enabled', 'callTime') || n.includes('call time')) {
-    rules.push({ key: 'call_time', label: 'CALL TIME', tip: 'Call time rules are in effect' });
-  }
-  if (on(s, 'no_rathole', 'noRathole')) {
-    rules.push({
-      key: 'no_rathole',
-      label: 'NO RATHOLE',
-      tip: 'Players must return with their full previous stack',
-    });
-  }
+
+  /* ── FOUR MEDALLIONS DELIBERATELY NOT HERE ──────────────────────────────
+     Dan asked for VPIP and for a minimum-hands rule, and the honest answer is
+     that this platform does not have either yet:
+
+       VPIP        - there is no vpip column on `tables` at all. The seat HUD
+                     shows VPIP to everyone unconditionally, so a chip would
+                     be true of every table and would distinguish nothing.
+       MIN HANDS   - `maintain_hands` is 10 on all 46 rows and is read by
+                     NOTHING. A player can sit, play one hand and leave.
+                     "MIN 10 HANDS" would be a rule the table will not keep.
+       NO RATHOLE  - `no_rathole` has no reader in server/src either.
+       CALL TIME   - `calltime_enabled` likewise, and the old medallion read
+                     `call_time_enabled`, a name that is not even a column.
+
+     They come back the moment the engine enforces them, and not before: a
+     lobby chip is a promise about what happens when you sit down.
+
+     The name-substring fallbacks are gone with them. A table CALLED
+     "NLH 25/50 INSURANCE TEST" whose insurance column is off is a
+     misconfigured table, not an insurance table, and guessing from its title
+     is how the lobby ends up disagreeing with the felt. */
   return rules;
 }
 
@@ -427,7 +528,13 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
          now carries a labelled "Registered 2/3" well of its own (Dan asked for
          it by name), and printing the same fraction twice on a 375px card cost
          a line for nothing. The badge says the STATE; the well says the seats. */
-      if (cap > 0 && taken >= cap) return { key: 'full', label: 'Starting' };
+      /* Dan 2026-08-25: "IF A TABLE ALREADY HAS 3 PLAYERS, IT NEEDS TO SAY
+         RUNNING NOT STARTING." A seat-first game starts on its last bought
+         seat — there is no gap between full and dealing for a player to act
+         in, so "Starting" described a state that lasts no time and invited a
+         tap that can only fail. Running is also what pushes the card to the
+         bottom of the board (see seatFirstJoinable). */
+      if (cap > 0 && taken >= cap) return { key: 'running', label: 'Running' };
       if (taken > 0) return { key: 'registering', label: 'Filling' };
       return { key: 'registering', label: 'Open Seats' };
     }
@@ -483,7 +590,7 @@ export function cashEntry(t: LobbyTableRow): LobbyEntry {
     status: st.key,
     statusLabel: st.label,
     live: (t.current_players || 0) > 0,
-    rules: cashRuleMedallions(t.settings, t.name),
+    rules: cashRuleMedallions(t, t.name),
     raw: t,
   };
 }
@@ -635,6 +742,51 @@ export function spinPayoutLabel(entry: LobbyEntry): string | null {
   return `Win Up To ${SPIN_MAX_MULTIPLIER}x`;
 }
 
+/**
+ * The money underneath the multiplier. Dan 2026-08-25: "YOU NEED TO ADD THE
+ * WIN UP TO 100X THE BUY IN AND SHOW WHAT THE TOP PRIZE IS (BUY IN AMOUNT X
+ * 100 = 100 TOP PRIZE)" and, for a game already under way, "THE PAYOUT
+ * MULTIPLIER SHOULD BE DISPLAYED AFTER ITS DECIDED FOR RUNNING SPINS, PRIZE
+ * POOL XXX".
+ *
+ * "Win Up To 100x" is a ratio, and a ratio is the one thing a player shopping
+ * a board of eight buy-ins cannot compare at a glance. The chips can.
+ *
+ * Before the draw this is arithmetic on the ladder ceiling and gives nothing
+ * away. After it, `prize_pool` IS `buy_in x multiplier`, so it is exactly as
+ * secret as the multiplier and goes through the same gate — printing it early
+ * would leak the draw by division.
+ */
+export function spinPrizeLabel(entry: LobbyEntry): string | null {
+  if (entry.kind !== 'spin') return null;
+  const t = entry.raw as LobbyTournamentRow;
+  const revealed = spinMultiplierLabel(t as Parameters<typeof spinMultiplierLabel>[0]);
+  if (revealed) {
+    const pool = Number(t.prize_pool) || 0;
+    if (pool > 0) return `Prize Pool ${pool.toLocaleString()}`;
+    /* The row has not been re-read since the draw. Derive it from the two
+       numbers that ARE on the card rather than showing nothing. */
+    const derived = (Number(t.buy_in_amount) || 0) * (Number(t.spin_multiplier) || 0);
+    return derived > 0 ? `Prize Pool ${derived.toLocaleString()}` : null;
+  }
+  const top = (Number(t.buy_in_amount) || 0) * SPIN_MAX_MULTIPLIER;
+  return top > 0 ? `Top Prize ${top.toLocaleString()}` : null;
+}
+
+/**
+ * Can a player still buy a seat in this game? Dan 2026-08-25, twice: a running
+ * Spin and a running Heads-Up both "NEED TO BE DROPPED TO THE BOTTOM OF THE
+ * RESULTS". A board sorted by buy-in alone put a sold-out game between two
+ * joinable ones at the same price, which is the row a player taps by mistake.
+ */
+export function seatFirstJoinable(entry: LobbyEntry): boolean {
+  if (entry.kind !== 'spin' && entry.kind !== 'sng') return true;
+  if (entry.status === 'running' || entry.status === 'completed' || entry.status === 'closed')
+    return false;
+  if (entry.capacity > 0 && entry.players >= entry.capacity) return false;
+  return true;
+}
+
 /** "3 Min Levels" / "10 Min Levels" — the blind clock, from level 1. */
 export function levelSpeedLabel(t: LobbyTournamentRow): string | null {
   const structure = parseBlindStructure(t.blind_structure);
@@ -642,7 +794,10 @@ export function levelSpeedLabel(t: LobbyTournamentRow): string | null {
   const mins = blindLevelMinutes(structure, 1);
   if (mins <= 0) return null;
   const rounded = Math.round(mins * 10) / 10;
-  return `${rounded} Min Levels`;
+  /* Just the number. "Levels" used to be in the value and wrapped the well
+     onto three lines on a 375px card, under a heading that already said BLIND
+     LEVELS. The heading carries the noun. */
+  return `${rounded} Min`;
 }
 
 /**
@@ -698,8 +853,12 @@ export function seatsTakenLabel(entry: LobbyEntry): string {
  * named the table. A table with no name beyond its stakes has no second line
  * rather than an empty one.
  */
+/* plo6 was missing from this class until 2026-08-25 and the miss was visible:
+   a table named "PLO6 1/2" kept its whole name as the SUBTITLE, so the card
+   printed "PLO6 1/2" twice, once per line. The class now covers every variant
+   the platform deals. */
 const VARIANT_HEAD =
-  /^\s*(nlhe?|plo[458]?|flh|flo8?|limit[_\s-]?(?:holdem|omaha)|pineapple|short[\s_-]?deck|6\+)\b/i;
+  /^\s*(nlhe?|plo[4568]?|flh|flo8?|limit[_\s-]?(?:holdem|omaha)|pineapple|short[\s_-]?deck|6\+)\b/i;
 const STAKES_HEAD = /^\s*\$?\d+(?:\.\d+)?\s*\/\s*\$?\d+(?:\.\d+)?/;
 
 export function cashTitleLines(entry: LobbyEntry): { headline: string; subtitle: string | null } {

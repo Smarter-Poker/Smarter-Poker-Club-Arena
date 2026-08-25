@@ -1493,12 +1493,23 @@ export class HandController {
       );
       // Merge by user, integer cents throughout so the sum stays exact.
       const byUser = new Map<string, number>();
+      // Keep the evaluated hand alongside the money. Rebuilding these entries as
+      // { userId, amount } alone dropped `hand`, so on every double board the
+      // merged winners carried no hand name and no cards — the board could
+      // neither name the winning hand nor light the cards that made it. Where a
+      // user won both boards, the higher-ranking hand is the one shown.
+      const handByUser = new Map<string, (typeof winners1)[number]['hand']>();
       for (const w of [...winners1, ...winners2]) {
         byUser.set(w.userId, (byUser.get(w.userId) ?? 0) + Math.round(w.amount * 100));
+        const held = handByUser.get(w.userId);
+        if (w.hand && (!held || (w.hand.ranking ?? 0) > (held.ranking ?? 0))) {
+          handByUser.set(w.userId, w.hand);
+        }
       }
       winners = Array.from(byUser.entries()).map(([userId, cents]) => ({
         userId,
         amount: cents / 100,
+        hand: handByUser.get(userId),
       }));
       // Round 2: keep the per-board story for the WINNERS emit below —
       // clients label each board with its own winner + hand name.

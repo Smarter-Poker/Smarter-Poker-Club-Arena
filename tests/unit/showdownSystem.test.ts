@@ -102,3 +102,64 @@ describe('the client RENDERS the sequence, the muck, and the description', () =>
     expect(TABLE_PAGE).toMatch(/SHOWDOWN_REVEAL_STAGGER_MS/);
   });
 });
+
+/**
+ * SHOWDOWN follow-ups 2026-08-25 — the three items Dan approved after the
+ * compliance audit: sequenced multi-pot awards (spec 16/19), stack-update
+ * timing (spec 21), and the prompt-free AUTO-MUCK setting (spec 37).
+ */
+describe('follow-up: pots are AWARDED as a sequence (spec 16/19)', () => {
+  it("the engine names each winner's pot in pot_win", () => {
+    const potWin = EVENTS.slice(EVENTS.indexOf("type: 'pot_win'"));
+    expect(potWin.slice(0, 3400)).toMatch(/pot_index:/);
+  });
+
+  it('the client staggers award groups by the shared spec constant', () => {
+    expect(TABLE_PAGE).toMatch(/POT_AWARD_STAGGER_MS/);
+    expect(TABLE_PAGE).toMatch(/potAwardStaggerTimersRef/);
+    expect(HAND_COMPLETION.POT_AWARD_STAGGER_MS).toBeGreaterThan(0);
+  });
+
+  it('a late side-pot award can never fire into the next hand', () => {
+    // The stagger timers are cancelled in the HAND_STARTED reset and on unmount.
+    const cancels =
+      TABLE_PAGE.match(
+        /for \(const t of potAwardStaggerTimersRef\.current\) clearTimeout\(t\);/g
+      ) || [];
+    expect(cancels.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('follow-up: the stack rises only when the pot arrives (spec 21)', () => {
+  it('winner seats hold stack minus the pending share until release', () => {
+    expect(TABLE_PAGE).toMatch(/stackHoldReleased/);
+    expect(TABLE_PAGE).toMatch(/stack: Math\.max\(0, displayPlayer\.stack - pendingWin\.amount\)/);
+  });
+
+  it('the hold is released by the POT_WIN timer and re-armed at HAND_STARTED', () => {
+    expect(TABLE_PAGE).toMatch(/setStackHoldReleased\(true\)/);
+    expect(TABLE_PAGE).toMatch(/setStackHoldReleased\(false\)/);
+    expect(TABLE_PAGE).toMatch(/stackHoldReleaseTimerRef/);
+  });
+});
+
+describe('follow-up: AUTO-MUCK is a real setting, with no prompt (spec 37)', () => {
+  const SETTINGS_HOOK = strip(read('src/hooks/useTableSettings.ts'));
+  const PANEL = strip(read('src/components/table/SettingsPanel.tsx'));
+
+  it('auto-muck defaults ON', () => {
+    expect(SETTINGS_HOOK).toMatch(/autoMuck:\s*true/);
+  });
+
+  it('switching it off answers the engine muck ruling with a voluntary show — never a prompt', () => {
+    expect(TABLE_PAGE).toMatch(/userSettingsRef\.current\.autoMuck === false/);
+    expect(TABLE_PAGE).toMatch(/GameServerAPI\.showHand\(tableId\)/);
+    expect(TABLE_PAGE).toMatch(/autoShowFiredHandRef/);
+  });
+
+  it('the toggle is back in the table settings panel and round-trips to the autoMuck key', () => {
+    expect(PANEL).toMatch(/Auto-Muck Losing Hands/);
+    expect(PANEL).toMatch(/handleToggle\('autoMuckLosers'\)/);
+    expect(TABLE_PAGE).toMatch(/updateSetting\('autoMuck', settingsUpdate\.autoMuckLosers\)/);
+  });
+});

@@ -60,9 +60,22 @@ export function dealerButtonPosition(seat: Pos): Pos {
   /* Derived from the seat rather than taken as an argument, so every existing
      caller keeps working and no call site can forget to pass it. */
   const factor = isBottomSeat(seat) ? DEALER_BUTTON_FACTOR_HERO : DEALER_BUTTON_FACTOR;
+
+  const dx = 50 - seat.x;
+  const dy = 50 - seat.y;
+
+  // Rotate the direction vector by ~22.5 degrees clockwise so the button sits
+  // to the side of the bet chips instead of directly in their path.
+  const angle = 22.5 * (Math.PI / 180);
+  const cosA = Math.cos(angle);
+  const sinA = Math.sin(angle);
+
+  const rDx = dx * cosA - dy * sinA;
+  const rDy = dx * sinA + dy * cosA;
+
   return {
-    x: seat.x + (50 - seat.x) * factor.x,
-    y: seat.y + (50 - seat.y) * factor.y,
+    x: seat.x + rDx * factor.x,
+    y: seat.y + rDy * factor.y,
   };
 }
 

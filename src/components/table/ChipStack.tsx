@@ -99,7 +99,6 @@ export default function ChipStack({
             // SLIGHTLY OFF SET logic: pseudo-random based on index
             const offsetX = Math.sin(index * 23.45) * 1.5;
             const offsetY = Math.cos(index * 34.56) * 0.5;
-
             return (
               <div
                 key={index}
@@ -109,9 +108,9 @@ export default function ChipStack({
                   height: chipSize * (partial ? 0.12 : 0.2),
                   background: `linear-gradient(135deg, ${denom.color} 0%, ${denom.accent} 100%)`,
                   borderColor: denom.accent,
-                  bottom: index * spacing + offsetY,
+                  bottom: 0,
                   left: offsetX,
-                  zIndex: flattenedChips.length - index,
+                  zIndex: index,
                 }}
               >
                 {/* Clamped stacks print their real count */}

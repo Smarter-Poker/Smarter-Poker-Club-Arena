@@ -83,7 +83,12 @@ describe('a club inside a union has no Spins wallet at all', () => {
   });
 
   it('is not even fetched for a club in a union', () => {
-    expect(wallet).toMatch(/useSpinsWallet\(clubId, variant !== 'union' && !isClubInUnion\)/);
+    /* The GATE is what this test is about: a club inside a union must not
+       even ask. The first argument is the club identifier and is deliberately
+       not pinned - it moved from the raw prop to the resolved UUID so the
+       hook's device cache keys match every other read on the surface, which
+       changes nothing about who owns the wallet. */
+    expect(wallet).toMatch(/useSpinsWallet\([^)]*,\s*variant !== 'union' && !isClubInUnion\)/);
   });
 });
 

@@ -71,6 +71,19 @@ describe('the club lobby paints from one round trip', () => {
 
   it('respects unmount before touching state', () => {
     const rpcBlock = src.slice(at("rpc('get_club_home'"), at('const resolvedId = clubData.id;'));
-    expect(rpcBlock).toContain('if (getIsMounted && !getIsMounted()) return;');
+    /* The mount check is now half of a wider guard. `stale()` compares a
+       per-load token, because `lobbyPainted` is a local of one invocation and
+       could never arbitrate between two DIFFERENT loads: club A's in-flight
+       RPC landing after a switch to club B still painted A over B. Both
+       halves must be present, and they must guard BOTH the players-playing
+       write and the list paint. */
+    expect(rpcBlock).toContain('if (stale() || (getIsMounted && !getIsMounted())) return;');
+    // Declared just above the rpc call, so it is checked against the file.
+    expect(src).toContain('const loadToken = ++loadTokenRef.current;');
+    expect(src).toContain('const stale = () => loadToken !== loadTokenRef.current;');
+    expect(
+      rpcBlock.split('if (stale() || (getIsMounted && !getIsMounted())) return;').length - 1,
+      'both the players-playing write and the list paint must be guarded'
+    ).toBe(2);
   });
 });

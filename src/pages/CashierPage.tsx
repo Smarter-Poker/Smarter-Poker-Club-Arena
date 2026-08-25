@@ -284,6 +284,18 @@ export default function CashierPage() {
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [selectedRecipient, setSelectedRecipient] = useState('');
   const [loadingRecipients, setLoadingRecipients] = useState(false);
+  const [recipientSearch, setRecipientSearch] = useState('');
+
+  const filteredRecipients = useMemo(() => {
+    if (!recipientSearch.trim()) return recipients;
+    const q = recipientSearch.trim().toLowerCase();
+    return recipients.filter(
+      (r) =>
+        r.username.toLowerCase().includes(q) ||
+        r.role.toLowerCase().includes(q) ||
+        (r.id === user?.id && 'you'.includes(q))
+    );
+  }, [recipients, recipientSearch, user?.id]);
 
   // Transaction history state
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -534,11 +546,29 @@ export default function CashierPage() {
       // the else below and was told "regular members can't send chips" - on a
       // page whose own comment two lines down says admins see everyone.
       if (isClubStaff(userRole) || isUnionOwner) {
-        roleFilter = ['agent', 'super_agent', 'sub_agent', 'member', 'player'];
+        roleFilter = [
+          'owner',
+          'co_owner',
+          'admin',
+          'agent',
+          'super_agent',
+          'sub_agent',
+          'member',
+          'player',
+        ];
       } else if (userRole === 'agent' || userRole === 'super_agent') {
-        roleFilter = ['sub_agent', 'member', 'player'];
+        roleFilter = [
+          'owner',
+          'co_owner',
+          'admin',
+          'agent',
+          'super_agent',
+          'sub_agent',
+          'member',
+          'player',
+        ];
       } else if (userRole === 'sub_agent') {
-        roleFilter = ['member', 'player'];
+        roleFilter = ['sub_agent', 'member', 'player'];
       } else {
         // Regular members can't send chips
         setRecipients([]);
@@ -548,21 +578,7 @@ export default function CashierPage() {
 
       // Fetch members — role-based visibility:
       // Union/Club owners + admins: see everyone
-      // Agents/sub-agents: see only their downline (filtered by agent_id)
-      // club_members.agent_id holds the agent's USER id and carries a foreign
-      // key to users. This used to look up the agent's row in `agents` and
-      // filter on agents.id - a different id entirely - so the query could
-      // never match a single row and every agent saw an empty recipient list.
-      // Verified against production: all 1,160 assigned memberships are
-      // user-id shaped and none matches any agents.id. The lookup it needed
-      // was also redundant, because userRole already established that this
-      // person is an agent in this club.
-      // A SUPER AGENT used to fall through to the staff branch and see the
-      // WHOLE CLUB - every player of every other agent, as a chip recipient.
-      // Scope is now asked of the server, which walks club_members.agent_id
-      // downwards, so a super agent gets their agents AND those agents'
-      // players. On SHARK CLUB that is 429 people, not the 26 directly
-      // assigned to them.
+      // Agents/sub-agents: see only their downline (filtered by agent_id) + themselves
       const agentScoped = ['super_agent', 'agent', 'sub_agent'].includes(userRole);
       let downlineIds: string[] | null = null;
       if (agentScoped) {
@@ -572,9 +588,6 @@ export default function CashierPage() {
         );
         if (!isMounted.current || stale()) return;
         const scope = dl as { scoped?: boolean; user_ids?: string[] | null } | null;
-        // `scoped: false` means no restriction; an empty array means an empty
-        // downline. Treating them the same is how an owner gets a blank
-        // cashier, so they are kept apart.
         downlineIds = scope?.scoped === false ? null : (scope?.user_ids ?? []);
       }
 
@@ -591,19 +604,16 @@ export default function CashierPage() {
           .from('club_members')
           .select('user_id, role, display_name, nickname, chip_balance, agent_id')
           .eq('club_id', resolvedId)
-          .neq('user_id', user.id)
           .in('role', roleFilter)
-          // status carries two words for "in this club" - see
-          // tests/unit/clubMemberStatus.test.ts. Asking for one hides most of a
-          // real club; this page previously asked for neither, which also let
-          // banned memberships through as valid recipients.
           .in('status', ['active', 'approved'])
           .order('joined_at', { ascending: true })
           .order('user_id', { ascending: true })
           .range(from, from + PAGE - 1);
         if (agentScoped && downlineIds !== null) {
-          if (downlineIds.length === 0) break; // nobody beneath them
-          query = query.in('user_id', downlineIds);
+          const effectiveDownline = downlineIds.includes(user.id)
+            ? downlineIds
+            : [...downlineIds, user.id];
+          query = query.in('user_id', effectiveDownline);
         }
 
         const { data: page } = await retryFetch(() => query.then((r) => r), {
@@ -1861,6 +1871,15 @@ export default function CashierPage() {
             {/* Recipient Select */}
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>SEND TO:</label>
+              <input
+                type="text"
+                placeholder="Search Member, Role Or (You)..."
+                className={styles.input}
+                style={{ marginBottom: '8px' }}
+                value={recipientSearch}
+                onChange={(e) => setRecipientSearch(e.target.value)}
+                aria-label="Search Recipients"
+              />
               {loadingRecipients ? (
                 <div className={styles.recipientSkeleton} aria-busy="true">
                   <div className={styles.recipientSkeletonBar} />
@@ -1872,21 +1891,29 @@ export default function CashierPage() {
                   onChange={(e) => setSelectedRecipient(e.target.value)}
                 >
                   <option value="">Select Recipient</option>
-                  {recipients.map((r) => {
+                  {filteredRecipients.map((r) => {
+                    const isSelf = r.id === user?.id;
                     const isAgent = ['agent', 'super_agent', 'sub_agent'].includes(r.role);
                     const roleTag =
-                      r.role === 'super_agent'
-                        ? 'SA'
-                        : r.role === 'agent'
-                          ? 'AGT'
-                          : r.role === 'sub_agent'
-                            ? 'SUB'
-                            : '';
+                      r.role === 'owner'
+                        ? 'OWNER'
+                        : r.role === 'co_owner'
+                          ? 'CO-OWNER'
+                          : r.role === 'admin'
+                            ? 'ADMIN'
+                            : r.role === 'super_agent'
+                              ? 'SA'
+                              : r.role === 'agent'
+                                ? 'AGT'
+                                : r.role === 'sub_agent'
+                                  ? 'SUB'
+                                  : '';
                     const commInfo =
                       isAgent && r.commissionRate ? ` ${(r.commissionRate * 100).toFixed(0)}%` : '';
                     const typeInfo = isAgent ? (r.isPrepaid ? ' PP' : ' CR') : '';
                     return (
                       <option key={r.id} value={r.id}>
+                        {isSelf ? '(YOU) ' : ''}
                         {roleTag ? `[${roleTag}${commInfo}${typeInfo}] ` : ''}
                         {r.username} (Bal: {r.balance.toLocaleString()})
                       </option>
@@ -2007,6 +2034,15 @@ export default function CashierPage() {
             {/* Player Selector */}
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>Recipient</label>
+              <input
+                type="text"
+                placeholder="Search Member, Role Or (You)..."
+                className={styles.input}
+                style={{ marginBottom: '8px' }}
+                value={recipientSearch}
+                onChange={(e) => setRecipientSearch(e.target.value)}
+                aria-label="Search Distribute Recipients"
+              />
               {loadingRecipients ? (
                 <div className={styles.recipientSkeleton} aria-busy="true">
                   <div className={styles.recipientSkeletonBar} />
@@ -2018,8 +2054,9 @@ export default function CashierPage() {
                   onChange={(e) => setSelectedRecipient(e.target.value)}
                 >
                   <option value="">Select Player...</option>
-                  {recipients.map((r) => (
+                  {filteredRecipients.map((r) => (
                     <option key={r.id} value={r.id}>
+                      {r.id === user?.id ? '(YOU) ' : ''}
                       {r.username} ({r.role}) - {r.balance.toLocaleString()} Chips
                     </option>
                   ))}

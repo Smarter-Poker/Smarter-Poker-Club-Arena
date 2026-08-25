@@ -311,15 +311,21 @@ export default function CashierTradePage() {
             .range(from, from + PAGE - 1);
 
           if (!isStaff) {
-            if (role === 'super_agent' && downlineIds !== null) {
-              if (downlineIds.length > 0) {
-                q = q.or(`agent_id.is.null,user_id.in.(${downlineIds.join(',')})`);
+            const effectiveDownline =
+              downlineIds !== null
+                ? downlineIds.includes(user.id)
+                  ? downlineIds
+                  : [...downlineIds, user.id]
+                : null;
+            if (role === 'super_agent' && effectiveDownline !== null) {
+              if (effectiveDownline.length > 0) {
+                q = q.or(`agent_id.is.null,user_id.in.(${effectiveDownline.join(',')})`);
               } else {
                 q = q.is('agent_id', null);
               }
-            } else if (isAgent && downlineIds !== null) {
-              if (downlineIds.length === 0) break;
-              q = q.in('user_id', downlineIds);
+            } else if (isAgent && effectiveDownline !== null) {
+              if (effectiveDownline.length === 0) break;
+              q = q.in('user_id', effectiveDownline);
             }
           }
 

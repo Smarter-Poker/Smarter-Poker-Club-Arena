@@ -56,7 +56,8 @@ export function canSeeClubBank(role: unknown): boolean {
  * seeing the bank.
  */
 export function canHoldAgentWallet(role: unknown): boolean {
-  return isAgentRole(normaliseRole(role));
+  const r = normaliseRole(role);
+  return isAgentRole(r) || canSeeClubBank(r);
 }
 
 /**

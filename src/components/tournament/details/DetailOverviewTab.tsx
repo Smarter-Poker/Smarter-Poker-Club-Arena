@@ -55,6 +55,11 @@ import { spinMultiplierLabel } from '../../../utils/spinReveal';
 import { useToast } from '../../common/Toast';
 import RegistrationApprovalsPanel from '../RegistrationApprovalsPanel';
 import { HandForHandBanner } from '../HandForHandBanner';
+import {
+  activationStatusLine,
+  formatCents,
+  topBountyCents,
+} from '../../../services/MysteryBountyService';
 import '../../../styles/tournament-lobby-3d.css';
 import './DetailOverviewTab.css';
 
@@ -147,6 +152,8 @@ export default function DetailOverviewTab({
   blindLevels,
   currentUserId,
   isRegistered,
+  mysteryBounty,
+  onOpenTab,
 }: TournamentTabProps) {
   const toast = useToast();
 
@@ -468,16 +475,34 @@ export default function DetailOverviewTab({
     if (t.is_bounty) {
       const parts = [`${money(Number(t.bounty_amount) || 0)} per KO`];
       if (t.is_pko) parts.push('50% to knocker, 50% to bounty');
-      if (t.is_mystery_bounty && t.mystery_bounty_min != null)
-        parts.push(
-          `Mystery ${money(Number(t.mystery_bounty_min))} - ${money(Number(t.mystery_bounty_max))}`
-        );
+      /* `mystery_bounty_min` / `mystery_bounty_max` used to be appended here.
+         They were a per-head advertised RANGE drawn at registration time, and
+         since the chest inventory shipped (2026-08-25) the engine does not read
+         them at all: the draw now happens once, when the mystery phase opens,
+         and produces a real ladder. Printing the dead columns told a player a
+         number nothing would ever pay. The advertisement is the TOP CHEST THAT
+         EXISTS, two rows below, off the same fetch that feeds the Rewards
+         ladder. */
       rows.push({
         key: 'bounty',
         label: 'Bounty',
         value: parts.join(' - '),
         wide: true,
         tone: 'danger',
+      });
+    }
+    if (t.is_mystery_bounty) {
+      const top = topBountyCents(mysteryBounty?.inventory ?? null);
+      rows.push({
+        key: 'mysterytop',
+        label: 'Top Mystery Bounty',
+        value: top > 0 ? `${formatCents(top)} Chips` : 'Drawn When The Mystery Phase Opens',
+        tone: 'accent',
+      });
+      rows.push({
+        key: 'mysterystatus',
+        label: 'Mystery Status',
+        value: activationStatusLine(mysteryBounty?.inventory ?? null),
       });
     }
     if (t.variant === 'spin' || t.tournament_type === 'SPIN') {
@@ -496,7 +521,7 @@ export default function DetailOverviewTab({
       });
     }
     return rows;
-  }, [tournament, blindLevels, isRunning, isCompleted, field.entries]);
+  }, [tournament, blindLevels, isRunning, isCompleted, field.entries, mysteryBounty?.inventory]);
 
   /* ── Podium, for a finished event. ── */
   const podium = useMemo(() => {
@@ -740,6 +765,16 @@ export default function DetailOverviewTab({
             </div>
           ))}
         </dl>
+
+        {/* The full chest ladder lives on Rewards, because Dan asked that tab
+            for "the total bounty pool and whats left or 'still available' in
+            the mystery bounty pool" - the same question. This is the link, not
+            a second copy of the ladder. */}
+        {Boolean(tournament.is_mystery_bounty) && onOpenTab && (
+          <button type="button" className="dov-ladder-link" onClick={() => onOpenTab('rewards')}>
+            Open The Full Mystery Ladder
+          </button>
+        )}
       </div>
     </section>
   );

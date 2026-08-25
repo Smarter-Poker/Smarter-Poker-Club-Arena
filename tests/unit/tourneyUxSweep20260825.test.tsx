@@ -44,6 +44,8 @@ const ANNOUNCE = 'src/components/table/TournamentAnnouncementOverlay.tsx';
 const HUD = 'src/components/tournament/TournamentHUD.tsx';
 const DETAILS = 'src/pages/tournament/TournamentDetails.tsx';
 const STANDINGS = 'src/components/tournament/TournamentStandings.tsx';
+const ENTRIES_TAB = 'src/components/tournament/details/EntriesTab.tsx';
+const RANKING_TAB = 'src/components/tournament/details/RankingTab.tsx';
 const REG_HOOK = 'src/hooks/useTournamentRegistration.ts';
 const SIGNUP_TSX = 'src/components/tournament/signUpDialog.tsx';
 const SIGNUP_CSS = 'src/components/tournament/signUpDialog.css';
@@ -109,17 +111,46 @@ describe('Item 1 - a running tournament can be watched', () => {
     expect(src).toMatch(/const watchable = !!\(onWatchPlayer && player\.tableId\)/);
   });
 
+  /* MOVED 2026-08-25 (same commit): the details page no longer draws the entry
+     list or the ranking board inline - they are EntriesTab and RankingTab, and
+     the page hands them `onWatchPlayer` through the tab contract. The
+     behaviour Dan asked for is unchanged, so these two assert it at its new
+     address rather than at the old one. */
   it('an Entries row for a seated player is a route to that table', () => {
-    const src = code(read(DETAILS));
-    expect(src).toMatch(/const watchable = isRunning && isPlaying && !!entry\.table_id/);
-    expect(src).toMatch(/watchTable\(entry\.table_id as string\)/);
+    const src = code(read(ENTRIES_TAB));
+    // Still playing, still holding a table, and only when the page offered a
+    // handler at all - which it does only for a RUNNING event.
+    expect(src).toMatch(
+      /const watchable = !!onWatchPlayer && entry\.status === 'playing' && !!entry\.table_id/
+    );
+    expect(src).toMatch(/onWatchPlayer\?\.\(entry\.table_id as string\)/);
   });
 
   it('Ranking rows are only clickable while the tournament is RUNNING', () => {
+    // The page is the single gate: no handler unless the event is running.
+    const page = code(read(DETAILS));
+    expect(page).toMatch(/onWatchPlayer: isRunning \? watchTable : undefined/);
+    expect(page).toMatch(/const isRunning = tournament\?\.status === 'RUNNING'/);
+
+    // And the tab honours it rather than deriving a second rule of its own.
+    const src = code(read(RANKING_TAB));
+    expect(src).toMatch(/const eventRunning = Boolean\(onWatchPlayer\)/);
+    expect(src).toMatch(/const watchable = eventRunning && !out && !!entry\.table_id/);
+  });
+
+  it('every tab is mounted from one shared props object, not seven call sites', () => {
     const src = code(read(DETAILS));
-    expect(src).toMatch(
-      /onWatchPlayer=\{tournament\.status === 'RUNNING' \? watchTable : undefined\}/
-    );
+    for (const tab of [
+      'DetailOverviewTab',
+      'BlindsTab',
+      'RankingTab',
+      'EntriesTab',
+      'UnionsTab',
+      'TablesTab',
+      'RewardsTab',
+    ]) {
+      expect(src).toMatch(new RegExp(`<${tab} \\{\\.\\.\\.tabProps\\} />`));
+    }
   });
 });
 

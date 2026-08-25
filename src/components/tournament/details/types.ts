@@ -22,6 +22,61 @@
  */
 
 import type { Tournament } from '../../../types/database.types';
+import type { UseMysteryBountyResult } from '../../../hooks/useMysteryBounty';
+
+/**
+ * SEVEN TABS. Dan 2026-08-25, verbatim: "CHIPS SHOULD BE CALLED 'RANKING'" and
+ * "RANKING SHOULD BE DELETED, AS WE CONVERTED 'CHIPS' TO RANKING." The old
+ * `chips` tab is the one that survived, under the name Ranking; the old
+ * `ranking` tab (a TournamentStandings wrapper) is gone.
+ *
+ * The mystery bounty ladder is NOT an eighth tab. Dan asked Rewards to show
+ * "the total bounty pool and whats left or 'still available' in the mystery
+ * bounty pool", which is the same question, so the ladder renders inside
+ * Rewards. See RewardsTab.
+ */
+export type TabId = 'detail' | 'blinds' | 'ranking' | 'entries' | 'unions' | 'tables' | 'rewards';
+
+export const TAB_IDS: readonly TabId[] = [
+  'detail',
+  'blinds',
+  'ranking',
+  'entries',
+  'unions',
+  'tables',
+  'rewards',
+];
+
+export const TABS: readonly { id: TabId; label: string }[] = [
+  { id: 'detail', label: 'Detail' },
+  { id: 'blinds', label: 'Blinds' },
+  { id: 'ranking', label: 'Ranking' },
+  { id: 'entries', label: 'Entries' },
+  { id: 'unions', label: 'Unions' },
+  { id: 'tables', label: 'Tables' },
+  { id: 'rewards', label: 'Rewards' },
+];
+
+/**
+ * Ids that used to exist and can still be asked for - from a bookmark, a shared
+ * link, or anything that stored a tab id before the rename. `chips` IS Ranking
+ * now, so it must land there rather than on a blank page; `payouts` was in the
+ * union before Rewards absorbed it; `mystery` was a conditional tab that the
+ * Rewards tab now carries. Anything else, including an empty string, opens
+ * Detail.
+ */
+const LEGACY_TAB_IDS: Record<string, TabId> = {
+  chips: 'ranking',
+  payouts: 'rewards',
+  mystery: 'rewards',
+};
+
+/** The only way a tab id enters the lobby. Never throws, never returns junk. */
+export function normaliseTabId(raw: string | null | undefined): TabId {
+  const key = (raw || '').trim().toLowerCase();
+  if ((TAB_IDS as readonly string[]).includes(key)) return key as TabId;
+  return LEGACY_TAB_IDS[key] ?? 'detail';
+}
 
 /** One registered player, as the lobby understands them. */
 export interface TournamentEntry {
@@ -79,6 +134,33 @@ export interface TournamentTabProps {
   currentUserId?: string;
   /** True once this player holds an entry in this event. */
   isRegistered: boolean;
+
+  /**
+   * Open a table as a spectator (Dan 2026-08-25: "see any player and be
+   * redirected to that table directly").
+   *
+   * Absent when nothing is watchable - a tab must treat that as "do not offer
+   * the link", never as "navigate anyway". The page supplies it only while the
+   * tournament is RUNNING, because a finished event's `table_id`s point at
+   * closed felts.
+   *
+   * Ranking and Tables call `openTableAsObserver` themselves and do not need
+   * this; Entries does, because it holds no navigate of its own.
+   */
+  onWatchPlayer?: (tableId: string) => void;
+
+  /**
+   * The mystery bounty ladder, fetched ONCE by the page from
+   * `useMysteryBounty` and shared. Detail advertises the top chest off it and
+   * Rewards renders the full panel from the same object, so the two surfaces
+   * cannot disagree and a freezeout makes no RPC calls at all.
+   *
+   * Null or undefined for every event that is not a mystery bounty.
+   */
+  mysteryBounty?: UseMysteryBountyResult | null;
+
+  /** Switch tabs from inside a tab (Detail sends the ladder link to Rewards). */
+  onOpenTab?: (tab: TabId) => void;
 }
 
 /** Chips, always whole, always grouped. Never `padStart`. */

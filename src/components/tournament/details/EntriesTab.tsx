@@ -96,7 +96,7 @@ function publicId(entry: TournamentEntry, detail?: EntryDetail): string | null {
   return null;
 }
 
-export default function EntriesTab({ tournament, entries }: TournamentTabProps) {
+export default function EntriesTab({ tournament, entries, onWatchPlayer }: TournamentTabProps) {
   const [details, setDetails] = useState<Record<string, EntryDetail>>({});
 
   const tournamentId = tournament?.id;
@@ -298,8 +298,18 @@ export default function EntriesTab({ tournament, entries }: TournamentTabProps) 
           const avatarUrl = detail?.avatarUrl || entry.avatar_url;
           const isReentry = reentryIds.has(entry.id);
 
-          return (
-            <li key={entry.id} className="tl-row et-row">
+          /* Dan 2026-08-25: "see any player and be redirected to that table
+             directly." `table_id` has always been on these rows and was never
+             used by them. A player who is still IN, at a table, in a RUNNING
+             event, is a route to that table.
+
+             `onWatchPlayer` is absent unless the page says the event is
+             running, so a finished event's rows - whose table ids point at
+             closed felts - are plain list items, not dead links. */
+          const watchable = !!onWatchPlayer && entry.status === 'playing' && !!entry.table_id;
+
+          const body = (
+            <>
               {/* Registration ordinal. This is NOT a rank and never moves as
                   the tournament plays out — #3 entered third, forever. */}
               <span className="tl-rank et-ordinal" aria-label={`Entry ${index + 1}`}>
@@ -336,6 +346,27 @@ export default function EntriesTab({ tournament, entries }: TournamentTabProps) 
                   </span>
                 )}
               </span>
+            </>
+          );
+
+          if (!watchable) {
+            return (
+              <li key={entry.id} className="tl-row et-row">
+                {body}
+              </li>
+            );
+          }
+
+          return (
+            <li key={entry.id} className="et-item">
+              <button
+                type="button"
+                className="tl-row tl-row--interactive et-row et-row--watch"
+                onClick={() => onWatchPlayer?.(entry.table_id as string)}
+                aria-label={`Watch ${entry.username} at their table`}
+              >
+                {body}
+              </button>
             </li>
           );
         })}

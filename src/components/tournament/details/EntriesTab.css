@@ -146,3 +146,27 @@
     transform: none;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   A ROW THAT LEADS SOMEWHERE
+
+   Only a player who is still IN, at a table, in a RUNNING event gets a
+   button (Dan 2026-08-25). Every other row stays a plain list item, so this
+   can never advertise a link that does nothing. The <li> carries no layout of
+   its own here; the button is the row.
+   ───────────────────────────────────────────────────────────────────────── */
+.et-item {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.et-row--watch {
+  width: 100%;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}

@@ -1829,8 +1829,34 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       return false;
     };
 
+    /* Dan 2026-08-24: "WHEN A TOURNAMENT MOVES PAST THE REBUY/ADD-ON PHASE IT
+       ENTERS RUNNING, WHERE IT SHOULD STILL DISPLAY AT THE BOTTOM OF THE MTT
+       PAGE AS EVENTS THAT ARE RUNNING, WHERE PEOPLE CAN CLICK AND WATCH AND
+       SEE THE EVENTS FINISH UP."
+
+       The list used to drop a tournament the instant late registration closed,
+       so a club's biggest event of the night vanished from its own lobby at
+       the exact moment it got interesting. Being enterable and being worth
+       showing are two different questions: this one decides what is LISTED,
+       stillEnterable() above still decides what can be JOINED, and the card's
+       buttons read that to offer Watch instead of Register.
+
+       They sort to the bottom on their own — compareTournaments already ranks
+       RUNNING below anything still open. */
+    const isListable = (t: TournamentData) => {
+      const status = String(t.status).toUpperCase();
+      return [
+        'REGISTERING',
+        'LATE_REG',
+        'LATE_REGISTRATION',
+        'STARTING_SOON',
+        'RUNNING',
+        'IN_PROGRESS',
+      ].includes(status);
+    };
+
     const rows = tournaments.filter((t) => {
-      if (!stillEnterable(t)) return false;
+      if (!isListable(t)) return false;
       if (q && !((t.name as string) || '').toLowerCase().includes(q)) return false;
       if (!matchesVariant(t, variant)) return false;
 

@@ -260,6 +260,97 @@ describe('a table move must never leave a player holding two live seats', () => 
   });
 });
 
+describe('no seating path may write a second live seat in the same tournament', () => {
+  /**
+   * WHY THE GUARD ABOVE DID NOT CATCH THIS.
+   *
+   * The guard above pins ONE branch of ONE writer: the error rollback in
+   * executePlayerMoves, where a committed-but-errored destination write used
+   * to be undone by re-activating the source. That branch is fine and stayed
+   * fine. The 144 duplicate rows measured on production did not come through
+   * it — they came from the SEATING paths, which the guard says nothing about.
+   *
+   * `createTablesAndSeatPlayers` reads `alreadySeated` ONCE and then writes
+   * one seat per statement for the whole field. On tournament
+   * bae46dbf-7cf6-42c0-a709-c38a97306a08 ("$100 Freeroll 12:00 PM",
+   * 497 entrants) that loop ran from 17:11:39 to 17:16:44 on 2026-08-25. A
+   * second pass over the same tournament inside that window takes its own
+   * snapshot, sees every not-yet-written player as unseated, and seats them
+   * again — 72 players, 144 live seats, 46 of the pairs exactly 14 tables
+   * apart, which is two round-robin cursors walking one table list.
+   * `ensureLateRegSeated` holds the same shape of snapshot beside it.
+   *
+   * `idx_unique_active_user_per_table` is UNIQUE (table_id, user_id) WHERE
+   * left_at IS NULL — per TABLE. It cannot object to the second seat, because
+   * the second seat is at a different table.
+   *
+   * So the rule is not "the snapshot said they were unseated". The rule is
+   * that every writer re-asks the database immediately before it writes.
+   */
+  const SEAT_CLAIM = read('src/tournament/seatClaim.ts');
+
+  it('the claim is scoped to the TOURNAMENT, not to one table', () => {
+    const src = code(SEAT_CLAIM);
+    // Reached through the join, because table_seats carries no tournament_id.
+    expect(src).toContain('tables!inner(tournament_id)');
+    expect(src).toMatch(/eq\('tables\.tournament_id'/);
+    expect(src).toMatch(/is\('left_at',\s*null\)/);
+  });
+
+  it('an unreadable claim refuses the seat instead of granting it', () => {
+    const src = code(SEAT_CLAIM);
+    // A read error must not collapse into "no seats found".
+    expect(src).toMatch(/ok:\s*false/);
+    expect(src).toMatch(/unknown:\s*true/);
+    // Never `allowed: true` on the error path.
+    const errBranch = src.slice(
+      src.indexOf('if (!found.ok)'),
+      src.indexOf('if (found.seats.length')
+    );
+    expect(errBranch).not.toMatch(/allowed:\s*true/);
+  });
+
+  it('start-seating claims the seat against the DB, not against its snapshot', () => {
+    const src = code(BASE);
+    const fn = src.slice(src.indexOf('createTablesAndSeatPlayers(tournament: any)'));
+    const loop = fn.indexOf('for (let i = 0; i < toSeat.length; i++)');
+    const insert = fn.indexOf("from('table_seats').insert(", loop);
+    expect(loop).toBeGreaterThan(-1);
+    expect(insert).toBeGreaterThan(loop);
+    // Structural: between entering the per-player loop and inserting the seat
+    // there must be a claim, and a refusal must skip the player.
+    const window = fn.slice(loop, insert);
+    expect(window).toMatch(/mayTakeSeat\(/);
+    expect(window).toMatch(/claim\.allowed/);
+    expect(window).toMatch(/\bcontinue;/);
+  });
+
+  it('the late-reg sweep claims the seat before it writes one', () => {
+    const src = code(MANAGER);
+    const fn = src.slice(src.indexOf('ensureLateRegSeated()'));
+    // Anchor on the SEAT write, not on the first `.update(` in the method —
+    // the roster promotion for a full-house player is written before it.
+    const write = fn.search(/from\('table_seats'\)[\s\S]{0,40}\.update\(/);
+    expect(write).toBeGreaterThan(-1);
+    const window = fn.slice(0, write);
+    expect(window).toMatch(/mayTakeSeat\(/);
+    expect(window).toMatch(/\bcontinue;/);
+  });
+
+  it('a move stands down rather than adding a third live seat', () => {
+    const src = code(MANAGER);
+    const fn = src.slice(src.indexOf('executePlayerMoves(moves: MoveInstruction[])'));
+    const claim = fn.indexOf('mayTakeSeat(');
+    const vacate = fn.indexOf('update({ left_at: new Date().toISOString() })');
+    expect(claim).toBeGreaterThan(-1);
+    // Checked BEFORE the source seat is stamped, so a refusal touches nothing.
+    expect(claim).toBeLessThan(vacate);
+    // The source table is the one seat that does not count against the move.
+    expect(fn.slice(claim, claim + 200)).toContain('move.fromTableId');
+    expect(fn).toMatch(/Move_aborted_player_already_seated_twice/);
+  });
+});
+
 describe('seating a tournament twice must not build a second set of tables', () => {
   /**
    * start() calls createTablesAndSeatPlayers BEFORE the

@@ -101,7 +101,6 @@ const PromotionsPage = lazyWithRetry(() => import('./pages/PromotionsPage'));
 const ClubSettingsPage = lazyWithRetry(() => import('./pages/ClubSettingsPage'));
 const TransactionHistoryPage = lazyWithRetry(() => import('./pages/TransactionHistoryPage'));
 const InvitePage = lazyWithRetry(() => import('./pages/InvitePage'));
-const TableCreationPage = lazyWithRetry(() => import('./pages/TableCreationPage'));
 const ReportPlayerPage = lazyWithRetry(() => import('./pages/ReportPlayerPage'));
 const ReportReviewPage = lazyWithRetry(() => import('./pages/ReportReviewPage'));
 const ClubAnnouncementsPage = lazyWithRetry(() => import('./pages/ClubAnnouncementsPage'));
@@ -1442,16 +1441,6 @@ export default function App() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="Clubs List">
                         <ClubsPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
-                />
-                <Route
-                  path="clubs/:clubId/table-creation"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Table Creation">
-                        <TableCreationPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

@@ -255,8 +255,24 @@ describe('spins say what they pay and how they play (Dan 5)', () => {
     expect(spinPayoutLabel(spin())).toBe('Win Up To 100x');
   });
 
-  it('shows the drawn multiplier once there is one', () => {
-    expect(spinPayoutLabel(spin({ spin_multiplier: 25 }))).toBe('25x');
+  it('will not print a drawn multiplier while the Spin is still filling', () => {
+    // THE DRAW IS THE PRODUCT. utils/spinReveal exists because five surfaces
+    // once printed it independently; a lobby card is not allowed to become the
+    // sixth. A row that somehow carries a multiplier before the wheel turns
+    // still advertises the ladder.
+    expect(spinPayoutLabel(spin({ spin_multiplier: 25 }))).toBe('Win Up To 100x');
+  });
+
+  it('shows it once the game is actually under way', () => {
+    expect(spinPayoutLabel(spin({ spin_multiplier: 25, status: 'RUNNING' }))).toBe('25x');
+  });
+
+  it('never sorts the board by a number it is hiding', () => {
+    // Sorting by an unrevealed multiplier would leak the draw through the
+    // ORDER of the rows, which is the same leak by another route.
+    const col = TSX.slice(TSX.indexOf('const COL_PAYOUT'), TSX.indexOf('const COL_LEVELTIME'));
+    expect(col).not.toContain('sortValue');
+    expect(col).not.toContain('spin_multiplier');
   });
 
   it('says nothing about payout on a game that is not a spin', () => {

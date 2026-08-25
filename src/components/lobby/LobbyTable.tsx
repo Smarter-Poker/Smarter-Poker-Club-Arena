@@ -665,8 +665,11 @@ const COL_PAYOUT: ColumnDef = {
   key: 'payout',
   label: 'Max Payout',
   className: 'lt-col-payout',
-  sortable: true,
-  sortValue: (e) => Number((e.raw as LobbyTournamentRow).spin_multiplier) || 0,
+  /* NOT sortable, and the column is never given the raw number to sort by.
+     Sorting a board by a multiplier that has not been revealed yet would leak
+     the draw through the ORDER of the rows — the one thing utils/spinReveal
+     exists to prevent. Every unrevealed Spin prints the same ceiling anyway,
+     so a sort here could only ever order them by a secret. */
   render: (e) => {
     const label = spinPayoutLabel(e);
     if (!label) return null;

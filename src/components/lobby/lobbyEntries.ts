@@ -19,6 +19,7 @@ import { isInLateRegistration } from '../../utils/tournamentFilters';
 import { stakesLabel as stakesLabelFor } from '../../lib/bettingStructure';
 import { blindLevelMinutes, parseBlindStructure, tournamentLevel } from './tournamentFigures';
 import { cashBuyInLabel, cashBuyInRange } from '../../lib/cashBuyIn';
+import { spinMultiplierLabel } from '../../utils/spinReveal';
 import { SPIN_TIERS } from '../../config/spinSpec';
 
 // ─── Raw row shapes (subset the lobby queries actually select) ─────────────
@@ -624,8 +625,13 @@ export const SPIN_MAX_MULTIPLIER = SPIN_TIERS.reduce((max, t) => Math.max(max, t
  */
 export function spinPayoutLabel(entry: LobbyEntry): string | null {
   if (entry.kind !== 'spin') return null;
-  const drawn = Number((entry.raw as LobbyTournamentRow).spin_multiplier) || 0;
-  if (drawn > 0) return `${drawn.toLocaleString()}x`;
+  /* THE DRAW IS THE PRODUCT, so the column is never read raw here — the gate
+     in utils/spinReveal decides whether this Spin has actually turned its
+     wheel, and returns null while the answer is still secret. A game still
+     filling advertises the ceiling of the ladder instead, which is the honest
+     thing to shop by and gives nothing away. */
+  const revealed = spinMultiplierLabel(entry.raw as Parameters<typeof spinMultiplierLabel>[0]);
+  if (revealed) return revealed;
   return `Win Up To ${SPIN_MAX_MULTIPLIER}x`;
 }
 

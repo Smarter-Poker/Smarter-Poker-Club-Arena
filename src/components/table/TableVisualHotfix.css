@@ -275,3 +275,13 @@
   align-items: center !important;
   justify-content: center !important;
 }
+
+/* Force CardBack to fill the opponent's seat__card container instead of clipping */
+.table-page .seat__cards--opponent .seat__card--back .card-image {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: inherit !important;
+}
+.table-page .seat__cards--opponent .seat__card--back .card-back {
+  border-radius: inherit !important;
+}

@@ -553,30 +553,46 @@ function blindsForLevel(t: LobbyTournamentRow): string | null {
   }
 }
 
-const COL_TSTATS: ColumnDef = {
-  key: 'tstats',
-  label: 'Stack',
-  className: 'lt-col-tstats',
+/* Dan 2026-08-24: "STARTING STACK SHOULD BE IN THE HEADER AS A TITLE, NOT IN
+   THE DESCRIPTION. THE STARTING STACK AMOUNT SHOULD BE CENTERED UNDER IT. NEXT
+   TO STARTING STACK SHOULD BE CURRENT LEVEL WITH THE CURRENT LEVEL AND BLINDS
+   LISTED CENTERED UNDER IT."
+
+   These were one cell called "Stack" that printed its own labels inside
+   itself, so the table had a heading that named neither of the two things
+   underneath it and the values ran together as "Starting Stack 12,000 Level 3
+   100/200". They are two independent facts a player compares across rows, and
+   a column each is what makes that comparison possible: the heading says the
+   word once, at the top, and every row answers it in the same place. */
+const COL_TSTACK: ColumnDef = {
+  key: 'tstack',
+  label: 'Starting Stack',
+  className: 'lt-col-tstack',
+  sortable: true,
+  sortValue: (e) =>
+    e.kind === 'cash' ? -1 : Number((e.raw as LobbyTournamentRow).starting_chips) || 0,
   render: (e) => {
     if (e.kind === 'cash') return null;
     const t = e.raw as LobbyTournamentRow;
-    const stack = t.starting_chips ? t.starting_chips.toLocaleString() : null;
+    if (!t.starting_chips) return null;
+    return <span className="lt-mono">{Number(t.starting_chips).toLocaleString()}</span>;
+  },
+};
+
+const COL_TLEVEL: ColumnDef = {
+  key: 'tlevel',
+  label: 'Current Level',
+  className: 'lt-col-tlevel',
+  sortable: true,
+  sortValue: (e) => (e.kind === 'cash' ? -1 : levelOf(e.raw as LobbyTournamentRow)),
+  render: (e) => {
+    if (e.kind === 'cash') return null;
+    const t = e.raw as LobbyTournamentRow;
     const blinds = blindsForLevel(t);
-    if (!stack && !blinds) return null;
     return (
-      <span className="lt-tstats">
-        {stack && (
-          <span className="lt-tstat">
-            <span className="lt-tstat__k">Starting Stack</span>
-            <span className="lt-tstat__v">{stack}</span>
-          </span>
-        )}
-        {blinds && (
-          <span className="lt-tstat">
-            <span className="lt-tstat__k">Level {levelOf(t)}</span>
-            <span className="lt-tstat__v">{blinds}</span>
-          </span>
-        )}
+      <span className="lt-tlevel">
+        <span className="lt-tlevel__n">Level {levelOf(t)}</span>
+        {blinds && <span className="lt-tlevel__b">{blinds}</span>}
       </span>
     );
   },
@@ -688,7 +704,8 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_SPEED,
         { ...COL_PLAYERS, label: 'Enrolled', hideOnMobile: true },
         COL_STATUS,
-        COL_TSTATS,
+        COL_TSTACK,
+        COL_TLEVEL,
         COL_RULES,
         COL_ACTIONS,
       ];
@@ -713,7 +730,8 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_STARTS,
         COL_RULES,
         COL_STATUS,
-        COL_TSTATS,
+        COL_TSTACK,
+        COL_TLEVEL,
         COL_ACTIONS,
       ];
   }

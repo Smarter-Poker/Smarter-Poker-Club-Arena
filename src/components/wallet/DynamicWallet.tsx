@@ -262,6 +262,19 @@ function formatBalance(num: number): string {
   });
 }
 
+/* Dan 2026-08-24: "DIAMONDS ARE ALWAYS WHOLE NUMBERS SO YOU CAN DELETE THE
+   .00." Diamonds are a counted item, not a currency — they are bought, spent
+   and awarded in whole units and there is no half-diamond anywhere in the
+   schema — so the two cents columns were decoration that made the balance
+   read like money and cost it two digits of width beside the wallets that
+   really are money. Truncation, not rounding: a fractional diamond could only
+   ever arrive from a bad write, and rounding 0.6 up to 1 would invent a
+   diamond the player does not own. */
+function formatDiamonds(num: number): string {
+  const safe = Number.isFinite(num) ? num : 0;
+  return Math.trunc(safe).toLocaleString('en-US', { maximumFractionDigits: 0 });
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1178,7 +1191,7 @@ export default function DynamicWallet({
             <WalletIcon name="diamond" />
           </span>
           <span className="dw__row-label">Diamonds</span>
-          <span className="dw__row-value">{formatBalance(animDiamonds)}</span>
+          <span className="dw__row-value">{formatDiamonds(animDiamonds)}</span>
           {onBuyDiamonds && (
             <button
               className="dw__plus"

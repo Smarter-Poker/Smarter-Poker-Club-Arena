@@ -172,6 +172,13 @@ export interface SeatPlayer {
   holeCards?: (Card | null)[];
   showCards: boolean;
   isHero: boolean;
+  /**
+   * SHOWDOWN AUDIT 2026-08-25: the engine's muck ruling as carried by the
+   * snapshot (is_mucked). The parent unions it with the showdown event's
+   * mask so a client that reconnects mid-showdown — and therefore missed the
+   * event — still renders the MUCKED label.
+   */
+  isMucked?: boolean;
 }
 
 export interface SeatSlotProps {

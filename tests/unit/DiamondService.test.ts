@@ -144,6 +144,43 @@ describe('DiamondService', () => {
       const result = await DiamondService.purchaseDiamonds('user-1', 'starter');
       // RPC mock returns success
       expect(result.success).toBe(true);
+      expect(result.newBalance).toBe(500);
+    });
+
+    /**
+     * `return { success: data?.success ?? true }` (Dan 2026-08-25 audit). A
+     * null payload with no PostgREST error — what a refusal that returns
+     * nothing looks like — resolved to SUCCESS with `newBalance: undefined`.
+     * The top-up modal toasted "20000 diamonds added" and set the displayed
+     * balance to 0. Nothing was credited and nothing went red.
+     */
+    it('does NOT call a null payload a successful credit', async () => {
+      const { supabase } = await import('../../src/lib/supabase');
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: null, error: null } as never);
+      const result = await DiamondService.purchaseDiamonds('user-1', 'starter');
+      expect(result.success).toBe(false);
+      expect(result.newBalance).toBeUndefined();
+    });
+
+    it('does NOT call a credit successful when no balance came back', async () => {
+      const { supabase } = await import('../../src/lib/supabase');
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({
+        data: { success: true },
+        error: null,
+      } as never);
+      const result = await DiamondService.purchaseDiamonds('user-1', 'starter');
+      expect(result.success).toBe(false);
+    });
+
+    it('surfaces a payload refusal instead of swallowing it', async () => {
+      const { supabase } = await import('../../src/lib/supabase');
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({
+        data: { success: false, error: 'permission denied for function fn_add_diamonds' },
+        error: null,
+      } as never);
+      const result = await DiamondService.purchaseDiamonds('user-1', 'starter');
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('permission denied');
     });
   });
 

@@ -1174,7 +1174,78 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       ? fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage)
       : 0;
 
+    /**
+     * ── CAP: A PER-HAND CEILING ON WHAT A PLAYER CAN PUT IN ────────────────
+     *
+     * Dan 2026-08-25, table-creation parity. `cap_enabled` has been a toggle
+     * since February with NO AMOUNT COLUMN ANYWHERE IN THE SCHEMA, so even a
+     * reader could not have enforced it. `cap_bb` was added alongside this.
+     *
+     * A cap is a limit on TOTAL chips committed across the whole hand, not on
+     * one street, so it is measured against `totalInvested` — which the engine
+     * already maintains and broadcasts. `player.bet` is this street only, and
+     * capping on that would let a player commit the cap four times over.
+     *
+     * CLAMPED, NOT REJECTED, exactly like the pot-limit ceiling above it and
+     * for the same reason the fixed-limit snap gives: a client with a stale
+     * cap value should still make a LEGAL bet rather than have its action
+     * bounce. The amount is reduced to whatever is left under the ceiling.
+     *
+     * A player who reaches the cap is NOT all-in — their remaining stack stays
+     * in front of them and plays the next hand. That is the whole point of a
+     * cap game, and it is why the all-in promotions below have to be measured
+     * against the capped figure rather than the raw stack.
+     */
+    const capBB = Number(this.tableInfo?.cap_bb) || 0;
+    const capChips =
+      this.tableInfo?.cap_enabled === true && capBB > 0
+        ? capBB * (Number(this.tableInfo?.big_blind) || 0)
+        : 0;
+    /* What this player may still commit this hand. Infinity when uncapped, so
+       every Math.min below is a no-op on an ordinary table. */
+    const capRemaining =
+      capChips > 0 ? Math.max(0, capChips - (Number(player.totalInvested) || 0)) : Infinity;
+
+    /**
+     * AN "ALL IN" AT A CAPPED TABLE IS NOT ALL OF YOUR CHIPS.
+     *
+     * `all_in` skips the amount clamps below entirely — validateAllIn returns
+     * `sanitizedAmount: context.playerStack` unconditionally — so without this
+     * a player could push their whole stack past a ceiling the host set, and
+     * the cap would hold for every action EXCEPT the largest one.
+     *
+     * Rewritten into an ordinary bet or raise of exactly what the cap leaves,
+     * so it goes through the same validation as any other sized action and
+     * the remainder of the stack stays in front of the player.
+     */
+    if (normalizedAction === 'all_in' && capRemaining !== Infinity) {
+      const stillAllowed = Math.min(player.stack, capRemaining);
+      if (stillAllowed <= 0) {
+        return { success: false, error: "You have committed this table's cap for this hand" };
+      }
+      if (stillAllowed < player.stack) {
+        normalizedAction = state.currentBet > 0 ? 'raise' : 'bet';
+        amount = state.currentBet > 0 ? player.bet + stillAllowed : stillAllowed;
+      }
+    }
+
     // Clamp amounts
+    /**
+     * A CALL IS DELIBERATELY NOT CAPPED, and it does not need to be.
+     *
+     * Clamping a call would produce a SHORT call — an under-call that the pot
+     * logic has to turn into a side pot — which is a genuine pot-integrity
+     * hazard for a feature no live table has switched on. It is also
+     * unnecessary, because the cap is a per-player TOTAL and every wager that
+     * can be called has already been clamped above:
+     *
+     *   a caller's total after calling = the bettor's total for this hand,
+     *   the bettor's total is <= the cap by construction,
+     *   therefore the caller's total is <= the cap.
+     *
+     * A player can never call their way past a ceiling that every bet in front
+     * of them already respects.
+     */
     if (normalizedAction === 'call') amount = toCall;
     if (normalizedAction === 'bet' && amount !== undefined) {
       amount = isFixedLimit ? flBetSize : Math.max(state.minRaise, amount);
@@ -1182,7 +1253,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       if (isPotLimit) {
         amount = Math.min(amount, potLimitMaxBet);
       }
-      if (amount >= player.stack) {
+      // Table cap: never more than this hand has left under the ceiling.
+      amount = Math.min(amount, capRemaining);
+      /* The cap, not the stack, decides all-in at a capped table: a player who
+         has committed the ceiling still has chips in front of them. */
+      if (amount >= Math.min(player.stack, capRemaining)) {
         normalizedAction = 'all_in';
         amount = undefined;
       }
@@ -1195,7 +1270,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         const potLimitRaiseTo = state.currentBet + potLimitMaxBet;
         amount = Math.min(amount, potLimitRaiseTo);
       }
-      const maxRaiseTo = player.stack + player.bet;
+      /* A raise is a TO figure, so the ceiling has to be expressed the same
+         way: this street's bet plus whatever the cap leaves. */
+      const capRaiseTo = capRemaining === Infinity ? Infinity : player.bet + capRemaining;
+      amount = Math.min(amount, capRaiseTo);
+      const maxRaiseTo = Math.min(player.stack + player.bet, capRaiseTo);
       if (amount >= maxRaiseTo) {
         normalizedAction = 'all_in';
         amount = undefined;

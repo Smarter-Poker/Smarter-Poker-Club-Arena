@@ -394,6 +394,16 @@ export interface Entitlements {
   emotePack: boolean;
   themeUnlock: boolean;
   avatars: string[];
+  /**
+   * The SPECIFIC themes the player owns, from `theme_unlocks`.
+   *
+   * `themeUnlock` above is the generic `feature_purchases.theme_unlock` flag
+   * that fn_redeem_shop_item also writes. It cannot say WHICH theme, and it
+   * accumulates one row per redemption, so "you own a table theme" was the most
+   * the strip could ever claim no matter how many were bought. `theme_unlocks`
+   * carries the theme_id, which is what any selector would have to gate on.
+   */
+  themes: string[];
   loaded: boolean;
 }
 
@@ -404,27 +414,36 @@ export const EMPTY_ENTITLEMENTS: Entitlements = Object.freeze({
   emotePack: false,
   themeUnlock: false,
   avatars: [],
+  themes: [],
   loaded: false,
 });
 
 /**
- * Read the player's live entitlement balances. Both tables are RLS-scoped to
- * the caller (feature_purchases_select_own / "Users can view their own
+ * Read the player's live entitlement balances. All three tables are RLS-scoped
+ * to the caller (feature_purchases_select_own / "Users can view their own
  * unlocks"), so this is a safe direct read.
+ *
+ * EVERY read is checked. `avatar_unlocks` used to be read with its error
+ * discarded, so a failed request rendered as "you own no avatars" - the same
+ * failure-as-empty-success shape the Store tab already had to fix. A caller
+ * that cannot tell "none" from "could not ask" will always print the wrong one.
  */
 export async function loadEntitlements(
   userId: string,
   secondsPerUse = DEFAULT_SECONDS_PER_TIME_BANK_USE
 ): Promise<Entitlements> {
   const nowIso = new Date().toISOString();
-  const [fp, av] = await Promise.all([
+  const [fp, av, th] = await Promise.all([
     supabase
       .from('feature_purchases')
       .select('feature, uses_remaining, expires_at')
       .eq('user_id', userId),
     supabase.from('avatar_unlocks').select('avatar_id').eq('user_id', userId),
+    supabase.from('theme_unlocks').select('theme_id').eq('user_id', userId),
   ]);
   if (fp.error) throw fp.error;
+  if (av.error) throw av.error;
+  if (th.error) throw th.error;
 
   const live = (fp.data || []).filter((r) => !r.expires_at || r.expires_at > nowIso);
   const sumUses = (feature: string) =>
@@ -435,13 +454,18 @@ export async function loadEntitlements(
     live.some((r) => r.feature === feature && r.uses_remaining == null);
 
   const timeBankUses = sumUses('time_bank_seconds');
+  // Deduped: fn_redeem_shop_item ON CONFLICT DO NOTHINGs the unlock but still
+  // writes a fresh generic feature_purchases row, so counting rows would
+  // over-report ownership on a re-redeem.
+  const themes = Array.from(new Set((th.data || []).map((r) => String(r.theme_id))));
   return {
     timeBankUses,
     timeBankSeconds: timeBankUses * secondsPerUse,
     throwables: sumUses('throwable'),
     emotePack: hasPermanent('emoji_pack'),
-    themeUnlock: hasPermanent('theme_unlock'),
-    avatars: (av.data || []).map((r) => String(r.avatar_id)),
+    themeUnlock: hasPermanent('theme_unlock') || themes.length > 0,
+    avatars: Array.from(new Set((av.data || []).map((r) => String(r.avatar_id)))),
+    themes,
     loaded: true,
   };
 }

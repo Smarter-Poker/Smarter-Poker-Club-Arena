@@ -211,7 +211,20 @@ export function TournamentStartingTicker() {
             .from('tournament_players')
             .select('tournament_id')
             .eq('user_id', auth.userId)
+            // PRE-EXISTING DEAD PREDICATE, left as-is deliberately.
+            // tournament_players.status in production only ever holds
+            // 'eliminated' (73k), 'winner' (12k) and 'playing' (1k) - there is
+            // no 'REGISTERED', so this has always matched zero rows and the
+            // ticker's "you are registered" badge has never rendered. Changing
+            // the value is a product decision (does the badge mean registered,
+            // or seated and playing?) rather than a perf fix, so it is flagged
+            // for Dan rather than guessed at here.
             .in('status', ['REGISTERED'])
+            // ORDER BY is required, not cosmetic: a bare LIMIT in Postgres
+            // returns ARBITRARY rows, so if the predicate above is ever
+            // corrected and a player exceeds 200 matches, the 200 kept would be
+            // random and the badge would be wrong. Newest registrations first.
+            .order('registered_at', { ascending: false })
             .limit(200);
           return new Set((regData || []).map((r: { tournament_id: string }) => r.tournament_id));
         })();

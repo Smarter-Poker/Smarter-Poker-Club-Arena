@@ -84,7 +84,14 @@ export function preloadCriticalChunks(): void {
   // Data Saver on, or a connection the browser rates below 4g: do nothing at
   // all. Every chunk here is still reachable through lazyWithRetry on real
   // navigation, so skipping costs latency on one navigation and saves ~1MB.
-  if (!shouldPreload()) return;
+  //
+  // NOTE the gate is applied to the CHUNK LIST ONLY, further down. It must not
+  // wrap the whole function: the deck warmer below carries its own, more
+  // permissive guard (it only refuses Data Saver and 2g), and Chrome commonly
+  // reports effectiveType '3g' on perfectly usable mobile connections. An
+  // early return here meant those users never warmed their card deck and paid
+  // an image fetch on the first hand dealt.
+  const preloadChunks = shouldPreload();
 
   const schedule =
     typeof requestIdleCallback === 'function'
@@ -94,7 +101,7 @@ export function preloadCriticalChunks(): void {
   // Wait for browser idle before starting preload
   schedule(() => {
     // Stagger imports to avoid a network burst
-    CRITICAL_CHUNKS.forEach((importFn, index) => {
+    if (preloadChunks) CRITICAL_CHUNKS.forEach((importFn, index) => {
       setTimeout(() => {
         importFn().catch(() => {
           // Silently ignore — if a chunk fails to preload, the normal
@@ -148,7 +155,14 @@ const ROUTE_CHUNKS: Record<string, () => Promise<any>> = {
   '/tournament-results': () => import('../pages/tournament/TournamentResultsPage'),
   '/stats': () => import('../pages/PlayerStatsPage'),
   '/players': () => import('../pages/PlayerStatsPage'),
-  '/table/': () => import('../pages/TablePage'),
+  // Both are needed: PersistentTableLayer lazy-loads MultiTablePage, so
+  // without this entry the first table open after boot blocks on that chunk.
+  // (2026-08-24: it was removed from CRITICAL_CHUNKS on the stated grounds
+  // that ROUTE_CHUNKS already warmed it - which was true of TablePage only.)
+  '/table/': () => {
+    void import('../pages/MultiTablePage').catch(() => {});
+    return import('../pages/TablePage');
+  },
   '/clubs/': () => import('../pages/ClubHomePage'),
   '/unions': () => import('../pages/UnionsPage'),
   '/achievements': () => import('../pages/AchievementsPage'),

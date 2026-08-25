@@ -118,6 +118,16 @@ export default function PromotionsPage() {
        apply. Do not remove the filter on the club route. */
     const setupRealtime = async () => {
       const resolvedClubId = clubId ? await resolveClubUUID(clubId) : null;
+
+      /* A club slug that fails to resolve must NOT fall through to an
+         unfiltered subscription. Spreading `...(resolved ? {filter} : {})`
+         reads as harmless, but on the failure path it silently restores the
+         platform-wide firehose this scoping exists to remove - and
+         tests/no-unfiltered-realtime-firehose.test.ts is static, so it cannot
+         see a runtime widening. No scope means no subscription; the page still
+         renders from its initial load. (clubId absent entirely is different:
+         that is the legitimate global promotions surface.) */
+      if (clubId && !resolvedClubId) return;
       if (!isMounted) return;
 
       const channel = masterBus.getOrCreateChannel(channelKey);
@@ -133,7 +143,7 @@ export default function PromotionsPage() {
           (payload) => {
             if (!isMounted) return;
             if (payload.eventType === 'INSERT') {
-              toast.info(' New promotion available!');
+              toast.info('New Promotion Available');
             }
             loadPromotionsRef.current();
           }

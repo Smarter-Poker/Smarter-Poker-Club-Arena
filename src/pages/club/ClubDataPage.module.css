@@ -355,6 +355,25 @@
   margin-top: 0.75rem;
 }
 
+/* The Players tab wrapper. This was `display: block` - the div default, so it
+   did nothing - and removing it broke check-css-modules, which is right: a
+   styles.* key with no class ships className={undefined} and nothing warns.
+   Given it has to exist, give it the job it should have had: dim the panel
+   while a refetch is in flight, so the previous range's per-player money is
+   visibly stale rather than silently sitting under a new range chip.
+   Dan 2026-08-25. */
+.playersPanel[aria-busy='true'] {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .playersPanel[aria-busy='true'] {
+    transition: none;
+  }
+}
+
 .row {
   display: flex;
   align-items: center;

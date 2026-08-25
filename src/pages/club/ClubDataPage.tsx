@@ -1093,7 +1093,7 @@ export default function ClubDataPage() {
       )}
 
       {tab === 'players' && (
-        <div className={styles.playersPanel}>
+        <div className={styles.playersPanel} aria-busy={playersLoading}>
           <div className={styles.filterRow} role="tablist" aria-label="Sort players">
             {PLAYER_SORTS.map((o) => (
               <button

@@ -922,7 +922,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const config: HandConfig = {
       tableId: this.tableId,
       handNumber,
-      gameVariant: this.tableInfo.game_variant as GameVariant,
+      gameVariant: this.dealtGameVariant() as GameVariant,
       smallBlind: this.tableInfo.small_blind,
       bigBlind: this.tableInfo.big_blind,
       // FIX-219: Bible V8 §4.3 — Respect ante_enabled toggle; if disabled, zero out ante

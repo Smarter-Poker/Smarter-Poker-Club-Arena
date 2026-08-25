@@ -197,6 +197,8 @@ export interface TableInfo {
   /** Per-hand betting cap. cap_bb is the ceiling in big blinds. */
   cap_enabled?: boolean;
   cap_bb?: number | null;
+  /** Deal a Hold'em table as Pineapple. See dealtGameVariant. */
+  pineapple_holdem?: boolean;
 }
 
 export interface SeatedPlayer {

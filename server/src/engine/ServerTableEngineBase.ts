@@ -817,6 +817,29 @@ export abstract class ServerTableEngineBase {
    * one is not a hand. A tournament table ignores the setting entirely: its
    * field size is decided by the tournament, not by a cash-table slider.
    */
+  /**
+   * ── THE VARIANT THIS TABLE ACTUALLY DEALS (Dan 2026-08-25) ──────────────
+   *
+   * Pineapple is a fully built variant: three hole cards, its own discard
+   * street, its own timer, `pineapple_discard` wired through BettingStructure
+   * and HandController. The toggle on the creation screen was simply never
+   * connected to it — `pineapple_holdem` is a boolean column with no reader,
+   * sitting beside a `game_variant` the engine reads for everything.
+   *
+   * So this is mapping, not building. A Hold'em table with the switch on is
+   * dealt as pineapple; every other variant is left exactly as it is, because
+   * "Pineapple PLO" is not a game and a stray flag must not silently turn a
+   * PLO table into one.
+   */
+  protected dealtGameVariant(): string {
+    const variant = String(this.tableInfo?.game_variant || 'nlh').toLowerCase();
+    if (variant === 'pineapple') return 'pineapple';
+    const wantsPineapple = (this.tableInfo as { pineapple_holdem?: boolean } | null)
+      ?.pineapple_holdem;
+    if (wantsPineapple === true && (variant === 'nlh' || variant === 'nlhe')) return 'pineapple';
+    return variant;
+  }
+
   protected minPlayersToDeal(): number {
     if (this.isTournamentTable()) return 2;
     const configured = Number(this.tableInfo?.auto_start_players);
@@ -2164,7 +2187,7 @@ export abstract class ServerTableEngineBase {
     const config: HandConfig = {
       tableId: this.tableId,
       handNumber: this.handCount,
-      gameVariant: this.tableInfo.game_variant as GameVariant,
+      gameVariant: this.dealtGameVariant() as GameVariant,
       smallBlind: this.tableInfo.small_blind,
       bigBlind: this.tableInfo.big_blind,
       ante: this.tableInfo.ante,

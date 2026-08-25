@@ -56,6 +56,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
 import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
@@ -2935,7 +2936,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         onClose={() => setActiveCashier(null)}
         clubId={resolvedClubId || clubId || ''}
         role={isOwner ? 'owner' : userRole}
-        walletType={activeCashier || 'club_bank'}
+        walletType={activeCashier || DEFAULT_CASHIER_WALLET}
       />
       <PlayerWalletModal
         isOpen={showPlayerWallet}

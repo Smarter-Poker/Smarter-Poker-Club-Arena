@@ -860,6 +860,21 @@ export default function TableConfigPage() {
     min_buy_in_bb: config.minBuyInBB,
     max_buy_in_bb: config.maxBuyInBB,
     ante_bb: config.anteBB,
+    /**
+     * THE ANTE SLIDER WAS DEAD ON EVERY TABLE THIS PAGE CREATED.
+     *
+     * `ante_bb` is not in the engine's select list (server/src/services/
+     * supabase/tables.ts) — the engine reads `ante` and `ante_enabled`, and
+     * this page wrote neither. So a host could drag Ante to 2 BB, save, sit
+     * down, and no ante was ever posted. The only path that worked was the
+     * older CreateTableModal, which happens to map to the right columns.
+     *
+     * `ante_bb` is kept because it is the authored unit (big blinds, which
+     * survives a blind change); `ante` is the chip figure the engine actually
+     * posts, derived here so the two cannot drift.
+     */
+    ante_enabled: Number(config.anteBB) > 0,
+    ante: Number(config.anteBB) > 0 ? Number(config.anteBB) * Number(config.bigBlind || 0) : 0,
     career_percent_min: config.careerPercentMin,
     maintain_percent_min: config.maintainPercentMin,
     maintain_hands: config.maintainHands,

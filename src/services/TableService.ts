@@ -247,6 +247,8 @@ class TableService {
       double_board: false,
       time_limit_minutes: 0,
       action_time_seconds: 15,
+      /* NOTE: this is the DEFAULTS block. The operator's own choice is carried
+         to the column below - see the action_time_seconds line in the insert. */
       min_buyin_bb: 20,
       max_buyin_bb: 100,
       insurance_enabled: false,
@@ -300,11 +302,35 @@ class TableService {
         stakes: smallBlind != null && bigBlind != null ? `${smallBlind}/${bigBlind}` : '1/2',
         small_blind: smallBlind,
         big_blind: bigBlind,
-        min_buy_in: bigBlind * 40,
-        max_buy_in: bigBlind * 200,
+        /**
+         * THE OPERATOR'S BUY-IN RANGE WAS BEING DISCARDED.
+         *
+         * CreateTableModal has min/max buy-in inputs, puts the host's numbers
+         * in `settings`, and these two lines then overwrote them with a fixed
+         * 40x/200x band on the way to the columns the RPC enforces. Whatever
+         * the host typed was accepted by the form, stored in a blob nothing
+         * reads, and silently replaced. The band is the FALLBACK now, which is
+         * what it was always meant to be.
+         */
+        min_buy_in:
+          Number(settings?.min_buyin_bb) > 0
+            ? Number(settings?.min_buyin_bb) * bigBlind
+            : bigBlind * 40,
+        max_buy_in:
+          Number(settings?.max_buyin_bb) > 0
+            ? Number(settings?.max_buyin_bb) * bigBlind
+            : bigBlind * 200,
         max_players: maxPlayers,
         current_players: 0,
         status: 'waiting',
+        /* Action Time was a slider whose value reached `settings` and stopped
+           there: the engine reads the COLUMN, and nothing mirrored it. Every
+           table built from the modal ran at the 15s default no matter what the
+           host chose. */
+        action_time_seconds:
+          Number(settings?.action_time_seconds) > 0
+            ? Math.round(Number(settings?.action_time_seconds))
+            : 15,
         settings: defaultSettings,
         // FIX-D1 2026-07-19: the engine (loadTable in server) reads TOP-LEVEL
         // columns, NOT the `settings` JSONB. Writing host gameplay choices only

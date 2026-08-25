@@ -510,101 +510,27 @@
 
 /* Wood grain + leather stitching removed — the artwork paints both. */
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   FELT COLOR THEMES — Apply via data-felt-theme attribute on .table-page
-   ═══════════════════════════════════════════════════════════════════════════════ */
+/* FELT COLOUR THEMES — DELETED 2026-08-25.
 
-/* Classic Green */
-.table-page[data-felt-theme='green'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a7a4a 0%, #0f5132 50%, #0a3d24 100%);
-}
+   Seventeen rules keyed on [data-felt-theme] used to sit here, setting
+   --felt-gradient (17 declarations), --bg-gradient (5) and --rail-gradient (1).
+   Across this file and design-tokens.css those three properties were defined
+   37 times and read by `var()` ZERO times. The felt has been an
+   <img class="table-art"> painted by resolveSkin since 2026-08-17 and the page
+   behind it is a designed background image, so the whole section was left over
+   from the gradient-painted table that replaced it: it looked like a working
+   theme system and painted nothing.
 
-/* Default (Dan 2026-07-28): Commander charcoal — matches the near-black felt
-   in the /commander/table-tablets artwork. Named themes below still apply. */
-.table-page:not([data-felt-theme]) {
-  --felt-gradient: radial-gradient(ellipse at 50% 42%, #151b1f 0%, #0e1316 55%, #090d10 100%);
-  --rail-gradient: linear-gradient(
-    180deg,
-    #5a4232 0%,
-    #4a3728 20%,
-    #3a2a1e 50%,
-    #4a3728 80%,
-    #5a4232 100%
-  );
-}
-
-/* Blue Royale */
-.table-page[data-felt-theme='blue'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a4a7a 0%, #0f3252 50%, #0a243d 100%);
-}
-
-/* Burgundy */
-.table-page[data-felt-theme='burgundy'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #7a1a3a 0%, #52102a 50%, #3d0a20 100%);
-}
-
-/* Midnight Black */
-.table-page[data-felt-theme='black'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #2a2a2e 0%, #1a1a1e 50%, #0e0e12 100%);
-}
-
-/* Tournament Purple */
-.table-page[data-felt-theme='purple'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #4a1a7a 0%, #321052 50%, #240a3d 100%);
-}
-
-/* Gold VIP */
-.table-page[data-felt-theme='gold'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #7a6a1a 0%, #524a0f 50%, #3d380a 100%);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   FIX 222: BIBLE V8 §11.2 THEME IDS — Tab 1 (Themes) + Tab 2 (Table Felt)
-   Maps ThemeSettingsModal asset IDs to --felt-gradient CSS custom property
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-/* Tab 1: Themes (presets) */
-.table-page[data-felt-theme='default-dark'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a1a2e 0%, #16213e 50%, #0e0e18 100%);
-  --bg-gradient: radial-gradient(ellipse at 50% 50%, #1a1a2e 0%, #0e0f1a 100%);
-}
-.table-page[data-felt-theme='classic-brown'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #5d4037 0%, #3e2723 50%, #2c1a14 100%);
-  --bg-gradient: radial-gradient(ellipse at 50% 50%, #3e2723 0%, #1a0f0a 100%);
-}
-.table-page[data-felt-theme='neon-blue'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1565c0 0%, #0d47a1 50%, #062f6e 100%);
-  --bg-gradient: radial-gradient(ellipse at 50% 50%, #0d47a1 0%, #05204f 100%);
-}
-.table-page[data-felt-theme='rustic-wood'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #795548 0%, #4e342e 50%, #321e18 100%);
-  --bg-gradient: radial-gradient(ellipse at 50% 50%, #4e342e 0%, #1a0f0a 100%);
-}
-.table-page[data-felt-theme='casino-green'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #2e7d32 0%, #1b5e20 50%, #0d3a10 100%);
-  --bg-gradient: radial-gradient(ellipse at 50% 50%, #1b5e20 0%, #0a2d0a 100%);
-}
-
-/* Tab 2: Table Felt (specific surface) */
-.table-page[data-felt-theme='dark-felt'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a1a2e 0%, #0f0f1a 50%, #08080f 100%);
-}
-.table-page[data-felt-theme='brown-felt'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #4e342e 0%, #3e2723 50%, #2a1812 100%);
-}
-.table-page[data-felt-theme='neon-blue-felt'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a237e 0%, #0d47a1 50%, #062c70 100%);
-}
-.table-page[data-felt-theme='red-leather'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #c62828 0%, #b71c1c 50%, #7f0000 100%);
-}
-.table-page[data-felt-theme='green-casino'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #388e3c 0%, #1b5e20 50%, #0d3a10 100%);
-}
+   Five of those rules were the Themes tab's presets — default-dark,
+   classic-brown, neon-blue, rustic-wood, casino-green — which is why all five
+   presets produced an identical table. They now paint five different tables
+   through THEME_PRESET_SKINS in src/lib/tableTheme.ts.
+   tests/config/themePresetsPaintDistinctTables.test.ts fails if a `-gradient`
+   token comes back with nothing reading it. */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    FIX 222: BIBLE V8 §11.2 — Tab 4 (Background Themes)
-   Applied to .table-page via --bg-gradient and background
+   Applied to .table-page via the `background` shorthand
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .table-page[data-background-theme='diamond-pattern'] {

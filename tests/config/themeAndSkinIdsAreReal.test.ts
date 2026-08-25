@@ -17,6 +17,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { TABLE_FELT_CATALOG } from '../../src/lib/tableTheme';
 
 const root = process.cwd();
 const read = (p: string) => fs.readFileSync(path.join(root, p), 'utf8');
@@ -132,9 +133,22 @@ describe('a table skin you can pick is a skin that exists', () => {
       [...TABLE_ASSETS.matchAll(/^\s{2}'?([a-z0-9_-]+)'?:\s*skin/gm)].map((m) => m[1])
     );
     expect(registry.size, 'TABLE_SKINS registry parsed empty').toBeGreaterThan(0);
-    const tableTab = THEME_MODAL.match(/\n\s{2}table: \[([\s\S]*?)\n\s{2}\],/);
-    expect(tableTab, "the modal's table tab was not found").toBeTruthy();
-    const offered = [...tableTab![1].matchAll(/id: '([a-z0-9_-]+)'/g)].map((m) => m[1]);
+
+    // FIXED 2026-08-25 — this assertion was RED ON MAIN, which stops the World
+    // Hub sync for every agent. It parsed a `table: [ ... ]` literal out of the
+    // modal; #833 replaced that literal with `table: TABLE_ASSETS`, generated
+    // from TABLE_FELT_CATALOG. The duplicate list this file exists to forbid
+    // was removed, and the regex that depended on the duplicate then matched
+    // nothing. Read the generated catalogue instead, and pin the absence of a
+    // second hand-written copy rather than its presence.
+    const literal = THEME_MODAL.match(/\n\s{2}table: \[([\s\S]*?)\n\s{2}\],/);
+    expect(
+      literal,
+      'the modal is hand-listing felts again instead of reading TABLE_FELT_CATALOG'
+    ).toBeNull();
+    expect(THEME_MODAL).toMatch(/\n\s{2}table: TABLE_ASSETS,/);
+
+    const offered = TABLE_FELT_CATALOG.map((f) => f.id);
     expect(offered.length).toBeGreaterThan(0);
     const dead = offered.filter((id) => !registry.has(id));
     expect(dead, `table skins offered that resolve to nothing: ${dead.join(', ')}`).toEqual([]);

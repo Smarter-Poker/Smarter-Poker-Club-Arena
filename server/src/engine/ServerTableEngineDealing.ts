@@ -828,6 +828,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // Bible V8 §2.3: Carry through identity fields for broadcast
       is_horse: p.is_horse ?? false,
       avatar_url: p.avatar_url ?? '',
+      equipped_frame: p.equipped_frame ?? '',
+      equipped_aura: p.equipped_aura ?? '',
     }));
 
     // Rotate dealer — AUDIT FIX 2026-07-19: SEAT-based moving button. Advance to

@@ -57,6 +57,7 @@ import { parseBlindStructure } from '../utils/parseBlindStructure';
 // it, so flipping the flag is a pure rollout switch.
 import { useEngineTableState } from '../hooks/useEngineTableState';
 import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
+import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
 import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
 
 import { gameCode } from '../utils/gameCode';
@@ -7837,6 +7838,56 @@ export default function TablePage({
       supabase.removeChannel(channel);
     };
   }, [tableId, userId]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // REALTIME PROFILES — a seated player's avatar or cosmetics changed
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Changing your avatar used to change it on YOUR screen only; everyone else
+  // kept the old face until they reloaded, because identity fields reach other
+  // clients on the engine snapshot and the engine only re-reads `profiles` at
+  // the top of a deal. Between hands, on an idle table, and on a table that is
+  // still filling, nothing re-read anything.
+  //
+  // The engine remains authoritative — this only ever refreshes the three
+  // identity fields, never stack, status, cards or seat. See the hook for why
+  // postgres_changes and not the engine socket or the legacy broadcast channel.
+  const seatedUserIds = useMemo(() => tableState.players.map((p) => p?.id), [tableState.players]);
+
+  const handleSeatedProfileChange = useCallback((change: SeatedProfileChange) => {
+    setTableState((prev) => {
+      const idx = prev.players.findIndex((p) => p?.id === change.userId);
+      if (idx === -1) return prev;
+      const existing = prev.players[idx];
+      if (!existing) return prev;
+
+      const nextAvatar = change.avatar ?? existing.avatar;
+      const nextFrame = change.frame ?? undefined;
+      const nextAura = change.aura ?? undefined;
+
+      /* No-op guard. Realtime echoes the hero's own write back to them, and a
+         `profiles` UPDATE fires for any column — a chip balance, a last-seen
+         stamp — so most deliveries here change nothing. Returning `prev`
+         unchanged is what stops each one re-rendering nine seats. */
+      if (
+        existing.avatar === nextAvatar &&
+        existing.frame === nextFrame &&
+        existing.aura === nextAura
+      ) {
+        return prev;
+      }
+
+      const updatedPlayers = [...prev.players];
+      updatedPlayers[idx] = {
+        ...existing,
+        avatar: nextAvatar,
+        frame: nextFrame,
+        aura: nextAura,
+      };
+      return { ...prev, players: updatedPlayers };
+    });
+  }, []);
+
+  useSeatedProfileSync(tableId, seatedUserIds, handleSeatedProfileChange);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // WAITLIST → HORSE YIELD — When a real player is waiting & table full, remove a horse

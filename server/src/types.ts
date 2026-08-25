@@ -88,6 +88,14 @@ export interface SeatPlayer {
   position?: string;
   /** Bible V8 §2.3: Player avatar URL */
   avatar_url?: string;
+  /**
+   * Equipped avatar frame token, e.g. `frame-gold`. Travels with `avatar_url`
+   * because it is drawn on top of it; a client that has one and not the other
+   * renders a ring around the wrong picture. Empty string means none.
+   */
+  equipped_frame?: string;
+  /** Equipped avatar aura token, e.g. `aura-fire`. Empty string means none. */
+  equipped_aura?: string;
   /** Bible V8 §2.3: Whether this player is an AI horse */
   is_horse?: boolean;
 }
@@ -223,6 +231,10 @@ export interface SeatedPlayer {
   is_sitting_out?: boolean;
   /** Bible V8 §2.3: Player avatar for broadcast */
   avatar_url?: string;
+  /** Equipped avatar frame token for broadcast, e.g. `frame-gold`. */
+  equipped_frame?: string;
+  /** Equipped avatar aura token for broadcast, e.g. `aura-fire`. */
+  equipped_aura?: string;
   /** Bible V8 §4.2: Player returning from sit-out must post dead blind */
   returning_from_sitout?: boolean;
   /** Bible V8 §4.2: Player is waiting for BB position before playing */

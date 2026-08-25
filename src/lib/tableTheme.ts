@@ -8,11 +8,196 @@
  * is unknown, renamed, or simply absent has to fall back to a real asset rather
  * than to undefined.
  */
-import { TABLE_SKINS, TABLE_BACKGROUNDS } from '../assets/tableAssets';
+import {
+  TABLE_SKINS,
+  TABLE_BACKGROUNDS,
+  TABLE_SKIN_IDS,
+  TABLE_BACKGROUND_IDS,
+} from '../assets/tableAssets';
 
 /** Resolve a stored table/theme id to a skin asset; default stays green. */
 export function resolveSkin(tid: string): string {
   return TABLE_SKINS[tid] || TABLE_SKINS.classic_green;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// THE FELT CATALOGUE — one list, every surface
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Dan 2026-08-25. Two components offered a felt and they did not agree on what
+// a felt IS. ThemeSettingsModal's Table tab typed out thirteen ids that happen
+// to match TABLE_SKINS; TableFeltSelector typed out eight FLAT COLOURS —
+// classic_green, navy, burgundy, charcoal, purple, crimson, midnight, emerald.
+// Only TWO of those eight paint what their label says. Five (navy, burgundy,
+// charcoal, purple, midnight) are not skins at all - `midnight` is a BACKGROUND
+// id - so resolveSkin sent all five to classic green, and picking Royal Purple
+// or Charcoal produced the identical green felt. The eighth, `emerald`, is a
+// legacy alias pointing at the GOLDEN SAND skin, so that tile was simply
+// mislabelled.
+//
+// Same shape as the card-back defect, same cause: a second copy of a list.
+// Both surfaces now read this one, which is generated against TABLE_SKIN_IDS,
+// so an id cannot appear in a picker unless a skin file exists behind it.
+// feltCatalog.test.ts pins the coverage in both directions.
+
+export type FeltTier = 'standard' | 'vip';
+
+export interface TableFeltDesign {
+  id: string;
+  name: string;
+  tier: FeltTier;
+  /** Fallback gradient, painted only if the skin image has not arrived yet. */
+  thumbnail: string;
+}
+
+/** Display name, tier and fallback gradient per skin id. */
+const FELT_META: Record<string, Omit<TableFeltDesign, 'id'>> = {
+  neon_city: {
+    name: 'Neon City',
+    tier: 'standard',
+    thumbnail: 'linear-gradient(135deg, #2b2b33 40%, #d446b8 75%, #2ad4d4)',
+  },
+  classic_green: {
+    name: 'Classic Green',
+    tier: 'standard',
+    thumbnail: 'linear-gradient(135deg, #0f9d63, #0a3d24)',
+  },
+  carbon_red: {
+    name: 'Carbon Red',
+    tier: 'standard',
+    thumbnail: 'linear-gradient(135deg, #232326 55%, #b3221f)',
+  },
+  ice_cavern: {
+    name: 'Ice Cavern',
+    tier: 'standard',
+    thumbnail: 'linear-gradient(135deg, #0c1524 40%, #3f6fae 75%, #bcd6ee)',
+  },
+  arctic_white: {
+    name: 'Arctic White',
+    tier: 'standard',
+    thumbnail: 'linear-gradient(135deg, #f2f2f0 35%, #3f8fd4)',
+  },
+  mahogany_red: {
+    name: 'Royal Mahogany',
+    tier: 'standard',
+    thumbnail: 'linear-gradient(135deg, #3a1410 30%, #b3273a 70%, #d8a437)',
+  },
+  ocean_blue: {
+    name: 'Ocean Blue',
+    tier: 'standard',
+    thumbnail: 'linear-gradient(135deg, #1a4a7a, #0a243d)',
+  },
+  crimson: {
+    name: 'Crimson',
+    tier: 'standard',
+    thumbnail: 'linear-gradient(135deg, #7a1a3a, #3d0a20)',
+  },
+  electric_purple: {
+    name: 'Electric Purple',
+    tier: 'standard',
+    thumbnail: 'linear-gradient(135deg, #4a1a7a, #240a3d)',
+  },
+  golden_sand: {
+    name: 'Golden Sand',
+    tier: 'standard',
+    thumbnail: 'linear-gradient(135deg, #7a6a1a, #3d380a)',
+  },
+  jade_city: {
+    name: 'Jade City',
+    tier: 'vip',
+    thumbnail: 'linear-gradient(135deg, #14261c 40%, #2fae6f 75%, #9fe8c0)',
+  },
+  amethyst_cavern: {
+    name: 'Amethyst Cavern',
+    tier: 'vip',
+    thumbnail: 'linear-gradient(135deg, #180c24 40%, #7d3fae 75%, #d9bcee)',
+  },
+  carbon_ion: {
+    name: 'Carbon Ion',
+    tier: 'vip',
+    thumbnail: 'linear-gradient(135deg, #232326 55%, #1fb392)',
+  },
+};
+
+/** Display order for the felt pickers. Ids not listed follow, so a newly
+ *  added skin appears on its own rather than waiting for someone to notice. */
+const FELT_ORDER = [
+  'neon_city',
+  'classic_green',
+  'carbon_red',
+  'ice_cavern',
+  'arctic_white',
+  'mahogany_red',
+  'ocean_blue',
+  'crimson',
+  'electric_purple',
+  'golden_sand',
+  'jade_city',
+  'amethyst_cavern',
+  'carbon_ion',
+];
+
+const FELT_FALLBACK_GRADIENT = 'linear-gradient(135deg, #0f9d63, #0a3d24)';
+
+export const TABLE_FELT_CATALOG: readonly TableFeltDesign[] = [
+  ...FELT_ORDER.filter((id) => TABLE_SKIN_IDS.includes(id)),
+  ...TABLE_SKIN_IDS.filter((id) => !FELT_ORDER.includes(id)),
+].map((id) => ({
+  id,
+  name: FELT_META[id]?.name ?? id.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+  tier: FELT_META[id]?.tier ?? 'standard',
+  thumbnail: FELT_META[id]?.thumbnail ?? FELT_FALLBACK_GRADIENT,
+}));
+
+/** The catalogue entry for a stored table_id. Never undefined. */
+export function feltDesign(tid: string | undefined | null): TableFeltDesign {
+  const match = TABLE_FELT_CATALOG.find((f) => f.id === tid);
+  if (match) return match;
+  return TABLE_FELT_CATALOG.find((f) => f.id === 'classic_green') ?? TABLE_FELT_CATALOG[0];
+}
+
+/**
+ * Map a stored table_id onto the canonical id whose TILE the picker shows.
+ *
+ * The database really does hold legacy aliases: a live row on 2026-08-25 had
+ * `table_id: 'dark-felt'`. resolveSkin paints that correctly (Neon City), but
+ * the picker highlighted NOTHING, because no tile carries that id. From the
+ * player's side the modal had forgotten their table. Exactly the defect
+ * normalizeCardBack was added to fix on the Cards tab; felts needed it too.
+ *
+ * Resolution is by ASSET, not by a second alias table, so it follows any
+ * future alias automatically.
+ */
+export function normalizeFeltId(tid: string | undefined | null): string {
+  const fallback = 'classic_green'; // what resolveSkin actually paints on a miss
+  if (!tid) return fallback;
+  if (TABLE_FELT_CATALOG.some((f) => f.id === tid)) return tid;
+  const asset = TABLE_SKINS[tid];
+  if (asset) {
+    const match = TABLE_FELT_CATALOG.find((f) => TABLE_SKINS[f.id] === asset);
+    if (match) return match.id;
+  }
+  return fallback;
+}
+
+/** Same idea for background_id: legacy ids such as 'diamond-pattern' paint
+ *  midnight but used to highlight no tile at all. */
+export function normalizeBackgroundId(bid: string | undefined | null): string {
+  const fallback = 'midnight';
+  if (!bid) return fallback;
+  const asset = TABLE_BACKGROUNDS[bid];
+  if (!asset) return fallback;
+  if (TABLE_BACKGROUND_IDS.includes(bid)) return bid;
+  const canonical = TABLE_BACKGROUND_IDS.find((id) => TABLE_BACKGROUNDS[id] === asset);
+  return canonical ?? fallback;
+}
+
+/** VIP felts need VIP. Everything else is free. */
+export function isFeltUnlocked(
+  tid: string | undefined | null,
+  opts: { isVip?: boolean } = {}
+): boolean {
+  return feltDesign(tid).tier === 'standard' || !!opts.isVip;
 }
 
 // Dan 2026-08-18 — INTERCHANGEABLE DESIGNED BACKGROUNDS.

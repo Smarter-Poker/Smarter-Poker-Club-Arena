@@ -128,9 +128,11 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     }
 
     try {
-      // approveCashout is atomic and terminal (server route moves the chips to the
-      // club treasury and sets status='approved' in one transaction). The old
-      // follow-up completeCashout() call is gone -- it is now a deprecated no-op.
+      // Atomic and terminal. fn_cashout_approve releases the escrow into THIS
+      // approver's agent wallet (Dan 2026-08-25: "Once approved the chips go
+      // into the agent's wallet"), writes the ledger row and notifies the
+      // player, all in one transaction. It used to credit the approver's
+      // club_members.chip_balance, which is their player wallet.
       await cashoutService.approveCashout(cashout.id, user.id);
       loadCashouts();
       onCashoutProcessed?.();
@@ -340,7 +342,8 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
               </div>
 
               <div className="escrow-notice">
-                Chips Are Locked In Escrow. Approving Will Complete The Cashout.
+                Chips Are Locked In Escrow. Approving Moves Them Into Your Agent Wallet. Rejecting
+                Returns Them To The Player.
               </div>
             </div>
           ))}

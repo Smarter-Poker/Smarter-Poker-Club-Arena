@@ -84,9 +84,43 @@ async function mayViewUnionClub(clubUuid: string, userId: string): Promise<boole
   }
 }
 
+/**
+ * The viewer's id, from the store if it has hydrated and from the Supabase
+ * session if it has not.
+ *
+ * AUDIT 2026-08-25 — THE RACE THIS CLOSES. The guard used to read
+ * `useUserStore.getState().user?.id` once, inside an effect keyed only on the
+ * pathname. On a cold load the store hydrates (and `loadProfile` finishes)
+ * AFTER the first render, so a union owner opening their own club by link or
+ * bookmark was seen as `userId === null`, the owner check was skipped
+ * entirely, and they were redirected out of the one surface this guard's
+ * exemption exists to protect. The effect never re-ran, because the user was
+ * not a dependency — so it stayed wrong for the whole visit.
+ *
+ * Asking Supabase for the SESSION (a local read, not a network round trip)
+ * settles it: an id means check the exemption, and a genuine "no session"
+ * means an anonymous visitor, who cannot be the owner and should be ejected.
+ */
+async function resolveViewerId(): Promise<string | null> {
+  const fromStore = useUserStore.getState().user?.id ?? null;
+  if (fromStore) return fromStore;
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data?.session?.user?.id ?? null;
+  } catch (err) {
+    reportError(err, 'UnionSkinGuard.resolveViewerId');
+    return null;
+  }
+}
+
 export default function UnionSkinGuard() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  /**
+   * Subscribed, not read once: when the profile lands the guard re-evaluates
+   * instead of standing on the answer it got before anyone was logged in.
+   */
+  const storeUserId = useUserStore((s) => s.user?.id ?? null);
 
   useEffect(() => {
     const match = CLUB_ROUTE.exec(pathname);
@@ -105,7 +139,8 @@ export default function UnionSkinGuard() {
       if (!(await isConfirmedUnionClubId(clubUuid))) return; // ordinary club
       if (cancelled) return;
 
-      const userId = useUserStore.getState().user?.id ?? null;
+      const userId = await resolveViewerId();
+      if (cancelled) return;
       if (userId && (await mayViewUnionClub(clubUuid, userId))) return; // owner / union admin
       if (cancelled) return;
 
@@ -125,7 +160,7 @@ export default function UnionSkinGuard() {
     return () => {
       cancelled = true;
     };
-  }, [pathname, navigate]);
+  }, [pathname, navigate, storeUserId]);
 
   return null;
 }

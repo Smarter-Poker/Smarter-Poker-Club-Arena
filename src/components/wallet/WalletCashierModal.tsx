@@ -51,10 +51,35 @@
  *  IF IT IS A STAND ALONE CLUB, CHIP MINTING EXISTS INSIDE THEIR CLUB BANK."
  * So the mint entry point is here and nowhere else, and only when the club has
  * no union_id. In a union, chips flow DOWN from the union bank.
+ *
+ * ── ROLE SCOPED WALLETS (Dan 2026-08-25, binding) ──────────────────────────
+ *
+ * "If they simply just click cashier, this must always default to Agent and
+ *  player wallets only... Super Agents, Agents, and Sub Agents should ONLY EVER
+ *  SEE their downlines, and their downline agents' downlines - nobody else.
+ *  Owners, Co Owners and Admins see everyone. Any chips sent or claimed back
+ *  transact from the Agent Wallet."
+ *
+ * Three things changed here, and each was broken rather than merely missing:
+ *
+ *  - `walletType` now defaults to DEFAULT_CASHIER_WALLET ('agent_wallet'). It
+ *    defaulted to 'club_bank', and all four mount points spelled that fallback
+ *    out by hand, so a fifth would have copied it.
+ *
+ *  - loadMembers paged the ENTIRE club_members table with no scoping at all: a
+ *    sub agent was offered the club owner as a recipient. It now reads
+ *    fn_club_cashier_members, which walks the same downline edge the send RPC
+ *    refuses on, so the list and the refusal cannot disagree.
+ *
+ *  - the agent send went through ChipFlowService.agentToPlayer, which capped
+ *    against agents.agent_wallet_balance but debited `wallets`, wrote NO ledger
+ *    row, had no idempotency key inside a three-attempt retry, and had its
+ *    result hard-coded to `{ success: true }` here regardless of what happened.
+ *    It is now fn_agent_wallet_send: one transaction, one ledger row, one
+ *    op_id, and a ten minute clawback window the Claim Back tab can act on.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChipFlowService } from '../../services/ChipFlowService';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useIsMounted } from '../../hooks/useIsMounted';
@@ -73,6 +98,7 @@ import {
   canUseCashier,
   destinationBlurb,
   claimNeedsConfirm,
+  DEFAULT_CASHIER_WALLET,
   type CashierTab,
   type CashierDestination,
   type CashierWalletType,
@@ -97,15 +123,6 @@ const TAB_LABELS: Record<Tab, string> = {
 
 /** Wallets only an agent-shaped member can hold. See canHoldAgentWallet. */
 const AGENT_ONLY: DestinationWallet[] = ['agent_wallet', 'promo_wallet'];
-
-/**
- * A membership row means "in this club", and the column says so in two ways:
- * rows created before 2026-07-22 say 'approved', everything since says
- * 'active', and most of production is still the older word. Asking for one
- * hides most of a real club. Named here for the same reason CashierTradePage
- * names it: so the next screen copies the set rather than one of its halves.
- */
-const MEMBER_IN_CLUB = ['active', 'approved'];
 
 /**
  * A send at or above this share of the bank asks a second time. Funding an
@@ -147,6 +164,24 @@ interface LedgerTotals {
   into_bank: number;
   out_of_bank: number;
   net: number;
+}
+
+/**
+ * One agent wallet send that is still inside its ten minute window, straight
+ * off fn_agent_wallet_reversible. `seconds_left` is computed by the database so
+ * a phone with a wrong clock cannot offer a claim the server will refuse.
+ */
+interface ReversibleSend {
+  transaction_id: string;
+  to_user_id: string;
+  to_name: string;
+  amount: number;
+  claimed_back: number;
+  remaining: number;
+  destination: string;
+  created_at: string;
+  reversible_until: string;
+  seconds_left: number;
 }
 
 interface WalletCashierModalProps {
@@ -201,7 +236,7 @@ export default function WalletCashierModal({
   onClose,
   clubId,
   role,
-  walletType = 'club_bank',
+  walletType = DEFAULT_CASHIER_WALLET,
 }: WalletCashierModalProps) {
   const { user } = useAuthUser();
   const toast = useToast();
@@ -233,6 +268,16 @@ export default function WalletCashierModal({
    */
   const [holderHeld, setHolderHeld] = useState<number | null>(null);
 
+  /**
+   * The AGENT wallet's Claim Back tab: the sends this agent made inside the
+   * last ten minutes, and which one is being undone right now.
+   */
+  const [reversible, setReversible] = useState<ReversibleSend[]>([]);
+  const [reversibleLoading, setReversibleLoading] = useState(false);
+  const [claimingId, setClaimingId] = useState<string | null>(null);
+  /** Ticks once a second so each countdown on that list stays honest. */
+  const [nowTick, setNowTick] = useState(() => Date.now());
+
   const [ledger, setLedger] = useState<LedgerRow[]>([]);
   const [ledgerTotal, setLedgerTotal] = useState(0);
   const [ledgerTotals, setLedgerTotals] = useState<LedgerTotals | null>(null);
@@ -263,6 +308,8 @@ export default function WalletCashierModal({
 
   const tabs = cashierTabs(walletType);
   const destinations = cashierDestinations(walletType);
+  /** The agent wallet's Claim Back tab is a different shape from the bank's. */
+  const agentClaimTab = walletType === 'agent_wallet' && tab === 'claim';
 
   // ── Club + bank balance ───────────────────────────────────────────────────
   const loadClub = useCallback(async () => {
@@ -343,50 +390,76 @@ export default function WalletCashierModal({
     setClubLoading(false);
   }, [clubId, walletType, user?.id, isMounted]);
 
-  // ── Members who can receive ───────────────────────────────────────────────
+  /**
+   * ── Who this cashier may transact with ────────────────────────────────────
+   *
+   * This used to page EVERY club_members row for the club, 500 at a time, with
+   * no scoping whatsoever: an agent was offered the club owner, and a sub agent
+   * was offered every one of the club's 584 members. There was no server rule
+   * to disagree with either - the send path never asked who the recipient was
+   * beneath.
+   *
+   * fn_club_cashier_members answers that question in the database, walking the
+   * SAME club_members.agent_id edge that fn_agent_wallet_send now refuses on:
+   * everyone for an owner, co owner or admin; the recursive downline for a
+   * super agent, agent or sub agent; nobody for a plain player. A recipient
+   * offered here is one the server will accept, which is the whole point - a
+   * list that offers someone the RPC then rejects is a dead end nobody can
+   * diagnose from the screen.
+   */
   const loadMembers = useCallback(
     async (uuid: string) => {
       setMembersLoading(true);
-      // PostgREST caps a page at 1,000 rows. Paging in a deterministic order
-      // is the same shape CashierPage uses, and for the same reason: a 588
-      // member club silently lost 88 people to an unordered .limit().
-      const PAGE = 500;
-      const collected: Array<Record<string, unknown>> = [];
-      for (let from = 0; from < 10000; from += PAGE) {
-        const { data: page, error } = await supabase
-          .from('club_members')
-          .select(
-            'user_id, role, nickname, chip_balance, profiles!inner ( player_number, avatar_url, username, display_name )'
-          )
-          .eq('club_id', uuid)
-          .in('status', MEMBER_IN_CLUB)
-          .order('joined_at', { ascending: true })
-          .order('user_id', { ascending: true })
-          .range(from, from + PAGE - 1);
-        if (error) break;
-        collected.push(...((page || []) as Array<Record<string, unknown>>));
-        if (!page || page.length < PAGE) break;
-      }
+      const { data, error } = await supabase.rpc('fn_club_cashier_members', {
+        p_club_id: uuid,
+      });
       if (!isMounted.current) return;
+      if (error) {
+        /* A read that failed is not an empty club. Leaving the roster empty and
+           saying so is honest; pretending the club has nobody in it would let a
+           search box sit there returning nothing forever. */
+        reportError(error, 'WalletCashierModal.loadMembers');
+        setMembers([]);
+        setMembersLoading(false);
+        return;
+      }
+      const rows = (data || []) as Array<Record<string, unknown>>;
       setMembers(
-        collected.map((m) => {
-          const profile = m.profiles as Record<string, unknown>;
-          return {
-            user_id: String(m.user_id),
-            role: String(m.role || 'player'),
-            name:
-              (profile?.display_name as string) ||
-              (m.nickname as string) ||
-              (profile?.username as string) ||
-              `Member ${String(m.user_id).slice(0, 8)}`,
-            chip_balance: Number(m.chip_balance) || 0,
-            avatar_url: (profile?.avatar_url as string) || '',
-            username: (profile?.username as string) || '',
-            short_id: String((profile?.player_number as number) || '----'),
-          };
-        })
+        rows.map((m) => ({
+          user_id: String(m.user_id),
+          role: String(m.role || 'player'),
+          name: (m.name as string) || `Member ${String(m.user_id).slice(0, 8)}`,
+          chip_balance: Number(m.chip_balance) || 0,
+          avatar_url: (m.avatar_url as string) || '',
+          username: (m.username as string) || '',
+          short_id: String(m.player_number || '----'),
+        }))
       );
       setMembersLoading(false);
+    },
+    [isMounted]
+  );
+
+  /**
+   * The Claim Back list for an AGENT wallet: this agent's own sends that are
+   * still inside their ten minute window. Computed by the database
+   * (fn_agent_wallet_reversible) rather than from created_at on the client, so
+   * a phone with a skewed clock cannot offer a claim the server will refuse.
+   */
+  const loadReversible = useCallback(
+    async (uuid: string) => {
+      setReversibleLoading(true);
+      const { data, error } = await supabase.rpc('fn_agent_wallet_reversible', {
+        p_club_id: uuid,
+      });
+      if (!isMounted.current) return;
+      if (error) {
+        reportError(error, 'WalletCashierModal.loadReversible');
+        setReversible([]);
+      } else {
+        setReversible(((data || []) as ReversibleSend[]).map((r) => ({ ...r })));
+      }
+      setReversibleLoading(false);
     },
     [isMounted]
   );
@@ -453,6 +526,8 @@ export default function WalletCashierModal({
     setMembers([]);
     setMembersLoading(true);
     setHolderHeld(null);
+    setReversible([]);
+    setClaimingId(null);
     opIdRef.current = newOpId();
     busyRef.current = false;
     loadClub();
@@ -487,6 +562,16 @@ export default function WalletCashierModal({
     // list, which is how a ledger comes to show rows that do not match its own
     // filter chip.
   }, [isOpen, clubUuid, allowed, tab, typeFilter, loadLedger]);
+
+  // The agent wallet's Claim Back list, and a one-second tick so the countdown
+  // on each row is the truth rather than the value it had when the tab opened.
+  useEffect(() => {
+    if (!isOpen || !clubUuid || !allowed || walletType !== 'agent_wallet' || tab !== 'claim')
+      return;
+    loadReversible(clubUuid);
+    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [isOpen, clubUuid, allowed, walletType, tab, loadReversible]);
 
   // ── Claim Back: what does the chosen wallet actually hold? ────────────────
   // The player wallet figure already rides on the member row; the agent and
@@ -572,9 +657,10 @@ export default function WalletCashierModal({
     loadClub();
     if (!clubUuid) return;
     loadMembers(clubUuid);
+    if (walletType === 'agent_wallet') loadReversible(clubUuid);
     if (tab === 'ledger') loadLedger(clubUuid, 0, typeFilter);
     else setLedger([]);
-  }, [loadClub, loadMembers, loadLedger, clubUuid, tab, typeFilter]);
+  }, [loadClub, loadMembers, loadLedger, loadReversible, clubUuid, tab, typeFilter, walletType]);
 
   const { recentIds, addRecipient } = useRecentRecipients(user?.id, clubUuid, walletType);
 
@@ -677,15 +763,22 @@ export default function WalletCashierModal({
         if (error) throw error;
         res = Array.isArray(data) ? data[0] : data;
       } else if (walletType === 'agent_wallet') {
-        await ChipFlowService.agentToPlayer(
-          user?.id || '',
-          recipient.user_id,
-          amt,
-          'Agent',
-          recipient.name,
-          clubName
-        );
-        res = { success: true, replayed: false };
+        /* THE AGENT WALLET IS AN ACCOUNT NOW. This used to call
+           ChipFlowService.agentToPlayer, which capped the send against
+           agents.agent_wallet_balance and then debited an entirely different
+           account, wrote nothing to the ledger, carried no idempotency key
+           inside a three-attempt retry, and had its result hard-coded to
+           success below - so a refusal toasted "Sent". */
+        const { data, error } = await supabase.rpc('fn_agent_wallet_send', {
+          p_club_id: clubUuid,
+          p_to_user_id: recipient.user_id,
+          p_amount: amt,
+          p_destination: destination,
+          p_reason: reason.trim() || null,
+          p_op_id: opIdRef.current,
+        });
+        if (error) throw error;
+        res = Array.isArray(data) ? data[0] : data;
       } else {
         const { data, error } = await supabase.rpc('fn_club_bank_send', {
           p_club_id: clubUuid,
@@ -745,6 +838,58 @@ export default function WalletCashierModal({
       return;
     }
     void doSend();
+  };
+
+  /**
+   * THE TEN MINUTE MISTAKE ERASER.
+   *
+   * Dan 2026-08-25: "Agents can only claim back chips that were sent in the
+   * first 10 minutes (reconciling a mistake); after that they cannot remove
+   * chips from downline wallets unless the downline requests a cash out."
+   *
+   * The button is only rendered while the row still has time on it, but the
+   * clock that DECIDES is the database's: fn_agent_wallet_claim_back re-reads
+   * reversible_until on the originating row and refuses a late claim outright.
+   * This is the narrow exception to the chip-removal authority policy and it is
+   * anchored on a specific send, never on a balance.
+   */
+  const claimBack = async (row: ReversibleSend) => {
+    if (!clubUuid || claimingId || busyRef.current) return;
+    busyRef.current = true;
+    setClaimingId(row.transaction_id);
+    try {
+      const { data, error } = await supabase.rpc('fn_agent_wallet_claim_back', {
+        p_club_id: clubUuid,
+        p_transaction_id: row.transaction_id,
+        p_amount: row.remaining,
+        p_reason: 'Claimed Back From The Agent Wallet Cashier',
+        p_op_id: newOpId(),
+      });
+      if (error) throw error;
+      const res = (Array.isArray(data) ? data[0] : data) as {
+        success?: boolean;
+        error?: string;
+        replayed?: boolean;
+      } | null;
+      if (!res?.success) throw new Error(res?.error || 'Those Chips Could Not Be Claimed Back');
+      toast?.success?.(
+        res.replayed
+          ? `That Claim Had Already Gone Through. ${fmtWhole(row.remaining)} Chips Are Back In Your Agent Wallet`
+          : `Claimed ${fmtWhole(row.remaining)} Chips Back From ${row.to_name}`
+      );
+      masterBus.emit('BALANCE_UPDATED', { source: 'agent_wallet_claim', userId: user?.id || '' });
+      masterBus.emit('BALANCE_UPDATED', {
+        source: 'agent_wallet_claim',
+        userId: row.to_user_id,
+      });
+      refresh();
+    } catch (e) {
+      reportError(e, 'WalletCashierModal.claimBack');
+      toast?.error?.((e as Error).message || 'Claim Back Failed');
+    } finally {
+      busyRef.current = false;
+      if (isMounted.current) setClaimingId(null);
+    }
   };
 
   const reverse = async (row: LedgerRow) => {
@@ -919,7 +1064,57 @@ export default function WalletCashierModal({
           </div>
 
           <div className="cbc-body">
-            {tab === 'send' || tab === 'claim' ? (
+            {agentClaimTab ? (
+              /* THE AGENT WALLET'S CLAIM BACK TAB. Not the club bank's kind:
+                 there is no member to pick and no amount to type, because the
+                 only thing an agent may take back is a send they already made,
+                 and only while its ten minute window is open. One row per send,
+                 one tap, and the row disappears when the clock runs out. */
+              <>
+                <div className="cbc-blurb">
+                  {destinationBlurb(walletType, destination, 'claim')}
+                </div>
+                {reversibleLoading && <div className="cbc-empty">Reading Your Recent Sends...</div>}
+                {!reversibleLoading && reversible.length === 0 && (
+                  <div className="cbc-empty">
+                    Nothing To Claim Back. Only Sends Made In The Last Ten Minutes Can Be Undone.
+                  </div>
+                )}
+                {reversible.map((row) => {
+                  const left = Math.max(
+                    0,
+                    Math.ceil((new Date(row.reversible_until).getTime() - nowTick) / 1000)
+                  );
+                  if (left <= 0) return null;
+                  return (
+                    <div key={row.transaction_id} className="cbc-tx">
+                      <div className="cbc-tx-top">
+                        <span className="cbc-tx-type">{row.to_name}</span>
+                        <span className="cbc-tx-amount">{fmt(row.remaining)}</span>
+                      </div>
+                      <div className="cbc-tx-mid">
+                        <span>Into {titleCase(row.destination)}</span>
+                        <span className="cbc-tx-when">
+                          {Math.floor(left / 60)}m {left % 60}s Left
+                        </span>
+                      </div>
+                      <button
+                        className="cbc-undo"
+                        disabled={claimingId !== null}
+                        onClick={() => void claimBack(row)}
+                      >
+                        {claimingId === row.transaction_id
+                          ? 'Claiming...'
+                          : `Claim Back ${fmtWhole(row.remaining)} Chips`}
+                      </button>
+                    </div>
+                  );
+                })}
+                <div className="cbc-actions">
+                  <button onClick={onClose}>Close</button>
+                </div>
+              </>
+            ) : tab === 'send' || tab === 'claim' ? (
               <>
                 {/* Destination (send) or source (claim) */}
                 <div className="cbc-field">

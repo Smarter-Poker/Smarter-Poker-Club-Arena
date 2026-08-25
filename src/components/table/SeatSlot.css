@@ -998,6 +998,18 @@
   opacity: 1 !important;
   filter: none !important;
 }
+/* Dan 2026-08-25: this was briefly generalised to `.seat--in-hand` to stop live
+   VILLAINS being faded. That fixed the fade and broke five other things, because
+   `filter: none !important` is a sledgehammer that lands on every seat in a live
+   hand — it killed the acting-player spotlight (TablePage.css .seat-wrapper--spot
+   brightness), the gold stack-change glow, avatar hover brightening, the bust-art
+   drop shadow, and it out-ranked `.seat--folded` during the window where
+   lastAction is 'fold' but status has not flipped yet, putting a bright frame on
+   every fold.
+   The villain fade is fixed properly one level up instead: `seatDimmed` in
+   TablePage.tsx no longer dims ANY seat holding a live hand, so the vignette
+   never reaches them and there is nothing here to override. This rule stays
+   hero-only and two-class, which is what its specificity note above assumes. */
 
 /* ─── ACTIVE PLAYER ───────────────────────────────────────────────────── */
 
@@ -1227,6 +1239,12 @@
    `.seat`, and `.seat__info` is that column's last child, so this lands
    directly beneath the plate without needing to know the box's height. */
 .seat__cards--opponent {
+  /* How much of every card after the first is hidden under the one before it.
+     A token rather than a literal because the top-cap row overrides it: those
+     two seats hang their row OUTBOARD, off the side of the table, so their
+     group has to be the narrowest one on the felt. One name, two values, no
+     second copy of the overlap arithmetic. */
+  --sp-opp-overlap: 12px;
   position: absolute;
   top: 100%;
   left: 50%;
@@ -1239,7 +1257,29 @@
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.7));
 }
 
-/* Overlap every card after the first. -13px on a 30px card leaves a 17px
+/* ── Dan 2026-08-25, item 12: ONE PLAYER'S HAND IS ONE OBJECT ───────────────
+   "When the two players on the top have cards displayed at once, there is no
+   separation and they appear to be 10 cards."
+
+   Two fixes, and this is the second half of it. The first half is geometric -
+   the top seats now hang their rows on OPPOSITE, outboard sides (see the end
+   of this file), so the two groups sit at the far edges of the table with both
+   avatars and the whole felt between them. That alone ends the unbroken row.
+
+   This is the belt to that pair of braces: a group of face-down backs gets its
+   own backing plate and hairline, so it reads as one player's hand no matter
+   whose cards end up near it - at 2-max, at 9-max, and at whatever the next
+   ring is. It is deliberately NOT applied to a revealed hand: at showdown the
+   ranks are the whole point and a frame around them is noise, and the revealed
+   row already has its own anchor over the plate. */
+.seat__cards--opponent:not(.seat__cards--revealed) {
+  padding: 2px;
+  border-radius: 5px;
+  background: rgba(6, 10, 20, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+/* Overlap every card after the first. -12px on a 30px card leaves an 18px
    sliver of each - wide enough to count, narrow enough that six fit in the
    space two used to take.
 
@@ -1250,7 +1290,7 @@
    cards on top of each other hides the very ranks the player is trying to read.
    That is "crooked and mis alligned". */
 .seat__cards--opponent:not(.seat__cards--revealed) .seat__card:nth-child(n + 2) {
-  margin-left: -12px;
+  margin-left: calc(-1 * var(--sp-opp-overlap, 12px));
 }
 
 /* A shown hand lies flat and evenly spaced, in rank order (see SeatSlot.tsx).
@@ -1335,16 +1375,23 @@
      THE HERO, NOT ON TOP OF THE TABLE." The centred-above anchor (2026-08-19)
      floated the row onto the felt. Now that the hero avatar itself sits at
      y:100 of the scaler (barely overlapping the rail), the row hangs off the
-     RIGHT of the seat, vertically centred on the avatar — the PokerBros look.
-     The -10px tuck slides the first card slightly behind the avatar so a wide
-     PLO6 row still fits inside a 375px viewport. */
+     RIGHT of the seat — the PokerBros look. The -10px tuck slides the first
+     card slightly behind the avatar so a wide PLO6 row still fits inside a
+     375px viewport.
+
+     Dan 2026-08-25 item 14 supplies the vertical half: see the single
+     end-of-file anchor rule, which stretches this row across the band between
+     the hero and the action bar and centres the cards in it. The declarations
+     are repeated there because that rule is the one that governs every
+     breakpoint; they are kept identical here so reading either tells the
+     truth. */
   left: calc(100% - 10px);
   right: auto;
-  top: calc(var(--seat-avatar-size, 84px) / 2);
-  bottom: auto;
-  transform: translateY(-50%);
+  top: 0;
+  bottom: calc(50% - var(--sp-hero-clear, 34px) - env(safe-area-inset-bottom, 0px));
+  transform: none;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: flex-start;
   z-index: 20;
   gap: 0;
@@ -2848,8 +2895,20 @@
      A 56px avatar shortens the seat from 112px to 84px, which halves that
      offset to ~2.5% and lets the box rest on the rail with the whole unit,
      bust art included, still inside the canvas. The bust scale stays capped
-     because the art is drawn rising from its feet. */
-  --sp-bust-scale: 1.15;
+     because the art is drawn rising from its feet.
+
+     Dan 2026-08-25, item 7: "The top two players need to be moved up more.
+     Their action boxes should be on the rail, not on the table." The cap
+     drops from 1.15 to 1.05, and that is precisely what pays for the move.
+     The art is scaled about a point near the character's feet, so every 0.01
+     of scale lifts its crown ~0.56px above the avatar slot on the measured
+     1000px frame; the seats moved up 1.5 points of the table (top centre
+     6 -> 5, diagonals 8.5 -> 6) = 15px, and giving 0.10 of scale back buys
+     5.6px of it while the compact 56px slot and the shorter seat cover the
+     rest. At 1.15 the top-centre box could not clear the felt without the
+     crown crossing y 0 into the banner; at 1.05 it clears with 5px to spare.
+     Measured on the same harness the guard uses — tests/e2e/top-rail-seat.spec.ts. */
+  --sp-bust-scale: 1.05;
 }
 
 /* Dan 2026-08-20 (audit): the cap above used to be `--seat-avatar-size: 56px`
@@ -2976,15 +3035,99 @@
    blocks above cannot reach, so one rule governs every screen size instead of
    four copies that drift apart. */
 
+/* ── Dan 2026-08-25, item 14 — THE HERO'S CARDS SIT IN THEIR OWN LANE ────────
+   "The hero's cards should be perfectly centered to the right of the hero,
+   spaced perfectly between the avatar and the action bar."
+
+   "Perfectly" is a geometry request, not a nudge request, so this stops being
+   a hand-tuned offset and becomes a BAND with the row centred inside it. The
+   row is stretched from the top of the hero block down to the top of the
+   action bar and its cards are centred in that stretch, so the clearance above
+   and the clearance below are equal BY CONSTRUCTION — at two cards and at six,
+   at 375px and at desktop, and again the moment the table around it changes
+   size. Nothing here has to be re-tuned when it does.
+
+   Where the bottom of the band comes from, and why it is arithmetic rather
+   than a number:
+
+     - the hero block's CENTRE sits on the scaler's bottom edge (ring y:100
+       with the wrapper lift retired — see `.seat-wrapper.seat-wrapper--hero`
+       below), so in this row's own coordinates the scaler's bottom edge is at
+       50%: percentages here resolve against the seat's height, which is the
+       one measurement CSS can read without anyone writing the plate's height
+       down a second time;
+     - `.table-container` reserves exactly `--sp-action-h + --sp-hero-clear`
+       under the scaler. --sp-action-h is the action bar's OWN measured height,
+       republished by a ResizeObserver every time the raise slider opens or
+       closes, so the strip left between the scaler and the top of the bar is
+       always the remaining --sp-hero-clear. Reading --sp-hero-clear is
+       therefore how you read "the top of the action bar" from in here: hard-
+       coding a pixel gap instead would be correct only while the bar happened
+       to be collapsed, which is the exact bug that put the hero's stack behind
+       it on 2026-08-23.
+
+   Declared at the end of the file, out of reach of the three breakpoint blocks
+   above, so one rule governs every screen size instead of four copies that
+   drift apart. */
 .seat__cards--hero {
-  /* Beside the avatar, vertically centred on it, slightly tucked behind its
-     right edge — every hand size, every breakpoint. */
+  /* Beside the hero, slightly tucked behind the avatar's right edge — every
+     hand size, every breakpoint. */
   left: calc(100% - 10px);
   right: auto;
-  top: calc(var(--seat-avatar-size, 84px) / 2);
-  bottom: auto;
-  transform: translateY(-50%);
+  /* The band: hero block top -> action bar top, cards centred inside it. */
+  top: 0;
+  bottom: calc(50% - var(--sp-hero-clear, 34px) - env(safe-area-inset-bottom, 0px));
+  transform: none;
+  align-items: center;
   justify-content: flex-start;
+}
+
+/* ── Dan 2026-08-25, item 4 — THE HERO SITS ON THE RAIL, NOT ON THE TABLE ────
+   "The Hero position needs to be moved down. They should be on the rail, not
+   on the table."
+
+   The ring already says where the hero goes: y:100, the scaler's bottom edge,
+   measured against the painted skin like every other seat. What moved the hero
+   onto the felt was a second, later instruction — `.seat-wrapper--hero`
+   in TablePage.css carries `transform: translate(-50%, calc(-50% - 78px))`,
+   added 2026-08-23 so the stack would stop being hidden behind the fixed
+   action bar. 78px is three quarters of a hero block: it lifted the whole
+   player, avatar and plate, clear of the rail and up onto the playing surface,
+   which is what Dan is looking at.
+
+   This retires the lift, and it does it by re-declaring the lift's own
+   variable rather than by writing a competing `transform` — deliberately, for
+   three reasons:
+
+     - a second `transform` on `.seat-wrapper--hero` would be a coin flip. Both
+       declarations would be 0-1-0, so whichever stylesheet the bundler emitted
+       last would win, and that is not a thing to leave to chance on the seat
+       carrying the player's own stack. `.seat-wrapper.seat-wrapper--hero` is
+       0-2-0 and wins from either file in either order.
+     - the two short-viewport reductions of the lift (max-height 700 -> 62px,
+       600 -> 50px) are 0-1-0 as well, so this one line retires those too.
+       Three rules, one override, no leftovers.
+     - it moves the WHOLE wrapper, so the hero's chat bubble and their all-in
+       equity badge — both siblings of the seat inside that wrapper — travel
+       with the player instead of being left floating a lift's-height above
+       their head.
+
+   Zero, not some smaller lift, because the ring position IS the answer: with
+   nothing added, the wrapper's own translate(-50%, -50%) lands the hero block's
+   centre on the scaler's bottom edge, which puts the top edge of the avatar on
+   the bottom edge of the felt window (.table-surface ends at 89.2% of the
+   scaler). No part of the character overlaps the playing surface, which is
+   exactly what Dan asked for, and every pixel of drop beyond that only buries
+   the name plate deeper.
+
+   THE ONE THING IT DEPENDS ON: half the hero block now hangs below the
+   scaler, so `--sp-hero-clear` in TablePage.css (the strip reserved between
+   the scaler and the action bar) has to be at least that half — about 56px on
+   a 375px phone, against the 34px it reserves today. Below that the plate
+   carrying the stack goes back under the bar, which is the bug the lift was
+   added for in the first place. */
+.seat-wrapper.seat-wrapper--hero {
+  --hero-lift: 0px;
 }
 
 .seat__cards--opponent.seat__cards--revealed {
@@ -3096,15 +3239,64 @@
    OF HIM, NOT UNDER HIM" and the bottom-centre seat (hero slot) "AT THE
    BOTTOM OF THE TABLE WITH CARDS TO THE RIGHT OF THEM." The under-the-player
    rule stays for the left/right rail seats (his 2026-08-24 morning directive);
-   the two centre seats — top cap and bottom cap — hang their face-down row to
-   the RIGHT of the avatar instead, where there is open felt. Showdown reveals
-   keep their own placement (the revealed row draws above the plate). */
+   the top cap and bottom cap seats hang their face-down row BESIDE the avatar
+   instead, where there is open felt. Showdown reveals keep their own placement
+   (the revealed row draws above the plate).
+
+   ── Dan 2026-08-25, item 7, two corrections to that ─────────────────────────
+   "their cards should appear much closer to the avatar - there is too much of
+   a gap, 1 pixel away from the avatar the cards should appear. The guy on the
+   left, his cards should be on the left."
+
+   1. THE GAP. `left: calc(100% + 4px)` measured from the SEAT's edge, and the
+      seat is a whole name-plate wider than the avatar standing in the middle
+      of it: on a phone that is 12px of empty column plus the 4px, so the row
+      started ~16px clear of the character it belongs to and read as loose
+      cards on the felt. Measuring from the avatar instead — 50% of the seat
+      is the avatar's centre line, so its edge is half the avatar token away —
+      puts the row exactly 1px off the art at every breakpoint, including the
+      compact 56px top row, with no per-breakpoint number to keep in step.
+
+   2. THE SIDE. One `left` for both top seats sent the top-LEFT player's cards
+      inward, toward the top-right player's, which is how ten cards came to
+      read as one row (item 12). The side is now the OUTBOARD one, chosen from
+      the seat's own x by `outboardCardSide` in lib/tableSeatGeometry.ts and
+      carried in as `seat--cards-left` / `seat--cards-right`. Derived from x
+      rather than from a seat index because an index means a different chair on
+      every ring, while "left of the middle of the table" does not.
+
+   Vertically the row centres on the avatar's own midline rather than the old
+   `top: 22%` of the seat, which drifted with the plate's height. */
 .seat-wrapper--top .seat__cards--opponent:not(.seat__cards--revealed),
 .seat-wrapper--hero .seat__cards--opponent:not(.seat__cards--revealed) {
-  top: 22%;
-  left: calc(100% + 4px);
-  transform: none;
+  top: calc(var(--seat-avatar-size, 84px) / 2);
+  bottom: auto;
   margin-top: 0;
+  transform: translateY(-50%);
+}
+
+.seat-wrapper--top .seat--cards-right .seat__cards--opponent:not(.seat__cards--revealed),
+.seat-wrapper--hero .seat--cards-right .seat__cards--opponent:not(.seat__cards--revealed) {
+  left: calc(50% + var(--seat-avatar-size, 84px) / 2 + 1px);
+  right: auto;
+}
+
+.seat-wrapper--top .seat--cards-left .seat__cards--opponent:not(.seat__cards--revealed),
+.seat-wrapper--hero .seat--cards-left .seat__cards--opponent:not(.seat__cards--revealed) {
+  left: auto;
+  right: calc(50% + var(--seat-avatar-size, 84px) / 2 + 1px);
+}
+
+/* The top cap is the one place a row hangs OFF the side of the table rather
+   than over it, so its group has to be the narrowest one on screen or a PLO5
+   hand at the top-left seat runs off the felt entirely. 20px backs with the
+   12px overlap leave an 8px sliver each: a five-card group is 20 + 4 x 8 =
+   52px, which clears the scaler's edge at 375px on every ring including the
+   3-max and 5-max diagonals, the two that sit furthest out. Scoped to the
+   face-down row so a showdown reveal keeps the full-size cards it needs. */
+.seat-wrapper--top .seat__cards--opponent:not(.seat__cards--revealed) .seat__card {
+  width: 20px;
+  height: 28px;
 }
 
 /* ───────────────────────────────────────────────────────────────────────────

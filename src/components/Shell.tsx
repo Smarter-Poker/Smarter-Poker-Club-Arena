@@ -30,7 +30,7 @@ function VIPBadge() {
     <button
       className={`shell-vip-badge ${isVIP ? 'vip-active' : ''}`}
       onClick={() => {
-        navigate('/diamond-store');
+        navigate('/marketplace?tab=diamonds');
       }}
       title={isVIP ? 'VIP Gold Active' : 'Get VIP Benefits'}
     >
@@ -206,7 +206,7 @@ function ShellContent() {
                 if (e.key === 'Enter' || e.key === ' ') e.currentTarget.click();
               }}
               onClick={() => {
-                navigate('/diamond-store');
+                navigate('/marketplace?tab=diamonds');
               }}
               style={{ cursor: 'pointer' }}
             >

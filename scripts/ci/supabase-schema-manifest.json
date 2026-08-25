@@ -1535,6 +1535,7 @@
     "fn_mystery_bounty_reveal",
     "fn_mystery_bounty_seed",
     "fn_mystery_bounty_settle",
+    "fn_mystery_bounty_table_state",
     "fn_next_hand_number",
     "fn_next_player_number",
     "fn_normalize_chart_value",

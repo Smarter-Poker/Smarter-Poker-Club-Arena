@@ -10336,6 +10336,91 @@ export default function TablePage({
     return () => clearInterval(buzz);
   }, [isTimerWarningWindow]);
 
+  // --- NEW: Fully Functional Auto Top Up & Stand Up Next Big Blind ---
+  useEffect(() => {
+    // Only run when a hand is NOT in progress (i.e. between hands) and we are seated.
+    if (!tableId || !tableState) return;
+    if (!tableState.isHandInProgress && tableState.heroSeat > 0) {
+      const heroSeatData = tableState.players[tableState.heroSeat - 1];
+      if (!heroSeatData) return;
+
+      // 1. Stand Up Next Big Blind
+      if (standUpNextBB) {
+        // Approximate Next BB: The player who will post the Big Blind in the next hand.
+        const activeSeats = tableState.players
+          .map((p, i) =>
+            p && (p.status === 'active' || p.status === 'sitting_out') ? i + 1 : null
+          )
+          .filter(Boolean) as number[];
+
+        if (activeSeats.length >= 2) {
+          activeSeats.sort((a, b) => a - b);
+          let dealerIdx = activeSeats.indexOf(tableState.dealerSeat);
+          if (dealerIdx < 0) {
+            dealerIdx = activeSeats.findIndex((s) => s > tableState.dealerSeat);
+            if (dealerIdx < 0) dealerIdx = 0;
+          }
+
+          let currentBBIdx;
+          if (activeSeats.length === 2) {
+            // Heads up: dealer is SB, other is BB
+            currentBBIdx = (dealerIdx + 1) % activeSeats.length;
+          } else {
+            // 3+ players: BB is 2 seats after dealer
+            currentBBIdx = (dealerIdx + 2) % activeSeats.length;
+          }
+
+          // Next BB will be the player after the current BB
+          const nextBBIdx = (currentBBIdx + 1) % activeSeats.length;
+          const nextBBSeat = activeSeats[nextBBIdx];
+
+          if (nextBBSeat === tableState.heroSeat) {
+            void handleSitOut();
+            setStandUpNextBB(false);
+            if (typeof window !== 'undefined') {
+              toast?.success?.('Sitting out as requested before Big Blind');
+            }
+          }
+        }
+      }
+
+      // 2. Auto Top Up (Cash Games Only)
+      if (isAutoRebuyEnabled && !tableState.isTournament) {
+        const bbMatch =
+          typeof tableState.blinds === 'string' ? tableState.blinds.match(/\d+\/(\d+)/) : null;
+        const bb = bbMatch ? parseInt(bbMatch[1]) : 2;
+        const maxBuyIn = bb * 100;
+        const currentStack = Number(heroSeatData.stack || 0);
+
+        if (currentStack < maxBuyIn && accountBalance > 0) {
+          const topUpAmount = Math.min(maxBuyIn - currentStack, accountBalance);
+          if (topUpAmount > 0) {
+            handleAddChips(topUpAmount)
+              .then((res) => {
+                if (res && typeof window !== 'undefined') {
+                  toast?.success?.(`Auto Top Up: Added ${topUpAmount.toLocaleString()} chips`);
+                }
+              })
+              .catch(console.error);
+          }
+        }
+      }
+    }
+  }, [
+    tableState.isHandInProgress,
+    tableState.heroSeat,
+    tableState.players,
+    tableState.dealerSeat,
+    isAutoRebuyEnabled,
+    standUpNextBB,
+    tableState.blinds,
+    tableState.isTournament,
+    accountBalance,
+    tableId,
+    handleSitOut,
+  ]);
+  // -------------------------------------------------------------------
+
   return (
     <div
       /* `--embedded` (Dan 2026-08-23: "+ does not create the action box for

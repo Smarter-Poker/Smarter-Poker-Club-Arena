@@ -38,6 +38,7 @@ import {
   mysteryBountyTiers,
   type MysteryBountyProfileName,
   type MysteryBountyTierName,
+  applyTopBountyPercent,
 } from '../config/mysteryBountySpec.js';
 
 export interface MysteryChest {
@@ -159,7 +160,13 @@ interface Bucket {
 export function buildInventory(
   poolCents: number,
   drawCount: number,
-  profile: MysteryBountyProfileName
+  profile: MysteryBountyProfileName,
+  /**
+   * The headline prize as a percentage of the whole pool - spec section 10,
+   * default 20. Omitted or out of range means "use the profile as written",
+   * which is what every existing caller and test expects.
+   */
+  topPercent?: number | null
 ): MysteryChest[] {
   if (!Number.isInteger(poolCents) || poolCents <= 0) {
     throw new Error(
@@ -176,7 +183,7 @@ export function buildInventory(
     );
   }
 
-  const tiers = mysteryBountyTiers(profile);
+  const tiers = applyTopBountyPercent(mysteryBountyTiers(profile), topPercent);
 
   // ── 1. HOW MANY CHESTS PER TIER ─────────────────────────────────────────
   const counts = largestRemainder(

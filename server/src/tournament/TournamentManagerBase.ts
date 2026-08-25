@@ -29,7 +29,10 @@ import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
 import { effectivePrizePool } from './startRules.js';
-import { resolveMysteryBountyProfile } from '../config/mysteryBountySpec.js';
+import {
+  DEFAULT_TOP_BOUNTY_PERCENT,
+  resolveMysteryBountyProfile,
+} from '../config/mysteryBountySpec.js';
 import { buildInventory, poolCentsFromNumeric } from './mysteryBountyPool.js';
 import { shuffleChests } from './mysteryBountyDraw.js';
 import {
@@ -666,13 +669,27 @@ export abstract class TournamentManagerBase {
     this.mysteryBountySeeding = true;
     try {
       const profile = resolveMysteryBountyProfile(fresh.mystery_bounty_profile);
-      const chests = shuffleChests(buildInventory(poolCents, decision.drawCount, profile)).map(
-        (c) => ({ tier: c.tier, amount_cents: c.amountCents, seq: c.seq })
-      );
+      /* The stored top-bounty percentage DECIDES the jackpot, it does not just
+         describe it. The lobby advertises this number before a chest is
+         opened, so the generator has to be built from the same figure or the
+         advertisement is a guess. Defaults to 20 - spec section 10 - which is
+         what CLASSIC already carries, so a default event is unchanged. */
+      const topPercent =
+        fresh.mystery_bounty_top_percent == null
+          ? DEFAULT_TOP_BOUNTY_PERCENT
+          : Number(fresh.mystery_bounty_top_percent);
+      const chests = shuffleChests(
+        buildInventory(poolCents, decision.drawCount, profile, topPercent)
+      ).map((c) => ({ tier: c.tier, amount_cents: c.amountCents, seq: c.seq }));
 
       const { data: seeded, error: seedErr } = await supabase.rpc('fn_mystery_bounty_seed', {
         p_tournament_id: this.tournamentId,
-        p_players_remaining: decision.drawCount,
+        /* PLAYERS REMAINING, not the chest count. The RPC derives the chest
+           count from it (players - 1) and also records it as
+           mystery_bounty_activated_players, which is the figure the audit
+           trail prints as "Mystery Stage Activated: 150 Players Remaining".
+           Sending drawCount here would log 149 for a 150-player field. */
+        p_players_remaining: playersRemaining,
         p_chests: chests,
       });
 

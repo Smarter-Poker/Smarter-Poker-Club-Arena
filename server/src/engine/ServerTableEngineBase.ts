@@ -519,9 +519,16 @@ export abstract class ServerTableEngineBase {
 
   /**
    * SHOWDOWN SYSTEM 2026-08-25: true when the player mucked at showdown and
-   * has not voluntarily shown — the one question every reveal gate asks.
-   * A voluntary show (showHandPlayers, or per-card picks in showHandCards)
-   * always overrides a muck: mucking hides by default, showing is consent.
+   * has not voluntarily shown the WHOLE hand — the one question every reveal
+   * gate asks. A whole-hand voluntary show (showHandPlayers) overrides the
+   * muck: mucking hides by default, showing is consent.
+   *
+   * AUDIT NOTE 2026-08-25 (doc/code drift fixed): per-card picks
+   * (showHandCards) deliberately do NOT clear the muck. A mucked player who
+   * marked one card gets exactly that card exposed through the snapshot's
+   * partialReveal branch while the REST of the hand — and its identity
+   * (hand_name / ranking / description) — stays private. That is the whole
+   * point of a per-card pick: show the bluff card, keep the hand mucked.
    */
   protected isMuckedAtShowdown(userId: string): boolean {
     if (this.showHandPlayers?.has(userId)) return false;

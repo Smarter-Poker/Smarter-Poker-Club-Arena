@@ -135,17 +135,59 @@ bash "$ROOT/scripts/check-unpushed-work.sh" --quiet 2>&1 | sed "s/^/# /" >&2 || 
 # no real disk until something modifies it. Each tree now owns its node_modules
 # outright, which means `npm ci` in a worktree is simply SAFE - the thing agents
 # were doing all along.
-if [ ! -e "$DIR/node_modules" ] && [ -d "$ROOT/node_modules" ]; then
-  if cp -Rc "$ROOT/node_modules" "$DIR/node_modules" 2>/dev/null; then
-    echo "# node_modules: cloned from the main clone (copy-on-write, ~5s, no extra disk)" >&2
-  elif cp -R "$ROOT/node_modules" "$DIR/node_modules" 2>/dev/null; then
+#
+# 2026-08-25: EVERY PACKAGE ROOT, AND ON EVERY ENTRY - NOT JUST AT CREATION.
+#
+# Two holes, both measured on this machine:
+#
+#   1. This block only ever knew about the repo root. `server/` is its own
+#      package with its own node_modules, and NOTHING provisioned it, so
+#      124 of 162 Club Arena trees could not run the ENGINE's tsc or vitest
+#      at all. That is the highest-stakes code in the repo, and the pre-push
+#      hook responds to a missing vitest by printing a WARNING and skipping
+#      the test gate - so "NEVER PUSH A RED TEST" was unenforceable in the
+#      large majority of trees, silently, for anyone touching server/**.
+#      A gate that has quietly stopped running looks exactly like a gate
+#      with nothing to complain about.
+#
+#   2. It ran only when the tree was first created. Provisioning takes a few
+#      seconds, and an agent whose session is interrupted inside that window
+#      leaves an unprovisioned tree that NOTHING ever repairs - it is skipped
+#      forever after, because the `git worktree add` has already happened.
+#      That is where the 8 trees with no root node_modules came from.
+#
+# So: provision every package root, every time this script is run, and repair
+# what is missing rather than assuming creation succeeded. Cloning is a no-op
+# when the directory is already there, so the steady-state cost is one `[ -e ]`
+# per package root.
+provision_node_modules() {
+  # $1 = relative package dir ("" for the repo root)
+  local rel="$1"
+  local src="$ROOT${rel:+/$rel}"
+  local dst="$DIR${rel:+/$rel}"
+  local label="${rel:-.}/node_modules"
+
+  [ -d "$dst" ] || return 0                 # package does not exist in this tree
+  [ -d "$src/node_modules" ] || return 0    # nothing to clone from
+  [ -e "$dst/node_modules" ] && return 0    # already provisioned
+
+  if cp -Rc "$src/node_modules" "$dst/node_modules" 2>/dev/null; then
+    echo "# $label: cloned from the main clone (copy-on-write, no extra disk)" >&2
+  elif cp -R "$src/node_modules" "$dst/node_modules" 2>/dev/null; then
     # Not APFS. Slower and it really does use the disk, but still ISOLATED,
     # which is the property that matters.
-    echo "# node_modules: copied from the main clone (no copy-on-write here)" >&2
+    echo "# $label: copied from the main clone (no copy-on-write here)" >&2
   else
-    echo "# node_modules: could not be provisioned - run npm ci in this tree" >&2
+    echo "# $label: could not be provisioned - run 'npm ci' in ${rel:-the tree root}" >&2
   fi
-fi
+}
+
+# The repo root first, then every nested package that carries its own manifest.
+provision_node_modules ""
+for _pkg in server; do
+  provision_node_modules "$_pkg"
+done
+unset _pkg
 
 echo "# worktree: $DIR" >&2
 echo "# branch:   $BRANCH  (from origin/main)" >&2

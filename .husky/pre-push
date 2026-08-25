@@ -389,13 +389,42 @@ fi
 bash "$(git rev-parse --show-toplevel)/scripts/check-node-modules.sh" --check || true
 
 VITEST="$(git rev-parse --show-toplevel)/node_modules/.bin/vitest"
+
+# 2026-08-25: REPAIR IT, DO NOT NARRATE IT.
+#
+# This used to print a WARNING and push anyway. A warning in the middle of a
+# successful push is read by nobody, human or agent, and the line under it -
+# "the test gate did NOT run" - was true in 124 of 162 Club Arena trees for
+# server/**, because agent-workspace.sh provisioned the repo root and never
+# knew server/ was its own package. So the one rule that stops a red test
+# blocking the World Hub bundle for everybody was, in the majority of trees,
+# a printed sentence.
+#
+# The fix that matters is in agent-workspace.sh (provision every package root,
+# on every entry). This is the belt: a tree that reaches a push without vitest
+# repairs itself from the main clone and then RUNS the gate. Copy-on-write, a
+# few seconds, and the push proceeds gated instead of proceeding blind.
+if [ -z "${CA_SKIP_TESTS:-}" ] && [ -f package.json ] && [ ! -x "$VITEST" ]; then
+  CA_ROOT_MAIN="$HOME/Documents/club-arena"
+  CA_TREE_TOP="$(git rev-parse --show-toplevel)"
+  if [ -d "$CA_ROOT_MAIN/node_modules" ] && [ "$CA_TREE_TOP" != "$CA_ROOT_MAIN" ]; then
+    echo "[club-arena pre-push] no local vitest - provisioning from the main clone so the gate can actually run..."
+    cp -Rc "$CA_ROOT_MAIN/node_modules" "$CA_TREE_TOP/node_modules" 2>/dev/null \
+      || cp -R "$CA_ROOT_MAIN/node_modules" "$CA_TREE_TOP/node_modules" 2>/dev/null \
+      || true
+  fi
+fi
 if [ -z "${CA_SKIP_TESTS:-}" ] && [ -f package.json ] && [ ! -x "$VITEST" ]; then
   echo ""
-  echo "[club-arena pre-push] WARNING: no local vitest in this tree, so the test"
-  echo "                      gate did NOT run. CI still catches a red test - but"
-  echo "                      only after it has blocked the World Hub bundle for"
-  echo "                      everyone. Fix:  bash scripts/agent-workspace.sh <you> <slug>"
+  echo "[club-arena pre-push] REFUSING: no vitest in this tree and it could not be"
+  echo "                      provisioned, so the test gate cannot run. Pushing now"
+  echo "                      would put an ungated commit on a branch that CI"
+  echo "                      publishes from."
+  echo "                      Fix:  bash scripts/agent-workspace.sh <you> <slug>"
+  echo "                      or:   npm ci"
+  echo "                      Deliberate override: CA_SKIP_TESTS=1"
   echo ""
+  exit 1
 fi
 if [ -z "${CA_SKIP_TESTS:-}" ] && [ -f package.json ] && [ -x "$VITEST" ]; then
   CHANGED_TESTS=""

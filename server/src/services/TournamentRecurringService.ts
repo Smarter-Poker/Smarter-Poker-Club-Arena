@@ -188,6 +188,38 @@ const BLIND_STRUCTURES = {
     { level: 7, smallBlind: 150, bigBlind: 300, ante: 30, durationMinutes: 2 },
     { level: 8, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 2 },
   ],
+  /**
+   * HEADS-UP, three minutes a level (Dan 2026-08-25: "IT NEEDS TO DISPLAY THE
+   * BLIND LEVELS (3 MINUTES) AND THE STARTING STACK 300 FOR TURBO AND 1000 FOR
+   * DEEP STACK").
+   *
+   * Heads-Up was running BLIND_STRUCTURES.STANDARD — ten-minute opening levels
+   * built for a full-field MTT — with a 1,500 stack into 25/50. That is 30 big
+   * blinds and a clock that barely moves: a duel that should be over in
+   * minutes was structured like a two-hour tournament, and the lobby card said
+   * so ("10 Min Levels", "1,500").
+   *
+   * The ladder is the Spin ladder, because a Spin and a Heads-Up are the same
+   * shape of game — bought seats, no clock to wait for, a stack measured in
+   * big blinds rather than chips. 300 into 10/20 is 15bb (turbo); 1,000 is
+   * 50bb (deep). Identical level lengths across the whole ladder, which is the
+   * rule spinSpec already settled on: tier identity lives in stack depth, not
+   * in the clock.
+   */
+  HEADS_UP_3MIN: [
+    { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 3 },
+    { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 3 },
+    { level: 3, smallBlind: 20, bigBlind: 40, ante: 0, durationMinutes: 3 },
+    { level: 4, smallBlind: 30, bigBlind: 60, ante: 0, durationMinutes: 3 },
+    { level: 5, smallBlind: 40, bigBlind: 80, ante: 0, durationMinutes: 3 },
+    { level: 6, smallBlind: 50, bigBlind: 100, ante: 0, durationMinutes: 3 },
+    { level: 7, smallBlind: 60, bigBlind: 120, ante: 0, durationMinutes: 3 },
+    { level: 8, smallBlind: 75, bigBlind: 150, ante: 0, durationMinutes: 3 },
+    { level: 9, smallBlind: 90, bigBlind: 180, ante: 0, durationMinutes: 3 },
+    { level: 10, smallBlind: 105, bigBlind: 210, ante: 0, durationMinutes: 3 },
+    { level: 11, smallBlind: 150, bigBlind: 300, ante: 0, durationMinutes: 3 },
+    { level: 12, smallBlind: 200, bigBlind: 400, ante: 0, durationMinutes: 3 },
+  ],
   SPIN: [
     { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 2 },
     { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 2 },
@@ -952,9 +984,14 @@ function horsesForSeatHeldGame(maxPlayers: number): { horses: number; isSim: boo
  * Heads-Up is seat-first (isSeatFirstFormat): two seats, first come first
  * served, and the game begins the moment both are bought.
  */
-const SNG_BOARD_SHAPES: { seats: number; label: string; turbo: boolean }[] = [
-  { seats: 2, label: 'Heads-Up', turbo: false },
-];
+/**
+ * Dan 2026-08-25: "THE STARTING STACK 300 FOR TURBO AND 1000 FOR DEEP STACK."
+ * The stack is a property of the SHAPE now rather than a ternary on seat count
+ * that could only ever say 1500 — the board has one shape today, and the rule
+ * has to be written where a second one would read it.
+ */
+const SNG_BOARD_SHAPES: { seats: number; label: string; turbo: boolean; startingStack: number }[] =
+  [{ seats: 2, label: 'Heads-Up', turbo: false, startingStack: 1000 }];
 
 const SNG_BOARD_VARIANTS: { key: string; label: string }[] = [
   { key: 'nlh', label: 'NLH' },
@@ -973,11 +1010,13 @@ const SNG_CONFIGS: SNGConfig[] = SNG_BOARD_SHAPES.flatMap((shape) =>
       // Derived, never authored - see src/utils/buyIn.ts. The value is unused
       // by createSNG (which calls buyInColumns) but kept for config parity.
       rake: 0,
-      startingStack: shape.seats <= 2 ? 1500 : 2000,
+      startingStack: shape.startingStack,
       maxPlayers: shape.seats,
       minPlayers: shape.seats,
       horsesToRegister: shape.seats - 1,
-      blindStructure: shape.turbo ? BLIND_STRUCTURES.TURBO : BLIND_STRUCTURES.STANDARD,
+      /* Both bands run the same three-minute clock — see HEADS_UP_3MIN. The
+         turbo flag now chooses the STACK, not the level length. */
+      blindStructure: BLIND_STRUCTURES.HEADS_UP_3MIN,
       payoutStructure:
         shape.seats <= 2
           ? [{ place: 1, percentage: 100 }]

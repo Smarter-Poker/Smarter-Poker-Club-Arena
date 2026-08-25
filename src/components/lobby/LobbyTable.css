@@ -97,12 +97,20 @@
   vertical-align: middle;
   text-align: center;
 }
-/* The name is the row's identity and the only cell whose content is a
-   sentence rather than a value, so it centres as a block: the two-line MTT
-   title keeps its lines stacked and centred on each other instead of each
-   line finding its own centre. */
+/* Dan 2026-08-25: "TITLES AND ALL GAME DESCRIPTIONS ON ALL PAGES MUST BE LEFT
+   JUSTIFIED ON ALL PAGES. ONLY THE TOP CATEGORY ROW SHOULD BE CENTERED HERE."
+
+   The centring rule from 2026-08-24 stands for every column that holds a
+   VALUE - a heading and the numbers it names still share an axis. A title is
+   not a value. It is a sentence of varying length, and centring sentences puts
+   every row's first character in a different place, so the eye has to re-find
+   the start of each name on every row. The name cell reads from a single left
+   edge now; the heading above it stays centred with all the others. */
+.lobby-table td.lt-col-name {
+  text-align: left;
+}
 .lt-name {
-  justify-content: center;
+  justify-content: flex-start;
 }
 .lt-row:hover {
   background: rgba(65, 105, 225, 0.07);
@@ -150,9 +158,6 @@
 }
 .lt-col-players {
   width: 108px;
-}
-.lt-col-rules {
-  width: 168px;
 }
 .lt-col-starts {
   width: 110px;
@@ -307,11 +312,10 @@
 .lt-name--seatfirst {
   display: flex;
   flex-direction: column;
-  /* Centre, matching every other cell. This block sits AFTER the centring
-     rule near the top of the file and has the identical selector, so while it
-     said flex-start it silently won and MTT titles alone stayed ragged-left
-     in a centred table. One declaration, one place. */
-  align-items: center;
+  /* Line 1 (name and variation) and line 2 (the game's description - guarantee,
+     start clock, late-reg countdown, or the table's own name) share one left
+     edge, so a title reads as one block rather than two centred fragments. */
+  align-items: flex-start;
   gap: 2px;
   line-height: 1.25;
 }
@@ -450,24 +454,6 @@ abbr.lt-variant[title] {
   color: var(--danger-red, #ff4757);
 }
 
-/* Rule tokens */
-.lt-rules {
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
-}
-.lt-rule {
-  padding: 1px 5px;
-  border-radius: 3px;
-  border: 1px solid rgba(65, 105, 225, 0.3);
-  background: rgba(65, 105, 225, 0.08);
-  color: var(--club-blue-light, #5b83e8);
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-decoration: none;
-  cursor: help;
-}
 /* Status badges — always text, never color alone */
 .lt-statuscell {
   display: inline-flex;
@@ -576,71 +562,37 @@ abbr.lt-variant[title] {
 }
 
 /* ── Responsive: trim secondary columns before ever going back to cards ── */
-/* 1100 was measured against a column set that did not yet include the title's
-   232px, and against one that had never had to fit Starting Stack, Current
-   Level, Blind Levels and Format at once. The full ALL set measures 1586px, so
-   between 1100 and 1586 the board was scrolling sideways and the first thing
-   scrolled off was the leftmost column. The ladder now begins where the board
-   genuinely stops fitting. */
-@media (max-width: 1880px) {
-  .lt-col-rules {
-    width: 120px;
-  }
-  /* The three wells the 2026-08-25 pass added are the first to go on a narrow
-     desktop, in the same priority order as everything else here: they are
-     detail about a game, not the identity of one. The phone card takes them
-     back below — see the 640px block, which re-shows them as labelled wells. */
-  .lt-col-leveltime,
-  .lt-col-format {
-    display: none;
-  }
-  /* ...but not on the two seat-first boards. Blind speed is HOW a Spin or a
-     Heads-Up plays, and both boards are narrow enough to keep it at any
-     desktop width. The comment above is about the eight-column boards. */
-  .lobby-table--spin .lt-col-leveltime,
-  .lobby-table--sng .lt-col-leveltime {
-    display: table-cell;
-  }
-  /* Starting Stack and Current Level joined a `table-layout: fixed` table
-     without joining its narrowing ladder, so their 216px was carried whole
-     into every breakpoint down to the card. The ALL set went from 710px to
-     926px in the 641-768px band - roughly 200px of the sideways scroll the
-     phone pass exists to prevent. They narrow here and, below 900, they go:
-     the card and the game panel both still carry both figures. */
-  .lt-col-tstack {
-    width: 84px;
-  }
-  .lt-col-tlevel {
-    width: 92px;
-  }
-}
-/* THE RUNGS BELOW ARE MEASURED, NOT GUESSED (2026-08-25).
+/* ═══ THE NARROWING LADDER IS MEASURED, NOT GUESSED ═══════════════════════
    Every column here is content-box, so a stated width costs 20px more than it
-   says once padding is added - which is why the earlier arithmetic on this
-   ladder was 20px per column short and the board still scrolled sideways at
-   laptop widths. Each rung was measured in Chromium with the shipped
-   stylesheet, and the threshold is the width the rung ABOVE it actually needs:
+   says once the 10px side padding is added. Reasoning about this ladder in
+   STATED widths is how it came to be 20px per column short, across up to
+   thirteen columns, while the board quietly scrolled sideways and the title -
+   then the only `width: auto` column - paid for the whole overflow by
+   shrinking until it vanished. Nothing here is auto any more, so nothing can
+   absorb a miscalculation silently. Each rung is measured in Chromium against
+   the real column sets, and its threshold is the width the rung ABOVE it
+   actually needs:
 
-     full set                                        ALL 1866px  MTT 1708px
-     - Blind Levels, Format                          ALL 1542px  MTT 1384px
-     - narrowed, Max Payout / Stack / Level kept     ALL 1332px  MTT 1190px
-     - Max Payout                                    ALL 1216px  MTT 1190px
-     - Starting Stack, Current Level                 ALL 1020px  MTT 1021px
-     - Rules, Variant                                ALL  824px  MTT  825px
+     everything                       MTT 1520px   ALL 1542px   -> rung at 1560
+     narrowed, nothing dropped        MTT 1310px   ALL 1336px   -> rung at 1340
+     - Blind Levels, Format           MTT 1079px   ALL 1100px   -> rung at 1110
+     - Starting Stack, Level, Payout  MTT  939px   ALL  939px   -> rung at  940
+     - Variant, Type                  fits 641px, the last width before the card
 
-   So nothing is dropped before it stops fitting, and nothing that does not fit
-   is kept. A 1440px laptop keeps Starting Stack and Current Level, which the
-   first pass at this ladder had thrown away at 1360. */
-@media (max-width: 1550px) {
-  /* Narrow, do not drop. The title gives up 32px here and keeps the rest. */
+   Each figure is the width the board ACTUALLY measured when it overflowed, so
+   the rung below it is set just above that number and the board never scrolls.
+
+   Re-measure these numbers whenever a column is added or removed - taking
+   Rules and Max Payout off the board on 2026-08-25 freed ~280px and let three
+   rungs move DOWN, which is why a 1440px laptop now keeps Starting Stack,
+   Current Level, Blind Levels and Format instead of losing them at 1550. */
+@media (max-width: 1560px) {
+  /* Narrow, do not drop. Every column is still here. */
   .lt-col-name {
     width: 200px;
   }
   .lt-col-status {
     width: 110px;
-  }
-  .lt-col-rules {
-    width: 96px;
   }
   .lt-col-num,
   .lt-col-starts,
@@ -664,6 +616,27 @@ abbr.lt-variant[title] {
   }
 }
 @media (max-width: 1340px) {
+  /* First to go, in the ladder's standing priority order: detail about a game,
+     not the identity of one. The phone card takes them back below as labelled
+     wells, and the game panel carries both. */
+  .lt-col-leveltime,
+  .lt-col-format {
+    display: none;
+  }
+  /* ...but not on the two seat-first boards (#869). Blind speed is HOW a Spin
+     or a Heads-Up plays, and both boards are narrow enough by construction to
+     keep it at any desktop width. The rule above is about the wide boards. */
+  .lobby-table--spin .lt-col-leveltime,
+  .lobby-table--sng .lt-col-leveltime {
+    display: table-cell;
+  }
+}
+@media (max-width: 1110px) {
+  /* Max Payout only ever renders on the Spin board (Dan 2026-08-25), where it
+     is the whole point of the game - so it is the last of the three to go and
+     it goes here, with the other two, rather than earlier. */
+  .lt-col-tstack,
+  .lt-col-tlevel,
   .lt-col-payout {
     display: none;
   }
@@ -673,40 +646,27 @@ abbr.lt-variant[title] {
   .lobby-table--spin .lt-col-payout {
     display: table-cell;
   }
-}
-@media (max-width: 1220px) {
-  /* Both figures are still on the game panel and on the phone card. */
-  .lt-col-tstack,
-  .lt-col-tlevel {
-    display: none;
-  }
-  /* The Spin and Heads-Up boards keep the starting stack: neither has a
+  /* And both seat-first boards keep the starting stack (#869): neither has a
      Current Level column to spend the space on, and a seat-first game is
-     chosen on its stack and its blind speed. */
+     chosen on its stack as much as on its price. */
   .lobby-table--spin .lt-col-tstack,
   .lobby-table--sng .lt-col-tstack {
     display: table-cell;
   }
 }
-@media (max-width: 1023px) {
-  /* Tablet landscape. Type goes with Rules and Variant - the row's own chip
-     already says MTT or Cash - and the title gives up another 20px, which is
-     what keeps this band off a sideways scroll now that the title states a
-     width instead of silently absorbing whatever was left over. */
+@media (max-width: 940px) {
+  /* Tablet landscape. Type goes with Variant - the row's own chip already says
+     MTT or Cash - and the title gives up another 20px, which is what keeps
+     this band off a sideways scroll now that the title states a width instead
+     of silently absorbing whatever was left over. */
   .lt-col-name {
     width: 180px;
   }
   .lt-col-status {
     width: 104px;
   }
-  .lt-col-kind {
-    display: none;
-  }
-  .lt-col-rules,
-  .lt-col-variant,
-  .lt-col-tstack,
-  .lt-col-tlevel,
-  .lt-col-payout {
+  .lt-col-kind,
+  .lt-col-variant {
     display: none;
   }
   .lt-col-num {
@@ -743,22 +703,6 @@ abbr.lt-variant[title] {
   }
   .hide-on-mobile {
     display: none !important;
-  }
-  /* The last rung before the card. Six columns at their tablet widths measured
-     772px on the MTT board against a 641px viewport; the title used to swallow
-     that overflow by shrinking to nothing, which is the whole defect this pass
-     removes, so the numbers give it up instead. Measured at 641px: MTT 626px,
-     ALL 581px. */
-  .lt-col-name {
-    width: 150px;
-  }
-  .lt-col-num,
-  .lt-col-starts,
-  .lt-col-players {
-    width: 72px;
-  }
-  .lt-col-status {
-    width: 76px;
   }
 }
 
@@ -924,9 +868,6 @@ abbr.lt-variant[title] {
   .lobby-table td.lt-col-format {
     order: 4;
   }
-  .lobby-table td.lt-col-rules {
-    order: 5;
-  }
   .lobby-table td.lt-col-actions {
     order: 6;
   }
@@ -974,9 +915,10 @@ abbr.lt-variant[title] {
      every card on every phone was a 36px-tall window onto content that was
      routinely twice that:
 
-       - an MTT's rule medallions wrap to two or three lines, and the second
-         line was sliced through the middle — which is exactly the photograph
-         Dan sent, FREEZEOUT and DEEPSTACK visible and the rest guillotined;
+       - an MTT's rule medallions wrapped to two or three lines, and the
+         second line was sliced through the middle — which is exactly the
+         photograph Dan sent, FREEZEOUT and DEEPSTACK visible and the rest
+         guillotined (those medallions live in the game panel now);
        - "Current Level 5 / 150/300" is a label and two lines, so the blinds
          were cut in half;
        - a cash table's name is line two of its title, so "INSURANCE TEST"
@@ -1329,47 +1271,11 @@ abbr.lt-variant[title] {
 
      The left of the card answers "which game"; the right now answers "what
      kind of tournament", and the two read as columns rather than one long
-     wrap. The medallions were already computed for every tournament and were
-     only ever shown on the desktop table. */
+     wrap. */
   .lobby-table tr[data-kind='mtt'],
   .lobby-table tr[data-kind='sng'],
   .lobby-table tr[data-kind='spin'] {
     padding-right: 10px;
-  }
-
-  .lobby-table td.lt-col-rules {
-    display: block;
-    flex: 0 0 100%;
-    width: 100%;
-    text-align: left;
-  }
-
-  .lt-rules {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    gap: 5px;
-    /* The medallion list is allowed to run to as many lines as it needs. It
-       used to be capped to one line of a right-aligned cell, which is what cut
-       the second row of badges in half. */
-    max-height: none;
-    overflow: visible;
-  }
-
-  /* Dan 2026-08-24: "NO YELLOWS OR BROWNS ARE ALLOWED — SMARTER.POKER COLOUR
-     SCHEME ONLY." The medallions inherited a casino-gold treatment from the
-     desktop table. Club Arena blue, same as every other chip on the card. */
-  .lt-rule {
-    display: inline-block;
-    padding: 3px 7px;
-    border-radius: 6px;
-    font-size: 0.5875rem;
-    font-weight: 800;
-    letter-spacing: 0.06em;
-    text-decoration: none;
-    color: #bfe4ff;
-    background: linear-gradient(180deg, rgba(46, 92, 150, 0.45), rgba(20, 44, 80, 0.55));
-    border: 1px solid rgba(90, 160, 230, 0.4);
   }
 
   /* On a card the two now behave like every other labelled value: the well
@@ -1459,22 +1365,14 @@ abbr.lt-variant[title] {
     display: none;
   }
 
-  /* ── CASH TABLES EARN THEIR MEDALLIONS BACK (Dan 2026-08-25) ────────────
-     "you need to add any special table features like vpip, insurance, run it
-     twice, rathole etc." — said once for Hold'em and again for PLO.
-
-     They were hidden here on the argument that a cash table's rules are "a
-     settings list, not an identity". That is wrong in the one place it
-     matters: choosing between eleven NLH 5/10 tables. Nothing else on those
-     cards differs, so the medallions are the ONLY thing that distinguishes
-     them — and they were the one thing not shown. cashRuleMedallions has
-     always computed RIT, INSURANCE, STRADDLE, BOMB POTS, ANTE, DOUBLE BOARD,
-     SEVEN DEUCE, TIME BANK, VPIP, CALL TIME and NO RATHOLE from the real
-     TableSettings flags; the lobby simply never rendered them on a phone. */
-  .lobby-table tr[data-kind='cash'] td.lt-col-rules {
-    display: block;
-  }
-
+  /* THE MEDALLIONS MOVED, THEY DID NOT GO (Dan 2026-08-25): "FOR RULES, REMOVE
+     IT FROM THE MAIN SCREEN BUT MAKE SURE ALL RULES AND TAGS ARE ON THE LOBBY
+     SCREEN WHEN YOU CLICK THE GAME." Everything cashRuleMedallions and
+     tournamentMedallions compute - RIT, INSURANCE, STRADDLE, BOMB POTS, ANTE,
+     DOUBLE BOARD, SEVEN DEUCE, TIME BANK, VPIP, CALL TIME, NO RATHOLE, and the
+     tournament traits - is rendered by GameLobbyPanel one tap away, with the
+     full sentence beside each one instead of an abbreviation you had to hover
+     to read. */
   .lobby-table td.lt-col-starts {
     display: block;
     flex: 0 0 auto;

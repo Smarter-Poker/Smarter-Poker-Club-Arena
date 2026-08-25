@@ -29,6 +29,10 @@ import { resolve } from 'path';
 
 const CSS = readFileSync(resolve(__dirname, '../../src/components/lobby/LobbyTable.css'), 'utf8');
 const TSX = readFileSync(resolve(__dirname, '../../src/components/lobby/LobbyTable.tsx'), 'utf8');
+const PANEL = readFileSync(
+  resolve(__dirname, '../../src/components/lobby/GameLobbyPanel.tsx'),
+  'utf8'
+);
 
 /** The body of `columnsFor`, with block comments stripped so a column name
  *  mentioned in prose cannot be mistaken for a column in the set. */
@@ -64,10 +68,16 @@ function renderedColumnClasses(): string[] {
 function baseWidthOf(cls: string): string | null {
   const firstMedia = CSS.indexOf('@media');
   const desktop = firstMedia === -1 ? CSS : CSS.slice(0, firstMedia);
-  const rule = new RegExp(`\\.${cls}\\s*\\{([^}]*)\\}`).exec(desktop);
-  if (!rule) return null;
-  const width = /(?:^|[;\s])width:\s*([^;]+);/.exec(rule[1]);
-  return width ? width[1].trim() : null;
+  /* Every desktop rule whose selector names this class, not just the first:
+     the title also carries a `.lobby-table td.lt-col-name { text-align }` rule
+     that declares no width, and stopping at that one made a column that HAS a
+     width look like one that does not. */
+  const rules = [...desktop.matchAll(new RegExp(`\\.${cls}[\\s,{][^{}]*\\{([^}]*)\\}`, 'g'))];
+  for (const r of rules) {
+    const width = /(?:^|[;\s])width:\s*([^;]+);/.exec(r[1]);
+    if (width) return width[1].trim();
+  }
+  return rules.length ? null : null;
 }
 
 /** Classes the stylesheet removes from the desktop board outright. A column
@@ -141,5 +151,86 @@ describe('the title leads the board', () => {
     for (const tab of ['HOLDEM', 'SPIN', 'SNG']) {
       expect(columnSet(tab), `${tab} lost its name column`).toContain('COL_NAME');
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Dan, 2026-08-25 (verbatim): "TITLES AND ALL GAME DESCRIPTIONS ON ALL PAGES
+ * MUST BE LEFT JUSTIFIED ON ALL PAGES. ONLY THE TOP CATEGORY ROW SHOULD BE
+ * CENTERED HERE. 2, REMOVE THE MAX PAYOUT ON ANY PAGE BESIDES SPINS. ITS ONLY
+ * FOR THAT CATEGORY. FOR RULES, REMOVE IT FROM THE 'MAIN SCREEN' BUT MAKE SURE
+ * ALL RULES AND TAGS ARE ON THE LOBBY SCREEN WHEN YOU CLICK THE GAME."
+ */
+describe('the title reads from a left edge, the heading above it does not', () => {
+  it('left-aligns the name cell', () => {
+    expect(CSS).toMatch(/\.lobby-table td\.lt-col-name \{[^}]*text-align: left/);
+  });
+
+  it('starts the title box at the left of its cell', () => {
+    const rule = /(?:^|\n)\.lt-name \{([^}]*)\}/.exec(CSS);
+    expect(rule, '.lt-name rule not found').toBeTruthy();
+    expect(rule![1]).toContain('justify-content: flex-start');
+  });
+
+  it('stacks line 1 and line 2 of a title on the same left edge', () => {
+    const rule = /\.lt-name--mtt,\s*\.lt-name--cash,\s*\.lt-name--seatfirst \{([^}]*)\}/.exec(CSS);
+    expect(rule, 'the stacked-title rule was not found').toBeTruthy();
+    expect(rule![1]).toContain('align-items: flex-start');
+    expect(rule![1]).not.toContain('align-items: center');
+  });
+
+  it('leaves the column headings centred', () => {
+    const head = /\.lobby-table thead th \{([^}]*)\}/.exec(CSS);
+    expect(head, 'thead th rule not found').toBeTruthy();
+    expect(head![1]).toContain('text-align: center');
+  });
+});
+
+describe('Max Payout belongs to Spins and to nothing else', () => {
+  it('appears on the Spin board', () => {
+    expect(columnSet('SPIN')).toContain('COL_PAYOUT');
+  });
+
+  it('appears on no other board', () => {
+    for (const tab of ['ALL', 'MTT', 'SNG', 'HOLDEM', 'OMAHA', 'LIMIT', 'MIXED']) {
+      expect(columnSet(tab), `${tab} is offering Max Payout`).not.toContain('COL_PAYOUT');
+    }
+  });
+});
+
+describe('rules left the board and none of them were lost', () => {
+  it('is on no column set', () => {
+    for (const tab of ['ALL', 'MTT', 'SPIN', 'SNG', 'HOLDEM', 'OMAHA', 'LIMIT', 'MIXED']) {
+      expect(columnSet(tab), `${tab} still draws a Rules column`).not.toContain('COL_RULES');
+    }
+  });
+
+  it('took its cell and its stylesheet with it', () => {
+    expect(TSX).not.toContain('COL_RULES');
+    // The tombstone comment naming it is fine; the component and its use are not.
+    expect(TSX).not.toContain('function RulesCell');
+    expect(TSX).not.toContain('<RulesCell');
+    expect(CSS).not.toContain('lt-col-rules');
+    expect(CSS).not.toContain('.lt-rule');
+  });
+
+  it('is still computed for every row, because the panel reads it', () => {
+    // entry.rules is what cashRuleMedallions / tournamentMedallions produce.
+    expect(TSX + PANEL).toContain('entry.rules');
+  });
+
+  it('renders every rule, with its explanation, in the game panel', () => {
+    // Two render sites: one for cash and seat-first games, one for tournaments.
+    const sites = [...PANEL.matchAll(/entry\.rules\.map\(\(r\) => \(/g)];
+    expect(sites.length, 'the panel renders no rule list').toBeGreaterThanOrEqual(2);
+    // Label AND the sentence that explains it - the thing an abbreviation on a
+    // phone could never give, since a phone has no hover.
+    expect(PANEL).toContain('{r.label}');
+    expect(PANEL).toContain('{r.tip}');
+  });
+
+  it('gates the list on nothing but having rules to show', () => {
+    expect(PANEL).toContain('entry.rules.length > 0');
   });
 });

@@ -129,32 +129,14 @@ interface ColumnDef {
 
 // ─── Cell renderers ────────────────────────────────────────────────────────
 
-/* Every rule medallion is shown. `hidden` was a hard-coded empty array left
-   behind when the truncation was removed, so `extra` was always 0 and the
-   "+2" overflow chip below it was unreachable code guarding a tooltip that
-   could never be built - along with its .lt-rule--more stylesheet rule. */
-function RulesCell({ entry }: { entry: LobbyEntry }) {
-  const shown = entry.rules;
-  /* Nothing, not a dash. A phone card drops a cell that renders empty
-     (`td:empty`), so a Spin with no traits loses the well instead of showing a
-     heading called RULES with a hyphen under it. */
-  if (shown.length === 0) return null;
-  return (
-    <span className="lt-rules">
-      {shown.map((r) => (
-        /* `title` is a hover affordance and a phone has no hover, so the
-           explanation of "BOMB POTS 1 IN 25" was unreachable on the surface
-           where the medallions matter most — they are what distinguishes
-           eleven identical NLH 5/10 tables. aria-label carries the same
-           sentence to a screen reader, and the tip is also rendered in the
-           game panel a tap away. */
-        <abbr key={r.key} title={r.tip} aria-label={`${r.label}: ${r.tip}`} className="lt-rule">
-          {r.label}
-        </abbr>
-      ))}
-    </span>
-  );
-}
+/* RulesCell lived here and is deleted (2026-08-25). Dan: "FOR RULES, REMOVE IT
+   FROM THE MAIN SCREEN BUT MAKE SURE ALL RULES AND TAGS ARE ON THE LOBBY
+   SCREEN WHEN YOU CLICK THE GAME." The medallions were a row of abbreviations
+   that had to be hovered to mean anything, on the one surface that has no
+   hover on half its traffic. GameLobbyPanel already renders every one of them
+   with its full sentence - `entry.rules` is unchanged and still computed by
+   cashRuleMedallions / tournamentMedallions - so nothing is lost by taking the
+   abbreviations off the board, and 168px goes back to the games themselves. */
 
 /* LiveCountdown lived here and is deleted (2026-08-25). It rendered a coarse
    whole-minutes countdown into the status cell of any non-MTT tournament — in
@@ -529,12 +511,6 @@ const COL_GTD: ColumnDef = {
   render: (e) =>
     e.guaranteeLabel ? <span className="lt-mono lt-gtd">{e.guaranteeLabel}</span> : null,
 };
-const COL_RULES: ColumnDef = {
-  key: 'rules',
-  label: 'Rules',
-  className: 'lt-col-rules',
-  render: (e) => <RulesCell entry={e} />,
-};
 const COL_STARTS: ColumnDef = {
   key: 'starts',
   label: 'Starting Time',
@@ -702,6 +678,11 @@ const COL_TLEVEL: ColumnDef = {
    They are ordinary columns, so the desktop board gets a heading and the phone
    card gets the same heading printed above the value from data-label — the two
    layouts cannot say different things about the same fact. */
+/* SPINS ONLY (Dan 2026-08-25: "REMOVE THE MAX PAYOUT ON ANY PAGE BESIDES
+   SPINS. ITS ONLY FOR THAT CATEGORY."). spinPayoutLabel returns null for
+   anything that is not a Spin, so on any other board this is a column of
+   nothing - and the multiplier IS the Spin, which is why it stays there.
+   Pinned by lobbyTitleColumn.test.ts. */
 const COL_PAYOUT: ColumnDef = {
   key: 'payout',
   label: 'Max Payout',
@@ -988,7 +969,6 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_VARIANT,
         COL_PLAYERS,
         COL_BUYIN,
-        COL_RULES,
         COL_STATUS,
         COL_ACTIONS,
       ];
@@ -1022,7 +1002,6 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_TLEVEL,
         COL_LEVELTIME,
         COL_FORMAT,
-        COL_RULES,
         COL_ACTIONS,
       ];
     case 'SPIN':
@@ -1084,7 +1063,6 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
            ALL tab. */
         COL_PLAYERS,
         COL_STARTS,
-        COL_RULES,
         COL_STATUS,
         COL_TSTACK,
         COL_TLEVEL,

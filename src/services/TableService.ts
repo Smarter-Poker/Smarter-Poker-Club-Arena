@@ -565,24 +565,17 @@ class TableService {
             });
         }
       } else {
-        // For tournaments, just clear the seat without crediting wallets
+        // In tournaments, leaving the table NEVER cashes out chips, deletes the seat,
+        // or eliminates the player. The player is placed in sit-out mode, chips stay
+        // on the table, and the server continues to blind them out / auto-muck until
+        // they return or bust.
         await supabase
           .from('table_seats')
-          .update({ left_at: new Date().toISOString() })
+          .update({ status: 'sitting_out' })
           .eq('table_id', tableId)
           .eq('seat_number', seatNo)
           .eq('user_id', userId)
           .is('left_at', null);
-      }
-
-      // If this is a tournament table, update tournament_players status
-      // (tableData already has tournament_id from the query at L258 — no second query needed)
-      if (tableData?.tournament_id) {
-        await supabase
-          .from('tournament_players')
-          .update({ status: 'eliminated', chips: 0 })
-          .eq('tournament_id', tableData.tournament_id)
-          .eq('user_id', userId);
       }
 
       // Update player count for TOURNAMENT leaves only

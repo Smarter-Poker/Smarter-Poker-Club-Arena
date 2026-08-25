@@ -25,9 +25,11 @@ import { reportError } from '../utils/errorReporter';
 // seated" and "the database is down" must not read as the same event.
 const UNREGISTER_REASON_TEXT: Record<string, string> = {
   tournament_not_found: 'That tournament no longer exists',
-  registration_closed: 'Registration has closed for this tournament',
+  registration_closed:
+    'Registration has closed for this tournament. Tournaments that have started cannot be refunded.',
   too_close_to_start: 'You cannot unregister within a minute of the start time',
-  not_registered_or_seated: 'You are not registered, or you have already been seated at a table',
+  not_registered_or_seated:
+    'You are not registered, or you have already been seated at a table. Tournaments that have started cannot be refunded.',
 };
 
 const REGISTER_REASON_TEXT: Record<string, string> = {

@@ -419,6 +419,49 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       return { success: true, immediate: true };
     }
 
+    if (this.isTournamentTable()) {
+      // In tournaments, leaving the table NEVER cashes out or clears the seat.
+      // The player is auto-folded if mid-hand, marked sitting_out in table_seats
+      // and disconnectEngine, and continues to be dealt in / blinded out until
+      // they return and sit down or run out of chips.
+      if (this.handController !== null) {
+        const state = this.handController.getState();
+        const enginePlayer = state.players.find((p) => p.user_id === userId);
+        if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in) {
+          let folded = false;
+          try {
+            folded = this.handController.performAction(enginePlayer.seat, 'fold') === true;
+            if (folded) {
+              console.log(
+                `[ServerTableEngine:${this.tableId}] Tournament player ${userId} auto-folded on leave`
+              );
+            }
+          } catch (err) {
+            console.warn(
+              `[ServerTableEngine:${this.tableId}] Auto-fold on tournament leave threw: ${err}`
+            );
+          }
+          if (!folded) {
+            this.preActionEngine.setPreAction(this.tableId, userId, 'auto_fold');
+          }
+        }
+      }
+
+      supabase
+        .from('table_seats')
+        .update({ status: 'sitting_out' })
+        .eq('table_id', this.tableId)
+        .eq('user_id', userId)
+        .is('left_at', null)
+        .then(({ error }) => {
+          if (error)
+            console.warn(`[ServerTableEngine] tournament sit-out update failed:`, error.message);
+        });
+
+      this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
+      return { success: true, immediate: true };
+    }
+
     // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_left discrete event so
     // every connected client (including spectators) can re-render the
     // empty seat without diffing the next state snapshot.

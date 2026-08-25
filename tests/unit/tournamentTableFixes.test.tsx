@@ -137,3 +137,28 @@ describe('MiniStatsCard Tournament STATS Button', () => {
     expect(container.firstChild).toBeNull();
   });
 });
+
+describe('Tournament Leave & Unregister Refund Rules', () => {
+  it('does not cash out or delete seat on tournament table leave in server engine', () => {
+    const code = tsCode(read(SEATING_SRC));
+    expect(code).toMatch(/if\s*\(this\.isTournamentTable\(\)\)\s*\{/);
+    expect(code).toMatch(
+      /this\.disconnectEngine\.sitOut\(this\.tableId,\s*userId,\s*'voluntary'\)/
+    );
+  });
+
+  it('does not clear seat or eliminate player on tournament table leave in TableService', () => {
+    const code = tsCode(read('src/services/TableService.ts'));
+    expect(code).toMatch(/table_seats[\s\S]*?status:\s*'sitting_out'/);
+    // Ensure we do NOT set left_at for tournament leaves
+    expect(code).not.toMatch(
+      /if\s*\(tableData\?\.tournament_id\)\s*\{\s*await supabase[\s\S]*?status:\s*'eliminated'/
+    );
+  });
+
+  it('informs player of tournament sit-out behavior on LeaveTableConfirm', () => {
+    const code = tsCode(read('src/components/table/LeaveTableConfirm.tsx'));
+    expect(code).toMatch(/isTournament\s*\?\s*'Leave Tournament Table\?'\s*:\s*'Leave Table\?'/);
+    expect(code).toMatch(/In Tournaments, Leaving The Table/);
+  });
+});

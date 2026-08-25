@@ -51,8 +51,31 @@ export default function ChipStack({
 
   // Five stacks of five is what this component's absolute-positioned chip
   // layout can hold without stacks overlapping their neighbours.
-  const stacks: ChipStackVisual[] = visualChipStacks(amount, { maxStacks: 5, maxPerStack: 5 });
+  // UPDATE: We flatten all denominations into a single vertical pile
+  // to satisfy the "all stacked in one pile" requirement.
+  const stacks: ChipStackVisual[] = visualChipStacks(amount, { maxStacks: 5, maxPerStack: 4 });
   const { chipSize, spacing } = SIZES[size];
+
+  const flattenedChips: {
+    denom: any;
+    partial: boolean;
+    isTopInDenom: boolean;
+    truncated: boolean;
+    count: number;
+  }[] = [];
+  stacks.forEach((stack) => {
+    for (let i = 0; i < stack.drawn; i++) {
+      flattenedChips.push({
+        denom: stack.denom,
+        partial: stack.partial,
+        isTopInDenom: i === stack.drawn - 1,
+        truncated: stack.truncated,
+        count: stack.count,
+      });
+    }
+  });
+
+  const shadowDepth = Math.min(flattenedChips.length * 3, 16);
 
   // Detect amount change for bounce animation
   const hasAmountChanged = prevAmount !== undefined && amount !== prevAmount;
@@ -62,61 +85,63 @@ export default function ChipStack({
     <div className={`chip-stack-container ${bounceClass} ${className}`}>
       {/* Chip Stacks */}
       <div className="chip-stacks">
-        {stacks.map((stack, stackIndex) => {
-          const { denom, count, drawn, truncated, partial } = stack;
-          const shadowDepth = Math.min(drawn * 3, 16);
+        <div
+          className={`chip-stack ${animated ? 'animated' : ''}`}
+          style={{
+            height: chipSize * 0.2 + (flattenedChips.length - 1) * spacing,
+            width: chipSize,
+            filter: `drop-shadow(0 ${shadowDepth}px ${shadowDepth * 1.5}px rgba(0, 0, 0, ${0.3 + flattenedChips.length * 0.05}))`,
+          }}
+        >
+          {flattenedChips.map((chip, index) => {
+            const { denom, partial, isTopInDenom, truncated, count } = chip;
 
-          return (
-            <div
-              key={denom.value}
-              className={`chip-stack ${animated ? 'animated' : ''}`}
-              style={{
-                animationDelay: `${stackIndex * 50}ms`,
-                // The stack is absolutely positioned from the bottom, so it
-                // needs explicit room or the amount label overlaps its top chip.
-                height: chipSize * 0.2 + (drawn - 1) * spacing,
-                width: chipSize,
-                filter: `drop-shadow(0 ${shadowDepth}px ${shadowDepth * 1.5}px rgba(0, 0, 0, ${0.3 + drawn * 0.1}))`,
-              }}
-            >
-              {/* Clamped stacks print their real count: the pile is capped for
-                  layout, the value it represents never is. */}
-              {truncated && (
-                <span className="chip-stack__multi" style={{ fontSize: chipSize * 0.3 }}>
-                  ×{count.toLocaleString()}
-                </span>
-              )}
+            // SLIGHTLY OFF SET logic: pseudo-random based on index
+            const offsetX = Math.sin(index * 23.45) * 1.5;
+            const offsetY = Math.cos(index * 34.56) * 0.5;
 
-              {Array.from({ length: drawn }).map((_, chipIndex) => (
-                <div
-                  key={chipIndex}
-                  className={`chip${partial ? ' chip--partial' : ''}`}
-                  style={{
-                    width: chipSize,
-                    height: chipSize * (partial ? 0.12 : 0.2),
-                    background: `linear-gradient(135deg, ${denom.color} 0%, ${denom.accent} 100%)`,
-                    borderColor: denom.accent,
-                    bottom: chipIndex * spacing,
-                    zIndex: drawn - chipIndex,
-                  }}
-                >
-                  {/* Only the top chip carries the value, and the partial
-                      sliver carries none: it stands in for a sub-1 remainder
-                      no chip on the ladder can represent, so labelling it "1"
-                      would overstate it. See chipDenominations.ts. */}
-                  {chipIndex === drawn - 1 && !partial && (
-                    <span
-                      className="chip-value"
-                      style={{ color: denom.ink, fontSize: chipSize * 0.35 }}
-                    >
-                      {denom.label}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          );
-        })}
+            return (
+              <div
+                key={index}
+                className={`chip${partial ? ' chip--partial' : ''}`}
+                style={{
+                  width: chipSize,
+                  height: chipSize * (partial ? 0.12 : 0.2),
+                  background: `linear-gradient(135deg, ${denom.color} 0%, ${denom.accent} 100%)`,
+                  borderColor: denom.accent,
+                  bottom: index * spacing + offsetY,
+                  left: offsetX,
+                  zIndex: flattenedChips.length - index,
+                }}
+              >
+                {/* Clamped stacks print their real count */}
+                {truncated && isTopInDenom && (
+                  <span
+                    className="chip-stack__multi"
+                    style={{
+                      fontSize: chipSize * 0.3,
+                      bottom: '100%',
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                    }}
+                  >
+                    ×{count.toLocaleString()}
+                  </span>
+                )}
+
+                {/* Only the top chip carries the value */}
+                {isTopInDenom && !partial && (
+                  <span
+                    className="chip-value"
+                    style={{ color: denom.ink, fontSize: chipSize * 0.35 }}
+                  >
+                    {denom.label}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Amount Label */}

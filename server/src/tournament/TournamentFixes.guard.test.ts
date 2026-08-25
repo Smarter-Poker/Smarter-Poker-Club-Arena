@@ -279,11 +279,28 @@ describe('seating a tournament twice must not build a second set of tables', () 
     expect(fn).toMatch(/tablesToCreate/);
   });
 
-  it('creates only the shortfall, never a full second set', () => {
+  it('creates only the shortfall, and measures it in SEATS not tables', () => {
     const src = code(BASE);
     const fn = src.slice(src.indexOf('createTablesAndSeatPlayers(tournament: any)'));
-    // the create loop must be bounded by the shortfall, not by numTables alone
-    expect(fn).toMatch(/Math\.max\(0,\s*numTables\s*-\s*alreadyHave\)/);
+    /**
+     * UPDATED 2026-08-25. This used to pin
+     * `Math.max(0, numTables - alreadyHave)`, and that formula is the defect:
+     * `numTables = ceil(players.length / maxPerTable)` assumes every adopted
+     * table is EMPTY, which is the one thing adoption guarantees they are not.
+     * One adopted table already holding 9 of 9 seats plus 10 entrants asked
+     * for 2 tables, had 1, created 1 — and the tenth entrant was handed to the
+     * FULL table. Live footprint 2026-08-25: 54 seats above their table's own
+     * max_players across 53 tournament tables ("Turbo Tuesday Graveyard"
+     * tables 44-56 each carrying a seat_number 10 on max_players 9).
+     *
+     * The shortfall is now counted in seats against real free capacity, which
+     * is strictly stronger: it still creates only the shortfall, and it can no
+     * longer under-create.
+     */
+    expect(fn).not.toMatch(/Math\.max\(0,\s*numTables\s*-\s*alreadyHave\)/);
+    expect(fn).toMatch(/freeSeatsNow/);
+    expect(fn).toMatch(/seatShortfall/);
+    expect(fn).toMatch(/tablesToCreate\s*=\s*Math\.ceil\(seatShortfall\s*\/\s*maxPerTable\)/);
   });
 
   it('never re-seats a player who already holds a live seat', () => {
@@ -300,10 +317,28 @@ describe('seating a tournament twice must not build a second set of tables', () 
     expect(row).not.toContain('players[i].user_id');
   });
 
-  it('gives a new seat the lowest FREE seat number so it cannot collide', () => {
+  it('gives a new seat the lowest FREE seat number WITHIN the table capacity', () => {
     const src = code(BASE);
     const fn = src.slice(src.indexOf('createTablesAndSeatPlayers(tournament: any)'));
-    expect(fn).toMatch(/while\s*\(taken\.has\(seatNumber\)\)/);
+    /**
+     * UPDATED 2026-08-25. The pinned scan was `while (taken.has(seatNumber))
+     * seatNumber++` — lowest free, with NO CEILING. Handed a full 9-max table
+     * it returned seat 10, walking straight past the max_players that
+     * clampSeatsForVariant had just clamped for deck safety (#782). The
+     * sibling scan in ensureLateRegSeated has always carried its ceiling
+     * (`if (seatNumber > occ.max) continue`); this one did not.
+     *
+     * Lowest-free is still the rule. It is now bounded by the table's own
+     * capacity, and a player for whom no in-capacity seat exists is left
+     * unseated for the 5-second sweep rather than given an illegal seat.
+     */
+    expect(fn).not.toMatch(/while\s*\(taken\.has\(seatNumber\)\)\s*seatNumber\+\+/);
+    expect(fn).toMatch(/capacityOf/);
+    // The scan is bounded by the capacity on BOTH the loop and the acceptance.
+    expect(fn).toMatch(/while\s*\(n\s*<=\s*cap\s*&&\s*taken\.has\(n\)\)/);
+    expect(fn).toMatch(/if\s*\(n\s*<=\s*cap\)/);
+    // No in-capacity seat anywhere is reported, never papered over.
+    expect(fn).toMatch(/seating_capacity_exhausted/);
   });
 });
 

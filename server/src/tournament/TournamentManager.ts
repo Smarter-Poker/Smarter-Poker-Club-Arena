@@ -736,7 +736,36 @@ export class TournamentManager extends TournamentManagerEliminations {
           .eq('seat_number', seatNumber)
           .not('left_at', 'is', null)
           .select('id');
-        if (reuseErr) continue;
+        /**
+         * A PAID PLAYER WHO NEVER GETS A SEAT MUST NOT BE SILENT (2026-08-25).
+         *
+         * Both of these branches were a bare `continue`. This method is the
+         * self-heal that guarantees Dan's rule that an MTT entrant is NEVER
+         * waiting, and it runs every five seconds — so an error here does not
+         * retry into success, it retries into the SAME failure, forever, with
+         * nothing written anywhere. A player who paid a buy-in and holds no
+         * seat is the failure shape this estate keeps hitting, and it was
+         * reaching production with no report attached to it at all.
+         *
+         * A genuine unique-index race — the player was seated by another pass
+         * in the same instant — is the one expected outcome and stays quiet;
+         * the resolved state is correct, so a report would be pure noise.
+         * Everything else is now reported and the sweep moves to the next
+         * player rather than abandoning the pass.
+         */
+        const quietRace = (msg?: string) =>
+          /duplicate|unique|23505|already/i.test(msg || '');
+        if (reuseErr) {
+          if (!quietRace(reuseErr.message)) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Could not reuse seat ${seatNumber} at table ${best.tableId.slice(0, 8)} for ${player.user_id.slice(0, 8)}: ${reuseErr.message}. Player is registered and UNSEATED; the sweep will retry in 5s.`
+              ),
+              'Tournament.late_reg_seat_reuse_failed'
+            );
+          }
+          continue;
+        }
         if (!reusedRows || reusedRows.length === 0) {
           const { error: seatErr } = await supabase.from('table_seats').insert({
             table_id: best.tableId,
@@ -745,7 +774,14 @@ export class TournamentManager extends TournamentManagerEliminations {
             stack: playerChips,
           });
           if (seatErr) {
-            // Unique-index race (already seated elsewhere this instant) — skip
+            if (!quietRace(seatErr.message)) {
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Could not seat ${player.user_id.slice(0, 8)} at table ${best.tableId.slice(0, 8)} seat ${seatNumber}: ${seatErr.message}. Player is registered and UNSEATED; the sweep will retry in 5s.`
+                ),
+                'Tournament.late_reg_seat_insert_failed'
+              );
+            }
             continue;
           }
         }

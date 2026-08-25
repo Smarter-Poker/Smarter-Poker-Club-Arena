@@ -593,12 +593,27 @@ abbr.lt-variant[title] {
     flex: 1 1 100%;
   }
   .lt-col-num,
-  .lt-col-players,
-  .lt-col-status {
+  .lt-col-players {
     flex: 0 0 auto;
   }
-  .lt-col-status {
-    margin-left: auto;
+
+  /* The badge is the card's top-right corner, not a third line. Measured on
+     the deployed card: the chips and value wells came to 352px of a 312px
+     line, so `margin-left:auto` pushed the status onto its own row and the
+     card ran 150px tall for three lines of content. Lifting it out of the
+     flow puts it where the desktop board has it and returns the card to two
+     lines. */
+  .lobby-table td.lt-col-status {
+    position: absolute;
+    top: 9px;
+    right: 11px;
+    margin-left: 0;
+  }
+
+  /* ...and the headline reserves the corner so a long game name wraps before
+     it reaches the badge instead of running underneath it. */
+  .lt-col-name {
+    padding-right: 96px;
   }
 
   /* A long game name now wraps instead of forcing the row wider. */
@@ -634,7 +649,7 @@ abbr.lt-variant[title] {
      raised surface. */
   .lobby-table td.lt-col-num,
   .lobby-table td.lt-col-players {
-    padding: 3px 8px 4px;
+    padding: 3px 7px 4px;
     border-radius: 7px;
     background: rgba(0, 0, 0, 0.32);
     box-shadow:
@@ -696,7 +711,7 @@ abbr.lt-variant[title] {
   .lt-kind,
   .lt-variant {
     display: inline-block;
-    padding: 2px 7px;
+    padding: 2px 6px;
     border-radius: 6px;
     font-size: 0.5875rem;
     font-weight: 800;

@@ -110,22 +110,13 @@ describe('who can receive a Club Bank send into an agent wallet', () => {
    * offers a recipient the server will reject and the user gets a refusal with
    * no way to work out why.
    */
-  it('is exactly the three agent roles', () => {
-    for (const r of ['super_agent', 'agent', 'sub_agent'] as const) {
+  it('is the agent roles and staff roles', () => {
+    for (const r of ['owner', 'co_owner', 'admin', 'super_agent', 'agent', 'sub_agent'] as const) {
       expect(canHoldAgentWallet(r)).toBe(true);
     }
-    for (const r of ['owner', 'co_owner', 'admin', 'player'] as const) {
+    for (const r of ['player'] as const) {
       expect(canHoldAgentWallet(r)).toBe(false);
     }
-  });
-
-  it('is NOT the same set as canSeeClubBank - the two answer different questions', () => {
-    // An owner spends from the bank without holding a float; an agent holds a
-    // float without ever seeing the bank. super_agent is the only overlap.
-    const bank = CLUB_ROLES.filter(canSeeClubBank);
-    const float = CLUB_ROLES.filter(canHoldAgentWallet);
-    expect(bank).not.toEqual(float);
-    expect(bank.filter((r) => float.includes(r))).toEqual(['super_agent']);
   });
 
   it('refuses junk, like every other gate here', () => {

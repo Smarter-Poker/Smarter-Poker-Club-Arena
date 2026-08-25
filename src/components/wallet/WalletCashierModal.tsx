@@ -537,9 +537,9 @@ export default function WalletCashierModal({
     const needsAgent = AGENT_ONLY.includes(destination);
     const q = search.trim().toLowerCase();
 
-    const destinationMembers = members
-      .filter((m) => m.user_id !== user?.id)
-      .filter((m) => (needsAgent ? canHoldAgentWallet(m.role) : true));
+    const destinationMembers = members.filter((m) =>
+      needsAgent ? canHoldAgentWallet(m.role) : true
+    );
 
     if (q.length < 2) {
       let recent = destinationMembers
@@ -930,7 +930,10 @@ export default function WalletCashierModal({
                           style={{ backgroundImage: `url(${m.avatar_url || ''})` }}
                         />
                         <div className="cbc-member-info">
-                          <span className="cbc-member-name">{m.name}</span>
+                          <span className="cbc-member-name">
+                            {m.name}
+                            {m.user_id === user?.id && ' (You)'}
+                          </span>
                           <span className="cbc-member-id">#{m.short_id}</span>
                         </div>
                         <span className="cbc-member-role">{roleLabel(m.role)}</span>

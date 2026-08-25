@@ -167,7 +167,7 @@ async function getUserSearchScope(userId: string): Promise<SearchScope> {
 
     // ── 4. Build searchable user ID pool based on role ──
     if (result.role === 'player') {
-      result.searchableUserIds = result.friendIds;
+      result.searchableUserIds = [...new Set([...result.friendIds, userId])];
     } else {
       // Elevated role: get all club member IDs
       if (result.clubIds.length > 0) {
@@ -179,17 +179,14 @@ async function getUserSearchScope(userId: string): Promise<SearchScope> {
 
         if (clubMembers) {
           const memberIds = clubMembers.map((cm: any) => cm.user_id);
-          result.searchableUserIds = [...new Set([...memberIds, ...result.friendIds])];
+          result.searchableUserIds = [...new Set([...memberIds, ...result.friendIds, userId])];
         }
       }
 
       if (result.searchableUserIds.length === 0) {
-        result.searchableUserIds = result.friendIds;
+        result.searchableUserIds = [...new Set([...result.friendIds, userId])];
       }
     }
-
-    // Filter out self
-    result.searchableUserIds = result.searchableUserIds.filter((id) => id !== userId);
   } catch (err) {
     reportError(err, 'FindPlayerModal.getUserSearchScope');
   }

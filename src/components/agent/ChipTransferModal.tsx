@@ -59,6 +59,7 @@ export default function ChipTransferModal({
   const [note, setNote] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingRecipients, setIsLoadingRecipients] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [senderBalance, setSenderBalance] = useState<number>(0);
@@ -147,19 +148,36 @@ export default function ChipTransferModal({
                     )
                 `
         )
-        .eq('club_id', await resolveClubUUID(clubId))
-        .neq('user_id', user.id);
+        .eq('club_id', await resolveClubUUID(clubId));
 
       // Filter recipients based on sender's role in the hierarchy
-      if (role === 'owner') {
-        // Owner can send to agents, sub-agents, and players
-        query = query.in('role', ['agent', 'sub_agent', 'member', 'player']);
+      if (role === 'owner' || role === 'co_owner' || role === 'admin') {
+        // Owner/Admin can send to all roles (including staff, agents, and players)
+        query = query.in('role', [
+          'owner',
+          'co_owner',
+          'admin',
+          'super_agent',
+          'agent',
+          'sub_agent',
+          'member',
+          'player',
+        ]);
       } else if (role === 'agent' || role === 'super_agent') {
-        // Agents can send to their sub-agents and players
-        query = query.in('role', ['sub_agent', 'member', 'player']);
+        // Agents can send to staff, agents, sub-agents, and players
+        query = query.in('role', [
+          'owner',
+          'co_owner',
+          'admin',
+          'super_agent',
+          'agent',
+          'sub_agent',
+          'member',
+          'player',
+        ]);
       } else if (role === 'sub_agent') {
-        // Sub-agents can only send to their players
-        query = query.in('role', ['member', 'player']);
+        // Sub-agents can send to their players and sub-agents
+        query = query.in('role', ['sub_agent', 'member', 'player']);
       }
 
       const { data, error: queryError } = await query;
@@ -190,11 +208,14 @@ export default function ChipTransferModal({
         .sort((a: Recipient, b: Recipient) => {
           // Sort: agents first, then players
           const roleOrder: Record<string, number> = {
-            agent: 0,
-            super_agent: 0,
-            sub_agent: 1,
-            member: 2,
-            player: 2,
+            owner: 0,
+            co_owner: 0,
+            admin: 0,
+            super_agent: 1,
+            agent: 1,
+            sub_agent: 2,
+            member: 3,
+            player: 3,
           };
           return (roleOrder[a.role] || 3) - (roleOrder[b.role] || 3);
         });
@@ -206,6 +227,17 @@ export default function ChipTransferModal({
     }
     setIsLoadingRecipients(false);
   };
+
+  const filteredRecipients = useMemo(() => {
+    if (!searchQuery.trim()) return recipients;
+    const q = searchQuery.trim().toLowerCase();
+    return recipients.filter(
+      (r) =>
+        r.username.toLowerCase().includes(q) ||
+        r.role.toLowerCase().includes(q) ||
+        (r.id === user?.id && 'you'.includes(q))
+    );
+  }, [recipients, searchQuery, user?.id]);
 
   const selectedRecipientData = useMemo(() => {
     return recipients.find((r) => r.id === selectedRecipient);
@@ -345,6 +377,22 @@ export default function ChipTransferModal({
           {!recipientId && (
             <div className="form-group">
               <label>Send To</label>
+              <input
+                type="text"
+                placeholder="Search Member, Role Or (You)..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  marginBottom: '8px',
+                  padding: '8px',
+                  borderRadius: '4px',
+                  border: '1px solid #334155',
+                  background: '#0f172a',
+                  color: '#fff',
+                  width: '100%',
+                }}
+                aria-label="Search Recipients"
+              />
               {isLoadingRecipients ? (
                 <div className="loading-text">Loading...</div>
               ) : (
@@ -354,16 +402,30 @@ export default function ChipTransferModal({
                   className="player-select"
                 >
                   <option value="">Select Recipient</option>
-                  {recipients.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.role === 'agent' || r.role === 'super_agent'
-                        ? '[Agent] '
-                        : r.role === 'sub_agent'
-                          ? '[Sub-Agent] '
-                          : ''}
-                      {r.username} (Bal: {r.balance.toLocaleString()})
-                    </option>
-                  ))}
+                  {filteredRecipients.map((r) => {
+                    const isSelf = r.id === user?.id;
+                    const roleTag =
+                      r.role === 'owner'
+                        ? '[Owner] '
+                        : r.role === 'co_owner'
+                          ? '[Co-Owner] '
+                          : r.role === 'admin'
+                            ? '[Admin] '
+                            : r.role === 'super_agent'
+                              ? '[Super-Agent] '
+                              : r.role === 'agent'
+                                ? '[Agent] '
+                                : r.role === 'sub_agent'
+                                  ? '[Sub-Agent] '
+                                  : '';
+                    return (
+                      <option key={r.id} value={r.id}>
+                        {isSelf ? '(You) ' : ''}
+                        {roleTag}
+                        {r.username} (Bal: {r.balance.toLocaleString()})
+                      </option>
+                    );
+                  })}
                 </select>
               )}
             </div>

@@ -41,6 +41,7 @@ import ConnectionStatusBar from './components/ConnectionStatusBar';
 import PersistentTableLayer from './components/table/PersistentTableLayer';
 import BusToastBridge from './components/common/BusToastBridge';
 import { ConfirmHost } from './components/common/confirmDialog';
+import { SignUpHost } from './components/tournament/signUpDialog';
 import MilestoneToast from './components/common/MilestoneToast';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
 
@@ -378,6 +379,12 @@ export default function App() {
         <UnionSkinGuard />
         <BusToastBridge />
         <ConfirmHost />
+        {/* Dan 2026-08-25: the ONE tournament buy-in confirmation. Mounted here
+          for the same reason ConfirmHost is - every register button in the app
+          goes through useTournamentRegistration, which awaits this imperatively,
+          and it must be reachable from the club lobby, the tournament page, XMTT
+          and union games alike, not only from the tournament details route. */}
+        <SignUpHost />
         {/* Dan 2026-08-18: Session Complete now pops in the LOBBY, so its host
           lives outside <Routes> - it has to survive the navigate() off the
           table, and "the lobby" is HomePage OR ClubHomePage (which now serves

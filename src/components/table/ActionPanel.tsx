@@ -101,6 +101,22 @@ interface ActionPanelProps {
    * the parent fall back to horizontal during the visual rollout if needed.
    */
   verticalSlider?: boolean;
+  /**
+   * Dan 2026-08-25 (binding): "tournaments and cash games should ALWAYS be
+   * defaulted to actual totals unless the user changes the setting to BB.
+   * Enforce that rule and functionality."
+   *
+   * This panel used to print big blinds unconditionally — the sub-label under
+   * the bet amount and both slider cap figures were BB whatever the player had
+   * chosen — so a table whose every other number was chips still handed the
+   * player "26BB / 4BB" on the control they actually bet with.
+   *
+   * This is the SAME user setting the seats and the pot read
+   * (`user_table_settings.show_stack_in_bb`, default false). Off = chips
+   * everywhere, which is the default and the rule. It is a prop rather than a
+   * hook read so this component stays presentational and unit-testable.
+   */
+  showStackInBB?: boolean;
 }
 
 function formatChips(amount: number): string {
@@ -425,6 +441,8 @@ export default function ActionPanel({
 
   raiseIntent,
   verticalSlider = true,
+  // Chips is the default and the rule — see the prop's docstring.
+  showStackInBB = false,
 }: ActionPanelProps) {
   /**
    * The table's chip unit. The small blind when the parent knows it, otherwise
@@ -944,7 +962,9 @@ export default function ActionPanel({
                   {formatChips(raiseAmount)}
                 </button>
               )}
-              {bigBlind > 0 && !amountTyping && (
+              {/* Big blinds only when the player asked for them — chips are
+                  the default everywhere (Dan 2026-08-25). */}
+              {showStackInBB && bigBlind > 0 && !amountTyping && (
                 <span className="raise-value__bb">{(raiseAmount / bigBlind).toFixed(1)} BB</span>
               )}
             </div>
@@ -1076,12 +1096,20 @@ export default function ActionPanel({
                 })}
               </div>
             </div>
+            {/* Dan 2026-08-25: the max cap sat at the top of this column at
+                exactly the height of the 100% tick label, so "26BB" and
+                "ALL IN" printed on top of each other (visible in his
+                screenshot as "A26BB"). They named the same number anyway —
+                the top tick IS the all-in — so only the floor is labelled
+                here now. Do not re-add a --max cap without moving the top
+                tick label out of its way first.
+                And the floor prints CHIPS unless the player switched to BB;
+                every other number on the felt already did. */}
             <div className="raise-slider-vertical__caps" aria-hidden="true">
-              <span className="raise-slider-vertical__cap raise-slider-vertical__cap--max">
-                {bigBlind > 0 ? `${Math.round(maxRaise / bigBlind)}BB` : formatChips(maxRaise)}
-              </span>
               <span className="raise-slider-vertical__cap raise-slider-vertical__cap--min">
-                {bigBlind > 0 ? `${Math.round(minRaise / bigBlind)}BB` : formatChips(minRaise)}
+                {showStackInBB && bigBlind > 0
+                  ? `${Math.round(minRaise / bigBlind)}BB`
+                  : formatChips(minRaise)}
               </span>
             </div>
           </div>

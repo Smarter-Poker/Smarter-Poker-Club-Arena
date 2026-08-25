@@ -109,14 +109,31 @@ describe('a buy-in cannot be taken twice', () => {
   it('guards on a ref that flips before the confirm dialog is awaited', () => {
     /* `isRegistering` is state, and state does not change until React
        re-renders — but the next line awaits a dialog. Two activations in one
-       frame both passed, and confirmDialog QUEUES rather than rejects, so the
-       second confirmation debited a second buy-in. */
+       frame both passed, and the dialog QUEUES rather than rejects, so the
+       second confirmation debited a second buy-in.
+
+       2026-08-25: the awaited dialog is now `signUpDialog` — the full Sign Up
+       card — rather than the generic `confirmDialog` this line used to name.
+       Dan: "you don't need a secondary confirmation for buy ins", so the two
+       dialogs that used to fire for one buy-in became this one. The INVARIANT
+       here is unchanged and is exactly as important: the ref must flip before
+       anything is awaited. Only the dialog's identity moved, so this assertion
+       moves with it rather than being deleted. */
     const guard = REG.indexOf('if (registeringRef.current) return;');
-    const confirm = REG.indexOf('await confirmDialog');
+    const confirm = REG.indexOf('await signUpDialog');
     expect(guard, 'the ref guard is missing').toBeGreaterThan(-1);
+    expect(confirm, 'the buy-in must still be confirmed before it is taken').toBeGreaterThan(-1);
     expect(guard, 'the guard must come BEFORE the await').toBeLessThan(confirm);
     expect(REG).toMatch(/registeringRef\.current = true;/);
     expect(REG.indexOf('registeringRef.current = true;')).toBeLessThan(confirm);
+  });
+
+  it('asks exactly once - there is no second confirmation behind the first', () => {
+    /* Dan 2026-08-25, binding. Two prompts for one buy-in is the bug; zero
+       prompts would be a far worse one, so this pins BOTH ends: exactly one
+       awaited dialog, and it is the Sign Up card. */
+    expect(REG).not.toMatch(/confirmDialog\(/);
+    expect((REG.match(/await signUpDialog\(/g) || []).length).toBe(1);
   });
 
   it('releases the guard when the player cancels', () => {

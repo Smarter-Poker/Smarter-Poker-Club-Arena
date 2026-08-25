@@ -73,20 +73,43 @@ export function TournamentHUD({
   const [derivedRemaining, setDerivedRemaining] = useState<number | null>(null);
   const [derivedAvgStack, setDerivedAvgStack] = useState<number | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const resyncRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Load + subscribe to live tournament level changes ──
   useEffect(() => {
     if (!tournamentId) return;
     let mounted = true;
 
-    (async () => {
+    const refresh = async () => {
       try {
         const t = await tournamentService.getTournament(tournamentId);
         if (mounted) setTournament(t);
       } catch (e) {
         reportError(e, 'TournamentHUD.load', { tournamentId });
       }
-    })();
+    };
+
+    void refresh();
+
+    /**
+     * Dan 2026-08-25 (binding): "blind levels on the screen are never
+     * increasing."
+     *
+     * This HUD had EXACTLY ONE way to learn that the level changed: a
+     * postgres_changes subscription on the tournaments row. That is a single
+     * point of failure with no fallback — a dropped socket, a tab that slept
+     * through the UPDATE, a subscribe() that returned CHANNEL_ERROR (nothing
+     * here even looked at the status), and the HUD sits on its mount-time
+     * snapshot for the rest of the tournament, cheerfully printing LEVEL 1
+     * while the felt plays level 9. It never re-fetched, not once.
+     *
+     * A clock that can be wrong for an hour is worse than no clock. It now
+     * re-reads the authoritative row every 45 seconds while RUNNING, so the
+     * realtime feed is an OPTIMISATION (instant update) rather than the only
+     * source of truth, and the worst case is a level that is late by under a
+     * minute instead of stale forever.
+     */
+    resyncRef.current = setInterval(() => void refresh(), 45_000);
 
     const channel = masterBus.getOrCreateChannel(`tournament-hud-${tournamentId}`);
     channel
@@ -103,6 +126,7 @@ export function TournamentHUD({
 
     return () => {
       mounted = false;
+      if (resyncRef.current) clearInterval(resyncRef.current);
       try {
         masterBus.removeRegisteredChannel(`tournament-hud-${tournamentId}`);
       } catch {

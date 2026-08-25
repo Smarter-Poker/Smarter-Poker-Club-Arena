@@ -1,0 +1,263 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SIGN UP MODAL — the buy-in confirmation
+   ═══════════════════════════════════════════════════════════════════════════════
+
+   Dan 2026-08-25 (binding): "the buy in confirmation is trash and needs to be
+   updated. This should be middle of the screen, dynamic pop up display with
+   depth, and that 3D look and feel to it. There needs to be a space after
+   every : it currently has Buy In:50 instead of Buy In: 50."
+
+   WHY IT LOOKED LIKE THAT. Not a styling opinion — the modal had NO STYLES AT
+   ALL. `.modal-overlay`, `.signup-modal`, `.signup-row`, `.signup-label`,
+   `.signup-value`, `.signup-note`, `.signup-actions` and `.modal-close` are
+   every class the markup uses, and not one of them was ever declared in this
+   file or anywhere else this page imports. So the browser laid it out as plain
+   block text pinned to the top-left of a bare backdrop, and "Entry Fee:" and
+   "50" rendered flush against each other because two adjacent inline spans with
+   only a JSX newline between them have no whitespace between them at all.
+   That is Dan's "Entry Fee:50", and it is the same cause on every row.
+
+   The gap between label and value is therefore a LAYOUT fact now (flex + gap),
+   not a stray space character someone has to remember to type. It cannot come
+   back by editing the JSX.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.signup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center; /* "middle of the screen" — vertically too */
+  justify-content: center;
+  padding: 20px;
+  background: rgba(4, 7, 14, 0.72);
+  backdrop-filter: blur(6px) saturate(0.9);
+  -webkit-backdrop-filter: blur(6px) saturate(0.9);
+  animation: signupOverlayIn 0.18s ease-out both;
+  /* The card tilts in on the X axis; without a perspective on the parent that
+     rotation is flat and the entrance has no depth. */
+  perspective: 1000px;
+}
+
+@keyframes signupOverlayIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.signup-modal {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  padding: 26px 24px 22px;
+  border-radius: 20px;
+  color: #eef3f8;
+  /* Layered, not flat: a light source at the top edge, a body gradient, and a
+     dark base — the three things that make a rectangle read as an object. */
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(120, 190, 255, 0.22) 0%, rgba(120, 190, 255, 0) 60%),
+    linear-gradient(180deg, #1d2836 0%, #141d29 45%, #0d141d 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-top-color: rgba(255, 255, 255, 0.24);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 12px 28px rgba(0, 0, 0, 0.55),
+    0 32px 64px rgba(0, 0, 0, 0.45);
+  animation: signupModalIn 0.34s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+
+@keyframes signupModalIn {
+  from {
+    opacity: 0;
+    transform: translateY(26px) scale(0.94) rotateX(9deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotateX(0deg);
+  }
+}
+
+.signup-modal h2 {
+  margin: 0 0 18px;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-align: center;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+}
+
+.signup-modal .modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #b9c6d4;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.signup-modal .modal-close:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  transform: rotate(90deg);
+}
+
+/* THE ROW. `gap` is what puts the space after every colon — see the header. */
+.signup-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.signup-row:last-of-type {
+  border-bottom: none;
+}
+
+.signup-row.total {
+  padding: 12px 14px;
+  margin-bottom: 4px;
+  border-bottom: none;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35);
+}
+
+.signup-label {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: #9aa9b8;
+  letter-spacing: 0.01em;
+}
+
+.signup-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.signup-row.total .signup-value {
+  font-size: 19px;
+  color: #ffd76a;
+  text-shadow: 0 1px 4px rgba(255, 180, 40, 0.35);
+}
+
+.signup-note {
+  margin: 12px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  text-align: center;
+  color: #8fa0b1;
+}
+
+.signup-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.signup-actions .btn {
+  flex: 1;
+  padding: 13px 12px;
+  border: none;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease,
+    filter 0.18s ease;
+}
+
+/* The 3D part: a solid colour ledge under each button, which compresses on
+   press. Cheaper and steadier than a shadow animation, and it reads as a
+   physical key rather than a coloured rectangle. */
+.signup-actions .btn-cancel {
+  color: #cdd8e4;
+  background: linear-gradient(180deg, #38434f 0%, #2a333d 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 3px 0 #1b222a,
+    0 6px 14px rgba(0, 0, 0, 0.45);
+}
+
+.signup-actions .btn-confirm {
+  color: #04140b;
+  background: linear-gradient(180deg, #34e08a 0%, #10b981 55%, #0a9c6c 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 3px 0 #067a55,
+    0 6px 18px rgba(16, 185, 129, 0.35);
+}
+
+.signup-actions .btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.signup-actions .btn:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 0 0 rgba(0, 0, 0, 0),
+    0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.signup-actions .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.4);
+}
+
+@media (max-width: 400px) {
+  .signup-modal {
+    padding: 22px 18px 18px;
+    border-radius: 16px;
+  }
+  .signup-modal h2 {
+    font-size: 21px;
+  }
+  .signup-row.total .signup-value {
+    font-size: 17px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .signup-overlay,
+  .signup-modal {
+    animation: none;
+  }
+  .signup-modal .modal-close:hover {
+    transform: none;
+  }
+}

@@ -370,6 +370,11 @@ export interface BlindLevel {
   ante: number;
   duration_minutes?: number; // Canonical snake_case
   durationMinutes?: number; // Legacy camelCase
+  /* SECONDS, and a third spelling. TournamentRecurringService.createSpin
+     writes `duration: tier.levelMinutes * 60` — every Spin and every Spin
+     restarted by TournamentManagerBase carries its level length only here.
+     blindLevelMinutes reads all three. */
+  duration?: number;
   isBreak?: boolean;
 }
 

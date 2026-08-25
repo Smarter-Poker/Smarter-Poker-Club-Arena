@@ -1614,6 +1614,24 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
+   * Are there no cards in the air at this table right now?
+   *
+   * The mystery bounty phase may only open BETWEEN hands (Dan's sections 1-3):
+   * a player who committed his stack while a knockout was worth a flat bounty
+   * must not find, when the hand is scored, that it was worth a chest. That is
+   * the information changing under a decision already made.
+   *
+   * `handController === null` is the whole test. It is also briefly true during
+   * setup, before the first hand — which is harmless here and deliberately not
+   * excluded: seeding a chest inventory before any hand has been dealt is the
+   * safest moment there is, whereas `isDrained()` (which does exclude it) would
+   * report a running table as busy forever and the phase would never open.
+   */
+  isBetweenHands(): boolean {
+    return this.handController === null;
+  }
+
+  /**
    * True while this table is stopped ON PURPOSE (hand-for-hand pause, or the
    * table FSM parked in 'paused'). The watchdog and the /health stall
    * detector must treat this as healthy: before this existed, a hand-for-hand

@@ -12,6 +12,8 @@ import nodeCrypto from 'node:crypto';
 import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
 import { mysteryChestHoldMs } from '../config/mysteryChestSpec.js';
+import { MYSTERY_BOUNTY_REVEAL_DELAY_MS } from '../config/mysteryBountySpec.js';
+import { buildRecipientClaims } from './mysteryBountyDraw.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { computePlacePrize } from './payoutMath.js';
 import {
@@ -342,7 +344,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             ),
             'Tournament.remaining_count_unavailable'
           );
-        } else if (remainingCount <= 1) {
+        } else if (remainingCount > 1) {
+          // MYSTERY BOUNTY ACTIVATION (2026-08-25). This is the only place in
+          // the engine that knows, between hands and from a count it has just
+          // verified, how many players can still be knocked out — which is
+          // both halves of the activation predicate and the size of the chest
+          // inventory. Guarded on `> 1` so the phase can never open on the
+          // heads-up hand that ends the event.
+          try {
+            await this.maybeActivateMysteryBounty(remainingCount);
+          } catch (mbErr) {
+            reportError(mbErr, 'Tournament.mystery_bounty_activation_sweep');
+          }
+        }
+
+        if (
+          !remainingErr &&
+          remainingCount !== null &&
+          remainingCount !== undefined &&
+          remainingCount <= 1
+        ) {
           try {
             // Use maybeSingle to handle edge case where 0 players remain
             const { data: winner } = await supabase
@@ -933,6 +954,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // took the LARGEST amount (the main pot containing the busted player's
         // chips), not whichever entry happened to be first in the array.
         let knockerId: string | null = null;
+        // SPLIT KNOCKOUTS (Dan sections 27/28). When a short stack busts
+        // against a side pot, more than one player has a claim on the bounty,
+        // in proportion to what each of them won out of the pot the busted
+        // player's chips were in. The old code kept only the largest winner
+        // and gave them everything; the mystery path splits the chest, so it
+        // needs the whole list with the amounts as weights.
+        let claimants: Array<{ userId: string; weight: number }> = [];
         if (seat?.table_id) {
           const { data: recentHands } = await supabase
             .from('hand_history')
@@ -951,13 +979,25 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 .filter((w: any) => (w.userId || w.user_id) !== userId)
                 .sort((a: any, b: any) => Number(b.amount || 0) - Number(a.amount || 0));
               knockerId = candidates.length ? candidates[0].userId || candidates[0].user_id : null;
+              claimants = candidates
+                .map((w: any) => ({
+                  userId: String(w.userId || w.user_id || ''),
+                  weight: Math.max(0, Number(w.amount) || 0),
+                }))
+                .filter((c: { userId: string }) => c.userId.length > 0);
             }
             break; // only the busted player's most recent hand counts
           }
         }
 
         if (knockerId) {
-          await this.processBountyCollection(tournament, userId, knockerId, seat?.table_id ?? null);
+          await this.processBountyCollection(
+            tournament,
+            userId,
+            knockerId,
+            seat?.table_id ?? null,
+            claimants
+          );
         } else {
           console.warn(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Could not determine knocker for ${userId.slice(0, 8)} — bounty skipped`
@@ -1021,8 +1061,24 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
      * played the chest for a knockout that happened somewhere else. Clients
      * match on it and ignore knockouts that are not theirs.
      */
-    tableId: string | null = null
+    tableId: string | null = null,
+    /**
+     * Everyone with a claim on this knockout and the weight of that claim —
+     * what each of them won out of the pot the busted player's chips were in.
+     * Sections 27/28. Empty (or a single entry) is the ordinary case: one
+     * knocker takes the whole bounty.
+     */
+    claimants: Array<{ userId: string; weight: number }> = []
   ): Promise<void> {
+    // ── MYSTERY PHASE ──────────────────────────────────────────────────────
+    // Once the chests are open, this knockout draws one. fn_collect_bounty
+    // refuses in that state ('mystery_phase_active'), so this is not an
+    // optimisation — it is the only path that pays.
+    if (this.mysteryBountyStage === 'active' && tournament?.is_mystery_bounty) {
+      await this.processMysteryBountyKnockout(eliminatedUserId, knockerUserId, tableId, claimants);
+      return;
+    }
+
     // DAN'S SPEC 2026-08-15: bounties are FUNDED (registration splits the
     // buy-in into rake / bounty_pool / prize_pool) and paid out of that pool
     // by a single atomic RPC. This replaces four separate writes here
@@ -1162,6 +1218,303 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     console.log(
       `[Tournament:${this.tournamentId.slice(0, 8)}] BOUNTY (${res.mode}): ${knockerUserId.slice(0, 8)} collected ${res.paid_cash} from ${eliminatedUserId.slice(0, 8)}${res.added_to_head ? ` (+${res.added_to_head} to own head)` : ''}`
     );
+  }
+
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  MYSTERY BOUNTY KNOCKOUT — reserve, hold the deal, reveal, pay
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * Four steps, in this order, and the order is the point.
+   *
+   * 1. RESERVE. `fn_mystery_bounty_reserve` takes the next chest atomically
+   *    and writes the award and the recipient split. It deliberately does NOT
+   *    return the amount: the surest way to keep a number out of a broadcast
+   *    is for the code that builds the broadcast never to have seen it
+   *    (section 19).
+   *
+   * 2. HOLD THE DEAL. The chest owns the screen for the length of its
+   *    sequence, so the table must not deal a hand underneath it. Same
+   *    mechanism the spin wheel uses, and only the knockout's own table
+   *    pauses — a bustout on table 3 must not stall tables 1 and 2.
+   *
+   * 3. REVEAL, on a timer. The winner's client opens the chest at
+   *    CHEST_AUTO_OPEN_MS whether they tap or not. A tap before then calls
+   *    `fn_mystery_bounty_reveal` from the browser and shows THEM the number
+   *    first, which is the whole reason there is a tap; the engine's call
+   *    below is idempotent and returns the identical payload, so the private
+   *    reveal and the table broadcast can never disagree.
+   *
+   * 4. PAY. Only after the reveal, and only through `fn_mystery_bounty_pay`,
+   *    which credits every recipient through `fn_credit_and_log` under the key
+   *    `mb:{award}:{user}` and moves `bounty_pool_paid`.
+   *
+   * NOTHING HERE THROWS INTO THE ELIMINATION SWEEP. A reveal that fails to
+   * broadcast is a knockout with no animation; a reserve that throws would
+   * stop the sweep processing every other bustout in the event.
+   */
+  protected async processMysteryBountyKnockout(
+    eliminatedUserId: string,
+    knockerUserId: string,
+    tableId: string | null,
+    claimants: Array<{ userId: string; weight: number }>
+  ): Promise<void> {
+    const recipients = buildRecipientClaims(knockerUserId, claimants);
+    if (recipients.length === 0) return;
+
+    // op_id makes THIS call idempotent; the award's unique
+    // (tournament, eliminated) key makes the whole knockout idempotent. The
+    // op id is derived from the knockout rather than random so that a retry of
+    // the same sweep pass presents the same id.
+    const opId = nodeCrypto
+      .createHash('sha256')
+      .update(`mb:${this.tournamentId}:${eliminatedUserId}`)
+      .digest('hex');
+    const opUuid = [
+      opId.slice(0, 8),
+      opId.slice(8, 12),
+      // Version 4 nibble and variant bits, so the value is a legal UUID and
+      // Postgres accepts it. It is a name, not entropy — the entropy that
+      // matters was spent on the inventory shuffle.
+      '4' + opId.slice(13, 16),
+      ((parseInt(opId.slice(16, 17), 16) & 0x3) | 0x8).toString(16) + opId.slice(17, 20),
+      opId.slice(20, 32),
+    ].join('-');
+
+    const { data: reserved, error: reserveErr } = await supabase.rpc('fn_mystery_bounty_reserve', {
+      p_tournament_id: this.tournamentId,
+      p_eliminated_user_id: eliminatedUserId,
+      p_recipients: recipients,
+      p_table_id: tableId,
+      p_hand_id: null,
+      p_op_id: opUuid,
+      p_reveal_ms: MYSTERY_BOUNTY_REVEAL_DELAY_MS,
+    });
+
+    if (reserveErr) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty reserve FAILED for ${eliminatedUserId.slice(0, 8)}: ${reserveErr.message}`
+        ),
+        'Tournament.mystery_bounty_reserve_failed'
+      );
+      return;
+    }
+
+    const res = (reserved ?? {}) as {
+      ok?: boolean;
+      reason?: string;
+      already?: boolean;
+      status?: string;
+      award_id?: string;
+      queue_index?: number;
+      queue_total?: number;
+      designated_revealer?: string;
+      recipient_user_ids?: string[];
+    };
+
+    if (!res.ok || !res.award_id) {
+      if (res.reason === 'inventory_exhausted') {
+        // Every chest is spoken for and a player was still knocked out. That
+        // is a real accounting event, not a hiccup: the inventory is sized to
+        // the field at activation, so it means more knockouts happened than
+        // there were players.
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] mystery bounty INVENTORY EXHAUSTED at knockout of ${eliminatedUserId.slice(0, 8)}`
+          ),
+          'Tournament.mystery_bounty_inventory_exhausted'
+        );
+      } else if (res.reason !== 'mystery_phase_not_active') {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] mystery bounty not reserved (${res.reason}) for ${eliminatedUserId.slice(0, 8)}`
+          ),
+          'Tournament.mystery_bounty_not_reserved'
+        );
+      }
+      return;
+    }
+
+    // Already completed on an earlier pass — nothing to re-announce.
+    if (res.already && res.status === 'completed') return;
+
+    const awardId = res.award_id;
+
+    // 2. HOLD THE DEAL.
+    if (tableId) {
+      const engine = this.tableEngines.get(tableId);
+      if (engine) {
+        try {
+          engine.holdDealingUntil(Date.now() + mysteryChestHoldMs());
+        } catch {
+          /* the hold is presentation; never let it break the payout path */
+        }
+      }
+    }
+
+    // The pending broadcast. NO AMOUNT (section 19).
+    await this.broadcast('mystery_bounty_pending', {
+      tableId,
+      awardId,
+      recipientUserIds: res.recipient_user_ids ?? [],
+      designatedRevealer: res.designated_revealer ?? knockerUserId,
+      eliminatedUserId,
+      queueIndex: res.queue_index ?? 1,
+      queueTotal: res.queue_total ?? 1,
+      deadlineMs: MYSTERY_BOUNTY_REVEAL_DELAY_MS,
+    });
+
+    // 3 + 4, on a timer. Detached deliberately: the elimination sweep must not
+    // sit for ten seconds holding `isProcessingEliminations` while a chest
+    // animation plays, or every other bustout in the event waits behind it.
+    setTimeout(() => {
+      void this.settleMysteryBountyAward(
+        awardId,
+        tableId,
+        eliminatedUserId,
+        res.queue_index ?? 1,
+        res.queue_total ?? 1
+      );
+    }, MYSTERY_BOUNTY_REVEAL_DELAY_MS);
+  }
+
+  /**
+   * FINAL RECONCILIATION (Dan sections 46 and 71).
+   *
+   * Runs at completion, BEFORE fn_finalize_bounty_pool, on both finish paths
+   * (the ordinary one and the final-table deal). Two jobs:
+   *
+   *   - settle every chest nobody claimed to the champion. The last player
+   *     standing was never knocked out, so their own chest is theirs, and so
+   *     is any chest a broken elimination left behind;
+   *   - prove the event balances. `sum(paid) === mystery_bounty_pool_cents`,
+   *     to the cent, or a critical error names the variance.
+   *
+   * Order matters: settle moves `bounty_pool_paid`, so fn_finalize_bounty_pool
+   * afterwards pays the champion only the genuine residual of the REGULAR half
+   * rather than the mystery money a second time.
+   */
+  protected async reconcileMysteryBounty(winnerId: string | null): Promise<void> {
+    if (!this.tournamentCache?.is_mystery_bounty) return;
+    if (this.mysteryBountyStage === 'pending') return;
+    try {
+      const { data, error } = await supabase.rpc('fn_mystery_bounty_settle', {
+        p_tournament_id: this.tournamentId,
+        p_winner_user_id: winnerId,
+      });
+      if (error) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty settlement FAILED: ${error.message}`
+          ),
+          'Tournament.mystery_bounty_settle_failed'
+        );
+        return;
+      }
+      const res = (data ?? {}) as {
+        ok?: boolean;
+        balanced?: boolean;
+        pool_cents?: number;
+        settled_cents?: number;
+        unclaimed_cents?: number;
+        variance_cents?: number;
+      };
+      this.mysteryBountyStage = 'complete';
+      if (res.ok && res.balanced === false) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty DOES NOT RECONCILE — pool ${res.pool_cents}c, settled ${res.settled_cents}c, variance ${res.variance_cents}c`
+          ),
+          'Tournament.mystery_bounty_unbalanced'
+        );
+      } else if (res.ok) {
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Mystery bounty reconciled exactly: ${res.settled_cents}c of ${res.pool_cents}c (${res.unclaimed_cents}c unclaimed to champion)`
+        );
+      }
+    } catch (err) {
+      reportError(err, 'Tournament.mystery_bounty_settle_threw');
+    }
+  }
+
+  /** Reveal (idempotently), pay, and tell the table what was in the chest. */
+  protected async settleMysteryBountyAward(
+    awardId: string,
+    tableId: string | null,
+    eliminatedUserId: string,
+    queueIndex: number,
+    queueTotal: number
+  ): Promise<void> {
+    try {
+      const { data: revealed, error: revealErr } = await supabase.rpc('fn_mystery_bounty_reveal', {
+        p_award_id: awardId,
+        p_actor_user_id: null,
+        p_auto: true,
+      });
+      if (revealErr || !(revealed as { ok?: boolean } | null)?.ok) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty reveal FAILED for award ${awardId}: ${revealErr?.message ?? 'refused'}`
+          ),
+          'Tournament.mystery_bounty_reveal_failed'
+        );
+        return;
+      }
+      const rev = revealed as {
+        amount_cents: number;
+        tier: string;
+        is_jackpot: boolean;
+        recipients: Array<{ user_id: string; amount_cents: number }>;
+      };
+
+      // PAY BEFORE BROADCASTING. If the credit fails, nobody should have been
+      // shown a number they are not going to receive.
+      const { error: payErr } = await supabase.rpc('fn_mystery_bounty_pay', {
+        p_award_id: awardId,
+      });
+      if (payErr) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty PAY FAILED for award ${awardId} (${rev.amount_cents}c): ${payErr.message}`
+          ),
+          'Tournament.mystery_bounty_pay_failed'
+        );
+        return;
+      }
+
+      await this.broadcast('mystery_bounty_revealed', {
+        tableId,
+        awardId,
+        amountCents: rev.amount_cents,
+        tier: rev.tier,
+        isJackpot: rev.is_jackpot,
+        recipients: (rev.recipients ?? []).map((r) => ({
+          userId: r.user_id,
+          amountCents: r.amount_cents,
+        })),
+        eliminatedUserId,
+        queueIndex,
+        queueTotal,
+      });
+
+      // Is this table's reveal queue empty now? The client uses this to take
+      // the overlay down and let the table breathe before the next deal.
+      const { count: stillOpen } = await supabase
+        .from('tournament_bounty_awards')
+        .select('*', { count: 'exact', head: true })
+        .eq('tournament_id', this.tournamentId)
+        .in('status', ['reserved', 'revealed']);
+      if ((stillOpen ?? 0) === 0) {
+        await this.broadcast('mystery_bounty_complete', { tableId });
+      }
+
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY CHEST ${rev.tier} ${rev.amount_cents}c over ${eliminatedUserId.slice(0, 8)}`
+      );
+    } catch (err) {
+      reportError(err, 'Tournament.mystery_bounty_settle_threw');
+    }
   }
 
   /* DEAD CODE REMOVED 2026-08-25: `creditBountyToWallet`.
@@ -1615,6 +1968,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       this.tournamentCache?.is_pko ||
       this.tournamentCache?.is_mystery_bounty
     ) {
+      // Mystery chests settle FIRST — see reconcileMysteryBounty.
+      await this.reconcileMysteryBounty(winnerId);
       try {
         const { error: finErr } = await supabase.rpc('fn_finalize_bounty_pool', {
           p_tournament_id: this.tournamentId,
@@ -1970,6 +2325,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // by the tiered mystery draw. One RPC, idempotent on the ownbounty key,
       // and it leaves bounty_pool_paid == bounty_pool so the event is exactly
       // conserving (verified live: pool 75.00 -> paid 75.00, residual 0.00).
+      // Mystery chests settle FIRST — see reconcileMysteryBounty.
+      await this.reconcileMysteryBounty(winnerId);
       try {
         const { data: fin, error: finErr } = await supabase.rpc('fn_finalize_bounty_pool', {
           p_tournament_id: this.tournamentId,

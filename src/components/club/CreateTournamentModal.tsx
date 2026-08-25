@@ -130,6 +130,17 @@ export default function CreateTournamentModal({
   // ── Mystery Bounty Config ──
   const [mysteryBountyMin, setMysteryBountyMin] = useState('1');
   const [mysteryBountyMax, setMysteryBountyMax] = useState('100');
+  // Mystery bounty options (Dan section 72). Defaults are the spec's own:
+  // the classic ladder, chests opening at the money, and half the bounty pool
+  // held back for them.
+  const [mysteryProfile, setMysteryProfile] = useState<'balanced' | 'classic' | 'jackpot'>(
+    'classic'
+  );
+  const [mysteryActivation, setMysteryActivation] = useState<
+    'at_the_money' | 'percent_field' | 'player_count'
+  >('at_the_money');
+  const [mysteryActivationValue, setMysteryActivationValue] = useState('20');
+  const [mysteryPoolPercent, setMysteryPoolPercent] = useState('50');
 
   // ── Spin Config ──
   const [spinType, setSpinType] = useState<'standard' | 'hyper'>('standard');
@@ -509,58 +520,14 @@ export default function CreateTournamentModal({
                       ? 'progressive'
                       : 'mystery',
                 baseBounty: Math.round(Number(bountyAmount)) || 5,
-                ...(format === 'mystery_bounty'
-                  ? (() => {
-                      const minMult = Math.round(Number(mysteryBountyMin)) || 1;
-                      const maxMult = Math.round(Number(mysteryBountyMax)) || 100;
-                      // Generate tiers from min to max with probability distribution
-                      // Bottom tier (most common), middle tiers, top tier (rarest)
-                      const tiers: Array<{
-                        minMultiplier: number;
-                        maxMultiplier: number;
-                        probability: number;
-                      }> = [];
-                      tiers.push({
-                        minMultiplier: minMult,
-                        maxMultiplier: minMult,
-                        probability: 60,
-                      });
-                      if (maxMult >= minMult * 2) {
-                        tiers.push({
-                          minMultiplier: minMult * 2,
-                          maxMultiplier: minMult * 2,
-                          probability: 25,
-                        });
-                      }
-                      if (maxMult >= minMult * 5) {
-                        tiers.push({
-                          minMultiplier: minMult * 5,
-                          maxMultiplier: minMult * 5,
-                          probability: 10,
-                        });
-                      }
-                      if (maxMult >= minMult * 10) {
-                        tiers.push({
-                          minMultiplier: minMult * 10,
-                          maxMultiplier: minMult * 10,
-                          probability: 4,
-                        });
-                      }
-                      if (maxMult >= minMult * 50) {
-                        tiers.push({
-                          minMultiplier: Math.min(minMult * 50, maxMult),
-                          maxMultiplier: Math.min(minMult * 50, maxMult),
-                          probability: 0.9,
-                        });
-                      }
-                      tiers.push({
-                        minMultiplier: maxMult,
-                        maxMultiplier: maxMult,
-                        probability: 0.1,
-                      });
-                      return { mysteryTiers: tiers };
-                    })()
-                  : {}),
+                // The fifty lines that used to sit here built a `mysteryTiers`
+                // multiplier ladder out of the min/max pair and returned it on
+                // this object. `buildRpcConfig` never sent it, so it reached
+                // nothing: every mystery tournament ever created ran on the
+                // hard-coded ladder inside the SQL register function instead.
+                // Deleted 2026-08-25 along with that ladder. The chest sizes
+                // now come from the funded pool at activation, and the club
+                // picks a PROFILE (below) rather than authoring a ladder.
               }
             : undefined,
         spinType: format === 'spin' ? spinType : undefined,
@@ -601,6 +568,19 @@ export default function CreateTournamentModal({
           format === 'mystery_bounty' ? Math.round(Number(mysteryBountyMin)) : undefined,
         mysteryBountyMax:
           format === 'mystery_bounty' ? Math.round(Number(mysteryBountyMax)) : undefined,
+        // Section 72. Collected above and actually SENT, via
+        // fn_apply_mystery_bounty_config — unlike the tier ladder this modal
+        // used to build and drop on the floor.
+        mysteryBountyProfile: format === 'mystery_bounty' ? mysteryProfile : undefined,
+        mysteryBountyActivation: format === 'mystery_bounty' ? mysteryActivation : undefined,
+        mysteryBountyActivationValue:
+          format === 'mystery_bounty' && mysteryActivation !== 'at_the_money'
+            ? Math.max(1, Math.round(Number(mysteryActivationValue)) || 20)
+            : undefined,
+        mysteryBountyPoolPercent:
+          format === 'mystery_bounty'
+            ? Math.min(100, Math.max(1, Math.round(Number(mysteryPoolPercent)) || 50))
+            : undefined,
       };
 
       // ── Weekly recurring schedule (2026-08-22): save the recurrence with
@@ -1166,6 +1146,90 @@ export default function CreateTournamentModal({
                           }
                         />
                         <span className={styles.helperText}>Highest Multiplier (E.G. 100X)</span>
+                      </div>
+                    </div>
+                    {/* MYSTERY BOUNTY OPTIONS (Dan section 72). Four settings,
+                        all with a working default, so an owner who ignores this
+                        block still gets the ladder Dan specified. */}
+                    <div className={styles.col}>
+                      <div className={styles.formGroup}>
+                        <label>Prize Ladder</label>
+                        <select
+                          className={styles.input}
+                          value={mysteryProfile}
+                          onChange={(e) =>
+                            setMysteryProfile(e.target.value as typeof mysteryProfile)
+                          }
+                        >
+                          <option value="balanced">Balanced (Flatter Payouts)</option>
+                          <option value="classic">Classic (Recommended)</option>
+                          <option value="jackpot">Jackpot (Top Heavy)</option>
+                        </select>
+                        <span className={styles.helperText}>
+                          How Much Of The Pool Sits On The Biggest Chest
+                        </span>
+                      </div>
+                    </div>
+                    <div className={styles.col}>
+                      <div className={styles.formGroup}>
+                        <label>Chests Open</label>
+                        <select
+                          className={styles.input}
+                          value={mysteryActivation}
+                          onChange={(e) =>
+                            setMysteryActivation(e.target.value as typeof mysteryActivation)
+                          }
+                        >
+                          <option value="at_the_money">At The Money</option>
+                          <option value="percent_field">At A Percent Of The Field</option>
+                          <option value="player_count">At A Player Count</option>
+                        </select>
+                        <span className={styles.helperText}>
+                          Never Before Late Registration Closes
+                        </span>
+                      </div>
+                    </div>
+                    {mysteryActivation !== 'at_the_money' && (
+                      <div className={styles.col}>
+                        <div className={styles.formGroup}>
+                          <label>
+                            {mysteryActivation === 'percent_field'
+                              ? 'Percent Of Field Left'
+                              : 'Players Left'}
+                          </label>
+                          <input
+                            type="number"
+                            className={styles.input}
+                            value={mysteryActivationValue}
+                            onChange={(e) => setMysteryActivationValue(digitsOnly(e.target.value))}
+                            min={mysteryActivation === 'percent_field' ? 1 : 2}
+                            step={1}
+                            inputMode="numeric"
+                          />
+                          <span className={styles.helperText}>
+                            {mysteryActivation === 'percent_field'
+                              ? 'E.G. 20 Opens Chests With The Last Fifth Left'
+                              : 'E.G. 27 Opens Chests With 27 Players Left'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    <div className={styles.col}>
+                      <div className={styles.formGroup}>
+                        <label>Percent Of Bounties In Chests</label>
+                        <input
+                          type="number"
+                          className={styles.input}
+                          value={mysteryPoolPercent}
+                          onChange={(e) => setMysteryPoolPercent(digitsOnly(e.target.value))}
+                          min={1}
+                          max={100}
+                          step={1}
+                          inputMode="numeric"
+                        />
+                        <span className={styles.helperText}>
+                          The Rest Pays Ordinary Bounties Before The Chests Open
+                        </span>
                       </div>
                     </div>
                   </>

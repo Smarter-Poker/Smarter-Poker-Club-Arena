@@ -1643,6 +1643,19 @@ export default function TablePage({
    */
   const potShipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const potPushDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // SHOWDOWN follow-up 2026-08-25 (spec 16/19): one timer per pot-award group
+  // — main pot fires first, each side pot POT_AWARD_STAGGER_MS later. All
+  // cancelled at HAND_STARTED and on unmount so a fast next hand can never
+  // receive a late side-pot fan from the previous one.
+  const potAwardStaggerTimersRef = useRef<number[]>([]);
+  // SHOWDOWN follow-up 2026-08-25 (spec 21): while false AND the snapshot
+  // carries winners, each winner's SEAT displays stack minus their share —
+  // the number only rises once the pot-push animation has landed on them.
+  // Flipped true by a timer scheduled at POT_WIN (after the last award
+  // group's fan arrives); reset false at HAND_STARTED. Purely visual: the
+  // authoritative stacks in tableState are never modified.
+  const [stackHoldReleased, setStackHoldReleased] = useState(false);
+  const stackHoldReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Guards the diamond charge in handleBuyTimeBank against a double-tap. */
   const buyingTimeBankRef = useRef(false);
   /**
@@ -3062,6 +3075,11 @@ export default function TablePage({
   // clockwise). Drives a small per-seat stagger on the card flip so the
   // reveal reads as a SEQUENCE, the way live poker tables hands in turn.
   const showdownRevealOrderRef = useRef<Record<number, number>>({});
+  // SHOWDOWN follow-up 2026-08-25 (spec 37): once-per-hand guard for the
+  // auto-show that answers the engine's muck ruling when the hero has
+  // AUTO-MUCK LOSING HANDS switched off. A re-delivered showdown event must
+  // not fire a second POST /showhand.
+  const autoShowFiredHandRef = useRef<number>(0);
   const muckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -3121,6 +3139,8 @@ export default function TablePage({
       if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
       if (potShipTimerRef.current) clearTimeout(potShipTimerRef.current);
       if (potPushDelayTimerRef.current) clearTimeout(potPushDelayTimerRef.current);
+      for (const t of potAwardStaggerTimersRef.current) clearTimeout(t);
+      if (stackHoldReleaseTimerRef.current) clearTimeout(stackHoldReleaseTimerRef.current);
     };
   }, []);
 
@@ -7754,6 +7774,18 @@ export default function TablePage({
           clearTimeout(potPushDelayTimerRef.current);
           potPushDelayTimerRef.current = null;
         }
+        // SHOWDOWN follow-up 2026-08-25 (spec 40): no late side-pot award may
+        // fire into the new hand.
+        for (const t of potAwardStaggerTimersRef.current) clearTimeout(t);
+        potAwardStaggerTimersRef.current = [];
+        // SHOWDOWN follow-up 2026-08-25 (spec 21): the stack hold is scoped to
+        // one hand. The fresh snapshot has no winners, so re-arming the hold
+        // here can never mask a stack.
+        if (stackHoldReleaseTimerRef.current) {
+          clearTimeout(stackHoldReleaseTimerRef.current);
+          stackHoldReleaseTimerRef.current = null;
+        }
+        setStackHoldReleased(false);
         // ANIMATION AUDIT 2026-08-19: the previous hand's 3s reset timer was
         // NEVER cancelled here. The server's fold-win inter-hand gap is
         // 2000ms, so on every fold-win that stale timer fired ~1s INTO the
@@ -8533,6 +8565,29 @@ export default function TablePage({
             }
             showdownRevealOrderRef.current = orderBySeat;
             if (muckedMask.some(Boolean)) setMuckedLabelSeats(muckedMask);
+            // SHOWDOWN follow-up 2026-08-25 (Dan spec section 37): AUTO-MUCK
+            // LOSING HANDS as a real player setting, with NO prompt (prompts
+            // stay forbidden — Dan 2026-08-18, binding). autoMuck ON (the
+            // default) keeps the engine's ruling: the beaten hand stays
+            // private. autoMuck OFF means "always table my hand": when the
+            // engine rules the HERO's hand muckable, the client immediately
+            // answers with the existing voluntary-show call and the hand
+            // turns face up for the table. The setting cannot muck a winner
+            // (the engine auto-tables winners) and cannot hide an all-in
+            // showdown (all-in hands are force-exposed with mucked=false).
+            const heroMucked = sdResults.some((r) => r.user_id === userId && r.mucked === true);
+            if (
+              heroMucked &&
+              userSettingsRef.current.autoMuck === false &&
+              tableId &&
+              autoShowFiredHandRef.current !== heroHandRef.current
+            ) {
+              autoShowFiredHandRef.current = heroHandRef.current;
+              GameServerAPI.showHand(tableId).catch(() => {
+                // Voluntary show is best-effort decoration; the hand result
+                // is already settled server-side.
+              });
+            }
           }
         }
         // Bible V8 §4.6: Showdown — play showdown sound, trigger card reveal animations
@@ -8563,6 +8618,7 @@ export default function TablePage({
             hand_name?: string;
             hand_description?: string;
             hole_card_indices?: number[];
+            pot_index?: number;
           }>) || [];
         const winHandName =
           ((evt.data as any).hand_name as string) ||
@@ -8780,14 +8836,32 @@ export default function TablePage({
           const potPos = seatPctToViewportPx(tableScalerRef.current, POT_ANCHOR_PCT);
           // Resolve each winner's seat from the current player list (rotated
           // positions already account for hero-at-bottom view).
-          const events: ChipAnimationEvent[] = [];
-          const potWinFloatPlans: Array<{
-            fromX: number;
-            fromY: number;
-            toX: number;
-            toY: number;
-            amount: number;
-          }> = [];
+          // SHOWDOWN follow-up 2026-08-25 (Dan spec sections 16/19/20): when
+          // pots resolve to different winners they are awarded as a SEQUENCE —
+          // main pot first, then each side pot, one POT_AWARD_STAGGER_MS
+          // apart — so the table reads "A takes the main, then C takes the
+          // side" instead of one simultaneous blur. Winners of the SAME pot
+          // (a chop) still fire together: their separate "+N" floats at their
+          // own seats are the story there (spec section 12). The pot rank
+          // comes from the engine's per-winner pot_index (0 = main).
+          const winnerPotIndex: Record<string, number> = {};
+          for (const w of winnersArray) winnerPotIndex[w.user_id] = w.pot_index ?? 0;
+          const distinctPotIdxs = [
+            ...new Set(winnerIds.map((wid) => winnerPotIndex[wid] ?? 0)),
+          ].sort((a, b) => a - b);
+          const potGroupRank = new Map(distinctPotIdxs.map((p, i) => [p, i]));
+
+          interface AwardGroup {
+            events: ChipAnimationEvent[];
+            floats: Array<{
+              fromX: number;
+              fromY: number;
+              toX: number;
+              toY: number;
+              amount: number;
+            }>;
+          }
+          const awardGroups: AwardGroup[] = distinctPotIdxs.map(() => ({ events: [], floats: [] }));
           for (const wid of winnerIds) {
             // SeatPlayer.id is the userId — players[] index = seatNumber - 1.
             const seatIdx = tableStateRef.current.players.findIndex((p) => p?.id === wid);
@@ -8800,13 +8874,14 @@ export default function TablePage({
             // potAmount/n split labelled side-pot chops with wrong numbers.
             const share =
               winnerInfoRef.current?.amounts?.[wid] ?? potAmount / (winnerIds.length || 1);
+            const group = awardGroups[potGroupRank.get(winnerPotIndex[wid] ?? 0) ?? 0];
             // createPotToWinnerEvent already returns a fan of 3-8 chips with
             // bezier arc, staggered 40ms each, 600ms duration — spec match.
-            events.push(...createPotToWinnerEvent(potPos, winnerPos, share));
+            group.events.push(...createPotToWinnerEvent(potPos, winnerPos, share));
             // Dan 2026-08-21: the floating "+N" rides with this fan and ends
             // above the winner's seat naming the exact share they won —
             // accurate per winner, so chops read right too.
-            potWinFloatPlans.push({
+            group.floats.push({
               fromX: potPos.x,
               fromY: potPos.y,
               toX: winnerPos.x,
@@ -8814,28 +8889,57 @@ export default function TablePage({
               amount: share,
             });
           }
-          if (events.length > 0) {
-            const fireFan = () => {
-              setChipAnimations((prev) => [...prev, ...events]);
+          if (awardGroups.some((g) => g.events.length > 0)) {
+            const fireGroup = (g: AwardGroup) => {
+              if (g.events.length === 0) return;
+              setChipAnimations((prev) => [...prev, ...g.events]);
               // Dan 2026-08-21: launch each winner's floating "+N" in the same
               // frame as their chip fan so the number travels WITH the pot.
-              for (const plan of potWinFloatPlans) {
+              for (const plan of g.floats) {
                 spawnPotWinFloat(plan.fromX, plan.fromY, plan.toX, plan.toY, plan.amount);
               }
               // Bible V8 §5.3: pot collect sweep sound — synced with chip animation
               // #175 gated for multi-table: only play on the active tab
               if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playPotCollect();
             };
-            if (shipDelayMs > 0) {
-              if (potShipTimerRef.current) clearTimeout(potShipTimerRef.current);
-              potShipTimerRef.current = setTimeout(() => {
-                potShipTimerRef.current = null;
-                fireFan();
-              }, shipDelayMs);
-            } else {
-              fireFan();
-            }
+            for (const t of potAwardStaggerTimersRef.current) clearTimeout(t);
+            potAwardStaggerTimersRef.current = [];
+            awardGroups.forEach((g, rank) => {
+              const groupDelay =
+                shipDelayMs + rank * HAND_COMPLETION.POT_AWARD_STAGGER_MS * getAnimationSpeed();
+              if (groupDelay > 0) {
+                const t = window.setTimeout(() => {
+                  potAwardStaggerTimersRef.current = potAwardStaggerTimersRef.current.filter(
+                    (x) => x !== t
+                  );
+                  fireGroup(g);
+                }, groupDelay);
+                potAwardStaggerTimersRef.current.push(t);
+              } else {
+                fireGroup(g);
+              }
+            });
           }
+          // SHOWDOWN follow-up 2026-08-25 (spec 21): the winner's displayed
+          // stack rises only once the pot has visibly reached them — after
+          // the LAST award group's fan lands (fan travel is ~600ms; 700
+          // leaves it settled). Until then the seat shows stack minus the
+          // pending share (see the displayPlayer hold at render). Scheduled
+          // even when no fan could be built (seat lookup failure), so the
+          // hold can never outlive the hand it belongs to.
+          const lastGroupDelay =
+            shipDelayMs +
+            Math.max(0, awardGroups.length - 1) *
+              HAND_COMPLETION.POT_AWARD_STAGGER_MS *
+              getAnimationSpeed();
+          if (stackHoldReleaseTimerRef.current) clearTimeout(stackHoldReleaseTimerRef.current);
+          stackHoldReleaseTimerRef.current = setTimeout(
+            () => {
+              stackHoldReleaseTimerRef.current = null;
+              setStackHoldReleased(true);
+            },
+            lastGroupDelay + 700 * getAnimationSpeed()
+          );
 
           // Dan 2026-08-19, bug list item 6: push the POT ITSELF to the winner,
           // not just a fan of chips. `.pot-display--collect` and its
@@ -12011,6 +12115,26 @@ export default function TablePage({
                   name: derivedHeroName!,
                 }
               : null;
+            /* SHOWDOWN follow-up 2026-08-25 (Dan spec section 21): do not show
+               the winner's stack increasing before the pot has visibly reached
+               them. The engine credits stacks the moment the hand settles, so
+               the snapshot that reveals the showdown already carries POST-win
+               totals — the number jumped a full pot before the chips moved.
+               Until the pot-push animation lands (stackHoldReleased, set on a
+               timer from POT_WIN, backstopped at HAND_STARTED), each winner's
+               seat displays their stack minus the share they were just paid.
+               Authoritative state is untouched — this is presentation only. */
+            if (displayPlayer && !stackHoldReleased) {
+              const pendingWin = tableState.engineWinners?.find(
+                (w) => w.userId === displayPlayer!.id
+              );
+              if (pendingWin && pendingWin.amount > 0) {
+                displayPlayer = {
+                  ...displayPlayer,
+                  stack: Math.max(0, displayPlayer.stack - pendingWin.amount),
+                };
+              }
+            }
             // The seat hero just tapped: show them SITTING immediately, with a
             // pending stack, while the buy-in modal is still open. Replaced by
             // real server data the moment the buy-in lands.

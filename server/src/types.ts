@@ -403,6 +403,29 @@ export interface ShowdownResult {
   hand: EvaluatedHand;
   /** DOUBLE-BOARD BOMB POT 2026-08-20: the same hole cards evaluated on board 2. */
   hand2?: EvaluatedHand;
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25 (Dan spec sections 3-10): position in the
+   * table's reveal sequence. 0 = shows first (final-street last aggressor,
+   * or first player in normal river action order when the river checked
+   * through), then clockwise. Clients stagger the card flips by this index.
+   */
+  revealOrder?: number;
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25: true when this hand cannot win or tie any
+   * pot it is eligible for against the hands required to show before it, so
+   * poker rules permit it to be mucked. The engine — never the client —
+   * makes this call. A mucked hand's hole cards are withheld from the
+   * public broadcast; the seat renders a Mucked label instead. Always false
+   * for every live hand when an all-in ended further betting (spec section
+   * 8: all-in showdown exposes every live hand, no muck option).
+   */
+  mucked?: boolean;
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25: descriptive secondary line for the winning
+   * hand display, e.g. "Kings Full Of Nines" under "Full House". Generated
+   * by describeHand() from the actual evaluated hand.
+   */
+  handDescription?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

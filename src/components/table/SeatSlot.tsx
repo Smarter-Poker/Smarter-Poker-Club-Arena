@@ -193,6 +193,27 @@ export interface SeatSlotProps {
   isWinner?: boolean;
   winningHandName?: string; // e.g. "Straight", "Full House"
   /**
+   * SHOWDOWN SYSTEM 2026-08-25 (spec section 15): indices of THIS winner's
+   * own hole cards that participate in the winning five-card hand, from the
+   * engine's pot_win payload. When present, only those cards highlight;
+   * when absent, the whole hand highlights (previous behaviour, and the
+   * right fallback for older engine payloads).
+   */
+  winningHoleCardIndexes?: readonly number[];
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the ENGINE ruled this hand
+   * muckable at showdown — its cards were never revealed, and the seat
+   * renders a MUCKED label instead. Distinct from isMucking, which is the
+   * fly-to-muck animation for cards that WERE revealed and lost.
+   */
+  isMuckedShowdown?: boolean;
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25 (spec section 3): how long to hold this
+   * seat's showdown reveal so the flips play in reveal order — the
+   * final-street aggressor first, then clockwise. 0 = flip immediately.
+   */
+  showdownRevealDelayMs?: number;
+  /**
    * Dan 2026-08-21 (item 15): hero's CURRENT made hand, recomputed on every
    * street ("Ace High" -> "Pair" -> "Two Pair"). Hero seats only; the parent
    * evaluates it so the work happens once per board, not once per seat.
@@ -518,6 +539,9 @@ export const SeatSlot = memo(
       isCollectingChips = false,
       isDealing = false,
       isMucking = false,
+      winningHoleCardIndexes,
+      isMuckedShowdown = false,
+      showdownRevealDelayMs = 0,
       cardSqueezeActive = false,
       handNumber = 0,
       playSounds = true,
@@ -841,20 +865,43 @@ export const SeatSlot = memo(
 
     // Showdown card flip animation — 3D flip when opponent cards are revealed
     const [isShowdownFlip, setIsShowdownFlip] = useState(false);
+    // SHOWDOWN SYSTEM 2026-08-25 (spec section 3): while true, the seat keeps
+    // rendering card BACKS even though the snapshot has already revealed the
+    // hand — this is what turns the simultaneous broadcast reveal into a
+    // sequence. The hold expires after showdownRevealDelayMs (reveal order x
+    // stagger), then the flip plays exactly as before.
+    const [revealHeld, setRevealHeld] = useState(false);
     const prevShowCardsRef = React.useRef<boolean>(player?.showCards ?? false);
     useEffect(() => {
       if (!player) return;
       // Trigger 3D flip when showCards transitions false → true
       if (player.showCards && !prevShowCardsRef.current) {
-        setIsShowdownFlip(true);
-        // ANIMATION AUDIT 2026-08-19: was 400ms, but card 2 runs 120ms delay
-        // + 350ms flip = 470ms — it snapped face-up at 85%. 600ms covers it.
-        const timer = setTimeout(() => setIsShowdownFlip(false), 600 * getAnimationSpeed());
         prevShowCardsRef.current = player.showCards;
-        return () => clearTimeout(timer);
+        let flipEndTimer: ReturnType<typeof setTimeout> | null = null;
+        const beginFlip = () => {
+          setRevealHeld(false);
+          setIsShowdownFlip(true);
+          // ANIMATION AUDIT 2026-08-19: was 400ms, but card 2 runs 120ms delay
+          // + 350ms flip = 470ms — it snapped face-up at 85%. 600ms covers it.
+          flipEndTimer = setTimeout(() => setIsShowdownFlip(false), 600 * getAnimationSpeed());
+        };
+        const holdMs = Math.max(0, showdownRevealDelayMs) * getAnimationSpeed();
+        if (holdMs > 0) {
+          setRevealHeld(true);
+          const holdTimer = setTimeout(beginFlip, holdMs);
+          return () => {
+            clearTimeout(holdTimer);
+            if (flipEndTimer) clearTimeout(flipEndTimer);
+            setRevealHeld(false);
+          };
+        }
+        beginFlip();
+        return () => {
+          if (flipEndTimer) clearTimeout(flipEndTimer);
+        };
       }
       prevShowCardsRef.current = player.showCards ?? false;
-    }, [player?.showCards]);
+    }, [player?.showCards, showdownRevealDelayMs]);
 
     // ── COMPETITOR-PARITY 2026-08-19: Card Squeeze ─────────────────────────
     // squeezeProgress: 0 = face down, 1 = fully peeled open. Driven by a
@@ -1333,7 +1380,7 @@ export const SeatSlot = memo(
         {!player.isHero &&
           (player.status === 'active' || player.status === 'all_in' || isFolding || isMucking) && (
             <div
-              className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
+              className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length && !revealHeld ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
             >
               {player.holeCards && player.holeCards.length > 0
                 ? displayHoleCards.map((card, i) => (
@@ -1342,10 +1389,15 @@ export const SeatSlot = memo(
                       card={card}
                       /* Dan 2026-08-18: null = this specific card was not among
                        the ones the player chose to show, so it stays down even
-                       though the seat itself is revealed. */
-                      hidden={!player.showCards || card == null}
+                       though the seat itself is revealed.
+                       SHOWDOWN SYSTEM 2026-08-25: revealHeld keeps the back on
+                       until this seat's turn in the reveal sequence. */
+                      hidden={!player.showCards || card == null || revealHeld}
                       index={i}
-                      isWinner={isWinner}
+                      isWinner={
+                        isWinner &&
+                        (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
+                      }
                       deckStyle={deckStyle}
                       cardBack={cardBack}
                     />
@@ -1749,7 +1801,10 @@ export const SeatSlot = memo(
                     hidden={false}
                     index={i}
                     isHero={true}
-                    isWinner={isWinner}
+                    isWinner={
+                      isWinner &&
+                      (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
+                    }
                     deckStyle={deckStyle}
                     cardBack={cardBack}
                   />
@@ -1761,6 +1816,12 @@ export const SeatSlot = memo(
 
         {/* Winning Hand Name — floats below cards (premium style) "Straight" label */}
         {isWinner && winningHandName && <div className="seat__hand-name">{winningHandName}</div>}
+
+        {/* SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the engine ruled this
+            hand muckable — its cards were never revealed. The label is the
+            seat's whole showdown story, so it never renders alongside a
+            winner label. */}
+        {isMuckedShowdown && !isWinner && <div className="seat__mucked-label">Mucked</div>}
 
         {/**
          * Dan 2026-08-21 (bug list item 15): "display the current strength of
@@ -1861,6 +1922,19 @@ export const SeatSlot = memo(
     if (prev.isCollectingChips !== next.isCollectingChips) return false;
     // ANIMATION AUDIT 2026-08-19: showdown-loser muck flag must re-render.
     if (prev.isMucking !== next.isMucking) return false;
+    // SHOWDOWN SYSTEM 2026-08-25: the MUCKED label, the reveal stagger and
+    // the exact-card winner highlight all arrive as new props at showdown —
+    // each must break the memo or the feature is invisible.
+    if (prev.isMuckedShowdown !== next.isMuckedShowdown) return false;
+    if (prev.showdownRevealDelayMs !== next.showdownRevealDelayMs) return false;
+    {
+      const a = prev.winningHoleCardIndexes;
+      const b = next.winningHoleCardIndexes;
+      if (a !== b) {
+        if (!a || !b || a.length !== b.length) return false;
+        for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+      }
+    }
     // COMPETITOR-PARITY 2026-08-19: card squeeze mode flips render structure.
     if (prev.cardSqueezeActive !== next.cardSqueezeActive) return false;
     // AUDIT-2 FIX 2026-08-20: these were missing from the comparator.

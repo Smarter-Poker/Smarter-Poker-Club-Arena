@@ -12,7 +12,7 @@
  */
 
 import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
-import type { LobbyEntry, LobbyStatusKey } from './lobbyEntries';
+import type { LobbyEntry, LobbyStatusKey, LobbyTournamentRow } from './lobbyEntries';
 import { mttPhaseText, mttTitleLine } from './lobbyEntries';
 import { prefetchIntent } from '../../utils/ChunkPreloader';
 import './LobbyTable.css';
@@ -507,6 +507,58 @@ const COL_COST: ColumnDef = {
 
    A heads-up table is a cash game with two seats, so it is detected from the
    capacity rather than from a category the entry does not carry. */
+/* Dan 2026-08-24: "IT SHOULD ALSO HAVE THE STARTING STACK AND CURRENT BLIND
+   LEVELS." Both live on the tournament row already — starting_chips is set at
+   creation, and current_level plus blind_structure are what the clock runs
+   on — they were simply never surfaced outside the tournament screen. A card
+   for a game you have not entered yet is exactly where they answer "is this
+   the game I want": a 20,000 stack and a level-1 clock is a different
+   proposition from a 20,000 stack at level 9. */
+function blindsForLevel(t: LobbyTournamentRow): string | null {
+  if (!t.blind_structure || !t.current_level) return null;
+  try {
+    const levels = JSON.parse(t.blind_structure) as Array<{
+      level?: number;
+      smallBlind?: number;
+      bigBlind?: number;
+    }>;
+    const lv = levels.find((l) => l.level === t.current_level) || levels[t.current_level - 1];
+    if (!lv?.smallBlind || !lv?.bigBlind) return null;
+    return `${lv.smallBlind.toLocaleString()}/${lv.bigBlind.toLocaleString()}`;
+  } catch {
+    return null;
+  }
+}
+
+const COL_TSTATS: ColumnDef = {
+  key: 'tstats',
+  label: 'Stack',
+  className: 'lt-col-tstats',
+  render: (e) => {
+    if (e.kind === 'cash') return null;
+    const t = e.raw as LobbyTournamentRow;
+    const stack = t.starting_chips ? t.starting_chips.toLocaleString() : null;
+    const blinds = blindsForLevel(t);
+    if (!stack && !blinds) return null;
+    return (
+      <span className="lt-tstats">
+        {stack && (
+          <span className="lt-tstat">
+            <span className="lt-tstat__k">Stack</span>
+            <span className="lt-tstat__v">{stack}</span>
+          </span>
+        )}
+        {blinds && (
+          <span className="lt-tstat">
+            <span className="lt-tstat__k">Level {t.current_level}</span>
+            <span className="lt-tstat__v">{blinds}</span>
+          </span>
+        )}
+      </span>
+    );
+  },
+};
+
 const COL_ACTIONS: ColumnDef = {
   key: 'actions',
   label: '',
@@ -601,6 +653,8 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_SPEED,
         { ...COL_PLAYERS, label: 'Enrolled', hideOnMobile: true },
         COL_STATUS,
+        COL_TSTATS,
+        COL_RULES,
         COL_ACTIONS,
       ];
     case 'SPIN':
@@ -624,6 +678,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_STARTS,
         COL_RULES,
         COL_STATUS,
+        COL_TSTATS,
         COL_ACTIONS,
       ];
   }
@@ -839,6 +894,7 @@ export default function LobbyTable({
                 key={entry.id}
                 data-id={entry.id}
                 className={`lt-row lt-row--${entry.status}${selected ? ' is-selected' : ''}`}
+                data-kind={entry.kind}
                 aria-selected={selected}
                 // Hover / touch / keyboard-focus on a lobby row is the earliest
                 // honest signal that this table is where the player is going, so

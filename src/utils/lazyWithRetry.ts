@@ -98,8 +98,18 @@ export function lazyWithRetry<T extends ComponentType<any>>(
         clearReloadCount();
         return module;
       } catch (error: any) {
+        /* SAFARI PHRASES IT DIFFERENTLY, AND THAT IS THE WHOLE BUG (Dan,
+           2026-08-24, from an iPhone: "Importing a module script failed.").
+           Every matcher below was written against Chrome's wording, so on iOS
+           a stale chunk after a deploy fell straight past the retry AND past
+           the hard reload, and the app just showed its error card — which is
+           why Register, Details and Join all died on the same screen while
+           the desktop recovered silently. */
         const isChunkError =
           error?.name === 'ChunkLoadError' ||
+          error?.message?.includes('Importing a module script failed') ||
+          error?.message?.includes('error loading dynamically imported module') ||
+          error?.message?.includes('Unable to preload CSS') ||
           error?.message?.includes('dynamically imported module') ||
           error?.message?.includes('Failed to fetch') ||
           error?.message?.includes('Loading chunk') ||

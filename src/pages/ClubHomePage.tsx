@@ -2166,10 +2166,20 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         () => {
           setRegisteredTournamentIds((prev) => new Set(prev).add(t.id));
           setPanelOpen(false);
+          /* Dan 2026-08-24: "WHEN YOU CLICK REGISTER AND CONFIRM IT NEEDS TO
+             AUTO OPEN YOUR TOURNAMENT TABLE AND SEAT YOU AS SOON AS YOU BUY
+             IN." Registration used to end by closing a panel and leaving the
+             player on the list they had just committed money from. The
+             tournament's own screen is what owns seating — it holds you in
+             the waiting room until the clock starts and moves you to your
+             table when it does — so that is where a paid entry belongs.
+             Deferred a tick for the same reason the join path defers: let the
+             panel unmount before the router transition. */
+          setTimeout(() => navigate(`/tournaments/${t.id}`), 0);
         }
       );
     },
-    [registerMtt]
+    [registerMtt, navigate]
   );
 
   const handleUnregister = useCallback(
@@ -2945,7 +2955,18 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 else openEntry(e);
               },
               onJoinTable: (e) => handleJoinTable(e.id),
-              onViewTable: (e) => openEntry(e),
+              /* Dan 2026-08-24: "VIEW TABLE SHOULD OPEN THE GAME AND LET YOU
+                 WATCH AS A SPECTATOR — IT CURRENTLY BRINGS YOU TO THE JOIN
+                 PAGE." It did, because it opened the pre-commit panel. The
+                 table route with no join state IS the spectator view (the
+                 panel's own "Observe Table" link goes to exactly this), so
+                 the button now goes straight there.
+
+                 For a tournament the equivalent is its own lobby screen —
+                 "THE DETAILS BUTTON SHOULD TAKE YOU TO THE TOURNAMENT LOBBY
+                 SCREEN" — unconditionally, not only once it is running. */
+              onViewTable: (e) =>
+                e.kind === 'cash' ? navigate(`/table/${e.id}`) : navigate(`/tournaments/${e.id}`),
             }}
           />
         )}

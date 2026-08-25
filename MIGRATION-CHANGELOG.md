@@ -14627,3 +14627,68 @@ Also this session: shared-worktree collision — a scheduled agent's `git add
 -A` swept this fix into its lobby commit (#652, failing on a phantom
 ClubBankCashierModal import). Extracted cleanly to #660; #652 annotated for
 its owner. This session now works from its own worktree (cowork-claude-conn).
+
+## Cowork session 2026-08-25 (21) — THE SWEEP WAS SCOPED TO THE SAMPLE, NOT THE PROPERTY
+
+Dan: "get everything up to date, finish up anything you feel like is necessary
+before we start making mobile updates." Full audit in
+`.agent/audits/2026-08-25-the-sweep-was-scoped-to-the-sample.md`.
+
+1. **Two MTTs at a dead felt that no sweep could see (#780).** The
+   started-but-never-dealt recovery shipped filtered to `['sng','spin']` — the
+   variants its originating outage happened to contain — while its own comment
+   said "no existing sweep covers this state". Monday Grind PLO6 Turbo sat
+   RUNNING 183 minutes with 18 paid players and zero hands; Six-Card Late Night
+   16 minutes with 499 players, 56 tables, 548 live seats, zero hands. Filter
+   removed. The 15-minute cutoff was measured, not assumed: of 187
+   non-seat-first tournaments in 48h, 153 dealt within 15 minutes and 127 within
+   5, INCLUDING a 500-player field, and the slow tail's average field is smaller
+   than the fast group's. Added a seating-settled guard (every `playing` player
+   must hold a live seat; an unreadable count is UNKNOWN) so a large MTT still
+   filling tables is not requeued mid-seating. 4 guards, each verified to fail
+   when the fix is reverted.
+
+2. **Verified live, and honest about what it did not fix.** Engine cut over to
+   `137247b2`, the sweep requeued both games, the start gate relaunched both,
+   the engine adopted their tables (295 known vs 294 running). They STILL did
+   not deal: both wedged at `loopPhase 'dealing'` with 108s since progress, 9
+   dealable seats, not paused. #780 rescues the state, it does not cure it —
+   left as a ~15min retry loop rather than dressed up as a fix.
+
+3. **The wedge has a shape, and a worse baseline (#782).** Never-dealt rate by
+   game_type over 48h: NLH 22.3%, PLO4 20.8%, PLO5 35.9%, PLO6 36.5%. The 5/6
+   card excess is real, but the headline is that ~1 tournament in 5 never deals
+   a card — ~1,942 in 48 hours. Until #780 that state was invisible to every
+   sweep. Raised with the instrumentation needed rather than guessed at.
+
+4. **The open PR queue was half revert.** All four stuck PRs were DIRTY and all
+   four touched the files mobile work starts in. #761 resolved to main. #744
+   resolved by SPLITTING the hunk — the branch's functional updater is a real
+   stale-closure fix for `setStandUpNextBB`, but wrong for
+   `setIsAutoRebuyEnabled`, which is a `(v:boolean)=>void` wrapper. #733 closed:
+   fully superseded by #758, and its only surviving 10 lines were a
+   byte-for-byte re-add of the opponent card rotation #742 deliberately removed.
+   #716 closed: exact duplicate of #717, which merged the day before.
+
+5. **The stranded-work alarm was almost entirely false.** Five branches / ~10
+   commits reported as never seen by GitHub were ALL already on main under
+   different SHAs — verified by blob hash per path, not filename. They sit on
+   ancient bases, so pushing them would have opened PRs reverting ~100k lines.
+   27 dirty trees snapshotted to `refs/wip/rescue/20260825T045141Z/*`; nothing
+   pushed, nothing deleted.
+
+6. **Estate drift #682 closed, both halves, in OPPOSITE directions.**
+   `AGENT-PLAYBOOK.md`: Club Arena newer, synced out — six repos were still
+   telling agents to run `npm ci` in the shared clone, which is now the worst
+   place to do it. `agent-autopilot.yml`: PepNationLab newer (Dependabot bump of
+   `checkout` and `create-github-app-token`), synced in. The second mints the
+   merge credential, so it was staged through `commander-shared` as a canary and
+   only propagated after its sweep went green on the bumped SHA.
+
+7. **Left alone deliberately:** live uncommitted mobile work in the shared clone
+   (`ClubBottomNav.tsx` +332 and 5 more files, implementing today's binding
+   bottom-nav instruction, modified minutes before it was found) — snapshotted
+   to `refs/wip/rescue/shared-clone-mobile-20260825T050552Z` and untouched. Also
+   noted: `Smarter-Poker-Club-Arena` is a third real clone, not the symlink
+   AGENT-PLAYBOOK section 1b claims, and that is where the phantom stranded work
+   lives.

@@ -965,6 +965,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           startedAt: this.currentHandStartedAt || Date.now(),
           endedAt: Date.now(),
           winners: this.currentHandWinners,
+          // POT-LEVEL SETTLEMENT (Dan section 29). Captured at WINNERS, when
+          // the breakdown still exists. `winners` already carry `potIndex`;
+          // this is the other half of that pair, and without it the number is
+          // an index into an array nobody stored. Together they let the
+          // elimination sweep credit a knockout to the winner(s) of the pot
+          // that held the busted player's last chips.
+          pots: this.currentHandPots,
           players: players.map((p) => ({
             userId: p.user_id,
             username: p.username,

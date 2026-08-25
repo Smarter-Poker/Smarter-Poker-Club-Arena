@@ -22,10 +22,15 @@ import {
   SEAT_LAYOUTS,
   SEAT_POSITIONS_6MAX,
   SEAT_POSITIONS_9MAX,
+  TOP_CAP_Y_MAX,
   seatLayoutFor,
   createEmptySeats,
   rotateSeatsForHero,
   seatPixelMap,
+  isTopCapSeat,
+  outboardCardSide,
+  inboardCardSide,
+  seatCardSide,
 } from '../../src/lib/tableSeatGeometry';
 
 const SIZES = [2, 3, 4, 5, 6, 7, 8, 9] as const;
@@ -37,7 +42,11 @@ describe('every table size has a complete ring', () => {
   });
 
   it('covers 2 through 9 and nothing else', () => {
-    expect(Object.keys(SEAT_LAYOUTS).map(Number).sort((a, b) => a - b)).toEqual([...SIZES]);
+    expect(
+      Object.keys(SEAT_LAYOUTS)
+        .map(Number)
+        .sort((a, b) => a - b)
+    ).toEqual([...SIZES]);
   });
 });
 
@@ -84,6 +93,149 @@ describe('no seat escapes the frame', () => {
     const ring = seatLayoutFor(n);
     const keys = new Set(ring.map((s) => `${s.x},${s.y}`));
     expect(keys.size).toBe(ring.length);
+  });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * WHICH SIDE A SEAT HANGS ITS CARDS OFF (Dan 2026-08-25 round 2, item 7).
+ *
+ * There are two rules and they are opposites, which is exactly why they need
+ * pinning: the top cap goes OUTBOARD (away from the middle of the table,
+ * because it has no felt beneath it and its only problem is the neighbouring
+ * top hand), and every other seat goes INBOARD (toward the felt, because
+ * outboard is what ran a right-rail PLO hand off the edge of a 375px phone).
+ *
+ * Swapping them looks fine in review and is immediately wrong on a phone, in
+ * opposite directions on the two halves of the table.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+describe('which side a seat hangs its cards off', () => {
+  it('the top cap goes outboard — away from the middle of the table', () => {
+    expect(seatCardSide(27, 6), '9-max top-left').toBe('left');
+    expect(seatCardSide(73, 6), '9-max top-right').toBe('right');
+    expect(seatCardSide(20.5, 6), '3/5-max top-left diagonal').toBe('left');
+    expect(seatCardSide(79.5, 6), '3/5-max top-right diagonal').toBe('right');
+  });
+
+  it('side and bottom seats go inboard — toward the felt', () => {
+    // Dan's own two examples, verbatim: "the villan in the position where
+    // BarrelBlitz is should have their cards on the LEFT side of them. 'Aggro
+    // Andy' position should have them to the RIGHT side of the avatar."
+    expect(seatCardSide(89.5, 58), 'BarrelBlitz — a right-rail seat').toBe('left');
+    expect(seatCardSide(10.5, 82.5), 'Aggro Andy — the bottom-left cap').toBe('right');
+  });
+
+  it('a seat with no side (x exactly 50) keeps the long-standing right', () => {
+    expect(seatCardSide(50, 5), 'top centre').toBe('right');
+    expect(seatCardSide(50, 100), 'the hero slot').toBe('right');
+  });
+
+  it('degrades to right, not to a coin flip, when the seat cannot be measured', () => {
+    // seatWrapperPercent in SeatSlot.tsx returns NaN when neither the inline
+    // percentage nor the offset fallback can answer.
+    expect(seatCardSide(NaN, NaN)).toBe('right');
+    expect(seatCardSide(NaN, 6)).toBe('right');
+  });
+
+  it('the two rules are genuine opposites everywhere except dead centre', () => {
+    for (const x of [0, 10.5, 20.5, 27, 49.9, 50.1, 73, 79.5, 89.5, 100]) {
+      expect(outboardCardSide(x), `x ${x}`).not.toBe(inboardCardSide(x));
+    }
+    expect(outboardCardSide(50)).toBe('right');
+    expect(inboardCardSide(50)).toBe('right');
+  });
+
+  it('applies the right rule to every seat of every ring', () => {
+    for (const n of SIZES) {
+      for (const seat of seatLayoutFor(n)) {
+        const expected = isTopCapSeat(seat.y) ? outboardCardSide(seat.x) : inboardCardSide(seat.x);
+        expect(seatCardSide(seat.x, seat.y), `${n}-max seat ${seat.x},${seat.y}`).toBe(expected);
+      }
+    }
+  });
+
+  it('no seat sits near the top-cap threshold, so the band is never ambiguous', () => {
+    // The threshold has to agree with TablePage's `pos.y < 20` test, which is
+    // what tags `.seat-wrapper--top` and so what makes the outboard rule apply
+    // at all. Clearance on both sides means a 1-point nudge to a ring can never
+    // silently flip a seat between the two rules.
+    for (const n of SIZES) {
+      for (const seat of seatLayoutFor(n)) {
+        expect(
+          Math.abs(seat.y - TOP_CAP_Y_MAX),
+          `${n}-max seat at y ${seat.y} sits on the top-cap threshold`
+        ).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * RING EVENNESS UNDER THE TOP CAP (Dan 2026-08-25 round 2, item 10).
+ *
+ * "Villan 'Violet Wei' and villan Jaxaaron should both be raised up higher in
+ * their positions on the table." Those are the left-high / right-high seats,
+ * and the complaint is measurable: they sat with the ring's NARROWEST gap below
+ * them and its WIDEST gap above them.
+ *
+ * Gaps are measured on the painted frame, where the locked 605/1000 aspect
+ * makes one point of x 6.05px and one point of y 10px. Comparing raw
+ * percentages instead would understate every corner, which is precisely where
+ * the crowding was.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+const railGapPx = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+  Math.hypot((a.x - b.x) * 6.05, (a.y - b.y) * 10);
+
+describe('the seats under the top cap are not crowded', () => {
+  it('9-max raised the left/right-high pair from 36 to 30', () => {
+    const ring = seatLayoutFor(9);
+    expect(ring[3]).toEqual({ x: 10.5, y: 30 });
+    expect(ring[6]).toEqual({ x: 89.5, y: 30 });
+  });
+
+  it('8-max had the same crowding and got the same fix, 28 to 23', () => {
+    const ring = seatLayoutFor(8);
+    expect(ring[3]).toEqual({ x: 10.5, y: 23 });
+    expect(ring[5]).toEqual({ x: 89.5, y: 23 });
+  });
+
+  it('7-max was already even under the cap and is deliberately untouched', () => {
+    // Its two rail seats sit 288px from the top cap and 290px from each other —
+    // already even. 7-max's uneven leg is the 449px hero-to-first-seat run, and
+    // raising these seats would only widen it.
+    const ring = seatLayoutFor(7);
+    expect(ring[2]).toEqual({ x: 10.5, y: 33 });
+    expect(ring[5]).toEqual({ x: 89.5, y: 33 });
+  });
+
+  it.each([8, 9] as const)(
+    '%i-max: the three legs from the bottom cap to the top cap are even',
+    (n) => {
+      // Left rail, walking up: bottom cap -> low -> high -> top cap. Before the
+      // fix these ran 245/220/316 (9-max) and 305/240/331 (8-max) — a widest-to
+      // -narrowest ratio of 1.44 and 1.38, with the widest gap sitting directly
+      // above the narrowest one. That is what "too low" looked like.
+      const ring = seatLayoutFor(n);
+      const rail = [ring[1], ring[2], ring[3], ring[4]];
+      const legs = [
+        railGapPx(rail[0], rail[1]),
+        railGapPx(rail[1], rail[2]),
+        railGapPx(rail[2], rail[3]),
+      ];
+      expect(Math.max(...legs) / Math.min(...legs), `${n}-max legs ${legs}`).toBeLessThanOrEqual(
+        1.25
+      );
+    }
+  );
+
+  it.each([7, 8, 9] as const)('%i-max keeps its rails mirrored left and right', (n) => {
+    const ring = seatLayoutFor(n);
+    const left = ring.filter((s) => s.x < 50).map((s) => s.y);
+    const right = ring.filter((s) => s.x > 50).map((s) => s.y);
+    expect([...left].sort((a, b) => a - b)).toEqual([...right].sort((a, b) => a - b));
   });
 });
 
@@ -223,7 +375,13 @@ describe('seatPixelMap', () => {
   });
 
   it('turns percentages into scaler pixels', () => {
-    const map = seatPixelMap([{ x: 50, y: 50 }, { x: 10, y: 90 }], scaler);
+    const map = seatPixelMap(
+      [
+        { x: 50, y: 50 },
+        { x: 10, y: 90 },
+      ],
+      scaler
+    );
     expect(map.get(1)).toEqual({ x: 150, y: 300 });
     expect(map.get(2)).toEqual({ x: 30, y: 540 });
   });

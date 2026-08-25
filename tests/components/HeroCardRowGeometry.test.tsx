@@ -125,6 +125,72 @@ describe('hero hole-card row geometry', () => {
     }
   });
 
+  /**
+   * Dan 2026-08-25 round 2, item 9: "when the hero doesn't have a hand, they
+   * should never be covered by anything ever."
+   *
+   * The row used to be anchored at `left: calc(100% - 10px)` — a deliberate
+   * tuck that slid the first card BEHIND the avatar to buy 10px of room for a
+   * PLO6 hand. That tuck is the one part of the seat drawn ON the hero, at
+   * z-index 20, and it survives into every state the row survives into: the
+   * hero's `holeCards` are preserved across the fold so the player can see
+   * what they mucked, and that preservation has no hand boundary in it.
+   *
+   * `100% + 1px` is the structural version of the fix: 100% is the seat's own
+   * right edge, `.seat__info` is capped at the seat's width, so a row starting
+   * one pixel past it shares no pixel with the hero at any hand size or
+   * breakpoint. Pinned because it is a one-character regression — a later
+   * "just tuck it back a bit for room" is exactly how it arrived.
+   */
+  it('anchors the row OUTSIDE the seat box, so it can never cover the hero', () => {
+    const anchors = rulesFor('.seat__cards--hero')
+      .flatMap((r) => [...r.body.matchAll(/left:\s*([^;]+);/g)])
+      .map((m) => m[1].trim());
+
+    expect(anchors.length, 'the hero row must declare its own left anchor').toBeGreaterThan(0);
+    for (const anchor of anchors) {
+      expect(anchor, 'a negative tuck puts the first card back on top of the hero').toBe(
+        'calc(100% + 1px)'
+      );
+    }
+  });
+
+  /**
+   * Dan 2026-08-25 round 2, item 10: "for holdem, every player should have
+   * their cards displayed exactly as the hero has theirs."
+   *
+   * "Exactly" only survives if there is ONE set of numbers. They live on
+   * `.seat` as --sp-card2-*, and both rows read them — the hero's row here and
+   * `.seat__cards--opponent.seat__cards--twocard` at the end of the file. A
+   * literal creeping back into either is the drift this pins.
+   */
+  it('reads the shared two-card size rather than restating it', () => {
+    const heroTokens = rulesFor('.seat__cards--hero')
+      .flatMap((r) => [...r.body.matchAll(/--sp-hero-card-(w|h|step):\s*([^;]+);/g)])
+      .map((m) => m[2].trim());
+
+    expect(heroTokens.length, 'the hero row must set all three size tokens').toBe(3);
+    for (const value of heroTokens) {
+      expect(value, 'the two-card size is shared with hold-em villains').toMatch(
+        /^var\(--sp-card2-(w|h|step),/
+      );
+    }
+  });
+
+  it('retunes the shared two-card size at every breakpoint that retunes the seat', () => {
+    // `.seat` is where the responsive blocks already override --seat-avatar-base,
+    // so the card size retunes in the same place and by the same rule. Four
+    // declarations: the base plus the 640 / 480 / 380 blocks.
+    for (const token of ['w', 'h', 'step']) {
+      const hits = cssNoComments.match(new RegExp(`--sp-card2-${token}:`, 'g'));
+      expect(hits, `--sp-card2-${token} is missing entirely`).toBeTruthy();
+      expect(
+        hits!.length,
+        `--sp-card2-${token} must be tuned at every breakpoint that tunes the others`
+      ).toBe(4);
+    }
+  });
+
   it('row widths stay within the felt at every hand size', () => {
     // Values from the base (widest) breakpoint block.
     const sizes = [

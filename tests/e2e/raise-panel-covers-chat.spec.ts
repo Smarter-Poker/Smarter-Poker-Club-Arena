@@ -17,10 +17,29 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 
+/*
+ * TableHUD.css is in this list as of 2026-08-25, and the reason is the point of
+ * the spec rather than a detail of it.
+ *
+ * The chat button's offset used to be a hardcoded 112px, so three stylesheets
+ * were enough to place it. It is now `bottom: var(--sp-hud-line)`, and the only
+ * declaration of that property lives on `.table-page` in TableHUD.css — which
+ * this harness did not load, and under a markup root that this harness did not
+ * have. An unresolved custom property does not degrade a `position: fixed`
+ * offset, it deletes it: `bottom` computed to `auto` and the bubble jumped to
+ * the top of the page, which read as "the panel no longer covers chat".
+ *
+ * So the harness now loads the sheet that declares the line and mounts the
+ * markup inside `.table-page`, i.e. the real cascade. Keep it that way: a spec
+ * that asserts geometry while loading only some of the stylesheets that produce
+ * that geometry is measuring a page that never ships.
+ */
 const css =
   fs.readFileSync(path.join(process.cwd(), 'src/styles/design-tokens.css'), 'utf8') +
   '\n' +
   fs.readFileSync(path.join(process.cwd(), 'src/components/table/ActionPanel.css'), 'utf8') +
+  '\n' +
+  fs.readFileSync(path.join(process.cwd(), 'src/components/table/TableHUD.css'), 'utf8') +
   '\n' +
   fs.readFileSync(path.join(process.cwd(), 'src/components/table/TableChat.css'), 'utf8');
 
@@ -33,6 +52,7 @@ const harness = `
    followed by the collapsed chat button — chat AFTER the panel, exactly the
    DOM order TablePage renders them in, because that order is half the bug. */
 const html = `<style>${css}\n${harness}</style>
+<div class="table-page">
 <div class="action-panel action-panel--raise">
   <div class="raise-layout"><div class="raise-main">
     <div class="raise-header">
@@ -56,7 +76,8 @@ const html = `<style>${css}\n${harness}</style>
     </div>
   </div></div>
 </div>
-<button class="chat-collapsed" id="chat">C</button>`;
+<button class="chat-collapsed" id="chat">C</button>
+</div>`;
 
 test('the open raise panel covers the chat button and keeps its taps', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });

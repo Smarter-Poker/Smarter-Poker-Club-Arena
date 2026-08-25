@@ -435,9 +435,35 @@
   }
 }
 
+/* ═══ THE PHONE ROW IS EXACTLY --sp-bottom-row-h TALL ═══
+   Dan 2026-08-25 round 2, item 5. This bar and `.action-panel` swap places as
+   the action passes round the table, and BOTH are `position: fixed`, so the
+   space reserved for them under the felt comes from a min-height floor on
+   `.action-panel-wrapper` rather than from either row's own height. One floor,
+   two rows: if they are not the same height, the floor is wrong for whichever
+   one is currently up, and the felt either overlaps the buttons or leaves a
+   band of dead black above them. Dan has now reported both.
+
+   So this breakpoint is built to the same arithmetic as `.action-panel` at
+   <=640px, and to the same total:
+     1px  border-top + 5px padding-top + 46px button = 52px = --sp-bottom-row-h.
+   The token, the sum and the reason all live at the top of ActionPanel.css.
+   Change one of the three numbers and you must change it in both files. */
+@media (max-width: 640px) {
+  .pre-action-bar {
+    padding: 5px 12px;
+    /* Flush — see the base rule. */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .pre-action-btn {
+    min-height: 46px;
+  }
+}
+
 @media (max-width: 480px) {
   .pre-action-bar {
-    padding: 6px 10px;
+    padding: 5px 10px;
     /* Flush — see the base rule. */
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
@@ -447,8 +473,11 @@
   }
 
   .pre-action-btn {
-    min-height: 44px;
-    padding: 8px 10px;
+    /* 46px, matching the <=640px block above and the action row it stands in
+       for. It used to be 44px here, which made this row 2px shorter than the
+       one the floor is measured against. */
+    min-height: 46px;
+    padding: 6px 10px;
     font-size: 0.6875rem;
     border-radius: 18px;
     gap: 4px;
@@ -464,7 +493,8 @@
 
 @media (max-width: 380px) {
   .pre-action-btn {
-    min-height: 44px;
+    /* Same 46px. Only the side padding and the type tighten at 375px. */
+    min-height: 46px;
     padding: 6px 8px;
     font-size: 0.625rem;
     border-radius: 16px;

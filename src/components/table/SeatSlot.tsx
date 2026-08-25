@@ -17,7 +17,7 @@
  * that DISAPPEARS as the clock counts down (CSS conic-gradient mask).
  */
 
-import React, { useMemo, useState, useEffect, useRef, memo } from 'react';
+import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, memo } from 'react';
 import { serverNow } from '../../utils/serverClock';
 import './SeatSlot.css';
 import { CardImage, CardBack } from './CardImage';
@@ -31,7 +31,7 @@ import RiveAvatar from './RiveAvatar';
 import { startMotionBudget } from '../../utils/motionBudget';
 import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
 import { sortCardsByRank } from '../../lib/tableCardDisplay';
-import { outboardCardSide, type CardSide } from '../../lib/tableSeatGeometry';
+import { seatCardSide, type CardSide } from '../../lib/tableSeatGeometry';
 import './avatarChoreography.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -492,29 +492,33 @@ function HoleCard({
 }
 
 /**
- * Where this seat sits across the table, as a percentage of the table's width.
+ * Where this seat sits on the table, as percentages of the table's own box.
  *
  * A seat is handed its NUMBER and nothing else — the ring, the rotation and the
- * table size all live in the parent — so the only place the seat's own x still
- * exists by the time it renders is on the element the parent wrapped it in:
- * TablePage sets `left: ${pos.x}%` inline on `.seat-wrapper`. Reading that
- * string back is exact, costs no layout, and is scale-invariant, which is why
- * it is tried first.
+ * table size all live in the parent — so the only place the seat's own position
+ * still exists by the time it renders is on the element the parent wrapped it
+ * in: TablePage sets `left: ${pos.x}%` and `top: ${pos.y}%` inline on
+ * `.seat-wrapper`. Reading those strings back is exact, costs no layout, and is
+ * scale-invariant, which is why it is tried first.
  *
- * The offsetLeft fallback covers any host that positions the wrapper some other
- * way (SimPage mounts SeatSlot outside the table page entirely). It is a
- * layout-forcing read, so it runs once per seat per mount and only when the
- * cheap path found nothing.
+ * The offset fallback covers any host that positions the wrapper some other way
+ * (SimPage mounts SeatSlot outside the table page entirely). It is a
+ * layout-forcing read, so the caller runs it only when the cheap path found
+ * nothing AND the wrapper has actually moved since the last look.
  *
- * NaN, deliberately, when neither works: `outboardCardSide` then answers
- * 'right', which is where every seat's cards hung before this existed.
+ * NaN, deliberately, when neither works: `seatCardSide` then answers 'right',
+ * which is where every seat's cards hung before any of this existed.
  */
-function seatCentrePercent(wrap: HTMLElement): number {
-  const inline = /^\s*([\d.]+)%\s*$/.exec(wrap.style.left || '');
-  if (inline) return Number(inline[1]);
+function seatWrapperPercent(wrap: HTMLElement): { x: number; y: number } {
+  const inlineX = /^\s*([\d.]+)%\s*$/.exec(wrap.style.left || '');
+  const inlineY = /^\s*([\d.]+)%\s*$/.exec(wrap.style.top || '');
+  if (inlineX && inlineY) return { x: Number(inlineX[1]), y: Number(inlineY[1]) };
   const host = wrap.offsetParent as HTMLElement | null;
-  if (!host || !host.offsetWidth) return NaN;
-  return (wrap.offsetLeft / host.offsetWidth) * 100;
+  if (!host || !host.offsetWidth || !host.offsetHeight) return { x: NaN, y: NaN };
+  return {
+    x: (wrap.offsetLeft / host.offsetWidth) * 100,
+    y: (wrap.offsetTop / host.offsetHeight) * 100,
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -638,30 +642,69 @@ export const SeatSlot = memo(
     }, [player?.holeCards]);
 
     /**
-     * OUTBOARD CARDS 2026-08-25 (Dan, item 7): "The guy on the left, his cards
-     * should be on the left."
-     *
-     * A top-cap seat hangs its face-down row beside the avatar rather than
-     * under the plate (there is no felt under a top seat, only the banner), and
-     * the side has to be the one AWAY from the middle of the table. Sending
-     * both top seats' cards to the same side is what made five and five read as
-     * a single row of ten (item 12).
+     * WHICH SIDE THIS SEAT'S CARDS HANG OFF — see `seatCardSide` in
+     * lib/tableSeatGeometry.ts for the rule itself (outboard at the top cap,
+     * inboard everywhere else) and for why it is derived from position rather
+     * than from a seat index.
      *
      * Measured rather than passed as a prop: adding one would mean editing
-     * TablePage, which four other workstreams are in at once, and the seat can
-     * recover its own x from the wrapper the parent already positions it with.
-     * Re-runs when the seat gains or loses an occupant because the measured
-     * element only exists on the occupied branch; a seat's x never changes
-     * otherwise (it is a percentage, so a resize cannot flip the answer).
+     * TablePage, which several other workstreams are in at once, and the seat
+     * can recover its own position from the wrapper the parent already
+     * positions it with.
+     *
+     * ── Dan 2026-08-25 round 2: WHY THE TOP SEATS BOTH SHOWED CARDS ON THE
+     *    LEFT, and why the wrapper is OBSERVED rather than re-read on render ──
+     *
+     * The measurement itself was fine. WHEN it ran was not: the dependency list
+     * was `[seatNumber, hasPlayer]`, and NEITHER of those changes when the seat
+     * MOVES. A seat moves constantly — `rotateSeatsForHero` re-assigns every
+     * chair's position the moment the hero's seat is known, and the ring itself
+     * is swapped when `maxPlayers` arrives from the table row after the first
+     * paint. Both rewrite the inline `left` on the wrapper while seatNumber and
+     * hasPlayer sit still, so the side stayed whatever the pre-rotation layout
+     * happened to say — which for the two top seats was the same answer for
+     * both of them. It was never falling through to the NaN default; it was
+     * answering a question about where the seat USED to be.
+     *
+     * Widening the dependency list would not fix it either, because a pure
+     * rotation need not re-render this seat at all: the wrapper's `style` moves
+     * while SeatSlot's own props stand still, and the memo comparator below
+     * correctly skips the render. So the position is watched at its source —
+     * one MutationObserver on the one attribute that carries it. That is true
+     * for every host and every reason the seat might move, including ones that
+     * do not exist yet, and it costs nothing while the seat is not moving.
+     *
+     * The string compare in `read` is the cheap guard: `style.left`/`style.top`
+     * are property reads on an element already in hand, with no layout flush,
+     * and they are exact. Only when the pair has actually changed do we parse —
+     * and only then can the offset fallback, which DOES force layout, run.
+     *
+     * `useLayoutEffect` so the first measurement lands in the same paint as the
+     * markup it measured; with a plain effect the seat shows one frame of cards
+     * on the default side before correcting itself.
      */
     const seatRef = useRef<HTMLDivElement | null>(null);
     const [cardSide, setCardSide] = useState<CardSide>('right');
     const hasPlayer = !!player;
-    useEffect(() => {
+    useLayoutEffect(() => {
+      // The wrapper is only in the DOM on the occupied branch (the empty-seat
+      // branches return before the ref is attached), so gaining or losing an
+      // occupant is what re-arms this.
       const wrap = seatRef.current?.parentElement;
       if (!wrap) return;
-      setCardSide(outboardCardSide(seatCentrePercent(wrap)));
-    }, [seatNumber, hasPlayer]);
+      let lastStamp: string | null = null;
+      const read = () => {
+        const stamp = `${wrap.style.left}|${wrap.style.top}`;
+        if (stamp === lastStamp) return;
+        lastStamp = stamp;
+        const { x, y } = seatWrapperPercent(wrap);
+        setCardSide(seatCardSide(x, y));
+      };
+      read();
+      const moved = new MutationObserver(read);
+      moved.observe(wrap, { attributes: true, attributeFilter: ['style'] });
+      return () => moved.disconnect();
+    }, [hasPlayer]);
 
     // Animated stack change — flash green/red when stack changes
     const [stackDelta, setStackDelta] = useState<number>(0);
@@ -1276,6 +1319,59 @@ export const SeatSlot = memo(
       !isWinner &&
       !isMucking;
 
+    /**
+     * How many cards a VILLAIN's row is about to draw, and therefore whether
+     * this is a 2-card variant.
+     *
+     * Dan 2026-08-25 round 2, item 10: "for holdem, every player should have
+     * their cards displayed exactly as the hero has theirs." A hold'em villain
+     * now gets the hero's card size and the hero's spacing; PLO4/PLO5/PLO6 keep
+     * the compact face-down treatment, because six full-size cards beside a
+     * villain do not fit at 375px.
+     *
+     * Counted from what will actually be RENDERED rather than from
+     * holeCardCount alone, because the two branches below disagree by design:
+     * a revealed hand draws `holeCards`, a hidden one draws `holeCardCount`
+     * backs. Both are the variant's count for a villain — an opponent's
+     * holeCards array is empty precisely because the hand is hidden, never
+     * short — so either branch answers the same question, and reading the one
+     * that is about to render means the class can never disagree with the row
+     * it is describing.
+     */
+    const opponentCardCount =
+      player.holeCards && player.holeCards.length > 0
+        ? player.holeCards.length
+        : Math.max(1, Math.min(6, holeCardCount));
+
+    /**
+     * Dan 2026-08-25 round 2, item 9: "when the hero doesn't have a hand, they
+     * should never be covered by anything ever."
+     *
+     * The hero's card row is the one thing INSIDE this seat that can be drawn
+     * over the hero, and it outlives the hand it belongs to. TablePage keeps
+     * the hero's last-delivered `holeCards` alive on purpose — when the hero
+     * folds, the engine scrubs them out of the public snapshot and TablePage
+     * substitutes the previous array back in, so the player can still see what
+     * they mucked (Dan's UX rule, 2026-04-14). That substitution has no hand
+     * boundary in it: once the hero has been dealt in even once, `holeCards`
+     * stays non-empty through the fold, through the showdown, through the gap
+     * before the next deal, and on through a sit-out — so this row renders in
+     * every state where the hero has no hand at all.
+     *
+     * Two halves to making that structurally impossible, and this is the first:
+     * a player who is OUT of the game — sat out or away — is not holding a hand
+     * by any reading, so the stale row is not drawn for them at all. The second
+     * half is geometric and lives in SeatSlot.css: the row is anchored 1px
+     * clear of the seat's own box, so even while it legitimately renders (live
+     * hand, muck view, showdown) it cannot overlap the avatar or the plate at
+     * any hand size or breakpoint.
+     *
+     * Deliberately NOT extended to 'disconnected': a disconnected player is
+     * still in the hand until the engine folds them, and erasing their cards
+     * would be erasing a live holding.
+     */
+    const heroIsOutOfPlay = player.status === 'sitting_out' || player.status === 'away';
+
     // 2026-04-15 Bible V8 §6.1 — pure-CSS ring countdown. Set animation
     // duration + a negative animation-delay so the ring animates from the
     // CURRENT elapsed position to 0% over the remaining seconds. Works on
@@ -1395,9 +1491,10 @@ export const SeatSlot = memo(
     return (
       <div
         ref={seatRef}
-        /* `seat--cards-left` / `seat--cards-right` is the outboard side derived
-           above. It rides on the seat rather than on the card row so the CSS can
-           key both the hero row and the opponent row off one class. */
+        /* `seat--cards-left` / `seat--cards-right` is the side derived above —
+           outboard at the top cap, inboard everywhere else, see `seatCardSide`.
+           It rides on the seat rather than on the card row so the CSS can key
+           both the hero row and the opponent row off one class. */
         className={`${containerClasses} seat--cards-${cardSide}`}
         onClick={onAction}
         data-seat-num={seatNumber}
@@ -1444,7 +1541,7 @@ export const SeatSlot = memo(
         {!player.isHero &&
           (player.status === 'active' || player.status === 'all_in' || isFolding || isMucking) && (
             <div
-              className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length && !revealHeld ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
+              className={`seat__cards seat__cards--opponent${opponentCardCount === 2 ? ' seat__cards--twocard' : ''}${player.showCards && player.holeCards?.length && !revealHeld ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
             >
               {player.holeCards && player.holeCards.length > 0
                 ? displayHoleCards.map((card, i) => (
@@ -1470,10 +1567,13 @@ export const SeatSlot = memo(
                    so a PLO4 seat showed a Hold'em hand and a 6-card seat showed
                    a third of one. The count comes from the table because the
                    seat has nothing to count - an opponent's holeCards array is
-                   empty BECAUSE the hand is hidden. Guarded to a sane band so a
-                   malformed variant string cannot render 0 cards (a live player
-                   who looks like they folded) or a hundred. */
-                  Array.from({ length: Math.max(1, Math.min(6, holeCardCount)) }, (_, i) => (
+                   empty BECAUSE the hand is hidden. `opponentCardCount` above
+                   applies the sane-band clamp so a malformed variant string
+                   cannot render 0 cards (a live player who looks like they
+                   folded) or a hundred - and so the row's own 2-card class is
+                   derived from the same number that decides how many backs are
+                   drawn, rather than from a second copy of this expression. */
+                  Array.from({ length: opponentCardCount }, (_, i) => (
                     <HoleCard
                       key={i}
                       hidden={true}
@@ -1725,7 +1825,7 @@ export const SeatSlot = memo(
          *  After the hero folds, keep the cards visible but dim them so the
          *  player can still see what they mucked (matches how the avatar
          *  dims on fold). Dan's UX rule, 2026-04-14. */}
-        {player.holeCards && player.holeCards.length > 0 && player.isHero && (
+        {player.holeCards && player.holeCards.length > 0 && player.isHero && !heroIsOutOfPlay && (
           /* COMPETITOR-PARITY 2026-08-19 (Card Squeeze): while the setting is
              on and this hand has not been squeezed open, the hero's cards sit
              face DOWN and the container owns a drag-up peel gesture instead

@@ -1,99 +1,90 @@
 /**
- * Timebank Counter — spec §5.7 visual design.
- * Bottom-left anchored, small clock + diamond badge + count.
+ * Timebank Counter — bottom-left HUD tile (spec §5.7).
+ *
+ * Dan 2026-08-25 round 2 (item 6c): a small flat dark rounded square with one
+ * monochrome glyph and the count. See TimebankCounter.tsx for what the ornate
+ * alarm-clock chip it replaces was, and why it went.
  */
 
 .tbc-widget {
   /* Dan 2026-08-21: no longer a free-floating fixed pill — it lives in the
      TableHUD bottom-left stack, with the previous-hand card. */
   position: static;
-  /* ═══ THE BOTTOM-EDGE LINE (Dan 2026-08-25, item 6) ═══
-     "The time bank button needs to be lower, same level as the chat button.
-     The bottoms of both icons should be equal at the bottom."
 
-     It is not anchored here and it must not be: the moment this chip carries
-     its own `bottom` it can disagree with the chat button, which is the bug.
-     The line is owned by `.table-hud__lower`'s padding-bottom in TableHUD.css
-     —- `calc(var(--sp-action-h) + 8px + env(safe-area-inset-bottom))` — and
-     `.chat-collapsed` in TableChat.css resolves its `bottom` from a
-     byte-identical copy of that expression. Both edges therefore move together
-     whenever the action bar changes height, which is exactly what closes this
-     for good.
+  /* ═══ WHICH ONE IS ON TOP (Dan 2026-08-25 round 2, item 6b) ═══
+     "THE PREVIOUS HAND IS SUPPOSED TO BE ON THE BOTTOM, WITH THE TIME BANK ON
+     TOP."
 
-     All this chip has to do is BE the bottom of that stack. `order: 1` puts it
-     after the previous-hand card (default order 0) without touching the markup,
-     so its bottom edge IS the stack's bottom edge IS the line. It reverses the
-     visual order Dan set on 2026-08-21 ("the time bank icon should be on top
-     of it"); that is the necessary consequence of today's instruction, since
-     only the bottom-most item of a bottom-anchored column can sit on the line.
-     The previous-hand card, which appears only after a hand finishes, now
-     stacks above it. */
-  order: 1;
+     There is no `order` here any more, and that IS the fix. The stack's DOM
+     order in TablePage.tsx is <TimebankCounter> then <PreviousHandCard>, so the
+     default order already reads time-bank-above-previous-hand. An `order: 1` on
+     this chip was added on 2026-08-25 to push it to the bottom of the column,
+     on the theory that only the bottom-most item can rest on THE BOTTOM-EDGE
+     LINE. That theory is wrong about which box the line touches: the line is
+     `.table-hud__lower`'s padding-bottom and the row is `align-items:
+     flex-end`, so the CORNER's bottom edge is on the line no matter what is
+     inside it. Whatever is last in the column rests on the line by
+     construction. Removing the override therefore satisfies both halves of
+     Dan's instruction at once — the stack reads time-bank over previous-hand,
+     and its bottom edge is still the same number as `.chat-collapsed`'s.
+
+     Do not re-add `order` here. It cannot move the line; it can only decide
+     which of the two chips is sitting on it, and Dan has now named that chip. */
+
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
-  border-radius: 14px;
-  background: rgba(14, 17, 24, 0.82);
-  backdrop-filter: blur(10px) saturate(1.2);
-  -webkit-backdrop-filter: blur(10px) saturate(1.2);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
+  justify-content: center;
+  /* 1px, not a gap token: glyph and numeral are one object, and any more space
+     makes a 36px tile read as two stacked things. */
+  gap: 1px;
+  width: var(--sp-hud-tile-size, 36px);
+  height: var(--sp-hud-tile-size, 36px);
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--sp-hud-tile-radius, 10px);
+  background: var(--sp-hud-tile-bg, rgba(10, 12, 18, 0.72));
+  /* Blur is legibility, not ornament: the tile sits over a painted felt whose
+     colour changes per theme, and without it the glyph reads differently on
+     every skin. */
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  color: var(--sp-hud-tile-fg, rgba(255, 255, 255, 0.86));
   line-height: 1;
-  letter-spacing: 0.02em;
   cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
   transition:
     transform 0.15s ease,
-    background 0.2s ease,
-    border-color 0.2s ease;
+    background 0.2s ease;
 }
 
 .tbc-widget:hover {
-  background: rgba(28, 34, 48, 0.92);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(20, 24, 34, 0.85);
 }
 
 .tbc-widget:active {
-  transform: scale(0.96);
+  transform: scale(0.94);
 }
 
-/* Dan 2026-08-20 (alarm-clock redesign): golden alarm clock with "20s" on the
-   face; count beside it. The pink diamond and generic clock glyph are gone. */
-.tbc-alarm {
+.tbc-glyph {
   display: inline-flex;
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
 }
 
 .tbc-count {
-  min-width: 12px;
-  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
-  font-size: 13px;
-  font-weight: 800;
-  color: #ffffff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  letter-spacing: 0.02em;
+  color: inherit;
 }
 
-/* Low state — 1 or 0 timebanks remaining. Pulsing halo draws the eye. */
-.tbc-widget--low {
-  border-color: rgba(255, 107, 182, 0.5);
-  animation: tbcPulse 1.6s ease-in-out infinite;
+/* Low state — 1 or 0 timebanks remaining.
+   The pink pulsing halo is gone with the rest of the ornament. A resource the
+   player is about to run out of still has to announce itself, so the NUMERAL
+   takes a muted warning tint; the tile and the glyph stay monochrome, which is
+   what "quiet and flat" has to survive. */
+.tbc-widget--low .tbc-count {
+  color: #ff9b9b;
 }
-
-@keyframes tbcPulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(255, 107, 182, 0.25);
-  }
-  50% {
-    box-shadow: 0 0 0 6px rgba(255, 107, 182, 0);
-  }
-}
-
-/* Phase 2 cleanup 2026-08-22: the old mobile block set bottom/left on this
-   widget, but it has been `position: static` inside the TableHUD stack since
-   2026-08-21 — those offsets were dead on every phone. Removed. */

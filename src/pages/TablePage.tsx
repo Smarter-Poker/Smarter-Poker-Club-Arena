@@ -1567,8 +1567,25 @@ export default function TablePage({
         if (!p) return null;
         const sp = p as unknown as SeatPlayer;
         if (sp.isHero && (!sp.holeCards || sp.holeCards.length === 0)) {
+          /* Dan 2026-08-25 round 2, item 9: "when the hero doesn't have a hand,
+             they should never be covered by anything ever."
+             The muck view above is only for the hand the hero folded OUT OF.
+             Without this test the substitution has NO HAND BOUNDARY at all - the
+             only condition was "engine says empty and we had some" - so once the
+             hero had been dealt in even once, holeCards was non-empty forever:
+             through the fold, through showdown, through the gap before the next
+             deal, and on through a sit-out. The hero's card row therefore
+             rendered in every state where the hero holds no hand, which is
+             exactly what was covering them. */
+          const stillInThisHand = sp.status === 'folded' || sp.status === 'all_in';
           const prevHero = prev.players[i];
-          if (prevHero && prevHero.isHero && prevHero.holeCards && prevHero.holeCards.length > 0) {
+          if (
+            stillInThisHand &&
+            prevHero &&
+            prevHero.isHero &&
+            prevHero.holeCards &&
+            prevHero.holeCards.length > 0
+          ) {
             return { ...sp, holeCards: prevHero.holeCards };
           }
         }
@@ -2765,6 +2782,32 @@ export default function TablePage({
    * Measure it instead. The panel publishes its own height and both reserves
    * read that, so the table and the HUD get out of the way of whatever the
    * panel actually is right now, at any breakpoint, in any state.
+   *
+   * ─── 2026-08-25 round 2: MEASURE THE BORDER BOX, NOT THE CONTENT BOX ───
+   *
+   * Dan, item 5: "that padding is way too much on the bottom." Part of it was
+   * here, and it was the opposite of a padding — it was a reserve that went
+   * MISSING.
+   *
+   * The first publish used `getBoundingClientRect().height` (border box) but
+   * every later one used `entry.contentRect.height` (content box). The wrapper
+   * carries `padding-bottom: env(safe-area-inset-bottom)` and a 1px top border,
+   * so on a notched iPhone the two differ by 35px, and the second number is the
+   * one that survived: `--sp-action-h` reported 95px for a bar that occupied
+   * 130px. Everything downstream then had to guess the missing strip back.
+   * TableHUD.css and TableChat.css did, by adding `env(safe-area-inset-bottom)`
+   * on top of the variable — which was right only because the variable was
+   * wrong, and became a double count the moment anybody fixed it. TablePage.css
+   * did NOT, and says so in --sp-table-bottom ("the home-indicator strip is
+   * already inside this number"): it wasn't, so the felt sat 34px lower than
+   * that rule believed, over the top of the bar.
+   *
+   * `borderBoxSize` is what both of those comments describe. With it,
+   * --sp-action-h means exactly "how much of the screen the bottom chrome
+   * occupies, home-indicator strip included", one definition, and the
+   * `+ env()` in the two HUD stylesheets is gone in the same change. The
+   * `getBoundingClientRect()` arm is for Safari 14, which fires ResizeObserver
+   * without ever populating borderBoxSize.
    */
   const actionPanelRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -2781,8 +2824,19 @@ export default function TablePage({
     };
     publish(el.getBoundingClientRect().height);
     const ro = new ResizeObserver((entries) => {
-      const r = entries[0]?.contentRect;
-      if (r && r.height > 0) publish(r.height);
+      const entry = entries[0];
+      if (!entry) return;
+      // Spec says borderBoxSize is an array; Firefox shipped it as a bare
+      // object for a while, and Safari 14 omits it entirely.
+      const raw = entry.borderBoxSize as unknown;
+      const box = Array.isArray(raw)
+        ? (raw[0] as ResizeObserverSize | undefined)
+        : (raw as ResizeObserverSize | undefined);
+      const h = box?.blockSize ?? entry.target.getBoundingClientRect().height;
+      // The guard stays. A zero here would strand every consumer of
+      // --sp-action-h on a reserve of nothing, and the wrapper is briefly
+      // unmeasurable while the page is being torn down.
+      if (h > 0) publish(h);
     });
     ro.observe(el);
     return () => ro.disconnect();

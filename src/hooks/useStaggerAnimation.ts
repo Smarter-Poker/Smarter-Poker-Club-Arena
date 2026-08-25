@@ -43,7 +43,14 @@ function prefersReducedMotion(): boolean {
 
 export function useStaggerAnimation(itemCount: number, options: StaggerAnimationOptions = {}) {
   const { staggerMs = 50, transition = DEFAULT_TRANSITION, offsetY = '8px' } = options;
-  const reduced = useRef<boolean>(prefersReducedMotion());
+  /**
+   * Lazy. `useRef(prefersReducedMotion())` discards the value after the first
+   * render but still CALLS it on every one, so window.matchMedia ran on every
+   * render of every staggered surface - including the bottom nav on each route
+   * change.
+   */
+  const reduced = useRef<boolean | null>(null);
+  if (reduced.current === null) reduced.current = prefersReducedMotion();
   const [visible, setVisible] = useState<Set<number>>(new Set());
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -56,7 +63,7 @@ export function useStaggerAnimation(itemCount: number, options: StaggerAnimation
     // in from translateY is exactly the kind of motion the setting turns off,
     // and an item that starts at opacity:0 must never depend on an animation
     // it is not allowed to run.
-    if (reduced.current) {
+    if (reduced.current === true) {
       setVisible(new Set(Array.from({ length: itemCount }, (_, i) => i)));
       return;
     }
@@ -82,7 +89,7 @@ export function useStaggerAnimation(itemCount: number, options: StaggerAnimation
   const style = (index: number): React.CSSProperties => ({
     opacity: visible.has(index) ? 1 : 0,
     transform: visible.has(index) ? 'translateY(0)' : `translateY(${offsetY})`,
-    transition: reduced.current ? 'none' : transition,
+    transition: reduced.current === true ? 'none' : transition,
   });
 
   return { isVisible, style };

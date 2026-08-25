@@ -40,6 +40,12 @@ export interface EnginePublicPlayer {
   avatar_url?: string;
   is_horse?: boolean;
   hand_name?: string;
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25: the engine ruled this hand muckable at
+   * showdown and the player has not voluntarily shown — the seat renders a
+   * MUCKED label instead of cards. Never inferred client-side.
+   */
+  is_mucked?: boolean;
 }
 
 export interface EngineActionRecord {
@@ -133,6 +139,8 @@ export interface MappedTableStatePatch {
     holeCards?: Array<{ rank: string; suit: string }>;
     showCards: boolean;
     isHero: boolean;
+    /** SHOWDOWN SYSTEM 2026-08-25: engine-decided muck — seat shows MUCKED. */
+    isMucked?: boolean;
   } | null>;
   /** Current bet for action panel. */
   currentBet: number;
@@ -271,6 +279,7 @@ export function mapEngineSnapshot(
       holeCards: p.cards && p.cards.length > 0 ? p.cards : undefined,
       showCards: !!(p.cards && p.cards.length > 0 && p.user_id !== heroUserId),
       isHero: p.user_id === heroUserId,
+      isMucked: p.is_mucked === true,
     };
     positions[idx] = p.position ?? null;
   }

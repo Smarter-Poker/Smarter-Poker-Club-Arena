@@ -343,7 +343,11 @@ export default function ClubDataPage() {
     resolveClubUUID(clubParam)
       .then((uuid) => {
         if (cancelled) return;
-        if (uuid) {
+        // isUUID, not truthiness: resolveClubUUID returns the INPUT unchanged
+        // when it cannot resolve, so this branch was unreachable and the
+        // comment below described a fix the code did not implement - a bad club
+        // code went straight into ca_club_data_snapshot as p_club_id.
+        if (isUUID(uuid)) {
           setClubUuid(uuid);
           return;
         }
@@ -797,6 +801,8 @@ export default function ClubDataPage() {
         <button
           type="button"
           role="tab"
+          id="club-data-tab-games"
+          aria-controls="club-data-panel-games"
           aria-selected={tab === 'games'}
           className={`${styles.tab} ${tab === 'games' ? styles.active : ''}`}
           onClick={() => setTab('games')}
@@ -806,6 +812,8 @@ export default function ClubDataPage() {
         <button
           type="button"
           role="tab"
+          id="club-data-tab-players"
+          aria-controls="club-data-panel-players"
           aria-selected={tab === 'players'}
           className={`${styles.tab} ${tab === 'players' ? styles.active : ''}`}
           onClick={() => setTab('players')}

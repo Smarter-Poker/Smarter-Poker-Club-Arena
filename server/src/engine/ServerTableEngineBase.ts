@@ -383,7 +383,29 @@ export abstract class ServerTableEngineBase {
     handName: string;
     kickers: number[];
     holeCards: Array<{ rank: string; suit: string }>;
+    /**
+     * SHOWDOWN SYSTEM 2026-08-25: engine-decided reveal metadata. seat +
+     * revealOrder drive the client's staggered flip; mucked withholds the
+     * hole cards from every public surface (snapshot, resync,
+     * showdown_cards_revealed) unless the player voluntarily shows;
+     * handDescription is the secondary line ("Kings Full Of Nines").
+     */
+    seat?: number;
+    revealOrder?: number;
+    mucked?: boolean;
+    handDescription?: string;
   }> = [];
+
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25: true when the player mucked at showdown and
+   * has not voluntarily shown — the one question every reveal gate asks.
+   * A voluntary show (showHandPlayers, or per-card picks in showHandCards)
+   * always overrides a muck: mucking hides by default, showing is consent.
+   */
+  protected isMuckedAtShowdown(userId: string): boolean {
+    if (this.showHandPlayers?.has(userId)) return false;
+    return this.currentHandShowdownResults.some((r) => r.userId === userId && r.mucked === true);
+  }
   /** Bible V8 §2.15: Timer log — every timer start/expiry/action event */
   protected currentHandTimerLog: Array<{
     playerId: string;

@@ -13,44 +13,53 @@
  *    per-club rows instead of .maybeSingle()).
  */
 
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { tabTransition, instant } from '../components/stats/statsMotion';
 import { useParams, useNavigate } from 'react-router-dom';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import { supabase } from '../lib/supabase';
+// The two caches sign-out has to be able to reach. They live in a leaf module
+// so clearUserCaches can purge them without importing this page - that import
+// would pull the whole Stats graph into the sign-out chunk and undo the lazy
+// chart split.
+import {
+  STATS_CACHE_PREFIX,
+  readStatsRangeMemo,
+  writeStatsRangeMemo,
+  clearStatsRangeMemo,
+} from '../lib/statsCache';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { retryFetch } from '../utils/retryFetch';
 import { exportToCSV } from '../lib/export';
 import { useIsMounted } from '../hooks/useIsMounted';
-import {
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts';
 import PositionWinRates from '../components/stats/PositionWinRates';
 import PositionalRadar from '../components/stats/PositionalRadar';
-import EVLuckChart from '../components/stats/EVLuckChart';
 import HoleCardHeatmap from '../components/stats/HoleCardHeatmap';
 import NemesisPanel from '../components/stats/NemesisPanel';
 import BenchmarkPanel from '../components/stats/BenchmarkPanel';
 import TrophyRoom from '../components/stats/TrophyRoom';
 import StatsShareCard from '../components/stats/StatsShareCard';
 import PanelBoundary from '../components/stats/PanelBoundary';
+/**
+ * LAZY (Dan 2026-08-25). recharts is 120 KB gzipped and these three charts live
+ * on the Analysis tab, while the default tab is Overview - so three quarters of
+ * what a Stats visitor downloaded was a charting library they had not scrolled
+ * to. See StatsCharts.tsx for the measurements.
+ */
+const StatsCharts = lazy(() => import('../components/stats/StatsCharts'));
+/**
+ * The other two recharts consumers on this page. Both also live on non-default
+ * tabs (EV And Luck on Performance, Bankroll on Analysis), and between them
+ * they were what kept CartesianChart - 96.5 KB of the 120 KB - eager even
+ * after StatsCharts was split out.
+ */
+const EVLuckChart = lazy(() => import('../components/stats/EVLuckChart'));
+const BankrollTracker = lazy(() => import('../components/stats/BankrollTracker'));
 import { playerStyleFromStats } from '../components/stats/playerStyleFromStats';
 import SessionHistory from '../components/stats/SessionHistory';
-import BankrollTracker from '../components/stats/BankrollTracker';
 import AdvancedStatsSummary from '../components/stats/AdvancedStatsSummary';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -61,7 +70,7 @@ import DownlineRakePanel from '../components/agent/DownlineRakePanel';
 import { AgentRakeService, type AgentRoleRow } from '../services/AgentRakeService';
 
 // ── SWR Cache helpers (localStorage for cross-session persistence) ──
-const STATS_CACHE_KEY = 'ps_stats_v3_';
+const STATS_CACHE_KEY = STATS_CACHE_PREFIX;
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 function getCachedFull(userId: string): FullStats | null {
@@ -279,8 +288,6 @@ const RANGES: { key: string; days: number | null; label: string }[] = [
   { key: '30d', days: 30, label: '30 Days' },
   { key: 'all', days: null, label: 'All' },
 ];
-
-const CHART_COLORS = ['#4169E1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#10b981'];
 
 const EMPTY_OVERALL: OverallStats = {
   total_hands: 0,
@@ -636,15 +643,23 @@ export default function PlayerStatsPage() {
 
   useEffect(() => {
     const done = () => setPrinting(false);
-    // beforeprint: a user who hits Cmd-P directly, without the Dossier button,
-    // used to print whatever single tab was open. The dossier stylesheet was
-    // written for all of them, so arm the same state the button arms.
-    const arm = () => setPrinting(true);
+    /**
+     * NO `beforeprint` ARM (Dan 2026-08-25).
+     *
+     * There was one, and it could never have worked: `beforeprint` is
+     * synchronous - the browser starts paginating the moment the handlers
+     * return - so a React state update scheduled inside it cannot commit
+     * first. Cmd-P printed the current tab regardless, which is exactly what
+     * the removed comment claimed it fixed.
+     *
+     * The lazy chart split makes it unfixable in that form as well: arming
+     * `printing` now needs three network round trips, and a synchronous event
+     * cannot await them. Cmd-P honestly prints the tab you are on; the Dossier
+     * button is the path that produces the complete report, and it preloads.
+     */
     window.addEventListener('afterprint', done);
-    window.addEventListener('beforeprint', arm);
     return () => {
       window.removeEventListener('afterprint', done);
-      window.removeEventListener('beforeprint', arm);
     };
   }, []);
 
@@ -682,7 +697,7 @@ export default function PlayerStatsPage() {
 
   const printTimerRef = useRef<number | null>(null);
 
-  const printDossier = useCallback(() => {
+  const printDossier = useCallback(async () => {
     setPrinting(true);
     // Every tab has to mount, recharts has to measure its ResponsiveContainers,
     // and the framer-motion entrances have to settle. Charts are handed
@@ -698,6 +713,28 @@ export default function PlayerStatsPage() {
     // is cleared by the afterprint listener, with a focus/visibility release
     // above as the escape hatch for the platforms where afterprint never
     // fires (a stuck `printing` makes the tab strip inert, see showTab).
+    /**
+     * AWAIT THE LAZY CHUNKS FIRST (Dan 2026-08-25).
+     *
+     * The three chart components are lazy now, and the default tab is Overview
+     * - which is the entire point of the split - so when the user presses this
+     * button their chunks have usually never been requested. The 1200ms budget
+     * below was sized for a layout pass, not a network round trip, so on a cold
+     * cache window.print() fired while the Suspense boundaries were still
+     * showing their fallbacks and the PDF captured the literal text
+     * "Loading Charts...". A dossier is the copy someone reads months later as
+     * authoritative; it does not get to contain a spinner.
+     *
+     * import() is idempotent and the module registry caches it, so after this
+     * resolves the lazy components render synchronously. A chunk that fails to
+     * load is left to PanelBoundary - we still print the rest.
+     */
+    await Promise.all([
+      import('../components/stats/StatsCharts'),
+      import('../components/stats/EVLuckChart'),
+      import('../components/stats/BankrollTracker'),
+    ]).catch(() => undefined);
+
     if (printTimerRef.current !== null) window.clearTimeout(printTimerRef.current);
     printTimerRef.current = window.setTimeout(() => {
       printTimerRef.current = null;
@@ -799,108 +836,135 @@ export default function PlayerStatsPage() {
   // instead of dropped: the bus events are debounced, not queued, so a discarded
   // HAND_COMPLETED used to leave the page stale until some later event.
   const pendingRefreshRef = useRef(false);
+  /**
+   * The CURRENT loader. Both the shared debouncer and the in-flight replay
+   * below read it, so neither can fire a copy captured under an older range.
+   */
+  const loadRef = useRef<((opts?: { fresh?: boolean }) => Promise<void>) | null>(null);
   // The index refresh is a WRITE. Un-throttled it fired on every bus refresh and
   // every tab-visibility change, i.e. repeatedly during active play.
 
   // ── Single RPC pulls everything from hand_history server-side ──
-  const loadAllData = useCallback(async (): Promise<void> => {
-    if (!targetUserId) return;
-    if (statsLoadingRef.current) {
-      pendingRefreshRef.current = true;
-      return;
-    }
-    statsLoadingRef.current = true;
-    if (!hasStatsRef.current) setLoading(true);
-
-    try {
-      const { data, error } = await retryFetch(
-        () =>
-          supabase
-            .rpc('ca_player_stats_full', { p_user: targetUserId, p_days: windowDays })
-            .then((r: any) => r),
-        { maxRetries: 2, isMountedRef: isMounted }
-      );
-
-      if (!isMounted.current) return;
-
-      if (!error && data && data.overall) {
-        const resolved = normalizeFull(data);
-        setFull(resolved);
-        hasStatsRef.current = true;
-        setLoadError(false);
-        setServingCache(false);
-        // Only the unbounded view is cached — otherwise a 7-day payload could be
-        // rehydrated on the next visit and read as all-time.
-        if (windowDays === null) setCachedFull(targetUserId, resolved);
-
-        // A PAGE VIEW MUST NOT TRIGGER A MAINTENANCE JOB. (removed 2026-08-24)
-        //
-        // This used to fire ca_refresh_hand_player_index({ p_max_hands: 3000 })
-        // whenever a player opened their stats page. The comment claimed the
-        // batch was "sized to finish inside the 8s statement_timeout".
-        // Production disagreed: pg_stat_statements put that RPC at a 73,901 ms
-        // MEAN and a 173,487 ms max, and it was caught live in pg_stat_activity
-        // at 26.9s waiting on IO/DataFileRead - i.e. dragging the 10GB
-        // hand_history table off disk and evicting everyone else's working set
-        // from shared_buffers. That is why unrelated queries all over the
-        // platform went slow at once; a trivial PostgREST health probe was
-        // taking 14.4 SECONDS while raw Postgres answered the same shape in
-        // 0.17ms.
-        //
-        // The 5-minute guard below did not bound it either: lastIndexRefreshRef
-        // is per component instance, so it throttled one tab, not the platform.
-        //
-        // It is already done properly server-side:
-        // pages/api/cron/club-stats-maintenance.js runs the same RPC every 15
-        // minutes with p_max_hands: 60000, under service_role, off the request
-        // path. That route's own comment records the decision to own it there.
-        // So this call was redundant as well as harmful, and the index it
-        // maintains stays just as fresh without it.
+  const loadAllData = useCallback(
+    async (opts?: { fresh?: boolean }): Promise<void> => {
+      if (!targetUserId) return;
+      if (statsLoadingRef.current) {
+        pendingRefreshRef.current = true;
+        return;
+      }
+      // `fresh` means "something changed" - a bus event, a tab return, a retry.
+      // Those drop the memo entirely rather than reading it, so this can never
+      // serve a stale number in the one situation where staleness matters.
+      if (opts?.fresh) {
+        clearStatsRangeMemo();
       } else {
-        // Legacy fallback (aggregates per-club rows; never .maybeSingle())
-        const legacy = await loadLegacyStats(targetUserId);
-        if (!isMounted.current) return;
-        if (legacy) {
-          setFull(legacy);
+        const memo = readStatsRangeMemo(targetUserId, rangeKey) as FullStats | null;
+        if (memo) {
+          setFull(memo);
           hasStatsRef.current = true;
           setLoadError(false);
-        } else if (hasStatsRef.current) {
-          // Something is already on screen (cache or an earlier load). Keep it,
-          // but say it is stale rather than pretending it is current.
-          setServingCache(true);
-        } else {
-          setFull(null);
-          setLoadError(true);
+          setServingCache(false);
+          setLoading(false);
+          return;
         }
-        if (error) reportError(error, 'PlayerStatsPage.rpc_ca_player_stats_full');
       }
-    } catch (err: any) {
-      // retryFetch throws when the component goes away mid-flight; that is a
-      // navigation, not an application error worth reporting.
-      const unmounted = err instanceof Error && /unmounted/i.test(err.message || '');
-      if (!unmounted) {
-        reportError(err, 'PlayerStatsPage.Failed_to_load_stats');
-        if (isMounted.current) {
-          if (hasStatsRef.current) {
+      statsLoadingRef.current = true;
+      if (!hasStatsRef.current) setLoading(true);
+
+      try {
+        const { data, error } = await retryFetch(
+          () =>
+            supabase
+              .rpc('ca_player_stats_full', { p_user: targetUserId, p_days: windowDays })
+              .then((r: any) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        );
+
+        if (!isMounted.current) return;
+
+        if (!error && data && data.overall) {
+          const resolved = normalizeFull(data);
+          setFull(resolved);
+          hasStatsRef.current = true;
+          setLoadError(false);
+          setServingCache(false);
+          // Only the unbounded view is cached — otherwise a 7-day payload could be
+          // rehydrated on the next visit and read as all-time.
+          if (windowDays === null) setCachedFull(targetUserId, resolved);
+          writeStatsRangeMemo(targetUserId, rangeKey, resolved);
+
+          // A PAGE VIEW MUST NOT TRIGGER A MAINTENANCE JOB. (removed 2026-08-24)
+          //
+          // This used to fire ca_refresh_hand_player_index({ p_max_hands: 3000 })
+          // whenever a player opened their stats page. The comment claimed the
+          // batch was "sized to finish inside the 8s statement_timeout".
+          // Production disagreed: pg_stat_statements put that RPC at a 73,901 ms
+          // MEAN and a 173,487 ms max, and it was caught live in pg_stat_activity
+          // at 26.9s waiting on IO/DataFileRead - i.e. dragging the 10GB
+          // hand_history table off disk and evicting everyone else's working set
+          // from shared_buffers. That is why unrelated queries all over the
+          // platform went slow at once; a trivial PostgREST health probe was
+          // taking 14.4 SECONDS while raw Postgres answered the same shape in
+          // 0.17ms.
+          //
+          // The 5-minute guard below did not bound it either: lastIndexRefreshRef
+          // is per component instance, so it throttled one tab, not the platform.
+          //
+          // It is already done properly server-side:
+          // pages/api/cron/club-stats-maintenance.js runs the same RPC every 15
+          // minutes with p_max_hands: 60000, under service_role, off the request
+          // path. That route's own comment records the decision to own it there.
+          // So this call was redundant as well as harmful, and the index it
+          // maintains stays just as fresh without it.
+        } else {
+          // Legacy fallback (aggregates per-club rows; never .maybeSingle())
+          const legacy = await loadLegacyStats(targetUserId);
+          if (!isMounted.current) return;
+          if (legacy) {
+            setFull(legacy);
+            hasStatsRef.current = true;
+            setLoadError(false);
+          } else if (hasStatsRef.current) {
+            // Something is already on screen (cache or an earlier load). Keep it,
+            // but say it is stale rather than pretending it is current.
             setServingCache(true);
           } else {
             setFull(null);
             setLoadError(true);
-            toast.error('Failed to load player stats');
+          }
+          if (error) reportError(error, 'PlayerStatsPage.rpc_ca_player_stats_full');
+        }
+      } catch (err: any) {
+        // retryFetch throws when the component goes away mid-flight; that is a
+        // navigation, not an application error worth reporting.
+        const unmounted = err instanceof Error && /unmounted/i.test(err.message || '');
+        if (!unmounted) {
+          reportError(err, 'PlayerStatsPage.Failed_to_load_stats');
+          if (isMounted.current) {
+            if (hasStatsRef.current) {
+              setServingCache(true);
+            } else {
+              setFull(null);
+              setLoadError(true);
+              toast.error('Failed to load player stats');
+            }
           }
         }
+      } finally {
+        if (isMounted.current) setLoading(false);
+        statsLoadingRef.current = false;
+        if (pendingRefreshRef.current && isMounted.current) {
+          pendingRefreshRef.current = false;
+          // loadRef, not the closed-over loadAllData: if the user changed the
+          // range while a load was in flight, replaying the old closure refetched
+          // the PREVIOUS window and overwrote the newer data with it.
+          void loadRef.current?.({ fresh: true });
+        }
       }
-    } finally {
-      if (isMounted.current) setLoading(false);
-      statsLoadingRef.current = false;
-      if (pendingRefreshRef.current && isMounted.current) {
-        pendingRefreshRef.current = false;
-        void loadAllData();
-      }
-    }
-    // toast comes from context and isMounted is a ref wrapper: both stable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetUserId, rangeKey]);
+      // toast comes from context and isMounted is a ref wrapper: both stable.
+    },
+    [targetUserId, rangeKey]
+  );
 
   // Notable hands. Loaded only when the Analysis tab is actually open — the
   // 'biggest' modes score the whole analysis window, so this is not free.
@@ -957,7 +1021,11 @@ export default function PlayerStatsPage() {
       ?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'auto' });
   }, [category]);
 
-  useVisibilityRefresh(loadAllData);
+  // Kept current on every render, for the debouncer and the replay above.
+  loadRef.current = loadAllData;
+
+  // A tab return means time has passed, so it CLEARS the memo and refetches.
+  useVisibilityRefresh(() => loadAllData({ fresh: true }));
 
   // SWR: show cached stats instantly on mount
   useEffect(() => {
@@ -988,25 +1056,51 @@ export default function PlayerStatsPage() {
     if (targetUserId) void loadAllData();
   }, [targetUserId, loadAllData]);
 
-  // ── Bus Listeners: debounced refresh from engine events ──
+  /**
+   * ── Bus listeners: ONE debounce window, not five ────────────────────────
+   *
+   * MEASURED 2026-08-25. ca_player_stats_full costs 2.6s warm and 15s COLD for
+   * a heavy account, against an 8s statement_timeout on the `authenticated`
+   * role. This used to be five INDEPENDENT `subscribeDebounced` calls, each
+   * with its own 2000ms window - and a single completed hand emits
+   * HAND_COMPLETED, BALANCE_UPDATED and CHIPS_DISTRIBUTED within milliseconds
+   * of each other. Three windows, three refetches per hand, plus the
+   * pendingRefreshRef replay for a fourth.
+   *
+   * So a player sitting on this page with one table running was asking the
+   * database for up to four multi-second scans of a 10GB table per hand. One
+   * shared debouncer collapses that to one.
+   *
+   * The handler goes through a ref so the replay and the timer always call the
+   * CURRENT loader: `loadAllData` closes over `rangeKey`, and firing a stale
+   * copy refetches the previous window and overwrites newer data with it.
+   */
   useEffect(() => {
-    const unsubHand = masterBus.subscribeDebounced('HAND_COMPLETED', () => loadAllData(), 2000);
-    const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadAllData(), 2000);
-    const unsubChips = masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', () => loadAllData(), 2000);
-    const unsubCashout = masterBus.subscribeDebounced(
+    const REFRESH_EVENTS = [
+      'HAND_COMPLETED',
+      'BALANCE_UPDATED',
+      'CHIPS_DISTRIBUTED',
       'CASHOUT_APPROVED',
-      () => loadAllData(),
-      2000
-    );
-    const unsubCredit = masterBus.subscribeDebounced('CREDIT_UPDATED', () => loadAllData(), 2000);
-    return () => {
-      unsubHand();
-      unsubBalance();
-      unsubChips();
-      unsubCashout();
-      unsubCredit();
+      'CREDIT_UPDATED',
+    ] as const;
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        void loadRef.current?.({ fresh: true });
+      }, 2000);
     };
-  }, [loadAllData]);
+
+    const unsubs = REFRESH_EVENTS.map((e) => masterBus.subscribe(e as never, schedule));
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsubs.forEach((u) => u());
+    };
+    // No dependencies on purpose: loadRef is a ref wrapper, and re-subscribing
+    // on every range change would drop a pending debounce window on the floor.
+  }, []);
 
   const overall = full?.overall ?? EMPTY_OVERALL;
   const lifetime = full?.lifetime ?? EMPTY_LIFETIME;
@@ -1258,7 +1352,7 @@ export default function PlayerStatsPage() {
             onClick={() => {
               setLoadError(false);
               setLoading(true);
-              void loadAllData();
+              void loadAllData({ fresh: true });
             }}
           >
             Try Again
@@ -1622,7 +1716,9 @@ export default function PlayerStatsPage() {
                 their own per-hand records. */}
               {isOwnProfile && (
                 <PanelBoundary name="EV And Luck">
-                  <EVLuckChart userId={targetUserId} days={windowDays} still={printing} />
+                  <Suspense fallback={<div className="hand-empty">Loading Chart...</div>}>
+                    <EVLuckChart userId={targetUserId} days={windowDays} still={printing} />
+                  </Suspense>
                 </PanelBoundary>
               )}
 
@@ -1872,156 +1968,36 @@ export default function PlayerStatsPage() {
 
               {/* Charts */}
               <PanelBoundary name="Charts">
-                <div className="charts-section">
-                  <div className="stats-section-header">
-                    <h3 style={{ color: '#00d4ff' }}>Charts</h3>
-                  </div>
-
-                  <div className="stats-action-row">
-                    {sessionRows.length > 0 && (
-                      <button className="export-btn" onClick={exportSessionsCSV}>
-                        Export Sessions CSV
-                      </button>
-                    )}
-                    <button className="export-btn" onClick={exportOverviewCSV}>
-                      Export Stats CSV
-                    </button>
-                    <button
-                      className="assistant-export-btn"
-                      onClick={sendToAssistant}
-                      disabled={exporting}
-                    >
-                      {exporting ? 'Exporting...' : 'Send to Personal Assistant'}
-                    </button>
-                  </div>
-
-                  {/* Profit Over Time Chart */}
-                  <div className="chart-card">
-                    <div className="chart-card-header">
-                      {/* Derived, not hardcoded. `daily` is windowed by the RPC's
-                        p_days, so with "7 Days" selected this chart plotted a
-                        week under a heading that said 90. It is also cash-only
-                        (the RPC's daily CTE filters is_cash), which the title
-                        never said either. */}
-                      <h3>{`Cash Profit Over Time (${RANGES.find((r) => r.key === rangeKey)?.label ?? 'All Time'})`}</h3>
-                      {/* Three recharts SVGs carried no role, no aria-label and
-                          no adjacent summary, so the entire Charts section was
-                          empty to a screen reader - a whole workflow (reading
-                          your own results) closed off. Every number below is
-                          already in dailySeries. Dan 2026-08-25. */}
-                      <p className="sr-only">{profitChartSummary}</p>
-                    </div>
-                    <div className="chart-container">
-                      <ResponsiveContainer width="100%" height={250}>
-                        <AreaChart data={dailySeries}>
-                          <defs>
-                            <linearGradient id="profitGradient" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#4169E1" stopOpacity={0.3} />
-                              <stop offset="95%" stopColor="#4169E1" stopOpacity={0} />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                          <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" fontSize={11} />
-                          <YAxis stroke="rgba(255,255,255,0.4)" fontSize={11} />
-                          <Tooltip
-                            contentStyle={{
-                              background: 'rgba(14, 14, 28, 0.95)',
-                              border: '1px solid rgba(0, 212, 255, 0.2)',
-                              borderRadius: '10px',
-                              backdropFilter: 'blur(16px)',
-                            }}
-                            labelStyle={{ color: '#fff' }}
-                          />
-                          <Area
-                            type="monotone"
-                            dataKey="cumulative"
-                            stroke="#4169E1"
-                            fill="url(#profitGradient)"
-                            strokeWidth={2}
-                            name="Cumulative Profit"
-                          />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  {/* Session Results Bar Chart */}
-                  <div className="chart-card">
-                    <div className="chart-card-header">
-                      <h3>Daily Results</h3>
-                      <p className="sr-only">{dailyChartSummary}</p>
-                    </div>
-                    <div className="chart-container">
-                      <ResponsiveContainer width="100%" height={200}>
-                        <BarChart data={dailySeries}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                          <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" fontSize={11} />
-                          <YAxis stroke="rgba(255,255,255,0.4)" fontSize={11} />
-                          <Tooltip
-                            contentStyle={{
-                              background: 'rgba(14, 14, 28, 0.95)',
-                              border: '1px solid rgba(0, 212, 255, 0.2)',
-                              borderRadius: '10px',
-                              backdropFilter: 'blur(16px)',
-                            }}
-                            labelStyle={{ color: '#fff' }}
-                          />
-                          <Bar dataKey="profit" name="Profit" radius={[4, 4, 0, 0]}>
-                            {dailySeries.map((entry, index) => (
-                              <Cell
-                                key={`cell-${index}`}
-                                fill={entry.profit >= 0 ? '#22c55e' : '#ef4444'}
-                              />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  {/* Position Breakdown Pie Chart */}
-                  {positionPie.length > 0 && (
-                    <div className="chart-card">
-                      <div className="chart-card-header">
-                        <h3>Hands Won By Position</h3>
-                        <p className="sr-only">{positionChartSummary}</p>
+                <Suspense
+                  fallback={
+                    <div className="charts-section">
+                      <div className="stats-section-header">
+                        <h3 style={{ color: '#00d4ff' }}>Charts</h3>
                       </div>
-                      <div className="chart-container pie-chart">
-                        <ResponsiveContainer width="100%" height={250}>
-                          <PieChart>
-                            <Pie
-                              data={positionPie}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={60}
-                              outerRadius={90}
-                              paddingAngle={2}
-                              dataKey="value"
-                              nameKey="name"
-                              label={({ name, value }) => `${name}: ${value}`}
-                              labelLine={{ stroke: 'rgba(255,255,255,0.3)' }}
-                            >
-                              {positionPie.map((_entry, index) => (
-                                <Cell
-                                  key={`cell-${index}`}
-                                  fill={CHART_COLORS[index % CHART_COLORS.length]}
-                                />
-                              ))}
-                            </Pie>
-                            <Tooltip
-                              contentStyle={{
-                                background: 'rgba(14, 14, 28, 0.95)',
-                                border: '1px solid rgba(0, 212, 255, 0.2)',
-                                borderRadius: '10px',
-                                backdropFilter: 'blur(16px)',
-                              }}
-                            />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
+                      <div className="hand-empty">Loading Charts...</div>
                     </div>
-                  )}
-                </div>
+                  }
+                >
+                  <StatsCharts
+                    dailySeries={dailySeries}
+                    positionPie={positionPie}
+                    profitChartSummary={profitChartSummary}
+                    dailyChartSummary={dailyChartSummary}
+                    positionChartSummary={positionChartSummary}
+                    rangeLabel={RANGES.find((r) => r.key === rangeKey)?.label ?? 'All Time'}
+                    // recharts animates its entrance over 1500ms and the print
+                    // fires at 1200ms, so without this all three charts were
+                    // caught mid-draw in the PDF. EVLuckChart already took
+                    // `still`; these three never did, despite the comment on
+                    // printDossier claiming otherwise.
+                    still={printing}
+                    sessionRows={sessionRows}
+                    exporting={exporting}
+                    onExportSessions={exportSessionsCSV}
+                    onExportOverview={exportOverviewCSV}
+                    onSendToAssistant={sendToAssistant}
+                  />
+                </Suspense>
               </PanelBoundary>
 
               {/* Notable hands — every stat above used to be a dead end. */}
@@ -2126,7 +2102,9 @@ export default function PlayerStatsPage() {
                   <h3 style={{ color: '#10b981' }}>Cash Bankroll</h3>
                 </div>
                 <PanelBoundary name="Bankroll">
-                  <BankrollTracker userId={targetUserId} initialSessions={sessionRows} />
+                  <Suspense fallback={<div className="hand-empty">Loading Chart...</div>}>
+                    <BankrollTracker userId={targetUserId} initialSessions={sessionRows} />
+                  </Suspense>
                 </PanelBoundary>
               </div>
             </div>

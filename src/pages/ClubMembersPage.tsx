@@ -402,7 +402,11 @@ export default function ClubMembersPage() {
         break;
     }
     return sorted;
-  }, [members, filter, searchQuery, sortKey]);
+    // user?.id is read by the `mine` filter above. Without it here this memo
+    // and the mineCount memo beside it disagreed: an auth write that changed
+    // `user` without changing `members` updated the "Direct (12)" chip while
+    // the list it filters stayed stale.
+  }, [members, filter, searchQuery, sortKey, user?.id]);
 
   const virtualScroll = useVirtualScroll(filteredMembers, { initialCount: 30, pageSize: 20 });
 

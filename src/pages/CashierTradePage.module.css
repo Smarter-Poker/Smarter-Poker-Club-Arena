@@ -12,10 +12,11 @@
   overflow-x: hidden;
   background: var(--bg-primary, #0a0e17);
   color: var(--text-primary, #e8eaf0);
-  /* nav (74) + action footer (~70) + selection bar (~38) + breathing room.
-     Was 130, which covered the nav and the footer but not the selection
-     summary added 2026-08-25. */
-  padding-bottom: calc(186px + env(safe-area-inset-bottom, 0px));
+  /* nav (74) + action footer (69) + selection bar (53) + a little air. The
+     tallest fixed stack tops out at stack-base + 70 + 53 = 197, so 200 clears
+     it; the inset is added because the PAGE still scrolls under the physical
+     home indicator even where the nav does not pad for it. */
+  padding-bottom: calc(200px + env(safe-area-inset-bottom, 0px));
 }
 
 /* ── Header ── */
@@ -431,7 +432,10 @@
   position: fixed;
   left: 0;
   right: 0;
-  bottom: calc(var(--bottom-nav-height, 74px) + env(safe-area-inset-bottom, 0px));
+  /* --bottom-nav-stack-base, not height + inset: below 768px the nav drops its
+     safe-area padding, so anchoring here left a 34px band of scrolling content
+     visible BETWEEN the nav and this footer on a notched iPhone. */
+  bottom: var(--bottom-nav-stack-base, 74px);
   display: flex;
   gap: 10px;
   padding: 12px 14px 12px;
@@ -516,7 +520,7 @@
   /* The action footer above the nav is 12px + ~44px button + 12px + 1px border.
      70px clears it with a hair to spare; anything less and the selection
      summary sits ON TOP of Claim Back. */
-  bottom: calc(var(--bottom-nav-height, 74px) + env(safe-area-inset-bottom, 0px) + 70px);
+  bottom: calc(var(--bottom-nav-stack-base, 74px) + 70px);
   z-index: 49;
   display: flex;
   align-items: center;

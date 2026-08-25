@@ -254,11 +254,6 @@
   font-weight: 600;
 }
 
-.section-icon {
-  font-size: 0.85rem;
-  opacity: 0.9;
-}
-
 /* Stats Grid */
 .stats-grid {
   display: flex;
@@ -1353,6 +1348,12 @@
   /* Chrome that means nothing on paper. */
   .stats-pill-tabs,
   .stats-range-row,
+  /* A Suspense fallback must never reach paper. printDossier awaits the three
+     lazy chart chunks before printing, so this should be unreachable - but the
+     failure mode it guards against is a dossier containing the literal words
+     "Loading Charts...", in a document read months later as authoritative.
+     Dan 2026-08-25. */
+  .hand-empty,
   .stats-action-row,
   .export-btn,
   .assistant-export-btn,

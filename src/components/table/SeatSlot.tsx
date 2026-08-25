@@ -318,6 +318,7 @@ export interface SeatSlotProps {
    * this node and restarts the ring for real.
    */
   timeBankArmed?: boolean;
+  isTimeBankActive?: boolean;
   /**
    * Dan 2026-08-18: "a user should be able to click on any card in their hand,
    * and when clicked that card or cards always get shown after the hand is
@@ -523,6 +524,7 @@ export const SeatSlot = memo(
       turnDeadlineMs,
       turnStartTimeMs,
       timeBankArmed,
+      isTimeBankActive,
       showPickedCardIndexes,
       onToggleShowCard,
     } = props;
@@ -1003,6 +1005,7 @@ export const SeatSlot = memo(
         // acting chrome (and its countdown ring) immediately, without waiting
         // for the snapshot that moves currentPlayerSeat along. See hasFolded.
         if (isActingNow) cls.push('seat--active');
+        if (isActingNow && isTimeBankActive) cls.push('seat--time-bank-active');
         if (isWinner) {
           cls.push('seat--winner');
           cls.push('seat--winner-glow');
@@ -1040,6 +1043,7 @@ export const SeatSlot = memo(
       allinShake,
       stackGlow,
       timeBankArmed,
+      isTimeBankActive,
     ]);
 
     // ─── EMPTY SEAT ────────────────────────────────────────────────────────
@@ -1909,6 +1913,7 @@ export const SeatSlot = memo(
        which is how it would silently regress back to "the toast is the only
        feedback". */
     if (prev.timeBankArmed !== next.timeBankArmed) return false;
+    if (prev.isTimeBankActive !== next.isTimeBankActive) return false;
 
     const pp = prev.player;
     const np = next.player;

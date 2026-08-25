@@ -449,6 +449,7 @@ interface TableState {
    * animation via SeatSlot turnStartTimeMs/turnDeadlineMs props. */
   actionTimerStartTime?: number;
   actionTimerPlayerId?: string;
+  isTimeBankActive?: boolean;
   // Phase 8: Session stats
   sessionPL?: number;
   sessionHands?: number;
@@ -4672,9 +4673,9 @@ export default function TablePage({
   useMasterBusSubscription('TABLE_MENU_ACTION', (event: any) => {
     if (event.tableId && event.tableId !== tableId) return;
     if (event.action === 'STAND_UP_BB') {
-      setStandUpNextBB((prev) => !prev);
+      setStandUpNextBB(!standUpNextBB);
     } else if (event.action === 'AUTO_TOP_UP') {
-      setIsAutoRebuyEnabled((prev) => !prev);
+      setIsAutoRebuyEnabled(!isAutoRebuyEnabled);
     } else if (event.action === 'TOGGLE_SOUNDS') {
       // Toggle sound
       const muted = localStorage.getItem('table_sound_muted') === 'true';
@@ -11607,6 +11608,11 @@ export default function TablePage({
                   /* Only meaningful on the seat that is actually acting; a
                      stale arm must never light up a seat whose turn has
                      already passed. */
+                  isTimeBankActive={
+                    seatNumber === tableState.currentPlayerSeat
+                      ? tableState.isTimeBankActive
+                      : false
+                  }
                   timeBankArmed={
                     seatNumber === tableState.currentPlayerSeat ? timeBankArmed : false
                   }

@@ -979,6 +979,10 @@ export interface BusPayloadMap {
     tableId: string;
     action:
       | 'SIT_OUT'
+      | 'STAND_UP_BB'
+      | 'AUTO_TOP_UP'
+      | 'TOGGLE_SOUNDS'
+      | 'TOGGLE_VIBRATIONS'
       | 'REBUY'
       | 'ADD_ON'
       | 'SESSION_STATS'

@@ -48,6 +48,12 @@ export function isVibrationAllowed(): boolean {
   }
 }
 
+export function setVibrationAllowed(allowed: boolean): void {
+  const val = allowed ? 'true' : 'false';
+  localStorage.setItem(IN_TABLE_KEY, val);
+  localStorage.setItem(SETTINGS_KEY, val);
+}
+
 /**
  * ─── COALESCING ────────────────────────────────────────────────────────────
  *

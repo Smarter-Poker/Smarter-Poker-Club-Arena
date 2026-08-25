@@ -2407,6 +2407,23 @@ export default function TablePage({
    * result card is still correct.
    */
   const BUST_HOLD_MS = 5000;
+  /**
+   * The backstop for the MODAL branch.
+   *
+   * 2026-08-25 audit: when the rebuy prompt opened, the 5s deadline was
+   * cancelled and the hold was left claimed with NO timer at all, on the
+   * reasoning that "the modal is the pause". That is true right up until the
+   * player navigates away without answering — and `/table/:tableId` renders
+   * through `PersistentTableLayer`, which HIDES rather than unmounts, so the
+   * unmount cleanup never runs. The hold then stayed active for the rest of
+   * the session: no result card, no exit, elimination never reconciled.
+   *
+   * Two minutes is long enough that nobody reading a price is rushed, and
+   * short enough that an abandoned prompt cannot strand the player forever. It
+   * declines on the player's behalf, which is the safe direction: declining
+   * costs nothing, and a rebuy they never confirmed must never be charged.
+   */
+  const BUST_HOLD_MODAL_MS = 120_000;
   const bustHoldRef = useRef<{
     active: boolean;
     /** The exit that was deferred, replayed verbatim when the hold releases. */
@@ -2446,6 +2463,20 @@ export default function TablePage({
     }, BUST_HOLD_MS);
     return true;
   }, [releaseBustHold]);
+
+  /**
+   * `beginBustHold` reachable from the realtime subscription's closure.
+   *
+   * 2026-08-25 audit: the elimination broadcast is the EARLIEST and most
+   * reliable bust signal there is — it is the engine telling us, rather than us
+   * inferring from a stack that reached zero. It therefore claims the hold
+   * itself rather than checking whether some other watcher happened to get
+   * there first, which was a race it could lose.
+   */
+  const beginBustHoldRef = useRef<(() => boolean) | null>(null);
+  beginBustHoldRef.current = beginBustHold;
+  const releaseBustHoldRef = useRef<(() => void) | null>(null);
+  releaseBustHoldRef.current = releaseBustHold;
 
   // A player who navigates away inside the grace window must not leave a timer
   // behind that fires against a torn-down page.
@@ -4358,21 +4389,44 @@ export default function TablePage({
       return;
     }
     /* Dan 2026-08-25 (binding): `if (tableState.isHandInProgress) return;` used
-     * to sit here, and it is the second half of "it just knocked me out". It
-     * made this watcher wait for the busting hand to finish settling, while the
-     * `player_eliminated` broadcast fired mid-settlement and scheduled the exit
-     * — so the prompt was always asking a question that had already been
-     * answered. The prompt now fires the moment the stack reaches zero, and
-     * claims the bust hold so the elimination path waits for it instead. The
-     * cash-game watcher above KEEPS its in-hand guard: a cash player is not
-     * being removed from anything, so there is nothing to race and no reason to
-     * throw a modal over a hand that is still paying out. */
+     * to sit here unconditionally, and it is the second half of "it just
+     * knocked me out". It made this watcher wait for the busting hand to finish
+     * settling, while the `player_eliminated` broadcast fired mid-settlement and
+     * scheduled the exit — so the prompt was always asking a question that had
+     * already been answered.
+     *
+     * But deleting it outright (the first version of this fix) bought a WORSE
+     * bug, found in the 2026-08-25 audit: A HERO WHO IS ALL-IN SHOWS
+     * `stack === 0` FOR THE WHOLE OF SETTLEMENT. That is a completely ordinary
+     * state for a player who is about to win the pot, and it threw a rebuy
+     * modal at them mid-showdown.
+     *
+     * The discriminator is not the stack and it is not the clock — it is
+     * whether anything has actually said this player is OUT. `bustHoldRef.active`
+     * is exactly that signal: the `player_eliminated` handler claims the hold
+     * the instant the engine eliminates hero. So:
+     *
+     *   hand still running + no elimination signal -> WAIT (all-in, may win)
+     *   hand still running + elimination signal    -> PROMPT NOW (the race)
+     *   hand settled                               -> PROMPT (busted, no event)
+     *
+     * The cash-game watcher above keeps its plain in-hand guard: a cash player
+     * is not being removed from anything, so there is nothing to race. */
+    /* `String(...)`: the elimination handler stamps `status: 'eliminated'` onto
+       the seat row at runtime, but `PlayerStatus` does not declare that member,
+       so a direct compare is a type error. Widening here rather than adding
+       'eliminated' to PlayerStatus, which would make every seat-status switch
+       in the app claim to handle a state the SEAT never renders. */
+    const eliminationSignalled =
+      bustHoldRef.current.active || String(heroPlayer.status) === 'eliminated';
+    if (tableState.isHandInProgress && !eliminationSignalled) return;
     if (bustPromptFiredRef.current) return;
     if (showRebuyModal) return;
     bustPromptFiredRef.current = true;
 
     // Claim the grace period BEFORE any await — the elimination broadcast can
-    // land inside the very next tick.
+    // land inside the very next tick. A no-op if the elimination handler
+    // already claimed it, which is the common case for a real bust.
     beginBustHold();
 
     (async () => {
@@ -4380,19 +4434,35 @@ export default function TablePage({
         const rebuyCheck = await tournamentService.canRebuy(tableState.tournamentId!, userId);
         if (rebuyCheck.allowed) {
           const tournament = await tournamentService.getTournament(tableState.tournamentId!);
+          /* 2026-08-25 audit: `canRebuy` and `getTournament` are two sequential
+             round trips with no cancellation. If together they take longer than
+             BUST_HOLD_MS the deadline has already fired, replayed the deferred
+             exit and navigated the player to the lobby — and this line would
+             then open a rebuy modal over a table they have left. If the hold is
+             gone, so is the offer. */
+          if (!bustHoldRef.current.active) return;
           if (tournament) {
             const quote = tournamentService.quoteFromTournament(tournament, 'rebuy');
             setRebuyData({ cost: quote.baseCost, fee: quote.fee, chips: quote.chips });
             setShowRebuyModal(true);
             /* The modal IS the pause now, so the 5s deadline must not fire out
-             * from under a player who is reading a price. Cancel the timer but
-             * keep the hold (and any exit deferred into it) claimed: the
-             * modal's confirm / decline paths release it. */
+             * from under a player who is reading a price. It is replaced by the
+             * far longer BUST_HOLD_MODAL_MS backstop rather than removed — see
+             * that constant for why "no timer at all" stranded players. */
             const hold = bustHoldRef.current;
-            if (hold.deadline) {
-              clearTimeout(hold.deadline);
-              hold.deadline = null;
-            }
+            if (hold.deadline) clearTimeout(hold.deadline);
+            hold.deadline = setTimeout(() => {
+              bustHoldRef.current.deadline = null;
+              // Unanswered for two minutes is a decline. Close the prompt and
+              // tell the server, exactly as the Cancel button would.
+              setShowRebuyModal(false);
+              if (tableId) {
+                GameServerAPI.notifyServerRejectRebuy(tableId).catch(() => {
+                  /* best effort: the exit below must happen either way */
+                });
+              }
+              releaseBustHoldRef.current?.();
+            }, BUST_HOLD_MODAL_MS);
             return;
           }
         }
@@ -4426,6 +4496,10 @@ export default function TablePage({
     userId,
     tableState.heroSeat,
     tableState.players,
+    // Back in the deps because the all-in guard above reads it again — without
+    // it the effect would not re-run when the hand finally settles, and a
+    // genuine bust during a hand would never prompt at all.
+    tableState.isHandInProgress,
     tableState.isTournament,
     tableState.tournamentId,
     showRebuyModal,
@@ -6501,11 +6575,17 @@ export default function TablePage({
                       prize: Number(elimData.prize) || 0,
                       delayMs: 2500,
                     };
-                    if (bustHoldRef.current.active) {
-                      bustHoldRef.current.pendingExit = exit;
-                    } else {
-                      goToLobbyWithResult(exit.position, exit.prize, exit.delayMs);
-                    }
+                    /* 2026-08-25 audit: this used to only DEFER when some
+                       other watcher had already claimed the hold, and otherwise
+                       navigated immediately — which is the same race in a new
+                       coat, because the stack-watcher may not have run yet.
+                       The engine's own elimination event is the most reliable
+                       bust signal we get, so it claims the hold itself and the
+                       exit is always deferred into it. `beginBustHold` is a
+                       no-op when a hold is already running, so this cannot
+                       start a second deadline. */
+                    beginBustHoldRef.current?.();
+                    bustHoldRef.current.pendingExit = exit;
                   }
                 }
 

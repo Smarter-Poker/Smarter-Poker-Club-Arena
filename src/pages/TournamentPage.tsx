@@ -34,6 +34,7 @@ import { useAnimationQueue } from '../hooks/useAnimationQueue';
 import { TournamentClock } from '../components/tournament/TournamentClock';
 import TournamentStandings from '../components/tournament/TournamentStandings';
 import { reportError } from '../utils/errorReporter';
+import { openTableAsObserver } from '../utils/observeTable';
 import { spinMultiplierLabel } from '../utils/spinReveal';
 import { useMysteryBounty } from '../hooks/useMysteryBounty';
 import MysteryBountyPanel from '../components/tournament/MysteryBountyPanel';
@@ -505,6 +506,17 @@ export default function TournamentPage() {
         name: selectedTournament.name,
         buy_in_amount: selectedTournament.buy_in_amount,
         buy_in_fee: selectedTournament.buy_in_fee,
+        /* 2026-08-25 audit: same card everywhere means the same ROWS
+           everywhere. Without these the Bounty and Start Time rows silently
+           vanished on this surface only. */
+        bounty_amount: (selectedTournament as any).is_bounty
+          ? (selectedTournament as any).bounty_amount || 0
+          : 0,
+        is_pko: !!(selectedTournament as any).is_pko,
+        is_mystery_bounty: !!(selectedTournament as any).is_mystery_bounty,
+        start_time: (selectedTournament as any).start_time ?? null,
+        club_id: (selectedTournament as any).club_id ?? null,
+        is_late_registration: String(selectedTournament.status).toUpperCase() === 'RUNNING',
       },
       () => {
         setIsRegistered(true);
@@ -550,7 +562,7 @@ export default function TournamentPage() {
     try {
       const { data: tables, error: tablesErr } = await supabase
         .from('tables')
-        .select('id')
+        .select('id, status, current_players')
         .eq('tournament_id', selectedTournament.id);
       if (tablesErr) {
         toast.error('Failed to load tables');
@@ -575,12 +587,29 @@ export default function TournamentPage() {
       }
 
       if (seat) {
-        navigate(`/table/${seat.table_id}`); // FIX: was /clubs/:clubId/table/:tableId which is not a defined route
-      } else {
-        toast.warning(
-          'You are registered but not seated. Please wait for the tournament to start fully.'
-        );
+        // FIX: was /clubs/:clubId/table/:tableId which is not a defined route
+        openTableAsObserver(navigate, { tableId: seat.table_id });
+        return;
       }
+
+      /* Dan 2026-08-25 (binding): a running tournament must be watchable.
+         This branch used to end at a toast — "you are registered but not
+         seated" — which was both a dead end AND wrong for the case that now
+         reaches it most often: somebody who is not in the event at all and
+         simply wants to see it. Fall back to the FEATURED TABLE, defined the
+         same way TournamentDetails defines it: the busiest live table. */
+      const live = (tables as Array<{ id: string; status?: string; current_players?: number }>)
+        .filter((t) => String(t.status || '').toLowerCase() !== 'closed')
+        .sort((a, b) => (b.current_players || 0) - (a.current_players || 0));
+      if (live[0]?.id) {
+        openTableAsObserver(navigate, { tableId: live[0].id });
+        return;
+      }
+      toast.warning(
+        isRegistered
+          ? 'You Are Registered But Not Seated Yet. Your Seat Is Being Assigned.'
+          : 'No Live Tables To Watch Yet.'
+      );
     } catch (e) {
       reportError(e, 'TournamentPage.error');
       toast.error('Failed to join tournament table');
@@ -1461,12 +1490,15 @@ export default function TournamentPage() {
                   )
                 ) : selectedTournament.status === 'RUNNING' ? (
                   <>
-                    <button
-                      className="btn btn-primary btn-block"
-                      disabled={!isRegistered}
-                      onClick={handleJoinTable}
-                    >
-                      {isRegistered ? 'Go to Table' : 'Tournament in Progress'}
+                    {/* Dan 2026-08-25 (binding): a running tournament must be
+                        watchable. This was `disabled={!isRegistered}` with the
+                        label "Tournament in Progress" — a literal greyed-out
+                        dead end, on the one screen a player lands on when they
+                        tap a running game. It is a live button for everyone
+                        now: `handleJoinTable` already falls back to the
+                        tournament's own tables when the viewer holds no seat. */}
+                    <button className="btn btn-primary btn-block" onClick={handleJoinTable}>
+                      {isRegistered ? 'Go to Table' : 'Watch'}
                     </button>
 
                     {/* Rebuy Button */}

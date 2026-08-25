@@ -2371,6 +2371,15 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           name: t.name,
           buy_in_amount: t.buy_in_amount,
           buy_in_fee: t.buy_in_fee,
+          /* 2026-08-25 audit: this payload carried only the two money fields,
+             so the ONE shared Sign Up card was materially shorter here than on
+             the details page — no Bounty row, no Start Time — for the same
+             tournament. "One dialog everywhere" has to mean the same dialog. */
+          bounty_amount: (t as any).is_bounty ? (t as any).bounty_amount || 0 : 0,
+          is_pko: !!(t as any).is_pko,
+          is_mystery_bounty: !!(t as any).is_mystery_bounty,
+          start_time: (t as any).start_time ?? null,
+          club_id: (t as any).club_id ?? resolvedClubIdRef.current ?? null,
         },
         () => {
           setRegisteredTournamentIds((prev) => new Set(prev).add(t.id));

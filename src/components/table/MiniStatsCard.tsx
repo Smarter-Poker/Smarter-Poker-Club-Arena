@@ -76,7 +76,8 @@ export function MiniStatsCard({
   const pnlColor = pnl >= 0 ? 'var(--success, #31A24C)' : 'var(--danger, #F02849)';
   const pnlSign = pnl >= 0 ? '+' : '';
   const vpipPct = handsPlayed > 0 ? Math.round((vpipCount / handsPlayed) * 100) : 0;
-  const winRate = handsPlayed > 0 ? Math.round((handsWon / handsPlayed) * 100) : 0;
+  /* `winRate` deleted 2026-08-25: computed on every render and read by
+     nothing. `handsWon` is shown directly on the tournament bar instead. */
 
   // Resolve effective expand state. `onTap` (if provided) opens the full
   // SessionStats modal or tournament lobby; internal isExpanded toggle only matters when onTap

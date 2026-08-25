@@ -59,14 +59,37 @@ describe('Item 1 - a running tournament can be watched', () => {
     expect(src).toMatch(/onClick=\{\(\) => watchTable\(featuredTableId\)\}/);
   });
 
-  it('the featured table is the chip leader table, with fallbacks that cannot be empty', () => {
+  it('the featured table is the chip leader table, and never a closed one', () => {
     const src = code(read(DETAILS));
     // Leader first: still playing, has a table, highest chips.
     expect(src).toMatch(/e\.status === 'playing' && e\.table_id/);
     expect(src).toMatch(/\(b\.chips \|\| 0\) - \(a\.chips \|\| 0\)/);
-    // Then the fullest live table, then any table at all.
+    // Then the fullest LIVE table.
     expect(src).toMatch(/\(b\.current_players \|\| 0\) - \(a\.current_players \|\| 0\)/);
-    expect(src).toMatch(/return tables\[0\]\?\.id \?\? null;/);
+    /* 2026-08-25 audit: the last-resort fallback was `tables[0]?.id`, which can
+       be a CLOSED table — a WATCH button that opens a dead felt. Every fallback
+       is now drawn from the `live` list, and when nothing is live the button is
+       not rendered at all. */
+    expect(src).toMatch(/const live = tables\.filter/);
+    expect(src).toMatch(/return live\[0\]\?\.id \?\? null;/);
+    expect(src).not.toMatch(/return tables\[0\]\?\.id/);
+  });
+
+  it('watching ADDS a screen rather than replacing the one in front of you', () => {
+    const src = code(read(DETAILS));
+    expect(src).toMatch(/openTableAsObserver\(navigate, \{ tableId \}\)/);
+    expect(src).not.toMatch(/navigate\(`\/table\/\$\{tableId\}`\)/);
+  });
+
+  it('a running tournament is watchable from the lobby card and the club page too', () => {
+    const card = code(read('src/components/tournament/TournamentLobbyCard.tsx'));
+    expect(card).not.toMatch(/tournament\.status === 'running' && isRegistered/);
+    expect(card).toMatch(/isRegistered \? 'Open Tournament' : 'Watch'/);
+
+    const page = code(read('src/pages/TournamentPage.tsx'));
+    expect(page).not.toMatch(/disabled=\{!isRegistered\}[\s\S]{0,160}handleJoinTable/);
+    expect(page).toMatch(/isRegistered \? 'Go to Table' : 'Watch'/);
+    expect(page).toMatch(/openTableAsObserver\(navigate, \{ tableId: live\[0\]\.id \}\)/);
   });
 
   it('WATCH is offered alongside every running-state footer, not instead of one', () => {
@@ -351,10 +374,38 @@ describe('Item 10 - busting holds action so the rebuy can be offered', () => {
     expect(src).toMatch(/hold\.deadline = setTimeout\(/);
   });
 
-  it('the elimination broadcast defers its exit instead of navigating', () => {
+  it('the elimination broadcast claims the hold itself and always defers', () => {
+    /* 2026-08-25 audit: this used to only defer IF some other watcher had
+       already claimed the hold, and otherwise navigated — the same race in a
+       new coat, because the stack watcher may not have run yet. */
     expect(src).toMatch(
+      /beginBustHoldRef\.current\?\.\(\);\s*bustHoldRef\.current\.pendingExit = exit;/
+    );
+    expect(src).not.toMatch(
       /if \(bustHoldRef\.current\.active\) \{\s*bustHoldRef\.current\.pendingExit = exit;/
     );
+  });
+
+  it('an all-in that is still live does not get a bust prompt', () => {
+    /* THE REGRESSION THIS BRANCH ITSELF INTRODUCED, caught by audit: a hero who
+       is all-in shows stack === 0 for the whole of settlement. Deleting the
+       in-hand guard outright threw a rebuy modal at a player about to win the
+       pot. The guard is back, but conditional on there being no elimination
+       signal — which is what preserves the fix for the original race. */
+    expect(src).toMatch(/const eliminationSignalled =/);
+    expect(src).toMatch(/if \(tableState\.isHandInProgress && !eliminationSignalled\) return;/);
+  });
+
+  it('an unanswered rebuy prompt cannot hold the player forever', () => {
+    /* The modal branch cancelled the 5s deadline and set nothing in its place.
+       PersistentTableLayer HIDES rather than unmounts, so navigating away with
+       the prompt open left the hold active for the rest of the session. */
+    expect(src).toMatch(/const BUST_HOLD_MODAL_MS = 120_000;/);
+    expect(src).toMatch(/releaseBustHoldRef\.current\?\.\(\)/);
+  });
+
+  it('a slow rebuy check cannot open a modal over a table the player has left', () => {
+    expect(src).toMatch(/if \(!bustHoldRef\.current\.active\) return;/);
   });
 
   it('the deferred exit is replayed, not discarded, when the hold releases', () => {
@@ -425,5 +476,147 @@ describe("Item 11 - the hero's chips sit closer to the rail", () => {
     // The two seats opposite each other, both outside the painted felt by the
     // same amount, must be treated identically to within rounding.
     expect(Math.abs(heroDist - topDist)).toBeLessThanOrEqual(20);
+  });
+});
+
+// ─── AUDIT HARDENING (2026-08-25, post-merge) ─────────────────────────────────
+//
+// Everything below pins a defect found by an adversarial audit of the shipped
+// PR, hours after it merged. Each one is a way the "one confirmation" work
+// could have cost a player money or stranded them at a table.
+
+describe('Audit - no path takes a buy-in without asking', () => {
+  const REGISTER_SURFACES = [
+    'src/pages/tournament/TournamentLobbyPage.tsx',
+    'src/pages/XMTTPage.tsx',
+    'src/pages/UnionGamesPage.tsx',
+    'src/pages/ClubHomePage.tsx',
+    'src/pages/TournamentPage.tsx',
+    'src/pages/tournament/TournamentDetails.tsx',
+  ];
+
+  it('every player-facing surface registers through the hook, never the service', () => {
+    /* THE HOLE. TournamentLobbyPage (the GLOBAL lobby — the busiest register
+       button in the app), XMTTPage and UnionGamesPage each called
+       `tournamentService.registerPlayer` directly: one tap, chips gone, no
+       price confirmed, no balance shown. All three ALSO destructured
+       `registerMtt` from the hook and never used it, so they looked wired to
+       the shared path and were not. */
+    for (const f of REGISTER_SURFACES) {
+      const src = code(read(f));
+      expect(src, `${f} must not register directly`).not.toMatch(
+        /tournamentService\.registerPlayer\(/
+      );
+      expect(src, `${f} must go through the hook`).toMatch(/registerMtt\(/);
+    }
+  });
+
+  it('the only registerPlayer caller left in src/ is the hook and the horses', () => {
+    const offenders: string[] = [];
+    for (const f of REGISTER_SURFACES) {
+      if (/tournamentService\.registerPlayer\(/.test(read(f))) offenders.push(f);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('every surface hands the dialog the SAME rows, including the club that pays', () => {
+    /* "One dialog everywhere" has to mean the same dialog. ClubHomePage and
+       TournamentPage passed only the two money fields, so the Bounty and Start
+       Time rows silently vanished on those surfaces for the same tournament.
+       `club_id` matters more than cosmetics: without it the balance is read
+       against whatever club is ambient, which can DISABLE Confirm for a player
+       who is funded in the club that would actually be charged. */
+    for (const f of REGISTER_SURFACES) {
+      const src = code(read(f));
+      expect(src, `${f} must pass club_id`).toMatch(/club_id:/);
+      expect(src, `${f} must pass start_time`).toMatch(/start_time:/);
+    }
+    expect(code(read(REG_HOOK))).toMatch(/clubId: t\.club_id \?\? null/);
+    expect(code(read(REG_HOOK))).toMatch(/club_id\?: string \| null/);
+  });
+});
+
+describe('Audit - the dialog cannot confirm a buy-in nobody was shown', () => {
+  const src = code(read(SIGNUP_TSX));
+
+  it('settle answers one request by id, never whatever is at the head', () => {
+    /* R1. The first version popped the head unconditionally, so two settles in
+       one React batch (double-tapped Confirm, or Escape landing in the same
+       batch as a click) resolved request #1 AND silently resolved queued
+       request #2 `true` — confirming a buy-in whose card never rendered. */
+    expect(src).toMatch(/const settle = useCallback\(\(id: number, result: boolean\)/);
+    expect(src).toMatch(/if \(settledRef\.current\.has\(id\)\) return;/);
+    expect(src).toMatch(/setQueue\(\(q\) => q\.filter\(\(r\) => r\.id !== id\)\)/);
+    // and every control passes the id it was rendered for
+    expect(src).toMatch(/settle\(id, true\)/);
+    expect(src).toMatch(/settle\(id, false\)/);
+  });
+
+  it('never resolves a money promise from inside a state updater', () => {
+    // R2. React runs updaters twice under StrictMode.
+    expect(src).not.toMatch(/setQueue\(\([\s\S]{0,200}head\.resolve\(/);
+  });
+
+  it('unmount settles every pending request instead of hanging it', () => {
+    /* R3. The caller awaits this AFTER flipping its re-entrancy ref, so one
+       hung promise bricked that Register button for the rest of the session. */
+    expect(src).toMatch(/for \(const req of pending\)/);
+    expect(src).toMatch(/req\.resolve\(false\)/);
+  });
+
+  it('a remounted host cannot null out the live bridge', () => {
+    // R4.
+    expect(src).toMatch(/if \(enqueue === mine\) enqueue = null;/);
+  });
+
+  it('sits above every other overlay in the app', () => {
+    /* R5. It shipped at z-index 1000. The app has ~20 overlays above that and
+       the offline banner alone is 9999 — ordinary chrome could paint over the
+       one prompt that takes money. */
+    const css = read(SIGNUP_CSS);
+    const m = css.match(/\.signup-overlay\s*\{[\s\S]*?z-index:\s*(\d+)/);
+    expect(m).toBeTruthy();
+    expect(Number(m![1])).toBeGreaterThan(9999);
+  });
+
+  it('reads the balance of the club that actually pays', () => {
+    // R6.
+    expect(src).toMatch(/getPlayerBalance\(userId, \{ clubId \}\)/);
+  });
+
+  it('an unreadable balance never blocks a buy-in', () => {
+    // Null renders "--" and leaves Confirm enabled; the server RPC is the gate.
+    expect(src).toMatch(/const short = balance !== null && balance < cost;/);
+  });
+
+  it('does not tell a late registrant they cannot unregister near the start', () => {
+    // A late registration cannot be unregistered at all, and an SNG has no
+    // start time for the rule to be about.
+    expect(src).toMatch(/!o\.isLateRegistration && !!startLabel/);
+  });
+
+  it('traps focus and gives it back', () => {
+    expect(src).toMatch(/restoreFocusRef/);
+    expect(src).toMatch(/e\.key !== 'Tab'/);
+  });
+});
+
+describe('Audit - the tournament HUD stops when there is nothing left to ask', () => {
+  const src = code(read(HUD));
+
+  it('stops polling once the event is over', () => {
+    expect(src).toMatch(/status !== 'RUNNING' && status !== 'REGISTERING'/);
+    expect(src).toMatch(/clearInterval\(resyncRef\.current\)/);
+  });
+
+  it('does not report the same failure every 45 seconds forever', () => {
+    expect(src).toMatch(/if \(failures <= 2\) reportError/);
+    expect(src).toMatch(/if \(failures >= 5 && resyncRef\.current\)/);
+  });
+
+  it('does not tick once a second while hidden', () => {
+    expect(src).toMatch(
+      /if \(hidden \|\| !tournament \|\| tournament\.status !== 'RUNNING'\) return;/
+    );
   });
 });

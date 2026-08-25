@@ -13,7 +13,6 @@ import TournamentStartingTicker from './components/tournament/TournamentStarting
 import TournamentAutoSeat from './components/tournament/TournamentAutoSeat';
 import { MEDIA_BASE } from './utils/mediaBase';
 import { Suspense, useState, useEffect } from 'react';
-import { lazyWithRetry as lazy } from './utils/lazyWithRetry';
 import { supabase } from './lib/supabase';
 import { realtimeChannelService } from './services/RealtimeChannelService';
 import { OfflineQueueService } from './services/OfflineQueueService';

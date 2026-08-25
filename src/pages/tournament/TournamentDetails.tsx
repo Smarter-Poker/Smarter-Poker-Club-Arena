@@ -34,6 +34,7 @@ import {
   formatCents,
   topBountyCents,
 } from '../../services/MysteryBountyService';
+import { openTableAsObserver } from '../../utils/observeTable';
 
 type TabId =
   | 'detail'
@@ -698,6 +699,7 @@ export default function TournamentDetails({
         is_pko: !!(tournament as any).is_pko,
         is_mystery_bounty: !!(tournament as any).is_mystery_bounty,
         start_time: tournament.start_time,
+        club_id: (tournament as any).club_id ?? null,
         is_late_registration: isLate,
       },
       () => {
@@ -752,21 +754,42 @@ export default function TournamentDetails({
       .sort((a, b) => (b.chips || 0) - (a.chips || 0))[0];
     if (leader?.table_id) return leader.table_id;
 
-    const fullest = [...tables]
-      .filter((t) => (t.status || '').toLowerCase() !== 'closed')
-      .sort((a, b) => (b.current_players || 0) - (a.current_players || 0))[0];
+    const live = tables.filter((t) => (t.status || '').toLowerCase() !== 'closed');
+
+    const fullest = [...live].sort(
+      (a, b) => (b.current_players || 0) - (a.current_players || 0)
+    )[0];
     if (fullest?.id) return fullest.id;
 
-    return tables[0]?.id ?? null;
+    /* 2026-08-25 audit: this used to be `tables[0]?.id`, with a comment saying
+       "any table at all, so the button still works rather than disappearing".
+       That is backwards — `tables[0]` can be a CLOSED table, and a WATCH button
+       that opens a dead felt is worse than no button. If nothing is live there
+       is nothing to watch, and returning null hides the button, which is the
+       honest outcome. */
+    return live[0]?.id ?? null;
   }, [entries, tables]);
 
-  /** Open a table as a spectator. Used by Watch, and by a row in Ranking. */
+  /**
+   * Open a table as a spectator. Used by WATCH, by a Ranking row and by an
+   * Entries row.
+   *
+   * 2026-08-25 audit: this used to be a bare `navigate('/table/'+id)`, which is
+   * the weaker half of a helper written for exactly this job.
+   * `utils/observeTable` emits OPEN_OBSERVE_TABLE *and* navigates, and its
+   * docstring explains why both are required: emitting alone is a dead button
+   * on a cold load (MultiTablePage is lazy and may have no subscriber yet),
+   * while navigating alone CONVERTS a parked lobby tab instead of adding a
+   * screen — the wrong shape for "watch this too". Both are keyed on the table
+   * id and de-duplicated, so running both can only ever produce one screen.
+   */
   const watchTable = useCallback(
     (tableId: string) => {
-      if (!tableId) return;
-      navigate(`/table/${tableId}`);
+      if (!openTableAsObserver(navigate, { tableId })) {
+        toast.error('That Table Is Not Available To Watch');
+      }
     },
-    [navigate]
+    [navigate, toast]
   );
 
   const handleUnregister = async () => {

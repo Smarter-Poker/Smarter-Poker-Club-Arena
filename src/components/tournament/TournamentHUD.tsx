@@ -80,12 +80,46 @@ export function TournamentHUD({
     if (!tournamentId) return;
     let mounted = true;
 
+    /**
+     * 2026-08-25 audit: two defects lived in the first version of this.
+     *
+     *  - It reported EVERY failure, forever. No backoff, no counter, no
+     *    de-dupe. A persistent failure — an RLS denial, a deleted row, an
+     *    offline tab — filed an error report every 45 seconds, per open table,
+     *    for as long as the component stayed mounted (which, because
+     *    PersistentTableLayer hides rather than unmounts, is "the session").
+     *    Only the first few are information; the rest are noise that buries
+     *    real reports.
+     *  - Nothing stopped it. A COMPLETED or CANCELLED tournament has no next
+     *    level and no clock, and was polled every 45s regardless.
+     */
+    let failures = 0;
     const refresh = async () => {
       try {
         const t = await tournamentService.getTournament(tournamentId);
-        if (mounted) setTournament(t);
+        if (!mounted) return;
+        failures = 0;
+        setTournament(t);
+        // Nothing left to track once the event is over: stop the poll rather
+        // than asking the same settled question every 45 seconds.
+        const status = String((t as { status?: string } | null)?.status ?? '').toUpperCase();
+        if (t && status !== 'RUNNING' && status !== 'REGISTERING' && status !== 'LATE_REG') {
+          if (resyncRef.current) {
+            clearInterval(resyncRef.current);
+            resyncRef.current = null;
+          }
+        }
       } catch (e) {
-        reportError(e, 'TournamentHUD.load', { tournamentId });
+        if (!mounted) return;
+        failures += 1;
+        // First two only. After that the fault is established and repeating it
+        // tells nobody anything new.
+        if (failures <= 2) reportError(e, 'TournamentHUD.load', { tournamentId, failures });
+        // A wall we cannot get through is not worth hitting every 45s forever.
+        if (failures >= 5 && resyncRef.current) {
+          clearInterval(resyncRef.current);
+          resyncRef.current = null;
+        }
       }
     };
 
@@ -127,6 +161,7 @@ export function TournamentHUD({
     return () => {
       mounted = false;
       if (resyncRef.current) clearInterval(resyncRef.current);
+      resyncRef.current = null;
       try {
         masterBus.removeRegisteredChannel(`tournament-hud-${tournamentId}`);
       } catch {
@@ -138,12 +173,14 @@ export function TournamentHUD({
   // ── 1-second countdown tick (only while RUNNING) ──
   useEffect(() => {
     if (tickRef.current) clearInterval(tickRef.current);
-    if (!tournament || tournament.status !== 'RUNNING') return;
+    // `hidden` returns null below, so a hidden HUD ticking once a second was
+    // re-rendering nothing, on every open table (2026-08-25 audit).
+    if (hidden || !tournament || tournament.status !== 'RUNNING') return;
     tickRef.current = setInterval(() => setTick((n) => (n + 1) % 3600), 1000);
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
     };
-  }, [tournament?.status, tournament?.id]);
+  }, [hidden, tournament?.status, tournament?.id]);
 
   // ── Derive players-remaining / avg-stack from live rows when not supplied ──
   useEffect(() => {

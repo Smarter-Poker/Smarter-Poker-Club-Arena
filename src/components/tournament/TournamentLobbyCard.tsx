@@ -611,7 +611,16 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
                   : `Register (${money(tournament.buyIn)})`}
             </button>
           ))}
-        {tournament.status === 'running' && isRegistered && (
+        {/* Dan 2026-08-25 (binding): "when I click on a tournament that's
+            RUNNING I should be able to click a button and watch."
+            This branch was gated on `isRegistered`, so a running tournament you
+            were not in rendered NO action at all — the card was a dead end for
+            exactly the player who wants to watch. Everyone gets a button now;
+            only its wording differs, because "open the tournament you are
+            playing" and "watch someone else's" are different intents. Both land
+            on the tournament screen, whose footer carries WATCH straight to the
+            featured table. */}
+        {tournament.status === 'running' && (
           <button
             className={styles.playBtn}
             onClick={(e) => {
@@ -619,7 +628,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
               navigate(`/tournaments/${tournament.id}`);
             }}
           >
-            Open Tournament
+            {isRegistered ? 'Open Tournament' : 'Watch'}
           </button>
         )}
       </div>

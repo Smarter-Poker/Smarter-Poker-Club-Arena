@@ -197,6 +197,46 @@ export function mysteryBountyTiers(
   return MYSTERY_BOUNTY_PROFILES[profile] ?? CLASSIC;
 }
 
+/** The advertised headline prize, as a percentage of the whole mystery pool. */
+export const DEFAULT_TOP_BOUNTY_PERCENT = 20;
+
+/**
+ * Re-cut a ladder so the JACKPOT holds exactly `topPercent` of the pool.
+ *
+ * Dan's spec section 10: "TOP BOUNTY = 20% OF THE ENTIRE MYSTERY BOUNTY POOL",
+ * and the lobby advertises that number before a single chest is opened. So the
+ * number the lobby prints and the number the generator uses have to be the
+ * same one - `tournaments.mystery_bounty_top_percent` was being stored,
+ * validated and then ignored, which meant an event configured at 25% would
+ * advertise 25% and pay 20%.
+ *
+ * Everything below the jackpot keeps its RELATIVE weighting and shares
+ * whatever is left, so moving the top prize never reorders the ladder: at 20%
+ * this returns CLASSIC unchanged, and at 30% every lower tier shrinks by the
+ * same factor rather than one of them absorbing the difference.
+ */
+export function applyTopBountyPercent(
+  tiers: readonly MysteryBountyTierSpec[],
+  topPercent: number | null | undefined
+): readonly MysteryBountyTierSpec[] {
+  const top = Number(topPercent);
+  // A jackpot cannot be the whole pool (nothing left for the other tiers) and
+  // cannot be nothing (the event has no headline prize). Outside that, use the
+  // profile as written.
+  if (!Number.isFinite(top) || top <= 0 || top >= 100) return tiers;
+  if (tiers.length === 0 || tiers[0].tier !== 'jackpot') return tiers;
+  if (Math.abs(top - tiers[0].poolShare) < 1e-9) return tiers;
+
+  const restBefore = tiers.slice(1).reduce((sum, t) => sum + t.poolShare, 0);
+  if (restBefore <= 0) return tiers;
+  const scale = (100 - top) / restBefore;
+
+  return [
+    { ...tiers[0], poolShare: top },
+    ...tiers.slice(1).map((t) => ({ ...t, poolShare: t.poolShare * scale })),
+  ];
+}
+
 /**
  * Every profile must describe a whole field and a whole pool. A ladder whose
  * frequencies sum to 97 leaves three chests per hundred undefined; one whose

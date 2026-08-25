@@ -128,7 +128,11 @@ export function shouldActivateMysteryBounty(
   if (!input.isMysteryBounty) return no('not_a_mystery_bounty');
   if (input.stage !== 'pending') return no('already_activated');
   if (!input.entryClosed) return no('entry_still_open');
-  if (input.playersRemaining <= 0) return no('no_players');
+  /* <= 1, not <= 0. With N-1 chests a heads-up field would ask for one chest
+     and a one-player field for zero, and an event that is already down to its
+     champion has no eliminations left to pay for. Refuse rather than seed an
+     empty inventory the settle step would then have to reason about. */
+  if (input.playersRemaining <= 1) return no('no_players');
   if (input.mysteryPoolCents <= 0) return no('empty_pool');
   if (
     !mysteryBountyThresholdReached(
@@ -147,11 +151,23 @@ export function shouldActivateMysteryBounty(
   // hide the real reason from the log for the whole tournament.
   if (!input.allTablesBetweenHands) return no('hand_in_progress');
 
-  // ONE CHEST PER SURVIVOR. Every player who can still be knocked out is
-  // carrying a chest, so the inventory is exhausted at exactly the moment the
-  // event reaches one player - and that last player is the champion, whose own
-  // chest is the residual settled to them at completion.
-  return { activate: true, reason: null, drawCount: input.playersRemaining };
+  /* PLAYERS REMAINING, MINUS ONE. Dan's spec section 8, verbatim: "Number Of
+     Mystery Bounty Draws = Players Remaining At Mystery Bounty Activation - 1
+     ... Every remaining player except the eventual tournament winner will
+     eventually be eliminated. Do not generate an unused bounty for the
+     eventual winner."
+
+     The first build generated one chest per SURVIVOR and settled the leftover
+     to the champion as a residual. That is a different game: 150 players got
+     150 chests, so the advertised ladder held one more prize than the event
+     could ever award, every tier's published count was one too many somewhere,
+     and the champion collected a chest nobody knocked them out of.
+
+     N-1 also makes the invariant self-enforcing. There are exactly as many
+     chests as there are eliminations left to happen, so the inventory empties
+     at the moment the event reaches one player, and `sum(paid)` equals the
+     pool without anything having to be swept up afterwards. */
+  return { activate: true, reason: null, drawCount: input.playersRemaining - 1 };
 }
 
 /**

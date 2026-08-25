@@ -63,6 +63,15 @@ export interface DeltaMessage {
 export interface EventMessage {
   type: 'EVENT';
   tableId: string;
+  /**
+   * SHOWDOWN POLISH 2026-08-25: monotonic per-table event sequence. Events
+   * ride the same socket as snapshots but their client-side dispatch is
+   * deliberately deferred a macrotask (see EngineStateClient), so relative
+   * ordering between two EVENTs was observable only by arrival luck. The seq
+   * makes it a fact: a consumer can order, de-duplicate, and detect a gap.
+   * Optional so recorded fixtures and older payloads stay valid.
+   */
+  seq?: number;
   payload: Record<string, unknown>;
 }
 
@@ -293,10 +302,16 @@ export class TableStateHub {
 
     const room = this.rooms.get(tableId);
     if (!room) return;
+    // SHOWDOWN POLISH 2026-08-25: stamp the per-table event sequence.
+    const seq = (this.eventSeqs.get(tableId) ?? 0) + 1;
+    this.eventSeqs.set(tableId, seq);
     // The delivered set records who actually got it live, so a later resync
     // from the SAME socket does not replay a beat it already animated.
-    this.broadcast(room, { type: 'EVENT', tableId, payload }, retention?.delivered);
+    this.broadcast(room, { type: 'EVENT', tableId, seq, payload }, retention?.delivered);
   }
+
+  /** SHOWDOWN POLISH 2026-08-25: per-table monotonic EVENT sequence. */
+  private eventSeqs = new Map<string, number>();
 
   /**
    * Re-send the latest snapshot to a single subscriber. Used when the client

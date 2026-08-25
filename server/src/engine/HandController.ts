@@ -18,6 +18,7 @@ import {
   determineWinners,
   describeHand,
   compareHands,
+  compareLowHands,
 } from './PokerEngine.js';
 import {
   isFixedLimitVariant,
@@ -46,6 +47,7 @@ import type {
   EvaluatedHand,
   Pot,
   Winner,
+  PerPotAward,
   RakeConfig,
   BettingState,
 } from '../types.js';
@@ -152,6 +154,12 @@ export class HandController {
    * for exactly one hand, so no reset is needed.
    */
   private allInShowdownLocked = false;
+  /**
+   * SHOWDOWN POLISH 2026-08-25: the unmerged per-pot(-half) award breakdown
+   * collected by determineWinners for the WINNERS emit. Per-hand — a
+   * HandController lives for exactly one hand.
+   */
+  private pendingPerPotAwards: PerPotAward[] = [];
   /** FIX-225: Bible V8 §1.6/§3.2 — Formal Hand State Machine */
   private handFSM = createHandStateMachine('idle');
 
@@ -1477,20 +1485,31 @@ export class HandController {
           eligiblePlayers: [...pot.eligiblePlayers],
         });
       }
+      // SHOWDOWN POLISH 2026-08-25: collect the unmerged per-pot(-half)
+      // breakdown for each board so the award sequence can play board 1's
+      // pots and then board 2's, each with its exact share.
+      const perPot1: PerPotAward[] = [];
+      const perPot2: PerPotAward[] = [];
       const winners1 = determineWinners(
         this.state.players,
         this.state.communityCards,
         potsBoard1,
         this.config.gameVariant,
-        this.state.dealerSeat
+        this.state.dealerSeat,
+        perPot1
       );
       const winners2 = determineWinners(
         this.state.players,
         this.state.communityCards2,
         potsBoard2,
         this.config.gameVariant,
-        this.state.dealerSeat
+        this.state.dealerSeat,
+        perPot2
       );
+      this.pendingPerPotAwards = [
+        ...perPot1.map((a) => ({ ...a, board: 1 as const })),
+        ...perPot2.map((a) => ({ ...a, board: 2 as const })),
+      ];
       // Merge by user, integer cents throughout so the sum stays exact.
       const byUser = new Map<string, number>();
       // Keep the evaluated hand alongside the money. Rebuilding these entries as
@@ -1528,13 +1547,16 @@ export class HandController {
         })),
       ];
     } else {
+      const perPot: PerPotAward[] = [];
       winners = determineWinners(
         this.state.players,
         this.state.communityCards,
         pots,
         this.config.gameVariant,
-        this.state.dealerSeat
+        this.state.dealerSeat,
+        perPot
       );
+      this.pendingPerPotAwards = perPot;
     }
 
     // Bible V8 §1.9 — No-winners guard: if determineWinners returns empty
@@ -1627,10 +1649,22 @@ export class HandController {
     // but += on binary floats is where cross-hand drift was born.
     this.snapChips();
 
+    // SHOWDOWN POLISH 2026-08-25: scale the per-pot display shares by the
+    // same global rake ratio the merged winners were scaled by, so each
+    // pot's fan carries a post-rake number and a user's per-pot shares sum
+    // (to within a rounding cent) to the amount actually credited. Display
+    // only — the credited money above came exclusively from adjustedWinners.
+    const rakeRatio = totalWinnerAmount > 0 ? totalWinnings / totalWinnerAmount : 1;
+    const scaledPerPot = this.pendingPerPotAwards.map((a) => ({
+      ...a,
+      amount: Math.round(a.amount * rakeRatio * 100) / 100,
+    }));
+
     this.emit({
       type: 'WINNERS',
       winners: adjustedWinners,
       winnersByBoard: this.pendingWinnersByBoard,
+      perPotAwards: scaledPerPot,
     });
     this.handFSM.transition('settlement');
     this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake, bbjFee });
@@ -1706,13 +1740,11 @@ export class HandController {
         }
       }
     }
-    // Lower is better for lows; lexicographic on the sorted-desc rank arrays.
-    const compareLowKickers = (a: number[], b: number[]): number => {
-      for (let i = 0; i < 5; i++) {
-        if (a[i] !== b[i]) return a[i] - b[i];
-      }
-      return 0;
-    };
+    // SHOWDOWN POLISH 2026-08-25 (hygiene): the low comparator is the SAME
+    // exported function the payout path uses (PokerEngine.compareLowHands) —
+    // the previous local duplicate could have drifted from the function that
+    // actually awards the low half.
+    const compareLowKickers = compareLowHands;
 
     // Per pot index: the best hand among players already required to show.
     const bestShownHi: (EvaluatedHand | null)[] = pots.map(() => null);

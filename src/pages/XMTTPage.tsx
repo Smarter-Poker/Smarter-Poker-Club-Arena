@@ -232,22 +232,40 @@ export default function XMTTPage() {
   });
 
   // Register / Unregister
+  /**
+   * Dan 2026-08-25 (binding): one confirmation per buy-in — and this page had
+   * ZERO. It called `tournamentService.registerPlayer` directly, so an XMTT
+   * entry was a single unconfirmed tap that debited the wallet, while
+   * `registerMtt` sat destructured and unused at the top of the file.
+   *
+   * Routed through the shared hook, which owns the Sign Up card, the
+   * double-tap guard and the seat lookup. `club_id` matters here: an XMTT
+   * spans clubs, and the balance the card shows must be read against the club
+   * that actually pays for the seat, not whichever club is ambient.
+   */
   const handleRegister = async (tournamentId: string) => {
     if (!user || !clubId) return;
-    try {
-      // registerPlayer handles buy-in deduction, escrow, duplicate check, and event emission
-      await tournamentService.registerPlayer(
-        tournamentId,
-        user.id,
-        user.display_name || user.username || 'Player'
-      );
-      loadTournaments(clubId);
-      if (selectedTournament === tournamentId) loadDetail(tournamentId);
-    } catch (err: any) {
-      setActionError(safeErrorMessage(err));
-      clearTimeout(errorTimerRef.current);
-      errorTimerRef.current = setTimeout(() => setActionError(null), 5000);
+    const t = tournaments.find((x) => x.id === tournamentId);
+    if (!t) {
+      setActionError('That Tournament Is No Longer Listed');
+      return;
     }
+    await registerMtt(
+      {
+        id: t.id,
+        name: t.name,
+        // This page aliases the column as `buy_in` in its select.
+        buy_in_amount: Number((t as any).buy_in ?? (t as any).buy_in_amount ?? 0),
+        buy_in_fee: Number(t.buy_in_fee ?? 0),
+        start_time: (t as any).start_time ?? null,
+        club_id: (t as any).club_id ?? clubId,
+        is_late_registration: String(t.status).toUpperCase() === 'RUNNING',
+      },
+      () => {
+        loadTournaments(clubId);
+        if (selectedTournament === tournamentId) loadDetail(tournamentId);
+      }
+    );
   };
 
   const handleUnregister = async (tournamentId: string) => {

@@ -452,12 +452,34 @@ export class EngineStateClient {
   private handleMessage(msg: ServerMessage): void {
     switch (msg.type) {
       case 'SNAPSHOT': {
+        // SHOWDOWN POLISH 2026-08-25: the engine deliberately emits the
+        // `showdown` event BEFORE the revealing snapshot so the client can
+        // latch the reveal-order stagger before any card turns face up. But
+        // event dispatch is deferred one macrotask (see the EVENT case),
+        // while state frames used to apply synchronously — so whenever both
+        // frames landed in one tick the snapshot overtook the event and the
+        // sequenced reveal silently degraded to a simultaneous flip. If
+        // events are still pending, requeue this state frame BEHIND them:
+        // timers fire FIFO, so every earlier event gets its own render
+        // first (preserving the Task-56 one-render-per-event fix), and the
+        // snapshot renders after — server emit order, end to end.
+        if (this.pendingEvents.length > 0) {
+          setTimeout(() => this.handleMessage(msg), 0);
+          return;
+        }
         this.snapshot = msg.state;
         this.seq = msg.seq;
         this.opts.onSnapshot(this.snapshot, this.seq);
         return;
       }
       case 'DELTA': {
+        // SHOWDOWN POLISH 2026-08-25: same ordering rule as SNAPSHOT — see
+        // the comment there. Requeued BEFORE gap detection so a deferred
+        // delta is judged against the seq at its actual apply time.
+        if (this.pendingEvents.length > 0) {
+          setTimeout(() => this.handleMessage(msg), 0);
+          return;
+        }
         // If we don't have a snapshot yet, we can't apply a patch — request one.
         if (!this.snapshot) {
           this.requestResync();
@@ -508,8 +530,19 @@ export class EngineStateClient {
         // event, so every `useEffect([engineLastEvent])` watcher observes
         // every event in order. Tiny (<1ms) latency penalty, totally
         // invisible to the user — the animations now fire every hand.
+        // SHOWDOWN POLISH 2026-08-25: the deferral stays — each event still
+        // gets its own macrotask and its own React render, which is what
+        // fixed the collapsed pot_win — but the event is now TRACKED while
+        // pending, so a state frame arriving in the same tick can requeue
+        // itself behind it (see the SNAPSHOT case). Timer FIFO then plays
+        // event render(s) first and the snapshot render after: server emit
+        // order end to end, one render per event, both preserved.
         const payload = msg.payload;
+        const entry = { payload };
+        this.pendingEvents.push(entry);
         setTimeout(() => {
+          const i = this.pendingEvents.indexOf(entry);
+          if (i >= 0) this.pendingEvents.splice(i, 1);
           try {
             this.opts.onEvent(payload);
           } catch (err) {
@@ -522,6 +555,9 @@ export class EngineStateClient {
       }
     }
   }
+
+  /** SHOWDOWN POLISH 2026-08-25: events awaiting their deferred dispatch. */
+  private pendingEvents: Array<{ payload: Record<string, unknown> }> = [];
 
   private requestResync(): void {
     try {

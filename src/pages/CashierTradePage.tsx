@@ -16,16 +16,48 @@
  *             sort, and multi-select.
  *   Footer    Claim Back | Send Ticket | Send Out — pinned to the bottom.
  *
- * Money moves on the CLUB ledger (club_members.chip_balance):
- *   Send Out   → fn_transfer_chips(club, me → player)   [atomic + chip_transactions log]
- *   Claim Back → fn_admin_remove_player_chips           [SECURITY DEFINER, authz inside]
+ * ── THE MONEY PATH (Dan 2026-08-25, binding) ────────────────────────────────
+ *
+ * "IT SHOULD BE REMOVING OR ADDING TO PLAYER WALLET DIRECTLY, AND SENT FROM AND
+ *  DEPOSITING INTO AGENT WALLETS. THE CLAWBACK IS ONLY IN EFFECT FOR THE FIRST
+ *  10 MINUTES WHEN CHIPS ARE SENT, AND AGENT CAN ONLY REMOVE CHIPS IF REQUESTED
+ *  BY THE PLAYER AFTER THAT."
+ *
+ * So the AGENT WALLET (agents.agent_wallet_balance) is the source and the
+ * destination, exactly as the Club Bank Cashier already works:
+ *
+ *   Send Out   → fn_agent_wallet_send        debits the caller's agent wallet,
+ *                                            credits the recipient's player
+ *                                            wallet (or an agent's own float),
+ *                                            writes one chip_transactions row,
+ *                                            idempotent on p_op_id, stamps
+ *                                            reversible_until = now() + 10 min
+ *   Claim Back → fn_agent_wallet_claim_back  anchored on ONE originating send,
+ *                                            refused by the DATABASE's clock
+ *                                            once the ten minutes have passed
+ *   The list   → fn_agent_wallet_reversible  what is still claimable, with the
+ *                                            countdown computed server-side
+ *
+ * This page used to call fn_cashier_send_chips / fn_cashier_claim_back, which
+ * moved club_members.chip_balance ↔ club_members.chip_balance and never touched
+ * an agent wallet at all - a second, older money path beside the cashier modal's
+ * one. The send carried no idempotency key whatsoever; the claim carried a key
+ * in a convention nothing else uses and had no ten minute anchor, so an agent
+ * could pull chips off a player days later with no cash out request.
+ *
+ * AFTER THE WINDOW CLOSES there is exactly one way chips leave a player: the
+ * player's own cash out request (fn_cashout_request → approve / deny). The UI
+ * says so rather than offering a control the server would refuse.
+ *
+ * The recipient list is fn_club_cashier_members - the SAME downline edge
+ * fn_agent_wallet_send refuses on, so the list and the refusal cannot disagree.
  *
  * The classic cashier (buy-in / cash-out / mint / full history) remains at
  * ./cashier-classic and is linked from the bottom of the Trade tab.
  */
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { isClubStaff, roleLabel, roleRank, AGENT_ROLES, type ClubRole } from '../types/clubRoles';
+import { roleLabel, roleRank, type ClubRole } from '../types/clubRoles';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -35,7 +67,7 @@ import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
 import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
-import { canSeeClubBank } from '../components/wallet/walletRows';
+import { canSeeClubBank, canHoldAgentWallet } from '../components/wallet/walletRows';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import styles from './CashierTradePage.module.css';
 
@@ -58,11 +90,33 @@ interface DownlineRow {
   role: string;
   chipBalance: number;
   isHorse: boolean;
-  /** club_members.agent_id - the USER id of the agent this player sits under. */
-  agentId: string | null;
-  /** true when this player is assigned to the person looking at the screen */
+  /**
+   * How many club_members.agent_id hops below the viewer this member sits, as
+   * computed by fn_club_cashier_members. 1 is a direct assignee; 0 means the
+   * recursion never reached them, which only happens for staff (scope 'all').
+   */
+  depth: number;
+  /** true when this player is assigned DIRECTLY to the person looking. */
   isMine: boolean;
   playerNumber: string | null;
+}
+
+/**
+ * One agent wallet send still inside its ten minute window, straight off
+ * fn_agent_wallet_reversible. `seconds_left` is computed by the DATABASE, so a
+ * phone with a skewed clock cannot offer a claim the server will refuse.
+ */
+interface ReversibleSend {
+  transaction_id: string;
+  to_user_id: string;
+  to_name: string;
+  amount: number;
+  claimed_back: number;
+  remaining: number;
+  destination: string;
+  created_at: string;
+  reversible_until: string;
+  seconds_left: number;
 }
 
 // A membership row means "in this club". The column carries two words for it:
@@ -74,11 +128,12 @@ interface DownlineRow {
 // rather than one of its halves.
 const MEMBER_IN_CLUB = ['active', 'approved'];
 
-// PostgREST caps a response at 1,000 rows. A club with more members than that
-// would silently lose the tail, which on a page that MOVES CHIPS is not an
-// acceptable failure mode, so the fetch pages until it has everything.
-const PAGE = 1000;
-const MAX_MEMBERS = 10000;
+/**
+ * PostgREST caps a response at 1,000 rows, and `.in('id', [...])` with ten
+ * thousand ids is a URL no proxy will carry. The horse flag is the one field
+ * fn_club_cashier_members does not return, so it is fetched in slices.
+ */
+const PROFILE_CHUNK = 300;
 
 interface TradeRecordRow {
   id: string;
@@ -120,11 +175,26 @@ const fmt = (n: number) =>
  * Raw Postgres enums were rendered straight at the user: "peer_transfer",
  * "awaiting_payment". Title Case them, the way ROLE_LABEL does for roles.
  */
-/** crypto.randomUUID is undefined on http origins and Safari < 15.4. */
-function newSubmissionId(): string {
-  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+/**
+ * crypto.randomUUID is undefined on http origins and in Safari < 15.4.
+ *
+ * THE FALLBACK MUST STILL BE A UUID (2026-08-25). It used to be
+ * `${Date.now()}-${random}`, which was fine while the only consumer was a text
+ * idempotency key. fn_agent_wallet_send takes `p_op_id uuid`, and a non-uuid
+ * there is a 22P02 from Postgres on the one call that moves the chips - on
+ * exactly the browsers that have no randomUUID.
+ */
+function newOpId(): string {
+  try {
+    const c = globalThis.crypto as Crypto | undefined;
+    if (c?.randomUUID) return c.randomUUID();
+  } catch {
+    /* fall through to the shim */
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+    const r = (Math.random() * 16) | 0;
+    return (ch === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
 }
 
 function txLabel(value: string | null | undefined): string {
@@ -149,7 +219,13 @@ export default function CashierTradePage() {
 
   const [myRole, setMyRole] = useState<string>('player');
   const [myBalance, setMyBalance] = useState(0);
-  const [availableChips, setAvailableChips] = useState(0);
+  /**
+   * agents.agent_wallet_balance for the viewer IN THIS CLUB - the account
+   * Send Out actually spends. Null while unknown, never 0: a figure we could
+   * not read must not disable a send that is in fact funded, nor authorise one
+   * that is not. The pre-flight check below only refuses on a KNOWN shortfall.
+   */
+  const [agentWallet, setAgentWallet] = useState<number | null>(null);
   const [downline, setDownline] = useState<DownlineRow[]>([]);
   const [mineOnly, setMineOnly] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -187,7 +263,23 @@ export default function CashierTradePage() {
   const [askNote, setAskNote] = useState('');
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [recordsError, setRecordsError] = useState<string | null>(null);
-  const [amountModal, setAmountModal] = useState<'send' | 'claim' | 'ticket' | null>(null);
+  const [amountModal, setAmountModal] = useState<'send' | 'ticket' | null>(null);
+  /**
+   * CLAIM BACK IS NO LONGER AN AMOUNT AGAINST A SELECTION.
+   *
+   * It is anchored on ONE send this agent made inside the last ten minutes, so
+   * the modal lists those sends rather than asking for a number. Anything older
+   * cannot be clawed back at all - the player has to request a cash out - and
+   * the empty state says exactly that instead of offering a control the server
+   * would refuse.
+   */
+  const [claimOpen, setClaimOpen] = useState(false);
+  const [reversible, setReversible] = useState<ReversibleSend[]>([]);
+  const [reversibleLoading, setReversibleLoading] = useState(false);
+  const [reversibleError, setReversibleError] = useState<string | null>(null);
+  const [claimingId, setClaimingId] = useState<string | null>(null);
+  /** Ticks once a second so each countdown in that list stays honest. */
+  const [nowTick, setNowTick] = useState(() => Date.now());
   /**
    * Per-target failures from the last batch, rendered IN the modal. The toast
    * layer sanitises money errors (it strips the player's name off an
@@ -210,12 +302,6 @@ export default function CashierTradePage() {
   // Guards a double-submit that beats the re-render `busy` depends on.
   const busyRef = useRef(false);
   /**
-   * Identifies ONE claim submission across retries, so a request that already
-   * committed cannot be charged twice by the retry that follows a lost
-   * response. Held across failures on purpose and cleared only on full
-   * success - see runTransfers.
-   */
-  /**
    * The idempotency nonce for the batch currently being submitted.
    *
    * ONE NONCE PER INTENT (Dan 2026-08-25). It used to be minted only when null
@@ -232,6 +318,21 @@ export default function CashierTradePage() {
    * unchanged batch - which is exactly what it is for.
    */
   const submissionIdRef = useRef<string | null>(null);
+  /**
+   * ONE op_id PER TARGET, held for the life of one intent.
+   *
+   * fn_agent_wallet_send is keyed on a single `p_op_id uuid`, not on a composed
+   * text key, so a batch cannot reuse one nonce across recipients - the second
+   * recipient would match the first's row and be reported as a replay while
+   * receiving nothing. The map is minted lazily per target and CLEARED BY THE
+   * SAME EFFECT that clears submissionIdRef, so:
+   *
+   *   retry the identical batch  → same uuids → committed targets replay
+   *   change the amount or the selection → fresh uuids → a genuinely new intent
+   *
+   * This is `opIdRef` from WalletCashierModal, generalised to a batch.
+   */
+  const opIdsRef = useRef<Map<string, string>>(new Map());
   const isMounted = useRef(true);
   useEffect(() => {
     isMounted.current = true;
@@ -349,14 +450,22 @@ export default function CashierTradePage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [meRes, panelRes] = await Promise.all([
+      const [meRes, floatRes] = await Promise.all([
         supabase
           .from('club_members')
           .select('role, chip_balance')
           .eq('club_id', clubUuid)
           .eq('user_id', user.id)
           .maybeSingle(),
-        supabase.rpc('fn_club_money_panel', { p_club_id: clubUuid }),
+        // The account Send Out spends. An owner has one of these too - the
+        // Club Bank funds it, and fn_agent_wallet_send refuses every role
+        // that has not been funded, staff included.
+        supabase
+          .from('agents')
+          .select('agent_wallet_balance')
+          .eq('club_id', clubUuid)
+          .eq('user_id', user.id)
+          .maybeSingle(),
       ]);
       // Swallowing this error rendered an owner as a `player` with a 0.00
       // balance and silently flipped the downline into agent scope. A failure
@@ -364,142 +473,84 @@ export default function CashierTradePage() {
       if (meRes.error) throw meRes.error;
       const role = meRes.data?.role ? (meRes.data.role as string) : 'player';
       const bal = meRes.data?.chip_balance ? Number(meRes.data.chip_balance) : 0;
-      const panel = ((Array.isArray(panelRes.data) ? panelRes.data[0] : panelRes.data) ??
-        {}) as Record<string, unknown>;
+      // A row that does not exist is a float of zero. A row we could not READ
+      // is unknown, and stays null so the pre-flight check does not refuse a
+      // send the server would have allowed.
+      const float = floatRes.error
+        ? null
+        : floatRes.data
+          ? Number(floatRes.data.agent_wallet_balance) || 0
+          : 0;
 
-      const isStaff = isClubStaff(role);
-      const isAgent = AGENT_ROLES.includes(role as ClubRole);
-
-      let downlineIds: string[] | null = null;
-      if (isAgent && !isStaff) {
-        /**
-         * TWO SHAPES, ONE FUNCTION (Dan 2026-08-25).
-         *
-         * ca_club_my_downline exists in the repo twice: a jsonb variant
-         * returning {scoped, user_ids}, and a later TABLE variant returning one
-         * row per downline agent. The TABLE one is what is deployed, so
-         * supabase-js hands back an ARRAY - `scope.scoped` was undefined,
-         * `scope.user_ids` was undefined, and downlineIds collapsed to [].
-         * An agent then queried `.in('user_id', [self])` and saw a cashier
-         * containing only themselves; a super_agent saw the club's unassigned
-         * members, which is not their downline in either direction.
-         *
-         * The dropped error made a genuine RPC failure indistinguishable from
-         * "you have nobody", which is why it read as a data problem for so long.
-         */
-        const { data: scopeRow, error: scopeErr } = await supabase.rpc('ca_club_my_downline', {
-          p_club_id: clubUuid,
-        });
-        if (stale()) return;
-        if (scopeErr) throw scopeErr;
-        if (Array.isArray(scopeRow)) {
-          const ids = scopeRow
-            .map((r: Record<string, unknown>) => r?.agent_id ?? r?.user_id)
-            .filter((v: unknown): v is string => typeof v === 'string' && v.length > 0);
-          downlineIds = ids;
-        } else {
-          const scope = scopeRow as { scoped?: boolean; user_ids?: string[] | null } | null;
-          downlineIds = scope?.scoped === false ? null : (scope?.user_ids ?? []);
-        }
-      }
-
+      /**
+       * WHO THIS PAGE MAY TRANSACT WITH — asked in the database.
+       *
+       * This used to page club_members by hand and scope it from
+       * ca_club_my_downline, in three different ways depending on the role, with
+       * a super_agent branch that also swept up every UNASSIGNED member of the
+       * club. None of that agreed with the server: fn_agent_wallet_send refuses
+       * on fn_club_cashier_can_transact, which walks the recursive
+       * club_members.agent_id edge and nothing else. A list that offers someone
+       * the RPC will reject is a dead end nobody can diagnose from the screen.
+       *
+       * fn_club_cashier_members IS that edge: everyone for an owner, co owner or
+       * admin; the recursive downline for a super agent, agent or sub agent;
+       * nobody for a plain player. It also carries `depth`, so "Assigned To Me"
+       * is a direct hop rather than a second query for agent_id.
+       */
       const dl: Array<Record<string, unknown>> = [];
       if (role !== 'player') {
-        for (let from = 0; from < MAX_MEMBERS; from += PAGE) {
-          let q = supabase
-            .from('club_members')
-            .select('user_id, role, chip_balance, display_name, nickname, agent_id')
-            .eq('club_id', clubUuid)
-            .in('status', MEMBER_IN_CLUB)
-            .order('joined_at', { ascending: true })
-            .order('user_id', { ascending: true })
-            .range(from, from + PAGE - 1);
-
-          if (!isStaff) {
-            const effectiveDownline =
-              downlineIds !== null
-                ? downlineIds.includes(user.id)
-                  ? downlineIds
-                  : [...downlineIds, user.id]
-                : null;
-            if (role === 'super_agent' && effectiveDownline !== null) {
-              if (effectiveDownline.length > 0) {
-                q = q.or(`agent_id.is.null,user_id.in.(${effectiveDownline.join(',')})`);
-              } else {
-                q = q.is('agent_id', null);
-              }
-            } else if (isAgent && effectiveDownline !== null) {
-              if (effectiveDownline.length === 0) break;
-              q = q.in('user_id', effectiveDownline);
-            }
-          }
-
-          const { data: page, error: dlErr } = await q;
-          if (dlErr) throw dlErr;
-          if (stale()) return;
-          dl.push(...((page || []) as Array<Record<string, unknown>>));
-          if (!page || page.length < PAGE) break;
-        }
+        const { data: memberRows, error: dlErr } = await supabase.rpc('fn_club_cashier_members', {
+          p_club_id: clubUuid,
+        });
+        if (dlErr) throw dlErr;
+        if (stale()) return;
+        dl.push(...((memberRows || []) as Array<Record<string, unknown>>));
       }
 
-      const ids = (dl || []).map((r) => r.user_id as string);
-      const profMap = new Map<
-        string,
-        {
-          username?: string;
-          display_name?: string;
-          avatar_url?: string;
-          is_horse?: boolean;
-          player_number?: number;
-        }
-      >();
-      if (ids.length > 0) {
-        const { data: profs } = await supabase
+      // The horse flag is the ONE field fn_club_cashier_members does not
+      // return, and `.in('id', ids)` with a whole club in it is both a URL no
+      // proxy will carry and a response PostgREST truncates at 1,000 rows.
+      const ids = dl.map((r) => String(r.user_id));
+      const horses = new Set<string>();
+      for (let i = 0; i < ids.length; i += PROFILE_CHUNK) {
+        const slice = ids.slice(i, i + PROFILE_CHUNK);
+        const { data: profs, error: profErr } = await supabase
           .from('profiles')
-          .select(
-            'id, username, display_name, avatar_url:arena_avatar_url, player_number, is_horse'
-          )
-          .in('id', ids);
-        for (const pr of profs || []) {
-          profMap.set(pr.id as string, {
-            username: pr.username,
-            display_name: pr.display_name,
-            avatar_url: pr.avatar_url,
-            is_horse: pr.is_horse,
-            player_number: pr.player_number,
-          });
+          .select('id, is_horse')
+          .in('id', slice);
+        if (stale()) return;
+        // A horse tag is decoration; losing it must not fail the whole cashier.
+        if (profErr) {
+          reportError(profErr, 'CashierTradePage.horseFlags');
+          break;
         }
+        for (const pr of profs || []) if (pr.is_horse) horses.add(pr.id as string);
       }
 
-      const rows: DownlineRow[] = (dl || []).map((r) => {
-        const p = profMap.get(r.user_id as string) || null;
-        const agentId = (r.agent_id as string | null) ?? null;
+      const rows: DownlineRow[] = dl.map((r) => {
+        const uid = String(r.user_id);
+        const depth = Number(r.depth) || 0;
         return {
-          userId: r.user_id as string,
-          name:
-            (r.display_name as string) ||
-            (r.nickname as string) ||
-            p?.display_name ||
-            p?.username ||
-            'Player',
-          username: p?.username || '',
-          avatarUrl: p?.avatar_url || null,
+          userId: uid,
+          name: (r.name as string) || 'Player',
+          username: (r.username as string) || '',
+          avatarUrl: (r.avatar_url as string) || null,
           role: (r.role as string) || 'player',
           chipBalance: Number(r.chip_balance) || 0,
-          isHorse: Boolean(p?.is_horse),
-          agentId,
-          isMine: agentId === user.id,
-          playerNumber: p?.player_number ? String(p.player_number) : null,
+          isHorse: horses.has(uid),
+          depth,
+          // depth 1 is a DIRECT assignee. Deeper rows belong to an agent
+          // beneath this one, and are still transactable - just not "mine".
+          isMine: depth === 1,
+          playerNumber: (r.player_number as string) || null,
         };
       });
 
       if (!isMounted.current || stale()) return;
       setMyRole(role);
       setMyBalance(bal);
-      // "Available Chips": for owners the club bank (mintable/distributable
-      // pool); for agents their own sendable balance is the constraint, so
-      // show the same number the strip's first box shows for clarity.
-      setAvailableChips(isStaff ? Number(panel.club_treasury) || 0 : bal);
+      setAgentWallet(float);
       setDownline(rows);
       setSelected(new Set());
     } catch (e) {
@@ -572,10 +623,16 @@ export default function CashierTradePage() {
     // whole load, so club B's header sat above club A's totals with A's members
     // still in the list - on the screen that moves the chips.
     setMyBalance(0);
-    setAvailableChips(0);
+    setAgentWallet(null);
     setDownline([]);
     setSelected(new Set());
     setTransferFailures([]);
+    // The claimable list belongs to the club it was read from. Leaving it up
+    // would offer a claim against a send made in a DIFFERENT club, which the
+    // server refuses - after the user has already tapped it.
+    setReversible([]);
+    setReversibleError(null);
+    setClaimOpen(false);
     // Was NOT reset. The checkbox is disabled when mineCount is 0, so switching
     // to a club where you have no assigned players left the filter stuck ON
     // with the only control that clears it greyed out - reload was the way out.
@@ -884,29 +941,19 @@ export default function CashierTradePage() {
   const picked = useMemo(() => list.filter((r) => selected.has(r.userId)), [list, selected]);
 
   /**
-   * What Claim Back would ACTUALLY collect. runTransfers clamps per player
-   * (`Math.min(value, t.chipBalance)`), so typing 500 against someone holding
-   * 40 collects 40 - and the receipt said "Claimed 500.00 Back". The page holds
-   * every balance it needs to show the truth BEFORE the tap.
-   */
-  /**
    * A changed amount or a changed selection is a NEW intent, so the retained
-   * nonce must not carry into it. Retry the same batch unchanged and the id
-   * survives; touch either input and the next submission mints a fresh one.
+   * nonces must not carry into it. Retry the same batch unchanged and the ids
+   * survive; touch either input and the next submission mints fresh ones.
    */
   useEffect(() => {
     submissionIdRef.current = null;
+    opIdsRef.current = new Map();
   }, [amount, selected, clubUuid]);
 
   /** Chips the selected players are holding right now. */
   const pickedHeld = useMemo(
     () => picked.reduce((sum, r) => sum + (Number(r.chipBalance) || 0), 0),
     [picked]
-  );
-
-  const claimableTotal = useMemo(
-    () => picked.reduce((sum, r) => sum + Math.min(Number(amount) || 0, r.chipBalance), 0),
-    [picked, amount]
   );
 
   const toggleSelect = (id: string) =>
@@ -918,7 +965,7 @@ export default function CashierTradePage() {
     });
 
   // ── Money actions ──────────────────────────────────────────────────────────
-  const runTransfers = async (kind: 'send' | 'claim' | 'ticket') => {
+  const runTransfers = async (kind: 'send' | 'ticket') => {
     if (!user?.id || !clubUuid) return;
     const raw = Number(amount);
     if (!Number.isFinite(raw) || raw <= 0) {
@@ -952,15 +999,27 @@ export default function CashierTradePage() {
       setAmountModal(null);
       return;
     }
-    // GUARD AGAINST THE POT THIS ACTUALLY SPENDS. fn_cashier_send_chips debits
-    // club_members.chip_balance of auth.uid() for EVERY role - it never touches
-    // clubs.chip_treasury. `availableChips` is the club bank for staff, so an
-    // owner with a large treasury and a small personal balance sailed past this
-    // check and collected N server refusals instead.
-    if ((kind === 'send' || kind === 'ticket') && value * targets.length > myBalance) {
+    /**
+     * GUARD AGAINST THE POT EACH ACTION ACTUALLY SPENDS. These are two
+     * different accounts and quoting the wrong one is how a user is told they
+     * have money this action cannot reach:
+     *
+     *   Send Out    → agents.agent_wallet_balance  (fn_agent_wallet_send)
+     *   Send Ticket → club_members.chip_balance    (fn_issue_tournament_ticket)
+     *
+     * `availableChips` is the CLUB BANK for staff and is deliberately not used
+     * here: an owner with a large treasury and an unfunded agent wallet sailed
+     * past the old check and collected N server refusals instead.
+     */
+    const total = value * targets.length;
+    if (kind === 'send' && agentWallet !== null && total > agentWallet) {
       toast?.error?.(
-        `Insufficient Chips: Sending ${fmt(value * targets.length)} Needs More Than ${fmt(myBalance)}`
+        `Insufficient Chips: Sending ${fmt(total)} Needs More Than Your Agent Wallet Holds, ${fmt(agentWallet)}`
       );
+      return;
+    }
+    if (kind === 'ticket' && total > myBalance) {
+      toast?.error?.(`Insufficient Chips: Sending ${fmt(total)} Needs More Than ${fmt(myBalance)}`);
       return;
     }
     if (busyRef.current) return; // a fast double-tap must not send twice
@@ -983,39 +1042,56 @@ export default function CashierTradePage() {
      * that is a genuinely new intent and must be allowed through.
      */
     if (!submissionIdRef.current) {
-      submissionIdRef.current = newSubmissionId();
+      submissionIdRef.current = newOpId();
     }
     const submissionId = submissionIdRef.current;
+    /** The op_id for one target, minted once and reused by every retry. */
+    const opIdFor = (userId: string) => {
+      const held = opIdsRef.current.get(userId);
+      if (held) return held;
+      const fresh = newOpId();
+      opIdsRef.current.set(userId, fresh);
+      return fresh;
+    };
     let ok = 0;
-    let skipped = 0;
     const failed: Array<{ userId: string; name: string; message: string }> = [];
     try {
       for (const t of targets) {
         try {
           if (kind === 'send') {
-            // fn_cashier_send_chips (migration 20260821): sender is always
-            // auth.uid() server-side; owner/admin -> anyone, agents -> their
-            // own downline only. Moves club_members.chip_balance — the ledger
-            // that buys into games.
-            const { data, error } = await supabase.rpc('fn_cashier_send_chips', {
+            /**
+             * THE AGENT WALLET IS THE SOURCE (Dan 2026-08-25).
+             *
+             * fn_agent_wallet_send debits agents.agent_wallet_balance for
+             * auth.uid(), credits the recipient, writes ONE chip_transactions
+             * row and stamps reversible_until ten minutes out. It refuses a
+             * recipient outside the caller's downline BEFORE any money moves,
+             * on the same fn_club_cashier_can_transact the member list is built
+             * from.
+             *
+             * `p_destination` follows the RECIPIENT's role: chips to a player
+             * land in the player wallet they buy in with; chips to a sub agent
+             * land in the float they distribute from, which is the account
+             * their own Send Out spends.
+             */
+            const { data, error } = await supabase.rpc('fn_agent_wallet_send', {
               p_club_id: clubUuid,
               p_to_user_id: t.userId,
               p_amount: value,
-              p_reason: `Cashier send out to ${t.name}`,
-              // Scoped exactly like the claim key below: club, submission,
-              // target, amount. Migration 20260825300000 gave this function the
-              // same replay guard Claim Back has had since 2026-08-24 - until
-              // then a send that committed and lost its response was charged
-              // again by the retry, which is the whole reason the submission id
-              // survives a failure.
-              p_idempotency_key: `send:${clubUuid}:${submissionId}:${t.userId}:${value}`,
+              p_destination: canHoldAgentWallet(t.role) ? 'agent_wallet' : 'player_wallet',
+              p_reason: `Cashier Send Out To ${t.name}`,
+              p_op_id: opIdFor(t.userId),
             });
             if (error) throw error;
-            const res = data as { success?: boolean; error?: string } | null;
-            if (res && res.success === false) throw new Error(res.error || 'refused');
-          } else if (kind === 'ticket') {
+            const res = (Array.isArray(data) ? data[0] : data) as {
+              success?: boolean;
+              error?: string;
+            } | null;
+            if (!res?.success) throw new Error(res?.error || 'refused');
+          } else {
             // Tournament ticket: the value is ESCROWED off the issuer now and
-            // held on the ticket until the player redeems it.
+            // held on the ticket until the player redeems it. This one still
+            // spends club_members.chip_balance - a ticket is not agent float.
             const { data, error } = await supabase.rpc('fn_issue_tournament_ticket', {
               p_club_id: clubUuid,
               p_holder_id: t.userId,
@@ -1029,36 +1105,6 @@ export default function CashierTradePage() {
             if (error) throw error;
             const res = data as { success?: boolean; error?: string } | null;
             if (res && res.success === false) throw new Error(res.error || 'refused');
-          } else {
-            const claim = Math.min(value, t.chipBalance);
-            // Nothing to take back. Counted, so the summary can say so instead
-            // of closing the modal in silence and leaving the user guessing.
-            if (claim <= 0) {
-              skipped++;
-              continue;
-            }
-            // fn_cashier_claim_back (migration 20260821): conserved player ->
-            // caller move on the club ledger. NOT fn_admin_remove_player_chips,
-            // which refuses agents and strands the chips in clubs.chip_pool.
-            const { data, error } = await supabase.rpc('fn_cashier_claim_back', {
-              p_club_id: clubUuid,
-              p_from_user_id: t.userId,
-              p_amount: claim,
-              p_reason: 'Cashier claim back',
-              // Per target AND per amount: retrying this batch replays, while
-              // claiming a different amount from the same player is a new
-              // intent and must go through. See submissionIdRef above.
-              // CLUB-SCOPED (Dan 2026-08-25). This was `claim:<submission>:<user>:<amount>`
-              // with no club in it, and the unique index is GLOBAL on
-              // chip_transactions - so a retained submission id claiming the
-              // same amount from the same player in a DIFFERENT club replayed
-              // the first club's outcome and moved nothing, while reporting
-              // success. Chips are per club; the key has to be too.
-              p_idempotency_key: `claim:${clubUuid}:${submissionId}:${t.userId}:${claim}`,
-            });
-            if (error) throw error;
-            const res = data as { success?: boolean; error?: string } | null;
-            if (res && res.success === false) throw new Error(res.error || 'refused');
           }
           ok++;
         } catch (e) {
@@ -1067,7 +1113,7 @@ export default function CashierTradePage() {
           // rateLimit/server categories entirely, and rewrites a funds refusal
           // to a generic sentence that loses the player's NAME - so on a
           // dropped connection every per-target toast vanished and the summary
-          // below had no branch for "nothing succeeded and nothing skipped".
+          // below had no branch for "nothing succeeded at all".
           // The user was left not knowing whether ten transfers had happened.
           // Keyed on userId, not name: `name` falls back to 'Player' for anyone
           // with no display name, so two such recipients failing in one batch
@@ -1085,11 +1131,14 @@ export default function CashierTradePage() {
       // and both Confirm and Cancel are disabled on it - the modal became a
       // trap that only a page reload could escape.
       busyRef.current = false;
-      // Retire the submission id ONLY when every target went through. If any
-      // one of them failed, keeping it is the whole point: the retry carries
-      // the same key, so whichever targets already committed replay instead of
-      // being charged a second time.
-      if (skipped + ok === targets.length) submissionIdRef.current = null;
+      // Retire the nonces ONLY when every target went through. If any one of
+      // them failed, keeping them is the whole point: the retry carries the
+      // same op_id per target, so whichever targets already committed replay
+      // instead of being charged a second time.
+      if (ok === targets.length) {
+        submissionIdRef.current = null;
+        opIdsRef.current = new Map();
+      }
       if (isMounted.current) {
         setBusy(false);
         setTransferFailures(failed);
@@ -1110,18 +1159,12 @@ export default function CashierTradePage() {
       const who = targets.length === 1 ? targets[0].name : `${ok} Player${ok === 1 ? '' : 's'}`;
       toast?.success?.(
         kind === 'send'
-          ? `Sent ${fmt(value)} To ${who}`
-          : kind === 'ticket'
-            ? `Issued ${ok} Ticket${ok === 1 ? '' : 's'} Worth ${fmt(value)} Each To ${who}`
-            : `Claimed ${fmt(value)} Back From ${who}`
+          ? `Sent ${fmt(value)} To ${who} From Your Agent Wallet`
+          : `Issued ${ok} Ticket${ok === 1 ? '' : 's'} Worth ${fmt(value)} Each To ${who}`
       );
       // The bus event is already wired to reload this page, so calling
       // loadClub() as well fired two identical loads at once.
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade', userId: user.id });
-    } else if (skipped > 0 && failed.length === 0) {
-      toast?.info?.(
-        `Nothing To Claim Back: ${skipped} Player${skipped === 1 ? ' Has' : 's Have'} No Chips`
-      );
     }
     if (failed.length > 0) {
       // The one branch that did not exist. A batch where every target failed
@@ -1135,6 +1178,96 @@ export default function CashierTradePage() {
   };
 
   /**
+   * ── CLAIM BACK: THE TEN MINUTE MISTAKE ERASER, AND NOTHING WIDER ──────────
+   *
+   * Dan 2026-08-25: "THE CLAWBACK IS ONLY IN EFFECT FOR THE FIRST 10 MINUTES
+   * WHEN CHIPS ARE SENT, AND AGENT CAN ONLY REMOVE CHIPS IF REQUESTED BY THE
+   * PLAYER AFTER THAT."
+   *
+   * So this is not "type an amount against a selection" any more. It is
+   * anchored on ONE send this agent made, and the list of what is still
+   * claimable is computed by the database (fn_agent_wallet_reversible) rather
+   * than from created_at on the client - a phone with a skewed clock must not
+   * offer a claim the server will refuse.
+   */
+  const loadReversible = useCallback(async () => {
+    if (!clubUuid) return;
+    setReversibleLoading(true);
+    setReversibleError(null);
+    const { data, error } = await supabase.rpc('fn_agent_wallet_reversible', {
+      p_club_id: clubUuid,
+    });
+    if (!isMounted.current) return;
+    if (error) {
+      reportError(error, 'CashierTradePage.loadReversible');
+      // "Nothing Is Claimable" is a different statement from "we could not read
+      // it", and on a screen about taking money back the difference matters.
+      setReversible([]);
+      setReversibleError('Could Not Read Your Recent Sends.');
+    } else {
+      setReversible(((data || []) as ReversibleSend[]).map((r) => ({ ...r })));
+    }
+    setReversibleLoading(false);
+  }, [clubUuid]);
+
+  const claimBack = async (row: ReversibleSend) => {
+    if (!clubUuid || claimingId || busyRef.current) return;
+    busyRef.current = true;
+    setClaimingId(row.transaction_id);
+    try {
+      const { data, error } = await supabase.rpc('fn_agent_wallet_claim_back', {
+        p_club_id: clubUuid,
+        p_transaction_id: row.transaction_id,
+        p_amount: row.remaining,
+        p_reason: 'Claimed Back From The Trade Grid',
+        // A fresh op id per attempt, exactly as WalletCashierModal does: the
+        // claim is already anchored on one transaction, and the server records
+        // what has been taken off it, so a replay cannot double-collect.
+        p_op_id: newOpId(),
+      });
+      if (error) throw error;
+      const res = (Array.isArray(data) ? data[0] : data) as {
+        success?: boolean;
+        error?: string;
+        replayed?: boolean;
+      } | null;
+      if (!res?.success) throw new Error(res?.error || 'Those Chips Could Not Be Claimed Back');
+      toast?.success?.(
+        res.replayed
+          ? `That Claim Had Already Gone Through. ${fmt(row.remaining)} Chips Are Back In Your Agent Wallet`
+          : `Claimed ${fmt(row.remaining)} Back From ${row.to_name}`
+      );
+      masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade_claim', userId: user?.id || '' });
+      void loadReversible();
+    } catch (e) {
+      reportError(e, 'CashierTradePage.claimBack');
+      toast?.error?.((e as Error).message || 'Claim Back Failed');
+    } finally {
+      busyRef.current = false;
+      if (isMounted.current) setClaimingId(null);
+    }
+  };
+
+  // The claimable list, and a one second tick so each countdown is the truth
+  // rather than the value it had when the modal opened.
+  useEffect(() => {
+    if (!claimOpen || !clubUuid) return;
+    void loadReversible();
+    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [claimOpen, clubUuid, loadReversible]);
+
+  /**
+   * Rows whose window has run out WHILE THE MODAL IS OPEN. The server would
+   * refuse them, so the button goes and the sentence explaining why takes its
+   * place rather than leaving a control that fails on tap.
+   */
+  const stillClaimable = useMemo(
+    () => reversible.filter((r) => new Date(r.reversible_until).getTime() > nowTick),
+    [reversible, nowTick]
+  );
+
+  /**
    * MODAL KEYBOARD AND SCROLL (Dan 2026-08-25).
    *
    * Both modals were plain divs: no role, no aria-modal, and no Escape, so a
@@ -1146,7 +1279,7 @@ export default function CashierTradePage() {
    * be an escape hatch out of an in-flight batch.
    */
   useEffect(() => {
-    if (!amountModal && !askOpen) return;
+    if (!amountModal && !askOpen && !claimOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (amountModal && !busy) {
@@ -1154,6 +1287,7 @@ export default function CashierTradePage() {
         setTransferFailures([]);
       }
       if (askOpen && !asking) setAskOpen(false);
+      if (claimOpen && !claimingId) setClaimOpen(false);
     };
     document.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
@@ -1162,7 +1296,7 @@ export default function CashierTradePage() {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [amountModal, askOpen, busy, asking]);
+  }, [amountModal, askOpen, claimOpen, busy, asking, claimingId]);
 
   const initial = (name: string) => (name || '?').charAt(0).toUpperCase();
 
@@ -1263,25 +1397,17 @@ export default function CashierTradePage() {
               <span className={styles.stripLabel}>Agency Players Balance</span>
               <span className={styles.stripValue}>{fmt(agencyBalance)}</span>
             </div>
-            {/* For a non-staff role `availableChips` IS `myBalance` (see loadClub),
-                so an agent read the same figure twice under two labels, with no
-                "+" on the second, which looks like a rendering fault. Give them
-                the number they cannot get anywhere else instead: what their own
-                players are holding. Dan 2026-08-25. */}
+            {/* THE ACCOUNT THIS PAGE SPENDS (Dan 2026-08-25).
+                Send Out debits agents.agent_wallet_balance for every role, so
+                this cell shows THAT figure rather than the club treasury - an
+                owner with a large bank and an unfunded float could otherwise
+                read a number this action cannot reach. The "+" opens the Club
+                Bank Cashier, which is where a float is funded from, and only
+                for the four roles that may stand at it. */}
             <div className={styles.stripCell}>
-              <span className={styles.stripLabel}>
-                {isClubStaff(myRole) ? 'Available Chips' : 'Assigned To Me'}
-              </span>
+              <span className={styles.stripLabel}>Agent Wallet</span>
               <span className={styles.stripValue}>
-                {isClubStaff(myRole)
-                  ? fmt(availableChips)
-                  : `${mineCount.toLocaleString()} - ${fmt(mineTotal)}`}
-                {/* Dan 2026-08-23: this used to open the Chip Mint directly.
-                    Minting is a CLUB BANK action now - it exists only for a
-                    standalone club and only inside the cashier that holds the
-                    account it credits. So the "+" opens the Club Bank Cashier,
-                    and only for the four roles that may stand at it. An agent
-                    or a sub agent sees no "+" at all. */}
+                {agentWallet === null ? '--' : fmt(agentWallet)}
                 {canSeeClubBank(myRole) && (
                   <button
                     className={styles.plusBtn}
@@ -1317,7 +1443,11 @@ export default function CashierTradePage() {
                 onChange={(e) => setMineOnly(e.target.checked)}
                 disabled={mineCount === 0}
               />
-              Assigned To Me ({mineCount})
+              {/* The count AND what they hold. The total used to live in the
+                  balance strip, which now shows the account this page spends;
+                  it is the number that decides whether a claim is worth making,
+                  so it stays beside the filter that isolates those players. */}
+              Assigned To Me ({mineCount.toLocaleString()} &middot; {fmt(mineTotal)})
             </label>
             <label className={styles.groupToggle}>
               <input
@@ -1456,10 +1586,16 @@ export default function CashierTradePage() {
 
           {/* Footer actions — pinned */}
           <div className={styles.footer}>
+            {/* NOT GATED ON THE SELECTION any more. A claim back is anchored on
+                a SEND, not on a player, so the modal lists this agent's own
+                sends that are still inside their ten minute window - and says
+                so plainly when there are none. Gating it on a selection would
+                hide the only control that can undo a mistake behind picking the
+                player you have just realised you sent to by accident. */}
             <button
               className={styles.footerBtn}
-              disabled={selected.size === 0 || busy}
-              onClick={() => setAmountModal('claim')}
+              disabled={busy || claimingId !== null}
+              onClick={() => setClaimOpen(true)}
             >
               Claim Back
             </button>
@@ -1706,12 +1842,8 @@ export default function CashierTradePage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className={styles.modalTitle} id="cashier-amount-title">
-              {amountModal === 'send'
-                ? 'Send Out'
-                : amountModal === 'ticket'
-                  ? 'Send Ticket'
-                  : 'Claim Back'}{' '}
-              &middot; {picked.length.toLocaleString()} Player{picked.length === 1 ? '' : 's'}
+              {amountModal === 'send' ? 'Send Out' : 'Send Ticket'} &middot;{' '}
+              {picked.length.toLocaleString()} Player{picked.length === 1 ? '' : 's'}
             </div>
             <input
               type="number"
@@ -1725,42 +1857,29 @@ export default function CashierTradePage() {
                 if (transferFailures.length) setTransferFailures([]);
               }}
               placeholder={
-                amountModal === 'claim'
-                  ? 'Amount per player (max = balance)'
-                  : amountModal === 'ticket'
-                    ? 'Ticket value per player'
-                    : 'Amount per player'
+                amountModal === 'ticket' ? 'Ticket value per player' : 'Amount per player'
               }
               autoFocus
             />
-            {/* WHO, AND HOW MUCH EACH (Dan 2026-08-25).
-                The modal said "Claim Back - 3 Players" and never named them; on
-                a 375px screen the selection has scrolled out of view and the
-                user is one tap from moving real money to a set they cannot see.
-                And Claim Back CLAMPS per player, so typing 500 against someone
-                holding 40 collects 40 - which the old receipt then reported as
-                "Claimed 500.00 Back". Every number here is already on the
-                client; this is a preview of the actual outcome. */}
+            {/* WHO, AND WHERE IT LANDS (Dan 2026-08-25).
+                The modal named a count and never the people; on a 375px screen
+                the selection has scrolled out of view and the user is one tap
+                from moving real money to a set they cannot see. The wallet is
+                named too, because a send to a sub agent funds the float they
+                distribute from rather than a balance they can sit down with. */}
             {picked.length > 0 && (
               <div className={styles.modalTargets}>
                 {picked.map((r) => (
                   <div className={styles.modalTargetRow} key={r.userId}>
-                    <span>{r.name}</span>
                     <span>
-                      {amountModal === 'claim'
-                        ? fmt(Math.min(Number(amount) || 0, r.chipBalance))
-                        : fmt(Number(amount) || 0)}
+                      {r.name}
+                      {amountModal === 'send' && canHoldAgentWallet(r.role)
+                        ? ' (Agent Wallet)'
+                        : ''}
                     </span>
+                    <span>{fmt(Number(amount) || 0)}</span>
                   </div>
                 ))}
-              </div>
-            )}
-            {amountModal === 'claim' && picked.length > 0 && (
-              <div className={styles.modalHint}>
-                Total To Collect: {fmt(claimableTotal)}
-                {claimableTotal < (Number(amount) || 0) * picked.length
-                  ? ' - Capped By What Each Player Actually Holds'
-                  : ''}
               </div>
             )}
             {amountModal === 'ticket' && (
@@ -1769,14 +1888,20 @@ export default function CashierTradePage() {
                 Ticket To Get The Chips Back.
               </div>
             )}
-            {(amountModal === 'send' || amountModal === 'ticket') && (
+            <div className={styles.modalHint}>
+              Total: {fmt((Number(amount) || 0) * picked.length)} &middot;{' '}
+              {/* THE ACCOUNT EACH ACTION SPENDS. Send Out debits the agent
+                  wallet; a ticket escrows the caller's own chip balance. They
+                  are different accounts and quoting the wrong one tells the
+                  user they have money this action cannot reach. */}
+              {amountModal === 'send'
+                ? `Your Agent Wallet: ${agentWallet === null ? '--' : fmt(agentWallet)}`
+                : `Your Chips: ${fmt(myBalance)}`}
+            </div>
+            {amountModal === 'send' && (
               <div className={styles.modalHint}>
-                Total: {fmt((Number(amount) || 0) * picked.length)}{' '}
-                {/* YOUR balance, not the club bank. Send Out debits
-                    club_members.chip_balance of the caller for every role, so
-                    quoting the treasury here told an owner they could spend
-                    money this action cannot reach. */}
-                &middot; Your Chips: {fmt(myBalance)}
+                You Can Claim These Chips Back For Ten Minutes. After That The Player Must Request A
+                Cash Out.
               </div>
             )}
             {transferFailures.length > 0 && (
@@ -1808,6 +1933,94 @@ export default function CashierTradePage() {
                 onClick={() => runTransfers(amountModal)}
               >
                 {busy ? 'Working...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CLAIM BACK — anchored on a send, bounded by the database's clock.
+          Dan 2026-08-25: "THE CLAWBACK IS ONLY IN EFFECT FOR THE FIRST 10
+          MINUTES WHEN CHIPS ARE SENT, AND AGENT CAN ONLY REMOVE CHIPS IF
+          REQUESTED BY THE PLAYER AFTER THAT." */}
+      {claimOpen && (
+        <div
+          className={styles.modalOverlay}
+          onClick={() => {
+            if (claimingId) return;
+            setClaimOpen(false);
+          }}
+        >
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cashier-claim-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={styles.modalTitle} id="cashier-claim-title">
+              Claim Back
+            </div>
+            <div className={styles.modalHint}>
+              You Can Take Back A Send For Ten Minutes. After That The Only Way Chips Leave A Player
+              Is Their Own Cash Out Request.
+            </div>
+            {reversibleLoading && <div className={styles.empty}>Reading Your Recent Sends...</div>}
+            {!reversibleLoading && reversibleError && (
+              <div className={styles.empty} role="alert">
+                {reversibleError}{' '}
+                <button
+                  type="button"
+                  className={styles.retryBtn}
+                  onClick={() => void loadReversible()}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+            {!reversibleLoading && !reversibleError && stillClaimable.length === 0 && (
+              <div className={styles.empty}>
+                Nothing Is Still Inside Its Ten Minute Window. Ask The Player To Request A Cash Out.
+              </div>
+            )}
+            {stillClaimable.length > 0 && (
+              <div className={styles.claimList}>
+                {stillClaimable.map((row) => {
+                  // The countdown is the DATABASE's deadline, re-read against
+                  // the local tick only so the number moves. The decision is
+                  // never the phone's: fn_agent_wallet_claim_back re-checks
+                  // reversible_until and refuses a late claim outright.
+                  const left = Math.max(
+                    0,
+                    Math.ceil((new Date(row.reversible_until).getTime() - nowTick) / 1000)
+                  );
+                  const mm = Math.floor(left / 60);
+                  const ss = String(left % 60).padStart(2, '0');
+                  return (
+                    <div className={styles.claimRow} key={row.transaction_id}>
+                      <div className={styles.rowInfo}>
+                        <span className={styles.rowName}>{row.to_name}</span>
+                        <span className={styles.rowSub}>
+                          {row.destination === 'agent_wallet' ? 'Agent Wallet' : 'Player Wallet'}{' '}
+                          &middot; {mm}:{ss} Left
+                        </span>
+                      </div>
+                      <span className={styles.rowBalance}>{fmt(row.remaining)}</span>
+                      <button
+                        className={`${styles.reqBtn} ${styles.reqBtnGo}`}
+                        disabled={claimingId !== null}
+                        onClick={() => void claimBack(row)}
+                      >
+                        {claimingId === row.transaction_id ? 'Working...' : 'Claim Back'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className={styles.modalActions}>
+              <button disabled={claimingId !== null} onClick={() => setClaimOpen(false)}>
+                Close
               </button>
             </div>
           </div>

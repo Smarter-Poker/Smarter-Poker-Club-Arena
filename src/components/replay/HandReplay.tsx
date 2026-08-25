@@ -32,6 +32,14 @@ interface HandPlayer {
   final_hand?: string; // "Two Pair", "One Pair", etc.
   result: number; // +/- chips
   is_winner: boolean;
+  /** SHOWDOWN POLISH 2026-08-25: the persisted reveal record (see
+      HandHistoryService.HandPlayer.showdown_reveal). */
+  showdown_reveal?: {
+    reveal_order: number;
+    mucked: boolean;
+    hand_name?: string;
+    hand_description?: string;
+  };
 }
 
 interface HandData {
@@ -188,6 +196,7 @@ export default function HandReplay({
               final_hand: p.final_hand,
               result: p.result,
               is_winner: p.is_winner,
+              showdown_reveal: p.showdown_reveal,
             })),
             actions: data.actions.map((a) => ({
               player_id: a.player_id,
@@ -393,66 +402,90 @@ export default function HandReplay({
 
       {/* Players Table */}
       <div className="players-table">
-        {handData.players.map((player) => (
-          <div key={player.user_id} className={`player-row ${player.is_winner ? 'winner' : ''}`}>
-            {/* Name & Position */}
-            <div className="player-info">
-              <span className="player-name">{player.username}</span>
-              <span
-                className="player-position"
-                style={{ backgroundColor: getPositionColor(player.position) }}
-              >
-                {player.position}
-              </span>
-            </div>
+        {/* SHOWDOWN POLISH 2026-08-25: when the reveal record exists, list
+            the showdown participants in the order the table revealed them —
+            aggressor first, then clockwise — with everyone else after. */}
+        {[...handData.players]
+          .sort((a, b) => {
+            const ao = a.showdown_reveal?.reveal_order ?? 99;
+            const bo = b.showdown_reveal?.reveal_order ?? 99;
+            return ao - bo || a.seat - b.seat;
+          })
+          .map((player) => (
+            <div key={player.user_id} className={`player-row ${player.is_winner ? 'winner' : ''}`}>
+              {/* Name & Position */}
+              <div className="player-info">
+                <span className="player-name">{player.username}</span>
+                <span
+                  className="player-position"
+                  style={{ backgroundColor: getPositionColor(player.position) }}
+                >
+                  {player.position}
+                </span>
+              </div>
 
-            {/* Hole Cards */}
-            <div className="player-hole-cards">
-              {player.hole_cards.length > 0 ? (
-                player.hole_cards.map((card, idx) => (
-                  <div key={idx} className="card">
-                    <CardImage card={toCardImage(card)} size="xs" />
-                  </div>
-                ))
-              ) : (
-                <>
-                  <div className="card back" />
-                  <div className="card back" />
-                </>
-              )}
-            </div>
+              {/* Hole Cards */}
+              <div className="player-hole-cards">
+                {player.hole_cards.length > 0 ? (
+                  player.hole_cards.map((card, idx) => (
+                    <div key={idx} className="card">
+                      <CardImage card={toCardImage(card)} size="xs" />
+                    </div>
+                  ))
+                ) : (
+                  <>
+                    <div className="card back" />
+                    <div className="card back" />
+                  </>
+                )}
+              </div>
 
-            {/* Hand Ranking (if shown) */}
-            {player.final_hand && <div className="player-hand-ranking">{player.final_hand}</div>}
-
-            {/* Community Cards (repeated per row for visual) */}
-            <div className="community-cards-row">
-              {getVisibleCommunityCards().map((card, idx) => (
-                <div key={idx} className="card small">
-                  <CardImage card={toCardImage(card)} size="xs" />
+              {/* Hand Ranking (if shown) — SHOWDOWN POLISH 2026-08-25: prefer
+                the persisted reveal record (name + description), fall back to
+                the winner's hand name; a mucked participant reads MUCKED, with
+                no hand identity, exactly as the table showed it. */}
+              {player.showdown_reveal?.mucked ? (
+                <div className="player-hand-ranking player-hand-ranking--mucked">Mucked</div>
+              ) : player.showdown_reveal?.hand_name || player.final_hand ? (
+                <div className="player-hand-ranking">
+                  {player.showdown_reveal?.hand_name || player.final_hand}
+                  {player.showdown_reveal?.hand_description && (
+                    <span className="player-hand-description">
+                      {' '}
+                      {player.showdown_reveal.hand_description}
+                    </span>
+                  )}
                 </div>
-              ))}
-            </div>
-            {/* Round 2 (double board): board 2 under board 1, same street slice */}
-            {(handData.community_cards2?.length ?? 0) > 0 && (
+              ) : null}
+
+              {/* Community Cards (repeated per row for visual) */}
               <div className="community-cards-row">
-                {sliceForStep(handData.community_cards2!).map((card, idx) => (
-                  <div key={`b2-${idx}`} className="card small">
+                {getVisibleCommunityCards().map((card, idx) => (
+                  <div key={idx} className="card small">
                     <CardImage card={toCardImage(card)} size="xs" />
                   </div>
                 ))}
               </div>
-            )}
+              {/* Round 2 (double board): board 2 under board 1, same street slice */}
+              {(handData.community_cards2?.length ?? 0) > 0 && (
+                <div className="community-cards-row">
+                  {sliceForStep(handData.community_cards2!).map((card, idx) => (
+                    <div key={`b2-${idx}`} className="card small">
+                      <CardImage card={toCardImage(card)} size="xs" />
+                    </div>
+                  ))}
+                </div>
+              )}
 
-            {/* Result */}
-            <div className={`player-result ${player.result >= 0 ? 'positive' : 'negative'}`}>
-              {player.result >= 0 ? '+' : ''}
-              {player.result.toLocaleString()}
-              <br />
-              <span className="result-label">Main Pot</span>
+              {/* Result */}
+              <div className={`player-result ${player.result >= 0 ? 'positive' : 'negative'}`}>
+                {player.result >= 0 ? '+' : ''}
+                {player.result.toLocaleString()}
+                <br />
+                <span className="result-label">Main Pot</span>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
       </div>
 
       {/* Playback Controls */}

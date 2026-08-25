@@ -32,6 +32,16 @@ export interface RegisterTournamentParams {
   start_time?: string | null;
   /** True when registering after the off, so the card says Late Register. */
   is_late_registration?: boolean;
+  /**
+   * Which club's chips pay for this seat.
+   *
+   * 2026-08-25 audit: without it the Sign Up card read the balance of whatever
+   * club the player last looked at (`getPlayerBalance` defaults to the ambient
+   * `currentClubId`), so a buy-in made from the GLOBAL lobby, an XMTT or a
+   * union game could show the wrong wallet — and, worse, DISABLE Confirm for a
+   * player who was funded in the club that would actually be charged.
+   */
+  club_id?: string | null;
 }
 
 export function useTournamentRegistration() {
@@ -97,6 +107,7 @@ export function useTournamentRegistration() {
         isMysteryBounty: t.is_mystery_bounty,
         startTime: t.start_time ?? null,
         userId: currentUserId,
+        clubId: t.club_id ?? null,
         isLateRegistration: t.is_late_registration,
       });
       if (!confirmed) {

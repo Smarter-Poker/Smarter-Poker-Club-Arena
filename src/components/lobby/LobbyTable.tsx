@@ -99,6 +99,10 @@ export interface LobbyRowContext {
   onJoinTable?: (e: LobbyEntry) => void;
   onViewTable?: (e: LobbyEntry) => void;
   onToggleFavorite?: (tableId: string, next: boolean) => void;
+  /* A full cash table cannot be joined, so its primary action is the
+     waitlist. Without this the card offered Join Table, which could only
+     ever fail, while the panel behind it offered the waitlist that works. */
+  onWaitlistToggle?: (tableId: string, joining: boolean) => void;
   /* True only when the Reserve Pool can actually pay the top Spin multiplier
      at this club right now. Undefined means "not known yet", which renders as
      no badge - an absent boast rather than a wrong one. Filled in by
@@ -770,11 +774,17 @@ const COL_ACTIONS: ColumnDef = {
       if (which === 'register') ctx.onRegister?.(e);
       else if (which === 'join') ctx.onJoinTable?.(e);
       else if (which === 'view') ctx.onViewTable?.(e);
+      else if (which === 'waitlist') ctx.onWaitlistToggle?.(e.id, !ctx.waitlistedIds.has(e.id));
     };
 
     if (e.kind === 'cash') {
       const seated = ctx.seatedIds.has(e.id);
       const headsUp = e.capacity === 2;
+      /* A seat the player already holds beats every other consideration: a
+         full table is still THEIR table, and Return To Table has to win over
+         the waitlist offer. */
+      const full = !seated && e.capacity > 0 && e.players >= e.capacity;
+      const waiting = ctx.waitlistedIds.has(e.id);
       return (
         <span className="lt-actions">
           {ctx.onViewTable && (
@@ -782,7 +792,17 @@ const COL_ACTIONS: ColumnDef = {
               View Table
             </button>
           )}
-          {ctx.onJoinTable && (
+          {full && ctx.onWaitlistToggle && (
+            <button
+              type="button"
+              className={`lt-act ${waiting ? 'lt-act--done' : 'lt-act--primary'}`}
+              data-act="waitlist"
+              onClick={run}
+            >
+              {waiting ? 'Leave Waitlist' : 'Join Waitlist'}
+            </button>
+          )}
+          {!full && ctx.onJoinTable && (
             <button type="button" className="lt-act lt-act--primary" data-act="join" onClick={run}>
               {seated ? 'Return To Table' : headsUp ? 'Sit Down' : 'Join Table'}
             </button>
@@ -1291,7 +1311,12 @@ export default function LobbyTable({
             }`
           : 'Default order'}
       </span>
-      <table className="lobby-table" role="grid">
+      {/* The category is on the table so the stylesheet can shed columns per
+          BOARD rather than per page width. The wide breakpoints were written
+          for the ALL and MTT boards, which carry eight columns; the SPIN board
+          carries five, so dropping its Max Payout at 1340px starved a table
+          that had room to spare — and the payout IS the Spin. */}
+      <table className={`lobby-table lobby-table--${category.toLowerCase()}`} role="grid">
         <thead>
           {/* The explicit row/gridcell roles below are not redundant. Under
               640px this table stops being a table - thead/tbody/tr/td all

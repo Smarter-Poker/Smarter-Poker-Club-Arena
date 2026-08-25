@@ -128,11 +128,25 @@ describe('a new player never receives the button', () => {
   it('eligibility is recorded AFTER the button is chosen, not before', () => {
     // Recording first would let a first-time player qualify for the very
     // button this rule exists to keep away from them.
+    //
+    // Scoped to the ROTATION deliberately. There is a second, legitimate write
+    // to dealtInUserIds in the dealing loop's first-iteration block, which
+    // seeds everyone already seated when the engine booted as a veteran (they
+    // were playing before the restart). That one is earlier in the file, so an
+    // unscoped indexOf finds it and reads the order backwards.
     const chosen = DEALING.indexOf('this.lastButtonSeat = dealerSeat');
-    const recorded = DEALING.indexOf('this.dealtInUserIds.add(p.user_id)');
     expect(chosen, 'button assignment not found').toBeGreaterThan(-1);
-    expect(recorded, 'eligibility recording not found').toBeGreaterThan(-1);
+    const recorded = DEALING.indexOf('this.dealtInUserIds.add(p.user_id)', chosen);
+    expect(recorded, 'eligibility is not recorded after the rotation').toBeGreaterThan(-1);
     expect(recorded).toBeGreaterThan(chosen);
+  });
+
+  it('the boot seeding is a SEPARATE site and only runs on the first iteration', () => {
+    // Restart fidelity: without it, buttonEligible() falls back to the whole
+    // roster after every deploy and the rule is unenforceable for an orbit.
+    const at = DEALING.indexOf('if (this.dealingLoopFirstIteration)');
+    expect(at).toBeGreaterThan(-1);
+    expect(DEALING.slice(at, at + 500)).toMatch(/this\.dealtInUserIds\.add\(p\.user_id\)/);
   });
 
   it('the rotation itself walks the eligible roster, not the raw deal roster', () => {

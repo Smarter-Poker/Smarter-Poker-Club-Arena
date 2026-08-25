@@ -11,9 +11,14 @@
 import nodeCrypto from 'node:crypto';
 import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
-import { mysteryChestHoldMs } from '../config/mysteryChestSpec.js';
-import { MYSTERY_BOUNTY_REVEAL_DELAY_MS } from '../config/mysteryBountySpec.js';
+import {
+  mysteryChestHoldMs,
+  mysteryChestPostRevealMs,
+  MYSTERY_BOUNTY_QUEUE_COALESCE_MS,
+} from '../config/mysteryChestSpec.js';
+import { MYSTERY_BOUNTY_REVEAL_DELAY_MS, formatBountyTier } from '../config/mysteryBountySpec.js';
 import { buildRecipientClaims } from './mysteryBountyDraw.js';
+import { attributeKnockout } from './knockoutAttribution.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { computePlacePrize } from './payoutMath.js';
 import {
@@ -22,7 +27,45 @@ import {
   remainingPoolAfterAwards,
 } from './payoutStructure.js';
 
+interface QueuedBountyReveal {
+  awardId: string;
+  tableId: string | null;
+  eliminatedUserId: string;
+  designatedRevealer: string;
+  recipientUserIds: string[];
+}
+
+interface TableRevealQueue {
+  /** Chests reserved and not yet on screen, in reserve order. */
+  waiting: QueuedBountyReveal[];
+  /** The chest currently owning the table, or null between chests. */
+  active: QueuedBountyReveal | null;
+  /** How many of this burst have been presented — the "1" in "1 OF 3". */
+  presented: number;
+  /** Open only until the first chest of a burst is presented. */
+  coalesceTimer: ReturnType<typeof setTimeout> | null;
+}
+
 export abstract class TournamentManagerEliminations extends TournamentManagerBase {
+  /**
+   * One reveal queue per table (sections 22 and 61 — only the affected table
+   * pauses). Keyed by table id; the empty string is the degenerate "knockout
+   * with no table" case, which still needs ordering so its broadcasts do not
+   * interleave.
+   */
+  private bountyRevealQueues: Map<string, TableRevealQueue> = new Map();
+  /**
+   * Every award this manager has already put in a queue.
+   *
+   * `fn_mystery_bounty_reserve` is idempotent by design: a re-swept
+   * elimination gets the SAME award id back with `already: true`. Without
+   * this set, that reply would queue a second presentation of a chest that is
+   * already on screen — and, in the worst case, a second `fn_mystery_bounty_pay`
+   * for it. The RPC's own key makes the payment safe; this makes the
+   * PRESENTATION safe (section 80/33).
+   */
+  private dispatchedBountyAwards: Set<string> = new Set();
+
   protected startEliminationChecker(): void {
     this.eliminationTimer = setInterval(async () => {
       if (!this.running || this.isProcessingEliminations) return;
@@ -945,26 +988,39 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           .maybeSingle();
 
         // Find the busted player's LAST HAND at that table to determine the knocker.
-        // TOURNEY-AUDIT 2026-07-24: two fixes. (a) The old query took the most
-        // recent hand at the table regardless of whether the eliminated player
-        // was even IN it — the 5s elimination sweep can lag several hands, so
-        // bounties routed to the winner of some later, unrelated pot. Now the
-        // recent hands are scanned for the last one the busted player played.
-        // (b) With multiple winners (side pots), the knocker is the winner who
-        // took the LARGEST amount (the main pot containing the busted player's
-        // chips), not whichever entry happened to be first in the array.
+        // TOURNEY-AUDIT 2026-07-24: (a) The old query took the most recent hand
+        // at the table regardless of whether the eliminated player was even IN
+        // it — the 5s elimination sweep can lag several hands, so bounties
+        // routed to the winner of some later, unrelated pot. The recent hands
+        // are scanned for the last one the busted player played.
+        //
+        // KNOCKOUT ATTRIBUTION 2026-08-25 (Dan section 29). (b) used to say
+        // "the knocker is the winner who took the LARGEST amount (the main pot
+        // containing the busted player's chips)". Those two things are not the
+        // same thing, and the parenthesis was the bug: with a side pot, the
+        // largest winner is usually the player who was NOT in the pot that
+        // busted anybody. The credit belongs to the winner(s) of the pot that
+        // contained the eliminated player's final chips, which is now a
+        // recorded fact (`hand_history.pots`) rather than a guess about
+        // amounts. See knockoutAttribution.ts for the full rule; it falls back
+        // to the old heuristic on rows written before the column existed.
         let knockerId: string | null = null;
-        // SPLIT KNOCKOUTS (Dan sections 27/28). When a short stack busts
-        // against a side pot, more than one player has a claim on the bounty,
-        // in proportion to what each of them won out of the pot the busted
-        // player's chips were in. The old code kept only the largest winner
-        // and gave them everything; the mystery path splits the chest, so it
-        // needs the whole list with the amounts as weights.
+        // SPLIT KNOCKOUTS (Dan sections 27/28). A tied pot means every tied
+        // winner shares one chest, equally.
         let claimants: Array<{ userId: string; weight: number }> = [];
+        /**
+         * The hand the knockout happened in. Stream B's reserve call has been
+         * passing `p_hand_id: null` since it shipped, so `tournament_bounty_
+         * awards.hand_id` — the only link between an award and the hand that
+         * earned it — was empty on every row. Nothing could audit a bounty
+         * back to its knockout. It is available right here and simply was not
+         * being selected.
+         */
+        let knockoutHandId: string | null = null;
         if (seat?.table_id) {
           const { data: recentHands } = await supabase
             .from('hand_history')
-            .select('winners, players')
+            .select('id, winners, players, pots')
             .eq('table_id', seat.table_id)
             .order('created_at', { ascending: false })
             .limit(10);
@@ -974,17 +1030,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               Array.isArray(hand.players) &&
               hand.players.some((p: any) => (p.userId || p.user_id) === userId);
             if (!inHand) continue;
-            if (hand.winners && Array.isArray(hand.winners)) {
-              const candidates = hand.winners
-                .filter((w: any) => (w.userId || w.user_id) !== userId)
-                .sort((a: any, b: any) => Number(b.amount || 0) - Number(a.amount || 0));
-              knockerId = candidates.length ? candidates[0].userId || candidates[0].user_id : null;
-              claimants = candidates
-                .map((w: any) => ({
-                  userId: String(w.userId || w.user_id || ''),
-                  weight: Math.max(0, Number(w.amount) || 0),
-                }))
-                .filter((c: { userId: string }) => c.userId.length > 0);
+            knockoutHandId = hand.id ? String(hand.id) : null;
+            const attribution = attributeKnockout(hand as any, userId);
+            knockerId = attribution.knockerUserId;
+            claimants = attribution.claimants.map((c) => ({ ...c }));
+            if (attribution.basis === 'largest_winner' && Array.isArray(hand.pots)) {
+              // Pots were stored and still could not settle the question. Not
+              // fatal — the fallback pays somebody — but it means the recorded
+              // breakdown disagrees with the recorded winners, which is worth
+              // a signal rather than a silent shrug.
+              console.warn(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] knockout attribution fell back to ` +
+                  `largest-winner for ${userId.slice(0, 8)} despite stored pots (hand ${knockoutHandId})`
+              );
             }
             break; // only the busted player's most recent hand counts
           }
@@ -996,7 +1054,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             userId,
             knockerId,
             seat?.table_id ?? null,
-            claimants
+            claimants,
+            knockoutHandId
           );
         } else {
           console.warn(
@@ -1063,19 +1122,27 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
      */
     tableId: string | null = null,
     /**
-     * Everyone with a claim on this knockout and the weight of that claim —
-     * what each of them won out of the pot the busted player's chips were in.
-     * Sections 27/28. Empty (or a single entry) is the ordinary case: one
-     * knocker takes the whole bounty.
+     * Everyone with a claim on this knockout and the weight of that claim.
+     * Sections 27/28: the winners of the pot that held the busted player's
+     * last chips, equally weighted when that pot was tied. Empty (or a single
+     * entry) is the ordinary case: one knocker takes the whole bounty.
      */
-    claimants: Array<{ userId: string; weight: number }> = []
+    claimants: Array<{ userId: string; weight: number }> = [],
+    /** The hand_history row this knockout happened in, for the audit link. */
+    handId: string | null = null
   ): Promise<void> {
     // ── MYSTERY PHASE ──────────────────────────────────────────────────────
     // Once the chests are open, this knockout draws one. fn_collect_bounty
     // refuses in that state ('mystery_phase_active'), so this is not an
     // optimisation — it is the only path that pays.
     if (this.mysteryBountyStage === 'active' && tournament?.is_mystery_bounty) {
-      await this.processMysteryBountyKnockout(eliminatedUserId, knockerUserId, tableId, claimants);
+      await this.processMysteryBountyKnockout(
+        eliminatedUserId,
+        knockerUserId,
+        tableId,
+        claimants,
+        handId
+      );
       return;
     }
 
@@ -1257,7 +1324,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     eliminatedUserId: string,
     knockerUserId: string,
     tableId: string | null,
-    claimants: Array<{ userId: string; weight: number }>
+    claimants: Array<{ userId: string; weight: number }>,
+    handId: string | null = null
   ): Promise<void> {
     const recipients = buildRecipientClaims(knockerUserId, claimants);
     if (recipients.length === 0) return;
@@ -1286,7 +1354,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       p_eliminated_user_id: eliminatedUserId,
       p_recipients: recipients,
       p_table_id: tableId,
-      p_hand_id: null,
+      // AUDIT LINK 2026-08-25: this was hard-coded null, so
+      // `tournament_bounty_awards.hand_id` — the only pointer from an award
+      // back to the hand that earned it — was empty on every row ever
+      // written. The eliminations sweep reads that hand three lines earlier;
+      // it simply was not being selected or passed.
+      p_hand_id: handId,
       p_op_id: opUuid,
       p_reveal_ms: MYSTERY_BOUNTY_REVEAL_DELAY_MS,
     });
@@ -1339,44 +1412,254 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // Already completed on an earlier pass — nothing to re-announce.
     if (res.already && res.status === 'completed') return;
 
-    const awardId = res.award_id;
+    // 2, 3 and 4 are the queue's job from here. Enqueueing CLOSES THE TABLE'S
+    // REVEAL GATE IMMEDIATELY (sections 21-26): the table stops before the
+    // first chest is even on screen, so a second knockout discovered a moment
+    // later cannot find that a hand has already been dealt over it.
+    this.enqueueBountyReveal({
+      awardId: res.award_id,
+      tableId,
+      eliminatedUserId,
+      designatedRevealer: res.designated_revealer ?? knockerUserId,
+      recipientUserIds: res.recipient_user_ids ?? [],
+    });
+  }
 
-    // 2. HOLD THE DEAL.
-    if (tableId) {
-      const engine = this.tableEngines.get(tableId);
-      if (engine) {
-        try {
-          engine.holdDealingUntil(Date.now() + mysteryChestHoldMs());
-        } catch {
-          /* the hold is presentation; never let it break the payout path */
-        }
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  THE TABLE'S REVEAL QUEUE (Dan sections 21-26, 51-57, 61-65)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * ONE CHEST AT A TIME, PER TABLE, IN ORDER.
+   *
+   * Three knockouts in one hand are three chests, shown as "MYSTERY BOUNTY
+   * 1 OF 3", then 2 of 3, then 3 of 3 — and the dealer button may not move
+   * until the last of them is finished (sections 25 and 64).
+   *
+   * WHAT THIS REPLACES. The reserve path used to fire a bare
+   * `setTimeout(..., 9700)` per award. Three simultaneous knockouts therefore
+   * revealed three chests AT THE SAME INSTANT, on top of each other, each
+   * labelled with a queue counter the SQL had computed independently — the
+   * first one reserved says "1 of 1", the second "2 of 2", the third "3 of 3",
+   * because `fn_mystery_bounty_reserve` counts what is open at the moment IT
+   * runs and cannot know about the two knockouts the sweep has not reached
+   * yet. Right numbers to a question nobody asked.
+   *
+   * The counter is therefore computed HERE, where the whole burst is visible,
+   * after a short coalescing window (MYSTERY_BOUNTY_QUEUE_COALESCE_MS). The
+   * queue is keyed by table because section 22 and section 61 are explicit
+   * that only the affected table pauses: the tournament clock, the blind-level
+   * clock and every other table keep running, and they do not consult this.
+   *
+   * IDEMPOTENCE. `dispatchedBountyAwards` means a re-swept elimination (which
+   * `fn_mystery_bounty_reserve` answers with the SAME award id) cannot enqueue
+   * the same chest twice — section 80/33: a duplicate event cannot double-pay.
+   */
+  private enqueueBountyReveal(item: {
+    awardId: string;
+    tableId: string | null;
+    eliminatedUserId: string;
+    designatedRevealer: string;
+    recipientUserIds: string[];
+  }): void {
+    if (this.dispatchedBountyAwards.has(item.awardId)) return;
+    this.dispatchedBountyAwards.add(item.awardId);
+
+    const key = item.tableId ?? '';
+    let q = this.bountyRevealQueues.get(key);
+    if (!q) {
+      q = { waiting: [], active: null, presented: 0, coalesceTimer: null };
+      this.bountyRevealQueues.set(key, q);
+    }
+    q.waiting.push(item);
+
+    // CLOSE THE GATE NOW, not at presentation. The award exists and the money
+    // is reserved; the table must not deal another hand in the seconds between
+    // the reserve and the chest appearing.
+    //
+    // The deadline is a failsafe only — the gate is normally closed by
+    // `finishBountyReveal` — so it is sized for this award's worst case: it
+    // may have to wait out every chest queued ahead of it.
+    const depth = q.waiting.length + (q.active ? 1 : 0);
+    this.openBountyGate(
+      item.tableId,
+      item.awardId,
+      Date.now() + MYSTERY_BOUNTY_QUEUE_COALESCE_MS + depth * mysteryChestHoldMs() + 15000
+    );
+
+    if (!q.active && !q.coalesceTimer) {
+      q.coalesceTimer = setTimeout(() => {
+        const live = this.bountyRevealQueues.get(key);
+        if (live) live.coalesceTimer = null;
+        void this.pumpBountyRevealQueue(key);
+      }, MYSTERY_BOUNTY_QUEUE_COALESCE_MS);
+      // A queue timer must never keep the process alive on its own.
+      (q.coalesceTimer as unknown as { unref?: () => void }).unref?.();
+    }
+  }
+
+  /** Close the table's dealing gate for one award. Never throws. */
+  private openBountyGate(tableId: string | null, awardId: string, deadlineMs: number): void {
+    if (!tableId) return;
+    const engine = this.tableEngines.get(tableId);
+    if (!engine) return;
+    try {
+      engine.beginBountyReveal(awardId, deadlineMs);
+      // The time-based hold as well, belt and braces: an older engine build
+      // that predates the gate still stops on this one, and it is what the
+      // spin wheel already uses so the two cannot fight.
+      engine.holdDealingUntil(deadlineMs);
+    } catch {
+      /* the hold is presentation; never let it break the payout path */
+    }
+  }
+
+  /** Re-open the table's dealing gate. */
+  private closeBountyGate(tableId: string | null, awardId: string): void {
+    if (!tableId) return;
+    const engine = this.tableEngines.get(tableId);
+    if (!engine) return;
+    try {
+      engine.endBountyReveal(awardId);
+    } catch {
+      /* nothing to release */
+    }
+  }
+
+  /**
+   * Put the next chest on screen, or declare the table's queue empty.
+   *
+   * Nothing in here is allowed to throw: it runs detached from the elimination
+   * sweep (deliberately — the sweep must not sit for seventeen seconds holding
+   * `isProcessingEliminations` while an animation plays, or every other bustout
+   * in the event waits behind it), so an unhandled rejection here would be an
+   * unhandled rejection in the engine process.
+   */
+  protected async pumpBountyRevealQueue(key: string): Promise<void> {
+    const q = this.bountyRevealQueues.get(key);
+    if (!q || q.active) return;
+
+    const next = q.waiting.shift();
+    if (!next) {
+      // SECTION 63: the queue is empty, the overlay may clear, the button may
+      // move, the next hand may deal. The gate is already open by now (each
+      // award released its own on completion); this event is what tells the
+      // clients the sequence is over.
+      this.bountyRevealQueues.delete(key);
+      q.presented = 0;
+      try {
+        await this.broadcast('mystery_bounty_complete', { tableId: key || null });
+      } catch {
+        /* the all-clear is cosmetic; the gate has already re-opened */
       }
+      return;
     }
 
-    // The pending broadcast. NO AMOUNT (section 19).
-    await this.broadcast('mystery_bounty_pending', {
-      tableId,
-      awardId,
-      recipientUserIds: res.recipient_user_ids ?? [],
-      designatedRevealer: res.designated_revealer ?? knockerUserId,
-      eliminatedUserId,
-      queueIndex: res.queue_index ?? 1,
-      queueTotal: res.queue_total ?? 1,
-      deadlineMs: MYSTERY_BOUNTY_REVEAL_DELAY_MS,
-    });
+    q.active = next;
+    q.presented += 1;
+    const queueIndex = q.presented;
+    const queueTotal = q.presented + q.waiting.length;
 
-    // 3 + 4, on a timer. Detached deliberately: the elimination sweep must not
-    // sit for ten seconds holding `isProcessingEliminations` while a chest
-    // animation plays, or every other bustout in the event waits behind it.
-    setTimeout(() => {
-      void this.settleMysteryBountyAward(
-        awardId,
-        tableId,
-        eliminatedUserId,
-        res.queue_index ?? 1,
-        res.queue_total ?? 1
-      );
+    // Re-arm this award's own failsafe from the moment it actually starts, so
+    // a chest that waited a long time behind others still gets a full window.
+    this.openBountyGate(
+      next.tableId,
+      next.awardId,
+      Date.now() + mysteryChestHoldMs() + mysteryChestPostRevealMs()
+    );
+
+    // The pending broadcast. NO AMOUNT (section 19) — the number does not
+    // leave the database until the chest is opened.
+    try {
+      const names = await this.resolveBountyNames([next.eliminatedUserId, next.designatedRevealer]);
+      await this.broadcast('mystery_bounty_pending', {
+        tableId: next.tableId,
+        awardId: next.awardId,
+        recipientUserIds: next.recipientUserIds,
+        designatedRevealer: next.designatedRevealer,
+        designatedRevealerName: names(next.designatedRevealer),
+        eliminatedUserId: next.eliminatedUserId,
+        eliminatedName: names(next.eliminatedUserId),
+        queueIndex,
+        queueTotal,
+        deadlineMs: MYSTERY_BOUNTY_REVEAL_DELAY_MS,
+      });
+    } catch (err) {
+      reportError(err, 'Tournament.mystery_bounty_pending_broadcast_failed');
+    }
+
+    // The reveal, on the deadline. The designated revealer's own tap normally
+    // gets there first (from the browser, which is the drama); this call is
+    // idempotent and returns the identical payload, so section 54's "auto
+    // reveal so a table can never wedge" costs nothing when they did tap and
+    // saves the table when they did not.
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          await this.settleMysteryBountyAward(
+            next.awardId,
+            next.tableId,
+            next.eliminatedUserId,
+            queueIndex,
+            queueTotal
+          );
+        } catch (err) {
+          reportError(err, 'Tournament.mystery_bounty_settle_threw');
+        } finally {
+          this.finishBountyReveal(key, next);
+        }
+      })();
     }, MYSTERY_BOUNTY_REVEAL_DELAY_MS);
+    (timer as unknown as { unref?: () => void }).unref?.();
+  }
+
+  /**
+   * One chest is done. Let its animation finish, THEN release the table and
+   * start the next one.
+   *
+   * Section 63, in order: reveal, animation done, UI clears, button moves,
+   * next hand. The reveal broadcast has just gone out; the clients are only
+   * now playing the lid, the explosion and the count-up. Releasing the gate on
+   * the broadcast would deal the next hand underneath all of that.
+   */
+  private finishBountyReveal(key: string, item: { awardId: string; tableId: string | null }): void {
+    const settle = setTimeout(() => {
+      this.closeBountyGate(item.tableId, item.awardId);
+      const q = this.bountyRevealQueues.get(key);
+      if (q && q.active?.awardId === item.awardId) q.active = null;
+      void this.pumpBountyRevealQueue(key);
+    }, mysteryChestPostRevealMs());
+    (settle as unknown as { unref?: () => void }).unref?.();
+  }
+
+  /**
+   * Usernames for a knockout, as one lookup.
+   *
+   * The chest names both players ("Alice Eliminated Bob"), and the pending
+   * broadcast is the only chance to supply them — the reveal payload from
+   * `fn_mystery_bounty_reveal` carries ids and money, deliberately, because it
+   * is a money function. Failure returns 'Player' for everyone rather than
+   * throwing: a nameless chest is a cosmetic loss, a thrown lookup is a
+   * knockout with no bounty.
+   */
+  protected async resolveBountyNames(
+    userIds: Array<string | null | undefined>
+  ): Promise<(id: string) => string> {
+    const ids = Array.from(new Set(userIds.filter((u): u is string => !!u)));
+    if (ids.length === 0) return () => 'Player';
+    try {
+      const { data } = await supabase
+        .from('tournament_players')
+        .select('user_id, username')
+        .eq('tournament_id', this.tournamentId)
+        .in('user_id', ids);
+      const map = new Map<string, string>(
+        (data ?? []).map((r: any) => [String(r.user_id), String(r.username || 'Player')])
+      );
+      return (id: string) => map.get(id) || 'Player';
+    } catch {
+      return () => 'Player';
+    }
   }
 
   /**
@@ -1483,31 +1766,43 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         return;
       }
 
+      const recipients = (rev.recipients ?? []).map((r) => ({
+        userId: r.user_id,
+        amountCents: r.amount_cents,
+      }));
+      // The names the chest displays. The reveal RPC returns ids and money —
+      // correctly, it is a money function — so they are resolved here.
+      const names = await this.resolveBountyNames([
+        eliminatedUserId,
+        ...recipients.map((r) => r.userId),
+      ]);
+
       await this.broadcast('mystery_bounty_revealed', {
         tableId,
         awardId,
         amountCents: rev.amount_cents,
+        // SECTION 50: the tier is the SERVER'S, from the chest that was drawn.
+        // The client used to infer it from `amount / avgBounty`, which meant
+        // the same chest could be called a Mega Prize on one screen and a Huge
+        // Prize on another as the average moved during the event.
         tier: rev.tier,
+        tierLabel: formatBountyTier(rev.tier),
         isJackpot: rev.is_jackpot,
-        recipients: (rev.recipients ?? []).map((r) => ({
-          userId: r.user_id,
-          amountCents: r.amount_cents,
-        })),
+        recipients: recipients.map((r) => ({ ...r, name: names(r.userId) })),
         eliminatedUserId,
+        eliminatedName: names(eliminatedUserId),
+        knockerUserId: recipients[0]?.userId ?? null,
+        knockerName: recipients[0] ? names(recipients[0].userId) : 'Player',
         queueIndex,
         queueTotal,
       });
 
-      // Is this table's reveal queue empty now? The client uses this to take
-      // the overlay down and let the table breathe before the next deal.
-      const { count: stillOpen } = await supabase
-        .from('tournament_bounty_awards')
-        .select('*', { count: 'exact', head: true })
-        .eq('tournament_id', this.tournamentId)
-        .in('status', ['reserved', 'revealed']);
-      if ((stillOpen ?? 0) === 0) {
-        await this.broadcast('mystery_bounty_complete', { tableId });
-      }
+      // NOTE: `mystery_bounty_complete` is NOT sent here. It belongs to the
+      // table's reveal queue, which knows whether another chest is waiting
+      // behind this one; a per-award count of open awards across the whole
+      // TOURNAMENT (which is what used to run here) declared the sequence over
+      // on table 1 whenever table 4 happened to be idle, and never declared it
+      // over at all while any other table had a knockout in flight.
 
       console.log(
         `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY CHEST ${rev.tier} ${rev.amount_cents}c over ${eliminatedUserId.slice(0, 8)}`

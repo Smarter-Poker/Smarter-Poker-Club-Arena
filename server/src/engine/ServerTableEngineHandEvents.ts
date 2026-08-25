@@ -616,6 +616,26 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         if (this.handController) {
           const state = this.handController.getState();
           if (hasWinners) this.currentHandPotSize = state.pot;
+          // POT-LEVEL SETTLEMENT (Dan section 29, 2026-08-25). `state.pots` is
+          // the snapshot `completeHandInner()` took with calculatePots() just
+          // before it decided the winners — so `eligiblePlayers` still names
+          // everyone who had a claim on each pot, which is the whole question
+          // a knockout attribution has to answer.
+          //
+          // THIS IS THE ONLY MOMENT IT EXISTS. `HandController.getPots()`
+          // recalculates from the live players, and by the time postHandTasks
+          // runs the winners' stacks have already moved. Capturing here rather
+          // than at the write is why hand_history can finally record which pot
+          // held the busted player's last chips.
+          if (hasWinners && Array.isArray(state.pots)) {
+            this.currentHandPots = state.pots.map((p, index) => ({
+              index,
+              amount: Number(p?.amount) || 0,
+              eligible: Array.isArray(p?.eligiblePlayers)
+                ? p.eligiblePlayers.map((u) => String(u ?? '')).filter(Boolean)
+                : [],
+            }));
+          }
           // Note: rake + bbjFee are captured from HAND_COMPLETE event, not from state
           // Bible V8 §1.9: Capture totalInvested for equal-share rakeback tracking (FIX 144)
           this.currentHandContributions.clear();

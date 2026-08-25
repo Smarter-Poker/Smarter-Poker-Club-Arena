@@ -76,6 +76,34 @@ export const MYSTERY_BOUNTY_TIER_ORDER: readonly MysteryBountyTierName[] = [
   'base',
 ] as const;
 
+/**
+ * The tier as a player reads it (Dan section 50).
+ *
+ * The chest used to NAME THE TIER ITSELF, from `amount / avgBounty`. That is
+ * not a tier, it is a ratio — and the average moves as an event runs, so the
+ * identical chest could be announced as a "Mega Prize" at the first knockout
+ * and a "Large Prize" at the last. The tier is a property of the chest that
+ * was drawn out of the inventory, it is decided at seed time, and it is the
+ * server's to state.
+ *
+ * House rule (CLAUDE.md §5.7): First Letter Of Every Word Capitalised.
+ */
+const TIER_LABELS: Readonly<Record<MysteryBountyTierName, string>> = {
+  jackpot: 'Jackpot',
+  mega: 'Mega Prize',
+  major: 'Major Prize',
+  large: 'Large Prize',
+  medium: 'Medium Prize',
+  small: 'Small Prize',
+  base_plus: 'Bonus Prize',
+  base: 'Standard Prize',
+};
+
+export function formatBountyTier(tier: string | null | undefined): string {
+  const key = String(tier ?? '').trim() as MysteryBountyTierName;
+  return TIER_LABELS[key] ?? 'Prize';
+}
+
 export type MysteryBountyProfileName = 'balanced' | 'classic' | 'jackpot';
 
 export interface MysteryBountyTierSpec {

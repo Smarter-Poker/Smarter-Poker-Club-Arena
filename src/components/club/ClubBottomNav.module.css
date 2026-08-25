@@ -46,8 +46,9 @@
   background: #000000;
   border-top: 1px solid rgba(0, 180, 255, 0.15);
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(10px) saturate(1.1);
-  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+  /* No backdrop-filter. The background is fully opaque, so there is nothing
+     behind this bar to blur - the only effect was a compositing layer, on a
+     position:fixed element that is on screen for the whole session. */
 }
 
 /* Navigation items container. A <ul> since 2026-08-25 — a bar of links is a
@@ -100,7 +101,6 @@
 .navItem:hover {
   color: rgba(0, 200, 255, 0.9);
   background: rgba(0, 180, 255, 0.1);
-  transform: translateY(-2px);
 }
 
 /* Keyboard focus has to be visible on its own. :hover alone left a
@@ -120,9 +120,15 @@
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
+/* THE LIFT LIVES HERE, ON THE ICON. It used to be `.navItem:hover
+   { transform: translateY(-2px) }`, which never fired: useStaggerAnimation
+   returns `{opacity, transform, transition}` and it is applied as an INLINE
+   style on the link, and an inline transform beats any non-!important
+   stylesheet rule. The icon carries no inline style, so one transform here
+   does both jobs and the reduced-motion rule below can actually reach it. */
 .navItem:hover .icon {
   filter: drop-shadow(0 0 4px rgba(0, 212, 255, 0.3));
-  transform: scale(1.05);
+  transform: translateY(-2px) scale(1.05);
 }
 
 /* Label styling */
@@ -173,10 +179,6 @@
     transition: none;
   }
 
-  .navItem:hover {
-    transform: none;
-  }
-
   .navItem:hover .icon {
     transform: none;
   }
@@ -190,12 +192,10 @@
   }
 }
 
-/* Safe area for devices with home indicators */
-@supports (padding-bottom: env(safe-area-inset-bottom)) {
-  .bottomNav {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-}
+/* The @supports duplicate of the safe-area inset that used to sit here is
+   gone: the base rule at the top of this file already applies it, and the
+   768px rule below deliberately removes it on phones. Three declarations of
+   one property, two of them dead. */
 
 /* Dan 2026-08-24: "THE FOOTER NEEDS TO ACTUALLY BE ATTACHED TO THE BOTTOM,
    WITH NO PADDING." The safe-area inset was reserving ~34px of empty bar

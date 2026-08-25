@@ -56,6 +56,18 @@
 }
 
 /* Corner screws */
+/* Taken OUT OF FLOW. .cplaque is a grid with named areas and a 14px gap, and
+   this element declares no grid-area - so auto-placement pushed it into an
+   implicit second row. Its four children are all position:absolute, so the row
+   measured 0px, but the 14px ROW GAP still applied: dead space under the
+   plaque at every width, and again below 560px where the areas become a
+   single column. */
+.cplaque__screws {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
 .cplaque__screws i {
   position: absolute;
   width: 7px;
@@ -153,7 +165,10 @@
 .cplaque__norules {
   font-size: 0.75rem;
   letter-spacing: 0.1em;
-  color: #6c727c;
+  /* #6c727c measured ~3.7:1 on the plaque face - under the 4.5:1 minimum,
+     on the line shown for the most common case. This is the same grey
+     .cplaque__kind already uses, ~5.9:1. */
+  color: #8f959e;
   text-transform: uppercase;
 }
 .cplaque__medallion {
@@ -236,19 +251,9 @@
   box-shadow:
     inset 0 2px 6px rgba(0, 0, 0, 0.7),
     inset 0 -1px 0 rgba(255, 255, 255, 0.05);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: stretch;
-  padding: 12px 14px;
-  border-radius: 10px;
-
-  /* Recessed inset panel */
-  background: linear-gradient(180deg, #0a0b0e 0%, #101217 100%);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow:
-    inset 0 2px 6px rgba(0, 0, 0, 0.7),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+  /* (Nine of these declarations were pasted a second time inside this same
+     rule. Harmless to the browser, but the next person to edit the panel
+     would have changed one copy and seen nothing happen.) */
 }
 .cplaque__join-label {
   font-size: 0.625rem;
@@ -394,7 +399,10 @@
       'identity'
       'join'
       'rules';
-    padding: 14px;
+    /* 8px top, not 14px: less dead air above the identity row on phones. This
+       used to be a second `.cplaque` rule at the bottom of the same media
+       block, which silently overrode the 14px here. */
+    padding: 8px 14px 14px;
   }
   .cplaque__identity {
     justify-self: center;
@@ -415,10 +423,6 @@
   }
   .cplaque__seats {
     align-items: center;
-  }
-  .cplaque {
-    /* less dead air above the identity row on phones */
-    padding: 8px 14px 14px;
   }
   .cplaque__medallion {
     width: 64px;

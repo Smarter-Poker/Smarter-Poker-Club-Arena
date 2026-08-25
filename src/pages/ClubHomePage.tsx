@@ -3340,7 +3340,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         </div>
       )}
 
-      {clubId && <ClubBottomNav clubId={clubId} />}
+      {/* Unguarded. ClubBottomNav resolves its own club precisely so call
+          sites stop dropping the footer - its header comment says so - and
+          then this call site put the guard back. It renders null when it has
+          no tabs to show. */}
+      <ClubBottomNav clubId={clubId} />
 
       {/* Confirm Modal for Table Deletion */}
       <ConfirmModal

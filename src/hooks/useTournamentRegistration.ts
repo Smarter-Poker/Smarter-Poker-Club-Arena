@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUserStore } from '../stores/useUserStore';
 import { tournamentService } from '../services/TournamentService';
@@ -29,6 +29,16 @@ export function useTournamentRegistration() {
   const [isRegistering, setIsRegistering] = useState(false);
   const navigate = useNavigate();
   const toast = useToast();
+  /** Flips synchronously, so a second activation cannot slip past an await. */
+  const registeringRef = useRef(false);
+  /** False once unmounted: no navigate, no setState, on a late resolve. */
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
   const currentUserId = useUserStore((s: any) => s.user?.id);
   const username = useUserStore((s: any) => s.user?.username) || 'Player';
 
@@ -38,7 +48,16 @@ export function useTournamentRegistration() {
         toast.error('Sign In To Register');
         return;
       }
-      if (isRegistering) return;
+      /* A REF, NOT THE STATE. `isRegistering` is state, and state does not
+         change until React re-renders - but the very next line awaits a
+         confirm dialog. Two activations in the same frame (a mobile
+         double-tap, or Enter plus a click) BOTH passed this check, and
+         confirmDialog QUEUES concurrent calls rather than rejecting them, so
+         the second dialog surfaced after the first registration had already
+         debited the buy-in and navigated. Confirming it debited a second
+         time. The ref flips synchronously, before anything is awaited. */
+      if (registeringRef.current) return;
+      registeringRef.current = true;
 
       const totalCost = t.buy_in_amount + (t.buy_in_fee || 0);
       const confirmed = await confirmDialog({
@@ -46,7 +65,10 @@ export function useTournamentRegistration() {
         message: `Register for ${t.name}? This will debit ${fmtChips(totalCost)} from your wallet.`,
         confirmText: 'Confirm Buy In',
       });
-      if (!confirmed) return;
+      if (!confirmed) {
+        registeringRef.current = false;
+        return;
+      }
 
       setIsRegistering(true);
       try {
@@ -85,12 +107,18 @@ export function useTournamentRegistration() {
          * page beats being stranded on the wrong one.
          */
         const findMySeat = async (): Promise<string | null> => {
-          const { data: tp } = await supabase
+          const { data: tp, error } = await supabase
             .from('tournament_players')
             .select('table_id')
             .eq('tournament_id', t.id)
             .eq('user_id', currentUserId)
             .maybeSingle();
+          /* A read that FAILED is not "no seat yet". Discarding the error made
+             an RLS refusal or a dropped connection burn all three retries and
+             then route a correctly seated player to the tournament page
+             instead of to their table. */
+          if (error)
+            reportError(error, 'useTournamentRegistration.findMySeat', { tournamentId: t.id });
           return (tp?.table_id as string | undefined) || null;
         };
 
@@ -100,20 +128,26 @@ export function useTournamentRegistration() {
           seatTableId = await findMySeat();
         }
 
-        if (seatTableId) {
-          navigate(`/table/${seatTableId}`);
-        } else {
-          toast.success('You Are Registered - Your Seat Is Being Assigned');
-          navigate(`/tournaments/${t.id}`);
+        /* The seat lookup can take 3.6s of retries. If the player left the
+           lobby in that window, navigating would yank them out of whatever
+           page they had moved on to. */
+        if (aliveRef.current) {
+          if (seatTableId) {
+            navigate(`/table/${seatTableId}`);
+          } else {
+            toast.success('You Are Registered - Your Seat Is Being Assigned');
+            navigate(`/tournaments/${t.id}`);
+          }
         }
       } catch (e) {
         reportError(e, 'useTournamentRegistration.register', { tournamentId: t.id });
         toast.error(e instanceof Error ? e.message : 'Registration Failed, Please Try Again');
       } finally {
-        setIsRegistering(false);
+        registeringRef.current = false;
+        if (aliveRef.current) setIsRegistering(false);
       }
     },
-    [currentUserId, username, isRegistering, navigate, toast]
+    [currentUserId, username, navigate, toast]
   );
 
   return { register, isRegistering };

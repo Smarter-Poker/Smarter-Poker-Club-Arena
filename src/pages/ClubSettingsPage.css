@@ -546,8 +546,11 @@
   border-radius: 8px;
   font-size: 0.75rem;
   cursor: pointer;
-  /* 32px keeps the tap target usable on a phone without making the bar tall */
-  min-height: 32px;
+  /* 44px, not 32 (Dan 2026-08-25). These are the Save and Discard buttons on
+     the Profile page - the two most consequential controls on it - and they
+     were the only sub-44px targets left after the audit. The bar wraps, so the
+     extra 12px costs nothing at 375px. */
+  min-height: 44px;
   padding: 0.4rem 0.9rem;
 }
 .unsaved-bar__discard {

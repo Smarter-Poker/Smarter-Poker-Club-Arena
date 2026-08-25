@@ -580,6 +580,28 @@ export default function CashierTradePage() {
 
   // ── Chip requests (Chip Request tab) ───────────────────────────────────────
   const reqSeqRef = useRef(0);
+  /** Open chip requests in this club. Drives the tab badge. */
+  const [pendingCount, setPendingCount] = useState(0);
+
+  /**
+   * A head-only count, so no rows cross the wire. Runs on every club load and
+   * on every bus event that already reloads this page, and is superseded by
+   * requests.length the moment the tab is actually opened.
+   */
+  const loadPendingCount = useCallback(async () => {
+    if (!clubUuid) {
+      setPendingCount(0);
+      return;
+    }
+    const { count, error } = await supabase
+      .from('chip_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('club_id', clubUuid)
+      .in('status', ['pending']);
+    if (!isMounted.current) return;
+    // A failed count must not claim zero. Leave the previous value alone.
+    if (!error) setPendingCount(count ?? 0);
+  }, [clubUuid]);
   const loadRequests = useCallback(async () => {
     if (!user?.id || !clubUuid) return;
     const seq = ++reqSeqRef.current;
@@ -608,6 +630,7 @@ export default function CashierTradePage() {
           );
       }
       if (!isMounted.current || seq !== reqSeqRef.current) return;
+      setPendingCount((data || []).length);
       setRequests(
         (data || []).map((r) => ({
           id: r.id as string,
@@ -634,6 +657,10 @@ export default function CashierTradePage() {
   useEffect(() => {
     if (tab === 'request') loadRequests();
   }, [tab, loadRequests]);
+
+  useEffect(() => {
+    void loadPendingCount();
+  }, [loadPendingCount]);
 
   const respondToRequest = async (id: string, action: 'approve' | 'decline' | 'cancel') => {
     // Approving a chip request performs the same conserved ledger move as a
@@ -750,6 +777,11 @@ export default function CashierTradePage() {
 
   // ── Derived list ───────────────────────────────────────────────────────────
   const mineCount = useMemo(() => downline.filter((r) => r.isMine).length, [downline]);
+  /** What the reader's own assigned players are holding, for the strip. */
+  const mineTotal = useMemo(
+    () => downline.reduce((sum, r) => (r.isMine ? sum + (Number(r.chipBalance) || 0) : sum), 0),
+    [downline]
+  );
 
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -798,6 +830,31 @@ export default function CashierTradePage() {
     });
   }, [list]);
 
+  /**
+   * The selected rows, memoised. This was `list.filter(...)` inlined at four
+   * render sites, so every keystroke in the amount input re-ran it four times
+   * over a list that can be ten thousand rows - forty thousand predicate calls
+   * per character, on a phone, inside a modal.
+   */
+  const picked = useMemo(() => list.filter((r) => selected.has(r.userId)), [list, selected]);
+
+  /**
+   * What Claim Back would ACTUALLY collect. runTransfers clamps per player
+   * (`Math.min(value, t.chipBalance)`), so typing 500 against someone holding
+   * 40 collects 40 - and the receipt said "Claimed 500.00 Back". The page holds
+   * every balance it needs to show the truth BEFORE the tap.
+   */
+  /** Chips the selected players are holding right now. */
+  const pickedHeld = useMemo(
+    () => picked.reduce((sum, r) => sum + (Number(r.chipBalance) || 0), 0),
+    [picked]
+  );
+
+  const claimableTotal = useMemo(
+    () => picked.reduce((sum, r) => sum + Math.min(Number(amount) || 0, r.chipBalance), 0),
+    [picked, amount]
+  );
+
   const toggleSelect = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -831,7 +888,7 @@ export default function CashierTradePage() {
     // `list`, not `downline`: the visible, filtered set. The pruning effect
     // above already keeps these in step; reading the same source the user was
     // looking at means a race can never widen the blast radius of a transfer.
-    const targets = list.filter((r) => selected.has(r.userId));
+    const targets = picked;
     if (targets.length === 0) {
       // loadClub() clears `selected` unconditionally and six bus events fire
       // it, so a balance event landing while this modal was open emptied the
@@ -1000,6 +1057,36 @@ export default function CashierTradePage() {
     }
   };
 
+  /**
+   * MODAL KEYBOARD AND SCROLL (Dan 2026-08-25).
+   *
+   * Both modals were plain divs: no role, no aria-modal, and no Escape, so a
+   * keyboard user who opened Send Out could tab straight past it into the list
+   * behind and had no way to dismiss it except to find Cancel. Body scroll was
+   * not locked either, so on iOS the page scrolled underneath the overlay.
+   *
+   * The busy guards mirror the overlay-click guards exactly - Escape must never
+   * be an escape hatch out of an in-flight batch.
+   */
+  useEffect(() => {
+    if (!amountModal && !askOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (amountModal && !busy) {
+        setAmountModal(null);
+        setTransferFailures([]);
+      }
+      if (askOpen && !asking) setAskOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [amountModal, askOpen, busy, asking]);
+
   const initial = (name: string) => (name || '?').charAt(0).toUpperCase();
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -1071,9 +1158,18 @@ export default function CashierTradePage() {
             <button
               key={key}
               className={`${styles.tab} ${tab === key ? styles.tabActive : ''}`}
+              aria-pressed={tab === key}
               onClick={() => setTab(key)}
             >
               {label}
+              {/* A player who has asked their agent for chips is a player who is
+                  not at a table. loadRequests only runs when this tab is opened,
+                  so an owner sitting on Trade had no indication that anyone was
+                  waiting. One head-only count turns a tab nobody opens into a
+                  queue that pulls itself. Dan 2026-08-25. */}
+              {key === 'request' && pendingCount > 0 ? (
+                <span className={styles.tabBadge}>{pendingCount.toLocaleString()}</span>
+              ) : null}
             </button>
           ))}
       </div>
@@ -1090,10 +1186,19 @@ export default function CashierTradePage() {
               <span className={styles.stripLabel}>Agency Players Balance</span>
               <span className={styles.stripValue}>{fmt(agencyBalance)}</span>
             </div>
+            {/* For a non-staff role `availableChips` IS `myBalance` (see loadClub),
+                so an agent read the same figure twice under two labels, with no
+                "+" on the second, which looks like a rendering fault. Give them
+                the number they cannot get anywhere else instead: what their own
+                players are holding. Dan 2026-08-25. */}
             <div className={styles.stripCell}>
-              <span className={styles.stripLabel}>Available Chips</span>
+              <span className={styles.stripLabel}>
+                {isClubStaff(myRole) ? 'Available Chips' : 'Assigned To Me'}
+              </span>
               <span className={styles.stripValue}>
-                {fmt(availableChips)}
+                {isClubStaff(myRole)
+                  ? fmt(availableChips)
+                  : `${mineCount.toLocaleString()} - ${fmt(mineTotal)}`}
                 {/* Dan 2026-08-23: this used to open the Chip Mint directly.
                     Minting is a CLUB BANK action now - it exists only for a
                     standalone club and only inside the cashier that holds the
@@ -1248,6 +1353,29 @@ export default function CashierTradePage() {
               Advanced Cashier (Buy-In, Cash-Out, Mint, Full History)
             </button>
           </div>
+
+          {/* THE SELECTION, VISIBLE AND REVERSIBLE (Dan 2026-08-25).
+              Three things a user could not do. There was no undo for a
+              selection - to deselect twelve players you tapped twelve rows,
+              scrolling to find each. The count existed only inside the amount
+              modal, so while scrolling a 588-row list you could not tell what
+              you had picked up. And the total held by the selection is what
+              decides whether a Claim Back is worth making. All three live in
+              the thumb zone, which at 375px is where the hand already is. */}
+          {selected.size > 0 && (
+            <div className={styles.selBar} role="status">
+              <span>
+                {selected.size.toLocaleString()} Selected &middot; {fmt(pickedHeld)} Held
+              </span>
+              <button
+                type="button"
+                className={styles.selClear}
+                onClick={() => setSelected(new Set())}
+              >
+                Clear
+              </button>
+            </div>
+          )}
 
           {/* Footer actions — pinned */}
           <div className={styles.footer}>
@@ -1426,8 +1554,16 @@ export default function CashierTradePage() {
       {/* Ask-for-chips modal */}
       {askOpen && (
         <div className={styles.modalOverlay} onClick={() => setAskOpen(false)}>
-          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.modalTitle}>Request Chips</div>
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cashier-ask-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={styles.modalTitle} id="cashier-ask-title">
+              Request Chips
+            </div>
             <input
               type="number"
               inputMode="decimal"
@@ -1485,15 +1621,20 @@ export default function CashierTradePage() {
             setTransferFailures([]);
           }}
         >
-          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.modalTitle}>
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cashier-amount-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={styles.modalTitle} id="cashier-amount-title">
               {amountModal === 'send'
                 ? 'Send Out'
                 : amountModal === 'ticket'
                   ? 'Send Ticket'
                   : 'Claim Back'}{' '}
-              &middot; {list.filter((r) => selected.has(r.userId)).length} Player
-              {list.filter((r) => selected.has(r.userId)).length === 1 ? '' : 's'}
+              &middot; {picked.length.toLocaleString()} Player{picked.length === 1 ? '' : 's'}
             </div>
             <input
               type="number"
@@ -1515,6 +1656,36 @@ export default function CashierTradePage() {
               }
               autoFocus
             />
+            {/* WHO, AND HOW MUCH EACH (Dan 2026-08-25).
+                The modal said "Claim Back - 3 Players" and never named them; on
+                a 375px screen the selection has scrolled out of view and the
+                user is one tap from moving real money to a set they cannot see.
+                And Claim Back CLAMPS per player, so typing 500 against someone
+                holding 40 collects 40 - which the old receipt then reported as
+                "Claimed 500.00 Back". Every number here is already on the
+                client; this is a preview of the actual outcome. */}
+            {picked.length > 0 && (
+              <div className={styles.modalTargets}>
+                {picked.map((r) => (
+                  <div className={styles.modalTargetRow} key={r.userId}>
+                    <span>{r.name}</span>
+                    <span>
+                      {amountModal === 'claim'
+                        ? fmt(Math.min(Number(amount) || 0, r.chipBalance))
+                        : fmt(Number(amount) || 0)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {amountModal === 'claim' && picked.length > 0 && (
+              <div className={styles.modalHint}>
+                Total To Collect: {fmt(claimableTotal)}
+                {claimableTotal < (Number(amount) || 0) * picked.length
+                  ? ' - Capped By What Each Player Actually Holds'
+                  : ''}
+              </div>
+            )}
             {amountModal === 'ticket' && (
               <div className={styles.modalHint}>
                 Tickets Are Paid Now And Held Until The Player Redeems Them. Cancel An Unredeemed
@@ -1523,8 +1694,7 @@ export default function CashierTradePage() {
             )}
             {(amountModal === 'send' || amountModal === 'ticket') && (
               <div className={styles.modalHint}>
-                Total:{' '}
-                {fmt((Number(amount) || 0) * list.filter((r) => selected.has(r.userId)).length)}{' '}
+                Total: {fmt((Number(amount) || 0) * picked.length)}{' '}
                 {/* YOUR balance, not the club bank. Send Out debits
                     club_members.chip_balance of the caller for every role, so
                     quoting the treasury here told an owner they could spend
@@ -1557,7 +1727,7 @@ export default function CashierTradePage() {
               </button>
               <button
                 className={styles.modalConfirm}
-                disabled={busy || list.filter((r) => selected.has(r.userId)).length === 0}
+                disabled={busy || picked.length === 0}
                 onClick={() => runTransfers(amountModal)}
               >
                 {busy ? 'Working...' : 'Confirm'}

@@ -169,6 +169,13 @@
    PILL TABS — Animated Background Slider
    ───────────────────────────────────────────────────────────────────────────── */
 
+/* SCROLLS (Dan 2026-08-25). An agent on their own profile gets EIGHT tabs, and
+   this was `display:flex` with `flex:1` and `white-space:nowrap` and no
+   overflow. Flex items will not shrink below their content with nowrap, so at
+   375px the row needed ~400px and the Rake tab - the one an agent is paid to
+   look at - was the one pushed off. The swipe handler could then move to a tab
+   the user could not see was selected. .filterRow on Club Data and .tabNav on
+   the Marketplace already do exactly this; Stats was the outlier. */
 .stats-pill-tabs {
   display: flex;
   gap: 6px;
@@ -178,10 +185,20 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
   position: relative;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  justify-content: flex-start;
+}
+
+.stats-pill-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .stats-pill-tabs button {
-  flex: 1;
+  flex: 0 0 auto;
+  scroll-snap-align: center;
   padding: 0.6rem 0.5rem;
   min-height: 44px;
   border: none;

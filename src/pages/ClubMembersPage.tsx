@@ -82,10 +82,15 @@ import ClubRosterService, { mapRosterRow, type RosterMember } from '../services/
    FILTERS AND SORTS
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-type MemberFilter = 'all' | 'online' | 'agents' | 'admins';
+type MemberFilter = 'all' | 'mine' | 'online' | 'agents' | 'admins';
 
 const FILTER_LABEL: Record<MemberFilter, string> = {
   all: 'All',
+  /* Direct downline, deliberately named that way: upline_user_id is one hop,
+     so a super agent's full tree is larger than this. Claiming "My Downline"
+     for a one-hop filter is how you get a support ticket about missing
+     players. The agent's own downline_total is the honest full number. */
+  mine: 'Direct',
   online: 'Online',
   agents: 'Agents',
   admins: 'Admins',
@@ -362,6 +367,7 @@ export default function ClubMembersPage() {
     const q = searchQuery.trim().toLowerCase();
     const matched = members.filter((m) => {
       if (filter === 'online' && !m.is_online) return false;
+      if (filter === 'mine' && m.upline_user_id !== user?.id) return false;
       if (filter === 'agents' && !AGENT_ROLE_SET.includes(m.role)) return false;
       if (filter === 'admins' && !STAFF_ROLE_SET.includes(m.role)) return false;
       if (!q) return true;
@@ -404,6 +410,12 @@ export default function ClubMembersPage() {
   const agentCount = useMemo(
     () => members.filter((m) => AGENT_ROLE_SET.includes(m.role)).length,
     [members]
+  );
+  /** Players whose upline is the reader. Drives the Direct chip, which is
+   *  hidden entirely when it would match nothing. */
+  const mineCount = useMemo(
+    () => (user?.id ? members.filter((m) => m.upline_user_id === user.id).length : 0),
+    [members, user?.id]
   );
 
   const openMember = useCallback(
@@ -478,17 +490,32 @@ export default function ClubMembersPage() {
 
       <div className="members-controls">
         <div className="members-filters">
-          {(Object.keys(FILTER_LABEL) as MemberFilter[]).map((f) => (
-            <button
-              key={f}
-              type="button"
-              className={filter === f ? 'active' : ''}
-              onClick={() => setFilter(f)}
-            >
-              {FILTER_LABEL[f]}
-              {f === 'agents' && agentCount > 0 ? ` (${agentCount})` : ''}
-            </button>
-          ))}
+          {(Object.keys(FILTER_LABEL) as MemberFilter[])
+            .filter((f) => f !== 'mine' || mineCount > 0)
+            .map((f) => (
+              <button
+                key={f}
+                type="button"
+                className={filter === f ? 'active' : ''}
+                aria-pressed={filter === f}
+                onClick={() => setFilter(f)}
+              >
+                {FILTER_LABEL[f]}
+                {/* Counts are over the WHOLE roster, so with a search active the
+                  chip said "Agents (412)" and clicking it showed two. Drop the
+                  count while searching rather than print a number that is
+                  about to be contradicted. */}
+                {!searchQuery && f === 'agents' && agentCount > 0
+                  ? ` (${agentCount.toLocaleString()})`
+                  : ''}
+                {!searchQuery && f === 'mine' && mineCount > 0
+                  ? ` (${mineCount.toLocaleString()})`
+                  : ''}
+                {!searchQuery && f === 'online' && onlineCount > 0
+                  ? ` (${onlineCount.toLocaleString()})`
+                  : ''}
+              </button>
+            ))}
         </div>
 
         <div className="members-toolbar">
@@ -502,6 +529,23 @@ export default function ClubMembersPage() {
               ))}
             </select>
           </label>
+
+          {/* THE REFRESH THIS PAGE ALREADY ASSUMED IT HAD (Dan 2026-08-25).
+              The comment above loadMembers justifies refusing to refresh on
+              wallet events and tab focus with "pull-to-refresh is right there
+              when it matters" - and there was no pull-to-refresh and no button.
+              `refresh` was reachable only from a bus event or a realtime row
+              change, so an owner who had just funded five agents in the Cashier
+              switched to Players, saw stale wallets, and had no way to ask for
+              current ones short of reloading the page. */}
+          <button
+            type="button"
+            className="members-refresh"
+            onClick={refresh}
+            disabled={loading || isRefreshing}
+          >
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
 
           {/* Export is a CSV of every member's wallets, chip balance and fee
               totals. `userRole` was resolved on every load - including an extra
@@ -523,7 +567,9 @@ export default function ClubMembersPage() {
         </div>
       </div>
 
-      {isRefreshing && <div className="members-refreshing">Refreshing...</div>}
+      <div className="members-refreshing" role="status" aria-live="polite">
+        {isRefreshing ? 'Refreshing...' : ''}
+      </div>
 
       {/* NO containerRef here (Dan 2026-08-25). .members-list has no overflow and
           no height - it is not a scroll container - so passing it as the
@@ -570,6 +616,23 @@ export default function ClubMembersPage() {
   );
 }
 
+/** "12d" / "3mo" since a member was last seen, or '' when unreadable. */
+function dormancy(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '';
+  const days = Math.floor((Date.now() - t) / 86_400_000);
+  if (days < 1) return 'Today';
+  if (days < 30) return `${days}d`;
+  if (days < 365) return `${Math.floor(days / 30)}mo`;
+  return `${Math.floor(days / 365)}y`;
+}
+
+/** The full timestamp for the title attribute, or '' when unreadable. */
+function fullDate(iso: string): string {
+  const d = new Date(iso);
+  return Number.isFinite(d.getTime()) ? d.toLocaleString() : '';
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    ONE ROW
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -580,12 +643,23 @@ function MemberRow({ member, onOpen }: { member: RosterMember; onOpen: (userId: 
   return (
     <button
       type="button"
-      className={`member-row${member.is_online ? ' member-row--online' : ''}`}
+      /* SEATED and ONLINE are different facts with different consequences, and
+         the row collapsed them into one cyan ring. is_seated is already on
+         every row: an owner deciding whether to claim chips back, or an agent
+         deciding whether to message someone, needs to know if they are mid-hand.
+         Dan 2026-08-25. */
+      className={`member-row${
+        member.is_seated ? ' member-row--seated' : member.is_online ? ' member-row--online' : ''
+      }`}
       onClick={() => onOpen(member.user_id)}
       /* aria-label on a button overrides its whole subtree, so the role badge,
          player number, club and all five metrics were unreachable by screen
          reader - a list of names and nothing else. Fold the essentials in. */
-      aria-label={`${member.alias}, ${roleLabel(member.role)}, ${chips(member.downline_total)} Downlines. Open Member Management`}
+      aria-label={`${member.alias}, ${roleLabel(member.role)}${
+        member.is_seated ? ', At A Table' : member.is_online ? ', Online' : ''
+      }${member.upline_name ? `, Under ${member.upline_name}` : ''}, ${chips(
+        member.downline_total
+      )} Downlines. Open Member Management`}
     >
       <span className="member-avatar">
         {member.avatar_url ? (
@@ -630,6 +704,20 @@ function MemberRow({ member, onOpen }: { member: RosterMember; onOpen: (userId: 
             <span className="member-number">No. {member.player_number}</span>
           )}
           {member.home_club_name && <span className="member-club">{member.home_club_name}</span>}
+          {/* upline_name is fetched by the roster RPC, which walks the agent
+              tree to produce it, and was rendered nowhere. "Who does this
+              player sit under" is the first question an owner asks about any
+              name on this list. */}
+          {member.upline_name && <span className="member-upline">Under {member.upline_name}</span>}
+          {member.is_seated && <span className="member-seated">At Table</span>}
+          {/* last_login was also fetched and dropped. An owner pruning a
+              roster, or an agent finding who has gone quiet, had no dormancy
+              signal anywhere in the product. */}
+          {!member.is_online && member.last_login && (
+            <span className="member-seen" title={fullDate(member.last_login)}>
+              {dormancy(member.last_login)}
+            </span>
+          )}
         </span>
 
         {/* Requirement 3, plus user's requested two columns for fees */}

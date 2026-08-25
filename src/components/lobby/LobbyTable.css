@@ -162,13 +162,6 @@
 }
 /* Was an inline style object on the element, which no class rule could ever
    beat - see LiveCountdown. */
-.lt-countdown {
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  margin-right: 8px;
-  color: var(--text-secondary, #c8ccd4);
-}
 
 .lt-col-tstack {
   width: 104px;
@@ -244,8 +237,22 @@
   box-shadow: 0 0 6px rgba(255, 176, 92, 0.9);
 }
 
+/* The keyboard cursor. Distinct from selection, which OPENS a row — arrowing
+   through the list must show where you are without acting on it. */
+.lt-row.is-cursor {
+  outline: 2px solid var(--club-blue-light, #5b83e8);
+  outline-offset: -2px;
+}
+
 .lt-row.is-mine {
   box-shadow: inset 3px 0 0 #2ed573;
+}
+/* ...but it must not eat the hover. `.lt-row:hover` and `.lt-row.is-mine` are
+   both (0,2,0), so the later one won unconditionally and the ONE row a player
+   most wants to click was the only row with no hover feedback at all. The
+   green rail stays; the blue wash comes back on top of it. */
+.lt-row.is-mine:hover {
+  background: rgba(65, 105, 225, 0.07);
 }
 .lt-row.is-mine.is-selected {
   box-shadow: inset 3px 0 0 #2ed573;
@@ -514,20 +521,16 @@ abbr.lt-variant[title] {
   background: rgba(255, 255, 255, 0.04);
 }
 
-/* Player's own relationship to the game */
-.lt-mine {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: #0a0b0f;
-  background: var(--club-blue-light, #5b83e8);
-}
-.lt-mine--wait {
-  background: var(--text-secondary, #c8ccd4);
-}
+/* ── THE OLD .lt-mine BLOCK LIVED HERE AND IS DELETED ──────────────────────
+   It was a second definition at the SAME specificity (0,1,0), later in source,
+   so it silently beat the styled block further up: the green "seated" and
+   amber "waitlisted" treatments were both dead and all three player states
+   rendered the identical blue. `display:inline-block` also killed the
+   `gap: 4px`, so the status dot sat flush against the text, and
+   `border-radius: 4px` squared off a pill.
+
+   `.lt-mine--wait` went with it: PLAYER_STATE_LABEL emits seated / waitlisted
+   / registered, and nothing has ever emitted `wait`. */
 
 /* Favorite star */
 .lt-fav {
@@ -709,9 +712,6 @@ abbr.lt-variant[title] {
   .lobby-table th,
   .lobby-table td {
     padding: 6px 4px;
-  }
-  .lt-countdown {
-    font-size: 0.6rem;
   }
   .hide-on-mobile {
     display: none !important;
@@ -1078,7 +1078,6 @@ abbr.lt-variant[title] {
   }
 
   .lobby-table td.lt-col-num .lt-mono,
-  .lobby-table td.lt-col-starts .lt-countdown,
   .lobby-table td.lt-col-starts .lt-dim,
   .lobby-table td.lt-col-players .lt-seats__num,
   .lobby-table td.lt-col-payout .lt-payout__x,
@@ -1187,7 +1186,11 @@ abbr.lt-variant[title] {
 
   .lt-act {
     flex: 1 1 0;
-    min-height: 38px;
+    /* 44px, which is what the comment above has always promised and what WCAG
+       2.5.5 and the iOS HIG both ask for. It was 38. This is the primary
+       commit control of the card; it is the last thing that should be
+       negotiated down. */
+    min-height: 44px;
     border-radius: 9px;
     font-size: 0.8125rem;
     font-weight: 800;

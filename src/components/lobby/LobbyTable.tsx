@@ -21,6 +21,8 @@ import {
   mttTitleLine,
   seatFirstJoinable,
   seatsTakenLabel,
+  stackDepthBB,
+  SPIN_MAX_MULTIPLIER,
   spinPayoutLabel,
   spinPrizeLabel,
   stackDepthLabel,
@@ -136,7 +138,13 @@ function RulesCell({ entry }: { entry: LobbyEntry }) {
   return (
     <span className="lt-rules">
       {shown.map((r) => (
-        <abbr key={r.key} title={r.tip} className="lt-rule">
+        /* `title` is a hover affordance and a phone has no hover, so the
+           explanation of "BOMB POTS 1 IN 25" was unreachable on the surface
+           where the medallions matter most — they are what distinguishes
+           eleven identical NLH 5/10 tables. aria-label carries the same
+           sentence to a screen reader, and the tip is also rendered in the
+           game panel a tap away. */
+        <abbr key={r.key} title={r.tip} aria-label={`${r.label}: ${r.tip}`} className="lt-rule">
           {r.label}
         </abbr>
       ))}
@@ -159,9 +167,10 @@ function RulesCell({ entry }: { entry: LobbyEntry }) {
  */
 const tickSubscribers = new Set<() => void>();
 let tickInterval: ReturnType<typeof setInterval> | null = null;
-function useSharedSecondTick(): number {
+function useSharedSecondTick(active = true): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
+    if (!active) return;
     const cb = () => setNow(Date.now());
     tickSubscribers.add(cb);
     if (tickInterval == null)
@@ -175,7 +184,7 @@ function useSharedSecondTick(): number {
         tickInterval = null;
       }
     };
-  }, []);
+  }, [active]);
   return now;
 }
 
@@ -188,7 +197,11 @@ function useSharedSecondTick(): number {
  * pinned by tests.
  */
 function MttTitleMeta({ entry }: { entry: LobbyEntry }) {
-  const now = useSharedSecondTick();
+  /* A completed or cancelled tournament has a STATIC phrase — mttPhaseText
+     returns its terminal label — so subscribing it to the 1 Hz tick
+     re-rendered one component per such row, every second, forever. */
+  const isTicking = entry.status !== 'completed' && entry.status !== 'closed';
+  const now = useSharedSecondTick(isTicking);
 
   const startMs = entry.startTime ? new Date(entry.startTime).getTime() : NaN;
   const startClock = Number.isFinite(startMs)
@@ -319,7 +332,9 @@ function SeatsMeter({ entry }: { entry: LobbyEntry }) {
 }
 
 function FavCell({ entry, ctx }: { entry: LobbyEntry; ctx: LobbyRowContext }) {
-  if (entry.kind !== 'cash' || !ctx.onToggleFavorite) return <span className="lt-dim" />;
+  /* null, not an empty span: a non-empty cell defeats `td:empty` and reserves
+     34px on every tournament row. */
+  if (entry.kind !== 'cash' || !ctx.onToggleFavorite) return null;
   const isFav = ctx.favoriteIds.has(entry.id);
   return (
     <button
@@ -366,7 +381,23 @@ const COL_FAV: ColumnDef = {
  * the whole reason the badge is allowed to make a claim at all. Unknown
  * renders as nothing: an absent boast, never a wrong one.
  */
+/**
+ * The literal stays, because the availability view's column is literally named
+ * `can_draw_100x` — the badge and the column have to agree, and a value
+ * derived from SPIN_TIERS could silently stop matching a hard-coded SQL name.
+ *
+ * The assertion beside it is what makes that safe: if the ladder's top tier
+ * ever moves, this throws at import rather than letting the badge quietly
+ * advertise a multiplier the view is not asking about. The 500x retirement is
+ * the precedent that this number changes.
+ */
 const SPIN_TOP_MULTIPLIER = 100;
+if (SPIN_TOP_MULTIPLIER !== SPIN_MAX_MULTIPLIER) {
+  throw new Error(
+    `Spin top tier moved to ${SPIN_MAX_MULTIPLIER}x: update SPIN_TOP_MULTIPLIER and the ` +
+      `can_draw_${SPIN_TOP_MULTIPLIER}x column in v_spin_tier_availability together.`
+  );
+}
 
 function SpinTopTierBadge() {
   const label = `${SPIN_TOP_MULTIPLIER.toLocaleString()}x Live`;
@@ -437,7 +468,7 @@ const COL_STAKES: ColumnDef = {
   className: 'lt-col-num',
   sortable: true,
   sortValue: (e) => e.stakesValue,
-  render: (e) => <span className="lt-mono">{e.stakesLabel || '-'}</span>,
+  render: (e) => (e.stakesLabel ? <span className="lt-mono">{e.stakesLabel}</span> : null),
 };
 const COL_VARIANT: ColumnDef = {
   key: 'variant',
@@ -489,12 +520,10 @@ const COL_GTD: ColumnDef = {
   className: 'lt-col-num',
   sortable: true,
   sortValue: (e) => e.guaranteeValue,
+  /* null, not a dash. A non-empty cell defeats `td:empty`, so every freezeout
+     without a guarantee grew a labelled GUARANTEE well containing a hyphen. */
   render: (e) =>
-    e.guaranteeLabel ? (
-      <span className="lt-mono lt-gtd">{e.guaranteeLabel}</span>
-    ) : (
-      <span className="lt-dim">-</span>
-    ),
+    e.guaranteeLabel ? <span className="lt-mono lt-gtd">{e.guaranteeLabel}</span> : null,
 };
 const COL_RULES: ColumnDef = {
   key: 'rules',
@@ -556,13 +585,19 @@ const COL_KIND: ColumnDef = {
   sortValue: (e) => e.kind,
   render: (e) => (
     <span className="lt-kind">
+      {/* COL_KIND is in the ALL set alone, and the ALL list is MTTs and cash
+          only today ("SPINS AND HEADS UP ARE NEVER HERE", pinned by
+          allTabScope). The Spin and Heads-Up labels stay anyway: collapsing
+          them to a bare `: 'MTT'` means the day that scope changes, a Spin
+          silently calls itself an MTT rather than failing visibly. A label
+          that is merely unused costs nothing; one that is wrong costs trust. */}
       {e.kind === 'cash'
         ? 'Cash'
-        : e.kind === 'mtt'
-          ? 'MTT'
-          : e.kind === 'spin'
-            ? 'Spin'
-            : 'Heads Up'}
+        : e.kind === 'spin'
+          ? 'Spin'
+          : e.kind === 'sng'
+            ? 'Heads Up'
+            : 'MTT'}
     </span>
   ),
 };
@@ -703,7 +738,16 @@ const COL_FORMAT: ColumnDef = {
   label: 'Format',
   className: 'lt-col-format',
   sortable: true,
-  sortValue: (e) => stackDepthLabel(e) || '',
+  /* The DEPTH, not the word. Sorting on the label gave the alphabet
+     ('' < Deepstack < Hyper < Standard < Turbo) and floated every cash row —
+     which has no format — to the top of the ALL tab. Infinity for a row that
+     cannot say, so it sinks in both directions, exactly as COL_TSTACK does.
+     It is also ~1,300 JSON.parse calls cheaper per sort: stackDepthLabel
+     re-parsed the blind structure inside the comparator. */
+  sortValue: (e) => {
+    const depth = stackDepthBB(e);
+    return depth > 0 ? depth : Infinity;
+  },
   render: (e) => {
     const label = stackDepthLabel(e);
     return label ? <span className="lt-format">{label}</span> : null;
@@ -715,9 +759,17 @@ const COL_ACTIONS: ColumnDef = {
   label: '',
   className: 'lt-col-actions',
   render: (e, ctx) => {
-    const stop = (fn?: (x: LobbyEntry) => void) => (ev: React.MouseEvent) => {
+    /* One closure, not one per button. `stop` used to be a factory allocating
+       a fresh handler for every button on every row on every render, on a
+       column the desktop stylesheet hides entirely — 2 to 3 closures x 111
+       rows to build DOM that is display:none. The action is carried on the
+       button instead and read back from the event. */
+    const run = (ev: React.MouseEvent) => {
       ev.stopPropagation();
-      fn?.(e);
+      const which = (ev.currentTarget as HTMLElement).dataset.act;
+      if (which === 'register') ctx.onRegister?.(e);
+      else if (which === 'join') ctx.onJoinTable?.(e);
+      else if (which === 'view') ctx.onViewTable?.(e);
     };
 
     if (e.kind === 'cash') {
@@ -726,16 +778,12 @@ const COL_ACTIONS: ColumnDef = {
       return (
         <span className="lt-actions">
           {ctx.onViewTable && (
-            <button type="button" className="lt-act lt-act--ghost" onClick={stop(ctx.onViewTable)}>
+            <button type="button" className="lt-act lt-act--ghost" data-act="view" onClick={run}>
               View Table
             </button>
           )}
           {ctx.onJoinTable && (
-            <button
-              type="button"
-              className="lt-act lt-act--primary"
-              onClick={stop(ctx.onJoinTable)}
-            >
+            <button type="button" className="lt-act lt-act--primary" data-act="join" onClick={run}>
               {seated ? 'Return To Table' : headsUp ? 'Sit Down' : 'Join Table'}
             </button>
           )}
@@ -750,10 +798,14 @@ const COL_ACTIONS: ColumnDef = {
          can only ever fail — the same reasoning that gave running MTTs a
          Watch button. A player who already holds a seat gets taken back to it. */
       const mine = playerStateOf(e, ctx) !== null;
+      /* `full` is not in this list any more: tournamentStatus returns
+         'running' for a seat-first game with every seat gone, and 'completed'
+         is filtered out by the query. The capacity check is what actually
+         fires, and it is kept because it is true a moment before the status
+         catches up. */
       const noSeatLeft =
         e.status === 'running' ||
         e.status === 'completed' ||
-        e.status === 'full' ||
         (e.capacity > 0 && e.players >= e.capacity);
 
       if (mine || noSeatLeft) {
@@ -763,7 +815,8 @@ const COL_ACTIONS: ColumnDef = {
               <button
                 type="button"
                 className={`lt-act ${mine ? 'lt-act--done' : 'lt-act--primary'}`}
-                onClick={stop(ctx.onViewTable)}
+                data-act="view"
+                onClick={run}
               >
                 {mine ? 'Return To Game' : 'Watch'}
               </button>
@@ -775,7 +828,12 @@ const COL_ACTIONS: ColumnDef = {
       return (
         <span className="lt-actions">
           {ctx.onRegister && (
-            <button type="button" className="lt-act lt-act--primary" onClick={stop(ctx.onRegister)}>
+            <button
+              type="button"
+              className="lt-act lt-act--primary"
+              data-act="register"
+              onClick={run}
+            >
               Sit Down
             </button>
           )}
@@ -794,7 +852,7 @@ const COL_ACTIONS: ColumnDef = {
     return (
       <span className="lt-actions">
         {ctx.onViewTable && (
-          <button type="button" className="lt-act lt-act--ghost" onClick={stop(ctx.onViewTable)}>
+          <button type="button" className="lt-act lt-act--ghost" data-act="view" onClick={run}>
             Details
           </button>
         )}
@@ -802,13 +860,14 @@ const COL_ACTIONS: ColumnDef = {
           <button
             type="button"
             className={`lt-act ${registered ? 'lt-act--done' : 'lt-act--primary'}`}
-            onClick={stop(registered ? ctx.onViewTable : ctx.onRegister)}
+            data-act={registered ? 'view' : 'register'}
+            onClick={run}
           >
             {registered ? 'Registered' : 'Register'}
           </button>
         )}
         {closedToEntry && ctx.onViewTable && (
-          <button type="button" className="lt-act lt-act--primary" onClick={stop(ctx.onViewTable)}>
+          <button type="button" className="lt-act lt-act--primary" data-act="view" onClick={run}>
             {registered ? 'Return To Game' : 'Watch'}
           </button>
         )}
@@ -837,6 +896,7 @@ const LobbyRow = memo(function LobbyRow({
   columns,
   ctx,
   selected,
+  cursor,
   onSelect,
   onActivate,
 }: {
@@ -844,6 +904,8 @@ const LobbyRow = memo(function LobbyRow({
   columns: ColumnDef[];
   ctx: LobbyRowContext;
   selected: boolean;
+  /** The keyboard cursor is here. Not the same as selected — see handleKeyDown. */
+  cursor?: boolean;
   onSelect: (e: LobbyEntry) => void;
   onActivate: (e: LobbyEntry) => void;
 }) {
@@ -856,11 +918,11 @@ const LobbyRow = memo(function LobbyRow({
   return (
     <tr
       data-id={entry.id}
-      className={`lt-row lt-row--${entry.status}${selected ? ' is-selected' : ''}${mine ? ' is-mine' : ''}`}
+      className={`lt-row lt-row--${entry.status}${selected ? ' is-selected' : ''}${cursor ? ' is-cursor' : ''}${mine ? ' is-mine' : ''}`}
       data-kind={entry.kind}
-      data-mine={mine || undefined}
       role="row"
       aria-selected={selected}
+      id={`lt-row-${entry.id}`}
       // Hover / touch / keyboard-focus on a lobby row is the earliest honest
       // signal that this table is where the player is going, so start pulling
       // the TablePage chunk now. TablePage is the single heaviest chunk in the
@@ -928,7 +990,13 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
            and COL_LEVELTIME says how long a level actually runs — so the MTT
            card now answers speed the same way the Spin and Heads-Up cards do,
            out of the same two helpers. */
-        { ...COL_PLAYERS, label: 'Enrolled', hideOnMobile: true },
+        /* `labelFor` came along with the spread and said "Registered" while
+           the header said "Enrolled", so the desktop column heading and the
+           card's own data-label disagreed about the same number. One word.
+           And it is no longer hidden on phones: hideOnMobile meant the MTT tab
+           showed no registration count at all on a phone, which is one of the
+           two numbers a player is choosing between. */
+        { ...COL_PLAYERS, label: 'Registered' },
         COL_STATUS,
         COL_TSTACK,
         COL_TLEVEL,
@@ -989,7 +1057,11 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_KIND,
         COL_VARIANT,
         COL_COST,
-        COL_PAYOUT,
+        /* COL_PAYOUT is NOT here. The ALL tab carries MTTs and cash only —
+           "SPINS AND HEADS UP ARE NEVER HERE", pinned by allTabScope.test.ts —
+           and spinPayoutLabel returns null for everything that is not a Spin,
+           so the column was 116px of guaranteed emptiness on every desktop
+           ALL tab. */
         COL_PLAYERS,
         COL_STARTS,
         COL_RULES,
@@ -1032,7 +1104,12 @@ export default function LobbyTable({
   /* One fetch per lobby, shared by every Spin row (the hook is module-cached
      with a 60s TTL). `clubId` here is the resolved club UUID; when the page
      has only the slug the lookup simply misses and no row is badged. */
-  const spinTiers = useSpinTierAvailability(clubId);
+  /* Only the Spin tabs can render the badge (it requires kind === 'spin', and
+     the ALL list never contains a Spin), so every other tab was fetching a
+     view whose answer it could not display. */
+  const spinTiers = useSpinTierAvailability(
+    category === 'SPIN' || category === 'SNG' ? clubId : undefined
+  );
   const rowCtx = useMemo<LobbyRowContext>(
     () => ({ ...ctx, spinTopTierLive: spinTiers?.can_draw_100x === true }),
     [ctx, spinTiers]
@@ -1042,15 +1119,30 @@ export default function LobbyTable({
     () => readSort(clubId, category) ?? defaultSortFor(category)
   );
   const bodyRef = useRef<HTMLTableSectionElement>(null);
+  /* Which row the keyboard is on. Deliberately separate from `selectedId`:
+     selecting a row opens (and for a running MTT, navigates), and arrowing
+     through a list must not do either. */
+  const [keyboardFocusId, setKeyboardFocusId] = useState<string | null>(null);
 
   /* The columns change with the category, so the sort cannot carry across -
      it is restored from what this player last chose on THIS tab instead. A
      remembered key that the new column set does not define is dropped by the
      sort itself (columns.find returns undefined -> original order). */
-  useEffect(
-    () => setSort(readSort(clubId, category) ?? defaultSortFor(category)),
-    [category, clubId]
-  );
+  /**
+   * Restore the remembered sort when the TAB changes.
+   *
+   * `clubId` was in this dependency list and should not have been: on a slug
+   * route it starts as the slug and becomes the UUID a moment later, so the
+   * effect fired twice with two different storage keys and threw away any
+   * header the player had clicked in between. The tab is the only thing that
+   * changes the column set, and the column set is the only reason to re-read.
+   */
+  const lastCategoryRef = useRef(category);
+  useEffect(() => {
+    if (lastCategoryRef.current === category) return;
+    lastCategoryRef.current = category;
+    setSort(readSort(clubId, category) ?? defaultSortFor(category));
+  }, [category, clubId]);
 
   /* Dan 2026-08-25: a Spin or Heads-Up with every seat gone "NEEDS TO BE
      DROPPED TO THE BOTTOM OF THE RESULTS". This is applied AFTER whatever sort
@@ -1058,13 +1150,19 @@ export default function LobbyTable({
      seats or status should ever float a game nobody can enter back up between
      two they can. Array.prototype.sort is stable in every engine we ship to,
      so the chosen order survives inside each partition. */
-  const sink = useCallback(
-    (rows: LobbyEntry[]) =>
-      rows.some((r) => !seatFirstJoinable(r))
-        ? [...rows].sort((a, b) => Number(!seatFirstJoinable(a)) - Number(!seatFirstJoinable(b)))
-        : rows,
-    []
-  );
+  const sink = useCallback((rows: LobbyEntry[]) => {
+    /* ONE pass. The previous version called seatFirstJoinable once per row for
+       `.some` and then ~2 n log n more times inside a comparator, on an array
+       that had just been copied — and copied it again. Partitioning is O(n),
+       preserves the incoming order inside each half (which is what the stable
+       sort was there for), and evaluates the predicate exactly once per row.
+       The identical array reference is returned when nothing needs to sink, so
+       the memo below still sees no change. */
+    const open: LobbyEntry[] = [];
+    const gone: LobbyEntry[] = [];
+    for (const r of rows) (seatFirstJoinable(r) ? open : gone).push(r);
+    return gone.length === 0 ? rows : open.concat(gone);
+  }, []);
 
   const sorted = useMemo(() => {
     if (!sort) return sink(entries);
@@ -1094,6 +1192,10 @@ export default function LobbyTable({
 
   const handleHeaderClick = (col: ColumnDef) => {
     if (!col.sortable) return;
+    /* The write happens OUTSIDE the updater. React may invoke an updater more
+       than once (StrictMode, bail-out replays), and a side effect in there is
+       a correctness hazard the moment it stops being idempotent. */
+    let committed: { key: string; dir: SortDir } | null = null;
     setSort((prev) => {
       /**
        * TWO STATES, NOT THREE (Dan 2026-08-23: "CLICK A 3RD TIME AND ITS
@@ -1111,9 +1213,10 @@ export default function LobbyTable({
         !prev || prev.key !== col.key
           ? { key: col.key, dir: 'asc' }
           : { key: col.key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
-      writeSort(clubId, category, next);
+      committed = next;
       return next;
     });
+    if (committed) writeSort(clubId, category, committed);
   };
 
   const handleKeyDown = useCallback(
@@ -1123,7 +1226,8 @@ export default function LobbyTable({
       const NAV = ['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageDown', 'PageUp'];
       if (!NAV.includes(e.key) && e.key !== 'Enter') return;
       if (sorted.length === 0) return;
-      const idx = sorted.findIndex((r) => r.id === selectedId);
+      const cursorId = keyboardFocusId ?? selectedId;
+      const idx = sorted.findIndex((r) => r.id === cursorId);
       if (e.key === 'Enter') {
         if (idx >= 0) {
           e.preventDefault();
@@ -1147,14 +1251,18 @@ export default function LobbyTable({
                 : e.key === 'PageDown'
                   ? Math.min(last, from + PAGE)
                   : Math.max(0, from - PAGE);
-      onSelect(sorted[next]);
+      /* onSelect is openEntry, which NAVIGATES for a running MTT. Holding
+         ArrowDown through the list therefore routed the player off the lobby
+         mid-scroll, and Home/End/PageDown did it in one keystroke. Keyboard
+         navigation moves the SELECTION; Enter is what activates. */
+      setKeyboardFocusId(sorted[next].id);
       // Keep the focused row in view inside the sticky-header scroller.
       const rowEl = bodyRef.current?.querySelector<HTMLTableRowElement>(
         `tr[data-id="${sorted[next].id}"]`
       );
       rowEl?.scrollIntoView({ block: 'nearest' });
     },
-    [sorted, selectedId, onSelect, onActivate]
+    [sorted, selectedId, keyboardFocusId, onActivate]
   );
 
   return (
@@ -1164,6 +1272,11 @@ export default function LobbyTable({
       aria-label={`Game list, ${sorted.length} game${sorted.length === 1 ? '' : 's'}`}
       tabIndex={0}
       onKeyDown={handleKeyDown}
+      /* Without this the arrow keys moved a selection no screen reader was
+         told about: focus stays on this wrapper by design (moving it into the
+         row would fight the scroller), so the grid has to name its own active
+         descendant. */
+      aria-activedescendant={keyboardFocusId ? `lt-row-${keyboardFocusId}` : undefined}
     >
       {/* role=grid: aria-selected on a <tr> is only valid inside a grid, and
           without it a screen reader announces none of the selection state the
@@ -1262,6 +1375,7 @@ export default function LobbyTable({
               columns={columns}
               ctx={rowCtx}
               selected={entry.id === selectedId}
+              cursor={entry.id === keyboardFocusId}
               onSelect={onSelect}
               onActivate={onActivate}
             />

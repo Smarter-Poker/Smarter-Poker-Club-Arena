@@ -233,7 +233,11 @@ const CTX = {
 };
 
 const TABS: { cat: LobbyCategory; rows: (typeof MTT)[] }[] = [
-  { cat: 'ALL', rows: [MTT, CASH, SPIN, HU] },
+  /* ALL is MTTs and cash ONLY, matching what ClubHomePage actually builds
+     ("SPINS AND HEADS UP ARE NEVER HERE", pinned by allTabScope.test.ts).
+     Feeding it a Spin made the harness exercise a state production cannot
+     reach, which is how a synthetic pass hides a real gap. */
+  { cat: 'ALL', rows: [MTT, MTT2, CASH, CASH2] },
   { cat: 'MTT', rows: [MTT, MTT2, MTT_MANYTAGS] },
   { cat: 'HOLDEM', rows: [CASH, CASH2] },
   { cat: 'OMAHA', rows: [CASH_NONAME, CASH2] },

@@ -6396,6 +6396,12 @@ export default function TablePage({
      */
     resetTimer(seconds);
 
+    // Visually activate the time bank UI for ALL players
+    setTableState((prev) => ({
+      ...prev,
+      isTimeBankActive: true,
+    }));
+
     // Update the Hero's specific localized UI if they are the one activating it
     if (evtPlayerId === userId) {
       /* The arm has just been REDEEMED — the engine spent the bank and
@@ -11372,17 +11378,6 @@ export default function TablePage({
                 PotDisplay, drawing the number twice (stacked). PotDisplay
                 already shows the amount + a chip stack next to it + side
                 pots, which is the single authoritative pot display. */}
-            {/* Phase 2 T1-04 — PokerBros signature: hand strength label
-             *  floats at pot center for ~1s on ANY win (showdown or not). */}
-            {winnerInfo.handName && tableState.boardStage === 'preflop' && (
-              <div
-                className="pot-hand-strength"
-                key={`hand-${tableState.handNumber ?? 0}-${winnerInfo.handName}`}
-                role="status"
-              >
-                {winnerInfo.handName}
-              </div>
-            )}
           </div>
 
           {/* THE FLOATING TIME BANK PANEL IS GONE. Do not re-add it.

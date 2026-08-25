@@ -576,20 +576,54 @@ export function lateRegEndMs(t: LobbyTournamentRow): number | null {
  * The live phrase on line 2 of an MTT title: "Starting In 17:33...",
  * "Late Reg 12:45 Left", "Running", or the terminal status label.
  */
+/** Time left in the level a running tournament is on, or null when the blind
+    structure does not say. */
+export function levelRemainingMs(t: LobbyTournamentRow, now: number): number | null {
+  if (!t.blind_structure || !t.level_started_at) return null;
+  try {
+    const structure = JSON.parse(t.blind_structure) as BlindLevel[];
+    if (!Array.isArray(structure)) return null;
+    const cur = Math.max(1, Number(t.current_level) || 1);
+    const row = structure.find((b) => Number(b.level) === cur) || structure[cur - 1];
+    const mins = Number(row?.durationMinutes);
+    if (!Number.isFinite(mins) || mins <= 0) return null;
+    const began = new Date(t.level_started_at).getTime();
+    if (!Number.isFinite(began)) return null;
+    const left = began + mins * 60000 - now;
+    return left > 0 ? left : 0;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Dan 2026-08-24: "KEEP THE LATE REG CLOCK RUNNING OR THE STARTS IN CLOCK
+ * RUNNING AT ALL TIMES. DON'T SWITCH BACK AND FORTH FROM A CLOCK TO 'LATE REG
+ * CLOSING SOON'. ALWAYS USE CLOCKS."
+ *
+ * Every branch here used to fall back to a phrase the moment its number went
+ * to zero or its input was briefly missing — so a card that had been counting
+ * down for an hour would suddenly read "Late Reg Closing", then go back to
+ * counting on the next poll. A clock that disappears at the exact moment it
+ * matters most is worse than no clock. Zero is now a legitimate reading, and
+ * a running tournament counts its level down instead of saying "Running".
+ */
 export function mttPhaseText(entry: LobbyEntry, now: number): string | null {
   if (entry.status === 'registering' || entry.status === 'starting_soon') {
     const startMs = entry.startTime ? new Date(entry.startTime).getTime() : NaN;
-    return Number.isFinite(startMs) && startMs > now
-      ? `Starting In ${formatClock(startMs - now)}...`
-      : 'Starting Soon';
+    if (Number.isFinite(startMs)) return `Starts In ${formatClock(Math.max(0, startMs - now))}`;
+    return 'Starting Soon';
   }
   if (entry.status === 'late_reg') {
     const end = lateRegEndMs(entry.raw as LobbyTournamentRow);
-    if (end != null && end > now) return `Late Reg ${formatClock(end - now)} Left`;
-    if (end != null) return 'Late Reg Closing';
+    if (end != null) return `Late Reg ${formatClock(Math.max(0, end - now))} Left`;
     return 'Late Reg Open';
   }
-  if (entry.status === 'running') return 'Running';
+  if (entry.status === 'running') {
+    const left = levelRemainingMs(entry.raw as LobbyTournamentRow, now);
+    if (left != null) return `Level Ends In ${formatClock(left)}`;
+    return 'Running';
+  }
   if (entry.status === 'completed' || entry.status === 'closed') return entry.statusLabel;
   return null;
 }

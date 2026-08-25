@@ -1229,17 +1229,40 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           (error) => ({ data: null, error })
         );
 
-      // Standalone clubs need a live member count (clubs.member_count is
-      // denormalised and goes stale). Union clubs ignore it - one cheap
-      // indexed count is a better trade than a whole round trip in series.
+      /* Standalone clubs need a live member count (clubs.member_count is
+         denormalised and goes stale).
+
+         THIS USED TO BE A DIRECT club_members COUNT, described here as "one
+         cheap indexed count". It was neither cheap nor correct.
+
+         NOT CORRECT: club_members has four permissive SELECT policies, and a
+         viewer who is not a member, admin, owner or union overseer of this club
+         matches none of them. So the count they got back was 0 - for a club
+         with 588 active members. That is the same defect ClubsService.ts
+         records on 2026-07-24 ("the featured Shark Club card showed 1 member
+         for a 578-member club"); it was fixed for the featured card and left
+         here. The `liveCount > 0` guard below is what stopped it being visible
+         as a literal zero - a stale number was shown instead - so it degraded
+         quietly rather than loudly, which is why it survived.
+
+         NOT CHEAP: measured on production as the club owner, who can see all
+         588 rows, the RLS filter evaluates a SECURITY DEFINER function per row:
+
+           direct count ................. 204.61 ms
+           fn_get_club_member_count ......  0.55 ms
+
+         and pg_stat_statements had that statement shape at a 253 ms mean over
+         591 calls, 1,882 ms at worst.
+
+         fn_get_club_member_count is SECURITY DEFINER with a pinned search_path,
+         so it answers the question the page is actually asking - how many
+         members does this club have - rather than how many of them this viewer
+         is allowed to enumerate. */
       const liveMemberCountPromise = supabase
-        .from('club_members')
-        .select('user_id', { count: 'exact', head: true })
-        .eq('club_id', resolvedId)
-        .in('status', ['active', 'approved'])
+        .rpc('fn_get_club_member_count', { p_club_id: resolvedId })
         .then(
           (r) => r,
-          (error) => ({ count: null, error })
+          (error) => ({ data: null, error })
         );
 
       /* Not destructured. `getAuthUser()` resolving to undefined - which it
@@ -1385,11 +1408,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           // Get ALL club IDs in this union + member count in parallel
           const [allUcResult, memberCountResult] = await Promise.all([
             supabase.from('union_clubs').select('club_id').eq('union_id', unionId),
-            supabase
-              .from('club_members')
-              .select('user_id', { count: 'exact', head: true })
-              .eq('club_id', resolvedId) // A CLUB's own count. Unions re-query below.
-              .in('status', ['active', 'approved']),
+            // A CLUB's own count. Unions re-query below. Same RPC as the
+            // standalone path above, for the same two reasons: a direct count
+            // is RLS-filtered (0 for a non-member) and ~370x slower.
+            supabase.rpc('fn_get_club_member_count', { p_club_id: resolvedId }),
           ]);
 
           if (allUcResult.data && allUcResult.data.length > 0) {
@@ -1458,11 +1480,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
            * SERIES, ahead of the tables and tournaments queries, so the games
            * waited on a number nobody wanted.
            */
-          if (memberCountResult.count != null && !clubData.is_union) {
+          const unionPathCount =
+            memberCountResult.data == null ? null : Number(memberCountResult.data);
+          if (unionPathCount != null && Number.isFinite(unionPathCount) && !clubData.is_union) {
             if (getIsMounted && !getIsMounted()) return;
-            setClub((prev) =>
-              prev ? { ...prev, member_count: memberCountResult.count as number } : prev
-            );
+            setClub((prev) => (prev ? { ...prev, member_count: unionPathCount } : prev));
           }
         }
       } catch (e) {
@@ -1474,9 +1496,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       // Without this, standalone clubs display the stale clubs.member_count value
       if (!unionId) {
         try {
-          const { count: liveCount } = await liveMemberCountPromise;
+          const { data: liveCountRaw } = await liveMemberCountPromise;
+          // bigint over PostgREST can arrive as a JSON number or a string.
+          const liveCount = liveCountRaw == null ? null : Number(liveCountRaw);
 
-          if (liveCount != null && liveCount > 0) {
+          if (liveCount != null && Number.isFinite(liveCount) && liveCount > 0) {
             if (getIsMounted && !getIsMounted()) return;
             setClub((prev) => (prev ? { ...prev, member_count: liveCount } : prev));
             // Also update clubData so the level calculation below uses the live count

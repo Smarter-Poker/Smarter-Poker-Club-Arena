@@ -1214,6 +1214,7 @@
     "fn_bbj_payout",
     "fn_bbj_pool_facts",
     "fn_bbj_pool_for_club",
+    "fn_bbj_promo_bank_check",
     "fn_bbj_promo_payout_atomic",
     "fn_bbj_promo_rain",
     "fn_bbj_recent_hits",
@@ -2975,9 +2976,6 @@
     "word_similarity_dist_commutator_op",
     "word_similarity_dist_op",
     "word_similarity_op",
-    "xp_ban_guard_fn",
-    "zz_probe2",
-    "zz_probe3",
-    "zz_probe4"
+    "xp_ban_guard_fn"
   ]
 }

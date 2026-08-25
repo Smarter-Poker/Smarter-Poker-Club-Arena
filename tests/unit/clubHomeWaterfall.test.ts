@@ -104,10 +104,17 @@ describe('the club lobby does not re-serialise its round trips', () => {
       at('const liveMemberCountPromise')
     );
     expect(unionBlock).toContain('(error) => ({ data: null, error })');
+    /* Was `{ count: null, error }` while this was a PostgREST head/count query.
+       It is now supabase.rpc('fn_get_club_member_count', ...), whose failure
+       shape is `{ data: null, error }` - because a direct count returned 0 to
+       anyone who is not a member of the club (RLS), and cost 204ms against the
+       RPC's 0.55ms. What this test actually guards is unchanged: the hoisted
+       promise must still shape its rejection so the fail-open handling at the
+       await site sees `{ error }` instead of an unhandled rejection. */
     const countBlock = src.slice(
       at('const liveMemberCountPromise = supabase'),
       at('const liveMemberCountPromise = supabase') + 600
     );
-    expect(countBlock).toContain('(error) => ({ count: null, error })');
+    expect(countBlock).toContain('(error) => ({ data: null, error })');
   });
 });

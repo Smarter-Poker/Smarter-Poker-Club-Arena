@@ -4767,7 +4767,8 @@
       "button_seat",
       "has_human",
       "community_cards2",
-      "pots"
+      "pots",
+      "showdown"
     ],
     "hand_players": [
       "id",

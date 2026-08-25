@@ -7,6 +7,93 @@
 
 ---
 
+## Cowork session 2026-08-25 — THE FEE ROLLUP WAS SLOW FOR A REASON NOBODY HAD CHECKED
+
+### What was claimed vs what production actually said
+
+A previous session reported that a UUID regex was "entirely pegging your CPU",
+that `fn_refresh_member_fee_rollup` had gone from 8.9s to 42ms, that
+`sp_prune_hand_history` had gone from 11.6s to 4.7s, and that eight further
+functions had shipped in PR #728. Read against production, in a
+pg_stat_statements window that had been reset AFTER those changes:
+
+- `fn_refresh_member_fee_rollup` was still **8,468 ms mean** over 92 calls and
+  **14.4% of all database time**. Not 42ms.
+- `sp_prune_hand_history` was **16,261 ms mean**. Worse than the 11.6s baseline,
+  not 4.7s.
+- All **eight** functions still carried the regex, including
+  `trg_hand_history_club_member_stats`. PR #728 is
+  "fix(time-banks): prevent stale snapshot overwrite and db truncation" by a
+  different agent. It never contained this work.
+- The `member_fee_rollup` watermark was **5 days / 557,837 hands** behind and
+  was LOSING ground: ~167 hands/min processed against ~331 hands/min arriving.
+
+### The regex was never the problem
+
+Measured directly: the whole seat/action extraction for a 250-hand batch takes
+**35 ms**. The regex is a rounding error at these volumes. So is its cost in
+`trg_hand_history_club_member_stats` — about 12 evaluations per inserted hand.
+
+### The actual root cause: inlined CTEs re-executed in nested loops
+
+Every single-reference CTE in `fn_refresh_member_fee_rollup` was **inlined** —
+a CTE is only an optimisation fence when it is referenced more than once. The
+inlined subqueries then landed on the inner side of nested loops whose
+estimates were `rows=34` against **1,433 actual**, so `three_bet_opps`,
+`cbets`, `cbet_opps` and `won` were re-executed per outer row.
+
+Measured on production, same 250 hands, identical 479 rollup rows out:
+
+|                   | time          |
+| ----------------- | ------------- |
+| inlined           | **35,842 ms** |
+| `AS MATERIALIZED` | **768 ms**    |
+
+`AS MATERIALIZED` is purely an optimiser barrier. It cannot change results.
+
+Through the function end to end: 250 hands 17.6s -> 3.9s, and ~70 ms/hand ->
+~5.7 ms/hand at a 1,000-hand batch.
+
+### A landmine that had not gone off yet
+
+The earlier change had replaced the UUID regex with `length(userId) = 36`. A
+36-character string that is not a UUID passes that test and then throws 22P02
+on the `::uuid` cast, aborting the batch — and because the watermark only
+advances inside that same transaction, the rollup would have **wedged
+permanently** on the first such row. Verified in production:
+
+    length('not-a-uuid-but-exactly-36-chars-long') = 36  ->  true
+    'not-a-uuid-but-exactly-36-chars-long'::uuid         ->  22P02
+
+Zero such rows exist today, which is exactly why it had not fired. The length
+test is kept as a cheap pre-filter with the regex behind it making the cast
+safe.
+
+### Engine batch 250 -> 1000
+
+250 was sized around the defect. At 5.7 ms/hand a 1,000-hand batch is ~5.7s,
+inside both the 15s client AbortController and the function's own 30s
+statement_timeout, and it triples drain throughput at the same <=50% duty
+cycle.
+
+### Result
+
+Backlog 557,837 -> 511,808 within the first 35 minutes; drain rate went from
+~167 hands/min to ~3,661 hands/min (**~22x**), and it is now gaining on ingest
+instead of losing to it. Shipped as #755. `npx tsc --noEmit` clean;
+`npx vitest run tests/` 334 files, 4,151 passed, 5 skipped.
+
+### Still open, deliberately not touched
+
+`realtime.list_changes` is now the largest single consumer at **23.3%** of
+database time (246 ms mean). 113 tables are in the `supabase_realtime`
+publication. Trimming it is the biggest remaining win, but both apps subscribe
+broadly via `postgres_changes` and `realtime.subscription` only shows currently
+connected clients, so removing a table risks silently breaking a live feature.
+That needs a deliberate subscription audit, not a guess.
+
+---
+
 ## Cowork session 2026-08-24 (part 4) — REALTIME FIREHOSES AND A REGRESSION I CAUSED
 
 ### A bug I introduced, found by auditing my own work

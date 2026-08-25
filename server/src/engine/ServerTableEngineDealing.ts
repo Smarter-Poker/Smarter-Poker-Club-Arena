@@ -403,8 +403,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           );
         }
 
-        if (activePlayers.length < 2) {
-          // Bible V8 §3.1: Table FSM — running → waiting (not enough players)
+        if (activePlayers.length < this.minPlayersToDeal()) {
+          // Bible V8 §3.1: Table FSM — running → waiting (not enough players).
+          // "Enough" is the host's AutoStart figure now, not a hard-coded 2 —
+          // see minPlayersToDeal on the base class, which the watchdog reads
+          // too so the two cannot disagree
           if (this.tableFSM.state === 'running') {
             this.tableFSM.transition('waiting');
           }
@@ -994,7 +997,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const config: HandConfig = {
       tableId: this.tableId,
       handNumber,
-      gameVariant: this.tableInfo.game_variant as GameVariant,
+      gameVariant: this.dealtGameVariant() as GameVariant,
       smallBlind: this.tableInfo.small_blind,
       bigBlind: this.tableInfo.big_blind,
       // FIX-219: Bible V8 §4.3 — Respect ante_enabled toggle; if disabled, zero out ante

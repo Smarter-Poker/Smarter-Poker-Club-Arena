@@ -831,6 +831,55 @@ export abstract class ServerTableEngineBase {
   /**
    * Start the dealing pipeline
    */
+
+  /**
+   * HOW MANY SEATS BEFORE A HAND IS DEALT (Dan 2026-08-25).
+   *
+   * `auto_start_players` has been a slider on the creation screen since
+   * February and was read by nothing: the dealing loop, the start-up wait and
+   * the stall watchdog each hard-coded 2. A host could set AutoStart to 5, and
+   * the table dealt three-handed anyway.
+   *
+   * It lives here, on the base, because THREE call sites have to agree about
+   * it. They already had to agree about the old constant — the watchdog's own
+   * comment says "mirror dealingLoop's predicate exactly, so the watchdog's
+   * idea of 'this table should be dealing' cannot disagree with the loop's" —
+   * and a table whose loop waits for 5 while the watchdog wants 2 is a table
+   * the watchdog kills and rebuilds every ninety seconds.
+   *
+   * Clamped at 2 because the column carries no CHECK constraint and a hand of
+   * one is not a hand. A tournament table ignores the setting entirely: its
+   * field size is decided by the tournament, not by a cash-table slider.
+   */
+  /**
+   * ── THE VARIANT THIS TABLE ACTUALLY DEALS (Dan 2026-08-25) ──────────────
+   *
+   * Pineapple is a fully built variant: three hole cards, its own discard
+   * street, its own timer, `pineapple_discard` wired through BettingStructure
+   * and HandController. The toggle on the creation screen was simply never
+   * connected to it — `pineapple_holdem` is a boolean column with no reader,
+   * sitting beside a `game_variant` the engine reads for everything.
+   *
+   * So this is mapping, not building. A Hold'em table with the switch on is
+   * dealt as pineapple; every other variant is left exactly as it is, because
+   * "Pineapple PLO" is not a game and a stray flag must not silently turn a
+   * PLO table into one.
+   */
+  protected dealtGameVariant(): string {
+    const variant = String(this.tableInfo?.game_variant || 'nlh').toLowerCase();
+    if (variant === 'pineapple') return 'pineapple';
+    const wantsPineapple = (this.tableInfo as { pineapple_holdem?: boolean } | null)
+      ?.pineapple_holdem;
+    if (wantsPineapple === true && (variant === 'nlh' || variant === 'nlhe')) return 'pineapple';
+    return variant;
+  }
+
+  protected minPlayersToDeal(): number {
+    if (this.isTournamentTable()) return 2;
+    const configured = Number(this.tableInfo?.auto_start_players);
+    return Number.isFinite(configured) && configured > 2 ? Math.floor(configured) : 2;
+  }
+
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
@@ -947,8 +996,25 @@ export abstract class ServerTableEngineBase {
 
       // Bible V8 §4.20 + FIX 98: Configure Run It Twice engine
       // Chooser gets 5s, responders get 10s — per Dan's rules
+      /**
+       * Dan 2026-08-25: run_it_mode reaches the engine at last. Read
+       * DEFENSIVELY and additively — see RITConfig.mode. The column is the
+       * string 'none' on all 46 live tables while run-it-twice is genuinely on
+       * via the three boolean columns, so a mode that gated `enabled` would
+       * have switched the feature off across the whole platform. It can only
+       * ever REMOVE the question, never the feature.
+       */
+      const ritMode = String(this.tableInfo.run_it_mode || '').toLowerCase();
       this.runItTwiceEngine.configure(this.tableId, {
         enabled: ritEffective,
+        mode:
+          ritMode === 'mandatory_three'
+            ? 'mandatory_three'
+            : ritMode === 'mandatory_twice'
+              ? 'mandatory_twice'
+              : ritMode === 'player_choice'
+                ? 'player_choice'
+                : 'none',
         autoDeclineTimeout: 10,
         maxRuns: 3, // Support up to 3 boards (Dan's rules: player can choose 1/2/3)
         chooserTimeout: 5,
@@ -1023,7 +1089,7 @@ export abstract class ServerTableEngineBase {
       // Bible V8 §3.1: Table FSM — empty → waiting (engine started, waiting for players)
       this.tableFSM.transition('waiting');
 
-      // Wait for minimum 2 players
+      // Wait for the host's AutoStart figure (2 unless they raised it)
       this.setLoopPhase('start_wait_for_players');
       while (this.running) {
         try {
@@ -1048,9 +1114,9 @@ export abstract class ServerTableEngineBase {
         } catch {
           /* idle publish must never stall the wait loop */
         }
-        if (this.seatedPlayers.length >= 2) break;
+        if (this.seatedPlayers.length >= this.minPlayersToDeal()) break;
         console.log(
-          `[ServerTableEngine:${this.tableId}] Waiting for players... (${this.seatedPlayers.length}/2)`
+          `[ServerTableEngine:${this.tableId}] Waiting for players... (${this.seatedPlayers.length}/${this.minPlayersToDeal()})`
         );
         await this.sleep(5000);
       }
@@ -2205,7 +2271,7 @@ export abstract class ServerTableEngineBase {
     const config: HandConfig = {
       tableId: this.tableId,
       handNumber: this.handCount,
-      gameVariant: this.tableInfo.game_variant as GameVariant,
+      gameVariant: this.dealtGameVariant() as GameVariant,
       smallBlind: this.tableInfo.small_blind,
       bigBlind: this.tableInfo.big_blind,
       ante: this.tableInfo.ante,

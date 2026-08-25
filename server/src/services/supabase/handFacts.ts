@@ -186,6 +186,18 @@ const RIT_EVENT_TYPES = new Set([
   // Both names are accepted so neither rename can blind this again.
   'rit_resolved',
   'rit_result',
+  /**
+   * A hand that ran multiple boards WITHOUT anyone being asked (2026-08-25).
+   *
+   * `run_it_mode` mandatory_twice / mandatory_three skip the offer entirely —
+   * there is no chooser to elect and nothing to time out, so a mandatory hand
+   * emits no rit_offer and no rit_chooser_decided. Without a name of its own
+   * it would be a multi-board resolution with no antecedent, which reads in
+   * the telemetry exactly like the 2026-08-21 defect this file exists to stop
+   * (results with no offers). It is also the only way to tell a table where
+   * the host compelled the runs from one where the players agreed to them.
+   */
+  'rit_mandatory',
   // The outcome that produces ONE board: the chooser picking 1, an all-in
   // opponent declining, or nobody answering in time. Added 2026-08-23 with the
   // event itself. Recording it is the whole point of having it — a single-run

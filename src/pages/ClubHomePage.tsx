@@ -1449,13 +1449,39 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
            * not blocking the tables/tournaments queries below.
            */
           if (clubData.is_union && unionClubIds.length > 0) {
-            const { count: unionMembers } = await supabase
-              .from('club_members')
-              .select('user_id', { count: 'exact', head: true })
-              .in('club_id', unionClubIds)
-              .in('status', ['active', 'approved']);
+            /* SUMMED FROM THE SECURITY DEFINER RPC, not counted off the table.
+               A direct count here is RLS-filtered, and the filter does not
+               remove a club from the sum - it removes ROWS, so the union total
+               silently becomes "members of this union that I personally may
+               enumerate". Measured for a real admin of one of the two clubs,
+               who can see both rows in union_clubs and therefore reaches this
+               block:
+
+                 union header showed ....... 593
+                 truth ..................... 1,172   (584 JAQK + 588 Shark)
+                 fn_batch_club_member_counts 1,172
+
+               That is the same number Dan caught being wrong on 2026-08-23
+               ("less than the 551 people playing in it at the time"). The fix
+               then corrected WHICH clubs get counted; it could not have fixed
+               this, because the count itself was never the union's - it was
+               the viewer's view of it.
+
+               Still summed WITHOUT de-duplication, exactly as specified above:
+               the RPC returns one row per club and a player in two clubs is two
+               memberships, which is what unions.member_count holds. */
+            const { data: perClub } = await supabase.rpc('fn_batch_club_member_counts', {
+              p_club_ids: unionClubIds,
+            });
+            const unionMembers = Array.isArray(perClub)
+              ? perClub.reduce(
+                  (sum: number, row: { member_count: number | string }) =>
+                    sum + Number(row.member_count ?? 0),
+                  0
+                )
+              : null;
             if (getIsMounted && !getIsMounted()) return;
-            if (unionMembers != null) {
+            if (unionMembers != null && Number.isFinite(unionMembers)) {
               setClub((prev) => (prev ? { ...prev, member_count: unionMembers } : prev));
               // The level badge is derived from clubData further down; keep the
               // two from disagreeing the way the header and the record did.

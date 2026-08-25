@@ -45,6 +45,8 @@ export interface MiniStatsCardProps {
   observers?: MiniStatsObserver[];
   /** Whether we are displaying real-time results (true overrides expanded logic) */
   showRealTimeResults?: boolean;
+  /** Whether the table is a tournament */
+  isTournament?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -63,11 +65,12 @@ export function MiniStatsCard({
   // Dan 2026-04-17: stats panel was covering 40% of the table by default.
   // Collapse by default — single-line P&L pill. Tap expands to full panel.
   showRealTimeResults = false,
+  isTournament = false,
 }: MiniStatsCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // Don't show if not seated
-  if (!isSeated) return null;
+  // Don't show if not seated (unless in a tournament, where stats/lobby button is always visible)
+  if (!isSeated && !isTournament) return null;
 
   const pnl = currentStack - totalBuyIn;
   const pnlColor = pnl >= 0 ? 'var(--success, #31A24C)' : 'var(--danger, #F02849)';
@@ -76,7 +79,7 @@ export function MiniStatsCard({
   const winRate = handsPlayed > 0 ? Math.round((handsWon / handsPlayed) * 100) : 0;
 
   // Resolve effective expand state. `onTap` (if provided) opens the full
-  // SessionStats modal; internal isExpanded toggle only matters when onTap
+  // SessionStats modal or tournament lobby; internal isExpanded toggle only matters when onTap
   // is not wired. showRealTimeResults forces expanded display.
   const expanded = showRealTimeResults || isExpanded;
 
@@ -87,6 +90,37 @@ export function MiniStatsCard({
       setIsExpanded((prev) => !prev);
     }
   };
+
+  // Tournament STATS button: always visible in top-right to open tournament lobby & info
+  if (isTournament) {
+    return (
+      <button
+        type="button"
+        className="mini-stats-card mini-stats-card--tournament-stats"
+        onClick={handleClick}
+        aria-label="Tournament Stats & Lobby"
+        title="Tournament Stats & Lobby"
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M3 21h18" />
+          <rect x="5" y="13" width="3" height="6" rx="0.5" />
+          <rect x="10.5" y="9" width="3" height="10" rx="0.5" />
+          <rect x="16" y="5" width="3" height="14" rx="0.5" />
+        </svg>
+        <span className="mini-stats-card__tournament-label">STATS</span>
+      </button>
+    );
+  }
 
   // ─── Collapsed (default): icon-only stats button (Dan 2026-04-17). The
   // previous "P&L +$N" pill was text — Dan wanted an icon. Renders a compact

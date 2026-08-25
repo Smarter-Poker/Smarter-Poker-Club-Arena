@@ -839,18 +839,25 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
       />
 
       {/* Bad Beat Jackpot Display — per-variant qualifying rule (2026-08-18).
-          Hidden entirely for variants the server never pays (PLO6, Short Deck):
-          advertising a jackpot that cannot hit is worse than no banner. */}
-      {bbjInfo.eligible && (
-        <BadBeatJackpot
-          amount={bbjAmount}
-          qualifyingHand={bbjInfo.shortLabel}
-          subText={bbjInfo.subLabel}
-          payoutPercent={getBBJPayoutPercentForBB(safeBB(blinds))}
-          isHit={showBBJ}
-          onOpenDetails={() => setShowBBJDetails(true)}
-        />
-      )}
+          Hidden entirely for variants the server never pays (PLO6, Short Deck),
+          and never displayed during MTT, Spins, or Heads-Up games. */}
+      {bbjInfo.eligible &&
+        !isTournament &&
+        !tournamentId &&
+        maxPlayers > 2 &&
+        gameType !== 'heads_up' &&
+        gameType !== 'hu' &&
+        gameType !== 'spin' &&
+        gameType !== 'spins' && (
+          <BadBeatJackpot
+            amount={bbjAmount}
+            qualifyingHand={bbjInfo.shortLabel}
+            subText={bbjInfo.subLabel}
+            payoutPercent={getBBJPayoutPercentForBB(safeBB(blinds))}
+            isHit={showBBJ}
+            onOpenDetails={() => setShowBBJDetails(true)}
+          />
+        )}
 
       {/* Last 5 jackpots + what this table pays */}
       <BBJInfoModal

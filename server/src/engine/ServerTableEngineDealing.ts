@@ -143,7 +143,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         } else {
           for (const p of this.seatedPlayers) {
             if (!this.knownPlayerIds.has(p.user_id)) {
-              if (!this.returningFromSitout.has(p.user_id)) {
+              if (!this.returningFromSitout.has(p.user_id) && !this.isTournamentTable()) {
                 this.registerWaitForBB(p.user_id);
               }
               this.knownPlayerIds.add(p.user_id);
@@ -907,14 +907,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       straddles: straddleResults.length > 0 ? straddleResults : undefined,
       // Bible V8 §4.2: Dead blinds for players returning from sit-out
       deadBlinds:
-        this.returningFromSitout.size > 0
+        !this.isTournamentTable() && this.returningFromSitout.size > 0
           ? players
               .filter((p) => this.returningFromSitout.has(p.user_id))
               .map((p) => ({ seat: p.seat_number }))
           : undefined,
       // AUDIT FIX 2026-07-19: "Post BB to enter" players post a live BB only.
       bbOnlyPosts:
-        this.postingBBToEnter.size > 0
+        !this.isTournamentTable() && this.postingBBToEnter.size > 0
           ? players
               .filter((p) => this.postingBBToEnter.has(p.user_id))
               .map((p) => ({ seat: p.seat_number }))

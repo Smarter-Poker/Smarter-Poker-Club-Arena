@@ -384,8 +384,10 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       // Cancel any pending sit-out
       this.pendingSitOut.delete(userId);
       this.disconnectEngine.sitBack(this.tableId, userId);
-      // Bible V8 §4.2: Mark player as returning — must post dead blind on next hand
-      this.returningFromSitout.add(userId);
+      // Bible V8 §4.2: Mark player as returning — must post dead blind on next hand (cash tables only)
+      if (!this.isTournamentTable()) {
+        this.returningFromSitout.add(userId);
+      }
     }
 
     // FIX 143: willFoldNextHand is informational — player finishes current hand normally
@@ -576,7 +578,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * The player cannot play until the BB position rotates to their seat.
    */
   public registerWaitForBB(userId: string): void {
-    if (this.tableInfo?.wait_for_big_blind) {
+    if (this.tableInfo?.wait_for_big_blind && !this.isTournamentTable()) {
       this.waitingForBB.add(userId);
     }
   }

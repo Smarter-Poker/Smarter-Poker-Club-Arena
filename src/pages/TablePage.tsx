@@ -1942,6 +1942,9 @@ export default function TablePage({
   /* The pending tournament-exit navigation, so the subscription's cleanup can
      cancel it. See goToLobbyWithResult. */
   const tournamentExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const goToLobbyWithResultRef = useRef<
+    ((position: number, prize: number, delayMs: number) => void) | null
+  >(null);
   const vpipCountRef = useRef(0);
   // Dan 2026-08-15 (Session Stats fix): per-HAND voluntary-action flags.
   // vpipCountRef above is cumulative and cannot answer "did hero VPIP THIS
@@ -3767,6 +3770,67 @@ export default function TablePage({
     tableState.isTournament,
     bustRebuyOpen,
     showBuyInModal,
+  ]);
+
+  // Tournament bust / rebuy & elimination watcher
+  useEffect(() => {
+    if (!tableId || !userId || tableState.heroSeat <= 0) return;
+    if (!tableState.isTournament || !tableState.tournamentId) return;
+    const heroPlayer = tableState.players[tableState.heroSeat - 1];
+    if (!heroPlayer) return;
+    const stack = heroPlayer.stack ?? 0;
+    if (stack > 0) {
+      bustPromptFiredRef.current = false;
+      return;
+    }
+    if (tableState.isHandInProgress) return;
+    if (bustPromptFiredRef.current) return;
+    if (showRebuyModal) return;
+    bustPromptFiredRef.current = true;
+
+    (async () => {
+      try {
+        const rebuyCheck = await tournamentService.canRebuy(tableState.tournamentId!, userId);
+        if (rebuyCheck.allowed) {
+          const tournament = await tournamentService.getTournament(tableState.tournamentId!);
+          if (tournament) {
+            const quote = tournamentService.quoteFromTournament(tournament, 'rebuy');
+            setRebuyData({ cost: quote.baseCost, fee: quote.fee, chips: quote.chips });
+            setShowRebuyModal(true);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('[TablePage] Tournament rebuy check error:', err);
+      }
+
+      // If rebuy not available or not allowed, check if eliminated and exit cleanly
+      try {
+        const { data: tp } = await supabase
+          .from('tournament_players')
+          .select('status, position, prize')
+          .eq('tournament_id', tableState.tournamentId!)
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (tp?.status === 'eliminated') {
+          heroSeatRef.current = 0;
+          setTableState((prev) => ({ ...prev, heroSeat: 0 }));
+          goToLobbyWithResultRef.current?.(Number(tp.position) || 0, Number(tp.prize) || 0, 2000);
+        }
+      } catch (err) {
+        console.warn('[TablePage] Tournament elimination check error:', err);
+      }
+    })();
+  }, [
+    tableId,
+    userId,
+    tableState.heroSeat,
+    tableState.players,
+    tableState.isHandInProgress,
+    tableState.isTournament,
+    tableState.tournamentId,
+    showRebuyModal,
   ]);
 
   const confirmBustRebuy = useCallback(
@@ -5695,14 +5759,22 @@ export default function TablePage({
                 {
                   const bustedId = String(elimData.userId || '');
                   if (bustedId) {
+                    const isHeroBusted = bustedId === userId;
+                    if (isHeroBusted) {
+                      heroSeatRef.current = 0;
+                    }
                     setTableState((prev) => {
                       const idx = prev.players.findIndex(
                         (pl: any) => pl && (pl.id === bustedId || pl.user_id === bustedId)
                       );
-                      if (idx < 0) return prev; // not seated here — another table's bust
+                      if (idx < 0 && !isHeroBusted) return prev; // not seated here — another table's bust
                       const players = [...prev.players];
-                      players[idx] = null;
-                      return { ...prev, players };
+                      if (idx >= 0) players[idx] = null;
+                      return {
+                        ...prev,
+                        players,
+                        ...(isHeroBusted ? { heroSeat: 0 } : {}),
+                      };
                     });
                   }
                 }
@@ -10580,7 +10652,7 @@ export default function TablePage({
 
          Embedded instances now fill their slot instead of the viewport; the
          route case is untouched. */
-      className={`table-page${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress ? ' table-page--hero-turn' : ''}${winnerInfo.playerIds.length > 0 ? ' table-page--winner-flash' : ''}`}
+      className={`table-page${tableState.isTournament ? ' table-page--tournament' : ''}${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress ? ' table-page--hero-turn' : ''}${winnerInfo.playerIds.length > 0 ? ' table-page--winner-flash' : ''}`}
       /* Dan 2026-08-24: a spectator has no hero plate hanging below the
          scaler, so the --sp-hero-clear bottom reserve is dead space for them.
          CSS collapses it via [data-hero='false'] (see TablePage.css). */
@@ -11005,6 +11077,7 @@ export default function TablePage({
             vpipCount={vpipCountRef.current}
             handsWon={handsWonRef.current}
             isSeated={tableState.heroSeat > 0}
+            isTournament={tableState.isTournament}
             onTap={() =>
               tableState.isTournament && tableState.tournamentId
                 ? setShowTournamentInfo(true)
@@ -11647,7 +11720,7 @@ export default function TablePage({
                    no layout has both, so nothing looks mismatched. */
                 className={`seat-wrapper${seatDimmed ? ' seat-wrapper--dim' : ''}${
                   isActingSeat ? ' seat-wrapper--spot' : ''
-                }${pos.y < 20 ? ' seat-wrapper--top' : ''}${
+                }${pos.y < 20 && !tableState.isTournament ? ' seat-wrapper--top' : ''}${
                   /* Dan 2026-08-23: "you can never see the hero's stack, it's
                      always cut off by the footer." Hero sits at y:100 in every
                      ring in tableSeatGeometry.ts - avatar CENTRE on the
@@ -12013,7 +12086,9 @@ export default function TablePage({
              contradicted the reserved seat + "Post BB to Enter" CTA on felt. */
           <div className="spectator-footer-bar" data-state="reserved">
             <span className="spectator-footer-bar__label">
-              Seat Reserved, You'll Be Dealt In Next Hand
+              {tableState.isTournament
+                ? 'Spectating'
+                : "Seat Reserved, You'll Be Dealt In Next Hand"}
             </span>
           </div>
         ) : seatFirstBuyIn && tableState.heroSeat > 0 ? (
@@ -12372,6 +12447,7 @@ export default function TablePage({
           ═══════════════════════════════════════════════════════════════════════ */}
       {userId &&
         tableId &&
+        !tableState.isTournament &&
         Array.isArray(tableState.waitingForBBUserIds) &&
         tableState.waitingForBBUserIds.includes(userId) && (
           <button
@@ -13174,6 +13250,16 @@ export default function TablePage({
           setShowRebuyModal(false);
           if (tableId && userId) {
             GameServerAPI.notifyServerRejectRebuy(tableId).catch(console.error);
+            if (
+              tableState.isTournament &&
+              (tableState.players[tableState.heroSeat - 1]?.stack ?? 0) <= 0
+            ) {
+              heroSeatRef.current = 0;
+              setTableState((prev) => ({ ...prev, heroSeat: 0 }));
+              if (tableState.tournamentId) {
+                goToLobbyWithResultRef.current?.(0, 0, 1500);
+              }
+            }
           }
         }}
         // Tournament Break

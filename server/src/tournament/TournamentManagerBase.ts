@@ -24,6 +24,7 @@ import {
   spinBlindsForLevel,
 } from '../config/spinSpec.js';
 import { reportError } from '../services/errorReporter.js';
+import { clampSeatsForVariant } from '../config/tableSeating.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
@@ -1685,6 +1686,37 @@ export abstract class TournamentManagerBase {
       // Clamped to the same 2-10 range fn_create_tournament enforces.
       maxPerTable = Math.min(10, Math.max(2, Number(tournament.table_size) || 9));
     }
+
+    /**
+     * THE DECK HAS TO BE ABLE TO SERVE THE TABLE (2026-08-25).
+     *
+     * Cash tables have run through clampSeatsForVariant since the seat law was
+     * written. Tournament tables never did - they took table_size verbatim, and
+     * table_size knows nothing about how many hole cards the game deals.
+     *
+     * A 9-handed PLO6 table needs 9 x 6 = 54 hole cards plus a 5-card board
+     * from a 52-card deck. It cannot be dealt, ever. ServerTableEngineDealing
+     * refuses at deal time, sleeps 30s and returns WITHOUT dealing, so the
+     * table sits at loopPhase 'dealing' having never dealt a card, the watchdog
+     * eventually kills the engine, the reaper rebuilds it, and the new engine
+     * refuses in exactly the same way. Permanent.
+     *
+     * Measured live 2026-08-25 before this fix: 58 of 70 PLO6 tournament tables
+     * were seated beyond what their deck could serve (10 seated against a
+     * ceiling of 7), and never-dealt rates were PLO6 36.5% / PLO5 35.9% against
+     * NLH 22.3%. The whole 5-and-6-card excess is this one line.
+     *
+     * Clamped LAST so it wins over every branch above, including spin and sng.
+     */
+    const seatVariant = (tournament.game_type || '').toLowerCase();
+    const deckSafe = clampSeatsForVariant(seatVariant, maxPerTable);
+    if (deckSafe !== maxPerTable) {
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] ${seatVariant || 'nlh'} seats ${maxPerTable} -> ${deckSafe} (deck cannot serve more)`
+      );
+      maxPerTable = deckSafe;
+    }
+
     const numTables = Math.ceil(players.length / maxPerTable);
     const alreadyHave = (existingTables ?? []).length;
     const tablesToCreate = Math.max(0, numTables - alreadyHave);

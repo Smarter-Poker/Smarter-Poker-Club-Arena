@@ -222,7 +222,9 @@ describe('a restart mid-break does not resume play', () => {
        which is what this pins. House rule 8: the test that pins replaced
        behaviour is updated in the commit that replaces it. */
     expect(resumeFn).toMatch(/if \(tournament\.on_break\) \{/);
-    // ...and the conjunction that caused the bug must not creep back in.
+    /* And the conjunction may not come back. A positive assertion alone would
+       still pass if someone re-added `&& tournament.break_ends_at` on a later
+       line, which is exactly the shape of the original defect. */
     expect(resumeFn).not.toMatch(/tournament\.on_break && tournament\.break_ends_at/);
     expect(resumeFn).toMatch(/tournament\.break_started_at/);
     expect(resumeFn).toMatch(/LAST_HAND_GRACE_MS \+\s*TournamentManagerBase\.BREAK_DURATION_MS/);

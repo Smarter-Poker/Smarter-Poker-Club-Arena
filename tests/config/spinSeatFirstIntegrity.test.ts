@@ -98,9 +98,24 @@ describe('horses take seats, not just places on a list', () => {
     // per-horse shape.
     expect(recurring).not.toMatch(/pickFreeHorse\(\)/);
 
+    /**
+     * SLICE TO THE TWO METHODS THIS TEST IS ABOUT (2026-08-25).
+     *
+     * The end marker was `private async createSpin`, which is four methods
+     * further down the file, so the count silently covered everything in
+     * between. #805 landed `unseatedRegistrantHorses` in that gap - a read
+     * that runs ONCE PER GAME to fill a seat-first game from its own roster,
+     * not once per horse - and this assertion went red on `main` for a query
+     * it was never written to police. A guard that fails on unrelated code is
+     * a guard nobody can ship past.
+     *
+     * `unseatedRegistrantHorses` is the method immediately after
+     * `pickFreeHorses`, so ending there scopes the count to exactly the pair
+     * named in the comment below, which is what it always claimed to measure.
+     */
     const pick = recurring.slice(
       recurring.indexOf('private async horseLoadMap'),
-      recurring.indexOf('private async createSpin')
+      recurring.indexOf('private async unseatedRegistrantHorses')
     );
     // Exactly one read of each source across horseLoadMap + pickFreeHorses,
     // which together are one call. The batching this protects is unchanged -

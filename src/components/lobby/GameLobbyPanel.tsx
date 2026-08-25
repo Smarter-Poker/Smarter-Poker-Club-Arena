@@ -183,9 +183,20 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           .select('seat_number, user_id')
           .eq('table_id', entry.id)
           .is('left_at', null);
-        if (!cancelled && !error && data) setSeatMap(data);
-      } catch {
+        if (cancelled) return;
+        if (error) {
+          /* `!error && data` swallowed this silently. The seat map is read-only
+             enrichment and correctly stays HIDDEN on failure - it is never drawn
+             as "every seat empty" - but a failure nobody records is a failure
+             nobody can fix. */
+          reportError(error, 'GameLobbyPanel.loadSeatMap');
+          setSeatMap(null);
+          return;
+        }
+        setSeatMap(data ?? []);
+      } catch (err) {
         /* transport failure - the panel simply shows no seat map */
+        reportError(err, 'GameLobbyPanel.loadSeatMap');
       }
     })();
     return () => {

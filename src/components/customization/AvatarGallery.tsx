@@ -42,6 +42,7 @@ import { haptic } from '../../services/SoundService';
 import './AvatarGallery.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { reportError } from '../../utils/errorReporter';
+import { AvatarCustomizer } from './AvatarCustomizer';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -78,6 +79,12 @@ export function AvatarGallery({
   const [saving, setSaving] = useState(false);
   const toast = useToast();
   const [notice, setNotice] = useState<string | null>(null);
+  /* The Hub preset API did not answer. Distinct from "the library is empty",
+     which is what this modal used to render for both. */
+  const [presetsFailed, setPresetsFailed] = useState(false);
+  const [customFailed, setCustomFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [showQuickAvatar, setShowQuickAvatar] = useState(false);
 
   // Keep the preview honest if the caller swaps the current avatar underneath us
   useEffect(() => {
@@ -91,13 +98,20 @@ export function AvatarGallery({
 
     setLoading(true);
     setNotice(null);
+    setPresetsFailed(false);
+    setCustomFailed(false);
 
     avatarService
-      .getAvatarLibrary(userId)
-      .then((library) => {
+      .getAvatarLibraryResult(userId)
+      .then((result) => {
         if (cancelled) return;
-        setAvatars(library);
-        if (library.length === 0) {
+        setAvatars(result.avatars);
+        setPresetsFailed(result.presetsFailed);
+        setCustomFailed(result.customFailed);
+        /* Only claim "there are none" when the sources actually ANSWERED.
+           A failed fetch used to land here as the same reassuring sentence,
+           which is a failed query rendered as an empty success state. */
+        if (result.avatars.length === 0 && !result.presetsFailed && !result.customFailed) {
           // The old copy here offered "You can still upload a photo" as the
           // consolation. There is no longer a photo to fall back to, so say
           // what is actually true instead of pointing at a removed feature.
@@ -107,6 +121,8 @@ export function AvatarGallery({
       .catch((e) => {
         if (cancelled) return;
         reportError(e, 'AvatarGallery.load');
+        setPresetsFailed(true);
+        setCustomFailed(true);
         setNotice('Could not load avatars. Please try again shortly.');
       })
       .finally(() => {
@@ -116,7 +132,7 @@ export function AvatarGallery({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, userId]);
+  }, [isOpen, userId, reloadKey]);
 
   const freeAvatars = useMemo(() => avatars.filter((a) => a.category === 'free'), [avatars]);
   /* Dan 2026-08-20: 'vip' used to be folded into "Mine", which was correct
@@ -136,16 +152,25 @@ export function AvatarGallery({
 
   const saveAvatar = useCallback(
     async (newUrl: string) => {
-      if (!userId || newUrl === currentAvatarUrl) {
+      if (!userId) {
+        toast.error('Sign In To Change Your Avatar');
+        return;
+      }
+      if (newUrl === currentAvatarUrl) {
+        /* This used to return in silence. Tapping the avatar you already wear
+           is the single most likely tap in this grid, and it produced no toast,
+           no state change and no explanation - indistinguishable from a dead
+           tile. Confirm the state instead. */
+        toast.success('Avatar Already Applied');
         return;
       }
       setSaving(true);
       try {
         const success = await avatarService.setUserAvatar(userId, newUrl);
         if (!success) {
-          toast.error('Failed to update avatar.');
+          toast.error('Could Not Update Avatar. Please Try Again.');
         } else {
-          toast.success('Avatar updated!');
+          toast.success('Avatar Updated');
           onAvatarChanged?.(newUrl);
           masterBus.emit('USER_PROFILE_LOADED', {
             avatarUrl: newUrl,
@@ -154,17 +179,23 @@ export function AvatarGallery({
           // We do not close the modal here to let them see it apply
         }
       } catch (err) {
-        toast.error('Failed to update avatar.');
+        toast.error('Could Not Update Avatar. Please Try Again.');
         reportError(err, 'AvatarGallery.Unexpected_update_error');
       }
       setSaving(false);
     },
-    [userId, currentAvatarUrl, onAvatarChanged]
+    [userId, currentAvatarUrl, onAvatarChanged, toast]
   );
 
   const handleSelect = useCallback(
     (avatar: Avatar) => {
-      if (avatar.category === 'vip' && !isVip) {
+      /* VIP art is gated by VIP membership OR by an unlock the player already
+         holds. `avatar.isOwned` now carries the avatar_unlocks answer; before
+         2026-08-25 this line read `category === 'vip' && !isVip` and nothing in
+         the app ever consulted the unlock ledger, so an avatar bought in the
+         club shop stayed locked behind the badge the purchase was meant to
+         stand in for. */
+      if (avatar.category === 'vip' && !isVip && !avatar.isOwned) {
         haptic.light();
         setNotice('This avatar is part of the VIP collection. Upgrade to VIP to use it.');
         return;
@@ -175,6 +206,17 @@ export function AvatarGallery({
       saveAvatar(avatar.imageUrl);
     },
     [isVip, saveAvatar]
+  );
+
+  /** Applies immediately and toasts from inside AvatarCustomizer. */
+  const handleQuickAvatarSaved = useCallback(
+    (url: string) => {
+      setSelectedAvatar(url);
+      onAvatarChanged?.(url);
+      setShowQuickAvatar(false);
+      setReloadKey((k) => k + 1);
+    },
+    [onAvatarChanged]
   );
 
   const handleCreateVipAvatar = useCallback(() => {
@@ -190,6 +232,8 @@ export function AvatarGallery({
   if (!isOpen) return null;
 
   const unchanged = selectedAvatar === currentAvatarUrl;
+  /** Did the source behind the ACTIVE tab fail, as opposed to return nothing? */
+  const tabFailed = activeTab === 'custom' ? customFailed : presetsFailed;
 
   const content = (
     <div className="avatar-gallery-overlay" onClick={onClose}>
@@ -246,10 +290,34 @@ export function AvatarGallery({
             a profile picture by a different route than the upload tab, and
             removed for the same reason. */}
         <div className="ag-actions">
+          {/* Quick Avatar is the in-app path. The Hub creator below opens a
+              popup window and then asks the player to come back and reopen this
+              modal, which is not something a phone can reasonably do; this one
+              composes an SVG avatar, saves it and applies it here. */}
+          <button
+            className="ag-action ag-action--quick"
+            onClick={() => {
+              haptic.light();
+              setShowQuickAvatar((v) => !v);
+            }}
+            aria-expanded={showQuickAvatar}
+          >
+            {showQuickAvatar ? 'Close Quick Avatar' : 'Quick Avatar'}
+          </button>
           <button className="ag-action ag-action--vip" onClick={handleCreateVipAvatar}>
             {isVip ? 'Create VIP Avatar' : 'Create Custom Avatar'}
           </button>
         </div>
+
+        {showQuickAvatar && (
+          <div className="ag-quick">
+            <AvatarCustomizer
+              userId={userId}
+              currentAvatar={selectedAvatar}
+              onSaved={handleQuickAvatarSaved}
+            />
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="ag-tabs">
@@ -288,19 +356,44 @@ export function AvatarGallery({
         <div className="ag-content">
           {loading ? (
             <div className="ag-empty">Loading Avatars...</div>
+          ) : filteredAvatars.length === 0 && tabFailed ? (
+            /* A source that did not answer is NOT an empty source. This branch
+               exists because both used to print the same calm sentence, so a
+               dead API read to the player as "there is nothing here". */
+            <div className="ag-empty ag-empty--error" role="alert">
+              <p className="ag-empty__msg">
+                {activeTab === 'custom'
+                  ? 'Your avatars could not be loaded.'
+                  : 'The avatar library could not be loaded.'}
+              </p>
+              <button
+                className="ag-retry"
+                onClick={() => {
+                  haptic.light();
+                  setReloadKey((k) => k + 1);
+                }}
+              >
+                Try Again
+              </button>
+            </div>
           ) : filteredAvatars.length === 0 ? (
             <div className="ag-empty">
               {activeTab === 'custom'
-                ? 'You have not created any avatars yet. Use Create Custom Avatar above.'
+                ? 'You have not created any avatars yet. Use Quick Avatar above.'
                 : activeTab === 'vip'
-                  ? 'VIP avatars could not be loaded.'
+                  ? 'No VIP avatars available.'
                   : 'No preset avatars available.'}
             </div>
           ) : (
             <div className="ag-grid">
               {filteredAvatars.map((avatar) => {
                 const isSelected = selectedAvatar === avatar.imageUrl;
-                const isLocked = avatar.category === 'vip' && !isVip;
+                const isLocked = avatar.category === 'vip' && !isVip && !avatar.isOwned;
+                /* VIP art the player owns outright rather than through the
+                   badge. Worth its own mark: otherwise a purchased avatar is
+                   visually identical to one that merely happens to be
+                   unlocked because the player is currently VIP. */
+                const isUnlockedByPurchase = avatar.category === 'vip' && !isVip && avatar.isOwned;
 
                 return (
                   <div
@@ -329,6 +422,7 @@ export function AvatarGallery({
                       }}
                     />
                     {isLocked && <div className="ag-item__lock">VIP</div>}
+                    {isUnlockedByPurchase && <div className="ag-item__owned">Owned</div>}
                     {isSelected && !isLocked && <div className="ag-item__check">&#10003;</div>}
                     <span className="ag-item__name">{avatar.name}</span>
                   </div>

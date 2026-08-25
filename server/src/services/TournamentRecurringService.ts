@@ -3018,11 +3018,31 @@ export class TournamentRecurringService {
        * never begin. It also kept advertising three open seats, so the next
        * human to sit became a fourth entrant in a three-handed game.
        */
-      const { data: tRow } = await supabase
+      /**
+       * A MISSING ROW MUST NOT DECIDE THE FORMAT.
+       *
+       * This read discarded its error and then fell through `?? 0` into
+       * isSeatFirstFormat('', 0) - and 0 <= 2, so an unreadable tournament
+       * read as SEAT-FIRST. A 500-seat MTT would then be sent down the
+       * seat-seating path instead of registerHorses, seat nobody (its table
+       * is not a seat-first table), and never be topped up at all. The one
+       * value we cannot guess is the one that chooses between the two halves
+       * of this function.
+       */
+      const { data: tRow, error: tErr } = await supabase
         .from('tournaments')
         .select('variant, max_players')
         .eq('id', tournamentId)
         .maybeSingle();
+      if (tErr || !tRow) {
+        reportError(
+          new Error(
+            `[TournamentRecurring] top-up cannot read tournament ${tournamentId.slice(0, 8)}: ${tErr?.message ?? 'no row'}`
+          ),
+          'TournamentRecurring.topup_tournament_read_failed'
+        );
+        return 0;
+      }
       const seatFirst = isSeatFirstFormat(
         String((tRow as { variant?: string } | null)?.variant ?? ''),
         Number((tRow as { max_players?: number } | null)?.max_players ?? 0)

@@ -3630,6 +3630,7 @@ export default function TablePage({
       if (bbjTimerRef.current) clearTimeout(bbjTimerRef.current);
       if (bbjSeatCreditsTimerRef.current) clearTimeout(bbjSeatCreditsTimerRef.current);
       if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
+      if (rabbitExpiryTimerRef.current) clearTimeout(rabbitExpiryTimerRef.current);
       if (potShipTimerRef.current) clearTimeout(potShipTimerRef.current);
       if (potPushDelayTimerRef.current) clearTimeout(potPushDelayTimerRef.current);
       for (const t of potAwardStaggerTimersRef.current) clearTimeout(t);
@@ -3900,6 +3901,8 @@ export default function TablePage({
   /** Live diamond price from feature_pricing, sent with the offer. */
   const [rabbitDiamondCost, setRabbitDiamondCost] = useState<number | null>(null);
   const rabbitHandNumberRef = useRef<number | null>(null);
+  /** Takes the Rabbit Hunt button down when the server's offer TTL runs out. */
+  const rabbitExpiryTimerRef = useRef<number | null>(null);
 
   const handleRabbitReveal = useCallback(async (): Promise<RabbitHuntRevealResult> => {
     if (!tableId) return { success: false, error: 'Table Not Ready' };
@@ -5598,6 +5601,28 @@ export default function TablePage({
           const cost = Number(handState.diamond_cost);
           if (Number.isFinite(cost) && cost > 0) setRabbitDiamondCost(cost);
           setIsRabbitAvailable(true);
+
+          // TAKE THE BUTTON DOWN WHEN THE OFFER DIES.
+          //
+          // The engine expires an offer after 90s and refuses a late reveal with
+          // "That Hand Is Too Old To Rabbit Hunt". It has always SENT expires_at
+          // for exactly this — and the client ignored it, so the button sat
+          // there after the offer was dead and the only thing left to click was
+          // a refusal. Offering something that cannot be bought is worse than
+          // not offering it.
+          if (rabbitExpiryTimerRef.current) clearTimeout(rabbitExpiryTimerRef.current);
+          const expiresAt = Number(handState.expires_at);
+          if (Number.isFinite(expiresAt) && expiresAt > 0) {
+            // Clock skew between server and browser is real, so never schedule a
+            // negative or absurd delay: clamp to the TTL the server applies.
+            const msLeft = Math.max(0, Math.min(expiresAt - Date.now(), 120_000));
+            rabbitExpiryTimerRef.current = window.setTimeout(() => {
+              rabbitExpiryTimerRef.current = null;
+              setIsRabbitAvailable(false);
+              setRabbitCardsAvailable(0);
+              rabbitHandNumberRef.current = null;
+            }, msLeft);
+          }
         }
         return;
       }
@@ -10150,6 +10175,12 @@ export default function TablePage({
       setIsRabbitAvailable(false);
       setRabbitCardsAvailable(0);
       rabbitHandNumberRef.current = null;
+      // The previous hand's expiry timer must die with the offer it belonged to,
+      // or it fires mid-next-hand and clears an offer that is not its own.
+      if (rabbitExpiryTimerRef.current) {
+        clearTimeout(rabbitExpiryTimerRef.current);
+        rabbitExpiryTimerRef.current = null;
+      }
       // NOTE: the deal animation is triggered by the discrete HAND_STARTED
       // handler (single source). AUDIT FIX 2026-07-19: the redundant bump that
       // used to live here was removed — now that handNumber advances via the

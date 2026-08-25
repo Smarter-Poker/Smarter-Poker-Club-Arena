@@ -166,8 +166,26 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
     features: CASH_FEATURES,
   },
   OMAHA: {
-    // No "Games:" row on the Omaha reference screen - the Omaha tab already IS
-    // the variant selection, and the lobby has no sub-variant chips for it.
+    /* Dan 2026-08-25: "PLO ... HAS 5 VARIATIONS. INSIDE THE FILTERS, USERS
+       SHOULD BE ABLE TO SELECT WHAT PLO GAMES THEY WANT DISPLAYED, AND THEY
+       SHOULD BE DISPLAYED IN ORDER."
+
+       The old note here said the Omaha tab "already IS the variant selection".
+       It is not: it is four games in one list. PLO4 and PLO6 are different
+       games with different bankroll requirements and the tab mixed them at
+       every stake, so a player who only plays 4-card had to read every row.
+
+       Every key below is one `variantKey` already returns — the precedent
+       this file records twice (the removed FLH and 'OMAHA High' chips) is that
+       a chip whose key can never be produced silently empties the tab. PLO8 is
+       matched before PLO6/5/4 in variantKey, so hi-lo does not fall into the
+       4-card bucket. */
+    games: [
+      { key: 'plo4', label: 'PLO 4c' },
+      { key: 'plo5', label: 'PLO 5c' },
+      { key: 'plo6', label: 'PLO 6c' },
+      { key: 'plo8', label: 'PLO Hi/Lo' },
+    ],
     range: BLIND_RANGE,
     statuses: CASH_STATUSES,
     seats: { min: 2, max: 9 },
@@ -367,7 +385,12 @@ export interface FilterableRow {
 }
 
 /** Normalise a variant string to the keys used by the spec's `games` chips. */
-function variantKey(raw: string | null | undefined): string {
+/**
+ * Exported since 2026-08-25 so the lobby can GROUP by the same key it filters
+ * by. A second copy of this ladder in ClubHomePage would be a second place for
+ * `plo8` to stop being tested before `plo6`.
+ */
+export function variantKey(raw: string | null | undefined): string {
   const v = String(raw ?? '').toLowerCase();
   if (!v) return '';
   // Fixed-limit Omaha Hi-Lo first: `flo8` contains neither "plo8" nor "hilo",

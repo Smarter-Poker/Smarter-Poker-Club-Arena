@@ -101,6 +101,27 @@ const MTT = tournamentEntry(
   } as Partial<LobbyTournamentRow>),
   'mtt'
 );
+/* Dan 2026-08-25, image 1: "if a tournament has multiple tags (like Freezout,
+   Turbo, Guaranteed, and more below it) they must ALWAYS ALL BE DISPLAYED."
+   This row is built to produce the longest medallion list the platform can
+   emit, so the check fails if any of them is clipped. */
+const MTT_MANYTAGS = tournamentEntry(
+  tourn({
+    name: 'Afternoon PLO Turbo Mystery Bounty Re-Entry Rebuy (NLH)',
+    variant: 'mtt',
+    guaranteed_prize: 150,
+    current_players: 4,
+    max_players: 500,
+    starting_chips: 12000,
+    blind_structure: MTT_BLINDS,
+    late_reg_mins: 45,
+    late_reg_levels: 6,
+    is_reentry: true,
+    rebuy_cost: 5,
+    addon_cost: 5,
+  } as Partial<LobbyTournamentRow>),
+  'mtt'
+);
 const MTT2 = tournamentEntry(
   tourn({
     name: 'Monday Grind NLH Mystery Bounty Deepstack Rebuy',
@@ -153,15 +174,35 @@ const CASH = cashEntry(
     big_blind: 50,
     min_buy_in: 2000,
     max_buy_in: 10000,
-    settings: {
-      insurance_enabled: true,
-      run_it_twice: true,
-      vpip_display: true,
-      no_rathole: true,
-      straddle_enabled: true,
-      bomb_pot_enabled: true,
-      bomb_pot_frequency: 10,
-    },
+    /* Columns, not `settings` — the live shape. */
+    insurance_enabled: true,
+    straddle_enabled: true,
+    auto_utg_straddle: true,
+    bomb_pot_enabled: true,
+    bomb_pot_frequency: 10,
+    bomb_pot_double_board: true,
+    ante_enabled: true,
+    ante: 5,
+    seven_deuce_enabled: true,
+    seven_deuce_amount: 20,
+    time_bank_enabled: true,
+    all_in_or_fold: true,
+  })
+);
+/* Dan 2026-08-25, image 3: "the spacing needs to be there even if there isn't
+   a table name". This row has none. */
+const CASH_NONAME = cashEntry(
+  table({
+    name: 'PLO6 1/2',
+    game_variant: 'plo6',
+    small_blind: 1,
+    big_blind: 2,
+    min_buy_in: 80,
+    max_buy_in: 400,
+    current_players: 3,
+    max_players: 6,
+    run_it_twice: true,
+    allow_run_it_twice: true,
   })
 );
 const CASH2 = cashEntry(
@@ -174,7 +215,9 @@ const CASH2 = cashEntry(
     max_buy_in: 2000,
     current_players: 8,
     max_players: 8,
-    settings: { run_it_twice: true, time_bank_enabled: true },
+    run_it_twice: true,
+    allow_run_it_twice: true,
+    time_bank_enabled: true,
   })
 );
 
@@ -191,8 +234,9 @@ const CTX = {
 
 const TABS: { cat: LobbyCategory; rows: (typeof MTT)[] }[] = [
   { cat: 'ALL', rows: [MTT, CASH, SPIN, HU] },
-  { cat: 'MTT', rows: [MTT, MTT2] },
+  { cat: 'MTT', rows: [MTT, MTT2, MTT_MANYTAGS] },
   { cat: 'HOLDEM', rows: [CASH, CASH2] },
+  { cat: 'OMAHA', rows: [CASH_NONAME, CASH2] },
   { cat: 'SPIN', rows: [SPIN, SPIN_RUN] },
   { cat: 'SNG', rows: [HU] },
 ];

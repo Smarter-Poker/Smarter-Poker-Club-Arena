@@ -497,6 +497,48 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // Phase 2: board clear (clients animate the card/chip sweep).
           this.broadcastCurrentState(); // Sends clean state (no hand in progress)
           await this.sleep(boardClearMs(wentToShowdown));
+
+          // ── Dan's Rebuy Pause (2026-08-24) ──
+          // Give busted players 5 seconds to process the UI modal and hit rebuy before the next hand starts.
+          // activePlayers refers to the players DEALT into this hand (so they started > 0 chips).
+          // If they now have 0, they just busted.
+          const justBustedHumans = activePlayers.filter(
+            (p) => p.stack === 0 && p.is_horse === false
+          );
+          if (justBustedHumans.length > 0) {
+            let needsRebuyPause = false;
+            if (!this.isTournamentTable()) {
+              needsRebuyPause = true; // Cash games always have rebuy
+            } else if (this.tableInfo?.tournament_id) {
+              try {
+                const { data: t } = await supabase
+                  .from('tournaments')
+                  .select('is_rebuy, rebuy_levels, late_reg_levels, current_level')
+                  .eq('id', this.tableInfo.tournament_id)
+                  .single();
+
+                if (t && t.is_rebuy) {
+                  const cap = t.rebuy_levels ?? t.late_reg_levels ?? 0;
+                  if (cap === 0 || (t.current_level ?? 1) <= cap) {
+                    needsRebuyPause = true;
+                  }
+                }
+              } catch (err) {
+                console.error(
+                  `[ServerTableEngine:${this.tableId}] Failed to check tournament rebuy status for pause:`,
+                  err
+                );
+              }
+            }
+
+            if (needsRebuyPause) {
+              console.log(
+                `[ServerTableEngine:${this.tableId}] Pausing 5s for busted players to buy back in: ${justBustedHumans.map((p) => p.username).join(', ')}`
+              );
+              this.setLoopPhase('rebuy_pause');
+              await this.sleep(5000);
+            }
+          }
         }
       } catch (err) {
         const errMsg =

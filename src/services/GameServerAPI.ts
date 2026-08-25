@@ -765,10 +765,11 @@ export async function notifyServerRejectRebuy(tableId: string): Promise<ActionRe
  * POST /post-bb — Bible V8 §4.2: Post the BB to enter the next hand
  * immediately, skipping the normal "wait for BB to rotate to your seat" delay.
  *
- * Walkthrough Step 4 fix 2026-04-29: previously the engine accepted this
- * request but the frontend had no way to call it. Now the SeatSlot renders
- * a "Post BB" button when the hero player is in the engine's
- * waiting_for_bb_user_ids list, and that button calls this function.
+ * Dan 2026-08-25: NOTHING IN THE UI CALLS THIS ANY MORE, deliberately. The
+ * overlay that did is a notice now — cash entry is free, and the only players
+ * still waiting are the two the engine holds out for one hand, for both of whom
+ * the engine refuses this call. Kept exported so the endpoint stays reachable
+ * for the fuzzer and any future opt-in with a real wait to skip.
  */
 export async function postBBToEnter(tableId: string): Promise<ActionResult> {
   try {
@@ -808,6 +809,8 @@ export interface RabbitHuntResult {
   diamonds_spent?: number;
   diamonds_remaining?: number | null;
   vip_remaining?: number | null;
+  /** Uses left on a purchased rabbit-hunt pack, when a pack paid for this one. */
+  uses_remaining?: number | null;
 }
 
 export async function requestRabbitHunt(

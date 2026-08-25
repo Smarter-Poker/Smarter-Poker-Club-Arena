@@ -352,10 +352,14 @@ export default function VIPPage() {
                 icon: '◆',
                 title: 'Rabbit Hunt',
                 description: 'See undealt cards',
-                // Dan 2026-08-25: 100 a month, then 5 diamonds. This said
+                // Dan 2026-08-25: 100 a month, then diamonds. This said
                 // "Unlimited" while the server charged from the 101st, which is
-                // a billing promise the product could not keep.
-                value: '100 / month',
+                // a billing promise the product could not keep. Derived from
+                // VIP_GOLD_LIMITS like its sibling below, rather than a third
+                // hardcoded copy of the number — the cap lives in
+                // fn_consume_rabbit_hunt and this is the only place that quotes
+                // it to a customer.
+                value: `${VIP_GOLD_LIMITS.rabbitHunts} / month`,
               },
               {
                 id: 'timebank',

@@ -29,13 +29,11 @@ import type { SeatPlayer, Card, LastAction, PositionBadge } from '../components/
 import type { SidePot } from '../components/table/PotDisplay';
 import type { BoardStage } from '../components/table/CommunityCards';
 import { normalizeCardBack } from '../components/table/CardImage';
-// Rabbit-hunt button artwork (Dan: "use the actual rabbit hunt dynamic image").
-// Imported through Vite rather than referenced from public/ on purpose: an
-// imported asset is emitted into dist/assets/, and sync-club-arena.sh copies
-// assets/ wholesale while it deliberately PRESERVES (i.e. never updates)
-// public/hub/club-arena/images/. A new file dropped in images/ would never
-// reach production, and git-safe-push.sh's `git clean` sweeps untracked files
-// there — assets/ is explicitly excluded from that clean.
+// (The rabbit-hunt artwork note that used to sit here moved to RabbitHunt.tsx,
+// which is where the image is now actually imported and rendered. It had been
+// stranded above the table-skin registry for weeks, describing an import that
+// did not exist, while the button drew a text glyph.)
+//
 // Dan 2026-08-17 — five new composite skins (his renders) + three derived
 // colorways, all sharing the SAME canonical geometry as the original five
 // (felt window 20.3-79.6% x 8.9-89.2% of the 896x1200 frame, measured by
@@ -209,7 +207,12 @@ import GameServerAPI, {
   setSitOut,
   showHand as serverShowHand,
   toggleStraddle as serverToggleStraddle,
-  postBBToEnter as serverPostBBToEnter,
+  // `postBBToEnter` is deliberately NOT imported here any more. The overlay
+  // that called it is a notice now: cash entry is free, the only players still
+  // waiting are the two the engine holds out for one hand, and the engine
+  // refuses that call for both of them. The endpoint and its bbOnlyPosts path
+  // stay on the server for the fuzzer and for any future opt-in, but nothing
+  // in the product may bill a player for a hand they are about to get free.
   requestRabbitHunt,
 } from '../services/GameServerAPI';
 import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
@@ -3742,6 +3745,8 @@ export default function TablePage({
   // pack, then five diamonds) and answers only the caller that paid.
   const [isRabbitAvailable, setIsRabbitAvailable] = useState(false);
   const [rabbitCardsAvailable, setRabbitCardsAvailable] = useState(0);
+  /** Live diamond price from feature_pricing, sent with the offer. */
+  const [rabbitDiamondCost, setRabbitDiamondCost] = useState<number | null>(null);
   const rabbitHandNumberRef = useRef<number | null>(null);
 
   const handleRabbitReveal = useCallback(async (): Promise<RabbitHuntRevealResult> => {
@@ -3778,6 +3783,10 @@ export default function TablePage({
       // which is why the button could say FREE on the 101st hunt and then
       // silently charge five diamonds.
       vipRemaining: result.vip_remaining,
+      // Uses left on a purchased pack. Without it a pack reveal spent neither
+      // diamonds nor a VIP use, so the player burned one of something they had
+      // paid for and nothing on screen acknowledged it.
+      usesRemaining: result.uses_remaining,
     };
   }, [tableId]);
 
@@ -5330,9 +5339,22 @@ export default function TablePage({
         // only to players who folded. Gating on heroFolded meant the player who
         // won the pot when everyone else folded — the one person most likely to
         // wonder what was coming — was never offered a rabbit hunt at all.
-        if (available > 0) {
+        //
+        // But it goes ONLY to them. This is a room-wide broadcast, so it now
+        // names who was dealt in: without this check a spectator, or someone who
+        // had just sat down, saw a live Rabbit Hunt button whose only possible
+        // outcome was the server refusing them.
+        const eligibleIds = Array.isArray(handState.eligible_user_ids)
+          ? (handState.eligible_user_ids as string[])
+          : null;
+        const heroMayHunt = !eligibleIds || (!!userId && eligibleIds.includes(userId));
+        if (available > 0 && heroMayHunt) {
           rabbitHandNumberRef.current = Number(handState.hand_number ?? 0) || null;
           setRabbitCardsAvailable(available);
+          // The live price from feature_pricing, so a repricing reaches the
+          // button without a deploy.
+          const cost = Number(handState.diamond_cost);
+          if (Number.isFinite(cost) && cost > 0) setRabbitDiamondCost(cost);
           setIsRabbitAvailable(true);
         }
         return;
@@ -14192,6 +14214,7 @@ export default function TablePage({
         // Rabbit Hunt
         isRabbitAvailable={isRabbitAvailable}
         rabbitCardsAvailable={rabbitCardsAvailable}
+        rabbitDiamondCost={rabbitDiamondCost}
         onRabbitReveal={handleRabbitReveal}
         // Leaderboard
         showLeaderboard={showLeaderboard}

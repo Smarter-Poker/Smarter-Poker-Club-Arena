@@ -2767,10 +2767,15 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   POST-BB-TO-ENTER OVERLAY (Bible V8 §4.2)
-   Walkthrough Step 4 fix 2026-04-29 — small fixed-position pill button
-   shown to the hero only when their userId is in the engine's
-   waitingForBBUserIds list. Tapping it calls POST /post-bb on the engine.
+   SEAT-RESERVED OVERLAY (Bible V8 §4.2)
+   Was "Post BB To Enter" — a pill BUTTON that called POST /post-bb. Dan
+   2026-08-25: cash entry is free, so the only players still waiting are the two
+   the engine holds out for one hand (the seat the small blind is about to
+   reach, and the seat the button is about to reach), and it refuses that call
+   for both. It is a notice now, so the interactive affordances below are
+   confined to the --button modifier and the notice gets none of them: a div
+   that pulses, lifts on hover and shows a pointer cursor is a lie about what
+   tapping it will do.
    ═══════════════════════════════════════════════════════════════════════════ */
 .post-bb-overlay-button {
   position: fixed;
@@ -2789,14 +2794,28 @@
   color: #ffde5c;
   font-family: inherit;
   font-weight: 700;
-  cursor: pointer;
   box-shadow:
     0 0 18px rgba(255, 213, 74, 0.45),
     0 4px 14px rgba(0, 0, 0, 0.5);
+}
+/* Interactive affordances live here, on the button form only. */
+button.post-bb-overlay-button {
+  cursor: pointer;
   animation: post-bb-pulse 1.6s ease-in-out infinite alternate;
 }
-.post-bb-overlay-button:hover {
+button.post-bb-overlay-button:hover {
   background: linear-gradient(180deg, #374151 0%, #1f2937 100%);
+}
+/* The notice: informational, not tappable. Calmer than the old pulsing pill,
+   because nothing is being asked of the player — they are already seated and
+   will be dealt in free. */
+.post-bb-overlay-button--notice {
+  cursor: default;
+  animation: none;
+  border-color: rgba(255, 213, 74, 0.55);
+  box-shadow:
+    0 0 12px rgba(255, 213, 74, 0.22),
+    0 4px 14px rgba(0, 0, 0, 0.5);
 }
 .post-bb-overlay-button__title {
   font-size: 14px;

@@ -103,6 +103,19 @@ describe('coming in behind the button costs nothing', () => {
     expect(guard, 'no small-blind guard on postBBToEnter').toBeGreaterThan(-1);
     // The refusal must come BEFORE the player is released and billed.
     expect(guard).toBeLessThan(release);
+    // BOTH hold-outs, not just the small blind. A player held out because they
+    // took the seat the button is about to reach could still pay a live big
+    // blind for a hand they were about to get free — the same asymmetry, left
+    // open on the other half of the rule.
+    expect(body).toMatch(/getButtonSeatIndex/);
+    expect(body).toMatch(/seat\.seat_number === buttonSeatIndex/);
+  });
+
+  it('nothing in the product calls POST /post-bb any more', () => {
+    // Every remaining path through it is a refusal, so a UI that offers it is
+    // offering the player a charge they cannot complete and would not want.
+    const tablePage = strip(read('../src/pages/TablePage.tsx'));
+    expect(tablePage).not.toMatch(/serverPostBBToEnter\(/);
   });
 });
 

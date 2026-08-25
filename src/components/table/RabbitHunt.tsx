@@ -35,6 +35,14 @@ import { CardImage } from '../table/CardImage';
 import type { Card as CardImageCard } from '../table/CardImage';
 import './RabbitHunt.css';
 import { reportError } from '../../utils/errorReporter';
+/* Dan: "use the actual rabbit hunt dynamic image". The artwork has been in the
+   repo the whole time and nothing referenced it — the button drew a `◆` text
+   glyph. Imported through Vite rather than referenced from public/ on purpose:
+   an imported asset is emitted into dist/assets/, and sync-club-arena.sh copies
+   assets/ wholesale while it deliberately PRESERVES (never updates)
+   public/hub/club-arena/images/, so a file dropped there would never reach
+   production. */
+import rabbitHuntIcon from '../../assets/rabbit-hunt.png';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -53,6 +61,8 @@ export interface RabbitHuntRevealResult {
   diamondsSpent?: number;
   /** VIP monthly hunts left AFTER this one. Server-counted; null for non-VIP. */
   vipRemaining?: number | null;
+  /** Uses left on a purchased pack after this one. Null unless a pack paid. */
+  usesRemaining?: number | null;
 }
 
 export interface RabbitHuntProps {
@@ -65,6 +75,14 @@ export interface RabbitHuntProps {
    * placeholders next to the one real card.
    */
   cardsAvailable: number;
+  /**
+   * Live diamond price from the server's `feature_pricing` row, delivered with
+   * the offer. The button used to render a hardcoded 5 from the client's
+   * FEATURE_PRICING while the charge came from that table, so repricing in the
+   * dashboard — which the migration explicitly supports — made the label lie.
+   * Falls back to the constant only if the offer arrived without one.
+   */
+  rabbitDiamondCost?: number | null;
   onReveal: () => Promise<RabbitHuntRevealResult>;
 }
 
@@ -85,7 +103,12 @@ function toCardImage(card: Card): CardImageCard {
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function RabbitHunt({ isAvailable, cardsAvailable, onReveal }: RabbitHuntProps) {
+export function RabbitHunt({
+  isAvailable,
+  cardsAvailable,
+  rabbitDiamondCost,
+  onReveal,
+}: RabbitHuntProps) {
   const { user } = useAuthUser();
   const toast = useToast();
 
@@ -95,7 +118,11 @@ export function RabbitHunt({ isAvailable, cardsAvailable, onReveal }: RabbitHunt
   const [isVIP, setIsVIP] = useState(false);
   const [vipRemaining, setVipRemaining] = useState<number | null>(null);
 
-  const cost = FEATURE_PRICING.rabbit_hunt.cost;
+  // Server price when we have it, the constant only as a fallback.
+  const cost =
+    typeof rabbitDiamondCost === 'number' && rabbitDiamondCost > 0
+      ? rabbitDiamondCost
+      : FEATURE_PRICING.rabbit_hunt.cost;
 
   // Label only. The server decides the actual price, so this lookup must never
   // be able to block the button: it used to drive a `disabled={isCheckingVIP}`
@@ -103,6 +130,14 @@ export function RabbitHunt({ isAvailable, cardsAvailable, onReveal }: RabbitHunt
   // hung (as opposed to rejected) VIP query disabled Rabbit Hunt forever with
   // nothing on screen to say why. The button is enabled from the first frame
   // and the label fills in when the answer arrives.
+  //
+  // It also reads the monthly USAGE, not just the VIP flag. The earlier attempt
+  // at "stop saying FREE once the pool runs out" set `vipRemaining` from the
+  // reveal response — which arrives strictly after the button has been pressed,
+  // and the button is unmounted the moment it has been. So the state was never
+  // non-null while the label was on screen, and the 101st hunt still read FREE.
+  // checkVIPStatus already returns monthlyLimits; the number just has to be
+  // fetched BEFORE the press rather than reported after it.
   useEffect(() => {
     let cancelled = false;
     const checkVIP = async () => {
@@ -112,7 +147,12 @@ export function RabbitHunt({ isAvailable, cardsAvailable, onReveal }: RabbitHunt
       }
       try {
         const status = await vipService.checkVIPStatus(user.id);
-        if (!cancelled) setIsVIP(!!status?.isVIP);
+        if (cancelled) return;
+        setIsVIP(!!status?.isVIP);
+        const pool = status?.monthlyLimits?.rabbitHunts;
+        if (pool && typeof pool.limit === 'number' && typeof pool.used === 'number') {
+          setVipRemaining(Math.max(0, pool.limit - pool.used));
+        }
       } catch (err) {
         reportError(err, 'RabbitHunt.Error');
         if (!cancelled) setIsVIP(false);
@@ -122,7 +162,7 @@ export function RabbitHunt({ isAvailable, cardsAvailable, onReveal }: RabbitHunt
     return () => {
       cancelled = true;
     };
-  }, [user?.id]);
+  }, [user?.id, isAvailable]);
 
   // A new hand's offer must not show the previous hand's cards.
   useEffect(() => {
@@ -151,6 +191,8 @@ export function RabbitHunt({ isAvailable, cardsAvailable, onReveal }: RabbitHunt
         return;
       }
 
+      // Every paying path says what it took. The player must never spend
+      // something and be told nothing.
       if (result.diamondsSpent && result.diamondsSpent > 0) {
         toast.info(`${result.diamondsSpent} Diamonds Charged`);
       } else if (typeof result.vipRemaining === 'number') {
@@ -163,6 +205,17 @@ export function RabbitHunt({ isAvailable, cardsAvailable, onReveal }: RabbitHunt
             ? `Free Rabbit Hunt, ${result.vipRemaining} Left This Month`
             : 'Last Free Rabbit Hunt This Month'
         );
+      } else if (typeof result.usesRemaining === 'number') {
+        // A purchased pack. This spends neither diamonds nor a VIP use, so it
+        // fell through both branches above and the player burned one of
+        // something they had paid for in total silence.
+        toast.info(
+          result.usesRemaining > 0
+            ? `Rabbit Hunt Used, ${result.usesRemaining} Left In Your Pack`
+            : 'That Was The Last Hunt In Your Pack'
+        );
+      } else if (result.source === 'already_revealed') {
+        toast.info('Showing Your Rabbit Hunt Again, No Charge');
       }
 
       // Set every card at once and let CSS stagger them. Awaiting 500ms PER
@@ -195,7 +248,13 @@ export function RabbitHunt({ isAvailable, cardsAvailable, onReveal }: RabbitHunt
           onClick={handleReveal}
           disabled={isRevealing}
         >
-          <span className="rabbit-hunt__icon">◆</span>
+          <img
+            className="rabbit-hunt__icon-img"
+            src={rabbitHuntIcon}
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+          />
           <span className="rabbit-hunt__label">{isRevealing ? 'Revealing...' : 'Rabbit Hunt'}</span>
           {!isRevealing && (
             <span

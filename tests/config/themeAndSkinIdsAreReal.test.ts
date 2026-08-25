@@ -17,6 +17,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { TABLE_FELT_CATALOG } from '../../src/lib/tableTheme';
 
 const root = process.cwd();
 const read = (p: string) => fs.readFileSync(path.join(root, p), 'utf8');
@@ -133,21 +134,31 @@ describe('a table skin you can pick is a skin that exists', () => {
     );
     expect(registry.size, 'TABLE_SKINS registry parsed empty').toBeGreaterThan(0);
 
-    // 2026-08-25: this used to read a hand-maintained `table: [ … ]` array out
-    // of the modal and check each id against the registry. That array is gone —
-    // the tab is now derived from TABLE_FELT_CATALOG, which is itself built from
-    // the skin registry — so the old locator matched nothing and the test failed
-    // on a change that made the bug it guards against impossible.
+    // 2026-08-25: this used to read a hand-maintained `table: [ ... ]` array out
+    // of the modal and check each id against the registry. That array is gone -
+    // the tab is derived from TABLE_FELT_CATALOG, which is itself built from the
+    // skin registry - so the old locator matched nothing and the test failed on
+    // a change that made the bug it guards against impossible. It was RED ON
+    // MAIN, which stops the World Hub sync for every agent.
     //
-    // The invariant is now structural, so that is what gets pinned: a literal
-    // list here would be a regression, because a tile can only exist if a skin
-    // exists behind it. Re-introducing a hardcoded array must fail this.
+    // Two invariants are pinned now, because they catch different regressions.
+    //
+    // STRUCTURAL: the tab must be generated, never hand-listed. A literal array
+    // here is a regression by itself, since it can drift from the registry.
     expect(THEME_MODAL).toMatch(/^\s{2}table: TABLE_ASSETS,$/m);
     expect(THEME_MODAL).toMatch(/const TABLE_ASSETS: ThemeAsset\[\] = TABLE_FELT_CATALOG\.map/);
     expect(
       THEME_MODAL,
-      'the table tab is a literal array again — it can drift from the skin registry'
+      'the table tab is a literal array again - it can drift from the skin registry'
     ).not.toMatch(/\n\s{2}table: \[/);
+
+    // RESOLUTION: and every id the catalogue offers must still resolve to real
+    // artwork. Generating the list makes a hand-typed dead id impossible; it
+    // does not make a dead id in the CATALOGUE impossible.
+    const offered = TABLE_FELT_CATALOG.map((f) => f.id);
+    expect(offered.length).toBeGreaterThan(0);
+    const dead = offered.filter((id) => !registry.has(id));
+    expect(dead, `table skins offered that resolve to nothing: ${dead.join(', ')}`).toEqual([]);
   });
 });
 

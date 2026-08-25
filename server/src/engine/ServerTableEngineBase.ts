@@ -797,6 +797,32 @@ export abstract class ServerTableEngineBase {
   /**
    * Start the dealing pipeline
    */
+
+  /**
+   * HOW MANY SEATS BEFORE A HAND IS DEALT (Dan 2026-08-25).
+   *
+   * `auto_start_players` has been a slider on the creation screen since
+   * February and was read by nothing: the dealing loop, the start-up wait and
+   * the stall watchdog each hard-coded 2. A host could set AutoStart to 5, and
+   * the table dealt three-handed anyway.
+   *
+   * It lives here, on the base, because THREE call sites have to agree about
+   * it. They already had to agree about the old constant — the watchdog's own
+   * comment says "mirror dealingLoop's predicate exactly, so the watchdog's
+   * idea of 'this table should be dealing' cannot disagree with the loop's" —
+   * and a table whose loop waits for 5 while the watchdog wants 2 is a table
+   * the watchdog kills and rebuilds every ninety seconds.
+   *
+   * Clamped at 2 because the column carries no CHECK constraint and a hand of
+   * one is not a hand. A tournament table ignores the setting entirely: its
+   * field size is decided by the tournament, not by a cash-table slider.
+   */
+  protected minPlayersToDeal(): number {
+    if (this.isTournamentTable()) return 2;
+    const configured = Number(this.tableInfo?.auto_start_players);
+    return Number.isFinite(configured) && configured > 2 ? Math.floor(configured) : 2;
+  }
+
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
@@ -913,8 +939,25 @@ export abstract class ServerTableEngineBase {
 
       // Bible V8 §4.20 + FIX 98: Configure Run It Twice engine
       // Chooser gets 5s, responders get 10s — per Dan's rules
+      /**
+       * Dan 2026-08-25: run_it_mode reaches the engine at last. Read
+       * DEFENSIVELY and additively — see RITConfig.mode. The column is the
+       * string 'none' on all 46 live tables while run-it-twice is genuinely on
+       * via the three boolean columns, so a mode that gated `enabled` would
+       * have switched the feature off across the whole platform. It can only
+       * ever REMOVE the question, never the feature.
+       */
+      const ritMode = String(this.tableInfo.run_it_mode || '').toLowerCase();
       this.runItTwiceEngine.configure(this.tableId, {
         enabled: ritEffective,
+        mode:
+          ritMode === 'mandatory_three'
+            ? 'mandatory_three'
+            : ritMode === 'mandatory_twice'
+              ? 'mandatory_twice'
+              : ritMode === 'player_choice'
+                ? 'player_choice'
+                : 'none',
         autoDeclineTimeout: 10,
         maxRuns: 3, // Support up to 3 boards (Dan's rules: player can choose 1/2/3)
         chooserTimeout: 5,
@@ -989,7 +1032,7 @@ export abstract class ServerTableEngineBase {
       // Bible V8 §3.1: Table FSM — empty → waiting (engine started, waiting for players)
       this.tableFSM.transition('waiting');
 
-      // Wait for minimum 2 players
+      // Wait for the host's AutoStart figure (2 unless they raised it)
       this.setLoopPhase('start_wait_for_players');
       while (this.running) {
         try {
@@ -1014,9 +1057,9 @@ export abstract class ServerTableEngineBase {
         } catch {
           /* idle publish must never stall the wait loop */
         }
-        if (this.seatedPlayers.length >= 2) break;
+        if (this.seatedPlayers.length >= this.minPlayersToDeal()) break;
         console.log(
-          `[ServerTableEngine:${this.tableId}] Waiting for players... (${this.seatedPlayers.length}/2)`
+          `[ServerTableEngine:${this.tableId}] Waiting for players... (${this.seatedPlayers.length}/${this.minPlayersToDeal()})`
         );
         await this.sleep(5000);
       }

@@ -21,8 +21,26 @@ import { deadlineScheduler, type DeadlineScheduler } from './DeadlineScheduler.j
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * How this table decides how many times to run it (Dan 2026-08-25).
+ *
+ * `run_it_mode` has carried these four values since February and no engine
+ * ever read it, so "Mandatory Twice" and "Mandatory 3 Times" behaved exactly
+ * like "Player's Choice" — the offer went out and either player could decline
+ * a rule the host had made compulsory.
+ */
+export type RunItMode = 'none' | 'player_choice' | 'mandatory_twice' | 'mandatory_three';
+
 export interface RITConfig {
   enabled: boolean;
+  /**
+   * ADDITIVE ONLY. A missing or unrecognised mode leaves the offer flow
+   * exactly as it was — which matters, because `run_it_mode` is the string
+   * 'none' on all 46 live tables while run-it-twice is genuinely ON via the
+   * three boolean columns. Gating `enabled` on this would have switched the
+   * feature off across the whole platform.
+   */
+  mode?: RunItMode;
   autoDeclineTimeout: number;
   maxRuns: 2 | 3;
   /** FIX 96: Timeout for chooser to pick runs (phase 1) */
@@ -115,6 +133,66 @@ export class RunItTwiceEngine {
 
   isEnabled(tableId: string): boolean {
     return this.tableConfigs.get(tableId)?.enabled ?? false;
+  }
+
+  /** The run count this table forces, or 0 when the players decide. */
+  mandatoryRuns(tableId: string): 0 | 2 | 3 {
+    const config = this.tableConfigs.get(tableId);
+    if (!config?.enabled) return 0;
+    if (config.mode === 'mandatory_three') return 3;
+    if (config.mode === 'mandatory_twice') return 2;
+    return 0;
+  }
+
+  /**
+   * Run it N times WITHOUT asking. The host has already decided.
+   *
+   * This builds the same RITState `offer()` builds, in the state that flow
+   * only reaches after everyone has agreed: chooserDecided, status 'accepted',
+   * and every player already in acceptedBy — because dealDualBoards hard
+   * returns null unless status is 'accepted', and tryCompleteAcceptance needs
+   * every allPlayerIds member present. No deadline is scheduled: there is
+   * nothing to time out when there was never a question.
+   */
+  forceRuns(
+    tableId: string,
+    handId: string,
+    allPlayerIds: string[],
+    pot: number,
+    runs: 2 | 3
+  ): void {
+    const config = this.tableConfigs.get(tableId);
+    if (!config?.enabled || allPlayerIds.length === 0) return;
+
+    this.clearOffer(tableId);
+
+    const state: RITState = {
+      tableId,
+      handId,
+      status: 'accepted',
+      offeredBy: allPlayerIds[0],
+      offeredTo: allPlayerIds[1] ?? allPlayerIds[0],
+      allPlayerIds,
+      chooserPlayerId: allPlayerIds[0],
+      acceptedBy: new Set(allPlayerIds),
+      pot,
+      maxRuns: runs,
+      chosenRuns: runs,
+      chooserDecided: true,
+      board1: [],
+      board2: [],
+      board3: [],
+    };
+    this.activeOffers.set(tableId, state);
+
+    this.emitEvent({
+      type: 'RIT_ACCEPTED',
+      tableId,
+      handId,
+      playerId: allPlayerIds[0],
+      runs,
+      mandatory: true,
+    });
   }
 
   /**
@@ -339,9 +417,7 @@ export class RunItTwiceEngine {
      */
     const declaredRuns = runs === 3 ? 3 : 2;
     const declared = [board1Winner, board2Winner, board3Winner].slice(0, declaredRuns);
-    const resolvedCount = declared.filter(
-      (w) => typeof w === 'string' && w.length > 0
-    ).length;
+    const resolvedCount = declared.filter((w) => typeof w === 'string' && w.length > 0).length;
 
     // Each board that was RUN is worth an equal share of the pot, regardless of
     // whether it produced a winner. The last share carries the rounding
@@ -350,7 +426,10 @@ export class RunItTwiceEngine {
     const lastShare = Math.round((state.pot - share * (declaredRuns - 1)) * 100) / 100;
     const award = (playerId: string, amount: number) => {
       if (amount <= 0) return;
-      distribution.set(playerId, Math.round(((distribution.get(playerId) || 0) + amount) * 100) / 100);
+      distribution.set(
+        playerId,
+        Math.round(((distribution.get(playerId) || 0) + amount) * 100) / 100
+      );
     };
 
     let unresolvedChips = 0;
@@ -375,7 +454,11 @@ export class RunItTwiceEngine {
       const contenders =
         state.allPlayerIds && state.allPlayerIds.length > 0
           ? state.allPlayerIds
-          : [...new Set(declared.filter((w): w is string => typeof w === 'string' && w.length > 0))];
+          : [
+              ...new Set(
+                declared.filter((w): w is string => typeof w === 'string' && w.length > 0)
+              ),
+            ];
 
       reportError(
         new Error(

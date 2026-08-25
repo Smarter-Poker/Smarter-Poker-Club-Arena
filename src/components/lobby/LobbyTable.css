@@ -611,9 +611,21 @@ abbr.lt-variant[title] {
   }
 
   /* ...and the headline reserves the corner so a long game name wraps before
-     it reaches the badge instead of running underneath it. */
-  .lt-col-name {
-    padding-right: 96px;
+     it reaches the badge instead of running underneath it.
+
+     Qualified with .lobby-table td for the third time in this file: the phone
+     layout's own `td { padding: 0 }` is (0,1,1) and silently beats a bare
+     class. Measured on the deployed card — "Monday Grind NLH Mystery Bounty"
+     ran straight under the Registering badge. */
+  .lobby-table td.lt-col-name {
+    padding-right: 104px;
+  }
+
+  .lt-status {
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* A long game name now wraps instead of forcing the row wider. */

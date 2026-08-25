@@ -381,6 +381,8 @@ export interface TableModalsLayerProps {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 import React from 'react';
+import { supabase } from '../../lib/supabase';
+import { useToast } from '../common/Toast';
 
 export function TableModalsLayer(props: TableModalsLayerProps) {
   const { diamonds } = useWallet();
@@ -564,6 +566,73 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     safeBB,
     getPlayerHUDStats,
   } = props;
+
+  const toast = useToast();
+  // We use local state for diamonds listening directly to MasterBus because useWalletStore is cached.
+  const [localDiamonds, setLocalDiamonds] = React.useState(0);
+  const [ownedCardBacks, setOwnedCardBacks] = React.useState<string[]>([]);
+
+  React.useEffect(() => {
+    if (!userId) return;
+    let mounted = true;
+
+    // Fetch exact diamond balance directly
+    supabase
+      .from('profiles')
+      .select('diamonds')
+      .eq('id', userId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (mounted && data) setLocalDiamonds(Number(data.diamonds) || 0);
+      });
+
+    // Fetch owned card backs from feature_purchases
+    supabase
+      .from('feature_purchases')
+      .select('feature')
+      .eq('user_id', userId)
+      .like('feature', 'card_back_%')
+      .then(({ data }) => {
+        if (mounted && data) {
+          setOwnedCardBacks(data.map((r: any) => r.feature.replace('card_back_', '')));
+        }
+      });
+
+    // Listen to real-time diamond balance updates
+    const off = masterBus.subscribe('DIAMOND_BALANCE_CHANGED', (e) => {
+      const balance = (e as any).payload?.balance;
+      if (typeof balance === 'number' && mounted) {
+        setLocalDiamonds(balance);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      off();
+    };
+  }, [userId]);
+
+  const handleCardBackPurchase = React.useCallback(
+    async (id: string, price: number) => {
+      if (!userId) return;
+
+      const { data, error } = await supabase.rpc('fn_purchase_feature', {
+        p_user_id: userId,
+        p_feature: `card_back_${id}`,
+        p_cost: price,
+      });
+
+      if (error || (data as any)?.success === false) {
+        toast.error('Failed to purchase card back. Please try again.');
+        return;
+      }
+
+      setLocalDiamonds((prev: number) => Math.max(0, prev - price));
+      setOwnedCardBacks((prev: string[]) => [...prev, id]);
+      toast.success('Card back purchased!');
+    },
+    [userId, toast]
+  );
 
   // The rake the engine will actually take at this table (table override ->
   // club default -> published schedule). Only queried while the Game Rules
@@ -1062,7 +1131,9 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         }}
         onSettingsChange={onSettingsChange}
         userId={userId}
-        userDiamonds={diamonds}
+        userDiamonds={localDiamonds}
+        ownedCardBacks={ownedCardBacks}
+        onCardBackPurchase={handleCardBackPurchase}
         currentCardBack={currentCardBack}
         onCardBackChanged={onCardBackChanged}
       />

@@ -361,9 +361,18 @@ export default function TableOperationsPanel({ clubId }: Props) {
   // ─── Load tables ───────────────────────────────────────────────────────────
   const loadTables = useCallback(async () => {
     setLoading(true);
-    const data = await tableService.getClubTables(clubId);
-    setTables(data as unknown as TableInfo[]);
-    if (isMounted.current) setLoading(false);
+    try {
+      /* getClubTables THROWS on a failed read now, rather than returning an
+         empty array that reads as "this club has no tables". Caught here so a
+         failure leaves the previous list on screen and clears the spinner,
+         instead of an unhandled rejection and a permanent load state. */
+      const data = await tableService.getClubTables(clubId);
+      if (isMounted.current) setTables(data as unknown as TableInfo[]);
+    } catch (err) {
+      reportError(err, 'TableOperationsPanel.loadTables', { clubId });
+    } finally {
+      if (isMounted.current) setLoading(false);
+    }
   }, [clubId]);
 
   useEffect(() => {

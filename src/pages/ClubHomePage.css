@@ -582,10 +582,11 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    TABLE CARD
 ═══════════════════════════════════════════════════════════════════════════════ */
-.status-dot.running,
-/* ═══════════════════════════════════════════════════════════════════════════════
-   TOURNAMENT CARD
-═══════════════════════════════════════════════════════════════════════════════ */
+/* (`.status-dot.running,` was stranded here when the table-card and
+   tournament-card blocks were deleted: the dangling comma joined it to the
+   NEXT rule's selector list, so .empty-tables' centred grey padding was being
+   applied to the status dot on every page that renders one. Deleted 2026-08-25
+   in the pass that found it.) */
 /* ═══════════════════════════════════════════════════════════════════════════════
    EMPTY STATE
 ═══════════════════════════════════════════════════════════════════════════════ */
@@ -741,54 +742,18 @@
 /* P4-1: Ambient Background Particles */
 /* P4-2: Level Bar Sparkle at Fill Tip */
 /* P4-3: Game Card Scanner Sweep on Hover */
-@keyframes cardScanSweep {
-  0% {
-    left: -100%;
-  }
-  100% {
-    left: 200%;
-  }
-}
-
-/* P4-4: Bottom Nav Active Tab Glow */
-.club-home__bottom-nav .nav-item.active,
-.club-home__bottom-nav .nav-item.active::after,
-/* P4-5: Tournament Card Premium Border Glow */
-@keyframes liveCardGlow {
-  0%,
-  100% {
-    opacity: 0.5;
-  }
-  50% {
-    opacity: 1;
-  }
-}
+/* (Two `.nav-item.active` selectors were stranded here the same way, and
+   their trailing comma made the parser read `@keyframes liveCardGlow` as part
+   of the SELECTOR LIST - so the at-rule stopped existing and an invalid
+   qualified rule shipped in its place. Both selectors are gone with the rule
+   they belonged to, and liveCardGlow / cardScanSweep went with them: nothing
+   has referenced either since the card grid was replaced.) */
 
 /* P4-6: Club Header Section Depth */
 /* P4-7: Filter Tab Slide Underline */
 /* ═══════════════════════════════════════════════════════════════════════════════
    ANIMATIONS (extracted from inline <style>)
 ═══════════════════════════════════════════════════════════════════════════════ */
-@keyframes clubHomePageSlideInUp {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes clubHomePageShimmer {
-  0% {
-    background-position: -1000px 0;
-  }
-  100% {
-    background-position: 1000px 0;
-  }
-}
-
 /* BBJ lobby ticker spacing (2026-08-18) */
 /* Dan 2026-08-21: real search box under the header bar (the icon used to be
    a no-op). Filters cash tables + tournament cards by name. */

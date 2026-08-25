@@ -29,7 +29,10 @@ import CreateTournamentModal from '../components/club/CreateTournamentModal';
    Selecting a row NEVER joins or spends; every commit action goes through the
    panel, which reuses the existing flows (navigate-to-table seat+buy-in,
    WaitlistService, TournamentService, spinQuickJoin). */
-import LobbyTable, { type LobbyCategory } from '../components/lobby/LobbyTable';
+import LobbyTable, {
+  type LobbyCategory,
+  type LobbyRowContext,
+} from '../components/lobby/LobbyTable';
 import GameLobbyPanel from '../components/lobby/GameLobbyPanel';
 import {
   cashEntry,
@@ -355,6 +358,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const loadClubDataRef = useRef<(getIsMounted?: () => boolean) => void>(() => {});
   /** Bumped by every club load and on unmount; a late response compares. */
   const loadTokenRef = useRef(0);
+  /** The resolved UUID, for comparing bus payloads that name the club by it. */
+  const resolvedClubIdRef = useRef<string | null>(null);
 
   // Refs to avoid stale closures in realtime subscriptions
   const clubIdRef = useRef(clubId);
@@ -805,6 +810,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(() =>
     clubId ? resolveClubUUIDSync(clubId) : null
   );
+  useEffect(() => {
+    resolvedClubIdRef.current = resolvedClubId;
+  }, [resolvedClubId]);
 
   // ── SPIN QUICK-JOIN (Dan 2026-08-20: "there is 'no lobby' for a spin, you
   // just start on a table") ──────────────────────────────────────────────────
@@ -949,6 +957,17 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       if (isMounted) loadClubDataRef.current(() => isMounted);
     };
 
+    /* A club event may name the club by its UUID or by the id in the URL -
+       the two are different strings on a slug route. ClubsService emits the
+       resolved UUID now, but this page can be mounted under either, so match
+       against both rather than against whichever one happens to be in the ref.
+       Comparing only the URL id is how a CLUB_UPDATED for the club on screen
+       could arrive and be ignored. */
+    const matchesThisClub = (id: unknown) => {
+      if (!id || typeof id !== 'string') return true; // no id: refresh anyway
+      return id === clubIdRef.current || id === resolvedClubIdRef.current;
+    };
+
     const unsubs = [
       masterBus.subscribeDebounced('CLUB_JOINED', reload, 300),
       masterBus.subscribeDebounced('CLUB_LEFT', reload, 300),
@@ -957,7 +976,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       masterBus.subscribeDebounced(
         'CLUB_UPDATED',
         (event) => {
-          if (!clubIdRef.current || event.payload?.clubId === clubIdRef.current) {
+          if (matchesThisClub(event.payload?.clubId)) {
             reload();
           }
         },
@@ -966,7 +985,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       masterBus.subscribeDebounced(
         'CLUB_SETTINGS_UPDATED',
         (event) => {
-          if (!clubIdRef.current || event.payload?.clubId === clubIdRef.current) {
+          if (matchesThisClub(event.payload?.clubId)) {
             reload();
           }
         },
@@ -2411,6 +2430,57 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   }, [urlSyncEnabled, lobbyEntries]);
 
   /** How many rows the lobby is about to render. */
+  /* ONE ctx IDENTITY PER RENDER THAT ACTUALLY CHANGES IT.
+     This object was built inline in the JSX, so it was a new identity on every
+     render of the page - which makes memoising the rows below it pointless,
+     because every row's props change every time regardless of whether
+     anything it displays did. The lobby runs to a hundred-plus rows. */
+  const lobbyCtx = useMemo<LobbyRowContext>(
+    () => ({
+      waitlistedIds: waitlistedTableIds,
+      seatedIds: seatedTableIds,
+      registeredIds: registeredTournamentIds,
+      favoriteIds: favoriteTableIds,
+      onToggleFavorite: currentUserId ? handleToggleFavorite : undefined,
+      /* The card's buttons run the SAME flows the game-lobby panel
+               runs — registerMtt for a tournament, the table navigation for
+               a cash seat, the panel itself for a look first. Nothing new
+               is invented at the card level, so there is one registration
+               path and one join path in this page, not three. */
+      onRegister: (e) => {
+        const row = filteredTournaments.find((t) => t.id === e.id);
+        if (row) handleRegister(row);
+        else openEntry(e);
+      },
+      onJoinTable: (e) => handleJoinTable(e.id),
+      /* Dan 2026-08-24: "VIEW TABLE SHOULD OPEN THE GAME AND LET YOU
+               WATCH AS A SPECTATOR — IT CURRENTLY BRINGS YOU TO THE JOIN
+               PAGE." It did, because it opened the pre-commit panel. The
+               table route with no join state IS the spectator view (the
+               panel's own "Observe Table" link goes to exactly this), so
+               the button now goes straight there.
+
+               For a tournament the equivalent is its own lobby screen —
+               "THE DETAILS BUTTON SHOULD TAKE YOU TO THE TOURNAMENT LOBBY
+               SCREEN" — unconditionally, not only once it is running. */
+      onViewTable: (e) =>
+        e.kind === 'cash' ? navigate(`/table/${e.id}`) : navigate(`/tournaments/${e.id}`),
+    }),
+    [
+      waitlistedTableIds,
+      seatedTableIds,
+      registeredTournamentIds,
+      favoriteTableIds,
+      currentUserId,
+      handleToggleFavorite,
+      filteredTournaments,
+      handleRegister,
+      handleJoinTable,
+      openEntry,
+      navigate,
+    ]
+  );
+
   const shownCount = lobbyEntries.length;
 
   /**
@@ -3161,36 +3231,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             onSelect={openEntry}
             onActivate={openEntry}
             loading={loading}
-            ctx={{
-              waitlistedIds: waitlistedTableIds,
-              seatedIds: seatedTableIds,
-              registeredIds: registeredTournamentIds,
-              favoriteIds: favoriteTableIds,
-              onToggleFavorite: currentUserId ? handleToggleFavorite : undefined,
-              /* The card's buttons run the SAME flows the game-lobby panel
-                 runs — registerMtt for a tournament, the table navigation for
-                 a cash seat, the panel itself for a look first. Nothing new
-                 is invented at the card level, so there is one registration
-                 path and one join path in this page, not three. */
-              onRegister: (e) => {
-                const row = filteredTournaments.find((t) => t.id === e.id);
-                if (row) handleRegister(row);
-                else openEntry(e);
-              },
-              onJoinTable: (e) => handleJoinTable(e.id),
-              /* Dan 2026-08-24: "VIEW TABLE SHOULD OPEN THE GAME AND LET YOU
-                 WATCH AS A SPECTATOR — IT CURRENTLY BRINGS YOU TO THE JOIN
-                 PAGE." It did, because it opened the pre-commit panel. The
-                 table route with no join state IS the spectator view (the
-                 panel's own "Observe Table" link goes to exactly this), so
-                 the button now goes straight there.
-
-                 For a tournament the equivalent is its own lobby screen —
-                 "THE DETAILS BUTTON SHOULD TAKE YOU TO THE TOURNAMENT LOBBY
-                 SCREEN" — unconditionally, not only once it is running. */
-              onViewTable: (e) =>
-                e.kind === 'cash' ? navigate(`/table/${e.id}`) : navigate(`/tournaments/${e.id}`),
-            }}
+            ctx={lobbyCtx}
           />
         )}
 

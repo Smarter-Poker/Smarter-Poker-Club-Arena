@@ -8,7 +8,7 @@ import { engineChannelClient } from './EngineStateClient';
 import type { PokerTable, TableSettings, GameVariant, HandState } from '../types/database.types';
 import { masterBus } from '../core/MasterBus';
 
-import { resolveClubUUID } from '../utils/clubIdResolver';
+import { resolveClubUUID, isUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 import { notifyServerLeave } from './GameServerAPI';
@@ -48,6 +48,22 @@ class TableService {
     // Resolve integer club_id to UUID for FK query
     const resolvedId = await resolveClubUUID(clubId);
 
+    /* THE RESOLVER RETURNS ITS INPUT WHEN IT CANNOT RESOLVE - an RLS refusal,
+       a PostgREST 400 and a dropped connection all land there - so `resolvedId`
+       can be a slug. Below it is CONCATENATED into a PostgREST `or=`
+       expression, where a slug containing a comma, a bracket or a quote splits
+       the expression and returns 400; a clean slug still reaches a uuid column
+       and errors with 22P02. Either way the lobby comes back empty, which is
+       indistinguishable from a club with no games. Refuse the query instead of
+       issuing one that is guaranteed to fail. */
+    if (!isUUID(resolvedId)) {
+      reportError(
+        new Error(`getClubTables: club id did not resolve to a UUID (${clubId})`),
+        'TableService.getClubTables_unresolved'
+      );
+      throw new Error('That Club Could Not Be Resolved');
+    }
+
     // UNION LAW (2026-08-19, Dan): a club inside a union lists the UNION's
     // games (all hosted by the union house club, stamped with union_id) plus
     // this club's OWN private tables. Sibling clubs' private games never show.
@@ -70,6 +86,18 @@ class TableService {
         'id, club_id, union_id, name, game_type, game_variant, stakes, small_blind, big_blind, min_buy_in, max_buy_in, max_players, current_players, status, settings, created_at'
       );
     if (unionId) {
+      /* Both ids are verified UUIDs at this point - `resolvedId` by the guard
+         at the top, `unionId` by the check here - so nothing user-controlled
+         reaches the `or=` grammar. */
+      if (!isUUID(unionId)) {
+        reportError(
+          new Error(`getClubTables: union id is not a UUID (${unionId})`),
+          'TableService.getClubTables_bad_union'
+        );
+        unionId = null;
+      }
+    }
+    if (unionId) {
       query = query.or(`union_id.eq.${unionId},and(club_id.eq.${resolvedId},is_private.eq.true)`);
     } else {
       query = query.eq('club_id', resolvedId);
@@ -84,8 +112,13 @@ class TableService {
       .limit(QUERY_LIMITS.LIST);
 
     if (error) {
+      /* NOT `return []`. An empty array here is the same answer this method
+         gives for a club that genuinely has no games, so a 400, an RLS
+         refusal or a dropped connection rendered as "no games in this club"
+         with nothing to retry - the same reasoning getSeatedPlayers already
+         records for its own throw. The caller can show a failure. */
       reportError(error, 'TableService.getClubTables');
-      return [];
+      throw error;
     }
     return data || [];
   }

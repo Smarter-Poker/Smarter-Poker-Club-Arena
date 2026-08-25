@@ -254,7 +254,14 @@ function useAnimatedCounter(target: number, duration = 400): number {
      was stuck for the life of the component, and formatBalance printed the
      wreckage as a tidy "0.00" on a money surface. One coercion at the door
      ends the whole class. */
-  const safeTarget = Number.isFinite(target) ? target : 0;
+  /* The animation runs from a finite number - it has to - but the CALLER must
+     still be able to tell a broken figure from a real zero. `formatBalance`
+     and `formatDiamonds` print "-" for a non-finite value on the grounds that
+     a wrong number on a money surface is worse than none, and coercing here
+     without returning the sentinel below quietly turned every one of those
+     into a confident 0.00. */
+  const targetIsReal = Number.isFinite(target);
+  const safeTarget = targetIsReal ? target : 0;
   const [value, setValue] = useState(safeTarget);
   const rafId = useRef<number | null>(null);
   /* Synced in an effect, never in the render body. Writing a ref while
@@ -296,7 +303,7 @@ function useAnimatedCounter(target: number, duration = 400): number {
     };
   }, [safeTarget, duration]);
 
-  return value;
+  return targetIsReal ? value : NaN;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -733,8 +740,22 @@ export default function DynamicWallet({
          Beat Jackpot 0.00 and no error badge, then persist those invented
          zeros to the device cache for the next visit to paint instantly.
          Raising sends it to the catch, which keeps whatever was on screen. */
-      if (panel.authorized === false) {
-        throw new Error(`fn_club_money_panel refused: ${String(panel.reason ?? 'unknown')}`);
+      /* ...BUT "NOT YOURS TO READ" IS NOT "THE READ FAILED".
+         Three of the four reads above are the viewer's OWN money - diamonds,
+         their club chip balance, their agent wallets - and they succeed
+         whether or not this club is theirs. Only the panel refuses. Throwing
+         on every refusal (as the first version of this did) meant a signed-in
+         NON-MEMBER opening any club lobby got a red "Balances Unavailable"
+         badge and a fabricated Diamonds 0 over the balance we had just read
+         successfully, with a Retry that could only fail again and a
+         reportError on every visit. `not_a_member` and `no_auth` are ordinary
+         states: keep what was read, leave the club's own figures UNKNOWN
+         (scope stays null, so the rows render "-" rather than 0.00), and do
+         not raise. Anything else really is a fault. */
+      const panelRefused = panel.authorized === false;
+      const refusalReason = String(panel.reason ?? 'unknown');
+      if (panelRefused && refusalReason !== 'not_a_member' && refusalReason !== 'no_auth') {
+        throw new Error(`fn_club_money_panel refused: ${refusalReason}`);
       }
       const bbj = (panel.bbj ?? {}) as Record<string, unknown>;
       const num = (v: unknown) => Number(v) || 0;
@@ -790,7 +811,12 @@ export default function DynamicWallet({
          silently removed a standalone club's Rake Treasury and Spins Wallet
          rows and stopped useSpinsWallet fetching at all. `union_id` is the
          same fact from the same object and is the fallback. */
-      setIsClubInUnion(panel.in_union !== undefined ? Boolean(panel.in_union) : unionId !== null);
+      /* A refusal carries neither `in_union` nor `union_id`, so it must not
+         move the flag in either direction - the club-switch reset already put
+         it at false, which is the safe default. */
+      if (!panelRefused) {
+        setIsClubInUnion(panel.in_union !== undefined ? Boolean(panel.in_union) : unionId !== null);
+      }
       setFetchError(false);
       setLoading(false);
 

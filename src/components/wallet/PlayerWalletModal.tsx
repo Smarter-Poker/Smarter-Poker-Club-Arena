@@ -92,7 +92,14 @@ export default function PlayerWalletModal({ isOpen, onClose, clubId }: PlayerWal
 
   const load = useCallback(
     async (offset: number) => {
-      if (!clubId) return;
+      if (!clubId) {
+        /* `loading` is initialised true, and this returned before the
+           try/finally that clears it - so an unresolvable club left the panel
+           on "Loading Your Wallet..." forever, with no error and no way out. */
+        setError('That Club Could Not Be Resolved');
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       if (offset === 0) setError(null);
       try {

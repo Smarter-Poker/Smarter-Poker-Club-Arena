@@ -16,21 +16,21 @@ export default function SlugEnforcer() {
       const uuid = match[2];
 
       Promise.all([
-        supabase.from('clubs').select('slug, union_id').eq('id', uuid).maybeSingle(),
+        supabase.from('clubs').select('slug, union_id, is_union').eq('id', uuid).maybeSingle(),
         supabase.from('unions').select('id').eq('id', uuid).maybeSingle(),
       ]).then(([clubRes, unionRes]) => {
         let newPath = location.pathname;
         let redirected = false;
 
         if (clubRes.data) {
-          if (clubRes.data.union_id && !location.pathname.includes('/unions/')) {
+          if (clubRes.data.is_union && !location.pathname.includes('/unions/')) {
             // It's a union club. The app enforces union routes.
             newPath = newPath.replace(/^\/club\//, '/unions/');
             newPath = newPath.replace(/^\/clubs\//, '/unions/');
-            newPath = newPath.replace(uuid, clubRes.data.union_id);
+            newPath = newPath.replace(uuid, clubRes.data.union_id || uuid);
             newPath = newPath.replace(/\/financials$/, '/settlement');
             redirected = true;
-          } else if (clubRes.data.slug) {
+          } else if (clubRes.data.slug && !location.pathname.includes('/unions/')) {
             newPath = newPath.replace(uuid, clubRes.data.slug);
             newPath = newPath.replace(/^\/club\//, '/clubs/');
             redirected = true;

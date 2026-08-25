@@ -1201,3 +1201,24 @@ abbr.lt-variant[title] {
     display: none;
   }
 }
+
+/* ── Spin top-tier badge ──────────────────────────────────────────────────
+   Shown on a Spin row only while the Reserve Pool can actually pay the top
+   multiplier (see SpinTopTierBadge in LobbyTable.tsx). Gold, because it is
+   the one thing on the row that is worth more than the buy-in suggests -
+   but small and inline, so it reads as a fact about the game rather than an
+   advertisement bolted onto it. */
+.lt-spintop {
+  flex: none;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 199, 44, 0.55);
+  background: rgba(255, 199, 44, 0.12);
+  color: var(--gold, #ffc72c);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  white-space: nowrap;
+}

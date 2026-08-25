@@ -47,7 +47,13 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  text-align: left;
+  /* Dan 2026-08-24: "EVERYTHING SHOULD BE CENTERED UNDER THE TITLE ON THIS,
+     NOT LEFT JUSTIFIED." The phone cards were centred back in the mobile
+     pass; the desktop table was still ragged-left, so a heading and the
+     values it names did not share an axis and the eye had to re-find the
+     column on every row. Heading and cell are centred together — one rule
+     each — so the alignment cannot drift apart again. */
+  text-align: center;
   padding: 8px 10px;
   white-space: nowrap;
   user-select: none;
@@ -64,6 +70,7 @@
 .lt-th {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
 }
 .lt-sortmark {
@@ -88,6 +95,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   vertical-align: middle;
+  text-align: center;
+}
+/* The name is the row's identity and the only cell whose content is a
+   sentence rather than a value, so it centres as a block: the two-line MTT
+   title keeps its lines stacked and centred on each other instead of each
+   line finding its own centre. */
+.lt-name {
+  justify-content: center;
+}
+.lt-name--mtt {
+  align-items: center;
 }
 .lt-row:hover {
   background: rgba(65, 105, 225, 0.07);
@@ -136,6 +154,34 @@
 }
 .lt-col-status {
   width: 148px;
+}
+.lt-col-tstack {
+  width: 104px;
+}
+.lt-col-tlevel {
+  width: 112px;
+}
+
+/* Level and blinds are one answer on two lines — "Level 3" is the clock's
+   position, "100/200" is what it costs — so they stack in the cell and the
+   row grows by a line rather than the two facts sharing one crowded line. */
+.lt-tlevel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.25;
+}
+.lt-tlevel__n {
+  font-weight: 600;
+}
+.lt-tlevel__b {
+  /* Tabular figures, not a second typeface — the lobby is deliberately one
+     face (see lobbyMttTitle: "no mono face anywhere in the lobby table"), and
+     what blinds actually need is columns of digits that line up row to row. */
+  font-variant-numeric: tabular-nums;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary, #8b8f98);
 }
 
 /* ── Cell pieces ── */
@@ -568,7 +614,8 @@ abbr.lt-variant[title] {
   .lobby-table td.lt-col-starts {
     order: 3;
   }
-  .lobby-table td.lt-col-tstats {
+  .lobby-table td.lt-col-tstack,
+  .lobby-table td.lt-col-tlevel {
     order: 4;
   }
   .lobby-table td.lt-col-rules {
@@ -903,27 +950,30 @@ abbr.lt-variant[title] {
     border: 1px solid rgba(90, 160, 230, 0.4);
   }
 
-  /* The three full-width bands of the card. flex-basis alone left them able
-     to shrink below their content when a line got crowded; 100% width states
-     it outright. */
-  .lobby-table td.lt-col-tstats {
+  /* On a card the two now behave like every other labelled value: the well
+     prints its own heading from data-label (Starting Stack / Current Level),
+     which is the same word the desktop header carries, so the two layouts
+     cannot say different things. They share one row and split it. */
+  .lobby-table td.lt-col-tstack,
+  .lobby-table td.lt-col-tlevel {
     display: block;
-    flex: 0 0 100%;
-    width: 100%;
-  }
-
-  .lt-tstats {
-    display: flex;
-    gap: 8px;
-  }
-
-  .lt-tstat {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
     flex: 1 1 0;
     min-width: 0;
+  }
+  .lobby-table td.lt-col-tstack::before,
+  .lobby-table td.lt-col-tlevel::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-tertiary, #7d8698);
+    margin-bottom: 1px;
+  }
+  .lobby-table td.lt-col-tstack,
+  .lobby-table td.lt-col-tlevel {
+    text-align: center;
     /* The value was losing its descenders: the well inherited the table's
        0.75rem line-height, which is shorter than the 0.75rem digits it had to
        hold once the label sat above them. */
@@ -935,15 +985,13 @@ abbr.lt-variant[title] {
       inset 0 1px 2px rgba(0, 0, 0, 0.6),
       0 1px 0 rgba(255, 255, 255, 0.04);
   }
-  .lt-tstat__k {
-    white-space: nowrap;
-    font-size: 0.5625rem;
-    font-weight: 700;
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
-    color: var(--text-tertiary, #7d8698);
+  /* A cash row has neither, and an empty well is a hole in the card. */
+  .lobby-table tr[data-kind='cash'] td.lt-col-tstack,
+  .lobby-table tr[data-kind='cash'] td.lt-col-tlevel {
+    display: none;
   }
-  .lt-tstat__v {
+  .lobby-table td.lt-col-tstack .lt-mono,
+  .lobby-table td.lt-col-tlevel .lt-tlevel__n {
     /* "IT DOESN'T NEED TO BE THAT BIG." */
     font-size: 0.75rem;
     font-weight: 700;

@@ -38,7 +38,15 @@ export const LiveChipCounts: React.FC<LiveChipCountsProps> = ({
   const [totalChips, setTotalChips] = useState(0);
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
-  const [prevChips, setPrevChips] = useState<Record<string, number>>({});
+  /**
+   * A FAILED QUERY IS NOT AN EMPTY FIELD (2026-08-25).
+   *
+   * `if (!error && data)` dropped the error on the floor and then let the
+   * `finally` clear `loading`, so a refused or dropped chip-count query landed
+   * the player on "No Players Found" - a sentence that is only ever true after
+   * a tournament has been wiped out, printed here for a table that was mid-hand.
+   */
+  const [loadFailed, setLoadFailed] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -67,45 +75,39 @@ export const LiveChipCounts: React.FC<LiveChipCountsProps> = ({
         .order('chips', { ascending: false })
         .limit(limit);
 
-      if (!error && data) {
-        let total = 0;
-        const mapped = data.map((p: any, idx: number) => {
-          total += p.chips || 0;
-          const profile = Array.isArray(p.profile) ? p.profile[0] : p.profile;
-          return {
-            userId: p.user_id,
-            username: profile?.username || 'Unknown',
-            avatarUrl: profile?.avatar_url || null,
-            chipCount: p.chips || 0,
-            status: p.status || 'playing',
-            rank: idx + 1,
-          };
-        });
-        setPrevChips(
-          leaders.reduce(
-            (acc, leader) => ({
-              ...acc,
-              [leader.userId]: leader.chipCount,
-            }),
-            {}
-          )
-        );
-        setLeaders(mapped);
-        setTotalChips(total);
+      if (error) {
+        reportError(error, 'LiveChipCounts.Failed_to_load_chip_counts');
+        // Hold the last good board rather than blanking it, and say why.
+        if (isMounted.current) setLoadFailed(true);
+        return;
       }
+
+      let total = 0;
+      const mapped = (data ?? []).map((p: any, idx: number) => {
+        total += p.chips || 0;
+        const profile = Array.isArray(p.profile) ? p.profile[0] : p.profile;
+        return {
+          userId: p.user_id,
+          username: profile?.username || 'Unknown',
+          avatarUrl: profile?.avatar_url || null,
+          chipCount: p.chips || 0,
+          status: p.status || 'playing',
+          rank: idx + 1,
+        };
+      });
+      if (!isMounted.current) return;
+      setLoadFailed(false);
+      setLeaders(mapped);
+      setTotalChips(total);
     } catch (error) {
       reportError(error, 'LiveChipCounts.Failed_to_load_chip_counts');
+      if (isMounted.current) setLoadFailed(true);
     } finally {
       if (isMounted.current) setLoading(false);
     }
   };
 
   const avgStack = leaders.length > 0 ? totalChips / leaders.length : 0;
-
-  const animateNumber = (from: number, to: number, duration: number = 800): number => {
-    // Used in render, but we'll use state-based animation instead
-    return to;
-  };
 
   const getChipRatio = (chips: number): number => {
     return avgStack > 0 ? chips / avgStack : 0;
@@ -260,8 +262,13 @@ export const LiveChipCounts: React.FC<LiveChipCountsProps> = ({
         })}
       </div>
 
-      {/* Empty State */}
-      {leaders.length === 0 && (
+      {/* Two different sentences, because they are two different facts. */}
+      {loadFailed && (
+        <div className="lcc-empty lcc-error" role="status">
+          <span>Chip Counts Are Not Updating. Retrying.</span>
+        </div>
+      )}
+      {!loadFailed && leaders.length === 0 && (
         <div className="lcc-empty">
           <span>No Players Found</span>
         </div>

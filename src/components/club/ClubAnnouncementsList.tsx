@@ -42,6 +42,8 @@ export function ClubAnnouncementsList({ clubId, isAdmin, limit = 10 }: ClubAnnou
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const isMounted = useIsMounted();
   const [loading, setLoading] = useState(true);
+  /** "We could not ask" is not "there is nothing to say". */
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     loadAnnouncements();
@@ -71,7 +73,16 @@ export function ClubAnnouncementsList({ clubId, isAdmin, limit = 10 }: ClubAnnou
         .order('created_at', { ascending: false })
         .limit(limit);
 
-      if (!error && data) {
+      if (error) {
+        // `if (!error && data)` left the list at [] and cleared the spinner, so
+        // a refused read rendered "No Announcements" - a statement about the
+        // club, made without an answer from the database.
+        reportError(error, 'ClubAnnouncementsList.loadAnnouncements');
+        setLoadFailed(true);
+        return;
+      }
+      setLoadFailed(false);
+      {
         setAnnouncements(
           data.map((a) => {
             const author = Array.isArray(a.author) ? a.author[0] : a.author;
@@ -89,7 +100,9 @@ export function ClubAnnouncementsList({ clubId, isAdmin, limit = 10 }: ClubAnnou
         );
       }
     } catch (error) {
-      toast.error('Failed to load announcements');
+      reportError(error, 'ClubAnnouncementsList.loadAnnouncements');
+      setLoadFailed(true);
+      toast.error('Failed To Load Announcements');
     }
     if (isMounted.current) setLoading(false);
   };
@@ -132,7 +145,9 @@ export function ClubAnnouncementsList({ clubId, isAdmin, limit = 10 }: ClubAnnou
         <h3> Announcements</h3>
       </div>
 
-      {announcements.length === 0 ? (
+      {loadFailed && announcements.length === 0 ? (
+        <div className="empty-state">Announcements Could Not Be Loaded. Try Again.</div>
+      ) : announcements.length === 0 ? (
         <div className="empty-state">No Announcements</div>
       ) : (
         <div className="announcements">

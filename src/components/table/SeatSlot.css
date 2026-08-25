@@ -2856,6 +2856,12 @@
   --sp-bust-gain-max: 1;
 }
 
+/* Tournaments have no BBJ banner — top avatars stay standard full size */
+.table-page--tournament .seat-wrapper--top .seat {
+  --seat-avatar-base: var(--seat-avatar-base, 84px);
+  --sp-bust-gain-max: 1.45;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    PER-CARD SHOW PICKER  (Dan 2026-08-18)
    "a user should be able to click on any card in their hand, and when clicked

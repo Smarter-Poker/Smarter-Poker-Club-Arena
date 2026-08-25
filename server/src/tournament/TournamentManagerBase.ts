@@ -29,6 +29,7 @@ import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
 import { effectivePrizePool } from './startRules.js';
+import { mayTakeSeat } from './seatClaim.js';
 import type { GameServer } from '../GameServer.js';
 
 export abstract class TournamentManagerBase {
@@ -2141,6 +2142,40 @@ export abstract class TournamentManagerBase {
     // is how a full adopted table was handed an eleventh player.
     let cursor = 0;
     for (let i = 0; i < toSeat.length; i++) {
+      /**
+       * THE SNAPSHOT IS NOT THE CHECK (2026-08-25).
+       *
+       * `alreadySeated` is read ONCE, above, and this loop then writes one
+       * seat per statement for the whole field — five minutes on a 497-entrant
+       * freeroll. A second pass over the same tournament (a re-entered start,
+       * a resume, a second engine instance) takes its own snapshot inside that
+       * window, sees every not-yet-written player as unseated, and seats them
+       * again at a different table. `idx_unique_active_user_per_table` is
+       * scoped to ONE table, so it cannot object.
+       *
+       * Live footprint on `bae46dbf` 2026-08-25: 72 players holding 144 live
+       * seats, 46 of the pairs exactly 14 tables apart — two round-robin
+       * cursors, this loop, running twice. Both seats were dealt and both
+       * stacks diverged.
+       *
+       * So the seat is claimed against the DATABASE, immediately before the
+       * write. A player who has acquired a seat since the snapshot is skipped,
+       * and an unreadable answer skips too: the 5s seat sweep will seat them
+       * on a later pass, and a guess here is a double stack.
+       */
+      const claim = await mayTakeSeat(supabase, this.tournamentId, toSeat[i].user_id);
+      if (!claim.allowed) {
+        if (claim.unknown) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Not seating ${toSeat[i].user_id.slice(0, 8)} — ${claim.reason}. Leaving them to the 5s seat sweep rather than risking a second live seat.`
+            ),
+            'Tournament.seat_claim_unreadable'
+          );
+        }
+        continue;
+      }
+
       // Next table, from the cursor, that has a genuinely free seat number
       // within its own capacity.
       let tableId: string | null = null;

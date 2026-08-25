@@ -2295,6 +2295,13 @@ export abstract class TournamentManagerBase {
           action_time_seconds: tournament.action_time_seconds || 15,
           big_blind_ante_enabled: tournament.big_blind_ante === true,
           all_in_or_fold: tournament.all_in_or_fold === true,
+          // 2026-08-25: rabbit hunt is gated on tables.allow_rabbit_hunt, which
+          // a cash host sets at table creation. Tournament tables never set it,
+          // so every MTT, Spin and Heads Up table inherited the column default
+          // and a tournament host had no way to turn the feature off — a
+          // setting that cannot be changed is not a setting. Carried from the
+          // tournament's own toggle, defaulting ON so nothing in flight changes.
+          allow_rabbit_hunt: tournament.allow_rabbit_hunt !== false,
         })
         .select()
         .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single

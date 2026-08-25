@@ -141,6 +141,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         if (this.dealingLoopFirstIteration) {
           for (const p of this.seatedPlayers) {
             this.knownPlayerIds.add(p.user_id);
+            // Dan 2026-08-25, BINDING (restart fidelity): anyone already seated
+            // when this engine booted was PLAYING before the restart, so they
+            // are a veteran for button purposes. Without this, dealtInUserIds is
+            // empty on boot, buttonEligible() falls back to the whole roster,
+            // and "a new player never gets the button" is unenforceable for a
+            // full orbit after every deploy — the one moment the table is most
+            // likely to look wrong to the people sitting at it.
+            this.dealtInUserIds.add(p.user_id);
           }
           this.dealingLoopFirstIteration = false;
         } else {
@@ -1174,14 +1182,36 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // Only initialize time bank if player is NEW (don't reset existing pool per session)
       if (!this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)) {
         const tbTotal = this.timeBankBaseSeconds + (tbExtras.get(p.user_id) ?? 0);
+        // RESTART FIDELITY (Dan 2026-08-25). `syncStacks` has always written
+        // time_bank_remaining and time_bank_uses_remaining, and loadSeatedPlayers
+        // has always read them back — and then this line threw them away and
+        // handed every player a FULL bank. So an engine restart silently refilled
+        // the time banks of everyone at the table: a player who had burned all of
+        // theirs stalling got a fresh set for free on the next deploy.
+        //
+        // The persisted value wins when there IS one. `?? tbTotal` covers a
+        // genuinely new seat (columns null) and keeps the VIP/purchased extras
+        // path exactly as it was.
+        const seated = this.seatedPlayers.find((s) => s.user_id === p.user_id);
+        const persistedSeconds = Number(seated?.time_bank_remaining);
+        const persistedUses = Number(seated?.time_bank_uses_remaining);
+        const hasPersisted = Number.isFinite(persistedSeconds) && persistedSeconds >= 0;
+        const remainingSeconds = hasPersisted ? persistedSeconds : tbTotal;
+        const usesRemaining =
+          hasPersisted && Number.isFinite(persistedUses) && persistedUses >= 0
+            ? persistedUses
+            : Math.ceil(remainingSeconds / 20);
+
         this.timeBankEngine.initializePlayer(this.tableId, p.user_id, {
-          remainingSeconds: tbTotal,
-          usesRemaining: Math.ceil(tbTotal / 20),
+          remainingSeconds,
+          usesRemaining,
         });
         this.timeBankMeta.set(p.user_id, {
+          // initialSeconds is what this seat STARTED the session with, which is
+          // still the full allowance — the consumed part is the difference.
           initialSeconds: tbTotal,
           baseSeconds: this.timeBankBaseSeconds,
-          dbConsumedSeconds: 0,
+          dbConsumedSeconds: Math.max(0, tbTotal - remainingSeconds),
         });
       }
       this.disconnectEngine.registerPlayer(this.tableId, p.user_id);

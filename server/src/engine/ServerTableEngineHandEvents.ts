@@ -494,17 +494,6 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           mucked: r.mucked === true,
           handDescription: r.handDescription ?? '',
         }));
-        this.broadcastCurrentState();
-        // ── ADDITIVE event-sourcing shadow (#1): record ShowdownRevealed ──
-        if (this.shadowRecorder && this.handController) {
-          const sdState = this.handController.getState();
-          const sdReveals = ((event as any).results || []).map((r: any) => ({
-            seat: sdState.players.find((pp) => pp.user_id === r.userId)?.seat ?? -1,
-            userId: r.userId,
-            cards: [] as import('../types.js').Card[],
-          }));
-          this.shadowRecorder.recordShowdownRevealed(sdReveals);
-        }
         // 2026-04-16 fix: Emit discrete showdown event so the client can
         // trigger showdown sound + card reveal animations (Bible V8 §4.6).
         // Previously only broadcastCurrentState was called, which sends a
@@ -515,6 +504,12 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // MUCKED seats instead of hands. A mucked player's hand identity is
         // withheld — publishing "Pair, ranking 2" for a hand whose cards stay
         // private would leak exactly what the muck exists to protect.
+        //
+        // AUDIT FIX 2026-08-25 (ordering): this event now goes out BEFORE the
+        // revealing snapshot below. The client latches its flip stagger on the
+        // snapshot's showCards rising edge, reading the order this event
+        // delivered — sent after the snapshot, the order routinely lost the
+        // race and every reveal degraded to a simultaneous flip.
         this.hub?.emitEvent(this.tableId, {
           type: 'showdown',
           table_id: this.tableId,
@@ -532,6 +527,17 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             };
           }),
         });
+        this.broadcastCurrentState();
+        // ── ADDITIVE event-sourcing shadow (#1): record ShowdownRevealed ──
+        if (this.shadowRecorder && this.handController) {
+          const sdState = this.handController.getState();
+          const sdReveals = ((event as any).results || []).map((r: any) => ({
+            seat: sdState.players.find((pp) => pp.user_id === r.userId)?.seat ?? -1,
+            userId: r.userId,
+            cards: [] as import('../types.js').Card[],
+          }));
+          this.shadowRecorder.recordShowdownRevealed(sdReveals);
+        }
         // AUDIT FIX 2026-07-19: the showdown_cards_revealed event (which carries
         // hole cards) is emitted in the WINNERS handler instead of here — at
         // SHOWDOWN time the winners aren't known yet, so it could not respect

@@ -3320,7 +3320,10 @@ export default function TablePage({
   // auto-show that answers the engine's muck ruling when the hero has
   // AUTO-MUCK LOSING HANDS switched off. A re-delivered showdown event must
   // not fire a second POST /showhand.
-  const autoShowFiredHandRef = useRef<number>(0);
+  // AUDIT FIX 2026-08-25: initialised to -1, NOT 0 — a client that joins
+  // mid-hand has heroHandRef 0 until its first HAND_STARTED, and a 0 here
+  // made the guard read "already fired" and suppress that hand's auto-show.
+  const autoShowFiredHandRef = useRef<number>(-1);
   const muckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -8883,6 +8886,12 @@ export default function TablePage({
           // SHOWDOWN SYSTEM 2026-08-25 cleanup (spec section 39): no showdown
           // artifact may leak into the next hand.
           setMuckedLabelSeats(Array(9).fill(false));
+          // SHOWDOWN AUDIT 2026-08-25 (spec 21 backstop): a client that
+          // joined or reconnected AFTER pot_win never schedules the release
+          // timer, so without this the winner's stack would sit reduced until
+          // the next HAND_STARTED. The hold must never outlive the hold
+          // window itself.
+          setStackHoldReleased(true);
         }, holdMs);
         break;
       }
@@ -8997,9 +9006,13 @@ export default function TablePage({
           [];
         // SHOWDOWN SYSTEM 2026-08-25 (spec section 15): which of each
         // winner's own hole cards belong to the winning five.
+        // AUDIT FIX 2026-08-25: keep EMPTY arrays too. A winner who plays the
+        // board has hole_card_indices [] — dropping it made SeatSlot fall
+        // back to "highlight the whole hand", lighting two cards that are not
+        // part of the win. [] and payload-absent mean different things.
         const winHoleCardIndices: Record<string, number[]> = {};
         for (const w of winnersArray) {
-          if (Array.isArray(w.hole_card_indices) && w.hole_card_indices.length > 0) {
+          if (Array.isArray(w.hole_card_indices)) {
             winHoleCardIndices[w.user_id] = w.hole_card_indices;
           }
         }
@@ -12710,7 +12723,15 @@ export default function TablePage({
                   /* SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the engine
                      ruled this hand muckable — cards stay private, seat says
                      MUCKED. */
-                  isMuckedShowdown={muckedLabelSeats[idx] || false}
+                  /* AUDIT FIX 2026-08-25: union of the showdown event's mask
+                     and the snapshot's is_mucked (covers a reconnect that
+                     missed the event), suppressed the moment the hand is
+                     actually revealed — a voluntary or autoMuck-off show must
+                     not leave a MUCKED label under face-up cards. */
+                  isMuckedShowdown={
+                    (muckedLabelSeats[idx] || player?.isMucked === true) &&
+                    !(player?.showCards && (player?.holeCards?.length ?? 0) > 0)
+                  }
                   /* SHOWDOWN SYSTEM 2026-08-25 (spec section 3): stagger the
                      flip by reveal order — aggressor first, then clockwise. */
                   showdownRevealDelayMs={

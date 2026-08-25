@@ -395,10 +395,16 @@ export function mapEngineSnapshot(
     // nothing at all: the one hand where a player most wants to know what
     // happened to their chips was the one hand that told them nothing.
     winners: (s.winners ?? []).map((w) => {
-      const p = s.players.find((pp) => pp.user_id === w.user_id);
+      // AUDIT FIX 2026-08-25: the engine historically emitted this entry with
+      // a camelCase `userId` while this mapper read `user_id` — every winner
+      // mapped to userId undefined / seat 0, and the "+N" net float, the muck
+      // loser-mask and the stack hold all silently missed. The engine now
+      // emits `user_id`; accept BOTH so either side can deploy first.
+      const wid = w.user_id ?? (w as unknown as { userId?: string }).userId ?? '';
+      const p = s.players.find((pp) => pp.user_id === wid);
       const invested = p?.totalInvested ?? 0;
       return {
-        userId: w.user_id,
+        userId: wid,
         seat: p?.seat ?? 0,
         amount: w.amount,
         netAmount: w.amount - invested,

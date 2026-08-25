@@ -195,6 +195,53 @@ describe('HEADS-UP showdown ordering + muck (spec sections 3, 4, 7)', () => {
     expect(h.winners().length).toBeGreaterThan(0);
   });
 
+  it('AUDIT: river all-in bet + call — an all-in showdown, both hands exposed', () => {
+    // Spec section 8 lists "River all-ins": the runout park never fires (no
+    // cards to come), but at most one live player could still bet, so this
+    // is an all-in showdown all the same — the beaten caller may NOT muck.
+    const h = harness(mkConfig(), mkPlayers([200, 200]), 1);
+    huToRiver(h);
+    h.actSeat(2, 'check');
+    expect(h.actSeat(1, 'all_in')).toBe(true); // river all-in wager
+    h.setBoard(DRY_BOARD);
+    h.setHole(1, [c('A', 'spades'), c('A', 'diamonds')]); // winner
+    h.setHole(2, [c('7', 'diamonds'), c('2', 'clubs')]); // beaten caller
+    h.actSeat(2, 'call');
+
+    const results = h.showdown();
+    expect(results.length).toBe(2);
+    for (const r of results) expect(r.mucked).toBe(false);
+    expect(h.winners().map((w) => w.userId)).toEqual(['u1']);
+  });
+
+  it('AUDIT: four of a kind or better is ALWAYS tabled, even when beaten (BBJ integrity)', () => {
+    // The Bad Beat Jackpot pays the LOSER of a quads-or-better hand — a
+    // jackpot on a hand the table never saw is a contradiction, so a monster
+    // can never be ruled muckable. Plain bet/call river (no all-in), quads
+    // beaten by a royal flush.
+    const h = harness(mkConfig(), mkPlayers([200, 200]), 1);
+    huToRiver(h);
+    h.actSeat(2, 'check');
+    h.actSeat(1, 'bet', 4);
+    h.setBoard([
+      c('T', 'spades'),
+      c('J', 'spades'),
+      c('Q', 'spades'),
+      c('8', 'hearts'),
+      c('8', 'diamonds'),
+    ]);
+    h.setHole(1, [c('A', 'spades'), c('K', 'spades')]); // royal flush
+    h.setHole(2, [c('8', 'clubs'), c('8', 'spades')]); // quads — beaten
+    h.actSeat(2, 'call');
+
+    const results = h.showdown();
+    const bySeat = new Map(results.map((r) => [r.seat, r]));
+    expect(bySeat.get(1)!.hand.name).toBe('Royal Flush');
+    expect(bySeat.get(2)!.hand.name).toBe('Four of a Kind');
+    expect(bySeat.get(2)!.mucked).toBe(false); // beaten, but never muckable
+    expect(h.winners().map((w) => w.userId)).toEqual(['u1']);
+  });
+
   it('HU 5: river bet, opponent folds — no showdown event at all', () => {
     const h = harness(mkConfig(), mkPlayers([200, 200]), 1);
     huToRiver(h);

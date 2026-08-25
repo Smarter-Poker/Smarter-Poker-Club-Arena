@@ -1674,12 +1674,36 @@ export class HandController {
     // Spec section 8: all-in with no further betting possible — expose all.
     if (this.allInShowdownLocked) return;
 
+    // AUDIT FIX 2026-08-25 (spec sections 8/10, "River all-ins" included): the
+    // runout park only catches an all-in with CARDS TO COME. A river all-in
+    // that gets called, or a multiway pot where the last live stacks went in
+    // on the final street, reaches here without the lock — yet at most one
+    // live player could still have bet, so this too is an all-in showdown and
+    // every live hand is tabled. When two or more live players still have
+    // chips behind (spec section 9's shape), normal muck rules apply.
+    const liveCanStillBet = results.filter((r) => {
+      const p = this.state.players.find((pp) => pp.seat === r.seat);
+      return p ? !p.is_all_in : false;
+    }).length;
+    if (liveCanStillBet <= 1) return;
+
     const isHiLo = isHiLoVariant(this.config.gameVariant);
     const lowByUser = new Map<string, number[] | null>();
+    // AUDIT FIX 2026-08-25 (double-board hi-lo): each board settles its own
+    // hi AND lo half, so muck eligibility must consider the board-2 low too —
+    // without lowByUser2/bestShownLo2, a hand winning ONLY board-2's low was
+    // ruled muckable and then paid, breaking the mucked-hands-never-win
+    // invariant.
+    const board2Live = results.some((r) => r.hand2 !== undefined);
+    const lowByUser2 = new Map<string, number[] | null>();
     if (isHiLo) {
       for (const r of results) {
         const low = evaluateOmahaLowHand(r.cards, this.state.communityCards);
         lowByUser.set(r.userId, low ? low.kickers : null);
+        if (board2Live) {
+          const low2 = evaluateOmahaLowHand(r.cards, this.state.communityCards2);
+          lowByUser2.set(r.userId, low2 ? low2.kickers : null);
+        }
       }
     }
     // Lower is better for lows; lexicographic on the sorted-desc rank arrays.
@@ -1694,11 +1718,21 @@ export class HandController {
     const bestShownHi: (EvaluatedHand | null)[] = pots.map(() => null);
     const bestShownLo: (number[] | null)[] = pots.map(() => null);
     const bestShownHi2: (EvaluatedHand | null)[] = pots.map(() => null);
+    const bestShownLo2: (number[] | null)[] = pots.map(() => null);
 
     for (const r of results) {
       let eligibleAnywhere = false;
       let mustShow = false;
-      for (let potIdx = 0; potIdx < pots.length; potIdx++) {
+      // AUDIT FIX 2026-08-25 (BBJ integrity): a hand of four of a kind or
+      // better is ALWAYS tabled, win or lose. The Bad Beat Jackpot pays the
+      // LOSER of exactly such a hand, and bbj_hit broadcasts that hand's
+      // identity — a jackpot paid on a hand the table never saw is a
+      // contradiction, and every cardroom tables jackpot hands. Ranking 8 is
+      // FOUR_OF_A_KIND in both standard and short-deck orderings.
+      if (r.hand.ranking >= 8 || (r.hand2 && r.hand2.ranking >= 8)) {
+        mustShow = true;
+      }
+      for (let potIdx = 0; !mustShow && potIdx < pots.length; potIdx++) {
         if (!pots[potIdx].eligiblePlayers.includes(r.userId)) continue;
         eligibleAnywhere = true;
         const hi = bestShownHi[potIdx];
@@ -1722,10 +1756,22 @@ export class HandController {
               break;
             }
           }
+          // AUDIT FIX 2026-08-25: board-2's low half competes too.
+          const myLow2 = board2Live ? (lowByUser2.get(r.userId) ?? null) : null;
+          if (myLow2) {
+            const lo2 = bestShownLo2[potIdx];
+            if (lo2 === null || compareLowKickers(myLow2, lo2) <= 0) {
+              mustShow = true;
+              break;
+            }
+          }
         }
       }
       // Defensive: a live hand that somehow appears in no pot still shows.
-      if (!eligibleAnywhere) mustShow = true;
+      // (eligibleAnywhere is only meaningful when the pot loop actually ran —
+      // a hand force-shown by the jackpot rule above skips the loop and is
+      // already showing, which is the safe direction.)
+      if (!eligibleAnywhere && !mustShow) mustShow = true;
 
       if (!mustShow) {
         r.mucked = true;
@@ -1744,6 +1790,11 @@ export class HandController {
           if (myLow) {
             const lo = bestShownLo[potIdx];
             if (lo === null || compareLowKickers(myLow, lo) < 0) bestShownLo[potIdx] = myLow;
+          }
+          const myLow2 = board2Live ? (lowByUser2.get(r.userId) ?? null) : null;
+          if (myLow2) {
+            const lo2 = bestShownLo2[potIdx];
+            if (lo2 === null || compareLowKickers(myLow2, lo2) < 0) bestShownLo2[potIdx] = myLow2;
           }
         }
       }

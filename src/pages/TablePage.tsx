@@ -1131,6 +1131,16 @@ export default function TablePage({
     const mapped = mapEngineSnapshot(engineSnapshot, userId, tableState.maxPlayers);
     // Phase 1.2 PR-F: stash disconnect map for the top-level toast
     setDisconnectStates(mapped.disconnectStates);
+
+    // Dan 2026-08-24: Total Buy In restoration on refresh/seat-first.
+    // totalBuyInRef is only updated by the manual buy-in modal, so it is 0 after a page refresh
+    // or after a Seat-First buy-in. Seed it with the hero's current stack so the Session Complete card doesn't drop the stat.
+    const mappedHero = mapped.players.find((p) => p && p.id === userId);
+    if (mappedHero && mappedHero.stack > 0) {
+      if (totalBuyInRef.current === 0) totalBuyInRef.current = mappedHero.stack;
+      if (peakStackRef.current === 0) peakStackRef.current = mappedHero.stack;
+    }
+
     setTableState((prev) => {
       // Merge per-seat players carefully: engine provides the full authoritative
       // roster. The SeatPlayer shape the UI wants matches mapped.players[i].

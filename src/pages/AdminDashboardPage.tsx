@@ -2115,24 +2115,32 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                     onClick={async () => {
                       setActionError(null);
                       try {
-                        const uuid = await resolveClubUUID(clubId);
-                        const { data: newTable, error: insErr } = await supabase
-                          .from('tables')
-                          .insert({
-                            club_id: uuid,
-                            name: tmpl.name || 'New Table',
-                            game_type: tmpl.game_type || 'nlh',
-                            small_blind: tmpl.small_blind || 1,
-                            big_blind: tmpl.big_blind || 2,
-                            max_players: tmpl.max_players || 9,
-                            min_buy_in: tmpl.min_buy_in || 40,
-                            max_buy_in: tmpl.max_buy_in || 200,
-                            status: 'active',
-                          })
-                          .select('id')
-                          .maybeSingle();
+                        /**
+                         * LAUNCH COPIES THE WHOLE ROW (2026-08-25).
+                         *
+                         * This used to hand-copy EIGHT fields out of a row with
+                         * over a hundred columns, so every rule the host had
+                         * configured on the template - straddle, bomb pots,
+                         * ante, insurance, run it twice, cap, no-rathole,
+                         * VIP-only, all of it - was silently discarded. A
+                         * launched template was a plain table wearing the
+                         * template's name.
+                         *
+                         * fn_launch_table_from_template copies the row and
+                         * overrides only identity and live state, so a column
+                         * added tomorrow is carried without anyone remembering
+                         * to add it here. It also checks club staff itself,
+                         * which the client-side insert never could.
+                         */
+                        const { data: newId, error: insErr } = await supabase.rpc(
+                          'fn_launch_table_from_template',
+                          { p_template_id: tmpl.id }
+                        );
                         if (insErr) throw insErr;
-                        masterBus.emit('TABLE_CREATED', { tableId: newTable?.id || '', clubId });
+                        masterBus.emit('TABLE_CREATED', {
+                          tableId: (newId as string) || '',
+                          clubId,
+                        });
                       } catch (e: unknown) {
                         setActionError(`Launch failed: ${safeErrorMessage(e)}`);
                       }

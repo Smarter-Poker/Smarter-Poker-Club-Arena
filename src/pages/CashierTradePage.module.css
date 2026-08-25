@@ -486,6 +486,40 @@
   color: rgba(255, 255, 255, 0.55);
 }
 
+/* Per-target failures, rendered in the modal rather than through the toast
+   layer - that layer strips the player's name off a funds refusal and drops
+   network errors entirely, so a partial batch failure was unattributable. */
+.modalFailures {
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 92, 108, 0.4);
+  border-radius: 8px;
+  background: rgba(255, 92, 108, 0.08);
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.modalFailuresTitle {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #ff8b96;
+  margin-bottom: 4px;
+}
+
+.modalFailureRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.75);
+  padding: 2px 0;
+}
+
+.modalFailureRow span:last-child {
+  color: rgba(255, 255, 255, 0.55);
+  text-align: right;
+}
+
 .modalActions {
   display: flex;
   gap: 10px;

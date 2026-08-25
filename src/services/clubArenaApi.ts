@@ -30,6 +30,19 @@ export interface ClubArenaApiOptions {
    * naturally-repeatable reads.
    */
   idempotent?: boolean;
+  /**
+   * The key to send, when the caller owns one.
+   *
+   * WHY THIS EXISTS (Dan 2026-08-25). Without it this function minted a fresh
+   * uuid() on EVERY call - per request, not per purchase INTENT. So the shape
+   * the header is meant to defend against was undefended: Confirm fires, the
+   * server commits, the response is lost (mobile network drop, tab
+   * backgrounded), the user sees "Purchase failed" and taps Confirm again -
+   * and the server receives a DIFFERENT key for the same intent, so it debits
+   * a second time. A retry has to carry the same key as the attempt it is
+   * retrying, which only the caller knows.
+   */
+  idempotencyKey?: string;
   /** Override the HTTP method. Defaults to POST (all mutating routes are POST). */
   method?: 'POST' | 'GET';
 }
@@ -57,9 +70,10 @@ export async function callClubArenaApi<T = Record<string, unknown>>(
     'Content-Type': 'application/json',
   };
   if (opts.idempotent !== false) {
-    // crypto.randomUUID is undefined on http origins and Safari < 15.4; every
-    // purchase/mutation goes through here, so it must not throw there.
-    headers['X-Idempotency-Key'] = uuid();
+    // The caller's key when it has one (a retry of the SAME intent must reuse
+    // it); otherwise a fresh one. crypto.randomUUID is undefined on http
+    // origins and Safari < 15.4, so uuid() must not throw there.
+    headers['X-Idempotency-Key'] = opts.idempotencyKey || uuid();
   }
 
   const response = await fetch(`/api/club-arena/${endpoint}`, {

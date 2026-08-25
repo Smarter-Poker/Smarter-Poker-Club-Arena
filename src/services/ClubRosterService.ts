@@ -72,7 +72,14 @@ export interface RosterMember {
   remark: string | null;
 }
 
-function mapRosterRow(row: Record<string, unknown>): RosterMember {
+/**
+ * Exported so the page's sessionStorage cache can be run through the SAME
+ * defaulting the network path gets. A blob written by an earlier build (before
+ * a field existed) used to be cast straight to RosterMember and rendered, and
+ * the first `.toLocaleString()` on the missing field white-screened the tab on
+ * every load until the user closed it.
+ */
+export function mapRosterRow(row: Record<string, unknown>): RosterMember {
   return {
     user_id: String(row.user_id ?? ''),
     home_club_id: (row.home_club_id as string) ?? null,

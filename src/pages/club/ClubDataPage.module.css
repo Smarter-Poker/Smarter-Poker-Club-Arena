@@ -34,8 +34,10 @@
   padding: 0.25rem 0.5rem;
   cursor: pointer;
   border-radius: 6px;
-  min-width: 40px;
-  min-height: 40px;
+  /* The CSV export and both range steppers were 40px while every other control
+     here is 44. These are the most consequential controls on the page. */
+  min-width: 44px;
+  min-height: 44px;
 }
 
 .headerBtn:disabled {
@@ -71,8 +73,8 @@
   line-height: 1;
   cursor: pointer;
   padding: 0 0.25rem;
-  min-width: 40px;
-  min-height: 40px;
+  min-width: 44px;
+  min-height: 44px;
 }
 
 .arrow:disabled {
@@ -166,6 +168,15 @@
   color: #ff5c6c;
 }
 
+/* Four tiles across 375px leaves ~73px of content per tile, and
+   `overflow-wrap: anywhere` then breaks INSIDE the number - "1,234,5" over
+   "67.00". Two columns below 420px, which is the width the house rule targets. */
+@media (max-width: 420px) {
+  .summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 /* ---- search ---- */
 .searchRow {
   display: flex;
@@ -185,14 +196,28 @@
   color: #e8ecf7;
   font-size: 16px; /* was 0.8125rem; under 16px makes iOS zoom the page on focus */
   /* the row around this adds padding; 40 here clears 44 in total */
-  min-height: 40px;
+  min-height: 44px;
 }
 
 .searchInput::placeholder {
-  color: #6d7691;
+  color: #98a1bb;
 }
+/* The focus ring was removed with no replacement, so a keyboard user lost the
+   caret location entirely on the only input on the page. Move the indicator to
+   the wrapper so the whole field lights up. Dan 2026-08-25. */
 .searchInput:focus {
   outline: none;
+}
+
+.searchRow:focus-within {
+  border-color: #f0b429;
+  box-shadow: 0 0 0 2px rgba(240, 180, 41, 0.35);
+}
+
+.arrow:focus-visible,
+.linkBtn:focus-visible {
+  outline: 2px solid #f0b429;
+  outline-offset: 2px;
 }
 
 /* ---- filters ---- */
@@ -261,6 +286,12 @@
 }
 .invoicePaid {
   border-color: rgba(53, 208, 127, 0.4);
+}
+/* Money coming TO the club. This used to fall through to .invoiceOwed, so an
+   invoice reading "Union owes you 480.00" was framed in the red that means
+   "you owe 480.00". Dan 2026-08-25. */
+.invoiceCredit {
+  border-color: rgba(53, 208, 127, 0.45);
 }
 
 .invoiceTop {
@@ -380,6 +411,7 @@
 }
 
 .rowId {
+  /* was #6d7691 at 9px: ~2.9:1. */
   margin-top: 0.1875rem;
   font-size: 0.5625rem;
   color: #6d7691;
@@ -476,7 +508,7 @@
   padding: 1rem 1.25rem 0;
   text-align: center;
   font-size: 0.6875rem;
-  color: #6d7691;
+  color: #98a1bb;
 }
 
 .skeletonRow {
@@ -588,9 +620,6 @@
 }
 
 /* ---- players ---- */
-.playersPanel {
-  display: block;
-}
 
 .playerTotals {
   display: flex;

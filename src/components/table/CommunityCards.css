@@ -705,7 +705,7 @@
 
 .community-cards__hand-name {
   position: absolute;
-  top: 85%;
+  bottom: 115%; /* User explicitly requested this to be ABOVE the board */
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 20;

@@ -28,14 +28,14 @@ export const SEAT_POSITIONS_6MAX = [
 
 export const SEAT_POSITIONS_9MAX = [
   { x: 50, y: 100 }, // Seat 1 (Hero, bottom-center; Dan 2026-08-22: avatar centre ON the scaler's bottom edge so it barely overlaps the table)
-  { x: 19, y: 82.5 }, // Seat 2 (lower-left, bottom cap)
+  { x: 10.5, y: 82.5 }, // Seat 2 (lower-left, bottom cap)
   { x: 10.5, y: 58 }, // Seat 3 (left-low, on rail side)
   { x: 10.5, y: 36 }, // Seat 4 (left-high, on rail side)
   { x: 27, y: 8.5 }, // Seat 5 (top-left, top cap)
   { x: 73, y: 8.5 }, // Seat 6 (top-right, top cap)
   { x: 89.5, y: 36 }, // Seat 7 (right-high, on rail side)
   { x: 89.5, y: 58 }, // Seat 8 (right-low, on rail side)
-  { x: 81, y: 82.5 }, // Seat 9 (lower-right, bottom cap)
+  { x: 89.5, y: 82.5 }, // Seat 9 (lower-right, bottom cap)
 ];
 
 /* Dan 2026-08-17 — PER-SIZE SEAT RINGS.
@@ -90,13 +90,13 @@ export const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
   ],
   8: [
     { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
-    { x: 19, y: 82.5 }, // lower-left bottom cap
+    { x: 10.5, y: 82.5 }, // lower-left bottom cap
     { x: 10.5, y: 52 }, // left-low
     { x: 10.5, y: 28 }, // left-high
     { x: 50, y: 6 }, // top-center, box on the rail
     { x: 89.5, y: 28 }, // right-high
     { x: 89.5, y: 52 }, // right-low
-    { x: 81, y: 82.5 }, // lower-right bottom cap
+    { x: 89.5, y: 82.5 }, // lower-right bottom cap
   ],
   9: SEAT_POSITIONS_9MAX,
 };

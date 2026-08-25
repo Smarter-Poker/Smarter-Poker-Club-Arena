@@ -289,62 +289,110 @@ const haveBrowser = (() => {
   }
 })();
 
+/* Dan photographed a phone, but the defect was never phone-specific: the
+   lobby has five layout bands and only one of them was ever checked. The
+   641-1023px band was running a stripped table that had shed Payout, Starting
+   Stack, Level Time, Rules and Variant on the way down and never got them
+   back, and had no action button either. So the check sweeps the bands. */
+const WIDTHS = [
+  { w: 375, band: 'phone' },
+  { w: 414, band: 'large phone' },
+  { w: 768, band: 'tablet portrait' },
+  { w: 900, band: 'tablet, last card width' },
+  { w: 1024, band: 'tablet landscape, back to a table' },
+  { w: 1440, band: 'desktop' },
+];
+
 it.skipIf(!haveBrowser)(
-  'renders every lobby card at 375px with nothing clipped',
+  'renders every lobby card with nothing clipped, in every layout band',
   async () => {
     const browser = await chromium.launch({ args: ['--no-sandbox'] });
-    const page = await browser.newPage({
-      viewport: { width: 375, height: 900 },
-      deviceScaleFactor: 2,
-    });
-    await page.goto(`file://${OUT}/lobby.html`);
-    await page.waitForTimeout(400);
+    const failures: string[] = [];
 
-    const report = await page.evaluate(() => {
-      const clipped: string[] = [];
-      document.querySelectorAll('td').forEach((td) => {
-        const el = td as HTMLElement;
-        if (el.offsetParent === null && getComputedStyle(el).display === 'none') return;
-        // A cell is clipped when its content is taller than the box AND the box
-        // is not allowed to show the overflow.
-        const cs = getComputedStyle(el);
-        const hidden = cs.overflow === 'hidden' || cs.overflowY === 'hidden';
-        if (hidden && el.scrollHeight > el.clientHeight + 1)
-          clipped.push(
-            `${el.className.trim()} :: content ${el.scrollHeight}px in a ${el.clientHeight}px box :: "${(el.textContent || '').slice(0, 46)}"`
-          );
+    for (const { w, band } of WIDTHS) {
+      const page = await browser.newPage({
+        viewport: { width: w, height: 1000 },
+        deviceScaleFactor: 1,
       });
-      const overflowX = document.documentElement.scrollWidth > window.innerWidth;
-      const cards = [...document.querySelectorAll('tbody tr')].map((r) => ({
-        kind: (r as HTMLElement).dataset.kind,
-        mine: (r as HTMLElement).dataset.mine || '-',
-        h: (r as HTMLElement).getBoundingClientRect().height,
-        text: (r.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 150),
-      }));
-      return { clipped, overflowX, scrollWidth: document.documentElement.scrollWidth, cards };
-    });
+      await page.goto(`file://${OUT}/lobby.html`);
+      await page.waitForTimeout(250);
 
-    await page.screenshot({ path: `${OUT}/lobby-375.png`, fullPage: true });
-    await browser.close();
+      const report = await page.evaluate(() => {
+        const clipped: string[] = [];
+        document.querySelectorAll('td').forEach((td) => {
+          const el = td as HTMLElement;
+          if (el.offsetParent === null && getComputedStyle(el).display === 'none') return;
+          const cs = getComputedStyle(el);
+          const hidden = cs.overflow === 'hidden' || cs.overflowY === 'hidden';
+          if (hidden && el.scrollHeight > el.clientHeight + 1)
+            clipped.push(
+              `${el.className.trim()} :: content ${el.scrollHeight}px in a ${el.clientHeight}px box :: "${(el.textContent || '').slice(0, 46)}"`
+            );
+        });
+        const vis = (el: Element | null) =>
+          !!el && getComputedStyle(el as HTMLElement).display !== 'none';
+        /* A Spin row is the densest thing the lobby draws, so it is the probe:
+           if its payout survives the band, everything narrower did too. The
+           SECOND one is running — a Spin that has not started has no level to
+           show, and the card correctly hides an empty cell rather than
+           printing an empty well. */
+        const spins = [...document.querySelectorAll('tbody tr[data-kind="spin"]')] as HTMLElement[];
+        const spin = spins[0] ?? null;
+        const running = spins[1] ?? null;
+        void running;
+        return {
+          clipped,
+          overflowX: document.documentElement.scrollWidth > window.innerWidth,
+          scrollWidth: document.documentElement.scrollWidth,
+          spinPayout: vis(spin?.querySelector('.lt-col-payout') ?? null),
+          spinStack: vis(spin?.querySelector('.lt-col-tstack') ?? null),
+          /* The SPIN tab carries COL_LEVELTIME, not COL_TLEVEL — "3 Min
+             Levels" is the fact a Spin has, and Current Level belongs to an
+             MTT. Probing the wrong class is how a check passes while the thing
+             it names is missing. */
+          spinLevel: vis(spin?.querySelector('.lt-col-leveltime') ?? null),
+          spinAction: vis(spin?.querySelector('.lt-col-actions') ?? null),
+          rowsPerLine: (() => {
+            const rows = [...document.querySelectorAll('tbody tr')] as HTMLElement[];
+            if (rows.length < 2) return 1;
+            const top = Math.round(rows[0].getBoundingClientRect().top);
+            return rows.filter((r) => Math.round(r.getBoundingClientRect().top) === top).length;
+          })(),
+        };
+      });
 
-    console.log(
-      'viewport 375px | page scrollWidth',
-      report.scrollWidth,
-      '| sideways scroll:',
-      report.overflowX
-    );
-    console.log('CLIPPED CELLS:', report.clipped.length);
-    report.clipped.forEach((c) => console.log('  !', c));
-    console.log('\nCARDS');
-    report.cards.forEach((c) =>
+      await page.screenshot({ path: `${OUT}/lobby-${w}.png`, fullPage: true });
+      await page.close();
+
+      const card = w <= 900;
       console.log(
-        `  [${c.kind}${c.mine !== '-' ? '/' + c.mine : ''}] ${Math.round(c.h)}px  ${c.text}`
-      )
-    );
-    console.log('\nscreenshot:', `${OUT}/lobby-375.png`);
+        `\n${w}px (${band}) | scrollWidth ${report.scrollWidth} | sideways ${report.overflowX} | ` +
+          `${report.rowsPerLine} per line | spin: payout ${report.spinPayout} stack ${report.spinStack} ` +
+          `level ${report.spinLevel} action ${report.spinAction} | clipped ${report.clipped.length}`
+      );
+      report.clipped.forEach((c) => console.log('  !', c));
 
-    expect(report.clipped, report.clipped.join('\n')).toHaveLength(0);
-    expect(report.overflowX, 'the lobby must never scroll sideways on a phone').toBe(false);
+      report.clipped.forEach((c) => failures.push(`${w}px: clipped ${c}`));
+      if (report.overflowX) failures.push(`${w}px: the lobby scrolls sideways`);
+      /* The Spin board is five columns wide at ANY size, so its three
+         defining facts survive every band — the wide breakpoints shed columns
+         for the eight-column ALL board and used to take this board down with
+         them. The action button is a card affordance and correctly absent from
+         the desktop table, where the panel carries it. */
+      if (!report.spinPayout) failures.push(`${w}px: a Spin does not show its payout`);
+      if (!report.spinStack) failures.push(`${w}px: a Spin does not show its stack`);
+      if (!report.spinLevel) failures.push(`${w}px: a Spin does not show its blind speed`);
+      if (card && !report.spinAction) failures.push(`${w}px: a Spin card has no action button`);
+      /* The tablet half of the card band puts two cards on a line; a phone
+         puts one, and the desktop table is one row per line by definition. */
+      const want = w >= 641 && w <= 900 ? 2 : 1;
+      if (report.rowsPerLine !== want)
+        failures.push(`${w}px: ${report.rowsPerLine} cards per line, expected ${want}`);
+    }
+
+    await browser.close();
+    console.log('\nscreenshots:', `${OUT}/lobby-<width>.png`);
+    expect(failures, failures.join('\n')).toHaveLength(0);
   },
-  120000
+  180000
 );

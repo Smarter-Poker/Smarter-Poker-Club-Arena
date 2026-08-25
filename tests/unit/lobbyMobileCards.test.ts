@@ -60,7 +60,11 @@ const TSX = readFileSync(resolve(__dirname, '../../src/components/lobby/LobbyTab
 
 /** The phone card block, so an assertion cannot accidentally match a desktop rule. */
 const PHONE_BLOCK = (() => {
-  const start = CSS.indexOf('@media (max-width: 640px)');
+  /* 900, not 640, since 2026-08-25: the card is the layout for phones AND
+     tablets. The band above it used to run a stripped table that had shed
+     Payout, Starting Stack and Level Time on the way down and never got them
+     back — strictly less than the phone showed. */
+  const start = CSS.indexOf('@media (max-width: 900px)');
   expect(start).toBeGreaterThan(-1);
   const end = CSS.indexOf('@media (max-width: 380px)');
   expect(end).toBeGreaterThan(start);

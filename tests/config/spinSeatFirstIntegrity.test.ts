@@ -124,6 +124,28 @@ describe('horses take seats, not just places on a list', () => {
     expect((pick.match(/from\('table_seats'\)/g) || []).length).toBe(1);
     expect((pick.match(/from\('profiles'\)/g) || []).length).toBe(1);
 
+    /* #805's roster-full path reads the same three tables to find registrants
+       who hold no seat. Same rule: one batched read each, and no query inside
+       a loop - a per-registrant scan here would be the same saturation by
+       another door, on the same five-second discovery pass. */
+    const unseated = recurring.slice(
+      recurring.indexOf('private async unseatedRegistrantHorses'),
+      recurring.indexOf('private async createSpin')
+    );
+    expect(unseated.length, 'unseatedRegistrantHorses has moved or been renamed').toBeGreaterThan(
+      0
+    );
+    for (const table of ['tournament_players', 'table_seats', 'profiles']) {
+      expect(
+        (unseated.match(new RegExp(`from\\('${table}'\\)`, 'g')) || []).length,
+        `${table} must be read exactly once in unseatedRegistrantHorses`
+      ).toBe(1);
+    }
+    expect(
+      /(for|while)\s*\([\s\S]{0,400}?\.from\(/.test(unseated),
+      'a query inside a loop in unseatedRegistrantHorses is the per-horse shape again'
+    ).toBe(false);
+
     /**
      * ...AND ONCE PER CALL, which the widened window alone no longer proves.
      *

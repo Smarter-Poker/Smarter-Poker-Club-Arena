@@ -91,33 +91,50 @@ export function MiniStatsCard({
     }
   };
 
-  // Tournament STATS button: always visible in top-right to open tournament lobby & info
+  /**
+   * TOURNAMENT STATS BAR — Dan 2026-08-25 (binding): "tournaments are still
+   * missing the stats bar in the right corner."
+   *
+   * They were, and this early return is why. It short-circuited PAST every
+   * figure the card exists to show and rendered a bare chart glyph with the
+   * word STATS — a button that opens a panel, not a stats bar. A player in a
+   * tournament could see nothing about their own game without tapping.
+   *
+   * It now shows the numbers, in the corner, the way a cash table does. Buy-In
+   * and P&L are deliberately absent: in a tournament your buy-in is money and
+   * your stack is chips, so subtracting one from the other is meaningless. The
+   * four figures below are all genuinely session-tracked for tournament tables too
+   * (handsPlayed / vpipCount / handsWon are incremented in TablePage
+   * regardless of table kind), so none of this is invented.
+   *
+   * The tap target is unchanged: it still opens the tournament lobby / info
+   * panel, which is where standings, payouts and the clock live in full.
+   */
   if (isTournament) {
     return (
       <button
         type="button"
         className="mini-stats-card mini-stats-card--tournament-stats"
         onClick={handleClick}
-        aria-label="Tournament Stats & Lobby"
+        aria-label={`Tournament stats. Stack ${currentStack.toLocaleString()}, ${handsPlayed} hands played. Opens tournament lobby.`}
         title="Tournament Stats & Lobby"
       >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M3 21h18" />
-          <rect x="5" y="13" width="3" height="6" rx="0.5" />
-          <rect x="10.5" y="9" width="3" height="10" rx="0.5" />
-          <rect x="16" y="5" width="3" height="14" rx="0.5" />
-        </svg>
-        <span className="mini-stats-card__tournament-label">STATS</span>
+        <span className="mini-stats-card__tstat">
+          <span className="mini-stats-card__tstat-label">Stack</span>
+          <span className="mini-stats-card__tstat-value">{currentStack.toLocaleString()}</span>
+        </span>
+        <span className="mini-stats-card__tstat">
+          <span className="mini-stats-card__tstat-label">Hands</span>
+          <span className="mini-stats-card__tstat-value">{handsPlayed}</span>
+        </span>
+        <span className="mini-stats-card__tstat">
+          <span className="mini-stats-card__tstat-label">VPIP</span>
+          <span className="mini-stats-card__tstat-value">{vpipPct}%</span>
+        </span>
+        <span className="mini-stats-card__tstat">
+          <span className="mini-stats-card__tstat-label">Won</span>
+          <span className="mini-stats-card__tstat-value">{handsWon}</span>
+        </span>
       </button>
     );
   }

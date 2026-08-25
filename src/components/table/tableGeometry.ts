@@ -131,8 +131,20 @@ export const CHIP_RAIL_DEALER_EXTRA_PX = 20;
  * x=50 into an avatar that is a third larger than everyone else's and whose art
  * rises well past its own box. The rail is measured from the seat CENTRE, and
  * for this one seat the thing it has to clear is much taller.
+ *
+ * Dan 2026-08-25: "hero's chips are put too far in front of them, needs to be
+ * closer to the rail." 46 was set BEFORE CHIP_RAIL_SCALE moved into this module
+ * (2026-08-24) — at that point the stylesheet's own 1.82 was applied on top of
+ * it, so the number here was tuned against a rail that has since been rescaled
+ * underneath it. 46 * 1.82 = 84px of hero-only extra, on top of the common rail:
+ * that is the "on the felt, nowhere near the player" picture in the screenshot.
+ *
+ * 16 * 1.82 = ~29px of extra, which is still more than the height the hero's
+ * oversized avatar art rises past its own box (the original complaint), and
+ * still a strictly positive extra, which tests/unit/chipRail.test.ts requires.
+ * Do NOT set this to 0 — the hero's chips then sit on the avatar again.
  */
-export const CHIP_RAIL_BOTTOM_EXTRA_PX = 46;
+export const CHIP_RAIL_BOTTOM_EXTRA_PX = 16;
 
 /**
  * The rail's scale factor.

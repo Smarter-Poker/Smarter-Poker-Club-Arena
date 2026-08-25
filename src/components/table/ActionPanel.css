@@ -461,10 +461,25 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  /* Sits INSIDE the reserved gutter. It used to be right:-56px in a 56px
-     gutter, so the 48px rail plus its cap labels overhung the panel edge and
-     the thumb and the stack figure were clipped at the viewport. */
-  right: 8px;
+  /* Dan 2026-08-25 (binding): "the slider needs to be moved over to the right
+     and not overlap the rest of the action buttons."
+     It did overlap, and `right: 8px` is why. This element is absolutely
+     positioned against `.raise-layout` — the 500px CONTENT column — not against
+     the panel, so `right: 8px` laid the 76px rail (thumb, tick labels and cap
+     figures) straight over the right-hand end of the presets row and the
+     RAISE / All In confirm button underneath it. The 100px gutter reserved on
+     `.action-panel--raise-vertical` was sitting empty the whole time.
+
+     The rail now lives IN that gutter: its right edge is 84px past the content
+     column, so it occupies [+8px, +84px] beyond the buttons — 8px of clear air
+     between it and the confirm button, and at least 16px between it and the
+     panel's own edge (the gutter is 84 + 16). That 16px is what stops the
+     regression the old comment records, where a rail hung at right:-56px in a
+     56px gutter and had its thumb and stack figure clipped at the viewport.
+
+     The two numbers are tied: RAIL_GUTTER (84px) below must stay <= the 84px in
+     `padding-right: calc(84px + 16px)`, or the rail clips again. */
+  right: -84px;
   width: 76px;
   display: flex;
   flex-direction: row;
@@ -537,7 +552,10 @@
 .raise-slider-vertical__caps {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  /* Only the floor figure lives here now (see ActionPanel.tsx) — pin it to the
+     bottom of the rail rather than the top, which is where it belongs. */
+  justify-content: flex-end;
+  padding-bottom: 8px;
   margin-left: 6px;
   font-size: 10px;
   font-weight: 700;
@@ -592,7 +610,8 @@
   }
   .raise-slider-vertical__caps {
     flex-direction: row;
-    justify-content: space-between;
+    justify-content: flex-start;
+    padding-bottom: 0;
     margin: 4px 0 0 0;
   }
 }

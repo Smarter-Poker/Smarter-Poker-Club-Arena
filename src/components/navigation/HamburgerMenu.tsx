@@ -230,6 +230,28 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             setIsVIP(data.is_vip || data.tier === 'vip' || false);
           }
         });
+
+      /* Dan 2026-08-25: `profiles.show_stack_bb` above is the LEGACY copy of
+       * this preference. The felt reads `user_table_settings.show_stack_in_bb`,
+       * and before today only this menu wrote the legacy column — so an account
+       * carrying an old `true` there showed this switch ON while every table
+       * drew chips. Whatever the table is actually obeying is what this switch
+       * must display, so the canonical row wins when it exists. No row means
+       * the user never chose, which is chips, which is the default. */
+      supabase
+        .from('user_table_settings')
+        .select('show_stack_in_bb')
+        .eq('user_id', user.id)
+        .maybeSingle()
+        .then(({ data: uts, error: utsErr }) => {
+          if (utsErr || !uts || uts.show_stack_in_bb === null) return;
+          setShowBBEnabled(uts.show_stack_in_bb);
+          try {
+            localStorage.setItem(STORAGE_KEYS.SHOW_STACK_BB, String(uts.show_stack_in_bb));
+          } catch {
+            /* private mode */
+          }
+        });
     }
   }, [user?.id]);
 
@@ -328,7 +350,29 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     updateSetting(STORAGE_KEYS.SHOW_STACK_BB, 'show_stack_bb', newValue, () =>
       setShowBBEnabled(!newValue)
     );
-    masterBus.emit('SETTINGS_CHANGED', { setting: 'showStackInBB', value: newValue });
+    /* Dan 2026-08-25 (binding): "tournaments and cash games should always be
+     * defaulted to actual totals unless the user changes the setting to BB."
+     *
+     * TWO bugs lived in this one line. The bus key was `showStackInBB`, but
+     * useUserTableSettings only accepts a key that IS a field of
+     * DEFAULT_USER_TABLE_SETTINGS — `show_stack_in_bb` — so it dropped this
+     * event on the floor and the table never changed. And the value only ever
+     * landed in `profiles.show_stack_bb`, while the felt reads
+     * `user_table_settings.show_stack_in_bb`: two columns for one preference,
+     * free to disagree forever. The canonical one is now written here too, so
+     * this switch and the in-table switch are the same switch.
+     *
+     * The `profiles` write above stays for now — other surfaces still read it —
+     * but user_table_settings is the source of truth for what the table draws. */
+    masterBus.emit('SETTINGS_CHANGED', { setting: 'show_stack_in_bb', value: newValue });
+    if (user?.id) {
+      void supabase
+        .from('user_table_settings')
+        .upsert({ user_id: user.id, show_stack_in_bb: newValue }, { onConflict: 'user_id' })
+        .then(({ error: bbErr }) => {
+          if (bbErr) reportError(bbErr, 'HamburgerMenu.Show_stack_bb_save_failed');
+        });
+    }
   };
 
   const handleResetTutorial = async () => {

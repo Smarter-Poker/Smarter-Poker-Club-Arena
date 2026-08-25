@@ -41,6 +41,10 @@ export type BusEventType =
   // Dan 2026-08-15: the in-table "+" asks MultiTablePage to open a LOBBY tab
   // alongside the running game, instead of navigating the whole app away.
   | 'OPEN_LOBBY_TAB'
+  // Dan 2026-08-25: the tournament lobby's Ranking and Tables tabs ask
+  // MultiTablePage to open a table as an OBSERVER in a new screen, leaving
+  // every screen already open still live. Cap-guarded like every other tab.
+  | 'OPEN_OBSERVE_TABLE'
   | 'TABLE_CAP_BLOCKED'
   | 'BALANCE_UPDATED'
   | 'VIP_POINTS_UPDATED'
@@ -344,6 +348,14 @@ export interface BusPayloadMap {
   TABLE_LEFT: TableEventPayload;
   /** Request that MultiTablePage open a lobby tab beside the running game. */
   OPEN_LOBBY_TAB: { requestedBy?: string };
+  /**
+   * Open a table as an observer in a NEW screen without disturbing the screens
+   * already open. `tableName` is cosmetic (the tab label before the engine
+   * reports the real one). Honours the same MAX_TABLES cap as every other tab:
+   * at the cap this is refused with the standard cap notice, never silently
+   * dropped, and never by closing a screen the player is using.
+   */
+  OPEN_OBSERVE_TABLE: { tableId: string; tableName?: string; stakes?: string };
   /** Dan 2026-08-21: a seat could not be opened because the player is at
    *  the 4-table cap. TournamentAutoSeat turns this into the large popup. */
   TABLE_CAP_BLOCKED: { tableId: string };

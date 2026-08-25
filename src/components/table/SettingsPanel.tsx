@@ -55,8 +55,10 @@ export interface SettingsPanelProps {
   currentCardBack?: string;
   ownedCardBacks?: string[];
   onAvatarChanged?: (url: string) => void;
-  onCardBackChanged?: (id: string) => void;
-  onCardBackPurchase?: (id: string, price: number) => void;
+  /* Both may be async and may reject. CardBackSelector awaits them before it
+     reports success, so a failed write cannot show as a success. */
+  onCardBackChanged?: (id: string) => void | Promise<unknown>;
+  onCardBackPurchase?: (id: string, price: number) => void | Promise<unknown>;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -223,29 +225,31 @@ export function SettingsPanel({
           >
             <h3 className="settings-section__title">Gameplay</h3>
 
-            {/* ── Dan 2026-08-18: auto-muck covers UNCONTESTED pots only ──
-                "Auto-muck losing hands / Automatically fold losing hands at
-                showdown" is gone. It was a dead switch - it wrote the
-                `autoMuck` key, which nothing at the table ever read - and as of
-                today it also promised the opposite of how the game behaves: a
-                showdown turns EVERY hand face up, so there is no such thing as
-                auto-mucking a loser any more. A toggle that says it will hide
-                your cards at showdown and then shows them is worse than no
-                toggle at all.
+            {/* ── SHOWDOWN follow-up 2026-08-25 (Dan spec section 37) ──
+                The auto-muck toggle RETURNS, because both of the reasons it
+                was removed are gone:
 
-                What remains is the one case where hiding is genuinely the
-                player's call: winning when everyone folds. No showdown
-                happened, so nobody is entitled to see the hand. The label says
-                so explicitly, and says what it does NOT cover. */}
-            {/* Dan 2026-08-23: "auto muck should be on by default, you should
-                never ask if they want to show cards." The toggle is removed
-                rather than merely defaulted, for the same reason the
-                confirm-all-in control was removed a few days earlier: a
-                default is a suggestion, and a control that can restore a
-                behaviour Dan asked to be gone will eventually restore it.
-                `autoMuckWinners` stays in the settings type and is pinned true
-                so any stored `false` from before today has nothing to switch
-                on — TablePage no longer reads it to decide whether to ask. */}
+                2026-08-18 removed it as a dead switch — nothing read the
+                `autoMuck` key and every showdown hand was turned face up
+                anyway. The engine now genuinely mucks beaten hands at
+                showdown (HandController.applyShowdownRevealRules), so the
+                switch controls a real behaviour.
+
+                2026-08-23 removed it to keep prompts dead ("you should never
+                ask if they want to show cards"). That rule stands: this
+                toggle asks NOTHING mid-hand. ON (default) keeps the engine's
+                muck — a beaten hand stays private. OFF means "always table
+                my hand": the client answers the engine's muck ruling with
+                the voluntary-show call and the hand turns face up, no
+                question asked. The setting can never muck a winner (the
+                engine auto-tables winners and ties) and can never hide an
+                all-in showdown (every live all-in hand is force-exposed). */}
+            <SettingToggle
+              label="Auto-Muck Losing Hands"
+              description="Keep A Beaten Hand Private At Showdown. Off Always Shows Your Hand"
+              checked={settings.autoMuckLosers}
+              onChange={() => handleToggle('autoMuckLosers')}
+            />
 
             <SettingToggle
               label="Auto-Post Blinds"
@@ -417,6 +421,11 @@ export function SettingsPanel({
               currentCardBack={currentCardBack}
               ownedCardBacks={ownedCardBacks}
               userDiamonds={userDiamonds}
+              /* 2026-08-25: the store gated paid designs on a purchase alone
+                 while Theme Settings gated the same designs on VIP alone, so a
+                 VIP was quoted a price here for something that was already
+                 theirs one modal across. Same resolvedVip both places. */
+              isVip={resolvedVip}
               onChange={onCardBackChanged}
               onPurchase={onCardBackPurchase}
             />

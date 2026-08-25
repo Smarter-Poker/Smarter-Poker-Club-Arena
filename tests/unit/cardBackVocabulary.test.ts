@@ -22,7 +22,18 @@ import {
   SELECTABLE_CARD_BACK_IDS,
 } from '@/components/table/CardImage';
 
-/** The catalog CardBackSelector actually sells (mirrors its CARD_BACKS list). */
+/**
+ * 2026-08-25 UPDATE. These are no longer the ids the store SELLS — it sells
+ * the canonical CARD_BACK_CATALOG now, because these twelve collapsed onto
+ * seven designs and three PAID tiles were pixel-for-pixel a free one (see
+ * cardBackCatalog.test.ts).
+ *
+ * They are still exactly what has to keep working: they sit in localStorage
+ * settings and in user_theme_settings.cards_id for everyone who used the store
+ * before today. A legacy id that stops surviving persistence, or stops
+ * resolving to a real design, blanks those players' cards. So this file keeps
+ * pinning them, now as the LEGACY vocabulary rather than the current one.
+ */
 const STORE_IDS = [
   'black',
   'red',

@@ -834,6 +834,12 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
                 hand_name: w.hand?.name,
                 hand_description: sd?.handDescription ?? '',
                 hole_card_indices: holeIndices,
+                // SHOWDOWN follow-up 2026-08-25 (spec 16/19): which pot this
+                // winner's FIRST share came from (0 = main). The client
+                // sequences award animations by this — main pot first, then
+                // each side pot — so a hand with different winners for
+                // different pots resolves as a visible sequence, not a blur.
+                pot_index: w.potIndex ?? 0,
               };
             }),
             // Round 2 (double board): board 1 / board 2 winner + hand-name

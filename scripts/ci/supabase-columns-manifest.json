@@ -4757,7 +4757,8 @@
       "reported_at",
       "button_seat",
       "has_human",
-      "community_cards2"
+      "community_cards2",
+      "pots"
     ],
     "hand_players": [
       "id",
@@ -7044,7 +7045,8 @@
       "memory_elo",
       "arena_avatar_url",
       "equipped_frame",
-      "equipped_aura"
+      "equipped_aura",
+      "use_avatar_as_profile_pic"
     ],
     "promo_code_redemptions": [
       "id",
@@ -8872,7 +8874,8 @@
       "seven_deuce_amount",
       "hands_dealt",
       "avg_pot",
-      "bomb_pot_double_board"
+      "bomb_pot_double_board",
+      "cap_bb"
     ],
     "theme_unlocks": [
       "id",

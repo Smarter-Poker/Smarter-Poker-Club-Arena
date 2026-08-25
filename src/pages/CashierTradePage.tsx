@@ -34,6 +34,7 @@ import { reportError } from '../utils/errorReporter';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
 import { canSeeClubBank } from '../components/wallet/walletRows';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import styles from './CashierTradePage.module.css';
@@ -1684,7 +1685,7 @@ export default function CashierTradePage() {
         }}
         clubId={clubUuid || clubParam || ''}
         role={myRole}
-        walletType={activeCashier || 'club_bank'}
+        walletType={activeCashier || DEFAULT_CASHIER_WALLET}
       />
 
       {/* Amount modal */}

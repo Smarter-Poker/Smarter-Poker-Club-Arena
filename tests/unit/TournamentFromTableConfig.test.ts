@@ -123,18 +123,32 @@ describe('blind structure', () => {
 });
 
 describe('money', () => {
-  it('the fee is 10% of the buy-in, rounded to whole chips', () => {
-    // Dan 2026-08-20: tournament and SNG buy-ins are whole numbers, so the fee
-    // cut out of one is whole too. A 33 buy-in is 3 fee + 30 prize, not 3.3 -
-    // a fractional fee made the total non-integer and the DB CHECK refused the
-    // INSERT outright.
+  it('the fee is 10% of the buy-in, to the cent', () => {
+    /**
+     * Dan 2026-08-25 SUPERSEDES the whole-chip rule this test used to pin.
+     * "FRACTIONAL FEE'S NEED TO BE ALLOWED, WE HAVE 1 BUY IN, 5 BUY IN'S ETC
+     * THOSE SHOULD BE .10 RAKE AND .50 RAKE PER BUY IN."
+     *
+     * The old note said a fractional fee "made the total non-integer and the DB
+     * CHECK refused the INSERT". Both halves of that are addressed rather than
+     * worked around: the fee is cut OUT of the price, so a 33 buy-in is
+     * 29.70 + 3.30 and the TOTAL is still exactly 33; and the CHECK that
+     * hard-coded floor() to whole chips was relaxed by migration
+     * 20260825_tournament_fees_may_be_fractional, which still refuses anything
+     * over a tenth.
+     */
     expect(buildTournamentConfig({ ...base, buyIn: 50 }, 'nlh').rake).toBe(5);
-    expect(buildTournamentConfig({ ...base, buyIn: 33 }, 'nlh').rake).toBe(3);
+    expect(buildTournamentConfig({ ...base, buyIn: 33 }, 'nlh').rake).toBe(3.3);
+    expect(buildTournamentConfig({ ...base, buyIn: 1 }, 'nlh').rake).toBe(0.1);
+    expect(buildTournamentConfig({ ...base, buyIn: 5 }, 'nlh').rake).toBe(0.5);
     for (const buyIn of [1, 5, 15, 25, 33, 50, 99, 100, 250]) {
       const c = buildTournamentConfig({ ...base, buyIn }, 'nlh');
-      expect(Number.isInteger(c.rake)).toBe(true);
+      // The PRICE stays whole; only the split has cents.
       expect(Number.isInteger(c.buyIn)).toBe(true);
       expect(c.buyIn).toBe(buyIn);
+      expect(c.rake).toBe(Number(c.rake.toFixed(2)));
+      expect(c.rake).toBeGreaterThan(0);
+      expect(c.rake).toBeLessThanOrEqual(buyIn * 0.1 + 1e-9);
     }
   });
 
@@ -249,10 +263,7 @@ describe('parity fields (2026-08-22)', () => {
   });
 
   it('clamps action time and table size to the server ranges', () => {
-    const c = buildTournamentConfig(
-      { ...base, actionTimeSeconds: 999, tableSize: 99 },
-      'nlh'
-    );
+    const c = buildTournamentConfig({ ...base, actionTimeSeconds: 999, tableSize: 99 }, 'nlh');
     expect(c.actionTimeSeconds).toBe(60);
     // Still 10. The tournament path is bound by the DECK, not by the cash seat
     // cap — tableSeating's header is explicit that tournaments are exempt from
@@ -276,7 +287,6 @@ describe('parity fields (2026-08-22)', () => {
     expect(buildTournamentConfig({ ...base, tableSize: 99 }, 'plo4').tableSize).toBe(10);
     expect(buildTournamentConfig({ ...base, tableSize: 99 }, 'short_deck').tableSize).toBe(10);
   });
-
 
   it('MTT-only fields never leave an SNG', () => {
     const c = buildTournamentConfig(

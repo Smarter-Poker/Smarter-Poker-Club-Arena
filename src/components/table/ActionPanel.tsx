@@ -664,6 +664,15 @@ export default function ActionPanel({
   const handleRaiseClick = useCallback(() => {
     if (!canRaise && !canAllIn) return;
     haptic.light();
+    /* Dan 2026-08-25 (item 5): the sizing controls open as an OVERLAY above a
+       three-button row that never moves, so unlike the old full-panel swap
+       this button is still on screen while the overlay is up. It therefore has
+       to close it too - otherwise the only way back out is the Back button
+       hiding at the top of the overlay. */
+    if (isRaiseMode) {
+      setIsRaiseMode(false);
+      return;
+    }
     // 2026-08-23 (fixed limit): there is exactly ONE legal wager on this street
     // — TablePage collapses minRaise and maxRaise onto it — so there is nothing
     // to size and no panel to open. Opening the sizing panel here would draw a
@@ -678,7 +687,7 @@ export default function ActionPanel({
     setIsRaiseMode(true);
     setRaiseAmount(minRaise);
     lastSnapRef.current = minRaise;
-  }, [canRaise, canAllIn, minRaise, isFixedLimit, allInThreshold, onAction]);
+  }, [canRaise, canAllIn, minRaise, isFixedLimit, allInThreshold, onAction, isRaiseMode]);
 
   const handleConfirmRaise = useCallback(() => {
     haptic.medium(); // FIX 196: Bible V8 §5.4 — raise = medium haptic (was strong/heavy, reserved for all_in)
@@ -832,8 +841,28 @@ export default function ActionPanel({
   const isOpeningBet = currentBet <= 0;
   const wagerVerb = isOpeningBet ? 'Bet' : 'Raise';
 
-  // ─── RAISE MODE ──────────────────────────────────────────────
-  if (isRaiseMode) {
+  /**
+   * ─── RAISE SIZING OVERLAY ────────────────────────────────────
+   *
+   * Dan 2026-08-25 (item 5): "these 3 action buttons should be on the bottom,
+   * and if you click Raise, the action slider and other buttons pop open and
+   * can overlay the Hero and other things when clicked to open."
+   *
+   * Raise mode used to REPLACE the whole panel: the three buttons disappeared,
+   * a much taller box took their place, and the bar's height changed under a
+   * table that had already reserved room for the short version. It is an
+   * OVERLAY now — this block renders ABOVE the pinned row, inside the same
+   * `position: fixed; bottom: 0` panel, so the panel grows UPWARD over the hero
+   * and the bottom of the felt and the row underneath never moves a pixel.
+   *
+   * That also settles `--sp-action-h`, the reserve every other stylesheet reads:
+   * it is measured on `.action-panel-wrapper`, and this panel is `position:
+   * fixed`, so it is not part of that wrapper's flow. Opening the overlay
+   * cannot grow the published height, which is the whole point — the table must
+   * not reflow when the slider appears.
+   */
+  const raiseOverlay = (() => {
+    if (!isRaiseMode) return null;
     // Phase 2 T1-02: shared slider markup so the vertical and horizontal
     // variants stay in lockstep for accessibility (same min/max/step/aria-*).
     const sliderEl = (
@@ -859,217 +888,220 @@ export default function ActionPanel({
       />
     );
 
+    /* Phase 2 T1-02: vertical layout splits the panel — main column on the
+       left holds amount + presets + confirm; slider sits on the right edge per
+       spec §5.2. Horizontal fallback retains the legacy stack. */
     return (
-      <div
-        className={`action-panel action-panel--raise${effectiveVerticalSlider ? ' action-panel--raise-vertical' : ''}`}
-      >
-        {/* Phase 2 T1-02: vertical layout splits the panel — main column on
-            the left holds amount + presets + confirm; slider sits on the right
-            edge per spec §5.2. Horizontal fallback retains the legacy stack. */}
-        <div className="raise-layout">
-          <div className="raise-main">
-            {/* Amount Display with +/- */}
-            <div className="raise-header">
-              <button
-                className="raise-adjust raise-adjust--minus"
-                onClick={() => adjustRaise(-sliderStep)}
-                disabled={raiseAmount <= minRaise}
-                aria-label={`Decrease By ${formatChips(sliderStep)}`}
-              >
-                −
-              </button>
-              <div className="raise-value">
-                {amountTyping ? (
-                  <input
-                    ref={amountInputRef}
-                    type="text"
-                    /* iOS shows the digits-only keypad; Android still gets a
+      <div className="raise-layout">
+        <div className="raise-main">
+          {/* Amount Display with +/- */}
+          <div className="raise-header">
+            <button
+              className="raise-adjust raise-adjust--minus"
+              onClick={() => adjustRaise(-sliderStep)}
+              disabled={raiseAmount <= minRaise}
+              aria-label={`Decrease By ${formatChips(sliderStep)}`}
+            >
+              −
+            </button>
+            <div className="raise-value">
+              {amountTyping ? (
+                <input
+                  ref={amountInputRef}
+                  type="text"
+                  /* iOS shows the digits-only keypad; Android still gets a
                        numeric keyboard with the spec-required decimal point. */
-                    inputMode="decimal"
-                    pattern="[0-9]*[.,]?[0-9]*"
-                    className="raise-value__input"
-                    value={amountDraft}
-                    /* Filter as they type. A raw text field accepts "12e5",
+                  inputMode="decimal"
+                  pattern="[0-9]*[.,]?[0-9]*"
+                  className="raise-value__input"
+                  value={amountDraft}
+                  /* Filter as they type. A raw text field accepts "12e5",
                        and Number("12e5") is 1,200,000 - a silent shove on a
                        control the player thinks is a bet box. */
-                    onChange={(e) => setAmountDraft(sanitizeAmountDraft(e.target.value))}
-                    onBlur={commitAmountEdit}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        commitAmountEdit();
-                      } else if (e.key === 'Escape') {
-                        e.preventDefault();
-                        cancelAmountEdit();
-                      }
-                    }}
-                    aria-label={`Type exact bet amount, between ${formatChips(
-                      minRaise
-                    )} and ${formatChips(maxRaise)}`}
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    className="raise-value__amount"
-                    onClick={beginEditAmount}
-                    aria-label={`Edit bet amount ${formatChips(raiseAmount)} - opens numeric keyboard`}
-                    title="Tap to type exact amount"
-                  >
-                    {formatChips(raiseAmount)}
-                  </button>
-                )}
-                {bigBlind > 0 && !amountTyping && (
-                  <span className="raise-value__bb">{(raiseAmount / bigBlind).toFixed(1)} BB</span>
-                )}
-              </div>
-              <button
-                className="raise-adjust raise-adjust--plus"
-                onClick={() => adjustRaise(sliderStep)}
-                disabled={raiseAmount >= maxRaise}
-                aria-label={`Increase By ${formatChips(sliderStep)}`}
-              >
-                +
-              </button>
+                  onChange={(e) => setAmountDraft(sanitizeAmountDraft(e.target.value))}
+                  onBlur={commitAmountEdit}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      commitAmountEdit();
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      cancelAmountEdit();
+                    }
+                  }}
+                  aria-label={`Type exact bet amount, between ${formatChips(
+                    minRaise
+                  )} and ${formatChips(maxRaise)}`}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="raise-value__amount"
+                  onClick={beginEditAmount}
+                  aria-label={`Edit bet amount ${formatChips(raiseAmount)} - opens numeric keyboard`}
+                  title="Tap to type exact amount"
+                >
+                  {formatChips(raiseAmount)}
+                </button>
+              )}
+              {bigBlind > 0 && !amountTyping && (
+                <span className="raise-value__bb">{(raiseAmount / bigBlind).toFixed(1)} BB</span>
+              )}
             </div>
+            <button
+              className="raise-adjust raise-adjust--plus"
+              onClick={() => adjustRaise(sliderStep)}
+              disabled={raiseAmount >= maxRaise}
+              aria-label={`Increase By ${formatChips(sliderStep)}`}
+            >
+              +
+            </button>
+          </div>
 
-            {/* Horizontal slider — only rendered in legacy mode. */}
-            {!effectiveVerticalSlider && (
-              <div className="raise-slider-wrap">
-                {sliderEl}
-                <div className="raise-slider-ticks">
-                  <div className="raise-slider-tick" style={{ left: '25%' }} />
-                  <div className="raise-slider-tick" style={{ left: '50%' }} />
-                  <div className="raise-slider-tick" style={{ left: '75%' }} />
-                  <div className="raise-slider-tick" style={{ left: '100%' }} />
-                </div>
+          {/* Horizontal slider — only rendered in legacy mode. */}
+          {!effectiveVerticalSlider && (
+            <div className="raise-slider-wrap">
+              {sliderEl}
+              <div className="raise-slider-ticks">
+                <div className="raise-slider-tick" style={{ left: '25%' }} />
+                <div className="raise-slider-tick" style={{ left: '50%' }} />
+                <div className="raise-slider-tick" style={{ left: '75%' }} />
+                <div className="raise-slider-tick" style={{ left: '100%' }} />
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Preset Row */}
-            {showBetSizePresets && (
-              <div className="raise-presets">
-                {presets.map((p) => (
-                  <button
-                    key={p.label}
-                    className={`raise-preset${raiseAmount === p.value ? ' raise-preset--on' : ''}`}
-                    onClick={() => setPreset(p.value)}
-                    /* Only dead when there is no legal raise at all. The old
+          {/* Preset Row */}
+          {showBetSizePresets && (
+            <div className="raise-presets">
+              {presets.map((p) => (
+                <button
+                  key={p.label}
+                  className={`raise-preset${raiseAmount === p.value ? ' raise-preset--on' : ''}`}
+                  onClick={() => setPreset(p.value)}
+                  /* Only dead when there is no legal raise at all. The old
                        `p.value < minRaise` test could never fire (value is
                        already clamped to minRaise) while `p.value > maxRaise`
                        greyed out every preset a short stack could still shove
                        into. Over-stack now snaps to all-in, per spec 5.2. */
-                    disabled={minRaise > maxRaise}
-                    title={`${wagerVerb} ${formatChips(p.value)}`}
-                    aria-label={`${p.label} - ${wagerVerb.toLowerCase()} ${formatChips(p.value)}`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-                <button
-                  className="raise-preset raise-preset--allin"
-                  onClick={handleAllIn}
-                  // Never offer a shove hero is not entitled to make. The
-                  // server would reject it, but a button that produces an
-                  // error toast is a broken button.
-                  disabled={!canAllIn}
-                  title={`All in for ${formatChips(allInThreshold)}`}
-                  aria-label={`Bet all in for ${formatChips(allInThreshold)}`}
+                  disabled={minRaise > maxRaise}
+                  title={`${wagerVerb} ${formatChips(p.value)}`}
+                  aria-label={`${p.label} - ${wagerVerb.toLowerCase()} ${formatChips(p.value)}`}
                 >
-                  ALL IN
+                  {p.label}
                 </button>
-              </div>
-            )}
-            {/* Confirm / Cancel Row */}
-            <div className="raise-actions">
+              ))}
               <button
-                className="raise-cancel"
-                onClick={() => setIsRaiseMode(false)}
-                aria-label="Back"
+                className="raise-preset raise-preset--allin"
+                onClick={handleAllIn}
+                // Never offer a shove hero is not entitled to make. The
+                // server would reject it, but a button that produces an
+                // error toast is a broken button.
+                disabled={!canAllIn}
+                title={`All in for ${formatChips(allInThreshold)}`}
+                aria-label={`Bet all in for ${formatChips(allInThreshold)}`}
               >
-                Back
+                ALL IN
               </button>
-              {/* 2026-08-20: the confirm button said "Raise N" even when N was
+            </div>
+          )}
+          {/* Confirm / Cancel Row */}
+          <div className="raise-actions">
+            <button
+              className="raise-cancel"
+              onClick={() => setIsRaiseMode(false)}
+              aria-label="Back"
+            >
+              Back
+            </button>
+            {/* 2026-08-20: the confirm button said "Raise N" even when N was
                   hero's whole stack and handleConfirmRaise was about to
                   dispatch `allin`. Now that the slider can actually reach the
                   top (see sliderGridMax), that state is one drag away, and a
                   button that says Raise while it shoves is the same class of
                   lie the ALL IN label had. Say which action it is. */}
-              <button
-                className={`raise-confirm${
-                  raiseAmount >= allInThreshold ? ' raise-confirm--allin' : ''
-                }`}
-                onClick={handleConfirmRaise}
-                aria-label={
-                  raiseAmount >= allInThreshold
-                    ? `All in for ${formatChips(raiseAmount)}`
-                    : `${wagerVerb} ${formatChips(raiseAmount)}`
-                }
-              >
-                {raiseAmount >= allInThreshold ? 'All In' : wagerVerb} {formatChips(raiseAmount)}
-              </button>
-            </div>
+            <button
+              className={`raise-confirm${
+                raiseAmount >= allInThreshold ? ' raise-confirm--allin' : ''
+              }`}
+              onClick={handleConfirmRaise}
+              aria-label={
+                raiseAmount >= allInThreshold
+                  ? `All in for ${formatChips(raiseAmount)}`
+                  : `${wagerVerb} ${formatChips(raiseAmount)}`
+              }
+            >
+              {raiseAmount >= allInThreshold ? 'All In' : wagerVerb} {formatChips(raiseAmount)}
+            </button>
           </div>
+        </div>
 
-          {/* Phase 2 T1-02: vertical slider rail on the right per spec §5.2.
+        {/* Phase 2 T1-02: vertical slider rail on the right per spec §5.2.
               Uses a CSS-rotated <input type="range"> wrapped in a fixed-height
               column. Tick marks correspond to 25/50/75/100% of the legal range.
               Hidden when verticalSlider is false. */}
-          {effectiveVerticalSlider && (
-            <div className="raise-slider-vertical">
-              <div
-                className="raise-slider-vertical__rail"
-                ref={railRef}
-                style={{ ['--raise-rail-length' as string]: `${railLength}px` }}
-              >
-                {sliderEl}
-                <div className="raise-slider-vertical__ticks" aria-hidden="true">
-                  {/* BB labels at 25/50/75/100% of the raise range */}
-                  {[100, 75, 50, 25].map((pct) => {
-                    // Evenly spaced across the LEGAL range, which already ends
-                    // at the hero's stack - so the top tick is the all-in.
-                    // Snapped onto the slider's own grid: a tick that names an
-                    // amount the thumb cannot land on is a target you cannot
-                    // hit. `Math.round` used to do this job, which also erased
-                    // the label entirely at 0.25/0.50 stakes, where four ticks
-                    // across a 10-chip range all rounded to the same integer.
-                    const val = snapToSliderGrid(minRaise + (maxRaise - minRaise) * (pct / 100));
-                    const isTop = pct === 100;
-                    return (
-                      <div
-                        key={pct}
-                        className={`raise-slider-vertical__tick${
-                          isTop ? ' raise-slider-vertical__tick--max' : ''
-                        }`}
-                        style={{ bottom: `${pct}%` }}
-                      >
-                        <span className="raise-slider-vertical__tick-label">
-                          {isTop ? 'ALL IN' : formatChips(val)}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="raise-slider-vertical__caps" aria-hidden="true">
-                <span className="raise-slider-vertical__cap raise-slider-vertical__cap--max">
-                  {bigBlind > 0 ? `${Math.round(maxRaise / bigBlind)}BB` : formatChips(maxRaise)}
-                </span>
-                <span className="raise-slider-vertical__cap raise-slider-vertical__cap--min">
-                  {bigBlind > 0 ? `${Math.round(minRaise / bigBlind)}BB` : formatChips(minRaise)}
-                </span>
+        {effectiveVerticalSlider && (
+          <div className="raise-slider-vertical">
+            <div
+              className="raise-slider-vertical__rail"
+              ref={railRef}
+              style={{ ['--raise-rail-length' as string]: `${railLength}px` }}
+            >
+              {sliderEl}
+              <div className="raise-slider-vertical__ticks" aria-hidden="true">
+                {/* BB labels at 25/50/75/100% of the raise range */}
+                {[100, 75, 50, 25].map((pct) => {
+                  // Evenly spaced across the LEGAL range, which already ends
+                  // at the hero's stack - so the top tick is the all-in.
+                  // Snapped onto the slider's own grid: a tick that names an
+                  // amount the thumb cannot land on is a target you cannot
+                  // hit. `Math.round` used to do this job, which also erased
+                  // the label entirely at 0.25/0.50 stakes, where four ticks
+                  // across a 10-chip range all rounded to the same integer.
+                  const val = snapToSliderGrid(minRaise + (maxRaise - minRaise) * (pct / 100));
+                  const isTop = pct === 100;
+                  return (
+                    <div
+                      key={pct}
+                      className={`raise-slider-vertical__tick${
+                        isTop ? ' raise-slider-vertical__tick--max' : ''
+                      }`}
+                      style={{ bottom: `${pct}%` }}
+                    >
+                      <span className="raise-slider-vertical__tick-label">
+                        {isTop ? 'ALL IN' : formatChips(val)}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-          )}
-        </div>
+            <div className="raise-slider-vertical__caps" aria-hidden="true">
+              <span className="raise-slider-vertical__cap raise-slider-vertical__cap--max">
+                {bigBlind > 0 ? `${Math.round(maxRaise / bigBlind)}BB` : formatChips(maxRaise)}
+              </span>
+              <span className="raise-slider-vertical__cap raise-slider-vertical__cap--min">
+                {bigBlind > 0 ? `${Math.round(minRaise / bigBlind)}BB` : formatChips(minRaise)}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     );
-  }
+  })();
 
-  // ─── STANDARD 3-BUTTON MODE ──────────────────────────────────
+  // ─── PINNED 3-BUTTON ROW ─────────────────────────────────────
+  // Always rendered, in every state, flush with the bottom of the viewport.
+  // The sizing overlay above it is a sibling, not a replacement.
   return (
     <div
-      className={`action-panel ${isMyTurn ? 'action-panel--active' : ''} ${turnPulse ? 'action-panel--attention' : ''}`}
+      className={`action-panel${isMyTurn ? ' action-panel--active' : ''}${
+        turnPulse ? ' action-panel--attention' : ''
+      }${isRaiseMode ? ' action-panel--raise' : ''}${
+        isRaiseMode && effectiveVerticalSlider ? ' action-panel--raise-vertical' : ''
+      }`}
     >
+      {raiseOverlay}
       <div className="action-row">
         {/* FOLD — Always Red, Left */}
         <button
@@ -1148,11 +1180,15 @@ export default function ActionPanel({
           </button>
         ) : (
           <button
-            className="action-btn action-btn--raise"
+            className={`action-btn action-btn--raise${isRaiseMode ? ' action-btn--on' : ''}`}
             onClick={handleRaiseClick}
             disabled={!canRaise}
             title={isDesktop ? 'Raise/Bet (R or E)' : undefined}
-            aria-label={`Open ${wagerVerb.toLowerCase()} panel`}
+            /* The button survives the overlay opening now (Dan 2026-08-25,
+               item 5), so it is a disclosure control rather than a one-way
+               door: say which way the next tap goes. */
+            aria-expanded={isRaiseMode}
+            aria-label={`${isRaiseMode ? 'Close' : 'Open'} ${wagerVerb.toLowerCase()} panel`}
           >
             {/* Per PokerBros spec §5.1: the Raise button itself shows ONLY
                 the word "Raise" (or "Bet" when no current bet). The actual

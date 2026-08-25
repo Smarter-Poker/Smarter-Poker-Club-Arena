@@ -8,8 +8,9 @@
   position: fixed;
   right: 8px;
   /* Dan 2026-08-22 item 6: anchored just above the action bar, on the line
-     where the background meets the black action box. */
-  bottom: calc(112px + env(safe-area-inset-bottom, 0px));
+     where the background meets the black action box.
+     2026-08-25: that line is THE BOTTOM-EDGE LINE — see .chat-collapsed. */
+  bottom: calc(var(--sp-action-h, 96px) + 8px + env(safe-area-inset-bottom, 0px));
   /* Phase 4 (2026-08-22): 99, one below the action panel's --z-action-panel
      (100). The 112px line clears the COLLAPSED 3-button bar, but the open
      raise panel is ~270px tall at 375px (measured headlessly) and chat used
@@ -55,9 +56,26 @@
 .chat-collapsed {
   position: fixed;
   right: 8px;
-  /* Dan 2026-08-22 item 6: same anchor line as the expanded chat + the
-     bottom-left HUD stack — just above the action bar. */
-  bottom: calc(112px + env(safe-area-inset-bottom, 0px));
+  /* ═══ THE BOTTOM-EDGE LINE (Dan 2026-08-25, item 6) ═══
+     "The time bank button needs to be lower, same level as the chat button.
+     The bottoms of both icons should be equal at the bottom."
+
+     This expression is the line, and it is a byte-for-byte copy of the one that
+     positions the other side: `.table-hud__lower`'s padding-bottom in
+     TableHUD.css. The time-bank chip is the last item of that row's
+     bottom-left stack (`.tbc-widget { order: 1 }`), so its bottom edge and this
+     button's bottom edge are the same number in every state, and they follow
+     the action bar together whenever it changes height.
+
+     They could not before: this side was a hardcoded 112px while the HUD side
+     read the MEASURED `--sp-action-h`, and the HUD side also counted the
+     safe-area inset twice. Two anchors, three disagreements.
+
+     Do not replace `var(--sp-action-h)` with a number here. That variable is
+     published by a ResizeObserver on `.action-panel-wrapper` (TablePage.tsx);
+     a literal is only ever right for one state of one phone, which is the
+     defect this replaces. Keep the 96px fallback in step with TableHUD.css. */
+  bottom: calc(var(--sp-action-h, 96px) + 8px + env(safe-area-inset-bottom, 0px));
   /* Phase 4 (2026-08-22): 99 for the same reason as .table-chat above — the
      open raise panel (z-100) must cover this button, not sit under it. */
   z-index: 99;
@@ -564,13 +582,16 @@
     width: calc(100% - 16px);
     left: 8px;
     right: 8px;
-    /* Dan 2026-08-22 item 6: same anchor as desktop — just above the bar. */
-    bottom: calc(112px + env(safe-area-inset-bottom, 0px));
+    /* Dan 2026-08-22 item 6: same anchor as desktop — just above the bar.
+       Byte-identical to the base rule: a breakpoint that redefines THE
+       BOTTOM-EDGE LINE is a breakpoint on which chat and the time-bank chip
+       drift apart again, and phones are where that was reported. */
+    bottom: calc(var(--sp-action-h, 96px) + 8px + env(safe-area-inset-bottom, 0px));
     max-height: 280px;
   }
 
   .chat-collapsed {
     right: 8px;
-    bottom: calc(112px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(var(--sp-action-h, 96px) + 8px + env(safe-area-inset-bottom, 0px));
   }
 }

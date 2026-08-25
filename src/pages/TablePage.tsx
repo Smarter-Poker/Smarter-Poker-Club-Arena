@@ -11214,12 +11214,8 @@ export default function TablePage({
                 already shows the amount + a chip stack next to it + side
                 pots, which is the single authoritative pot display. */}
             {/* Phase 2 T1-04 — PokerBros signature: hand strength label
-             *  floats at pot center for ~1s on ANY win (showdown or not).
-             *  2026-04-16 fix: removed boardStage === 'showdown' gate —
-             *  PokerBros shows winning hand name on ALL wins, including
-             *  when everyone folds. Keyed on hand number + hand name so
-             *  every new hand re-triggers the animation. */}
-            {winnerInfo.handName && (
+             *  floats at pot center for ~1s on ANY win (showdown or not). */}
+            {winnerInfo.handName && tableState.boardStage === 'preflop' && (
               <div
                 className="pot-hand-strength"
                 key={`hand-${tableState.handNumber ?? 0}-${winnerInfo.handName}`}

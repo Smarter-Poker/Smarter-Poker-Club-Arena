@@ -705,7 +705,7 @@
 
 .community-cards__hand-name {
   position: absolute;
-  top: 50%;
+  top: 85%;
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 20;
@@ -861,15 +861,6 @@
   .community-cards__center-suit {
     font-size: 1.25rem;
   }
-
-  .community-cards__hand-name {
-    font-size: 0.9rem;
-    padding: 2px 12px;
-    margin-top: 4px;
-    max-width: 200px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
 }
 
 @media (max-width: 380px) {
@@ -888,12 +879,6 @@
   }
   .community-cards__center-suit {
     font-size: 1.1rem;
-  }
-
-  .community-cards__hand-name {
-    font-size: 0.5rem;
-    padding: 2px 8px;
-    max-width: 180px;
   }
 
   .community-cards__stage-label {
@@ -950,11 +935,22 @@
 
   .community-cards__hand-name {
     opacity: 1;
-    transform: none;
     filter: none;
   }
 
   .community-cards__card::after {
     display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .community-cards__hand-name {
+    font-size: 1.8rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .community-cards__hand-name {
+    font-size: 1.5rem;
   }
 }

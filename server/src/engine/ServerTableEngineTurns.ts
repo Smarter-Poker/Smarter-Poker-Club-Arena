@@ -226,7 +226,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             !this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) &&
           !this.waitingForBB.has(p.user_id)
       ).length;
-      if (dealable >= 2 && idleMs > ServerTableEngineBase.WATCHDOG_IDLE_MS) {
+      if (dealable >= this.minPlayersToDeal() && idleMs > ServerTableEngineBase.WATCHDOG_IDLE_MS) {
         /**
          * ── Dan 2026-08-22: "games randomly break, stop running or freeze" ──
          *

@@ -57,7 +57,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       players: state.players.map((p) => ({
         seat: p.seat,
         user_id: p.user_id,
-        username: p.username,
+        ...this.seatIdentity(p),
         stack: p.stack,
         bet: p.bet,
         is_folded: p.is_folded,
@@ -93,6 +93,47 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
    * No-limit and pot-limit tables carry `fixed_bet_size`/`wagers_capped` as
    * undefined, which JSON drops.
    */
+
+  /**
+   * ── ANONYMOUS TABLE (Dan 2026-08-25) ────────────────────────────────────
+   *
+   * `is_anonymous` has been a toggle on the creation screen since February,
+   * read by nothing. Seat names shipped as real usernames with no branch that
+   * could hide them.
+   *
+   * The identity a seat carries is exactly two fields: `username` and
+   * `avatar_url`. `user_id` MUST survive — the client keys the hero seat,
+   * `current_player`, `winner_ids`, `disconnect_states` and
+   * `waiting_for_bb_user_ids` off it, and scrubbing it would break the table
+   * rather than anonymise it. A user id is not a name on screen.
+   *
+   * UNIFORM, not per-viewer, and that is deliberate: broadcastCurrentState
+   * publishes ONE payload through TableStateHub to every subscriber
+   * ("public-scrubbed shape - so there is nothing per-subscriber to
+   * serialize"). Making the hero an exception would mean a payload per seat.
+   * At an anonymous table nobody's name is shown, including your own, and you
+   * find yourself by seat exactly as you would at a live table.
+   *
+   * Called by all FOUR serializers. They are byte-identical seat maps and the
+   * file already carries a comment about a reveal gate that was missed in one
+   * of them; one helper is what stops that happening again.
+   */
+  protected seatIdentity(p: {
+    seat?: number;
+    seat_number?: number;
+    username?: string;
+    avatar_url?: string;
+  }): {
+    username: string;
+    avatar_url: string;
+  } {
+    if (!this.tableInfo?.is_anonymous) {
+      return { username: p.username ?? '', avatar_url: p.avatar_url ?? '' };
+    }
+    const seat = p.seat ?? p.seat_number ?? 0;
+    return { username: seat > 0 ? `Player ${seat}` : 'Player', avatar_url: '' };
+  }
+
   private bettingStructureFields(state: GameState): {
     betting_structure: 'no_limit' | 'pot_limit' | 'fixed_limit';
     fixed_bet_size?: number;
@@ -199,7 +240,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
           return {
             seat: p.seat,
             user_id: p.user_id,
-            username: p.username,
+            ...this.seatIdentity(p),
             stack: p.stack,
             bet: p.bet ?? 0,
             totalInvested: p.totalInvested ?? 0,
@@ -214,7 +255,6 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
             time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
             position: positionLabels.get(p.seat) ?? '',
-            avatar_url: p.avatar_url ?? '', // Bible V8 §2.3
             is_horse: p.is_horse ?? false, // Bible V8 §2.3
           };
         });
@@ -407,7 +447,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
           return {
             seat: p.seat,
             user_id: p.user_id,
-            username: p.username,
+            ...this.seatIdentity(p),
             stack: p.stack,
             bet: p.bet ?? 0,
             totalInvested: p.totalInvested ?? 0, // Bible V8 §2.3
@@ -419,7 +459,6 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id), // Bible V8 §2.3
             time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id), // Bible V8 §2.3
             position: positionLabels.get(p.seat) ?? '', // Bible V8 §2.3, Appendix B
-            avatar_url: p.avatar_url ?? '', // Bible V8 §2.3
             is_horse: p.is_horse ?? false, // Bible V8 §2.3
             // Bible V8 §4.2 — Wait-for-BB flag exposed to clients so the
             // post-BB UI button can render. Walkthrough Step 4 fix
@@ -492,7 +531,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       players: (this.seatedPlayers ?? []).map((p) => ({
         seat: p.seat_number,
         user_id: p.user_id,
-        username: p.username,
+        ...this.seatIdentity(p),
         stack: p.stack,
         bet: 0,
         totalInvested: 0,
@@ -504,7 +543,6 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
         time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
         time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
         position: '',
-        avatar_url: p.avatar_url ?? '',
         is_horse: p.is_horse ?? false,
         is_waiting_for_bb: this.waitingForBB.has(p.user_id),
         hand_name: '',

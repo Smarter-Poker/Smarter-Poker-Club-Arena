@@ -510,6 +510,39 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
 
         const allPlayerIds = allInPlayers.map((p) => p.user_id);
 
+        /**
+         * ── MANDATORY MODES SKIP THE QUESTION (Dan 2026-08-25) ────────────
+         *
+         * "Mandatory Twice" and "Mandatory 3 Times" have been radio buttons on
+         * the creation screen since February that produced the SAME behaviour
+         * as "Player's Choice": the offer went out and either all-in player
+         * could decline a rule the host had made compulsory. `run_it_mode` was
+         * written and never read.
+         *
+         * The host has already decided, so there is nothing to ask, nobody to
+         * time out and no chooser to elect. Straight to the boards.
+         */
+        const forcedRuns = this.runItTwiceEngine.mandatoryRuns(this.tableId);
+        if (forcedRuns) {
+          this.runItTwiceEngine.forceRuns(
+            this.tableId,
+            `${this.tableId}:${this.handCount}`,
+            allPlayerIds,
+            pot,
+            forcedRuns
+          );
+          this.hub?.emitEvent(this.tableId, {
+            type: 'rit_mandatory',
+            table_id: this.tableId,
+            hand_number: this.handCount,
+            allPlayerIds,
+            pot,
+            runs: forcedRuns,
+          });
+          void this.dealAndResolveRIT(allInPlayers);
+          return;
+        }
+
         this.runItTwiceEngine.offer(
           this.tableId,
           `${this.tableId}:${this.handCount}`,

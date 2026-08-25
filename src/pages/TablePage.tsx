@@ -160,6 +160,7 @@ import TournamentBreakScreen from '../components/table/TournamentBreakScreen';
 import TournamentAnnouncementOverlay from '../components/table/TournamentAnnouncementOverlay';
 import KnockoutAnimation, { type KnockoutData } from '../components/tournament/KnockoutAnimation';
 import MysteryBountyChest, {
+  formatBountyTierLabel,
   type MysteryChestData,
 } from '../components/tournament/MysteryBountyChest';
 import { useAnimationQueue } from '../hooks/useAnimationQueue';
@@ -993,8 +994,82 @@ export default function TablePage({
   const knockoutQueue = useAnimationQueue<KnockoutData>();
   const chestQueue = useAnimationQueue<MysteryChestData>();
   const knockout = knockoutQueue.current;
-  const mysteryChest = chestQueue.current;
   const [chestRemoteOpened, setChestRemoteOpened] = useState(false);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  TWO-PHASE MYSTERY BOUNTY REVEAL (Dan sections 19, 21-26, 51-57)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The chest now arrives BEFORE its contents. `mystery_bounty_pending`
+   * carries the award, the queue position and who may tap it — and no amount,
+   * because the surest way to keep a number out of a broadcast is for the
+   * server that builds the broadcast never to have seen it.
+   *
+   * The amount reaches this page by two independent routes, and both must
+   * land in the same place:
+   *
+   *   THE TAP. The designated revealer's client calls
+   *   `fn_mystery_bounty_reveal(awardId, myUserId, false)` itself and gets the
+   *   number straight back. That is the drama — they see it before the table
+   *   does. `revealMysteryBounty` below.
+   *
+   *   THE BROADCAST. The engine calls the same function at the deadline with
+   *   `p_auto = true`, pays, and broadcasts `mystery_bounty_revealed` to the
+   *   whole table. Idempotent and identical, so the private reveal and the
+   *   public one can never disagree.
+   *
+   * This map is where either of them lands. It is keyed by award id, so a
+   * duplicate broadcast (section 80/33) writes the same values over the same
+   * key rather than queueing a second chest, and a reconnect that replays a
+   * reveal cannot double-anything.
+   */
+  const [chestReveals, setChestReveals] = useState<
+    Record<
+      string,
+      {
+        amount: number;
+        tier?: string;
+        tierLabel?: string;
+        isJackpot?: boolean;
+        recipients?: { userId: string; name: string; amount: number }[];
+      }
+    >
+  >({});
+  /**
+   * Award ids this page has already put on screen.
+   *
+   * A ref rather than state because the decision is made synchronously inside
+   * a broadcast handler: pending and revealed for the same award can land in
+   * the same tick, and reading a state value there would see the pre-pending
+   * snapshot and enqueue the chest twice.
+   */
+  const chestSeenRef = useRef<Set<string>>(new Set());
+
+  /**
+   * The chest on screen, with whatever is known about it right now.
+   *
+   * Merged at render rather than mutated into the queue: `useAnimationQueue`
+   * hands out the object it was given, and rewriting queue entries in place
+   * would make "what is showing" depend on when the reveal happened to arrive.
+   * MysteryBountyChest is keyed on the award id precisely so this merge can
+   * produce a new object every render without restarting its animation.
+   */
+  const queuedChest = chestQueue.current;
+  const mysteryChest = useMemo<MysteryChestData | null>(() => {
+    if (!queuedChest) return null;
+    const revealed = queuedChest.awardId ? chestReveals[queuedChest.awardId] : undefined;
+    if (!revealed) return queuedChest;
+    return {
+      ...queuedChest,
+      amount: revealed.amount,
+      amountPending: false,
+      tier: revealed.tier ?? queuedChest.tier,
+      tierLabel: revealed.tierLabel ?? queuedChest.tierLabel,
+      isJackpot: revealed.isJackpot ?? queuedChest.isJackpot,
+      recipients: revealed.recipients ?? queuedChest.recipients,
+    };
+  }, [queuedChest, chestReveals]);
   // The Spin multiplier draw. Server-decided, shown once per tournament.
   const [spinDraw, setSpinDraw] = useState<SpinWheelData | null>(null);
   /**
@@ -1057,6 +1132,161 @@ export default function TablePage({
       // It must never stop the winner from seeing their prize.
       reportError(err, 'TablePage.broadcastChestOpen');
     }
+  }, [tableId]);
+
+  /**
+   * THE TAP (Dan sections 19, 51-54).
+   *
+   * The designated revealer's own client opens the chest — from the browser,
+   * against `fn_mystery_bounty_reveal`, which returns the amount immediately.
+   * That is the entire reason there is a tap: the player who made the knockout
+   * sees the number before the table does.
+   *
+   * WHAT IT CANNOT DO:
+   *   - it cannot re-roll. The chest was drawn and its value fixed at reserve
+   *     time, inside `fn_mystery_bounty_reserve`. This call only uncovers it;
+   *     calling it twice returns the identical payload.
+   *   - it cannot pay. Money moves in `fn_mystery_bounty_pay`, which only the
+   *     engine calls, once, after its own idempotent reveal.
+   *   - it cannot fire twice. MysteryBountyChest requests exactly one reveal
+   *     per award, from the tap and the auto-open alike, and the award id key
+   *     below means a second answer overwrites rather than accumulates.
+   *
+   * If it fails, nothing is lost: the engine reveals the same award on its own
+   * deadline and broadcasts the result to everyone including this client. The
+   * tapper simply loses their head start.
+   */
+  const revealMysteryBounty = useCallback(
+    async (awardId: string) => {
+      if (!awardId || !userId || userId === 'guest') return;
+      try {
+        const { data, error } = await supabase.rpc('fn_mystery_bounty_reveal', {
+          p_award_id: awardId,
+          p_actor_user_id: userId,
+          p_auto: false,
+        });
+        const res = (data ?? {}) as {
+          ok?: boolean;
+          amount_cents?: number;
+          tier?: string;
+          is_jackpot?: boolean;
+          recipients?: Array<{ user_id: string; amount_cents: number }>;
+        };
+        if (error || !res.ok || typeof res.amount_cents !== 'number') return;
+        setChestReveals((prev) => ({
+          ...prev,
+          [awardId]: {
+            amount: Math.round(res.amount_cents! / 100),
+            tier: res.tier,
+            tierLabel: formatBountyTierLabel(res.tier),
+            isJackpot: !!res.is_jackpot,
+            // The private reveal knows the ids and the shares but not the
+            // names; the table broadcast that follows carries both and
+            // overwrites this entry. Until then the split is shown by share.
+            recipients:
+              (res.recipients ?? []).length > 1
+                ? res.recipients!.map((r) => ({
+                    userId: r.user_id,
+                    name: r.user_id === userId ? 'You' : 'Player',
+                    amount: Math.round(r.amount_cents / 100),
+                  }))
+                : undefined,
+          },
+        }));
+      } catch (err) {
+        reportError(err, 'TablePage.revealMysteryBounty');
+      }
+    },
+    [userId]
+  );
+
+  /**
+   * RECONNECT / LATE ARRIVAL (Dan section 57).
+   *
+   * "Reconnect during pending, waiting or reveal restores the CURRENT state
+   * from the server — never re-rolls, never re-pays, never restarts the hand."
+   *
+   * Realtime broadcasts are fire-and-forget: a player who refreshed, tabbed
+   * away, dropped signal in a lift, or simply opened the table two seconds
+   * after the knockout has already missed `mystery_bounty_pending` and it will
+   * never be sent again. Their table is stopped — the engine's reveal gate is
+   * closed until the queue empties — and they are looking at a felt where
+   * nothing happens for seventeen seconds with no explanation.
+   *
+   * `fn_mystery_bounty_table_state` is the one read that answers it, and it
+   * withholds `amount_cents` for as long as the award is still `reserved`, so
+   * restoring the state cannot leak what is in an unopened chest (section 19).
+   * The three bounty tables have RLS on with NO select policy for exactly that
+   * reason; this RPC is the only way in and it is SECURITY DEFINER.
+   *
+   * Nothing here can pay or re-roll: it is a SELECT wrapped in a function.
+   */
+  const restoreMysteryBountyState = useCallback(() => {
+    if (!tableId) return () => {};
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data, error } = await supabase.rpc('fn_mystery_bounty_table_state', {
+          p_table_id: tableId,
+        });
+        if (cancelled || error) return;
+        const open = ((data as { open?: any[] } | null)?.open ?? []) as any[];
+        for (const a of open) {
+          const awardKey = String(a?.award_id || '');
+          if (!awardKey || chestSeenRef.current.has(awardKey)) continue;
+          chestSeenRef.current.add(awardKey);
+          const cents = typeof a?.amount_cents === 'number' ? a.amount_cents : null;
+          const recipients: Array<{ userId: string; name: string; amount: number }> = Array.isArray(
+            a?.recipients
+          )
+            ? a.recipients.map((r: any) => ({
+                userId: String(r?.user_id ?? ''),
+                name: String(r?.username ?? 'Player'),
+                amount: typeof r?.amount_cents === 'number' ? Math.round(r.amount_cents / 100) : 0,
+              }))
+            : [];
+          if (cents !== null) {
+            // Already revealed before this client arrived. Seed the amount so
+            // the chest opens onto the real figure rather than asking for it
+            // again — which would be harmless (the RPC is idempotent) but is
+            // a round trip for something we have already been told.
+            setChestReveals((prev) => ({
+              ...prev,
+              [awardKey]: {
+                amount: Math.round(cents / 100),
+                tier: a?.tier ?? undefined,
+                tierLabel: formatBountyTierLabel(a?.tier),
+                isJackpot: !!a?.is_jackpot,
+                recipients: recipients.length > 1 ? recipients : undefined,
+              },
+            }));
+          }
+          chestQueue.enqueue({
+            awardId: awardKey,
+            knockerUserId: String(a?.designated_revealer || ''),
+            knockerName: String(a?.designated_revealer_name || 'Player'),
+            eliminatedName: String(a?.eliminated?.username || 'Player'),
+            amount: cents !== null ? Math.round(cents / 100) : 0,
+            amountPending: cents === null,
+            tier: a?.tier ?? undefined,
+            tierLabel: formatBountyTierLabel(a?.tier),
+            isJackpot: !!a?.is_jackpot,
+            queueIndex: 1,
+            queueTotal: open.length,
+            recipients: recipients.length > 1 ? recipients : undefined,
+          });
+        }
+      } catch (err) {
+        // A restore that fails leaves the table exactly as it is today: the
+        // engine still reveals, pays and broadcasts on its own deadline, and
+        // this client picks the sequence up from there.
+        reportError(err, 'TablePage.restoreMysteryBountyState');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableId]);
 
   // Listen for that tap. Every client subscribes, including the winner's —
@@ -1224,6 +1454,16 @@ export default function TablePage({
       isBountyTournament: false,
     };
   });
+
+  /**
+   * Run the section-57 restore once this table is known to be a tournament
+   * table. Gated on `tournamentId` rather than fired at mount so a cash table
+   * — which can never hold a mystery bounty award — makes no call at all.
+   */
+  useEffect(() => {
+    if (!tableState.tournamentId) return;
+    return restoreMysteryBountyState();
+  }, [tableState.tournamentId, restoreMysteryBountyState]);
 
   // REST fetch for initial seats while WS connects (3-5s speedup)
   useEffect(() => {
@@ -6174,6 +6414,51 @@ export default function TablePage({
                     `[TablePage] Rebuy: ${rebuyData.userId.slice(0, 8)} +${rebuyData.chips} chips`
                   );
                 }
+              } else if (data?.type === 'mystery_bounty_pending') {
+                // ── THE CHEST ARRIVES, THE AMOUNT DOES NOT (Dan section 19) ──
+                //
+                // A knockout has been scored and a chest reserved for it. The
+                // engine has already stopped this table (sections 21-26): no
+                // button move, no next hand, no blinds, no action timers until
+                // the queue empties. All this page has to do is put the chest
+                // on screen and let the designated revealer tap it.
+                //
+                // There is deliberately NO AMOUNT in this payload. The number
+                // arrives from `fn_mystery_bounty_reveal` — either because the
+                // revealer tapped, or because the engine's deadline fired.
+                const p = data.payload || {};
+                // Same table scoping as the reveal: this rides the tournament
+                // channel, so a knockout on table 3 must not open a chest here.
+                if (p.tableId && p.tableId !== tableId) return;
+                const awardKey = String(p.awardId || '');
+                if (!awardKey || chestSeenRef.current.has(awardKey)) return;
+                chestSeenRef.current.add(awardKey);
+                chestQueue.enqueue({
+                  awardId: awardKey,
+                  // SECTIONS 52/53: exactly one player may tap. Everyone else
+                  // at the table, and every spectator, watches. On a split the
+                  // server has already picked which claimant that is.
+                  knockerUserId: String(p.designatedRevealer || ''),
+                  knockerName: String(p.designatedRevealerName || 'Player'),
+                  eliminatedName: String(p.eliminatedName || 'Player'),
+                  amount: 0,
+                  amountPending: true,
+                  queueIndex: Number(p.queueIndex) || 1,
+                  queueTotal: Number(p.queueTotal) || 1,
+                });
+                setChestRemoteOpened(false);
+              } else if (data?.type === 'mystery_bounty_complete') {
+                // SECTION 63: reveal, animation done, UI clears, button moves,
+                // next hand. The queue at this table is empty, so nothing more
+                // is coming and the reveal cache can be dropped.
+                //
+                // The overlay is NOT force-closed here: the last chest's own
+                // dismissal timer owns that, and cutting it short would be the
+                // "rushed animation" Dan's standing rule forbids. This only
+                // stops the page holding award ids nobody will ask about again.
+                const c = data.payload || {};
+                if (c.tableId && c.tableId !== tableId) return;
+                setChestReveals({});
               } else if (
                 data?.type === 'bounty_collected' ||
                 data?.type === 'mystery_bounty_revealed'
@@ -6207,16 +6492,66 @@ export default function TablePage({
                   if (b.tableId && b.tableId !== tableId) {
                     return;
                   }
-                  chestQueue.enqueue({
-                    knockerUserId: b.knockerUserId || '',
-                    knockerName: b.knockerName || 'Player',
-                    eliminatedName: b.eliminatedName || 'Player',
-                    amount: Number(b.amount) || 0,
-                    tierLabel: b.tierLabel,
-                    isJackpot: !!b.isJackpot,
-                    avgBounty: Number(b.avgBounty) || undefined,
-                  });
-                  setChestRemoteOpened(false);
+                  // TWO-PHASE REVEAL. The amount now arrives in CENTS on
+                  // `amountCents`; `amount` is the pre-2026-08-25 field and is
+                  // kept as the fallback so an older engine build still shows a
+                  // figure rather than zero.
+                  const revealedAmount =
+                    typeof b.amountCents === 'number'
+                      ? Math.round(b.amountCents / 100)
+                      : Number(b.amount) || 0;
+                  const revealedRecipients: Array<{
+                    userId: string;
+                    name: string;
+                    amount: number;
+                  }> = Array.isArray(b.recipients)
+                    ? b.recipients.map((r: any) => ({
+                        userId: String(r.userId ?? r.user_id ?? ''),
+                        name: String(r.name ?? r.username ?? 'Player'),
+                        amount:
+                          typeof r.amountCents === 'number'
+                            ? Math.round(r.amountCents / 100)
+                            : Number(r.amount) || 0,
+                      }))
+                    : [];
+                  if (b.awardId) {
+                    // Keyed by award: a duplicate broadcast (section 80/33)
+                    // overwrites the same entry instead of queueing a second
+                    // chest or crediting anything twice.
+                    setChestReveals((prev) => ({
+                      ...prev,
+                      [String(b.awardId)]: {
+                        amount: revealedAmount,
+                        tier: b.tier,
+                        tierLabel: b.tierLabel || formatBountyTierLabel(b.tier),
+                        isJackpot: !!b.isJackpot,
+                        recipients: revealedRecipients.length > 1 ? revealedRecipients : undefined,
+                      },
+                    }));
+                  }
+                  // Enqueue only if the pending broadcast never reached us —
+                  // a client that joined between the reserve and the reveal,
+                  // or an engine build old enough not to send one. The normal
+                  // path already has this chest on screen.
+                  const awardKey = b.awardId ? String(b.awardId) : '';
+                  if (!awardKey || !chestSeenRef.current.has(awardKey)) {
+                    if (awardKey) chestSeenRef.current.add(awardKey);
+                    chestQueue.enqueue({
+                      awardId: awardKey || undefined,
+                      knockerUserId: b.knockerUserId || '',
+                      knockerName: b.knockerName || 'Player',
+                      eliminatedName: b.eliminatedName || 'Player',
+                      amount: revealedAmount,
+                      tier: b.tier,
+                      tierLabel: b.tierLabel || formatBountyTierLabel(b.tier),
+                      isJackpot: !!b.isJackpot,
+                      avgBounty: Number(b.avgBounty) || undefined,
+                      queueIndex: Number(b.queueIndex) || undefined,
+                      queueTotal: Number(b.queueTotal) || undefined,
+                      recipients: revealedRecipients.length > 1 ? revealedRecipients : undefined,
+                    });
+                    setChestRemoteOpened(false);
+                  }
                 } else {
                   knockoutQueue.enqueue({
                     knockerName: b.knockerName || 'Player',
@@ -11193,6 +11528,11 @@ export default function TablePage({
         viewerUserId={userId}
         remoteOpened={chestRemoteOpened}
         onBroadcastOpen={broadcastChestOpen}
+        /* THE TAP (section 19). Fired once per chest, by the designated
+           revealer's client only, from the tap and the auto-open alike. */
+        onRequestReveal={
+          mysteryChest?.awardId ? () => void revealMysteryBounty(mysteryChest.awardId!) : undefined
+        }
         queuedBehind={chestQueue.pending}
         onDone={() => {
           chestQueue.complete();

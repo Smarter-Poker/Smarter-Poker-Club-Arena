@@ -1,0 +1,186 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * MYSTERY BOUNTY — WHEN THE MYSTERY PHASE OPENS
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Sections 1, 2 and 3. Activation needs THREE things to be true at once, and
+ * every one of them exists because getting it wrong costs real money:
+ *
+ *   (a) ENTRY IS CLOSED. Late registration, rebuys, re-entries and the add-on
+ *       window must all be finished. Until they are, `tournaments.bounty_pool`
+ *       is still growing — every new entry adds to it — so an inventory seeded
+ *       before the close would be built from a pool smaller than the one the
+ *       event ends up holding, and the difference could never be paid out. The
+ *       engine already has exactly one flag that means "the pool has stopped
+ *       moving": `prize_pool_finalized`, which is set at the three sites that
+ *       close the entry window (start with no late reg, the level that passes
+ *       the late-reg cap, and finalizeAfterAddOn). It is the same close for
+ *       the bounty pool as for the prize pool, so it is the same flag.
+ *
+ *   (b) THE THRESHOLD IS REACHED. Whichever of the three configured modes the
+ *       club chose. Below the threshold, knockouts pay the ordinary bounty out
+ *       of the regular half of the pool; from here on they open chests.
+ *
+ *   (c) NO CARDS ARE IN THE AIR ANYWHERE. Activation may only flip BETWEEN
+ *       hands. A player who committed his stack while a knockout was worth a
+ *       flat 5 must not find, when the hand is scored, that it was worth a
+ *       chest — that is the information changing under a decision already
+ *       made. Because the flip is global (one inventory for the whole event),
+ *       "between hands" means every table, not just one.
+ *
+ * The predicate is a pure function so it can be tested without a tournament,
+ * a database or a clock. The engine hook underneath it does nothing but gather
+ * the inputs.
+ */
+
+export type MysteryBountyActivationMode = 'at_the_money' | 'percent_field' | 'player_count';
+
+export type MysteryBountyStage = 'pending' | 'active' | 'complete';
+
+export interface MysteryBountyActivationInputs {
+  /** Is this a mystery bounty tournament at all? */
+  readonly isMysteryBounty: boolean;
+  /** `tournaments.mystery_bounty_stage`. Only 'pending' can activate. */
+  readonly stage: MysteryBountyStage;
+  /** `prize_pool_finalized` — the single flag meaning entry is closed. */
+  readonly entryClosed: boolean;
+  /** True only when no table in the event has a hand in progress. */
+  readonly allTablesBetweenHands: boolean;
+  /** Players who can still be knocked out right now. */
+  readonly playersRemaining: number;
+  /** Total entries the event took, including rebuys and re-entries. */
+  readonly totalEntries: number;
+  /** How many places the payout structure pays. Used by 'at_the_money'. */
+  readonly paidPlaces: number;
+  readonly mode: MysteryBountyActivationMode;
+  /** Percent for 'percent_field', an absolute count for 'player_count'. */
+  readonly modeValue: number | null | undefined;
+  /** The mystery half of the bounty pool, in cents. Nothing to draw if zero. */
+  readonly mysteryPoolCents: number;
+}
+
+export interface MysteryBountyActivationDecision {
+  readonly activate: boolean;
+  /** Why not, for the log. `null` when activating. */
+  readonly reason:
+    | null
+    | 'not_a_mystery_bounty'
+    | 'already_activated'
+    | 'entry_still_open'
+    | 'hand_in_progress'
+    | 'threshold_not_reached'
+    | 'no_players'
+    | 'empty_pool';
+  /** How many chests to build. Meaningful only when `activate` is true. */
+  readonly drawCount: number;
+}
+
+/**
+ * Has the configured threshold been crossed?
+ *
+ * Exported separately because the lobby wants to show "chests open at 27
+ * players" without asking whether a hand is in progress.
+ */
+export function mysteryBountyThresholdReached(
+  mode: MysteryBountyActivationMode,
+  modeValue: number | null | undefined,
+  playersRemaining: number,
+  totalEntries: number,
+  paidPlaces: number
+): boolean {
+  if (playersRemaining <= 0) return false;
+  switch (mode) {
+    case 'player_count': {
+      const target = Math.floor(Number(modeValue) || 0);
+      // A misconfigured zero must not open the chests on the first hand of the
+      // event; treat it as "not configured" and refuse.
+      if (target <= 0) return false;
+      return playersRemaining <= target;
+    }
+    case 'percent_field': {
+      const pct = Number(modeValue) || 0;
+      if (pct <= 0 || totalEntries <= 0) return false;
+      // Ceil, not round: "the last 20%" of a 27-entry field is 6 players, and
+      // rounding down would open the chests one bustout late, after somebody
+      // had already been knocked out for a flat bounty at the boundary.
+      return playersRemaining <= Math.ceil((totalEntries * pct) / 100);
+    }
+    case 'at_the_money':
+    default: {
+      // The bubble bursts when the field reaches the number of paid places.
+      // A structure with no paid places is unusable; refuse rather than guess.
+      if (paidPlaces <= 0) return false;
+      return playersRemaining <= paidPlaces;
+    }
+  }
+}
+
+/** The whole predicate. Pure. */
+export function shouldActivateMysteryBounty(
+  input: MysteryBountyActivationInputs
+): MysteryBountyActivationDecision {
+  const no = (reason: MysteryBountyActivationDecision['reason']) => ({
+    activate: false,
+    reason,
+    drawCount: 0,
+  });
+
+  if (!input.isMysteryBounty) return no('not_a_mystery_bounty');
+  if (input.stage !== 'pending') return no('already_activated');
+  if (!input.entryClosed) return no('entry_still_open');
+  if (input.playersRemaining <= 0) return no('no_players');
+  if (input.mysteryPoolCents <= 0) return no('empty_pool');
+  if (
+    !mysteryBountyThresholdReached(
+      input.mode,
+      input.modeValue,
+      input.playersRemaining,
+      input.totalEntries,
+      input.paidPlaces
+    )
+  ) {
+    return no('threshold_not_reached');
+  }
+  // Checked LAST, deliberately. Every other reason is stable — it will still
+  // be the reason on the next sweep — but "a hand is in progress" is a
+  // transient that resolves itself in seconds, and checking it first would
+  // hide the real reason from the log for the whole tournament.
+  if (!input.allTablesBetweenHands) return no('hand_in_progress');
+
+  // ONE CHEST PER SURVIVOR. Every player who can still be knocked out is
+  // carrying a chest, so the inventory is exhausted at exactly the moment the
+  // event reaches one player - and that last player is the champion, whose own
+  // chest is the residual settled to them at completion.
+  return { activate: true, reason: null, drawCount: input.playersRemaining };
+}
+
+/**
+ * How the mystery pool is carved out of the bounty pool.
+ *
+ * The bounty pool is split in two. `regularPercent` funds ordinary knockouts
+ * for the whole pre-activation phase; `mysteryPercent` funds the chests. They
+ * are stored as two separate columns rather than one, because a club that sets
+ * them to something other than 50/50 must be able to see both numbers, and
+ * because a single column would leave the reader guessing which half it named.
+ *
+ * They are normalised here rather than trusted: if they do not sum to 100 the
+ * mystery half is taken as its share of whatever they DO sum to, so a club
+ * that types 60 and 60 gets a 50/50 split rather than an event that tries to
+ * pay out 120% of its bounty pool.
+ */
+export function mysteryPoolCents(
+  bountyPoolCents: number,
+  mysteryPercent: number | null | undefined,
+  regularPercent: number | null | undefined
+): number {
+  if (!Number.isInteger(bountyPoolCents) || bountyPoolCents <= 0) return 0;
+  const m = Math.max(0, Number(mysteryPercent ?? 50) || 0);
+  const r = Math.max(0, Number(regularPercent ?? 50) || 0);
+  const total = m + r;
+  if (total <= 0) return 0;
+  // Floor: the regular half keeps the odd cent. It is spent knockout by
+  // knockout against a pool that is checked for exhaustion on every payment,
+  // whereas the mystery half is committed to a fixed inventory up front and
+  // an extra cent there would leave the event unable to reconcile.
+  return Math.floor((bountyPoolCents * m) / total);
+}

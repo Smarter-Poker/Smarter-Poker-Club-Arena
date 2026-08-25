@@ -2292,14 +2292,36 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   );
 
   /** Row selection — opens the game lobby panel. NEVER joins or spends. */
+  /**
+   * THE single route into a tournament lobby. Dan 2026-08-25:
+   * "when you click any of the MTT fields in the display inside of ALL or MTT,
+   *  it should open to the tournament lobby."
+   *
+   * It used to be gated on status, so a RUNNING / LATE-REG / COMPLETED event
+   * opened the lobby while a REGISTERING one opened the pre-commit drawer
+   * instead. Same row, same tab, two different destinations depending on a
+   * status the player cannot see — which is why it read as broken.
+   *
+   * The pathname guard makes this idempotent: LobbyTable fires onSelect on
+   * click AND onActivate on double click, both wired here, so without it a
+   * double tap pushes two identical history entries and Back appears dead.
+   */
+  const openTournamentLobby = useCallback(
+    (tournamentId: string) => {
+      const target = `/tournaments/${tournamentId}`;
+      if (window.location.pathname.endsWith(target)) return;
+      navigate(target);
+    },
+    [navigate]
+  );
+
   const openEntry = useCallback(
     (entry: LobbyEntry) => {
       haptic.selection();
-      if (
-        entry.kind === 'mtt' &&
-        (entry.status === 'running' || entry.status === 'late_reg' || entry.status === 'completed')
-      ) {
-        navigate(`/tournaments/${entry.id}`);
+      // Kind alone decides, never status. Cash, Spin and Sit & Go keep the
+      // pre-commit drawer: their buy-in is chosen there.
+      if (entry.kind === 'mtt') {
+        openTournamentLobby(entry.id);
         return;
       }
       setSelectedId(entry.id);
@@ -2310,7 +2332,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       // stalling on a network fetch. No-op when idle preload already ran.
       preloadRoute(`/table/${entry.id}`);
     },
-    [navigate]
+    [openTournamentLobby]
   );
 
   const handleJoinTable = useCallback(
@@ -2362,7 +2384,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
              table when it does — so that is where a paid entry belongs.
              Deferred a tick for the same reason the join path defers: let the
              panel unmount before the router transition. */
-          setTimeout(() => navigate(`/tournaments/${t.id}`), 0);
+          setTimeout(() => openTournamentLobby(t.id), 0);
         }
       );
     },
@@ -2508,7 +2530,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                "THE DETAILS BUTTON SHOULD TAKE YOU TO THE TOURNAMENT LOBBY
                SCREEN" — unconditionally, not only once it is running. */
       onViewTable: (e) =>
-        e.kind === 'cash' ? navigate(`/table/${e.id}`) : navigate(`/tournaments/${e.id}`),
+        e.kind === 'cash' ? navigate(`/table/${e.id}`) : openTournamentLobby(e.id),
     }),
     [
       waitlistedTableIds,

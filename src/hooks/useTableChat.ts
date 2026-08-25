@@ -58,6 +58,12 @@ export interface UseTableChatReturn {
   isChatMuted: boolean;
   setIsChatMuted: React.Dispatch<React.SetStateAction<boolean>>;
   handleSendChatMessage: (message: string) => void;
+  /**
+   * True when the host has switched chat off for this table. The RLS policy
+   * refuses the insert either way (Dan 2026-08-25) — this is so the composer
+   * can say so instead of swallowing the message.
+   */
+  isChatBanned: boolean;
   // Reaction parsing
   activeReactions: ReactionEvent[];
   parseIncomingMessage: (content: string, senderId: string) => boolean;
@@ -78,6 +84,7 @@ export function useTableChat(
   onThrowReceived?: (fromSeat: number, toSeat: number, throwableId: string) => void
 ): UseTableChatReturn {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isChatBanned, setIsChatBanned] = useState(false);
   const [isChatCollapsed, setIsChatCollapsed] = useState(true);
   const [isChatMuted, setIsChatMuted] = useState(false);
   const [activeReactions, setActiveReactions] = useState<ReactionEvent[]>([]);
@@ -85,6 +92,36 @@ export function useTableChat(
   const reactionIdRef = useRef(0);
   const pendingTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const lastSendTimestampRef = useRef(0);
+  const isChatBannedRef = useRef(false);
+
+  /* Dan 2026-08-25: `tables.ban_chat` was read only by the tournament screens.
+     A cash host could switch chat off and every player kept talking. The rule
+     is enforced in the table_chat INSERT policy, because the send is a direct
+     PostgREST call from the browser and there is no server hop to gate; this
+     read exists purely so the UI can hide the composer rather than accept a
+     message and drop it. */
+  useEffect(() => {
+    if (!tableId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data } = await supabase
+          .from('tables')
+          .select('ban_chat')
+          .eq('id', tableId)
+          .maybeSingle();
+        if (cancelled) return;
+        const banned = data?.ban_chat === true;
+        isChatBannedRef.current = banned;
+        setIsChatBanned(banned);
+      } catch {
+        /* a failed read leaves chat enabled - the policy is the enforcement */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tableId]);
   const onThrowReceivedRef = useRef(onThrowReceived);
   useEffect(() => {
     onThrowReceivedRef.current = onThrowReceived;
@@ -402,6 +439,9 @@ export function useTableChat(
 
       // Rate limiter: enforce 1 message/second
       const now = Date.now();
+      // The policy would refuse this anyway; returning here keeps the message
+      // in the box instead of optimistically rendering one that never lands.
+      if (isChatBannedRef.current) return;
       if (now - lastSendTimestampRef.current < RATE_LIMIT_MS) return;
       lastSendTimestampRef.current = now;
 
@@ -454,6 +494,7 @@ export function useTableChat(
     isChatMuted,
     setIsChatMuted,
     handleSendChatMessage,
+    isChatBanned,
     activeReactions,
     parseIncomingMessage,
     unreadCount,

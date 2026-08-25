@@ -4953,7 +4953,13 @@ export default function TablePage({
   useMasterBusSubscription('TABLE_MENU_ACTION', (event: any) => {
     if (event.tableId && event.tableId !== tableId) return;
     if (event.action === 'STAND_UP_BB') {
-      setStandUpNextBB(!standUpNextBB);
+      // STALE CLOSURE. This bus callback is registered once, so `standUpNextBB`
+      // inside it is whatever the value was at registration - `!standUpNextBB`
+      // can therefore toggle against a stale reading and land on the value it
+      // already had, so the menu item stops responding. The functional updater
+      // always sees the current value. (The onClick further down is fine: it is
+      // recreated every render.)
+      setStandUpNextBB((prev) => !prev);
     } else if (event.action === 'AUTO_TOP_UP') {
       setIsAutoRebuyEnabled(!isAutoRebuyEnabled);
     } else if (event.action === 'TOGGLE_SOUNDS') {

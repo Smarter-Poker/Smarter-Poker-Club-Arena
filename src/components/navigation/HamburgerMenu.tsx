@@ -1028,46 +1028,87 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             padding: '8px 16px 12px',
           }}
         >
+          {/*
+            THE ONLY IDS THAT ARE REAL CARD BACKS.
+
+            This list used to read default / emerald / crimson / royal / gold /
+            midnight / obsidian / neon. Six of those eight match NOTHING - not
+            CARD_BACK_IDS in CardImage.tsx, not CARD_BACK_ALIASES - so
+            normalizeCardBack sent every one of them to classic_blue. Every tile
+            painted the same navy back and picking any of them changed nothing
+            on the felt.
+
+            That is the identical defect Dan recorded in ThemeSettingsModal on
+            2026-08-20 (standard-red / premium-gold / premium-platinum, same
+            outcome). It was fixed there and left standing here, because the two
+            menus keep their own copy of the catalogue.
+
+            Every id here is in CARD_BACK_IDS and has artwork on disk under
+            public/cards/backs/table/. neon, diamond, dragon and galaxy are real
+            designs this menu was never offering at all.
+            vipOnly mirrors it too, so this menu and the shop agree on what is
+            paid rather than offering a premium back as if it were free.
+          */}
           {[
             {
-              id: 'default',
-              name: 'Deep Ocean',
-              bg: 'linear-gradient(145deg, rgba(8, 20, 40, 0.9), rgba(5, 12, 28, 0.95))',
+              id: 'classic_blue',
+              name: 'Classic Blue',
+              bg: 'linear-gradient(135deg, #1e3a5f, #0d2137)',
+              vipOnly: false,
             },
             {
-              id: 'emerald',
-              name: 'Emerald Night',
-              bg: 'linear-gradient(145deg, rgba(5, 30, 20, 0.9), rgba(3, 18, 12, 0.95))',
-            },
-            {
-              id: 'crimson',
-              name: 'Crimson Velvet',
-              bg: 'linear-gradient(145deg, rgba(40, 8, 15, 0.9), rgba(28, 5, 10, 0.95))',
+              id: 'classic_red',
+              name: 'Classic Red',
+              bg: 'linear-gradient(135deg, #8b0000, #4a0000)',
+              vipOnly: false,
             },
             {
               id: 'royal',
-              name: 'Royal Purple',
-              bg: 'linear-gradient(145deg, rgba(20, 8, 40, 0.9), rgba(12, 5, 28, 0.95))',
+              name: 'Royal',
+              bg: 'linear-gradient(135deg, #4a0080, #1a0030)',
+              vipOnly: false,
             },
             {
               id: 'gold',
-              name: 'Gold Rush',
-              bg: 'linear-gradient(145deg, rgba(35, 28, 8, 0.9), rgba(24, 18, 5, 0.95))',
+              name: 'Premium Gold',
+              bg: 'linear-gradient(135deg, #ffd700, #b8860b)',
+              vipOnly: true,
             },
             {
-              id: 'midnight',
-              name: 'Midnight Ice',
-              bg: 'linear-gradient(145deg, rgba(5, 10, 35, 0.9), rgba(3, 6, 22, 0.95))',
+              id: 'holographic',
+              name: 'Holographic',
+              bg: 'linear-gradient(135deg, #d3d3d3, #a9a9a9)',
+              vipOnly: true,
             },
             {
-              id: 'obsidian',
-              name: 'Obsidian',
-              bg: 'linear-gradient(145deg, rgba(15, 15, 15, 0.9), rgba(8, 8, 8, 0.95))',
+              id: 'carbon',
+              name: 'Carbon Fiber',
+              bg: 'linear-gradient(135deg, #434343, #000000)',
+              vipOnly: true,
             },
             {
               id: 'neon',
-              name: 'Neon Cyber',
-              bg: 'linear-gradient(145deg, rgba(5, 15, 25, 0.9), rgba(3, 8, 18, 0.95))',
+              name: 'Neon',
+              bg: 'linear-gradient(135deg, #00f0ff, #0066ff)',
+              vipOnly: true,
+            },
+            {
+              id: 'diamond',
+              name: 'Diamond',
+              bg: 'linear-gradient(135deg, #b9f2ff, #4aa3c7)',
+              vipOnly: true,
+            },
+            {
+              id: 'dragon',
+              name: 'Dragon',
+              bg: 'linear-gradient(135deg, #7a1f1f, #2b0808)',
+              vipOnly: true,
+            },
+            {
+              id: 'galaxy',
+              name: 'Galaxy',
+              bg: 'linear-gradient(135deg, #2b1055, #7597de)',
+              vipOnly: true,
             },
           ].map((preset) => {
             const isSelected = selectedCardColor === preset.id;

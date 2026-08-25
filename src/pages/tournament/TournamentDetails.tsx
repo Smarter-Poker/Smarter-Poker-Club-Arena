@@ -1,72 +1,75 @@
 /**
- * ♠ CLUB ARENA — Tournament Details Page
- * premium-style tournament registration (PLAY CHIPS ONLY)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  CLUB ARENA - Tournament Lobby (PLAY CHIPS ONLY)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * This file is the SHELL. It loads the event, keeps it live, owns registration
+ * and owns the footer. It draws no tab content of its own: the seven tabs are
+ * seven components under `components/tournament/details/`, and each one takes
+ * exactly the `TournamentTabProps` contract built once by `tabProps` below.
+ *
+ * WHAT USED TO BE HERE. Seven inline tab blocks, roughly 1,100 lines of them,
+ * plus a duplicated title band that printed the same rule badges the Detail tab
+ * already draws. The blocks are gone; every behaviour they carried moved into
+ * the tab that owns the question it answers, and nothing was dropped:
+ *
+ *   the countdown numeral + TournamentClock  -> DetailOverviewTab hero band
+ *   the quick-stats grid                     -> DetailOverviewTab stat grid
+ *   the game-info label/value list           -> DetailOverviewTab info grid
+ *   the final-table deal vote + its poll     -> DetailOverviewTab (one poll now)
+ *   RegistrationApprovalsPanel               -> DetailOverviewTab
+ *   HandForHandBanner                        -> DetailOverviewTab
+ *   the completed-event podium               -> DetailOverviewTab
+ *   BlindLevelProgress                       -> BlindsTab
+ *   LiveChipCounts + TournamentStandings     -> RankingTab (one tab, was two)
+ *   the entry list                           -> EntriesTab
+ *   the union sentence                       -> UnionsTab
+ *   the table card grid                      -> TablesTab
+ *   the payout table + bounty pool           -> RewardsTab
+ *   the mystery bounty ladder                -> RewardsTab (MysteryBountyPanel)
+ *
+ * THE SHELL DOES NOT SCROLL. Dan 2026-08-25: the Detail tab shows everything on
+ * one overview with no scrolling. `.tournament-details` is a fixed-height flex
+ * column - [header][tabs][title][content][footer] - and only `.details-content`
+ * grows. Each tab scrolls inside itself. The height is MEASURED, not `100dvh`;
+ * see the measurement effect for why a viewport unit and a token constant are
+ * both wrong here.
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { tournamentService } from '../../services/TournamentService';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import type { Tournament } from '../../types/database.types';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import TournamentStandings from '../../components/tournament/TournamentStandings';
-import BlindLevelProgress from '../../components/tournament/BlindLevelProgress';
-import LiveChipCounts from '../../components/tournament/LiveChipCounts';
-import PayoutStructure from '../../components/tournament/PayoutStructure';
-import TournamentStatsDashboard from '../../components/tournament/TournamentStatsDashboard';
 import './TournamentDetails.css';
 import { useToast } from '../../components/common/Toast';
 import PageErrorBoundary from '../../components/common/PageErrorBoundary';
-import { TournamentClock } from '../../components/tournament/TournamentClock';
-import { HandForHandBanner } from '../../components/tournament/HandForHandBanner';
 import { FinalTableOverlay } from '../../components/tournament/FinalTableOverlay';
-import RegistrationApprovalsPanel from '../../components/tournament/RegistrationApprovalsPanel';
+import MysteryBountyCelebration from '../../components/tournament/MysteryBountyCelebration';
+import DetailOverviewTab from '../../components/tournament/details/DetailOverviewTab';
+import BlindsTab from '../../components/tournament/details/BlindsTab';
+import RankingTab from '../../components/tournament/details/RankingTab';
+import EntriesTab from '../../components/tournament/details/EntriesTab';
+import UnionsTab from '../../components/tournament/details/UnionsTab';
+import TablesTab from '../../components/tournament/details/TablesTab';
+import RewardsTab from '../../components/tournament/details/RewardsTab';
+import type {
+  NormalisedBlindLevel,
+  TabId,
+  TournamentEntry,
+  TournamentTable,
+  TournamentTabProps,
+} from '../../components/tournament/details/types';
+import { TABS, normaliseTabId } from '../../components/tournament/details/types';
+import { blindLevelMinutes } from '../../components/lobby/tournamentFigures';
 import { reportError } from '../../utils/errorReporter';
-import { spinMultiplierLabel } from '../../utils/spinReveal';
-import { formatBuyIn, money } from '../../utils/buyIn';
+import { formatBuyIn } from '../../utils/buyIn';
 import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
-import MysteryBountyPanel from '../../components/tournament/MysteryBountyPanel';
 import { useMysteryBounty } from '../../hooks/useMysteryBounty';
-import {
-  activationStatusLine,
-  formatCents,
-  topBountyCents,
-} from '../../services/MysteryBountyService';
 import { openTableAsObserver } from '../../utils/observeTable';
-
-type TabId =
-  | 'detail'
-  | 'blinds'
-  | 'chips'
-  | 'entries'
-  | 'ranking'
-  | 'unions'
-  | 'tables'
-  | 'rewards'
-  | 'mystery';
-
-interface TournamentEntry {
-  id: string;
-  user_id: string;
-  username: string;
-  avatar_url: string | null;
-  position?: number;
-  chips?: number;
-  status: 'registered' | 'playing' | 'eliminated' | 'finished' | 'winner';
-  table_id?: string | null;
-}
-
-interface TournamentTable {
-  id: string;
-  name: string;
-  status: string;
-  max_players: number;
-  current_players: number;
-  small_blind: number;
-  big_blind: number;
-}
 
 /** Ordinal suffix helper (1st, 2nd, 3rd...) */
 function getOrdinal(n: number): string {
@@ -77,7 +80,7 @@ function getOrdinal(n: number): string {
 
 /**
  * Dan 2026-08-19: `tournamentIdOverride` lets this page render OUTSIDE its own
- * route — MultiTablePage embeds it in a lobby tab so a seated player can
+ * route - MultiTablePage embeds it in a lobby tab so a seated player can
  * browse and register for a tournament while their other tables keep dealing.
  * Route usage is unchanged: without the prop the id comes from useParams.
  */
@@ -87,22 +90,28 @@ export default function TournamentDetails({
   const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
 
   const { tournamentId: routeTournamentId } = useParams<{ tournamentId: string }>();
+  const [searchParams] = useSearchParams();
   const tournamentId = tournamentIdOverride || routeTournamentId;
   const navigate = useNavigate();
-  const { user, isHydrating } = useAuthUser();
+  const { user } = useAuthUser();
   const toast = useToast();
 
   const [tournament, setTournament] = useState<Tournament | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>('detail');
+  /**
+   * A `?tab=` deep link is read once, through the normaliser, so a stale
+   * `?tab=chips` opens Ranking instead of rendering nothing at all. Nothing in
+   * the app persists a tab id today; the normaliser is what makes it safe for
+   * anything to start.
+   */
+  const [activeTab, setActiveTab] = useState<TabId>(() => normaliseTabId(searchParams.get('tab')));
   const [entries, setEntries] = useState<TournamentEntry[]>([]);
   const [isRegistered, setIsRegistered] = useState(false);
   /** Fires the auto-open-my-table navigation exactly once per tournament. */
   const autoOpenedTableRef = useRef(false);
   const [tables, setTables] = useState<TournamentTable[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  /* `showSignUpModal` deleted 2026-08-25 — this page no longer owns a buy-in
+  /* `showSignUpModal` deleted 2026-08-25 - this page no longer owns a buy-in
      modal. See handleRegister. */
-  const [countdown, setCountdown] = useState({ hours: 0, minutes: 0, seconds: 0 });
 
   /* `walletBalance` deleted 2026-08-25. It existed only to fill the Your
      Balance row and the insufficient-funds gate on this page's own Sign Up
@@ -110,32 +119,78 @@ export default function TournamentDetails({
      balance itself, when the dialog opens, so the figure a player is shown is
      never one this page happened to fetch minutes earlier. */
   const [lateRegCountdown, setLateRegCountdown] = useState<string>('');
-  // SWEEP #6: 1s tick to drive the live level countdown in the quick-stats grid.
-  const [clockTick, setClockTick] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [unionName, setUnionName] = useState<string>('');
 
-  // ── Final Table Deal voting (2026-08-22). A seated player at an
-  // FT-deal-enabled final table may insert their own vote row into
-  // tournament_deal_votes, once — RLS enforces both halves of that. ──
-  const [dealVoteCount, setDealVoteCount] = useState(0);
-  const [hasVotedDeal, setHasVotedDeal] = useState(false);
-  const [votingDeal, setVotingDeal] = useState(false);
-
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lateRegTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [visibleEntries, setVisibleEntries] = useState<Set<string>>(new Set());
+  const shellRef = useRef<HTMLDivElement | null>(null);
 
   /**
    * MYSTERY BOUNTY (sections 10, 31 to 36, 67, 68, 73).
    *
-   * One hook for the whole page: the Detail tab advertises the top bounty and
-   * the activation status off it, and the Mystery tab renders the three
-   * sections from the same fetch. `enabled` is false for every other format, so
-   * a freezeout makes no RPC calls at all.
+   * One hook for the whole page: DetailOverviewTab advertises the top chest and
+   * the activation status off it, and RewardsTab renders the full ladder from
+   * the same fetch. `enabled` is false for every other format, so a freezeout
+   * makes no RPC calls at all.
    */
-  const isMysteryBountyEvent = Boolean((tournament as any)?.is_mystery_bounty);
+  const isMysteryBountyEvent = Boolean(
+    (tournament as unknown as { is_mystery_bounty?: boolean } | null)?.is_mystery_bounty
+  );
   const mysteryBounty = useMysteryBounty(tournamentId ?? null, isMysteryBountyEvent);
+
+  /**
+   * MEASURE THE SPACE, DO NOT GUESS IT.
+   *
+   * The shell has to be exactly as tall as what is left after the chrome
+   * around it, or the "no scroll" layout is a lie. That chrome is not a
+   * constant: AppLayout puts GlobalHeader above this route, may put a club
+   * announcement banner and an offline banner under it, and `<main>` adds its
+   * own padding - and `--header-height` disagrees with itself across the three
+   * token files (44px in one, 56px in two) before you even get to a header
+   * that wraps onto a second line.
+   *
+   * So take the number from the DOM: the distance from the top of the document
+   * to the top of this element is everything above it, and the container's
+   * bottom padding is everything below. `scrollY` is added back because a
+   * viewport-relative `top` shrinks the moment anything scrolls, and this must
+   * converge rather than feed back on itself.
+   *
+   * This is also what makes the MultiTablePage embed right, where the space is
+   * a tab panel and not the viewport at all.
+   */
+  useEffect(() => {
+    const el = shellRef.current;
+    if (!el || typeof window === 'undefined') return;
+
+    const measure = () => {
+      const above = el.getBoundingClientRect().top + window.scrollY;
+      const parent = el.parentElement;
+      const below = parent ? parseFloat(getComputedStyle(parent).paddingBottom || '0') || 0 : 0;
+      // A floor, so a mis-measure during a transition can never collapse the
+      // lobby to nothing - a short page is recoverable, a zero-height one is not.
+      const avail = Math.max(320, window.innerHeight - above - below);
+      const next = `${Math.round(avail)}px`;
+      // Write only on a real change. The ResizeObserver below watches the
+      // parent, and this write changes the parent's height, so an
+      // unconditional write is a resize loop waiting for a browser that does
+      // not de-duplicate it. `above` does not depend on our own height, so the
+      // value converges after one pass and this guard ends the cycle there.
+      if (el.style.getPropertyValue('--details-h') !== next) {
+        el.style.setProperty('--details-h', next);
+      }
+    };
+
+    measure();
+    window.addEventListener('resize', measure);
+    window.addEventListener('orientationchange', measure);
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => measure()) : null;
+    if (ro && el.parentElement) ro.observe(el.parentElement);
+
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('orientationchange', measure);
+      ro?.disconnect();
+    };
+  }, [isLoading, tournament?.id]);
 
   useEffect(() => {
     let isMounted = true;
@@ -144,20 +199,23 @@ export default function TournamentDetails({
     }
     return () => {
       isMounted = false;
-      if (timerRef.current) clearInterval(timerRef.current);
       if (lateRegTimerRef.current) clearInterval(lateRegTimerRef.current);
     };
   }, [tournamentId, user?.id]);
 
-  // ── Late-reg level-based status ──
+  // ── Late-reg level-based status. Drives the footer's Late Register button. ──
   useEffect(() => {
     if (lateRegTimerRef.current) clearInterval(lateRegTimerRef.current);
-    const lateRegLevels =
-      (tournament as any)?.late_reg_levels || (tournament as any)?.late_reg_mins || 0;
+    const t = tournament as unknown as {
+      late_reg_levels?: number;
+      late_reg_mins?: number;
+      current_level?: number;
+    } | null;
+    const lateRegLevels = t?.late_reg_levels || t?.late_reg_mins || 0;
     if (tournament?.status !== 'RUNNING' || !lateRegLevels) return;
 
     const tick = () => {
-      const currentLevel = (tournament as any)?.current_level || 0;
+      const currentLevel = t?.current_level || 0;
       if (currentLevel >= lateRegLevels) {
         setLateRegCountdown('');
         if (lateRegTimerRef.current) clearInterval(lateRegTimerRef.current);
@@ -174,83 +232,21 @@ export default function TournamentDetails({
     };
   }, [
     tournament?.status,
-    (tournament as any)?.current_level,
-    (tournament as any)?.late_reg_levels,
+    (tournament as unknown as { current_level?: number } | null)?.current_level,
+    (tournament as unknown as { late_reg_levels?: number } | null)?.late_reg_levels,
   ]);
-
-  // SWEEP #6: drive a live 1-second countdown for the quick-stats level chip while
-  // the tournament is RUNNING. getCurrentLevelState reads the server-authoritative
-  // level clock, so this stays in sync with the engine's real timer.
-  useEffect(() => {
-    if (tournament?.status !== 'RUNNING') return;
-    const id = setInterval(() => setClockTick((n) => (n + 1) % 3600), 1000);
-    return () => clearInterval(id);
-  }, [tournament?.status]);
-
-  // ── Final Table Deal votes: cheap count poll, only while the tournament is
-  // RUNNING with the feature on. ──
-  useEffect(() => {
-    const t = tournament as unknown as {
-      final_table_deal_enabled?: boolean;
-      status?: string;
-    } | null;
-    if (!tournamentId || !t?.final_table_deal_enabled || t.status !== 'RUNNING') return;
-    let alive = true;
-    const load = async () => {
-      const { data, error } = await supabase
-        .from('tournament_deal_votes')
-        .select('user_id')
-        .eq('tournament_id', tournamentId);
-      if (!alive || error || !data) return;
-      setDealVoteCount(data.length);
-      setHasVotedDeal(Boolean(user?.id && data.some((v) => v.user_id === user.id)));
-    };
-    void load();
-    const iv = setInterval(load, 15_000);
-    return () => {
-      alive = false;
-      clearInterval(iv);
-    };
-  }, [tournamentId, (tournament as any)?.final_table_deal_enabled, tournament?.status, user?.id]);
-
-  const handleVoteForDeal = async () => {
-    if (!user?.id || !tournamentId || votingDeal) return;
-    setVotingDeal(true);
-    try {
-      const { error } = await supabase
-        .from('tournament_deal_votes')
-        .insert({ tournament_id: tournamentId, user_id: user.id });
-      if (error) {
-        // 23505 = unique violation: the vote is already in, which is fine.
-        if ((error as { code?: string }).code === '23505') {
-          setHasVotedDeal(true);
-        } else {
-          throw error;
-        }
-      } else {
-        setHasVotedDeal(true);
-        setDealVoteCount((n) => n + 1);
-        toast.success('Your deal vote is in.');
-      }
-    } catch (e) {
-      reportError(e, 'TournamentDetails.voteForDeal');
-      toast.error('Could not record your vote.');
-    } finally {
-      setVotingDeal(false);
-    }
-  };
 
   /**
    * Dan 2026-08-19: registering for a tournament must TAKE YOU TO IT the moment
    * it starts. Until now the page only rendered a manual "go to table" link
-   * once the entry flipped to 'playing' — a registered player watching the
+   * once the entry flipped to 'playing' - a registered player watching the
    * countdown was left sitting on the details screen while their table dealt
    * without them, blinding off.
    *
    * The realtime subscription below already streams both the tournament status
    * and this player's tournament_players row, so the moment the engine seats
    * them (a table_id appears) we open that table. Guarded by a ref so it fires
-   * exactly once per tournament — re-navigating on every realtime tick would
+   * exactly once per tournament - re-navigating on every realtime tick would
    * trap the player on the table route and break the back button.
    */
   useEffect(() => {
@@ -300,7 +296,14 @@ export default function TournamentDetails({
         },
         (payload) => {
           if (payload.eventType === 'INSERT' && payload.new) {
-            // New player registered
+            // New player registered.
+            //
+            // The realtime row carries every COLUMN of tournament_players, so
+            // registered_at / rebuys / add_on ride along and the contract
+            // fields stay populated. It cannot carry the profiles embed, so
+            // `avatar_url` and `player_code` are null until the next full
+            // load - EntriesTab fetches those itself, and RankingTab falls
+            // back to initials rather than a broken image.
             const newPlayer = payload.new as {
               id: string;
               user_id: string;
@@ -309,6 +312,9 @@ export default function TournamentDetails({
               status: string;
               position?: number | null;
               table_id?: string | null;
+              registered_at?: string | null;
+              rebuys?: number | null;
+              add_on?: boolean | null;
             };
             setEntries((prev) => [
               ...prev,
@@ -317,7 +323,8 @@ export default function TournamentDetails({
                 user_id: newPlayer.user_id,
                 username: newPlayer.username || 'Player',
                 avatar_url: null,
-                // BUG FIX: do NOT read tournament.starting_chips here — this
+                player_code: null,
+                // BUG FIX: do NOT read tournament.starting_chips here - this
                 // handler is in a closure that captured `tournament` at the time
                 // the effect ran (tournamentId dep), which may be null if the
                 // subscription was set up before loadTournament completed.
@@ -327,10 +334,15 @@ export default function TournamentDetails({
                 position: newPlayer.position || undefined,
                 status: newPlayer.status as TournamentEntry['status'],
                 table_id: newPlayer.table_id || null,
+                created_at: newPlayer.registered_at ?? null,
+                rebuys: Number(newPlayer.rebuys) || 0,
+                add_ons: newPlayer.add_on ? 1 : 0,
               },
             ]);
           } else if (payload.eventType === 'UPDATE' && payload.new) {
-            // Player status or chips updated
+            // Player status, chips, rebuy or add-on updated. A rebuy IS an
+            // UPDATE on this row, so carrying the two counters here is what
+            // keeps the Entries tab honest between full loads.
             const updatedPlayer = payload.new as {
               id: string;
               user_id: string;
@@ -339,6 +351,8 @@ export default function TournamentDetails({
               status: string;
               position?: number | null;
               table_id?: string | null;
+              rebuys?: number | null;
+              add_on?: boolean | null;
             };
             setEntries((prev) =>
               prev.map((e) =>
@@ -350,13 +364,23 @@ export default function TournamentDetails({
                       position: updatedPlayer.position || undefined,
                       table_id:
                         updatedPlayer.table_id !== undefined ? updatedPlayer.table_id : e.table_id,
+                      rebuys:
+                        updatedPlayer.rebuys !== undefined && updatedPlayer.rebuys !== null
+                          ? Number(updatedPlayer.rebuys) || 0
+                          : e.rebuys,
+                      add_ons:
+                        updatedPlayer.add_on !== undefined && updatedPlayer.add_on !== null
+                          ? updatedPlayer.add_on
+                            ? 1
+                            : 0
+                          : e.add_ons,
                     }
                   : e
               )
             );
           } else if (payload.eventType === 'DELETE' && payload.old) {
             // Player unregistered or eliminated
-            setEntries((prev) => prev.filter((e) => e.id !== (payload.old as any).id));
+            setEntries((prev) => prev.filter((e) => e.id !== (payload.old as { id: string }).id));
           }
         }
       )
@@ -370,7 +394,7 @@ export default function TournamentDetails({
         },
         (payload) => {
           if (payload.eventType === 'INSERT' && payload.new) {
-            const t = payload.new as any;
+            const t = payload.new as TournamentTable & { name?: string | null };
             setTables((prev) => [
               ...prev,
               {
@@ -384,7 +408,7 @@ export default function TournamentDetails({
               },
             ]);
           } else if (payload.eventType === 'UPDATE' && payload.new) {
-            const t = payload.new as any;
+            const t = payload.new as TournamentTable;
             setTables((prev) =>
               prev.map((tbl) =>
                 tbl.id === t.id
@@ -399,7 +423,9 @@ export default function TournamentDetails({
               )
             );
           } else if (payload.eventType === 'DELETE' && payload.old) {
-            setTables((prev) => prev.filter((tbl) => tbl.id !== (payload.old as any).id));
+            setTables((prev) =>
+              prev.filter((tbl) => tbl.id !== (payload.old as { id: string }).id)
+            );
           }
         }
       )
@@ -425,7 +451,7 @@ export default function TournamentDetails({
               : e
           )
         );
-        // BUG FIX: guard against undefined position — getOrdinal(undefined) would
+        // BUG FIX: guard against undefined position - getOrdinal(undefined) would
         // produce "undefinedth" which reads as a broken toast message.
         const pos = event.payload.position;
         const posText = pos != null ? `${pos}${getOrdinal(pos)} place` : 'eliminated';
@@ -450,8 +476,8 @@ export default function TournamentDetails({
       'BLIND_LEVEL_CHANGE',
       (event) => {
         if (event.payload.tournamentId !== tournamentId) return;
-        setTournament((prev: any) =>
-          prev ? { ...prev, current_level: event.payload.level } : prev
+        setTournament((prev) =>
+          prev ? ({ ...prev, current_level: event.payload.level } as Tournament) : prev
         );
       },
       300
@@ -503,12 +529,6 @@ export default function TournamentDetails({
     { debounce: 500 }
   );
 
-  useEffect(() => {
-    if (tournament?.start_time) {
-      startCountdown();
-    }
-  }, [tournament]);
-
   // Re-check registration status when user hydrates after tournament loaded
   useEffect(() => {
     if (user && tournament && entries.length > 0) {
@@ -516,17 +536,6 @@ export default function TournamentDetails({
       setIsRegistered(registered);
     }
   }, [user, entries]);
-
-  // Stagger animation for entries
-  useEffect(() => {
-    if (entries.length === 0) return;
-    setVisibleEntries(new Set());
-    entries.forEach((entry, index) => {
-      setTimeout(() => {
-        setVisibleEntries((prev) => new Set(prev).add(entry.id));
-      }, index * 60);
-    });
-  }, [entries]);
 
   const loadTournament = async (getIsMounted?: () => boolean) => {
     if (!tournamentId) return;
@@ -537,10 +546,27 @@ export default function TournamentDetails({
       setTournament(data);
 
       if (data) {
-        // Fetch tournament entries from supabase
+        /**
+         * THE ENTRY QUERY IS THE TAB CONTRACT.
+         *
+         * It used to select `id, user_id, username, chips, status, position,
+         * table_id` and hardcode `avatar_url: null`. RankingTab reads
+         * `entry.avatar_url` straight from props with no query of its own, so
+         * that null drew initials for the entire field; and EntriesTab got
+         * neither a registration time nor a rebuy count from props. The three
+         * added columns are on the row already (no join), and the profiles
+         * embed rides `fk_tournament_players_user_id_profiles` - one join for
+         * the whole list, not one request per player.
+         *
+         * `add_on` is a BOOLEAN in production, not a count; the contract field
+         * is `add_ons: number`, so it collapses to 0 or 1 here rather than
+         * pretending the database records how many.
+         */
         const { data: playersData, error } = await supabase
           .from('tournament_players')
-          .select('id, user_id, username, chips, status, position, table_id')
+          .select(
+            'id, user_id, username, chips, status, position, table_id, registered_at, rebuys, add_on, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
+          )
           .eq('tournament_id', data.id)
           .order('registered_at', { ascending: true });
 
@@ -548,28 +574,38 @@ export default function TournamentDetails({
 
         if (!error && playersData) {
           setEntries(
-            playersData.map(
-              (e: {
-                id: string;
-                user_id: string;
-                username?: string | null;
-                chips?: number;
-                status: string;
-                position?: number | null;
-                club_id?: string | null;
-                table_id?: string | null;
-              }) => ({
-                id: e.id,
-                user_id: e.user_id,
-                username: e.username || 'Player',
-                avatar_url: null,
-                chips: e.chips || data.starting_chips,
-                position: e.position || undefined,
+            playersData.map((e: Record<string, unknown>): TournamentEntry => {
+              // PostgREST returns an embedded row as an object, but types it as
+              // an array in some shapes. Accept both rather than guess - this
+              // exact shape bit LiveChipCounts (see its line 88).
+              const rawProfile = e.profile as
+                | { player_number?: string | null; avatar_url?: string | null }
+                | { player_number?: string | null; avatar_url?: string | null }[]
+                | null
+                | undefined;
+              const profile = Array.isArray(rawProfile) ? rawProfile[0] : rawProfile;
+              return {
+                id: String(e.id),
+                user_id: String(e.user_id),
+                username: (e.username as string) || 'Player',
+                avatar_url: profile?.avatar_url || null,
+                player_code: profile?.player_number ? String(profile.player_number) : null,
+                chips: (e.chips as number) || data.starting_chips,
+                position: (e.position as number) || undefined,
                 status: e.status as TournamentEntry['status'],
-                club_id: e.club_id || undefined,
-                table_id: e.table_id || null,
-              })
-            )
+                /* `club_id` was selected here and mapped onto the entry solely
+                   so the old inline Unions block could count
+                   `new Set(entries.map(e => e.club_id))`. UnionsTab selects it
+                   itself, for the whole field, and then falls back to
+                   club_members for the ~40% of history that predates the
+                   column - so carrying it here now would be a second, weaker
+                   copy of a resolution that tab already does properly. */
+                table_id: (e.table_id as string | null) || null,
+                created_at: (e.registered_at as string | null) ?? null,
+                rebuys: Number(e.rebuys) || 0,
+                add_ons: e.add_on ? 1 : 0,
+              };
+            })
           );
 
           // Check if current user is registered
@@ -594,20 +630,10 @@ export default function TournamentDetails({
           }
         }
 
-        // Fetch union name for XMTT tournaments
-        if ((data as any).is_xmtt && (data as any).union_id) {
-          try {
-            const { data: unionData } = await supabase
-              .from('unions')
-              .select('name')
-              .eq('id', (data as any).union_id)
-              .maybeSingle();
-            if (unionData?.name && (!getIsMounted || getIsMounted())) setUnionName(unionData.name);
-          } catch (e) {
-            reportError(e, 'TournamentDetails');
-            /* non-critical */
-          }
-        }
+        /* The union-name lookup that used to live here is gone. UnionsTab
+           resolves the union AND every participating club itself, in two
+           queries, which is strictly more than the one name this page fetched
+           and then rendered in a tab it no longer owns. */
       }
     } catch (error) {
       reportError(error, 'TournamentDetails.Failed_to_load_tournament');
@@ -616,70 +642,12 @@ export default function TournamentDetails({
     if (!getIsMounted || getIsMounted()) setIsLoading(false);
   };
 
-  const startCountdown = () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-
-    const updateCountdown = () => {
-      if (!tournament) return;
-
-      const now = new Date().getTime();
-
-      // For RUNNING tournaments, show elapsed time since start
-      if (tournament.status === 'RUNNING' && tournament.started_at) {
-        const started = new Date(tournament.started_at).getTime();
-        const elapsed = now - started;
-
-        const hours = Math.floor(elapsed / (1000 * 60 * 60));
-        const minutes = Math.floor((elapsed % (1000 * 60 * 60)) / (1000 * 60));
-        const seconds = Math.floor((elapsed % (1000 * 60)) / 1000);
-
-        setCountdown({ hours, minutes, seconds });
-        return;
-      }
-
-      // For COMPLETED tournaments, show total duration
-      if (tournament.status === 'COMPLETED' && tournament.started_at && tournament.ended_at) {
-        const started = new Date(tournament.started_at).getTime();
-        const ended = new Date(tournament.ended_at).getTime();
-        const duration = ended - started;
-
-        const hours = Math.floor(duration / (1000 * 60 * 60));
-        const minutes = Math.floor((duration % (1000 * 60 * 60)) / (1000 * 60));
-        const seconds = Math.floor((duration % (1000 * 60)) / 1000);
-
-        setCountdown({ hours, minutes, seconds });
-        if (timerRef.current) clearInterval(timerRef.current);
-        return;
-      }
-
-      // For upcoming tournaments, countdown to start
-      if (!tournament.start_time) return;
-      const start = new Date(tournament.start_time).getTime();
-      const diff = start - now;
-
-      if (diff <= 0) {
-        setCountdown({ hours: 0, minutes: 0, seconds: 0 });
-        if (timerRef.current) clearInterval(timerRef.current);
-        return;
-      }
-
-      const hours = Math.floor(diff / (1000 * 60 * 60));
-      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-
-      setCountdown({ hours, minutes, seconds });
-    };
-
-    updateCountdown();
-    timerRef.current = setInterval(updateCountdown, 1000);
-  };
-
   /**
    * Dan 2026-08-25 (binding): "you don't need a secondary confirmation for buy
    * ins."
    *
    * This page used to open its OWN Sign Up card (local `showSignUpModal`
-   * state), and then, on Confirm, call `registerMtt` — which opened a SECOND,
+   * state), and then, on Confirm, call `registerMtt` - which opened a SECOND,
    * generic "Confirm Buy In" dialog inside the hook. Two dialogs, one buy-in.
    *
    * The card itself was the good one, so it moved into
@@ -689,17 +657,24 @@ export default function TournamentDetails({
    */
   const handleRegister = (isLate = false) => {
     if (!tournament) return;
+    const t = tournament as unknown as {
+      is_bounty?: boolean;
+      bounty_amount?: number;
+      is_pko?: boolean;
+      is_mystery_bounty?: boolean;
+      club_id?: string | null;
+    };
     registerMtt(
       {
         id: tournament.id,
         name: tournament.name,
         buy_in_amount: tournament.buy_in_amount,
         buy_in_fee: tournament.buy_in_fee,
-        bounty_amount: (tournament as any).is_bounty ? (tournament as any).bounty_amount || 0 : 0,
-        is_pko: !!(tournament as any).is_pko,
-        is_mystery_bounty: !!(tournament as any).is_mystery_bounty,
+        bounty_amount: t.is_bounty ? t.bounty_amount || 0 : 0,
+        is_pko: !!t.is_pko,
+        is_mystery_bounty: !!t.is_mystery_bounty,
         start_time: tournament.start_time,
-        club_id: (tournament as any).club_id ?? null,
+        club_id: t.club_id ?? null,
         is_late_registration: isLate,
       },
       () => {
@@ -711,7 +686,7 @@ export default function TournamentDetails({
 
   /**
    * ═══════════════════════════════════════════════════════════════════════════
-   *  THE FEATURED TABLE — Dan 2026-08-25 (binding)
+   *  THE FEATURED TABLE - Dan 2026-08-25 (binding)
    * ═══════════════════════════════════════════════════════════════════════════
    *
    * "In MTT, when I click on a tournament that's RUNNING I should be able to
@@ -722,19 +697,17 @@ export default function TournamentDetails({
    * surface either sent you to this page (`onViewTable` in ClubHomePage sends a
    * running MTT to `/tournaments/:id`, not to a felt), disabled its own button
    * unless you were registered (TournamentPage, TournamentLobbyCard), or showed
-   * an inert "In Progress" badge (the footer below). The ONLY clickable path to
-   * a running tournament's felt was the Tables tab — three taps in, and only if
-   * you knew to look there.
+   * an inert "In Progress" badge (the footer below).
    *
    * WHAT MAKES A TABLE "FEATURED". The chip leader's table, which is what a
-   * televised final table is and what a player means by "the featured table" —
+   * televised final table is and what a player means by "the featured table" -
    * the action that decides the tournament. Falling back, in order:
    *
    *   1. the table of the highest-stacked player who is still PLAYING;
    *   2. the fullest ACTIVE table, when no entry carries a table id yet (an
    *      early running tournament whose roster rows have not been stamped);
-   *   3. any table at all, so the button still works rather than disappearing;
-   *   4. null — and then no button is offered, rather than one that errors.
+   *   3. any LIVE table, so the button still works rather than disappearing;
+   *   4. null - and then no button is offered, rather than one that errors.
    *
    * Deliberately derived on the client from data this page already holds and
    * already keeps live over realtime (`entries` and `tables` both have their
@@ -763,7 +736,7 @@ export default function TournamentDetails({
 
     /* 2026-08-25 audit: this used to be `tables[0]?.id`, with a comment saying
        "any table at all, so the button still works rather than disappearing".
-       That is backwards — `tables[0]` can be a CLOSED table, and a WATCH button
+       That is backwards - `tables[0]` can be a CLOSED table, and a WATCH button
        that opens a dead felt is worse than no button. If nothing is live there
        is nothing to watch, and returning null hides the button, which is the
        honest outcome. */
@@ -771,8 +744,8 @@ export default function TournamentDetails({
   }, [entries, tables]);
 
   /**
-   * Open a table as a spectator. Used by WATCH, by a Ranking row and by an
-   * Entries row.
+   * Open a table as a spectator. Used by the footer's WATCH button and handed
+   * to the tabs as `onWatchPlayer`, so an Entries row leads to the same place.
    *
    * 2026-08-25 audit: this used to be a bare `navigate('/table/'+id)`, which is
    * the weaker half of a helper written for exactly this job.
@@ -780,7 +753,7 @@ export default function TournamentDetails({
    * docstring explains why both are required: emitting alone is a dead button
    * on a cold load (MultiTablePage is lazy and may have no subscriber yet),
    * while navigating alone CONVERTS a parked lobby tab instead of adding a
-   * screen — the wrong shape for "watch this too". Both are keyed on the table
+   * screen - the wrong shape for "watch this too". Both are keyed on the table
    * id and de-duplicated, so running both can only ever produce one screen.
    */
   const watchTable = useCallback(
@@ -815,31 +788,13 @@ export default function TournamentDetails({
     }
   };
 
-  const formatCountdown = () => {
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    return `${pad(countdown.hours)}:${pad(countdown.minutes)}:${pad(countdown.seconds)}`;
-  };
-
-  const formatDate = (date: string | null | undefined) => {
-    if (!date) return 'TBD';
-    return new Date(date)
-      .toLocaleString('en-US', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      })
-      .replace(',', '');
-  };
-
   /**
-   * Share this tournament. 2026-08-20: both the ID chip's "⊞" and the footer
-   * "Share" rendered with NO onClick at all — visible, enabled, and inert on a
-   * live routed page. Web Share where available, clipboard everywhere else;
-   * `navigator.share?.()` on its own silently does nothing on desktop Chrome and
-   * Firefox, which is most of the people looking at a tournament page.
+   * Share this tournament. 2026-08-20: both the ID chip's share control and the
+   * footer "Share" rendered with NO onClick at all - visible, enabled, and
+   * inert on a live routed page. Web Share where available, clipboard
+   * everywhere else; `navigator.share?.()` on its own silently does nothing on
+   * desktop Chrome and Firefox, which is most of the people looking at a
+   * tournament page.
    */
   const shareTournament = useCallback(async () => {
     const url = `${window.location.origin}/tournaments/${tournament?.id ?? ''}`;
@@ -858,32 +813,15 @@ export default function TournamentDetails({
     }
   }, [tournament?.id, tournament?.name, toast]);
 
-  // 2026-08-20: 'blinds' and 'chips' were declared in TabId and imported as
-  // components (BlindLevelProgress, LiveChipCounts) but never given a tab or a
-  // render block, so a registered player could not see the blind schedule or the
-  // live chip counts at all — core information for an MTT. ('payouts' was in the
-  // union too, but the Rewards tab below already renders the payout structure,
-  // so it was a duplicate rather than a gap; it is dropped from the union.)
-  const tabs: { id: TabId; label: string }[] = [
-    { id: 'detail', label: 'Detail' },
-    { id: 'blinds', label: 'Blinds' },
-    { id: 'chips', label: 'Chips' },
-    { id: 'entries', label: 'Entries' },
-    { id: 'ranking', label: 'Ranking' },
-    { id: 'unions', label: 'Unions' },
-    { id: 'tables', label: 'Tables' },
-    { id: 'rewards', label: 'Rewards' },
-    /* Only a mystery bounty event gets the tab. Adding it unconditionally would
-       give every freezeout a tab that says "No Mystery Bounties Were Drawn". */
-    ...(isMysteryBountyEvent ? [{ id: 'mystery' as TabId, label: 'Mystery' }] : []),
-  ];
-
   /**
-   * The stored structure uses `durationMinutes` (or `duration_minutes` on older
-   * rows); BlindLevelProgress wants `duration`. Passing the row straight through
-   * renders every level as 0 minutes.
+   * The stored structure spells the level length three ways, and one of them is
+   * a TRAP: `duration` holds SECONDS (every Spin stores `duration: 180`), while
+   * `durationMinutes` / `duration_minutes` hold minutes. Reading `duration`
+   * first - which this mapper used to do - drew a three minute Spin level as
+   * three HOURS. `NormalisedBlindLevel.duration` is contractually minutes, and
+   * `blindLevelMinutes` is the one reader that gets the precedence right.
    */
-  const blindLevels = useMemo(() => {
+  const blindLevels = useMemo<NormalisedBlindLevel[]>(() => {
     const raw =
       typeof tournament?.blind_structure === 'string'
         ? (() => {
@@ -895,15 +833,59 @@ export default function TournamentDetails({
           })()
         : tournament?.blind_structure || [];
     if (!Array.isArray(raw)) return [];
-    return raw.map((b: Record<string, unknown>, i: number) => ({
-      level: Number(b.level ?? i + 1),
-      smallBlind: Number(b.smallBlind ?? b.small_blind ?? 0),
-      bigBlind: Number(b.bigBlind ?? b.big_blind ?? 0),
-      ante: Number(b.ante ?? 0),
-      duration: Number(b.duration ?? b.durationMinutes ?? b.duration_minutes ?? 0),
-      isBreak: Boolean(b.isBreak ?? b.is_break ?? false),
-    }));
+    const rows = raw as Parameters<typeof blindLevelMinutes>[0];
+    return raw.map((row: Record<string, unknown>, i: number) => {
+      const level = Number(row.level ?? i + 1);
+      return {
+        level,
+        smallBlind: Number(row.smallBlind ?? row.small_blind ?? 0),
+        bigBlind: Number(row.bigBlind ?? row.big_blind ?? 0),
+        ante: Number(row.ante ?? 0),
+        duration: blindLevelMinutes(rows, level),
+        isBreak: Boolean(row.isBreak ?? row.is_break ?? false),
+      };
+    });
   }, [tournament?.blind_structure]);
+
+  const isRunning = tournament?.status === 'RUNNING';
+
+  /**
+   * The tab contract, built once. Every tab takes exactly this and nothing
+   * else, so switching tabs is a render, not a refetch.
+   *
+   * `onWatchPlayer` is handed over only while the event is RUNNING (Dan
+   * 2026-08-25: "you can go to Tables or Ranking and see any player and be
+   * redirected to that table directly") - a finished event's table ids point at
+   * closed felts, and a tab that receives no handler renders no link.
+   */
+  const tabProps = useMemo<TournamentTabProps | null>(
+    () =>
+      tournament
+        ? {
+            tournament,
+            entries,
+            tables,
+            blindLevels,
+            currentUserId: user?.id,
+            isRegistered,
+            onWatchPlayer: isRunning ? watchTable : undefined,
+            mysteryBounty: isMysteryBountyEvent ? mysteryBounty : null,
+            onOpenTab: setActiveTab,
+          }
+        : null,
+    [
+      tournament,
+      entries,
+      tables,
+      blindLevels,
+      user?.id,
+      isRegistered,
+      isRunning,
+      watchTable,
+      isMysteryBountyEvent,
+      mysteryBounty,
+    ]
+  );
 
   if (isLoading) {
     return (
@@ -914,7 +896,9 @@ export default function TournamentDetails({
     );
   }
 
-  if (!tournament) {
+  // tabProps is null exactly when `tournament` is null, so this one guard
+  // covers both and TypeScript keeps its narrowing all the way down.
+  if (!tournament || !tabProps) {
     return (
       <div className="tournament-details error">
         <h2>Tournament Not Found</h2>
@@ -925,19 +909,25 @@ export default function TournamentDetails({
     );
   }
 
+  const shortDescription = (tournament as unknown as { short_description?: string | null })
+    .short_description;
+
   return (
     <PageErrorBoundary pageName="TournamentDetails">
-      <div className="tournament-details">
+      <div className="tournament-details" ref={shellRef}>
         {/* Header */}
         <div className="details-header">
           <h1>Game Details</h1>
         </div>
 
         {/* Tabs */}
-        <div className="details-tabs">
-          {tabs.map((tab) => (
+        <div className="details-tabs" role="tablist" aria-label="Tournament sections">
+          {TABS.map((tab) => (
             <button
               key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
               className={`tab ${activeTab === tab.id ? 'active' : ''}`}
               onClick={() => setActiveTab(tab.id)}
             >
@@ -946,1082 +936,58 @@ export default function TournamentDetails({
           ))}
         </div>
 
-        {/* Tournament Title */}
-        <div className="tournament-title">
-          <h2>{tournament.name}</h2>
-          <span className="tournament-id">ID:{tournament.id.slice(0, 8)}</span>
-          <button
-            className="qr-btn"
-            onClick={() => void shareTournament()}
-            aria-label="Share this tournament"
-          >
-            ⊞
-          </button>
-        </div>
-
-        {/* Tournament Description */}
-        <div className="tournament-desc">
-          <p>{tournament.name}</p>
-          {/* Owner-written short description (2026-08-22) */}
-          {(tournament as any).short_description && (
-            <p style={{ color: 'rgba(255,255,255,0.75)', fontStyle: 'italic' }}>
-              {(tournament as any).short_description}
-            </p>
-          )}
-          <p>
+        {/* Title strip. The name, the short id, the share button, the price and
+            the owner's own blurb. Everything else that used to sit here -
+            FREEZEOUT / REBUY / ADD-ON, the bounty line, MULTI-DAY, XMTT, SPIN,
+            the parity tag row and EARLY BIRD - is rendered as badges by
+            DetailOverviewTab. Printing both said the same thing twice and cost
+            about 120px of the one screen this page is supposed to fit in. */}
+        <div className="details-title">
+          <div className="tournament-title">
+            <h2>{tournament.name}</h2>
+            <span className="tournament-id">ID:{tournament.id.slice(0, 8)}</span>
+            <button
+              className="qr-btn"
+              type="button"
+              onClick={() => void shareTournament()}
+              aria-label="Share this tournament"
+            >
+              ⊞
+            </button>
+          </div>
+          <div className="tournament-desc">
             {/* Whole chips only (Dan 2026-08-20) - formatBuyIn leads with the
                 total the player actually pays and never prints a decimal. */}
-            {formatBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)} CHIPS BUY-IN
-          </p>
-          <p>
-            {(tournament as any).variant === 'sng'
-              ? 'SIT & GO'
-              : (tournament as any).variant === 'spin'
-                ? 'SPIN & GO'
-                : (tournament as any).is_bounty &&
-                    !(tournament as any).is_pko &&
-                    !(tournament as any).is_mystery_bounty
-                  ? 'BOUNTY KO'
-                  : (tournament as any).is_pko
-                    ? 'PROGRESSIVE KO'
-                    : (tournament as any).is_mystery_bounty
-                      ? 'MYSTERY BOUNTY'
-                      : 'FREEZEOUT'}
-            {' / '}
-            {(tournament as any).is_rebuy ? 'REBUY' : 'NO REBUY'}
-            {' / '}
-            {(tournament as any).add_on_available ? 'ADD-ON' : 'NO ADD-ON'}
-          </p>
-          {(tournament as any).is_bounty && (
-            <p style={{ color: '#f87171', fontWeight: 600 }}>
-              BOUNTY: {money((tournament as any).bounty_amount || 0)} CHIPS PER KO
-              {(tournament as any).is_pko && ' (50/50 SPLIT)'}
+            <p className="tournament-buyin">
+              {formatBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)} CHIPS BUY-IN
             </p>
-          )}
-          {(tournament as any).is_multi_day && (
-            <p style={{ color: '#22d3ee' }}>
-              MULTI-DAY: {(tournament as any).total_days || 2} DAYS
-            </p>
-          )}
-          {(tournament as any).is_xmtt && (
-            <p style={{ color: '#00b4e6' }}>UNION TOURNAMENT (XMTT)</p>
-          )}
-          {((tournament as any).variant === 'spin' ||
-            (tournament as any).tournament_type === 'SPIN') && (
-            <p style={{ color: '#6fdcff', fontWeight: 700 }}>
-              SPIN & GO{' '}
-              {spinMultiplierLabel(tournament as any)
-                ? `- ${spinMultiplierLabel(tournament as any)} MULTIPLIER`
-                : '- Multiplier revealed at start'}
-            </p>
-          )}
-
-          {/* ── PokerBros parity tags (2026-08-22): the rule variants a player
-              needs to know BEFORE registering. ── */}
-          {(() => {
-            const t = tournament as any;
-            const tags: Array<{ label: string; color: string }> = [];
-            if (t.is_vip_only) tags.push({ label: 'VIP ONLY', color: '#00b4e6' });
-            if (t.all_in_or_fold) tags.push({ label: 'ALL-IN OR FOLD', color: '#ef4444' });
-            if (t.big_blind_ante) tags.push({ label: 'BB ANTE', color: '#38bdf8' });
-            if (t.accelerated_mtt) tags.push({ label: 'ACCELERATED', color: '#1877f2' });
-            if (t.bubble_protection) tags.push({ label: 'BUBBLE PROTECTION', color: '#00b4e6' });
-            if (t.final_table_deal_enabled)
-              tags.push({ label: 'FINAL TABLE DEAL', color: '#6fdcff' });
-            if (t.ban_chat) tags.push({ label: 'NO CHAT', color: '#9ca3af' });
-            if (tags.length === 0) return null;
-            return (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                {tags.map((tag) => (
-                  <span
-                    key={tag.label}
-                    style={{
-                      color: tag.color,
-                      border: `1px solid ${tag.color}55`,
-                      background: `${tag.color}1a`,
-                      borderRadius: 4,
-                      padding: '2px 8px',
-                      fontSize: 10,
-                      fontWeight: 800,
-                      letterSpacing: 0.5,
-                    }}
-                  >
-                    {tag.label}
-                  </span>
-                ))}
-              </div>
-            );
-          })()}
-          {/* Early bird: bonus chips for registering before the start. */}
-          {(tournament as any).early_bird_enabled &&
-            Number((tournament as any).early_bird_chips) > 0 && (
-              <p style={{ color: '#00b4e6', fontWeight: 600 }}>
-                EARLY BIRD: +{Number((tournament as any).early_bird_chips).toLocaleString()} CHIPS
-                FOR REGISTERING BEFORE THE START
-              </p>
-            )}
+            {/* Owner-written short description (2026-08-22). No tab renders it:
+                it is the event's own identity copy, not a figure, so it belongs
+                beside the name on every tab rather than inside one. */}
+            {shortDescription && <p className="tournament-blurb">{shortDescription}</p>}
+          </div>
         </div>
 
-        {activeTab === 'detail' && (
-          <>
-            {/* Authorized-to-register approvals (2026-08-23): the owner-facing
-                whitelist manager the gate shipped without. Renders null for
-                non-admins and for events without the flag. */}
-            <RegistrationApprovalsPanel
-              tournamentId={tournament.id}
-              clubId={String((tournament as any).club_id || '')}
-              authorizedToRegister={Boolean((tournament as any).authorized_to_register)}
-            />
-            {/* Tournament Results (for completed tournaments) */}
-            {tournament.status === 'COMPLETED' && entries.length > 0 && (
-              <div className="results-summary">
-                <h3>Final Results</h3>
-                <div className="results-podium">
-                  {entries
-                    .filter((e) => e.position && e.position <= 3)
-                    .sort((a, b) => (a.position || 99) - (b.position || 99))
-                    .map((player) => {
-                      const payoutArr = (() => {
-                        const raw = tournament.payout_structure;
-                        if (!raw) return [];
-                        if (Array.isArray(raw)) return raw;
-                        if (typeof raw === 'string') {
-                          try {
-                            return JSON.parse(raw);
-                          } catch {
-                            return [];
-                          }
-                        }
-                        return [];
-                      })();
-                      const payoutEntry = payoutArr.find(
-                        (p: any) => (p.place || p.position) === player.position
-                      );
-                      const prize = payoutEntry
-                        ? Math.trunc(
-                            (tournament.prize_pool || 0) * (payoutEntry as any).percentage
-                          ) / 100
-                        : 0;
-                      return (
-                        <div
-                          key={player.user_id}
-                          className={`podium-card place-${player.position}`}
-                        >
-                          <span className="podium-medal">
-                            {player.position === 1 && '★'}
-                            {player.position === 2 && '☆'}
-                            {player.position === 3 && '☆'}
-                          </span>
-                          <span className="podium-name">{player.username}</span>
-                          <span className="podium-prize">
-                            {prize > 0 ? `${prize.toLocaleString()} chips` : ''}
-                          </span>
-                        </div>
-                      );
-                    })}
-                </div>
-                <div className="results-full-list">
-                  {entries
-                    .filter((e) => e.position)
-                    .sort((a, b) => (a.position || 99) - (b.position || 99))
-                    .slice(0, 10)
-                    .map((player) => (
-                      <div key={player.user_id} className="result-row">
-                        <span className="result-position">#{player.position}</span>
-                        <span className="result-name">{player.username}</span>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
+        {/* The only part of the shell that grows. Each tab scrolls inside
+            itself via the shared `.tl-scroll`, so the page keeps exactly one
+            scrollbar and the footer never moves. */}
+        <div className="details-content" role="tabpanel">
+          {activeTab === 'detail' && <DetailOverviewTab {...tabProps} />}
+          {activeTab === 'blinds' && <BlindsTab {...tabProps} />}
+          {activeTab === 'ranking' && <RankingTab {...tabProps} />}
+          {activeTab === 'entries' && <EntriesTab {...tabProps} />}
+          {activeTab === 'unions' && <UnionsTab {...tabProps} />}
+          {activeTab === 'tables' && <TablesTab {...tabProps} />}
+          {activeTab === 'rewards' && <RewardsTab {...tabProps} />}
+        </div>
 
-            {/* Countdown Timer */}
-            <div className="countdown-section">
-              <div className="countdown-display">{formatCountdown()}</div>
-              <div className="start-time">
-                {tournament.status === 'RUNNING' ? (
-                  <span>Running Since {formatDate(tournament.started_at)}</span>
-                ) : tournament.status === 'COMPLETED' ? (
-                  <span>Completed - Total Duration</span>
-                ) : (
-                  <span>Starts {formatDate(tournament.start_time)}</span>
-                )}
-              </div>
-            </div>
-
-            {/* Tournament Clock (live blind level timer) */}
-            {tournament.status === 'RUNNING' && tournamentId && (
-              <TournamentClock tournamentId={tournamentId} />
-            )}
-
-            {/* Hand-for-Hand Banner (bubble play active) */}
-            {tournament.status === 'RUNNING' && (tournament as any).hand_for_hand && (
-              <HandForHandBanner
-                active={(tournament as any).hand_for_hand}
-                playersRemaining={entries.filter((e) => e.status === 'playing').length}
-                paidPositions={(() => {
-                  const raw = tournament.payout_structure;
-                  if (!raw) return 0;
-                  if (Array.isArray(raw)) return raw.length;
-                  if (typeof raw === 'string') {
-                    try {
-                      return JSON.parse(raw).length;
-                    } catch {
-                      return 0;
-                    }
-                  }
-                  return 0;
-                })()}
-              />
-            )}
-
-            {/* Quick Stats */}
-            {/* Dan 2026-08-20: aligned to the reference lobby card.
-                "Status" was dropped — it restated the countdown directly above
-                it ("Running since…"), spending a stat cell on a fact already on
-                screen. Blinds Up and Late Registration take its place: both are
-                questions a player at the table actually asks, and neither was
-                answerable from this page. Current Level also used to cram the
-                level AND the time remaining into one cell ("Lv 3 · 4:12"); the
-                clock half is now its own Blinds Up stat, which is what it was. */}
-            <div className="quick-stats">
-              <div className="stat">
-                <span className="stat-label">Blinds Up</span>
-                <span className="stat-value">
-                  {(() => {
-                    void clockTick; // re-render every second
-                    if (tournament.status !== 'RUNNING') return '-';
-                    try {
-                      const ls = tournamentService.getCurrentLevelState(tournament);
-                      const secs = Math.max(0, Math.floor(ls.timeRemainingSeconds));
-                      const mm = Math.floor(secs / 60);
-                      const ss = (secs % 60).toString().padStart(2, '0');
-                      return `${mm}:${ss}`;
-                    } catch {
-                      return '-';
-                    }
-                  })()}
-                </span>
-              </div>
-              <div className="stat">
-                <span className="stat-label">Late Registration</span>
-                <span className="stat-value">
-                  {(() => {
-                    const levels = Number((tournament as any).late_reg_levels) || 0;
-                    const mins = Number((tournament as any).late_reg_mins) || 0;
-                    if (levels > 0) return `level ${levels}`;
-                    if (mins > 0) return `${mins} min`;
-                    return 'Closed';
-                  })()}
-                </span>
-              </div>
-              <div className="stat">
-                <span className="stat-label">Current Level</span>
-                <span className="stat-value">
-                  {(() => {
-                    void clockTick;
-                    if (tournament.status !== 'RUNNING') {
-                      return tournament.current_level || 0;
-                    }
-                    try {
-                      const ls = tournamentService.getCurrentLevelState(tournament);
-                      return ls.currentLevel?.isBreak ? 'Break' : ls.levelIndex + 1;
-                    } catch {
-                      return tournament.current_level || 1;
-                    }
-                  })()}
-                </span>
-              </div>
-              <div className="stat">
-                <span className="stat-label">Remaining Players</span>
-                <span className="stat-value">
-                  {
-                    entries.filter((e) => e.status === 'playing' || e.status === 'registered')
-                      .length
-                  }
-                  {tournament.max_players ? `/${tournament.max_players}` : ''}
-                </span>
-              </div>
-              <div className="stat">
-                <span className="stat-label">Avg. Stack</span>
-                <span className="stat-value">
-                  {entries.filter((e) => e.status === 'playing').length > 0
-                    ? Math.trunc(
-                        entries
-                          .filter((e) => e.status === 'playing')
-                          .reduce((s, e) => s + (e.chips || 0), 0) /
-                          entries.filter((e) => e.status === 'playing').length
-                      ).toLocaleString()
-                    : tournament.starting_chips
-                      ? tournament.starting_chips.toLocaleString()
-                      : '-'}
-                </span>
-              </div>
-              <div className="stat">
-                <span className="stat-label">Tables</span>
-                <span className="stat-value">{tables.length}</span>
-              </div>
-              <div className="stat">
-                <span className="stat-label">Eliminated</span>
-                <span className="stat-value">
-                  {entries.filter((e) => e.status === 'eliminated').length}
-                </span>
-              </div>
-            </div>
-
-            {/* ── Final Table Deal (2026-08-22): once the field is down to one
-                table on an FT-deal-enabled tournament, seated players can vote
-                to split the remaining prizes. The vote row is the player's own
-                insert into tournament_deal_votes; RLS refuses anyone else's. ── */}
-            {(() => {
-              const t = tournament as any;
-              if (!t.final_table_deal_enabled || tournament.status !== 'RUNNING') return null;
-              const remaining = entries.filter(
-                (e) => e.status === 'playing' || e.status === 'registered'
-              ).length;
-              const ftSize = Number(t.table_size) || 9;
-              if (remaining < 2 || remaining > ftSize) return null;
-              const mySeat = user?.id ? entries.find((e) => e.user_id === user.id) : undefined;
-              const amSeated = mySeat?.status === 'playing';
-              return (
-                <div
-                  className="game-info-section"
-                  style={{ border: '1px solid rgba(111,220,255,0.4)', borderRadius: 8 }}
-                >
-                  <div className="info-row">
-                    <span className="info-label">Final Table Deal:</span>
-                    <span className="info-value" style={{ color: '#6fdcff', fontWeight: 700 }}>
-                      {dealVoteCount.toLocaleString()}/{remaining.toLocaleString()} Votes
-                    </span>
-                  </div>
-                  {amSeated &&
-                    (hasVotedDeal ? (
-                      <p style={{ color: '#00b4e6', fontSize: 13, margin: '6px 0 0' }}>
-                        Your Vote Is In. A Deal Happens When Every Remaining Player Votes.
-                      </p>
-                    ) : (
-                      <button
-                        className="btn btn-warning btn-block"
-                        style={{ marginTop: 8 }}
-                        onClick={handleVoteForDeal}
-                        disabled={votingDeal}
-                      >
-                        {votingDeal ? 'Voting...' : 'Vote For Deal'}
-                      </button>
-                    ))}
-                </div>
-              );
-            })()}
-
-            {/* Game Info */}
-            <div className="game-info-section">
-              <div className="info-row">
-                <span className="info-label">Game Type:</span>
-                <span className="info-value highlight">
-                  {(tournament.game_type || 'nlh').toUpperCase()}
-                  {tournament.max_players ? ` (${tournament.max_players} max)` : ''}
-                </span>
-              </div>
-              <div className="info-row">
-                <span className="info-label">Buy-In:</span>
-                <span className="info-value">
-                  {/* Was `{amount}+{fee} chips` — "18+1.8 chips", which leads
-                      with the half of the price that is NOT what the player
-                      pays and never states the total at all. formatBuyIn puts
-                      the total first and the split in parentheses: "20 (18 + 2)". */}
-                  {formatBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)}
-                  {(tournament as any).is_rebuy && <span className="badge-reentry">Rebuy</span>}
-                </span>
-              </div>
-              {(() => {
-                // TOURNEY-AUDIT 2026-07-24 (sweep 4): DB pool is authoritative
-                // (fee-stripped, horse-free); buy_in × entries over-advertised.
-                const hasGuarantee = (tournament.guaranteed_prize || 0) > 0;
-                const effectivePrizePool = hasGuarantee
-                  ? Math.max(tournament.prize_pool || 0, tournament.guaranteed_prize || 0)
-                  : tournament.prize_pool || 0;
-                return (
-                  <div className="info-row">
-                    <span className="info-label">Prize Pool:</span>
-                    <span className="info-value">
-                      {effectivePrizePool > 0
-                        ? effectivePrizePool.toLocaleString()
-                        : 'Based on entries'}
-                      {hasGuarantee && (
-                        <>
-                          {' '}
-                          <span className="badge-gtd">
-                            {(tournament.guaranteed_prize || 0).toLocaleString()} GTD
-                          </span>
-                        </>
-                      )}
-                    </span>
-                  </div>
-                );
-              })()}
-              <div className="info-half-grid">
-                <div className="info-row half">
-                  <span className="info-label">Entries:</span>
-                  <span className="info-value">{entries.length}</span>
-                </div>
-                <div className="info-row half">
-                  <span className="info-label">Max Entries:</span>
-                  <span className="info-value">{tournament.max_players || 'Unlimited'}</span>
-                </div>
-                <div className="info-row half">
-                  <span className="info-label">Rebuy:</span>
-                  <span className="info-value">
-                    {(tournament as any).is_rebuy
-                      ? `${((tournament as any).rebuy_chips || tournament.starting_chips || 0).toLocaleString()} chips - through Level ${(tournament as any).late_reg_levels ?? (tournament as any).rebuy_levels ?? 8}`
-                      : (tournament as any).is_reentry
-                        ? `Re-Entry - through Level ${(tournament as any).late_reg_levels ?? (tournament as any).rebuy_levels ?? 8}`
-                        : 'Not Available'}
-                  </span>
-                </div>
-                <div className="info-row half">
-                  <span className="info-label">Add-On:</span>
-                  <span className="info-value">
-                    {(tournament as any).add_on_available
-                      ? `${((tournament as any).addon_chips || tournament.starting_chips || 0).toLocaleString()} chips - Level ${(tournament as any).late_reg_levels ?? (tournament as any).rebuy_levels ?? 8} to ${((tournament as any).late_reg_levels ?? (tournament as any).rebuy_levels ?? 8) + ((tournament as any).addon_levels ?? 1)}`
-                      : 'Not Available'}
-                  </span>
-                </div>
-                <div className="info-row half">
-                  <span className="info-label">Starting Chips:</span>
-                  <span className="info-value">
-                    {tournament.starting_chips ? tournament.starting_chips.toLocaleString() : '-'}
-                  </span>
-                </div>
-                <div className="info-row half">
-                  <span className="info-label">Big Blind Ante:</span>
-                  <span className="info-value">
-                    {(() => {
-                      const blinds =
-                        typeof tournament.blind_structure === 'string'
-                          ? (() => {
-                              try {
-                                return JSON.parse(tournament.blind_structure);
-                              } catch {
-                                return [];
-                              }
-                            })()
-                          : tournament.blind_structure || [];
-                      return blinds.some((b: any) => (b.ante || 0) > 0) ? 'Yes' : 'No';
-                    })()}
-                  </span>
-                </div>
-                {((tournament as any).late_reg_levels || (tournament as any).late_reg_mins || 0) >
-                  0 && (
-                  <div className="info-row half">
-                    <span className="info-label">Late Registration:</span>
-                    <span className="info-value">
-                      Through Level{' '}
-                      {(tournament as any).late_reg_levels || (tournament as any).late_reg_mins}
-                    </span>
-                  </div>
-                )}
-              </div>
-              {(tournament as any).is_bounty && (
-                <div className="info-row">
-                  <span className="info-label">Bounty:</span>
-                  <span className="info-value" style={{ color: '#f87171' }}>
-                    {money((tournament as any).bounty_amount || 0)} Chips Per Knockout
-                    {(tournament as any).is_pko &&
-                      ' (Progressive: 50% to knocker, 50% added to bounty)'}
-                  </span>
-                </div>
-              )}
-              {/* MYSTERY BOUNTY (sections 10 and 73).
-                  `mystery_bounty_min` / `mystery_bounty_max` used to be printed
-                  here. They were a per-head advertised RANGE drawn at
-                  registration time, and since the chest inventory shipped the
-                  engine does not read them at all: the draw now happens once,
-                  when the mystery phase opens, and produces a real ladder. So
-                  the advertisement is the TOP CHEST THAT EXISTS, and the row
-                  underneath says when the chests open. */}
-              {isMysteryBountyEvent && (
-                <>
-                  <div className="info-row">
-                    <span className="info-label">Top Mystery Bounty:</span>
-                    <span className="info-value" style={{ color: '#6fdcff', fontWeight: 700 }}>
-                      {topBountyCents(mysteryBounty.inventory) > 0
-                        ? `${formatCents(topBountyCents(mysteryBounty.inventory))} Chips`
-                        : 'Drawn When The Mystery Phase Opens'}
-                    </span>
-                  </div>
-                  <div className="info-row">
-                    <span className="info-label">Mystery Status:</span>
-                    <span className="info-value">
-                      {activationStatusLine(mysteryBounty.inventory)}
-                    </span>
-                  </div>
-                  <div className="info-row">
-                    <span className="info-label">Full Ladder:</span>
-                    <span className="info-value">
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('mystery')}
-                        style={{
-                          background: 'none',
-                          border: '1px solid rgba(111,220,255,0.4)',
-                          color: '#6fdcff',
-                          borderRadius: 6,
-                          padding: '6px 10px',
-                          minHeight: 32,
-                          cursor: 'pointer',
-                          touchAction: 'manipulation',
-                          font: 'inherit',
-                        }}
-                      >
-                        Open The Mystery Tab
-                      </button>
-                    </span>
-                  </div>
-                </>
-              )}
-              <div className="info-row">
-                <span className="info-label">Blind Structure:</span>
-                <span className="info-value">
-                  {(() => {
-                    const blinds =
-                      typeof tournament.blind_structure === 'string'
-                        ? (() => {
-                            try {
-                              return JSON.parse(tournament.blind_structure);
-                            } catch {
-                              return [];
-                            }
-                          })()
-                        : tournament.blind_structure || [];
-                    if (blinds.length === 0) return 'Standard';
-                    const dur = blinds[0]?.duration_minutes || blinds[0]?.durationMinutes || 0;
-                    return dur <= 5 ? 'Turbo' : dur <= 10 ? 'Regular' : 'Deep Stack';
-                  })()}
-                </span>
-              </div>
-              {((tournament as any).variant === 'spin' ||
-                (tournament as any).tournament_type === 'SPIN') && (
-                <div className="info-row">
-                  <span className="info-label">Spin Multiplier:</span>
-                  <span className="info-value" style={{ color: '#6fdcff', fontWeight: 700 }}>
-                    {spinMultiplierLabel(tournament as any) ?? 'Revealed at game start'}
-                  </span>
-                </div>
-              )}
-              {(tournament as any).is_multi_day && (
-                <div className="info-row">
-                  <span className="info-label">Multi-Day:</span>
-                  <span className="info-value" style={{ color: '#22d3ee' }}>
-                    Day {(tournament as any).day_number || 1} Of{' '}
-                    {(tournament as any).total_days || 2}
-                  </span>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-
-        {activeTab === 'entries' &&
-          (() => {
-            const isRunning = tournament.status === 'RUNNING';
-            // Sort: playing players by chips (desc), then eliminated by position (asc), then registered
-            const sorted = [...entries].sort((a, b) => {
-              const statusOrder: Record<string, number> = {
-                playing: 0,
-                registered: 1,
-                winner: -1,
-                eliminated: 2,
-              };
-              const aOrder = statusOrder[a.status] ?? 3;
-              const bOrder = statusOrder[b.status] ?? 3;
-              if (aOrder !== bOrder) return aOrder - bOrder;
-              if (a.status === 'playing' || a.status === 'registered')
-                return (b.chips || 0) - (a.chips || 0);
-              if (a.status === 'eliminated') return (a.position || 999) - (b.position || 999);
-              return 0;
-            });
-
-            // ITM (in the money) calculation
-            const payoutCount = tournament.payout_structure
-              ? typeof tournament.payout_structure === 'string'
-                ? (() => {
-                    try {
-                      return JSON.parse(tournament.payout_structure).length;
-                    } catch {
-                      return 0;
-                    }
-                  })()
-                : Array.isArray(tournament.payout_structure)
-                  ? tournament.payout_structure.length
-                  : 0
-              : 0;
-            const playingCount = entries.filter((e) => e.status === 'playing').length;
-            const isBubble = isRunning && payoutCount > 0 && playingCount === payoutCount + 1;
-
-            return (
-              <div className="entries-list">
-                {isRunning && (
-                  <div
-                    className="chip-leader-header"
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      padding: '8px 12px',
-                      fontSize: 12,
-                      color: 'var(--text-muted)',
-                      borderBottom: '1px solid var(--border-subtle)',
-                    }}
-                  >
-                    <span>Rank</span>
-                    <span>Player</span>
-                    <span>Chips</span>
-                    <span>Status</span>
-                  </div>
-                )}
-                {isBubble && (
-                  <div
-                    style={{
-                      background: 'rgba(245,158,11,0.15)',
-                      color: '#0a5dc2',
-                      padding: '8px 12px',
-                      fontSize: 13,
-                      textAlign: 'center',
-                      borderRadius: 8,
-                      margin: '8px 0',
-                    }}
-                  >
-                    BUBBLE - {playingCount} Players Left, {payoutCount} Get Paid
-                  </div>
-                )}
-                {sorted.length === 0 ? (
-                  <div className="empty-state">
-                    <p>No Entries Yet. Be The First To Register!</p>
-                  </div>
-                ) : (
-                  sorted.map((entry, idx) => {
-                    const isPlaying = entry.status === 'playing';
-                    const rank = isPlaying ? idx + 1 : entry.position || '-';
-                    /* Dan 2026-08-25: "see any player and be redirected to that
-                       table directly." `table_id` has always been SELECTED for
-                       these rows and has never been used by them - it fed only
-                       the auto-open effect and the footer's own ENTER TABLE
-                       link. A player who is still in, at a live table, in a
-                       running tournament, is now a link to that table. */
-                    const watchable = isRunning && isPlaying && !!entry.table_id;
-                    const goWatch = () => {
-                      if (watchable) watchTable(entry.table_id as string);
-                    };
-                    return (
-                      <div
-                        key={entry.id}
-                        className={`entry-row ${entry.status === 'eliminated' ? 'eliminated-row' : ''} ${visibleEntries.has(entry.id) ? 'fadeInUp' : 'hidden'}`}
-                        role={watchable ? 'button' : undefined}
-                        tabIndex={watchable ? 0 : undefined}
-                        aria-label={
-                          watchable ? `Watch ${entry.username} at their table` : undefined
-                        }
-                        title={watchable ? 'Watch this player’s table' : undefined}
-                        onClick={watchable ? goWatch : undefined}
-                        onKeyDown={
-                          watchable
-                            ? (e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault();
-                                  goWatch();
-                                }
-                              }
-                            : undefined
-                        }
-                        style={
-                          visibleEntries.has(entry.id)
-                            ? entry.status === 'eliminated'
-                              ? { opacity: 0.5 }
-                              : watchable
-                                ? { cursor: 'pointer' }
-                                : undefined
-                            : { opacity: 0, transform: 'translateY(8px)' }
-                        }
-                      >
-                        <span
-                          className="entry-rank"
-                          style={
-                            isPlaying && idx === 0
-                              ? { color: '#6fdcff', fontWeight: 700 }
-                              : undefined
-                          }
-                        >
-                          {rank}
-                        </span>
-                        <div className="entry-avatar"></div>
-                        <div className="entry-info">
-                          <span className="entry-name">{entry.username}</span>
-                          <span className="entry-chips">
-                            {isPlaying
-                              ? `${(entry.chips || 0).toLocaleString()} chips`
-                              : entry.status === 'eliminated'
-                                ? `Eliminated ${entry.position ? `#${entry.position}` : ''}`
-                                : entry.status === 'winner'
-                                  ? 'WINNER'
-                                  : 'Registered'}
-                          </span>
-                        </div>
-                        <span className={`entry-status ${entry.status}`}>{entry.status}</span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            );
-          })()}
-
-        {activeTab === 'ranking' && (
-          <div className="ranking-section">
-            <TournamentStandings
-              tournamentId={tournamentId || ''}
-              totalPlayers={
-                tournament.max_players || entries.length || tournament.current_players || 0
-              }
-              /* Dan 2026-08-25: "you can go to Tables or Ranking and see any
-                 player and be redirected to that table directly." Only while
-                 the tournament is actually running - a finished event's
-                 table_ids point at closed tables. */
-              onWatchPlayer={tournament.status === 'RUNNING' ? watchTable : undefined}
-            />
-          </div>
-        )}
-
-        {activeTab === 'unions' && (
-          <div className="unions-section">
-            {(tournament as any).is_xmtt && (tournament as any).union_id ? (
-              <div className="union-info">
-                <h3>Union Tournament (XMTT)</h3>
-                <div className="info-row">
-                  <span className="info-label">Union:</span>
-                  <span className="info-value">
-                    {unionName || ((tournament as any).union_id || '').slice(0, 8)}
-                  </span>
-                </div>
-                <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginTop: 8 }}>
-                  This Tournament Spans Multiple Clubs Within The Union. Players From All Member
-                  Clubs Can Participate.
-                </p>
-                <div className="info-row">
-                  <span className="info-label">Participating Clubs:</span>
-                  <span className="info-value">
-                    {(() => {
-                      const uniqueClubs = new Set(
-                        entries.map((e) => (e as any).club_id).filter(Boolean)
-                      );
-                      return uniqueClubs.size > 0
-                        ? `${uniqueClubs.size} clubs`
-                        : 'All union clubs eligible';
-                    })()}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="empty-state">
-                <p>This Is A Club Tournament, Not A Union (XMTT) Event.</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'tables' && (
-          <div className="tables-section">
-            <div className="tables-header">
-              <h3>Active Tables ({tables.length})</h3>
-              <span className="table-balance-indicator">Auto-Balancing Enabled</span>
-            </div>
-            <div className="tables-grid">
-              {tables.length === 0 ? (
-                <div className="empty-state">
-                  <p>
-                    {tournament.status === 'RUNNING'
-                      ? 'Loading tables...'
-                      : 'Tables will be created when the tournament starts.'}
-                  </p>
-                </div>
-              ) : (
-                tables.map((table, idx) => (
-                  <Link
-                    key={table.id}
-                    to={`/table/${table.id}`}
-                    className="table-card"
-                    style={{ textDecoration: 'none', color: 'inherit' }}
-                  >
-                    <div className="table-num">{table.name || `Table ${idx + 1}`}</div>
-                    <div className="table-players">
-                      {table.current_players}/{table.max_players} Players
-                    </div>
-                    <div className="table-blinds">
-                      {table.small_blind}/{table.big_blind}
-                    </div>
-                    <div className="table-status">{table.status}</div>
-                  </Link>
-                ))
-              )}
-            </div>
-            <div className="balance-info">
-              <p>Tables Are Automatically Balanced When Player Counts Differ By 2+</p>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'blinds' &&
-          (blindLevels.length > 0 ? (
-            <BlindLevelProgress
-              levels={blindLevels}
-              currentLevel={Number((tournament as any)?.current_level) || 1}
-              levelStartTime={
-                (tournament as any)?.level_start_time ||
-                tournament.started_at ||
-                tournament.start_time
-              }
-              isPaused={tournament.status === 'PAUSED'}
-            />
-          ) : (
-            <div className="empty-state">
-              <p>No Blind Structure Published For This Tournament Yet.</p>
-            </div>
-          ))}
-
-        {activeTab === 'chips' &&
-          (tournament.status === 'RUNNING' || tournament.status === 'COMPLETED' ? (
-            <LiveChipCounts
-              tournamentId={tournament.id}
-              currentBigBlind={
-                blindLevels.find(
-                  (l: { level: number; bigBlind: number }) =>
-                    l.level === (Number((tournament as any)?.current_level) || 1)
-                )?.bigBlind ||
-                blindLevels[0]?.bigBlind ||
-                0
-              }
-            />
-          ) : (
-            <div className="empty-state">
-              <p>Chip Counts Appear Once The Tournament Is Under Way.</p>
-            </div>
-          ))}
-
-        {/* MYSTERY BOUNTY TAB (sections 31 to 36, 41, 47, 67, 68, 73). Three
-            sections, one panel, fed by the page-level hook so the Detail tab's
-            advertisement and this ladder can never disagree. */}
-        {activeTab === 'mystery' && isMysteryBountyEvent && (
-          <MysteryBountyPanel
-            tournamentId={tournament.id}
-            isMysteryBounty
-            data={mysteryBounty}
-            currentUserId={user?.id ?? null}
-            isCompleted={tournament.status === 'COMPLETED'}
-          />
-        )}
-
-        {activeTab === 'rewards' &&
-          (() => {
-            const entryCount = entries.length || tournament.current_players || 0;
-            const dbPrizePool = tournament.prize_pool || 0; // Live from DB (updated on reg, rebuy, addon)
-            const hasGuarantee = (tournament.guaranteed_prize || 0) > 0;
-            // TOURNEY-AUDIT 2026-07-24 (sweep 4): the DB pool is authoritative
-            // (server recalculates it on every registration/rebuy/add-on, fee
-            // stripped, horses excluded). The old `buy_in × entries` overlay
-            // counted FREE horse entries and ignored the fee split, so the
-            // rewards tab advertised prizes larger than what would be paid.
-            const effectivePrizePool = hasGuarantee
-              ? Math.max(dbPrizePool, tournament.guaranteed_prize || 0)
-              : dbPrizePool;
-
-            // Resolve payout structure — use DB if available, otherwise auto-select by entry count
-            const resolvePayouts = (): { place: number; percentage: number }[] => {
-              const raw = tournament.payout_structure;
-              if (raw) {
-                const parsed =
-                  typeof raw === 'string'
-                    ? (() => {
-                        try {
-                          return JSON.parse(raw);
-                        } catch {
-                          return [];
-                        }
-                      })()
-                    : raw;
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                  return parsed.map((p: any) => ({
-                    place: p.place || p.position || 0,
-                    percentage: p.percentage || 0,
-                  }));
-                }
-              }
-              // Auto-select based on entry count (matches TournamentEngine logic)
-              if (entryCount <= 3)
-                return [
-                  { place: 1, percentage: 65 },
-                  { place: 2, percentage: 35 },
-                ];
-              if (entryCount <= 6)
-                return [
-                  { place: 1, percentage: 65 },
-                  { place: 2, percentage: 35 },
-                ];
-              if (entryCount <= 9)
-                return [
-                  { place: 1, percentage: 50 },
-                  { place: 2, percentage: 30 },
-                  { place: 3, percentage: 20 },
-                ];
-              if (entryCount <= 18)
-                return [
-                  { place: 1, percentage: 50 },
-                  { place: 2, percentage: 30 },
-                  { place: 3, percentage: 20 },
-                ];
-              if (entryCount <= 35)
-                return [
-                  { place: 1, percentage: 38 },
-                  { place: 2, percentage: 27 },
-                  { place: 3, percentage: 18 },
-                  { place: 4, percentage: 10 },
-                  { place: 5, percentage: 7 },
-                ];
-              return [
-                { place: 1, percentage: 28 },
-                { place: 2, percentage: 18 },
-                { place: 3, percentage: 13 },
-                { place: 4, percentage: 10 },
-                { place: 5, percentage: 8 },
-                { place: 6, percentage: 6 },
-                { place: 7, percentage: 5 },
-                { place: 8, percentage: 4.5 },
-                { place: 9, percentage: 4 },
-                { place: 10, percentage: 3.5 },
-              ];
-            };
-            const payouts = resolvePayouts();
-            const isAutoResolved =
-              !tournament.payout_structure ||
-              (typeof tournament.payout_structure === 'string'
-                ? (() => {
-                    try {
-                      return JSON.parse(tournament.payout_structure).length === 0;
-                    } catch {
-                      return true;
-                    }
-                  })()
-                : !Array.isArray(tournament.payout_structure) ||
-                  tournament.payout_structure.length === 0);
-
-            return (
-              <div className="rewards-section">
-                <h3>Payout Structure</h3>
-                <div className="prize-pool-display">
-                  <span className="prize-label">Total Prize Pool</span>
-                  <span className="prize-amount">
-                    {effectivePrizePool > 0
-                      ? `${effectivePrizePool.toLocaleString()} chips`
-                      : 'Based on entries'}
-                  </span>
-                  {hasGuarantee && (
-                    <span className="prize-gtd">
-                      {(tournament.guaranteed_prize || 0).toLocaleString()} GTD
-                    </span>
-                  )}
-                </div>
-                {isAutoResolved && entryCount > 0 && (
-                  <p
-                    style={{
-                      fontSize: 12,
-                      color: 'var(--text-muted)',
-                      fontStyle: 'italic',
-                      margin: '4px 0 8px',
-                    }}
-                  >
-                    Estimated Payouts Based On {entryCount} Entries - Final Structure Determined At
-                    Start
-                  </p>
-                )}
-                <div className="payout-table">
-                  {payouts.length > 0 ? (
-                    payouts.map((payout) => (
-                      <div key={payout.place} className="payout-row">
-                        <span className="payout-place">
-                          {payout.place === 1 && '1st'}
-                          {payout.place === 2 && '2nd'}
-                          {payout.place === 3 && '3rd'}
-                          {payout.place > 3 && `#${payout.place}`}
-                        </span>
-                        <span className="payout-percent">{payout.percentage}%</span>
-                        <span className="payout-chips">
-                          {effectivePrizePool > 0
-                            ? (
-                                Math.trunc(effectivePrizePool * payout.percentage) / 100
-                              ).toLocaleString()
-                            : '-'}
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <div
-                      className="payout-row"
-                      style={{
-                        justifyContent: 'center',
-                        color: 'var(--text-muted)',
-                        fontStyle: 'italic',
-                      }}
-                    >
-                      <span>Register To See Estimated Payouts</span>
-                    </div>
-                  )}
-                </div>
-                {tournament.blind_structure &&
-                  (() => {
-                    const blinds =
-                      typeof tournament.blind_structure === 'string'
-                        ? (() => {
-                            try {
-                              return JSON.parse(tournament.blind_structure);
-                            } catch {
-                              return [];
-                            }
-                          })()
-                        : tournament.blind_structure;
-                    return blinds.length > 0 ? (
-                      <>
-                        <h3 style={{ marginTop: '24px' }}>Blind Structure</h3>
-                        <div className="blinds-table">
-                          <div className="blinds-header">
-                            <span>Level</span>
-                            <span>Blinds</span>
-                            <span>Ante</span>
-                            <span>Duration</span>
-                          </div>
-                          {blinds.slice(0, 10).map((level: any) => (
-                            <div
-                              key={level.level}
-                              className={`blinds-row ${tournament.current_level === level.level ? 'current-level' : ''}`}
-                            >
-                              <span className="level-num">{level.level}</span>
-                              <span className="level-blinds">
-                                {level.small_blind || level.smallBlind}/
-                                {level.big_blind || level.bigBlind}
-                              </span>
-                              <span className="level-ante">{level.ante || '-'}</span>
-                              <span className="level-duration">
-                                {level.duration_minutes || level.durationMinutes}m
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    ) : null;
-                  })()}
-              </div>
-            );
-          })()}
-
-        {/* Footer Actions */}
+        {/* Footer Actions. A flex child of the shell, NOT `position: fixed`:
+            the fixed version offset itself by `--bottom-nav-clearance` to clear
+            a bottom nav this page does not render, which is the dead 74px gap
+            Dan reported under it. As a flex child there is no offset left to be
+            wrong. */}
         <div className="details-footer">
-          <button className="btn btn-share" onClick={() => void shareTournament()}>
+          <button className="btn btn-share" type="button" onClick={() => void shareTournament()}>
             Share
           </button>
           {(() => {
@@ -2030,24 +996,12 @@ export default function TournamentDetails({
             if (tournament.status === 'RUNNING') {
               if (myEntry?.status === 'playing' && myEntry.table_id) {
                 return (
-                  <Link
-                    to={`/table/${myEntry.table_id}`}
-                    className="btn btn-primary"
-                    style={{
-                      flex: 1,
-                      backgroundColor: '#10b981',
-                      textDecoration: 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 700,
-                    }}
-                  >
+                  <Link to={`/table/${myEntry.table_id}`} className="btn btn-enter-table">
                     ENTER TABLE
                   </Link>
                 );
               }
-              /* Dan 2026-08-25: every branch below used to END the footer — a
+              /* Dan 2026-08-25: every branch below used to END the footer - a
                  badge, a countdown, or nothing. So a running tournament you
                  were not playing in offered no way onto its felt at all. WATCH
                  rides alongside whatever else the branch says, because "I am
@@ -2057,6 +1011,7 @@ export default function TournamentDetails({
               const watchBtn = featuredTableId ? (
                 <button
                   className="btn btn-watch"
+                  type="button"
                   onClick={() => watchTable(featuredTableId)}
                   title="Watch the featured table"
                 >
@@ -2067,12 +1022,7 @@ export default function TournamentDetails({
               if (myEntry?.status === 'registered') {
                 return (
                   <>
-                    <span
-                      className="tournament-status-badge running"
-                      style={{ color: '#6fdcff', borderColor: '#6fdcff' }}
-                    >
-                      WAITING FOR SEAT...
-                    </span>
+                    <span className="tournament-status-badge running">WAITING FOR SEAT...</span>
                     {watchBtn}
                   </>
                 );
@@ -2090,6 +1040,7 @@ export default function TournamentDetails({
                   <>
                     <button
                       className="btn btn-register late-reg"
+                      type="button"
                       onClick={() => handleRegister(true)}
                       disabled={isRegisteringMtt}
                     >
@@ -2118,6 +1069,7 @@ export default function TournamentDetails({
               return (
                 <button
                   className="btn btn-unregister"
+                  type="button"
                   onClick={handleUnregister}
                   disabled={isProcessing}
                 >
@@ -2129,6 +1081,7 @@ export default function TournamentDetails({
             return (
               <button
                 className="btn btn-register"
+                type="button"
                 onClick={() => handleRegister(false)}
                 disabled={isRegisteringMtt}
               >
@@ -2142,9 +1095,16 @@ export default function TournamentDetails({
             `components/tournament/signUpDialog`, shown by
             useTournamentRegistration for EVERY register button in the app.
             Dan 2026-08-25: "you don't need a secondary confirmation for buy
-            ins" — this local copy plus the hook's own prompt was the pair that
+            ins" - this local copy plus the hook's own prompt was the pair that
             asked twice. Do not re-add a page-local buy-in modal. */}
       </div>
+
+      {/* Mystery bounty celebration. Mounted on the SURFACE rather than inside a
+          tab: it is `position: fixed`, it listens to the engine's own broadcast
+          channel so an observer holding no entry still hears it, and a reveal
+          can land while the player is looking at any tab at all. It renders
+          nothing until a top-three chest is pulled. */}
+      {tournamentId && <MysteryBountyCelebration tournamentId={tournamentId} />}
 
       {/* Final Table Overlay */}
       {tournament.status === 'RUNNING' && tournamentId && (

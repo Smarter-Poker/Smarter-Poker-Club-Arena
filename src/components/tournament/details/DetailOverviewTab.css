@@ -486,3 +486,39 @@
     transition: none;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   THE MYSTERY LADDER LINK
+
+   Cyan house accent, never the blue action colour: opening a tab is not an
+   action that spends anything, and the two must not look like the same
+   button. 44px tall so a thumb finds it on a 375px screen.
+   ───────────────────────────────────────────────────────────────────────── */
+.dov-ladder-link {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(111, 220, 255, 0.4);
+  background: linear-gradient(180deg, #1a2436 0%, #131b28 100%);
+  color: #6fdcff;
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: all 0.2s;
+}
+
+.dov-ladder-link:hover {
+  border-color: #6fdcff;
+  background: linear-gradient(180deg, #223046 0%, #1a2436 100%);
+  color: #e8eaf0;
+}
+
+.dov-ladder-link:focus-visible {
+  outline: 2px solid #6fdcff;
+  outline-offset: 2px;
+}

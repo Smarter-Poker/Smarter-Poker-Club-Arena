@@ -226,17 +226,23 @@ type TournVariant = 'ALL' | 'MTT' | 'Spin-It' | 'SN';
    described (see the note further down). Status is one mechanism now:
    GameFilterValue.statuses, defined per game type in advancedFilterSpec. */
 
+/** ALL shows the ten soonest MTTs a player can still enter. Cash is uncapped
+    (Dan 2026-08-25: "the cap is 10 for MTT only"). */
+const ALL_TAB_MTT_CAP = 10;
+
 const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'LIMIT', 'MIXED'];
 const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
 
 /**
  * Dan 2026-08-20: "remove Mixed games from the action bar."
+ * Dan 2026-08-25: "WE DON'T HAVE MIXED CASH GAMES."
  *
- * MIXED stays in the GameType union and in cashKind, because it is still the
- * bucket every table that is neither Hold'em nor Omaha falls into — dropping
- * the type would make those tables unclassifiable. It just has no tab of its
- * own any more, so they surface under All, which is where a player browsing
- * everything expects to find them.
+ * MIXED stays in the GameType union as cashKind's LAST RESORT - the bucket a
+ * variant nobody has classified falls into - and it has no tab, so a table
+ * that reaches it is reachable only from ALL. That makes it a diagnostic, not
+ * a category: every variant this platform actually deals (nlh, plo4/5/6/8,
+ * short_deck, pineapple) is classified above it, and anything landing here is
+ * a variant someone shipped without telling the lobby about it.
  */
 const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
   /* LOBBY V2: All Games is a real tab now — the line-based table renders a
@@ -281,7 +287,21 @@ function cashKind(t: { game_variant?: string }): 'HOLDEM' | 'OMAHA' | 'LIMIT' | 
   if (isFixedLimitVariant(v)) return 'LIMIT';
   if (v.includes('flh') || (v.includes('limit') && !v.includes('no') && !v.includes('pot')))
     return 'LIMIT';
-  if (v.includes('nlh') || v.includes('holdem') || v.includes("hold'em") || v.includes('short'))
+  /* Pineapple is Hold'em. The platform's own type says so - club.types.ts
+     declares `'pineapple' // Pineapple Hold'em` - it deals a community board
+     and bets like Hold'em, and it differs only by dealing three hole cards
+     and discarding one. Without this it fell through to MIXED, which is the
+     unrecognised-variant bucket: production is running five pineapple tables
+     that appeared on NO tab in the app, because ALL dropped the MIXED bucket
+     and there is no Mixed tab to drop to. Short Deck sits here for exactly
+     the same reason. */
+  if (
+    v.includes('nlh') ||
+    v.includes('holdem') ||
+    v.includes("hold'em") ||
+    v.includes('short') ||
+    v.includes('pineapple')
+  )
     return 'HOLDEM';
   if (v.includes('plo') || v.includes('omaha')) return 'OMAHA';
   return 'MIXED';
@@ -2319,18 +2339,44 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     let cash = filteredTables.map(cashEntry);
     if (favoritesOnly) cash = cash.filter((e) => favoriteTableIds.has(e.id));
 
+    /* ── WHAT "ALL" MEANS (Dan, 2026-08-25) ────────────────────────────────
+       "WE DON'T HAVE MIXED CASH GAMES, AND THE CAP IS 10 FOR MTT ONLY.
+        SPINS AND HEADS UP (SNG) SHOULD NEVER BE ON THE ALL LIST."
+
+       Three rules, and the code only had the third one right.
+
+       EVERY CASH TABLE. The list used to be built as three buckets -
+       cashKind() === HOLDEM, then OMAHA, then LIMIT - which silently dropped
+       anything landing in the MIXED bucket. MIXED is not a game type this
+       platform runs; it is the fallback cashKind() returns for a variant it
+       does not recognise. Production is running five `pineapple` tables right
+       now, and cashKind() has no test for that string, so those five tables
+       were on no tab in the app: not on ALL, and there is no Mixed tab. Any
+       future variant would have vanished the same way, silently. Filtering by
+       an unrecognised-variant bucket is filtering by a bug.
+
+       NO CAP ON CASH. Each of those three buckets was also capped at 10, so a
+       club with 42 NLH tables showed ten of them with nothing saying so. The
+       cap is the MTT one.
+
+       ORDER COMES FROM THE SORT CONTROL. Bucketing by game kind overrode
+       whatever the player had chosen in Sort By; a flat list keeps the order
+       filteredTables already put them in, so the control means what it says.
+
+       SPINS AND HEADS UP ARE NEVER HERE. They have their own tabs, they are
+       seat-first rather than browse-first, and a Spin has no lobby at all -
+       tapping one commits the buy-in. The `kind === 'mtt'` test below is what
+       enforces that, and tests/unit/allTabScope.test.ts pins it. */
     if (gameType === 'ALL') {
       const isMtt = (e: LobbyEntry) => e.kind === 'mtt';
       const isLateRegOrStarting = (e: LobbyEntry) =>
         e.status === 'registering' || e.status === 'late_reg' || e.status === 'starting_soon';
 
-      const selectedTourns = tourns.filter((t) => isMtt(t) && isLateRegOrStarting(t)).slice(0, 10);
+      const selectedTourns = tourns
+        .filter((t) => isMtt(t) && isLateRegOrStarting(t))
+        .slice(0, ALL_TAB_MTT_CAP);
 
-      const holdemCash = cash.filter((c) => cashKind(c.raw as any) === 'HOLDEM').slice(0, 10);
-      const omahaCash = cash.filter((c) => cashKind(c.raw as any) === 'OMAHA').slice(0, 10);
-      const limitCash = cash.filter((c) => cashKind(c.raw as any) === 'LIMIT').slice(0, 10);
-
-      return [...selectedTourns, ...holdemCash, ...omahaCash, ...limitCash];
+      return [...selectedTourns, ...cash];
     }
 
     // Tournaments first, cash after — same order the card grid used, so the
@@ -2860,9 +2906,21 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           ))}
         </div>
 
-        {/* Advanced Filters. Hidden on ALL, which has no spec of its own and
-            means "show everything" - offering a filter sheet there would imply
-            the tab can be narrowed when it deliberately cannot. */}
+        {/* ON ALL THIS IS A SORT BUTTON, AND IT SAYS SO (Dan 2026-08-25).
+            The comment that used to sit here claimed the button was "Hidden
+            on ALL". It was not, and what it opened there was worse than
+            hidden: AdvancedFilters retargets initialType 'ALL' to 'HOLDEM',
+            while filteredTables/filteredTournaments set advType to null on
+            ALL - so a player could open the sheet, set Hold'em filters, press
+            Save, watch the list not change, and have those filters then apply
+            the moment they touched the NLH tab. A control that appears to do
+            one thing and quietly does another.
+
+            Hiding it was the other option and it is worse, because Sort By
+            lives inside this same sheet and ALL is the tab with the most rows
+            to order. So the sheet opens in sortOnly mode instead: the game
+            type row and every filter section are gone, Sort By is all that is
+            left, and the button reads Sort. Every other tab is unchanged. */}
         <button
           className={`game-bar__filter-btn ${(() => {
             if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
@@ -2871,15 +2929,15 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
             return isFilt || sortKey !== 'recommended' ? 'is-set' : '';
           })()}`}
-          aria-label="Filters and Sort"
-          title="Filters and Sort"
+          aria-label={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
+          title={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
           onClick={() => {
             haptic.light();
             setFiltersOpen(true);
           }}
         >
           <IconSort />
-          <span>Filters</span>
+          <span>{gameType === 'ALL' ? 'Sort' : 'Filters'}</span>
         </button>
       </div>
 
@@ -3008,6 +3066,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           sortKey={sortKey}
           onSortChange={setSortKey}
           sortOptions={SORT_OPTIONS}
+          sortOnly={gameType === 'ALL'}
         />
       )}
 

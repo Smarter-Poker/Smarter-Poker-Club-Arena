@@ -114,6 +114,15 @@ interface AdvancedFiltersProps {
   sortKey?: string;
   onSortChange?: (k: any) => void;
   sortOptions?: { key: string; label: string }[];
+  /**
+   * ALL has no filter spec of its own, and the lobby deliberately ignores the
+   * per-type filters while it is the active tab - so on ALL this sheet showed
+   * a game-type row and five filter sections that could be set, saved, and
+   * then have no effect on the list behind them. In that mode it is a Sort
+   * sheet and says so: the type tabs and every filter section are gone, and
+   * only Sort By remains. Nothing on screen does nothing.
+   */
+  sortOnly?: boolean;
 }
 
 export default function AdvancedFilters({
@@ -124,6 +133,7 @@ export default function AdvancedFilters({
   initialType,
   onClose,
   onApply,
+  sortOnly = false,
 }: AdvancedFiltersProps) {
   const [activeType, setActiveType] = useState<FilterGameType>(
     // ALL has no spec of its own; open on Hold'em, the first that does.
@@ -218,29 +228,35 @@ export default function AdvancedFilters({
         className="afx-sheet"
         role="dialog"
         aria-modal="true"
-        aria-label="Advanced Filters"
+        aria-label={sortOnly ? 'Sort' : 'Advanced Filters'}
         onClick={(e) => e.stopPropagation()}
       >
         <header className="afx-head">
-          <button className="afx-back" onClick={onClose} aria-label="Close advanced filters">
+          <button
+            className="afx-back"
+            onClick={onClose}
+            aria-label={sortOnly ? 'Close sort' : 'Close advanced filters'}
+          >
             &#8249;&#8249;
           </button>
-          <h2>Advanced Filters</h2>
+          <h2>{sortOnly ? 'Sort' : 'Advanced Filters'}</h2>
         </header>
 
-        <div className="afx-tabs" role="tablist" aria-label="Game type">
-          {TABS.filter((t) => t.key !== 'ALL').map((t) => (
-            <button
-              key={t.key}
-              role="tab"
-              aria-selected={activeType === t.key}
-              className={`afx-tab ${activeType === t.key ? 'is-active' : ''}`}
-              onClick={() => setActiveType(t.key)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        {!sortOnly && (
+          <div className="afx-tabs" role="tablist" aria-label="Game type">
+            {TABS.filter((t) => t.key !== 'ALL').map((t) => (
+              <button
+                key={t.key}
+                role="tab"
+                aria-selected={activeType === t.key}
+                className={`afx-tab ${activeType === t.key ? 'is-active' : ''}`}
+                onClick={() => setActiveType(t.key)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="afx-body">
           {sortOptions && onSortChange && (
@@ -264,7 +280,7 @@ export default function AdvancedFilters({
             </details>
           )}
 
-          {spec && (
+          {!sortOnly && spec && (
             <>
               {spec.format && (
                 <details className="afx-section">
@@ -449,34 +465,45 @@ export default function AdvancedFilters({
           )}
         </div>
 
-        <footer className="afx-foot">
-          <button className="afx-btn afx-btn--cancel" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="afx-btn afx-btn--reset"
-            onClick={() => {
-              /* Resets THIS TAB only. A single Reset that wiped every game
+        {/* In sort-only mode the sort chips apply as they are pressed, so
+            Cancel / Reset / Save would be three buttons acting on filters
+            that are not on screen. One Done. */}
+        {sortOnly ? (
+          <footer className="afx-foot">
+            <button className="afx-btn afx-btn--save" onClick={onClose}>
+              Done
+            </button>
+          </footer>
+        ) : (
+          <footer className="afx-foot">
+            <button className="afx-btn afx-btn--cancel" onClick={onClose}>
+              Cancel
+            </button>
+            <button
+              className="afx-btn afx-btn--reset"
+              onClick={() => {
+                /* Resets THIS TAB only. A single Reset that wiped every game
                  type would be a destructive action behind an innocuous label -
                  a player clearing their Hold'em filters does not expect their
                  MTT preferences to go with them. */
-              if (!spec) return;
-              setStore((prev) => ({ ...prev, [activeType]: emptyFilterValue(spec) }));
-            }}
-          >
-            Reset
-          </button>
-          <button
-            className="afx-btn afx-btn--save"
-            onClick={() => {
-              saveFilters(clubId, store);
-              onApply(store);
-              onClose();
-            }}
-          >
-            Save
-          </button>
-        </footer>
+                if (!spec) return;
+                setStore((prev) => ({ ...prev, [activeType]: emptyFilterValue(spec) }));
+              }}
+            >
+              Reset
+            </button>
+            <button
+              className="afx-btn afx-btn--save"
+              onClick={() => {
+                saveFilters(clubId, store);
+                onApply(store);
+                onClose();
+              }}
+            >
+              Save
+            </button>
+          </footer>
+        )}
       </div>
     </div>,
     document.body

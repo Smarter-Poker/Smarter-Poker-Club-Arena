@@ -98,7 +98,24 @@ const PORT = parseInt(process.env.PORT || '8080', 10);
  * Anything else (including unset) leaves it ON, so shipping this turns it on.
  */
 const MEMBER_FEE_ROLLUP_ENABLED = process.env.MEMBER_FEE_ROLLUP_ENABLED !== 'false';
-const ROLLUP_BATCH_HANDS = 250;
+/**
+ * BATCH SIZE RAISED 250 -> 1000 (2026-08-25), because the reason it had to be
+ * 250 was a query defect, not a real cost.
+ *
+ * Every single-reference CTE inside fn_refresh_member_fee_rollup was being
+ * INLINED and then re-executed per outer row inside nested loops. Migration
+ * 20260825_perf_fee_rollup_materialize_ctes puts AS MATERIALIZED fences back:
+ * a 250-hand batch measured 35,842 ms inlined and 768 ms materialized, for
+ * byte-identical output. End to end the function went ~70 ms/hand -> ~5.7
+ * ms/hand.
+ *
+ * At 5.7 ms/hand a 1000-hand batch is about 5.7s - inside the 15s client
+ * AbortController and the function's own 30s statement_timeout with room to
+ * spare, and it triples drain throughput at the SAME <=50% duty cycle
+ * (1000 per ~11.4s vs 250 per ~7.8s). Do not raise it further without
+ * re-measuring: the 15s client abort, not the database, is still the ceiling.
+ */
+const ROLLUP_BATCH_HANDS = 1000;
 const ROLLUP_BACKFILL_MS = 2_000;
 /**
  * DUTY CYCLE CAP (2026-08-25). The backfill must never saturate a core.

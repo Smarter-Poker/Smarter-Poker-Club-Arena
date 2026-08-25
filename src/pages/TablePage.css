@@ -1016,19 +1016,70 @@
    never cover the date / club / game / hand line. The stack is anchored
    from its top so board 1 keeps its usual position. */
 .table-page[data-boards] .community-area {
-  top: 42%;
-  transform: translate(-50%, -42%);
+  top: 40%;
+  transform: translate(-50%, -40%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+}
+.table-page[data-boards='3'] .community-area {
+  top: 36%;
+  transform: translate(-50%, -36%);
+  gap: 4px;
 }
 .community-area__run {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   width: 100%;
+}
+.community-area__run-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 8px;
+  background: rgba(10, 14, 22, 0.88);
+  border: 1px solid rgba(255, 215, 0, 0.35);
+  border-radius: 6px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-sizing: border-box;
+}
+.community-area__run-badge {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffd700;
+  background: rgba(255, 215, 0, 0.16);
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.community-area__run-winner {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  flex: 1 1 auto;
+}
+.community-area__run-equity {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #4ade80;
+  font-family: 'JetBrains Mono', monospace, sans-serif;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* ── Bomb pot countdown pill (round 3, 2026-08-20) ───────────────────────
@@ -1110,6 +1161,9 @@
 }
 /* Run 3 (a second extra board) waits for run 2's cards to land. */
 .community-area__run + .community-area__run {
+  --rit-run-delay: 0.5s;
+}
+.community-area__run + .community-area__run + .community-area__run {
   --rit-run-delay: 1s;
 }
 @keyframes ritRunCardIn {

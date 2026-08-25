@@ -251,7 +251,7 @@ import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage';
 import { serverNow } from '../utils/serverClock';
 // Dan 2026-08-21, item 15: hero's live hand strength under their seat box.
-import { bestFive } from '../utils/handEvaluator';
+import { bestFive, cardKey } from '../utils/handEvaluator';
 // Dan 2026-08-21, items 11 + 16: the client's post-hand hold comes from the
 // same animation spec the engine derives its own hold from, so the table can
 // never clear the winner before the pot has finished travelling to them.
@@ -2418,6 +2418,70 @@ export default function TablePage({
     intensity: number;
   }>({ active: false, origin: { x: 0, y: 0 }, intensity: 1 });
 
+  // Multi-board Run It Twice / Run It 3 Times view model (all rendered directly on the table felt)
+  const ritBoardsView = useMemo(() => {
+    if (!ritResult?.boards || ritResult.boards.length < 2) return [];
+    const runs = ritResult.runs || ritResult.boards.length || 2;
+    const sharePct = Math.round(100 / runs);
+    const boardPot = Math.floor(ritResult.potTotal / runs);
+
+    return ritResult.boards.map((rawBoard, bi) => {
+      const cards = normalizeCards(rawBoard) as Card[];
+      const winnerIds = ritResult.perBoardWinners?.[bi] || [];
+      const winnerNames = winnerIds
+        .map((id) => tableState.players.find((p) => p?.id === id)?.name || 'Player')
+        .filter(Boolean);
+
+      let winnerHandName: string | undefined;
+      let highlightedIndices: number[] = [];
+
+      // Evaluate the winning hand for the winner(s) on this board
+      for (const wid of winnerIds) {
+        const winnerPlayer = tableState.players.find((p) => p?.id === wid);
+        const hole = (winnerPlayer?.holeCards ?? []).filter((c): c is Card => c != null);
+        if (hole.length > 0) {
+          const evalResult = bestFive(hole, cards, tableState.gameType);
+          if (evalResult) {
+            winnerHandName = evalResult.name;
+            const playedKeySet = new Set(evalResult.cards.map(cardKey));
+            highlightedIndices = cards
+              .map((c, idx) => (playedKeySet.has(cardKey(c)) ? idx : -1))
+              .filter((idx) => idx >= 0);
+            break;
+          }
+        }
+      }
+
+      // Fallback: evaluate best hand among any players with visible hole cards
+      if (!winnerHandName) {
+        for (const p of tableState.players) {
+          const hole = (p?.holeCards ?? []).filter((c): c is Card => c != null);
+          if (hole.length > 0) {
+            const evalResult = bestFive(hole, cards, tableState.gameType);
+            if (evalResult) {
+              winnerHandName = evalResult.name;
+              const playedKeySet = new Set(evalResult.cards.map(cardKey));
+              highlightedIndices = cards
+                .map((c, idx) => (playedKeySet.has(cardKey(c)) ? idx : -1))
+                .filter((idx) => idx >= 0);
+              break;
+            }
+          }
+        }
+      }
+
+      return {
+        boardIndex: bi,
+        cards,
+        winnerNames,
+        winnerHandName,
+        highlightedIndices,
+        sharePct,
+        shareAmount: boardPot,
+      };
+    });
+  }, [ritResult, tableState.players, tableState.gameType]);
+
   // ─── Multi-table info reporting ─────────────────────────────────────
   // When embedded in MultiTablePage, report table name/pot/turn status
   //
@@ -4365,6 +4429,11 @@ export default function TablePage({
             perBoardWinners: (handState.per_board_winners as string[][]) || undefined,
             potTotal: pots.reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
           });
+          setTableState((prev) => ({
+            ...prev,
+            communityCards: normalizeCards(boards[0]) as Card[],
+            boardStage: 'river',
+          }));
           if (ritResultTimerRef.current) clearTimeout(ritResultTimerRef.current);
           ritResultTimerRef.current = setTimeout(() => setRitResult(null), 12_000);
         }
@@ -7489,6 +7558,11 @@ export default function TablePage({
           muckTimerRef.current = null;
         }
         setMuckingSeats(Array(9).fill(false));
+        setRitResult(null);
+        if (ritResultTimerRef.current) {
+          clearTimeout(ritResultTimerRef.current);
+          ritResultTimerRef.current = null;
+        }
         // AUDIT-2 FIX 2026-08-20: the ALL IN banner timer was NOT cancelled at
         // the hand boundary — a hand starting inside the 1.8s window left
         // "ALL IN" splashed over the fresh deal.
@@ -8184,6 +8258,7 @@ export default function TablePage({
             amounts: {},
             boardHandNames: null,
           });
+          setRitResult(null);
           setWinnerParticle((prev) => ({ ...prev, active: false }));
           setMuckingSeats(Array(9).fill(false));
         }, 3000);
@@ -11162,66 +11237,90 @@ export default function TablePage({
                     percentages are converted so it does not move a pixel). */}
 
                 {/* Community Cards.
-                    Dan 2026-08-18: when the hand is run twice or three times,
-                    the extra boards render HERE, stacked directly under the
-                    first one, instead of only inside the RIT modal. The
-                    felt masthead shifts down via data-boards (see
-                    .table-page[data-boards] in TablePage.css) so the cards
-                    can never cover the date / club / game / hand line. */}
+                    When the hand is run twice or three times, all boards render
+                    directly on the table felt with run badges, winning hand names,
+                    winner labels, and winning card highlights. */}
                 <div className="community-area">
-                  <CommunityCards
-                    cards={tableState.communityCards}
-                    stage={
-                      // Bomb pot: keep the board visually preflop until the
-                      // explosion finishes (see bombPotHoldFlop). Only the
-                      // flop is ever held — if the stage has already moved
-                      // past flop (instant all-in runout) show it.
-                      bombPotHoldFlop && tableState.boardStage === 'flop'
-                        ? 'preflop'
-                        : tableState.boardStage
-                    }
-                    highlightedIndices={winnerInfo.cardIndices}
-                    winningHandName={
-                      // Round 2 (double board): label board 1 with ITS winning
-                      // hand; the merged single name stays for single-board.
-                      winnerInfo.boardHandNames?.[0] || winnerInfo.handName
-                    }
-                    deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
-                    cardBack={activeCardBack}
-                    playSounds={ambientSoundsAllowed}
-                  />
-                  {/* DOUBLE-BOARD BOMB POT 2026-08-20: board 2, stacked
-                      directly under board 1 like the reference — no label,
-                      same stage (both boards deal in lockstep), silent so
-                      each street sounds once. */}
-                  {tableState.communityCards2.length > 0 && (
-                    <div className="community-area__board2">
+                  {ritBoardsView.length >= 2 ? (
+                    ritBoardsView.map((board) => (
+                      <div
+                        className={`community-area__run community-area__run--board-${board.boardIndex + 1}`}
+                        key={`rit-run-${board.boardIndex + 1}`}
+                        style={
+                          {
+                            '--rit-run-delay': `${board.boardIndex * 0.4}s`,
+                          } as React.CSSProperties
+                        }
+                      >
+                        <div className="community-area__run-header">
+                          <span className="community-area__run-badge">
+                            RUN {board.boardIndex + 1}
+                          </span>
+                          {board.winnerNames.length > 0 && (
+                            <span
+                              className="community-area__run-winner"
+                              title={board.winnerNames.join(', ')}
+                            >
+                              {board.winnerNames.length > 1
+                                ? `${board.winnerNames.join(' & ')} • ${board.winnerHandName ? `${board.winnerHandName} (Chop)` : 'Chop'}`
+                                : `${board.winnerNames[0]}${board.winnerHandName ? ` • ${board.winnerHandName}` : ''}`}
+                            </span>
+                          )}
+                          <span className="community-area__run-equity">
+                            {board.sharePct}%
+                            {board.shareAmount > 0
+                              ? ` ($${board.shareAmount.toLocaleString()})`
+                              : ''}
+                          </span>
+                        </div>
+                        <CommunityCards
+                          cards={board.cards}
+                          stage="river"
+                          highlightedIndices={board.highlightedIndices}
+                          winningHandName={board.winnerHandName}
+                          deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
+                          cardBack={activeCardBack}
+                          playSounds={board.boardIndex === 0 && ambientSoundsAllowed}
+                        />
+                      </div>
+                    ))
+                  ) : (
+                    <>
                       <CommunityCards
-                        cards={tableState.communityCards2}
+                        cards={tableState.communityCards}
                         stage={
                           bombPotHoldFlop && tableState.boardStage === 'flop'
                             ? 'preflop'
                             : tableState.boardStage
                         }
-                        winningHandName={winnerInfo.boardHandNames?.[1] || undefined}
+                        highlightedIndices={winnerInfo.cardIndices}
+                        winningHandName={winnerInfo.boardHandNames?.[0] || winnerInfo.handName}
                         deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                         cardBack={activeCardBack}
-                        playSounds={false}
+                        playSounds={ambientSoundsAllowed}
                       />
-                    </div>
+                      {/* DOUBLE-BOARD BOMB POT 2026-08-20: board 2, stacked
+                          directly under board 1 like the reference — no label,
+                          same stage (both boards deal in lockstep), silent so
+                          each street sounds once. */}
+                      {tableState.communityCards2.length > 0 && (
+                        <div className="community-area__board2">
+                          <CommunityCards
+                            cards={tableState.communityCards2}
+                            stage={
+                              bombPotHoldFlop && tableState.boardStage === 'flop'
+                                ? 'preflop'
+                                : tableState.boardStage
+                            }
+                            winningHandName={winnerInfo.boardHandNames?.[1] || undefined}
+                            deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
+                            cardBack={activeCardBack}
+                            playSounds={false}
+                          />
+                        </div>
+                      )}
+                    </>
                   )}
-                  {(ritResult?.boards?.length ?? 0) >= 2 &&
-                    ritResult!.boards.slice(1).map((board, bi) => (
-                      <div className="community-area__run" key={`run-${bi + 2}`}>
-                        <span className="community-area__run-label">Run {bi + 2}</span>
-                        <CommunityCards
-                          cards={normalizeCards(board) as Card[]}
-                          stage="river"
-                          deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
-                          cardBack={activeCardBack}
-                        />
-                      </div>
-                    ))}
                 </div>
 
                 {/* ROUND 3 (2026-08-20): bomb pot countdown — players see the

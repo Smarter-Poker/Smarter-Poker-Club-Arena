@@ -44,9 +44,19 @@ vi.mock('../../src/utils/retryAsync', () => ({
   retryAsync: <T>(fn: () => Promise<T>) => fn(),
 }));
 
+/* `resolved-uuid` is not a UUID, and getClubTables now REFUSES to build a
+   PostgREST `or=` filter out of anything that is not one - the resolver
+   returns its input unchanged when it cannot resolve, so a slug used to be
+   concatenated straight into the filter grammar. The mock returns a real UUID
+   so the method under test reaches its query, and `isUUID` is mocked
+   alongside the two functions that were already here. */
 vi.mock('../../src/utils/clubIdResolver', () => ({
-  resolveClubUUID: vi.fn().mockResolvedValue('resolved-uuid'),
-  resolveClubIdFilter: vi.fn().mockReturnValue({ column: 'id', value: 'resolved-uuid' }),
+  resolveClubUUID: vi.fn().mockResolvedValue('11111111-2222-4333-8444-555555555555'),
+  resolveClubIdFilter: vi
+    .fn()
+    .mockReturnValue({ column: 'id', value: '11111111-2222-4333-8444-555555555555' }),
+  isUUID: (v: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v),
 }));
 
 vi.mock('../../src/services/WalletService', () => ({
@@ -79,6 +89,20 @@ describe('TableService', () => {
     it('should return empty array when no tables exist', async () => {
       const result = await tableService.getClubTables('club-1');
       expect(result).toEqual([]);
+    });
+
+    it('refuses a club id that did not resolve to a UUID', async () => {
+      /* Rather than concatenating it into `or=`, where a slug containing a
+         comma or a bracket splits the expression and returns 400 - and a
+         clean slug still hits a uuid column and errors - both of which
+         rendered as "this club has no games". */
+      const { resolveClubUUID } = await import('../../src/utils/clubIdResolver');
+      (
+        resolveClubUUID as unknown as { mockResolvedValueOnce: (v: string) => void }
+      ).mockResolvedValueOnce('my-club-slug');
+      await expect(tableService.getClubTables('my-club-slug')).rejects.toThrow(
+        'That Club Could Not Be Resolved'
+      );
     });
   });
 

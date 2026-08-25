@@ -35,14 +35,27 @@ const FILTERS = code(read('src/components/lobby/AdvancedFilters.tsx'));
 const CACHE = code(read('src/lib/walletCache.ts'));
 
 describe('the wallet never renders a refusal as a balance', () => {
-  it('treats an unauthorized money panel as a failure, not as zeros', () => {
+  it('never renders an unauthorized money panel as zeros', () => {
     /* fn_club_money_panel answers {authorized:false, reason} for no_auth,
        club_not_found and not_a_member. That is a RESOLVED rpc with no `error`,
        so the error check cannot see it; every figure then coerced to 0 and the
        panel declared success — and the write-through persisted the invented
-       zeros for the next visit to paint instantly. */
-    expect(WALLET).toMatch(/if \(panel\.authorized === false\)/);
+       zeros for the next visit to paint instantly.
+
+       REFINED 2026-08-25: the first fix threw on EVERY refusal, which made a
+       signed-in NON-MEMBER opening any club lobby see a red "Balances
+       Unavailable" badge and a fabricated Diamonds 0 over the balance that had
+       just been read successfully - three of the four reads are the viewer's
+       own money and succeed regardless of membership. `not_a_member` and
+       `no_auth` are ordinary states: keep what was read, leave the club's own
+       figures unknown, do not raise. Anything else is still a fault. */
+    expect(WALLET).toMatch(/const panelRefused = panel\.authorized === false;/);
+    expect(WALLET).toMatch(
+      /panelRefused && refusalReason !== 'not_a_member' && refusalReason !== 'no_auth'/
+    );
     expect(WALLET).toMatch(/throw new Error\(`fn_club_money_panel refused/);
+    // ...and a refusal must not move the union flag in either direction.
+    expect(WALLET).toMatch(/if \(!panelRefused\) \{/);
   });
 
   it('still raises on a genuine query error from any of the four reads', () => {
@@ -133,13 +146,34 @@ describe('saved filters cannot empty the lobby or crash it', () => {
     expect(FILTERS).toMatch(/reportError\(perTab, 'AdvancedFilters\.loadFilters\.tab'/);
   });
 
-  it('derives the slider step from the range MIN, not the max', () => {
+  it('derives the slider step from the range MIN, and only when it is above zero', () => {
     /* min 0.02 with a step of 1 makes the reachable values 0.02, 1.02, 2.02...
        so the Micro and Small blind tiers the spec itself defines could not be
        selected, and 5000 was not step-valid so the max thumb was sanitised to
-       4999.02 and read as a permanently active filter. */
-    expect(FILTERS).toMatch(/const rangeStep = spec \? \(spec\.range\.min < 1 \? 0\.01 : 1\) : 1;/);
+       4999.02 and read as a permanently active filter.
+
+       REFINED 2026-08-25: `min < 1` is also true for the BUY-IN sliders, whose
+       min is 0 - that gave a 0-15,000 range 1.5 million steps, so one arrow
+       key moved the filter by a cent and dragging produced 3847.23 under a
+       header whose own formatter says buy-ins carry no decimals. Cents are
+       needed only when the minimum is above zero and below one. */
+    expect(FILTERS).toMatch(
+      /const rangeStep = spec \? \(spec\.range\.min > 0 && spec\.range\.min < 1 \? 0\.01 : 1\) : 1;/
+    );
     expect(/step=\{spec\.range\.max > 100 \? 1 : 0\.01\}/.test(FILTERS)).toBe(false);
+  });
+
+  it('keeps both thumbs inside the spec, and heals an inverted pair on read', () => {
+    /* The one-step gap alone could walk a bound OUTSIDE the spec: with
+       rangeMax already at the minimum, `rangeMax - rangeStep` is below it, and
+       the browser then clamps the input while the arithmetic re-applies the
+       out-of-range partner on every drag - the range freezes and the tab
+       empties. Clamping each bound separately on read cannot undo an inversion
+       either, so an inverted pair is discarded for the spec's full range. */
+    expect(FILTERS).toMatch(/Math\.max\(\s*spec\.range\.min,/);
+    expect(FILTERS).toMatch(/Math\.min\(\s*spec\.range\.max,/);
+    expect(FILTERS).toMatch(/if \(repaired\.rangeMin > repaired\.rangeMax\)/);
+    expect(FILTERS).toMatch(/if \(repaired\.seatMin > repaired\.seatMax\)/);
   });
 
   it('keeps the two range thumbs one step apart so neither can be buried', () => {

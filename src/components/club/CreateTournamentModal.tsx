@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   tournamentService,
   BLIND_STRUCTURES,
@@ -51,16 +51,10 @@ export default function CreateTournamentModal({
   onSuccess,
 }: Props) {
   const toast = useToast();
-  const [visibleSections, setVisibleSections] = useState<boolean[]>([]);
-
-  useEffect(() => {
-    setVisibleSections([]);
-    [0, 1, 2, 3, 4, 5].forEach((i) => {
-      setTimeout(() => {
-        setVisibleSections((prev) => [...prev, true]);
-      }, i * 90);
-    });
-  }, []);
+  /* A `visibleSections` state and six uncleaned setTimeouts used to sit here,
+     driving a stagger nothing read - the value was never referenced anywhere
+     in this file. Closing the modal inside 540ms still fired them, setting
+     state on an unmounted component. */
 
   // Apply the caller's preferred starting format ONCE, through the same
   // handler a manual selection uses so its per-format defaults apply too.
@@ -112,6 +106,16 @@ export default function CreateTournamentModal({
   const isRebuy = format === 'mtt_rebuy';
   const isReentry = format === 'mtt_reentry';
   const [rebuyCost, setRebuyCost] = useState('');
+  /** Flips synchronously, so a second submit cannot slip past an await. */
+  const submittingRef = useRef(false);
+  /** False once unmounted: onSuccess() closes this modal from inside submit. */
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
   const [rebuyChips, setRebuyChips] = useState('');
   // rebuyLevels is derived from lateRegLevels (always the same cutoff)
   // Auto-enable add-on for rebuy/reentry formats
@@ -306,13 +310,35 @@ export default function CreateTournamentModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    /* A REF, BEFORE ANYTHING IS AWAITED. `isSubmitting` is state and does not
+       change until React re-renders, so two submits in the same tick - a
+       double tap, or Enter held down - both got through and created two
+       tournaments, and createTournament carries no idempotency key. */
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setIsSubmitting(true);
+
+    /* A SCHEDULED start in the past creates a tournament that can never begin.
+       coreValid only checks the two date strings are non-empty, so an owner
+       picking yesterday got no feedback at all. A minute of slack, for a form
+       filled in while the clock moves. */
+    if (startTimeMode === 'scheduled') {
+      const startsAt = new Date(`${scheduledDate}T${scheduledTime}`).getTime();
+      if (!Number.isFinite(startsAt) || startsAt < Date.now() - 60_000) {
+        toast.error('Pick A Start Time In The Future');
+        submittingRef.current = false;
+        setIsSubmitting(false);
+        return;
+      }
+    }
 
     try {
       // ── Satellite validation: without a target it silently becomes a cash
       // payout, defeating the point (winners should earn seats). ──
       if (isSatellite && !satelliteTargetId) {
-        toast.error('Pick the target tournament this satellite awards seats into.');
+        toast.error('Pick The Target Tournament This Satellite Awards Seats Into');
+        submittingRef.current = false;
+        submittingRef.current = false;
         setIsSubmitting(false);
         return;
       }
@@ -341,6 +367,7 @@ export default function CreateTournamentModal({
         if (!mustBePositive && (value === '' || Number(value) === 0)) continue;
         if (!isWholeBuyIn(value)) {
           toast.error(`${label} must be a whole number of chips, with no decimals.`);
+          submittingRef.current = false;
           setIsSubmitting(false);
           return;
         }
@@ -357,6 +384,7 @@ export default function CreateTournamentModal({
         const ba = Math.round(Number(bountyAmount));
         if (!ba || ba <= 0) {
           toast.error('Bounty amount is required for bounty tournaments');
+          submittingRef.current = false;
           setIsSubmitting(false);
           return;
         }
@@ -368,6 +396,7 @@ export default function CreateTournamentModal({
           toast.error(
             `Bounty ${money(ba)} plus the ${money(parsedRake)} fee exceeds the ${money(parsedBuyIn)} buy-in. Lower the bounty or raise the buy-in.`
           );
+          submittingRef.current = false;
           setIsSubmitting(false);
           return;
         }
@@ -376,11 +405,13 @@ export default function CreateTournamentModal({
           const max = Math.round(Number(mysteryBountyMax));
           if (!min || min <= 0 || !max || max <= 0) {
             toast.error('Mystery bounty min and max multipliers are required');
+            submittingRef.current = false;
             setIsSubmitting(false);
             return;
           }
           if (max <= min) {
             toast.error('Mystery bounty max multiplier must be greater than min');
+            submittingRef.current = false;
             setIsSubmitting(false);
             return;
           }
@@ -410,6 +441,7 @@ export default function CreateTournamentModal({
       const restartMinutes = restartEvery.trim() === '' ? null : Math.round(Number(restartEvery));
       if (restartMinutes !== null && (restartMinutes < 5 || restartMinutes > 1440)) {
         toast.error('Restart interval must be between 5 and 1440 minutes.');
+        submittingRef.current = false;
         setIsSubmitting(false);
         return;
       }
@@ -417,6 +449,7 @@ export default function CreateTournamentModal({
         const problem = validateWeeklySchedule(schedule);
         if (problem) {
           toast.error(problem);
+          submittingRef.current = false;
           setIsSubmitting(false);
           return;
         }
@@ -601,7 +634,10 @@ export default function CreateTournamentModal({
       reportError(error, 'CreateTournamentModal.Failed_to_create_tournament');
       toast.error(error?.message || 'Failed to create tournament');
     } finally {
-      setIsSubmitting(false);
+      submittingRef.current = false;
+      /* onSuccess() unmounts this modal, so a bare setState here wrote to a
+         torn-down component on the happy path. */
+      if (isMountedRef.current) setIsSubmitting(false);
     }
   };
 
@@ -643,6 +679,23 @@ export default function CreateTournamentModal({
     return true;
   })();
 
+  /* "Anything typed" is the right bar for a destructive backdrop click: the
+     defaults alone are not worth protecting, a name or a buy-in is. */
+  const formIsDirty = Boolean(name.trim()) || Boolean(buyIn.trim());
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSubmitting) onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose, isSubmitting]);
+
   const coreValid = (() => {
     if (!name.trim()) return false;
     // Whole numbers only — no decimal buy-ins on any tournament or SNG.
@@ -660,7 +713,22 @@ export default function CreateTournamentModal({
   const canSubmit = coreValid && bountyValid && payoutsValid && blindsValid && !isSubmitting;
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
+    /* THE BACKDROP DOES NOT DISCARD A CONFIGURED TOURNAMENT.
+       `onClick={onClose}` threw away a fully filled form on a mis-tap, with no
+       confirmation, and it was live while a create was in flight. Escape and
+       the body-scroll lock were missing too - every other modal in this folder
+       has both. */
+    <div
+      className={styles.modalOverlay}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Create Game"
+      onClick={() => {
+        if (isSubmitting) return;
+        if (formIsDirty) return;
+        onClose();
+      }}
+    >
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
           <h2>{unionId ? 'Create Union Tournament (XMTT)' : 'Create Tournament'}</h2>
@@ -1246,7 +1314,9 @@ export default function CreateTournamentModal({
                           type="number"
                           className={styles.input}
                           value={rebuyChips}
-                          onChange={(e) => setRebuyChips(e.target.value)}
+                          /* digitsOnly, like every other chip field. A raw value let
+                             parseInt('-500') through into the config. */
+                          onChange={(e) => setRebuyChips(digitsOnly(e.target.value))}
                           placeholder={startingChips}
                         />
                         <span className={styles.helperText}>Blank = Starting Stack</span>
@@ -1288,7 +1358,7 @@ export default function CreateTournamentModal({
                         type="number"
                         className={styles.input}
                         value={addOnChips}
-                        onChange={(e) => setAddOnChips(e.target.value)}
+                        onChange={(e) => setAddOnChips(digitsOnly(e.target.value))}
                         placeholder={startingChips}
                       />
                       <span className={styles.helperText}>Blank = Starting Stack</span>
@@ -1632,7 +1702,10 @@ export default function CreateTournamentModal({
                 </p>
               )}
               {!isWholeBuyIn(buyIn) && <p>Buy-In Must Be A Whole Number Of Chips Greater Than 0</p>}
-              {parseInt(startingChips) <= 0 && <p>Starting Chips Must Be Greater Than 0</p>}
+              {/* `NaN <= 0` is FALSE, so clearing the field disabled Create with
+                  no explanation at all - the one field most likely to be
+                  blank. */}
+              {!(parseInt(startingChips) > 0) && <p>Starting Chips Must Be Greater Than 0</p>}
               {startTimeMode === 'scheduled' && (!scheduledDate || !scheduledTime) && (
                 <p>Scheduled Date And Time Are Required</p>
               )}

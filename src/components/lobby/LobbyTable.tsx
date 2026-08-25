@@ -11,7 +11,7 @@
  * (stakesValue / buyInValue / startValue), never the formatted strings.
  */
 
-import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
+import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import type { LobbyEntry, LobbyStatusKey, LobbyTournamentRow } from './lobbyEntries';
 import { tournamentBlinds, tournamentLevel } from './tournamentFigures';
 import { mttPhaseText, mttTitleLine } from './lobbyEntries';
@@ -667,6 +667,75 @@ const COL_ACTIONS: ColumnDef = {
   },
 };
 
+/* ── ONE ROW, MEMOISED ──────────────────────────────────────────────────────
+   The lobby renders up to 111 rows and re-renders on every realtime tick, every
+   filter keystroke and every seat change. Inline in the parent, each row rebuilt
+   its own click handlers and re-ran `col.render` for every cell on every one of
+   those - so a single seat count changing on one table repainted the whole
+   board.
+
+   Memoising only pays if the PROPS are stable, which is why two other things
+   had to change with it: `ctx` is now a useMemo in ClubHomePage (it was an
+   object literal in the JSX, new on every render), and `prefetchIntent` caches
+   its handler set per path (it allocated three closures per call). Without
+   either of those this wrapper would skip nothing.
+
+   `onSelect` / `onActivate` are taken as-is and called with the entry, so no
+   per-row closure is created here either. */
+const LobbyRow = memo(function LobbyRow({
+  entry,
+  columns,
+  ctx,
+  selected,
+  onSelect,
+  onActivate,
+}: {
+  entry: LobbyEntry;
+  columns: ColumnDef[];
+  ctx: LobbyRowContext;
+  selected: boolean;
+  onSelect: (e: LobbyEntry) => void;
+  onActivate: (e: LobbyEntry) => void;
+}) {
+  return (
+    <tr
+      data-id={entry.id}
+      className={`lt-row lt-row--${entry.status}${selected ? ' is-selected' : ''}`}
+      data-kind={entry.kind}
+      role="row"
+      aria-selected={selected}
+      // Hover / touch / keyboard-focus on a lobby row is the earliest honest
+      // signal that this table is where the player is going, so start pulling
+      // the TablePage chunk now. TablePage is the single heaviest chunk in the
+      // app; fetching it while the player is still reading the row means the
+      // click resolves from the module cache instead of stalling on the
+      // network.
+      //
+      // Spread FIRST so the row's own onClick/onDoubleClick below win, and
+      // idempotent - repeat hovers over the same row are a no-op (see
+      // ChunkPreloader.preloadRoute).
+      {...prefetchIntent(`/table/${entry.id}`)}
+      onClick={() => onSelect(entry)}
+      onDoubleClick={() => onActivate(entry)}
+    >
+      {columns.map((col) => (
+        <td
+          key={col.key}
+          role="gridcell"
+          /* data-label carries the column's own heading down to the cell. On a
+             phone the header row is gone, so the card layout prints it above
+             the value — and it is always the right word, which a class name
+             could not guarantee: Stakes and Buy-In share .lt-col-num. */
+          data-label={col.labelFor ? col.labelFor(entry) : col.label}
+          className={`${col.className || ''} ${col.hideOnMobile ? 'hide-on-mobile' : ''}`}
+        >
+          {col.render(entry, ctx)}
+        </td>
+      ))}
+    </tr>
+  );
+});
+
 export function columnsFor(category: LobbyCategory): ColumnDef[] {
   switch (category) {
     case 'HOLDEM':
@@ -963,48 +1032,17 @@ export default function LobbyTable({
                 ))}
               </tr>
             ))}
-          {sorted.map((entry) => {
-            const selected = entry.id === selectedId;
-            return (
-              <tr
-                key={entry.id}
-                data-id={entry.id}
-                className={`lt-row lt-row--${entry.status}${selected ? ' is-selected' : ''}`}
-                data-kind={entry.kind}
-                role="row"
-                aria-selected={selected}
-                // Hover / touch / keyboard-focus on a lobby row is the earliest
-                // honest signal that this table is where the player is going, so
-                // start pulling the TablePage chunk now. TablePage is the single
-                // heaviest chunk in the app; fetching it while the player is
-                // still reading the row means the click resolves from the module
-                // cache instead of stalling on the network.
-                //
-                // Spread FIRST so the row's own onClick/onDoubleClick below win,
-                // and idempotent - repeat hovers over the same row are a no-op
-                // (see ChunkPreloader.preloadRoute).
-                {...prefetchIntent(`/table/${entry.id}`)}
-                onClick={() => onSelect(entry)}
-                onDoubleClick={() => onActivate(entry)}
-              >
-                {columns.map((col) => (
-                  <td
-                    key={col.key}
-                    role="gridcell"
-                    /* data-label carries the column's own heading down to the
-                       cell. On a phone the header row is gone, so the card
-                       layout prints it above the value — and it is always the
-                       right word, which a class name could not guarantee:
-                       Stakes and Buy-In share .lt-col-num. */
-                    data-label={col.labelFor ? col.labelFor(entry) : col.label}
-                    className={`${col.className || ''} ${col.hideOnMobile ? 'hide-on-mobile' : ''}`}
-                  >
-                    {col.render(entry, rowCtx)}
-                  </td>
-                ))}
-              </tr>
-            );
-          })}
+          {sorted.map((entry) => (
+            <LobbyRow
+              key={entry.id}
+              entry={entry}
+              columns={columns}
+              ctx={rowCtx}
+              selected={entry.id === selectedId}
+              onSelect={onSelect}
+              onActivate={onActivate}
+            />
+          ))}
         </tbody>
       </table>
     </div>

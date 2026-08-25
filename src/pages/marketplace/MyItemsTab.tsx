@@ -9,7 +9,7 @@ import { confirmDialog } from '../../components/common/confirmDialog';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
 import { fmt, timeAgo } from '../../utils/format';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { callClubArenaApi } from '../../services/clubArenaApi';
 import styles from '../MarketplacePage.module.css';
 import ItemArt from './ItemArt';
@@ -47,14 +47,25 @@ export default function MyItemsTab({
   const toast = useToast();
   const [redeeming, setRedeeming] = useState<string | null>(null);
   const [refunding, setRefunding] = useState<string | null>(null);
+  /**
+   * REFS, NOT THE STATE FLAGS. `refunding`/`redeeming` only become visible to a
+   * later event once React has committed, so two handlers firing in the SAME
+   * tick (iOS touch-then-click, Enter landing alongside a click) both read null
+   * and both proceed - two confirm dialogs over one purchase. StoreTab already
+   * carries this fix for Buy; refund moves real diamonds, so it needs it more.
+   * The state flags stay: they are what disables the buttons.
+   */
+  const refundingRef = useRef(false);
+  const redeemingRef = useRef(false);
 
   const handleRefund = async (purchaseId: string, itemName: string, currency?: string | null) => {
-    if (refunding || !clubId) return;
+    if (refundingRef.current || !clubId) return;
     const unit = unitOf(currency);
     // CLAIM THE FLAG BEFORE THE DIALOG (Dan 2026-08-25). It was set after the
     // await, so for the whole time the confirm dialog was open `refunding` was
     // still null and every Refund button was still enabled - two dialogs could
     // be opened and both confirmed, for two refunds.
+    refundingRef.current = true;
     setRefunding(purchaseId);
     if (
       !(await confirmDialog({
@@ -64,6 +75,7 @@ export default function MyItemsTab({
         variant: 'danger',
       }))
     ) {
+      refundingRef.current = false;
       setRefunding(null);
       return;
     }
@@ -72,7 +84,15 @@ export default function MyItemsTab({
         amount: number;
         currency?: string;
         alreadyRefunded?: boolean;
-      }>('refund-purchase', { clubId, purchaseId });
+      }>(
+        'refund-purchase',
+        { clubId, purchaseId },
+        // ONE KEY PER REFUND INTENT, derived from the purchase itself. A retry
+        // of the same refund must carry the same key or the server sees two
+        // distinct intents; the default in callClubArenaApi mints a fresh uuid
+        // per CALL, which defends nothing against the retry it exists for.
+        { idempotencyKey: `refund:${clubId}:${purchaseId}` }
+      );
       toast.success(
         res.alreadyRefunded
           ? 'That Purchase Was Already Refunded'
@@ -82,14 +102,16 @@ export default function MyItemsTab({
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Refund failed');
     } finally {
+      refundingRef.current = false;
       setRefunding(null);
     }
   };
   const [showHistory, setShowHistory] = useState(false);
 
   const handleRedeem = async (inventoryId: string) => {
-    if (redeeming) return;
+    if (redeemingRef.current) return;
     // Same shape as handleRefund: claim first, release on cancel.
+    redeemingRef.current = true;
     setRedeeming(inventoryId);
     if (
       !(await confirmDialog({
@@ -100,6 +122,7 @@ export default function MyItemsTab({
         variant: 'default',
       }))
     ) {
+      redeemingRef.current = false;
       setRedeeming(null);
       return;
     }
@@ -113,9 +136,9 @@ export default function MyItemsTab({
       // fn_redeem_shop_item now grants a real entitlement and reports it back.
       const g = data?.granted as { type?: string; uses?: number; seconds?: number } | undefined;
       if (g?.type === 'time_bank' && g.seconds) {
-        toast.success(`Redeemed - +${g.seconds}s Of Table Time Added`);
+        toast.success(`Redeemed - +${fmt(g.seconds)}s Of Table Time Added`);
       } else if (g?.type === 'throwable' && g.uses) {
-        toast.success(`Redeemed - ${g.uses} Free Throws Added`);
+        toast.success(`Redeemed - ${fmt(g.uses)} Free Throws Added`);
       } else if (g?.type === 'emote_pack') {
         toast.success('Redeemed - Emote Pack Unlocked');
       } else if (g?.type === 'table_skin') {
@@ -135,14 +158,21 @@ export default function MyItemsTab({
   };
 
   const ent = entitlements;
+  /**
+   * Counts, not vague claims. "Table Theme" was printed off the generic
+   * `feature_purchases.theme_unlock` flag, so a member who had bought and
+   * redeemed four skins was told the same thing as one who had bought one.
+   * `theme_unlocks` knows which, so say how many.
+   */
+  const themeCount = ent.themes.length || (ent.themeUnlock ? 1 : 0);
   const entitlementChips = ent.loaded
     ? [
-        ent.timeBankSeconds > 0 ? `${ent.timeBankSeconds}s Table Time` : null,
-        ent.throwables > 0 ? `${ent.throwables} Throws` : null,
+        ent.timeBankSeconds > 0 ? `${fmt(ent.timeBankSeconds)}s Table Time` : null,
+        ent.throwables > 0 ? `${fmt(ent.throwables)} Throws` : null,
         ent.emotePack ? 'Emote Pack' : null,
-        ent.themeUnlock ? 'Table Theme' : null,
+        themeCount > 0 ? `${fmt(themeCount)} Table Theme${themeCount > 1 ? 's' : ''}` : null,
         ent.avatars.length > 0
-          ? `${ent.avatars.length} Avatar${ent.avatars.length > 1 ? 's' : ''}`
+          ? `${fmt(ent.avatars.length)} Avatar${ent.avatars.length > 1 ? 's' : ''}`
           : null,
       ].filter(Boolean)
     : [];

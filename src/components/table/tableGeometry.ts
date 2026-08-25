@@ -1,16 +1,71 @@
 /**
  * Table geometry shared by the seats, the dealer button and the bet chips.
  *
- * Everything here is expressed as a FACTOR of the distance from a seat toward
- * the centre of the table (50%, 50%), per axis. A factor of 0 is on the seat, 1
- * is dead centre. The table is much taller than it is wide, so the two axes
- * deliberately use different factors: an equal y-factor flings a marker far up
- * or down the felt and away from the seat it belongs to.
+ * Two markers live on this felt and they belong to the same player: the chips
+ * that player has bet, and the puck that says they are the dealer. This module
+ * is the single answer to "where do those two go", because when they were
+ * computed in two places they disagreed - the button used factors of 0.28/0.16
+ * and the chips a flat 0.22, so on the side seats the BUTTON sat further onto
+ * the felt than the chips it was supposed to stand behind.
  *
- * This lives in one module because the dealer button and the bet chips have to
- * agree about who stands where. They previously did not: the button used
- * 0.28/0.16 and the chips a flat 0.22, so on the side seats the BUTTON sat
- * further toward the felt than the chips it was supposed to stand behind.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REWRITTEN 2026-08-25 (Dan, mobile pass items 11 and 13). Read this before
+ * changing a number; four separate exceptions were deleted here and every one
+ * of them will look reasonable again the next time a single seat looks wrong.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Item 11: "The button must always be on the table, and never on the rail."
+ * Item 13: "All chips ... should all appear to be in the same position and
+ *           distance in front of them. Imagine an imaginary oval, and all chips
+ *           must appear equally on that line for all players at all tables.
+ *           Those chips must never be in the same position on the table where
+ *           the button lands."
+ *
+ * WHAT THIS NOW GUARANTEES, in order of precedence:
+ *
+ *   1. ONE RAIL. Every seat's chips rest the SAME number of pixels from that
+ *      seat, measured along the line to the middle of the felt. There is no
+ *      per-seat term left: no hero extra, no button-holder extra, no shorter
+ *      walk for the seats level with the community board.
+ *   2. ON THE FELT. Neither marker may sit on the painted rail. Any point that
+ *      lands outside the felt window is projected back inside it - a closed
+ *      form, exact for every seat of every ring, not a tuned constant.
+ *   3. VISIBLY APART. The button is placed off the chip line by construction,
+ *      and then, if the projection in (2) has pushed the two together, it is
+ *      walked around the felt until they are at least MARKER_MIN_GAP_WIDTH_PCT
+ *      of the table's width apart. Two markers, never one blob.
+ *
+ * (1) is the rule; (2) and (3) are guarantees that apply identically to every
+ * seat. They move a seat's chips only where the seat's own ring position sits
+ * OUTSIDE the painted felt - the hero at y=100 is 10.8% of the table's height
+ * below the felt's bottom edge, and the bottom and top cap seats are outside it
+ * too. Those seats get a longer walk than the common rail because the first
+ * part of their walk is spent crossing the rail they are standing on. That is
+ * a consequence of where the seat ring is painted, not a preference about that
+ * seat, which is exactly the difference between this and what it replaced.
+ *
+ * WHAT WAS DELETED, and why it does not come back:
+ *
+ *   - CHIP_RAIL_BOTTOM_EXTRA_PX (+46px for the hero) and
+ *     CHIP_RAIL_DEALER_EXTRA_PX (+20px for whoever holds the button): both
+ *     handed one seat a different distance, which is the one thing item 13
+ *     forbids. The hero's real problem was that its chips landed on the rail;
+ *     guarantee (2) fixes that for every seat at once. The button-holder's real
+ *     problem was that the two markers overlapped; guarantee (3) fixes that by
+ *     moving the BUTTON, which is the marker that has somewhere else to be.
+ *   - CHIP_RAIL_SCALE_BOARD_LEVEL (1.15 instead of 1.82 for a seat level with
+ *     the board): the same defect from the other direction. Dan: "solve it by
+ *     moving the whole rail for the whole table rather than by giving one seat
+ *     a shorter walk." That is what CHIP_RAIL_WIDTH_PCT is - the longest rail
+ *     that keeps EVERY seat's chips off the community cards, applied to every
+ *     seat on every ring. It is shorter than the old rail for the seats that
+ *     used to get the full 1.82; that is the trade, and it is the trade Dan
+ *     asked for.
+ *   - The `len * 0.8` ceiling: it saturated, so two seats with different rails
+ *     came out at the same distance and the ordering guarantees silently
+ *     stopped holding. A degeneracy guard survives (a seat sitting on the felt
+ *     centre has no direction to walk in) but no production ring reaches it -
+ *     the closest seat on any ring is over three rails away from the middle.
  */
 
 export interface Pos {
@@ -18,320 +73,497 @@ export interface Pos {
   y: number;
 }
 
-/** Dealer button: tucks in toward the felt, stays close to its seat vertically. */
-export const DEALER_BUTTON_FACTOR = { x: 0.28, y: 0.16 } as const;
-
-/**
- * The hero's button steps much further in than everyone else's.
- *
- * Dan 2026-08-23: "button needs to be raised up for the hero as well. it
- * currently lays on top of the avatar."
- *
- * Not a style preference - it is geometry. Every other seat is off to a side,
- * so the 0.28 x-factor carries its button sideways, clear of the art. The hero
- * sits at x=50, dead centre of the bottom rail, so its x term is
- * (50 - 50) * 0.28 = 0 and the button can only move on ONE axis. At y 0.16 it
- * lands 8% of the table above the seat centre, which is inside the hero's own
- * avatar: the hero box is 1.3333x everyone else's and its bust art rises about
- * 160px from there. The button had nowhere to go but onto the player's head.
- */
-export const DEALER_BUTTON_FACTOR_HERO = { x: 0.28, y: 0.42 } as const;
-
-/** A seat on the bottom rail, where the button and chips can only travel up. */
-export function isBottomSeat(seat: Pos): boolean {
-  return seat.y > 80;
-}
-
-/** Bet chips for an ordinary seat: close to the player, not out near the middle. */
-export const BET_CHIP_FACTOR = { x: 0.22, y: 0.22 } as const;
-
-/*
- * betChipFactor(), betChipPosition(), chipCollectFactor() and
- * CHIP_COLLECT_END_FACTOR were removed on 2026-08-21. They scaled each axis by
- * how far the seat sat from centre ON THAT AXIS, which cannot produce an equal
- * distance for every seat - see THE CHIP RAIL at the bottom of this file for
- * why, and betChipOffsetPx() for what replaced them. Leaving them here would
- * have left a second, wrong answer to "where do the chips go" next to the
- * right one.
- */
-
-/** Absolute position of the dealer button for a seat, in scaler percentages. */
-export function dealerButtonPosition(seat: Pos): Pos {
-  /* Derived from the seat rather than taken as an argument, so every existing
-     caller keeps working and no call site can forget to pass it. */
-  const factor = isBottomSeat(seat) ? DEALER_BUTTON_FACTOR_HERO : DEALER_BUTTON_FACTOR;
-
-  const dx = 50 - seat.x;
-  const dy = 50 - seat.y;
-
-  // Rotate the direction vector by ~22.5 degrees clockwise so the button sits
-  // to the side of the bet chips instead of directly in their path.
-  const angle = 22.5 * (Math.PI / 180);
-  const cosA = Math.cos(angle);
-  const sinA = Math.sin(angle);
-
-  const rDx = dx * cosA - dy * sinA;
-  const rDy = dx * sinA + dy * cosA;
-
-  return {
-    x: seat.x + rDx * factor.x,
-    y: seat.y + rDy * factor.y,
-  };
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   THE CHIP RAIL
-   ═══════════════════════════════════════════════════════════════════════════
-   Dan 2026-08-21: "ALL CHIPS FOR ALL PLAYERS NEED TO BE PLACED THE SAME
-   DISTANCE FROM THEM REGARDLESS OF SEAT POSITION. IMAGINE AN IMAGINARY RAIL
-   THAT GOES ALL AROUND THE TABLE EQUALLY, AND ALL CHIPS SHOULD BE IN THE SAME
-   AREA, ABOVE THAT LINE."
-
-   WHY THE OLD MATH COULD NOT DO THAT. The offset was computed per axis as
-   `(50 - seat.x) * width * factor` and `(50 - seat.y) * height * factor`. Each
-   axis was scaled by how far that seat happened to be from the centre ON THAT
-   AXIS, so the distance from seat to chips depended entirely on where the seat
-   sat:
-
-     - top-centre seat  (seat.x = 50): dx = 0, so the chips dropped straight
-       down by a large amount and did not move sideways at all;
-     - side seat        (seat.y = 50): dy = 0, so they slid inward by a large
-       amount and did not move vertically at all;
-     - corner seat:     a moderate amount of both, i.e. a different distance
-       again.
-
-   Multiplying by a constant factor keeps the chips on a concentric ellipse,
-   and a concentric ellipse is NOT a constant distance from the original: the
-   gap is widest where the curve is flattest. On a table this much taller than
-   it is wide that difference is plainly visible, which is what the screenshot
-   shows.
-
-   WHAT THIS DOES INSTEAD. Take the inward direction in PIXELS, normalise it,
-   and step a fixed number of pixels along it. Every seat's chips then sit the
-   same visual distance inside their player, which is exactly a rail running
-   parallel to the seats the whole way round. */
-
-/** Chips rest this far inside the player, in px, at a mid-size table. */
-export const CHIP_RAIL_INSET_PX = 46;
-
-/**
- * Extra clearance when the seat also holds the dealer button, so the reading
- * order out from the player stays: player, button, chips.
- */
-export const CHIP_RAIL_DEALER_EXTRA_PX = 20;
-
-/**
- * Extra rail for a bottom-rail seat, the hero's included.
- *
- * Dan 2026-08-23: "chips for the hero need to be pushed out farther in front of
- * them, they are literally on top of the avatar."
- *
- * Same cause as the button above. A side seat's chips travel diagonally and
- * clear the art within the standard inset; the hero's travel straight up from
- * x=50 into an avatar that is a third larger than everyone else's and whose art
- * rises well past its own box. The rail is measured from the seat CENTRE, and
- * for this one seat the thing it has to clear is much taller.
- */
-export const CHIP_RAIL_BOTTOM_EXTRA_PX = 46;
-
-/**
- * The rail's scale factor.
- *
- * Dan 2026-08-24: "chips from players on the left and right sides need to be
- * put on the table farther. they are too close to the rail."
- *
- * They were, and this number is why it was invisible from inside this module.
- * Every inset computed here was multiplied by 1.82 again in CSS
- * (`.table-page .seat__bet-chips` in TableVisualHotfix.css), and that same CSS
- * rule ALSO clamped the horizontal component to +/-52px (44 and 38 at the two
- * mobile breakpoints). So the module said "one rail, equal for every seat", the
- * stylesheet agreed for the top and bottom seats, and quietly cut the left and
- * right seats to less than half the distance - which is exactly the picture
- * Dan is describing, and exactly the property tests/table-geometry-chips.test.ts
- * asserts and could never have caught, because the clamp was not in the maths
- * it tests.
- *
- * The scale now lives here, with the rest of the geometry, and the stylesheet
- * consumes --bet-offset-x/y unmodified. Same numbers for the seats that were
- * already right; the side seats get the rail they were always supposed to have.
- */
-export const CHIP_RAIL_SCALE = 1.82;
-
-/**
- * The rail a seat gets when it is LEVEL WITH THE COMMUNITY BOARD.
- *
- * The board holds the middle 68% of the felt (TablePage.css,
- * `.table-surface .community-cards` width: 68%), so a side seat at x=10.5%
- * has only about 5% of the table's width between its own centre and the
- * board's edge. A seat sitting at the board's height therefore cannot be given
- * the full rail: at 1.82 its bets land on the cards, which is what happened in
- * production before the clamp this replaces (a chip covering the 9d).
- *
- * It is a smaller SCALE rather than a clamped x-axis. Truncating one axis
- * turns the offset from "step along the line to the middle" into "step
- * somewhere else", and on a phone-width table the board leaves so little room
- * that the x term clamps to zero - the chips stop travelling toward the felt
- * at all and end up behind the dealer button. Shrinking the scale keeps the
- * direction exactly right and only shortens the walk.
- */
-export const CHIP_RAIL_SCALE_BOARD_LEVEL = 1.15;
-
-/**
- * A board-level seat's rail may never fall behind that seat's own button.
- *
- * The two are scaled by different things and they cross over. The button steps
- * a FRACTION of the way to the middle (DEALER_BUTTON_FACTOR, 0.28), so its
- * travel grows without limit as the table gets wider. The rail is a pixel inset
- * that is CLAMPED at 64px (chipRailInset), so it stops growing. On a desktop
- * table the button therefore overtakes the shortened board-level rail and ends
- * up standing in front of the chips it is supposed to stand behind - which is
- * the exact regression tests/table-geometry-chips.test.ts was written for, and
- * it caught it.
- *
- * So the board reduction is a preference and this is the rule: shorten the rail
- * for the board, but never past the button, plus enough clear air that the two
- * do not touch.
- */
-export const CHIP_RAIL_MIN_CLEARANCE_PX = 16;
-
-/**
- * A seat this close to the table's mid-height is LEVEL WITH THE BOARD.
- *
- * The clamp being deleted above was not paranoia - it was a live fix. On
- * 4-max and 5-max, side seats sit at y=45 and y=55, i.e. at the board's own
- * height, and an unclamped rail put their bets on top of the community cards
- * (seen in production: a chip covering the 9d). 8-max and 9-max have the same
- * problem at y=52 and y=58.
- *
- * But it applied that clamp to EVERY side seat, including the ones nowhere
- * near the board - 6-max sits its side seats at y=33 and y=66, a sixth of the
- * table clear of it. One flat horizontal limit cannot tell those apart. This
- * can: only a seat inside the band gives up any of its rail, and it gives up
- * only as much as the board actually needs.
- */
-export const BOARD_BAND_PCT = 10;
-
-/**
- * The HERO's chair: bottom rail, dead centre.
- *
- * `isBottomSeat` is true for the two bottom-CAP seats as well (9-max seats 2
- * and 9, at x=19 and x=81), and CHIP_RAIL_BOTTOM_EXTRA_PX was never about them.
- * Read its docstring: every word is about an avatar a third larger than
- * everyone else's, sitting at x=50 where the rail can only travel on one axis.
- * A bottom-cap seat has an ordinary avatar and travels diagonally like any
- * other side seat.
- *
- * Handing them the hero's 46px extra on top of CHIP_RAIL_SCALE pushed them
- * into the `len * 0.8` ceiling on a phone-width table, where they SATURATED:
- * the seat holding the button and the same seat without it came out at exactly
- * the same distance, so the button no longer stood in front of its own chips.
- *
- * Deliberately NOT folded into isBottomSeat, which the dealer button also
- * uses. The button's hero exception has its own reason (DEALER_BUTTON_FACTOR_
- * HERO) and its own tuning, and narrowing it here would move the button on two
- * seats nobody asked about.
- */
-export function isHeroRailSeat(seat: Pos): boolean {
-  return isBottomSeat(seat) && Math.abs(seat.x - 50) < 10;
-}
-
-/** True for a seat on the left or right rail rather than the top or bottom. */
-export function isSideSeat(seat: Pos): boolean {
-  return Math.abs(seat.x - 50) > 25;
-}
-
-/** True for a seat sitting at the community board's own height. */
-export function isBoardLevelSeat(seat: Pos): boolean {
-  return isSideSeat(seat) && Math.abs(seat.y - 50) <= BOARD_BAND_PCT;
-}
-
-/**
- * Where a chip finishes when it is collected, as a fraction of seat-to-centre.
- *
- * Raised from 0.66 to 0.9 on 2026-08-24, together with CHIP_RAIL_SCALE.
- *
- * 0.66 was chosen when the rail this module returned was the FINAL resting
- * place. It was not: the stylesheet multiplied it by 1.82 before painting it,
- * and did not touch --collect-dx/dy, so the two halves of the sweep were
- * measured on different scales and the chips never actually landed on the 0.66
- * mark they were aimed at. With the scale folded in here, a seat's rail can
- * reach 0.8 of the way to the middle by itself (see the `len * 0.8` cap), so an
- * endpoint at 0.66 would sit BEHIND where the chips already are and the sweep
- * would run backwards - furthest for the dealer, who starts furthest out.
- *
- * 0.9 is in front of every seat's rail, converges every seat on one point, and
- * is a truer description of what the animation is for: the chips are going to
- * the pot, which is in the middle.
- */
-export const CHIP_COLLECT_FRACTION = 0.9;
-
 export interface Size {
   w: number;
   h: number;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE TABLE, MEASURED
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 /**
- * The rail inset for a given table size.
+ * The felt window, as percentages of `.table-scaler`.
  *
- * A flat 46px is right on a phone-sized table and mean on a large one, so it
- * scales with the table's SHORTER side - the axis that actually constrains how
- * much room there is between a seat and the felt - and is clamped so it can
- * never collapse to nothing or swallow the middle of the table.
+ * These four numbers are `.table-surface` in TablePage.css, which is itself a
+ * measurement of the painted skin (source felt x 20.3-79.6% / y 8.9-89.2% of
+ * the 896x1200 composite, after the scaler's cover-crop to x [9.5%, 90.5%]).
+ * Everything on this felt - both markers, and the guarantee that they are on
+ * it - is expressed against these, so the geometry follows the artwork rather
+ * than a pixel assumption about any one breakpoint.
+ *
+ * IF `.table-surface` MOVES, MOVE THESE IN THE SAME COMMIT. There is no way for
+ * this module to read the stylesheet, and the failure is silent and ugly: the
+ * markers stay inside a felt window that is no longer where the felt is.
  */
-export function chipRailInset(size: Size, isDealer: boolean): number {
-  const base = Math.min(size.w, size.h) * 0.11;
-  const clamped = Math.max(30, Math.min(base, 64));
-  return clamped + (isDealer ? CHIP_RAIL_DEALER_EXTRA_PX : 0);
+export const FELT_WINDOW = {
+  left: 13.3,
+  top: 8.9,
+  width: 73.2,
+  height: 80.3,
+} as const;
+
+/**
+ * The scaler's own shape, width over height.
+ *
+ * `.table-scaler { aspect-ratio: 605 / 1000 }` - declared at every breakpoint in
+ * TablePage.css and locked there, because the seat ring percentages are derived
+ * from that box. It is needed here because a percentage of the width and a
+ * percentage of the height are not the same distance: an angle, a rotation or
+ * an "equal distance" computed in raw percentages is wrong by a factor of 1.65
+ * on one axis. Every construction below converts into a square space first.
+ *
+ * Used only as the DEFAULT table shape for `dealerButtonPosition`, which is
+ * handed a seat and nothing else by DealerButton.tsx. Anything that already
+ * knows the measured size passes it, and then this constant does not
+ * participate at all.
+ */
+export const NOMINAL_SCALER: Size = { w: 605, h: 1000 };
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE RAIL
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * How far a seat's chips rest from that seat, as a percentage of the TABLE'S
+ * WIDTH. One number, every seat, every ring.
+ *
+ * Derived, not tuned. The binding constraint is the community board, which is
+ * the only thing on the felt that a bet can land on top of (seen in production
+ * before this was worked out: a chip covering the 9d):
+ *
+ *     board width          68% of the felt (TablePage.css, `.community-cards`)
+ *     board's left edge    49.9 - 0.34 * 73.2  =  25.0% of the scaler
+ *     innermost seat       x = 10.5% (every ring puts its side seats there)
+ *     room in between      14.5% of the scaler's width
+ *     less half a chip     -2.0%   (a chip is ~4% of the table - see
+ *                                   TableVisualHotfix.css, --cp-chip-size)
+ *     less clear air       -1.0%
+ *     ------------------------------------------------------------------
+ *     rail                 11.5% of the table's width
+ *
+ * A side seat sitting at the board's own height walks straight at the cards, so
+ * it is the seat this arithmetic is about; every other seat approaches at an
+ * angle and has more room than this. Giving the shorter rail to only that one
+ * seat is what the old CHIP_RAIL_SCALE_BOARD_LEVEL did, and it is what makes
+ * one player's chips sit closer to them than everyone else's. The whole table
+ * walks the shorter rail instead.
+ *
+ * A percentage of the WIDTH rather than of `min(w, h)` because the table is
+ * always portrait and the width is both the short axis and the axis the board
+ * constrains. On a hypothetical landscape table the two differ; no breakpoint
+ * produces one.
+ */
+export const CHIP_RAIL_WIDTH_PCT = 11.5;
+
+/**
+ * Where a chip finishes when it is collected, as a fraction of seat-to-centre.
+ *
+ * The chips are going to the pot and the pot is in the middle, so every seat
+ * converges on one point. 0.9 rather than 1.0 so the arriving stacks form a
+ * pile around the pot rather than all landing on the same pixel.
+ */
+export const CHIP_COLLECT_FRACTION = 0.9;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE BUTTON
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * How far the button sits from its seat, as a fraction of the chip rail.
+ *
+ * Under 1 on purpose. Dan 2026-08-19: "chips must always be in front of the
+ * user (in front of the button if they're the button)" - so the reading order
+ * out from a player is player, button, chips, and the button is the marker that
+ * stands nearer the player.
+ *
+ * 0.78 is the largest fraction that still clears a seat's own avatar on a phone
+ * (a villain avatar is 52px at 375px against a rail of 11.5% x 347px = 40px, so
+ * the button at 31px from the seat centre stands just off the artwork) while
+ * leaving the two markers far enough apart for MARKER_MIN_GAP_WIDTH_PCT to be
+ * satisfied by the rotation alone on every unclamped seat.
+ */
+export const BUTTON_RAIL_RATIO = 0.78;
+
+/**
+ * How far off the chip line the button starts, in degrees.
+ *
+ * The button and the chips walk out from the same seat toward the same middle,
+ * so without an angle between them they walk the same line and the only thing
+ * keeping them apart is the difference in their distances. That is a single
+ * number's worth of separation and it disappears the moment either marker is
+ * moved by the on-felt guarantee - which is exactly how the button ended up
+ * standing in the chips before.
+ *
+ * At 36 degrees the two markers are
+ *   rail * sqrt(1 + 0.78^2 - 2 * 0.78 * cos 36) = 0.598 * rail
+ * apart before anything else happens, which is 6.9% of the table's width -
+ * comfortably past the 6% minimum, with no per-seat term involved.
+ */
+export const BUTTON_ANGLE_DEG = 36;
+
+/**
+ * The closest the two markers may ever be, centre to centre, as a percentage
+ * of the table's width.
+ *
+ * In PERCENT rather than pixels because both markers are now sized as a
+ * proportion of the table (see TableVisualHotfix.css): a chip is 3.6% of the
+ * table's width and the button 4.0%, so their radii are 1.8% and 2.0%, and they
+ * touch at 3.8%. 6% leaves a chip's width of felt between them at every table
+ * size, so they read as two markers rather than one smear.
+ *
+ * The button's mobile floor (17px, where the glyph would otherwise stop being
+ * legible) makes it proportionally larger on a small phone - 2.45% of the width
+ * rather than 2.0% - which the 6% still covers.
+ */
+export const MARKER_MIN_GAP_WIDTH_PCT = 6;
+
+/**
+ * How far inside the felt's edge a marker's CENTRE must stay, as a percentage
+ * of the table's width.
+ *
+ * A marker is a disc, and "on the felt" has to mean the whole disc, not its
+ * centre. 2.5% is half of the larger of the two markers at its largest relative
+ * size (the button at its 17px mobile floor on a 347px table is 4.9% wide), so
+ * neither disc can overhang the painted rail at any table size.
+ */
+export const FELT_MARKER_MARGIN_WIDTH_PCT = 2.5;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FELT MATHS
+   ═══════════════════════════════════════════════════════════════════════════
+   The felt is a STADIUM, not an ellipse. `.table-surface` carries
+   `border-radius: 9999px`, which every browser resolves to min(w, h) / 2 on
+   both axes, so the painted window is a rectangle with two semicircular caps -
+   a racetrack, which is the shape a real poker table is cut to.
+
+   An earlier pass here used the ellipse INSCRIBED in that window, on the theory
+   that inside the ellipse is inside anything rounder. It is, and it costs too
+   much: on a 347x574 table the ellipse is 25px narrower than the felt at the
+   height the 9-max bottom cap seats sit at, so those seats' chips were being
+   pushed a fifth of a rail further in than they needed to be, purely to satisfy
+   a shape the table does not have. Every pixel of that came straight out of
+   "one rail, equal for every seat".
+
+   So the region below is the real one, and the two operations on it are done by
+   bisection along a ray rather than in closed form. That is not a compromise:
+   the stadium is convex and contains its own centre, so the ray crosses the
+   boundary exactly once and bisection converges on it to full double precision
+   in 40 halvings. There is no ambiguity to trade away. */
+
+/** Centre of the felt window, in scaler percentages. */
+export function feltCenter(): Pos {
+  return {
+    x: FELT_WINDOW.left + FELT_WINDOW.width / 2,
+    y: FELT_WINDOW.top + FELT_WINDOW.height / 2,
+  };
+}
+
+/** The felt window in pixels, inset on every side by a marker's own radius. */
+function feltBoxPx(size: Size, marginWidthPct: number) {
+  const inset = (marginWidthPct / 100) * size.w;
+  const w = Math.max(1, (FELT_WINDOW.width / 100) * size.w - 2 * inset);
+  const h = Math.max(1, (FELT_WINDOW.height / 100) * size.h - 2 * inset);
+  return {
+    left: (FELT_WINDOW.left / 100) * size.w + inset,
+    top: (FELT_WINDOW.top / 100) * size.h + inset,
+    w,
+    h,
+    // What `border-radius: 9999px` resolves to. Insetting the box by `inset`
+    // reduces min(w, h) by 2 * inset and so the radius by exactly `inset`,
+    // which is what makes this the true offset curve of the painted window.
+    r: Math.min(w, h) / 2,
+  };
+}
+
+/** True when a point in PIXELS is inside the inset stadium. */
+function insideStadiumPx(px: number, py: number, box: ReturnType<typeof feltBoxPx>): boolean {
+  // Nearest point of the stadium's SPINE - the rectangle left after both caps
+  // are removed. A stadium is every point within r of that spine.
+  const sx = Math.min(Math.max(px, box.left + box.r), box.left + box.w - box.r);
+  const sy = Math.min(Math.max(py, box.top + box.r), box.top + box.h - box.r);
+  return Math.hypot(px - sx, py - sy) <= box.r + 1e-9;
+}
+
+/**
+ * How far along the ray from the felt's centre through `p` the felt ends.
+ *
+ * Returns the scale `s` such that centre + s * (p - centre) is exactly on the
+ * boundary. s > 1 means `p` is inside with room to spare; s < 1 means it is out
+ * on the painted rail and s is how much of the way back it has to come.
+ */
+function feltExitScale(p: Pos, size: Size, marginWidthPct: number): number {
+  const box = feltBoxPx(size, marginWidthPct);
+  const c = feltCenter();
+  const cx = (c.x / 100) * size.w;
+  const cy = (c.y / 100) * size.h;
+  const dx = (p.x / 100) * size.w - cx;
+  const dy = (p.y / 100) * size.h - cy;
+  const len = Math.hypot(dx, dy);
+  if (!Number.isFinite(len) || len < 1e-9) return Infinity;
+  if (!insideStadiumPx(cx, cy, box)) return 0; // a table too small to have a felt
+
+  let lo = 0; // inside
+  let hi = 1;
+  // Push `hi` out until it is outside, so the boundary is bracketed.
+  for (let i = 0; i < 40 && insideStadiumPx(cx + dx * hi, cy + dy * hi, box); i++) hi *= 2;
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    if (insideStadiumPx(cx + dx * mid, cy + dy * mid, box)) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * How far out toward the rail a point sits: 0 is the middle of the felt, 1 is
+ * as far out as a marker of this size may go, above 1 is on the painted rail.
+ *
+ * The one number that says whether `clampIntoFelt` moved a point, which is what
+ * separates "this seat walks the common rail" from "this seat's ring position
+ * is off the felt and the on-felt guarantee had to lengthen its walk".
+ */
+export function feltRadialFraction(
+  p: Pos,
+  size: Size = NOMINAL_SCALER,
+  marginWidthPct: number = FELT_MARKER_MARGIN_WIDTH_PCT
+): number {
+  const s = feltExitScale(p, size, marginWidthPct);
+  if (!Number.isFinite(s)) return 0;
+  return s <= 0 ? Infinity : 1 / s;
+}
+
+/** True when a marker centred here has its whole disc on the felt. */
+export function isInsideFelt(
+  p: Pos,
+  size: Size = NOMINAL_SCALER,
+  marginWidthPct: number = FELT_MARKER_MARGIN_WIDTH_PCT
+): boolean {
+  const box = feltBoxPx(size, marginWidthPct);
+  return insideStadiumPx((p.x / 100) * size.w, (p.y / 100) * size.h, box);
+}
+
+/**
+ * ITEM 11'S GUARANTEE. Returns a point that is always on the felt.
+ *
+ * Dan 2026-08-25: "The button must always be on the table, and never on the
+ * rail."
+ *
+ * The old construction stepped a FRACTION of the way from the seat toward the
+ * middle - 0.28 of the horizontal run, 0.16 of the vertical - and a fraction of
+ * a short run is a short step. Every TOP CAP DIAGONAL on every ring therefore
+ * left its button hanging over the painted rail, measured on the current rings:
+ *
+ *     3-max and 5-max  (20.5, 6) -> (23.4, 14.3)   7.6% past the felt's edge
+ *     7-max and 9-max  (27,   6) -> (28.2, 13.9)   2.7% past
+ *
+ * and it is worth noticing WHEN they became wrong: they were fine at y=8.5, and
+ * a seat move in a different file on 2026-08-25 raised the cap to y=6. A tuned
+ * constant here would have been correct on the day it was written and silently
+ * wrong the moment someone moved a chair - which is what happened. No constant
+ * can fix it, either, because the amount by which each seat misses depends on
+ * where that seat is.
+ *
+ * So this is not a constant. The point is pulled straight back along the line
+ * to the centre of the felt until it is inside, and not one step further. It is
+ * a no-op for every point that was already on the felt, so no seat that was
+ * right moves, and it cannot fail for any seat of any ring at any table size -
+ * the felt is convex and contains the point being pulled toward.
+ */
+export function clampIntoFelt(
+  p: Pos,
+  size: Size = NOMINAL_SCALER,
+  marginWidthPct: number = FELT_MARKER_MARGIN_WIDTH_PCT
+): Pos {
+  const s = feltExitScale(p, size, marginWidthPct);
+  if (!Number.isFinite(s) || s >= 1) return { x: p.x, y: p.y };
+  const c = feltCenter();
+  return { x: c.x + (p.x - c.x) * s, y: c.y + (p.y - c.y) * s };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SQUARE SPACE
+   ═══════════════════════════════════════════════════════════════════════════
+   Percentages of a 605x1000 box are not distances: 1% across is 6.05px and 1%
+   down is 10px. Rotating a direction vector, or stepping "the same distance"
+   along one, has to happen where the axes agree. `sq()` divides y by the
+   table's aspect so that a unit in either axis is the same number of pixels
+   (specifically w/100 of them), and `unsq()` puts it back. Every length below
+   is therefore in units of "1% of the table's width", which is also why the
+   rail and the minimum gap are quoted that way. */
+
+const sq = (p: Pos, size: Size): Pos => ({ x: p.x, y: (p.y * size.h) / size.w });
+const unsq = (p: Pos, size: Size): Pos => ({ x: p.x, y: (p.y * size.w) / size.h });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE TWO MARKERS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Where a seat's bet chips come to rest, in scaler percentages.
+ *
+ * One rail for every seat (CHIP_RAIL_WIDTH_PCT), walked along the line to the
+ * centre of the FELT - not the centre of the scaler, which is a different point
+ * by about 1% of the table's height and is not where the pot is.
+ *
+ * The `Math.min(rail, len * 0.8)` is a degeneracy guard and nothing more: a
+ * seat sitting almost on top of the felt centre has no room to walk a full
+ * rail, and without it the chips would step past the middle and end up on the
+ * far side of the table from the player who bet them. The closest seat on any
+ * production ring is 40 units from the centre against a rail of 11.5, so it
+ * cannot bind on a real table - which is the point. Its predecessor was applied
+ * to seats it COULD bind on, where it silently equalised two seats that were
+ * supposed to differ.
+ */
+export function chipRestPosition(seat: Pos, size: Size = NOMINAL_SCALER): Pos {
+  const c = feltCenter();
+  const s = sq(seat, size);
+  const t = sq(c, size);
+  const dx = t.x - s.x;
+  const dy = t.y - s.y;
+  const len = Math.hypot(dx, dy);
+  if (!Number.isFinite(len) || len < 1e-6) return { x: seat.x, y: seat.y };
+
+  const step = Math.min(CHIP_RAIL_WIDTH_PCT, len * 0.8);
+  const walked = unsq({ x: s.x + (dx / len) * step, y: s.y + (dy / len) * step }, size);
+  return clampIntoFelt(walked, size);
+}
+
+/**
+ * Where a seat's dealer button sits, in scaler percentages.
+ *
+ * Built from the chip rail rather than from its own set of factors, so the two
+ * markers can no longer drift apart the way they did when each had its own
+ * arithmetic. Three steps, in order:
+ *
+ *   1. walk BUTTON_RAIL_RATIO of the rail, along the line to the felt centre
+ *      rotated by BUTTON_ANGLE_DEG - nearer the player than the chips, and off
+ *      their line;
+ *   2. project onto the felt (item 11);
+ *   3. if step 2 has pushed the two markers together - it can, because a seat
+ *      outside the felt has both of its markers projected onto the same arc -
+ *      walk the button AROUND the felt until they are MARKER_MIN_GAP_WIDTH_PCT
+ *      apart (item 13).
+ *
+ * Step 3 swings the button about the CENTRE of the felt and then re-applies
+ * step 2, so the two guarantees cannot fight each other: whatever the swing
+ * does, the result is put back on the felt before it is accepted. It searches
+ * outward from zero in both directions and takes the first angle that satisfies
+ * the gap, so it moves the button as little as the geometry allows and is a
+ * no-op on every seat that did not need it.
+ *
+ * `size` defaults to the scaler's own shape because DealerButton.tsx is handed
+ * a seat and nothing else. Only the ASPECT of `size` reaches the answer (the
+ * result is in percentages), and TablePage.css locks that aspect at every
+ * breakpoint, so the default is exact in production rather than approximate.
+ */
+export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER): Pos {
+  const c = feltCenter();
+  const s = sq(seat, size);
+  const t = sq(c, size);
+  const dx = t.x - s.x;
+  const dy = t.y - s.y;
+  const len = Math.hypot(dx, dy);
+  if (!Number.isFinite(len) || len < 1e-6) return { x: seat.x, y: seat.y };
+
+  const ux = dx / len;
+  const uy = dy / len;
+  const a = BUTTON_ANGLE_DEG * (Math.PI / 180);
+  const cosA = Math.cos(a);
+  const sinA = Math.sin(a);
+  // Same rotation sense the button has always used, so it stays on the side of
+  // each seat that players are used to seeing it on.
+  const rx = ux * cosA - uy * sinA;
+  const ry = ux * sinA + uy * cosA;
+
+  const step = Math.min(CHIP_RAIL_WIDTH_PCT * BUTTON_RAIL_RATIO, len * 0.8);
+  const walked = unsq({ x: s.x + rx * step, y: s.y + ry * step }, size);
+  const placed = clampIntoFelt(walked, size);
+
+  const chips = chipRestPosition(seat, size);
+  if (markerGapWidthPct(placed, chips, size) >= MARKER_MIN_GAP_WIDTH_PCT) return placed;
+
+  // Swing it around the middle of the felt, 1.5 degrees at a time, out to a
+  // quarter turn - far more than any seat on any ring has ever needed. The
+  // swing happens in square space so the angle is the angle a person sees, and
+  // every candidate is put back on the felt before it is judged.
+  const pv = sq(placed, size);
+  const cv = sq(c, size);
+  for (let i = 1; i <= 60; i++) {
+    for (const dir of [1, -1]) {
+      const phi = dir * i * 1.5 * (Math.PI / 180);
+      const cosP = Math.cos(phi);
+      const sinP = Math.sin(phi);
+      const vx = pv.x - cv.x;
+      const vy = pv.y - cv.y;
+      const cand = clampIntoFelt(
+        unsq({ x: cv.x + vx * cosP - vy * sinP, y: cv.y + vx * sinP + vy * cosP }, size),
+        size
+      );
+      if (markerGapWidthPct(cand, chips, size) >= MARKER_MIN_GAP_WIDTH_PCT) return cand;
+    }
+  }
+  return placed;
+}
+
+/**
+ * Distance between two points on the table, in percent of the table's WIDTH.
+ *
+ * The unit both the minimum gap and the rail are quoted in; multiply by
+ * `size.w / 100` for pixels.
+ */
+export function markerGapWidthPct(a: Pos, b: Pos, size: Size = NOMINAL_SCALER): number {
+  const pa = sq(a, size);
+  const pb = sq(b, size);
+  return Math.hypot(pa.x - pb.x, pa.y - pb.y);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WHAT THE TABLE PAGE ACTUALLY CALLS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * The one rail, in pixels, for a given table size.
+ *
+ * Kept as a named export because it is the number a person wants when a bet
+ * looks wrong, and because it is the thing the tests measure.
+ *
+ * `_isDealer` is accepted and IGNORED. It used to add CHIP_RAIL_DEALER_EXTRA_PX
+ * so the button holder's chips could clear their own puck; the puck now moves
+ * instead (see `dealerButtonPosition`), because giving one seat a longer rail is
+ * the exact thing item 13 forbids. The parameter survives only so the existing
+ * call in TablePage.tsx keeps compiling - drop it there and then here.
+ */
+export function chipRailInset(size: Size, _isDealer?: boolean): number {
+  return (CHIP_RAIL_WIDTH_PCT / 100) * size.w;
 }
 
 /**
  * Pixel offset from a seat to its resting bet chips.
  *
- * Same distance for every seat, measured along the line to the centre of the
- * table. Returns pixels because the caller positions with translate().
+ * Pixels because the caller positions with translate(). See `chipRestPosition`
+ * for the rule; `_isDealer` is accepted and ignored, see `chipRailInset`.
  */
-export function betChipOffsetPx(seat: Pos, size: Size, isDealer: boolean): Pos {
-  const dxPx = ((50 - seat.x) * size.w) / 100;
-  const dyPx = ((50 - seat.y) * size.h) / 100;
-  const len = Math.hypot(dxPx, dyPx);
-  // A seat sitting on the centre has no inward direction to step along.
-  if (!Number.isFinite(len) || len < 1) return { x: 0, y: 0 };
-
-  // Never step more than most of the way to the middle, however small the
-  // table gets - the chips belong to a player, not to the pot.
-  const bottomExtra = isHeroRailSeat(seat) ? CHIP_RAIL_BOTTOM_EXTRA_PX : 0;
-  // A seat level with the board is the one seat that cannot have the common
-  // rail - see CHIP_RAIL_SCALE_BOARD_LEVEL. Every other seat gets the same one.
-  const scale = isBoardLevelSeat(seat) ? CHIP_RAIL_SCALE_BOARD_LEVEL : CHIP_RAIL_SCALE;
-  let inset = (chipRailInset(size, isDealer) + bottomExtra) * scale;
-
-  // Never behind the button - see CHIP_RAIL_MIN_CLEARANCE_PX. Only the
-  // shortened board-level rail can fall foul of this; the full rail clears the
-  // button at every table size the app renders.
-  if (isBoardLevelSeat(seat)) {
-    const btn = dealerButtonPosition(seat);
-    const btnPx = Math.hypot(((btn.x - seat.x) * size.w) / 100, ((btn.y - seat.y) * size.h) / 100);
-    inset = Math.max(inset, btnPx + CHIP_RAIL_MIN_CLEARANCE_PX);
-  }
-
-  inset = Math.min(inset, len * 0.8);
+export function betChipOffsetPx(seat: Pos, size: Size, _isDealer?: boolean): Pos {
+  const p = chipRestPosition(seat, size);
   return {
-    x: Math.round((dxPx / len) * inset),
-    y: Math.round((dyPx / len) * inset),
+    x: Math.round(((p.x - seat.x) * size.w) / 100),
+    y: Math.round(((p.y - seat.y) * size.h) / 100),
   };
 }
 
 /**
  * How much FURTHER a chip travels when collected into the pot.
  *
- * The chip already sits at betChipOffsetPx(); the collect keyframe translates
- * it by this again. Expressed as the remainder to a common endpoint so every
- * seat's chips converge on the same place regardless of where they started.
+ * The chip already sits at betChipOffsetPx(); the collect keyframe translates it
+ * by this again. Expressed as the remainder to a common endpoint so every seat's
+ * chips converge on the same place regardless of where they started.
  */
-export function chipCollectOffsetPx(seat: Pos, size: Size, isDealer: boolean): Pos {
-  const dxPx = ((50 - seat.x) * size.w) / 100;
-  const dyPx = ((50 - seat.y) * size.h) / 100;
-  const rest = betChipOffsetPx(seat, size, isDealer);
+export function chipCollectOffsetPx(seat: Pos, size: Size, _isDealer?: boolean): Pos {
+  const c = feltCenter();
+  const dxPx = ((c.x - seat.x) * size.w) / 100;
+  const dyPx = ((c.y - seat.y) * size.h) / 100;
+  const rest = betChipOffsetPx(seat, size);
   return {
     x: Math.round(dxPx * CHIP_COLLECT_FRACTION - rest.x),
     y: Math.round(dyPx * CHIP_COLLECT_FRACTION - rest.y),

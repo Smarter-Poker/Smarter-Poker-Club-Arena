@@ -163,6 +163,13 @@ export abstract class ServerTableEngineBase {
   // (or opt to post the BB immediately via POST /post-bb).
   protected knownPlayerIds: Set<string> = new Set();
 
+  // Dan 2026-08-25, BINDING: "NEW PLAYERS NEVER GET THE BUTTON WHEN SITTING
+  // DOWN — it skips over them and moves to the correct person." Every userId
+  // that has actually been dealt at least one hand at this table. A player who
+  // is not in here has never played, so the button rotation passes over them;
+  // they pick it up on the following orbit like everyone else.
+  protected dealtInUserIds: Set<string> = new Set();
+
   // Guard for the dealing loop's first iteration. On the first pass — whether
   // this is a cold start or a crash-recovery resume — every currently-seated
   // player is treated as an initial/existing player and is NOT flagged as
@@ -363,6 +370,33 @@ export abstract class ServerTableEngineBase {
   protected currentHandBBJPayoutConfig: ServerRakeConfigResult | null = null;
   /** Remaining deck cards at hand completion — used for Rabbit Hunt reveal */
   protected currentHandRabbitCards: import('../types.js').Card[] = [];
+  /**
+   * Rabbit hunt offers, keyed by hand number. Dan 2026-08-25.
+   *
+   * These cards are NEVER broadcast. They are held server-side and released to
+   * one authenticated player at a time by revealRabbitHunt(), after
+   * fn_consume_rabbit_hunt has actually taken payment.
+   *
+   * Keyed by hand rather than kept in a single field because a player has a few
+   * seconds to click and the next hand may already be dealing by the time they
+   * do — a single field is wiped at the next deal and the purchase would return
+   * either nothing or, worse, the NEXT hand's undealt cards. Trimmed to the
+   * last two hands at capture, so it stays bounded on a table running for days.
+   *
+   * `eligible` is who was dealt into that hand: a spectator cannot buy a look
+   * at a hand they were never part of, and `revealed` makes a paid reveal
+   * repeatable for the buyer without charging them twice.
+   */
+  protected rabbitHuntOffers: Map<
+    number,
+    {
+      cards: import('../types.js').Card[];
+      boardLength: number;
+      eligible: Set<string>;
+      revealed: Set<string>;
+      offeredAt: number;
+    }
+  > = new Map();
   /**
    * RIT VERIFIER FIX 2026-08-21: number of boards dealt by Run It Twice this
    * hand (0 = normal hand). Every RIT-resolved hand tripped the state
@@ -1938,10 +1972,62 @@ export abstract class ServerTableEngineBase {
         (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
     );
     if (roster.length < 2) return -1;
-    const sortedSeats = roster.map((p) => p.seat_number).sort((a, b) => a - b);
-    const nextButton =
-      this.lastButtonSeat > 0 ? this.getNextSeat(this.lastButtonSeat, roster) : sortedSeats[0];
+    const nextButton = this.predictButtonSeat(roster);
     return roster.length === 2 ? nextButton : this.getNextSeat(nextButton, roster);
+  }
+
+  /**
+   * Dan 2026-08-25, BINDING: "NEW PLAYERS NEVER GET THE BUTTON WHEN SITTING
+   * DOWN. It skips over them and moves to the correct person."
+   *
+   * The subset of a roster that may hold the button on the next hand: players
+   * who have already been dealt at least one hand here. Returns the roster
+   * UNCHANGED when nobody has played yet — a table dealing its very first hand
+   * has none but new players and somebody has to take the button — so this can
+   * never empty the rotation or make the caller spin.
+   */
+  protected buttonEligible(roster: SeatedPlayer[]): SeatedPlayer[] {
+    // CASH ONLY. Dan's rule is about sitting down at a cash game. In a
+    // tournament nobody "sits down": the seating sweep places late registrants
+    // and TableBalancer moves players between tables deliberately, positioning
+    // them relative to the big blind so the rotation stays honest. Filtering
+    // those players out of the button rotation would silently override that
+    // placement, and a table that has just been balanced into is mostly players
+    // this set has never seen.
+    if (this.isTournamentTable()) return roster;
+    const veterans = roster.filter((p) => this.dealtInUserIds.has(p.user_id));
+    return veterans.length > 0 ? veterans : roster;
+  }
+
+  /**
+   * Where the button lands on the hand about to be dealt. ONE definition,
+   * shared by the SB/BB predictors, the wait-for-BB gate and the rotation
+   * itself — if these were separate walks they could disagree about who is on
+   * the button, which is exactly the class of bug the shared sbSeat/bbSeat
+   * computation in the dealing loop was introduced to kill.
+   */
+  protected predictButtonSeat(roster: SeatedPlayer[]): number {
+    const eligible = this.buttonEligible(roster);
+    const sortedSeats = eligible.map((p) => p.seat_number).sort((a, b) => a - b);
+    if (sortedSeats.length === 0) return -1;
+    return this.lastButtonSeat > 0
+      ? this.getNextSeat(this.lastButtonSeat, eligible)
+      : sortedSeats[0];
+  }
+
+  /**
+   * The button seat for the next hand, over the same roster the blinds use.
+   * Used by the dealing loop to hold a brand-new joiner out for one hand when
+   * they have sat down in the seat the button is about to reach.
+   */
+  protected getButtonSeatIndex(): number {
+    const roster = this.seatedPlayers.filter(
+      (p) =>
+        p.stack > 0 &&
+        (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
+    );
+    if (roster.length < 2) return -1;
+    return this.predictButtonSeat(roster);
   }
 
   protected getBBSeatIndex(): number {
@@ -1956,9 +2042,7 @@ export abstract class ServerTableEngineBase {
         (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
     );
     if (roster.length < 2) return -1;
-    const sortedSeats = roster.map((p) => p.seat_number).sort((a, b) => a - b);
-    const nextButton =
-      this.lastButtonSeat > 0 ? this.getNextSeat(this.lastButtonSeat, roster) : sortedSeats[0];
+    const nextButton = this.predictButtonSeat(roster);
     const sbSeat = roster.length === 2 ? nextButton : this.getNextSeat(nextButton, roster);
     return this.getNextSeat(sbSeat, roster);
   }

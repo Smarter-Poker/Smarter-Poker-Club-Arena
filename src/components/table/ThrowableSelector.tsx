@@ -1,11 +1,19 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  THROWABLE SELECTOR — Pick from the 49 Dynamic 3D Throwables (2026-08-20)
+ *  THROWABLE SELECTOR — Pick from the 48 Dynamic 3D Throwables (2026-08-20)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * The grid now renders the Supabase 3D renders (throwables/<id>.jpg) instead
  * of the retired hand-drawn SVGs. Pure-black image backgrounds vanish via
  * mix-blend-mode: screen (.throwable-img), so items float on the panel.
+ *
+ * COUNT: 48, not the 49 the comments claimed since the rebuild. Storage holds
+ * 49 renders; `mouse_card.jpg` has no catalog entry and is therefore not
+ * offered, which is the harmless direction of that mismatch. The dangerous
+ * direction - a catalog id with no render - is pinned by
+ * tests/unit/throwableCatalogIntegrity.test.ts, because a picker offering ids
+ * that resolve to nothing is exactly the defect the card-back picker shipped
+ * with: eight tiles, six of which painted a fallback and selected nothing.
  *
  * Five tabs: React · Throw · Sports · Cheer · VIP
  * VIP: 500 free throws/month, then 1 Diamond each; Non-VIP: 1 Diamond per throw.
@@ -61,7 +69,7 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Warm the 49-image cache the moment the panel opens
+    // Warm the render cache the moment the panel opens
     preloadThrowableImages();
 
     async function load() {

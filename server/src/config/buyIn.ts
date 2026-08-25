@@ -69,6 +69,40 @@ export function snapToWholeBuyIn(amount: number): number {
   return best;
 }
 
+/** Two decimal places, killing float noise. numeric(15,2) is what the
+    columns are, so cents is the finest money this platform can store. */
+function round2(n: number): number {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/**
+ * THE FEE, IN CENTS (Dan 2026-08-25).
+ *
+ * "FRACTIONAL FEE'S NEED TO BE ALLOWED, WE HAVE 1 BUY IN, 5 BUY IN'S ETC THOSE
+ * SHOULD BE .10 RAKE AND .50 RAKE PER BUY IN."
+ *
+ * The fee used to floor to a WHOLE chip, which is why a 1-chip game took
+ * nothing and a 5-chip game took nothing: floor(1 x 0.1) and floor(5 x 0.1)
+ * are both 0. The whole micro end of the ladder — 1, 2, 3, 5 — ran rake-free,
+ * and the comment above this line called that a deliberate trade because "that
+ * rule cannot coexist with a hard 10% cap WHILE FEES STAY WHOLE NUMBERS".
+ *
+ * They do not have to. buy_in_fee is numeric(15,2). Flooring to CENTS instead
+ * of to chips honours the same ceiling exactly — 1 pays 0.10, 5 pays 0.50, 15
+ * pays 1.50, and none of them is a fraction of a percent over 10 — while the
+ * total the player pays stays the whole number it has always been (0.90 + 0.10
+ * = 1.00), which is what every price display and the whole-total rule depend
+ * on.
+ *
+ * Still a FLOOR, never a round: rounding a fee up is rounding the house's cut
+ * up through its own ceiling, which is the exact bug fixed on 2026-08-21.
+ */
+function feeToCents(total: number, rakeRate: number): number {
+  const exact = total * rakeRate;
+  const floored = Math.floor(exact * 100 + 1e-9) / 100;
+  return Math.min(total, Math.max(0, floored));
+}
+
 /** Split a whole total. 0 stays a freeroll: never levy a fee on a free game. */
 export function splitBuyIn(total: number, rakeRate: number = DEFAULT_RAKE_RATE): BuyInSplit {
   const t = Math.max(0, Math.round(Number(total) || 0));
@@ -88,10 +122,11 @@ export function splitBuyIn(total: number, rakeRate: number = DEFAULT_RAKE_RATE):
    *
    * MIRROR of src/utils/buyIn.ts — change one, change both.
    */
-  const fee = Math.min(t, Math.floor(t * rakeRate + 1e-9));
-  // Subtraction, not a second independent rounding — otherwise prize + fee can
-  // miss total, and money that does not reconcile is a real bug.
-  return { total: t, prize: t - fee, fee };
+  const fee = feeToCents(t, rakeRate);
+  // prize is computed by SUBTRACTION, never by its own rounding. Rounding both
+  // ends independently is how prize + fee stops equalling total, and money that
+  // does not reconcile on a money surface is a real bug later.
+  return { total: t, prize: round2(t - fee), fee };
 }
 
 /** Snap, then split. Every generator calls THIS. */

@@ -52,9 +52,18 @@
   /* Dan 2026-04-17: shrunk — fits between the hamburger/+ on the left
      and the stats icon on the right at 375px. Padding + font smaller. */
   position: absolute;
-  /* Dan 2026-08-22 mobile audit item 1: the banner sat UNDER the iPhone
-     status bar (clock/battery). Respect the notch safe area. */
-  top: calc(6px + env(safe-area-inset-top, 0px));
+  /* This widget's containing block is `.table-page--embedded` (position:
+     absolute; inset:0 — TablePage.css), which fills
+     `.multi-table-page__table-slot`; the slot begins on the tab bar's bottom
+     border. So y=0 here is already BELOW the notch.
+
+     It used to read `calc(6px + env(safe-area-inset-top, 0px))` — Dan
+     2026-08-22, "the banner sat under the iPhone status bar". The inset was
+     the right diagnosis of the wrong element: `.table-tab-bar` above already
+     pads itself by the full inset, so adding it again here pushed the plate a
+     further ~47px DOWN, off the chrome and onto the felt. That is the drift
+     Dan reported on 2026-08-25. The notch is handled once, by the bar. */
+  top: 6px;
   left: 50%;
   transform: translateX(-50%);
 
@@ -515,23 +524,77 @@
 }
 
 /* Dan 2026-08-24 (iPhone screenshots): the plaque floated mid-air over the
-   felt and read enormous on a phone. Docked tight under the tab bar and cut
-   to roughly half its visual weight — the desktop plaque is untouched. */
+   felt and read enormous on a phone.
+   Dan 2026-08-25: "the bad beat jackpot needs to be moved to the very top of
+   the page, where the black action bar meets the table."
+
+   `top: 0` IS that seam, exactly — see the containing-block note on the base
+   rule. No coordinate arithmetic, and nothing to keep in sync when the tab bar
+   changes height (it just did: 44px -> 42px in this same pass).
+
+   It costs the table nothing. `position: absolute` keeps the plate out of
+   flow, so `.table-container` reserves no height for it and the felt is free
+   to grow into the band the plate hangs in.
+
+   LANDSCAPE, not stacked, on a phone: two 8px lines plus a 5px bezel made a
+   34px plaque, and a 34px plaque is not a seam, it is a second header. One row
+   is ~21px and reads as a nameplate hanging off the bar.
+
+   It cannot reach a seat or the board. The felt's scaler starts below
+   `.table-header` (8px + inset) plus `.table-container`'s own top padding
+   (48px at <=380px, 76px above that), so it begins 56px down at the very
+   least; a top seat's plate is centred at 6-8.5% of the scaler and reaches at
+   most a few px above that edge, call it 50px. The plate ends at 21px. The
+   board sits near 40% of the scaler, far below that again.
+
+   THE ONE THING THAT COULD BREAK THIS: `.table-container`'s top padding. It is
+   the whole clearance. If a later pass takes that band below ~30px, this plate
+   and the top seats start sharing pixels — shrink the plate here in the same
+   commit, do not discover it in a screenshot.
+
+   The desktop plaque is untouched. */
 @media (max-width: 768px) {
   .bbj-widget {
-    top: calc(2px + env(safe-area-inset-top, 0px));
-    border-width: 3px;
-    padding: 2px 10px;
-    border-radius: 8px;
-    max-width: calc(100% - 150px);
+    top: 0;
+    display: flex;
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: center;
+    gap: 5px;
+    /* No top bezel and square top corners: the plate hangs FROM the bar, and a
+       milled edge along the seam would read as a gap between the two. */
+    border-width: 0 2px 2px;
+    border-radius: 0 0 9px 9px;
+    padding: 2px 10px 3px;
+    /* Clears the stats icon parked at right:6px on phones (TableHUD.css
+       .table-hud__corner--ur + MiniStatsCard.css .mini-stats-card--icon, 36px
+       square): 375 - 110 = 265px of plate, centred, ends at x=320 against the
+       icon's left edge at x=333. */
+    max-width: calc(100% - 110px);
+  }
+
+  /* The inner bezel follows the outer one, or it draws a machined line across
+     the seam the outer border just gave up. */
+  .bbj-widget::before {
+    border-radius: 0 0 7px 7px;
   }
 
   .bbj-widget__label {
-    font-size: 0.5rem;
-    letter-spacing: 0.12em;
+    font-size: 0.4375rem;
+    letter-spacing: 0.1em;
+    /* Sits beside the amount now, not above it. */
+    margin-bottom: 0;
+    white-space: nowrap;
   }
 
   .bbj-widget__amount {
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
+  }
+
+  /* The hover lift raises the plate off the felt on desktop. Against the bar
+     it would open a gap along the seam instead, so the phone plate glows
+     rather than moves. */
+  .bbj-widget:hover {
+    transform: translateX(-50%);
   }
 }

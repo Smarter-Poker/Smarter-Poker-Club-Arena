@@ -49,9 +49,7 @@ const chipModuleCss = fs.readFileSync(
   path.join(process.cwd(), 'src/components/table/ChipAnimation.module.css'),
   'utf8'
 );
-const CHIP_Z = Number(
-  /\.manager\s*\{[^}]*z-index:\s*(\d+)/.exec(chipModuleCss)?.[1] ?? 'NaN'
-);
+const CHIP_Z = Number(/\.manager\s*\{[^}]*z-index:\s*(\d+)/.exec(chipModuleCss)?.[1] ?? 'NaN');
 const CHIP_Z_BEFORE = 1000; // what it was when the bug was reported
 
 const potMarkup = `
@@ -124,7 +122,12 @@ const BREAKPOINTS = [
 async function potBox(page: import('@playwright/test').Page) {
   return page.evaluate(() => {
     const r = document.querySelector('.pot-display__main')!.getBoundingClientRect();
-    return { x: Math.round(r.x * 100) / 100, y: Math.round(r.y * 100) / 100, w: r.width, h: r.height };
+    return {
+      x: Math.round(r.x * 100) / 100,
+      y: Math.round(r.y * 100) / 100,
+      w: r.width,
+      h: r.height,
+    };
   });
 }
 
@@ -132,12 +135,39 @@ for (const bp of BREAKPOINTS) {
   test.describe(`pot vs chips @ ${bp.label} (${bp.width}px)`, () => {
     test.use({ viewport: { width: bp.width, height: 1000 } });
 
+    /**
+     * "Did not move by a single pixel" is measured as SUB-PIXEL, not as exact
+     * float equality.
+     *
+     * `toEqual` on `getBoundingClientRect()` was already failing on main before
+     * the 2026-08-25 mobile pass touched anything, and it was failing on a
+     * DIFFERENT pair of breakpoints each run: base gave phone + tablet, the
+     * mobile branch gave desktop + phone. The deltas were 0.11px and smaller -
+     * the pot is a flex item centred in two different ancestors (`.table-surface`
+     * before, `.table-scaler` after) whose widths are percentages of 605px, so
+     * the two centrings land on either side of the same rounding boundary. That
+     * is arithmetic, not a regression, and no CSS change can make it converge.
+     *
+     * A half-pixel tolerance keeps the assertion this spec exists for. The bug
+     * it guards - the pot being promoted out of the felt and landing somewhere
+     * else - moves the total by tens of pixels, not by a ten-thousandth of one.
+     * Anything at or above half a CSS pixel is still a real move and still
+     * fails, because half a pixel is the smallest displacement a device-pixel-
+     * ratio-2 screen can actually paint.
+     */
+    const SUBPIXEL_TOLERANCE = 0.5;
+
     test('the pot did not move when it was promoted out of the felt', async ({ page }) => {
       await page.setContent(pageBefore(cssBefore));
       const before = await potBox(page);
       await page.setContent(pageAfter(cssAfter));
       const after = await potBox(page);
-      expect(after).toEqual(before);
+
+      expect(Math.abs(after.x - before.x)).toBeLessThan(SUBPIXEL_TOLERANCE);
+      expect(Math.abs(after.y - before.y)).toBeLessThan(SUBPIXEL_TOLERANCE);
+      // The box's SIZE has no competing centring to round, so it is exact.
+      expect(after.w).toBe(before.w);
+      expect(after.h).toBe(before.h);
     });
 
     test('a chip on the pot centre renders BENEATH the total', async ({ page }) => {
@@ -181,6 +211,6 @@ for (const bp of BREAKPOINTS) {
 
 test('the shipped chip layer sits below the pot and below every overlay', () => {
   expect(Number.isFinite(CHIP_Z)).toBe(true);
-  expect(CHIP_Z).toBeGreaterThan(1);   // above .table-surface (the felt + seats)
-  expect(CHIP_Z).toBeLessThan(30);     // below .pot-area
+  expect(CHIP_Z).toBeGreaterThan(1); // above .table-surface (the felt + seats)
+  expect(CHIP_Z).toBeLessThan(30); // below .pot-area
 });

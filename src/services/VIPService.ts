@@ -55,7 +55,12 @@ export type VIPFeature =
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const VIP_GOLD_LIMITS = {
-  rabbitHunts: Infinity, // Unlimited rabbit hunts
+  // Dan 2026-08-25: "VIP members get 100 rabbit hunts a month for free, and
+  // they cost 5 diamonds each after that." This was Infinity. The number that
+  // actually bills is the cap inside fn_consume_rabbit_hunt — this constant is
+  // what the UI quotes, so leaving it at Infinity would have had the client
+  // promising unlimited free hunts that the server starts charging for at 101.
+  rabbitHunts: 100,
   showStackBB: true, // Always available
   offlineProtection: true, // Always available
   autoTimeBank: true, // Always available
@@ -302,10 +307,11 @@ class VIPServiceClass {
    * Check if VIP user has remaining quota for feature
    */
   private async checkVIPQuota(userId: string, feature: VIPFeature): Promise<boolean> {
-    // Some features are unlimited for VIP
-    if (
-      ['rabbit_hunt', 'show_stack_bb', 'offline_protection', 'auto_time_bank'].includes(feature)
-    ) {
+    // Some features are unlimited for VIP. Rabbit hunt is NOT one of them any
+    // more (Dan 2026-08-25: 100/month, then 5 diamonds) — but this method is
+    // only consulted for display, and the authoritative decision is made by
+    // fn_consume_rabbit_hunt on the server when the reveal is actually bought.
+    if (['show_stack_bb', 'offline_protection', 'auto_time_bank'].includes(feature)) {
       return true;
     }
 

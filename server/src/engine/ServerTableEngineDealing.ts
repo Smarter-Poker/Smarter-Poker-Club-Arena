@@ -699,6 +699,30 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         'ServerTableEngine.' + this.tableId + '.deck_capacity_exceeded'
       );
       this.handCount--; // this hand never happened
+
+      /**
+       * MARK PROGRESS, BECAUSE THE LOOP IS ALIVE (2026-08-25).
+       *
+       * This refusal is correct - the deck genuinely cannot serve the table -
+       * but returning without marking progress made the engine lie about
+       * itself. `lastProgressAtMs` froze while the loop kept ticking, so the
+       * watchdog read a table that is refusing on purpose as a WEDGED one and
+       * called killForRestart. That restarts the WHOLE ENGINE - every table on
+       * the instance, ~2 minutes of 4404 rehydration, every seated human
+       * dropped - to cure one table that will refuse identically the moment
+       * the engine comes back. It is the mass-disconnect workstream's own
+       * failure mode, triggered by a guard.
+       *
+       * The loop is not stuck. It is running, and the answer it keeps
+       * producing is "no". Say so honestly and let the alarm above be the
+       * signal, rather than a restart nobody asked for.
+       *
+       * The real cure is upstream: tournament tables are now built through
+       * clampSeatsForVariant, so this branch should be unreachable for
+       * anything created after 2026-08-25. It stays as a backstop, and a
+       * backstop must not be able to take the fleet down.
+       */
+      this.markProgress();
       await this.sleep(30000); // do NOT hot-loop
       return;
     }

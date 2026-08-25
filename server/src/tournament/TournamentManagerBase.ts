@@ -24,6 +24,7 @@ import {
   spinBlindsForLevel,
 } from '../config/spinSpec.js';
 import { reportError } from '../services/errorReporter.js';
+import { clampSeatsForVariant } from '../config/tableSeating.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
@@ -749,50 +750,96 @@ export abstract class TournamentManagerBase {
           // unfundable tier is excluded from the draw rather than drawn and
           // refused, which is what makes an unpayable jackpot structurally
           // impossible.
-          try {
-            const { data: draw } = await supabase.rpc('fn_spin_draw_multiplier', {
-              p_club_id: tournament.club_id,
-              p_buy_in: tournament.buy_in_amount || 0,
-              p_tiers: SPIN_TIERS.map((t) => ({
-                multiplier: t.multiplier,
-                freq: t.freq,
-                reserveThresholdX: t.reserveThresholdX,
-              })),
-              p_rake_rate: spinRakeRate(tournament.buy_in_amount || 0),
-              p_seats: tournament.current_players || SPEC_SPIN_SEATS,
-            });
-            spinMultiplier = Number(draw?.multiplier) || 0;
-            if (Array.isArray(draw?.locked)) {
-              redrawnLockedTiers = draw.locked
-                .map((l: any) => ({
-                  multiplier: Number(l?.multiplier),
-                  reason: l?.reason ? String(l.reason) : undefined,
-                  unlocksAt: Number.isFinite(Number(l?.unlocksAt))
-                    ? Number(l.unlocksAt)
-                    : undefined,
-                }))
-                .filter((l: { multiplier: number }) => Number.isFinite(l.multiplier));
+          //
+          // D5 (2026-08-25) — A DRAW THAT COULD NOT BE READ IS NOT A DRAW.
+          //
+          // This call used to destructure `{ data: draw }` and throw the
+          // `error` away, sitting inside a `try { } catch { }` whose body was
+          // the comment "handled below". "Below" then read the still-zero
+          // multiplier and resolved it DOWN to SPIN_TIERS[0] — 2x — as though
+          // that were a merciful default. It is not a default, it is an
+          // invented result: three players watched a genuine-looking wheel
+          // chase five laps and land on a tier the database was never able to
+          // tell us it had drawn, and fn_spin_settle_game then moved real
+          // money against that number. A money-facing lie.
+          //
+          // The house rule is the one already applied to the elimination count
+          // (see 'remaining_count_unavailable' in TournamentManagerEliminations):
+          // an unreadable result is UNKNOWN, never a value. There is no honest
+          // multiplier to substitute, so the failure is made explicit and
+          // RETRYABLE instead — three attempts here, then the start stands
+          // down exactly like the short-field and unpaid-seat gates above.
+          // Nothing irreversible has happened at this point: the
+          // registrations are still 'registered', no table exists, no ledger
+          // row has been written, so standing down costs nothing and the
+          // discovery loop calls start() again on its next pass. The player
+          // sees a game that has not started yet, which is true, rather than a
+          // wheel telling him something that is false.
+          let drawFailure: string | null = null;
+          for (
+            let attempt = 1;
+            attempt <= 3 && (!spinMultiplier || spinMultiplier <= 0);
+            attempt++
+          ) {
+            try {
+              const { data: draw, error: drawErr } = await supabase.rpc('fn_spin_draw_multiplier', {
+                p_club_id: tournament.club_id,
+                p_buy_in: tournament.buy_in_amount || 0,
+                p_tiers: SPIN_TIERS.map((t) => ({
+                  multiplier: t.multiplier,
+                  freq: t.freq,
+                  reserveThresholdX: t.reserveThresholdX,
+                })),
+                p_rake_rate: spinRakeRate(tournament.buy_in_amount || 0),
+                p_seats: tournament.current_players || SPEC_SPIN_SEATS,
+              });
+              // The error is READ now. It was the whole defect.
+              if (drawErr) throw new Error(drawErr.message || 'draw_rpc_error');
+              const drawn = Number(draw?.multiplier);
+              // A response we cannot read a positive multiplier out of is a
+              // failure too, not a licence to pick one.
+              if (!Number.isFinite(drawn) || drawn <= 0) {
+                throw new Error(
+                  `draw returned no usable multiplier (${JSON.stringify(draw ?? null).slice(0, 160)})`
+                );
+              }
+              spinMultiplier = drawn;
+              drawFailure = null;
+              if (Array.isArray(draw?.locked)) {
+                redrawnLockedTiers = draw.locked
+                  .map((l: any) => ({
+                    multiplier: Number(l?.multiplier),
+                    reason: l?.reason ? String(l.reason) : undefined,
+                    unlocksAt: Number.isFinite(Number(l?.unlocksAt))
+                      ? Number(l.unlocksAt)
+                      : undefined,
+                  }))
+                  .filter((l: { multiplier: number }) => Number.isFinite(l.multiplier));
+              }
+            } catch (err: any) {
+              drawFailure = err?.message ? String(err.message) : String(err);
+              // Same short backoff the settlement and row-write loops below
+              // use; lock contention on a busy club's reserve pool is the
+              // expected cause and it clears in well under a second.
+              if (attempt < 3) await new Promise((r) => setTimeout(r, 250 * attempt));
             }
-          } catch {
-            /* handled below */
           }
           if (!spinMultiplier || spinMultiplier <= 0) {
-            // Draw RPC unreachable. Resolve DOWN to the SMALLEST tier, never
-            // up and never a local roll: a database hiccup must not be able
-            // to hand out a jackpot the pool was never asked about, and a 2x
-            // is the one prize every funded pool can always cover.
-            spinMultiplier = SPIN_TIERS[0].multiplier;
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw RPC unreachable at start — resolved down to ${spinMultiplier}x`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw UNAVAILABLE after 3 attempts (${drawFailure ?? 'no multiplier returned'}) — standing down; NO multiplier is invented and NO wheel is shown`
               ),
-              'Tournament.spin_draw_rpc_down'
+              'Tournament.spin_draw_unavailable'
             );
-          } else {
-            console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw: ${spinMultiplier}x through the reserve gate`
+            console.error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw unavailable — standing down so the start can be retried (NOT cancelling, NOT defaulting to a tier)`
             );
+            this.running = false;
+            return; // discovery calls start() again once the RPC answers
           }
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw: ${spinMultiplier}x through the reserve gate`
+          );
         }
 
         const buyIn = tournament.buy_in_amount || 0;
@@ -879,27 +926,41 @@ export abstract class TournamentManagerBase {
         // and 78181713 were found in on 2026-08-21 — three games that ran with
         // no draw, which `fn_spin_sweep_unbooked` then skipped forever because
         // it required `spin_multiplier > 0`.
+        //
+        // D5 (2026-08-25): the payload is hoisted into a named constant so the
+        // SELF-HEALING repair below can re-apply the identical write. Three
+        // attempts inside one start() is a thin defence against a failure that
+        // outlives them: the game then runs with spin_multiplier NULL, and
+        // every client gate for the wheel requires `> 0`, so the wheel can
+        // never fire for ANYONE on that game — not the three players at the
+        // table, not a spectator, not a reconnect. `fn_spin_sweep_unbooked`
+        // skips it for the same reason. One transient write error was enough
+        // to lose the whole feature for a game, permanently, and nothing ever
+        // came back for it.
+        const spinRowPatch = {
+          prize_pool: prizePool,
+          spin_multiplier: spinMultiplier,
+          is_premium_spin: spinMultiplier >= 100,
+          starting_chips: tier?.startingStack ?? tournament.starting_chips,
+          blind_structure: spinBlinds,
+          payout_structure: (tier?.payouts ?? [1]).map((pct, i) => ({
+            place: i + 1,
+            percentage: Math.round(pct * 10000) / 100,
+          })),
+          ...(redrawnLockedTiers ? { spin_locked_tiers: redrawnLockedTiers } : {}),
+        };
         let spinRowWritten = false;
+        let spinRowLastError = '';
         for (let attempt = 1; attempt <= 3 && !spinRowWritten; attempt++) {
           const { error: spinRowErr } = await supabase
             .from('tournaments')
-            .update({
-              prize_pool: prizePool,
-              spin_multiplier: spinMultiplier,
-              is_premium_spin: spinMultiplier >= 100,
-              starting_chips: tier?.startingStack ?? tournament.starting_chips,
-              blind_structure: spinBlinds,
-              payout_structure: (tier?.payouts ?? [1]).map((pct, i) => ({
-                place: i + 1,
-                percentage: Math.round(pct * 10000) / 100,
-              })),
-              ...(redrawnLockedTiers ? { spin_locked_tiers: redrawnLockedTiers } : {}),
-            })
+            .update(spinRowPatch)
             .eq('id', this.tournamentId);
           if (!spinRowErr) {
             spinRowWritten = true;
             break;
           }
+          spinRowLastError = spinRowErr.message;
           if (attempt === 3) {
             // The game still starts — Dan 2026-08-19, tournaments run, they do
             // not cancel — but it starts on the placeholder structure, so this
@@ -907,13 +968,22 @@ export abstract class TournamentManagerBase {
             // the multiplier from the prize actually paid on the next sweep.
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw row write FAILED after 3 attempts (${spinRowErr.message}) — ${spinMultiplier}x was drawn but the row still reads NULL; this game will run on the placeholder structure`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw row write FAILED after 3 attempts (${spinRowErr.message}) — ${spinMultiplier}x was drawn but the row still reads NULL; this game will run on the placeholder structure and NO client can show the wheel until the row is repaired`
               ),
               'Tournament.spin_draw_row_write_failed'
             );
           } else {
             await new Promise((r) => setTimeout(r, 250 * attempt));
           }
+        }
+        if (!spinRowWritten) {
+          console.error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ROW NOT WRITTEN (${spinRowLastError}) — ${spinMultiplier}x drawn, starting background repair`
+          );
+          // Safe to keep trying: the repair only ever writes the value THIS
+          // start already drew and settled against, and only while the column
+          // is still empty. See scheduleSpinRowRepair.
+          this.scheduleSpinRowRepair(spinRowPatch, spinMultiplier);
         }
 
         tournament.prize_pool = prizePool;
@@ -1036,6 +1106,17 @@ export abstract class TournamentManagerBase {
               reveal_at: revealAt,
               prize_pool: Number(tournament.prize_pool) || 0,
               timestamp: revealAt,
+              /**
+               * D3 (2026-08-25): ask the hub to HOLD this event until the
+               * first card may legally be dealt, so a client that is
+               * mid-reconnect at this exact instant still receives it when it
+               * subscribes or resyncs. It used to be a single un-replayed
+               * packet — miss the one emission and the reveal was gone for
+               * good, because the SNAPSHOT a resync returns carries no
+               * multiplier. Past `holdUntil` the wheel is meaningless (cards
+               * are out), so the hub drops it on its own; there is no log.
+               */
+              replay_until: holdUntil,
             });
           } catch (err) {
             // The reveal is theatre; it must never stop a game from starting.
@@ -1527,6 +1608,94 @@ export abstract class TournamentManagerBase {
   }
 
   /**
+   * D5 (2026-08-25) — SELF-HEALING for the draw row that would not land.
+   *
+   * `spin_multiplier` is not decoration. Both client gates for the wheel
+   * require `> 0`, and `fn_spin_sweep_unbooked` requires it too, so a game
+   * whose row write failed three times at start runs with the column NULL and
+   * NOBODY can ever see the wheel on it — while the money has already been
+   * settled against a multiplier that exists only in this process's memory.
+   * Before this, that was terminal: three attempts, a report, and the value
+   * was gone the moment the process restarted.
+   *
+   * Why re-writing is safe rather than a second source of truth:
+   *
+   *   - it writes ONLY the patch this start already computed, so it cannot
+   *     introduce a multiplier that was never drawn;
+   *   - it is guarded on the column still being empty (`is null` or `0`), so
+   *     a value that arrived by any other route — a later start, the sweep,
+   *     an operator — is never overwritten;
+   *   - it re-reads and confirms, so "no error" is not mistaken for "landed"
+   *     when the guard matched no rows;
+   *   - it is bounded (12 passes, 5s apart, ~1 minute) and every timer is
+   *     unref'd, so a wedged database cannot hold the process open.
+   *
+   * Exhausting the budget is reported, not swallowed: at that point the row
+   * genuinely needs `fn_spin_repair_missing_multiplier` or a human.
+   */
+  private scheduleSpinRowRepair(patch: Record<string, unknown>, drawnMultiplier: number): void {
+    const MAX_PASSES = 12;
+    const INTERVAL_MS = 5000;
+    const tag = this.tournamentId.slice(0, 8);
+    let pass = 0;
+
+    const soon = (fn: () => Promise<void>) => {
+      const timer = setTimeout(() => {
+        void fn().catch((err) => reportError(err, 'Tournament.' + tag + '.spin_row_repair'));
+      }, INTERVAL_MS);
+      // Never hold the process open for a repair.
+      if (typeof (timer as any)?.unref === 'function') (timer as any).unref();
+    };
+
+    const attempt = async (): Promise<void> => {
+      pass++;
+      const { data: before } = await supabase
+        .from('tournaments')
+        .select('spin_multiplier')
+        .eq('id', this.tournamentId)
+        .maybeSingle();
+      if (Number(before?.spin_multiplier) > 0) {
+        console.warn(
+          `[Tournament:${tag}] Spin row repair: multiplier already present (${before?.spin_multiplier}x) after ${pass} pass(es) — nothing to do`
+        );
+        return;
+      }
+
+      await supabase
+        .from('tournaments')
+        .update(patch as any)
+        .eq('id', this.tournamentId)
+        // Only ever fills a hole. Never overwrites a real value.
+        .or('spin_multiplier.is.null,spin_multiplier.eq.0');
+
+      const { data: after } = await supabase
+        .from('tournaments')
+        .select('spin_multiplier')
+        .eq('id', this.tournamentId)
+        .maybeSingle();
+      if (Number(after?.spin_multiplier) > 0) {
+        console.warn(
+          `[Tournament:${tag}] Spin row repair SUCCEEDED on pass ${pass} — ${drawnMultiplier}x is on the row; the wheel can fire again`
+        );
+        return;
+      }
+
+      if (pass >= MAX_PASSES) {
+        reportError(
+          new Error(
+            `[Tournament:${tag}] Spin row repair EXHAUSTED after ${MAX_PASSES} passes — ${drawnMultiplier}x was drawn and settled but spin_multiplier is still empty; no client can show the wheel for this game`
+          ),
+          'Tournament.spin_row_repair_exhausted'
+        );
+        return;
+      }
+      soon(attempt);
+    };
+
+    soon(attempt);
+  }
+
+  /**
    * THE ORDER AFTER THE WHEEL (Dan 2026-08-21).
    *
    *   "AFTER THE SPIN COMPLETES, CHIP STACKS GET ADDED, BUTTON RANDOMLY
@@ -1547,6 +1716,14 @@ export abstract class TournamentManagerBase {
     const chipsAt = revealAt + spinRevealTotalMs();
     const buttonAt = chipsAt + SPIN_REVEAL.CHIP_DROP_MS;
     const stillLive = () => this.isRunning() && this.tableEngines.size > 0;
+    /**
+     * D3: the same instant start() holds dealing until. Beats 1 and 2 are part
+     * of the reveal, so they get the same short hub retention the wheel does —
+     * a client that reconnects between the chips and the button still sees the
+     * sequence rather than discovering it in a state diff. After this instant
+     * the felt itself tells the story and the hub drops both.
+     */
+    const replayUntil = revealAt + spinRevealToDealMs();
 
     const later = (whenMs: number, fn: () => Promise<void>) => {
       const delay = Math.max(0, whenMs - Date.now());
@@ -1573,6 +1750,7 @@ export abstract class TournamentManagerBase {
             starting_stack: stack,
             seats_credited: credited,
             timestamp: Date.now(),
+            replay_until: replayUntil, // D3
           });
         } catch {
           /* theatre */
@@ -1600,6 +1778,7 @@ export abstract class TournamentManagerBase {
             tournament_id: this.tournamentId,
             dealer_seat: seat,
             timestamp: Date.now(),
+            replay_until: replayUntil, // D3
           });
         } catch (err) {
           // A missing button draw is survivable: the engine falls back to its
@@ -1685,6 +1864,37 @@ export abstract class TournamentManagerBase {
       // Clamped to the same 2-10 range fn_create_tournament enforces.
       maxPerTable = Math.min(10, Math.max(2, Number(tournament.table_size) || 9));
     }
+
+    /**
+     * THE DECK HAS TO BE ABLE TO SERVE THE TABLE (2026-08-25).
+     *
+     * Cash tables have run through clampSeatsForVariant since the seat law was
+     * written. Tournament tables never did - they took table_size verbatim, and
+     * table_size knows nothing about how many hole cards the game deals.
+     *
+     * A 9-handed PLO6 table needs 9 x 6 = 54 hole cards plus a 5-card board
+     * from a 52-card deck. It cannot be dealt, ever. ServerTableEngineDealing
+     * refuses at deal time, sleeps 30s and returns WITHOUT dealing, so the
+     * table sits at loopPhase 'dealing' having never dealt a card, the watchdog
+     * eventually kills the engine, the reaper rebuilds it, and the new engine
+     * refuses in exactly the same way. Permanent.
+     *
+     * Measured live 2026-08-25 before this fix: 58 of 70 PLO6 tournament tables
+     * were seated beyond what their deck could serve (10 seated against a
+     * ceiling of 7), and never-dealt rates were PLO6 36.5% / PLO5 35.9% against
+     * NLH 22.3%. The whole 5-and-6-card excess is this one line.
+     *
+     * Clamped LAST so it wins over every branch above, including spin and sng.
+     */
+    const seatVariant = (tournament.game_type || '').toLowerCase();
+    const deckSafe = clampSeatsForVariant(seatVariant, maxPerTable);
+    if (deckSafe !== maxPerTable) {
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] ${seatVariant || 'nlh'} seats ${maxPerTable} -> ${deckSafe} (deck cannot serve more)`
+      );
+      maxPerTable = deckSafe;
+    }
+
     const numTables = Math.ceil(players.length / maxPerTable);
     const alreadyHave = (existingTables ?? []).length;
     const tablesToCreate = Math.max(0, numTables - alreadyHave);

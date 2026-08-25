@@ -104,9 +104,6 @@
 .lt-name {
   justify-content: center;
 }
-.lt-name--mtt {
-  align-items: center;
-}
 .lt-row:hover {
   background: rgba(65, 105, 225, 0.07);
   box-shadow: inset 2px 0 0 rgba(65, 105, 225, 0.35);
@@ -155,6 +152,16 @@
 .lt-col-status {
   width: 148px;
 }
+/* Was an inline style object on the element, which no class rule could ever
+   beat - see LiveCountdown. */
+.lt-countdown {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin-right: 8px;
+  color: var(--text-secondary, #c8ccd4);
+}
+
 .lt-col-tstack {
   width: 104px;
 }
@@ -201,7 +208,11 @@
 .lt-name--mtt {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  /* Centre, matching every other cell. This block sits AFTER the centring
+     rule near the top of the file and has the identical selector, so while it
+     said flex-start it silently won and MTT titles alone stayed ragged-left
+     in a centred table. One declaration, one place. */
+  align-items: center;
   gap: 2px;
   line-height: 1.25;
 }
@@ -354,13 +365,6 @@ abbr.lt-variant[title] {
   text-decoration: none;
   cursor: help;
 }
-.lt-rule--more {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-tertiary, #8b8f98);
-  cursor: default;
-}
-
 /* Status badges — always text, never color alone */
 .lt-statuscell {
   display: inline-flex;
@@ -480,17 +484,59 @@ abbr.lt-variant[title] {
   .lt-col-speed {
     display: none;
   }
+  /* Starting Stack and Current Level joined a `table-layout: fixed` table
+     without joining its narrowing ladder, so their 216px was carried whole
+     into every breakpoint down to the card. The ALL set went from 710px to
+     926px in the 641-768px band - roughly 200px of the sideways scroll the
+     phone pass exists to prevent. They narrow here and, below 900, they go:
+     the card and the game panel both still carry both figures. */
+  .lt-col-tstack {
+    width: 84px;
+  }
+  .lt-col-tlevel {
+    width: 92px;
+  }
 }
 @media (max-width: 900px) {
   .lt-col-rules,
-  .lt-col-variant {
+  .lt-col-variant,
+  .lt-col-tstack,
+  .lt-col-tlevel {
     display: none;
   }
   .lt-col-num {
     width: 92px;
   }
 }
-/* ── PHONE (Dan's binding rule 6: 375px first) ────────────────────────────
+/* ── TABLET / LARGE PHONE (<=768px) ───────────────────────────────────────
+   THIS BLOCK MUST STAY ABOVE THE 640px CARD BLOCK. It used to sit at the very
+   end of the file, where - same selectors, same specificity, later in source -
+   it silently beat the card layout: its `.lobby-table { font-size: 0.65rem }`
+   overrode BOTH phone sizes written below (0.75rem and 0.71875rem, so every
+   phone rendered at 0.65rem and neither intended size existed), and its
+   `.lobby-table td { padding: 6px 4px }` beat the card's `padding: 0`, which
+   the whole card layout is measured against.
+
+   `.lt-badge` went with it: no element in this table has ever carried that
+   class. `.lt-countdown`'s `!important` went too - it was there to win a
+   fight with an inline style that no longer exists. */
+@media (max-width: 768px) {
+  .lobby-table {
+    font-size: 0.65rem;
+  }
+  .lobby-table th,
+  .lobby-table td {
+    padding: 6px 4px;
+  }
+  .lt-countdown {
+    font-size: 0.6rem;
+  }
+  .hide-on-mobile {
+    display: none !important;
+  }
+}
+
+/* ── PHONE (Dan's binding rule 6: 375px first) ─────────────────────────────
    The lobby must FIT, not scroll sideways. min-width: 520px used to force a
    horizontal scroll on every phone: the ALL column set alone measures
    34+140+78+92+108+148 = 600px, so a 375px screen scrolled ~225px sideways
@@ -704,11 +750,24 @@ abbr.lt-variant[title] {
     padding-right: 104px;
   }
 
+  /* ONE declaration. This was three - here, again 90 lines down as "the
+     card's right-hand anchor: raised, not flat", and a third time near the
+     end. Each later one kept whatever the earlier had not set, so the badge
+     ended up with the raised block's pill radius and shadow but the last
+     block's much smaller padding and type: a half-applied treatment nobody
+     designed. These are the values that were actually rendering. */
   .lt-status {
     max-width: 96px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    padding: 2px 6px;
+    font-size: 0.625rem;
+    font-weight: 700;
+    border-radius: 999px;
+    box-shadow:
+      0 1px 0 rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
   }
 
   /* A long game name now wraps instead of forcing the row wider. */
@@ -767,10 +826,6 @@ abbr.lt-variant[title] {
     color: #eef2f8;
   }
 
-  /* The name is the headline of the card. */
-  .lt-col-name {
-    padding-bottom: 1px;
-  }
   .lt-name__line1 {
     font-size: 0.875rem;
     font-weight: 700;
@@ -790,17 +845,6 @@ abbr.lt-variant[title] {
   /* The live dot earns a halo so a running game is visible while scrolling. */
   .lt-live {
     box-shadow: 0 0 8px rgba(46, 213, 115, 0.85);
-  }
-
-  /* The status badge is the card's right-hand anchor: raised, not flat. */
-  .lt-status {
-    padding: 4px 10px;
-    font-size: 0.6875rem;
-    font-weight: 700;
-    border-radius: 999px;
-    box-shadow:
-      0 1px 0 rgba(0, 0, 0, 0.5),
-      inset 0 1px 0 rgba(255, 255, 255, 0.12);
   }
 
   /* ── ACTIONS ────────────────────────────────────────────────────────────
@@ -884,14 +928,11 @@ abbr.lt-variant[title] {
     border: 1px solid rgba(120, 160, 240, 0.3);
     text-decoration: none;
   }
-  .lobby-table thead th {
-    padding: 7px 6px;
-    font-size: 0.625rem;
-    letter-spacing: 0.03em;
-  }
-  .lt-row td {
-    padding: 6px;
-  }
+  /* `.lobby-table thead { display: none }` above removes the header row on a
+     card, so the thead th sizing that used to live here styled nothing. The
+     `.lt-row td { padding: 6px }` beside it was the same weight (0,1,1) as
+     the card's own `.lobby-table td { padding: 0 }` and came later, so it was
+     quietly undoing the zero-padding the card layout is built on. */
   /* `.lobby-table td { display: block }` above is (0,1,1); a bare
      `.lt-col-fav` is (0,1,0) and loses NO MATTER WHERE IT SITS in the file.
      Measured live: every one of these columns was still rendering, which is
@@ -957,8 +998,16 @@ abbr.lt-variant[title] {
   .lobby-table td.lt-col-tstack,
   .lobby-table td.lt-col-tlevel {
     display: block;
-    flex: 1 1 0;
-    min-width: 0;
+    /* A basis of 0 with min-width: 0 contributes NOTHING to flex line
+       measurement, so these two could never wrap onto a line of their own -
+       they joined the tail of the buy-in / guarantee / start-time line, where
+       every sibling is `flex: 0 0 auto`, and absorbed all of the negative
+       free space themselves. At 390px that left about 20px each: a heading
+       wrapped over four lines above no value at all. A half-line basis plus a
+       floor makes them take a line and split it, which is what the row was
+       always meant to look like. */
+    flex: 1 1 calc(50% - 5px);
+    min-width: 8rem;
   }
   .lobby-table td.lt-col-tstack::before,
   .lobby-table td.lt-col-tlevel::before {
@@ -1035,12 +1084,6 @@ abbr.lt-variant[title] {
     flex: 0 0 auto;
   }
 
-  /* The wall-clock start time stays in the headline meta too — it was hidden
-     on phones when the row had no room for it. The card has room, and "starts
-     at 8:00 PM" and "starts in 41 minutes" answer different questions. */
-  .lt-name__clockpart {
-    display: inline;
-  }
   /* The MTT title's meta line sheds the wall-clock start time on phones —
      the countdown is the information. If the clock was the first part
      (no guarantee), the next part's separator goes with it so the line
@@ -1059,10 +1102,6 @@ abbr.lt-variant[title] {
   }
   .lt-seats__num {
     min-width: 0;
-  }
-  .lt-status {
-    padding: 2px 6px;
-    font-size: 0.625rem;
   }
   /* Seated / Registered / Waitlisted drops below the badge rather than
      widening the column. */
@@ -1091,6 +1130,17 @@ abbr.lt-variant[title] {
   .lt-live,
   .lt-skel {
     animation: none;
+  }
+  /* The staggered row entrance is the largest motion on this screen - up to
+     111 rows sliding and fading in - and it was declared after this block, so
+     the reduce preference did not reach it. Nor did it reach the action
+     buttons' transform transitions. */
+  .lobby-table tbody tr {
+    animation: none;
+  }
+  .lt-act,
+  .lobby-table tr {
+    transition: none;
   }
 }
 
@@ -1141,29 +1191,6 @@ abbr.lt-variant[title] {
 }
 .lobby-table tbody tr:nth-child(n + 11) {
   animation-delay: 0.3s;
-}
-
-@media (max-width: 768px) {
-  .lobby-table {
-    font-size: 0.65rem;
-  }
-  .lobby-table th,
-  .lobby-table td {
-    padding: 6px 4px;
-  }
-  .lt-countdown {
-    font-size: 0.6rem !important;
-  }
-  .lt-badge {
-    font-size: 0.55rem;
-    padding: 0.1rem 0.25rem;
-  }
-}
-
-@media (max-width: 768px) {
-  .hide-on-mobile {
-    display: none !important;
-  }
 }
 
 /* The action buttons are a phone-card affordance. On the desktop board the

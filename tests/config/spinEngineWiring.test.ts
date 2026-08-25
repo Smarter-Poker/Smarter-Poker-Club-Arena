@@ -154,8 +154,25 @@ describe('the draw happens at START, nowhere else', () => {
     expect(tournamentService).not.toMatch(/spinMultiplier\(config/);
   });
 
-  it("the engine's RPC-down fallback resolves DOWN to the smallest tier", () => {
-    expect(engine).toMatch(/SPIN_TIERS\[0\]\.multiplier/);
+  /* SUPERSEDED, AND LEFT RED ON main FOR AN HOUR (fixed 2026-08-25).
+     This test asserted that the engine, unable to read the draw, resolves the
+     player DOWN to SPIN_TIERS[0] - 2x. PR #794 removed exactly that line,
+     because it was a money-facing lie: three players watched a real-looking
+     wheel land on a tier the database had never said it drew, and
+     fn_spin_settle_game then moved real money against it. That PR added
+     server/src/tournament/SpinDrawIntegrity.guard.test.ts, which FORBIDS the
+     line this one required - two tests in the same tree demanding opposite
+     things, so main could not be green either way.
+
+     House rule 8 says the test that pins replaced behaviour is updated in the
+     commit that replaces it. It was not, so the assertion is inverted here to
+     the rule that actually holds now: an unreadable draw is UNKNOWN, the
+     start stands down and retries, and no tier is ever substituted. */
+  it('the engine never substitutes a tier for a draw it could not read', () => {
+    expect(engine).not.toMatch(/spinMultiplier\s*=\s*SPIN_TIERS\s*\[\s*0\s*\]/);
+    // ...and the failure is explicit and retryable instead.
+    expect(engine).toMatch(/drawFailure/);
+    expect(engine).toMatch(/error:\s*drawErr/);
   });
 });
 

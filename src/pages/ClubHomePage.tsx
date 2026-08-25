@@ -40,13 +40,9 @@ import {
 } from '../components/lobby/lobbyEntries';
 import { tournamentService } from '../services/TournamentService';
 import { getClubLevel, ClubLevelInfo } from '../utils/clubLevels';
-import { fmtChips } from '../utils/format';
-import { BusToastBridge } from '../components/common/BusToastBridge';
-import { DiamondService } from '../services/DiamondService';
 import { useToast } from '../components/common/Toast';
 import { waitlistService } from '../services/WaitlistService';
 import ConfirmModal from '../components/common/ConfirmModal';
-import confirmDialog from '../components/common/confirmDialog';
 import { retryFetch } from '../utils/retryFetch';
 import './ClubHomePage.css';
 import { isFixedLimitVariant } from '../lib/bettingStructure';
@@ -76,14 +72,7 @@ import {
   isFilterActive,
   type FilterGameType,
 } from '../components/lobby/advancedFilterSpec';
-import {
-  IconTrophy,
-  IconLeaderboard,
-  IconMembers,
-  IconShareLink,
-  IconSearch,
-  IconSort,
-} from '../components/icons/LobbyIcons';
+import { IconMembers, IconShareLink, IconSearch, IconSort } from '../components/icons/LobbyIcons';
 import { CLUB_HOME_CACHE_PREFIX } from '../utils/clearUserCaches';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { preloadRoute } from '../utils/ChunkPreloader';
@@ -118,6 +107,9 @@ function getClubHomeCache(clubId: string) {
       // Pre-v2 entries (unwrapped, sessionStorage) still hydrate one last
       // time during the transition; the next write lands in localStorage.
       sessionStorage.getItem(`${CLUB_HOME_CACHE_PREFIX}${clubId}`);
+    // (Both reads are inside this function's try - Safari private mode and a
+    //  sandboxed frame both THROW on storage access rather than returning
+    //  null, and an uncaught throw here aborts the whole club load.)
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === 'object' && 'at' in parsed && 'data' in parsed) {
@@ -213,11 +205,6 @@ interface TournamentData {
   level_started_at?: string | null;
 }
 
-interface WalletBalances {
-  gold: number;
-  diamonds: number;
-}
-
 /**
  * ── GAME ACTION BAR (Dan 2026-08-20) ─────────────────────────────────────────
  *
@@ -239,17 +226,23 @@ type TournVariant = 'ALL' | 'MTT' | 'Spin-It' | 'SN';
    described (see the note further down). Status is one mechanism now:
    GameFilterValue.statuses, defined per game type in advancedFilterSpec. */
 
+/** ALL shows the ten soonest MTTs a player can still enter. Cash is uncapped
+    (Dan 2026-08-25: "the cap is 10 for MTT only"). */
+const ALL_TAB_MTT_CAP = 10;
+
 const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'LIMIT', 'MIXED'];
 const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
 
 /**
  * Dan 2026-08-20: "remove Mixed games from the action bar."
+ * Dan 2026-08-25: "WE DON'T HAVE MIXED CASH GAMES."
  *
- * MIXED stays in the GameType union and in cashKind, because it is still the
- * bucket every table that is neither Hold'em nor Omaha falls into — dropping
- * the type would make those tables unclassifiable. It just has no tab of its
- * own any more, so they surface under All, which is where a player browsing
- * everything expects to find them.
+ * MIXED stays in the GameType union as cashKind's LAST RESORT - the bucket a
+ * variant nobody has classified falls into - and it has no tab, so a table
+ * that reaches it is reachable only from ALL. That makes it a diagnostic, not
+ * a category: every variant this platform actually deals (nlh, plo4/5/6/8,
+ * short_deck, pineapple) is classified above it, and anything landing here is
+ * a variant someone shipped without telling the lobby about it.
  */
 const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
   /* LOBBY V2: All Games is a real tab now — the line-based table renders a
@@ -294,17 +287,29 @@ function cashKind(t: { game_variant?: string }): 'HOLDEM' | 'OMAHA' | 'LIMIT' | 
   if (isFixedLimitVariant(v)) return 'LIMIT';
   if (v.includes('flh') || (v.includes('limit') && !v.includes('no') && !v.includes('pot')))
     return 'LIMIT';
-  if (v.includes('nlh') || v.includes('holdem') || v.includes("hold'em") || v.includes('short'))
+  /* Pineapple is Hold'em. The platform's own type says so - club.types.ts
+     declares `'pineapple' // Pineapple Hold'em` - it deals a community board
+     and bets like Hold'em, and it differs only by dealing three hole cards
+     and discarding one. Without this it fell through to MIXED, which is the
+     unrecognised-variant bucket: production is running five pineapple tables
+     that appeared on NO tab in the app, because ALL dropped the MIXED bucket
+     and there is no Mixed tab to drop to. Short Deck sits here for exactly
+     the same reason. */
+  if (
+    v.includes('nlh') ||
+    v.includes('holdem') ||
+    v.includes("hold'em") ||
+    v.includes('short') ||
+    v.includes('pineapple')
+  )
     return 'HOLDEM';
   if (v.includes('plo') || v.includes('omaha')) return 'OMAHA';
   return 'MIXED';
 }
 
-// ── Lobby ordering (used by the ALL view): Hold'em → Omaha → Limit → Mixed for cash ──
-function cashRank(t: { game_variant?: string }): number {
-  const kind = cashKind(t);
-  return kind === 'HOLDEM' ? 0 : kind === 'OMAHA' ? 1 : kind === 'LIMIT' ? 2 : 3;
-}
+/* `cashRank` used to sit here - a comparator for a Hold'em/Omaha/Limit/Mixed
+   ordering that nothing has called since the ALL view was rebuilt around
+   per-section lists. */
 // Tournaments open for registration (or not past late-reg) come first, soonest first.
 function tournamentOpenFirst(
   a: { status?: string; start_time: string },
@@ -339,6 +344,17 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   useVisibilityRefresh(() => loadClubData());
   const navigate = useNavigate();
   const isMountedRef = useIsMounted();
+  /* THE LATEST loadClubData, ALWAYS.
+     `loadClubData` is redefined every render and closes over that render's
+     clubId. The bus effect below and the realtime member handler both have []
+     deps, so they froze render 0's copy: after /clubs/a -> /clubs/b (React
+     Router reuses this component), a CLUB_JOINED event, a club_members
+     realtime tick or the 90-second fallback would refetch club A and paint it
+     over club B. Kept current by an effect - never assigned during render,
+     which would be a side effect in the render body. */
+  const loadClubDataRef = useRef<(getIsMounted?: () => boolean) => void>(() => {});
+  /** Bumped by every club load and on unmount; a late response compares. */
+  const loadTokenRef = useRef(0);
 
   // Refs to avoid stale closures in realtime subscriptions
   const clubIdRef = useRef(clubId);
@@ -364,7 +380,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [club, setClub] = useState<ClubData | null>(bootCache?.club ?? null);
   const [tables, setTables] = useState<TableData[]>(bootCache?.tables ?? []);
   const [tournaments, setTournaments] = useState<TournamentData[]>([]);
-  const [wallet, setWallet] = useState<WalletBalances>({ gold: 0, diamonds: 0 });
   const [jackpotAmount, setJackpotAmount] = useState(0);
   // BBJ-TICKER 2026-08-18: the resolved BBJ scope for the lobby ticker.
   // (jackpotAmount was live-subscribed but rendered NOWHERE before this —
@@ -393,7 +408,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
      single visit. All Games is the landing view of a dense lobby. */
   const [gameType, setGameType] = useState<GameType>('ALL');
   const [sortKey, setSortKey] = useState<SortKey>('starting_soon');
-  const [sortOpen, setSortOpen] = useState(false);
+  /* `sortOpen` used to live here. It was assigned false in three places,
+     never assigned true, and read nowhere - the exact dead wiring the comment
+     below says had already been removed once. */
   /* Advanced Filters (Dan 2026-08-20). Loaded lazily from localStorage on
      first render so a returning player's preferences apply to the FIRST
      paint of the lobby rather than flashing an unfiltered list first. */
@@ -436,6 +453,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [unionIdForCreate, setUnionIdForCreate] = useState<string | undefined>(undefined);
   const [showCreateTournament, setShowCreateTournament] = useState(false);
   const [clubLevel, setClubLevel] = useState<ClubLevelInfo | null>(null);
+  /* The last COMMITTED club level. The level-up celebration compares against
+     this rather than against the `prev` handed to a state updater, because an
+     updater can be called more than once for one real change. */
+  const clubLevelRef = useRef<typeof clubLevel>(null);
+  useEffect(() => {
+    clubLevelRef.current = clubLevel;
+  }, [clubLevel]);
   // Synchronous from the user store (Dan 2026-08-24: "when you leave a game
   // and go back to the lobby, the wallet is never there and has to load
   // again"). This used to start null and hydrate from an ASYNC auth call —
@@ -484,8 +508,19 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     setDeletingTableId(null);
     setDeleteTableConfirm({ show: false, tableId: null, tableName: null });
     setClubLevel(null);
-    setWallet({ gold: 0, diamonds: 0 });
     setJackpotAmount(0);
+    /* THE LISTS TOO. This reset cleared the viewer's role, level and jackpot
+       but left `club`, `tables` and `tournaments` - the three things actually
+       on screen - holding the previous club. Entering a club with no cached
+       payload therefore showed the PREVIOUS club's name, member count and
+       table rows, as live joinable games, for the whole length of the fetch.
+       Clearing them re-arms the skeleton; the SWR effect immediately below
+       repaints from the new club's cache in the same commit when it has one,
+       so a cached club still opens without a flash. */
+    setClub(null);
+    setTables([]);
+    setTournaments([]);
+    setLoading(true);
     loadingRef.current = false;
     hasDataRef.current = false;
   }, [clubId]);
@@ -541,8 +576,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     tableName: string | null;
   }>({ show: false, tableId: null, tableName: null });
 
-  // Confirm modal state for table deletion
-
   useEffect(() => {
     if (clubId) {
       clubIdRef.current = clubId;
@@ -550,6 +583,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       loadClubData(() => isMounted);
       return () => {
         isMounted = false;
+        // Any answer still in flight belongs to the club being left.
+        loadTokenRef.current++;
       };
     }
   }, [clubId]);
@@ -742,6 +777,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       );
 
       channel.subscribe((status: string, err?: Error) => {
+        /* Every other handler in this effect checks isMounted; this one did
+           not, so a late CHANNEL_ERROR or TIMED_OUT arriving after the page
+           unmounted set state on a torn-down component. */
+        if (!isMounted) return;
         setWsConnected(status === 'SUBSCRIBED');
         if (status === 'CHANNEL_ERROR') {
           if (err) reportError(err?.message || err, 'ClubHomePage._Tables_RT_channel_error');
@@ -891,7 +930,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   }, [resolvedClubId]);
 
   const handleMemberUpdate = useCallback(() => {
-    loadClubData();
+    loadClubDataRef.current();
   }, []);
 
   useMasterBusChannel({
@@ -907,7 +946,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   useEffect(() => {
     let isMounted = true;
     const reload = () => {
-      if (isMounted) loadClubData(() => isMounted);
+      if (isMounted) loadClubDataRef.current(() => isMounted);
     };
 
     const unsubs = [
@@ -950,18 +989,26 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       reload();
     };
     const fallbackInterval = setInterval(runFallback, 90_000);
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') reload();
-    };
-    document.addEventListener('visibilitychange', onVisible);
+    /* The visibilitychange listener that used to sit here was the SECOND one
+       on this page - useVisibilityRefresh registers the other, higher up -
+       and the two raced through loadClubData's own loadingRef dedupe, so
+       whichever fired first won. This one held the stale render-0 closure, so
+       on a returning tab the previous club could win that race and repaint
+       over the current one. One listener, and it is the hook's. */
 
     return () => {
       isMounted = false;
       clearInterval(fallbackInterval);
-      document.removeEventListener('visibilitychange', onVisible);
       unsubs.forEach((u) => u());
     };
   }, []);
+
+  /* Assigned in an effect with no dep array, so it re-runs after EVERY
+     commit and the ref always holds the function from the render that is
+     actually on screen. */
+  useEffect(() => {
+    loadClubDataRef.current = loadClubData;
+  });
 
   const loadClubData = async (getIsMounted?: () => boolean) => {
     if (!clubId) return;
@@ -990,8 +1037,15 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       );
 
       if (clubError || !clubData) {
-        reportError(clubError, 'ClubHomePage.Failed_to_load_club');
-        toast.error('Failed to load club details');
+        /* reportError only for an ACTUAL error - "no row matched" arrives as
+           `clubError === null` and was being reported as a fault every time.
+           And the toast only when there is nothing on screen: this same path
+           runs on the 90-second background refresh and on every bus event, so
+           a player sitting on a working, populated lobby with a flaky
+           connection was getting a red toast every 90 seconds over data that
+           was still perfectly good. */
+        if (clubError) reportError(clubError, 'ClubHomePage.Failed_to_load_club');
+        if (!hasDataRef.current) toast.error('Could Not Load Club Details');
         /* Dan 2026-08-23 reported this panel appearing every time on his phone,
            and it could not be reproduced from a clean session on any of his
            three clubs, by either entry path. The reason is that this state
@@ -1036,9 +1090,18 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       // screen five round trips earlier. `lobbyPainted` guarantees the fast
       // path can only ever paint BEFORE the authoritative data, never over it.
       let lobbyPainted = false;
+      /* A per-load token. `lobbyPainted` is a local of THIS invocation, so it
+         can arbitrate between the fast path and the chain WITHIN one load but
+         cannot say anything about a different load: club A's in-flight RPC
+         landing after the user has moved to club B still painted A's tables,
+         A's role and A's jackpot over B. The token is bumped by every new
+         load and by unmount, so a late answer knows it is stale. */
+      const loadToken = ++loadTokenRef.current;
+      const stale = () => loadToken !== loadTokenRef.current;
       Promise.resolve(supabase.rpc('get_club_home', { p_club_key: clubId }))
         .then(({ data: home, error: homeErr }) => {
           if (homeErr || !home || home.found !== true) return;
+          if (stale() || (getIsMounted && !getIsMounted())) return;
 
           /**
            * PLAYERS CURRENTLY PLAYING (Dan, 2026-08-23): "the 0 players
@@ -1063,7 +1126,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           }
 
           if (lobbyPainted) return; // the real chain already answered
-          if (getIsMounted && !getIsMounted()) return;
+          if (stale() || (getIsMounted && !getIsMounted())) return;
           lobbyPainted = true;
           try {
             if (home.club) {
@@ -1142,32 +1205,33 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           (error) => ({ count: null, error })
         );
 
-      // Check if current user is owner
-      const {
-        data: { user: authUser },
-      } = await getAuthUser();
+      /* Not destructured. `getAuthUser()` resolving to undefined - which it
+         does on an auth error - made this a TypeError ("Cannot destructure
+         property 'user' of undefined"), caught by the outer try AFTER the
+         club had been set but BEFORE tables and tournaments were, so a
+         perfectly healthy club rendered empty behind a "Failed To Load Club
+         Data" toast. */
+      const authRes = await getAuthUser();
+      const authUser = authRes?.data?.user ?? null;
       if (authUser) {
         if (getIsMounted && !getIsMounted()) return;
         setCurrentUserId(authUser.id);
         setIsOwner(clubData.owner_id === authUser.id);
 
-        // ── Batch: member data + diamond wallet in parallel ──
-        const [memberResult, diamondWallet] = await Promise.all([
-          supabase
-            .from('club_members')
-            .select('chip_balance, role')
-            .eq('club_id', resolvedId)
-            .eq('user_id', authUser.id)
-            .maybeSingle(),
-          DiamondService.getBalance(authUser.id),
-        ]);
+        /* The viewer's ROLE is the only thing this read is for. It used to
+           also fetch a chip balance and a diamond balance into a `wallet`
+           state that nothing in this file ever read - DynamicWallet fetches
+           its own - so every club load paid for a DiamondService round trip
+           whose answer went straight into the bin. */
+        const memberResult = await supabase
+          .from('club_members')
+          .select('role')
+          .eq('club_id', resolvedId)
+          .eq('user_id', authUser.id)
+          .maybeSingle();
 
         if (memberResult.data) {
           if (getIsMounted && !getIsMounted()) return;
-          setWallet({
-            gold: memberResult.data.chip_balance || 0,
-            diamonds: diamondWallet.balance || 0,
-          });
           setUserRole(memberResult.data.role || 'member');
         }
       }
@@ -1522,8 +1586,18 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       hasDataRef.current = true;
 
       // Merge club tournaments + XMTT tournaments
+      /* Both reads are reported, separately. This used to OR the two errors
+         and skip the whole merge, so a union whose XMTT query failed threw
+         away the club query that SUCCEEDED - and neither failure was
+         reported, so the lobby simply kept a stale tournament list forever
+         with nothing to notice. Whatever answered is merged; whatever failed
+         is reported. */
+      if (clubTournamentResult.error)
+        reportError(clubTournamentResult.error, 'ClubHomePage.Club_tournaments_failed');
+      if (xmttResults.length > 0 && xmttResults[0]?.error)
+        reportError(xmttResults[0].error, 'ClubHomePage.Union_tournaments_failed');
       const tournamentError =
-        clubTournamentResult.error || (xmttResults.length > 0 && xmttResults[0].error);
+        clubTournamentResult.error && (xmttResults.length === 0 || xmttResults[0]?.error);
       if (!tournamentError) {
         const allTournaments: TournamentData[] = clubTournamentResult.data
           ? [...clubTournamentResult.data]
@@ -1602,10 +1676,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         }
       }
 
-      // Calculate Club Level from live metrics
-      const activeTables = tableData
-        ? tableData.filter((t: any) => t.status === 'running' || t.current_players > 0).length
-        : 0;
+      /* An `activeTables` count was computed here on every load and passed to
+         nothing - the club level below is derived server-side from the
+         hierarchy thresholds on the club row. */
 
       // Auto-recompute club level if stuck at default (1 or null)
       // The RPC updates clubs.level in-place and returns VOID,
@@ -1661,17 +1734,20 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       });
       if (getIsMounted && !getIsMounted()) return;
 
-      // Level-up celebration: detect when level increased vs previous render
-      setClubLevel((prev) => {
-        if (prev && prev.level > 0 && levelInfo.level > prev.level) {
-          // Level went up — celebrate!
-          toast.success(
-            `Level Up! Your club reached Lv.${levelInfo.level} - ${levelInfo.tierLabel}!`
-          );
-          haptic.success();
-        }
-        return levelInfo;
-      });
+      /* Level-up celebration, decided OUTSIDE the updater.
+         A state updater must be pure. React 19 double-invokes updaters in
+         StrictMode and may replay them on a discarded render, so the toast
+         and the haptic fired twice - and the celebration is also exactly the
+         kind of side effect that must not depend on how many times React
+         chooses to call a reducer. `clubLevelRef` holds the last COMMITTED
+         level, which is the honest thing to compare against.
+         Title Case and no em dash, per the popup rule. */
+      const previousLevel = clubLevelRef.current;
+      if (previousLevel && previousLevel.level > 0 && levelInfo.level > previousLevel.level) {
+        toast.success(`Level Up: Your Club Reached Lv.${levelInfo.level}, ${levelInfo.tierLabel}`);
+        haptic.success();
+      }
+      setClubLevel(levelInfo);
     } catch (error: any) {
       reportError(error, 'ClubHomePage.Error_loading_club_data');
       toast.error(error.message || 'Failed to load club data');
@@ -2042,7 +2118,17 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   }, [urlSyncEnabled, panelOpen, selectedId, setSearchParams]);
   const [actionBusy, setActionBusy] = useState(false);
 
+  /* CANCELLABLE, AND BOUNDED.
+     Three unlimited, unscoped reads with no cancellation: every seat, every
+     registration and every favourite the player has ever held ANYWHERE on the
+     platform, and a slow response landing after a club switch or an unmount
+     wrote the previous club's seat set over the current screen - which is
+     what marks a row "Return To Table" on a table the player is not at. The
+     token below is the same shape used by the loaders above, and the row
+     limit is the one every other list query here already uses. */
+  const gameStatesTokenRef = useRef(0);
   const loadMyGameStates = useCallback(async () => {
+    const token = ++gameStatesTokenRef.current;
     if (!currentUserId) {
       setSeatedTableIds(new Set());
       setRegisteredTournamentIds(new Set());
@@ -2055,24 +2141,36 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           .from('table_seats')
           .select('table_id')
           .eq('user_id', currentUserId)
-          .is('left_at', null),
+          .is('left_at', null)
+          .limit(QUERY_LIMITS.LIST),
         supabase
           .from('tournament_players')
           .select('tournament_id')
           .eq('user_id', currentUserId)
-          .in('status', ['registered', 'playing']),
-        supabase.from('favorite_tables').select('table_id').eq('user_id', currentUserId),
+          .in('status', ['registered', 'playing'])
+          .limit(QUERY_LIMITS.LIST),
+        supabase
+          .from('favorite_tables')
+          .select('table_id')
+          .eq('user_id', currentUserId)
+          .limit(QUERY_LIMITS.LIST),
       ]);
+      if (token !== gameStatesTokenRef.current || !isMountedRef.current) return;
       setSeatedTableIds(new Set((seatsRes.data || []).map((r) => r.table_id)));
       setRegisteredTournamentIds(new Set((regsRes.data || []).map((r) => r.tournament_id)));
       setFavoriteTableIds(new Set((favsRes.data || []).map((r) => r.table_id)));
     } catch (e) {
       reportError(e, 'ClubHomePage.loadMyGameStates');
     }
-  }, [currentUserId]);
+  }, [currentUserId, isMountedRef]);
 
   useEffect(() => {
     loadMyGameStates();
+    return () => {
+      // Invalidate any in-flight read: its answer belongs to the club we are
+      // leaving, not the one we are arriving at.
+      gameStatesTokenRef.current++;
+    };
   }, [loadMyGameStates]);
 
   // Keep the seated / registered chips live: these events already fire on the
@@ -2241,18 +2339,44 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     let cash = filteredTables.map(cashEntry);
     if (favoritesOnly) cash = cash.filter((e) => favoriteTableIds.has(e.id));
 
+    /* ── WHAT "ALL" MEANS (Dan, 2026-08-25) ────────────────────────────────
+       "WE DON'T HAVE MIXED CASH GAMES, AND THE CAP IS 10 FOR MTT ONLY.
+        SPINS AND HEADS UP (SNG) SHOULD NEVER BE ON THE ALL LIST."
+
+       Three rules, and the code only had the third one right.
+
+       EVERY CASH TABLE. The list used to be built as three buckets -
+       cashKind() === HOLDEM, then OMAHA, then LIMIT - which silently dropped
+       anything landing in the MIXED bucket. MIXED is not a game type this
+       platform runs; it is the fallback cashKind() returns for a variant it
+       does not recognise. Production is running five `pineapple` tables right
+       now, and cashKind() has no test for that string, so those five tables
+       were on no tab in the app: not on ALL, and there is no Mixed tab. Any
+       future variant would have vanished the same way, silently. Filtering by
+       an unrecognised-variant bucket is filtering by a bug.
+
+       NO CAP ON CASH. Each of those three buckets was also capped at 10, so a
+       club with 42 NLH tables showed ten of them with nothing saying so. The
+       cap is the MTT one.
+
+       ORDER COMES FROM THE SORT CONTROL. Bucketing by game kind overrode
+       whatever the player had chosen in Sort By; a flat list keeps the order
+       filteredTables already put them in, so the control means what it says.
+
+       SPINS AND HEADS UP ARE NEVER HERE. They have their own tabs, they are
+       seat-first rather than browse-first, and a Spin has no lobby at all -
+       tapping one commits the buy-in. The `kind === 'mtt'` test below is what
+       enforces that, and tests/unit/allTabScope.test.ts pins it. */
     if (gameType === 'ALL') {
       const isMtt = (e: LobbyEntry) => e.kind === 'mtt';
       const isLateRegOrStarting = (e: LobbyEntry) =>
         e.status === 'registering' || e.status === 'late_reg' || e.status === 'starting_soon';
 
-      const selectedTourns = tourns.filter((t) => isMtt(t) && isLateRegOrStarting(t)).slice(0, 10);
+      const selectedTourns = tourns
+        .filter((t) => isMtt(t) && isLateRegOrStarting(t))
+        .slice(0, ALL_TAB_MTT_CAP);
 
-      const holdemCash = cash.filter((c) => cashKind(c.raw as any) === 'HOLDEM').slice(0, 10);
-      const omahaCash = cash.filter((c) => cashKind(c.raw as any) === 'OMAHA').slice(0, 10);
-      const limitCash = cash.filter((c) => cashKind(c.raw as any) === 'LIMIT').slice(0, 10);
-
-      return [...selectedTourns, ...holdemCash, ...omahaCash, ...limitCash];
+      return [...selectedTourns, ...cash];
     }
 
     // Tournaments first, cash after — same order the card grid used, so the
@@ -2298,15 +2422,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
    * narrowing most likely to be forgotten.
    */
   const totalGameCount = tables.length + tournaments.length;
-
-  const formatNumber = (num: number) => {
-    return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
-
-  const formatJackpot = (num: number) => {
-    if (num === 0) return '-';
-    return num.toLocaleString();
-  };
 
   if (loading) {
     return (
@@ -2450,6 +2565,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       </div>
     );
   }
+
+  /* Staff may edit the club notice. Derived once so the markup, the keyboard
+     path and the visibility test cannot drift apart. */
+  const noticeEditable = isOwner || isClubStaff(userRole);
 
   return (
     <div className="club-home">
@@ -2618,11 +2737,27 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         </div>
 
         {/* ── Editable Club Notice ── */}
-        {(club.description?.trim() || isOwner || isClubStaff(userRole)) && (
+        {(club.description?.trim() || noticeEditable) && (
           <div
             className={`lobby-top__notice ${isOwner || isClubStaff(userRole) ? 'lobby-top__notice--editable' : ''}`}
+            /* Editable for staff, so it is a control for staff: it carried a
+               click handler and nothing else, which no keyboard and no screen
+               reader could reach. For everyone else it stays a paragraph. */
+            role={noticeEditable && !isEditingNotice ? 'button' : undefined}
+            tabIndex={noticeEditable && !isEditingNotice ? 0 : undefined}
+            aria-label={
+              noticeEditable && !isEditingNotice ? 'Edit Club Welcome Message' : undefined
+            }
+            onKeyDown={(e) => {
+              if (!noticeEditable || isEditingNotice) return;
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setNoticeDraft(club.description || '');
+                setIsEditingNotice(true);
+              }
+            }}
             onClick={() => {
-              if ((isOwner || isClubStaff(userRole)) && !isEditingNotice) {
+              if (noticeEditable && !isEditingNotice) {
                 setNoticeDraft(club.description || '');
                 setIsEditingNotice(true);
               }
@@ -2644,22 +2779,32 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                   <button
                     onClick={() => {
                       const newDesc = noticeDraft.trim();
+                      /* `club.id`, not `resolvedClubId`. The latter can still
+                         be null on a slug route, and `.eq('id', null)` matches
+                         zero rows and returns NO error - so the owner saw
+                         "Successfully Updated", the optimistic text stayed on
+                         screen, and the notice reverted on the next load with
+                         nothing ever having been written. `club` is non-null
+                         in this branch by construction. */
+                      const targetId = club.id;
                       // Optimistic UI update
                       setClub((prev) => (prev ? { ...prev, description: newDesc } : prev));
                       setIsEditingNotice(false);
-                      toast.success('Successfully updated');
 
-                      // Fire and forget background update
-                      supabase
-                        .from('clubs')
-                        .update({ description: newDesc })
-                        .eq('id', resolvedClubId)
-                        .then(({ error }) => {
-                          if (error) {
-                            console.error('Background save failed', error);
-                            toast.error('Failed to sync welcome message to server');
-                          }
-                        });
+                      void (async () => {
+                        const { error } = await supabase
+                          .from('clubs')
+                          .update({ description: newDesc })
+                          .eq('id', targetId);
+                        // The toast reports what HAPPENED. It used to fire
+                        // before the request was even sent.
+                        if (error) {
+                          reportError(error, 'ClubHomePage.Notice_save_failed');
+                          toast.error('Could Not Save The Welcome Message');
+                        } else {
+                          toast.success('Welcome Message Updated');
+                        }
+                      })();
                     }}
                   >
                     Save
@@ -2671,6 +2816,48 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             )}
           </div>
         )}
+
+        {/* ── SEARCH ──────────────────────────────────────────────────────
+            THE BOX THAT WAS NEVER RENDERED. Every piece of this feature was
+            already built and wired - `searchQuery` filters both the cash
+            tables (filteredTables) and the tournament cards
+            (filteredTournaments), `narrowing.searching` drives the empty
+            state's copy, and `clearAllNarrowing` clears it - but nothing on
+            the page could ever SET it. `searchQuery` was permanently '', so
+            the filters were no-ops, the "Your Search And" branch of the empty
+            state was unreachable, and the IconSearch import was unused. The
+            markup below is the one the stylesheet has been carrying since
+            2026-08-21 (.lobby-top__searchbox / .lobby-top__searchclear).
+
+            type="search" and enterKeyHint="search" so a phone offers the
+            right keyboard and its own clear affordance; the explicit Clear
+            button stays for the browsers that do not draw one. */}
+        <div className="lobby-top__searchbox">
+          <span aria-hidden="true">
+            <IconSearch />
+          </span>
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setSearchQuery('');
+            }}
+            placeholder="Search Games By Name"
+            aria-label="Search Games By Name"
+            enterKeyHint="search"
+          />
+          {searchQuery.length > 0 && (
+            <button
+              type="button"
+              className="lobby-top__searchclear"
+              onClick={() => setSearchQuery('')}
+              aria-label="Clear Search"
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </header>
 
       <WalletCashierModal
@@ -2707,7 +2894,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               onClick={() => {
                 haptic.selection();
                 setGameType(tab.key);
-                setSortOpen(false);
                 if (tab.key === 'MTT') {
                   setSortKey('starting_soon');
                 } else if (tab.key === 'HOLDEM' || tab.key === 'OMAHA') {
@@ -2720,9 +2906,21 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           ))}
         </div>
 
-        {/* Advanced Filters. Hidden on ALL, which has no spec of its own and
-            means "show everything" - offering a filter sheet there would imply
-            the tab can be narrowed when it deliberately cannot. */}
+        {/* ON ALL THIS IS A SORT BUTTON, AND IT SAYS SO (Dan 2026-08-25).
+            The comment that used to sit here claimed the button was "Hidden
+            on ALL". It was not, and what it opened there was worse than
+            hidden: AdvancedFilters retargets initialType 'ALL' to 'HOLDEM',
+            while filteredTables/filteredTournaments set advType to null on
+            ALL - so a player could open the sheet, set Hold'em filters, press
+            Save, watch the list not change, and have those filters then apply
+            the moment they touched the NLH tab. A control that appears to do
+            one thing and quietly does another.
+
+            Hiding it was the other option and it is worse, because Sort By
+            lives inside this same sheet and ALL is the tab with the most rows
+            to order. So the sheet opens in sortOnly mode instead: the game
+            type row and every filter section are gone, Sort By is all that is
+            left, and the button reads Sort. Every other tab is unchanged. */}
         <button
           className={`game-bar__filter-btn ${(() => {
             if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
@@ -2731,16 +2929,15 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
             return isFilt || sortKey !== 'recommended' ? 'is-set' : '';
           })()}`}
-          aria-label="Filters and Sort"
-          title="Filters and Sort"
+          aria-label={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
+          title={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
           onClick={() => {
             haptic.light();
-            setSortOpen(false);
             setFiltersOpen(true);
           }}
         >
           <IconSort />
-          <span>Filters</span>
+          <span>{gameType === 'ALL' ? 'Sort' : 'Filters'}</span>
         </button>
       </div>
 
@@ -2807,7 +3004,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                   title="Advanced Filters"
                   onClick={() => {
                     haptic.light();
-                    setSortOpen(false);
                     setFiltersOpen(true);
                   }}
                 >
@@ -2870,6 +3066,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           sortKey={sortKey}
           onSortChange={setSortKey}
           sortOptions={SORT_OPTIONS}
+          sortOnly={gameType === 'ALL'}
         />
       )}
 
@@ -3051,9 +3248,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                     <p>Nothing Matches Your Filters</p>
                     <p className="empty-hint">
                       {totalHere.toLocaleString()}
-                      {countsCapped ? '+' : ''} Game{totalHere === 1 ? '' : 's'} Are Open In This
-                      Club, But {searching ? 'your search and ' : ''}
-                      The Filters On This Tab Hide {totalHere === 1 ? 'it' : 'them all'}.
+                      {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In This
+                      Club, But {searching ? 'Your Search And ' : ''}
+                      The Filters On This Tab Hide {totalHere === 1 ? 'It' : 'Them All'}.
                     </p>
                     <div className="empty-actions">
                       <button className="empty-action" onClick={clearAllNarrowing}>
@@ -3091,7 +3288,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           waitlisted={waitlistedTableIds.has(selectedEntry.id)}
           seated={seatedTableIds.has(selectedEntry.id)}
           registered={registeredTournamentIds.has(selectedEntry.id)}
-          busy={actionBusy}
+          /* `deletingTableId` was set in three places and read in none, so a
+             table delete showed no busy state anywhere; `isRegisteringMtt`
+             came out of useTournamentRegistration and was likewise never
+             used, so the Register CTA had no pending state of its own. Both
+             feed the panel's busy flag now, which is the control that was
+             built for exactly this. */
+          busy={actionBusy || isRegisteringMtt || deletingTableId !== null}
           onClose={() => setPanelOpen(false)}
           onJoinTable={handleJoinTable}
           onWaitlistToggle={handleWaitlistToggle}
